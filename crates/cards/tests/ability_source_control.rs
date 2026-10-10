@@ -262,8 +262,8 @@ fn an_unpayable_or_inert_ability_stays_unoffered_from_every_reachable_source() {
 }
 
 /// A `Cost::DiscardSelf` on a threat-area source sends the card to the
-/// **encounter** discard, not to a player's discard pile: threat-area cards are
-/// scenario-owned. Widening the addressable source set is what first made this
+/// **encounter** discard, not to a player's discard pile: the ward is an
+/// encounter card, owned by the encounter deck. Widening the addressable source set is what first made this
 /// branch reachable — before it, `Cost::DiscardSelf` could only ever name a card
 /// in `cards_in_play`, and the helper it reached panics on anything else.
 #[test]
@@ -290,7 +290,7 @@ fn discarding_a_threat_area_source_as_a_cost_sends_it_to_the_encounter_discard()
     assert_eq!(
         result.state.encounter_discard,
         vec![CardCode::new(WARD)],
-        "a scenario-owned card goes to the encounter discard",
+        "an encounter card goes to the encounter discard",
     );
     assert!(
         result.state.investigators[&MINE].discard.is_empty(),

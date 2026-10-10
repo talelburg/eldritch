@@ -223,8 +223,8 @@ fn elimination_removes_a_player_owned_weakness_from_the_game() {
 
 #[test]
 fn elimination_discards_an_encounter_treachery_to_the_encounter_discard() {
-    // RR p.10 step 4: Dissonant Voices is owned by the scenario, so the investigator's
-    // elimination must not remove it from the game.
+    // RR p.10 step 4: Dissonant Voices is owned by the encounter deck, so the
+    // investigator's elimination must not remove it from the game.
     let r = reveal_committing(board_at_lethal_range(7, &[], &[(DISSONANT_VOICES, 0)]), &[]);
 
     let inv = &r.state.investigators[&InvestigatorId(1)];
@@ -242,7 +242,7 @@ fn elimination_discards_an_encounter_treachery_to_the_encounter_discard() {
         !inv.removed_from_game
             .iter()
             .any(|c| c.as_str() == DISSONANT_VOICES),
-        "a scenario-owned card must NOT be removed from the game by an \
+        "an encounter card must NOT be removed from the game by an \
          investigator's elimination"
     );
     assert_event!(r.events, Event::CardDiscarded { code, from: Zone::ThreatArea, to: DiscardPile::Encounter }

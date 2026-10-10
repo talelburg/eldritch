@@ -488,15 +488,22 @@ pub enum Event {
     /// interaction with the game in any manner for the duration of its
     /// removal."*
     ///
-    /// The discard mirror of [`CardDiscarded`](Event::CardDiscarded), for the
-    /// case where the card's **owner** has no discard pile to route it to: a
-    /// scenario-owned card a player merely controls. Lita Chantler 01117 after
-    /// a Parley is the corpus's one occupant — *"remove her from the game (do
-    /// not place her into any discard pile)"*
-    /// (<https://arkhamdb.com/card/01117>).
+    /// The discard mirror of [`CardDiscarded`](Event::CardDiscarded), emitted
+    /// once per card by the leave-play exits in
+    /// [`board`](crate::engine::board). Three paths reach it:
     ///
-    /// Names no investigator: the owner is by construction not a player here,
-    /// and a removed card need not have had a controller at all.
+    /// - **elimination step 1**, which removes the cards an eliminated
+    ///   investigator controls in play and owns in their threat area, each to
+    ///   its owner's pile — the investigator's own cards to theirs;
+    /// - **a removed location**: Trapped 01108 removes the Study 01111 through
+    ///   `remove_location_from_game`;
+    /// - **a discarded scenario-owned card**, which has no discard pile to go
+    ///   to. Lita Chantler 01117 is the corpus case — *"remove her from the
+    ///   game (do not place her into any discard pile)"*
+    ///   (<https://arkhamdb.com/card/01117>).
+    ///
+    /// Names no investigator: the pile follows from the card's owner, and a
+    /// removed card need not have had a controller at all.
     CardRemovedFromGame {
         /// The removed card code.
         code: CardCode,

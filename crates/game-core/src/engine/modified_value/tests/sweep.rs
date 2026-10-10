@@ -2,8 +2,8 @@ use super::*;
 use crate::state::Status;
 
 /// The investigator card lives in `investigator_card`, not in
-/// `cards_in_play`; the sweep walks `controlled_card_instances()`,
-/// which yields it first.
+/// `cards_in_play`; the sweep reads `board::walk`, which yields it
+/// first.
 #[test]
 fn a_seated_investigator_cards_modifier_is_counted() {
     let (mut state, id) = state_with_cards_in_play(&[]);

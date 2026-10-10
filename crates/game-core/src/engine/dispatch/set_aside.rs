@@ -35,7 +35,6 @@ use crate::{card_registry, scenario};
 /// scenario's (`GLOSSARY.md`, **Owner / Controller**). A location records no
 /// owner, so the argument is unused for one.
 ///
-///
 /// - **Location** — minted into play (`at` must be `None`; a location
 ///   brings its own place), then wired to every in-play neighbour the
 ///   active scenario's layout pairs it with.
