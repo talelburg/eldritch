@@ -20,10 +20,12 @@
 //! (`docs/adr/0018-one-trigger-scan-walks-the-whole-board.md`).
 //!
 //! **The walk is unfiltered; each caller filters it.** An eliminated
-//! investigator's cards are on it: the trigger scan, the modifier sweep and the
-//! grant sweep skip them with [`Placement::in_eliminated_area`], and the
-//! instance lookup does not. Fast events in hand are not on it at all — they
-//! are not on the board — and the trigger scan adds them itself.
+//! investigator's cards are on it. The modifier sweep and the grant sweep read
+//! `walk_active`, which skips them; the trigger scan skips them with
+//! [`Placement::in_eliminated_area`] itself, keeping one investigator's at
+//! elimination step 0; and the instance lookup does not skip them. Fast events
+//! in hand are not on it at all — they are not on the board — and the trigger
+//! scan adds them itself.
 //!
 //! # Finding an instance
 //!
@@ -48,16 +50,19 @@
 //!
 //! [`discard_from_play`] and [`remove_from_game`] are the exits a card takes
 //! out of play, wherever it sits. Both file the card by its **owner** through
-//! one router and apply the Leaves Play consequences in the same step; see
-//! [`leave_play`].
+//! one router and apply the Leaves Play consequences in the same step; the
+//! private `leave_play` module's docs give the owner table and the rules
+//! behind it.
 //!
 //! [`place_in_victory_display`] is the victory display's exit, which a
 //! defeated Victory enemy takes.
 
-pub mod leave_play;
+mod leave_play;
 
-pub use leave_play::place_in_victory_display;
-pub use leave_play::{discard_from_play, remove_from_game, remove_location_from_game, LeavingCard};
+pub use leave_play::{
+    discard_from_play, place_in_victory_display, remove_from_game, remove_location_from_game,
+    LeavingCard,
+};
 
 use std::collections::BTreeMap;
 
@@ -304,6 +309,17 @@ pub(crate) fn walk(state: &GameState) -> Vec<BoardCard<'_>> {
     walked
 }
 
+/// The [`walk`] less the cards in an eliminated investigator's area
+/// ([`Placement::in_eliminated_area`]): the cards still acting on the game. The
+/// modifier sweep and the grant sweep read it. The trigger scan does not,
+/// because it keeps the cards of the investigator whose game-end weaknesses
+/// resolve at elimination step 0.
+pub(crate) fn walk_active(state: &GameState) -> Vec<BoardCard<'_>> {
+    let mut walked = walk(state);
+    walked.retain(|card| !card.placement.in_eliminated_area(state));
+    walked
+}
+
 /// The order the [`walk`] visits investigators in: the active investigator,
 /// then the rest of `turn_order`, then every other investigator by id — so an
 /// investigator a fixture never seated in `turn_order` is still walked, last.
@@ -399,7 +415,7 @@ fn instance_zone_mut(state: &mut GameState, placement: Placement) -> Option<&mut
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::{CardCode, GameStateBuilder, Owner, Status};
+    use crate::state::{GameStateBuilder, Owner};
     use crate::test_support;
 
     const STUDY: LocationId = LocationId(1);

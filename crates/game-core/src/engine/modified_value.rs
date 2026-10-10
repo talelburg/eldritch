@@ -505,7 +505,7 @@ fn base_value(state: &GameState, target: ModifierTarget, quantity: ModifiedQuant
 
 /// Sweep the board, pushing every active modifier that reaches `target`.
 ///
-/// The cards swept are the [board walk](board::walk), less those in an
+/// The cards swept are [`board::walk_active`]: the board walk less those in an
 /// eliminated investigator's area (Rules Reference p.10 removes them from play;
 /// in elimination's step-0 window they are still on the board, and must not
 /// keep projecting modifiers). The contributions come in the walk's order;
@@ -598,10 +598,7 @@ fn sweep(
 
     // Every card on the board — not just the target's, so Lita Chantler 01117
     // can reach a teammate.
-    for card in board::walk(state) {
-        if card.placement.in_eliminated_area(state) {
-            continue;
-        }
+    for card in board::walk_active(state) {
         visit(
             card.code(),
             card.card.instance(),

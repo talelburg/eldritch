@@ -1,10 +1,11 @@
 //! Investigator elimination helpers: defeat application, elimination
 //! steps, horror application, and no-remaining-players detection.
 
+use crate::engine::board::{self, Placement};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{act_agenda, combat, cursor, emit, hunters, trigger_scan};
 use crate::engine::outcome::EngineOutcome;
-use crate::engine::{board, Cx};
+use crate::engine::Cx;
 use crate::event::Event;
 use crate::scenario::ScenarioEnding;
 use crate::state::{
@@ -286,11 +287,26 @@ fn remove_cards_in_play(cx: &mut Cx, investigator: InvestigatorId) {
                 .collect()
         })
         .unwrap_or_default();
+    drain(cx, leaving, "step 1", |cx, id| {
+        board::remove_from_game(cx, id)
+    });
+}
+
+/// Take each of `leaving` out of play through `exit`, in order. The ids are
+/// collected before the first card leaves, so the drain never reads a zone it
+/// is emptying; `step` names the elimination step in the assertion that each
+/// card was still there when its turn came.
+fn drain(
+    cx: &mut Cx,
+    leaving: Vec<CardInstanceId>,
+    step: &str,
+    exit: fn(&mut Cx, CardInstanceId) -> Option<Placement>,
+) {
     for instance_id in leaving {
-        let left = board::remove_from_game(cx, instance_id);
+        let left = exit(cx, instance_id);
         debug_assert!(
             left.is_some(),
-            "elimination step 1: instance {instance_id:?} vanished mid-drain",
+            "elimination {step}: instance {instance_id:?} vanished mid-drain",
         );
     }
 }
@@ -423,8 +439,8 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     // placed in the appropriate discard pile" (Rules Reference p.10) — each
     // card's owner's, through the leave-play exit: an encounter treachery
     // (Frozen in Fear 01164, Dissonant Voices 01165) to the encounter discard,
-    // so an investigator's elimination does not remove the *scenario's* cards
-    // from the game. Engaged enemies are step 3's business, not this drain:
+    // so an investigator's elimination does not remove the *encounter deck's*
+    // cards from the game. Engaged enemies are step 3's business, not this drain:
     // they live in `enemies` keyed by `engaged_with`, not in `threat_area`.
     let remaining: Vec<CardInstanceId> = cx
         .state
@@ -432,13 +448,9 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
         .get(&investigator)
         .map(|inv| inv.threat_area.iter().map(|c| c.instance_id).collect())
         .unwrap_or_default();
-    for instance_id in remaining {
-        let left = board::discard_from_play(cx, instance_id);
-        debug_assert!(
-            left.is_some(),
-            "elimination step 4: threat-area instance {instance_id:?} vanished mid-drain",
-        );
-    }
+    drain(cx, remaining, "step 4", |cx, id| {
+        board::discard_from_play(cx, id)
+    });
 
     // Step 5: lead-investigator transfer. No-op by construction: there
     // is no stored lead; `first_active_investigator` recomputes the lead

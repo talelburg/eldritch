@@ -272,8 +272,8 @@ fn printed_in_effect(
 /// **The grant sweep**: every ability the board currently grants the card
 /// behind `source`.
 ///
-/// Reads the same [board walk](board::walk) `modified_value::sweep` does, less
-/// the cards in an eliminated investigator's area, matching a **bare**
+/// Reads the same [board walk](board::walk_active) `modified_value::sweep`
+/// does, the one less the cards in an eliminated investigator's area, matching a **bare**
 /// `Effect::Grant` under [`Trigger::Constant`] where that one matches a bare
 /// `Effect::Modify`. A grant wrapped in an `Effect::If` is invisible here,
 /// deliberately and for the reason the variant's own doc-comment gives.
@@ -336,10 +336,7 @@ fn granted_to(
         }
     };
 
-    for granter in board::walk(state) {
-        if granter.placement.in_eliminated_area(state) {
-            continue;
-        }
+    for granter in board::walk_active(state) {
         visit(granter.source, granter.code());
     }
     out

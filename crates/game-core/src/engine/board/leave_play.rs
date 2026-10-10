@@ -68,13 +68,12 @@
 //! `discard_attachments`. There is deliberately no public destination enum: a
 //! caller always knows which exit it means.
 
+use crate::engine::board::{self, Placement};
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
     CardCode, CardInPlay, CardInstanceId, DiscardPile, EnemyId, LocationId, Owner, Zone,
 };
-
-use super::{take_instance, Placement};
 
 /// A card that can leave play: a card instance, wherever it sits on the board,
 /// or an enemy.
@@ -106,7 +105,7 @@ impl From<EnemyId> for LeavingCard {
 /// **Discard `card` from play**, wherever it sits, and file it by its owner:
 /// an investigator's card to their discard, an encounter card to the encounter
 /// discard, and a scenario-owned card out of the game (see the
-/// [module docs](self)). Its attachments are discarded with it, each by its own
+/// `leave_play` module docs). Its attachments are discarded with it, each by its own
 /// owner, and its tokens go away.
 ///
 /// Returns the [`Placement`] the card left, from which a caller derives the
@@ -119,7 +118,7 @@ pub fn discard_from_play(cx: &mut Cx, card: impl Into<LeavingCard>) -> Option<Pl
 
 /// **Remove `card` from the game**, wherever it sits: an investigator's card to
 /// their own removed-from-game pile, any other card to the game's (see the
-/// [module docs](self)). Its attachments are *discarded*, each by its own owner
+/// `leave_play` module docs). Its attachments are *discarded*, each by its own owner
 /// — Leaves Play discards them whichever way the card itself went — and its
 /// tokens go away.
 ///
@@ -153,7 +152,7 @@ pub fn place_in_victory_display(
 /// **Remove `location` from the game**: its card to the game's removed-from-game
 /// pile, then its attachments and the cards put into play at it each
 /// *discarded* by its own owner, as for [`remove_from_game`] (see the
-/// [module docs](self)). Trapped 01108's *"Remove the Study from the game."* is
+/// `leave_play` module docs). Trapped 01108's *"Remove the Study from the game."* is
 /// the corpus case.
 ///
 /// A location is not a card instance and records no owner, so it has its own
@@ -199,7 +198,7 @@ enum Exit {
 fn leave_play(cx: &mut Cx, card: LeavingCard, exit: Exit) -> Option<Placement> {
     let (code, owner, placement, attachments) = match card {
         LeavingCard::Instance(id) => {
-            let (card, placement) = take_instance(cx.state, id)?;
+            let (card, placement) = board::take_instance(cx.state, id)?;
             (card.code, card.owner, placement, Vec::new())
         }
         LeavingCard::Enemy(id) => {
@@ -290,12 +289,7 @@ fn zone_left(placement: Placement) -> Zone {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::board::find_instance;
-    use crate::event::Event;
-    use crate::state::{
-        CardCode, CardInPlay, DiscardPile, GameState, GameStateBuilder, InvestigatorId, LocationId,
-        Owner, UseKind, Zone,
-    };
+    use crate::state::{GameState, GameStateBuilder, InvestigatorId, UseKind};
     use crate::test_support;
 
     /// The investigator whose areas the leaving cards sit in.
@@ -352,23 +346,10 @@ mod tests {
             ghoul.owner = owner;
             return (state, LeavingCard::Enemy(id));
         }
-        super::super::instance_zone_mut(&mut state, zone)
+        board::instance_zone_mut(&mut state, zone)
             .unwrap_or_else(|| panic!("no card leaves play from {zone:?}"))
             .push(card);
         (state, LeavingCard::Instance(LEAVING))
-    }
-
-    /// The zone a discard or removal event names for a card leaving `placement`.
-    fn zone_of(placement: Placement) -> Zone {
-        match placement {
-            Placement::PlayArea(_) => Zone::InPlay,
-            Placement::ThreatArea(_) => Zone::ThreatArea,
-            Placement::LocationAttachment(_) => Zone::LocationAttachment,
-            Placement::AtLocation(_) => Zone::AtLocation,
-            Placement::EnemyAttachment(_) => Zone::EnemyAttachment,
-            Placement::Enemy(_) => Zone::Enemy,
-            other => unreachable!("no card leaves play from {other:?}"),
-        }
     }
 
     fn run(
@@ -397,7 +378,7 @@ mod tests {
 
     /// Where every out-of-play pile stands: the owner's discard, the
     /// controller's discard, the encounter discard, the owner's removed-from-game
-    /// pile, and the scenario's.
+    /// pile, and the game's.
     fn piles(state: &GameState) -> [Vec<CardCode>; 5] {
         [
             state.investigators[&OWNER].discard.clone(),
@@ -416,7 +397,7 @@ mod tests {
 
     fn still_on_board(state: &GameState, card: LeavingCard) -> bool {
         match card {
-            LeavingCard::Instance(id) => find_instance(state, id).is_some(),
+            LeavingCard::Instance(id) => board::find_instance(state, id).is_some(),
             LeavingCard::Enemy(id) => state.enemies.contains_key(&id),
         }
     }
@@ -436,7 +417,7 @@ mod tests {
                 assert_eq!(left, Some(zone), "{case}: reports where it left");
                 assert!(!still_on_board(&state, card), "{case}: off the board");
                 let code = CardCode::new(LEAVING_CODE);
-                let from = zone_of(zone);
+                let from = zone_left(zone);
                 let (landed, event) = match owner {
                     Owner::Investigator(id) => (
                         only(LEAVING_CODE, 0),
@@ -469,7 +450,7 @@ mod tests {
     /// own removed-from-game pile — `glossary/Ownership_and_Control.md`, *"If a
     /// card would enter an out-of-play area that does not belong to the card's
     /// owner, the card is physically placed in its owner's equivalent
-    /// out-of-play area instead"* — and any other card to the scenario's.
+    /// out-of-play area instead"* — and any other card to the game's.
     #[test]
     fn remove_from_game_files_each_owner_from_each_zone() {
         for owner in OWNERS {
@@ -488,7 +469,7 @@ mod tests {
                     events,
                     vec![Event::CardRemovedFromGame {
                         code: CardCode::new(LEAVING_CODE),
-                        from: zone_of(zone),
+                        from: zone_left(zone),
                     }],
                     "{case}: one event",
                 );
@@ -574,7 +555,7 @@ mod tests {
             assert_eq!(left, Some(Placement::Enemy(GHOUL)));
             assert!(!state.enemies.contains_key(&GHOUL));
             for id in [71, 72, 73] {
-                assert!(find_instance(&state, CardInstanceId(id)).is_none());
+                assert!(board::find_instance(&state, CardInstanceId(id)).is_none());
             }
             let piles = piles(&state);
             assert_eq!(piles[0], vec![CardCode::new("MINE")]);
@@ -621,8 +602,7 @@ mod tests {
             Placement::ThreatArea(CONTROLLER),
         );
         {
-            let (on_board, _) =
-                crate::engine::board::find_instance_mut(&mut state, LEAVING).unwrap();
+            let (on_board, _) = board::find_instance_mut(&mut state, LEAVING).unwrap();
             on_board.clues = 2;
             on_board.accumulated_damage = 1;
             on_board.accumulated_horror = 1;
@@ -636,7 +616,7 @@ mod tests {
 
         run(&mut state, discard, card);
 
-        assert!(find_instance(&state, LEAVING).is_none());
+        assert!(board::find_instance(&state, LEAVING).is_none());
         assert_eq!(
             state.locations[&STUDY].clues, location_clues,
             "no clue returned to the location"
