@@ -221,8 +221,8 @@ fn prompt_slot_discard(
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_single(
             prompt,
-            choice::candidate_options(&candidates, |(inst, code)| {
-                (format!("{code:?}"), OptionTarget::CardInstance(*inst))
+            choice::candidate_options(cx.state, &candidates, |(inst, _)| {
+                OptionTarget::CardInstance(*inst)
             }),
         ),
         resume_token: ResumeToken(0),

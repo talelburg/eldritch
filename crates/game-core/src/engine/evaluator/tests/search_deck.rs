@@ -77,3 +77,39 @@ fn search_deck_top_n_suspends_on_two_eligible_then_takes_pick() {
     assert!(!inv.deck.contains(&CardCode::new("90002")));
     assert_eq!(inv.deck.len(), 2);
 }
+
+/// The searched cards are offered by name (#989), still un-anchored (ADR 0015):
+/// a deck card has no board home, so the options land in the prompt banner.
+#[test]
+fn search_deck_options_are_labelled_with_card_names_and_unanchored() {
+    let id = InvestigatorId(1);
+    let mut state = GameStateBuilder::new()
+        .with_investigator(test_support::test_investigator(1))
+        .build();
+    state.investigators.get_mut(&id).unwrap().deck = vec![
+        CardCode::new(test_support::TEST_ASSET),
+        CardCode::new(test_support::TEST_TREACHERY),
+    ];
+    let mut events = Vec::new();
+    let outcome = run(
+        &mut Cx {
+            state: &mut state,
+            events: &mut events,
+        },
+        &dsl::search_deck(InvestigatorTarget::You, SearchScope::Top(3), None),
+        ctx(1),
+    );
+    let EngineOutcome::AwaitingInput { request, .. } = outcome else {
+        panic!("two eligible cards suspend for a pick, got {outcome:?}");
+    };
+    let offered: Vec<_> = request
+        .options
+        .iter()
+        .map(|o| (o.label.as_str(), o.target.clone()))
+        .collect();
+    assert_eq!(
+        offered,
+        [("Test Asset", None), ("Test Treachery", None)],
+        "card names, no board anchor"
+    );
+}

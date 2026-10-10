@@ -87,14 +87,14 @@ fn crypt_chill_fail(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
         ChoiceResolution::Auto(i) => discard_asset_instance(cx, assets[i]),
         // 2+ → suspend for the controller's choice.
         ChoiceResolution::Suspend => {
-            let options = assets
+            let anchors: Vec<_> = assets
                 .iter()
-                .map(|id| (format!("{id:?}"), Some(OptionTarget::CardInstance(*id))))
+                .map(|id| OptionTarget::CardInstance(*id))
                 .collect();
             engine::suspend_for_native_choice(
                 cx,
                 "Choose an asset to discard",
-                options,
+                &anchors,
                 CRYPT_CHILL_FAIL,
                 ctx,
             )

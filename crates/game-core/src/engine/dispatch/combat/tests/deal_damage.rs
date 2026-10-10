@@ -1,5 +1,5 @@
 use super::*;
-use crate::state::EmitEventFrame;
+use crate::state::{EmitEventFrame, Owner};
 
 #[test]
 fn soak_and_place_with_no_soakers_matches_old_behavior() {
@@ -261,19 +261,27 @@ fn the_two_damage_conditions_are_classified_as_the_adr_says() {
 
 #[test]
 fn soak_options_anchor_assets_to_card_instances() {
+    let mut inv = test_support::test_investigator(1);
+    inv.investigator_card.instance_id = CardInstanceId(1);
+    inv.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new(test_support::TEST_ASSET),
+        CardInstanceId(7),
+        Owner::Investigator(InvestigatorId(1)),
+    ));
+    let state = GameStateBuilder::default().with_investigator(inv).build();
     let targets = vec![
         DistributionTarget::Investigator,
         DistributionTarget::Asset(CardInstanceId(7)),
     ];
     let me = OptionTarget::CardInstance(CardInstanceId(1));
-    let opts = soak_options(&targets, &me);
+    let opts = soak_options(&state, &targets, &me);
     // Anchors: the investigator to their own card; a soaker asset to its card.
     assert_eq!(opts[0].target, Some(me), "the investigator's own card");
     assert_eq!(
         opts[1].target,
         Some(OptionTarget::CardInstance(CardInstanceId(7)))
     );
-    // Labels unchanged from the former `hunters::candidate_options` debug repr.
-    assert_eq!(opts[0].label, "Investigator");
-    assert_eq!(opts[1].label, "Asset(CardInstanceId(7))");
+    // Labels: each anchored card's name (#989), not the target's Debug form.
+    assert_eq!(opts[0].label, "Test Investigator");
+    assert_eq!(opts[1].label, "Test Asset");
 }
