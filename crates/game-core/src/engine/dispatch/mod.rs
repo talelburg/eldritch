@@ -19,9 +19,8 @@ use crate::engine::outcome::{
 };
 use crate::engine::{enumerate, evaluator, Cx};
 use crate::state::{
-    ActionResolutionFrame, ActionResume, CardInstanceId, Continuation, FastWindowFrame,
-    FrameActivity, GameState, InvestigatorTurnFrame, ResolutionCandidate, ScenarioEndFrame,
-    ScenarioEndStep, Status,
+    ActionResolutionFrame, ActionResume, Continuation, FastWindowFrame, FrameActivity, GameState,
+    InvestigatorTurnFrame, ResolutionCandidate, ScenarioEndFrame, ScenarioEndStep, Status,
 };
 pub(crate) use control::take_control;
 
@@ -555,17 +554,11 @@ pub(super) struct ActivateCheckResult {
     /// What `initiation::record_initiation` counts the use against, so the
     /// handler records the very candidate the gate approved.
     pub candidate: ResolutionCandidate,
-    /// Action points this activation costs: the ability's
-    /// `Trigger::Activated` cost **plus** any `ExtraActionCost` surcharge on
-    /// the action class its designator names (#754). What the affordability
-    /// check compares and what payment spends — the printed cost alone is not
-    /// what the investigator pays.
+    /// The action points the ability prints (its `Trigger::Activated` cost),
+    /// without any surcharge. Taking the activation as an action adds the
+    /// `ExtraActionCost` surcharge on the class its designator names (#754),
+    /// pays the total and marks the surcharge sources.
     pub action_cost: u8,
-    /// The `first_each_round` surcharge sources that `action_cost` charged
-    /// for, to mark spent once the activation commits. Empty unless the
-    /// surcharge applied. Kept beside the cost so the peek stays read-only
-    /// for validate-first.
-    pub surcharge_sources: Vec<CardInstanceId>,
     /// The bold action designator the ability prints, if any — what the
     /// attack-of-opportunity exemption reads (#696) and what names the action
     /// class the surcharge keys on (#754).

@@ -1300,7 +1300,9 @@ fn check_activation_target_available(
 }
 
 /// The `ExtraActionCost` surcharge an activation owes, plus the
-/// `first_each_round` sources to mark spent once it commits.
+/// `first_each_round` sources it would consume. The validator reads only the
+/// amount, to refuse an activation the investigator can't afford; taking the
+/// activation (`take::take`) prices, pays and marks it again.
 ///
 /// A bold action designator makes this an action of that type, so a surcharge
 /// on that class applies here exactly as it does to the basic action (#754).
@@ -1539,16 +1541,16 @@ pub(crate) fn check_activate_ability(
         }
     }
 
-    let (surcharge, surcharge_sources) =
+    let (surcharge, _) =
         designated_action_surcharge(state, investigator, action_cost, designator.as_ref());
-    let action_cost = action_cost.saturating_add(surcharge);
+    let total_action_cost = action_cost.saturating_add(surcharge);
 
     let inv = state.investigators.get(&investigator).expect("checked");
 
     // Action-economy check.
-    if inv.actions_remaining < action_cost {
+    if inv.actions_remaining < total_action_cost {
         return Err(format!(
-            "ActivateAbility: needs {action_cost} action(s); investigator has {}",
+            "ActivateAbility: needs {total_action_cost} action(s); investigator has {}",
             inv.actions_remaining,
         )
         .into());
@@ -1571,7 +1573,6 @@ pub(crate) fn check_activate_ability(
     Ok(ActivateCheckResult {
         candidate,
         action_cost,
-        surcharge_sources,
         designator,
         costs,
         effect,
