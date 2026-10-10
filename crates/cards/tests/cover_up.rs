@@ -731,3 +731,63 @@ fn game_end_trauma_goes_to_the_investigator_holding_cover_up() {
         r.events
     );
 }
+
+/// Story 13: the co-located investigator **uses** Cover Up before the game
+/// ends — their Investigate's clue comes off Roland's Cover Up — and Cover Up
+/// still holds clues when it does. The trauma is still Roland's alone: using a
+/// threat-area card's reaction does not make it yours, and "you" on it stays
+/// *"the investigator who has the card in his/her threat area"*
+/// (`glossary/You_Your.md`).
+#[test]
+fn game_end_trauma_stays_rolands_after_a_colocated_investigator_uses_cover_up() {
+    let mut state = colocated_investigate_state(3);
+    state
+        .investigators
+        .get_mut(&OTHER)
+        .expect("the co-located investigator is on the board")
+        .clues = 1; // meets the act's clue threshold
+    state.scenario_id = Some(ScenarioId::new("unknown"));
+    state.act_deck = vec![Act {
+        code: test_support::terminal_code(1),
+        clue_threshold: 1,
+    }];
+
+    let session = TestSession::new(state)
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+            c.pick_single(OptionId(0));
+        })
+        .take(&TurnAction::Investigate {
+            investigator: OTHER,
+        });
+    assert_eq!(
+        cover_up_clues(session.state()),
+        2,
+        "the co-located investigator's discovery came off Roland's Cover Up",
+    );
+    assert_eq!(
+        session.state().investigators[&OTHER].clues,
+        1,
+        "and they discovered nothing",
+    );
+
+    let session = session.take(&TurnAction::AdvanceAct {
+        investigator: OTHER,
+    });
+    let traumas: Vec<_> = session
+        .events()
+        .iter()
+        .filter_map(|e| match e {
+            Event::TraumaSuffered {
+                investigator, kind, ..
+            } => Some((*investigator, *kind)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        traumas,
+        vec![(INV, TraumaKind::Mental)],
+        "events = {:?}",
+        session.events(),
+    );
+}

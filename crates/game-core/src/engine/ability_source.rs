@@ -313,7 +313,10 @@ fn unreachable_reason(investigator: InvestigatorId, source: AbilitySource) -> Co
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::{Act, Agenda, CardInstanceId, EnemyId, GameStateBuilder, Owner};
+    use crate::engine::enumerate::{self, TurnAction};
+    use crate::state::{
+        AbilityAddress, Act, Agenda, CardInstanceId, EnemyId, GameStateBuilder, Owner,
+    };
     use crate::test_support;
 
     const STUDY: LocationId = LocationId(1);
@@ -515,12 +518,12 @@ mod tests {
         );
     }
 
-    /// *"all **encounter** cards in the threat area of any investigator at
-    /// that location"* (#975): co-location reaches another investigator's
-    /// threat-area treachery, not a player card sitting beside it. The bearer
-    /// reaches both, through control.
-    #[test]
-    fn colocation_reaches_only_encounter_cards_in_another_investigators_threat_area() {
+    /// Investigator 1 and investigator 2 in the Study, investigator 1 with a
+    /// player card (11, [`test_support::TEST_ASSET`]) and an encounter card
+    /// (12, [`test_support::TEST_TREACHERY`]) in their threat area, each
+    /// carrying one `[action]` ability. `turn` is the investigator whose turn
+    /// is open.
+    fn threat_area_with_a_player_card_and_a_treachery(turn: InvestigatorId) -> GameState {
         let mut a = test_support::test_investigator(1);
         a.investigator_card.instance_id = CardInstanceId(10);
         a.threat_area.push(card(
@@ -532,12 +535,22 @@ mod tests {
             .push(card(test_support::TEST_TREACHERY, 12, Owner::EncounterDeck));
         let mut b = test_support::test_investigator(2);
         b.investigator_card.instance_id = CardInstanceId(20);
-        let state = GameStateBuilder::new()
+        GameStateBuilder::new()
             .with_investigator_at(a, STUDY)
             .with_investigator_at(b, STUDY)
             .with_location(test_support::test_location(1, "Study"))
-            .build();
+            .with_turn_order(vec![InvestigatorId(1), InvestigatorId(2)])
+            .open_turn(turn)
+            .build()
+    }
 
+    /// *"all **encounter** cards in the threat area of any investigator at
+    /// that location"* (#975): co-location reaches another investigator's
+    /// threat-area treachery, not a player card sitting beside it. The bearer
+    /// reaches both, through control.
+    #[test]
+    fn colocation_reaches_only_encounter_cards_in_another_investigators_threat_area() {
+        let state = threat_area_with_a_player_card_and_a_treachery(InvestigatorId(1));
         let player_card = AbilitySource::InPlay(CardInstanceId(11));
         let treachery = AbilitySource::InPlay(CardInstanceId(12));
         let a_reaches = sources_for(&state, InvestigatorId(1));
@@ -554,6 +567,36 @@ mod tests {
             !b_reaches.contains(&player_card),
             "a co-located investigator must not reach a player card in another's threat area; \
              sources were {b_reaches:?}",
+        );
+    }
+
+    /// The same #975 boundary, as the turn menu shows it: on investigator 2's
+    /// turn the treachery's `[action]` ability is offered and the player
+    /// card's is not; on the bearer's turn both are.
+    #[test]
+    fn a_colocated_investigators_turn_offers_only_the_encounter_cards_action() {
+        let activation = |investigator, instance| TurnAction::ActivateAbility {
+            investigator,
+            source: AbilitySource::InPlay(CardInstanceId(instance)),
+            address: AbilityAddress::Printed(0),
+        };
+        let (a, b) = (InvestigatorId(1), InvestigatorId(2));
+
+        let menu = enumerate::legal_actions(&threat_area_with_a_player_card_and_a_treachery(b));
+        assert!(
+            menu.contains(&activation(b, 12)),
+            "the co-located investigator is offered the treachery's action; menu was {menu:?}",
+        );
+        assert!(
+            !menu.contains(&activation(b, 11)),
+            "the co-located investigator must not be offered the player card's action; \
+             menu was {menu:?}",
+        );
+
+        let menu = enumerate::legal_actions(&threat_area_with_a_player_card_and_a_treachery(a));
+        assert!(
+            menu.contains(&activation(a, 11)) && menu.contains(&activation(a, 12)),
+            "the bearer is offered both actions; menu was {menu:?}",
         );
     }
 

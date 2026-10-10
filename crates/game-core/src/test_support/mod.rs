@@ -16,7 +16,7 @@
 use std::sync::OnceLock;
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Skills};
-use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
+use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, InvestigatorTarget};
 
 use crate::card_registry::{self, CardRegistry};
 use crate::state::CardCode;
@@ -57,17 +57,23 @@ fn test_inv_metadata() -> &'static CardMetadata {
     })
 }
 
-/// Synthetic **player-cardtype** card code for unit tests: an asset.
-/// Registered by [`install_test_registry`].
+/// Synthetic **player-cardtype** card code for unit tests: an asset, with one
+/// `[action]` ability. Registered by [`install_test_registry`].
 ///
 /// For a fixture that needs a card's cardtype to be a player one — a
 /// player card in a threat area, which co-location must not reach (#975) —
 /// without borrowing a real corpus code the unit registry does not know.
+///
+/// **A probe, shared rather than test-local.** ADR 0016 keeps probe cards
+/// in the one binary that reads them, but game-core's unit tests are one
+/// binary with one registry, installed before its harness runs
+/// ([`install_test_registry`]), so a unit-test probe can only be served from
+/// here. Integration binaries define their own.
 pub const TEST_ASSET: &str = "TEST_ASSET";
 
-/// Synthetic **encounter-cardtype** card code for unit tests: a treachery.
-/// Registered by [`install_test_registry`]. The encounter counterpart of
-/// [`TEST_ASSET`].
+/// Synthetic **encounter-cardtype** card code for unit tests: a treachery,
+/// with one `[action]` ability. Registered by [`install_test_registry`]. The
+/// encounter counterpart of [`TEST_ASSET`], and shared for the same reason.
 pub const TEST_TREACHERY: &str = "TEST_TREACHERY";
 
 /// Metadata for the synthetic cardtype cards, [`TEST_ASSET`] and
@@ -121,6 +127,19 @@ fn metadata_for_test_cardtypes(code: &CardCode) -> Option<&'static CardMetadata>
         })),
         _ => None,
     }
+}
+
+/// Abilities for the synthetic cardtype cards: one `[action]` ability each,
+/// costing nothing else, so a fixture can see which of them a turn menu
+/// offers.
+fn abilities_for_test_cardtypes(code: &CardCode) -> Option<Vec<Ability>> {
+    matches!(code.as_str(), TEST_ASSET | TEST_TREACHERY).then(|| {
+        vec![dsl::activated(
+            1,
+            vec![],
+            dsl::gain_resources(InvestigatorTarget::You, 1),
+        )]
+    })
 }
 
 /// Printed-code prefix for the synthetic **terminal** act/agenda cards.
@@ -266,7 +285,7 @@ pub fn install_test_registry() {
             metadata_for_test_inv(code).or_else(|| metadata_for_test_cardtypes(code))
         }
         fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-            abilities_for_terminal(code)
+            abilities_for_terminal(code).or_else(|| abilities_for_test_cardtypes(code))
         }
         let _ = card_registry::install(CardRegistry {
             metadata_for,
