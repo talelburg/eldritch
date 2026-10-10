@@ -1,18 +1,46 @@
-//! The Engage basic action: engage an enemy at the investigator's location.
+//! The Engage basic action and its candidates: engage an enemy at the
+//! investigator's location.
 
 use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::event::Event;
-use crate::state::{ActionResume, EnemyId, InvestigatorId};
+use crate::state::{ActionResume, EnemyId, GameState, InvestigatorId};
+
+/// The enemies an Engage may target: every enemy at `investigator`'s location
+/// that is not already engaged with them, in ascending [`EnemyId`] order.
+/// `glossary/Engage_Action.md`: *"To engage an enemy at the same location"*,
+/// including *"an enemy engaged with another investigator"*, but *"An
+/// investigator cannot use the engage action to engage an enemy he or she is
+/// already engaged with."*
+///
+/// Read by the basic action's target validation and by the turn menu. Empty for
+/// a locationless investigator, so a locationless enemy is never co-located
+/// with one.
+pub(crate) fn candidates(state: &GameState, investigator: InvestigatorId) -> Vec<EnemyId> {
+    let Some(here) = state
+        .investigators
+        .get(&investigator)
+        .and_then(|inv| inv.current_location)
+    else {
+        return Vec::new();
+    };
+    state
+        .enemies
+        .iter()
+        .filter(|(_, enemy)| {
+            enemy.current_location == Some(here) && enemy.engaged_with != Some(investigator)
+        })
+        .map(|(&id, _)| id)
+        .collect()
+}
 
 /// Handler for `TurnAction::Engage`. Engage an enemy at the
 /// investigator's location that they are not already engaged with
 /// (Rules Reference p.4) — it becomes engaged with the investigator.
 ///
 /// Validate-first: the investigator may take the action ([`take::check`]),
-/// the enemy is in state, at the investigator's `current_location`, and not
-/// already engaged with the investigator. Then take it ([`take::take`]). Engage
+/// the enemy is in state and one of the [`candidates`]. Then take it ([`take::take`]). Engage
 /// is not on the attack-of-opportunity exempt list; the target enemy is not
 /// yet engaged so it cannot attack, but every other ready engaged enemy does.
 /// If the investigator survives, [`engage_primary_effect`] runs the
@@ -28,9 +56,8 @@ pub(in crate::engine::dispatch) fn engage(
     }
     let inv = &cx.state.investigators[&investigator];
     // A `None` location can't host an engage (matches `investigate`'s
-    // guard); without it the `enemy.current_location != inv_location`
-    // check below would let a locationless investigator engage a
-    // locationless enemy (`None != None == false`).
+    // guard). `candidates` is empty then too, but this rejects with a message
+    // about the investigator standing nowhere rather than about the enemy.
     let Some(inv_location) = inv.current_location else {
         return EngineOutcome::Rejected {
             reason: format!("Engage: {investigator:?} has no current_location to engage from")
@@ -42,18 +69,17 @@ pub(in crate::engine::dispatch) fn engage(
             reason: format!("Engage: enemy {enemy_id:?} is not in state").into(),
         };
     };
-    if enemy.engaged_with == Some(investigator) {
-        return EngineOutcome::Rejected {
-            reason: format!("Engage: {investigator:?} is already engaged with {enemy_id:?}").into(),
-        };
-    }
-    if enemy.current_location != Some(inv_location) {
-        return EngineOutcome::Rejected {
-            reason: format!(
+    if !candidates(cx.state, investigator).contains(&enemy_id) {
+        let reason = if enemy.engaged_with == Some(investigator) {
+            format!("Engage: {investigator:?} is already engaged with {enemy_id:?}")
+        } else {
+            format!(
                 "Engage: enemy {enemy_id:?} (at {:?}) is not at {investigator:?}'s location ({inv_location:?})",
                 enemy.current_location,
             )
-            .into(),
+        };
+        return EngineOutcome::Rejected {
+            reason: reason.into(),
         };
     }
 
@@ -78,24 +104,15 @@ pub(in crate::engine::dispatch) fn engage_primary_effect(
     investigator: InvestigatorId,
     enemy_id: EnemyId,
 ) -> EngineOutcome {
-    let inv = cx
-        .state
-        .investigators
-        .get(&investigator)
-        .unwrap_or_else(|| {
-            unreachable!(
-                "engage_primary_effect: investigator {investigator:?} not in map after the \
-                 Status::Active re-validation gate; this is a state-corruption invariant violation"
-            )
-        });
-    let Some(inv_location) = inv.current_location else {
-        return EngineOutcome::Done; // lapsed: investigator lost its location during the AoO
-    };
-    let Some(enemy) = cx.state.enemies.get(&enemy_id) else {
-        return EngineOutcome::Done; // lapsed: target gone
-    };
-    if enemy.engaged_with == Some(investigator) || enemy.current_location != Some(inv_location) {
-        return EngineOutcome::Done; // lapsed: already engaged, or no longer co-located
+    assert!(
+        cx.state.investigators.contains_key(&investigator),
+        "engage_primary_effect: investigator {investigator:?} not in map after the \
+         Status::Active re-validation gate; this is a state-corruption invariant violation"
+    );
+    // Lapsed during the AoO: the investigator lost its location, the target is
+    // gone, already engaged, or no longer co-located.
+    if !candidates(cx.state, investigator).contains(&enemy_id) {
+        return EngineOutcome::Done;
     }
     let enemy_mut = cx.state.enemies.get_mut(&enemy_id).expect("checked above");
     enemy_mut.engaged_with = Some(investigator);

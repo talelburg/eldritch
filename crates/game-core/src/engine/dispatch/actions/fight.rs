@@ -1,32 +1,46 @@
-//! The Fight basic action, its target validation, and the fight primary
-//! shared with the designated Fight.
+//! The Fight basic action, its candidates and target validation, and the
+//! fight primary shared with the designated Fight.
 
 use card_dsl::dsl::{IntExpr, SkillTestKind, Stat};
 
 use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
-use crate::engine::dispatch::skill_test;
 use crate::engine::dispatch::skill_test::InitiatorModifier;
+use crate::engine::dispatch::{combat, skill_test};
 use crate::engine::outcome::EngineOutcome;
-use crate::engine::{designator, Cx};
+use crate::engine::Cx;
 use crate::state::{
-    AbilitySource, ActionResume, DifficultyBasis, EnemyId, GameState, InvestigatorId,
+    AbilitySource, ActionResume, DifficultyBasis, Enemy, EnemyId, GameState, InvestigatorId,
     ModifierTarget, SkillKind, SkillTestFollowUp,
 };
 
-/// Validate that `enemy_id` is a legal Fight target for `investigator`: it is
-/// one of the enemies a Fight may target (RR p.12, *"To fight an enemy **at his
-/// or her location**…"* — engagement is not required, unlike Evade), and its
-/// printed fight value is not malformed.
+/// The enemies a Fight may target: every enemy at `investigator`'s location, in
+/// ascending [`EnemyId`] order. `glossary/Fight_Action.md`: *"An investigator
+/// may fight any enemy at his or her location, including: an enemy he or she is
+/// engaged with, an unengaged enemy at the same location, or an enemy engaged
+/// with another investigator who is at the same location."*
 ///
-/// Candidacy is
-/// [`designator::fight_candidates`](crate::engine::designator::fight_candidates)
-/// — the same list a designated **Fight** grounds its pick against and the same
-/// one `can_perform` counts pre-cost (#805). The basic action differs only in
-/// naming its target up front instead of choosing among them, which is why it
-/// reads the *list* rather than `can_perform` itself: *"is **this** enemy a
-/// legal target"* is a question the activation gate deliberately does not ask
-/// (it asks only whether **some** target exists, and leaves the pick to the
-/// evaluator).
+/// The rules scope only. A malformed fight value is a separate question,
+/// [`has_malformed_value`], which the basic action and the turn menu ask on top;
+/// a designated **Fight**'s grounding does not.
+///
+/// Every caller that needs the Fight targets reads this: the basic action's
+/// target validation, the turn menu, the designator's pre-cost gate
+/// (`designator::can_perform`), and the evaluator's grounding of a designated
+/// **Fight**'s pick. The basic action names its target up front, so it asks
+/// whether *this* enemy is in the list; the gate asks only whether the list is
+/// empty, and the evaluator offers the list as the pick.
+pub(crate) fn candidates(state: &GameState, investigator: InvestigatorId) -> Vec<EnemyId> {
+    combat::enemies_in_scope(state, investigator, combat::fight_target_scope())
+}
+
+/// Whether `enemy`'s printed fight value is malformed (negative), which makes
+/// it no Fight target for the basic action even when it is a candidate.
+pub(crate) fn has_malformed_value(enemy: &Enemy) -> bool {
+    enemy.fight < 0
+}
+
+/// Validate that `enemy_id` is a legal Fight target for `investigator`: it is
+/// one of the [`candidates`], and its printed fight value is not malformed.
 ///
 /// Returns nothing on success: the fight value it range-checks is read
 /// again at ST.6 through the modified-value query, not carried out of
@@ -41,7 +55,7 @@ fn validate_fight_target(
             reason: format!("Fight: enemy {enemy_id:?} is not in state").into(),
         });
     };
-    if !designator::fight_candidates(state, investigator).contains(&enemy_id) {
+    if !candidates(state, investigator).contains(&enemy_id) {
         return Err(EngineOutcome::Rejected {
             reason: format!(
                 "Fight: enemy {enemy_id:?} (at {:?}) is not at {investigator:?}'s location",
@@ -50,7 +64,7 @@ fn validate_fight_target(
             .into(),
         });
     }
-    if enemy.fight < 0 {
+    if has_malformed_value(enemy) {
         return Err(EngineOutcome::Rejected {
             reason: format!(
                 "Fight: enemy {enemy_id:?} has negative fight value {} (malformed state)",
@@ -86,7 +100,7 @@ pub(in crate::engine::dispatch) fn fight(
         return EngineOutcome::Rejected { reason };
     }
     let inv = &cx.state.investigators[&investigator];
-    // A `None` location can't host a fight (mirrors `engage`); `fight_candidates`
+    // A `None` location can't host a fight (mirrors `engage`); `candidates`
     // is empty for a locationless investigator, so the target check below would
     // reject anyway — but with a message about the enemy rather than about the
     // investigator standing nowhere.

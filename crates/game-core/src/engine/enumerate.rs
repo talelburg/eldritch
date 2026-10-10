@@ -5,7 +5,8 @@
 
 use crate::card_registry;
 use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
-use crate::engine::dispatch::{act_agenda, movement, reaction_windows};
+use crate::engine::dispatch::actions::{engage, evade, fight, investigate, move_action};
+use crate::engine::dispatch::{act_agenda, reaction_windows};
 use crate::engine::outcome::OptionTarget;
 use crate::engine::{abilities_in_effect, ability_source};
 use crate::state::{
@@ -278,14 +279,10 @@ fn push_card_actions(state: &GameState, investigator: InvestigatorId, out: &mut 
     }
 }
 
-/// Append the combat / engage actions legal for `investigator`, mirroring the
-/// `fight`/`evade`/`engage` handlers (slice 2a-ii-2, #393). The three target
-/// distinct, overlapping enemy sets:
-/// - **Fight**: any enemy at the investigator's location, engaged or not (RR
-///   p.12, #401 — co-location, like Engage).
-/// - **Evade**: only an enemy engaged with the investigator (RR p.11).
-/// - **Engage**: a co-located enemy not already engaged with the investigator
-///   (including one engaged with another investigator; RR p.11).
+/// Append the combat / engage actions legal for `investigator` (slice 2a-ii-2,
+/// #393): one per enemy in each action's own `candidates` — the same lists the
+/// `fight`/`evade`/`engage` handlers validate against — less an enemy whose
+/// fight or evade value is malformed.
 fn push_combat_engage_actions(
     state: &GameState,
     investigator: InvestigatorId,
@@ -293,40 +290,38 @@ fn push_combat_engage_actions(
 ) {
     // Whether each action may be taken at all — phase, turn, Status, and its
     // cost, surcharge included — is the step's question, asked per kind since
-    // Frozen in Fear prices Fight and Evade but not Engage.
-    let fight_takeable = may_take(state, investigator, ActionKind::Fight);
-    let evade_takeable = may_take(state, investigator, ActionKind::Evade);
-    let engage_takeable = may_take(state, investigator, ActionKind::Engage);
-    let Some(inv) = state.investigators.get(&investigator) else {
-        return;
+    // Frozen in Fear prices Fight and Evade but not Engage. An action that
+    // can't be taken has no targets.
+    let targets = |kind: ActionKind, candidates: fn(&GameState, InvestigatorId) -> Vec<EnemyId>| {
+        if may_take(state, investigator, kind) {
+            candidates(state, investigator)
+        } else {
+            Vec::new()
+        }
     };
-    let inv_location = inv.current_location;
+    let fight_targets = targets(ActionKind::Fight, fight::candidates);
+    let evade_targets = targets(ActionKind::Evade, evade::candidates);
+    let engage_targets = targets(ActionKind::Engage, engage::candidates);
 
-    // One pass over the enemies; the three actions' conditions are independent
-    // and can overlap (a co-located engaged enemy is both a Fight and an Evade
-    // target; a co-located unengaged enemy is both a Fight and an Engage target).
-    // The `inv_location.is_some()` guard avoids a `None == None` co-location match
-    // when both are locationless (mirrors the fight/engage handlers' guard).
+    // One pass over the enemies, so the menu keeps the per-enemy interleave
+    // (Fight, Evade, Engage for each enemy in id order) the web client renders.
+    // The three sets can overlap: a co-located engaged enemy is both a Fight
+    // and an Evade target; a co-located unengaged enemy is both a Fight and an
+    // Engage target.
     for (&enemy_id, enemy) in &state.enemies {
-        let co_located = inv_location.is_some() && enemy.current_location == inv_location;
-        let engaged_with_me = enemy.engaged_with == Some(investigator);
-
-        // Fight: any co-located enemy, non-negative difficulty, affordable.
-        if co_located && fight_takeable && enemy.fight >= 0 {
+        if fight_targets.contains(&enemy_id) && !fight::has_malformed_value(enemy) {
             out.push(TurnAction::Fight {
                 investigator,
                 enemy: enemy_id,
             });
         }
-        // Evade: only an enemy engaged with the investigator.
-        if engaged_with_me && evade_takeable && enemy.evade >= 0 {
+        if evade_targets.contains(&enemy_id) && !evade::has_malformed_value(enemy) {
             out.push(TurnAction::Evade {
                 investigator,
                 enemy: enemy_id,
             });
         }
-        // Engage: a co-located enemy not already engaged with the investigator.
-        if co_located && !engaged_with_me && engage_takeable {
+        if engage_targets.contains(&enemy_id) {
             out.push(TurnAction::Engage {
                 investigator,
                 enemy: enemy_id,
@@ -352,39 +347,18 @@ fn push_basic_actions(state: &GameState, investigator: InvestigatorId, out: &mut
     if may_take(state, investigator, ActionKind::Draw) {
         out.push(TurnAction::Draw { investigator });
     }
-    let Some(inv) = state.investigators.get(&investigator) else {
-        return;
-    };
-    if may_take(state, investigator, ActionKind::Investigate) {
-        if let Some(loc_id) = inv.current_location {
-            if state.locations.get(&loc_id).is_some_and(|l| l.revealed) {
-                out.push(TurnAction::Investigate { investigator });
-            }
-        }
+    if may_take(state, investigator, ActionKind::Investigate)
+        && investigate::candidates(state, investigator).is_some()
+    {
+        out.push(TurnAction::Investigate { investigator });
     }
 
-    // Move: one option per connected destination in state.
-    if !may_take(state, investigator, ActionKind::Move) {
-        return;
-    }
-    let Some(from) = inv.current_location else {
-        return;
-    };
-    let Some(from_loc) = state.locations.get(&from) else {
-        return;
-    };
-    for &dest in &from_loc.connections {
-        // The barrier filter is applied to the *step*, never to the graph
-        // (#651/#774): a blocked destination is simply not offered, and the
-        // connection itself stays on the map for everything that measures
-        // distance across it.
-        if dest != from
-            && state.locations.contains_key(&dest)
-            && movement::investigator_can_enter_location(state, dest)
-        {
+    // Move: one option per destination, in connection order.
+    if may_take(state, investigator, ActionKind::Move) {
+        for destination in move_action::candidates(state, investigator) {
             out.push(TurnAction::Move {
                 investigator,
-                destination: dest,
+                destination,
             });
         }
     }
