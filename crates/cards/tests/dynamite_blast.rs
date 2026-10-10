@@ -182,3 +182,32 @@ fn auto_targets_and_discards_when_your_location_is_the_only_candidate() {
         "event discarded",
     );
 }
+
+#[test]
+fn blast_is_rejected_when_the_controller_has_no_location() {
+    // Between locations, there is neither "your location" nor a connecting
+    // one to choose, so the empty candidate list rejects the blast.
+    let mut inv = test_support::test_investigator(1);
+    inv.hand = vec![CardCode::new(DYNAMITE)];
+    let state = GameStateBuilder::new()
+        .with_investigator(inv)
+        .with_location(test_support::test_location(10, "Cellar"))
+        .open_turn(INV)
+        .build();
+    assert_eq!(state.investigators[&INV].current_location, None);
+
+    let s = play(state);
+    assert_eq!(
+        s.expect_rejected(),
+        "01024 blast: controller has no location to target",
+    );
+    // The rejection rolls the play back: the event is still in hand, nothing
+    // was discarded, and the session rests at the turn menu.
+    assert!(at_turn_menu(&s));
+    assert_eq!(
+        s.state().investigators[&INV].hand,
+        vec![CardCode::new(DYNAMITE)],
+        "event back in hand",
+    );
+    assert!(s.state().investigators[&INV].discard.is_empty());
+}

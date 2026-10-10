@@ -78,7 +78,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::card_registry::{self, CardRegistry};
 use crate::engine::board::{self, Placement};
-use crate::engine::dispatch::choice::{resolve_grounded_choice, ChoiceResolution, Grounded};
+use crate::engine::dispatch::choice::{ChoiceResolution, Grounded};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{
     self, act_agenda, actions, cards, choice, combat, elimination, emit, skill_test, threat_area,
@@ -1985,7 +1985,7 @@ fn ground_investigator_choice(
         return Err(EngineOutcome::Done);
     }
     let id = picked_or_reject(
-        resolve_grounded_choice(
+        choice::resolve_grounded_choice(
             cx.state,
             &eval_ctx,
             &candidates,
@@ -2010,7 +2010,7 @@ fn ground_location_choice(
 ) -> Result<EvalContext, EngineOutcome> {
     let candidates = location_candidates(cx.state, eval_ctx.controller, set);
     let id = picked_or_reject(
-        resolve_grounded_choice(
+        choice::resolve_grounded_choice(
             cx.state,
             &eval_ctx,
             &candidates,
@@ -2034,9 +2034,13 @@ fn ground_enemy_choice(
 ) -> Result<EvalContext, EngineOutcome> {
     let candidates = combat::enemies_in_scope(cx.state, eval_ctx.controller, scope);
     let id = picked_or_reject(
-        resolve_grounded_choice(cx.state, &eval_ctx, &candidates, "Choose an enemy", |id| {
-            OptionTarget::Enemy(*id)
-        }),
+        choice::resolve_grounded_choice(
+            cx.state,
+            &eval_ctx,
+            &candidates,
+            "Choose an enemy",
+            |id| OptionTarget::Enemy(*id),
+        ),
         "Chosen enemy: no candidate in scope",
     )?;
     let mut ctx = eval_ctx;
@@ -2052,7 +2056,7 @@ fn ground_enemy_choice(
 /// — every enemy *at the controller's location* (not engaged-only), in
 /// ascending [`EnemyId`] order. Per RR you choose an enemy at your location to
 /// attack and need not already be engaged, matching the basic Fight action
-/// (#451). Delegates to [`resolve_grounded_choice`]:
+/// (#451). Delegates to [`choice::resolve_grounded_choice`]:
 /// - 0 candidates → `Rejected` ("Fight: no enemy at your location").
 /// - 1 candidate → auto-bind (no suspend; preserves single-enemy behaviour).
 /// - 2+ candidates → suspend `AwaitingInput { PickSingle }`.
@@ -2067,7 +2071,7 @@ fn ground_fight_target_choice(
     let candidates =
         combat::enemies_in_scope(cx.state, eval_ctx.controller, combat::fight_target_scope());
     let id = picked_or_reject(
-        resolve_grounded_choice(
+        choice::resolve_grounded_choice(
             cx.state,
             &eval_ctx,
             &candidates,

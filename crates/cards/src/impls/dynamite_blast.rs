@@ -155,34 +155,6 @@ mod tests {
     }
 
     #[test]
-    fn blast_is_rejected_when_the_controller_has_no_location() {
-        // Between locations, there is neither "your location" nor a connecting
-        // one to choose, so the empty candidate list rejects the blast.
-        let mut state = GameStateBuilder::new()
-            .with_investigator(test_support::test_investigator(1))
-            .with_location(test_support::test_location(1, "Elsewhere"))
-            .build();
-        assert_eq!(
-            state.investigators[&InvestigatorId(1)].current_location,
-            None
-        );
-        let mut events: Vec<Event> = Vec::new();
-        let ctx = EvalContext::for_controller(InvestigatorId(1));
-        let out = {
-            let mut cx = Cx {
-                state: &mut state,
-                events: &mut events,
-            };
-            dynamite_blast(&mut cx, &ctx)
-        };
-        assert!(
-            matches!(out, EngineOutcome::Rejected { .. }),
-            "no location to target rejects, got {out:?}",
-        );
-        assert!(events.is_empty(), "nothing was blasted");
-    }
-
-    #[test]
     fn single_location_blast_surfaces_under_interactive_flag() {
         // Sole candidate (controller's location, no connections). With
         // interactive_acknowledge on, the blast target must surface as a

@@ -508,7 +508,7 @@ pub(super) fn spawn_enemy_at(
                          engage among {tied:?}"
                     ),
                     choice::candidate_options(cx.state, &tied, |i| {
-                        choice::investigator_anchor(cx.state, *i)
+                        cx.state.investigators[i].card_anchor()
                     }),
                 ),
                 resume_token: ResumeToken(0),

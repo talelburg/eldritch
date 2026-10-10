@@ -13,7 +13,7 @@ use crate::engine::outcome::{
     ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
 };
 use crate::engine::{board, Cx, EvalContext};
-use crate::state::{CardCode, Continuation, EffectFrame, GameState, InvestigatorId};
+use crate::state::{CardCode, Continuation, EffectFrame, GameState};
 
 /// Outcome of applying the uniform resolve convention to a count of legal
 /// options (umbrella §3.4 / spec §5). Crate-private: an entity selection goes
@@ -108,7 +108,7 @@ pub fn resolve_grounded_choice<T: Clone>(
 /// suspending effect node's own `Leaf` frame stays on the stack as the prompt
 /// (#422), and resume re-derives the option set and validates the pick by
 /// checked indexing.
-pub(crate) fn awaiting_selection(
+fn awaiting_selection(
     state: &GameState,
     prompt: impl Into<String>,
     anchors: &[OptionTarget],
@@ -145,7 +145,7 @@ fn option_id(i: usize) -> OptionId {
 /// returns a bare [`OptionTarget`] rather than an `Option`: a caller cannot leave
 /// one un-anchored and land it in the prompt banner (ADR 0011, #950). It supplies
 /// no label, so it cannot forget one or name a different entity than it anchors.
-pub(crate) fn candidate_options<T>(
+pub(super) fn candidate_options<T>(
     state: &GameState,
     candidates: &[T],
     anchor: impl Fn(&T) -> OptionTarget,
@@ -160,11 +160,6 @@ pub(crate) fn candidate_options<T>(
         .collect()
 }
 
-/// The anchor for one tied investigator: their investigator card (#950).
-pub(super) fn investigator_anchor(state: &GameState, id: InvestigatorId) -> OptionTarget {
-    state.investigators[&id].card_anchor()
-}
-
 /// The player-facing name of the board surface `anchor` names, for an option's
 /// label (#989). A location or enemy reads as its name. A card (in play, in a
 /// threat area, an investigator card, in hand, the current act or agenda) reads
@@ -175,7 +170,7 @@ pub(super) fn investigator_anchor(state: &GameState, id: InvestigatorId) -> Opti
 /// engine bug, because every candidate is enumerated from `state`. It trips a
 /// `debug_assert!` in tests and degrades to a neutral placeholder in a live
 /// game, never to an id's `Debug` form.
-pub(crate) fn anchor_label(state: &GameState, anchor: &OptionTarget) -> String {
+fn anchor_label(state: &GameState, anchor: &OptionTarget) -> String {
     let found = match anchor {
         OptionTarget::Location(id) => state.locations.get(id).map(|l| l.name.clone()),
         OptionTarget::Enemy(id) => state.enemies.get(id).map(|e| e.name.clone()),

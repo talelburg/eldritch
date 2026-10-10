@@ -438,7 +438,7 @@ fn suspend_hunter_choice(cx: &mut Cx, choice: HunterChoice) -> EngineOutcome {
                  {candidates:?}"
             ),
             choice::candidate_options(cx.state, candidates, |i| {
-                choice::investigator_anchor(cx.state, *i)
+                cx.state.investigators[i].card_anchor()
             }),
         ),
     };
