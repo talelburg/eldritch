@@ -43,7 +43,7 @@ use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId,
+    GameStateBuilder, InvestigatorId, LocationId, Owner,
 };
 use game_core::test_support::{self, MockRegistry, TEST_INV};
 
@@ -147,14 +147,18 @@ fn board() -> GameState {
     let mine = test_support::test_investigator(1);
 
     let mut neighbour = test_support::test_investigator(2);
-    neighbour
-        .threat_area
-        .push(CardInPlay::enter_play(CardCode::new(WARD), NEIGHBOURS_WARD));
+    neighbour.threat_area.push(CardInPlay::enter_play(
+        CardCode::new(WARD),
+        NEIGHBOURS_WARD,
+        Owner::EncounterDeck,
+    ));
 
     let mut stranger = test_support::test_investigator(3);
-    stranger
-        .threat_area
-        .push(CardInPlay::enter_play(CardCode::new(WARD), STRANGERS_WARD));
+    stranger.threat_area.push(CardInPlay::enter_play(
+        CardCode::new(WARD),
+        STRANGERS_WARD,
+        Owner::EncounterDeck,
+    ));
 
     let mut here = test_support::test_location(1, "Hall");
     here.code = CardCode::new(HALL);

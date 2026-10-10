@@ -15,7 +15,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, EngineOutcome};
 use game_core::state::{
     Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Phase,
+    GameStateBuilder, InvestigatorId, LocationId, Owner, Phase,
 };
 use game_core::test_support::{self, MockRegistry, TEST_INV};
 
@@ -99,8 +99,11 @@ fn roster() -> Vec<RosterEntry> {
 /// step-4.3 ready-all has something to ready.
 fn seed_exhausted_asset(state: &mut GameState) {
     let inv = state.investigators.get_mut(&InvestigatorId(1)).unwrap();
-    let mut card =
-        CardInPlay::enter_play(CardCode::new(format!("{PREFIX}asset")), CardInstanceId(1));
+    let mut card = CardInPlay::enter_play(
+        CardCode::new(format!("{PREFIX}asset")),
+        CardInstanceId(1),
+        Owner::Investigator(InvestigatorId(1)),
+    );
     card.exhausted = true;
     inv.cards_in_play.push(card);
 }

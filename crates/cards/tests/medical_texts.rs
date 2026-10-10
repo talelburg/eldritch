@@ -20,7 +20,7 @@ use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameState, GameStateBuilder, InvestigatorId, LocationId, TokenModifiers,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, TokenModifiers,
 };
 use game_core::test_support::{self, TestSession};
 
@@ -46,6 +46,7 @@ fn board(intellect: i8, damage: u8) -> GameState {
     inv.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new(MEDICAL_TEXTS),
         BOOK_INST,
+        Owner::Investigator(InvestigatorId(1)),
     ));
 
     GameStateBuilder::new()

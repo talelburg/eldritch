@@ -7,8 +7,8 @@
 (the [milestone query](https://github.com/talelburg/eldritch/milestone/9) is
 authoritative): #65 (other-investigator commits), #146 (turn-order choice),
 #151 (lead-investigator prey tie), #153 (clue allocation on advance), #359
-(Medical Texts target ordering), #371 (attachment ownership), #381 (reaction
-windows scoped to the controller), #409 (failed Fight redirects damage), #573
+(Medical Texts target ordering), #381 (reaction windows scoped to the
+controller), #409 (failed Fight redirects damage), #573
 (acts drop `clues_fixed`), #581 (no seat/identity on the wire), #650 (no-Spawn
 enemy prey-resolves), #654 (*Prey – Bearer only*), #662 (barricade-stranded
 enemy re-engagement). A thirteenth is not a deferral but the design ticket that

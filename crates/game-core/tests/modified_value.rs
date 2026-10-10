@@ -22,7 +22,7 @@ use game_core::engine::modified_value::{
 use game_core::event::Event;
 use game_core::state::{
     Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenModifiers,
+    GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{self, MockRegistry, TestSession};
 use game_core::{assert_event, card_registry};
@@ -141,8 +141,8 @@ fn board(teammate_at: LocationId) -> GameStateBuilder {
         .with_token_modifiers(TokenModifiers::default())
 }
 
-fn in_play(code: &str, instance: u32) -> CardInPlay {
-    CardInPlay::enter_play(CardCode::new(code), CardInstanceId(instance))
+fn in_play(code: &str, instance: u32, owner: Owner) -> CardInPlay {
+    CardInPlay::enter_play(CardCode::new(code), CardInstanceId(instance), owner)
 }
 
 // ---- 1. another investigator's cards in play --------------------
@@ -159,7 +159,7 @@ fn a_card_another_investigator_controls_reaches_me() {
         .get_mut(&TEAMMATE)
         .unwrap()
         .cards_in_play
-        .push(in_play(LITA, 1));
+        .push(in_play(LITA, 1, Owner::Scenario));
 
     let result = test_support::perform_skill_test_no_commits(state, ME, SkillKind::Combat, 4);
     assert_event!(
@@ -178,7 +178,7 @@ fn a_card_another_investigator_controls_elsewhere_does_not_reach_me() {
         .get_mut(&TEAMMATE)
         .unwrap()
         .cards_in_play
-        .push(in_play(LITA, 1));
+        .push(in_play(LITA, 1, Owner::Scenario));
 
     let result = test_support::perform_skill_test_no_commits(state, ME, SkillKind::Combat, 4);
     assert_event!(
@@ -226,7 +226,9 @@ fn a_modifier_on_a_location_does_not_reach_investigators_elsewhere() {
 #[test]
 fn a_modifier_on_a_location_attachment_reaches_that_location() {
     let mut fogged = test_support::test_location(10, "Study");
-    fogged.attachments.push(in_play(FOG, 1));
+    fogged
+        .attachments
+        .push(in_play(FOG, 1, Owner::EncounterDeck));
     let state = board(THERE).with_location(fogged).build();
 
     assert_eq!(shroud(&state, HERE), 4, "printed 2 + 2 from the attachment");
@@ -246,7 +248,9 @@ fn a_modifier_on_a_location_attachment_reaches_that_location() {
 #[test]
 fn a_card_put_into_play_at_my_location_reaches_me() {
     let mut parlor = test_support::test_location(10, "Parlor");
-    parlor.cards_at_location.push(in_play(LITA, 1));
+    parlor
+        .cards_at_location
+        .push(in_play(LITA, 1, Owner::Scenario));
     let state = board(THERE).with_location(parlor).build();
 
     let result = test_support::perform_skill_test_no_commits(state, ME, SkillKind::Combat, 4);
@@ -261,7 +265,9 @@ fn a_card_put_into_play_at_my_location_reaches_me() {
 #[test]
 fn a_card_put_into_play_at_another_location_does_not_reach_me() {
     let mut parlor = test_support::test_location(11, "Parlor");
-    parlor.cards_at_location.push(in_play(LITA, 1));
+    parlor
+        .cards_at_location
+        .push(in_play(LITA, 1, Owner::Scenario));
     let state = board(THERE).with_location(parlor).build();
 
     let result = test_support::perform_skill_test_no_commits(state, ME, SkillKind::Combat, 4);
@@ -280,7 +286,9 @@ fn a_card_put_into_play_at_another_location_does_not_reach_me() {
 #[test]
 fn a_card_put_into_play_at_a_location_is_not_attached_to_it() {
     let mut fogged = test_support::test_location(10, "Study");
-    fogged.cards_at_location.push(in_play(FOG, 1));
+    fogged
+        .cards_at_location
+        .push(in_play(FOG, 1, Owner::EncounterDeck));
     let state = board(THERE).with_location(fogged).build();
 
     assert_eq!(
@@ -333,7 +341,9 @@ fn a_modifier_on_an_enemy_elsewhere_does_not_reach_me() {
 fn a_modifier_on_an_enemy_attachment_reaches_that_enemy() {
     let mut brood = test_support::test_enemy(7, "Brood of Yog-Sothoth");
     brood.current_location = Some(HERE);
-    brood.attachments.push(in_play(TOWERING_BEASTS, 1));
+    brood
+        .attachments
+        .push(in_play(TOWERING_BEASTS, 1, Owner::EncounterDeck));
     let mut other = test_support::test_enemy(8, "Ghoul");
     other.current_location = Some(HERE);
     let state = board(THERE).with_enemy(brood).with_enemy(other).build();

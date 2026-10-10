@@ -17,8 +17,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::scenario::ScenarioEnding;
 use crate::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInstanceId, ChaosToken, EliminationCause, EnemyId,
-    InvestigatorId, LocationId, Phase, SkillKind, TokenResolution, UseKind, Zone,
+    AbilityAddress, AbilitySource, CardCode, CardInstanceId, ChaosToken, DiscardPile,
+    EliminationCause, EnemyId, InvestigatorId, LocationId, Phase, SkillKind, TokenResolution,
+    UseKind, Zone,
 };
 
 /// One state-change record emitted by the engine.
@@ -465,18 +466,21 @@ pub enum Event {
         /// The minted in-play instance id.
         instance_id: CardInstanceId,
     },
-    /// A card was discarded — moved from `from` to the investigator's
-    /// discard pile. Fires for played events after their on-play
-    /// effects resolve; future card effects ("discard a card from
-    /// your hand", "discard top of deck") emit this with the
-    /// matching `from` zone.
+    /// A card was discarded — moved from `from` to the discard pile `to`.
+    /// Fires for played events after their on-play effects resolve, for
+    /// discards from hand, from play, from a threat area and from a location
+    /// attachment, each with the matching `from` zone.
+    ///
+    /// Names the pile the card **landed in**, not a controller: an encounter
+    /// card has no investigator to name, and the pile is what a reader of the
+    /// log wants to follow.
     CardDiscarded {
-        /// The card's controller.
-        investigator: InvestigatorId,
         /// The discarded card code.
         code: CardCode,
         /// Where the card came from before landing in discard.
         from: Zone,
+        /// The discard pile the card landed in.
+        to: DiscardPile,
     },
     /// A card left play and was **removed from the game** rather than discarded
     /// (#772) — `glossary/Removed_from_Game.md`: *"A card that has been removed
@@ -484,18 +488,23 @@ pub enum Event {
     /// interaction with the game in any manner for the duration of its
     /// removal."*
     ///
-    /// The discard mirror of [`CardDiscarded`](Event::CardDiscarded), for the
-    /// case where the card's **owner** has no discard pile to route it to: a
-    /// scenario-owned card a player merely controls. Lita Chantler 01117 after
-    /// a Parley is the corpus's one occupant — *"remove her from the game (do
-    /// not place her into any discard pile)"*
-    /// (<https://arkhamdb.com/card/01117>).
+    /// The discard mirror of [`CardDiscarded`](Event::CardDiscarded), emitted
+    /// once per card by the leave-play exits in
+    /// [`board`](crate::engine::board). Three paths reach it:
     ///
-    /// Names the *controller* the card left, not an owner: the owner is by
-    /// construction not a player here.
+    /// - **elimination step 1**, which removes the cards an eliminated
+    ///   investigator controls in play and owns in their threat area, each to
+    ///   its owner's pile — the investigator's own cards to theirs;
+    /// - **a removed location**: Trapped 01108 removes the Study 01111 through
+    ///   `remove_location_from_game`;
+    /// - **a discarded scenario-owned card**, which has no discard pile to go
+    ///   to. Lita Chantler 01117 is the corpus case — *"remove her from the
+    ///   game (do not place her into any discard pile)"*
+    ///   (<https://arkhamdb.com/card/01117>).
+    ///
+    /// Names no investigator: the pile follows from the card's owner, and a
+    /// removed card need not have had a controller at all.
     CardRemovedFromGame {
-        /// The investigator who controlled the card as it left play.
-        investigator: InvestigatorId,
         /// The removed card code.
         code: CardCode,
         /// Where the card came from before leaving the game.

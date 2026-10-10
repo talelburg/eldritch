@@ -1,23 +1,19 @@
 //! Investigator elimination helpers: defeat application, elimination
 //! steps, horror application, and no-remaining-players detection.
 
-use std::mem;
-
-use crate::card_registry;
+use crate::engine::board::{self, Placement};
 use crate::engine::dispatch::emit::TimingEvent;
-use crate::engine::dispatch::{
-    act_agenda, combat, cursor, emit, hunters, threat_area, trigger_scan,
-};
+use crate::engine::dispatch::{act_agenda, combat, cursor, emit, hunters, trigger_scan};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::scenario::ScenarioEnding;
 use crate::state::{
-    CardCode, CardInPlay, CardInstanceId, EliminationCause, EliminationFrame, EliminationStep,
-    EmitStep, EnemyId, GameState, InvestigatorId, Status,
+    CardCode, CardInstanceId, EliminationCause, EliminationFrame, EliminationStep, EmitStep,
+    EnemyId, GameState, InvestigatorId, Owner, Status,
 };
 #[cfg(test)]
-use crate::state::{LocationId, Phase};
+use crate::state::{CardInPlay, LocationId, Phase};
 
 /// Flip an Active investigator's status to the variant `cause` implies —
 /// [`Status::Resigned`] for a resignation, [`Status::Defeated`] for every
@@ -257,7 +253,7 @@ fn take_limbo_cards(cx: &mut Cx, investigator: InvestigatorId) -> (Vec<CardCode>
     let mut scenarios = Vec::new();
     for frame in cx.state.continuations.frames_mut() {
         if let Some((card, owner)) = frame.take_play_in_progress(investigator) {
-            if owner == Some(investigator) {
+            if owner == Owner::Investigator(investigator) {
                 theirs.push(card);
             } else {
                 scenarios.push(card);
@@ -266,6 +262,53 @@ fn take_limbo_cards(cx: &mut Cx, investigator: InvestigatorId) -> (Vec<CardCode>
         theirs.extend(frame.take_committed_cards(investigator));
     }
     (theirs, scenarios)
+}
+
+/// Step 1's in-play half: remove from the game, through the leave-play exit,
+/// every card in `investigator`'s play area and every card they own in their
+/// threat area — each filed by its owner, with its one removal event.
+///
+/// Split out of [`run_elimination_steps`] to keep it under the function-size
+/// lint; the *why* is at the call site.
+fn remove_cards_in_play(cx: &mut Cx, investigator: InvestigatorId) {
+    let leaving: Vec<CardInstanceId> = cx
+        .state
+        .investigators
+        .get(&investigator)
+        .map(|inv| {
+            inv.cards_in_play
+                .iter()
+                .chain(
+                    inv.threat_area
+                        .iter()
+                        .filter(|card| card.owner == Owner::Investigator(investigator)),
+                )
+                .map(|card| card.instance_id)
+                .collect()
+        })
+        .unwrap_or_default();
+    drain(cx, leaving, "step 1", |cx, id| {
+        board::remove_from_game(cx, id)
+    });
+}
+
+/// Take each of `leaving` out of play through `exit`, in order. The ids are
+/// collected before the first card leaves, so the drain never reads a zone it
+/// is emptying; `step` names the elimination step in the assertion that each
+/// card was still there when its turn came.
+fn drain(
+    cx: &mut Cx,
+    leaving: Vec<CardInstanceId>,
+    step: &str,
+    exit: fn(&mut Cx, CardInstanceId) -> Option<Placement>,
+) {
+    for instance_id in leaving {
+        let left = exit(cx, instance_id);
+        debug_assert!(
+            left.is_some(),
+            "elimination {step}: instance {instance_id:?} vanished mid-drain",
+        );
+    }
 }
 
 fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
@@ -303,18 +346,23 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     // Step 1, part two: remove every card this investigator controls in play and
     // owns in out-of-play areas (hand/deck/discard) from the game.
     //
-    // Threat-area cards split by ownership (Rules Reference p.7 names the axis:
-    // a defeated card is "placed in the encounter discard pile (or in its
-    // owner's discard pile if it is a weakness)"). A **weakness** is owned by
-    // this player: step 4 would place it in "the appropriate discard pile", but
-    // step 1 removes that very pile from the game one step earlier — so the
-    // pile no longer exists and the card is removed. Everything else in the
-    // threat area is scenario-owned and is step 4's business (#567).
-    let weakness_in_threat_area = |card: &CardInPlay| {
-        card_registry::current()
-            .and_then(|reg| (reg.metadata_for)(&card.code))
-            .is_some_and(|m| m.weakness)
-    };
+    // *"The cards he or she **controls** in play … are removed from the game"* —
+    // so every card in the play area leaves it, whoever owns it, through the
+    // leave-play exit, which files each by its **owner**: this investigator's
+    // own cards to their removed-from-game pile, and a card they merely control
+    // — Lita Chantler 01117 after a Parley — to the scenario's
+    // (`GameState::removed_from_game`, #772). See **Removed from game** in
+    // `GLOSSARY.md` for why the two piles differ.
+    //
+    // The threat area splits by the same **owner**: a card this investigator
+    // owns there (a weakness such as Cover Up 01007, the bearer's) leaves with
+    // them now. Step 4 would place it in "the appropriate discard pile", but
+    // step 1 removes that very pile from the game one step earlier, so the
+    // card is removed. Every other threat-area card is step 4's business
+    // (#567).
+    //
+    // Each card leaving play emits its one removal event. The out-of-play
+    // areas and limbo emit none: those cards were never in play.
     let inv = cx
         .state
         .investigators
@@ -324,42 +372,21 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
                 "run_elimination_steps: investigator {investigator:?} not in map; state corruption"
             )
         });
-    // Build the pile in an owned local so each mutation borrows only one
-    // field of `inv` at a time (mutating `inv.removed_from_game` directly
-    // while borrowing `inv.hand` etc. would double-borrow `inv` — rejected
-    // by the borrow checker).
-    let mut removed = mem::take(&mut inv.removed_from_game);
-    removed.extend(in_limbo);
-    // *"The cards he or she **controls** in play … are removed from the game"* —
-    // so every card in the play area leaves it, whoever owns it. **Which pile it
-    // is removed to is the ownership question** (#772): this investigator's own
-    // pile is for their own deck's cards, and a card they merely control —
-    // Lita Chantler 01117 after a Parley — is the scenario's, so it goes to
-    // `GameState::removed_from_game` beside the victory display. The two piles
-    // wear the same words and mean different things; see **Removed from game**
-    // in `GLOSSARY.md`.
-    let (owned, controlled_only): (Vec<CardInPlay>, Vec<CardInPlay>) = inv
-        .cards_in_play
-        .drain(..)
-        .partition(|card| card.owner == Some(investigator));
-    removed.extend(owned.into_iter().map(|c| c.code));
-    // Partition the threat area: owned weaknesses leave with their owner here;
-    // the rest stay for step 4. No metadata (no registry, or engine-only tests
-    // with synthetic threat-area cards) ⇒ not a weakness ⇒ step 4.
-    let (owned, scenario_owned): (Vec<CardInPlay>, Vec<CardInPlay>) =
-        mem::take(&mut inv.threat_area)
-            .into_iter()
-            .partition(weakness_in_threat_area);
-    inv.threat_area = scenario_owned;
-    removed.extend(owned.into_iter().map(|c| c.code));
-    removed.append(&mut inv.hand);
-    removed.append(&mut inv.deck);
-    removed.append(&mut inv.discard);
-    inv.removed_from_game = removed;
-    cx.state
-        .removed_from_game
-        .extend(controlled_only.into_iter().map(|c| c.code));
+    inv.removed_from_game.extend(in_limbo);
+    remove_cards_in_play(cx, investigator);
     cx.state.removed_from_game.extend(scenario_owned_limbo);
+    let inv = cx
+        .state
+        .investigators
+        .get_mut(&investigator)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "run_elimination_steps: investigator {investigator:?} not in map; state corruption"
+            )
+        });
+    inv.removed_from_game.append(&mut inv.hand);
+    inv.removed_from_game.append(&mut inv.deck);
+    inv.removed_from_game.append(&mut inv.discard);
 
     // Step 2: place possessed clues at the location; return resources to
     // the (unmodeled, infinite) token pool by zeroing them.
@@ -409,11 +436,11 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     }
 
     // Step 4: "All other cards in the eliminated investigator's threat area are
-    // placed in the appropriate discard pile" (Rules Reference p.10). What
-    // survives step 1's partition is scenario-owned (Frozen in Fear 01164,
-    // Dissonant Voices 01165), so the appropriate pile is the encounter discard
-    // — an investigator's elimination must not remove the *scenario's* cards
-    // from the game. Engaged enemies are step 3's business, not this drain:
+    // placed in the appropriate discard pile" (Rules Reference p.10) — each
+    // card's owner's, through the leave-play exit: an encounter treachery
+    // (Frozen in Fear 01164, Dissonant Voices 01165) to the encounter discard,
+    // so an investigator's elimination does not remove the *encounter deck's*
+    // cards from the game. Engaged enemies are step 3's business, not this drain:
     // they live in `enemies` keyed by `engaged_with`, not in `threat_area`.
     let remaining: Vec<CardInstanceId> = cx
         .state
@@ -421,13 +448,9 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
         .get(&investigator)
         .map(|inv| inv.threat_area.iter().map(|c| c.instance_id).collect())
         .unwrap_or_default();
-    for instance_id in remaining {
-        let removed = threat_area::discard_from_threat_area(cx, investigator, instance_id);
-        debug_assert!(
-            removed,
-            "elimination step 4: threat-area instance {instance_id:?} vanished mid-drain",
-        );
-    }
+    drain(cx, remaining, "step 4", |cx, id| {
+        board::discard_from_play(cx, id)
+    });
 
     // Step 5: lead-investigator transfer. No-op by construction: there
     // is no stored lead; `first_active_investigator` recomputes the lead

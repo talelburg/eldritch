@@ -135,7 +135,7 @@ impl Location {
 #[cfg(test)]
 mod location_code_tests {
     use super::*;
-    use crate::state::CardInstanceId;
+    use crate::state::{CardInstanceId, Owner};
 
     #[test]
     fn location_carries_code_field() {
@@ -180,6 +180,7 @@ mod location_code_tests {
         original.cards_at_location.push(CardInPlay::enter_play(
             CardCode::new("01117"),
             CardInstanceId(7),
+            Owner::Scenario,
         ));
         let json = serde_json::to_value(&original).expect("serialize");
         let back: Location = serde_json::from_value(json.clone()).expect("deserialize");

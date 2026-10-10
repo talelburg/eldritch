@@ -56,7 +56,7 @@ use game_core::engine::{self, Cx, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
     Act, CardCode, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId,
-    ModifierTarget, Phase, SkillKind,
+    ModifierTarget, Owner, Phase, SkillKind,
 };
 use game_core::test_support::{self, ScriptedResolver};
 
@@ -146,7 +146,7 @@ fn reverse(state: &mut GameState) -> (EngineOutcome, Vec<Event>) {
 fn a_set_aside_asset_enters_play_at_the_named_location() {
     let mut state = board();
     let (outcome, events) = with_cx(&mut state, |cx| {
-        engine::put_set_aside_card_into_play(cx, LITA, Some(PARLOR))
+        engine::put_set_aside_card_into_play(cx, LITA, Some(PARLOR), Owner::Scenario)
     });
 
     assert_eq!(outcome, EngineOutcome::Done, "the asset entered play");
@@ -180,7 +180,7 @@ fn a_set_aside_asset_enters_play_at_the_named_location() {
 fn a_card_put_into_play_at_a_location_is_controlled_by_no_investigator() {
     let mut state = board();
     let (outcome, _) = with_cx(&mut state, |cx| {
-        engine::put_set_aside_card_into_play(cx, LITA, Some(PARLOR))
+        engine::put_set_aside_card_into_play(cx, LITA, Some(PARLOR), Owner::Scenario)
     });
     assert_eq!(outcome, EngineOutcome::Done);
 
@@ -204,7 +204,7 @@ fn a_card_put_into_play_at_a_location_is_controlled_by_no_investigator() {
 fn a_set_aside_asset_without_a_location_is_rejected() {
     let mut state = board();
     let (outcome, events) = with_cx(&mut state, |cx| {
-        engine::put_set_aside_card_into_play(cx, LITA, None)
+        engine::put_set_aside_card_into_play(cx, LITA, None, Owner::Scenario)
     });
 
     assert!(
@@ -224,7 +224,8 @@ fn a_set_aside_asset_without_a_location_is_rejected() {
 fn a_set_aside_asset_named_at_a_location_not_in_play_is_rejected() {
     let mut state = board();
     let (outcome, _) = with_cx(&mut state, |cx| {
-        engine::put_set_aside_card_into_play(cx, LITA, Some("01113")) // the Attic, still set aside
+        engine::put_set_aside_card_into_play(cx, LITA, Some("01113"), Owner::Scenario)
+        // the Attic, still set aside
     });
 
     assert!(
@@ -254,7 +255,7 @@ fn an_uncontrolled_asset_cannot_soak_damage_for_a_colocated_investigator() {
     // Put her into play where the investigator is standing — the strongest
     // form of the claim: co-location is not control.
     let (outcome, _) = with_cx(&mut state, |cx| {
-        engine::put_set_aside_card_into_play(cx, LITA, Some(HALLWAY))
+        engine::put_set_aside_card_into_play(cx, LITA, Some(HALLWAY), Owner::Scenario)
     });
     assert_eq!(outcome, EngineOutcome::Done);
 
@@ -296,7 +297,7 @@ fn an_uncontrolled_asset_cannot_soak_damage_for_a_colocated_investigator() {
 fn a_card_at_a_location_is_swept_by_the_modifier_query() {
     let mut state = board();
     let (outcome, _) = with_cx(&mut state, |cx| {
-        engine::put_set_aside_card_into_play(cx, LITA, Some(HALLWAY))
+        engine::put_set_aside_card_into_play(cx, LITA, Some(HALLWAY), Owner::Scenario)
     });
     assert_eq!(outcome, EngineOutcome::Done);
 
@@ -347,6 +348,23 @@ fn the_reverse_resolves_in_printed_order() {
         .any(|e| e.code.as_str() == GHOUL_PRIEST));
 }
 
+/// The reverse states each set-aside card's owner rather than reading one off
+/// the set-aside zone: the Ghoul Priest 01116 is an encounter-set enemy, so the
+/// encounter deck owns him, while Lita (below) is the scenario's.
+#[test]
+fn the_reverse_spawns_the_ghoul_priest_owned_by_the_encounter_deck() {
+    let mut state = board();
+    let (outcome, _) = reverse(&mut state);
+    assert_eq!(outcome, EngineOutcome::Done, "got {outcome:?}");
+
+    let priest = state
+        .enemies
+        .values()
+        .find(|e| e.code.as_str() == GHOUL_PRIEST)
+        .expect("the Ghoul Priest spawned");
+    assert_eq!(priest.owner, Owner::EncounterDeck);
+}
+
 /// Line 2 — *"Put the set-aside Lita Chantler into play in the Parlor."* — puts
 /// her into play there under nobody's control (#772). She waited on the
 /// granting hook: until the Parlor's *"While Lita Chantler is not controlled by
@@ -367,7 +385,8 @@ fn the_reverse_puts_lita_into_play_in_the_parlor() {
     assert_eq!(at_parlor.len(), 1, "one card at the Parlor");
     assert_eq!(at_parlor[0].code.as_str(), LITA);
     assert_eq!(
-        at_parlor[0].owner, None,
+        at_parlor[0].owner,
+        Owner::Scenario,
         "she is scenario-owned; the reverse gives nobody control of her",
     );
 }

@@ -99,10 +99,11 @@ use card_dsl::dsl::{
 
 use crate::card_registry::CardRegistry;
 use crate::engine::abilities_in_effect;
+use crate::engine::board::{self, Placement};
 use crate::engine::evaluator::{self, EvalContext};
 use crate::state::{
-    AbilitySource, CardCode, CardInPlay, CardInstanceId, DifficultyBasis, EnemyId, GameState,
-    InvestigatorId, LocationId, RecordedModifierKind,
+    AbilitySource, CardCode, CardInPlay, CardInstanceId, DifficultyBasis, GameState,
+    InvestigatorId, RecordedModifierKind,
 };
 
 /// Which entity's quantity is being asked about.
@@ -502,35 +503,14 @@ fn base_value(state: &GameState, target: ModifierTarget, quantity: ModifiedQuant
     }
 }
 
-/// Where a swept source card sits. Decides both which entity an
-/// audience resolves against and which location counts as "the source's
-/// location".
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Placement {
-    /// An instance an investigator controls: their investigator card, a
-    /// card in play, or a card in their threat area.
-    Controlled(InvestigatorId),
-    /// A location's own card.
-    Location(LocationId),
-    /// A card attached to a location.
-    LocationAttachment(LocationId),
-    /// A card put into play **at** a location, controlled by nobody
-    /// (Lita Chantler 01117 in the Parlor). Its location is that
-    /// location, so a location-scoped audience resolves from there —
-    /// but it is not an attachment, so
-    /// [`ModifierAudience::AttachedCard`] does not reach through it.
-    AtLocation(LocationId),
-    /// An enemy's own card.
-    Enemy(EnemyId),
-    /// A card attached to an enemy.
-    EnemyAttachment(EnemyId),
-    /// The current act or agenda. Has no location of its own, so
-    /// location-scoped audiences never resolve from one.
-    ActAgenda,
-}
-
-/// Sweep the seven collections, pushing every active modifier that
-/// reaches `target`.
+/// Sweep the board, pushing every active modifier that reaches `target`.
+///
+/// The cards swept are [`board::walk_active`]: the board walk less those in an
+/// eliminated investigator's area (Rules Reference p.10 removes them from play;
+/// in elimination's step-0 window they are still on the board, and must not
+/// keep projecting modifiers). The contributions come in the walk's order;
+/// nothing reads that order, since [`ModifierBreakdown::total`] is a
+/// commutative fold.
 ///
 /// Matches a **bare** `Effect::Modify` under `Trigger::Constant`. A
 /// modifier gated on a predicate — `Effect::If { condition, then:
@@ -616,73 +596,14 @@ fn sweep(
         }
     };
 
-    // 1. Every investigator's controlled instances — not just the
-    //    target's, so Lita Chantler 01117 can reach a teammate.
-    for inv in state.investigators.values() {
-        for card in inv.controlled_card_instances() {
-            visit(
-                &card.code,
-                Some(card),
-                Placement::Controlled(inv.id),
-                AbilitySource::InPlay(card.instance_id),
-            );
-        }
-    }
-    // 2, 3 and 4. Every location, its attachments, and the cards put into
-    //    play at it.
-    for (id, loc) in &state.locations {
+    // Every card on the board — not just the target's, so Lita Chantler 01117
+    // can reach a teammate.
+    for card in board::walk_active(state) {
         visit(
-            &loc.code,
-            None,
-            Placement::Location(*id),
-            AbilitySource::Location(*id),
-        );
-        for att in &loc.attachments {
-            visit(
-                &att.code,
-                Some(att),
-                Placement::LocationAttachment(*id),
-                AbilitySource::InPlay(att.instance_id),
-            );
-        }
-        for card in &loc.cards_at_location {
-            visit(
-                &card.code,
-                Some(card),
-                Placement::AtLocation(*id),
-                AbilitySource::InPlay(card.instance_id),
-            );
-        }
-    }
-    // 5 and 6. Every enemy and its attachments.
-    for (id, enemy) in &state.enemies {
-        visit(
-            &enemy.code,
-            None,
-            Placement::Enemy(*id),
-            AbilitySource::Enemy(*id),
-        );
-        for att in &enemy.attachments {
-            visit(
-                &att.code,
-                Some(att),
-                Placement::EnemyAttachment(*id),
-                AbilitySource::InPlay(att.instance_id),
-            );
-        }
-    }
-    // 7. The current act and agenda. `Placement::ActAgenda` is one value
-    //    because neither is anywhere on the board, but the *ability source* is
-    //    two: a grant addressed to the act must not be found on the agenda.
-    if let Some(act) = state.act_deck.get(state.act_index) {
-        visit(&act.code, None, Placement::ActAgenda, AbilitySource::Act);
-    }
-    if let Some(agenda) = state.agenda_deck.get(state.agenda_index) {
-        visit(
-            &agenda.code,
-            None,
-            Placement::ActAgenda,
-            AbilitySource::Agenda,
+            card.code(),
+            card.card.instance(),
+            card.placement,
+            card.source,
         );
     }
 }
@@ -806,10 +727,10 @@ fn audience_reaches(
 ) -> bool {
     match (audience, target) {
         (ModifierAudience::Controller, ModifierTarget::Investigator(id)) => {
-            placement == Placement::Controlled(id)
+            placement.investigator() == Some(id)
         }
         (ModifierAudience::EachInvestigatorAtSourceLocation, ModifierTarget::Investigator(id)) => {
-            let Some(here) = source_location(state, placement) else {
+            let Some(here) = placement.location(state) else {
                 return false;
             };
             state
@@ -818,7 +739,7 @@ fn audience_reaches(
                 .is_some_and(|inv| inv.current_location == Some(here))
         }
         (ModifierAudience::EachEnemyAtSourceLocation, ModifierTarget::Enemy(id)) => {
-            let Some(here) = source_location(state, placement) else {
+            let Some(here) = placement.location(state) else {
                 return false;
             };
             state
@@ -834,28 +755,6 @@ fn audience_reaches(
             placement == Placement::EnemyAttachment(id)
         }
         _ => false,
-    }
-}
-
-/// The location a source card counts as being at: its controller's for a
-/// controlled card, the location itself for a location, its attachments
-/// or a card put into play at it, the enemy's for an enemy or its
-/// attachments. The act and agenda are nowhere, and so reach no
-/// location-scoped audience.
-fn source_location(state: &GameState, placement: Placement) -> Option<LocationId> {
-    match placement {
-        Placement::Controlled(id) => state
-            .investigators
-            .get(&id)
-            .and_then(|inv| inv.current_location),
-        Placement::Location(id) | Placement::LocationAttachment(id) | Placement::AtLocation(id) => {
-            Some(id)
-        }
-        Placement::Enemy(id) | Placement::EnemyAttachment(id) => state
-            .enemies
-            .get(&id)
-            .and_then(|enemy| enemy.current_location),
-        Placement::ActAgenda => None,
     }
 }
 

@@ -10,6 +10,7 @@ fn elimination_step1_removes_controlled_and_owned_cards() {
     inv.cards_in_play = vec![CardInPlay::enter_play(
         CardCode("p1".into()),
         CardInstanceId(1),
+        Owner::Investigator(InvestigatorId(1)),
     )];
 
     let mut state = GameStateBuilder::default().with_investigator(inv).build();
@@ -341,16 +342,17 @@ fn elimination_without_location_skips_clue_placement_and_does_not_panic() {
 }
 
 #[test]
-fn elimination_without_card_metadata_treats_threat_area_as_scenario_owned() {
-    // The test registry knows no 01165 ⇒ metadata_for is None ⇒ not a
-    // weakness ⇒ step 4. The weakness→removed_from_game routing needs real
-    // metadata and is covered by `crates/cards/tests/elimination_teardown.rs`
-    // (the test registry resolves TEST_INV only).
+fn elimination_discards_an_encounter_owned_threat_card_at_step_four() {
+    // The threat area splits by owner: a card the encounter deck owns is not
+    // the eliminated investigator's, so step 1 leaves it and step 4 discards it
+    // to its owner's pile. No metadata is read. The owner-removed half is
+    // covered by `crates/cards/tests/elimination_teardown.rs`.
     let id = InvestigatorId(1);
     let mut inv = test_support::test_investigator(1);
     inv.threat_area = vec![CardInPlay::enter_play(
         CardCode::new("01165"),
         CardInstanceId(1),
+        Owner::EncounterDeck,
     )];
 
     let mut state = GameStateBuilder::default().with_investigator(inv).build();
@@ -372,7 +374,7 @@ fn elimination_without_card_metadata_treats_threat_area_as_scenario_owned() {
     assert_eq!(
         state.encounter_discard.len(),
         1,
-        "no metadata ⇒ routed to the encounter discard"
+        "the encounter deck's card ⇒ the encounter discard"
     );
     assert!(state.investigators[&id].removed_from_game.is_empty());
 }

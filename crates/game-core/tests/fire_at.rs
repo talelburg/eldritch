@@ -23,7 +23,7 @@ use game_core::event::Event;
 use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::state::{
     Act, CardCode, CardInPlay, CardInstanceId, GameStateBuilder, Investigator, InvestigatorId,
-    Phase,
+    Owner, Phase,
 };
 use game_core::test_support::{self, MockRegistry, TestSession};
 use game_core::{assert_event, assert_event_sequence};
@@ -119,9 +119,11 @@ fn install() {
 fn holding(codes: &[&str]) -> Investigator {
     let mut investigator = test_support::test_investigator(1);
     for (i, code) in codes.iter().enumerate() {
-        investigator
-            .threat_area
-            .push(CardInPlay::enter_play(CardCode::new(*code), instance(i)));
+        investigator.threat_area.push(CardInPlay::enter_play(
+            CardCode::new(*code),
+            instance(i),
+            Owner::EncounterDeck,
+        ));
     }
     investigator
 }
@@ -217,9 +219,11 @@ fn two_simultaneous_forced_abilities_run_in_the_order_the_lead_picks() {
 #[test]
 fn a_timing_point_fired_during_a_turn_comes_back_to_the_turn_menu() {
     let mut investigator = test_support::test_investigator(1);
-    investigator
-        .threat_area
-        .push(CardInPlay::enter_play(CardCode::new(FORCED_A), instance(0)));
+    investigator.threat_area.push(CardInPlay::enter_play(
+        CardCode::new(FORCED_A),
+        instance(0),
+        Owner::EncounterDeck,
+    ));
     let session = GameStateBuilder::new()
         .with_investigator(investigator)
         .open_turn(INV)

@@ -148,6 +148,7 @@ fn state_with_cards_in_play(codes: &[&str]) -> (GameState, InvestigatorId) {
                 CardCode::new(*c),
                 #[allow(clippy::cast_possible_truncation)]
                 CardInstanceId(i as u32),
+                Owner::Investigator(InvestigatorId(1)),
             )
         })
         .collect();

@@ -17,7 +17,7 @@ use game_core::engine::{self, EngineOutcome, OptionId, OptionTarget, TimingEvent
 use game_core::event::{Event, LapseReason};
 use game_core::state::{
     Agenda, CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameState, GameStateBuilder,
-    InvestigatorId, LocationId,
+    InvestigatorId, LocationId, Owner,
 };
 use game_core::test_support::{self, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -325,6 +325,7 @@ fn put_dissonant_voices_in_threat_area(state: &mut GameState, inv_id: Investigat
         .push(CardInPlay::enter_play(
             CardCode::new(DISSONANT_VOICES),
             CardInstanceId(90),
+            Owner::EncounterDeck,
         ));
 }
 

@@ -20,7 +20,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::EngineOutcome;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, UseKind,
+    GameStateBuilder, InvestigatorId, LocationId, Owner, UseKind,
 };
 use game_core::test_support::{self, MockRegistry};
 
@@ -96,12 +96,17 @@ fn install_probe_registry() {
 /// Depleter at position 0 with its last supply, bystander behind it at 1.
 fn board() -> GameState {
     let mut inv = test_support::test_investigator(1);
-    let mut depleter = CardInPlay::enter_play(CardCode::new(DEPLETER), DEPLETER_INST);
+    let mut depleter = CardInPlay::enter_play(
+        CardCode::new(DEPLETER),
+        DEPLETER_INST,
+        Owner::Investigator(InvestigatorId(1)),
+    );
     depleter.uses.insert(UseKind::Supplies, 1);
     inv.cards_in_play.push(depleter);
     inv.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new(BYSTANDER),
         BYSTANDER_INST,
+        Owner::Investigator(InvestigatorId(1)),
     ));
 
     GameStateBuilder::new()
@@ -152,8 +157,13 @@ fn costs_land_on_the_source_when_it_is_not_first_in_play() {
     inv.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new(BYSTANDER),
         BYSTANDER_INST,
+        Owner::Investigator(InvestigatorId(1)),
     ));
-    let mut depleter = CardInPlay::enter_play(CardCode::new(DEPLETER), DEPLETER_INST);
+    let mut depleter = CardInPlay::enter_play(
+        CardCode::new(DEPLETER),
+        DEPLETER_INST,
+        Owner::Investigator(InvestigatorId(1)),
+    );
     // Two supplies: spending one does not deplete, so the source stays in play
     // and the following Exhaust cost has something to find.
     depleter.uses.insert(UseKind::Supplies, 2);

@@ -43,7 +43,7 @@ use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId, OptionTarget
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, Enemy, EnemyId,
-    GameState, GameStateBuilder, InvestigatorId, LocationId, TokenModifiers,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, TokenModifiers,
 };
 use game_core::test_support::{self, TestSession};
 
@@ -165,7 +165,8 @@ fn guard_dog_retaliates_against_retaliate_and_skill_test_ends() {
     // Enemy fight 5, damage 1 (soaks onto Guard Dog health 3), max_health 5
     // (survives Guard Dog's 1-point retaliation after absorbing 0 prior damage).
     let enemy = retaliate_enemy(7, inv_id, loc_id, 5, 1, 5);
-    let guard_dog_in_play = CardInPlay::enter_play(CardCode::new(GUARD_DOG), dog);
+    let guard_dog_in_play =
+        CardInPlay::enter_play(CardCode::new(GUARD_DOG), dog, Owner::Investigator(inv_id));
 
     let (state, _, _) = fight_state(enemy, vec![], vec![guard_dog_in_play]);
 

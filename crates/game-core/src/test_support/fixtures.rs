@@ -25,8 +25,8 @@ use card_dsl::dsl::SkillTestKind;
 use crate::engine::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 use crate::state::{
     CardCode, CardInPlay, CardInstanceId, Continuation, ContinuationStack, DifficultyBasis, Enemy,
-    EnemyId, InFlightSkillTest, Investigator, InvestigatorId, Location, LocationId, SkillKind,
-    SkillTestFollowUp, SkillTestId, SkillTestStep, Skills, Status,
+    EnemyId, InFlightSkillTest, Investigator, InvestigatorId, Location, LocationId, Owner,
+    SkillKind, SkillTestFollowUp, SkillTestId, SkillTestStep, Skills, Status,
 };
 use crate::test_support;
 
@@ -43,6 +43,7 @@ pub fn test_investigator(id: u32) -> Investigator {
     let investigator_card = CardInPlay::enter_play(
         CardCode::new(test_support::TEST_INV),
         CardInstanceId(u32::MAX - id),
+        Owner::Investigator(InvestigatorId(id)),
     );
     Investigator {
         id: InvestigatorId(id),
@@ -100,6 +101,10 @@ pub fn test_location(id: u32, name: impl Into<String>) -> Location {
 /// - Attack pattern: 1 damage / 0 horror.
 /// - Not spawned (`current_location: None`), ready, unengaged, no
 ///   traits.
+/// - Owned by the **encounter deck** ([`Owner::EncounterDeck`]) — the owner of
+///   an enemy drawn from the encounter deck, which is where every enemy but a
+///   weakness comes from. A test about a weakness enemy sets
+///   [`owner`](Enemy::owner) to its bearer.
 ///
 /// Mutate fields directly after construction to customize. The
 /// `#[non_exhaustive]` interaction note from the module-level docs
@@ -126,6 +131,7 @@ pub fn test_enemy(id: u32, name: impl Into<String>) -> Enemy {
         retaliate: false,
         victory: None,
         attachments: Vec::new(),
+        owner: Owner::EncounterDeck,
     }
 }
 

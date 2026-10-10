@@ -17,8 +17,8 @@
 
 #[cfg(target_arch = "wasm32")]
 use game_core::action::InputResponse;
-use game_core::engine::{ChoiceOption, EngineOutcome, OptionTarget, PromptNature};
-use game_core::state::{AdvanceDeck, GameState, Investigator};
+use game_core::engine::{board, ChoiceOption, EngineOutcome, OptionTarget, PromptNature};
+use game_core::state::{AdvanceDeck, GameState};
 use leptos::prelude::*;
 
 use crate::act_agenda::{self, Face};
@@ -117,12 +117,7 @@ fn decision_source(game: &GameState, target: &OptionTarget) -> Option<DecisionSo
             act_agenda::deck_face(game, AdvanceDeck::Agenda),
         ),
         OptionTarget::CardInstance(instance_id) => (
-            game.investigators
-                .values()
-                .flat_map(Investigator::controlled_card_instances)
-                .find(|card| card.instance_id == *instance_id)?
-                .code
-                .clone(),
+            board::find_instance(game, *instance_id)?.0.code.clone(),
             Face::Front,
         ),
         _ => return None,
@@ -228,7 +223,7 @@ mod tests {
     use game_core::state::{
         Act, AdvanceReverseFrame, AdvanceStep, AdvanceTrigger, Agenda, CardCode, CardInPlay,
         CardInstanceId, ChaosToken, Continuation, GameStateBuilder, InvestigatorId,
-        TokenResolution, UseKind,
+        Owner as CardOwner, TokenResolution, UseKind,
     };
     use game_core::{card_registry, test_support};
 
@@ -278,7 +273,11 @@ mod tests {
     /// First Aid in play, so a `CardInstance` anchor resolves.
     fn board_with_first_aid() -> GameState {
         let mut inv = test_support::test_investigator(1);
-        let mut kit = CardInPlay::enter_play(CardCode::new(FIRST_AID), KIT);
+        let mut kit = CardInPlay::enter_play(
+            CardCode::new(FIRST_AID),
+            KIT,
+            CardOwner::Investigator(InvestigatorId(1)),
+        );
         kit.uses.insert(UseKind::Supplies, 3);
         inv.cards_in_play.push(kit);
         GameStateBuilder::new().with_investigator(inv).build()
@@ -324,6 +323,44 @@ mod tests {
             source.text,
         );
         assert_eq!(d.options.len(), 2, "every branch reaches the modal");
+    }
+
+    /// A card nobody controls is still the source of a prompt anchored on it:
+    /// Lita Chantler 01117, put into play at the Parlor, and Obscuring Fog
+    /// 01168, attached to it.
+    #[test]
+    fn a_decision_names_a_card_at_a_location_or_attached_to_one() {
+        install_registry();
+        let lita = CardInstanceId(60);
+        let fog = CardInstanceId(61);
+        let mut parlor = test_support::test_location(5, "Parlor");
+        parlor.cards_at_location.push(CardInPlay::enter_play(
+            CardCode::new("01117"),
+            lita,
+            CardOwner::Scenario,
+        ));
+        parlor.attachments.push(CardInPlay::enter_play(
+            CardCode::new("01168"),
+            fog,
+            CardOwner::EncounterDeck,
+        ));
+        let game = GameStateBuilder::new()
+            .with_investigator(test_support::test_investigator(1))
+            .with_location(parlor)
+            .build();
+        for (instance, name) in [(lita, "Lita Chantler"), (fog, "Obscuring Fog")] {
+            let state = awaiting(
+                Some(game.clone()),
+                InputRequest::pick_single("Choose one", branches())
+                    .at(OptionTarget::CardInstance(instance))
+                    .deciding(),
+            );
+            let source = live_decision(&state)
+                .expect("a live decision")
+                .source
+                .unwrap_or_else(|| panic!("{name} is on the board, so it is named"));
+            assert_eq!(source.name, name);
+        }
     }
 
     /// The advancing agenda shows the **reverse** — the face the player has just

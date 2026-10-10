@@ -13,7 +13,7 @@ use crate::engine::evaluator::EvalContext;
 use crate::engine::TimingEvent;
 use crate::event::FailureReason;
 use crate::state::ability_source::{AbilityAddress, AbilitySource};
-use crate::state::card::{CardCode, CardInPlay, CardInstanceId};
+use crate::state::card::{CardCode, CardInPlay, CardInstanceId, Owner};
 use crate::state::continuation::frame::impl_frame;
 use crate::state::enemy::EnemyId;
 use crate::state::game_state::{DifficultyBasis, SkillTestId};
@@ -790,11 +790,11 @@ impl Continuation {
     /// frame that was holding it (#772). A card being played from hand is the
     /// player's own; a card riding a [`SlotDiscard`](Self::SlotDiscard) frame
     /// may be one a [`TakeControl`](card_dsl::dsl::Effect::TakeControl) lifted off
-    /// the board, and that one is the scenario's — `None`.
+    /// the board, and that one keeps the owner it entered play with.
     pub fn take_play_in_progress(
         &mut self,
         investigator: InvestigatorId,
-    ) -> Option<(CardCode, Option<InvestigatorId>)> {
+    ) -> Option<(CardCode, Owner)> {
         match self {
             Continuation::ActionResolution(ActionResolutionFrame {
                 investigator: owner,
@@ -803,7 +803,9 @@ impl Continuation {
             | Continuation::PlayFromHand(PlayFromHandFrame {
                 investigator: owner,
                 card,
-            }) if *owner == investigator => card.take().map(|code| (code, Some(investigator))),
+            }) if *owner == investigator => card
+                .take()
+                .map(|code| (code, Owner::Investigator(investigator))),
             Continuation::SlotDiscard(SlotDiscardFrame {
                 investigator: owner,
                 card,

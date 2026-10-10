@@ -6,6 +6,7 @@ fn a_locations_shroud_folds_in_its_attachments() {
     loc.attachments.push(CardInPlay::enter_play(
         CardCode::new("shroud-plus-2"),
         CardInstanceId(0),
+        Owner::EncounterDeck,
     ));
     let state = GameStateBuilder::new().with_location(loc).build();
     let shroud = modified_value(
@@ -45,6 +46,7 @@ fn an_attached_card_reaches_only_what_it_is_attached_to() {
     fogged.attachments.push(CardInPlay::enter_play(
         CardCode::new("shroud-plus-2"),
         CardInstanceId(0),
+        Owner::EncounterDeck,
     ));
     let state = GameStateBuilder::new()
         .with_location(fogged)

@@ -49,8 +49,8 @@ use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{ApplyResult, EngineOutcome, InputKind, InputRequest, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, TokenModifiers, Zone,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, DiscardPile, EnemyId, GameState,
+    GameStateBuilder, InvestigatorId, LocationId, Owner, TokenModifiers, Zone,
 };
 use game_core::test_support::{self, ChoiceResolver};
 use game_core::{assert_event, assert_no_event};
@@ -118,8 +118,11 @@ impl ChoiceResolver for StTwoWindow {
 /// legal against it, and one point of damage defeats it.
 fn board_with_hand(hand: &[&str]) -> GameState {
     let mut inv = test_support::test_investigator(1);
-    inv.cards_in_play
-        .push(CardInPlay::enter_play(CardCode::new(BEAT_COP), COP_INST));
+    inv.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new(BEAT_COP),
+        COP_INST,
+        Owner::Investigator(InvestigatorId(1)),
+    ));
     inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
 
     let mut enemy = test_support::test_enemy(100, "Ghoul");
@@ -305,6 +308,7 @@ fn a_card_committed_to_the_abandoned_test_is_discarded_not_deleted() {
         result.events,
         Event::CardDiscarded {
             from: Zone::Hand,
+            to: DiscardPile::Investigator(INV),
             ..
         }
     );

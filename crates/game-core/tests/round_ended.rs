@@ -8,7 +8,7 @@ use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, ApplyResult, Cx, EngineOutcome, OptionId, TimingEvent};
 use game_core::state::{
     Agenda, CardCode, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId, LocationId,
-    Phase,
+    Owner, Phase,
 };
 use game_core::test_support::{self, MockRegistry, TestSession};
 
@@ -84,6 +84,7 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
     inv.threat_area.push(CardInPlay::enter_play(
         CardCode::new(DISSONANT),
         CardInstanceId(1),
+        Owner::EncounterDeck,
     ));
 
     let mut state = GameStateBuilder::new()

@@ -4,9 +4,10 @@
 //! right pile.
 //!
 //! Lives in `crates/cards/tests/` because every assertion needs real card
-//! metadata (`CardMetadata::weakness`) and abilities — `game-core` can't reach
-//! the corpus by crate direction, and `install_test_registry` resolves metadata
-//! for `TEST_INV` only.
+//! abilities (Grasping Hands' revelation, Cover Up's step-0 Forced) — `game-core`
+//! can't reach the corpus by crate direction, and `install_test_registry`
+//! resolves metadata for `TEST_INV` only. The threat area is routed by each
+//! card's owner, not by its metadata (#982).
 //!
 //! Elimination is reached through the **real** path (a lethal Grasping Hands
 //! revelation driven via `apply`); `apply_investigator_elimination` stays `pub(super)`.
@@ -38,8 +39,8 @@ use game_core::engine::{
 };
 use game_core::event::{Event, TraumaKind};
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosToken, GameState, GameStateBuilder, InvestigatorId,
-    LocationId, Status, Zone,
+    CardCode, CardInPlay, CardInstanceId, ChaosToken, DiscardPile, GameState, GameStateBuilder,
+    InvestigatorId, LocationId, Owner, Status, Zone,
 };
 use game_core::test_support::{self, ChoiceResolver, ScriptedResolver, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
@@ -48,6 +49,13 @@ const GRASPING_HANDS: &str = "01162";
 const SURVIVAL_INSTINCT: &str = "01081";
 const COVER_UP: &str = "01007";
 const DISSONANT_VOICES: &str = "01165";
+/// Threat-area cards with an owner and no weakness flag: they model the
+/// primitive — a card's owner, read on its own — rather than a printed card
+/// (ADR 0016), so the routing under test cannot be the weakness flag's.
+const OWNED_THREAT: &str = "_owned_threat_card";
+const OTHERS_THREAT: &str = "_others_threat_card";
+/// A card in the eliminated investigator's play area, which they own.
+const OWNED_ASSET: &str = "_owned_asset";
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
@@ -68,9 +76,17 @@ fn board_at_lethal_range(damage: u8, hand: &[&str], threat: &[(&str, u8)]) -> Ga
         .iter()
         .enumerate()
         .map(|(i, (code, clues))| {
+            // Cover Up is a weakness, so its bearer owns it; everything else
+            // here is an encounter card.
+            let owner = if *code == COVER_UP {
+                Owner::Investigator(InvestigatorId(1))
+            } else {
+                Owner::EncounterDeck
+            };
             let mut card = CardInPlay::enter_play(
                 CardCode::new(*code),
                 CardInstanceId(u32::try_from(i).expect("fits") + 1),
+                owner,
             );
             card.clues = *clues;
             card
@@ -207,8 +223,8 @@ fn elimination_removes_a_player_owned_weakness_from_the_game() {
 
 #[test]
 fn elimination_discards_an_encounter_treachery_to_the_encounter_discard() {
-    // RR p.10 step 4: Dissonant Voices is owned by the scenario, so the investigator's
-    // elimination must not remove it from the game.
+    // RR p.10 step 4: Dissonant Voices is owned by the encounter deck, so the
+    // investigator's elimination must not remove it from the game.
     let r = reveal_committing(board_at_lethal_range(7, &[], &[(DISSONANT_VOICES, 0)]), &[]);
 
     let inv = &r.state.investigators[&InvestigatorId(1)];
@@ -226,10 +242,10 @@ fn elimination_discards_an_encounter_treachery_to_the_encounter_discard() {
         !inv.removed_from_game
             .iter()
             .any(|c| c.as_str() == DISSONANT_VOICES),
-        "a scenario-owned card must NOT be removed from the game by an \
+        "an encounter card must NOT be removed from the game by an \
          investigator's elimination"
     );
-    assert_event!(r.events, Event::CardDiscarded { code, from: Zone::ThreatArea, .. }
+    assert_event!(r.events, Event::CardDiscarded { code, from: Zone::ThreatArea, to: DiscardPile::Encounter }
         if code.as_str() == DISSONANT_VOICES);
 }
 
@@ -475,4 +491,112 @@ fn the_elimination_interleaving_replays_bit_for_bit() {
         "the elimination interleaving must replay bit-for-bit"
     );
     assert_eq!(first.events, second.events, "events replay identically too");
+}
+
+/// Put `code`, owned by `owner`, into investigator 1's threat area.
+fn into_threat_area(state: &mut GameState, code: &str, id: u32, owner: InvestigatorId) {
+    state
+        .investigators
+        .get_mut(&InvestigatorId(1))
+        .expect("investigator 1")
+        .threat_area
+        .push(CardInPlay::enter_play(
+            CardCode::new(code),
+            CardInstanceId(id),
+            Owner::Investigator(owner),
+        ));
+}
+
+#[test]
+fn elimination_partitions_the_threat_area_by_owner() {
+    // RR p.10 Elimination, step 1: *"The cards he or she controls in play and
+    // all of the cards in his or her out-of-play areas (such as hand, deck,
+    // discard pile) are removed from the game."* and step 4: *"All other cards
+    // in the eliminated investigator's threat area are placed in the
+    // appropriate discard pile."* — which is the card's owner's
+    // (`glossary/Discard_Piles.md`: *"Any time a card is discarded, it is placed
+    // faceup on top of its owner's discard pile."*).
+    //
+    // So a threat-area card the eliminated investigator owns leaves at step 1,
+    // weakness or not, and one another investigator owns is discarded at step 4
+    // to that investigator's pile — not the encounter discard.
+    let mut state = board_with_survivor(7, &[]);
+    into_threat_area(&mut state, OWNED_THREAT, 50, InvestigatorId(1));
+    into_threat_area(&mut state, OTHERS_THREAT, 51, InvestigatorId(2));
+    let r = reveal_committing(state, &[]);
+
+    let eliminated = &r.state.investigators[&InvestigatorId(1)];
+    assert_eq!(eliminated.status, Status::Defeated);
+    assert!(eliminated.threat_area.is_empty(), "threat area drained");
+    assert!(
+        eliminated
+            .removed_from_game
+            .iter()
+            .any(|c| c.as_str() == OWNED_THREAT),
+        "their own card is removed from the game at step 1; removed = {:?}",
+        eliminated.removed_from_game
+    );
+    assert_eq!(
+        r.state.investigators[&InvestigatorId(2)].discard,
+        vec![CardCode::new(OTHERS_THREAT)],
+        "another investigator's card goes to its owner's discard at step 4"
+    );
+    assert!(
+        !r.state
+            .encounter_discard
+            .iter()
+            .any(|c| [OWNED_THREAT, OTHERS_THREAT].contains(&c.as_str())),
+        "neither is the encounter deck's; encounter discard = {:?}",
+        r.state.encounter_discard
+    );
+    assert_event!(r.events, Event::CardRemovedFromGame { code, from: Zone::ThreatArea }
+        if code.as_str() == OWNED_THREAT);
+    assert_event!(r.events, Event::CardDiscarded {
+        code,
+        from: Zone::ThreatArea,
+        to: DiscardPile::Investigator(to),
+    } if code.as_str() == OTHERS_THREAT && *to == InvestigatorId(2));
+}
+
+#[test]
+fn elimination_step_one_emits_one_removal_event_per_card_in_play() {
+    // RR p.10 step 1 removes the cards in play *and* the out-of-play areas, but
+    // only a card leaving play is an event: one `CardRemovedFromGame` per card
+    // in play, naming the zone it left, and none for the hand, deck or discard.
+    let mut state = board_at_lethal_range(7, &["filler1"], &[]);
+    into_threat_area(&mut state, OWNED_THREAT, 50, InvestigatorId(1));
+    let inv = state
+        .investigators
+        .get_mut(&InvestigatorId(1))
+        .expect("investigator 1");
+    inv.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new(OWNED_ASSET),
+        CardInstanceId(60),
+        Owner::Investigator(InvestigatorId(1)),
+    ));
+    inv.deck = vec![CardCode::new("filler2"), CardCode::new("filler3")];
+    inv.discard = vec![CardCode::new("filler4")];
+    let r = reveal_committing(state, &[]);
+
+    let inv = &r.state.investigators[&InvestigatorId(1)];
+    assert_eq!(inv.status, Status::Defeated);
+    for code in [
+        OWNED_ASSET,
+        OWNED_THREAT,
+        "filler1",
+        "filler2",
+        "filler3",
+        "filler4",
+    ] {
+        assert!(
+            inv.removed_from_game.iter().any(|c| c.as_str() == code),
+            "{code} removed from the game; removed = {:?}",
+            inv.removed_from_game
+        );
+    }
+    assert_event!(r.events, Event::CardRemovedFromGame { code, from: Zone::InPlay }
+        if code.as_str() == OWNED_ASSET);
+    assert_event!(r.events, Event::CardRemovedFromGame { code, from: Zone::ThreatArea }
+        if code.as_str() == OWNED_THREAT);
+    assert_event_count!(r.events, 2, Event::CardRemovedFromGame { .. });
 }

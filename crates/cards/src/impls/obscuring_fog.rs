@@ -37,7 +37,7 @@ use game_core::card_registry::NativeEffectFn;
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome};
 use game_core::event::Event;
-use game_core::state::{CardCode, Zone};
+use game_core::state::{CardCode, DiscardPile, Owner, Zone};
 
 /// `ArkhamDB` code for Obscuring Fog.
 pub const CODE: &str = "01168";
@@ -97,16 +97,22 @@ fn limit1_attach(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
         .get(&loc_id)
         .is_some_and(|loc| loc.attachments.iter().any(|c| c.code.as_str() == CODE));
     if already {
-        // Limit 1 per location: this copy can't enter play, so discard it.
+        // Limit 1 per location: this copy can't enter play, so discard it. It is
+        // never in play, so it does not take a leave-play exit: it goes straight
+        // from being revealed to its owner's pile, the encounter discard, which
+        // the event names (`glossary/Attach_To.md`: *"If the initial "attach
+        // to" check does not pass, … If such a card cannot remain in its prior
+        // state or game area, discard it."*).
         cx.state.encounter_discard.push(CardCode::new(CODE));
         cx.events.push(Event::CardDiscarded {
-            investigator: ctx.controller,
             code: CardCode::new(CODE),
             from: Zone::LocationAttachment,
+            to: DiscardPile::Encounter,
         });
         return EngineOutcome::Done;
     }
-    engine::attach_to_location(cx, loc_id, CardCode::new(CODE));
+    // Revealed from the encounter deck, so the encounter deck owns it.
+    engine::attach_to_location(cx, loc_id, CardCode::new(CODE), Owner::EncounterDeck);
     EngineOutcome::Done
 }
 

@@ -144,12 +144,12 @@ fn commit_window_discards_committed_cards_into_discard_pile() {
     assert_event_count!(result.events, 2, Event::CardDiscarded { .. });
     assert_event!(
         result.events,
-        Event::CardDiscarded { investigator, code, from: Zone::Hand }
+        Event::CardDiscarded { code, from: Zone::Hand, to: DiscardPile::Investigator(investigator) }
             if *investigator == id && *code == CardCode::new("A")
     );
     assert_event!(
         result.events,
-        Event::CardDiscarded { investigator, code, from: Zone::Hand }
+        Event::CardDiscarded { code, from: Zone::Hand, to: DiscardPile::Investigator(investigator) }
             if *investigator == id && *code == CardCode::new("B")
     );
 }

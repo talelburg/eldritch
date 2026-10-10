@@ -65,7 +65,7 @@ use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameState, GameStateBuilder,
-    InvestigatorId, LocationId,
+    InvestigatorId, LocationId, Owner,
 };
 use game_core::test_support::{self, TestSession};
 
@@ -138,10 +138,18 @@ fn the_damage_dealt_to_the_guard_dog_resolves_last() {
     roland.resources = 5; // the .45 costs 4
     roland.hand = vec![CardCode::new(AUTOMATIC_45)];
     roland.cards_in_play = vec![
-        CardInPlay::enter_play(CardCode::new(GUARD_DOG), dog),
+        CardInPlay::enter_play(
+            CardCode::new(GUARD_DOG),
+            dog,
+            Owner::Investigator(InvestigatorId(1)),
+        ),
         // Roland's own card in play is how the reaction scan reaches his
         // investigator ability (the `roland_banks.rs` fixture's convention).
-        CardInPlay::enter_play(CardCode::new(ROLAND), roland_card),
+        CardInPlay::enter_play(
+            CardCode::new(ROLAND),
+            roland_card,
+            Owner::Investigator(InvestigatorId(1)),
+        ),
     ];
 
     // A clue at the location for Roland's reaction to discover — the marker

@@ -277,9 +277,11 @@ pub struct GameState {
     /// revealed + no clues); victory-point enemies enter as defeated
     /// (C3). Phase 9 sums these cards' corpus victory values for XP.
     pub victory_display: Vec<CardCode>,
-    /// Cards removed from the game (#772), scenario-owned and sitting beside
+    /// Cards removed from the game (#772) that no investigator owns —
+    /// scenario-owned and encounter cards — sitting beside
     /// [`victory_display`](Self::victory_display) because removal is a property
-    /// of the *card* rather than of any player's area.
+    /// of the *card* rather than of any player's area. The leave-play exits in
+    /// [`board`](crate::engine::board) file them here.
     ///
     /// `glossary/Removed_from_Game.md`: *"A card that has been removed from the
     /// game is placed away from the game area and has no further interaction

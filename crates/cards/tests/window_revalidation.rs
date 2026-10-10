@@ -33,7 +33,7 @@ use game_core::engine::{self, EngineOutcome, OptionId, OptionTarget, TimingEvent
 use game_core::event::{Event, LapseReason};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, Investigator, InvestigatorId, LocationId, Status, TokenModifiers,
+    GameStateBuilder, Investigator, InvestigatorId, LocationId, Owner, Status, TokenModifiers,
 };
 use game_core::test_support::{self, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -200,6 +200,7 @@ fn evidence_is_withdrawn_when_rolands_reaction_takes_the_last_clue() {
         inv.cards_in_play.push(CardInPlay::enter_play(
             CardCode::new(ROLAND),
             CardInstanceId(1),
+            Owner::Investigator(InvestigatorId(1)),
         ));
     });
     assert_eq!(

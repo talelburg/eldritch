@@ -46,7 +46,7 @@
 use card_dsl::dsl::{self, Ability, Effect, EventPattern, EventTiming};
 use game_core::card_registry::{EligibilityFn, NativeEffectFn};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{Cx, EngineOutcome};
+use game_core::engine::{board, Cx, EngineOutcome};
 use game_core::event::{Event, TraumaKind};
 use game_core::state::GameState;
 
@@ -108,17 +108,12 @@ pub fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
 }
 
 /// True while the Cover Up instance (the firing source) still holds clues to
-/// discard. Read-only mirror of [`discard_clues`]'s instance lookup.
+/// discard, wherever it sits — so a co-located investigator is offered Roland's
+/// (#974).
 fn has_clues(state: &GameState, ctx: &EvalContext) -> bool {
-    let Some(source) = ctx.source_instance() else {
-        return false;
-    };
-    state.investigators.get(&ctx.controller).is_some_and(|inv| {
-        inv.threat_area
-            .iter()
-            .chain(inv.cards_in_play.iter())
-            .any(|c| c.instance_id == source && c.clues > 0)
-    })
+    ctx.source_instance()
+        .and_then(|source| board::find_instance(state, source))
+        .is_some_and(|(card, _)| card.clues > 0)
 }
 
 /// Resolve Cover Up's eligibility tag.
@@ -142,18 +137,11 @@ fn discard_clues(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
             reason: "cover_up discard: no source instance".into(),
         };
     };
-    if let Some(inv) = cx.state.investigators.get_mut(&ctx.controller) {
-        for card in inv
-            .threat_area
-            .iter_mut()
-            .chain(inv.cards_in_play.iter_mut())
-        {
-            if card.instance_id == source {
-                let take = count.min(card.clues);
-                card.clues -= take;
-                break;
-            }
-        }
+    // Found wherever it sits, not in the triggering investigator's areas: the
+    // ruling lets anyone at Roland's location discard from *his* Cover Up
+    // (<https://arkhamdb.com/card/01007>).
+    if let Some((card, _)) = board::find_instance_mut(cx.state, source) {
+        card.clues -= count.min(card.clues);
     }
     EngineOutcome::Done
 }
@@ -173,17 +161,15 @@ fn trauma(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
             reason: "cover_up trauma: no source instance".into(),
         };
     };
-    let has_clues = cx
-        .state
-        .investigators
-        .get(&ctx.controller)
-        .is_some_and(|inv| {
-            inv.controlled_card_instances()
-                .any(|c| c.instance_id == source && c.clues > 0)
-        });
-    if has_clues {
+    // "You" is the investigator whose threat area holds Cover Up —
+    // `glossary/You_Your.md`: *"the investigator who has the card in his/her
+    // threat area"* — read off where the card is, not off who triggered it.
+    let holder = board::find_instance(cx.state, source)
+        .filter(|(card, _)| card.clues > 0)
+        .and_then(|(_, placement)| placement.investigator());
+    if let Some(holder) = holder {
         cx.events.push(Event::TraumaSuffered {
-            investigator: ctx.controller,
+            investigator: holder,
             kind: TraumaKind::Mental,
             amount: 1,
         });
@@ -196,6 +182,7 @@ mod tests {
     use card_dsl::dsl::{Effect, Trigger};
     use game_core::state::{
         AbilitySource, CardCode, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId,
+        Owner,
     };
     use game_core::test_support;
 
@@ -261,7 +248,11 @@ mod tests {
         // Predicate: true while the source instance holds clues, false at 0.
         let pred = native_eligibility_for("01007:has_clues").expect("registered");
         let mut inv = test_support::test_investigator(1);
-        let mut card = CardInPlay::enter_play(CardCode::new("01007"), CardInstanceId(0));
+        let mut card = CardInPlay::enter_play(
+            CardCode::new("01007"),
+            CardInstanceId(0),
+            Owner::Investigator(InvestigatorId(1)),
+        );
         card.clues = 3;
         inv.threat_area.push(card);
         let mut state = GameStateBuilder::new().with_investigator(inv).build();

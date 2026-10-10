@@ -22,8 +22,8 @@ use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{ApplyResult, EngineOutcome, InputRequest, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId,
-    TokenModifiers, Zone,
+    CardCode, ChaosBag, ChaosToken, DiscardPile, GameState, GameStateBuilder, InvestigatorId,
+    LocationId, TokenModifiers, Zone,
 };
 use game_core::test_support::{self, ChoiceResolver};
 use game_core::{assert_event, assert_event_count};
@@ -231,7 +231,7 @@ fn a_fast_play_in_the_st2_window_does_not_move_the_committed_card() {
     );
     assert_event!(
         r.events,
-        Event::CardDiscarded { investigator, code, from: Zone::Hand }
+        Event::CardDiscarded { code, from: Zone::Hand, to: DiscardPile::Investigator(investigator) }
             if *investigator == inv_id && code.as_str() == DEDUCTION
     );
 

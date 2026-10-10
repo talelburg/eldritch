@@ -32,7 +32,7 @@ use game_core::engine::{EngineOutcome, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Enemy, GameStateBuilder, InvestigatorId, LocationId,
-    Status,
+    Owner, Status,
 };
 use game_core::test_support;
 
@@ -77,7 +77,11 @@ fn playing_a_non_fast_event_while_engaged_provokes_an_aoo() {
     let mut investigator = test_support::test_investigator(1);
     investigator.current_location = Some(loc);
     investigator.hand = vec![CardCode::new(EMERGENCY_CACHE)];
-    investigator.cards_in_play = vec![CardInPlay::enter_play(CardCode::new(GUARD_DOG), dog)];
+    investigator.cards_in_play = vec![CardInPlay::enter_play(
+        CardCode::new(GUARD_DOG),
+        dog,
+        Owner::Investigator(InvestigatorId(1)),
+    )];
     let resources_before = investigator.resources;
 
     let attacker = ready_attacker(7, 2, 5);
@@ -234,7 +238,11 @@ fn playing_a_fast_event_while_engaged_provokes_no_aoo_and_spends_no_action() {
     investigator.current_location = Some(loc);
     investigator.actions_remaining = 3;
     investigator.hand = vec![CardCode::new(WORKING_A_HUNCH)];
-    investigator.cards_in_play = vec![CardInPlay::enter_play(CardCode::new(GUARD_DOG), dog)];
+    investigator.cards_in_play = vec![CardInPlay::enter_play(
+        CardCode::new(GUARD_DOG),
+        dog,
+        Owner::Investigator(InvestigatorId(1)),
+    )];
 
     let mut location = test_support::test_location(101, "Study");
     location.clues = 1;
@@ -376,7 +384,11 @@ fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
     investigator.current_location = Some(loc);
     investigator.actions_remaining = 3;
     investigator.hand = vec![CardCode::new(MACHETE)];
-    investigator.cards_in_play = vec![CardInPlay::enter_play(CardCode::new(GUARD_DOG), dog)];
+    investigator.cards_in_play = vec![CardInPlay::enter_play(
+        CardCode::new(GUARD_DOG),
+        dog,
+        Owner::Investigator(InvestigatorId(1)),
+    )];
 
     let attacker = ready_attacker(7, 2, 5);
 

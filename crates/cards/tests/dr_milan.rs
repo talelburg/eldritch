@@ -10,7 +10,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, TokenModifiers,
+    InvestigatorId, LocationId, Owner, TokenModifiers,
 };
 use game_core::test_support;
 
@@ -34,6 +34,7 @@ fn board() -> GameState {
     inv.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new(DR_MILAN),
         CardInstanceId(1),
+        Owner::Investigator(InvestigatorId(1)),
     ));
     let mut loc = test_support::test_location(10, "Study"); // shroud 2 by default
     loc.clues = 1;
@@ -110,12 +111,14 @@ fn obscuring_fog_forced_discard_precedes_dr_milan_reaction_window() {
     inv.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new(DR_MILAN),
         CardInstanceId(1),
+        Owner::Investigator(InvestigatorId(1)),
     ));
     let mut loc = test_support::test_location(10, "Study"); // shroud 2
     loc.clues = 1;
     loc.attachments.push(CardInPlay::enter_play(
         CardCode::new(obscuring_fog),
         CardInstanceId(2),
+        Owner::EncounterDeck,
     ));
     let state = GameStateBuilder::new()
         .open_turn(INV)
