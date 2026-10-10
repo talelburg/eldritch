@@ -616,21 +616,14 @@ mod tests {
         ctx
     }
 
-    fn location_anchor(id: &LocationId) -> OptionTarget {
-        OptionTarget::Location(*id)
-    }
-
     #[test]
     fn grounded_choice_auto_picks_a_lone_candidate_without_a_prompt() {
         let state = labelled_board();
         let ctx = EvalContext::for_controller(InvestigatorId(1));
-        let out = resolve_grounded_choice(
-            &state,
-            &ctx,
-            &[LocationId(10)],
-            "Choose a location",
-            location_anchor,
-        );
+        let out =
+            resolve_grounded_choice(&state, &ctx, &[LocationId(10)], "Choose a location", |id| {
+                OptionTarget::Location(*id)
+            });
         assert!(matches!(out, Grounded::Picked(LocationId(10))));
     }
 
@@ -640,13 +633,10 @@ mod tests {
         let mut state = labelled_board();
         state.interactive_acknowledge = true;
         let ctx = EvalContext::for_controller(InvestigatorId(1));
-        let out = resolve_grounded_choice(
-            &state,
-            &ctx,
-            &[LocationId(10)],
-            "Choose a location",
-            location_anchor,
-        );
+        let out =
+            resolve_grounded_choice(&state, &ctx, &[LocationId(10)], "Choose a location", |id| {
+                OptionTarget::Location(*id)
+            });
         let Grounded::Suspend(EngineOutcome::AwaitingInput { request, .. }) = out else {
             panic!("expected a one-option suspend");
         };
@@ -662,7 +652,7 @@ mod tests {
             &ctx,
             &[] as &[LocationId],
             "Choose a location",
-            location_anchor,
+            |id| OptionTarget::Location(*id),
         );
         assert!(matches!(out, Grounded::Empty));
     }
