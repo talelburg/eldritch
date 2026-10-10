@@ -8,7 +8,8 @@ use card_dsl::dsl::{ActionDesignator, Cost, Effect, Trigger, UsageLimit};
 
 use crate::card_registry;
 use crate::engine::dispatch::actions::take::{self, ActionDescription};
-use crate::engine::dispatch::{initiation, reaction_windows, ActivateCheckResult};
+use crate::engine::dispatch::initiation;
+use crate::engine::dispatch::legality::{self, ActivateCheckResult};
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::{abilities_in_effect, ability_source, board, Cx};
@@ -107,7 +108,7 @@ pub(super) fn activate_ability(
         effect,
         usage_limit,
         source_exhausted: _,
-    } = match reaction_windows::check_activate_ability(cx.state, investigator, source, address) {
+    } = match legality::check_activate_ability(cx.state, investigator, source, address) {
         Ok(r) => r,
         Err(reason) => return EngineOutcome::Rejected { reason },
     };

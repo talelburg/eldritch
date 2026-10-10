@@ -6,7 +6,7 @@
 use crate::card_registry;
 use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
 use crate::engine::dispatch::actions::{engage, evade, fight, investigate, move_action};
-use crate::engine::dispatch::{act_agenda, reaction_windows};
+use crate::engine::dispatch::{act_agenda, legality};
 use crate::engine::outcome::OptionTarget;
 use crate::engine::{abilities_in_effect, ability_source};
 use crate::state::{
@@ -248,7 +248,7 @@ fn push_card_actions(state: &GameState, investigator: InvestigatorId, out: &mut 
     let hand_len = inv.hand.len();
     for idx in 0..hand_len {
         let hand_index = u8::try_from(idx).unwrap_or(u8::MAX);
-        if reaction_windows::check_play_card(state, investigator, hand_index).is_ok() {
+        if legality::check_play_card(state, investigator, hand_index).is_ok() {
             out.push(TurnAction::PlayCard {
                 investigator,
                 hand_index,
@@ -266,9 +266,7 @@ fn push_card_actions(state: &GameState, investigator: InvestigatorId, out: &mut 
     for (source, code) in ability_source::reachable_source_codes(state, investigator) {
         let abilities = abilities_in_effect::for_source(state, source, &code).unwrap_or_default();
         for (address, _) in abilities {
-            if reaction_windows::check_activate_ability(state, investigator, source, &address)
-                .is_ok()
-            {
+            if legality::check_activate_ability(state, investigator, source, &address).is_ok() {
                 out.push(TurnAction::ActivateAbility {
                     investigator,
                     source,

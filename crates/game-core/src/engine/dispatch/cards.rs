@@ -10,9 +10,9 @@ use crate::action::InputResponse;
 use crate::card_registry;
 use crate::engine::dispatch::actions::take::{self, ActionDescription};
 use crate::engine::dispatch::emit::TimingEvent;
+use crate::engine::dispatch::legality::PlayCheckResult;
 use crate::engine::dispatch::{
-    elimination, emit, encounter, phases, reaction_windows, slots, threat_area, PlayCheckResult,
-    PlayDestination,
+    elimination, emit, encounter, legality, phases, slots, threat_area, PlayDestination,
 };
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
@@ -879,7 +879,7 @@ pub(super) fn play_card(
         abilities: _,
         is_fast,
         card_type: _,
-    } = match reaction_windows::check_play_card(cx.state, investigator, hand_index) {
+    } = match legality::check_play_card(cx.state, investigator, hand_index) {
         Ok(r) => r,
         Err(reason) => return EngineOutcome::Rejected { reason },
     };
