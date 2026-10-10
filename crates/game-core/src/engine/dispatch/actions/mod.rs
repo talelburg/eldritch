@@ -2,17 +2,23 @@
 //! Resource, Move, Investigate, Fight, Engage and Evade. Each is taken through
 //! [`take`], which decides whether the investigator may take it, pays for it,
 //! and decides whether it provokes attacks of opportunity.
+//!
+//! Each action that takes a target or destination (Move, Investigate, Fight,
+//! Engage, Evade) owns one `candidates` function: what its rules scope
+//! accepts. The handler, the turn menu, the designator gate and the evaluator
+//! read it rather than re-deriving the set, so the menu can neither offer what
+//! the handler rejects nor hide what it accepts.
 
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::InvestigatorId;
 
 pub(super) mod draw;
-pub(super) mod engage;
-pub(super) mod evade;
+pub(crate) mod engage;
+pub(crate) mod evade;
 pub(crate) mod fight;
 pub(crate) mod investigate;
-pub(super) mod move_action;
+pub(crate) mod move_action;
 pub(super) mod resource;
 pub(crate) mod take;
 
