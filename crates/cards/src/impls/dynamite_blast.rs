@@ -6,10 +6,10 @@
 //! ```
 //!
 //! A card-local native (the #276 escape hatch), like agenda 01105 / Crypt
-//! Chill: it enumerates the controller's location and its connections,
-//! applies the choice convention (1 candidate → auto-target, 2+ → suspend via
-//! [`suspend_for_native_choice`](engine::suspend_for_native_choice)), and on
-//! resume deals 3 damage to every enemy
+//! Chill: it enumerates the controller's location and its connections, offers
+//! them through [`resolve_grounded_choice`](engine::resolve_grounded_choice)
+//! (1 candidate → auto-target, 2+ → suspend for a pick), and on the pick deals
+//! 3 damage to every enemy
 //! ([`deal_damage_to_enemy`](engine::deal_damage_to_enemy), which handles
 //! defeat → victory points / Roland's reaction) and every investigator
 //! ([`take_damage`](engine::take_damage) — the controller included if they
@@ -34,7 +34,7 @@
 
 use card_dsl::dsl::{self, Ability};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, ChoiceResolution, Cx, EngineOutcome, OptionTarget};
+use game_core::engine::{self, Cx, EngineOutcome, Grounded, OptionTarget};
 use game_core::state::{EnemyId, InvestigatorId, LocationId};
 
 use crate::impls::CardRecord;
@@ -80,32 +80,19 @@ fn candidate_locations(cx: &Cx, controller: InvestigatorId) -> Vec<LocationId> {
 fn dynamite_blast(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
     let controller = ctx.controller;
     let locations = candidate_locations(cx, controller);
-
-    // Resume: a pick was threaded in — re-enumerate and index by it.
-    if let Some(picked) = ctx.chosen_option() {
-        let Some(&loc) = locations.get(picked.0 as usize) else {
-            return EngineOutcome::Rejected {
-                reason: "01024 blast: chosen_option out of range".into(),
-            };
-        };
-        return blast_location(cx, controller, loc);
-    }
-
-    match engine::resolve_choice_count(locations.len(), cx.state.interactive_acknowledge) {
+    match engine::resolve_grounded_choice(
+        cx.state,
+        ctx,
+        &locations,
+        "Choose a location to blast",
+        |id| OptionTarget::Location(*id),
+    ) {
+        Grounded::Picked(loc) => blast_location(cx, controller, loc),
         // Controller is between locations — no legal target.
-        ChoiceResolution::Empty => EngineOutcome::Rejected {
+        Grounded::Empty => EngineOutcome::Rejected {
             reason: "01024 blast: controller has no location to target".into(),
         },
-        // Exactly one (your location, no connections) → auto-target.
-        ChoiceResolution::Auto(i) => blast_location(cx, controller, locations[i]),
-        // 2+ → suspend for the controller's pick.
-        ChoiceResolution::Suspend => {
-            let options = locations
-                .iter()
-                .map(|id| (format!("{id:?}"), Some(OptionTarget::Location(*id))))
-                .collect();
-            engine::suspend_for_native_choice(cx, "Choose a location to blast", options, BLAST, ctx)
-        }
+        Grounded::Suspend(outcome) => outcome,
     }
 }
 

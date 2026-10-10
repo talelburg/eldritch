@@ -752,23 +752,16 @@ fn credit_point(assignment: &mut Assignment, target: DistributionTarget, damage_
 /// Build the per-point soak options, anchoring each to its board home so a host
 /// renders it on the right card (S5, #540): a soaker asset to its card instance,
 /// the defending investigator to their own investigator card (`me`, #950).
-/// Labels match the former `choice::candidate_options` debug repr, so the flat
-/// bar is byte-unchanged.
-fn soak_options(targets: &[DistributionTarget], me: &OptionTarget) -> Vec<ChoiceOption> {
-    targets
-        .iter()
-        .enumerate()
-        .map(|(i, t)| {
-            let id = OptionId(u32::try_from(i).expect("soak target count fits u32"));
-            let opt = ChoiceOption::new(id, format!("{t:?}"));
-            match t {
-                DistributionTarget::Asset(instance) => {
-                    opt.at(OptionTarget::CardInstance(*instance))
-                }
-                DistributionTarget::Investigator => opt.at(me.clone()),
-            }
-        })
-        .collect()
+/// Each label is the anchored card's name (#989).
+fn soak_options(
+    state: &GameState,
+    targets: &[DistributionTarget],
+    me: &OptionTarget,
+) -> Vec<ChoiceOption> {
+    choice::candidate_options(state, targets, |t| match t {
+        DistributionTarget::Asset(instance) => OptionTarget::CardInstance(*instance),
+        DistributionTarget::Investigator => me.clone(),
+    })
 }
 
 /// Build the `PickSingle` over the eligible targets for the next point (the top
@@ -801,6 +794,7 @@ fn prompt_current_point(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutc
         request: InputRequest::pick_single(
             prompt,
             soak_options(
+                cx.state,
                 &targets,
                 &cx.state.investigators[&investigator].card_anchor(),
             ),
@@ -1092,8 +1086,7 @@ fn suspend_order_pick(
          next (RR p.25 step 3.3)",
         attackers.len()
     );
-    let options =
-        choice::candidate_options(&attackers, |e| (format!("{e:?}"), OptionTarget::Enemy(*e)));
+    let options = choice::candidate_options(cx.state, &attackers, |e| OptionTarget::Enemy(*e));
     cx.state.continuations.push(AttackLoopFrame {
         investigator,
         remaining_attackers: attackers,

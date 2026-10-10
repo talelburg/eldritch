@@ -671,7 +671,8 @@ the now-stable set of input shapes:
       `CardInstance` (a soak-local `soak_options` builder in `combat.rs`; the shared
       `hunters::candidate_options` and its five other callers are untouched); effect `ChooseOne` →
       `Enemy`/`Location` (a `target` closure threaded through `resolve_grounded_choice` into a new
-      `choice::awaiting_choice_anchored`); the round-end act-advance reaction → `OptionTarget::Act`
+      `choice::awaiting_choice_anchored`; #988 has since replaced that helper with the exported
+      `engine::resolve_grounded_choice` and moved `candidate_options` into `choice`); the round-end act-advance reaction → `OptionTarget::Act`
       (`build_resolution_options` maps a `CandidateSource::Board` candidate whose code is the current
       act, via `current_act_code`), so open-turn *and* round-end advance share the act-card home under
       one matcher. Web: the act renders as a glow-capable `ActCard` (mirrors `EnemyCard`, the only new
@@ -1047,6 +1048,8 @@ reject/auto · 1 ⇒ auto-bind · 2+ ⇒ suspend); a node needing a choice **sus
 place** and resume **re-steps the same leaf** with `chosen_option` set — no replay,
 no `DecisionCursor`. DSL targets bind through `ground_chosen_targets`
 (`chosen_investigator`/`location`/`enemy`); native leaves read `chosen_option`.
+(#988 superseded this split: evaluator arms and natives alike now resolve a board pick
+through `engine::resolve_grounded_choice`, and `resolve_choice_count` is crate-private.)
 Spatial targets use `Choose<S> { scope }` (`LocationSet { Here, Anywhere }` /
 `EntityScope`). Before-timing cancellation is a Before window the caller suspends on
 + an `Effect::Cancel` leaf setting `pending_cancellation` (a `bool` suffices —

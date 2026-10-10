@@ -9,17 +9,16 @@
 //! native (#276) — a single consumer of "discard an asset you control".
 //!
 //! **Interactive choice (Axis A, #334).** The fail branch enumerates the
-//! controller's in-play assets and applies the resolve convention: 0 assets →
-//! the printed "take 2 damage" fallback; 1 → auto-discard; 2+ → suspend for a
-//! controller pick via [`game_core::engine::suspend_for_native_choice`]. On resume the
-//! native re-runs with the pick threaded through
-//! [`EvalContext::chosen_option`](game_core::engine::evaluator::EvalContext::chosen_option),
-//! re-enumerating in the same order and indexing by it.
+//! controller's in-play assets and offers them through
+//! [`game_core::engine::resolve_grounded_choice`]: 0 assets → the printed "take
+//! 2 damage" fallback; 1 → auto-discard; 2+ → suspend for a controller pick. On
+//! resume the native re-runs, re-enumerates in the same order, and the engine
+//! function indexes the list by the threaded pick.
 
 use card_dsl::card_data::{CardKind, SkillKind};
 use card_dsl::dsl::{self, Ability};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, board, ChoiceResolution, Cx, EngineOutcome, OptionTarget};
+use game_core::engine::{self, board, Cx, EngineOutcome, Grounded, OptionTarget};
 use game_core::state::{CardInstanceId, InvestigatorId};
 
 use crate::impls::CardRecord;
@@ -65,40 +64,21 @@ fn controlled_assets(cx: &Cx, controller: InvestigatorId) -> Vec<CardInstanceId>
 fn crypt_chill_fail(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
     let controller = ctx.controller;
     let assets = controlled_assets(cx, controller);
-
-    // Resume: a pick was threaded in — re-enumerate and index by it.
-    if let Some(picked) = ctx.chosen_option() {
-        let Some(&instance) = assets.get(picked.0 as usize) else {
-            return EngineOutcome::Rejected {
-                reason: "01167 crypt-chill-fail: chosen_option out of range".into(),
-            };
-        };
-        return discard_asset_instance(cx, instance);
-    }
-
-    match engine::resolve_choice_count(assets.len(), cx.state.interactive_acknowledge) {
+    match engine::resolve_grounded_choice(
+        cx.state,
+        ctx,
+        &assets,
+        "Choose an asset to discard",
+        |id| OptionTarget::CardInstance(*id),
+    ) {
+        Grounded::Picked(instance) => discard_asset_instance(cx, instance),
         // Cannot discard an asset → take 2 damage instead (the printed
         // fallback; defeat handled by the kernel helper).
-        ChoiceResolution::Empty => {
+        Grounded::Empty => {
             engine::take_damage(cx, controller, 2);
             EngineOutcome::Done
         }
-        // Exactly one → auto-discard, no input.
-        ChoiceResolution::Auto(i) => discard_asset_instance(cx, assets[i]),
-        // 2+ → suspend for the controller's choice.
-        ChoiceResolution::Suspend => {
-            let options = assets
-                .iter()
-                .map(|id| (format!("{id:?}"), Some(OptionTarget::CardInstance(*id))))
-                .collect();
-            engine::suspend_for_native_choice(
-                cx,
-                "Choose an asset to discard",
-                options,
-                CRYPT_CHILL_FAIL,
-                ctx,
-            )
-        }
+        Grounded::Suspend(outcome) => outcome,
     }
 }
 

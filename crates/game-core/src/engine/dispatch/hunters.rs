@@ -430,16 +430,16 @@ fn suspend_hunter_choice(cx: &mut Cx, choice: HunterChoice) -> EngineOutcome {
                 "Hunter {enemy:?} movement: lead investigator picks a destination among \
                  {candidates:?}"
             ),
-            choice::candidate_options(candidates, |l| {
-                (format!("{l:?}"), OptionTarget::Location(*l))
-            }),
+            choice::candidate_options(cx.state, candidates, |l| OptionTarget::Location(*l)),
         ),
         HunterChoice::Engage { enemy, candidates } => (
             format!(
                 "Hunter {enemy:?} engagement: lead investigator picks whom to engage among \
                  {candidates:?}"
             ),
-            choice::candidate_options(candidates, |i| choice::investigator_option(cx.state, *i)),
+            choice::candidate_options(cx.state, candidates, |i| {
+                cx.state.investigators[i].card_anchor()
+            }),
         ),
     };
     cx.state

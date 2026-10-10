@@ -15,7 +15,7 @@ use game_core::state::{
     Agenda, CardCode, CardInPlay, CardInstanceId, ChaosToken, DiscardPile, GameState,
     GameStateBuilder, InvestigatorId, LocationId, Owner, Zone,
 };
-use game_core::test_support::{self, ScriptedResolver};
+use game_core::test_support::{self, ScriptedResolver, TestSession};
 use game_core::{assert_event, assert_event_count};
 
 #[ctor::ctor(unsafe)]
@@ -156,6 +156,57 @@ fn crypt_chill_with_an_asset_discards_the_asset_not_damage() {
             if *investigator == InvestigatorId(1)
                 && *code == CardCode::new("01059")
                 && *from == Zone::InPlay
+    );
+}
+
+/// The suspended discard pick names each asset by its card (#989), not by the
+/// `Debug` form of its instance id.
+#[test]
+fn crypt_chill_discard_options_are_labelled_with_card_names() {
+    let mut state = board_with("01167", ChaosToken::AutoFail);
+    {
+        let in_play = &mut state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .cards_in_play;
+        in_play.push(CardInPlay::enter_play(
+            CardCode::new("01059"),
+            CardInstanceId(1),
+            Owner::Investigator(InvestigatorId(1)),
+        ));
+        in_play.push(CardInPlay::enter_play(
+            CardCode::new("01030"),
+            CardInstanceId(2),
+            Owner::Investigator(InvestigatorId(1)),
+        ));
+    }
+
+    let s = TestSession::new(state)
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
+        .apply(Action::Engine(EngineRecord::EncounterCardRevealed {
+            investigator: InvestigatorId(1),
+        }));
+    let labels: Vec<_> = s
+        .prompt()
+        .options
+        .iter()
+        .map(|o| (o.target.clone(), o.label.as_str()))
+        .collect();
+    assert_eq!(
+        labels,
+        vec![
+            (
+                Some(OptionTarget::CardInstance(CardInstanceId(1))),
+                "Holy Rosary"
+            ),
+            (
+                Some(OptionTarget::CardInstance(CardInstanceId(2))),
+                "Magnifying Glass"
+            ),
+        ],
     );
 }
 
