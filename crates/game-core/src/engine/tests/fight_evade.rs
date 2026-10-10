@@ -411,7 +411,7 @@ fn fight_with_zero_actions_is_rejected() {
 #[test]
 fn fight_with_negative_fight_value_is_rejected_without_mutating_state() {
     // Malformed scenario data: fight = -1. validate-first must
-    // reject BEFORE spend_one_action runs, otherwise the action
+    // reject BEFORE the action is paid for, otherwise the action
     // is silently lost without a rejection event.
     let (inv_id, enemy_id, mut state) = fight_evade_scenario();
     state.enemies.get_mut(&enemy_id).unwrap().fight = -1;

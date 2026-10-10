@@ -7,14 +7,15 @@ use card_dsl::card_data::CardKind;
 use card_dsl::dsl::{ActionDesignator, Cost, Effect, Trigger, UsageLimit};
 
 use crate::card_registry;
-use crate::engine::dispatch::{combat, initiation, reaction_windows, ActivateCheckResult};
+use crate::engine::dispatch::actions::take::{self, ActionDescription};
+use crate::engine::dispatch::{initiation, reaction_windows, ActivateCheckResult};
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::{abilities_in_effect, ability_source, board, Cx};
 use crate::event::Event;
 use crate::state::{
-    AbilityAddress, AbilitySource, ActionResolutionFrame, ActionResume, CandidateSource, CardCode,
-    CardInPlay, CardInstanceId, GameState, Investigator, InvestigatorId, UseKind,
+    AbilityAddress, AbilitySource, ActionResume, CandidateSource, CardCode, CardInPlay,
+    CardInstanceId, GameState, Investigator, InvestigatorId, UseKind,
 };
 
 /// Handler for `TurnAction::ActivateAbility`.
@@ -33,12 +34,14 @@ use crate::state::{
 /// in the manner described by the ability."* Every implemented such ability's
 /// residual `effect` is empty; a non-empty one would run after.
 ///
-/// An action-cost ability whose printed **action designator** is not on the
-/// attack-of-opportunity exempt list provokes one from each engaged ready
-/// enemy, fired after costs and before the action — see [`provokes_aoo`]; both
-/// halves are parked on an `ActionResolution` frame and run on resume
-/// ([`resume_activate_ability`]). Exempt and fast abilities resolve
-/// synchronously.
+/// An action-cost ability is **taken as an action** ([`take::take`]): the step
+/// pays its actions and marks any surcharge, this handler's hook pays the
+/// ability's other costs and announces it, and the step then decides from the
+/// printed **action designator** whether it provokes attacks of opportunity.
+/// If it does, both halves are parked on an `ActionResolution` frame and run on
+/// resume ([`resume_activate_ability`]). A fast ability spends no action, so it
+/// takes none: it pays, announces and resolves synchronously, as an exempt
+/// action ability does.
 ///
 /// # Timing gate
 ///
@@ -99,7 +102,6 @@ pub(super) fn activate_ability(
     let ActivateCheckResult {
         candidate,
         action_cost,
-        surcharge_sources,
         designator,
         costs,
         effect,
@@ -110,65 +112,57 @@ pub(super) fn activate_ability(
         Err(reason) => return EngineOutcome::Rejected { reason },
     };
 
-    // Mutate.
-    //
-    // Count the use before the costs are paid rather than after: a
-    // `DiscardSelf` cost, or `SpendUses` emptying a `discard_when_empty` asset,
-    // takes the source — and the per-instance counter with it — out of play
-    // mid-payment. Within this one `apply` the order is unobservable: nothing
-    // between here and step 3 reads the counter, and a payment that rejects
-    // snapshot-restores the whole activation, the recorded use included (#161).
-    // A use on an instance that then leaves play is correctly lost —
-    // `glossary/Limits_and_Maximums.md`: *"If a card leaves play and re-enters
-    // play during the same period, the card is considered to be bringing a new
-    // instance of the ability to the game."*
-    initiation::record_initiation(cx.state, &candidate, usage_limit);
-    let source_code = candidate.code;
-    if let Err(reason) = pay_activation_costs(
-        cx,
-        investigator,
-        source,
-        &source_code,
-        action_cost,
-        &surcharge_sources,
-        &costs,
-    ) {
-        return EngineOutcome::Rejected { reason };
-    }
-    // The event names the **source**, not a card instance: the location and
-    // enemy kinds (#708) and the act and agenda kinds (#709) have no
-    // `CardInstanceId`. Consumers that want the instance ask `source.instance()`
-    // and handle the `None`.
-    cx.events.push(Event::AbilityActivated {
-        investigator,
-        source,
-        code: source_code,
-        address: address.clone(),
-    });
-
-    // RR p.5 "Attack of Opportunity": activating an action-cost ability while
-    // engaged with a ready enemy provokes one AoO from each — *unless* it prints
-    // a fight/evade/parley/resign action designator. The action cost is already spent
-    // (`pay_activation_costs`), so we park the effect on an `ActionResolution`
-    // frame and drive the AoO loop (which may open a Dodge cancel / Guard Dog
-    // soak window), then run the effect on resume. (#361, K3.)
-    if provokes_aoo(action_cost, designator.as_ref()) {
-        cx.state.continuations.push(ActionResolutionFrame {
+    // Mutate. Every cost but the actions, then the announcement.
+    let pay_and_announce = |cx: &mut Cx| -> Result<(), Cow<'static, str>> {
+        // Count the use before the costs are paid rather than after: a
+        // `DiscardSelf` cost, or `SpendUses` emptying a `discard_when_empty`
+        // asset, takes the source — and the per-instance counter with it — out
+        // of play mid-payment. Within this one `apply` the order is
+        // unobservable: nothing between here and step 3 reads the counter, and a
+        // payment that rejects snapshot-restores the whole activation, the
+        // recorded use included (#161). A use on an instance that then leaves
+        // play is correctly lost — `glossary/Limits_and_Maximums.md`: *"If a
+        // card leaves play and re-enters play during the same period, the card
+        // is considered to be bringing a new instance of the ability to the
+        // game."*
+        initiation::record_initiation(cx.state, &candidate, usage_limit);
+        pay_activation_costs(cx, investigator, source, &candidate.code, &costs)?;
+        // The event names the **source**, not a card instance: the location and
+        // enemy kinds (#708) and the act and agenda kinds (#709) have no
+        // `CardInstanceId`. Consumers that want the instance ask
+        // `source.instance()` and handle the `None`.
+        cx.events.push(Event::AbilityActivated {
             investigator,
-            resume: ActionResume::ActivateAbility {
-                source,
-                designator,
-                effect,
-            },
+            source,
+            code: candidate.code.clone(),
+            address: address.clone(),
         });
-        return combat::drive_aoo(cx, investigator);
+        Ok(())
+    };
+
+    // A fast ability is not an action, so it takes none: push both halves for
+    // the drive loop (Slice D, #423) — no enclosing frame, no post-logic.
+    if action_cost == 0 {
+        if let Err(reason) = pay_and_announce(cx) {
+            return EngineOutcome::Rejected { reason };
+        }
+        let eval_ctx = EvalContext::for_controller_with_source(investigator, source);
+        push_activation_resolution(cx, designator.as_ref(), &effect, eval_ctx);
+        return EngineOutcome::Done;
     }
 
-    // Fast (not an action), or an AoO-exempt designator: push both halves for
-    // the drive loop (Slice D, #423) — no enclosing frame, no post-logic.
-    let eval_ctx = EvalContext::for_controller_with_source(investigator, source);
-    push_activation_resolution(cx, designator.as_ref(), &effect, eval_ctx);
-    EngineOutcome::Done
+    // An action-cost ability is taken as an action. The step pays the actions,
+    // the hook pays the rest and announces, and the step then either parks the
+    // resolution behind the attacks of opportunity or performs it now (#361).
+    let description = ActionDescription::activate(source, action_cost, designator.clone());
+    take::take(cx, investigator, &description, |cx| {
+        pay_and_announce(cx)?;
+        Ok(ActionResume::ActivateAbility {
+            source,
+            designator,
+            effect,
+        })
+    })
 }
 
 /// Push an activated ability's two halves for the global drive loop, in
@@ -195,42 +189,6 @@ fn push_activation_resolution(
     if let Some(designator) = designator {
         evaluator::push_designated_action(cx, designator, eval_ctx);
     }
-}
-
-/// Whether activating an ability with this `action_cost` and `designator`
-/// provokes an attack of opportunity. `glossary/Attack_of_Opportunity.md`,
-/// verbatim:
-///
-/// > Each time an investigator is engaged with one or more ready enemies and
-/// > takes an action other than to **fight**, to **evade**, or to activate a
-/// > **parley** or **resign** ability, each of those enemies makes an attack of
-/// > opportunity against the investigator...
-///
-/// The exempt list is four **bold action designators**
-/// ([`ActionDesignator`]), so this reads the designator the ability
-/// *declares* (#696). It used to match the effect root instead — exempting
-/// `Effect::Fight` because every corpus weapon happens to be rooted in one —
-/// which answered the wrong question twice over: a `Seq`-wrapped Fight would
-/// have provoked, and Parley and Resign have no effect shape of their own, so
-/// the Parlor 01115's *"\[action\] **Resign.**"* would have provoked once
-/// #708 made a location's abilities reachable.
-///
-/// A designated **Move** or **Investigate** ability is not on the exempt list
-/// and provokes exactly as its basic action does (Flashlight 01087). Fast
-/// abilities (`action_cost == 0`) are not actions and never provoke — the same
-/// glossary entry, added in FAQ: *"\[free\] abilities with a bold action
-/// designator do not provoke attacks of opportunity."*
-fn provokes_aoo(action_cost: u8, designator: Option<&ActionDesignator>) -> bool {
-    action_cost > 0
-        && !matches!(
-            designator,
-            Some(
-                ActionDesignator::Fight { .. }
-                    | ActionDesignator::Evade
-                    | ActionDesignator::Parley
-                    | ActionDesignator::Resign
-            )
-        )
 }
 
 /// Run a parked activated ability's `effect` after its `AoO` loop completes
@@ -266,8 +224,9 @@ pub(super) fn resume_activate_ability(
     EngineOutcome::Done
 }
 
-/// Pay the action cost and every payment cost of an activated
-/// ability. Mutates state in place and pushes the matching events.
+/// Pay every payment cost of an activated ability beyond its actions, which
+/// the step pays ([`take::take`]). Mutates state in place and pushes the
+/// matching events.
 /// Caller has already validated that every cost was payable *at validation
 /// time*; a cost can still fail here by outliving its own source, which is
 /// what the `Err` return carries.
@@ -289,30 +248,8 @@ fn pay_activation_costs(
     investigator: InvestigatorId,
     source: AbilitySource,
     source_code: &CardCode,
-    action_cost: u8,
-    surcharge_sources: &[CardInstanceId],
     costs: &[Cost],
 ) -> Result<(), Cow<'static, str>> {
-    if action_cost > 0 {
-        let inv_mut = cx
-            .state
-            .investigators
-            .get_mut(&investigator)
-            .expect("validated above");
-        inv_mut.actions_remaining = inv_mut.actions_remaining.saturating_sub(action_cost);
-        // The surcharge is spent, so its `first_each_round` sources are done
-        // for the round — the same marking `actions::take::take` does when a
-        // basic action is paid for (#754). Without it Frozen in Fear 01164 would surcharge
-        // a designated Fight *and* the basic Fight that follows.
-        inv_mut
-            .action_surcharge_spent_this_round
-            .extend(surcharge_sources.iter().copied());
-        let new_count = inv_mut.actions_remaining;
-        cx.events.push(Event::ActionsRemainingChanged {
-            investigator,
-            new_count,
-        });
-    }
     for cost in costs {
         match cost {
             Cost::Resources(n) => {
@@ -587,52 +524,8 @@ pub(super) fn check_cost_payable(
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl;
-    use ActionDesignator::{Evade, Move, Parley, Resign};
-
     use super::*;
     use crate::test_support;
-
-    /// The attack-of-opportunity exemption is exactly the four designators
-    /// `glossary/Attack_of_Opportunity.md` names — **fight**, **evade**,
-    /// **parley**, **resign** — and nothing else. Exhaustive over the six
-    /// designators plus the undesignated case, in both action and `[free]`
-    /// flavours.
-    #[test]
-    fn provokes_aoo_exempts_exactly_the_four_named_designators() {
-        for exempt in [dsl::fight(0u8, 0u8), Evade, Parley, Resign] {
-            assert!(
-                !provokes_aoo(1, Some(&exempt)),
-                "{exempt:?} is on the exempt list"
-            );
-        }
-        for provoking in [Move, dsl::investigate(0u8)] {
-            assert!(
-                provokes_aoo(1, Some(&provoking)),
-                "{provoking:?} is not on the exempt list"
-            );
-        }
-        // No designator at all → an ordinary activate action, which provokes.
-        assert!(provokes_aoo(1, None));
-        // A multi-action ability still provokes (once — the loop is the
-        // caller's), per "An ability that costs more than one action only
-        // provokes one attack of opportunity from each engaged enemy."
-        assert!(provokes_aoo(2, None));
-
-        // `[free]` (action_cost 0) is not an action and never provokes, "even"
-        // with a bold action designator (same entry, added in FAQ).
-        for designator in [
-            None,
-            Some(dsl::fight(0u8, 0u8)),
-            Some(dsl::investigate(0u8)),
-            Some(Resign),
-        ] {
-            assert!(
-                !provokes_aoo(0, designator.as_ref()),
-                "{designator:?} at cost 0"
-            );
-        }
-    }
 
     #[test]
     fn spend_uses_payable_only_with_enough_of_the_named_kind() {

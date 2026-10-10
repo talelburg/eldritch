@@ -8,18 +8,19 @@ use card_dsl::dsl::{Ability, Effect, Trigger};
 
 use crate::action::InputResponse;
 use crate::card_registry;
+use crate::engine::dispatch::actions::take::{self, ActionDescription};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{
-    actions, combat, elimination, emit, encounter, phases, reaction_windows, slots, threat_area,
-    PlayCheckResult, PlayDestination,
+    elimination, emit, encounter, phases, reaction_windows, slots, threat_area, PlayCheckResult,
+    PlayDestination,
 };
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
-    ActionResolutionFrame, ActionResume, AssetEntry, CardCode, CardInPlay, DiscardPile,
-    InvestigatorId, MulliganFrame, Owner, PlayFromHandFrame, Zone,
+    ActionResume, AssetEntry, CardCode, CardInPlay, DiscardPile, InvestigatorId, MulliganFrame,
+    Owner, PlayFromHandFrame, Zone,
 };
 
 /// Starting hand size at scenario setup. Per the Rules Reference,
@@ -894,38 +895,26 @@ pub(super) fn play_card(
         .hand[idx]
         .clone();
 
-    // Mutate. A non-fast play costs one action (validated in `check_play_card`),
-    // spent before the card is announced — RR p.5 / the Dynamite Blast FAQ
-    // ("spend an action and pay the cost, then … attack of opportunity"). Fast
-    // plays are not actions (#378).
-    if !is_fast {
-        actions::spend_one_action(cx, investigator);
+    // Mutate. A fast play is not an action (`glossary/Fast.md`: *"A fast card
+    // does not cost an action to be played and is not played using the "Play"
+    // action."*), so it pays its resource cost, commences and resolves at once.
+    if is_fast {
+        pay_play_cost(cx, investigator, &code);
+        let card = commence_play(cx, investigator, idx);
+        return complete_play(cx, investigator, card);
     }
-    // Pay the resource cost (RR p.22): both Fast and non-Fast plays pay it —
-    // Fast only skips the *action* cost. Affordability was validated in
-    // `check_play_card`; the deduction happens before the card is announced and
-    // before any attack of opportunity resolves (#501).
-    pay_play_cost(cx, investigator, &code);
-    // The card is announced (`CardPlayed`) and commences being played — asset or
-    // event alike it leaves hand here and rides the frames below until it is
-    // placed (RR Appendix I step 3 → 4).
-    let card = commence_play(cx, investigator, idx);
-
-    // RR p.5: playing a card is an action, so a non-fast play provokes an AoO
-    // from each engaged ready enemy — fired *after* the card is announced + cost
-    // paid and *before* its effect resolves (Dynamite Blast 01024 FAQ). Park the
-    // rest of the play — the card itself included — on an `ActionResolution`
-    // frame and drive the AoO loop (which may open the Dodge cancel / Guard Dog
-    // soak windows); `complete_play` runs on resume. Fast plays are not actions
-    // and resolve immediately. (#378.)
-    if !is_fast {
-        cx.state.continuations.push(ActionResolutionFrame {
-            investigator,
-            resume: ActionResume::PlayCard { card: Some(card) },
-        });
-        return combat::drive_aoo(cx, investigator);
-    }
-    complete_play(cx, investigator, card)
+    // A non-fast play is taken as an action: the step pays its one action, and
+    // provokes attacks of opportunity before the play completes on resume. Its
+    // hook pays the resource cost (RR p.22, before any attack resolves, #501)
+    // and commences the play: `CardPlayed` is announced and the card leaves hand
+    // to ride the frames until it is placed (RR Appendix I step 3 → 4). The
+    // card itself rides the `ActionResolution` frame through the attacks.
+    let description = ActionDescription::play(code.clone());
+    take::take(cx, investigator, &description, |cx| {
+        pay_play_cost(cx, investigator, &code);
+        let card = commence_play(cx, investigator, idx);
+        Ok(ActionResume::PlayCard { card: Some(card) })
+    })
 }
 
 /// Move the asset **instance** `card` into `investigator`'s play area (RR
