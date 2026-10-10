@@ -86,7 +86,7 @@ fn ready_attacker(id: u32, damage: u8, max_health: u8) -> Enemy {
 ///   abandons the attack's sequence at its resolve step → no damage → the
 ///   parked `AttackLoop` is re-exposed and drains (`AoO` source, so no
 ///   exhaust) → `drive` → `ActionResolution` on top →
-///   `resume_action_resolution` → `move_primary_effect` → `Done`.
+///   `resume_action_resolution` → `move::perform` → `Done`.
 #[test]
 fn dodge_cancels_attack_of_opportunity_no_damage_move_completes_attacker_not_exhausted() {
     let inv_id = InvestigatorId(1);
@@ -174,7 +174,7 @@ fn dodge_cancels_attack_of_opportunity_no_damage_move_completes_attacker_not_exh
     );
 
     // The move completed after the cancel window closed: the ActionResolution
-    // frame resumed and ran move_primary_effect.
+    // frame resumed and ran `move::perform`.
     assert_eq!(
         state.investigators[&inv_id].current_location,
         Some(dest),

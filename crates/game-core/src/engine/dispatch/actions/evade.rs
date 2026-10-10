@@ -2,8 +2,6 @@
 //! after-test step: an Agility test against an enemy engaged with the
 //! investigator, which on success disengages and exhausts it.
 
-use std::borrow::Cow;
-
 use card_dsl::dsl::SkillTestKind;
 
 use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
@@ -26,8 +24,8 @@ use crate::state::{
 /// The rules scope only; a malformed evade value is [`has_malformed_value`]'s
 /// question. Read by the basic action's target validation and by the turn
 /// menu. A designated **Evade** is not implemented yet
-/// ([`designated_unimplemented`]), so the designator gate rejects it without
-/// reading this.
+/// ([`designated_unimplemented`](super::designated_unimplemented)), so the
+/// designator gate rejects it without reading this.
 pub(crate) fn candidates(state: &GameState, investigator: InvestigatorId) -> Vec<EnemyId> {
     state
         .enemies
@@ -52,8 +50,8 @@ pub(crate) fn has_malformed_value(enemy: &Enemy) -> bool {
 /// enemy is in state and one of the [`candidates`], and its evade value is not
 /// malformed. Then take it ([`take::take`]). Evade is
 /// on the attack-of-opportunity exempt list, so taking it performs the evade at
-/// once ([`perform_evade`]).
-pub(in crate::engine::dispatch) fn evade(
+/// once ([`perform`]).
+pub(in crate::engine::dispatch) fn handle(
     cx: &mut Cx,
     investigator: InvestigatorId,
     enemy_id: EnemyId,
@@ -98,14 +96,24 @@ pub(in crate::engine::dispatch) fn evade(
 /// disengages and exhausts the enemy ([`after_test`]).
 ///
 /// The one perform entry for both ways of evading, as
-/// [`perform_fight`](super::fight::perform_fight) is for fighting: the basic
+/// [`fight::perform`](super::fight::perform) is for fighting: the basic
 /// Evade action reaches it after taking the action, and a designated **Evade**
-/// will reach it once it carries a modification ([`designated_unimplemented`],
-/// `TODO(#818)`). It takes no modification parameter until then, since the
-/// corpus's two printed shapes disagree about what one would be.
+/// will reach it once it carries a modification. It takes no modification
+/// parameter until then.
+///
+/// Evade's share of the #818 blocker
+/// ([`designated_unimplemented`](super::designated_unimplemented)): the
+/// `ActionDesignator::Evade` variant carries no modification, because the
+/// corpus's two `Trigger::Activated` printings disagree about its shape. Fire
+/// Extinguisher 02114: *"\[action\] Exile Fire Extinguisher: **Evade.** You get
+/// +3 \[agility\] for this test. If you are successful, evade each other enemy
+/// engaged with you, as well."*, a row like the Fight designator's combat
+/// modifier plus a sweep. Strange Solution 02264: *"\[action\] Spend 1 supply:
+/// **Evade.** Evade with a base \[agility\] skill of 6."*, a base-value
+/// replacement. Neither is built, so nothing reaches this through activation.
 ///
 /// Callers validate the target; this takes the id as given.
-pub(crate) fn perform_evade(
+pub(crate) fn perform(
     cx: &mut Cx,
     investigator: InvestigatorId,
     enemy_id: EnemyId,
@@ -153,22 +161,4 @@ pub(in crate::engine::dispatch) fn after_test(
         investigator,
     });
     cx.events.push(Event::EnemyExhausted { enemy: enemy_id });
-}
-
-/// Why a designated **Evade** rejects: it is not implemented (`TODO(#818)`).
-///
-/// The `ActionDesignator::Evade` variant carries no modification, because the
-/// corpus's two `Trigger::Activated` printings disagree about its shape. Fire
-/// Extinguisher 02114: *"\[action\] Exile Fire Extinguisher: **Evade.** You get
-/// +3 \[agility\] for this test."*, a row like the Fight designator's combat
-/// modifier. Strange Solution 02264: *"\[action\] Spend 1 supply: **Evade.**
-/// Evade with a base \[agility\] skill of 6."*, a base-value replacement. Neither is built, so nothing reaches this through activation.
-/// When #818 settles the payload, a designated Evade calls [`perform_evade`].
-///
-/// Read pre-cost by `designator::can_perform` and again by the evaluator's
-/// perform dispatch, so the two sites share one wording.
-pub(crate) fn designated_unimplemented() -> Cow<'static, str> {
-    "a designated Evade is not implemented: no card the build compiles declares one, \
-     so the modification it would carry has no shape yet (TODO(#818))"
-        .into()
 }

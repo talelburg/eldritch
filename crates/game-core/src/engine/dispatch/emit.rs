@@ -225,7 +225,7 @@ pub enum TimingEvent {
         /// The location they are moving to. Carried because the departure's own
         /// impact — the engaged-enemy drag and the location assignment — is
         /// resolved from this event's value at the coordinator's resolve step,
-        /// where `move_primary_effect`'s locals are long out of scope.
+        /// where `move::perform`'s locals are long out of scope.
         destination: LocationId,
     },
 }
@@ -607,7 +607,7 @@ fn resolve_left_location(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
     else {
         unreachable!("resolve_left_location: not a LeftLocation event: {event:?}");
     };
-    actions::move_action::resolve_departure(cx, *investigator, *location, *destination);
+    actions::r#move::resolve_departure(cx, *investigator, *location, *destination);
     EngineOutcome::Done
 }
 
@@ -625,7 +625,7 @@ fn resolve_left_location(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
 /// on its own frame**: arm the resume cursor (`enemy_phase_end` /
 /// `upkeep_phase_end` re-park their phase anchor; `end_turn` arms
 /// `InvestigatorTurn { ending: true }`), or push a dedicated frame beneath the
-/// emit (`move_primary_effect`'s [`MoveEnter`](crate::state::Continuation::MoveEnter)),
+/// emit (`move::perform`'s [`MoveEnter`](crate::state::Continuation::MoveEnter)),
 /// then return this outcome unexamined. See
 /// `docs/adr/0003-emitting-a-timing-point-queues-abilities.md` (#569).
 ///

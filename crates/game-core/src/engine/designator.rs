@@ -32,7 +32,7 @@ use std::borrow::Cow;
 
 use card_dsl::dsl::ActionDesignator;
 
-use crate::engine::dispatch::actions::{evade, fight, investigate, move_action};
+use crate::engine::dispatch::actions::{self, fight, investigate};
 use crate::state::{GameState, InvestigatorId};
 
 /// Whether `investigator` can perform the action `designator` names, ignoring
@@ -55,16 +55,14 @@ use crate::state::{GameState, InvestigatorId};
 ///   gate asks separately.
 /// - **Resign** — eliminating the controller is always available to an
 ///   investigator who reached the ability at all.
-/// - **Evade** / **Move** — rejected, with the reason their own modules give
-///   ([`evade::designated_unimplemented`],
-///   [`move_action::designated_unimplemented`], `TODO(#818)`). Neither variant
-///   carries a modification, and no
-///   implemented card prints either, so the engine says so rather than
-///   performing a guess. Note the two differ in *why*: ten corpus cards print
-///   **Evade** and disagree about the payload's shape (Fire Extinguisher
-///   02114's `+3 [agility]` row vs Strange Solution 02264's base-value
-///   replacement), while **Move** is printed by no corpus card at all. See the
-///   variants' own docs.
+/// - **Evade** / **Move** — rejected, with the reason one shared helper gives
+///   ([`actions::designated_unimplemented`], `TODO(#818)`). Neither variant
+///   carries a modification, and no implemented card prints either, so the
+///   engine says so rather than performing a guess. Note the two differ in
+///   *why*: ten corpus cards print **Evade** and disagree about the payload's
+///   shape (Fire Extinguisher 02114's `+3 [agility]` row vs Strange Solution
+///   02264's base-value replacement), while **Move** is printed by no corpus
+///   card at all. See the variants' own docs.
 pub(crate) fn can_perform(
     state: &GameState,
     investigator: InvestigatorId,
@@ -88,8 +86,8 @@ pub(crate) fn can_perform(
             Ok(())
         }
         ActionDesignator::Parley | ActionDesignator::Resign => Ok(()),
-        ActionDesignator::Evade => Err(evade::designated_unimplemented()),
-        ActionDesignator::Move => Err(move_action::designated_unimplemented()),
+        ActionDesignator::Evade => Err(actions::designated_unimplemented("Evade")),
+        ActionDesignator::Move => Err(actions::designated_unimplemented("Move")),
     }
 }
 

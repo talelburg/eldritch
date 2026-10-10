@@ -40,12 +40,13 @@ pub(crate) fn candidates(state: &GameState, investigator: InvestigatorId) -> Vec
 /// (Rules Reference p.4) — it becomes engaged with the investigator.
 ///
 /// Validate-first: the investigator may take the action ([`take::check`]),
-/// the enemy is in state and one of the [`candidates`]. Then take it ([`take::take`]). Engage
-/// is not on the attack-of-opportunity exempt list; the target enemy is not
-/// yet engaged so it cannot attack, but every other ready engaged enemy does.
-/// If the investigator survives, [`engage_primary_effect`] runs the
+/// the enemy is in state and one of the [`candidates`]. Then take it
+/// ([`take::take`]). Engage is not on the attack-of-opportunity exempt list;
+/// the target enemy is not yet engaged so it cannot attack, but every other
+/// ready engaged enemy does.
+/// If the investigator survives, [`perform`] runs the
 /// engagement.
-pub(in crate::engine::dispatch) fn engage(
+pub(in crate::engine::dispatch) fn handle(
     cx: &mut Cx,
     investigator: InvestigatorId,
     enemy_id: EnemyId,
@@ -99,14 +100,14 @@ pub(in crate::engine::dispatch) fn engage(
 /// A missing investigator map entry after the `Status::Active` gate in
 /// `resume_action_resolution` is a state-corruption invariant violation and
 /// must `unreachable!`-panic — absence here is impossible if the gate held.
-pub(in crate::engine::dispatch) fn engage_primary_effect(
+pub(in crate::engine::dispatch) fn perform(
     cx: &mut Cx,
     investigator: InvestigatorId,
     enemy_id: EnemyId,
 ) -> EngineOutcome {
     assert!(
         cx.state.investigators.contains_key(&investigator),
-        "engage_primary_effect: investigator {investigator:?} not in map after the \
+        "engage::perform: investigator {investigator:?} not in map after the \
          Status::Active re-validation gate; this is a state-corruption invariant violation"
     );
     // Lapsed during the AoO: the investigator lost its location, the target is

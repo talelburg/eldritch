@@ -86,12 +86,12 @@ fn validate_fight_target(
 /// Per Rules Reference p.12 ("To fight an enemy **at his or her location**…"),
 /// Fight targets any enemy at the investigator's location — engaged with them or
 /// not (unlike Evade, which is engagement-only; RR p.11). The eligibility check
-/// is co-location, mirroring [`engage`](super::engage::engage) (#401).
+/// is co-location, mirroring [`engage`](super::engage::handle) (#401).
 ///
 /// Validate-first: the investigator may take the action ([`take::check`]), then
 /// the target checks. Then take it ([`take::take`]). Fight is on the
 /// attack-of-opportunity exempt list, so taking it performs the fight at once.
-pub(in crate::engine::dispatch) fn fight(
+pub(in crate::engine::dispatch) fn handle(
     cx: &mut Cx,
     investigator: InvestigatorId,
     enemy_id: EnemyId,
@@ -139,7 +139,7 @@ pub(in crate::engine::dispatch) fn fight(
 /// number here: the Fight follow-up consumes it as a `u8`.
 ///
 /// Callers validate the target; this takes the id as given.
-pub(crate) fn perform_fight(
+pub(crate) fn perform(
     cx: &mut Cx,
     investigator: InvestigatorId,
     enemy_id: EnemyId,

@@ -54,7 +54,7 @@
 //! revealed by turning it to its other side and placing a number of clues on
 //! it equal to its clue value."* So the Attic 01113 and the Cellar 01114 enter
 //! play unrevealed and are revealed **by** being entered
-//! (`dispatch::actions::move_action::resume_move_enter`, which reveals before the
+//! (`dispatch::actions::r#move::resume_move_enter`, which reveals before the
 //! entered-location Forced window, so their front-side Forced abilities see a
 //! revealed location). Only a location that prints a barrier on its back has
 //! one.

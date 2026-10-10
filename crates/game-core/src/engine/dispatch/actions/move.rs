@@ -1,8 +1,6 @@
 //! The Move basic action, and the departure and enter steps a move
 //! resolves through.
 
-use std::borrow::Cow;
-
 use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{emit, hunters, movement, reveal};
@@ -24,7 +22,8 @@ use crate::state::{ActionResume, EnemyId, GameState, InvestigatorId, LocationId,
 /// menu. Empty for a locationless investigator, and for one whose
 /// `current_location` dangles: that corruption is the handler's to surface
 /// loudly, so the menu offers nothing rather than panicking. A designated
-/// **Move** is not implemented yet ([`designated_unimplemented`]).
+/// **Move** is not implemented yet
+/// ([`designated_unimplemented`](super::designated_unimplemented)).
 pub(crate) fn candidates(state: &GameState, investigator: InvestigatorId) -> Vec<LocationId> {
     let Some(from) = state
         .investigators
@@ -48,22 +47,6 @@ pub(crate) fn candidates(state: &GameState, investigator: InvestigatorId) -> Vec
         .collect()
 }
 
-/// Why a designated **Move** rejects: it is not implemented (`TODO(#818)`).
-///
-/// The `ActionDesignator::Move` variant carries no modification because no
-/// corpus card prints a bold **Move** at all, so there is no printed shape to
-/// take one from. Printings outside the corpus suggest a destination or a
-/// repeat count rather than a stat row (#818 lists them). When #818 lands, a
-/// designated Move performs through this module as the basic Move does.
-///
-/// Read pre-cost by `designator::can_perform` and again by the evaluator's
-/// perform dispatch, so the two sites share one wording.
-pub(crate) fn designated_unimplemented() -> Cow<'static, str> {
-    "a designated Move is not implemented: no card the build compiles declares one, \
-     so the modification it would carry has no shape yet (TODO(#818))"
-        .into()
-}
-
 /// Handler for `TurnAction::Move`.
 ///
 /// Spends 1 action, then updates `current_location` to a connected
@@ -76,8 +59,16 @@ pub(crate) fn designated_unimplemented() -> Cow<'static, str> {
 /// Validate-first: the investigator may take the action, surcharge included
 /// ([`take::check`]), then the destination checks. Then take it
 /// ([`take::take`]). Move is not on the attack-of-opportunity exempt list, so
-/// each ready engaged enemy attacks before [`move_primary_effect`] relocates.
-pub(in crate::engine::dispatch) fn move_action(
+/// each ready engaged enemy attacks before [`perform`] relocates.
+///
+/// Move's share of the #818 blocker
+/// ([`designated_unimplemented`](super::designated_unimplemented)): the
+/// `ActionDesignator::Move` variant carries no modification because no corpus
+/// card prints a bold **Move** at all, so there is no printed shape to take one
+/// from. Printings outside the corpus suggest a destination or a repeat count
+/// rather than a stat row (#818 lists them). When #818 lands, a designated Move
+/// performs through this module as the basic Move does.
+pub(in crate::engine::dispatch) fn handle(
     cx: &mut Cx,
     investigator: InvestigatorId,
     destination: LocationId,
@@ -150,7 +141,7 @@ pub(in crate::engine::dispatch) fn move_action(
 /// the [`MoveEnter`](crate::state::Continuation::MoveEnter) frame this pushes
 /// and runs in [`resume_move_enter`] once the whole departure sequence has
 /// resolved (#569).
-pub(in crate::engine::dispatch) fn move_primary_effect(
+pub(in crate::engine::dispatch) fn perform(
     cx: &mut Cx,
     investigator: InvestigatorId,
     destination: LocationId,
@@ -161,7 +152,7 @@ pub(in crate::engine::dispatch) fn move_primary_effect(
         .get(&investigator)
         .unwrap_or_else(|| {
             unreachable!(
-                "move_primary_effect: investigator {investigator:?} absent after the \
+                "move::perform: investigator {investigator:?} absent after the \
                  Status::Active re-validation gate; this is a state-corruption invariant \
                  violation"
             )
@@ -208,9 +199,9 @@ pub(in crate::engine::dispatch) fn move_primary_effect(
 ///
 /// Since #721 this is `LeftLocation`'s **resolve step** — step 2 of the
 /// sequence in `glossary/Nested_Sequences.md` — run by the timing coordinator
-/// between the `when` and `at` cells rather than by `move_primary_effect`
+/// between the `when` and `at` cells rather than by `perform`
 /// before the emit. `from` is the location being left and `destination` the one
-/// being entered; both were re-validated by `move_primary_effect` before it
+/// being entered; both were re-validated by `perform` before it
 /// emitted. Reached through
 /// [`resolve_left_location`](super::emit::resolve_left_location).
 pub(in crate::engine::dispatch) fn resolve_departure(
@@ -220,7 +211,7 @@ pub(in crate::engine::dispatch) fn resolve_departure(
     destination: LocationId,
 ) {
     if !cx.state.investigators.contains_key(&investigator) {
-        // The `when` cell ran between `move_primary_effect`'s validation and
+        // The `when` cell ran between `perform`'s validation and
         // this step, so the actor's presence is re-checked rather than
         // asserted. No corpus card removes an investigator from an interrupt on
         // a departure; suppressing (as the connection re-check above does)
@@ -246,7 +237,7 @@ pub(in crate::engine::dispatch) fn resolve_departure(
     // ruling (<https://arkhamdb.com/card/01038>), "the engaged enemy will
     // disengage and remain in the investigator's previous location (after
     // making an attack of opportunity)". The AoO has already resolved by the
-    // time this runs (#293's `drive_aoo` precedes `move_primary_effect`).
+    // time this runs (#293's `drive_aoo` precedes `perform`).
     //
     // Capture the engagement set before mutating any locations, then update
     // each engaged enemy alongside the investigator's own move.
@@ -318,7 +309,7 @@ pub(in crate::engine::dispatch) fn resume_move_enter(cx: &mut Cx) -> EngineOutco
     } = cx.state.continuations.pop_expect();
     // Reveal the destination if this is the first investigator entry
     // (Rules Reference p.14). No-op if already revealed. Lives here rather than
-    // in `move_primary_effect` because it is the arrival's business: the
+    // in `perform` because it is the arrival's business: the
     // investigator has to have arrived to have entered, and since #721 the
     // arrival happens at the departure's resolve step, further down the stack.
     reveal::reveal_location(cx, destination);

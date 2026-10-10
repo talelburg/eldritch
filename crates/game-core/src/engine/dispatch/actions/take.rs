@@ -26,9 +26,7 @@ use std::fmt;
 use card_dsl::dsl::{ActionClass, ActionDesignator};
 
 use crate::card_registry;
-use crate::engine::dispatch::actions::{
-    draw, engage, evade, fight, investigate, move_action, resource,
-};
+use crate::engine::dispatch::actions::{draw, engage, evade, fight, investigate, r#move, resource};
 use crate::engine::dispatch::{abilities, cards, combat};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::{evaluator, Cx};
@@ -255,7 +253,8 @@ fn quote(
 /// `before_attacks` pays the caller's own costs and returns the rest of the
 /// action as an [`ActionResume`]. A basic action has no other cost, so its hook
 /// just returns its resume. A play's pays the resource cost and commences the
-/// play; an activation's pays the ability's other costs and announces it. If the action provokes, the resume is parked on an
+/// play; an activation's pays the ability's other costs and announces it. If
+/// the action provokes, the resume is parked on an
 /// [`ActionResolution`](crate::state::Continuation::ActionResolution) frame and
 /// the attacks are driven; the action is performed when the frame resumes.
 /// Otherwise it is performed immediately, by the same [`perform`] the frame
@@ -330,20 +329,18 @@ pub(in crate::engine::dispatch) fn perform(
     resume: ActionResume,
 ) -> EngineOutcome {
     match resume {
-        ActionResume::Move { destination } => {
-            move_action::move_primary_effect(cx, investigator, destination)
-        }
-        ActionResume::Investigate => investigate::investigate_primary_effect(cx, investigator),
-        ActionResume::Resource => resource::resource_primary_effect(cx, investigator),
-        ActionResume::Engage { enemy } => engage::engage_primary_effect(cx, investigator, enemy),
-        ActionResume::Draw => draw::draw_primary_effect(cx, investigator),
+        ActionResume::Move { destination } => r#move::perform(cx, investigator, destination),
+        // A basic investigation carries no modification. A designated one
+        // (Flashlight 01087) reaches the same perform with its shroud modifier.
+        ActionResume::Investigate => investigate::perform(cx, investigator, None, None),
+        ActionResume::Resource => resource::perform(cx, investigator),
+        ActionResume::Engage { enemy } => engage::perform(cx, investigator, enemy),
+        ActionResume::Draw => draw::perform(cx, investigator),
         // A basic attack carries no modification. A designated Fight (every
         // corpus weapon) reaches the same primary with its combat bonus and its
         // bonus damage.
-        ActionResume::Fight { enemy } => {
-            fight::perform_fight(cx, investigator, enemy, None, 0, None)
-        }
-        ActionResume::Evade { enemy } => evade::perform_evade(cx, investigator, enemy),
+        ActionResume::Fight { enemy } => fight::perform(cx, investigator, enemy, None, 0, None),
+        ActionResume::Evade { enemy } => evade::perform(cx, investigator, enemy),
         ActionResume::ActivateAbility {
             source,
             designator,

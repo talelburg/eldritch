@@ -1,4 +1,4 @@
-//! The Investigate basic action, its candidates, the investigate primary
+//! The Investigate basic action, its candidates, the investigate perform
 //! shared with the designated Investigate, and its after-test clue discovery.
 
 use card_dsl::dsl::{self, IntExpr, LocationTarget, SkillTestKind, Stat};
@@ -68,10 +68,10 @@ pub(crate) fn candidates(state: &GameState, investigator: InvestigatorId) -> Opt
 /// Validate-first: the investigator may take the action ([`take::check`]),
 /// then the location checks. Then take it ([`take::take`]). Investigate is not
 /// on the attack-of-opportunity exempt list, so each ready engaged enemy
-/// attacks before the skill test, which [`investigate_primary_effect`] starts.
+/// attacks before the skill test, which [`perform`] starts.
 ///
 /// [`Effect::DiscoverClue`]: card_dsl::dsl::Effect::DiscoverClue
-pub(in crate::engine::dispatch) fn investigate(
+pub(in crate::engine::dispatch) fn handle(
     cx: &mut Cx,
     investigator: InvestigatorId,
 ) -> EngineOutcome {
@@ -108,47 +108,17 @@ pub(in crate::engine::dispatch) fn investigate(
     })
 }
 
-/// The skill-test half of an Investigate, run after its `AoO` loop (#293).
-/// Re-reads the location + effective shroud live and re-checks the location
-/// is still revealed (the §D precondition re-check); suppresses (returns
-/// `Done`) if the precondition has lapsed.
+/// Perform an **investigate**: an Intellect test against `investigator`'s
+/// location whose difficulty *is* that location's modified shroud, read live at
+/// ST.6 rather than snapshotted here (#677), with the base Investigate follow-up
+/// (so a success discovers a clue).
 ///
-/// A missing investigator map entry panics — `resume_action_resolution`'s
-/// `Status::Active` gate upstream already guarantees the investigator is
-/// present, so absence here is a state-corruption invariant violation. A
-/// legitimately lapsed precondition (no `current_location`, or location
-/// absent / not `revealed`) returns `Done` instead.
-pub(in crate::engine::dispatch) fn investigate_primary_effect(
-    cx: &mut Cx,
-    investigator: InvestigatorId,
-) -> EngineOutcome {
-    assert!(
-        cx.state.investigators.contains_key(&investigator),
-        "investigate_primary_effect: investigator {investigator:?} not in map after the \
-         Status::Active re-validation gate; this is a state-corruption invariant violation"
-    );
-    // Locationless after the AoO, or the location gone / no longer revealed:
-    // the precondition lapsed, so suppress the primary rather than rejecting
-    // (the §D contract).
-    let Some(location_id) = candidates(cx.state, investigator) else {
-        return EngineOutcome::Done;
-    };
-    // A basic investigation carries no modification — the designated one
-    // (Flashlight 01087) reaches the same primary with its `-2 [shroud]`.
-    perform_investigate(cx, investigator, location_id, None, None)
-}
-
-/// Perform an **investigate** against `location_id`: an Intellect test whose
-/// difficulty *is* that location's modified shroud, read live at ST.6 rather
-/// than snapshotted here (#677), with the base Investigate follow-up (so a
-/// success discovers a clue).
-///
-/// The one primary behind both ways of investigating (#805) — the basic action
-/// (via [`investigate_primary_effect`], after its attack-of-opportunity loop)
-/// and an ability printing the bold **Investigate** designator (Flashlight
-/// 01087). `glossary/Ability.md` is what makes them the same procedure:
-/// *"Activating such an ability **performs the designated action** as described
-/// in the rules, but modified in the manner described by the ability."* The
+/// The one perform behind both ways of investigating (#805) — the basic action
+/// (after its attack-of-opportunity loop, with no modification) and an ability
+/// printing the bold **Investigate** designator (Flashlight 01087).
+/// `glossary/Ability.md` is what makes them the same procedure: *"Activating
+/// such an ability **performs the designated action** as described in the
+/// rules, but modified in the manner described by the ability."* The
 /// modification is `shroud_modifier`, and it is the *only* thing that differs.
 ///
 /// `shroud_modifier` adjusts the **location difficulty** (shroud), not the
@@ -158,15 +128,30 @@ pub(in crate::engine::dispatch) fn investigate_primary_effect(
 /// never be reduced below 0). It travels into the test unevaluated so the row
 /// it becomes is recalculated at every read (ADR 0005).
 ///
-/// Callers validate that the location exists and is revealed; this takes the id
-/// as given.
-pub(crate) fn perform_investigate(
+/// The location is re-read here through [`candidates`] — the §D precondition
+/// re-check after the basic action's attacks of opportunity. If the
+/// investigator is locationless or their location is gone or no longer
+/// revealed, the precondition has lapsed and this suppresses (returns `Done`).
+/// The designated path checks [`candidates`] itself first and rejects instead,
+/// so it never reaches the suppression.
+///
+/// A missing investigator map entry panics — `resume_action_resolution`'s
+/// `Status::Active` gate upstream already guarantees the investigator is
+/// present, so absence here is a state-corruption invariant violation.
+pub(crate) fn perform(
     cx: &mut Cx,
     investigator: InvestigatorId,
-    location_id: LocationId,
     shroud_modifier: Option<IntExpr>,
     source: Option<AbilitySource>,
 ) -> EngineOutcome {
+    assert!(
+        cx.state.investigators.contains_key(&investigator),
+        "investigate::perform: investigator {investigator:?} not in map after the \
+         Status::Active re-validation gate; this is a state-corruption invariant violation"
+    );
+    let Some(location_id) = candidates(cx.state, investigator) else {
+        return EngineOutcome::Done;
+    };
     skill_test::start_skill_test(
         cx,
         investigator,

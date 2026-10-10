@@ -489,7 +489,7 @@ fn step_designated(
 /// > described by the ability.
 ///
 /// Every arm routes through the **same primary the basic action uses**
-/// (`actions::fight::perform_fight` / `actions::investigate::perform_investigate` /
+/// (`actions::fight::perform` / `actions::investigate::perform` /
 /// `elimination::resign_investigator`), passing the modification as its only
 /// difference — so *"a designated Fight is a Fight action"* holds in code rather
 /// than by parallel construction.
@@ -510,16 +510,16 @@ fn perform_designated(
             extra_damage,
         } => perform_designated_fight(cx, eval_ctx, combat_modifier, extra_damage),
         ActionDesignator::Investigate { shroud_modifier } => {
-            let Some(location_id) = actions::investigate::candidates(cx.state, eval_ctx.controller)
-            else {
+            // Reject rather than reach `perform`'s lapse suppression: a board
+            // that changed underneath the activation is a rejection here.
+            if actions::investigate::candidates(cx.state, eval_ctx.controller).is_none() {
                 return EngineOutcome::Rejected {
                     reason: "Investigate: no revealed location to investigate".into(),
                 };
-            };
-            actions::investigate::perform_investigate(
+            }
+            actions::investigate::perform(
                 cx,
                 eval_ctx.controller,
-                location_id,
                 Some(shroud_modifier.clone()),
                 eval_ctx.ability_source,
             )
@@ -534,13 +534,14 @@ fn perform_designated(
         // ability's whole content is its residual effect.
         ActionDesignator::Parley => EngineOutcome::Done,
         // Unreachable through the activation path: `can_perform` rejects both
-        // pre-cost, since no implemented card prints either. Each module owns
-        // its rejection (and its `TODO(#818)`), so the two sites share a wording.
+        // pre-cost, since no implemented card prints either. One shared helper
+        // owns the rejection (and its `TODO(#818)`), so the two sites share a
+        // wording.
         ActionDesignator::Evade => EngineOutcome::Rejected {
-            reason: actions::evade::designated_unimplemented(),
+            reason: actions::designated_unimplemented("Evade"),
         },
         ActionDesignator::Move => EngineOutcome::Rejected {
-            reason: actions::move_action::designated_unimplemented(),
+            reason: actions::designated_unimplemented("Move"),
         },
     }
 }
@@ -582,7 +583,7 @@ fn perform_designated_fight(
         cx.state.enemies.contains_key(&enemy_id),
         "Fight chosen_enemy returned an id absent from state.enemies",
     );
-    actions::fight::perform_fight(
+    actions::fight::perform(
         cx,
         eval_ctx.controller,
         enemy_id,

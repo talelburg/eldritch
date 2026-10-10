@@ -435,7 +435,7 @@ pub(super) fn pay_play_cost(cx: &mut Cx, investigator: InvestigatorId, code: &Ca
 }
 
 /// Reshuffle the discard pile back into the deck for the named
-/// investigator. Used by [`draw`](actions::draw::draw) when the deck runs empty. Drains
+/// investigator. Used by [`draw`](actions::draw::handle) when the deck runs empty. Drains
 /// `discard` into `deck`, then calls [`shuffle_player_deck`] (which
 /// emits [`Event::DeckShuffled`] when ≥ 2 cards land in the deck).
 fn reshuffle_discard_into_deck(cx: &mut Cx, investigator: InvestigatorId) {

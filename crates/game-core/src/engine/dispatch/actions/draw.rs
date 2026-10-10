@@ -11,7 +11,7 @@ use crate::state::{ActionResume, InvestigatorId};
 /// Draw has no target, so taking it ([`take::take`]) is the whole handler.
 /// Draw is not on the attack-of-opportunity exempt list, so each ready engaged
 /// enemy attacks before the card is drawn. The draw itself, in
-/// [`draw_primary_effect`], resolves per the Rules Reference:
+/// [`perform`], resolves per the Rules Reference:
 ///
 /// - **Non-empty deck**: draw 1 to hand.
 /// - **Empty deck, non-empty discard**: shuffle discard into deck,
@@ -25,7 +25,7 @@ use crate::state::{ActionResume, InvestigatorId};
 ///   ("would-draw-from-empty triggers the penalty"), and the case
 ///   is rare enough in practice (only high-cycle decks burn through
 ///   both zones) that the difference is mostly theoretical.
-pub(in crate::engine::dispatch) fn draw(
+pub(in crate::engine::dispatch) fn handle(
     cx: &mut Cx,
     investigator: InvestigatorId,
 ) -> EngineOutcome {
@@ -45,7 +45,7 @@ pub(in crate::engine::dispatch) fn draw(
 /// present and Active; a missing map entry here is therefore a
 /// state-corruption invariant violation — it must panic (via
 /// `draw_one_with_deckout`'s `expect`), never silently return `Done`.
-pub(in crate::engine::dispatch) fn draw_primary_effect(
+pub(in crate::engine::dispatch) fn perform(
     cx: &mut Cx,
     investigator: InvestigatorId,
 ) -> EngineOutcome {

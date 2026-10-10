@@ -12,8 +12,8 @@ use crate::state::{ActionResume, InvestigatorId};
 /// Resource has no target, so taking it ([`take::take`]) is the whole handler.
 /// Resource is not on the attack-of-opportunity exempt list, so each ready
 /// engaged enemy attacks first. If the investigator survives the attacks,
-/// [`resource_primary_effect`] gains 1 resource.
-pub(in crate::engine::dispatch) fn resource_action(
+/// [`perform`] gains 1 resource.
+pub(in crate::engine::dispatch) fn handle(
     cx: &mut Cx,
     investigator: InvestigatorId,
 ) -> EngineOutcome {
@@ -32,9 +32,9 @@ pub(in crate::engine::dispatch) fn resource_action(
 /// `Status::Active` gate upstream already guarantees the investigator is
 /// present and Active; a missing map entry here is therefore a
 /// state-corruption invariant violation — it must `unreachable!`-panic.
-/// There is no legitimate `Done`-return inside `resource_primary_effect`:
+/// There is no legitimate `Done`-return inside `perform`:
 /// it always gains 1 resource and returns `Done`.
-pub(in crate::engine::dispatch) fn resource_primary_effect(
+pub(in crate::engine::dispatch) fn perform(
     cx: &mut Cx,
     investigator: InvestigatorId,
 ) -> EngineOutcome {
@@ -44,7 +44,7 @@ pub(in crate::engine::dispatch) fn resource_primary_effect(
         .get_mut(&investigator)
         .unwrap_or_else(|| {
             unreachable!(
-                "resource_primary_effect: investigator {investigator:?} not in map after the \
+                "resource::perform: investigator {investigator:?} not in map after the \
                  Status::Active re-validation gate; this is a state-corruption invariant violation"
             )
         });

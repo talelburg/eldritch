@@ -444,7 +444,7 @@ fn weapon_fight_with_two_enemies_suspends_for_pick_then_attacks_chosen() {
 ///
 /// So a designated **Fight** carrying *no* modification and the basic Fight
 /// action, taken against the same board, must resolve identically. Both run
-/// through `actions::fight::perform_fight`; before this issue they built their own
+/// through `actions::fight::perform`; before this issue they built their own
 /// near-identical skill tests side by side, and the assertion below is what
 /// keeps them from drifting apart again.
 ///

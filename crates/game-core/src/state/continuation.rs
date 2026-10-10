@@ -1880,7 +1880,7 @@ impl ResolutionCandidate {
 // --- Phase, turn and action frame payloads ---
 
 /// The entered-location half of a Move, parked beneath the whole
-/// `LeftLocation` sequence (#569). Pushed by `move_primary_effect`
+/// `LeftLocation` sequence (#569). Pushed by `move::perform`
 /// immediately before it emits `LeftLocation` — and since #721 that emit
 /// carries the relocation too, which the coordinator performs at the
 /// condition's own resolve step *above* this frame, so Barricade 01038's

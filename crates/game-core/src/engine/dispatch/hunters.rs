@@ -265,7 +265,7 @@ fn place_enemy_at(cx: &mut Cx, enemy_id: EnemyId, to: LocationId) {
 /// left engaged — `reengage_at_location`'s precondition is
 /// `engaged_with == None`, so the check is skipped rather than
 /// re-targeting it. That is right for the only engaged-enemy relocation
-/// the engine has (`move_action` dragging an enemy along with the
+/// the engine has (the Move action dragging an enemy along with the
 /// investigator it is engaged with, which is why that path does not
 /// call this one), but relocating an engaged enemy *away* from its
 /// investigator would strand the engagement across two locations,

@@ -1,6 +1,10 @@
 //! **Taking an action** (see `GLOSSARY.md`): which actions provoke an attack of
-//! opportunity, and which are refused before anything is paid. Driven through
-//! the public [`apply`](game_core::engine::apply) API, with the real card corpus
+//! opportunity, and which are refused before anything is paid. The attack rows
+//! take each action from the turn menu through
+//! [`TestSession`](game_core::test_support::TestSession); the refusal test
+//! submits it past the menu with
+//! [`dispatch_turn_action_unchecked`](game_core::test_support::dispatch_turn_action_unchecked),
+//! as a client that never read the menu would. The real card corpus is
 //! installed so the play and activation rows can seat printed cards.
 //!
 //! `glossary/Attack_of_Opportunity.md`, verbatim:
@@ -59,7 +63,7 @@ const MAGNIFYING_GLASS: &str = "01030";
 const MACHETE: &str = "01020";
 /// Flashlight (01087), whose action ability is a designated Investigate.
 const FLASHLIGHT: &str = "01087";
-/// The Parlor (01115), whose action ability is a Resign.
+/// Parlor (01115), whose action ability is a Resign.
 const PARLOR: &str = "01115";
 /// Beat Cop (01018), whose ability 1 is a fast ability.
 const BEAT_COP: &str = "01018";
@@ -317,7 +321,7 @@ fn play_and_activate_rows() -> Vec<Row> {
             actions_spent: 1,
             provokes: true,
         },
-        // The Parlor 01115: *"[action] <b>Resign.</b>"* A location's ability,
+        // Parlor 01115: *"[action] <b>Resign.</b>"* A location's ability,
         // reached by standing in it. Resign is exempt.
         Row {
             name: "Activate (Resign)",

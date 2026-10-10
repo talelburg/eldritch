@@ -83,13 +83,10 @@ fn activate_offered_for_an_in_play_activated_ability() {
     );
 }
 
-#[test]
-fn every_enumerated_action_applies_without_rejection_with_registry() {
-    // Cross-check, registry edition: with real card data the enumeration
-    // includes PlayCard (Holy Rosary) and ActivateAbility (Flashlight) alongside
-    // the basic actions; each applies without Rejected (Done or AwaitingInput
-    // are both acceptance).
-    let state = GameStateBuilder::new()
+/// Investigator 1 at the Study with Holy Rosary in hand and a Flashlight in
+/// play, at an open turn: the fixture of the registry-edition sweep.
+fn rosary_and_flashlight_board() -> GameState {
+    GameStateBuilder::new()
         .with_investigator(investigator(
             &[HOLY_ROSARY],
             vec![flashlight_in_play(CardInstanceId(0))],
@@ -97,7 +94,16 @@ fn every_enumerated_action_applies_without_rejection_with_registry() {
         .with_location(test_support::test_location(LOC.0, "Study"))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(INV)
-        .build();
+        .build()
+}
+
+#[test]
+fn every_enumerated_action_applies_without_rejection_with_registry() {
+    // Cross-check, registry edition: with real card data the enumeration
+    // includes PlayCard (Holy Rosary) and ActivateAbility (Flashlight) alongside
+    // the basic actions; each applies without Rejected (Done or AwaitingInput
+    // are both acceptance).
+    let state = rosary_and_flashlight_board();
     // OptionId round-trip: each enumerated action dispatches via
     // `ResolveInput(PickSingle(OptionId))` at the open turn (#447). None reject.
     let actions = enumerate::legal_actions(&state);
@@ -118,8 +124,10 @@ fn every_enumerated_action_applies_without_rejection_with_registry() {
     }
 }
 
-#[test]
-fn full_enumeration_covers_every_action_category_and_all_apply() {
+/// A board offering every action category: the registry-edition fixture plus a
+/// connected destination (Move), an engaged enemy (Fight/Evade), a co-located
+/// unengaged enemy (Engage), and an advanceable act (`AdvanceAct`).
+fn every_category_board() -> GameState {
     let inst = CardInstanceId(0);
     let mut state = GameStateBuilder::new()
         .with_investigator(investigator(&[HOLY_ROSARY], vec![flashlight_in_play(inst)]))
@@ -127,8 +135,6 @@ fn full_enumeration_covers_every_action_category_and_all_apply() {
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(INV)
         .build();
-    // A connected destination (Move), an engaged enemy (Fight/Evade), a
-    // co-located unengaged enemy (Engage), and an advanceable act (AdvanceAct).
     let mut other = test_support::test_location(11, "Hall");
     other.revealed = true;
     state
@@ -159,7 +165,12 @@ fn full_enumeration_covers_every_action_category_and_all_apply() {
             clue_threshold: 99,
         },
     ];
+    state
+}
 
+#[test]
+fn full_enumeration_covers_every_action_category_and_all_apply() {
+    let state = every_category_board();
     let actions = enumerate::legal_actions(&state);
 
     // Every category is represented.
@@ -434,6 +445,22 @@ fn the_menu_offers_every_basic_action_the_engine_accepts() {
 /// The completeness sweep under Frozen in Fear 01164, which surcharges *"one of
 /// the following actions (move, fight, or evade)"*: with 1 action left the
 /// surcharged kinds are neither accepted nor offered, and with 2 they are both.
+/// The completeness sweep over the fixtures the "every enumerated action
+/// applies" sweeps use, so the two directions are checked on the same boards.
+#[test]
+fn the_menu_offers_every_basic_action_the_engine_accepts_on_the_apply_sweep_boards() {
+    for (name, state) in [
+        ("rosary and flashlight", rosary_and_flashlight_board()),
+        ("every category", every_category_board()),
+    ] {
+        let accepted = assert_menu_offers_every_accepted_basic_action(&state, INV);
+        assert!(
+            !accepted.is_empty(),
+            "{name}: the engine accepted no basic action, so the sweep checked nothing",
+        );
+    }
+}
+
 #[test]
 fn the_menu_offers_every_basic_action_the_engine_accepts_under_frozen_in_fear() {
     for (actions_remaining, surcharged_affordable) in [(1, false), (2, true)] {

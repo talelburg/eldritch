@@ -5,7 +5,7 @@
 
 use crate::card_registry;
 use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
-use crate::engine::dispatch::actions::{engage, evade, fight, investigate, move_action};
+use crate::engine::dispatch::actions::{engage, evade, fight, investigate, r#move};
 use crate::engine::dispatch::{act_agenda, legality};
 use crate::engine::outcome::OptionTarget;
 use crate::engine::{abilities_in_effect, ability_source};
@@ -353,7 +353,7 @@ fn push_basic_actions(state: &GameState, investigator: InvestigatorId, out: &mut
 
     // Move: one option per destination, in connection order.
     if may_take(state, investigator, ActionKind::Move) {
-        for destination in move_action::candidates(state, investigator) {
+        for destination in r#move::candidates(state, investigator) {
             out.push(TurnAction::Move {
                 investigator,
                 destination,

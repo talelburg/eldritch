@@ -200,7 +200,7 @@ fn push_activation_resolution(
 /// context's source.
 ///
 /// TODO(#417) (richer mid-action invalidation): unlike the basic-action resumes
-/// (`investigate_primary_effect` etc., which return `Done` to *suppress*
+/// (`investigate::perform` etc., which return `Done` to *suppress*
 /// gracefully when their target precondition has lapsed), this pushes the
 /// effect for the drive loop with no suppression gate. Some effects
 /// (`Effect::Investigate` on Flashlight 01087, `Effect::Heal` on First Aid

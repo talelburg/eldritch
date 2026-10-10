@@ -79,26 +79,22 @@ pub(crate) fn dispatch_turn_action(cx: &mut Cx, action: &TurnAction) -> EngineOu
         TurnAction::Move {
             investigator,
             destination,
-        } => actions::move_action::move_action(cx, *investigator, *destination),
-        TurnAction::Investigate { investigator } => {
-            actions::investigate::investigate(cx, *investigator)
-        }
-        TurnAction::Resource { investigator } => {
-            actions::resource::resource_action(cx, *investigator)
-        }
-        TurnAction::Draw { investigator } => actions::draw::draw(cx, *investigator),
+        } => actions::r#move::handle(cx, *investigator, *destination),
+        TurnAction::Investigate { investigator } => actions::investigate::handle(cx, *investigator),
+        TurnAction::Resource { investigator } => actions::resource::handle(cx, *investigator),
+        TurnAction::Draw { investigator } => actions::draw::handle(cx, *investigator),
         TurnAction::Fight {
             investigator,
             enemy,
-        } => actions::fight::fight(cx, *investigator, *enemy),
+        } => actions::fight::handle(cx, *investigator, *enemy),
         TurnAction::Evade {
             investigator,
             enemy,
-        } => actions::evade::evade(cx, *investigator, *enemy),
+        } => actions::evade::handle(cx, *investigator, *enemy),
         TurnAction::Engage {
             investigator,
             enemy,
-        } => actions::engage::engage(cx, *investigator, *enemy),
+        } => actions::engage::handle(cx, *investigator, *enemy),
         TurnAction::PlayCard {
             investigator,
             hand_index,
@@ -329,7 +325,7 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // The entered-location half of a Move, re-exposed once the left
             // location's queued `LeftLocation` abilities resolved (#569):
             // auto-engage at the destination and emit `EnteredLocation`.
-            Continuation::MoveEnter(_) => actions::move_action::resume_move_enter(cx),
+            Continuation::MoveEnter(_) => actions::r#move::resume_move_enter(cx),
             // A per-drawer Mythos surge chain: draw the next card (first step or
             // a pending surge), or — chain over — pop itself and advance the
             // loop to the next drawer / post-1.4 window.
