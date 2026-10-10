@@ -2,9 +2,10 @@
 //! pick **suspend in place** — the evaluator leaves the node's
 //! [`EffectFrame::Leaf`](crate::state::EffectFrame::Leaf) on top of the
 //! continuation stack as the prompt. [`resume_effect_choice`] sets the pick on
-//! that frame and re-steps it. The `0 ⇒ reject · 1 ⇒ auto · 2+ ⇒ suspend`
-//! resolver ([`resolve_choice_count`]) is shared by the evaluator and
-//! card-local natives. No replay, no separate choice frame (umbrella §3.4).
+//! that frame and re-steps it. A choice among board entities goes through
+//! [`resolve_grounded_choice`] (`0 ⇒ empty · 1 ⇒ auto · 2+ ⇒ suspend`, plus the
+//! resume re-indexing), which the evaluator's `Chosen` arms and card-local
+//! natives share (#990). No replay, no separate choice frame (umbrella §3.4).
 
 use crate::action::InputResponse;
 use crate::card_registry;
@@ -15,9 +16,10 @@ use crate::engine::{board, Cx, EvalContext};
 use crate::state::{CardCode, Continuation, EffectFrame, GameState, InvestigatorId};
 
 /// Outcome of applying the uniform resolve convention to a count of legal
-/// options (umbrella §3.4 / spec §5). `pub` so card-local natives can apply
-/// the same convention as the evaluator (Crypt Chill 01167).
-pub enum ChoiceResolution {
+/// options (umbrella §3.4 / spec §5). Crate-private: an entity selection goes
+/// through [`resolve_grounded_choice`], which owns the resume protocol on top of
+/// this count; only `ChooseOne` and the search-deck pick count directly.
+pub(crate) enum ChoiceResolution {
     /// Zero legal options — caller applies its printed fallback or rejects.
     Empty,
     /// Exactly one — auto-bind this index, no input.
@@ -29,12 +31,72 @@ pub enum ChoiceResolution {
 /// Map a legal-option count to the resolve convention. When `interactive` is set
 /// (human play, `interactive_acknowledge`), a single option surfaces as a
 /// one-option pick (`Suspend`) instead of auto-binding silently (#466).
-pub fn resolve_choice_count(n: usize, interactive: bool) -> ChoiceResolution {
+pub(crate) fn resolve_choice_count(n: usize, interactive: bool) -> ChoiceResolution {
     match n {
         0 => ChoiceResolution::Empty,
         1 if interactive => ChoiceResolution::Suspend,
         1 => ChoiceResolution::Auto(0),
         _ => ChoiceResolution::Suspend,
+    }
+}
+
+/// What [`resolve_grounded_choice`] hands back to its caller.
+#[derive(Debug)]
+pub enum Grounded<T> {
+    /// The candidate to act on: the lone candidate auto-bound, or the
+    /// controller's pick threaded in on resume.
+    Picked(T),
+    /// There were no candidates. The caller decides what that means: a printed
+    /// fallback (Crypt Chill 01167 deals 2 damage), a skip, or a rejection.
+    Empty,
+    /// Return this outcome unchanged. It is the `AwaitingInput` prompt when the
+    /// controller must pick, or `Rejected` when a threaded pick indexes past the
+    /// candidate list.
+    Suspend(EngineOutcome),
+}
+
+/// Offer the controller a choice among board entities (#422, #990): the one way
+/// an evaluator arm or a card-local native grounds a pick.
+///
+/// `candidates` must be enumerated from `state` in a deterministic order,
+/// because a resumed node re-enumerates them and indexes the same list by the
+/// pick. `anchor` names the board entity each candidate renders on, and each
+/// option's label is derived from it (ADR 0011, #989).
+///
+/// - A pick threaded in through
+///   [`EvalContext::chosen_option`] is checked first. In range, it gives
+///   [`Grounded::Picked`]. Out of range, it gives `Suspend(Rejected)`,
+///   whatever the candidate count.
+/// - Otherwise zero candidates give [`Grounded::Empty`], one gives `Picked`
+///   with no prompt, and two or more give `Suspend` with the prompt. Under
+///   `state.interactive_acknowledge` a lone candidate is prompted too (#466).
+///
+/// It pushes nothing. The caller's suspending frame (the effect `Leaf`, or the
+/// designated-action frame) stays on the stack as the prompt and is re-stepped
+/// on resume. On `Picked`, the caller binds the candidate and clears the
+/// transient pick (`set_chosen_option(None)`) if it threads the context onward.
+pub fn resolve_grounded_choice<T: Clone>(
+    state: &GameState,
+    ctx: &EvalContext,
+    candidates: &[T],
+    prompt: &str,
+    anchor: impl Fn(&T) -> OptionTarget,
+) -> Grounded<T> {
+    if let Some(OptionId(i)) = ctx.chosen_option() {
+        return match candidates.get(i as usize) {
+            Some(c) => Grounded::Picked(c.clone()),
+            None => Grounded::Suspend(EngineOutcome::Rejected {
+                reason: format!("{prompt}: pick {i} out of range (0..{})", candidates.len()).into(),
+            }),
+        };
+    }
+    match resolve_choice_count(candidates.len(), state.interactive_acknowledge) {
+        ChoiceResolution::Empty => Grounded::Empty,
+        ChoiceResolution::Auto(i) => Grounded::Picked(candidates[i].clone()),
+        ChoiceResolution::Suspend => {
+            let anchors: Vec<_> = candidates.iter().map(anchor).collect();
+            Grounded::Suspend(awaiting_selection(state, prompt, &anchors))
+        }
     }
 }
 
@@ -174,9 +236,9 @@ pub(crate) fn card_name(code: &CardCode) -> String {
 ///
 /// Two callers: the evaluator's `Effect::ChooseOne` step, and the skill-test
 /// substitution offer (Mind over Matter 01036), whose source has left play and
-/// so passes no anchor. Every other suspend goes through
-/// [`awaiting_selection`] and keeps the
-/// [`Selection`](crate::engine::PromptNature::Selection) default.
+/// so passes no anchor. Every other suspend keeps the
+/// [`Selection`](crate::engine::PromptNature::Selection) default, whether it is
+/// built by [`awaiting_selection`], [`awaiting_choice`], or a builder of its own.
 pub(crate) fn awaiting_decision(
     prompt: impl Into<String>,
     labels: Vec<String>,
@@ -198,8 +260,9 @@ pub(crate) fn awaiting_decision(
 /// offered option, each **un-anchored** (no board home, so the host renders it in
 /// the prompt banner). Used by the search-deck pick, whose options are cards in a
 /// deck with no board surface (ADR 0015 excludes it), labelled by [`card_name`].
-/// Card-local native-leaf choices went the other way in #950:
-/// [`suspend_for_native_choice`] takes an anchor per option.
+/// Card-local native choices went the other way in #950: they are entity
+/// selections, offered through [`resolve_grounded_choice`] with an anchor per
+/// option.
 pub(crate) fn awaiting_choice(prompt: impl Into<String>, labels: Vec<String>) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_single(
@@ -208,26 +271,6 @@ pub(crate) fn awaiting_choice(prompt: impl Into<String>, labels: Vec<String>) ->
         ),
         resume_token: ResumeToken(0),
     }
-}
-
-/// Suspend a card-local native leaf for a controller pick (#422): build the
-/// `AwaitingInput` from one anchor per offered option, in offered order. A
-/// native's options are board entities, so each names the surface it renders on
-/// (ADR 0011, #950), and each option's label is derived from its anchor (#989).
-/// The native's `Leaf` frame stays on the stack;
-/// resume re-invokes the native with the pick threaded via
-/// [`EvalContext::chosen_option`](crate::engine::EvalContext::chosen_option).
-/// The native re-enumerates its candidates and indexes by the picked
-/// [`OptionId`]. (`cx`/`tag`/`ctx` are accepted for call-site compatibility; the
-/// frame management lives in the evaluator's native step.)
-pub fn suspend_for_native_choice(
-    cx: &mut Cx,
-    prompt: impl Into<String>,
-    anchors: &[OptionTarget],
-    _tag: &str,
-    _ctx: &EvalContext,
-) -> EngineOutcome {
-    awaiting_selection(cx.state, prompt, anchors)
 }
 
 /// Resume an effect node suspended in place for a controller pick (#422): the
@@ -564,6 +607,152 @@ mod tests {
             "NOT_A_CARD"
         );
         assert_eq!(card_name(&CardCode::new("NOT_A_CARD")), "NOT_A_CARD");
+    }
+
+    /// `ctx` with `pick` threaded in, as resume re-steps a suspended node.
+    fn picking(pick: u32) -> EvalContext {
+        let mut ctx = EvalContext::for_controller(InvestigatorId(1));
+        ctx.set_chosen_option(Some(OptionId(pick)));
+        ctx
+    }
+
+    fn location_anchor(id: &LocationId) -> OptionTarget {
+        OptionTarget::Location(*id)
+    }
+
+    #[test]
+    fn grounded_choice_auto_picks_a_lone_candidate_without_a_prompt() {
+        let state = labelled_board();
+        let ctx = EvalContext::for_controller(InvestigatorId(1));
+        let out = resolve_grounded_choice(
+            &state,
+            &ctx,
+            &[LocationId(10)],
+            "Choose a location",
+            location_anchor,
+        );
+        assert!(matches!(out, Grounded::Picked(LocationId(10))));
+    }
+
+    #[test]
+    fn grounded_choice_surfaces_a_lone_candidate_under_the_interactive_flag() {
+        // #466: in human play a lone candidate is a one-option pick.
+        let mut state = labelled_board();
+        state.interactive_acknowledge = true;
+        let ctx = EvalContext::for_controller(InvestigatorId(1));
+        let out = resolve_grounded_choice(
+            &state,
+            &ctx,
+            &[LocationId(10)],
+            "Choose a location",
+            location_anchor,
+        );
+        let Grounded::Suspend(EngineOutcome::AwaitingInput { request, .. }) = out else {
+            panic!("expected a one-option suspend");
+        };
+        assert_eq!(request.options.len(), 1);
+    }
+
+    #[test]
+    fn grounded_choice_hands_an_empty_candidate_list_back_to_the_caller() {
+        let state = labelled_board();
+        let ctx = EvalContext::for_controller(InvestigatorId(1));
+        let out = resolve_grounded_choice(
+            &state,
+            &ctx,
+            &[] as &[LocationId],
+            "Choose a location",
+            location_anchor,
+        );
+        assert!(matches!(out, Grounded::Empty));
+    }
+
+    #[test]
+    fn grounded_choice_anchors_enemy_options() {
+        let ctx = EvalContext::for_controller(InvestigatorId(1));
+        let state = GameStateBuilder::new()
+            .with_enemy(test_support::test_enemy(4, "Ghoul Minion"))
+            .with_enemy(test_support::test_enemy(9, "Ravenous Ghoul"))
+            .build();
+        let out = resolve_grounded_choice(
+            &state,
+            &ctx,
+            &[EnemyId(4), EnemyId(9)],
+            "Choose an enemy",
+            |id| OptionTarget::Enemy(*id),
+        );
+        let Grounded::Suspend(EngineOutcome::AwaitingInput { request, .. }) = out else {
+            panic!("2 candidates suspend for a pick");
+        };
+        assert_eq!(request.prompt, "Choose an enemy");
+        assert_eq!(request.options.len(), 2);
+        assert_eq!(request.options[0].id, OptionId(0));
+        assert_eq!(
+            request.options[0].target,
+            Some(OptionTarget::Enemy(EnemyId(4)))
+        );
+        assert_eq!(request.options[0].label, "Ghoul Minion");
+        assert_eq!(request.options[1].id, OptionId(1));
+        assert_eq!(
+            request.options[1].target,
+            Some(OptionTarget::Enemy(EnemyId(9)))
+        );
+        assert_eq!(request.options[1].label, "Ravenous Ghoul");
+    }
+
+    /// Investigator candidates anchor to their investigator card (#950) and are
+    /// labelled with that card's name (#989).
+    #[test]
+    fn grounded_choice_anchors_investigators_to_their_card() {
+        let ctx = EvalContext::for_controller(InvestigatorId(1));
+        let state = GameStateBuilder::new()
+            .with_investigator(test_support::test_investigator(1))
+            .with_investigator(test_support::test_investigator(2))
+            .build();
+        let cands = [InvestigatorId(1), InvestigatorId(2)];
+        let out = resolve_grounded_choice(&state, &ctx, &cands, "Choose an investigator", |id| {
+            state.investigators[id].card_anchor()
+        });
+        let Grounded::Suspend(EngineOutcome::AwaitingInput { request, .. }) = out else {
+            panic!("2 candidates suspend for a pick");
+        };
+        assert_eq!(request.options.len(), 2);
+        for (option, id) in request.options.iter().zip(cands) {
+            assert_eq!(option.target, Some(state.investigators[&id].card_anchor()));
+            assert_eq!(option.label, "Test Investigator");
+        }
+    }
+
+    #[test]
+    fn grounded_choice_picks_the_threaded_candidate_on_resume() {
+        let state = labelled_board();
+        let out = resolve_grounded_choice(
+            &state,
+            &picking(1),
+            &[EnemyId(4), EnemyId(9)],
+            "Choose an enemy",
+            |id| OptionTarget::Enemy(*id),
+        );
+        assert!(matches!(out, Grounded::Picked(EnemyId(9))));
+    }
+
+    /// The threaded pick is checked before the candidates are counted, so an
+    /// out-of-range pick is rejected whatever the list's length (#990).
+    #[test]
+    fn grounded_choice_rejects_an_out_of_range_pick_at_any_candidate_count() {
+        let state = labelled_board();
+        let lists: [&[EnemyId]; 3] = [&[], &[EnemyId(4)], &[EnemyId(4), EnemyId(9)]];
+        for candidates in lists {
+            let out =
+                resolve_grounded_choice(&state, &picking(2), candidates, "Choose an enemy", |id| {
+                    OptionTarget::Enemy(*id)
+                });
+            assert!(
+                matches!(out, Grounded::Suspend(EngineOutcome::Rejected { .. })),
+                "pick 2 of {} candidates must be rejected",
+                candidates.len(),
+            );
+        }
     }
 
     #[test]

@@ -78,7 +78,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::card_registry::{self, CardRegistry};
 use crate::engine::board::{self, Placement};
-use crate::engine::dispatch::choice::ChoiceResolution;
+use crate::engine::dispatch::choice::{resolve_grounded_choice, ChoiceResolution, Grounded};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{
     self, act_agenda, actions, cards, choice, combat, elimination, emit, skill_test, threat_area,
@@ -1931,44 +1931,19 @@ fn ground_chosen_targets(
     Ok(eval_ctx)
 }
 
-/// Resolve a grounded `*::Chosen` pick against its enumerated candidates
-/// (#422): bind `candidates[chosen_option]` (clearing the transient pick), or —
-/// on 2+ candidates with no pick yet — return the `AwaitingInput` prompt (the
-/// `Leaf` step re-pushes itself as the suspension). `target` anchors each
-/// candidate, and each option's label is derived from that anchor (#989).
-/// `bind` applies the chosen id to the context; resume re-enumerates the same
-/// deterministic candidate list and indexes it.
-fn resolve_grounded_choice<Id: Copy>(
-    state: &GameState,
-    eval_ctx: EvalContext,
-    candidates: &[Id],
+/// Map a `*::Chosen` arm's [`Grounded`] result to the step's flow: the picked
+/// candidate, or the outcome to return. An empty candidate list rejects with the
+/// arm's own `empty_reason`.
+fn picked_or_reject<T>(
+    grounded: Grounded<T>,
     empty_reason: &'static str,
-    prompt: &'static str,
-    target: impl Fn(&Id) -> OptionTarget,
-    bind: impl Fn(Id) -> EvalContext,
-) -> Result<EvalContext, EngineOutcome> {
-    match choice::resolve_choice_count(candidates.len(), state.interactive_acknowledge) {
-        ChoiceResolution::Empty => Err(EngineOutcome::Rejected {
+) -> Result<T, EngineOutcome> {
+    match grounded {
+        Grounded::Picked(c) => Ok(c),
+        Grounded::Empty => Err(EngineOutcome::Rejected {
             reason: empty_reason.into(),
         }),
-        ChoiceResolution::Auto(i) => Ok(bind(candidates[i])),
-        ChoiceResolution::Suspend => {
-            if let Some(OptionId(i)) = eval_ctx.chosen_option() {
-                match candidates.get(i as usize) {
-                    Some(&id) => Ok(bind(id)),
-                    None => Err(EngineOutcome::Rejected {
-                        reason: format!(
-                            "{prompt}: pick {i} out of range (0..{})",
-                            candidates.len()
-                        )
-                        .into(),
-                    }),
-                }
-            } else {
-                let anchors: Vec<_> = candidates.iter().map(target).collect();
-                Err(choice::awaiting_selection(state, prompt, &anchors))
-            }
-        }
+        Grounded::Suspend(outcome) => Err(outcome),
     }
 }
 
@@ -2009,20 +1984,20 @@ fn ground_investigator_choice(
     if candidates.is_empty() && !in_scope.is_empty() {
         return Err(EngineOutcome::Done);
     }
-    resolve_grounded_choice(
-        cx.state,
-        eval_ctx,
-        &candidates,
+    let id = picked_or_reject(
+        resolve_grounded_choice(
+            cx.state,
+            &eval_ctx,
+            &candidates,
+            "Choose an investigator",
+            |id| cx.state.investigators[id].card_anchor(),
+        ),
         "Chosen investigator: no candidate in scope",
-        "Choose an investigator",
-        |id| cx.state.investigators[id].card_anchor(),
-        |id| {
-            let mut ctx = eval_ctx;
-            ctx.set_chosen_investigator(id);
-            ctx.set_chosen_option(None);
-            ctx
-        },
-    )
+    )?;
+    let mut ctx = eval_ctx;
+    ctx.set_chosen_investigator(id);
+    ctx.set_chosen_option(None);
+    Ok(ctx)
 }
 
 /// Ground a `LocationTarget::Chosen` against its [`LocationSet`]: candidates are
@@ -2034,20 +2009,20 @@ fn ground_location_choice(
     set: LocationSet,
 ) -> Result<EvalContext, EngineOutcome> {
     let candidates = location_candidates(cx.state, eval_ctx.controller, set);
-    resolve_grounded_choice(
-        cx.state,
-        eval_ctx,
-        &candidates,
+    let id = picked_or_reject(
+        resolve_grounded_choice(
+            cx.state,
+            &eval_ctx,
+            &candidates,
+            "Choose a location",
+            |id| OptionTarget::Location(*id),
+        ),
         "Chosen location: no candidate in scope",
-        "Choose a location",
-        |id| OptionTarget::Location(*id),
-        |id| {
-            let mut ctx = eval_ctx;
-            ctx.set_chosen_location(id);
-            ctx.set_chosen_option(None);
-            ctx
-        },
-    )
+    )?;
+    let mut ctx = eval_ctx;
+    ctx.set_chosen_location(id);
+    ctx.set_chosen_option(None);
+    Ok(ctx)
 }
 
 /// Ground an `EnemyTarget::Chosen` against its [`EntityScope`]: candidates from
@@ -2058,20 +2033,16 @@ fn ground_enemy_choice(
     scope: EntityScope,
 ) -> Result<EvalContext, EngineOutcome> {
     let candidates = combat::enemies_in_scope(cx.state, eval_ctx.controller, scope);
-    resolve_grounded_choice(
-        cx.state,
-        eval_ctx,
-        &candidates,
+    let id = picked_or_reject(
+        resolve_grounded_choice(cx.state, &eval_ctx, &candidates, "Choose an enemy", |id| {
+            OptionTarget::Enemy(*id)
+        }),
         "Chosen enemy: no candidate in scope",
-        "Choose an enemy",
-        |id| OptionTarget::Enemy(*id),
-        |id| {
-            let mut ctx = eval_ctx;
-            ctx.set_chosen_enemy(id);
-            ctx.set_chosen_option(None);
-            ctx
-        },
-    )
+    )?;
+    let mut ctx = eval_ctx;
+    ctx.set_chosen_enemy(id);
+    ctx.set_chosen_option(None);
+    Ok(ctx)
 }
 
 /// Ground a designated **Fight**'s target against the co-located-enemy list.
@@ -2088,28 +2059,27 @@ fn ground_enemy_choice(
 ///
 /// On resume the evaluator re-enters the same
 /// [`Designated`](crate::state::EffectFrame::Designated) step; `chosen_option`
-/// is set and the right branch of `resolve_grounded_choice` picks from the
-/// same deterministic list.
+/// is set and `resolve_grounded_choice` picks from the same deterministic list.
 fn ground_fight_target_choice(
     cx: &mut Cx,
     eval_ctx: EvalContext,
 ) -> Result<EvalContext, EngineOutcome> {
     let candidates =
         combat::enemies_in_scope(cx.state, eval_ctx.controller, combat::fight_target_scope());
-    resolve_grounded_choice(
-        cx.state,
-        eval_ctx,
-        &candidates,
+    let id = picked_or_reject(
+        resolve_grounded_choice(
+            cx.state,
+            &eval_ctx,
+            &candidates,
+            "Choose an enemy to attack",
+            |id| OptionTarget::Enemy(*id),
+        ),
         "Fight: no enemy at your location",
-        "Choose an enemy to attack",
-        |id| OptionTarget::Enemy(*id),
-        |id| {
-            let mut ctx = eval_ctx;
-            ctx.set_chosen_enemy(id);
-            ctx.set_chosen_option(None);
-            ctx
-        },
-    )
+    )?;
+    let mut ctx = eval_ctx;
+    ctx.set_chosen_enemy(id);
+    ctx.set_chosen_option(None);
+    Ok(ctx)
 }
 
 /// Investigators matching an [`EntityScope`](card_dsl::dsl::EntityScope), in
