@@ -89,8 +89,8 @@ use crate::event::Event;
 use crate::scenario::{ResolutionId, ScenarioEnding};
 use crate::state::{
     AbilitySource, AdvanceTrigger, CardCode, CardInstanceId, Continuation, DamageSource,
-    DifficultyBasis, EffectFrame, EnemyId, GameState, Investigator, InvestigatorId, Lifetime,
-    LocationId, Owner, PlayFromHandFrame, RecordedModifier, SkillTestFollowUp,
+    DifficultyBasis, EffectFrame, EnemyId, GameState, InvestigatorId, Lifetime, LocationId, Owner,
+    PlayFromHandFrame, RecordedModifier, SkillTestFollowUp,
 };
 
 /// Failure margin of the just-resolved skill test (bound only while running an
@@ -1004,7 +1004,7 @@ fn apply_search_deck(
                         }
                     }
                 } else {
-                    let labels = eligible.iter().map(|(_, c)| c.0.clone()).collect();
+                    let labels = eligible.iter().map(|(_, c)| choice::card_name(c)).collect();
                     suspend_leaf_in_place(cx, node, eval_ctx);
                     return choice::awaiting_choice("Search: choose a card to take", labels);
                 }
@@ -1934,23 +1934,20 @@ fn ground_chosen_targets(
 /// Resolve a grounded `*::Chosen` pick against its enumerated candidates
 /// (#422): bind `candidates[chosen_option]` (clearing the transient pick), or —
 /// on 2+ candidates with no pick yet — return the `AwaitingInput` prompt (the
-/// `Leaf` step re-pushes itself as the suspension). `bind` applies the chosen
-/// id to the context; resume re-enumerates the same deterministic candidate list
-/// and indexes it.
-// Six closures/params past the resolver essentials (S5 added the `target`
-// anchor); a param struct would obscure the four thin `ground_*` call sites.
-#[allow(clippy::too_many_arguments)]
+/// `Leaf` step re-pushes itself as the suspension). `target` anchors each
+/// candidate, and each option's label is derived from that anchor (#989).
+/// `bind` applies the chosen id to the context; resume re-enumerates the same
+/// deterministic candidate list and indexes it.
 fn resolve_grounded_choice<Id: Copy>(
+    state: &GameState,
     eval_ctx: EvalContext,
     candidates: &[Id],
     empty_reason: &'static str,
     prompt: &'static str,
-    label: impl Fn(&Id) -> String,
-    target: impl Fn(&Id) -> Option<OptionTarget>,
+    target: impl Fn(&Id) -> OptionTarget,
     bind: impl Fn(Id) -> EvalContext,
-    interactive: bool,
 ) -> Result<EvalContext, EngineOutcome> {
-    match choice::resolve_choice_count(candidates.len(), interactive) {
+    match choice::resolve_choice_count(candidates.len(), state.interactive_acknowledge) {
         ChoiceResolution::Empty => Err(EngineOutcome::Rejected {
             reason: empty_reason.into(),
         }),
@@ -1968,11 +1965,8 @@ fn resolve_grounded_choice<Id: Copy>(
                     }),
                 }
             } else {
-                let options = candidates
-                    .iter()
-                    .map(|id| (label(id), target(id)))
-                    .collect();
-                Err(choice::awaiting_choice_anchored(prompt, options))
+                let anchors: Vec<_> = candidates.iter().map(target).collect();
+                Err(choice::awaiting_selection(state, prompt, &anchors))
             }
         }
     }
@@ -2016,24 +2010,18 @@ fn ground_investigator_choice(
         return Err(EngineOutcome::Done);
     }
     resolve_grounded_choice(
+        cx.state,
         eval_ctx,
         &candidates,
         "Chosen investigator: no candidate in scope",
         "Choose an investigator",
-        |id| format!("{id:?}"),
-        |id| {
-            cx.state
-                .investigators
-                .get(id)
-                .map(Investigator::card_anchor)
-        },
+        |id| cx.state.investigators[id].card_anchor(),
         |id| {
             let mut ctx = eval_ctx;
             ctx.set_chosen_investigator(id);
             ctx.set_chosen_option(None);
             ctx
         },
-        cx.state.interactive_acknowledge,
     )
 }
 
@@ -2047,19 +2035,18 @@ fn ground_location_choice(
 ) -> Result<EvalContext, EngineOutcome> {
     let candidates = location_candidates(cx.state, eval_ctx.controller, set);
     resolve_grounded_choice(
+        cx.state,
         eval_ctx,
         &candidates,
         "Chosen location: no candidate in scope",
         "Choose a location",
-        |id| format!("{id:?}"),
-        |id| Some(OptionTarget::Location(*id)),
+        |id| OptionTarget::Location(*id),
         |id| {
             let mut ctx = eval_ctx;
             ctx.set_chosen_location(id);
             ctx.set_chosen_option(None);
             ctx
         },
-        cx.state.interactive_acknowledge,
     )
 }
 
@@ -2072,19 +2059,18 @@ fn ground_enemy_choice(
 ) -> Result<EvalContext, EngineOutcome> {
     let candidates = combat::enemies_in_scope(cx.state, eval_ctx.controller, scope);
     resolve_grounded_choice(
+        cx.state,
         eval_ctx,
         &candidates,
         "Chosen enemy: no candidate in scope",
         "Choose an enemy",
-        |id| format!("{id:?}"),
-        |id| Some(OptionTarget::Enemy(*id)),
+        |id| OptionTarget::Enemy(*id),
         |id| {
             let mut ctx = eval_ctx;
             ctx.set_chosen_enemy(id);
             ctx.set_chosen_option(None);
             ctx
         },
-        cx.state.interactive_acknowledge,
     )
 }
 
@@ -2111,19 +2097,18 @@ fn ground_fight_target_choice(
     let candidates =
         combat::enemies_in_scope(cx.state, eval_ctx.controller, combat::fight_target_scope());
     resolve_grounded_choice(
+        cx.state,
         eval_ctx,
         &candidates,
         "Fight: no enemy at your location",
         "Choose an enemy to attack",
-        |id| format!("{id:?}"),
-        |id| Some(OptionTarget::Enemy(*id)),
+        |id| OptionTarget::Enemy(*id),
         |id| {
             let mut ctx = eval_ctx;
             ctx.set_chosen_enemy(id);
             ctx.set_chosen_option(None);
             ctx
         },
-        cx.state.interactive_acknowledge,
     )
 }
 

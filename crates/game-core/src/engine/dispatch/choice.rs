@@ -7,11 +7,12 @@
 //! card-local natives. No replay, no separate choice frame (umbrella §3.4).
 
 use crate::action::InputResponse;
+use crate::card_registry;
 use crate::engine::outcome::{
     ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
 };
-use crate::engine::{Cx, EvalContext};
-use crate::state::{Continuation, EffectFrame, GameState, InvestigatorId};
+use crate::engine::{board, Cx, EvalContext};
+use crate::state::{CardCode, Continuation, EffectFrame, GameState, InvestigatorId};
 
 /// Outcome of applying the uniform resolve convention to a count of legal
 /// options (umbrella §3.4 / spec §5). `pub` so card-local natives can apply
@@ -37,67 +38,127 @@ pub fn resolve_choice_count(n: usize, interactive: bool) -> ChoiceResolution {
     }
 }
 
-/// Build the `AwaitingInput` for a controller choice from one `(label, anchor)`
-/// per offered option, in offered order (`OptionId(i)` is the index). Like
-/// [`awaiting_choice`] but each option carries its board [`OptionTarget`] so a
-/// host renders it on the chosen entity (S5, #540). Pushes **nothing** — the
+/// Build the `AwaitingInput` for a controller pick among board entities, one
+/// anchor per offered option in offered order (`OptionId(i)` is the index).
+/// Each option renders on the entity its anchor names (S5, #540), and its label
+/// is derived from that anchor by [`anchor_label`], so the two cannot disagree
+/// and no caller can leave an option unlabelled (#989). Pushes **nothing**: the
 /// suspending effect node's own `Leaf` frame stays on the stack as the prompt
-/// (#422); resume re-derives the option set and validates the pick by checked
-/// indexing.
-pub(crate) fn awaiting_choice_anchored(
+/// (#422), and resume re-derives the option set and validates the pick by
+/// checked indexing.
+pub(crate) fn awaiting_selection(
+    state: &GameState,
     prompt: impl Into<String>,
-    options: Vec<(String, Option<OptionTarget>)>,
+    anchors: &[OptionTarget],
 ) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_single(prompt, choice_options(options)),
+        request: InputRequest::pick_single(
+            prompt,
+            candidate_options(state, anchors, OptionTarget::clone),
+        ),
         resume_token: ResumeToken(0),
     }
 }
 
 /// One `(label, anchor)` per offered option to the `ChoiceOption` list a request
-/// carries, `OptionId(i)` being the offered index. Shared by the two builders
-/// above and below so the index convention has one home.
+/// carries, `OptionId(i)` being the offered index. Shared by the un-anchored and
+/// decision builders below.
 fn choice_options(options: Vec<(String, Option<OptionTarget>)>) -> Vec<ChoiceOption> {
     options
         .into_iter()
         .enumerate()
-        .map(|(i, (label, target))| {
-            ChoiceOption::new(
-                OptionId(u32::try_from(i).expect("offered option count fits in u32")),
-                label,
-            )
-            .maybe_at(target)
-        })
+        .map(|(i, (label, target))| ChoiceOption::new(option_id(i), label).maybe_at(target))
         .collect()
 }
 
+/// The [`OptionId`] of the option offered at index `i`: the index convention's
+/// one home.
+fn option_id(i: usize) -> OptionId {
+    OptionId(u32::try_from(i).expect("offered option count fits in u32"))
+}
+
 /// Build the offered options for a candidate list: option `i` is
-/// `candidates[i]`, labelled and anchored by `option` (#205 will make the
-/// labels human). Every candidate here is a board entity, so `option` returns
-/// a bare [`OptionTarget`] rather than an `Option`: a caller cannot leave one
-/// un-anchored and land it in the prompt banner (ADR 0011, #950).
-pub(super) fn candidate_options<T>(
+/// `candidates[i]`, anchored by `anchor` and labelled from that anchor by
+/// [`anchor_label`] (#989). Every candidate here is a board entity, so `anchor`
+/// returns a bare [`OptionTarget`] rather than an `Option`: a caller cannot leave
+/// one un-anchored and land it in the prompt banner (ADR 0011, #950). It supplies
+/// no label, so it cannot forget one or name a different entity than it anchors.
+pub(crate) fn candidate_options<T>(
+    state: &GameState,
     candidates: &[T],
-    option: impl Fn(&T) -> (String, OptionTarget),
+    anchor: impl Fn(&T) -> OptionTarget,
 ) -> Vec<ChoiceOption> {
     candidates
         .iter()
         .enumerate()
         .map(|(i, c)| {
-            let (label, target) = option(c);
-            ChoiceOption::new(
-                OptionId(u32::try_from(i).expect("candidate count fits u32")),
-                label,
-            )
-            .at(target)
+            let target = anchor(c);
+            ChoiceOption::new(option_id(i), anchor_label(state, &target)).at(target)
         })
         .collect()
 }
 
-/// The option for one tied investigator: labelled by id, anchored to their
-/// investigator card.
-pub(super) fn investigator_option(state: &GameState, id: InvestigatorId) -> (String, OptionTarget) {
-    (format!("{id:?}"), state.investigators[&id].card_anchor())
+/// The anchor for one tied investigator: their investigator card (#950).
+pub(super) fn investigator_anchor(state: &GameState, id: InvestigatorId) -> OptionTarget {
+    state.investigators[&id].card_anchor()
+}
+
+/// The player-facing name of the board surface `anchor` names, for an option's
+/// label (#989). A location or enemy reads as its name. A card (in play, in a
+/// threat area, an investigator card, in hand, the current act or agenda) reads
+/// as its card's name via [`card_name`]. An investigator's panel affordances
+/// read as the investigator's name.
+///
+/// Total and panic-free. An anchor naming an entity that isn't in `state` is an
+/// engine bug, because every candidate is enumerated from `state`. It trips a
+/// `debug_assert!` in tests and degrades to a neutral placeholder in a live
+/// game, never to an id's `Debug` form.
+pub(crate) fn anchor_label(state: &GameState, anchor: &OptionTarget) -> String {
+    let found = match anchor {
+        OptionTarget::Location(id) => state.locations.get(id).map(|l| l.name.clone()),
+        OptionTarget::Enemy(id) => state.enemies.get(id).map(|e| e.name.clone()),
+        OptionTarget::CardInstance(id) => {
+            board::find_instance(state, *id).map(|(card, _)| card_name(&card.code))
+        }
+        OptionTarget::HandCard {
+            investigator,
+            hand_index,
+        } => state
+            .investigators
+            .get(investigator)
+            .and_then(|inv| inv.hand.get(usize::from(*hand_index)))
+            .map(card_name),
+        OptionTarget::HandCardByCode { code, .. } => Some(card_name(code)),
+        OptionTarget::Act => state
+            .act_deck
+            .get(state.act_index)
+            .map(|act| card_name(&act.code)),
+        OptionTarget::Agenda => state
+            .agenda_deck
+            .get(state.agenda_index)
+            .map(|agenda| card_name(&agenda.code)),
+        OptionTarget::TurnControl(id)
+        | OptionTarget::ResourcePool(id)
+        | OptionTarget::PlayerDeck(id) => state.investigators.get(id).map(|inv| inv.name.clone()),
+        OptionTarget::EncounterDeck => Some("Encounter deck".to_owned()),
+    };
+    found.unwrap_or_else(|| {
+        debug_assert!(
+            false,
+            "option anchor {anchor:?} names nothing in the game state"
+        );
+        "unknown card".to_owned()
+    })
+}
+
+/// A card's printed name, looked up through the installed card registry's
+/// metadata. Falls back to the bare code when no registry is installed or the
+/// corpus lacks the code, so a gap degrades readably rather than crashing a live
+/// game (#989).
+pub(crate) fn card_name(code: &CardCode) -> String {
+    card_registry::current()
+        .and_then(|r| (r.metadata_for)(code))
+        .map_or_else(|| code.0.clone(), |m| m.name.clone())
 }
 
 /// Build the `AwaitingInput` for a **decision** — a choice among alternatives
@@ -114,7 +175,7 @@ pub(super) fn investigator_option(state: &GameState, id: InvestigatorId) -> (Str
 /// Two callers: the evaluator's `Effect::ChooseOne` step, and the skill-test
 /// substitution offer (Mind over Matter 01036), whose source has left play and
 /// so passes no anchor. Every other suspend goes through
-/// [`awaiting_choice_anchored`] and keeps the
+/// [`awaiting_selection`] and keeps the
 /// [`Selection`](crate::engine::PromptNature::Selection) default.
 pub(crate) fn awaiting_decision(
     prompt: impl Into<String>,
@@ -135,32 +196,38 @@ pub(crate) fn awaiting_decision(
 
 /// Build the `AwaitingInput` for a controller choice from one render label per
 /// offered option, each **un-anchored** (no board home, so the host renders it in
-/// the prompt banner). Delegates to [`awaiting_choice_anchored`]. Used by the
-/// search-deck pick, whose options are cards in a deck with no board surface
-/// (ADR 0015 excludes it). Card-local native-leaf choices went the other way
-/// in #950: [`suspend_for_native_choice`] takes an anchor per option.
+/// the prompt banner). Used by the search-deck pick, whose options are cards in a
+/// deck with no board surface (ADR 0015 excludes it), labelled by [`card_name`].
+/// Card-local native-leaf choices went the other way in #950:
+/// [`suspend_for_native_choice`] takes an anchor per option.
 pub(crate) fn awaiting_choice(prompt: impl Into<String>, labels: Vec<String>) -> EngineOutcome {
-    awaiting_choice_anchored(prompt, labels.into_iter().map(|l| (l, None)).collect())
+    EngineOutcome::AwaitingInput {
+        request: InputRequest::pick_single(
+            prompt,
+            choice_options(labels.into_iter().map(|l| (l, None)).collect()),
+        ),
+        resume_token: ResumeToken(0),
+    }
 }
 
 /// Suspend a card-local native leaf for a controller pick (#422): build the
-/// `AwaitingInput` from one `(label, anchor)` per offered option, in offered
-/// order. A native's options are board entities, so each names the surface it
-/// renders on (ADR 0011, #950); an option with no board home spells it `None`
-/// explicitly rather than by default. The native's `Leaf` frame stays on the stack;
+/// `AwaitingInput` from one anchor per offered option, in offered order. A
+/// native's options are board entities, so each names the surface it renders on
+/// (ADR 0011, #950), and each option's label is derived from its anchor (#989).
+/// The native's `Leaf` frame stays on the stack;
 /// resume re-invokes the native with the pick threaded via
 /// [`EvalContext::chosen_option`](crate::engine::EvalContext::chosen_option).
 /// The native re-enumerates its candidates and indexes by the picked
 /// [`OptionId`]. (`cx`/`tag`/`ctx` are accepted for call-site compatibility; the
 /// frame management lives in the evaluator's native step.)
 pub fn suspend_for_native_choice(
-    _cx: &mut Cx,
+    cx: &mut Cx,
     prompt: impl Into<String>,
-    options: Vec<(String, Option<OptionTarget>)>,
+    anchors: &[OptionTarget],
     _tag: &str,
     _ctx: &EvalContext,
 ) -> EngineOutcome {
-    awaiting_choice_anchored(prompt, options)
+    awaiting_selection(cx.state, prompt, anchors)
 }
 
 /// Resume an effect node suspended in place for a controller pick (#422): the
@@ -213,7 +280,10 @@ mod tests {
     use crate::engine::dispatch;
     use crate::engine::evaluator::{self, EvalContext};
     use crate::engine::outcome::PromptNature;
-    use crate::state::{EnemyId, GameState, GameStateBuilder, InvestigatorId};
+    use crate::state::{
+        CardInPlay, CardInstanceId, EnemyId, GameState, GameStateBuilder, InvestigatorId,
+        LocationId, Owner,
+    };
     use crate::test_support;
 
     /// A `ChooseOne` branch that is **live** — one `effect_can_change_state`
@@ -362,12 +432,14 @@ mod tests {
     }
 
     #[test]
-    fn awaiting_choice_anchored_carries_per_option_targets() {
-        let out = awaiting_choice_anchored(
-            "Choose an enemy",
-            vec![
-                ("Ghoul".into(), Some(OptionTarget::Enemy(EnemyId(1)))),
-                ("Nobody".into(), None),
+    fn awaiting_selection_anchors_and_names_each_option() {
+        let state = labelled_board();
+        let out = awaiting_selection(
+            &state,
+            "Choose a target",
+            &[
+                OptionTarget::Enemy(EnemyId(1)),
+                OptionTarget::Location(LocationId(10)),
             ],
         );
         let EngineOutcome::AwaitingInput { request, .. } = out else {
@@ -378,7 +450,9 @@ mod tests {
             request.options[0].target,
             Some(OptionTarget::Enemy(EnemyId(1)))
         );
-        assert_eq!(request.options[1].target, None);
+        assert_eq!(request.options[0].label, "Ghoul Minion");
+        assert_eq!(request.options[1].id, OptionId(1));
+        assert_eq!(request.options[1].label, "Study");
     }
 
     #[test]
@@ -418,6 +492,78 @@ mod tests {
         assert_eq!(request.nature, PromptNature::Decision);
         assert_eq!(request.target, None);
         assert!(request.options.iter().all(|o| o.target.is_none()));
+    }
+
+    /// A board carrying one of every entity an entity selection anchors to:
+    /// investigator 1 (investigator card instance 100) in the Study (10), a
+    /// Ghoul Minion (enemy 1) there, and a [`test_support::TEST_ASSET`] in play
+    /// as instance 7.
+    fn labelled_board() -> GameState {
+        let mut me = test_support::test_investigator(1);
+        me.investigator_card.instance_id = CardInstanceId(100);
+        me.cards_in_play.push(CardInPlay::enter_play(
+            CardCode::new(test_support::TEST_ASSET),
+            CardInstanceId(7),
+            Owner::Investigator(InvestigatorId(1)),
+        ));
+        GameStateBuilder::default()
+            .with_location(test_support::test_location(10, "Study"))
+            .with_investigator_at(me, LocationId(10))
+            .with_enemy(test_support::test_enemy(1, "Ghoul Minion"))
+            .build()
+    }
+
+    #[test]
+    fn a_location_option_is_labelled_with_the_location_name() {
+        let state = labelled_board();
+        assert_eq!(
+            anchor_label(&state, &OptionTarget::Location(LocationId(10))),
+            "Study"
+        );
+    }
+
+    #[test]
+    fn an_enemy_option_is_labelled_with_the_enemy_name() {
+        let state = labelled_board();
+        assert_eq!(
+            anchor_label(&state, &OptionTarget::Enemy(EnemyId(1))),
+            "Ghoul Minion"
+        );
+    }
+
+    #[test]
+    fn a_card_instance_option_is_labelled_with_the_card_name() {
+        let state = labelled_board();
+        assert_eq!(
+            anchor_label(&state, &OptionTarget::CardInstance(CardInstanceId(7))),
+            "Test Asset"
+        );
+    }
+
+    #[test]
+    fn an_investigator_card_option_is_labelled_with_the_investigator_card_name() {
+        let state = labelled_board();
+        let anchor = state.investigators[&InvestigatorId(1)].card_anchor();
+        assert_eq!(anchor, OptionTarget::CardInstance(CardInstanceId(100)));
+        // The registry's name for the investigator card, not the fixture's
+        // `Investigator::name`.
+        assert_eq!(anchor_label(&state, &anchor), "Test Investigator");
+    }
+
+    #[test]
+    fn a_card_the_registry_does_not_know_falls_back_to_its_code() {
+        let mut state = labelled_board();
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .cards_in_play[0]
+            .code = CardCode::new("NOT_A_CARD");
+        assert_eq!(
+            anchor_label(&state, &OptionTarget::CardInstance(CardInstanceId(7))),
+            "NOT_A_CARD"
+        );
+        assert_eq!(card_name(&CardCode::new("NOT_A_CARD")), "NOT_A_CARD");
     }
 
     #[test]

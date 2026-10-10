@@ -100,11 +100,17 @@ fn dynamite_blast(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
         ChoiceResolution::Auto(i) => blast_location(cx, controller, locations[i]),
         // 2+ → suspend for the controller's pick.
         ChoiceResolution::Suspend => {
-            let options = locations
+            let anchors: Vec<_> = locations
                 .iter()
-                .map(|id| (format!("{id:?}"), Some(OptionTarget::Location(*id))))
+                .map(|id| OptionTarget::Location(*id))
                 .collect();
-            engine::suspend_for_native_choice(cx, "Choose a location to blast", options, BLAST, ctx)
+            engine::suspend_for_native_choice(
+                cx,
+                "Choose a location to blast",
+                &anchors,
+                BLAST,
+                ctx,
+            )
         }
     }
 }

@@ -423,16 +423,20 @@ fn heal_target_chosen_suspends_when_two_are_co_located() {
 #[test]
 fn grounded_choice_anchors_enemy_options() {
     let ctx = EvalContext::for_controller(InvestigatorId(1));
+    let state = GameStateBuilder::new()
+        .with_enemy(test_support::test_enemy(4, "Ghoul Minion"))
+        .with_enemy(test_support::test_enemy(9, "Ravenous Ghoul"))
+        .build();
     let cands = [EnemyId(4), EnemyId(9)];
+    // 2 candidates → suspend regardless of the interactive flag.
     let out = resolve_grounded_choice(
+        &state,
         ctx,
         &cands,
         "empty",
         "Choose an enemy",
-        |id| format!("{id:?}"),
-        |id| Some(OptionTarget::Enemy(*id)),
+        |id| OptionTarget::Enemy(*id),
         |_id| ctx,
-        false, // 2 candidates → suspend regardless of the flag
     );
     match out {
         Err(EngineOutcome::AwaitingInput { request, .. }) => {
@@ -440,32 +444,43 @@ fn grounded_choice_anchors_enemy_options() {
                 request.options[0].target,
                 Some(OptionTarget::Enemy(EnemyId(4)))
             );
+            assert_eq!(request.options[0].label, "Ghoul Minion");
             assert_eq!(
                 request.options[1].target,
                 Some(OptionTarget::Enemy(EnemyId(9)))
             );
+            assert_eq!(request.options[1].label, "Ravenous Ghoul");
         }
         other => panic!("2 candidates suspend for a pick, got {other:?}"),
     }
 }
 
+/// Investigator candidates anchor to their investigator card (#950) and are
+/// labelled with that card's name (#989). Replaces the pre-#950 test that
+/// pinned them un-anchored, which an anchor-only builder can no longer express.
 #[test]
-fn grounded_choice_investigator_stays_unanchored() {
+fn grounded_choice_anchors_investigators_to_their_card() {
     let ctx = EvalContext::for_controller(InvestigatorId(1));
+    let state = GameStateBuilder::new()
+        .with_investigator(test_support::test_investigator(1))
+        .with_investigator(test_support::test_investigator(2))
+        .build();
     let cands = [InvestigatorId(1), InvestigatorId(2)];
     let out = resolve_grounded_choice(
+        &state,
         ctx,
         &cands,
         "empty",
         "Choose an investigator",
-        |id| format!("{id:?}"),
-        |_id| None, // out of scope for S5
+        |id| state.investigators[id].card_anchor(),
         |_id| ctx,
-        false,
     );
     match out {
         Err(EngineOutcome::AwaitingInput { request, .. }) => {
-            assert!(request.options.iter().all(|o| o.target.is_none()));
+            for (option, id) in request.options.iter().zip(cands) {
+                assert_eq!(option.target, Some(state.investigators[&id].card_anchor()));
+                assert_eq!(option.label, "Test Investigator");
+            }
         }
         other => panic!("2 candidates suspend, got {other:?}"),
     }

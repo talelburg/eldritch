@@ -85,6 +85,14 @@ fn blasts_only_the_chosen_location_then_discards_the_event() {
     // Two candidates (your location + the connection) → suspend.
     let s = play(board());
     assert!(!at_turn_menu(&s), "2 candidate locations → choice suspends");
+    // Each option names its location (#989), not the `Debug` form of its id.
+    let labels: Vec<_> = s
+        .prompt()
+        .options
+        .iter()
+        .map(|o| o.label.as_str())
+        .collect();
+    assert_eq!(labels, ["Cellar", "Hallway"]);
     // The event has left hand ("commences being played") but isn't discarded yet.
     assert!(
         s.state().investigators[&INV].hand.is_empty(),

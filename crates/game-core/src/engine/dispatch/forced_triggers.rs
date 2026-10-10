@@ -12,12 +12,11 @@ use std::borrow::Cow;
 use card_dsl::dsl::{Effect, EventTiming};
 
 use crate::action::InputResponse;
-use crate::card_registry;
 use crate::engine::dispatch::emit::TimingEvent;
-use crate::engine::dispatch::{initiation, reaction_windows, trigger_scan};
+use crate::engine::dispatch::{choice, initiation, reaction_windows, trigger_scan};
 use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 use crate::engine::Cx;
-use crate::state::{AcknowledgeForcedFrame, CardCode};
+use crate::state::AcknowledgeForcedFrame;
 
 /// Queue the lone forced ability `event` reaches in the `bucket` cell: push its
 /// effect frame (plus an
@@ -130,16 +129,6 @@ fn is_only_an_advance(effect: &Effect) -> bool {
     matches!(effect, Effect::AdvanceCurrentAct)
 }
 
-/// Display name for the card a forced ability is printed on, for the
-/// [`AcknowledgeForced`](crate::state::Continuation::AcknowledgeForced) prompt.
-/// Resolved via the registry; falls back to the raw code when no
-/// registry/metadata is available (tests).
-fn forced_source_name(code: &CardCode) -> String {
-    card_registry::current()
-        .and_then(|r| (r.metadata_for)(code))
-        .map_or_else(|| code.0.clone(), |m| m.name.clone())
-}
-
 /// Drive a [`Continuation::AcknowledgeForced`](crate::state::Continuation::AcknowledgeForced)
 /// frame (#466): suspend with a one-option `PickSingle` naming the source. The
 /// pick precedes the forced effect's resolution ("confirm before the effect"),
@@ -150,7 +139,7 @@ pub(crate) fn drive_acknowledge_forced(cx: &mut Cx) -> EngineOutcome {
         .continuations
         .top_expect::<AcknowledgeForcedFrame>()
         .candidate;
-    let name = forced_source_name(&candidate.code);
+    let name = choice::card_name(&candidate.code);
     let anchor = reaction_windows::candidate_anchor(candidate);
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_single(
@@ -182,8 +171,8 @@ mod tests {
     use super::*;
     use crate::engine::outcome::OptionTarget;
     use crate::state::{
-        AbilityAddress, AbilitySource, Agenda, CandidateSource, CardInstanceId, Continuation,
-        GameStateBuilder, InvestigatorId, LocationId, ResolutionCandidate,
+        AbilityAddress, AbilitySource, Agenda, CandidateSource, CardCode, CardInstanceId,
+        Continuation, GameStateBuilder, InvestigatorId, LocationId, ResolutionCandidate,
     };
 
     #[test]
