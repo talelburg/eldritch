@@ -24,7 +24,7 @@
 //! - [`fight_candidates`] and [`investigate_location`] are what it answers
 //!   *from*, and the basic-action handlers read them directly, because a basic
 //!   action names its target up front rather than choosing among them:
-//!   `actions::validate_fight_target` asks whether *this* enemy is in the
+//!   `actions::fight::validate_fight_target` asks whether *this* enemy is in the
 //!   candidate list, which is a question `can_perform` deliberately does not
 //!   ask. Sharing the list rather than the predicate is what keeps a designated
 //!   **Fight** and the basic Fight action agreeing on what a legal target is —

@@ -489,7 +489,7 @@ fn step_designated(
 /// > described by the ability.
 ///
 /// Every arm routes through the **same primary the basic action uses**
-/// (`actions::perform_fight` / `actions::perform_investigate` /
+/// (`actions::fight::perform_fight` / `actions::investigate::perform_investigate` /
 /// `elimination::resign_investigator`), passing the modification as its only
 /// difference — so *"a designated Fight is a Fight action"* holds in code rather
 /// than by parallel construction.
@@ -516,7 +516,7 @@ fn perform_designated(
                     reason: "Investigate: no revealed location to investigate".into(),
                 };
             };
-            actions::perform_investigate(
+            actions::investigate::perform_investigate(
                 cx,
                 eval_ctx.controller,
                 location_id,
@@ -579,7 +579,7 @@ fn perform_designated_fight(
         cx.state.enemies.contains_key(&enemy_id),
         "Fight chosen_enemy returned an id absent from state.enemies",
     );
-    actions::perform_fight(
+    actions::fight::perform_fight(
         cx,
         eval_ctx.controller,
         enemy_id,
