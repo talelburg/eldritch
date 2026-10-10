@@ -31,8 +31,8 @@ pub(crate) mod actions;
 // pub(super): the #482 resumable act/agenda-advance sub-process; driven by the
 // `drive` loop and resumed via `resolve_input`.
 pub(super) mod advance_reverse;
-// pub(super): engine/mod.rs re-exports `suspend_for_native_choice` (pub) for
-// the `cards` crate's native-leaf picks (Crypt Chill 01167, Axis A #334).
+// pub(super): engine/mod.rs re-exports `resolve_grounded_choice` (pub) for
+// the `cards` crate's native picks (Crypt Chill 01167, Dynamite Blast 01024).
 pub(super) mod choice;
 // pub(super): evaluator reaches grant_resources via the full path
 // crate::engine::dispatch::cards::grant_resources (a sibling of dispatch).

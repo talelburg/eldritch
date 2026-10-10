@@ -25,7 +25,7 @@ pub(crate) mod pathfinding;
 
 pub use dispatch::act_agenda::{round_end_advance, round_end_advance_affordable};
 pub use dispatch::cards::discard_random_from_hand;
-pub use dispatch::choice::{resolve_choice_count, suspend_for_native_choice, ChoiceResolution};
+pub use dispatch::choice::{resolve_grounded_choice, Grounded};
 pub use dispatch::combat::deal_damage_to_enemy;
 pub use dispatch::elimination::{defeat_investigator, take_damage};
 pub use dispatch::encounter::{reshuffle_encounter_discard, resolve_encounter_card};
