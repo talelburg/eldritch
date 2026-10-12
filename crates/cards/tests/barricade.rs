@@ -36,23 +36,15 @@ fn install() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// A ready, unengaged ghoul (code `code`) at location `at`, with the printed
-/// traits of that card (Elite-ness drives the movement block, read off
-/// `Enemy.traits` as spawns populate it). Hunter-ness and engagement are the
-/// caller's to set — the two scenarios here want opposite answers.
+/// A ready, unengaged ghoul (code `code`) at location `at`. Elite-ness drives
+/// the movement block, and it comes from the real card's printed traits
+/// (looked up by code through the registry), so pass a real code: Ghoul
+/// Priest 01116 is Elite, Ghoul Minion 01160 is not. Hunter-ness and
+/// engagement are the caller's to set — the two scenarios here want opposite
+/// answers.
 fn ghoul(id: u32, code: &str, at: LocationId) -> Enemy {
     let mut e = test_support::test_enemy(id, "Ghoul");
     e.code = CardCode::new(code);
-    e.traits = if code == GHOUL_PRIEST {
-        vec![
-            "Humanoid".into(),
-            "Monster".into(),
-            "Ghoul".into(),
-            "Elite".into(),
-        ]
-    } else {
-        vec!["Humanoid".into(), "Monster".into(), "Ghoul".into()]
-    };
     e.current_location = Some(at);
     e.engaged_with = None;
     e.exhausted = false;
