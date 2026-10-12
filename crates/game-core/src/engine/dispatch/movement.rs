@@ -43,7 +43,7 @@
 //! `TODO(#826)` on [`location_carries_restriction`] for why that is a choice
 //! rather than an oversight.
 
-use card_dsl::dsl::{Ability, Effect, Restriction, Trigger};
+use card_dsl::dsl::{Ability, CardFilter, Effect, Restriction, Trigger};
 
 use crate::card_registry;
 use crate::engine::abilities_in_effect;
@@ -113,12 +113,15 @@ fn location_carries_restriction(
 /// stopped by the Parlor's investigator-side barrier.
 #[must_use]
 pub fn enemy_can_enter_location(state: &GameState, enemy: &Enemy, loc: LocationId) -> bool {
-    !location_carries_restriction(state, loc, |r| match r {
-        Restriction::EnemyMovementBlocked { exempt } => !exempt
-            .as_ref()
-            .is_some_and(|f| card_registry::card_matches(&enemy.code, f)),
+    // Exempt only when the restriction names a filter and this enemy matches it.
+    let is_exempt = |exempt: Option<&CardFilter>| {
+        exempt.is_some_and(|f| card_registry::card_matches(&enemy.code, f))
+    };
+    let blocks_enemy = |r: &Restriction| match r {
+        Restriction::EnemyMovementBlocked { exempt } => !is_exempt(exempt.as_ref()),
         _ => false,
-    })
+    };
+    !location_carries_restriction(state, loc, blocks_enemy)
 }
 
 /// Whether an investigator may move into `loc`. Blocked when `loc` carries

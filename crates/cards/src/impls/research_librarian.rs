@@ -26,12 +26,12 @@
 //! (recorded in `data/arkhamdb-faq/no-rulings.txt`).
 
 use card_dsl::card_data::CardType;
-
-use crate::generated::traits::TOME;
-use crate::impls::CardRecord;
 use card_dsl::dsl::{
     self, Ability, CardFilter, EventPattern, EventTiming, InvestigatorTarget, SearchScope,
 };
+
+use crate::generated::traits::TOME;
+use crate::impls::CardRecord;
 
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01032";
@@ -62,6 +62,8 @@ mod tests {
         TriggerKind,
     };
 
+    use crate::generated::traits::TOME;
+
     #[test]
     fn ability_is_entered_play_reaction_search_tome_asset() {
         let abilities = super::abilities();
@@ -80,7 +82,7 @@ mod tests {
                 target: InvestigatorTarget::You,
                 scope: SearchScope::EntireDeck,
                 filter: Some(CardFilter {
-                    trait_: Some("Tome".into()),
+                    trait_: Some(TOME.into()),
                     kind: Some(CardType::Asset),
                 }),
             },

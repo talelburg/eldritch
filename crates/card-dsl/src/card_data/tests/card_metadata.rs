@@ -327,16 +327,16 @@ fn is_weakness_false_when_field_is_false() {
 
 // ---- printed traits and card filters ----------------------------
 
-/// Old Book of Lore 01031 as printed: an `Item. Tome.` asset.
-fn old_book_of_lore() -> CardMetadata {
+/// A synthetic `Item. Tome.` asset.
+fn tome_asset() -> CardMetadata {
     CardMetadata {
-        code: "01031".into(),
-        name: "Old Book of Lore".into(),
+        code: "_synth_tome_asset".into(),
+        name: "Synth Tome Asset".into(),
         traits: vec!["Item".into(), "Tome".into()],
         text: None,
         back_name: None,
         back_text: None,
-        pack_code: "core".into(),
+        pack_code: "_synth".into(),
         weakness: false,
         kind: CardKind::Asset {
             class: Class::Seeker,
@@ -354,12 +354,12 @@ fn old_book_of_lore() -> CardMetadata {
     }
 }
 
-/// Research Librarian 01032 as printed: an `Ally. Miskatonic.` asset,
-/// so an asset with traits, none of them Tome.
-fn research_librarian() -> CardMetadata {
+/// A synthetic `Ally. Miskatonic.` asset: an asset with traits, none of
+/// them Tome.
+fn ally_asset() -> CardMetadata {
     CardMetadata {
-        code: "01032".into(),
-        name: "Research Librarian".into(),
+        code: "_synth_ally_asset".into(),
+        name: "Synth Ally Asset".into(),
         traits: vec!["Ally".into(), "Miskatonic".into()],
         kind: CardKind::Asset {
             class: Class::Seeker,
@@ -374,15 +374,15 @@ fn research_librarian() -> CardMetadata {
             uses: None,
             play_only_during_turn: false,
         },
-        ..old_book_of_lore()
+        ..tome_asset()
     }
 }
 
-/// Mind over Matter 01036 as printed: an `Insight.` event.
-fn mind_over_matter() -> CardMetadata {
+/// A synthetic `Insight.` event.
+fn insight_event() -> CardMetadata {
     CardMetadata {
-        code: "01036".into(),
-        name: "Mind over Matter".into(),
+        code: "_synth_insight_event".into(),
+        name: "Synth Insight Event".into(),
         traits: vec!["Insight".into()],
         kind: CardKind::Event {
             class: Class::Seeker,
@@ -393,24 +393,24 @@ fn mind_over_matter() -> CardMetadata {
             deck_limit: 2,
             play_only_during_turn: true,
         },
-        ..old_book_of_lore()
+        ..tome_asset()
     }
 }
 
 #[test]
 fn has_trait_is_true_for_a_printed_trait() {
-    assert!(old_book_of_lore().has_trait("Tome"));
-    assert!(old_book_of_lore().has_trait("Item"));
+    assert!(tome_asset().has_trait("Tome"));
+    assert!(tome_asset().has_trait("Item"));
 }
 
 #[test]
 fn has_trait_is_false_for_an_absent_trait() {
-    assert!(!research_librarian().has_trait("Tome"));
+    assert!(!ally_asset().has_trait("Tome"));
 }
 
 #[test]
 fn has_trait_is_false_for_a_near_miss_spelling() {
-    let book = old_book_of_lore();
+    let book = tome_asset();
     assert!(!book.has_trait("Tomes"));
     assert!(!book.has_trait("tome"));
     assert!(!book.has_trait("Tome."));
@@ -419,30 +419,30 @@ fn has_trait_is_false_for_a_near_miss_spelling() {
 #[test]
 fn trait_only_filter_matches_on_the_trait_alone() {
     let tome = CardFilter::with_trait("Tome");
-    assert!(tome.matches(&old_book_of_lore()));
-    assert!(!tome.matches(&research_librarian()));
+    assert!(tome.matches(&tome_asset()));
+    assert!(!tome.matches(&ally_asset()));
 }
 
 #[test]
 fn kind_only_filter_matches_on_the_card_type_alone() {
     let asset = CardFilter::of_kind(CardType::Asset);
-    assert!(asset.matches(&old_book_of_lore()));
-    assert!(asset.matches(&research_librarian()));
-    assert!(!asset.matches(&mind_over_matter()));
+    assert!(asset.matches(&tome_asset()));
+    assert!(asset.matches(&ally_asset()));
+    assert!(!asset.matches(&insight_event()));
 }
 
 #[test]
 fn trait_and_kind_filter_needs_both() {
-    let tome_asset = CardFilter::with_trait("Tome").and_kind(CardType::Asset);
-    assert!(tome_asset.matches(&old_book_of_lore()));
+    let tome_assets = CardFilter::with_trait("Tome").and_kind(CardType::Asset);
+    assert!(tome_assets.matches(&tome_asset()));
     // An asset without the trait.
-    assert!(!tome_asset.matches(&research_librarian()));
+    assert!(!tome_assets.matches(&ally_asset()));
     // The trait on a card of another type.
     let tome_event = CardMetadata {
         traits: vec!["Tome".into()],
-        ..mind_over_matter()
+        ..insight_event()
     };
-    assert!(!tome_asset.matches(&tome_event));
+    assert!(!tome_assets.matches(&tome_event));
 }
 
 #[test]
@@ -451,9 +451,9 @@ fn empty_filter_matches_everything() {
         trait_: None,
         kind: None,
     };
-    assert!(any.matches(&old_book_of_lore()));
-    assert!(any.matches(&research_librarian()));
-    assert!(any.matches(&mind_over_matter()));
+    assert!(any.matches(&tome_asset()));
+    assert!(any.matches(&ally_asset()));
+    assert!(any.matches(&insight_event()));
 }
 
 #[test]

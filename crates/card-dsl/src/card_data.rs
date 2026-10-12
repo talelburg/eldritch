@@ -537,9 +537,10 @@ impl CardMetadata {
     ///
     /// **Printed traits only.** `glossary/Gains.md`: *"\"Gained\"
     /// characteristics are not considered to be \"printed\" on the card."*
-    /// When a card in scope gains or loses a trait (Curse of Yig 04085, the
-    /// Refractions' optional Ultimatum of Invisibility), the gain belongs as a
-    /// sweep inside the trait query, computed at read time the way granted
+    /// When a card in scope gains or loses a trait (no corpus card does yet;
+    /// the first known gain through Dunwich is an optional variant, the
+    /// Refractions' Ultimatum of Invisibility, and beyond the corpus Curse of
+    /// Yig 04085), the gain belongs as a sweep inside the trait query, computed at read time the way granted
     /// abilities are (ADR 0014) — not stored on the entity.
     ///
     /// An entity whose identity differs from its printed card — Chapel Crypt

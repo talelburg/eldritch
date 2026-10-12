@@ -63,6 +63,8 @@ mod tests {
         CardFilter, Effect, EventPattern, EventTiming, Restriction, Trigger, TriggerKind,
     };
 
+    use crate::generated::traits::ELITE;
+
     #[test]
     fn abilities_are_attach_block_and_leave_discard() {
         let a = super::abilities();
@@ -73,7 +75,7 @@ mod tests {
         assert_eq!(
             a[1].effect,
             Effect::Restrict(Restriction::EnemyMovementBlocked {
-                exempt: Some(CardFilter::with_trait("Elite")),
+                exempt: Some(CardFilter::with_trait(ELITE)),
             })
         );
         assert!(
