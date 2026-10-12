@@ -749,7 +749,7 @@ the now-stable set of input shapes:
       resources/clues/status beside it, next to the hand; the loose stats line + the map-redundant
       location display are gone. Built on S4's `InPlayCardView` (reused untouched).
 
-**Deferred past the gate:** #353 (uses-depletion — no Gathering card; gated on
+**Deferred past the gate:** #353 ✅ #1009 (uses-depletion — no Gathering card; gated on
 Forbidden Knowledge / Grotesque Statue, which arrive with
 [phase 7.5](phase-7.5-investigator-breadth.md)'s Mystic pool), #427/#429
 (native-loop soak residue; both wait on #728), #119/#26 (behaviour-preserving

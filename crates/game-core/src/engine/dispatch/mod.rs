@@ -71,6 +71,9 @@ pub(super) mod skill_test;
 // pub(super): slot-capacity table + deficit math for asset slot enforcement (#498).
 pub(super) mod slots;
 pub(crate) mod threat_area;
+// pub(super): engine/mod.rs re-exports `spend_uses` for the `cards` crate (an
+// effect that spends uses, Forbidden Knowledge 01058's, #353).
+pub(super) mod uses;
 
 /// Dispatch one enumerated open-turn action (the internal id→action map target).
 /// The same handlers `apply_player_action`'s typed arms call; behaviour-identical.
