@@ -535,8 +535,8 @@ impl CardMetadata {
     /// `cards::generated::traits` (`GHOUL`, `TOME`, `ANCIENT_ONE`, …) rather
     /// than a literal, so a misspelling is a compile error.
     ///
-    /// **Printed traits only.** `glossary/Gains.md`: *"\"Gained\"
-    /// characteristics are not considered to be \"printed\" on the card."*
+    /// **Printed traits only.** `glossary/Gains.md`: *'"Gained"
+    /// characteristics are not considered to be "printed" on the card.'*
     /// When a card in scope gains or loses a trait (no corpus card does yet;
     /// the first known gain through Dunwich is an optional variant, the
     /// Refractions' Ultimatum of Invisibility, and beyond the corpus Curse of
