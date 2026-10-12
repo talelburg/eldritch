@@ -55,13 +55,6 @@ pub struct Enemy {
     /// Whether the enemy is exhausted. Exhausted enemies don't make
     /// attacks of opportunity and don't activate during the enemy phase.
     pub exhausted: bool,
-    /// Card-text traits (Monster, Humanoid, Cultist, Elite, etc.).
-    /// "Elite" is a trait, not a separate field — it's how cards
-    /// filter ("deal 1 damage to a non-Elite enemy", "automatically
-    /// evade a non-Elite enemy at your location", etc.), and the same
-    /// mechanism handles every other trait filter uniformly. Same
-    /// encoding as in the upstream card JSON's `traits` field.
-    pub traits: Vec<String>,
     /// Which investigator (if any) the enemy is currently engaged
     /// with. Engagement is stored on the enemy because the rulebook
     /// frames enemies as engaging investigators, not vice versa, and
@@ -124,7 +117,6 @@ mod hunter_prey_field_tests {
             attack_horror: 2,
             current_location: None,
             exhausted: false,
-            traits: vec!["Humanoid".into(), "Monster".into(), "Elite".into()],
             engaged_with: None,
             hunter: true,
             prey: Prey::Default,

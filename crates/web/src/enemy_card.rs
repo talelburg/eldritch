@@ -1,8 +1,9 @@
 //! Visual rendering of enemies for the web client. Enemies are a distinct data
-//! source — the `Enemy` state struct carries stats *and* live state — so they
-//! get a dedicated `EnemyCard` component rather than reusing `Card` (which is
-//! built around registry lookup + a `CardInPlay`). Shares the card CSS / chip
-//! vocabulary and the text renderer. Display-only.
+//! source — the `Enemy` state struct carries stats *and* live state, while its
+//! traits and text stay on the printed card — so they get a dedicated
+//! `EnemyCard` component rather than reusing `Card` (which is built around
+//! registry lookup + a `CardInPlay`). Shares the card CSS / chip vocabulary and
+//! the text renderer. Display-only.
 
 use game_core::card_registry;
 use game_core::engine::OptionTarget;
@@ -45,8 +46,9 @@ pub fn enemy_keyword_chips(enemy: &Enemy) -> Vec<String> {
 }
 
 /// One engaged enemy rendered as a card (red border via `card--enemy`), reusing
-/// the card CSS and the `card--exhausted` dim from the asset slice. Reads from
-/// the `Enemy` state struct; ability text is looked up by code via the registry.
+/// the card CSS and the `card--exhausted` dim from the asset slice. Stats and
+/// live state come from the `Enemy` state struct; traits and ability text come
+/// from its printed card, looked up by code via the registry.
 /// Display-only — no click handlers.
 // `enemy` is taken by value: Leptos `#[component]` generates a props struct
 // requiring owned fields, so a reference would need a lifetime the macro can't
@@ -55,13 +57,12 @@ pub fn enemy_keyword_chips(enemy: &Enemy) -> Vec<String> {
 #[component]
 pub fn EnemyCard(enemy: Enemy) -> impl IntoView {
     let name = enemy.name.clone();
-    let traits = if enemy.traits.is_empty() {
-        String::new()
-    } else {
-        format!("{}.", enemy.traits.join(". "))
+    let meta = card_registry::current().and_then(|r| (r.metadata_for)(&enemy.code));
+    let traits = match meta {
+        Some(m) if !m.traits.is_empty() => format!("{}.", m.traits.join(". ")),
+        _ => String::new(),
     };
-    let text_view = card_registry::current()
-        .and_then(|r| (r.metadata_for)(&enemy.code))
+    let text_view = meta
         .and_then(|m| m.text.as_deref())
         .map(|t| card::render_segments(card::parse_card_text(t)));
     let exhausted = enemy.exhausted;

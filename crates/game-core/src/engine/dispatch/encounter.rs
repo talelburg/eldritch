@@ -453,7 +453,6 @@ pub(super) fn spawn_enemy_at(
         attack_horror: *horror,
         current_location: Some(location_id),
         exhausted: false,
-        traits: metadata.traits.clone(),
         engaged_with: None,
         hunter: *hunter,
         prey,
