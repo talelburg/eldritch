@@ -35,7 +35,7 @@
 use card_dsl::dsl::{self, Ability};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, EngineOutcome, Grounded, NativeCx, OptionTarget};
-use game_core::state::{EnemyId, InvestigatorId, LocationId};
+use game_core::state::{EnemyId, GameState, InvestigatorId, LocationId};
 
 use crate::impls::CardRecord;
 
@@ -59,9 +59,8 @@ pub fn abilities() -> Vec<Ability> {
 /// Candidate target locations: the controller's location followed by each
 /// connected location, connections sorted by id so an `OptionId` indexes the
 /// same location when the choice replays on resume.
-fn candidate_locations(cx: &NativeCx, controller: InvestigatorId) -> Vec<LocationId> {
-    let Some(here) = cx
-        .state()
+fn candidate_locations(state: &GameState, controller: InvestigatorId) -> Vec<LocationId> {
+    let Some(here) = state
         .investigators
         .get(&controller)
         .and_then(|inv| inv.current_location)
@@ -69,7 +68,7 @@ fn candidate_locations(cx: &NativeCx, controller: InvestigatorId) -> Vec<Locatio
         return Vec::new();
     };
     let mut locations = vec![here];
-    if let Some(loc) = cx.state().locations.get(&here) {
+    if let Some(loc) = state.locations.get(&here) {
         let mut connections = loc.connections.clone();
         connections.sort_unstable();
         locations.extend(connections);
@@ -79,7 +78,7 @@ fn candidate_locations(cx: &NativeCx, controller: InvestigatorId) -> Vec<Locatio
 
 fn dynamite_blast(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     let controller = ctx.controller;
-    let locations = candidate_locations(cx, controller);
+    let locations = candidate_locations(cx.state(), controller);
     match engine::resolve_grounded_choice(
         cx.state(),
         ctx,

@@ -9,7 +9,7 @@ use crate::card_registry;
 use crate::engine::dispatch::actions::take::{self, ActionDescription};
 use crate::engine::dispatch::initiation;
 use crate::engine::dispatch::legality::{self, ActivateCheckResult};
-use crate::engine::dispatch::uses::{spend_uses, SpendUsesError};
+use crate::engine::dispatch::uses::{self, SpendUsesError};
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::{abilities_in_effect, ability_source, board, Cx};
@@ -289,7 +289,7 @@ fn pay_activation_costs(
                 // That is no longer a trap: a later source-referencing cost
                 // re-resolves by identity, finds nothing, and rejects the whole
                 // activation rather than addressing a shifted neighbour (#706).
-                match spend_uses(cx, investigator, instance_id, *kind, *count) {
+                match uses::spend_uses(cx, investigator, instance_id, *kind, *count) {
                     Ok(()) => {}
                     Err(SpendUsesError::Undiscardable) => {
                         return Err(undiscardable_source(investigator, instance_id));

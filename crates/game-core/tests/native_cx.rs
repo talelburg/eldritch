@@ -19,8 +19,8 @@ use game_core::state::{
 };
 use game_core::test_support::{self, MockRegistry, TestSession};
 
-const WRITE_THEN_SUSPEND_ACT: &str = "TEST-ACT-WRITE-THEN-SUSPEND";
-const SUSPEND_THEN_WRITE_ACT: &str = "TEST-ACT-SUSPEND-THEN-WRITE";
+const WRITE_THEN_SUSPEND_ACT: &str = "_ncx_act_write_then_suspend";
+const SUSPEND_THEN_WRITE_ACT: &str = "_ncx_act_suspend_then_write";
 
 const WRITE_THEN_SUSPEND: &str = "test:write-then-suspend";
 

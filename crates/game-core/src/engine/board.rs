@@ -72,7 +72,6 @@ pub(crate) use leave_play::{
 use std::collections::BTreeMap;
 
 use crate::engine::Cx;
-
 use crate::state::{
     AbilitySource, Act, Agenda, CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameState,
     InvestigatorId, Location, LocationId, Status, UseKind,
@@ -389,7 +388,7 @@ pub fn find_instance_mut(
 /// leaving a card.
 ///
 /// The exit a card-local native takes to discard clues from a card (Cover Up
-/// 01007's *"discard that many clues from Cover Up instead"*).
+/// 01007's *"Discard that many clues from Cover Up instead."*).
 pub(crate) fn remove_clues(cx: &mut Cx, instance_id: CardInstanceId, count: u8) {
     if let Some((card, _)) = find_instance_mut(cx.state, instance_id) {
         card.clues = card.clues.saturating_sub(count);

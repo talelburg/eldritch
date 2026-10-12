@@ -117,7 +117,6 @@ fn react_on_defeat() -> Vec<Ability> {
     )]
 }
 
-/// Gives the investigator the ability is bound to 1 resource.
 fn game_end_mark() -> Vec<Ability> {
     vec![dsl::forced_on_event(
         EventPattern::GameEnd,

@@ -21,12 +21,12 @@ use game_core::state::{
 use game_core::test_support::{self, MockRegistry, TestSession};
 use game_core::{assert_event, assert_no_event};
 
-const TRAUMA_ACT: &str = "TEST-ACT-TRAUMA";
-const DOOM_ACT: &str = "TEST-ACT-DOOM";
-const PLACE_ACT: &str = "TEST-ACT-PLACE";
-const CLUES_ACT: &str = "TEST-ACT-CLUES";
-const DIG_ACT: &str = "TEST-ACT-DIG";
-const SUBSTITUTE_ACT: &str = "TEST-ACT-SUBSTITUTE";
+const TRAUMA_ACT: &str = "_nx_act_trauma";
+const DOOM_ACT: &str = "_nx_act_doom";
+const PLACE_ACT: &str = "_nx_act_place";
+const CLUES_ACT: &str = "_nx_act_clues";
+const DIG_ACT: &str = "_nx_act_dig";
+const SUBSTITUTE_ACT: &str = "_nx_act_substitute";
 
 /// The card instance the `clues` native removes clues from.
 const CLUE_CARD: CardInstanceId = CardInstanceId(77);

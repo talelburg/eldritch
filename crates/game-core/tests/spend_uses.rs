@@ -1,4 +1,4 @@
-//! The one uses-spending path, [`engine::spend_uses`] (#1009, #353): spending
+//! The one uses-spending path, [`NativeCx::spend_uses`] (#1009, #353): spending
 //! a card's uses through a native's **effect**, not a `Cost::SpendUses`.
 //!
 //! The depletion discard is a constant ability (#353): it fires the moment the
@@ -32,8 +32,8 @@ const POUCH: &str = "TEST-POUCH";
 /// The [`POUCH`] instance the natives spend from.
 const HELD: CardInstanceId = CardInstanceId(50);
 
-const SPEND_SECRET_ACT: &str = "TEST-ACT-SPEND-SECRET";
-const SPEND_CHARGE_ACT: &str = "TEST-ACT-SPEND-CHARGE";
+const SPEND_SECRET_ACT: &str = "_su_act_spend_secret";
+const SPEND_CHARGE_ACT: &str = "_su_act_spend_charge";
 
 /// The controller, who holds [`HELD`].
 const HOLDER: InvestigatorId = InvestigatorId(1);

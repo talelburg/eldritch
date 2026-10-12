@@ -579,7 +579,7 @@ pub(super) fn draw_encounter_top(cx: &mut Cx) -> Option<CardCode> {
         }
         reshuffle_encounter_discard(cx);
     }
-    cx.state.encounter_deck.pop_front()
+    take_encounter_top(cx)
 }
 
 /// Take the top card of the encounter deck, or `None` if the deck is empty.
