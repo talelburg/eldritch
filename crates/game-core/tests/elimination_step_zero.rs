@@ -20,7 +20,7 @@
 use card_dsl::card_data::{CardKind, CardMetadata};
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{ApplyResult, Cx, EngineOutcome, OptionTarget};
+use game_core::engine::{ApplyResult, EngineOutcome, NativeCx, OptionTarget};
 use game_core::event::{Event, TraumaKind};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Continuation, GameState, GameStateBuilder,
@@ -80,14 +80,14 @@ fn game_end_trauma(cell: EventTiming) -> Vec<Ability> {
 }
 
 /// "If there are any clues on it: you suffer 1 mental trauma."
-fn trauma(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
+fn trauma(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     let Some(source) = ctx.source_instance() else {
         return EngineOutcome::Rejected {
             reason: "test trauma: no source instance".into(),
         };
     };
     let has_clues = cx
-        .state
+        .state()
         .investigators
         .get(&ctx.controller)
         .is_some_and(|inv| {
@@ -95,11 +95,7 @@ fn trauma(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
                 .any(|c| c.instance_id == source && c.clues > 0)
         });
     if has_clues {
-        cx.events.push(Event::TraumaSuffered {
-            investigator: ctx.controller,
-            kind: TraumaKind::Mental,
-            amount: 1,
-        });
+        cx.suffer_trauma(ctx.controller, TraumaKind::Mental, 1);
     }
     EngineOutcome::Done
 }

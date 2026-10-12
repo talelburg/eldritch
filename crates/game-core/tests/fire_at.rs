@@ -16,9 +16,8 @@
 //! resolution point — and none stands in for a printed card. They live here,
 //! the one binary that reads them.
 
-use card_dsl::dsl::{self, EventPattern, EventTiming};
-use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{Cx, EngineOutcome, InputKind, OptionTarget, TimingEvent};
+use card_dsl::dsl::{self, Effect, EventPattern, EventTiming, InvestigatorTarget};
+use game_core::engine::{EngineOutcome, InputKind, OptionTarget, TimingEvent};
 use game_core::event::Event;
 use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::state::{
@@ -48,12 +47,8 @@ const INV: InvestigatorId = InvestigatorId(1);
 
 /// A marker: one `ResourcesGained` whose amount names the ability that fired,
 /// so a test can read which abilities ran and in what order.
-fn mark(cx: &mut Cx, ctx: &EvalContext, amount: u8) -> EngineOutcome {
-    cx.events.push(Event::ResourcesGained {
-        investigator: ctx.controller,
-        amount,
-    });
-    EngineOutcome::Done
+fn mark(amount: u8) -> Effect {
+    dsl::gain_resources(InvestigatorTarget::You, amount)
 }
 
 #[ctor::ctor(unsafe)]
@@ -63,21 +58,21 @@ fn install() {
             vec![dsl::forced_on_event(
                 EventPattern::RoundEnded,
                 EventTiming::At,
-                dsl::native("_fa:mark1"),
+                mark(1),
             )]
         })
         .with_abilities(FORCED_B, || {
             vec![dsl::forced_on_event(
                 EventPattern::RoundEnded,
                 EventTiming::At,
-                dsl::native("_fa:mark2"),
+                mark(2),
             )]
         })
         .with_abilities(REACTION, || {
             vec![dsl::reaction_on_event(
                 EventPattern::RoundEnded,
                 EventTiming::At,
-                dsl::native("_fa:mark3"),
+                mark(3),
             )]
         })
         .with_abilities(RESOLVES, || {
@@ -93,7 +88,7 @@ fn install() {
                     phase: dsl::Phase::Enemy,
                 },
                 EventTiming::At,
-                dsl::native("_fa:mark4"),
+                mark(4),
             )]
         })
         .with_abilities(UPKEEP_END, || {
@@ -102,14 +97,9 @@ fn install() {
                     phase: dsl::Phase::Upkeep,
                 },
                 EventTiming::At,
-                dsl::native("_fa:mark5"),
+                mark(5),
             )]
         })
-        .with_native_effect("_fa:mark4", |cx, ctx| mark(cx, ctx, 4))
-        .with_native_effect("_fa:mark5", |cx, ctx| mark(cx, ctx, 5))
-        .with_native_effect("_fa:mark1", |cx, ctx| mark(cx, ctx, 1))
-        .with_native_effect("_fa:mark2", |cx, ctx| mark(cx, ctx, 2))
-        .with_native_effect("_fa:mark3", |cx, ctx| mark(cx, ctx, 3))
         .install();
 }
 

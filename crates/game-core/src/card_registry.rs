@@ -38,16 +38,16 @@ use card_dsl::card_data::CardMetadata;
 use card_dsl::dsl::{Ability, CardFilter};
 
 use crate::engine::evaluator::EvalContext;
-use crate::engine::{Cx, EngineOutcome};
+use crate::engine::{EngineOutcome, NativeCx};
 use crate::state::{CardCode, GameState};
 
-/// A card-local Rust effect: mutates state and emits events through the
-/// effect-resolution context, returning the resolution outcome. Provided
-/// by the `cards` crate and dispatched from [`Effect::Native`] via
+/// A card-local Rust effect: reads the state and changes the game through the
+/// engine exits on [`NativeCx`], returning the resolution outcome. Provided by
+/// the `cards` crate and dispatched from [`Effect::Native`] via
 /// [`CardRegistry::native_effect_for`].
 ///
 /// [`Effect::Native`]: card_dsl::dsl::Effect::Native
-pub type NativeEffectFn = fn(&mut Cx, &EvalContext) -> EngineOutcome;
+pub type NativeEffectFn = fn(&mut NativeCx, &EvalContext) -> EngineOutcome;
 
 /// A card-local read-only predicate backing a [`Condition::Native`] gate:
 /// returns whether the condition holds against the current board and evaluation

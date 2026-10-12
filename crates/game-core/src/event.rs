@@ -142,7 +142,8 @@ pub enum Event {
     /// Tokens were spent from a card's runtime uses-pool, to pay a
     /// `Cost::SpendUses` (".38 Special": "Spend 1 ammo") or by an effect that
     /// moves them off (Forbidden Knowledge 01058). Every spend emits it, through
-    /// [`engine::spend_uses`](crate::engine::spend_uses).
+    /// the engine's one uses-spending path (for a native,
+    /// [`NativeCx::spend_uses`](crate::engine::NativeCx::spend_uses)).
     UsesSpent {
         /// Investigator who spent them: the activator, for a cost.
         investigator: InvestigatorId,

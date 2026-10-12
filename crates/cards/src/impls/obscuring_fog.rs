@@ -34,7 +34,7 @@ use card_dsl::dsl::{
     TestOutcome, TestedLocationScope,
 };
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, board, Cx, EngineOutcome};
+use game_core::engine::{EngineOutcome, NativeCx};
 use game_core::state::{CardCode, Owner, Zone};
 
 use crate::impls::CardRecord;
@@ -78,9 +78,9 @@ pub fn abilities() -> Vec<Ability> {
 /// TODO(#373): collapse onto a generalized attach-to-location effect (a
 /// by-code form + an optional per-location limit) shared with Barricade
 /// 01038's `Effect::AttachSelfToLocation`, retiring this bespoke native.
-fn limit1_attach(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
+fn limit1_attach(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     let Some(loc_id) = cx
-        .state
+        .state()
         .investigators
         .get(&ctx.controller)
         .and_then(|inv| inv.current_location)
@@ -90,7 +90,7 @@ fn limit1_attach(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
         };
     };
     let already = cx
-        .state
+        .state()
         .locations
         .get(&loc_id)
         .is_some_and(|loc| loc.attachments.iter().any(|c| c.code.as_str() == CODE));
@@ -101,11 +101,11 @@ fn limit1_attach(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
         // the event names (`glossary/Attach_To.md`: *"If the initial "attach
         // to" check does not pass, … If such a card cannot remain in its prior
         // state or game area, discard it."*).
-        board::discard_encounter_card(cx, CardCode::new(CODE), Zone::LocationAttachment);
+        cx.discard_encounter_card(CardCode::new(CODE), Zone::LocationAttachment);
         return EngineOutcome::Done;
     }
     // Revealed from the encounter deck, so the encounter deck owns it.
-    engine::attach_to_location(cx, loc_id, CardCode::new(CODE), Owner::EncounterDeck);
+    cx.attach_to_location(loc_id, CardCode::new(CODE), Owner::EncounterDeck);
     EngineOutcome::Done
 }
 

@@ -18,7 +18,7 @@
 use card_dsl::card_data::SkillKind;
 use card_dsl::dsl::{self, Ability};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, Cx, EngineOutcome};
+use game_core::engine::{EngineOutcome, NativeCx};
 use game_core::state::SkillSubstitution;
 
 use crate::impls::CardRecord;
@@ -39,15 +39,12 @@ pub fn abilities() -> Vec<Ability> {
 }
 
 /// Register the round-scoped substitution for the controller.
-fn substitute(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
-    engine::add_skill_substitution(
-        cx,
-        SkillSubstitution {
-            investigator: ctx.controller,
-            use_skill: SkillKind::Intellect,
-            for_skills: vec![SkillKind::Combat, SkillKind::Agility],
-        },
-    );
+fn substitute(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
+    cx.add_skill_substitution(SkillSubstitution {
+        investigator: ctx.controller,
+        use_skill: SkillKind::Intellect,
+        for_skills: vec![SkillKind::Combat, SkillKind::Agility],
+    });
     EngineOutcome::Done
 }
 

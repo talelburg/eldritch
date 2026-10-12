@@ -10,8 +10,8 @@ use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{InvestigatorId, LocationId};
 
-/// Place `investigator` at `location`. Re-exported at
-/// `game_core::engine::place_investigator` for card-local natives.
+/// Place `investigator` at `location`. A card-local native reaches it as
+/// [`NativeCx::place_investigator`](crate::engine::NativeCx::place_investigator).
 ///
 /// Emits [`Event::InvestigatorMoved`] only when the investigator was at a
 /// location and it differs from `location`. The event's `from` is not

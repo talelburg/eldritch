@@ -53,7 +53,7 @@ pub struct GameState {
     /// Act-2 reverse spawns the Ghoul Priest (01116) in the Hallway (the
     /// `01109:reverse` native effect).
     ///
-    /// [`put_set_aside_card_into_play`]: crate::engine::put_set_aside_card_into_play
+    /// [`put_set_aside_card_into_play`]: crate::engine::NativeCx::put_set_aside_card_into_play
     pub set_aside_cards: Vec<CardCode>,
     /// Where roster-seated investigators are placed at scenario start.
     /// `setup()` sets it (e.g. The Gathering -> the Study); the
@@ -941,7 +941,7 @@ impl GameState {
     /// per-investigator health and a location's [`LocationId`] can be
     /// resolved against the live board.
     ///
-    /// [`put_set_aside_card_into_play`]: crate::engine::put_set_aside_card_into_play
+    /// [`put_set_aside_card_into_play`]: crate::engine::NativeCx::put_set_aside_card_into_play
     pub fn add_set_aside_card(&mut self, metadata: &CardMetadata) {
         self.set_aside_cards
             .push(CardCode::new(metadata.code.clone()));

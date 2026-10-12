@@ -24,6 +24,7 @@ use crate::state::CardCode;
 pub mod assertions;
 mod fixtures;
 mod mock_registry;
+mod native;
 mod resolver;
 mod session;
 
@@ -317,6 +318,7 @@ pub use fixtures::{
     from_frames_unchecked, test_enemy, test_investigator, test_location, test_skill_test,
 };
 pub use mock_registry::MockRegistry;
+pub use native::run_native;
 pub use resolver::{
     apply_no_commits, dispatch_turn_action_unchecked, drive, drive_skill_test, perform_skill_test,
     perform_skill_test_no_commits, take_turn_action, ChoiceResolver, ScriptedResolver,

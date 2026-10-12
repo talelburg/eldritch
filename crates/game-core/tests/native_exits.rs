@@ -11,7 +11,7 @@
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, board, ApplyResult, Cx, EngineOutcome, TimingEvent};
+use game_core::engine::{board, ApplyResult, EngineOutcome, NativeCx, TimingEvent};
 use game_core::event::{Event, TraumaKind};
 use game_core::state::{
     self, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation,
@@ -45,44 +45,41 @@ fn forced_native(tag: &'static str) -> Vec<Ability> {
     )]
 }
 
-fn trauma(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
-    engine::suffer_trauma(cx, ctx.controller, TraumaKind::Mental, 2);
+fn trauma(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
+    cx.suffer_trauma(ctx.controller, TraumaKind::Mental, 2);
     EngineOutcome::Done
 }
 
-fn doom(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
-    engine::place_doom_on_agenda(cx, 3);
+fn doom(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
+    cx.place_doom_on_agenda(3);
     EngineOutcome::Done
 }
 
-fn place(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
-    engine::place_investigator(cx, ctx.controller, DEST);
+fn place(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
+    cx.place_investigator(ctx.controller, DEST);
     EngineOutcome::Done
 }
 
-fn clues(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
-    board::remove_clues(cx, CLUE_CARD, 3);
+fn clues(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
+    cx.remove_clues(CLUE_CARD, 3);
     EngineOutcome::Done
 }
 
 /// Take the top encounter card, if any, and discard it — one step of a
 /// deck search like Rise of the Ghouls 01106's.
-fn dig(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
-    if let Some(code) = engine::take_encounter_top(cx) {
-        board::discard_encounter_card(cx, code, Zone::EncounterDeck);
+fn dig(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
+    if let Some(code) = cx.take_encounter_top() {
+        cx.discard_encounter_card(code, Zone::EncounterDeck);
     }
     EngineOutcome::Done
 }
 
-fn substitute(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
-    engine::add_skill_substitution(
-        cx,
-        SkillSubstitution {
-            investigator: ctx.controller,
-            use_skill: SkillKind::Intellect,
-            for_skills: vec![SkillKind::Combat],
-        },
-    );
+fn substitute(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
+    cx.add_skill_substitution(SkillSubstitution {
+        investigator: ctx.controller,
+        use_skill: SkillKind::Intellect,
+        for_skills: vec![SkillKind::Combat],
+    });
     EngineOutcome::Done
 }
 

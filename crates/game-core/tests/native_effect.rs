@@ -5,7 +5,7 @@
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{ApplyResult, Cx, EngineOutcome, TimingEvent};
+use game_core::engine::{ApplyResult, EngineOutcome, NativeCx, TimingEvent};
 use game_core::state::{self, Agenda, CardCode, GameState, GameStateBuilder, InvestigatorId};
 use game_core::test_support::{self, MockRegistry, TestSession};
 
@@ -23,8 +23,8 @@ fn forced_native(tag: &'static str) -> Vec<Ability> {
     )]
 }
 
-fn set_doom(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
-    cx.state.agenda_doom = 7;
+fn set_doom(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
+    cx.place_doom_on_agenda(7);
     EngineOutcome::Done
 }
 

@@ -49,9 +49,10 @@ fn act_advances_at_round_end(state: &GameState) -> bool {
 /// agenda that isn't there. Places doom silently: no event announces doom yet
 /// (#593).
 ///
-/// Re-exported at `game_core::engine::place_doom_on_agenda` so a card-local
-/// native (They're Getting Out 01107) gets the empty-agenda-deck guard rather
-/// than writing `agenda_doom` itself.
+/// A card-local native (They're Getting Out 01107) reaches it as
+/// [`NativeCx::place_doom_on_agenda`](crate::engine::NativeCx::place_doom_on_agenda),
+/// so it gets the empty-agenda-deck guard rather than writing `agenda_doom`
+/// itself.
 pub fn place_doom_on_agenda(cx: &mut Cx, count: u8) {
     if cx.state.agenda_deck.is_empty() {
         return;
@@ -268,7 +269,8 @@ pub(crate) fn spend_clues_from(state: &mut GameState, ids: &[InvestigatorId], am
 /// Whether the current act's round-end group clue-spend advance is affordable:
 /// investigators at `contributor_location_code` hold at least the current act's
 /// `clue_threshold`. Shared by the offer-side eligibility condition (act 01109's
-/// `01109:can-advance`) and the resolve-side [`round_end_advance`], so the two
+/// `01109:can-advance`) and the resolve-side
+/// [`NativeCx::round_end_advance`](crate::engine::NativeCx::round_end_advance), so the two
 /// can't drift. `false` when there is no current act or the location isn't in
 /// play (the "investigators in the Hallway" condition is subsumed — 0
 /// contributors ⇒ 0 clues ⇒ not affordable).
@@ -292,8 +294,9 @@ pub fn round_end_advance_affordable(state: &GameState, contributor_location_code
 ///
 /// Affordability is gated at the offer side by act 01109's `01109:can-advance`
 /// eligibility condition (which calls [`round_end_advance_affordable`]), so the
-/// insufficient-clues branch here is a defensive backstop. Exposed for the
-/// `cards` registry's 01109 native handler.
+/// insufficient-clues branch here is a defensive backstop. The 01109 native
+/// handler reaches it as
+/// [`NativeCx::round_end_advance`](crate::engine::NativeCx::round_end_advance).
 ///
 /// # Panics
 ///

@@ -40,7 +40,7 @@
 //! Like 01108's board build, the reverse is board-dependent, single-use
 //! scenario logic, so it lives card-locally as a [`card_dsl::dsl::Effect::Native`]
 //! handler (#276) rather than as shared `Effect` variants. The spawn reuses
-//! the engine's [`game_core::engine::put_set_aside_card_into_play`], which reads
+//! the engine's [`NativeCx::put_set_aside_card_into_play`], which reads
 //! the Priest's cardtype back from the corpus metadata and mints his
 //! combat stats / keywords / per-investigator health from it.
 //!
@@ -81,7 +81,7 @@
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::evaluator::{self, EvalContext};
-use game_core::engine::{self, Cx, EngineOutcome};
+use game_core::engine::{self, EngineOutcome, NativeCx};
 use game_core::state::{GameState, Owner};
 
 use crate::impls::CardRecord;
@@ -162,8 +162,8 @@ fn can_advance(state: &GameState, _ctx: &EvalContext) -> bool {
 /// (01112) investigators, then advance the act. Synchronous — the player's
 /// choice was the round-end `When` window's `PickSingle`. Delegates to the
 /// engine's generic group-spend entry, passing the printed contributor location.
-fn advance_via_clue_spend(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
-    engine::round_end_advance(cx, HALLWAY)
+fn advance_via_clue_spend(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
+    cx.round_end_advance(HALLWAY)
 }
 
 /// Resolve the reverse **in printed order**: reveal the Parlor (01115), put the
@@ -185,14 +185,14 @@ fn advance_via_clue_spend(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
 /// She lands in the Parlor **under nobody's control**, which is what the
 /// Parlor's own printed grant is written against: *"While Lita Chantler is not
 /// controlled by a player, she gains: '\[action\]: **Parley.** …'"* (#772).
-fn reverse(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
-    let Some(parlor) = evaluator::location_id_by_code(cx.state, PARLOR) else {
+fn reverse(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
+    let Some(parlor) = evaluator::location_id_by_code(cx.state(), PARLOR) else {
         return EngineOutcome::Rejected {
             reason: "01109 reverse: Parlor (01115) not in play".into(),
         };
     };
     if !cx
-        .state
+        .state()
         .set_aside_cards
         .iter()
         .any(|c| c.as_str() == GHOUL_PRIEST)
@@ -202,7 +202,7 @@ fn reverse(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
         };
     }
     if !cx
-        .state
+        .state()
         .set_aside_cards
         .iter()
         .any(|c| c.as_str() == LITA_CHANTLER)
@@ -211,22 +211,21 @@ fn reverse(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
             reason: "01109 reverse: Lita Chantler (01117) is not set aside".into(),
         };
     }
-    if evaluator::location_id_by_code(cx.state, HALLWAY).is_none() {
+    if evaluator::location_id_by_code(cx.state(), HALLWAY).is_none() {
         return EngineOutcome::Rejected {
             reason: "01109 reverse: Hallway (01112) not in play".into(),
         };
     }
     // All checks passed — mutate, in the order the card prints.
-    engine::reveal_location(cx, parlor);
+    cx.reveal_location(parlor);
     // Lita has no pile to return to, so she is the scenario's; the Ghoul
     // Priest is an encounter-set enemy, so he is the encounter deck's
     // (`GLOSSARY.md`, **Owner / Controller**).
-    let lita =
-        engine::put_set_aside_card_into_play(cx, LITA_CHANTLER, Some(PARLOR), Owner::Scenario);
+    let lita = cx.put_set_aside_card_into_play(LITA_CHANTLER, Some(PARLOR), Owner::Scenario);
     if !matches!(lita, EngineOutcome::Done) {
         return lita;
     }
-    engine::put_set_aside_card_into_play(cx, GHOUL_PRIEST, Some(HALLWAY), Owner::EncounterDeck)
+    cx.put_set_aside_card_into_play(GHOUL_PRIEST, Some(HALLWAY), Owner::EncounterDeck)
 }
 
 #[cfg(test)]

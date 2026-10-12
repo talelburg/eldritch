@@ -6,17 +6,17 @@
 //! suppression at one round-end emit, so this uses a synthetic mock registry:
 //!
 //! - a test **act** carries a `When`-`RoundEnded` reaction whose native removes a
-//!   threat-area card from play;
+//!   threat-area card from the game;
 //! - that threat-area card (`TESTX`) carries an `At`-`RoundEnded` *forced* ability
-//!   that gives its controller a clue.
+//!   that gives its controller a resource.
 //!
 //! Picking the `when` reaction removes `TESTX` before the `at` cell is scanned, so
-//! the `at` forced does **not** fire (no clue gained). Skipping leaves `TESTX` in
-//! play, so the `at` forced fires (one clue). The difference is the re-scan.
+//! the `at` forced does **not** fire (no resource gained). Skipping leaves `TESTX`
+//! in play, so the `at` forced fires (one resource). The difference is the re-scan.
 
-use card_dsl::dsl::{self, EventPattern, EventTiming};
+use card_dsl::dsl::{self, EventPattern, EventTiming, InvestigatorTarget};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{Cx, EngineOutcome, OptionTarget};
+use game_core::engine::{EngineOutcome, NativeCx, OptionTarget};
 use game_core::state::{
     Act, CardCode, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId, Owner,
 };
@@ -25,20 +25,20 @@ use game_core::test_support::{self, MockRegistry, TestSession};
 const TEST_ACT: &str = "TESTACT";
 const TEST_X: &str = "TESTX";
 
-/// `when`-cell native: remove `TESTX` from every investigator's threat area —
-/// flipping the `at`-cell forced's eligibility (its source leaves play).
-fn when_remove_x(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
-    for inv in cx.state.investigators.values_mut() {
-        inv.threat_area.retain(|c| c.code.as_str() != TEST_X);
-    }
-    EngineOutcome::Done
-}
-
-/// `at`-cell forced native: give the controller (the card's owner) one clue —
-/// an observable signal Mythos doesn't touch.
-fn at_gain_clue(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
-    if let Some(inv) = cx.state.investigators.get_mut(&ctx.controller) {
-        inv.clues += 1;
+/// `when`-cell native: remove every `TESTX` in an investigator's threat area
+/// from the game — flipping the `at`-cell forced's eligibility (its source
+/// leaves play).
+fn when_remove_x(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
+    let xs: Vec<CardInstanceId> = cx
+        .state()
+        .investigators
+        .values()
+        .flat_map(|inv| &inv.threat_area)
+        .filter(|c| c.code.as_str() == TEST_X)
+        .map(|c| c.instance_id)
+        .collect();
+    for x in xs {
+        cx.remove_from_game(x);
     }
     EngineOutcome::Done
 }
@@ -54,24 +54,29 @@ fn install() {
             )]
         })
         .with_abilities(TEST_X, || {
+            // Give the controller (the card's owner) one resource: the
+            // observable signal that the `at` forced fired.
             vec![dsl::forced_on_event(
                 EventPattern::RoundEnded,
                 EventTiming::At,
-                dsl::native("at:gain_clue"),
+                dsl::gain_resources(InvestigatorTarget::You, 1),
             )]
         })
         .with_native_effect("when:remove_x", when_remove_x)
-        .with_native_effect("at:gain_clue", at_gain_clue)
         .install();
 }
 
+/// The lead's resources.
+fn resources(session: &TestSession) -> u8 {
+    session.state().investigators[&InvestigatorId(1)].resources
+}
+
 /// The end of the Upkeep phase, the test act current, the lead holding `TESTX`
-/// (the `at`-forced source) in their threat area with 0 clues. Settled, it rests
+/// (the `at`-forced source) in their threat area. Settled, it rests
 /// at the round end's `when` reaction window.
 fn round_end_window() -> TestSession {
     let inv = InvestigatorId(1);
     let mut investigator = test_support::test_investigator(1);
-    investigator.clues = 0;
     investigator.threat_area.push(CardInPlay::enter_play(
         CardCode::new(TEST_X),
         CardInstanceId(0),
@@ -94,9 +99,11 @@ fn round_end_window() -> TestSession {
 fn when_cell_picked_suppresses_the_at_forced() {
     // Pick the `when` reaction (sole candidate): it removes TESTX before the
     // `at` cell is scanned, so the `at` forced never fires.
-    let session = round_end_window().pick(OptionTarget::Act);
+    let window = round_end_window();
+    let before = resources(&window);
+    let session = window.pick(OptionTarget::Act);
     assert_eq!(
-        session.state().investigators[&InvestigatorId(1)].clues,
+        resources(&session) - before,
         0,
         "the `at` forced must NOT fire: the `when` cell removed its source (per-cell re-scan)"
     );
@@ -105,10 +112,12 @@ fn when_cell_picked_suppresses_the_at_forced() {
 #[test]
 fn when_cell_skipped_leaves_the_at_forced_eligible() {
     // Control: skip the `when` reaction → TESTX stays in play → the `at` forced
-    // fires (one clue). Isolates "the re-scan suppressed it" from "it never fired".
-    let session = round_end_window().skip();
+    // fires (one resource). Isolates "the re-scan suppressed it" from "it never fired".
+    let window = round_end_window();
+    let before = resources(&window);
+    let session = window.skip();
     assert_eq!(
-        session.state().investigators[&InvestigatorId(1)].clues,
+        resources(&session) - before,
         1,
         "the `at` forced fires when the `when` cell leaves its source in play"
     );

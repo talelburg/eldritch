@@ -57,10 +57,11 @@ pub(crate) fn enemies_in_scope(
     }
 }
 
-/// Public entry point for card effects to deal damage to an enemy.
+/// The entry point for card effects to deal damage to an enemy.
 ///
-/// A thin wrapper over `damage_enemy` (which is crate-internal) so the
-/// `cards` crate can resolve `Effect::Native` retaliate effects — first
+/// A thin wrapper over `damage_enemy` that a card-local native reaches as
+/// [`NativeCx::deal_damage_to_enemy`](crate::engine::NativeCx::deal_damage_to_enemy),
+/// so the `cards` crate can resolve `Effect::Native` retaliate effects — first
 /// consumer: Guard Dog 01021's "Deal 1 damage to the attacking enemy."
 /// Reusing `damage_enemy` means a card that defeats its target here runs
 /// the same defeat cascade (`EnemyDefeated`, victory display) as the Fight
