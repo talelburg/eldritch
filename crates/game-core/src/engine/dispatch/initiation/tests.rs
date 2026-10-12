@@ -1,6 +1,6 @@
 //! The gate seam: one test per cell of the check × kind table, on synthetic
 //! fixtures that each model one primitive (ADR 0016) — an ability with a usage
-//! limit, an ability with an eligibility tag, an ability whose effect provably
+//! limit, an ability with an eligibility condition, an ability whose effect provably
 //! cannot change the game state, a card in hand with a resource cost, a
 //! constant "cannot play events". None of them stands in for a printed card.
 
@@ -8,12 +8,12 @@ use std::sync::OnceLock;
 
 use card_dsl::card_data::{CardKind, Class, SkillIcons};
 use card_dsl::dsl::{
-    self, Cost, Effect, EventPattern, EventTiming, InvestigatorTarget, LocationTarget, Restriction,
-    UsagePeriod,
+    self, CmpOp, Condition, Cost, Effect, EventPattern, EventTiming, InvestigatorTarget,
+    LocationTarget, Quantity, Restriction, UsagePeriod,
 };
 
 use super::*;
-use crate::card_registry::EligibilityFn;
+use crate::card_registry::NativeConditionFn;
 use crate::state::{
     AbilityAddress, CardInPlay, CardInstanceId, GameStateBuilder, LocationId, Owner,
 };
@@ -28,7 +28,7 @@ const COSTED_EVENT: &str = "_gate_costed_event";
 const EVENT_BAN: &str = "_gate_event_ban";
 /// Events played from hand, each resolving one `OnPlay` effect: one that can
 /// change the game state (and costs `EVENT_COST`), and two free ones — one that
-/// provably cannot, and one gated by an eligibility predicate that is false.
+/// provably cannot, and one gated by an eligibility condition that is false.
 const PLAYED_LIVE: &str = "_gate_played_live";
 const PLAYED_INERT: &str = "_gate_played_inert";
 const PLAYED_SHUT_TAG: &str = "_gate_played_shut_tag";
@@ -66,6 +66,16 @@ fn exhaust_cost(mut ability: Ability) -> Ability {
     ability
 }
 
+/// A declarative eligibility condition: there is a clue at the controller's
+/// location.
+fn clues_here() -> Condition {
+    Condition::Compare {
+        quantity: Quantity::CluesAtControllerLocation,
+        op: CmpOp::Gt,
+        value: 0,
+    }
+}
+
 fn once_per_round() -> UsageLimit {
     UsageLimit {
         count: 1,
@@ -93,36 +103,40 @@ const ACTIVATED_LIMITED: u8 = 15;
 const ACTIVATED_EXHAUST_COST: u8 = 16;
 const ACTIVATED_DESIGNATED_INERT: u8 = 17;
 const ACTIVATED_PARLEY_INERT: u8 = 18;
+const REACTION_CLUES_HERE: u8 = 19;
 /// One past the last printed index: an address nothing resolves to.
-const NOT_PRINTED: u8 = 19;
+const NOT_PRINTED: u8 = 20;
 
 fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
     match code.as_str() {
         PRIMITIVES => Some(vec![
             reaction(live()),
             reaction(inert()),
-            reaction(live()).with_eligibility(OPEN_TAG),
-            reaction(live()).with_eligibility(SHUT_TAG),
-            reaction(live()).with_eligibility(UNREGISTERED_TAG),
+            reaction(live()).with_eligibility(dsl::native_condition(OPEN_TAG)),
+            reaction(live()).with_eligibility(dsl::native_condition(SHUT_TAG)),
+            reaction(live()).with_eligibility(dsl::native_condition(UNREGISTERED_TAG)),
             reaction(live()).with_usage_limit(once_per_round()),
             exhaust_cost(reaction(live())),
             forced(live()),
             forced(inert()),
-            forced(live()).with_eligibility(SHUT_TAG),
+            forced(live()).with_eligibility(dsl::native_condition(SHUT_TAG)),
             forced(live()).with_usage_limit(once_per_round()),
             exhaust_cost(forced(live())),
             dsl::activated(0, vec![], live()),
             dsl::activated(0, vec![], inert()),
-            dsl::activated(0, vec![], live()).with_eligibility(SHUT_TAG),
+            dsl::activated(0, vec![], live()).with_eligibility(dsl::native_condition(SHUT_TAG)),
             dsl::activated(0, vec![], live()).with_usage_limit(once_per_round()),
             dsl::activated(0, vec![Cost::Exhaust], live()),
             dsl::activated_as(ActionDesignator::Evade, 1, vec![], inert()),
             dsl::activated_as(ActionDesignator::Parley, 1, vec![], inert()),
+            reaction(live()).with_eligibility(clues_here()),
         ]),
         COSTED_EVENT => Some(vec![reaction(live())]),
         PLAYED_LIVE => Some(vec![dsl::on_play(live())]),
         PLAYED_INERT => Some(vec![dsl::on_play(inert())]),
-        PLAYED_SHUT_TAG => Some(vec![dsl::on_play(live()).with_eligibility(SHUT_TAG)]),
+        PLAYED_SHUT_TAG => Some(vec![
+            dsl::on_play(live()).with_eligibility(dsl::native_condition(SHUT_TAG))
+        ]),
         EVENT_BAN => Some(vec![dsl::constant(dsl::restrict(Restriction::CannotPlay(
             CardType::Event,
         )))]),
@@ -179,7 +193,7 @@ fn never(_: &GameState, _: &EvalContext) -> bool {
     false
 }
 
-fn eligibility_for(tag: &str) -> Option<EligibilityFn> {
+fn condition_for(tag: &str) -> Option<NativeConditionFn> {
     match tag {
         OPEN_TAG => Some(always),
         SHUT_TAG => Some(never),
@@ -191,7 +205,7 @@ fn registry() -> CardRegistry {
     CardRegistry {
         metadata_for,
         abilities_for,
-        native_eligibility_for: eligibility_for,
+        native_condition_for: condition_for,
         ..CardRegistry::EMPTY
     }
 }
@@ -338,7 +352,7 @@ fn an_event_whose_play_effect_cannot_change_state_is_not_played() {
     assert_eq!(play(&state, PLAYED_LIVE), Ok(()));
 }
 
-/// A card played from hand is gated by its `OnPlay` effect's eligibility tag.
+/// A card played from hand is gated by its `OnPlay` ability's eligibility.
 #[test]
 fn an_event_whose_play_effect_is_ineligible_is_not_played() {
     assert_eq!(play(&state(), PLAYED_SHUT_TAG), Err(Refusal::NotEligible));
@@ -371,7 +385,7 @@ fn an_address_nothing_resolves_to_is_refused_on_every_kind() {
     }
 }
 
-// ---- eligibility tag ------------------------------------------------------
+// ---- eligibility condition ------------------------------------------------
 
 #[test]
 fn forced_ability_whose_eligibility_is_false_does_not_initiate() {
@@ -403,9 +417,43 @@ fn reaction_is_gated_by_its_eligibility_predicate() {
     );
 }
 
-/// A tag with no registered predicate is suppressed, so a half-installed host
-/// never surfaces a gated ability it can't evaluate.
+/// The gate reads a condition, not just a tag: a declarative `Compare` refuses
+/// on one board and passes on another, with no predicate registered for it.
 #[test]
+fn reaction_is_gated_by_a_declarative_eligibility_condition() {
+    let mut state = state();
+    assert_eq!(
+        gate(
+            &state,
+            &in_play(REACTION_CLUES_HERE),
+            InitiationKind::Reaction
+        ),
+        Err(Refusal::NotEligible)
+    );
+    state
+        .locations
+        .get_mut(&LOCATION)
+        .expect("the controller's location")
+        .clues = 1;
+    assert_eq!(
+        gate(
+            &state,
+            &in_play(REACTION_CLUES_HERE),
+            InitiationKind::Reaction
+        ),
+        Ok(())
+    );
+}
+
+/// A tag with no registered predicate is a content fault, not a board answer:
+/// it panics in a debug build so a mis-authored eligibility condition cannot
+/// pass the tests silently, and is refused in a release build, so a
+/// half-installed host never surfaces a gated ability it can't evaluate.
+#[test]
+#[cfg_attr(
+    debug_assertions,
+    should_panic(expected = "Native condition \"_gate:unregistered\": no predicate registered")
+)]
 fn reaction_whose_eligibility_tag_is_unregistered_is_refused() {
     let state = state();
     assert_eq!(

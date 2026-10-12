@@ -57,13 +57,14 @@ pub const CODE: &str = "01007";
 /// This card's registration, listed in [`ALL`](super::ALL).
 pub const CARD: CardRecord = CardRecord::new(CODE, abilities)
     .effects(&[(DISCARD_TAG, discard_clues), (TRAUMA_TAG, trauma)])
-    .eligibility(&[(HAS_CLUES_TAG, has_clues)]);
+    .conditions(&[(HAS_CLUES_TAG, has_clues)]);
 
 /// Native tag: discard the replaced clue count from Cover Up.
 const DISCARD_TAG: &str = "01007:discard-clues";
 /// Native tag: suffer 1 mental trauma at game end if clues remain.
 const TRAUMA_TAG: &str = "01007:trauma";
-/// Eligibility tag: both of Cover Up's clue-conditional abilities gate on it —
+/// Native-condition tag, the eligibility both of Cover Up's clue-conditional
+/// abilities gate on —
 /// the discover-replacement reaction is offered only while Cover Up still holds
 /// clues to discard, and the game-end Forced only initiates while it does
 /// (RR p.2 potential gate, #786). Replaces the former hardcoded
@@ -88,7 +89,7 @@ pub fn abilities() -> Vec<Ability> {
             // triggering condition may be used."*
             Effect::Seq(vec![dsl::native(DISCARD_TAG), Effect::Cancel]),
         )
-        .with_eligibility(HAS_CLUES_TAG),
+        .with_eligibility(dsl::native_condition(HAS_CLUES_TAG)),
         // "if there are any clues on Cover Up" is an initiation condition, not
         // part of the effect: RR p.2 ("Forced Abilities") — *"If a forced
         // ability does not have the potential to change the game state, the
@@ -100,7 +101,7 @@ pub fn abilities() -> Vec<Ability> {
             EventTiming::When,
             dsl::native(TRAUMA_TAG),
         )
-        .with_eligibility(HAS_CLUES_TAG),
+        .with_eligibility(dsl::native_condition(HAS_CLUES_TAG)),
     ]
 }
 
@@ -168,7 +169,7 @@ fn trauma(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::{Effect, Trigger};
+    use card_dsl::dsl::{Condition, Effect, Trigger};
     use game_core::state::{
         AbilitySource, CardCode, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId,
         Owner,
@@ -214,22 +215,23 @@ mod tests {
 
     #[test]
     fn has_clues_predicate_gates_on_source_instance_clues() {
-        // Both clue-conditional abilities carry the eligibility tag.
+        // Both clue-conditional abilities gate on the eligibility condition.
         let abilities = abilities();
+        let has_clues = Some(Condition::Native {
+            tag: "01007:has-clues".into(),
+        });
         assert_eq!(
-            abilities[1].eligibility.as_deref(),
-            Some("01007:has-clues"),
+            abilities[1].eligibility, has_clues,
             "the discover-replacement reaction declares the potential gate"
         );
         assert_eq!(
-            abilities[2].eligibility.as_deref(),
-            Some("01007:has-clues"),
+            abilities[2].eligibility, has_clues,
             "the game-end Forced declares it too, so a clueless Cover Up never \
              initiates (#786)"
         );
 
         // Predicate: true while the source instance holds clues, false at 0.
-        let pred = impls::native_eligibility_for("01007:has-clues").expect("registered");
+        let pred = impls::native_condition_for("01007:has-clues").expect("registered");
         let mut inv = test_support::test_investigator(1);
         let mut card = CardInPlay::enter_play(
             CardCode::new("01007"),

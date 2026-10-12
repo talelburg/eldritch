@@ -56,8 +56,8 @@ const SKILL_BOOST: &str = "MOCK5";
 /// (#958).
 const ONCE_PER_ROUND_GAIN: &str = "MOCK6";
 
-/// Mock card code: `[fast] Gain 1 resource.`, gated by an eligibility tag
-/// whose predicate holds only while the controller has a clue — an activated
+/// Mock card code: `[fast] Gain 1 resource.`, gated by a native eligibility
+/// condition whose predicate holds only while the controller has a clue — an activated
 /// ability whose condition lives outside its effect (#958, the #791 class).
 const CLUE_GATED_GAIN: &str = "MOCK7";
 const HAS_A_CLUE_TAG: &str = "_activate:has_a_clue";
@@ -129,10 +129,10 @@ fn install_mock_registry() {
         .with_abilities(CLUE_GATED_GAIN, || {
             vec![
                 dsl::activated(0, vec![], dsl::gain_resources(InvestigatorTarget::You, 1))
-                    .with_eligibility(HAS_A_CLUE_TAG),
+                    .with_eligibility(dsl::native_condition(HAS_A_CLUE_TAG)),
             ]
         })
-        .with_native_eligibility(HAS_A_CLUE_TAG, has_a_clue)
+        .with_native_condition(HAS_A_CLUE_TAG, has_a_clue)
         .with_abilities(ONCE_PER_ROUND_DISCOVERY, || {
             vec![dsl::activated(
                 0,
@@ -580,7 +580,7 @@ fn a_limited_ability_on_a_card_the_activator_does_not_control_counts_its_use() {
     );
 }
 
-/// An activated ability whose eligibility tag is false is not offered, and a
+/// An activated ability whose eligibility condition is false is not offered, and a
 /// submission that skips the menu is refused; once the condition holds it is
 /// offered (#958). The activation side of the bug class #791 closed for forced
 /// abilities.

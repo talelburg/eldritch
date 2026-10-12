@@ -76,8 +76,7 @@ pub(super) enum Refusal {
     /// Nothing resolves at the candidate's address on the side of its source
     /// that is in effect, or among the grants it holds now.
     SideNotInEffect,
-    /// The ability's eligibility predicate is false, or has no registered
-    /// predicate to evaluate.
+    /// The ability's eligibility condition is false, or cannot be evaluated.
     NotEligible,
     /// The ability's effect has no potential to change the game state.
     NoStateChange,
@@ -203,10 +202,12 @@ const _: () = {
 /// a sibling option has resolved (#568).
 ///
 /// The **change-state** check is [`evaluator::effect_can_change_state`],
-/// conservative by construction; the **eligibility** tag refines opaque
-/// `Effect::Native` effects it can't introspect (#368: Cover Up 01007's *"if
-/// there are any clues on Cover Up"*, act 01109). No tag → eligible. A tag
-/// with no resolvable predicate → refused, so a half-installed host never
+/// conservative by construction; the **eligibility** condition is a play
+/// restriction the card supplies where the engine can't derive one, such as an
+/// opaque `Effect::Native` it can't introspect (#368: Cover Up 01007's *"if
+/// there are any clues on Cover Up"*, act 01109). No condition → eligible. A
+/// condition that can't be evaluated (an unregistered native tag) panics in a
+/// debug build and is refused in release, so a half-installed host never
 /// surfaces a gated ability it can't evaluate.
 ///
 /// The **cost** check asks whether each printed cost can be paid in full
@@ -430,9 +431,16 @@ fn restrictions_met(
         return Err(Refusal::NoStateChange);
     }
     if applies(Check::Eligibility, kind) {
-        if let Some(tag) = ability.eligibility.as_deref() {
-            if !(reg.native_eligibility_for)(tag).is_some_and(|pred| pred(state, &ctx)) {
-                return Err(Refusal::NotEligible);
+        if let Some(eligibility) = &ability.eligibility {
+            match evaluator::eval_condition_against(state, Some(reg), &ctx, eligibility) {
+                Ok(true) => {}
+                Ok(false) => return Err(Refusal::NotEligible),
+                // A content or engine fault rather than a board answer, so loud
+                // in tests; refused in release, as an unregistered tag always was.
+                Err(fault) => {
+                    debug_assert!(false, "eligibility condition: {fault}");
+                    return Err(Refusal::NotEligible);
+                }
             }
         }
     }

@@ -19,7 +19,7 @@ Why the direction matters: editing the engine must not recompile 5600 lines of g
 
 ## CardRegistry — the only cross-crate bridge
 
-`game_core::card_registry` is a `OnceLock<CardRegistry>` holding six function pointers: `metadata_for` and `abilities_for` / `back_abilities_for` keyed by `&CardCode`, and `native_effect_for` / `native_eligibility_for` / `native_condition_for` keyed by a native tag. `cards` provides `pub const REGISTRY`, whose slots are searches over `cards::impls::ALL`, one registration record per card (#986); hosts install once at startup:
+`game_core::card_registry` is a `OnceLock<CardRegistry>` holding five function pointers: `metadata_for` and `abilities_for` / `back_abilities_for` keyed by `&CardCode`, and `native_effect_for` / `native_condition_for` keyed by a native tag. `native_condition_for` is the one read-only native slot: a `Condition::Native` resolves there whether it guards an effect or an ability's eligibility. `cards` provides `pub const REGISTRY`, whose slots are searches over `cards::impls::ALL`, one registration record per card (#986); hosts install once at startup:
 
 ```rust
 let _ = game_core::card_registry::install(cards::REGISTRY);

@@ -43,17 +43,11 @@ fn an_ability_with_no_natives_references_nothing() {
 }
 
 #[test]
-fn a_granted_abilitys_eligibility_is_reported_as_eligibility() {
+fn a_granted_abilitys_native_eligibility_is_reported_as_a_condition() {
     let granted = reaction_on_event(EventPattern::RoundEnded, EventTiming::When, Effect::Cancel)
-        .with_eligibility("x:granted-gate");
+        .with_eligibility(native_condition("x:granted-gate"));
     let ability = constant(grant(GrantTarget::SelfCard, None, vec![granted]));
-    assert_eq!(
-        ability.native_refs(),
-        [NativeRef {
-            kind: NativeKind::Eligibility,
-            tag: "x:granted-gate",
-        }]
-    );
+    assert_eq!(ability.native_refs(), [condition_ref("x:granted-gate")]);
 }
 
 #[test]

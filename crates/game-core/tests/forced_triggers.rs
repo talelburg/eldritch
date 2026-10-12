@@ -86,16 +86,16 @@ const AFTER_INVESTIGATE_CARD: &str = "test-after-investigate";
 
 /// Mock locations exercising the forced scan's **eligibility gate** (#786): the
 /// `EnteredLocation` horror ability of [`HORROR_ATTIC`], carrying an
-/// `Ability::eligibility` tag that respectively passes, fails, and has no
-/// registered predicate at all. RR p.2: an ability with no potential to change
-/// the game state does not initiate — so the last two must fire nothing, the
-/// unresolvable one because a host that cannot evaluate its own gate must not
-/// guess in the ability's favour.
+/// `Ability::eligibility` native condition that respectively passes, fails,
+/// and has no registered predicate at all. RR p.2: an ability with no potential
+/// to change the game state does not initiate — so the last two must fire
+/// nothing, the unresolvable one because a host that cannot evaluate its own
+/// gate must not guess in the ability's favour.
 const GATED_ELIGIBLE: &str = "test-gated-eligible";
 const GATED_INELIGIBLE: &str = "test-gated-ineligible";
 const GATED_UNKNOWN_TAG: &str = "test-gated-unknown-tag";
 
-/// Tags resolved by [`mock_native_eligibility_for`]. `UNKNOWN_TAG` is
+/// Tags the installed registry resolves as native conditions. `UNKNOWN_TAG` is
 /// deliberately absent from it.
 const ALWAYS_TAG: &str = "test:always";
 const NEVER_TAG: &str = "test:never";
@@ -111,9 +111,13 @@ fn forced_horror(pattern: EventPattern, cell: EventTiming, horror: u8) -> Abilit
     )
 }
 
-/// [`HORROR_ATTIC`]'s on-enter ability, carrying an eligibility `tag` (#786).
+/// [`HORROR_ATTIC`]'s on-enter ability, gated on the native condition `tag`
+/// (#786).
 fn gated_on_enter(tag: &'static str) -> Vec<Ability> {
-    vec![forced_horror(EventPattern::EnteredLocation, EventTiming::After, 1).with_eligibility(tag)]
+    vec![
+        forced_horror(EventPattern::EnteredLocation, EventTiming::After, 1)
+            .with_eligibility(dsl::native_condition(tag)),
+    ]
 }
 
 /// A `LeftLocation` forced ability in `cell` — a card printing two of these
@@ -212,8 +216,8 @@ fn install_mock_registry() {
                 1,
             )]
         })
-        .with_native_eligibility(ALWAYS_TAG, always)
-        .with_native_eligibility(NEVER_TAG, never)
+        .with_native_condition(ALWAYS_TAG, always)
+        .with_native_condition(NEVER_TAG, never)
         .install();
 }
 
@@ -1347,7 +1351,7 @@ fn order_first() -> Action {
 // `two_simultaneous_forced_triggers_resolved_in_lead_chosen_order` through `apply`.)
 
 // #786: the forced scan asks the same eligibility question the reaction-offer
-// scan does, so a forced ability's `eligibility` tag gates *initiation*. Rules
+// scan does, so a forced ability's `eligibility` condition gates *initiation*. Rules
 // Reference, "Ability" -> "Forced Abilities" (p.2):
 //
 //   "If a forced ability does not have the potential to change the game state,
@@ -1356,7 +1360,8 @@ fn order_first() -> Action {
 // Three tags, one per outcome: a passing predicate fires, a failing one does
 // not, and one with no registered predicate is suppressed rather than resolved
 // — the reaction side's posture, so a half-installed host never fires a gate it
-// cannot evaluate.
+// cannot evaluate. That last is a content fault, so a debug build panics on it
+// rather than letting it pass the tests silently.
 
 /// Enter `code`'s location and return the entering investigator's horror, so a
 /// gated `EnteredLocation` forced is measured by whether its 1 horror landed.
@@ -1389,11 +1394,15 @@ fn a_forced_with_an_unmet_eligibility_tag_does_not_initiate() {
     assert_eq!(
         horror_after_entering(GATED_INELIGIBLE),
         0,
-        "a false eligibility predicate keeps the forced out of the candidate list",
+        "a false eligibility condition keeps the forced out of the candidate list",
     );
 }
 
 #[test]
+#[cfg_attr(
+    debug_assertions,
+    should_panic(expected = "Native condition \"test:unregistered\": no predicate registered")
+)]
 fn a_forced_whose_eligibility_tag_has_no_predicate_is_suppressed() {
     assert_eq!(
         horror_after_entering(GATED_UNKNOWN_TAG),

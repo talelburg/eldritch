@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 use card_dsl::card_data::CardMetadata;
 use card_dsl::dsl::Ability;
 
-use crate::card_registry::{self, CardRegistry, EligibilityFn, NativeConditionFn, NativeEffectFn};
+use crate::card_registry::{self, CardRegistry, NativeConditionFn, NativeEffectFn};
 use crate::state::CardCode;
 use crate::test_support;
 
@@ -76,7 +76,6 @@ pub struct MockRegistry {
     abilities: Vec<(CardCode, AbilitiesFn)>,
     back_abilities: Vec<(CardCode, AbilitiesFn)>,
     native_effects: Vec<(String, NativeEffectFn)>,
-    native_eligibilities: Vec<(String, EligibilityFn)>,
     native_conditions: Vec<(String, NativeConditionFn)>,
 }
 
@@ -136,25 +135,11 @@ impl MockRegistry {
         self
     }
 
-    /// Register the reaction-eligibility predicate served for `tag`
-    /// ([`Ability::eligibility`](card_dsl::dsl::Ability::eligibility)).
-    #[must_use]
-    pub fn with_native_eligibility(
-        mut self,
-        tag: impl Into<String>,
-        eligibility: EligibilityFn,
-    ) -> Self {
-        self.native_eligibilities.push((tag.into(), eligibility));
-        self
-    }
-
     /// Register the condition predicate served for the
-    /// [`Condition::Native`](card_dsl::dsl::Condition::Native) `tag`.
-    ///
-    /// This method exists to carry the binaries that already mock the slot; it
-    /// is **not** an invitation to reach for it. `TODO(#609)`:
-    /// [`CardRegistry::native_condition_for`] is expected to be deleted along
-    /// with `Condition::Native`, and this method goes with it.
+    /// [`Condition::Native`](card_dsl::dsl::Condition::Native) `tag` — whether
+    /// it guards an effect or an ability's
+    /// [`eligibility`](card_dsl::dsl::Ability::eligibility), since both resolve
+    /// in [`CardRegistry::native_condition_for`].
     #[must_use]
     pub fn with_native_condition(
         mut self,
@@ -179,7 +164,7 @@ impl MockRegistry {
     /// stored only when this call won the slot, so a builder that lost leaves
     /// nothing behind for a lookup to serve from a registry that isn't ours.
     ///
-    /// The literal below names all six slots rather than spreading
+    /// The literal below names all five slots rather than spreading
     /// [`CardRegistry::EMPTY`], so a slot added later is a compile error here —
     /// which is what a builder wants, since every slot is one it must decide
     /// whether to expose a `with_*` for. (`EMPTY` is the right base for a
@@ -195,7 +180,6 @@ impl MockRegistry {
             abilities_for,
             back_abilities_for,
             native_effect_for,
-            native_eligibility_for,
             native_condition_for,
         })
         .is_ok();
@@ -205,7 +189,7 @@ impl MockRegistry {
     }
 }
 
-/// Serve `tag` out of one of the `Copy`-valued native tables. The three native
+/// Serve `tag` out of one of the `Copy`-valued native tables. The two native
 /// slots differ only in the function type they carry, so they share this scan.
 fn find_tag<T: Copy>(table: &[(String, T)], tag: &str) -> Option<T> {
     table
@@ -247,10 +231,6 @@ fn back_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
 
 fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
     find_tag(&TABLES.get()?.native_effects, tag)
-}
-
-fn native_eligibility_for(tag: &str) -> Option<EligibilityFn> {
-    find_tag(&TABLES.get()?.native_eligibilities, tag)
 }
 
 fn native_condition_for(tag: &str) -> Option<NativeConditionFn> {

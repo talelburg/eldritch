@@ -33,7 +33,7 @@ use std::sync::OnceLock;
 
 use card_dsl::card_data::CardMetadata;
 use card_dsl::dsl::Ability;
-use game_core::card_registry::{CardRegistry, EligibilityFn, NativeConditionFn, NativeEffectFn};
+use game_core::card_registry::{CardRegistry, NativeConditionFn, NativeEffectFn};
 use game_core::state::CardCode;
 
 pub mod generated;
@@ -108,11 +108,6 @@ fn registry_native_effect_for(tag: &str) -> Option<NativeEffectFn> {
     impls::native_effect_for(tag)
 }
 
-/// Adapter from an eligibility tag to its card-local predicate.
-fn registry_native_eligibility_for(tag: &str) -> Option<EligibilityFn> {
-    impls::native_eligibility_for(tag)
-}
-
 /// Adapter from a [`Condition::Native`](card_dsl::dsl::Condition::Native) tag to
 /// its card-local predicate.
 fn registry_native_condition_for(tag: &str) -> Option<NativeConditionFn> {
@@ -128,7 +123,6 @@ pub const REGISTRY: CardRegistry = CardRegistry {
     abilities_for: registry_abilities_for,
     back_abilities_for: registry_back_abilities_for,
     native_effect_for: registry_native_effect_for,
-    native_eligibility_for: registry_native_eligibility_for,
     native_condition_for: registry_native_condition_for,
 };
 
@@ -258,22 +252,17 @@ mod tests {
             .native_effects
             .iter()
             .map(|(tag, _)| (NativeKind::Effect, *tag));
-        let eligibility = record
-            .native_eligibility
-            .iter()
-            .map(|(tag, _)| (NativeKind::Eligibility, *tag));
         let conditions = record
             .native_conditions
             .iter()
             .map(|(tag, _)| (NativeKind::Condition, *tag));
-        effects.chain(eligibility).chain(conditions).collect()
+        effects.chain(conditions).collect()
     }
 
     /// Whether `tag` resolves through `REGISTRY`'s slot for `kind`.
     fn resolves(kind: NativeKind, tag: &str) -> bool {
         match kind {
             NativeKind::Effect => (REGISTRY.native_effect_for)(tag).is_some(),
-            NativeKind::Eligibility => (REGISTRY.native_eligibility_for)(tag).is_some(),
             NativeKind::Condition => (REGISTRY.native_condition_for)(tag).is_some(),
         }
     }
@@ -405,11 +394,7 @@ mod tests {
         assert!((REGISTRY.metadata_for)(&code).is_none());
         assert!((REGISTRY.abilities_for)(&code).is_none());
         assert!((REGISTRY.back_abilities_for)(&code).is_none());
-        for kind in [
-            NativeKind::Effect,
-            NativeKind::Eligibility,
-            NativeKind::Condition,
-        ] {
+        for kind in [NativeKind::Effect, NativeKind::Condition] {
             assert!(
                 !resolves(kind, "99999:unknown"),
                 "{kind:?} resolved an unknown tag"
