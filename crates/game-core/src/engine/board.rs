@@ -55,7 +55,8 @@
 //! behind it.
 //!
 //! [`place_in_victory_display`] is the victory display's exit, which a
-//! defeated Victory enemy takes.
+//! defeated Victory enemy takes. [`discard_encounter_card`] files an encounter
+//! card that never entered play through the same router.
 
 mod leave_play;
 

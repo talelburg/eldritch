@@ -41,7 +41,6 @@
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::evaluator::{self, EvalContext};
 use game_core::engine::{self, board, Cx, EngineOutcome};
-use game_core::event::Event;
 use game_core::state::Owner;
 
 use crate::impls::CardRecord;
@@ -113,24 +112,11 @@ fn board_build(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
     let Some(dest) = evaluator::location_id_by_code(cx.state, HALLWAY) else {
         unreachable!("01108 board-build: the Hallway just entered play");
     };
+    // A placement, not a move: no engaged enemy follows and no move trigger
+    // fires.
     let ids: Vec<_> = cx.state.investigators.keys().copied().collect();
     for id in ids {
-        let inv = cx
-            .state
-            .investigators
-            .get_mut(&id)
-            .expect("id sourced from keys()");
-        let from = inv.current_location;
-        inv.current_location = Some(dest);
-        if let Some(from_id) = from {
-            if from_id != dest {
-                cx.events.push(Event::InvestigatorMoved {
-                    investigator: id,
-                    from: from_id,
-                    to: dest,
-                });
-            }
-        }
+        engine::place_investigator(cx, id, dest);
     }
     engine::reveal_location(cx, dest);
     // Remove the Study (01111) from the game. Its attachments go with it, each

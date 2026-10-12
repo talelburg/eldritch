@@ -8,8 +8,12 @@
 //! and is unit-tested there; here we prove the *card effects* resolve.
 
 use cards::REGISTRY;
+use game_core::assert_event;
 use game_core::engine::{ApplyResult, EngineOutcome, PromptNature, TimingEvent};
-use game_core::state::{CardCode, EnemyId, GameStateBuilder, InvestigatorId, LocationId};
+use game_core::event::Event;
+use game_core::state::{
+    CardCode, DiscardPile, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Zone,
+};
 use game_core::test_support::{self, TestSession};
 
 #[ctor::ctor(unsafe)]
@@ -157,7 +161,12 @@ fn agenda_01106_reverse_discards_non_ghoul_cards() {
         .build();
     state.encounter_deck.push_back(CardCode::new("01135")); // treachery, no Ghoul
 
-    let ApplyResult { state, outcome, .. } = TestSession::new(state)
+    let ApplyResult {
+        state,
+        outcome,
+        events,
+        ..
+    } = TestSession::new(state)
         .fire_at(TimingEvent::AgendaAdvanced {
             code: CardCode::new("01106"),
         })
@@ -167,6 +176,14 @@ fn agenda_01106_reverse_discards_non_ghoul_cards() {
         state.encounter_discard,
         vec![CardCode::new("01135")],
         "the non-Ghoul card is discarded",
+    );
+    assert_event!(
+        events,
+        Event::CardDiscarded {
+            code,
+            from: Zone::EncounterDeck,
+            to: DiscardPile::Encounter,
+        } if code.as_str() == "01135"
     );
     assert!(state.encounter_deck.is_empty());
     assert!(

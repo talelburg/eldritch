@@ -117,7 +117,7 @@
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, Phase};
 use game_core::engine::evaluator::{self, EvalContext};
 use game_core::engine::{self, Cx, EngineOutcome};
-use game_core::event::{Event, TraumaKind};
+use game_core::event::TraumaKind;
 use game_core::state::{Enemy, EnemyId, GameState, InvestigatorId, LocationId, Status};
 
 use crate::generated::traits::GHOUL;
@@ -213,11 +213,7 @@ fn the_ghouls_run_rampant(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
         engine::defeat_investigator(cx, investigator);
         // Announced, not recorded: nothing persists trauma until the phase-9
         // campaign log (#766). Cover Up 01007's mental trauma is the precedent.
-        cx.events.push(Event::TraumaSuffered {
-            investigator,
-            kind: TraumaKind::Physical,
-            amount: 1,
-        });
+        engine::suffer_trauma(cx, investigator, TraumaKind::Physical, 1);
     }
     EngineOutcome::Done
 }
@@ -285,7 +281,8 @@ fn move_ghouls_toward_parlor(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
 
 /// Place 1 doom on the agenda per Ghoul in the Hallway (01112) or Parlor
 /// (01115). Not filtered by engagement (per card text). No threshold
-/// check — RR p.24 checks doom in Mythos step 1.3.
+/// check — RR p.24 checks doom in Mythos step 1.3. Placed through the
+/// engine's `place_doom_on_agenda`, so an empty agenda deck takes none.
 fn place_round_end_doom(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
     let counted: Vec<LocationId> = [HALLWAY, PARLOR]
         .iter()
@@ -299,7 +296,7 @@ fn place_round_end_doom(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
         .filter(|e| e.current_location.is_some_and(|l| counted.contains(&l)))
         .count();
     let count = u8::try_from(count).unwrap_or(u8::MAX);
-    cx.state.agenda_doom = cx.state.agenda_doom.saturating_add(count);
+    engine::place_doom_on_agenda(cx, count);
     EngineOutcome::Done
 }
 
@@ -786,5 +783,16 @@ mod tests {
         state.enemies.insert(EnemyId(1), engaged);
         cx_apply(&mut state, place_round_end_doom);
         assert_eq!(state.agenda_doom, 1);
+    }
+
+    /// The empty-agenda-deck guard: with no agenda to place doom on, a Ghoul
+    /// in the Hallway places none.
+    #[test]
+    fn round_end_doom_on_an_empty_agenda_deck_is_a_no_op() {
+        let mut state = star_board();
+        assert!(state.agenda_deck.is_empty());
+        state.enemies.insert(EnemyId(1), ghoul(1, LocationId(2))); // Hallway
+        cx_apply(&mut state, place_round_end_doom);
+        assert_eq!(state.agenda_doom, 0);
     }
 }

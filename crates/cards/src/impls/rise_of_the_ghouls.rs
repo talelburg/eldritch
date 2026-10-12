@@ -12,6 +12,7 @@
 //! single-use scenario logic, so it lives card-locally as an `Effect::Native`
 //! handler (#276), orchestrating engine primitives
 //! ([`reshuffle_encounter_discard`](engine::reshuffle_encounter_discard),
+//! `take_encounter_top`,
 //! [`resolve_encounter_card`](engine::resolve_encounter_card)) over the
 //! encounter deck.
 //!
@@ -27,10 +28,13 @@
 //! a deck with no Ghoul yields none). The algorithm is exercised against a
 //! seeded deck in `cards/tests/agenda_reverses.rs`.
 //!
-//! Solo-scope note: spawning the drawn Ghoul engages inline (`Done`) with
-//! one investigator; a tied-prey multi-investigator spawn would suspend
-//! (`AwaitingInput`) — unreachable through the single-trigger
-//! forced-advance path until #212/#213, consistent with Slice 1.
+//! The native never suspends: `resolve_encounter_card` pushes the card's
+//! Revelation and disposal frames and returns `Done`, and the drawn Ghoul
+//! spawns later, when the `drive` loop disposes of it — so any engagement
+//! choice its spawn needs is asked there, not here.
+//!
+//! Each card dug through is discarded with `discard_encounter_card`, which
+//! announces its `CardDiscarded` from the encounter deck.
 //!
 //! **Cell: the `after` cell of the `AgendaAdvanced` condition.** The reverse
 //! prints no trigger word, because it is not a triggered ability: it is step 2
@@ -48,7 +52,8 @@
 use card_dsl::card_data::CardType;
 use card_dsl::dsl::{self, Ability, CardFilter, EventPattern, EventTiming};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, Cx, EngineOutcome};
+use game_core::engine::{self, board, Cx, EngineOutcome};
+use game_core::state::Zone;
 
 use crate::generated::traits::GHOUL;
 use crate::impls::CardRecord;
@@ -83,15 +88,15 @@ fn is_ghoul_enemy(code: &str) -> bool {
 /// a no-op (nothing to draw).
 fn reverse(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
     engine::reshuffle_encounter_discard(cx);
-    // Pop directly from the deck (not `draw_encounter_top`, which would
-    // reshuffle the just-discarded cards back in and loop). The deck is
-    // finite and shrinks by one each iteration, so this terminates.
-    while let Some(code) = cx.state.encounter_deck.pop_front() {
+    // `take_encounter_top` never reshuffles, so the just-discarded cards are
+    // not fed back into the dig. The deck is finite and shrinks by one each
+    // iteration, so this terminates.
+    while let Some(code) = engine::take_encounter_top(cx) {
         if is_ghoul_enemy(code.as_str()) {
             let metadata = crate::by_code(code.as_str()).expect("is_ghoul_enemy looked it up");
             return engine::resolve_encounter_card(cx, ctx.controller, code, metadata);
         }
-        cx.state.encounter_discard.push(code);
+        board::discard_encounter_card(cx, code, Zone::EncounterDeck);
     }
     EngineOutcome::Done
 }
