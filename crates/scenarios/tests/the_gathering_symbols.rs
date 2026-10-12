@@ -38,8 +38,10 @@ fn gathering_state(token: ChaosToken, ghouls: u8) -> GameState {
         .locations
         .insert(loc, test_support::test_location(1, "Study"));
     for i in 0..ghouls {
+        // Ghoul Minion 01160 (Humanoid. Monster. Ghoul.): its printed traits
+        // drive ghoul_count; test_enemy's name arg is display-only.
         let mut e = test_support::test_enemy(u32::from(i) + 1, "Ghoul");
-        e.traits = vec!["Ghoul".to_string()]; // traits drives ghoul_count; test_enemy's name arg is display-only.
+        e.code = CardCode::new("01160");
         e.current_location = Some(loc);
         state.enemies.insert(e.id, e);
     }

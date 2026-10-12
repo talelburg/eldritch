@@ -246,8 +246,9 @@ fn dissonant_voices_round_end_coexists_with_agenda_01107_doom() {
         .with_location(loc(2, "01112", "Hallway"))
         .with_location(loc(5, "01115", "Parlor"))
         .build();
+    // Ghoul Minion 01160 (Humanoid. Monster. Ghoul.).
     let mut ghoul = test_support::test_enemy(1, "Ghoul");
-    ghoul.traits = vec!["Monster".into(), "Ghoul".into()];
+    ghoul.code = CardCode::new("01160");
     ghoul.current_location = Some(LocationId(2)); // Hallway
     state.enemies.insert(EnemyId(1), ghoul);
     state.agenda_deck = vec![Agenda {

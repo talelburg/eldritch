@@ -46,10 +46,11 @@
 //! card has no rulings (recorded in `data/arkhamdb-faq/no-rulings.txt`).
 
 use card_dsl::card_data::CardType;
-use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
+use card_dsl::dsl::{self, Ability, CardFilter, EventPattern, EventTiming};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome};
 
+use crate::generated::traits::GHOUL;
 use crate::impls::CardRecord;
 
 /// `ArkhamDB` code for Agenda 2, "Rise of the Ghouls".
@@ -72,8 +73,8 @@ pub fn abilities() -> Vec<Ability> {
 
 /// `true` if `code` is an encounter **enemy** carrying the `Ghoul` trait.
 fn is_ghoul_enemy(code: &str) -> bool {
-    crate::by_code(code)
-        .is_some_and(|m| m.card_type() == CardType::Enemy && m.traits.iter().any(|t| t == "Ghoul"))
+    let ghoul_enemy = CardFilter::with_trait(GHOUL).and_kind(CardType::Enemy);
+    crate::by_code(code).is_some_and(|m| ghoul_enemy.matches(m))
 }
 
 /// Shuffle the encounter discard into the deck, then dig from the top —
