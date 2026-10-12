@@ -56,6 +56,9 @@ mod trigger_scan;
 mod initiation;
 pub(crate) mod movement;
 pub(super) mod phases;
+// pub(super): engine/mod.rs re-exports `place_investigator` for the `cards`
+// crate (Trapped 01108's reverse).
+pub(super) mod placement;
 // pub(crate): engine/mod.rs re-exports `put_set_aside_card_into_play` for the
 // `cards` crate (The Gathering's Act-1 and Act-2 reverses).
 pub(crate) mod set_aside;

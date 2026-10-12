@@ -182,6 +182,20 @@ pub fn remove_location_from_game(cx: &mut Cx, location: LocationId) -> bool {
     true
 }
 
+/// Discard `code`, an encounter card outside any zone of play, to the encounter
+/// discard, and emit its [`Event::CardDiscarded`] naming `from`.
+///
+/// The card never entered play, so it takes no leave-play cascade: it has no
+/// tokens and no attachments. Two cases reach it: a revealed card that cannot
+/// enter play (Obscuring Fog 01168's limit-1 second copy, which the caller
+/// reports `from` [`Zone::LocationAttachment`]), and a card taken off the deck
+/// without being drawn (Rise of the Ghouls 01106's misses, `from`
+/// [`Zone::EncounterDeck`]). Filed through the same router as the leave-play
+/// exits, with the encounter deck as its owner.
+pub fn discard_encounter_card(cx: &mut Cx, code: CardCode, from: Zone) {
+    file(cx, code, Owner::EncounterDeck, from, Exit::Discard);
+}
+
 /// Which exit a card takes. Private: each variant has its own public verb.
 #[derive(Debug, Clone, Copy)]
 enum Exit {

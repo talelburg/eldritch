@@ -34,9 +34,8 @@ use card_dsl::dsl::{
     TestOutcome, TestedLocationScope,
 };
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, Cx, EngineOutcome};
-use game_core::event::Event;
-use game_core::state::{CardCode, DiscardPile, Owner, Zone};
+use game_core::engine::{self, board, Cx, EngineOutcome};
+use game_core::state::{CardCode, Owner, Zone};
 
 use crate::impls::CardRecord;
 
@@ -102,12 +101,7 @@ fn limit1_attach(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
         // the event names (`glossary/Attach_To.md`: *"If the initial "attach
         // to" check does not pass, … If such a card cannot remain in its prior
         // state or game area, discard it."*).
-        cx.state.encounter_discard.push(CardCode::new(CODE));
-        cx.events.push(Event::CardDiscarded {
-            code: CardCode::new(CODE),
-            from: Zone::LocationAttachment,
-            to: DiscardPile::Encounter,
-        });
+        board::discard_encounter_card(cx, CardCode::new(CODE), Zone::LocationAttachment);
         return EngineOutcome::Done;
     }
     // Revealed from the encounter deck, so the encounter deck owns it.

@@ -67,6 +67,10 @@ pub enum Zone {
     /// A player's deck (top or bottom — events that need the
     /// distinction can record it separately).
     Deck,
+    /// The encounter deck. Used as the `from` zone when a card taken off the
+    /// encounter deck is discarded without being drawn (Rise of the Ghouls
+    /// 01106's *"Discard cards from the top of the encounter deck"*).
+    EncounterDeck,
     /// Cards currently in play under an investigator's control.
     InPlay,
     /// An investigator's threat area — the play area holding encounter

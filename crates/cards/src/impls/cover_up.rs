@@ -45,8 +45,8 @@
 
 use card_dsl::dsl::{self, Ability, Effect, EventPattern, EventTiming};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{board, Cx, EngineOutcome};
-use game_core::event::{Event, TraumaKind};
+use game_core::engine::{self, board, Cx, EngineOutcome};
+use game_core::event::TraumaKind;
 use game_core::state::GameState;
 
 use crate::impls::CardRecord;
@@ -129,9 +129,7 @@ fn discard_clues(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
     // Found wherever it sits, not in the triggering investigator's areas: the
     // ruling lets anyone at Roland's location discard from *his* Cover Up
     // (<https://arkhamdb.com/card/01007>).
-    if let Some((card, _)) = board::find_instance_mut(cx.state, source) {
-        card.clues -= count.min(card.clues);
-    }
+    board::remove_clues(cx, source, count);
     EngineOutcome::Done
 }
 
@@ -157,11 +155,7 @@ fn trauma(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
         .filter(|(card, _)| card.clues > 0)
         .and_then(|(_, placement)| placement.investigator());
     if let Some(holder) = holder {
-        cx.events.push(Event::TraumaSuffered {
-            investigator: holder,
-            kind: TraumaKind::Mental,
-            amount: 1,
-        });
+        engine::suffer_trauma(cx, holder, TraumaKind::Mental, 1);
     }
     EngineOutcome::Done
 }
