@@ -414,9 +414,9 @@ async fn map_and_investigators_are_inside_board_main() {
 #[wasm_bindgen_test]
 async fn engaged_enemy_renders_as_card_in_threat_area() {
     // `test_enemy` is a primitive builder (ADR 0016): the `Enemy` struct carries
-    // its own name, traits and stats, and `EnemyCard` reads them from state —
-    // the registry is consulted only for optional ability text
-    // (`crates/web/src/enemy_card.rs:54-63`), and never renders `card--unknown`.
+    // its own name and stats, and `EnemyCard` reads them from state — the
+    // registry is consulted only for the printed card's optional traits and
+    // ability text, and a missing card never renders `card--unknown`.
     let mut enemy = test_support::test_enemy(1, "Ghoul Priest");
     enemy.engaged_with = Some(InvestigatorId(1));
     let state = GameStateBuilder::new()

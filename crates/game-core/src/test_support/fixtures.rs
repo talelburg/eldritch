@@ -99,8 +99,10 @@ pub fn test_location(id: u32, name: impl Into<String>) -> Location {
 ///
 /// - Fight 2, Evade 2, max-health 2, no damage.
 /// - Attack pattern: 1 damage / 0 horror.
-/// - Not spawned (`current_location: None`), ready, unengaged, no
-///   traits.
+/// - Not spawned (`current_location: None`), ready, unengaged.
+/// - A synthetic code (`_test_enemy_{id}`) with no printed card behind it, so
+///   it has no traits. A test whose rules depend on a trait sets
+///   [`code`](Enemy::code) to a real card's.
 /// - Owned by the **encounter deck** ([`Owner::EncounterDeck`]) — the owner of
 ///   an enemy drawn from the encounter deck, which is where every enemy but a
 ///   weakness comes from. A test about a weakness enemy sets
@@ -124,7 +126,6 @@ pub fn test_enemy(id: u32, name: impl Into<String>) -> Enemy {
         attack_horror: 0,
         current_location: None,
         exhausted: false,
-        traits: Vec::new(),
         engaged_with: None,
         hunter: false,
         prey: Prey::Default,
