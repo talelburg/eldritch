@@ -1,7 +1,7 @@
 //! Where a movement block bites, for both sides of the table (#651, #774).
 //!
 //! Two predicates, deliberately not one. Barricade 01038 blocks **enemies**
-//! and not investigators (*"Non-[[Elite]] enemies cannot move into attached
+//! and not investigators (*"Non-\[\[Elite\]\] enemies cannot move into attached
 //! location."*); the Parlor 01115's unrevealed back blocks **investigators**
 //! and not enemies (*"You cannot move into the Parlor."*). 01115's only
 //! `ArkhamDB` ruling settles that the two sides really do diverge:
@@ -26,7 +26,7 @@
 //!
 //! The **exemption filter** is the one thing the two sides do not share: it is
 //! the enemy side's alone, and there is no investigator analogue. It is the
-//! declaring card's own — Barricade's printed *"Non-[[Elite]]"* — carried on
+//! declaring card's own — Barricade's printed *"Non-\[\[Elite\]\]"* — carried on
 //! [`Restriction::EnemyMovementBlocked`], so this module names no trait.
 //!
 //! # Where a restriction can be printed
@@ -101,7 +101,7 @@ fn location_carries_restriction(
 /// Whether `enemy` may move into `loc`. Blocked when `loc` carries a
 /// [`Restriction::EnemyMovementBlocked`] whose exemption the enemy's printed
 /// card does not pass — a `None` exemption blocks every enemy. Barricade 01038
-/// supplies its own *"Non-[[Elite]]"* as that exemption.
+/// supplies its own *"Non-\[\[Elite\]\]"* as that exemption.
 ///
 /// The exemption is checked by code through
 /// [`card_registry::card_matches`], so with no registry installed it fails

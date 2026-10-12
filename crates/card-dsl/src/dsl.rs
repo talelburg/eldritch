@@ -1967,7 +1967,7 @@ pub enum Restriction {
     /// it that way, so a blocked step is a non-move rather than a detour.
     ///
     /// The exemption is the declaring card's own, not a rule: Barricade 01038
-    /// prints *"Non-[[Elite]] enemies cannot move into attached location."*,
+    /// prints *"Non-\[\[Elite\]\] enemies cannot move into attached location."*,
     /// so it supplies a "has the Elite trait" filter. The read site asks the
     /// card registry whether the moving enemy's code passes it.
     EnemyMovementBlocked {
