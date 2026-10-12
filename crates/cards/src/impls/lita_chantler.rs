@@ -80,7 +80,7 @@
 //!
 //! *"an investigator"*, not *"you"*. The reaction matcher hard-requires *test
 //! investigator == controller* **before** a candidate is minted, so no
-//! eligibility predicate — which runs afterwards — could have widened it back
+//! eligibility condition — which runs afterwards — could have widened it back
 //! out. Hence `EventPattern::SkillTestResolved { by_controller: false }`, with
 //! every existing consumer (Dr. Milan 01033, Obscuring Fog 01168) taking `true`.
 //!
@@ -95,10 +95,24 @@
 //! **defeat** and **damage-dealt** rather than attack, so coupling a trait
 //! filter to an attack pattern buys generality where it would not compound.
 //!
-//! Running it as an eligibility predicate rather than inside the effect also
-//! honours RR p.2 — *"A triggered ability can only be initiated if its effect
-//! has the potential to change the game state"* — so against a non-`[[Monster]]`
-//! the reaction is never **offered**, rather than offered and inert.
+//! Running it as the ability's eligibility rather than inside the effect means
+//! that against a non-`[[Monster]]` the reaction is never **offered**, rather
+//! than offered and inert.
+//!
+//! ## A misfit as eligibility
+//!
+//! Eligibility is a play restriction the engine can't derive itself. This
+//! clause isn't one: *"When an investigator at your location successfully
+//! attacks a \[\[Monster\]\] enemy"* **narrows the triggering condition**, which
+//! is the event pattern's job. It rides eligibility only because the pattern
+//! can't yet say either half, so don't copy it as a pattern.
+//!
+//! The fix is per-pattern scope fields on `EventPattern::SkillTestResolved`, in
+//! the style of `EnemyAttacks`'s attacker/target scopes and its own
+//! `tested_location` scope, each landing once a second consumer arrives:
+//! **Jewel of Aureolus 02269** (*"during a skill test at your location"*) for
+//! the location half, and Heirloom of Hyperborea's trait-filtered shape (#777)
+//! for the `[[Monster]]` half. See #609 and #777.
 //!
 //! # Module gap
 //!
@@ -141,10 +155,10 @@ pub const CODE: &str = "01117";
 
 /// This card's registration, listed in [`ALL`](super::ALL).
 pub const CARD: CardRecord = CardRecord::new(CODE, abilities)
-    .eligibility(&[(MONSTER_ATTACKED_HERE_TAG, monster_attacked_here)]);
+    .conditions(&[(MONSTER_ATTACKED_HERE_TAG, monster_attacked_here)]);
 
-/// Eligibility tag carrying the whole printed predicate of the reaction —
-/// *"an investigator **at your location** successfully attacks a
+/// Native-condition tag, the reaction's eligibility, carrying the whole printed
+/// predicate of the reaction — *"an investigator **at your location** successfully attacks a
 /// **\[\[Monster\]\]** enemy"*. Both halves ride one tag because both are
 /// answered off the same in-flight Fight frame.
 const MONSTER_ATTACKED_HERE_TAG: &str = "01117:monster-attacked-here";
@@ -176,7 +190,7 @@ pub fn abilities() -> Vec<Ability> {
                 EventTiming::When,
                 dsl::boost_attack_damage(1),
             )
-            .with_eligibility(MONSTER_ATTACKED_HERE_TAG),
+            .with_eligibility(dsl::native_condition(MONSTER_ATTACKED_HERE_TAG)),
         ],
     ))]
 }
@@ -219,7 +233,7 @@ fn investigator_location(state: &GameState, id: InvestigatorId) -> Option<Locati
 mod tests {
     use card_dsl::card_data::SkillKind;
     use card_dsl::dsl::{
-        Ability, Condition, ControlStatus, Effect, EventPattern, EventTiming, GrantTarget,
+        self, Ability, Condition, ControlStatus, Effect, EventPattern, EventTiming, GrantTarget,
         ModifierAudience, ModifierScope, SkillTestKind, Stat, TestOutcome, TestedLocationScope,
         Trigger, TriggerKind,
     };
@@ -315,8 +329,8 @@ mod tests {
         );
         assert_eq!(granted[1].effect, Effect::BoostAttackDamage(1));
         assert_eq!(
-            granted[1].eligibility.as_deref(),
-            Some(super::MONSTER_ATTACKED_HERE_TAG),
+            granted[1].eligibility,
+            Some(dsl::native_condition(super::MONSTER_ATTACKED_HERE_TAG)),
             "the [[Monster]] and at-your-location halves ride the tag",
         );
     }
@@ -402,7 +416,7 @@ mod tests {
 
     fn eligible(state: &GameState) -> bool {
         let pred =
-            impls::native_eligibility_for(super::MONSTER_ATTACKED_HERE_TAG).expect("registered");
+            impls::native_condition_for(super::MONSTER_ATTACKED_HERE_TAG).expect("registered");
         pred(
             state,
             &EvalContext::for_controller_with_source(

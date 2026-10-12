@@ -1,7 +1,7 @@
-//! #470: The Barrier's round-end advance is gated by an eligibility predicate
+//! #470: The Barrier's round-end advance is gated by an eligibility condition
 //! that must reject when the Hallway group can't afford the act's clue
 //! threshold. Exercises the predicate through the installed `cards::REGISTRY` —
-//! the same `native_eligibility_for("01109:can-advance")` lookup the reaction
+//! the same `native_condition_for("01109:can-advance")` lookup the reaction
 //! scan performs through the initiation gate (`trigger_scan::collect_reactions`).
 
 use cards::REGISTRY;
@@ -17,7 +17,7 @@ fn install() {
 #[test]
 fn barrier_advance_eligibility_gates_on_hallway_affordability() {
     let reg = card_registry::current().expect("registry installed");
-    let pred = (reg.native_eligibility_for)("01109:can-advance")
+    let pred = (reg.native_condition_for)("01109:can-advance")
         .expect("01109:can-advance is registered by The Barrier");
 
     // The Barrier's contributor location is the Hallway (01112).

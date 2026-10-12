@@ -10,9 +10,8 @@
 //! 1. Write `crates/cards/src/impls/<name>.rs` with `CODE`, `abilities()`
 //!    and `pub const CARD: CardRecord = CardRecord::new(CODE, abilities)`.
 //!    Chain [`back`](CardRecord::back) for a printed reverse, and
-//!    [`effects`](CardRecord::effects) / [`eligibility`](CardRecord::eligibility)
-//!    / [`conditions`](CardRecord::conditions) for each native tag an ability
-//!    names. The native fns stay private to the module.
+//!    [`effects`](CardRecord::effects) / [`conditions`](CardRecord::conditions)
+//!    for each native tag an ability names — an eligibility's included. The native fns stay private to the module.
 //! 2. Declare `pub mod <name>;` below.
 //! 3. Add `<name>::CARD` to [`ALL`].
 //!
@@ -70,7 +69,8 @@
 //!   abilities she gains: a location-scoped `Modify` (the corpus's first
 //!   *granted* modifier) and an `OnEvent` reaction on another investigator's
 //!   test (`SkillTestResolved { by_controller: false }`) carrying a
-//!   card-local eligibility tag. The complement of the Parlor's grant above.
+//!   card-local native eligibility condition. The complement of the Parlor's
+//!   grant above.
 //! - Deduction (01039) — `Trigger::OnSkillTestResolution` (Success-
 //!   gated) + `If(SkillTestKind(Investigate), DiscoverClue@TestedLocation)`.
 //! - Roland Banks (01001) — investigator. `Trigger::OnEvent`
@@ -84,7 +84,7 @@
 //! - Rise of the Ghouls (01106) — Agenda 2; `Trigger::OnEvent` (`AgendaAdvanced`, `After`) reverse: dig the encounter deck until a Ghoul, lead draws it.
 
 use card_dsl::dsl::Ability;
-use game_core::card_registry::{EligibilityFn, NativeConditionFn, NativeEffectFn};
+use game_core::card_registry::{NativeConditionFn, NativeEffectFn};
 
 pub mod ancient_evils;
 pub mod attic;
@@ -141,10 +141,10 @@ pub mod working_a_hunch;
 /// the native fns its abilities name by tag. Each card module exports one as
 /// `CARD`, listed once in [`ALL`]; every lookup below is a search over it.
 ///
-/// The three native namespaces stay separate because the engine resolves them
+/// The two native namespaces stay separate because the engine resolves them
 /// through separate [`CardRegistry`](game_core::card_registry::CardRegistry)
-/// slots: an eligibility predicate and a condition share a signature but not a
-/// role, so a tag listed in the wrong slice is never found. Build one with
+/// slots — an effect mutates, a condition only reads — so a tag listed in the
+/// wrong slice is never found. Build one with
 /// [`CardRecord::new`] and chain only the setters the card needs.
 #[derive(Debug, Clone, Copy)]
 pub struct CardRecord {
@@ -156,8 +156,6 @@ pub struct CardRecord {
     pub back_abilities: Option<fn() -> Vec<Ability>>,
     /// [`Effect::Native`](card_dsl::dsl::Effect::Native) tags and their fns.
     pub native_effects: &'static [(&'static str, NativeEffectFn)],
-    /// [`Ability::eligibility`] tags and their predicates.
-    pub native_eligibility: &'static [(&'static str, EligibilityFn)],
     /// [`Condition::Native`](card_dsl::dsl::Condition::Native) tags and their
     /// predicates.
     pub native_conditions: &'static [(&'static str, NativeConditionFn)],
@@ -172,7 +170,6 @@ impl CardRecord {
             abilities,
             back_abilities: None,
             native_effects: &[],
-            native_eligibility: &[],
             native_conditions: &[],
         }
     }
@@ -191,24 +188,15 @@ impl CardRecord {
         self
     }
 
-    /// Register the card's native eligibility predicates.
-    #[must_use]
-    pub const fn eligibility(
-        mut self,
-        eligibility: &'static [(&'static str, EligibilityFn)],
-    ) -> Self {
-        self.native_eligibility = eligibility;
-        self
-    }
-
-    /// Register the card's native conditions.
+    /// Register the card's native conditions: every read-only predicate the
+    /// card names by tag, whether a [`Condition::Native`] inside an effect or
+    /// an ability's [`eligibility`](Ability::eligibility).
     ///
-    /// `TODO(#609)`: two cards use this namespace, Machete 01020 and 01107, and
-    /// a third should not. Promotion to declarative DSL vocab is triggered by
-    /// the next card wanting a **compound or target-referencing** condition,
-    /// which is what Machete has and the DSL cannot express. 01107's act-deck
-    /// branch is neither: it is a plain scenario-state read (`act_index == 2`),
-    /// so it lands here without firing that trigger.
+    /// Before registering one, check the DSL can't say it — see
+    /// [`Condition::Native`] for its consumers and `TODO(#609)`, the promotion
+    /// that retires the compound, target-referencing ones.
+    ///
+    /// [`Condition::Native`]: card_dsl::dsl::Condition::Native
     #[must_use]
     pub const fn conditions(
         mut self,
@@ -317,13 +305,6 @@ fn registered_native<F: Copy>(
 #[must_use]
 pub fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
     registered_native(tag, |record| record.native_effects)
-}
-
-/// Resolve a native eligibility-predicate tag to its card-local predicate;
-/// returns `None` for unregistered tags.
-#[must_use]
-pub fn native_eligibility_for(tag: &str) -> Option<EligibilityFn> {
-    registered_native(tag, |record| record.native_eligibility)
 }
 
 /// Resolve a [`Condition::Native`](card_dsl::dsl::Condition::Native) tag to its

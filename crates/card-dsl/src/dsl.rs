@@ -34,10 +34,8 @@
 //!   [`Quantity`].
 //! - **Compound conditions** (`All` / `Any`) and **target-referencing
 //!   conditions or quantities** (predicates about the *chosen* enemy rather
-//!   than the controller). Machete 01020 wants both at once and holds them in a
-//!   [`Condition::Native`] predicate; `TODO(#609)` — the second card to want
-//!   either is the trigger to promote them to declarative vocab instead of
-//!   registering another native tag.
+//!   than the controller). Held in [`Condition::Native`] predicates until
+//!   `TODO(#609)` promotes them; its doc names the consumers.
 //!
 //! # Has DSL surface but not yet engine support
 //!
@@ -574,7 +572,7 @@ pub enum EventPattern {
         /// another location"*, Bestow Resolve 09032's *"or a connecting
         /// location"*). The one location scope that is part of a declaration
         /// is [`tested_location`](Self::SkillTestResolved::tested_location);
-        /// the rest stays the card's own, in a native eligibility predicate.
+        /// the rest stays the card's own, in a native eligibility condition.
         by_controller: bool,
         /// Which tested location the ability listens to — Obscuring Fog
         /// 01168's *"After **attached location** is successfully
@@ -1009,13 +1007,35 @@ pub struct Ability {
     /// serde treats a missing `Option` field as `None`, the genuine
     /// absent-by-design case.
     pub usage_limit: Option<UsageLimit>,
-    /// Native eligibility-predicate tag (resolved via the registry's
-    /// `native_eligibility_for`). When set, the reaction/fast scan suppresses
-    /// this ability unless the predicate holds (RR p.2: an ability can't
-    /// initiate if its effect won't change game state). `None` for the common
-    /// no-gate case; stays implicitly optional on the wire (#453 per-field
-    /// carve-out, like `usage_limit`).
-    pub eligibility: Option<String>,
+    /// A card-supplied [`Condition`] the initiation gate checks for a **play
+    /// restriction the engine can't derive itself** — the Rules Reference's
+    /// *"specific conditions that must be true in order to use them"*
+    /// (`glossary/Play_Restrictions_Permissions_and_Instructions.md`). While it
+    /// is false the ability is not offered, a forced one does not initiate, and
+    /// a played card is not played.
+    ///
+    /// A card supplies one for one of two reasons:
+    ///
+    /// - **an opaque native effect the change-state check can't see into.** The
+    ///   engine asks whether an effect has the potential to change the game
+    ///   state, but an [`Effect::Native`] is a black box to it: Cover Up 01007's
+    ///   *"if there are any clues on Cover Up"*, and The Barrier 01109's
+    ///   Hallway group affording its clue spend.
+    /// - **a trigger narrowing the event pattern can't yet express.** Lita
+    ///   Chantler 01117's *"an investigator at your location successfully
+    ///   attacks a \[\[Monster\]\] enemy"* — a misfit, kept here until the
+    ///   pattern grows the scope fields it needs (her module doc says which).
+    ///
+    /// A "would it do anything" case is **not** one: Agnes Baker 01004,
+    /// Pickpocketing 01046, Scavenging 01073, Rabbit's Foot 01075 and Heirloom
+    /// of Hyperborea 01012 belong to the change-state check, which reads the
+    /// effect itself.
+    ///
+    /// Evaluated like any other condition, so a declarative one needs no Rust;
+    /// [`Condition::Native`] is the escape hatch for a gate the vocabulary
+    /// can't express. `None` for the common no-gate case; stays implicitly
+    /// optional on the wire (#453 per-field carve-out, like `usage_limit`).
+    pub eligibility: Option<Condition>,
 }
 
 impl Ability {
@@ -1030,11 +1050,11 @@ impl Ability {
         self
     }
 
-    /// Attach a native eligibility-predicate tag (see [`Self::eligibility`]).
+    /// Attach an eligibility condition (see [`Self::eligibility`]).
     /// Builder-style sugar, chainable off the `on_event(...)` constructors.
     #[must_use]
-    pub fn with_eligibility(mut self, tag: impl Into<String>) -> Self {
-        self.eligibility = Some(tag.into());
+    pub fn with_eligibility(mut self, condition: Condition) -> Self {
+        self.eligibility = Some(condition);
         self
     }
 
@@ -1057,11 +1077,8 @@ impl Ability {
     }
 
     fn collect_native_refs<'a>(&'a self, refs: &mut Vec<NativeRef<'a>>) {
-        if let Some(tag) = &self.eligibility {
-            refs.push(NativeRef {
-                kind: NativeKind::Eligibility,
-                tag,
-            });
+        if let Some(eligibility) = &self.eligibility {
+            eligibility.collect_native_refs(refs);
         }
         match &self.trigger {
             // None of these holds an effect, condition or integer expression: an
@@ -1100,15 +1117,13 @@ impl Ability {
     }
 }
 
-/// Which registry namespace a native tag resolves in. The three are separate
+/// Which registry namespace a native tag resolves in. The two are separate
 /// slots of `game_core::card_registry::CardRegistry`, so a tag registered in
 /// the wrong one is never found.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum NativeKind {
     /// An [`Effect::Native`], resolved by `native_effect_for`.
     Effect,
-    /// An [`Ability::eligibility`] tag, resolved by `native_eligibility_for`.
-    Eligibility,
     /// A [`Condition::Native`], resolved by `native_condition_for`.
     Condition,
 }
@@ -2185,11 +2200,11 @@ impl EnemyTarget {
 
 // ---- conditions -----------------------------------------------
 
-/// A boolean predicate guarding an [`Effect::If`].
+/// A boolean predicate guarding an [`Effect::If`], an [`IntExpr::Cond`], a
+/// [`grant`], or an ability's [`eligibility`](Ability::eligibility).
 ///
-/// Phase-2 minimal set; later phases will add things like
-/// `Compare { CluesAtControllerLocation, Gt, 0 }`, `AnyEnemyEngaged`, comparisons against
-/// stat values, etc.
+/// A minimal set, grown per consumer under the DSL-primitive threshold;
+/// [`Native`](Self::Native) holds what it can't yet say.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Condition {
     /// Outcome of the most recent skill test in the current
@@ -2215,23 +2230,35 @@ pub enum Condition {
     },
     /// A card-local Rust predicate, resolved by tag through the host's
     /// `CardRegistry.native_condition_for`. The read-only mirror of
-    /// [`Effect::Native`]: the escape hatch for a gate that the declarative
-    /// vocabulary above cannot express and that only one card wants. The
-    /// `cards` crate maps the tag to a `fn(&GameState, &EvalContext) -> bool`;
-    /// the evaluator rejects loudly on an unknown tag or absent registry.
+    /// [`Effect::Native`], and the **single** escape hatch for a read-only card
+    /// predicate, whether it guards an effect or an ability's
+    /// [`eligibility`](Ability::eligibility): a gate the declarative vocabulary
+    /// above cannot express. The `cards` crate maps the tag to a
+    /// `fn(&GameState, &EvalContext) -> bool`; the evaluator rejects loudly on an
+    /// unknown tag or absent registry.
     ///
-    /// Machete 01020's "if the attacked enemy is the only enemy engaged with
-    /// you" is the sole consumer: it is a *conjunction* over the *chosen
-    /// target*, and neither half has a declarative form (no [`Condition`]
-    /// combinator, no target-referencing [`Condition`] or [`Quantity`], and
-    /// [`IntExpr::Cond`]'s branches are `i8` so conditions cannot nest).
+    /// Its consumers today:
     ///
-    /// `TODO(#609)`: this is an escape hatch, not a pattern. The **second**
-    /// card that wants a compound or target-referencing condition should
-    /// promote both halves to declarative vocab (`Condition::All` plus a
-    /// target-referencing variant) and re-express Machete through it, rather
-    /// than register a second native tag. Issue #609 names the in-corpus
-    /// candidates that will fire it (Oops! 02113, Esoteric Formula 02254,
+    /// - **Machete 01020** — *"If the attacked enemy is the only enemy engaged
+    ///   with you, this attack deals +1 damage."* A *conjunction* over the
+    ///   *chosen target*, and neither half has a declarative form (no
+    ///   [`Condition`] combinator, no target-referencing [`Condition`] or
+    ///   [`Quantity`], and [`IntExpr::Cond`]'s branches are `i8` so conditions
+    ///   cannot nest).
+    /// - **They're Getting Out! 01107** — its reverse's act-3 branch, a plain
+    ///   scenario-state read.
+    /// - **Cover Up 01007** and **The Barrier 01109**, as eligibility — each
+    ///   stands in for a change-state check its opaque [`Effect::Native`] hides.
+    /// - **Lita Chantler 01117**, as eligibility — a trigger narrowing, and a
+    ///   misfit there (see [`Ability::eligibility`]).
+    ///
+    /// `TODO(#609)`: this is an escape hatch, not a pattern. Lita's *"an
+    /// investigator at your location successfully attacks a \[\[Monster\]\]
+    /// enemy"* is the second compound, target-referencing predicate after
+    /// Machete's, so it fired #609's promotion trigger: `Condition::All` plus a
+    /// target-referencing variant, with Machete and Lita re-expressed through
+    /// them, rather than more native tags of that shape. Issue #609 names the
+    /// further in-corpus candidates (Oops! 02113, Esoteric Formula 02254,
     /// Springfield M1903 02226 — all Dunwich).
     Native { tag: String },
     /// **Whether the card printed with `code` is in the named control status.**

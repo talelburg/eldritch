@@ -49,21 +49,12 @@ use crate::state::{CardCode, GameState};
 /// [`Effect::Native`]: card_dsl::dsl::Effect::Native
 pub type NativeEffectFn = fn(&mut Cx, &EvalContext) -> EngineOutcome;
 
-/// A card-local read-only eligibility predicate: returns whether a reaction
-/// ability whose [`Ability::eligibility`](card_dsl::dsl::Ability::eligibility) names
-/// this tag may be offered (RR p.2: an ability can't initiate if its effect
-/// won't change game state). Receives the same [`EvalContext`] native effects do
-/// (controller + source). Dispatched from the reaction scan via
-/// [`CardRegistry::native_eligibility_for`].
-pub type EligibilityFn = fn(&GameState, &EvalContext) -> bool;
-
 /// A card-local read-only predicate backing a [`Condition::Native`] gate:
 /// returns whether the condition holds against the current board and evaluation
-/// context. Shares [`EligibilityFn`]'s signature but not its role — eligibility
-/// answers "may this ability be offered?", a condition answers "does this gate
-/// hold right now?" — so the two keep separate registry slots and tag
-/// namespaces. Dispatched from `eval_condition` via
-/// [`CardRegistry::native_condition_for`].
+/// context. Dispatched from `eval_condition` via
+/// [`CardRegistry::native_condition_for`], whether the condition guards an
+/// effect or an ability's
+/// [`eligibility`](card_dsl::dsl::Ability::eligibility).
 ///
 /// [`Condition::Native`]: card_dsl::dsl::Condition::Native
 pub type NativeConditionFn = fn(&GameState, &EvalContext) -> bool;
@@ -104,20 +95,15 @@ pub struct CardRegistry {
     ///
     /// [`Effect::Native`]: card_dsl::dsl::Effect::Native
     pub native_effect_for: fn(&str) -> Option<NativeEffectFn>,
-    /// Look up a card-local eligibility predicate by its
-    /// [`Ability::eligibility`](card_dsl::dsl::Ability::eligibility) tag. Returns
-    /// `None` for unregistered tags.
-    pub native_eligibility_for: fn(&str) -> Option<EligibilityFn>,
     /// Look up a card-local condition predicate by its [`Condition::Native`]
     /// tag. Returns `None` for unregistered tags.
     ///
-    /// `TODO(#609)`: two cards register here. Machete 01020 holds a compound,
-    /// target-referencing condition the DSL cannot express; agenda 01107's
-    /// act-three branch is a plain scenario-state read that does not fire
-    /// #609's promotion trigger (its module doc says why). This slot is
-    /// expected to be **deleted** along with [`Condition::Native`] once the
-    /// conditions it stands in for exist declaratively — don't grow it by
-    /// registering a third card's tag.
+    /// The registry's **one** read-only native slot: every card predicate the
+    /// declarative vocabulary can't express resolves here, whether it guards an
+    /// effect or an ability's
+    /// [`eligibility`](card_dsl::dsl::Ability::eligibility). See
+    /// [`Condition::Native`] for its consumers and `TODO(#609)`, the promotion
+    /// that retires the compound, target-referencing ones.
     ///
     /// [`Condition::Native`]: card_dsl::dsl::Condition::Native
     pub native_condition_for: fn(&str) -> Option<NativeConditionFn>,
@@ -159,7 +145,6 @@ impl CardRegistry {
         abilities_for: |_| None,
         back_abilities_for: |_| None,
         native_effect_for: |_| None,
-        native_eligibility_for: |_| None,
         native_condition_for: |_| None,
     };
 }

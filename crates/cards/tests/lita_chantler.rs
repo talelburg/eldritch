@@ -354,10 +354,9 @@ fn declining_the_reaction_leaves_the_attack_at_one_damage() {
 }
 
 /// Against Silver Twilight Acolyte 01102 the reaction is **never offered** — the
-/// eligibility predicate runs before the ability is minted as a candidate, which
-/// is RR p.2's *"A triggered ability can only be initiated if its effect has the
-/// potential to change the game state"*. Nothing to decline; the attack simply
-/// deals 1.
+/// eligibility condition, which carries the card's *"\[\[Monster\]\] enemy"*
+/// narrowing, runs before the ability is minted as a candidate. Nothing to
+/// decline; the attack simply deals 1.
 #[test]
 fn against_a_non_monster_the_reaction_is_never_offered() {
     let result = drive(

@@ -189,7 +189,7 @@ pub fn test_skill_test(
 /// checking any of the stack's invariants.
 ///
 /// **Render-only.** A state built with it is for reading — a view, a decision
-/// label, an eligibility predicate — and is never applied. The stack may be one
+/// label, an eligibility condition — and is never applied. The stack may be one
 /// the engine could never produce, and nothing re-establishes the prompt such a
 /// state is waiting on: a [`TestSession`](crate::test_support::TestSession)
 /// settling it panics if its top frame cannot re-surface its prompt. To drive a

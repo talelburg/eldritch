@@ -230,7 +230,7 @@ pub(super) fn collect_forced(
     // lone-hit path and the 2+ ordered run, so a forced ability that cannot
     // initiate neither resolves nor prompts. As `Forced` it gets the
     // change-state and eligibility checks — Cover Up 01007's *"if there are any
-    // clues on Cover Up"* is an eligibility tag, and without it a clueless
+    // clues on Cover Up"* is an eligibility condition, and without it a clueless
     // Cover Up prompted at game end (#786).
     hits.retain(|hit| initiation::check(state, hit, InitiationKind::Forced).is_ok());
     hits

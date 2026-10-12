@@ -1183,6 +1183,18 @@ pub(crate) fn eval_condition(
     eval_ctx: &EvalContext,
     condition: &Condition,
 ) -> Result<bool, String> {
+    eval_condition_against(state, card_registry::current(), eval_ctx, condition)
+}
+
+/// [`eval_condition`] against an explicit registry — the one a
+/// [`Condition::Native`] tag resolves in — for a caller that already holds it
+/// (the initiation gate). `None` is the no-registry-installed case.
+pub(crate) fn eval_condition_against(
+    state: &GameState,
+    reg: Option<&CardRegistry>,
+    eval_ctx: &EvalContext,
+    condition: &Condition,
+) -> Result<bool, String> {
     match condition {
         // Board-global: it reads no "you", which is what lets the grant sweep
         // ask it on behalf of a recipient nobody controls (ADR 0014).
@@ -1212,8 +1224,8 @@ pub(crate) fn eval_condition(
             })
         }
         Condition::Native { tag } => {
-            let reg = card_registry::current()
-                .ok_or_else(|| format!("Native condition {tag:?}: no card registry installed"))?;
+            let reg =
+                reg.ok_or_else(|| format!("Native condition {tag:?}: no card registry installed"))?;
             let predicate = (reg.native_condition_for)(tag)
                 .ok_or_else(|| format!("Native condition {tag:?}: no predicate registered"))?;
             Ok(predicate(state, eval_ctx))

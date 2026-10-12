@@ -23,12 +23,15 @@ fn a_designator_maps_onto_the_action_class_it_performs() {
 }
 
 #[test]
-fn with_eligibility_sets_the_tag_and_default_is_none() {
+fn with_eligibility_sets_the_condition_and_default_is_none() {
     let bare = reaction_on_event(EventPattern::RoundEnded, EventTiming::When, Effect::Cancel);
     assert_eq!(bare.eligibility, None);
     let gated = reaction_on_event(EventPattern::RoundEnded, EventTiming::When, Effect::Cancel)
-        .with_eligibility("01109:can-advance");
-    assert_eq!(gated.eligibility.as_deref(), Some("01109:can-advance"));
+        .with_eligibility(native_condition("01109:can-advance"));
+    assert_eq!(
+        gated.eligibility,
+        Some(native_condition("01109:can-advance"))
+    );
 }
 
 /// Holy Rosary's "while in play, +1 willpower" ability.

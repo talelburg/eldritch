@@ -91,13 +91,13 @@ pub const CODE: &str = "01109";
 
 /// This card's registration, listed in [`ALL`](super::ALL). The round-end
 /// advance is offered only when the Hallway (01112) group can afford the act's
-/// clue threshold, which is what its eligibility predicate checks.
+/// clue threshold, which is what its eligibility condition checks.
 pub const CARD: CardRecord = CardRecord::new(CODE, abilities)
     .effects(&[
         (REVERSE, reverse),
         (ROUND_END_ADVANCE, advance_via_clue_spend),
     ])
-    .eligibility(&[(CAN_ADVANCE, can_advance)]);
+    .conditions(&[(CAN_ADVANCE, can_advance)]);
 
 /// Native-effect tag for this act's reverse.
 const REVERSE: &str = "01109:reverse";
@@ -107,10 +107,14 @@ const REVERSE: &str = "01109:reverse";
 /// spend the requisite number of clues to advance").
 const ROUND_END_ADVANCE: &str = "01109:round-end-advance";
 
-/// Eligibility tag: the round-end advance may be offered only when the Hallway
-/// group can afford the act's clue threshold (RR p.2 potential gate). Restores
-/// the affordability gate the offer scan lost in the #434 coordinator remodel
-/// (#470).
+/// Native-condition tag, the round-end advance's eligibility: it may be offered
+/// only when the Hallway group can afford the act's clue threshold (RR p.2
+/// potential gate). Restores the affordability gate the offer scan lost in the
+/// #434 coordinator remodel (#470).
+///
+/// A **stand-in** for the change-state check: that check reads an ability's
+/// effect, and [`ROUND_END_ADVANCE`] is an opaque native whose group clue spend
+/// it can't see into, so the card supplies the affordability question itself.
 const CAN_ADVANCE: &str = "01109:can-advance";
 
 /// Printed codes the reverse touches.
@@ -125,7 +129,7 @@ const PARLOR: &str = "01115";
 ///   a `When`-timed `RoundEnded` reaction. The round-end `When` window offers
 ///   this as a single candidate (`PickSingle` = advance, Skip = decline); the
 ///   native spends + advances. Affordability is gated by the `01109:can-advance`
-///   eligibility predicate (shared with the resolve-side
+///   eligibility condition (shared with the resolve-side
 ///   [`round_end_advance_affordable`](engine::round_end_advance_affordable)),
 ///   so the candidate isn't offered when the
 ///   Hallway group can't afford the clue threshold (#470).
@@ -144,7 +148,7 @@ pub fn abilities() -> Vec<Ability> {
             EventTiming::When,
             dsl::native(ROUND_END_ADVANCE),
         )
-        .with_eligibility(CAN_ADVANCE),
+        .with_eligibility(dsl::native_condition(CAN_ADVANCE)),
     ]
 }
 

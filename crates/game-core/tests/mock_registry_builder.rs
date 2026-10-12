@@ -29,7 +29,6 @@ const LATE: &str = "_mrb_late";
 const BACK: &str = "_mrb_back";
 
 const EFFECT_TAG: &str = "_mrb:effect";
-const ELIGIBILITY_TAG: &str = "_mrb:eligibility";
 const CONDITION_TAG: &str = "_mrb:condition";
 
 fn probe_metadata(code: &str) -> CardMetadata {
@@ -78,10 +77,6 @@ fn probe_effect(_cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-fn probe_eligibility(_state: &GameState, _ctx: &EvalContext) -> bool {
-    true
-}
-
 fn probe_condition(_state: &GameState, _ctx: &EvalContext) -> bool {
     false
 }
@@ -93,7 +88,6 @@ fn install() {
         .with_abilities(PROBE, front_ability)
         .with_back_abilities(BACK, back_ability)
         .with_native_effect(EFFECT_TAG, probe_effect)
-        .with_native_eligibility(ELIGIBILITY_TAG, probe_eligibility)
         .with_native_condition(CONDITION_TAG, probe_condition)
         .install();
 }
@@ -162,8 +156,7 @@ fn native_tags_dispatch_per_slot() {
         ptr::fn_addr_eq(served, probe_effect as NativeEffectFn),
         "the registered effect itself comes back, not merely some effect"
     );
-    assert!((registry().native_eligibility_for)(EFFECT_TAG).is_none());
-    assert!((registry().native_eligibility_for)(ELIGIBILITY_TAG).is_some());
+    assert!((registry().native_condition_for)(EFFECT_TAG).is_none());
     assert!((registry().native_condition_for)(CONDITION_TAG).is_some());
     assert!((registry().native_effect_for)("_mrb:missing").is_none());
 }

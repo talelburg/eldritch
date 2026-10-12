@@ -262,7 +262,7 @@ pub(crate) fn spend_clues_from(state: &mut GameState, ids: &[InvestigatorId], am
 
 /// Whether the current act's round-end group clue-spend advance is affordable:
 /// investigators at `contributor_location_code` hold at least the current act's
-/// `clue_threshold`. Shared by the offer-side eligibility predicate (act 01109's
+/// `clue_threshold`. Shared by the offer-side eligibility condition (act 01109's
 /// `01109:can-advance`) and the resolve-side [`round_end_advance`], so the two
 /// can't drift. `false` when there is no current act or the location isn't in
 /// play (the "investigators in the Hallway" condition is subsumed — 0
@@ -286,7 +286,7 @@ pub fn round_end_advance_affordable(state: &GameState, contributor_location_code
 /// `clue_threshold` from the contributors (turn order) and advances the act.
 ///
 /// Affordability is gated at the offer side by act 01109's `01109:can-advance`
-/// eligibility predicate (which calls [`round_end_advance_affordable`]), so the
+/// eligibility condition (which calls [`round_end_advance_affordable`]), so the
 /// insufficient-clues branch here is a defensive backstop. Exposed for the
 /// `cards` registry's 01109 native handler.
 ///
