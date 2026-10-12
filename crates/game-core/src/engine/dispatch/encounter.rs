@@ -585,7 +585,7 @@ pub(super) fn draw_encounter_top(cx: &mut Cx) -> Option<CardCode> {
 /// Re-exported at `game_core::engine::take_encounter_top` for card-local
 /// natives.
 ///
-/// Unlike [`draw_encounter_top`], this never reshuffles the discard into an
+/// Unlike the encounter draw (`draw_encounter_top`), this never reshuffles the discard into an
 /// empty deck: a deck search (Rise of the Ghouls 01106) discards what it takes,
 /// and a reshuffle would feed those discards back into the search. The caller
 /// owns the card it takes and must put it somewhere, as
