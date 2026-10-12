@@ -25,8 +25,8 @@ use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, Cx, EngineOutcome, OptionId};
-use game_core::event::Event;
+use game_core::engine::{self, EngineOutcome, NativeCx, OptionId};
+use game_core::event::{Event, TraumaKind};
 use game_core::state::{
     self, Act, CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId,
 };
@@ -35,25 +35,20 @@ use game_core::test_support::{self, MockRegistry};
 /// The act carrying one marker forced ability per phase boundary.
 const ACT: &str = "TEST-BOUNDARIES";
 
-/// A boundary marker: two `ResourcesGained` events, the first naming the
-/// boundary that fired it and the second the `state.phase` it observed while
-/// firing. Amounts start at 10 so neither can be confused with the upkeep step
-/// 4.4 resource gain, which is 1.
+/// A boundary marker: two `TraumaSuffered` events, through the exit that only
+/// announces, the first naming the boundary that fired it and the second the
+/// `state.phase` it observed while firing. Amounts start at 10, as they did
+/// when the marker was a resource gain, to stay clear of the upkeep step 4.4
+/// gain of 1.
 ///
 /// The observed phase is what pins the ADR 0003 tail-position discipline: a
 /// forced ability queued at a phase boundary must resolve *before* the driver
 /// frame's own tail work, so a step-2.3 ability sees `Investigation` and not the
 /// `Enemy` the transition would have set had it run above the queued frame.
-fn mark(cx: &mut Cx, ctx: &EvalContext, amount: u8) -> EngineOutcome {
-    let observed = observed(cx.state.phase);
-    cx.events.push(Event::ResourcesGained {
-        investigator: ctx.controller,
-        amount,
-    });
-    cx.events.push(Event::ResourcesGained {
-        investigator: ctx.controller,
-        amount: observed,
-    });
+fn mark(cx: &mut NativeCx, ctx: &EvalContext, amount: u8) -> EngineOutcome {
+    let observed = observed(cx.state().phase);
+    cx.suffer_trauma(ctx.controller, TraumaKind::Physical, amount);
+    cx.suffer_trauma(ctx.controller, TraumaKind::Physical, observed);
     EngineOutcome::Done
 }
 
@@ -150,12 +145,12 @@ fn install() {
 }
 
 /// The boundary markers in the order they fired, dropping the observed-phase
-/// companions and every other `ResourcesGained` (the upkeep 4.4 gain of 1).
+/// companions.
 fn markers(events: &[Event]) -> Vec<u8> {
     events
         .iter()
         .filter_map(|e| match e {
-            Event::ResourcesGained { amount, .. } if (10..50).contains(amount) => Some(*amount),
+            Event::TraumaSuffered { amount, .. } if (10..50).contains(amount) => Some(*amount),
             _ => None,
         })
         .collect()
@@ -166,7 +161,7 @@ fn markers_with_observed_phase(events: &[Event]) -> Vec<(u8, u8)> {
     let raw: Vec<u8> = events
         .iter()
         .filter_map(|e| match e {
-            Event::ResourcesGained { amount, .. } if *amount >= 10 => Some(*amount),
+            Event::TraumaSuffered { amount, .. } => Some(*amount),
             _ => None,
         })
         .collect();

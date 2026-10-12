@@ -108,7 +108,7 @@ pub struct Investigator {
     /// (`cards_in_play`) and every card they own in an out-of-play area
     /// (`hand`, `deck`, `discard`) is drained into this pile and removed from
     /// the game. A card of theirs that
-    /// [`board::remove_from_game`](crate::engine::board::remove_from_game)
+    /// [`NativeCx::remove_from_game`](crate::engine::NativeCx::remove_from_game)
     /// takes out of play lands here too, by its owner, wherever it was.
     /// Required on the wire (#453).
     pub removed_from_game: Vec<CardCode>,

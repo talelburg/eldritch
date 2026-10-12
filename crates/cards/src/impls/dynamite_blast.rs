@@ -10,9 +10,9 @@
 //! them through [`resolve_grounded_choice`](engine::resolve_grounded_choice)
 //! (1 candidate → auto-target, 2+ → suspend for a pick), and on the pick deals
 //! 3 damage to every enemy
-//! ([`deal_damage_to_enemy`](engine::deal_damage_to_enemy), which handles
+//! ([`deal_damage_to_enemy`](NativeCx::deal_damage_to_enemy), which handles
 //! defeat → victory points / Roland's reaction) and every investigator
-//! ([`take_damage`](engine::take_damage) — the controller included if they
+//! ([`take_damage`](NativeCx::take_damage) — the controller included if they
 //! blast their own location) at the chosen location.
 //!
 //! # Native, not a typed fan-out — on purpose
@@ -34,8 +34,8 @@
 
 use card_dsl::dsl::{self, Ability};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, Cx, EngineOutcome, Grounded, OptionTarget};
-use game_core::state::{EnemyId, InvestigatorId, LocationId};
+use game_core::engine::{self, EngineOutcome, Grounded, NativeCx, OptionTarget};
+use game_core::state::{EnemyId, GameState, InvestigatorId, LocationId};
 
 use crate::impls::CardRecord;
 
@@ -59,9 +59,8 @@ pub fn abilities() -> Vec<Ability> {
 /// Candidate target locations: the controller's location followed by each
 /// connected location, connections sorted by id so an `OptionId` indexes the
 /// same location when the choice replays on resume.
-fn candidate_locations(cx: &Cx, controller: InvestigatorId) -> Vec<LocationId> {
-    let Some(here) = cx
-        .state
+fn candidate_locations(state: &GameState, controller: InvestigatorId) -> Vec<LocationId> {
+    let Some(here) = state
         .investigators
         .get(&controller)
         .and_then(|inv| inv.current_location)
@@ -69,7 +68,7 @@ fn candidate_locations(cx: &Cx, controller: InvestigatorId) -> Vec<LocationId> {
         return Vec::new();
     };
     let mut locations = vec![here];
-    if let Some(loc) = cx.state.locations.get(&here) {
+    if let Some(loc) = state.locations.get(&here) {
         let mut connections = loc.connections.clone();
         connections.sort_unstable();
         locations.extend(connections);
@@ -77,11 +76,11 @@ fn candidate_locations(cx: &Cx, controller: InvestigatorId) -> Vec<LocationId> {
     locations
 }
 
-fn dynamite_blast(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
+fn dynamite_blast(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     let controller = ctx.controller;
-    let locations = candidate_locations(cx, controller);
+    let locations = candidate_locations(cx.state(), controller);
     match engine::resolve_grounded_choice(
-        cx.state,
+        cx.state(),
         ctx,
         &locations,
         "Choose a location to blast",
@@ -101,27 +100,27 @@ fn dynamite_blast(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
 /// dealing damage can defeat enemies/investigators and mutate the maps mid-loop.
 /// Enemy damage is attributed to `controller` so a defeat counts as "you
 /// defeat" (victory points, Roland's reaction).
-fn blast_location(cx: &mut Cx, controller: InvestigatorId, loc: LocationId) -> EngineOutcome {
+fn blast_location(cx: &mut NativeCx, controller: InvestigatorId, loc: LocationId) -> EngineOutcome {
     let enemies: Vec<EnemyId> = cx
-        .state
+        .state()
         .enemies
         .iter()
         .filter(|(_, e)| e.current_location == Some(loc))
         .map(|(id, _)| *id)
         .collect();
     for enemy in enemies {
-        engine::deal_damage_to_enemy(cx, enemy, DAMAGE, Some(controller));
+        cx.deal_damage_to_enemy(enemy, DAMAGE, Some(controller));
     }
 
     let investigators: Vec<InvestigatorId> = cx
-        .state
+        .state()
         .investigators
         .iter()
         .filter(|(_, i)| i.current_location == Some(loc))
         .map(|(id, _)| *id)
         .collect();
     for inv in investigators {
-        engine::take_damage(cx, inv, DAMAGE);
+        cx.take_damage(inv, DAMAGE);
     }
 
     EngineOutcome::Done
@@ -130,7 +129,6 @@ fn blast_location(cx: &mut Cx, controller: InvestigatorId, loc: LocationId) -> E
 #[cfg(test)]
 mod tests {
     use card_dsl::dsl::{Effect, Trigger};
-    use game_core::event::Event;
     use game_core::state::GameStateBuilder;
     use game_core::test_support;
 
@@ -167,15 +165,8 @@ mod tests {
             .with_location(loc)
             .build();
         state.interactive_acknowledge = true;
-        let mut events: Vec<Event> = Vec::new();
         let ctx = EvalContext::for_controller(InvestigatorId(1));
-        let out = {
-            let mut cx = Cx {
-                state: &mut state,
-                events: &mut events,
-            };
-            dynamite_blast(&mut cx, &ctx)
-        };
+        let (out, _) = test_support::run_native(&mut state, dynamite_blast, &ctx);
         match out {
             EngineOutcome::AwaitingInput { request, .. } => {
                 assert_eq!(

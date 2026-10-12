@@ -127,10 +127,11 @@ pub(crate) fn treachery_is_persistent(abilities: &[Ability]) -> bool {
 /// decision). The apply loop's `events.clear()` on Rejected still wipes the
 /// event stream on rejection.
 ///
-/// Public so card effects that "draw"/"discard until" cards from the
-/// encounter deck can resolve the drawn card faithfully — agenda 01106's
-/// reverse draws the dug-up `Ghoul` enemy through here. Requires an
-/// installed card registry (rejects otherwise).
+/// Card effects that "draw"/"discard until" cards from the encounter deck
+/// resolve the drawn card through here, as
+/// [`NativeCx::resolve_encounter_card`](crate::engine::NativeCx::resolve_encounter_card)
+/// — agenda 01106's reverse draws the dug-up `Ghoul` enemy this way. Requires
+/// an installed card registry (rejects otherwise).
 pub fn resolve_encounter_card(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -578,6 +579,20 @@ pub(super) fn draw_encounter_top(cx: &mut Cx) -> Option<CardCode> {
         }
         reshuffle_encounter_discard(cx);
     }
+    take_encounter_top(cx)
+}
+
+/// Take the top card of the encounter deck, or `None` if the deck is empty.
+/// A card-local native reaches it as
+/// [`NativeCx::take_encounter_top`](crate::engine::NativeCx::take_encounter_top).
+///
+/// Unlike the encounter draw (`draw_encounter_top`), this never reshuffles the discard into an
+/// empty deck: a deck search (Rise of the Ghouls 01106) discards what it takes,
+/// and a reshuffle would feed those discards back into the search. The caller
+/// owns the card it takes and must put it somewhere, as
+/// [`discard_encounter_card`](crate::engine::board::discard_encounter_card)
+/// does for a miss.
+pub fn take_encounter_top(cx: &mut Cx) -> Option<CardCode> {
     cx.state.encounter_deck.pop_front()
 }
 

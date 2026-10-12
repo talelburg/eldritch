@@ -9,7 +9,10 @@
 
 use cards::REGISTRY;
 use game_core::engine::{ApplyResult, EngineOutcome, PromptNature, TimingEvent};
-use game_core::state::{CardCode, EnemyId, GameStateBuilder, InvestigatorId, LocationId};
+use game_core::event::Event;
+use game_core::state::{
+    CardCode, DiscardPile, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Zone,
+};
 use game_core::test_support::{self, TestSession};
 
 #[ctor::ctor(unsafe)]
@@ -92,10 +95,11 @@ fn agenda_01105_reverse_choice_random_discard_each() {
 /// 01106's reverse digs past non-Ghoul cards to the Ghoul enemy and the
 /// lead draws (spawns) it. The "shuffle the discard into the deck" step
 /// randomizes order, so the order-independent invariant is: the Ghoul is
-/// always reached and drawn, and exactly the one non-Ghoul card remains
-/// (still in the deck if the Ghoul sat above it, or in the discard if it
-/// was dug through). Seeded deck = [Hunting Shadow (01135, treachery),
-/// Ghoul Minion (01160, the Ghoul enemy)].
+/// always reached and drawn, both non-Ghoul cards remain (in the deck if the
+/// Ghoul sat above them, in the discard if they were dug through), and each
+/// one dug through announces its own discard, in dig order. Seeded deck =
+/// [Hunting Shadow (01135), False Lead (01136), Ghoul Minion (01160, the
+/// Ghoul enemy)].
 #[test]
 fn agenda_01106_reverse_digs_until_a_ghoul_and_the_lead_draws_it() {
     let lead = InvestigatorId(1);
@@ -106,9 +110,15 @@ fn agenda_01106_reverse_digs_until_a_ghoul_and_the_lead_draws_it() {
         .with_turn_order([lead])
         .build();
     state.encounter_deck.push_back(CardCode::new("01135")); // treachery (non-Ghoul)
+    state.encounter_deck.push_back(CardCode::new("01136")); // treachery (non-Ghoul)
     state.encounter_deck.push_back(CardCode::new("01160")); // Ghoul Minion
 
-    let ApplyResult { state, outcome, .. } = TestSession::new(state)
+    let ApplyResult {
+        state,
+        outcome,
+        events,
+        ..
+    } = TestSession::new(state)
         .fire_at(TimingEvent::AgendaAdvanced {
             code: CardCode::new("01106"),
         })
@@ -133,21 +143,40 @@ fn agenda_01106_reverse_digs_until_a_ghoul_and_the_lead_draws_it() {
     // The Ghoul left both deck and discard (it was drawn into play).
     assert!(!state.encounter_deck.contains(&CardCode::new("01160")));
     assert!(!state.encounter_discard.contains(&CardCode::new("01160")));
-    // Exactly the one non-Ghoul card remains somewhere (deck if the Ghoul
-    // was above it, discard if it was dug through).
+    // Both non-Ghoul cards remain somewhere (deck if the Ghoul was above
+    // them, discard if they were dug through).
     assert_eq!(
         state.encounter_deck.len() + state.encounter_discard.len(),
-        1,
+        2,
         "deck={:?} discard={:?}",
         state.encounter_deck,
         state.encounter_discard,
     );
+    // One discard event per miss, in dig order.
+    assert_eq!(encounter_deck_discards(&events), state.encounter_discard);
 }
 
-/// 01106's dig discards non-Ghoul cards. A one-card deck (no shuffle, since
-/// `len < 2`) with a single non-Ghoul card: it is discarded, nothing is
+/// The codes of every `CardDiscarded` from the encounter deck to the
+/// encounter discard, in emission order.
+fn encounter_deck_discards(events: &[Event]) -> Vec<CardCode> {
+    events
+        .iter()
+        .filter_map(|event| match event {
+            Event::CardDiscarded {
+                code,
+                from: Zone::EncounterDeck,
+                to: DiscardPile::Encounter,
+            } => Some(code.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// 01106's dig discards non-Ghoul cards. A deck of two non-Ghoul cards: both
+/// are discarded, each with its own discard event in dig order, nothing is
 /// drawn, and the reverse resolves to `Done` (deck exhausted with no Ghoul
-/// — a faithful no-op draw).
+/// — a faithful no-op draw). The reshuffle randomizes which miss comes
+/// first, so the order is read off the discard pile.
 #[test]
 fn agenda_01106_reverse_discards_non_ghoul_cards() {
     let lead = InvestigatorId(1);
@@ -156,17 +185,30 @@ fn agenda_01106_reverse_discards_non_ghoul_cards() {
         .with_turn_order([lead])
         .build();
     state.encounter_deck.push_back(CardCode::new("01135")); // treachery, no Ghoul
+    state.encounter_deck.push_back(CardCode::new("01136")); // treachery, no Ghoul
 
-    let ApplyResult { state, outcome, .. } = TestSession::new(state)
+    let ApplyResult {
+        state,
+        outcome,
+        events,
+        ..
+    } = TestSession::new(state)
         .fire_at(TimingEvent::AgendaAdvanced {
             code: CardCode::new("01106"),
         })
         .finish();
     assert_eq!(outcome, EngineOutcome::Done);
+    let mut discarded = state.encounter_discard.clone();
+    discarded.sort_unstable();
     assert_eq!(
+        discarded,
+        vec![CardCode::new("01135"), CardCode::new("01136")],
+        "both non-Ghoul cards are discarded",
+    );
+    assert_eq!(
+        encounter_deck_discards(&events),
         state.encounter_discard,
-        vec![CardCode::new("01135")],
-        "the non-Ghoul card is discarded",
+        "one discard event per miss, in dig order",
     );
     assert!(state.encounter_deck.is_empty());
     assert!(

@@ -132,10 +132,6 @@ repo and cannot be trusted.
 
 ## Open questions
 
-- **Does Forbidden Knowledge 01058 force #353?** It is one of the two cards
-  uses-depletion auto-discard has always been gated on, and #777 is where it acquires
-  a consumer. If the card cannot ship correctly without #353, that issue comes in
-  rather than the card being approximated.
 - **How is a *restricted* additional action represented?** Daisy's is not an action
   count — it is an action of a distinguished kind, spendable only on `[[Tome]]`
   `[action]` abilities, and the turn-menu enumerator has to know which options it can

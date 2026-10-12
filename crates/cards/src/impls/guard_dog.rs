@@ -35,7 +35,7 @@
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, Cx, EngineOutcome};
+use game_core::engine::{EngineOutcome, NativeCx};
 
 use crate::impls::CardRecord;
 
@@ -61,7 +61,7 @@ pub fn abilities() -> Vec<Ability> {
 /// an enemy attack — the only context that fires this ability. If it is
 /// somehow absent we reject loudly (matching the card-effect error
 /// policy) rather than panic.
-fn retaliate(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
+fn retaliate(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     let Some(enemy) = ctx.attacking_enemy() else {
         return EngineOutcome::Rejected {
             reason: "01021:retaliate fired without attacking_enemy bound — \
@@ -70,33 +70,18 @@ fn retaliate(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
                 .into(),
         };
     };
-    engine::deal_damage_to_enemy(cx, enemy, 1, Some(ctx.controller));
+    cx.deal_damage_to_enemy(enemy, 1, Some(ctx.controller));
     EngineOutcome::Done
 }
 
 #[cfg(test)]
 mod tests {
     use card_dsl::dsl::{Effect, Trigger, TriggerKind};
-    use game_core::card_registry::NativeEffectFn;
     use game_core::event::Event;
-    use game_core::state::{EnemyId, GameState, GameStateBuilder, InvestigatorId};
+    use game_core::state::{EnemyId, GameStateBuilder, InvestigatorId};
     use game_core::test_support;
 
     use super::*;
-
-    fn cx_apply(
-        state: &mut GameState,
-        ctx: &EvalContext,
-        f: NativeEffectFn,
-    ) -> (EngineOutcome, Vec<Event>) {
-        let mut events = Vec::new();
-        let mut cx = Cx {
-            state,
-            events: &mut events,
-        };
-        let out = f(&mut cx, ctx);
-        (out, events)
-    }
 
     /// The declared cell against the printed word, the review step
     /// `docs/agents/standards.md` names: the module's verbatim text block above
@@ -136,7 +121,7 @@ mod tests {
         let mut ctx = EvalContext::for_controller(InvestigatorId(1));
         ctx.set_attacking_enemy(eid);
 
-        let (out, events) = cx_apply(&mut state, &ctx, retaliate);
+        let (out, events) = test_support::run_native(&mut state, retaliate, &ctx);
         assert_eq!(out, EngineOutcome::Done);
         assert_eq!(state.enemies[&eid].damage, 1, "attacker took 1 damage");
         assert!(
@@ -152,7 +137,7 @@ mod tests {
     fn retaliate_rejects_when_attacking_enemy_unbound() {
         let mut state = GameStateBuilder::new().build();
         let ctx = EvalContext::for_controller(InvestigatorId(1));
-        let (out, events) = cx_apply(&mut state, &ctx, retaliate);
+        let (out, events) = test_support::run_native(&mut state, retaliate, &ctx);
         assert!(
             matches!(out, EngineOutcome::Rejected { .. }),
             "unbound attacker rejects: {out:?}"

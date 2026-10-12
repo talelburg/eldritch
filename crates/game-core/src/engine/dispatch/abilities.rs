@@ -3,13 +3,13 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use card_dsl::card_data::CardKind;
 use card_dsl::dsl::{ActionDesignator, Cost, Effect, Trigger, UsageLimit};
 
 use crate::card_registry;
 use crate::engine::dispatch::actions::take::{self, ActionDescription};
 use crate::engine::dispatch::initiation;
 use crate::engine::dispatch::legality::{self, ActivateCheckResult};
+use crate::engine::dispatch::uses::{self, SpendUsesError};
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::{abilities_in_effect, ability_source, board, Cx};
@@ -276,37 +276,27 @@ fn pay_activation_costs(
                 });
             }
             Cost::SpendUses { kind, count } => {
-                let card = require_source_reachable(cx, investigator, source, cost, source_code)?;
-                let instance_id = card.instance_id;
-                let remaining = card.uses.entry(*kind).or_insert(0);
-                *remaining = remaining.saturating_sub(*count);
-                let depleted = *remaining == 0;
-                cx.events.push(Event::UsesSpent {
-                    investigator,
-                    instance_id,
-                    kind: *kind,
-                    amount: *count,
-                });
-                // Uses-depletion auto-discard (First Aid 01019). TODO(#353):
-                // rules-precise timing is post-ability-resolution, and
-                // effect-depletion cards (Forbidden Knowledge 01058, Grotesque
-                // Statue 01071) need the check relocated there. For First Aid
-                // (depletes via this cost) the SpendUses arm is observationally
-                // correct.
+                let instance_id =
+                    require_source_reachable(cx, investigator, source, cost, source_code)?
+                        .instance_id;
+                // The one uses-spending path (#353). If this empties a
+                // `discard_when_empty` pool (First Aid 01019), the card's
+                // depletion discard is a constant ability with no point of
+                // initiation, so it fires right here, mid-payment, not after
+                // the ability resolves.
                 //
-                // Like `Cost::DiscardSelf`, this removes the source mid-payment.
+                // Like `Cost::DiscardSelf`, that removes the source mid-payment.
                 // That is no longer a trap: a later source-referencing cost
                 // re-resolves by identity, finds nothing, and rejects the whole
                 // activation rather than addressing a shifted neighbour (#706).
-                let discards_when_empty = card_registry::current()
-                    .and_then(|r| (r.metadata_for)(source_code))
-                    .and_then(|m| match m.kind {
-                        CardKind::Asset { uses, .. } => uses,
-                        _ => None,
-                    })
-                    .is_some_and(|u| u.discard_when_empty && u.kind == *kind);
-                if depleted && discards_when_empty {
-                    discard_source(cx, investigator, instance_id)?;
+                match uses::spend_uses(cx, investigator, instance_id, *kind, *count) {
+                    Ok(()) => {}
+                    Err(SpendUsesError::Undiscardable) => {
+                        return Err(undiscardable_source(investigator, instance_id));
+                    }
+                    Err(SpendUsesError::NotInPlay) => {
+                        unreachable!("require_source_reachable just found the source")
+                    }
                 }
             }
             Cost::DiscardSelf => {
@@ -374,12 +364,22 @@ fn discard_source(
     if board::discard_from_play(cx, instance_id).is_some() {
         return Ok(());
     }
-    Err(format!(
+    Err(undiscardable_source(investigator, instance_id))
+}
+
+/// The rejection for a cost that must discard its source when the source is
+/// in no zone a discard can take it from — `DiscardSelf`, or a `SpendUses`
+/// that empties a `discard_when_empty` pool.
+fn undiscardable_source(
+    investigator: InvestigatorId,
+    instance_id: CardInstanceId,
+) -> Cow<'static, str> {
+    format!(
         "ActivateAbility: {investigator:?}'s source {instance_id:?} is in no zone a discard \
          can remove it from (today only the investigator card, which is a permanent), so it \
          cannot be discarded as a cost",
     )
-    .into())
+    .into()
 }
 
 /// Prose name for a [`Cost`] in a rejection reason. Reasons reach the client, so

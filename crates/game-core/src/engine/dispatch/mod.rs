@@ -36,8 +36,8 @@ pub(super) mod cards;
 // pub(super): the unified trigger-dispatch chokepoint (Axis-B T5a); engine/mod.rs
 // re-exports queue_event + TimingEvent via pub(crate) for the GameEnd site.
 pub(super) mod emit;
-// pub(crate): engine/mod.rs re-exports `deal_damage_to_enemy` for the
-// `cards` crate (Guard Dog 01021's retaliate native, C5b #237).
+// pub(crate): the evaluator's damage effects and `NativeCx::deal_damage_to_enemy`
+// (Guard Dog 01021's retaliate native) reach it from engine/.
 pub(crate) mod combat;
 mod control;
 pub(super) mod coordinator;
@@ -56,8 +56,11 @@ mod trigger_scan;
 mod initiation;
 pub(crate) mod movement;
 pub(super) mod phases;
-// pub(crate): engine/mod.rs re-exports `put_set_aside_card_into_play` for the
-// `cards` crate (The Gathering's Act-1 and Act-2 reverses).
+// pub(super): `NativeCx::place_investigator` forwards to it (Trapped 01108's
+// reverse).
+pub(super) mod placement;
+// `NativeCx::put_set_aside_card_into_play` forwards to it (The Gathering's
+// Act-1 and Act-2 reverses).
 pub(crate) mod set_aside;
 // `pub(crate)` so the evaluator can reach `open_queued_reaction_window`; other
 // items stay `pub(super)`-to-dispatch.
@@ -68,6 +71,9 @@ pub(super) mod skill_test;
 // pub(super): slot-capacity table + deficit math for asset slot enforcement (#498).
 pub(super) mod slots;
 pub(crate) mod threat_area;
+// pub(super): `NativeCx::spend_uses` forwards to it (Forbidden Knowledge
+// 01058's effect, #353), and engine/mod.rs re-exports `SpendUsesError`.
+pub(super) mod uses;
 
 /// Dispatch one enumerated open-turn action (the internal id→action map target).
 /// The same handlers `apply_player_action`'s typed arms call; behaviour-identical.

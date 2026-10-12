@@ -52,7 +52,7 @@ use game_core::action::{Action, EngineRecord};
 use game_core::card_registry;
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::modified_value::{self, ModifiedQuantity, ReadContext};
-use game_core::engine::{self, Cx, EngineOutcome};
+use game_core::engine::{EngineOutcome, NativeCx};
 use game_core::event::Event;
 use game_core::state::{
     Act, CardCode, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId,
@@ -114,18 +114,13 @@ fn board() -> GameState {
     state
 }
 
-/// Run `f` against a `Cx` over `state`, returning the outcome and the events it
-/// pushed. The natives under test are `NativeEffectFn`s, which take a `Cx`.
+/// Run `f` against a `NativeCx` over `state`, returning the outcome and the
+/// events it emitted: the entry path as a native takes it.
 fn with_cx(
     state: &mut GameState,
-    f: impl FnOnce(&mut Cx) -> EngineOutcome,
+    f: impl FnOnce(&mut NativeCx) -> EngineOutcome,
 ) -> (EngineOutcome, Vec<Event>) {
-    let mut events = Vec::new();
-    let outcome = f(&mut Cx {
-        state,
-        events: &mut events,
-    });
-    (outcome, events)
+    test_support::run_native(state, |cx, _| f(cx), &EvalContext::for_controller(INV))
 }
 
 /// 01109's reverse, as the registry resolves it for the forced dispatch.
@@ -133,8 +128,7 @@ fn reverse(state: &mut GameState) -> (EngineOutcome, Vec<Event>) {
     let reg = card_registry::current().expect("registry installed");
     let native =
         (reg.native_effect_for)("01109:reverse").expect("01109:reverse is registered by 01109");
-    let ctx = EvalContext::for_controller(INV);
-    with_cx(state, |cx| native(cx, &ctx))
+    test_support::run_native(state, native, &EvalContext::for_controller(INV))
 }
 
 // ---- the entry path --------------------------------------------------
@@ -146,7 +140,7 @@ fn reverse(state: &mut GameState) -> (EngineOutcome, Vec<Event>) {
 fn a_set_aside_asset_enters_play_at_the_named_location() {
     let mut state = board();
     let (outcome, events) = with_cx(&mut state, |cx| {
-        engine::put_set_aside_card_into_play(cx, LITA, Some(PARLOR), Owner::Scenario)
+        cx.put_set_aside_card_into_play(LITA, Some(PARLOR), Owner::Scenario)
     });
 
     assert_eq!(outcome, EngineOutcome::Done, "the asset entered play");
@@ -180,7 +174,7 @@ fn a_set_aside_asset_enters_play_at_the_named_location() {
 fn a_card_put_into_play_at_a_location_is_controlled_by_no_investigator() {
     let mut state = board();
     let (outcome, _) = with_cx(&mut state, |cx| {
-        engine::put_set_aside_card_into_play(cx, LITA, Some(PARLOR), Owner::Scenario)
+        cx.put_set_aside_card_into_play(LITA, Some(PARLOR), Owner::Scenario)
     });
     assert_eq!(outcome, EngineOutcome::Done);
 
@@ -204,7 +198,7 @@ fn a_card_put_into_play_at_a_location_is_controlled_by_no_investigator() {
 fn a_set_aside_asset_without_a_location_is_rejected() {
     let mut state = board();
     let (outcome, events) = with_cx(&mut state, |cx| {
-        engine::put_set_aside_card_into_play(cx, LITA, None, Owner::Scenario)
+        cx.put_set_aside_card_into_play(LITA, None, Owner::Scenario)
     });
 
     assert!(
@@ -224,7 +218,7 @@ fn a_set_aside_asset_without_a_location_is_rejected() {
 fn a_set_aside_asset_named_at_a_location_not_in_play_is_rejected() {
     let mut state = board();
     let (outcome, _) = with_cx(&mut state, |cx| {
-        engine::put_set_aside_card_into_play(cx, LITA, Some("01113"), Owner::Scenario)
+        cx.put_set_aside_card_into_play(LITA, Some("01113"), Owner::Scenario)
         // the Attic, still set aside
     });
 
@@ -255,7 +249,7 @@ fn an_uncontrolled_asset_cannot_soak_damage_for_a_colocated_investigator() {
     // Put her into play where the investigator is standing — the strongest
     // form of the claim: co-location is not control.
     let (outcome, _) = with_cx(&mut state, |cx| {
-        engine::put_set_aside_card_into_play(cx, LITA, Some(HALLWAY), Owner::Scenario)
+        cx.put_set_aside_card_into_play(LITA, Some(HALLWAY), Owner::Scenario)
     });
     assert_eq!(outcome, EngineOutcome::Done);
 
@@ -297,7 +291,7 @@ fn an_uncontrolled_asset_cannot_soak_damage_for_a_colocated_investigator() {
 fn a_card_at_a_location_is_swept_by_the_modifier_query() {
     let mut state = board();
     let (outcome, _) = with_cx(&mut state, |cx| {
-        engine::put_set_aside_card_into_play(cx, LITA, Some(HALLWAY), Owner::Scenario)
+        cx.put_set_aside_card_into_play(LITA, Some(HALLWAY), Owner::Scenario)
     });
     assert_eq!(outcome, EngineOutcome::Done);
 

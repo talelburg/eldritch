@@ -5,7 +5,7 @@ use card_dsl::dsl::{self, EventPattern, EventTiming, InvestigatorTarget};
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, ApplyResult, Cx, EngineOutcome, OptionId, TimingEvent};
+use game_core::engine::{self, ApplyResult, EngineOutcome, NativeCx, OptionId, TimingEvent};
 use game_core::state::{
     Agenda, CardCode, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId, LocationId,
     Owner, Phase,
@@ -20,8 +20,8 @@ const AGENDA: &str = "TEST-AGENDA";
 /// Voices 01165's discard) so the lead orders both at round end (#213).
 const DISSONANT: &str = "TEST-DISSONANT";
 
-fn set_doom(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
-    cx.state.agenda_doom = 5;
+fn set_doom(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
+    cx.place_doom_on_agenda(5);
     EngineOutcome::Done
 }
 
@@ -161,7 +161,7 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
     assert!(matches!(done.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_eq!(
         done.state.agenda_doom, 6,
-        "agenda round-end forced resolved (native set 5), then Mythos entry \
+        "agenda round-end forced resolved (native placed 5), then Mythos entry \
          placed its +1 doom — the upkeep tail ran through to the next phase",
     );
     assert_eq!(

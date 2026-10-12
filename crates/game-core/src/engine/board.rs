@@ -48,24 +48,30 @@
 //!
 //! # Leaving play
 //!
-//! [`discard_from_play`] and [`remove_from_game`] are the exits a card takes
-//! out of play, wherever it sits. Both file the card by its **owner** through
-//! one router and apply the Leaves Play consequences in the same step; the
-//! private `leave_play` module's docs give the owner table and the rules
-//! behind it.
+//! `discard_from_play` and `remove_from_game` are the exits a card takes out of
+//! play, wherever it sits. Both file the card by its **owner** through one
+//! router and apply the Leaves Play consequences in the same step; the private
+//! `leave_play` module's docs give the owner table and the rules behind it.
 //!
-//! [`place_in_victory_display`] is the victory display's exit, which a
-//! defeated Victory enemy takes.
+//! `place_in_victory_display` is the victory display's exit, which a defeated
+//! Victory enemy takes. `discard_encounter_card` files an encounter card that
+//! never entered play through the same router.
+//!
+//! The exits are crate-private. A card-local native takes them as methods on
+//! [`NativeCx`](crate::engine::NativeCx), such as
+//! [`discard_from_play`](crate::engine::NativeCx::discard_from_play).
 
 mod leave_play;
 
-pub use leave_play::{
-    discard_from_play, place_in_victory_display, remove_from_game, remove_location_from_game,
-    LeavingCard,
+pub use leave_play::LeavingCard;
+pub(crate) use leave_play::{
+    discard_encounter_card, discard_from_play, place_in_victory_display, remove_from_game,
+    remove_location_from_game,
 };
 
 use std::collections::BTreeMap;
 
+use crate::engine::Cx;
 use crate::state::{
     AbilitySource, Act, Agenda, CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameState,
     InvestigatorId, Location, LocationId, Status, UseKind,
@@ -374,6 +380,19 @@ pub fn find_instance_mut(
         .iter_mut()
         .find(|card| card.instance_id == instance_id)
         .map(|card| (card, placement))
+}
+
+/// Remove up to `count` clues from the card instance `instance_id`, wherever
+/// it sits on the board (the [`find_instance`] walk). Saturates at zero, and is
+/// a no-op for an instance not on the board. No event: none names clues
+/// leaving a card.
+///
+/// The exit a card-local native takes to discard clues from a card (Cover Up
+/// 01007's *"Discard that many clues from Cover Up instead."*).
+pub(crate) fn remove_clues(cx: &mut Cx, instance_id: CardInstanceId, count: u8) {
+    if let Some((card, _)) = find_instance_mut(cx.state, instance_id) {
+        card.clues = card.clues.saturating_sub(count);
+    }
 }
 
 /// Take the card instance `instance_id` off the board, with the [`Placement`]

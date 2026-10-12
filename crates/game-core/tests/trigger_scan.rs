@@ -15,8 +15,7 @@ use card_dsl::dsl::{
 };
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
-use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{ApplyResult, Cx, EngineOutcome, OptionId, OptionTarget, TimingEvent};
+use game_core::engine::{ApplyResult, EngineOutcome, OptionId, OptionTarget, TimingEvent};
 use game_core::state::{
     Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
     GameStateBuilder, InvestigatorId, LocationId, Owner, Status, TokenModifiers,
@@ -118,21 +117,11 @@ fn react_on_defeat() -> Vec<Ability> {
     )]
 }
 
-const MARK: &str = "test:mark-the-bound-investigator";
-
-/// Gives the investigator the ability is bound to 1 resource.
-fn mark(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
-    if let Some(inv) = cx.state.investigators.get_mut(&ctx.controller) {
-        inv.resources += 1;
-    }
-    EngineOutcome::Done
-}
-
 fn game_end_mark() -> Vec<Ability> {
     vec![dsl::forced_on_event(
         EventPattern::GameEnd,
         EventTiming::When,
-        dsl::native(MARK),
+        dsl::gain_resources(InvestigatorTarget::You, 1),
     )]
 }
 
@@ -170,7 +159,6 @@ fn install_mock_registry() {
         .with_abilities(GAME_END_WEAKNESS, game_end_mark)
         .with_card(treachery(GAME_END_WEAKNESS, true))
         .with_abilities(GAME_END_NON_WEAKNESS, game_end_mark)
-        .with_native_effect(MARK, mark)
         .with_card(treachery(GAME_END_NON_WEAKNESS, false))
         .with_abilities(ON_ROUND_END, || {
             horror_on(EventPattern::RoundEnded, EventTiming::At)

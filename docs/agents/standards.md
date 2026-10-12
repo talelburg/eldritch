@@ -32,11 +32,13 @@ A new `Effect` (or `EventPattern`) variant waits until **two or more hand-writte
 
 **Why:** a variant added for one card fixes the DSL's shape around a sample of one, and the kernel then has to keep resolving it. One consumer is a card-local detail; two is a pattern.
 
-### A native moves a card between zones only through an engine exit
+### A native changes the game only through an engine exit
 
-A native in `cards` that takes a card out of play calls the engine's exit for it, `game_core::engine::board::discard_from_play`, `remove_from_game` or, for a location, `remove_location_from_game`. It never removes the card from a zone and pushes it onto a pile itself. A native that needs a new way out of play — the victory display, say — gets a sibling verb on the same router in `board::leave_play`, not a copy in the card module.
+A native in `cards` gets a `game_core::engine::NativeCx`. It reads the whole state through `NativeCx::state`, and its only way to change the game is the exits `NativeCx` offers as methods: `discard_from_play`, `remove_from_game`, `place_doom_on_agenda`, `spend_uses`, `take_damage` and the rest. The compiler enforces this: `state()` is read-only, nothing on `NativeCx` pushes an event, and the engine's `&mut Cx` functions are crate-private. A native that needs a new way to change the game gets a new exit on `NativeCx`, backed by an engine function that owns the rule — for a new way out of play, a sibling verb on the router in `board::leave_play` — never a write in the card module.
 
-**Why:** where a leaving card goes is decided by its **owner**, and the exit also discards its attachments and emits the one event per card. A hand-rolled copy gets one of the three wrong. Crypt Chill 01167 routed its discarded asset by **controller**, so a Parleyed Lita Chantler 01117 landed in the investigator's discard instead of leaving the game, as her ruling requires (#918).
+A native also **asks before it writes**. One that suspends for a choice is re-run from the top when the choice is answered, so an exit called before the suspend would apply twice. Any exit call marks the context written, and a native that suspends after one is `Rejected` in every build (#571). Read-only helpers such as `resolve_grounded_choice` are free functions on `state()`, so asking never counts as writing.
+
+**Why:** each exit owns a rule a hand-rolled write gets wrong. A card leaving play goes where its **owner** says, with its attachments, and emits one event: Crypt Chill 01167 routed its discarded asset by **controller**, so a Parleyed Lita Chantler 01117 landed in the investigator's discard instead of leaving the game, as her ruling requires (#918). Doom is not placed on an empty agenda deck: They're Getting Out 01107 wrote `agenda_doom` itself and skipped that guard while the rule was only a convention (#1008). And a card with uses is discarded the moment they run out, wherever they were spent from (#353).
 
 ### Never hand-edit `crates/cards/src/generated/cards.rs`
 

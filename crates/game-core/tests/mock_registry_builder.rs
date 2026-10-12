@@ -17,7 +17,7 @@ use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use card_dsl::dsl::{self, Ability, ModifierScope, Stat};
 use game_core::card_registry::{self, NativeEffectFn};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{Cx, EngineOutcome};
+use game_core::engine::{EngineOutcome, NativeCx};
 use game_core::state::{CardCode, GameState};
 use game_core::test_support::{self, MockRegistry, TEST_INV};
 
@@ -73,7 +73,7 @@ fn back_ability() -> Vec<Ability> {
     ))]
 }
 
-fn probe_effect(_cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
+fn probe_effect(_cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
     EngineOutcome::Done
 }
 

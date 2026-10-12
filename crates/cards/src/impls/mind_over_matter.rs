@@ -6,7 +6,7 @@
 //!   [combat] and [agility].
 //! ```
 //!
-//! One `OnPlay` native: push a round-scoped [`SkillSubstitution`] letting the
+//! One `OnPlay` native: register a round-scoped [`SkillSubstitution`] letting the
 //! controller make a Combat/Agility test as an Intellect test instead. The
 //! choice is offered at test initiation (intellect/wild icons + intellect
 //! bonuses apply, a weapon's combat bonus is dropped) — see the engine's
@@ -18,7 +18,7 @@
 use card_dsl::card_data::SkillKind;
 use card_dsl::dsl::{self, Ability};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{Cx, EngineOutcome};
+use game_core::engine::{EngineOutcome, NativeCx};
 use game_core::state::SkillSubstitution;
 
 use crate::impls::CardRecord;
@@ -38,9 +38,9 @@ pub fn abilities() -> Vec<Ability> {
     vec![dsl::on_play(dsl::native(SUBSTITUTE))]
 }
 
-/// Push the round-scoped substitution for the controller.
-fn substitute(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
-    cx.state.skill_substitutions.push(SkillSubstitution {
+/// Register the round-scoped substitution for the controller.
+fn substitute(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
+    cx.add_skill_substitution(SkillSubstitution {
         investigator: ctx.controller,
         use_skill: SkillKind::Intellect,
         for_skills: vec![SkillKind::Combat, SkillKind::Agility],

@@ -18,9 +18,10 @@ use crate::event::Event;
 use crate::state::LocationId;
 
 /// Reveal `location_id` if it is unrevealed, placing its printed clues.
-/// No-op if the location is absent or already revealed. Public so
-/// card-local [`Effect::Native`](card_dsl::dsl::Effect::Native) handlers can
-/// reveal a location they move investigators into.
+/// No-op if the location is absent or already revealed. A card-local
+/// native reaches it as
+/// [`NativeCx::reveal_location`](crate::engine::NativeCx::reveal_location), to
+/// reveal a location it moves investigators into.
 pub fn reveal_location(cx: &mut Cx, location_id: LocationId) {
     // "Number of investigators who started the scenario" — `len()` is
     // faithful because eliminated investigators stay in the map (status

@@ -11,16 +11,16 @@
 //! there, one that changes the state whatever the board — and none stands in
 //! for a printed card.
 
-use card_dsl::dsl::{self, EventPattern, EventTiming, LocationTarget};
-use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{Cx, EngineOutcome, OptionTarget, TimingEvent};
+use card_dsl::dsl::{self, EventPattern, EventTiming, InvestigatorTarget, LocationTarget};
+use game_core::engine::{EngineOutcome, OptionTarget, TimingEvent};
 use game_core::event::{Event, LapseReason};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId, LocationId, Owner,
 };
 use game_core::test_support::{self, MockRegistry, TestSession};
 
-/// `Forced - At the end of the round: Remove every clue from your location.`
+/// `Forced - At the end of the round: Discover 2 clues at your location.`
+/// Empties [`LOCATION`], which holds [`LOCATION_CLUES`].
 const EMPTIES: &str = "_frl_forced_empties_location";
 /// `Forced - At the end of the round: Discover 1 clue at your location.` Has
 /// the potential to change the game state only while the location has a clue.
@@ -32,30 +32,8 @@ const GAINS: &str = "_frl_forced_gains";
 const INV: InvestigatorId = InvestigatorId(1);
 const LOCATION: LocationId = LocationId(1);
 
-fn empty_your_location(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
-    let location = cx.state.investigators[&ctx.controller]
-        .current_location
-        .expect("the controller is at a location");
-    cx.state
-        .locations
-        .get_mut(&location)
-        .expect("the location is in play")
-        .clues = 0;
-    EngineOutcome::Done
-}
-
-fn gain_2(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
-    cx.state
-        .investigators
-        .get_mut(&ctx.controller)
-        .expect("the controller is seated")
-        .resources += 2;
-    cx.events.push(Event::ResourcesGained {
-        investigator: ctx.controller,
-        amount: 2,
-    });
-    EngineOutcome::Done
-}
+/// The clues on [`LOCATION`] at the end of the round.
+const LOCATION_CLUES: u8 = 2;
 
 #[ctor::ctor(unsafe)]
 fn install() {
@@ -68,14 +46,17 @@ fn install() {
     };
     MockRegistry::new()
         .with_abilities(EMPTIES, move || {
-            at_round_end(dsl::native("_frl:empty_your_location"))
+            at_round_end(dsl::discover_clue(
+                LocationTarget::YourLocation,
+                LOCATION_CLUES,
+            ))
         })
         .with_abilities(DISCOVERS, move || {
             at_round_end(dsl::discover_clue(LocationTarget::YourLocation, 1))
         })
-        .with_abilities(GAINS, move || at_round_end(dsl::native("_frl:gain_2")))
-        .with_native_effect("_frl:empty_your_location", empty_your_location)
-        .with_native_effect("_frl:gain_2", gain_2)
+        .with_abilities(GAINS, move || {
+            at_round_end(dsl::gain_resources(InvestigatorTarget::You, 2))
+        })
         .install();
 }
 
@@ -95,7 +76,7 @@ fn round_ends_holding(codes: &[&str]) -> TestSession {
         ));
     }
     let mut location = test_support::test_location(1, "Mock location");
-    location.clues = 2;
+    location.clues = LOCATION_CLUES;
     GameStateBuilder::new()
         .with_location(location)
         .with_investigator_at(investigator, LOCATION)
@@ -164,8 +145,8 @@ fn an_ability_a_sibling_left_unable_to_change_the_game_state_is_withdrawn_from_t
         "the ability left standing resolved"
     );
     assert_eq!(
-        investigator.clues, 0,
-        "the withdrawn discovery never resolved"
+        investigator.clues, LOCATION_CLUES,
+        "only the emptying discovery resolved; the withdrawn one never did"
     );
 }
 
