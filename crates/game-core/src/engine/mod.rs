@@ -40,6 +40,7 @@ pub use dispatch::reveal::reveal_location;
 pub use dispatch::set_aside::put_set_aside_card_into_play;
 pub use dispatch::skill_test::add_skill_substitution;
 pub use dispatch::threat_area::{attach_to_location, place_in_threat_area};
+pub use dispatch::uses::{spend_uses, SpendUsesError};
 pub use enumerate::{legal_actions, TurnAction};
 pub use evaluator::{location_id_by_code, EvalContext};
 pub use modified_value::{

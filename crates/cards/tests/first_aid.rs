@@ -140,8 +140,10 @@ fn heals_one_horror_when_the_horror_branch_is_chosen() {
 #[test]
 fn spending_the_last_supply_discards_first_aid() {
     // 1 supply: the activation's SpendUses empties the pool, so the
-    // depletion-discard (#302) fires during cost payment — First Aid is gone
-    // before the heal's choice even suspends.
+    // depletion discard — "If First Aid has no supplies, discard it.", a
+    // constant ability (#353) — fires during cost payment, through the one
+    // uses-spending path: First Aid is gone before the heal's choice even
+    // suspends.
     let s = activate(board(1));
     assert!(!at_turn_menu(&s));
     assert!(
@@ -151,6 +153,22 @@ fn spending_the_last_supply_discards_first_aid() {
     assert_eq!(
         s.state().investigators[&INV].discard,
         vec![CardCode::new(FIRST_AID)],
+    );
+    let spent = s
+        .events()
+        .iter()
+        .position(|e| matches!(e, Event::UsesSpent { instance_id, .. } if *instance_id == KIT_INST))
+        .expect("UsesSpent emitted");
+    let discarded = s
+        .events()
+        .iter()
+        .position(
+            |e| matches!(e, Event::CardDiscarded { code, .. } if *code == CardCode::new(FIRST_AID)),
+        )
+        .expect("CardDiscarded emitted");
+    assert!(
+        spent < discarded,
+        "the spend is announced before the discard"
     );
 
     // The heal still resolves (the ability continues even though its source
