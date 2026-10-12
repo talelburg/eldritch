@@ -11,15 +11,15 @@
 //! from `advance_agenda` (the mirror of the act path). Board-dependent,
 //! single-use scenario logic, so it lives card-locally as an `Effect::Native`
 //! handler (#276), orchestrating engine primitives
-//! ([`reshuffle_encounter_discard`](engine::reshuffle_encounter_discard),
+//! ([`reshuffle_encounter_discard`](NativeCx::reshuffle_encounter_discard),
 //! `take_encounter_top`,
-//! [`resolve_encounter_card`](engine::resolve_encounter_card)) over the
+//! [`resolve_encounter_card`](NativeCx::resolve_encounter_card)) over the
 //! encounter deck.
 //!
 //! The dug-up enemy is a *generic* `Ghoul` from the encounter deck — distinct
 //! from act-2's set-aside Ghoul Priest (01116, #280). "Draws that enemy"
 //! resolves it through the normal encounter-draw path
-//! ([`resolve_encounter_card`](engine::resolve_encounter_card)):
+//! ([`resolve_encounter_card`](NativeCx::resolve_encounter_card)):
 //! `CardRevealed`, any Revelation, then spawn.
 //!
 //! Empty-deck note: The Gathering's encounter deck isn't assembled yet, so
@@ -52,7 +52,7 @@
 use card_dsl::card_data::CardType;
 use card_dsl::dsl::{self, Ability, CardFilter, EventPattern, EventTiming};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, board, Cx, EngineOutcome};
+use game_core::engine::{EngineOutcome, NativeCx};
 use game_core::state::Zone;
 
 use crate::generated::traits::GHOUL;
@@ -86,17 +86,17 @@ fn is_ghoul_enemy(code: &str) -> bool {
 /// discarding each non-`Ghoul`-enemy — until a `Ghoul` enemy is found, and
 /// have the lead investigator draw it. A deck exhausted without a Ghoul is
 /// a no-op (nothing to draw).
-fn reverse(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
-    engine::reshuffle_encounter_discard(cx);
+fn reverse(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
+    cx.reshuffle_encounter_discard();
     // `take_encounter_top` never reshuffles, so the just-discarded cards are
     // not fed back into the dig. The deck is finite and shrinks by one each
     // iteration, so this terminates.
-    while let Some(code) = engine::take_encounter_top(cx) {
+    while let Some(code) = cx.take_encounter_top() {
         if is_ghoul_enemy(code.as_str()) {
             let metadata = crate::by_code(code.as_str()).expect("is_ghoul_enemy looked it up");
-            return engine::resolve_encounter_card(cx, ctx.controller, code, metadata);
+            return cx.resolve_encounter_card(ctx.controller, code, metadata);
         }
-        board::discard_encounter_card(cx, code, Zone::EncounterDeck);
+        cx.discard_encounter_card(code, Zone::EncounterDeck);
     }
     EngineOutcome::Done
 }

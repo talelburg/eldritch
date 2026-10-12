@@ -29,7 +29,7 @@
 //!
 //! The random-discard branch is a card-local `Effect::Native` looping over
 //! every investigator and discarding one card at random from each via
-//! [`game_core::engine::discard_random_from_hand`]. The randomness replays
+//! [`NativeCx::discard_random_from_hand`]. The randomness replays
 //! deterministically from the engine's `(seed, draws)` RNG (no `EngineRecord`
 //! is needed — see that helper's docs); the earlier "needs recorded
 //! randomness" deferral note was incorrect.
@@ -50,7 +50,7 @@
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, InvestigatorTarget};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, Cx, EngineOutcome};
+use game_core::engine::{EngineOutcome, NativeCx};
 
 use crate::impls::CardRecord;
 
@@ -94,11 +94,11 @@ pub fn abilities() -> Vec<Ability> {
 /// Branch A: every investigator discards 1 card at random from hand. Loops
 /// internally (rather than via `Effect::ForEach`, which is still a stub) — a
 /// single-consumer native in the Crypt Chill mold.
-fn random_discard_each(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
-    let ids: Vec<_> = cx.state.investigators.keys().copied().collect();
+fn random_discard_each(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
+    let ids: Vec<_> = cx.state().investigators.keys().copied().collect();
     for id in ids {
         // Empty hand ⇒ no-op (helper returns None); not an error.
-        let _ = engine::discard_random_from_hand(cx, id);
+        let _ = cx.discard_random_from_hand(id);
     }
     EngineOutcome::Done
 }

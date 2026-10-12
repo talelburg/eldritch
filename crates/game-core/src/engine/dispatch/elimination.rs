@@ -517,9 +517,10 @@ pub(crate) fn take_horror(cx: &mut Cx, investigator: InvestigatorId, amount: u8)
 /// The single-source-damage twin of `take_horror` — called by
 /// `Effect::Deal`'s evaluator (the `HarmKind::Damage` arm).
 ///
-/// Re-exported at `game_core::engine::take_damage` so card-local native effects
-/// (#276) can deal damage without re-implementing the defeat check — the
-/// first such consumer is Crypt Chill's (01167) no-asset failure branch.
+/// Card-local native effects (#276) reach it as
+/// [`NativeCx::take_damage`](crate::engine::NativeCx::take_damage), so they deal
+/// damage without re-implementing the defeat check — the first such consumer is
+/// Crypt Chill's (01167) no-asset failure branch.
 pub fn take_damage(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
     // Route through the shared soak entry (#44/K5a) so a controlled health-bearing
     // asset (Guard Dog, Beat Cop) absorbs non-attack damage; `place_assignment`
@@ -543,7 +544,8 @@ pub fn take_damage(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
 /// remaining players, the scenario ends"*, which is how a card that defeats the
 /// last active investigator reaches
 /// [`ScenarioEnding::NoResolution`](crate::scenario::ScenarioEnding::NoResolution)
-/// without latching it itself. Re-exported at `game_core::engine::defeat_investigator`.
+/// without latching it itself. A card-local native reaches it as
+/// [`NativeCx::defeat_investigator`](crate::engine::NativeCx::defeat_investigator).
 ///
 /// **No-ops on an investigator who is not `Active`** — one who has already been
 /// killed, driven insane, or resigned is not defeated again. That is what lets a
@@ -558,8 +560,9 @@ pub fn defeat_investigator(cx: &mut Cx, investigator: InvestigatorId) {
 }
 
 /// `investigator` suffers `amount` trauma of `kind`: emits
-/// [`Event::TraumaSuffered`]. Re-exported at `game_core::engine::suffer_trauma`
-/// for card-local natives (They're Getting Out 01107, Cover Up 01007).
+/// [`Event::TraumaSuffered`]. Card-local natives (They're Getting Out 01107,
+/// Cover Up 01007) reach it as
+/// [`NativeCx::suffer_trauma`](crate::engine::NativeCx::suffer_trauma).
 ///
 /// **Announced, not recorded.** Nothing persists trauma until the phase-9
 /// campaign log (#766), which makes this the one place it will be recorded.

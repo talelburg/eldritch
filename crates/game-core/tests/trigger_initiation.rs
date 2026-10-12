@@ -10,10 +10,10 @@
 //! card.
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
-use card_dsl::dsl::{self, EventPattern, EventTiming, UsageLimit, UsagePeriod};
+use card_dsl::dsl::{self, EventPattern, EventTiming, InvestigatorTarget, UsageLimit, UsagePeriod};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{Cx, EngineOutcome, OptionTarget, TimingEvent};
-use game_core::event::Event;
+use game_core::engine::{EngineOutcome, NativeCx, OptionTarget, TimingEvent};
+use game_core::event::{Event, TraumaKind};
 use game_core::state::{
     Assignment, CardCode, CardInPlay, CardInstanceId, DamageSource, EnemyId, GameState,
     GameStateBuilder, Investigator, InvestigatorId, LocationId, Owner,
@@ -36,23 +36,22 @@ const NAMES_ATTACKER: &str = "_ti_fast_names_attacker";
 
 const INV: InvestigatorId = InvestigatorId(1);
 
-/// A marker: one `ResourcesGained` whose amount names what fired.
-fn mark(cx: &mut Cx, ctx: &EvalContext, amount: u8) -> EngineOutcome {
-    cx.events.push(Event::ResourcesGained {
-        investigator: ctx.controller,
-        amount,
-    });
+/// A marker that names what its context bound: one `TraumaSuffered`, an exit
+/// that only announces, whose amount is the bound value. A marker with a
+/// constant amount is a plain `gain_resources` effect instead.
+fn mark(cx: &mut NativeCx, ctx: &EvalContext, amount: u8) -> EngineOutcome {
+    cx.suffer_trauma(ctx.controller, TraumaKind::Physical, amount);
     EngineOutcome::Done
 }
 
 /// Marks the bound clue-discovery count, or 0 when nothing was bound.
-fn mark_count(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
+fn mark_count(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     let amount = ctx.clue_discovery_count().unwrap_or(0);
     mark(cx, ctx, amount)
 }
 
 /// Marks the bound attacking enemy's id, or 0 when nothing was bound.
-fn mark_attacker(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
+fn mark_attacker(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     let amount = ctx
         .attacking_enemy()
         .map_or(0, |enemy| u8::try_from(enemy.0).expect("small enemy id"));
@@ -109,12 +108,12 @@ fn install() {
                 dsl::forced_on_event(
                     EventPattern::EnemyAttackDamagedSelf,
                     EventTiming::When,
-                    dsl::native("_ti:mark2"),
+                    dsl::gain_resources(InvestigatorTarget::You, 2),
                 ),
                 dsl::forced_on_event(
                     EventPattern::DiscoverClues,
                     EventTiming::When,
-                    dsl::native("_ti:mark2"),
+                    dsl::gain_resources(InvestigatorTarget::You, 2),
                 ),
             ]
         })
@@ -126,7 +125,6 @@ fn install() {
                 dsl::native("_ti:mark_attacker"),
             )]
         })
-        .with_native_effect("_ti:mark2", |cx, ctx| mark(cx, ctx, 2))
         .with_native_effect("_ti:mark_attacker", mark_attacker)
         .with_native_effect("_ti:mark_count", mark_count)
         .install();
@@ -157,13 +155,20 @@ fn session_holding(codes: &[&str]) -> TestSession {
         .session()
 }
 
-/// The markers fired so far, in order, with the controller each bound to.
+/// The markers fired so far, in order, with the controller each bound to:
+/// the context-naming markers' `TraumaSuffered` and the constant marker's
+/// `ResourcesGained`.
 fn marks(session: &TestSession) -> Vec<(InvestigatorId, u8)> {
     session
         .events()
         .iter()
         .filter_map(|e| match e {
-            Event::ResourcesGained {
+            Event::TraumaSuffered {
+                investigator,
+                amount,
+                ..
+            }
+            | Event::ResourcesGained {
                 investigator,
                 amount,
             } => Some((*investigator, *amount)),

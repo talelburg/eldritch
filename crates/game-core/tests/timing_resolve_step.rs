@@ -21,9 +21,8 @@
 //! `GameEnd` is `cards::tests::cover_up`, which drives the real 01007 through a
 //! real scenario ending.
 
-use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
-use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{ApplyResult, Cx, EngineOutcome, TimingEvent};
+use card_dsl::dsl::{self, Ability, Effect, EventPattern, EventTiming, InvestigatorTarget};
+use game_core::engine::{ApplyResult, EngineOutcome, TimingEvent};
 use game_core::event::Event;
 use game_core::state::{
     self, Act, CardCode, CardInPlay, CardInstanceId, EmitStep, GameState, GameStateBuilder,
@@ -47,28 +46,26 @@ const GAME_END_CARD: &str = "TESTGAMEEND";
 
 /// A cell marker: one `ResourcesGained` whose amount names the cell that fired
 /// it, so a test can assert *which* cells ran and *in what order*.
-fn mark(cx: &mut Cx, ctx: &EvalContext, amount: u8) -> EngineOutcome {
-    cx.events.push(Event::ResourcesGained {
-        investigator: ctx.controller,
-        amount,
-    });
-    EngineOutcome::Done
+fn mark(amount: u8) -> Effect {
+    dsl::gain_resources(InvestigatorTarget::You, amount)
 }
 
-fn mark_when(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
-    mark(cx, ctx, 1)
+/// The `when` cell's marker.
+fn mark_when() -> Effect {
+    mark(1)
 }
 
-fn mark_at(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
-    mark(cx, ctx, 2)
+/// The `at` cell's marker.
+fn mark_at() -> Effect {
+    mark(2)
 }
 
 /// The `when`/`at` marker pair a bare milestone's card declares, so both cells
 /// are observable in order.
 fn both_cells(pattern: EventPattern) -> Vec<Ability> {
     vec![
-        dsl::forced_on_event(pattern.clone(), EventTiming::When, dsl::native("mark:when")),
-        dsl::forced_on_event(pattern, EventTiming::At, dsl::native("mark:at")),
+        dsl::forced_on_event(pattern.clone(), EventTiming::When, mark_when()),
+        dsl::forced_on_event(pattern, EventTiming::At, mark_at()),
     ]
 }
 
@@ -85,20 +82,18 @@ fn install() {
             vec![dsl::forced_on_event(
                 upkeep_ended(),
                 EventTiming::When,
-                dsl::native("mark:when"),
+                mark_when(),
             )]
         })
         .with_abilities(AT_ACT, || {
             vec![dsl::forced_on_event(
                 upkeep_ended(),
                 EventTiming::At,
-                dsl::native("mark:at"),
+                mark_at(),
             )]
         })
         .with_abilities(ROUND_ACT, || both_cells(EventPattern::RoundEnded))
         .with_abilities(GAME_END_CARD, || both_cells(EventPattern::GameEnd))
-        .with_native_effect("mark:when", mark_when)
-        .with_native_effect("mark:at", mark_at)
         .install();
 }
 

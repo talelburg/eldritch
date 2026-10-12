@@ -18,8 +18,8 @@
 use card_dsl::card_data::{CardKind, SkillKind};
 use card_dsl::dsl::{self, Ability};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, board, Cx, EngineOutcome, Grounded, OptionTarget};
-use game_core::state::{CardInstanceId, InvestigatorId};
+use game_core::engine::{self, EngineOutcome, Grounded, NativeCx, OptionTarget};
+use game_core::state::{CardInstanceId, GameState, InvestigatorId};
 
 use crate::impls::CardRecord;
 
@@ -45,8 +45,8 @@ pub fn abilities() -> Vec<Ability> {
 /// The controller's in-play asset instances, in play order. The candidate set
 /// for the choice — re-enumerated identically on resume so an `OptionId`
 /// indexes the same asset.
-fn controlled_assets(cx: &Cx, controller: InvestigatorId) -> Vec<CardInstanceId> {
-    let Some(inv) = cx.state.investigators.get(&controller) else {
+fn controlled_assets(state: &GameState, controller: InvestigatorId) -> Vec<CardInstanceId> {
+    let Some(inv) = state.investigators.get(&controller) else {
         return Vec::new();
     };
     inv.cards_in_play
@@ -61,11 +61,11 @@ fn controlled_assets(cx: &Cx, controller: InvestigatorId) -> Vec<CardInstanceId>
         .collect()
 }
 
-fn crypt_chill_fail(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
+fn crypt_chill_fail(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     let controller = ctx.controller;
-    let assets = controlled_assets(cx, controller);
+    let assets = controlled_assets(cx.state(), controller);
     match engine::resolve_grounded_choice(
-        cx.state,
+        cx.state(),
         ctx,
         &assets,
         "Choose an asset to discard",
@@ -75,7 +75,7 @@ fn crypt_chill_fail(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
         // Cannot discard an asset → take 2 damage instead (the printed
         // fallback; defeat handled by the kernel helper).
         Grounded::Empty => {
-            engine::take_damage(cx, controller, 2);
+            cx.take_damage(controller, 2);
             EngineOutcome::Done
         }
         Grounded::Suspend(outcome) => outcome,
@@ -85,8 +85,8 @@ fn crypt_chill_fail(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
 /// Discard the chosen asset through the engine's discard-from-play exit, which
 /// files it by its **owner** — so a Parleyed Lita Chantler 01117 is removed
 /// from the game rather than discarded (#918, <https://arkhamdb.com/card/01117>).
-fn discard_asset_instance(cx: &mut Cx, instance: CardInstanceId) -> EngineOutcome {
-    match board::discard_from_play(cx, instance) {
+fn discard_asset_instance(cx: &mut NativeCx, instance: CardInstanceId) -> EngineOutcome {
+    match cx.discard_from_play(instance) {
         Some(_) => EngineOutcome::Done,
         None => EngineOutcome::Rejected {
             reason: "01167 crypt-chill-fail: chosen asset no longer in play".into(),
@@ -97,7 +97,6 @@ fn discard_asset_instance(cx: &mut Cx, instance: CardInstanceId) -> EngineOutcom
 #[cfg(test)]
 mod tests {
     use card_dsl::dsl::Effect;
-    use game_core::event::Event;
     use game_core::state::{CardCode, CardInPlay, GameStateBuilder, Owner};
     use game_core::test_support;
 
@@ -137,15 +136,8 @@ mod tests {
         ));
         let mut state = GameStateBuilder::new().with_investigator(inv).build();
         state.interactive_acknowledge = true;
-        let mut events: Vec<Event> = Vec::new();
         let ctx = EvalContext::for_controller(InvestigatorId(1));
-        let out = {
-            let mut cx = Cx {
-                state: &mut state,
-                events: &mut events,
-            };
-            crypt_chill_fail(&mut cx, &ctx)
-        };
+        let (out, _) = test_support::run_native(&mut state, crypt_chill_fail, &ctx);
         match out {
             EngineOutcome::AwaitingInput { request, .. } => {
                 assert_eq!(
@@ -169,15 +161,8 @@ mod tests {
             Owner::Investigator(InvestigatorId(1)),
         ));
         let mut state = GameStateBuilder::new().with_investigator(inv).build();
-        let mut events: Vec<Event> = Vec::new();
         let ctx = EvalContext::for_controller(InvestigatorId(1));
-        let out = {
-            let mut cx = Cx {
-                state: &mut state,
-                events: &mut events,
-            };
-            crypt_chill_fail(&mut cx, &ctx)
-        };
+        let (out, _) = test_support::run_native(&mut state, crypt_chill_fail, &ctx);
         assert!(
             matches!(out, EngineOutcome::Done),
             "flag off: auto-discard, no suspend"

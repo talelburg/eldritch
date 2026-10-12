@@ -5,7 +5,7 @@
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, Cx, EngineOutcome, OptionTarget};
+use game_core::engine::{EngineOutcome, NativeCx, OptionTarget};
 use game_core::state::{
     Act, CardCode, GameState, GameStateBuilder, InvestigatorId, Location, LocationId,
 };
@@ -14,8 +14,8 @@ use game_core::test_support::{self, MockRegistry, TestSession};
 /// The advance logic lives in the registry (01109's `When`-`RoundEnded` reaction
 /// native), so the coordinator fires it through the effect evaluator when its
 /// candidate is picked. A minimal mock registry stands in for `cards`.
-fn advance_native(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
-    engine::round_end_advance(cx, "01112") // the Hallway
+fn advance_native(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
+    cx.round_end_advance("01112") // the Hallway
 }
 
 fn advance_reaction() -> Vec<Ability> {

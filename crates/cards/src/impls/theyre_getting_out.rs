@@ -48,7 +48,7 @@
 //! zero-based act cursor**, so the predicate is `act_index == 2`.
 //!
 //! The act-3 arm is likewise a card-local native effect — a loop over
-//! `turn_order` calling [`defeat_investigator`](engine::defeat_investigator),
+//! `turn_order` calling [`defeat_investigator`](NativeCx::defeat_investigator),
 //! not `Effect::ForEach`, whose evaluator arm is a stub and whose general
 //! design is still open (#363). The loop and the body it fans out to each
 //! have one consumer, so both fail the DSL-primitive threshold independently.
@@ -71,7 +71,7 @@
 //! The card names no ending on this branch, because the card prints none.
 //!
 //! *"That has not resigned"* needs no filter to be *correct*:
-//! [`defeat_investigator`](engine::defeat_investigator) no-ops on any
+//! [`defeat_investigator`](NativeCx::defeat_investigator) no-ops on any
 //! investigator who is not `Active`, and a resigned one is not. The loop
 //! reads the status anyway, so that the trauma announcement fires only for
 //! someone this card actually defeated.
@@ -109,14 +109,14 @@
 //! Parlor, so the lowest-`LocationId` tie-break below is unreachable in this
 //! scenario (RR p.12: the controlling player chooses on a tie — deferred
 //! until a map with ties lands). The move goes through
-//! [`relocate_enemy`](engine::relocate_enemy), so a Ghoul arriving at an
+//! [`relocate_enemy`](NativeCx::relocate_enemy), so a Ghoul arriving at an
 //! investigator's location engages on arrival per the general engagement rule
 //! (#633) — the card text is positional only, but the framework rule applies
 //! regardless.
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, Phase};
 use game_core::engine::evaluator::{self, EvalContext};
-use game_core::engine::{self, Cx, EngineOutcome};
+use game_core::engine::{self, EngineOutcome, NativeCx};
 use game_core::event::TraumaKind;
 use game_core::state::{Enemy, EnemyId, GameState, InvestigatorId, LocationId, Status};
 
@@ -204,16 +204,22 @@ fn at_act_three(state: &GameState, _ctx: &EvalContext) -> bool {
 /// no-ops on a non-`Active` investigator anyway; reading the status first is
 /// what keeps the trauma announcement from firing for someone who was never
 /// defeated by this card.
-fn the_ghouls_run_rampant(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
-    let order: Vec<InvestigatorId> = cx.state.turn_order.clone();
+fn the_ghouls_run_rampant(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
+    let order: Vec<InvestigatorId> = cx.state().turn_order.clone();
     for investigator in order {
-        if cx.state.investigators.get(&investigator).map(|i| i.status) != Some(Status::Active) {
+        if cx
+            .state()
+            .investigators
+            .get(&investigator)
+            .map(|i| i.status)
+            != Some(Status::Active)
+        {
             continue;
         }
-        engine::defeat_investigator(cx, investigator);
+        cx.defeat_investigator(investigator);
         // Announced, not recorded: nothing persists trauma until the phase-9
         // campaign log (#766). Cover Up 01007's mental trauma is the precedent.
-        engine::suffer_trauma(cx, investigator, TraumaKind::Physical, 1);
+        cx.suffer_trauma(investigator, TraumaKind::Physical, 1);
     }
     EngineOutcome::Done
 }
@@ -236,14 +242,14 @@ fn is_ghoul(enemy: &Enemy) -> bool {
 /// whole apply back (#161), it landed on the *player's* action and made the
 /// scenario unplayable (#811). Same reading as the barricaded first step
 /// below: no move available means no move, never an error.
-fn move_ghouls_toward_parlor(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
-    let Some(parlor) = evaluator::location_id_by_code(cx.state, PARLOR) else {
+fn move_ghouls_toward_parlor(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
+    let Some(parlor) = evaluator::location_id_by_code(cx.state(), PARLOR) else {
         return EngineOutcome::Done;
     };
     // Scan first (shared borrows), then mutate. Deterministic lowest-
     // LocationId tie-break among shortest first steps.
     let mut movers: Vec<(EnemyId, LocationId)> = Vec::new();
-    for (id, e) in &cx.state.enemies {
+    for (id, e) in &cx.state().enemies {
         if e.engaged_with.is_some() || !is_ghoul(e) {
             continue;
         }
@@ -260,9 +266,9 @@ fn move_ghouls_toward_parlor(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
         // enemy with patrol would be compelled to move to a location which is
         // blocked by a card ability, the enemy does not move."* So a
         // barricaded first step is a non-move, never a detour (#797).
-        let mut steps: Vec<LocationId> = engine::shortest_first_steps(cx.state, from, parlor)
+        let mut steps: Vec<LocationId> = engine::shortest_first_steps(cx.state(), from, parlor)
             .into_iter()
-            .filter(|&loc| engine::enemy_can_enter_location(cx.state, e, loc))
+            .filter(|&loc| engine::enemy_can_enter_location(cx.state(), e, loc))
             .collect();
         steps.sort_unstable();
         if let Some(&to) = steps.first() {
@@ -274,7 +280,7 @@ fn move_ghouls_toward_parlor(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
         // `EnemyMoved` emit, and the engage-on-arrival check the general
         // engagement rule requires of *any* enemy movement — an exhausted
         // (evaded) Ghoul moved by this agenda still arrives unengaged.
-        engine::relocate_enemy(cx, id, to);
+        cx.relocate_enemy(id, to);
     }
     EngineOutcome::Done
 }
@@ -283,20 +289,20 @@ fn move_ghouls_toward_parlor(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
 /// (01115). Not filtered by engagement (per card text). No threshold
 /// check — RR p.24 checks doom in Mythos step 1.3. Placed through the
 /// engine's `place_doom_on_agenda`, so an empty agenda deck takes none.
-fn place_round_end_doom(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
+fn place_round_end_doom(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
     let counted: Vec<LocationId> = [HALLWAY, PARLOR]
         .iter()
-        .filter_map(|c| evaluator::location_id_by_code(cx.state, c))
+        .filter_map(|c| evaluator::location_id_by_code(cx.state(), c))
         .collect();
     let count = cx
-        .state
+        .state()
         .enemies
         .values()
         .filter(|e| is_ghoul(e))
         .filter(|e| e.current_location.is_some_and(|l| counted.contains(&l)))
         .count();
     let count = u8::try_from(count).unwrap_or(u8::MAX);
-    engine::place_doom_on_agenda(cx, count);
+    cx.place_doom_on_agenda(count);
     EngineOutcome::Done
 }
 
@@ -339,13 +345,10 @@ mod tests {
         state
     }
 
-    fn cx_apply(state: &mut GameState, f: NativeEffectFn) -> Vec<Event> {
-        let mut events = Vec::new();
-        let mut cx = Cx {
-            state,
-            events: &mut events,
-        };
-        let out = f(&mut cx, &EvalContext::for_controller(InvestigatorId(1)));
+    /// Run `f` for investigator 1, assert it finished, and return its events.
+    fn run_done(state: &mut GameState, f: NativeEffectFn) -> Vec<Event> {
+        let (out, events) =
+            test_support::run_native(state, f, &EvalContext::for_controller(InvestigatorId(1)));
         assert_eq!(out, EngineOutcome::Done);
         events
     }
@@ -460,7 +463,7 @@ mod tests {
             .with_turn_order([a, b])
             .build();
 
-        let events = cx_apply(&mut state, the_ghouls_run_rampant);
+        let events = run_done(&mut state, the_ghouls_run_rampant);
 
         for id in [a, b] {
             assert_eq!(
@@ -507,7 +510,7 @@ mod tests {
             .build();
         state.investigators.get_mut(&a).expect("seated").status = Status::Resigned;
 
-        let events = cx_apply(&mut state, the_ghouls_run_rampant);
+        let events = run_done(&mut state, the_ghouls_run_rampant);
 
         assert_eq!(state.investigators[&a].status, Status::Resigned);
         assert_eq!(state.investigators[&b].status, Status::Defeated);
@@ -524,13 +527,13 @@ mod tests {
     /// No Parlor on the board is a **no-op**, not a rejection: `Done`, no
     /// events, nothing moved. The reachable case is agenda 3 turning up while
     /// the act deck is still on act 1 or 2 — see the function's own doc for why
-    /// (#811). `cx_apply` already asserts the `Done`.
+    /// (#811). `run_done` already asserts the `Done`.
     #[test]
     fn no_parlor_in_play_moves_nothing_and_does_not_reject() {
         let mut state = star_board();
         state.locations.remove(&LocationId(5)); // the Parlor
         state.enemies.insert(EnemyId(1), ghoul(1, LocationId(3))); // Attic
-        let events = cx_apply(&mut state, move_ghouls_toward_parlor);
+        let events = run_done(&mut state, move_ghouls_toward_parlor);
         assert!(events.is_empty(), "no events: {events:?}");
         assert_eq!(
             state.enemies[&EnemyId(1)].current_location,
@@ -543,7 +546,7 @@ mod tests {
     fn unengaged_ghoul_in_attic_steps_to_hallway() {
         let mut state = star_board();
         state.enemies.insert(EnemyId(1), ghoul(1, LocationId(3))); // Attic
-        let events = cx_apply(&mut state, move_ghouls_toward_parlor);
+        let events = run_done(&mut state, move_ghouls_toward_parlor);
         assert_eq!(
             state.enemies[&EnemyId(1)].current_location,
             Some(LocationId(2))
@@ -556,7 +559,7 @@ mod tests {
     fn ghoul_in_hallway_steps_to_parlor() {
         let mut state = star_board();
         state.enemies.insert(EnemyId(1), ghoul(1, LocationId(2))); // Hallway
-        cx_apply(&mut state, move_ghouls_toward_parlor);
+        run_done(&mut state, move_ghouls_toward_parlor);
         assert_eq!(
             state.enemies[&EnemyId(1)].current_location,
             Some(LocationId(5))
@@ -572,7 +575,7 @@ mod tests {
         let mut state = star_board();
         state.enemies.insert(EnemyId(1), ghoul(1, LocationId(2))); // Hallway
         barricade(&mut state, LocationId(5));
-        cx_apply(&mut state, move_ghouls_toward_parlor);
+        run_done(&mut state, move_ghouls_toward_parlor);
         assert_eq!(
             state.enemies[&EnemyId(1)].current_location,
             Some(LocationId(2)),
@@ -627,7 +630,7 @@ mod tests {
         state.enemies.insert(EnemyId(1), ghoul(1, LocationId(3))); // Attic
         barricade(&mut state, LocationId(2)); // Hallway — the only shortest step
 
-        let events = cx_apply(&mut state, move_ghouls_toward_parlor);
+        let events = run_done(&mut state, move_ghouls_toward_parlor);
 
         assert_eq!(
             state.enemies[&EnemyId(1)].current_location,
@@ -641,7 +644,7 @@ mod tests {
     fn ghoul_takes_the_shortest_step_when_nothing_is_barricaded() {
         let mut state = detour_board();
         state.enemies.insert(EnemyId(1), ghoul(1, LocationId(3))); // Attic
-        cx_apply(&mut state, move_ghouls_toward_parlor);
+        run_done(&mut state, move_ghouls_toward_parlor);
         assert_eq!(
             state.enemies[&EnemyId(1)].current_location,
             Some(LocationId(2)),
@@ -654,7 +657,7 @@ mod tests {
         let mut state = detour_board();
         state.enemies.insert(EnemyId(1), ghoul(1, LocationId(3))); // Attic
         barricade(&mut state, LocationId(6)); // Study — on the long route only
-        cx_apply(&mut state, move_ghouls_toward_parlor);
+        run_done(&mut state, move_ghouls_toward_parlor);
         assert_eq!(
             state.enemies[&EnemyId(1)].current_location,
             Some(LocationId(2)),
@@ -675,7 +678,7 @@ mod tests {
         state.turn_order = vec![InvestigatorId(1)];
         state.enemies.insert(EnemyId(1), ghoul(1, LocationId(3))); // Attic
 
-        let events = cx_apply(&mut state, move_ghouls_toward_parlor);
+        let events = run_done(&mut state, move_ghouls_toward_parlor);
 
         assert_eq!(
             state.enemies[&EnemyId(1)].current_location,
@@ -707,7 +710,7 @@ mod tests {
         evaded.exhausted = true;
         state.enemies.insert(EnemyId(1), evaded);
 
-        let events = cx_apply(&mut state, move_ghouls_toward_parlor);
+        let events = run_done(&mut state, move_ghouls_toward_parlor);
 
         assert_eq!(
             state.enemies[&EnemyId(1)].current_location,
@@ -731,7 +734,7 @@ mod tests {
         engaged.engaged_with = Some(InvestigatorId(1));
         state.enemies.insert(EnemyId(1), engaged);
         state.enemies.insert(EnemyId(2), ghoul(2, LocationId(5))); // already at Parlor
-        cx_apply(&mut state, move_ghouls_toward_parlor);
+        run_done(&mut state, move_ghouls_toward_parlor);
         assert_eq!(
             state.enemies[&EnemyId(1)].current_location,
             Some(LocationId(3))
@@ -750,7 +753,7 @@ mod tests {
         e.code = CardCode::new("01159");
         e.current_location = Some(LocationId(3));
         state.enemies.insert(EnemyId(1), e);
-        cx_apply(&mut state, move_ghouls_toward_parlor);
+        run_done(&mut state, move_ghouls_toward_parlor);
         assert_eq!(
             state.enemies[&EnemyId(1)].current_location,
             Some(LocationId(3))
@@ -770,7 +773,7 @@ mod tests {
         non_ghoul.code = CardCode::new("01159");
         non_ghoul.current_location = Some(LocationId(2));
         state.enemies.insert(EnemyId(4), non_ghoul); // Hallway non-Ghoul — no
-        cx_apply(&mut state, place_round_end_doom);
+        run_done(&mut state, place_round_end_doom);
         assert_eq!(state.agenda_doom, 2);
     }
 
@@ -781,7 +784,7 @@ mod tests {
         let mut engaged = ghoul(1, LocationId(2)); // Hallway, engaged
         engaged.engaged_with = Some(InvestigatorId(1));
         state.enemies.insert(EnemyId(1), engaged);
-        cx_apply(&mut state, place_round_end_doom);
+        run_done(&mut state, place_round_end_doom);
         assert_eq!(state.agenda_doom, 1);
     }
 
@@ -792,7 +795,7 @@ mod tests {
         let mut state = star_board();
         assert!(state.agenda_deck.is_empty());
         state.enemies.insert(EnemyId(1), ghoul(1, LocationId(2))); // Hallway
-        cx_apply(&mut state, place_round_end_doom);
+        run_done(&mut state, place_round_end_doom);
         assert_eq!(state.agenda_doom, 0);
     }
 }

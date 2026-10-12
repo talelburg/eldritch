@@ -84,7 +84,7 @@ use crate::engine::dispatch::{
     self, act_agenda, actions, cards, choice, combat, elimination, emit, skill_test, threat_area,
 };
 use crate::engine::outcome::{EngineOutcome, OptionId, OptionTarget};
-use crate::engine::Cx;
+use crate::engine::{Cx, NativeCx};
 use crate::event::Event;
 use crate::scenario::{ResolutionId, ScenarioEnding};
 use crate::state::{
@@ -879,6 +879,10 @@ fn step_choose_one(
 /// re-invokes the native with the pick). The native must choose *before* any
 /// side effect (standalone contract) so re-invocation is idempotent up to the
 /// suspension — no double-apply (#422, #334).
+///
+/// The contract is enforced in every build (#571): the native gets a fresh
+/// [`NativeCx`], which notes any exit call, and a native that suspends after
+/// one is `Rejected`. The apply's snapshot rollback then undoes its writes.
 fn step_native(cx: &mut Cx, tag: &str, eval_ctx: EvalContext, node: &Effect) -> EngineOutcome {
     let Some(reg) = card_registry::current() else {
         return EngineOutcome::Rejected {
@@ -890,19 +894,22 @@ fn step_native(cx: &mut Cx, tag: &str, eval_ctx: EvalContext, node: &Effect) -> 
             reason: format!("Native effect {tag:?}: no handler registered").into(),
         };
     };
-    let events_before = cx.events.len();
-    let outcome = f(cx, &eval_ctx);
+    let mut native_cx = NativeCx::new(Cx {
+        state: &mut *cx.state,
+        events: &mut *cx.events,
+    });
+    let outcome = f(&mut native_cx, &eval_ctx);
+    let written = native_cx.written();
     if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
-        // Standalone-contract tripwire (#334): a native that suspends for a pick
-        // must do so *before* any side effect, so re-invoking it on resume is
-        // idempotent up to the suspension. A native that emitted events then
-        // suspended would double-apply them on re-step — flag it loudly.
-        debug_assert_eq!(
-            cx.events.len(),
-            events_before,
-            "native {tag:?} pushed events before suspending for a choice; \
-             re-invocation on resume would double-apply (standalone-contract violation)",
-        );
+        if written {
+            return EngineOutcome::Rejected {
+                reason: format!(
+                    "Native effect {tag:?} changed the game and then suspended for a choice; \
+                     a native must choose before it writes, since resuming re-runs it"
+                )
+                .into(),
+            };
+        }
         suspend_leaf_in_place(cx, node, eval_ctx);
     }
     outcome

@@ -336,10 +336,10 @@ fn move_deck_top_to_hand(cx: &mut Cx, investigator: InvestigatorId, count: u8) -
 ///
 /// The random index is drawn through the engine RNG ([`RngState`](crate::rng::RngState)),
 /// so it replays deterministically from `(seed, draws)` — no `EngineRecord` is
-/// needed (see `EngineRecord`'s doc-comment). Exposed `pub` (re-exported at the
-/// crate root) so card-local natives can drive "discard at random from hand"
-/// without reaching into the crate-private RNG (agenda 01105's random-discard
-/// branch, Axis A #334).
+/// needed (see `EngineRecord`'s doc-comment). Card-local natives reach it as
+/// [`NativeCx::discard_random_from_hand`](crate::engine::NativeCx::discard_random_from_hand),
+/// so they drive "discard at random from hand" without reaching into the
+/// crate-private RNG (agenda 01105's random-discard branch, Axis A #334).
 ///
 /// # Panics
 ///

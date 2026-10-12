@@ -19,7 +19,8 @@ use crate::engine::{board, Cx};
 use crate::event::Event;
 use crate::state::{CardInstanceId, InvestigatorId, UseKind};
 
-/// Why [`spend_uses`] could not do its whole job.
+/// Why [`NativeCx::spend_uses`](crate::engine::NativeCx::spend_uses) could not
+/// do its whole job.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpendUsesError {
     /// The instance is not on the board, so it has no uses to spend. Nothing
@@ -32,8 +33,8 @@ pub enum SpendUsesError {
 }
 
 /// `investigator` spends `amount` uses of `kind` from the card instance
-/// `instance`, wherever it sits on the board. Re-exported at
-/// `game_core::engine::spend_uses` for card-local natives.
+/// `instance`, wherever it sits on the board. A card-local native reaches it
+/// as [`NativeCx::spend_uses`](crate::engine::NativeCx::spend_uses).
 ///
 /// In order:
 /// 1. decrements the pool, saturating at zero (a pool the card lacks counts as

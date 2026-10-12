@@ -45,7 +45,7 @@
 
 use card_dsl::dsl::{self, Ability, Effect, EventPattern, EventTiming};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, board, Cx, EngineOutcome};
+use game_core::engine::{board, EngineOutcome, NativeCx};
 use game_core::event::TraumaKind;
 use game_core::state::GameState;
 
@@ -115,7 +115,7 @@ fn has_clues(state: &GameState, ctx: &EvalContext) -> bool {
 
 /// "Discard that many clues from Cover Up instead" — discard the replaced
 /// count (threaded via `clue_discovery_count`) from the firing instance.
-fn discard_clues(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
+fn discard_clues(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     debug_assert!(
         ctx.clue_discovery_count().is_some(),
         "cover_up discard: clue_discovery_count not threaded"
@@ -129,7 +129,7 @@ fn discard_clues(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
     // Found wherever it sits, not in the triggering investigator's areas: the
     // ruling lets anyone at Roland's location discard from *his* Cover Up
     // (<https://arkhamdb.com/card/01007>).
-    board::remove_clues(cx, source, count);
+    cx.remove_clues(source, count);
     EngineOutcome::Done
 }
 
@@ -142,7 +142,7 @@ fn discard_clues(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
 /// forced scan evaluates eligibility once at collect time. Two simultaneous
 /// game-end hits resolve in a chosen order (#213), so a sibling could strip the
 /// clues between this one's collection and its resolution.
-fn trauma(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
+fn trauma(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     let Some(source) = ctx.source_instance() else {
         return EngineOutcome::Rejected {
             reason: "cover_up trauma: no source instance".into(),
@@ -151,11 +151,11 @@ fn trauma(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
     // "You" is the investigator whose threat area holds Cover Up —
     // `glossary/You_Your.md`: *"the investigator who has the card in his/her
     // threat area"* — read off where the card is, not off who triggered it.
-    let holder = board::find_instance(cx.state, source)
+    let holder = board::find_instance(cx.state(), source)
         .filter(|(card, _)| card.clues > 0)
         .and_then(|(_, placement)| placement.investigator());
     if let Some(holder) = holder {
-        engine::suffer_trauma(cx, holder, TraumaKind::Mental, 1);
+        cx.suffer_trauma(holder, TraumaKind::Mental, 1);
     }
     EngineOutcome::Done
 }

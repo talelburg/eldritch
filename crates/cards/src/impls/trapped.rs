@@ -14,11 +14,11 @@
 //! in Slice-1 scope (no encounter path targets the Study). The four rooms are
 //! set aside by the scenario's `setup()` as bare card codes; this ability
 //! puts each into play through
-//! [`put_set_aside_card_into_play`](engine::put_set_aside_card_into_play),
+//! [`put_set_aside_card_into_play`](NativeCx::put_set_aside_card_into_play),
 //! which mints its `LocationId` and wires its printed connections from the
 //! scenario's layout table, then relocates investigators to the Hallway
 //! (01112) and removes the Study (01111) through
-//! [`remove_location_from_game`](board::remove_location_from_game), which
+//! [`remove_location_from_game`](NativeCx::remove_location_from_game), which
 //! discards whatever is attached to it by owner.
 //!
 //! The board build is board-dependent, single-use scenario logic, so it
@@ -40,7 +40,7 @@
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::evaluator::{self, EvalContext};
-use game_core::engine::{self, board, Cx, EngineOutcome};
+use game_core::engine::{EngineOutcome, NativeCx};
 use game_core::state::Owner;
 
 use crate::impls::CardRecord;
@@ -85,16 +85,21 @@ pub fn abilities() -> Vec<Ability> {
 /// and rejects before any mutation; a rejection is additionally rolled
 /// back wholesale by `apply_via`'s snapshot-restore, so validate-first
 /// here is about precise reasons, not state safety.
-fn board_build(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
+fn board_build(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
     // Validate-first: all four rooms set aside, and 01111 in play.
     for code in ROOMS {
-        if !cx.state.set_aside_cards.iter().any(|c| c.as_str() == code) {
+        if !cx
+            .state()
+            .set_aside_cards
+            .iter()
+            .any(|c| c.as_str() == code)
+        {
             return EngineOutcome::Rejected {
                 reason: format!("01108 board-build: {code} is not set aside").into(),
             };
         }
     }
-    if evaluator::location_id_by_code(cx.state, STUDY).is_none() {
+    if evaluator::location_id_by_code(cx.state(), STUDY).is_none() {
         return EngineOutcome::Rejected {
             reason: format!("01108 board-build: no in-play Study ({STUDY})").into(),
         };
@@ -103,28 +108,28 @@ fn board_build(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
     // printed connections to the rooms already there.
     for code in ROOMS {
         // A location records no owner, so the owner argument is unused here.
-        match engine::put_set_aside_card_into_play(cx, code, None, Owner::Scenario) {
+        match cx.put_set_aside_card_into_play(code, None, Owner::Scenario) {
             EngineOutcome::Done => {}
             other => return other,
         }
     }
     // Relocate all investigators to the Hallway (01112).
-    let Some(dest) = evaluator::location_id_by_code(cx.state, HALLWAY) else {
+    let Some(dest) = evaluator::location_id_by_code(cx.state(), HALLWAY) else {
         unreachable!("01108 board-build: the Hallway just entered play");
     };
     // A placement, not a move: no engaged enemy follows and no move trigger
     // fires.
-    let ids: Vec<_> = cx.state.investigators.keys().copied().collect();
+    let ids: Vec<_> = cx.state().investigators.keys().copied().collect();
     for id in ids {
-        engine::place_investigator(cx, id, dest);
+        cx.place_investigator(id, dest);
     }
-    engine::reveal_location(cx, dest);
+    cx.reveal_location(dest);
     // Remove the Study (01111) from the game. Its attachments go with it, each
     // discarded by its owner (`glossary/Leaves_Play.md`).
-    let Some(study) = evaluator::location_id_by_code(cx.state, STUDY) else {
+    let Some(study) = evaluator::location_id_by_code(cx.state(), STUDY) else {
         unreachable!("01108 board-build: the Study was validated in play above");
     };
-    let removed = board::remove_location_from_game(cx, study);
+    let removed = cx.remove_location_from_game(study);
     debug_assert!(
         removed,
         "01108 board-build: the Study was just found in play"

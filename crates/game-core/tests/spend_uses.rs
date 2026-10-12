@@ -17,7 +17,7 @@
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Uses};
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, ApplyResult, Cx, EngineOutcome, TimingEvent};
+use game_core::engine::{ApplyResult, EngineOutcome, NativeCx, TimingEvent};
 use game_core::event::Event;
 use game_core::state::{
     self, Act, CardCode, CardInPlay, CardInstanceId, DiscardPile, GameState, GameStateBuilder,
@@ -83,8 +83,8 @@ fn forced_native(tag: &'static str) -> Vec<Ability> {
 }
 
 /// Spend 1 `kind` from [`HELD`] as the controller; reject if the spend fails.
-fn spend_one(cx: &mut Cx, ctx: &EvalContext, kind: UseKind) -> EngineOutcome {
-    match engine::spend_uses(cx, ctx.controller, HELD, kind, 1) {
+fn spend_one(cx: &mut NativeCx, ctx: &EvalContext, kind: UseKind) -> EngineOutcome {
+    match cx.spend_uses(ctx.controller, HELD, kind, 1) {
         Ok(()) => EngineOutcome::Done,
         Err(err) => EngineOutcome::Rejected {
             reason: format!("spend_uses failed: {err:?}").into(),
@@ -92,11 +92,11 @@ fn spend_one(cx: &mut Cx, ctx: &EvalContext, kind: UseKind) -> EngineOutcome {
     }
 }
 
-fn spend_secret(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
+fn spend_secret(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     spend_one(cx, ctx, UseKind::Secrets)
 }
 
-fn spend_charge(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
+fn spend_charge(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     spend_one(cx, ctx, UseKind::Charges)
 }
 

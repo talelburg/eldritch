@@ -233,8 +233,10 @@ pub(in crate::engine) fn start_skill_test(
 
 /// Register `substitution` for the rest of the round: a later test of one of
 /// its `for_skills` by its investigator offers the "use X in place of Y?"
-/// choice at initiation. Re-exported at `game_core::engine::add_skill_substitution`
-/// for card-local natives (Mind over Matter 01036). Round-scoped because the
+/// choice at initiation. A card-local native (Mind over Matter 01036) reaches
+/// it as
+/// [`NativeCx::add_skill_substitution`](crate::engine::NativeCx::add_skill_substitution).
+/// Round-scoped because the
 /// round-end teardown is what clears the list; no event announces it.
 pub fn add_skill_substitution(cx: &mut Cx, substitution: SkillSubstitution) {
     cx.state.skill_substitutions.push(substitution);
