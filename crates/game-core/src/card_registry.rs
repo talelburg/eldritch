@@ -35,7 +35,7 @@
 use std::sync::OnceLock;
 
 use card_dsl::card_data::CardMetadata;
-use card_dsl::dsl::Ability;
+use card_dsl::dsl::{Ability, CardFilter};
 
 use crate::engine::evaluator::EvalContext;
 use crate::engine::{Cx, EngineOutcome};
@@ -196,6 +196,23 @@ pub fn install(registry: CardRegistry) -> Result<(), CardRegistry> {
 #[must_use]
 pub fn current() -> Option<&'static CardRegistry> {
     REGISTRY.get()
+}
+
+/// Whether the printed card with `code` matches `filter`
+/// ([`CardFilter::matches`] on its registry metadata).
+///
+/// This is game-core's only registry-backed card-filter check; anything in
+/// the engine that asks "is this card a Tome asset?" or "is this enemy
+/// Elite?" asks it here, keyed by code, so the kernel never names a trait.
+///
+/// Returns `false` when no registry is installed or the registry has no
+/// metadata for `code`. A filtered deck search then finds nothing rather
+/// than panicking; only registry-less test paths hit this.
+#[must_use]
+pub fn card_matches(code: &CardCode, filter: &CardFilter) -> bool {
+    current()
+        .and_then(|reg| (reg.metadata_for)(code))
+        .is_some_and(|meta| filter.matches(meta))
 }
 
 #[cfg(test)]
