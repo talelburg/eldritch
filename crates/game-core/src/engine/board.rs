@@ -60,11 +60,13 @@
 mod leave_play;
 
 pub use leave_play::{
-    discard_from_play, place_in_victory_display, remove_from_game, remove_location_from_game,
-    LeavingCard,
+    discard_encounter_card, discard_from_play, place_in_victory_display, remove_from_game,
+    remove_location_from_game, LeavingCard,
 };
 
 use std::collections::BTreeMap;
+
+use crate::engine::Cx;
 
 use crate::state::{
     AbilitySource, Act, Agenda, CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameState,
@@ -374,6 +376,19 @@ pub fn find_instance_mut(
         .iter_mut()
         .find(|card| card.instance_id == instance_id)
         .map(|card| (card, placement))
+}
+
+/// Remove up to `count` clues from the card instance `instance_id`, wherever
+/// it sits on the board (the [`find_instance`] walk). Saturates at zero, and is
+/// a no-op for an instance not on the board. No event: none names clues
+/// leaving a card.
+///
+/// The exit a card-local native takes to discard clues from a card (Cover Up
+/// 01007's *"discard that many clues from Cover Up instead"*).
+pub fn remove_clues(cx: &mut Cx, instance_id: CardInstanceId, count: u8) {
+    if let Some((card, _)) = find_instance_mut(cx.state, instance_id) {
+        card.clues = card.clues.saturating_sub(count);
+    }
 }
 
 /// Take the card instance `instance_id` off the board, with the [`Placement`]

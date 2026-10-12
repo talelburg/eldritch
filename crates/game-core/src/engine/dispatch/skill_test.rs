@@ -28,8 +28,8 @@ use crate::scenario::TokenEffect;
 use crate::state::{
     self, AbilitySource, CardCode, ChaosToken, Continuation, DifficultyBasis, DiscardPile,
     FastWindowKind, GameState, InFlightSkillTest, InvestigatorId, Lifetime, RecordedModifier,
-    ResolvedTest, SkillKind, SkillTestFollowUp, SkillTestStep, Status, SubstitutionPromptFrame,
-    TokenResolution, Zone,
+    ResolvedTest, SkillKind, SkillSubstitution, SkillTestFollowUp, SkillTestStep, Status,
+    SubstitutionPromptFrame, TokenResolution, Zone,
 };
 use crate::{card_registry, scenario};
 
@@ -229,6 +229,15 @@ pub(in crate::engine) fn start_skill_test(
     // No substitution: drive the test. `advance` parks at `AwaitingCommit`,
     // emitting the commit prompt (which propagates up to here).
     advance(cx)
+}
+
+/// Register `substitution` for the rest of the round: a later test of one of
+/// its `for_skills` by its investigator offers the "use X in place of Y?"
+/// choice at initiation. Re-exported at `game_core::engine::add_skill_substitution`
+/// for card-local natives (Mind over Matter 01036). Round-scoped because the
+/// round-end teardown is what clears the list; no event announces it.
+pub fn add_skill_substitution(cx: &mut Cx, substitution: SkillSubstitution) {
+    cx.state.skill_substitutions.push(substitution);
 }
 
 /// Whether `investigator` has an active round-scoped substitution covering a

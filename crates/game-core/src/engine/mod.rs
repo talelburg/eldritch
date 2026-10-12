@@ -23,16 +23,22 @@ pub mod modified_value;
 mod outcome;
 pub(crate) mod pathfinding;
 
-pub use dispatch::act_agenda::{round_end_advance, round_end_advance_affordable};
+pub use dispatch::act_agenda::{
+    place_doom_on_agenda, round_end_advance, round_end_advance_affordable,
+};
 pub use dispatch::cards::discard_random_from_hand;
 pub use dispatch::choice::{resolve_grounded_choice, Grounded};
 pub use dispatch::combat::deal_damage_to_enemy;
-pub use dispatch::elimination::{defeat_investigator, take_damage};
-pub use dispatch::encounter::{reshuffle_encounter_discard, resolve_encounter_card};
+pub use dispatch::elimination::{defeat_investigator, suffer_trauma, take_damage};
+pub use dispatch::encounter::{
+    reshuffle_encounter_discard, resolve_encounter_card, take_encounter_top,
+};
 pub use dispatch::hunters::relocate_enemy;
 pub use dispatch::movement::{enemy_can_enter_location, investigator_can_enter_location};
+pub use dispatch::placement::place_investigator;
 pub use dispatch::reveal::reveal_location;
 pub use dispatch::set_aside::put_set_aside_card_into_play;
+pub use dispatch::skill_test::add_skill_substitution;
 pub use dispatch::threat_area::{attach_to_location, place_in_threat_area};
 pub use enumerate::{legal_actions, TurnAction};
 pub use evaluator::{location_id_by_code, EvalContext};

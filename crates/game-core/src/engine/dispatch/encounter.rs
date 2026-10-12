@@ -581,6 +581,20 @@ pub(super) fn draw_encounter_top(cx: &mut Cx) -> Option<CardCode> {
     cx.state.encounter_deck.pop_front()
 }
 
+/// Take the top card of the encounter deck, or `None` if the deck is empty.
+/// Re-exported at `game_core::engine::take_encounter_top` for card-local
+/// natives.
+///
+/// Unlike [`draw_encounter_top`], this never reshuffles the discard into an
+/// empty deck: a deck search (Rise of the Ghouls 01106) discards what it takes,
+/// and a reshuffle would feed those discards back into the search. The caller
+/// owns the card it takes and must put it somewhere, as
+/// [`discard_encounter_card`](crate::engine::board::discard_encounter_card)
+/// does for a miss.
+pub fn take_encounter_top(cx: &mut Cx) -> Option<CardCode> {
+    cx.state.encounter_deck.pop_front()
+}
+
 /// Push the prompt for the topmost [`Continuation::EncounterDraw`] frame's
 /// current drawer (`remaining[0]`): an [`EngineOutcome::AwaitingInput`] whose
 /// response is a binary [`Confirm`](InputResponse::Confirm) (the draw carries

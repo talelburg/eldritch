@@ -6,7 +6,7 @@ use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{act_agenda, combat, cursor, emit, hunters, trigger_scan};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
-use crate::event::Event;
+use crate::event::{Event, TraumaKind};
 use crate::scenario::ScenarioEnding;
 use crate::state::{
     CardCode, CardInstanceId, EliminationCause, EliminationFrame, EliminationStep, EmitStep,
@@ -555,6 +555,20 @@ pub fn take_damage(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
 /// card-ability defeat cannot be.
 pub fn defeat_investigator(cx: &mut Cx, investigator: InvestigatorId) {
     apply_investigator_elimination(cx, investigator, EliminationCause::CardAbility);
+}
+
+/// `investigator` suffers `amount` trauma of `kind`: emits
+/// [`Event::TraumaSuffered`]. Re-exported at `game_core::engine::suffer_trauma`
+/// for card-local natives (They're Getting Out 01107, Cover Up 01007).
+///
+/// **Announced, not recorded.** Nothing persists trauma until the phase-9
+/// campaign log (#766), which makes this the one place it will be recorded.
+pub fn suffer_trauma(cx: &mut Cx, investigator: InvestigatorId, kind: TraumaKind, amount: u8) {
+    cx.events.push(Event::TraumaSuffered {
+        investigator,
+        kind,
+        amount,
+    });
 }
 
 /// Resign `investigator` from the scenario — what the

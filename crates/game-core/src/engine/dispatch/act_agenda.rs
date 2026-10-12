@@ -45,9 +45,14 @@ fn act_advances_at_round_end(state: &GameState) -> bool {
 /// Place `count` doom on the current agenda, no threshold check. Mythos step
 /// 1.2 (Rules Reference p.24) — "Take 1 doom from the token pool, and place it
 /// on the current agenda card." — passes `1`; a card effect passes whatever it
-/// prints. No-op when no agenda deck is modeled (tests/fixtures without an
-/// agenda).
-pub(crate) fn place_doom_on_agenda(cx: &mut Cx, count: u8) {
+/// prints. No-op on an empty agenda deck, so a card can't place doom on an
+/// agenda that isn't there. Places doom silently: no event announces doom yet
+/// (#593).
+///
+/// Re-exported at `game_core::engine::place_doom_on_agenda` so a card-local
+/// native (They're Getting Out 01107) gets the empty-agenda-deck guard rather
+/// than writing `agenda_doom` itself.
+pub fn place_doom_on_agenda(cx: &mut Cx, count: u8) {
     if cx.state.agenda_deck.is_empty() {
         return;
     }
