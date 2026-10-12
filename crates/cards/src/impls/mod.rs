@@ -10,9 +10,8 @@
 //! 1. Write `crates/cards/src/impls/<name>.rs` with `CODE`, `abilities()`
 //!    and `pub const CARD: CardRecord = CardRecord::new(CODE, abilities)`.
 //!    Chain [`back`](CardRecord::back) for a printed reverse, and
-//!    [`effects`](CardRecord::effects) / [`eligibility`](CardRecord::eligibility)
-//!    / [`conditions`](CardRecord::conditions) for each native tag an ability
-//!    names. The native fns stay private to the module.
+//!    [`effects`](CardRecord::effects) / [`conditions`](CardRecord::conditions)
+//!    for each native tag an ability names — an eligibility's included. The native fns stay private to the module.
 //! 2. Declare `pub mod <name>;` below.
 //! 3. Add `<name>::CARD` to [`ALL`].
 //!
@@ -70,7 +69,8 @@
 //!   abilities she gains: a location-scoped `Modify` (the corpus's first
 //!   *granted* modifier) and an `OnEvent` reaction on another investigator's
 //!   test (`SkillTestResolved { by_controller: false }`) carrying a
-//!   card-local native eligibility condition. The complement of the Parlor's grant above.
+//!   card-local native eligibility condition. The complement of the Parlor's
+//!   grant above.
 //! - Deduction (01039) — `Trigger::OnSkillTestResolution` (Success-
 //!   gated) + `If(SkillTestKind(Investigate), DiscoverClue@TestedLocation)`.
 //! - Roland Banks (01001) — investigator. `Trigger::OnEvent`
@@ -192,12 +192,9 @@ impl CardRecord {
     /// card names by tag, whether a [`Condition::Native`] inside an effect or
     /// an ability's [`eligibility`](Ability::eligibility).
     ///
-    /// `TODO(#609)`: before registering one, check the DSL can't say it. Lita
-    /// Chantler 01117 was the second card after Machete 01020 to want a
-    /// **compound or target-referencing** condition, which fired #609's
-    /// promotion trigger; another of that shape should land as declarative
-    /// vocab rather than a third native tag. A plain read such as 01107's
-    /// act-deck branch (`act_index == 2`) does not fire it.
+    /// Before registering one, check the DSL can't say it — see
+    /// [`Condition::Native`] for its consumers and `TODO(#609)`, the promotion
+    /// that retires the compound, target-referencing ones.
     ///
     /// [`Condition::Native`]: card_dsl::dsl::Condition::Native
     #[must_use]

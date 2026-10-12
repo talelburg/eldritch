@@ -34,10 +34,8 @@
 //!   [`Quantity`].
 //! - **Compound conditions** (`All` / `Any`) and **target-referencing
 //!   conditions or quantities** (predicates about the *chosen* enemy rather
-//!   than the controller). Machete 01020 and Lita Chantler 01117 want both at
-//!   once and hold them in [`Condition::Native`] predicates; `TODO(#609)` —
-//!   Lita, the second, fired the trigger to promote them to declarative vocab
-//!   instead of registering another native tag of that shape.
+//!   than the controller). Held in [`Condition::Native`] predicates until
+//!   `TODO(#609)` promotes them; its doc names the consumers.
 //!
 //! # Has DSL surface but not yet engine support
 //!
@@ -2205,9 +2203,8 @@ impl EnemyTarget {
 /// A boolean predicate guarding an [`Effect::If`], an [`IntExpr::Cond`], a
 /// [`grant`], or an ability's [`eligibility`](Ability::eligibility).
 ///
-/// Phase-2 minimal set; later phases will add things like
-/// `Compare { CluesAtControllerLocation, Gt, 0 }`, `AnyEnemyEngaged`, comparisons against
-/// stat values, etc.
+/// A minimal set, grown per consumer under the DSL-primitive threshold;
+/// [`Native`](Self::Native) holds what it can't yet say.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Condition {
     /// Outcome of the most recent skill test in the current

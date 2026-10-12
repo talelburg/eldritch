@@ -30,9 +30,7 @@ fn with_eligibility_sets_the_condition_and_default_is_none() {
         .with_eligibility(native_condition("01109:can-advance"));
     assert_eq!(
         gated.eligibility,
-        Some(Condition::Native {
-            tag: "01109:can-advance".into()
-        })
+        Some(native_condition("01109:can-advance"))
     );
 }
 

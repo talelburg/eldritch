@@ -64,10 +64,9 @@ const DISCARD_TAG: &str = "01007:discard-clues";
 /// Native tag: suffer 1 mental trauma at game end if clues remain.
 const TRAUMA_TAG: &str = "01007:trauma";
 /// Native-condition tag, the eligibility both of Cover Up's clue-conditional
-/// abilities gate on —
-/// the discover-replacement reaction is offered only while Cover Up still holds
-/// clues to discard, and the game-end Forced only initiates while it does
-/// (RR p.2 potential gate, #786). Replaces the former hardcoded
+/// abilities gate on — the discover-replacement reaction is offered only while
+/// Cover Up still holds clues to discard, and the game-end Forced only initiates
+/// while it does (RR p.2 potential gate, #786). Replaces the former hardcoded
 /// `card.clues == 0` stand-in in the reaction scan.
 const HAS_CLUES_TAG: &str = "01007:has-clues";
 
@@ -169,7 +168,7 @@ fn trauma(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::{Condition, Effect, Trigger};
+    use card_dsl::dsl::{Effect, Trigger};
     use game_core::state::{
         AbilitySource, CardCode, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId,
         Owner,
@@ -217,9 +216,7 @@ mod tests {
     fn has_clues_predicate_gates_on_source_instance_clues() {
         // Both clue-conditional abilities gate on the eligibility condition.
         let abilities = abilities();
-        let has_clues = Some(Condition::Native {
-            tag: "01007:has-clues".into(),
-        });
+        let has_clues = Some(dsl::native_condition("01007:has-clues"));
         assert_eq!(
             abilities[1].eligibility, has_clues,
             "the discover-replacement reaction declares the potential gate"

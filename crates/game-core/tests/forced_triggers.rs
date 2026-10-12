@@ -1403,7 +1403,7 @@ fn a_forced_with_an_unmet_eligibility_tag_does_not_initiate() {
     debug_assertions,
     should_panic(expected = "Native condition \"test:unregistered\": no predicate registered")
 )]
-fn a_forced_whose_eligibility_tag_has_no_predicate_is_suppressed() {
+fn a_forced_whose_eligibility_tag_has_no_predicate_panics_in_debug_and_is_suppressed_in_release() {
     assert_eq!(
         horror_after_entering(GATED_UNKNOWN_TAG),
         0,

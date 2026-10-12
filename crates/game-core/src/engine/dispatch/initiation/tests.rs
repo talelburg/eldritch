@@ -397,7 +397,7 @@ fn forced_ability_whose_eligibility_is_false_does_not_initiate() {
 }
 
 #[test]
-fn reaction_is_gated_by_its_eligibility_predicate() {
+fn reaction_is_gated_by_its_native_eligibility_condition() {
     let state = state();
     assert_eq!(
         gate(
@@ -454,7 +454,7 @@ fn reaction_is_gated_by_a_declarative_eligibility_condition() {
     debug_assertions,
     should_panic(expected = "Native condition \"_gate:unregistered\": no predicate registered")
 )]
-fn reaction_whose_eligibility_tag_is_unregistered_is_refused() {
+fn an_unregistered_eligibility_tag_panics_in_debug_and_is_refused_in_release() {
     let state = state();
     assert_eq!(
         gate(

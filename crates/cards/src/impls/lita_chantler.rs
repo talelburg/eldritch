@@ -158,8 +158,7 @@ pub const CARD: CardRecord = CardRecord::new(CODE, abilities)
     .conditions(&[(MONSTER_ATTACKED_HERE_TAG, monster_attacked_here)]);
 
 /// Native-condition tag, the reaction's eligibility, carrying the whole printed
-/// predicate of the reaction —
-/// *"an investigator **at your location** successfully attacks a
+/// predicate of the reaction — *"an investigator **at your location** successfully attacks a
 /// **\[\[Monster\]\]** enemy"*. Both halves ride one tag because both are
 /// answered off the same in-flight Fight frame.
 const MONSTER_ATTACKED_HERE_TAG: &str = "01117:monster-attacked-here";
@@ -234,7 +233,7 @@ fn investigator_location(state: &GameState, id: InvestigatorId) -> Option<Locati
 mod tests {
     use card_dsl::card_data::SkillKind;
     use card_dsl::dsl::{
-        Ability, Condition, ControlStatus, Effect, EventPattern, EventTiming, GrantTarget,
+        self, Ability, Condition, ControlStatus, Effect, EventPattern, EventTiming, GrantTarget,
         ModifierAudience, ModifierScope, SkillTestKind, Stat, TestOutcome, TestedLocationScope,
         Trigger, TriggerKind,
     };
@@ -331,9 +330,7 @@ mod tests {
         assert_eq!(granted[1].effect, Effect::BoostAttackDamage(1));
         assert_eq!(
             granted[1].eligibility,
-            Some(Condition::Native {
-                tag: super::MONSTER_ATTACKED_HERE_TAG.into()
-            }),
+            Some(dsl::native_condition(super::MONSTER_ATTACKED_HERE_TAG)),
             "the [[Monster]] and at-your-location halves ride the tag",
         );
     }
