@@ -30,9 +30,10 @@ fn install() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
+/// Ghoul Minion 01160 (Humanoid. Monster. Ghoul.), not Elite.
 fn ghoul(id: u32, at: LocationId) -> Enemy {
     let mut e = test_support::test_enemy(id, "Ghoul");
-    e.traits = vec!["Humanoid".into(), "Monster".into(), "Ghoul".into()];
+    e.code = CardCode::new("01160");
     e.current_location = Some(at);
     e
 }

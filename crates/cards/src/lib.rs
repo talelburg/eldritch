@@ -55,6 +55,18 @@ pub fn by_code(code: &str) -> Option<&'static CardMetadata> {
         .map(|i| &all()[i])
 }
 
+/// Whether the card with this `ArkhamDB` code prints `trait_name` — a
+/// [`CardMetadata::has_trait`] on the corpus entry, `false` for a code not
+/// in the corpus. Spell the trait with a [`generated::traits`] constant.
+///
+/// Reads the corpus directly, so card and scenario code asking about an
+/// entity's traits (an enemy's, through its code) needs no installed
+/// registry.
+#[must_use]
+pub fn has_trait(code: &str, trait_name: &str) -> bool {
+    by_code(code).is_some_and(|m| m.has_trait(trait_name))
+}
+
 /// Look up a card's hand-implemented abilities by code. Returns
 /// `None` for unimplemented cards. Re-exported from
 /// [`impls::abilities_for`].

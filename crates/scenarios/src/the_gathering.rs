@@ -28,6 +28,7 @@
 //! Lita Chantler at R1 are campaign machinery and stay with #766.
 
 use card_dsl::card_data::CardKind;
+use cards::generated::traits::GHOUL;
 use game_core::event::Event;
 use game_core::scenario::{
     LocationLayout, ScenarioEnding, ScenarioId, ScenarioModule, SymbolCtx, SymbolOutcome,
@@ -134,7 +135,7 @@ fn ghoul_count_at_investigator_location(cx: &SymbolCtx) -> u8 {
         .state()
         .enemies
         .values()
-        .filter(|e| e.current_location == Some(loc) && e.traits.iter().any(|t| t == "Ghoul"))
+        .filter(|e| e.current_location == Some(loc) && cards::has_trait(e.code.as_str(), GHOUL))
         .count();
     u8::try_from(n).unwrap_or(u8::MAX)
 }

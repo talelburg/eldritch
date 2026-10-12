@@ -118,8 +118,9 @@ use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, Phase};
 use game_core::engine::evaluator::{self, EvalContext};
 use game_core::engine::{self, Cx, EngineOutcome};
 use game_core::event::{Event, TraumaKind};
-use game_core::state::{EnemyId, GameState, InvestigatorId, LocationId, Status};
+use game_core::state::{Enemy, EnemyId, GameState, InvestigatorId, LocationId, Status};
 
+use crate::generated::traits::GHOUL;
 use crate::impls::CardRecord;
 
 /// `ArkhamDB` code for Agenda 3, "They're Getting Out!".
@@ -221,8 +222,9 @@ fn the_ghouls_run_rampant(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-fn is_ghoul(traits: &[String]) -> bool {
-    traits.iter().any(|t| t.as_str() == "Ghoul")
+/// Whether `enemy`'s printed card has the `Ghoul` trait.
+fn is_ghoul(enemy: &Enemy) -> bool {
+    crate::has_trait(enemy.code.as_str(), GHOUL)
 }
 
 /// Each unengaged Ghoul moves one location toward the Parlor (01115).
@@ -246,7 +248,7 @@ fn move_ghouls_toward_parlor(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
     // LocationId tie-break among shortest first steps.
     let mut movers: Vec<(EnemyId, LocationId)> = Vec::new();
     for (id, e) in &cx.state.enemies {
-        if e.engaged_with.is_some() || !is_ghoul(&e.traits) {
+        if e.engaged_with.is_some() || !is_ghoul(e) {
             continue;
         }
         let Some(from) = e.current_location else {
@@ -293,7 +295,7 @@ fn place_round_end_doom(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
         .state
         .enemies
         .values()
-        .filter(|e| is_ghoul(&e.traits))
+        .filter(|e| is_ghoul(e))
         .filter(|e| e.current_location.is_some_and(|l| counted.contains(&l)))
         .count();
     let count = u8::try_from(count).unwrap_or(u8::MAX);
@@ -316,9 +318,10 @@ mod tests {
     use super::*;
     use crate::REGISTRY;
 
+    /// Ghoul Minion 01160 (Humanoid. Monster. Ghoul.), not Elite.
     fn ghoul(id: u32, at: LocationId) -> Enemy {
         let mut e = test_support::test_enemy(id, "Ghoul");
-        e.traits = vec!["Humanoid".into(), "Monster".into(), "Ghoul".into()];
+        e.code = CardCode::new("01160");
         e.current_location = Some(at);
         e
     }
@@ -745,8 +748,9 @@ mod tests {
     #[test]
     fn non_ghoul_does_not_move() {
         let mut state = star_board();
+        // Swarm of Rats 01159 (Creature.): traits, but not Ghoul.
         let mut e = test_support::test_enemy(1, "Rat");
-        e.traits = vec!["Creature".into()];
+        e.code = CardCode::new("01159");
         e.current_location = Some(LocationId(3));
         state.enemies.insert(EnemyId(1), e);
         cx_apply(&mut state, move_ghouls_toward_parlor);
@@ -763,8 +767,10 @@ mod tests {
         state.enemies.insert(EnemyId(1), ghoul(1, LocationId(2))); // Hallway — counts
         state.enemies.insert(EnemyId(2), ghoul(2, LocationId(5))); // Parlor — counts
         state.enemies.insert(EnemyId(3), ghoul(3, LocationId(3))); // Attic — no
+
+        // Swarm of Rats 01159 (Creature.): traits, but not Ghoul.
         let mut non_ghoul = test_support::test_enemy(4, "Rat");
-        non_ghoul.traits = vec!["Creature".into()];
+        non_ghoul.code = CardCode::new("01159");
         non_ghoul.current_location = Some(LocationId(2));
         state.enemies.insert(EnemyId(4), non_ghoul); // Hallway non-Ghoul — no
         cx_apply(&mut state, place_round_end_doom);

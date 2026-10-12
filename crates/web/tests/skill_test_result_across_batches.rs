@@ -80,8 +80,9 @@ fn board(lita_in_play: bool) -> GameState {
 
     // Health well clear of the attack, so the Fight resolves without a defeat
     // queueing windows of its own.
+    // Ghoul Minion 01160 (Humanoid. Monster. Ghoul.).
     let mut ghoul = test_support::test_enemy(100, "Ghoul");
-    ghoul.traits = vec!["Humanoid".into(), "Monster".into(), "Ghoul".into()];
+    ghoul.code = CardCode::new("01160");
     ghoul.fight = 3;
     ghoul.max_health = 9;
     ghoul.engaged_with = Some(OTHER);
