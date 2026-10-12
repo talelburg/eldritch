@@ -27,6 +27,7 @@
 
 use card_dsl::card_data::CardType;
 
+use crate::generated::traits::TOME;
 use crate::impls::CardRecord;
 use card_dsl::dsl::{
     self, Ability, CardFilter, EventPattern, EventTiming, InvestigatorTarget, SearchScope,
@@ -48,10 +49,7 @@ pub fn abilities() -> Vec<Ability> {
         dsl::search_deck(
             InvestigatorTarget::You,
             SearchScope::EntireDeck,
-            Some(CardFilter {
-                trait_: Some("Tome".into()),
-                kind: Some(CardType::Asset),
-            }),
+            Some(CardFilter::with_trait(TOME).and_kind(CardType::Asset)),
         ),
     )]
 }

@@ -13,6 +13,7 @@ mod parse_traits;
 mod prey;
 mod process_raw;
 mod slots;
+mod trait_constants;
 
 /// Minimal `RawCard` fixture with the required fields populated and
 /// optional fields cleared. Tweak by mutating the returned value

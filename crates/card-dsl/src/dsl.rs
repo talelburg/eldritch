@@ -68,7 +68,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::card_data::{CardType, SkillKind, UseKind};
+use crate::card_data::{CardMetadata, CardType, SkillKind, UseKind};
 
 // ---- triggers --------------------------------------------------
 
@@ -1730,9 +1730,13 @@ pub enum SearchScope {
     EntireDeck,
 }
 
-/// Eligibility predicate for an [`Effect::SearchDeck`]. Both fields, when
-/// `Some`, must hold (trait AND type). `trait_` is owned (the [`Effect`] enum
-/// is serde-serializable, so no borrowed `&'static str`).
+/// A predicate on a printed card: an optional trait and an optional card type.
+/// Both fields, when `Some`, must hold (trait AND type); an empty filter
+/// matches every card. Used by [`Effect::SearchDeck`]. `trait_` is owned (the
+/// [`Effect`] enum is serde-serializable, so no borrowed `&'static str`).
+///
+/// Build one from a generated trait constant with the constructors, e.g.
+/// `CardFilter::with_trait(TOME).and_kind(CardType::Asset)`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct CardFilter {
     /// Required trait (e.g. `"Tome"`). `None` = any trait.
@@ -1740,6 +1744,53 @@ pub struct CardFilter {
     /// Required card type (e.g. [`CardType::Asset`]).
     /// `None` = any type.
     pub kind: Option<CardType>,
+}
+
+impl CardFilter {
+    /// A filter for cards printing `trait_name`, of any type.
+    #[must_use]
+    pub fn with_trait(trait_name: &str) -> Self {
+        Self {
+            trait_: Some(trait_name.to_owned()),
+            kind: None,
+        }
+    }
+
+    /// A filter for cards of type `kind`, with any traits.
+    #[must_use]
+    pub fn of_kind(kind: CardType) -> Self {
+        Self {
+            trait_: None,
+            kind: Some(kind),
+        }
+    }
+
+    /// This filter, additionally requiring `trait_name`.
+    #[must_use]
+    pub fn and_trait(self, trait_name: &str) -> Self {
+        Self {
+            trait_: Some(trait_name.to_owned()),
+            ..self
+        }
+    }
+
+    /// This filter, additionally requiring card type `kind`.
+    #[must_use]
+    pub fn and_kind(self, kind: CardType) -> Self {
+        Self {
+            kind: Some(kind),
+            ..self
+        }
+    }
+
+    /// Whether the printed card `meta` passes the filter: it has the trait
+    /// (via [`CardMetadata::has_trait`], so printed traits only) and is of the
+    /// type, for whichever of the two are set.
+    #[must_use]
+    pub fn matches(&self, meta: &CardMetadata) -> bool {
+        self.trait_.as_deref().is_none_or(|t| meta.has_trait(t))
+            && self.kind.is_none_or(|k| meta.card_type() == k)
+    }
 }
 
 // ---- stats and modifier scopes --------------------------------
