@@ -1,4 +1,5 @@
 use super::*;
+use crate::dsl::CardFilter;
 
 #[test]
 fn metadata_serde_roundtrip_preserves_is_fast() {
@@ -322,4 +323,162 @@ fn is_weakness_true_when_field_is_true() {
 #[test]
 fn is_weakness_false_when_field_is_false() {
     assert!(!make_treachery(false).is_weakness());
+}
+
+// ---- printed traits and card filters ----------------------------
+
+/// A synthetic `Item. Tome.` asset.
+fn tome_asset() -> CardMetadata {
+    CardMetadata {
+        code: "_synth_tome_asset".into(),
+        name: "Synth Tome Asset".into(),
+        traits: vec!["Item".into(), "Tome".into()],
+        text: None,
+        back_name: None,
+        back_text: None,
+        pack_code: "_synth".into(),
+        weakness: false,
+        kind: CardKind::Asset {
+            class: Class::Seeker,
+            cost: Some(3),
+            xp: Some(0),
+            slots: vec![Slot::Hand],
+            health: None,
+            sanity: None,
+            skill_icons: SkillIcons::default(),
+            is_fast: false,
+            deck_limit: 2,
+            uses: None,
+            play_only_during_turn: false,
+        },
+    }
+}
+
+/// A synthetic `Ally. Miskatonic.` asset: an asset with traits, none of
+/// them Tome.
+fn ally_asset() -> CardMetadata {
+    CardMetadata {
+        code: "_synth_ally_asset".into(),
+        name: "Synth Ally Asset".into(),
+        traits: vec!["Ally".into(), "Miskatonic".into()],
+        kind: CardKind::Asset {
+            class: Class::Seeker,
+            cost: Some(2),
+            xp: Some(0),
+            slots: vec![Slot::Ally],
+            health: Some(1),
+            sanity: Some(1),
+            skill_icons: SkillIcons::default(),
+            is_fast: false,
+            deck_limit: 2,
+            uses: None,
+            play_only_during_turn: false,
+        },
+        ..tome_asset()
+    }
+}
+
+/// A synthetic `Insight.` event.
+fn insight_event() -> CardMetadata {
+    CardMetadata {
+        code: "_synth_insight_event".into(),
+        name: "Synth Insight Event".into(),
+        traits: vec!["Insight".into()],
+        kind: CardKind::Event {
+            class: Class::Seeker,
+            cost: Some(1),
+            xp: Some(0),
+            skill_icons: SkillIcons::default(),
+            is_fast: true,
+            deck_limit: 2,
+            play_only_during_turn: true,
+        },
+        ..tome_asset()
+    }
+}
+
+#[test]
+fn has_trait_is_true_for_a_printed_trait() {
+    assert!(tome_asset().has_trait("Tome"));
+    assert!(tome_asset().has_trait("Item"));
+}
+
+#[test]
+fn has_trait_is_false_for_an_absent_trait() {
+    assert!(!ally_asset().has_trait("Tome"));
+}
+
+#[test]
+fn has_trait_is_false_for_a_near_miss_spelling() {
+    let book = tome_asset();
+    assert!(!book.has_trait("Tomes"));
+    assert!(!book.has_trait("tome"));
+    assert!(!book.has_trait("Tome."));
+}
+
+#[test]
+fn trait_only_filter_matches_on_the_trait_alone() {
+    let tome = CardFilter::with_trait("Tome");
+    assert!(tome.matches(&tome_asset()));
+    assert!(!tome.matches(&ally_asset()));
+}
+
+#[test]
+fn kind_only_filter_matches_on_the_card_type_alone() {
+    let asset = CardFilter::of_kind(CardType::Asset);
+    assert!(asset.matches(&tome_asset()));
+    assert!(asset.matches(&ally_asset()));
+    assert!(!asset.matches(&insight_event()));
+}
+
+#[test]
+fn trait_and_kind_filter_needs_both() {
+    let tome_assets = CardFilter::with_trait("Tome").and_kind(CardType::Asset);
+    assert!(tome_assets.matches(&tome_asset()));
+    // An asset without the trait.
+    assert!(!tome_assets.matches(&ally_asset()));
+    // The trait on a card of another type.
+    let tome_event = CardMetadata {
+        traits: vec!["Tome".into()],
+        ..insight_event()
+    };
+    assert!(!tome_assets.matches(&tome_event));
+}
+
+#[test]
+fn empty_filter_matches_everything() {
+    let any = CardFilter {
+        trait_: None,
+        kind: None,
+    };
+    assert!(any.matches(&tome_asset()));
+    assert!(any.matches(&ally_asset()));
+    assert!(any.matches(&insight_event()));
+}
+
+#[test]
+fn constructors_set_exactly_the_named_fields() {
+    assert_eq!(
+        CardFilter::with_trait("Tome"),
+        CardFilter {
+            trait_: Some("Tome".to_owned()),
+            kind: None,
+        }
+    );
+    assert_eq!(
+        CardFilter::of_kind(CardType::Asset),
+        CardFilter {
+            trait_: None,
+            kind: Some(CardType::Asset),
+        }
+    );
+    let both = CardFilter {
+        trait_: Some("Tome".to_owned()),
+        kind: Some(CardType::Asset),
+    };
+    assert_eq!(
+        CardFilter::with_trait("Tome").and_kind(CardType::Asset),
+        both
+    );
+    assert_eq!(CardFilter::of_kind(CardType::Asset).and_trait("Tome"), both);
 }

@@ -167,8 +167,9 @@ impl Board {
 
         // Health well clear of anything dealt below, so every case is read off
         // `damage` rather than off a defeat.
+        // Ghoul Minion 01160 (Humanoid. Monster. Ghoul.).
         let mut ghoul = test_support::test_enemy(100, "Ghoul");
-        ghoul.traits = vec!["Humanoid".into(), "Monster".into(), "Ghoul".into()];
+        ghoul.code = CardCode::new("01160");
         ghoul.fight = 3;
         ghoul.max_health = 9;
         ghoul.engaged_with = Some(self.actor);
@@ -176,11 +177,6 @@ impl Board {
 
         let mut acolyte = test_support::test_enemy(101, "Silver Twilight Acolyte");
         acolyte.code = CardCode::new(ACOLYTE);
-        acolyte.traits = vec![
-            "Humanoid".into(),
-            "Cultist".into(),
-            "Silver Twilight".into(),
-        ];
         acolyte.fight = 3;
         acolyte.max_health = 9;
         acolyte.current_location = Some(self.enemies_at);

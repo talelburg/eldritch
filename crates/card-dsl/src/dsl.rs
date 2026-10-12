@@ -68,7 +68,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::card_data::{CardType, SkillKind, UseKind};
+use crate::card_data::{CardMetadata, CardType, SkillKind, UseKind};
 
 // ---- triggers --------------------------------------------------
 
@@ -1730,9 +1730,13 @@ pub enum SearchScope {
     EntireDeck,
 }
 
-/// Eligibility predicate for an [`Effect::SearchDeck`]. Both fields, when
-/// `Some`, must hold (trait AND type). `trait_` is owned (the [`Effect`] enum
-/// is serde-serializable, so no borrowed `&'static str`).
+/// A predicate on a printed card: an optional trait and an optional card type.
+/// Both fields, when `Some`, must hold (trait AND type); an empty filter
+/// matches every card. Used by [`Effect::SearchDeck`]. `trait_` is owned (the
+/// [`Effect`] enum is serde-serializable, so no borrowed `&'static str`).
+///
+/// Build one from a generated trait constant with the constructors, e.g.
+/// `CardFilter::with_trait(TOME).and_kind(CardType::Asset)`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct CardFilter {
     /// Required trait (e.g. `"Tome"`). `None` = any trait.
@@ -1740,6 +1744,53 @@ pub struct CardFilter {
     /// Required card type (e.g. [`CardType::Asset`]).
     /// `None` = any type.
     pub kind: Option<CardType>,
+}
+
+impl CardFilter {
+    /// A filter for cards printing `trait_name`, of any type.
+    #[must_use]
+    pub fn with_trait(trait_name: &str) -> Self {
+        Self {
+            trait_: Some(trait_name.to_owned()),
+            kind: None,
+        }
+    }
+
+    /// A filter for cards of type `kind`, with any traits.
+    #[must_use]
+    pub fn of_kind(kind: CardType) -> Self {
+        Self {
+            trait_: None,
+            kind: Some(kind),
+        }
+    }
+
+    /// This filter, additionally requiring `trait_name`.
+    #[must_use]
+    pub fn and_trait(self, trait_name: &str) -> Self {
+        Self {
+            trait_: Some(trait_name.to_owned()),
+            ..self
+        }
+    }
+
+    /// This filter, additionally requiring card type `kind`.
+    #[must_use]
+    pub fn and_kind(self, kind: CardType) -> Self {
+        Self {
+            kind: Some(kind),
+            ..self
+        }
+    }
+
+    /// Whether the printed card `meta` passes the filter: it has the trait
+    /// (via [`CardMetadata::has_trait`], so printed traits only) and is of the
+    /// type, for whichever of the two are set.
+    #[must_use]
+    pub fn matches(&self, meta: &CardMetadata) -> bool {
+        self.trait_.as_deref().is_none_or(|t| meta.has_trait(t))
+            && self.kind.is_none_or(|k| meta.card_type() == k)
+    }
 }
 
 // ---- stats and modifier scopes --------------------------------
@@ -1906,17 +1957,25 @@ pub enum Restriction {
         /// Gate the surcharge to the first matching action each round.
         first_each_round: bool,
     },
-    /// Non-Elite enemies cannot move into the location this restriction's
-    /// source is attached to (Barricade 01038). **Inspected, not executed** —
-    /// the movers (`engine::dispatch::hunters`) read it to decide whether a
-    /// non-Elite enemy may enter. It applies to the **compelled step alone**,
-    /// leaving distances and shortest paths on the full connection graph —
-    /// Hunter movement (#651) and agenda 01107's forced Ghoul move (#797)
-    /// both read it that way, so a blocked step is a non-move rather than a
-    /// detour. The Elite exemption
-    /// (RR: most movement-blockers exempt Elite) is applied at the read site,
-    /// which has the moving enemy's traits.
-    EnemyMovementBlocked,
+    /// Enemies cannot move into the location this restriction's source is
+    /// attached to, unless their printed card passes `exempt`.
+    /// **Inspected, not executed** — the movers (`engine::dispatch::hunters`,
+    /// the engaged drag-along, forced enemy moves) read it to decide whether
+    /// an enemy may enter. It applies to the **compelled step alone**, leaving
+    /// distances and shortest paths on the full connection graph — Hunter
+    /// movement (#651) and agenda 01107's forced Ghoul move (#797) both read
+    /// it that way, so a blocked step is a non-move rather than a detour.
+    ///
+    /// The exemption is the declaring card's own, not a rule: Barricade 01038
+    /// prints *"Non-\[\[Elite\]\] enemies cannot move into attached location."*,
+    /// so it supplies a "has the Elite trait" filter. The read site asks the
+    /// card registry whether the moving enemy's code passes it.
+    EnemyMovementBlocked {
+        /// Enemies whose printed card passes this filter are not blocked.
+        /// `None` blocks every enemy — there is no filter value that means
+        /// "block nothing".
+        exempt: Option<CardFilter>,
+    },
     /// Investigators cannot move into the location this restriction's source
     /// is printed on or attached to (the Parlor 01115's unrevealed back:
     /// *"The entrance to the Parlor is blocked by a darkly glowing
@@ -1934,9 +1993,9 @@ pub enum Restriction {
     /// the investigators are blocked by the barrier."*
     /// (<https://arkhamdb.com/card/01115>). The Parlor blocks investigators
     /// and not enemies; Barricade 01038 blocks enemies and not investigators.
-    /// The **Elite exemption** belongs to the enemy side alone — there is no
-    /// investigator analogue of it, so this variant has no read-site
-    /// carve-out.
+    /// The exemption filter belongs to the enemy side alone — the printed
+    /// text names no investigator characteristic, so this variant carries
+    /// none.
     InvestigatorMovementBlocked,
 }
 

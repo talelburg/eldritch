@@ -133,6 +133,7 @@ use card_dsl::dsl::{
 use game_core::engine::evaluator::EvalContext;
 use game_core::state::{GameState, InvestigatorId, LocationId, SkillTestFollowUp};
 
+use crate::generated::traits::MONSTER;
 use crate::impls::CardRecord;
 
 /// `ArkhamDB` code for Lita Chantler.
@@ -141,9 +142,6 @@ pub const CODE: &str = "01117";
 /// This card's registration, listed in [`ALL`](super::ALL).
 pub const CARD: CardRecord = CardRecord::new(CODE, abilities)
     .eligibility(&[(MONSTER_ATTACKED_HERE_TAG, monster_attacked_here)]);
-
-/// The trait the reaction filters the attacked enemy on.
-const MONSTER: &str = "Monster";
 
 /// Eligibility tag carrying the whole printed predicate of the reaction —
 /// *"an investigator **at your location** successfully attacks a
@@ -210,7 +208,7 @@ fn monster_attacked_here(state: &GameState, ctx: &EvalContext) -> bool {
     state
         .enemies
         .get(&enemy)
-        .is_some_and(|e| e.traits.iter().any(|t| t == MONSTER))
+        .is_some_and(|e| crate::has_trait(e.code.as_str(), MONSTER))
 }
 
 fn investigator_location(state: &GameState, id: InvestigatorId) -> Option<LocationId> {
@@ -344,19 +342,15 @@ mod tests {
         let mut other = test_support::test_investigator(2);
         other.current_location = Some(if attacker_here { HERE } else { ELSEWHERE });
 
-        // A Ghoul from The Gathering (Humanoid. Monster. Ghoul.) and Silver
-        // Twilight Acolyte 01102 (Humanoid. Cultist. Silver Twilight.), the
-        // corpus's nearest non-[[Monster]] — every enemy in The Gathering itself
-        // is a [[Monster]], so the negative case has to come from outside it.
+        // Ghoul Minion 01160 (Humanoid. Monster. Ghoul.) and Silver Twilight
+        // Acolyte 01102 (Humanoid. Cultist. Silver Twilight.), the corpus's
+        // nearest non-[[Monster]] — every enemy in The Gathering itself is a
+        // [[Monster]], so the negative case has to come from outside it. The
+        // traits are read off each code's printed card.
         let mut ghoul = test_support::test_enemy(1, "Ghoul Minion");
-        ghoul.traits = vec!["Humanoid".into(), "Monster".into(), "Ghoul".into()];
+        ghoul.code = CardCode::new("01160");
         let mut acolyte = test_support::test_enemy(2, "Silver Twilight Acolyte");
         acolyte.code = CardCode::new("01102");
-        acolyte.traits = vec![
-            "Humanoid".into(),
-            "Cultist".into(),
-            "Silver Twilight".into(),
-        ];
 
         let mut state = GameStateBuilder::new()
             .with_investigator(lita_controller)

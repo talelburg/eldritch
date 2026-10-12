@@ -1,7 +1,7 @@
 //! Where a movement block bites, for both sides of the table (#651, #774).
 //!
 //! Two predicates, deliberately not one. Barricade 01038 blocks **enemies**
-//! and not investigators (*"Non-Elite enemies cannot move into attached
+//! and not investigators (*"Non-\[\[Elite\]\] enemies cannot move into attached
 //! location."*); the Parlor 01115's unrevealed back blocks **investigators**
 //! and not enemies (*"You cannot move into the Parlor."*). 01115's only
 //! `ArkhamDB` ruling settles that the two sides really do diverge:
@@ -24,8 +24,10 @@
 //! filtered — `glossary/Hunter.md` and `glossary/Patrol.md` both make the
 //! blocked compelled step a **non-move** rather than a detour.
 //!
-//! The **Elite exemption** is the one thing the two sides do not share: it is
-//! the enemy side's alone, and there is no investigator analogue.
+//! The **exemption filter** is the one thing the two sides do not share: it is
+//! the enemy side's alone, and there is no investigator analogue. It is the
+//! declaring card's own — Barricade's printed *"Non-\[\[Elite\]\]"* — carried on
+//! [`Restriction::EnemyMovementBlocked`], so this module names no trait.
 //!
 //! # Where a restriction can be printed
 //!
@@ -41,17 +43,19 @@
 //! `TODO(#826)` on [`location_carries_restriction`] for why that is a choice
 //! rather than an oversight.
 
-use card_dsl::dsl::{Ability, Effect, Restriction, Trigger};
+use card_dsl::dsl::{Ability, CardFilter, Effect, Restriction, Trigger};
 
 use crate::card_registry;
 use crate::engine::abilities_in_effect;
 use crate::state::{Enemy, GameState, LocationId};
 
-/// Whether `loc` carries a constant [`Restriction`] `r` — on the location's
-/// own in-effect side, or on any card attached to it.
+/// Whether `loc` carries a constant [`Restriction`] that passes `bites` — on
+/// the location's own in-effect side, or on any card attached to it.
 ///
 /// Read the way `play_is_prohibited` reads constant restrictions: a
-/// `Trigger::Constant` ability whose effect is exactly `Effect::Restrict(r)`.
+/// `Trigger::Constant` ability whose effect is `Effect::Restrict(r)` with
+/// `bites(r)`. A predicate rather than an equality, because a restriction can
+/// carry data the reader inspects (the enemy side's exemption filter).
 /// `false` with no registry installed.
 ///
 /// **TODO(#826): this does not read
@@ -66,10 +70,15 @@ use crate::state::{Enemy, GameState, LocationId};
 /// attachment-shaped by nature — Barricade 01038 is the corpus's only instance —
 /// or whether this walk should simply chain both collections. The first card
 /// that puts a restriction-carrying card into play at a location forces it.
-fn location_carries_restriction(state: &GameState, loc: LocationId, r: &Restriction) -> bool {
+fn location_carries_restriction(
+    state: &GameState,
+    loc: LocationId,
+    bites: impl Fn(&Restriction) -> bool,
+) -> bool {
     let carries = |abilities: &[Ability]| {
         abilities.iter().any(|a| {
-            a.trigger == Trigger::Constant && matches!(&a.effect, Effect::Restrict(got) if got == r)
+            a.trigger == Trigger::Constant
+                && matches!(&a.effect, Effect::Restrict(got) if bites(got))
         })
     };
     if carries(&abilities_in_effect::location_abilities_or_empty(
@@ -89,9 +98,14 @@ fn location_carries_restriction(state: &GameState, loc: LocationId, r: &Restrict
         .any(|att| (reg.abilities_for)(&att.code).is_some_and(|abilities| carries(&abilities)))
 }
 
-/// Whether `enemy` may move into `loc`. Blocked only when `loc` carries
-/// [`Restriction::EnemyMovementBlocked`] (Barricade 01038) **and** the enemy
-/// is non-Elite (RR: movement-blockers exempt Elite).
+/// Whether `enemy` may move into `loc`. Blocked when `loc` carries a
+/// [`Restriction::EnemyMovementBlocked`] whose exemption the enemy's printed
+/// card does not pass — a `None` exemption blocks every enemy. Barricade 01038
+/// supplies its own *"Non-\[\[Elite\]\]"* as that exemption.
+///
+/// The exemption is checked by code through
+/// [`card_registry::card_matches`], so with no registry installed it fails
+/// closed and the enemy is blocked.
 ///
 /// Shared by Hunter movement and forced enemy-movement effects (agenda
 /// 01107's Ghoul move), so a barricade is honored consistently regardless of
@@ -99,15 +113,22 @@ fn location_carries_restriction(state: &GameState, loc: LocationId, r: &Restrict
 /// stopped by the Parlor's investigator-side barrier.
 #[must_use]
 pub fn enemy_can_enter_location(state: &GameState, enemy: &Enemy, loc: LocationId) -> bool {
-    enemy_is_elite(enemy)
-        || !location_carries_restriction(state, loc, &Restriction::EnemyMovementBlocked)
+    // Exempt only when the restriction names a filter and this enemy matches it.
+    let is_exempt = |exempt: Option<&CardFilter>| {
+        exempt.is_some_and(|f| card_registry::card_matches(&enemy.code, f))
+    };
+    let blocks_enemy = |r: &Restriction| match r {
+        Restriction::EnemyMovementBlocked { exempt } => !is_exempt(exempt.as_ref()),
+        _ => false,
+    };
+    !location_carries_restriction(state, loc, blocks_enemy)
 }
 
 /// Whether an investigator may move into `loc`. Blocked when `loc` carries
 /// [`Restriction::InvestigatorMovementBlocked`] — the Parlor 01115's
 /// unrevealed back.
 ///
-/// Takes no investigator: the Elite exemption is the enemy side's alone, and
+/// Takes no investigator: the exemption filter is the enemy side's alone, and
 /// the printed text names no investigator characteristic (*"**You** cannot
 /// move into the Parlor"* is addressed to whoever is moving). Applied at both
 /// of the Move action's gates — destination enumeration and its own
@@ -115,12 +136,7 @@ pub fn enemy_can_enter_location(state: &GameState, enemy: &Enemy, loc: LocationI
 /// the menu or submits at the `apply` seam.
 #[must_use]
 pub fn investigator_can_enter_location(state: &GameState, loc: LocationId) -> bool {
-    !location_carries_restriction(state, loc, &Restriction::InvestigatorMovementBlocked)
-}
-
-/// Whether `enemy` is Elite — read from its `traits` (populated from card
-/// metadata at spawn, the same field the agenda's `is_ghoul` reads). No
-/// registry round-trip.
-fn enemy_is_elite(enemy: &Enemy) -> bool {
-    enemy.traits.iter().any(|t| t == "Elite")
+    !location_carries_restriction(state, loc, |r| {
+        *r == Restriction::InvestigatorMovementBlocked
+    })
 }

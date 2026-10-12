@@ -1,10 +1,11 @@
 //! Headless render tests for the `EnemyCard` component. wasm32-only (browser DOM).
 #![cfg(target_arch = "wasm32")]
 
+use cards::REGISTRY;
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
-use game_core::state::{Enemy, EnemyId};
+use game_core::state::{CardCode, Enemy, EnemyId};
 use game_core::test_support;
 use leptos::prelude::*;
 use leptos::task;
@@ -68,6 +69,23 @@ async fn engaged_enemy_renders_stats_keywords_exhausted() {
         html.contains("Exhausted"),
         "exhausted badge missing: {html}"
     );
+}
+
+#[wasm_bindgen_test]
+async fn enemy_shows_its_printed_traits() {
+    test_support::install_registry_with_test_cards(REGISTRY);
+    // Ghoul Minion 01160: traits "Humanoid. Monster. Ghoul."
+    let mut e = test_support::test_enemy(3, "Ghoul Minion");
+    e.code = CardCode::new("01160");
+    mount_to_body(move || view! { <EnemyCard enemy=e.clone()/> });
+    task::tick().await;
+
+    let traits = last_card()
+        .query_selector(".card-traits")
+        .expect("query ok")
+        .and_then(|el| el.text_content())
+        .unwrap_or_default();
+    assert_eq!(traits, "Humanoid. Monster. Ghoul.");
 }
 
 #[wasm_bindgen_test]

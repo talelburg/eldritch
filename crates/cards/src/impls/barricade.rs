@@ -9,8 +9,9 @@
 //!
 //! Three abilities on one card: `OnPlay` attaches the played event to the
 //! controller's location (`Effect::AttachSelfToLocation` — one card, no
-//! duplicate); a `Constant` `Restriction::EnemyMovementBlocked` (inspected by
-//! hunter pathfinding — non-Elite enemies cannot path into the attached
+//! duplicate); a `Constant` `Restriction::EnemyMovementBlocked` whose
+//! exemption filter is the printed *"Non-Elite"* (inspected by enemy movement —
+//! an enemy whose card lacks the Elite trait cannot move into the attached
 //! location); and a `Forced` self-discard when an investigator leaves the
 //! attached location (`EventPattern::LeftLocation` → `Effect::DiscardSelf`,
 //! routed to the owner's player discard).
@@ -28,8 +29,9 @@
 //! read `After` under the licensed mismatch this card was the second-to-last
 //! holder of. No card holds it now (`docs/agents/standards.md`).
 
-use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, Restriction};
+use card_dsl::dsl::{self, Ability, CardFilter, EventPattern, EventTiming, Restriction};
 
+use crate::generated::traits::ELITE;
 use crate::impls::CardRecord;
 
 /// `ArkhamDB` code for the original-Core printing.
@@ -44,7 +46,9 @@ pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 pub fn abilities() -> Vec<Ability> {
     vec![
         dsl::on_play(dsl::attach_self_to_location()),
-        dsl::constant(dsl::restrict(Restriction::EnemyMovementBlocked)),
+        dsl::constant(dsl::restrict(Restriction::EnemyMovementBlocked {
+            exempt: Some(CardFilter::with_trait(ELITE)),
+        })),
         dsl::forced_on_event(
             EventPattern::LeftLocation,
             EventTiming::When,
@@ -55,7 +59,11 @@ pub fn abilities() -> Vec<Ability> {
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::{Effect, EventPattern, EventTiming, Restriction, Trigger, TriggerKind};
+    use card_dsl::dsl::{
+        CardFilter, Effect, EventPattern, EventTiming, Restriction, Trigger, TriggerKind,
+    };
+
+    use crate::generated::traits::ELITE;
 
     #[test]
     fn abilities_are_attach_block_and_leave_discard() {
@@ -66,7 +74,9 @@ mod tests {
         assert_eq!(a[1].trigger, Trigger::Constant);
         assert_eq!(
             a[1].effect,
-            Effect::Restrict(Restriction::EnemyMovementBlocked)
+            Effect::Restrict(Restriction::EnemyMovementBlocked {
+                exempt: Some(CardFilter::with_trait(ELITE)),
+            })
         );
         assert!(
             matches!(

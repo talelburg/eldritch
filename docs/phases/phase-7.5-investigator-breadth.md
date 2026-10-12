@@ -53,7 +53,7 @@ ship untested by anything but a unit test.
 | #366 | Replacement effects beyond cancel — Wendy's blocker, re-milestoned here |
 | #777 | Slice 1 — Agnes Baker 01004 + Heirloom / Dark Memory + Mystic level 0 |
 | #778 | Slice 2 — "Skids" O'Toole 01003 + On the Lam / Hospital Debts + Rogue level 0 |
-| #779 | Slice 3 — Daisy Walker 01002 + Tote Bag / Necronomicon + the Tome-restricted extra action |
+| #779 | Slice 3 — Daisy Walker 01002 + Tote Bag / Necronomicon + the Tome-restricted extra action, plus the trait-counting `Quantity` (decided in #1000) |
 | #780 | Slice 4 — Wendy Adams 01005 + Amulet / Abandoned and Alone + Survivor level 0 |
 | #781 | The seven basic weaknesses + the random-basic-weakness draw |
 | #782 | Five legal starter decks + a real investigator picker |
@@ -132,8 +132,6 @@ repo and cannot be trusted.
 
 ## Open questions
 
-- **Does the trait-counting `Quantity` (`[[Tome]]`s you control) belong to #776 or to
-  Daisy's slice (#779)?** Both are defensible; #776 is where it gets decided.
 - **Does Forbidden Knowledge 01058 force #353?** It is one of the two cards
   uses-depletion auto-discard has always been gated on, and #777 is where it acquires
   a consumer. If the card cannot ship correctly without #353, that issue comes in

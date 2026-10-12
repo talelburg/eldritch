@@ -259,7 +259,6 @@ fn an_enemy_can_enter_the_unrevealed_parlor() {
     let state = board(false);
     let mut ghoul: Enemy = test_support::test_enemy(1, "Ghoul");
     ghoul.code = CardCode::new(GHOUL_MINION);
-    ghoul.traits = vec!["Humanoid".into(), "Monster".into(), "Ghoul".into()];
     ghoul.current_location = Some(HALLWAY);
 
     assert!(
@@ -292,7 +291,6 @@ fn a_barricaded_location_blocks_a_non_elite_enemy_and_not_an_investigator() {
 
     let mut ghoul: Enemy = test_support::test_enemy(1, "Ghoul");
     ghoul.code = CardCode::new(GHOUL_MINION);
-    ghoul.traits = vec!["Humanoid".into(), "Monster".into(), "Ghoul".into()];
     ghoul.current_location = Some(HALLWAY);
 
     assert!(

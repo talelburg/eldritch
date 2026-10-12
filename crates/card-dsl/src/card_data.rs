@@ -530,6 +530,27 @@ pub enum CardKind {
 }
 
 impl CardMetadata {
+    /// Whether the card prints `trait_name` among its [`traits`](Self::traits).
+    /// An exact string match: spell the trait with the generated constant in
+    /// `cards::generated::traits` (`GHOUL`, `TOME`, `ANCIENT_ONE`, …) rather
+    /// than a literal, so a misspelling is a compile error.
+    ///
+    /// **Printed traits only.** `glossary/Gains.md`: *'"Gained"
+    /// characteristics are not considered to be "printed" on the card.'*
+    /// When a card in scope gains or loses a trait (no corpus card does yet;
+    /// the first known gain through Dunwich is an optional variant, the
+    /// Refractions' Ultimatum of Invisibility, and beyond the corpus Curse of
+    /// Yig 04085), the gain belongs as a sweep inside the trait query, computed at read time the way granted
+    /// abilities are (ADR 0014) — not stored on the entity.
+    ///
+    /// An entity whose identity differs from its printed card — Chapel Crypt
+    /// 05173b's *"Treat that card as a Reanimated Dead enemy with … the
+    /// `[[Monster]]` trait."* — is #921 item 12's question, not this query's.
+    #[must_use]
+    pub fn has_trait(&self, trait_name: &str) -> bool {
+        self.traits.iter().any(|t| t == trait_name)
+    }
+
     /// The card's [`CardType`] discriminant, derived from
     /// [`kind`](Self::kind).
     #[must_use]

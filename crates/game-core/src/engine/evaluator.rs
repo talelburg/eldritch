@@ -983,7 +983,7 @@ fn apply_search_deck(
         .enumerate()
         .filter(|(_, code)| match filter {
             None => true,
-            Some(f) => filter_matches(f, code),
+            Some(f) => card_registry::card_matches(code, f),
         })
         .map(|(i, code)| (i, code.clone()))
         .collect();
@@ -1030,31 +1030,6 @@ fn apply_search_deck(
     //    remaining cards into the deck"). RNG-replayable; no-op on <2 cards.
     cards::shuffle_player_deck(cx, who);
     EngineOutcome::Done
-}
-
-/// Whether a deck card `code` matches a [`CardFilter`]: both `trait_` and
-/// `kind` (when `Some`) must hold, read from the installed registry's
-/// metadata. Returns `false` with no registry (a filtered search finds nothing
-/// rather than panicking — only the registry-less test paths, which never use
-/// a filter, hit this).
-fn filter_matches(f: &CardFilter, code: &CardCode) -> bool {
-    let Some(reg) = card_registry::current() else {
-        return false;
-    };
-    let Some(meta) = (reg.metadata_for)(code) else {
-        return false;
-    };
-    if let Some(t) = &f.trait_ {
-        if !meta.traits.iter().any(|x| x == t) {
-            return false;
-        }
-    }
-    if let Some(k) = f.kind {
-        if meta.card_type() != k {
-            return false;
-        }
-    }
-    true
 }
 
 /// Resolve [`Effect::AttachSelfToLocation`]: the currently-playing event

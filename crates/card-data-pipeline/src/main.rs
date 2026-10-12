@@ -23,6 +23,8 @@
 //!
 //! Output:
 //! - `crates/cards/src/generated/cards.rs`
+//! - `crates/cards/src/generated/traits.rs`: one constant per distinct
+//!   corpus trait (see [`render_traits`])
 //!
 //! # Snapshot vs. corpus
 //!
@@ -45,6 +47,7 @@ use serde::Deserialize;
 
 const SNAPSHOT_DIR: &str = "data/arkhamdb-snapshot";
 const OUTPUT_PATH: &str = "crates/cards/src/generated/cards.rs";
+const TRAITS_OUTPUT_PATH: &str = "crates/cards/src/generated/traits.rs";
 
 /// Pack files we read: the player files plus their `*_encounter.json`
 /// companions (the in-scope Core + Dunwich snapshot). Encounter
@@ -505,9 +508,15 @@ fn run() -> Result<(), String> {
         }
     }
 
+    // Render both files before writing either, so a trait the naming
+    // rule refuses leaves the checked-in output untouched.
     let output = render(&all);
+    let traits_output = render_traits(&all)?;
     let out_path = repo_root.join(OUTPUT_PATH);
     fs::write(&out_path, output).map_err(|e| format!("writing {}: {e}", out_path.display()))?;
+    let traits_path = repo_root.join(TRAITS_OUTPUT_PATH);
+    fs::write(&traits_path, traits_output)
+        .map_err(|e| format!("writing {}: {e}", traits_path.display()))?;
 
     eprintln!(
         "card-data-pipeline: wrote {} cards to {}",
@@ -848,6 +857,68 @@ fn render(all: &BTreeMap<String, NormalizedCard>) -> String {
     }
     out.push_str("    ]\n}\n");
     out
+}
+
+/// Render the trait-constants module: one `pub const` per distinct
+/// trait across `all`, named by [`trait_constant_name`] and holding the
+/// exact parsed trait string, sorted by name.
+///
+/// The constants come out of the same pass as the card data, so a
+/// change to how traits are parsed changes both together.
+///
+/// # Errors
+///
+/// A trait the naming rule refuses, or two traits that map to one
+/// constant name.
+fn render_traits(all: &BTreeMap<String, NormalizedCard>) -> Result<String, String> {
+    let traits: BTreeSet<&str> = all
+        .values()
+        .flat_map(|c| c.traits.iter().map(String::as_str))
+        .collect();
+    let mut by_name: BTreeMap<String, &str> = BTreeMap::new();
+    for t in traits {
+        let name = trait_constant_name(t)?;
+        if let Some(prev) = by_name.insert(name.clone(), t) {
+            return Err(format!(
+                "traits {prev:?} and {t:?} both map to the constant {name}"
+            ));
+        }
+    }
+
+    let mut out = String::new();
+    out.push_str(TRAITS_HEADER);
+    for (name, t) in &by_name {
+        let _ = writeln!(out, "pub const {name}: &str = {};", str_lit(t));
+    }
+    Ok(out)
+}
+
+/// The constant name for a trait: uppercased, spaces become `_`
+/// (`Ancient One` → `ANCIENT_ONE`).
+///
+/// Only ASCII letters and spaces are accepted, and the name must start
+/// with a letter. Anything else (`R'lyeh`, `Mi-Go`, `Montréal`, `???`)
+/// is refused, naming the trait, so that the snapshot bump that first
+/// brings one into the corpus decides how to spell it rather than
+/// inheriting a guess.
+///
+/// # Errors
+///
+/// An empty trait, one that does not start with a letter, or one with
+/// a character outside `[A-Za-z ]`.
+fn trait_constant_name(t: &str) -> Result<String, String> {
+    if !t.starts_with(|c: char| c.is_ascii_alphabetic()) {
+        return Err(format!(
+            "trait {t:?} has no constant name: it must start with an ASCII letter"
+        ));
+    }
+    if let Some(bad) = t.chars().find(|c| !(c.is_ascii_alphabetic() || *c == ' ')) {
+        return Err(format!(
+            "trait {t:?} has no constant name: {bad:?} is outside [A-Za-z ]; \
+             extend `trait_constant_name` deliberately"
+        ));
+    }
+    Ok(t.to_ascii_uppercase().replace(' ', "_"))
 }
 
 /// Write a single [`CardMetadata`] literal into `out`.
@@ -1213,6 +1284,16 @@ const GENERATED_HEADER: &str = "\
 //! pipeline; review the diff in your PR.
 
 #![allow(clippy::too_many_lines, clippy::needless_raw_string_hashes)]
+
+";
+
+const TRAITS_HEADER: &str = "\
+//! GENERATED FILE — do not edit by hand.
+//!
+//! Produced by `cargo run -p card-data-pipeline` from the pinned
+//! snapshot at `data/arkhamdb-snapshot/`: one constant per distinct
+//! trait in the corpus, holding the exact trait string the card data
+//! carries. Unused constants are expected.
 
 ";
 

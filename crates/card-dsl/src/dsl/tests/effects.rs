@@ -301,8 +301,11 @@ fn search_deck_builder_and_serde_round_trip() {
 fn barricade_dsl_variants_round_trip() {
     let attach = attach_self_to_location();
     assert_eq!(attach, Effect::AttachSelfToLocation);
-    let block = restrict(Restriction::EnemyMovementBlocked);
-    for e in [attach, block] {
+    let block_all = restrict(Restriction::EnemyMovementBlocked { exempt: None });
+    let block_non_elite = restrict(Restriction::EnemyMovementBlocked {
+        exempt: Some(CardFilter::with_trait("Elite")),
+    });
+    for e in [attach, block_all, block_non_elite] {
         let json = serde_json::to_string(&e).expect("ser");
         assert_eq!(e, serde_json::from_str::<Effect>(&json).expect("de"));
     }
