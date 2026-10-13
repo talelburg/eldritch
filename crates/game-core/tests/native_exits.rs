@@ -12,7 +12,7 @@
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{board, EngineOutcome, NativeCx, PromptNature, TimingEvent};
+use game_core::engine::{board, EngineOutcome, InputKind, NativeCx, PromptNature, TimingEvent};
 use game_core::event::{Event, TraumaKind};
 use game_core::state::{
     self, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, DiscardPile,
@@ -311,19 +311,28 @@ fn take_encounter_top_on_an_empty_deck_takes_nothing_and_does_not_reshuffle() {
     assert_no_event!(session.events(), Event::CardDiscarded { .. });
 }
 
-/// Whether a Combat test investigator 1 starts from the turn menu `session`
-/// rests at offers the "use Intellect in place of Combat?" decision rather
-/// than going straight to the commit window.
-fn combat_test_offers_substitution(session: TestSession) -> bool {
+/// Investigator 1 starts a difficulty-1 Combat test from the turn menu
+/// `session` rests at.
+fn start_combat_test(session: TestSession) -> TestSession {
     session.assert_at_turn_menu(INV);
-    let started = session.test_skill(INV, SkillKind::Combat, 1);
-    let prompt = started.prompt();
-    prompt.nature == PromptNature::Decision
-        && prompt
-            .options
-            .iter()
-            .map(|o| o.label.as_str())
-            .eq(["Use Intellect", "Keep Combat"])
+    session.test_skill(INV, SkillKind::Combat, 1)
+}
+
+/// Commit nothing to the test `session` is in and let it resolve: the margin
+/// it succeeded by. Combat is 3 and Intellect 5 (see
+/// `add_skill_substitution_is_offered_at_the_next_skill_test`), so the
+/// margin says which skill the test was made with: 2 for Combat, 4 for
+/// Intellect.
+fn success_margin(session: TestSession) -> i8 {
+    let session = session.commit(&[]);
+    session
+        .events()
+        .iter()
+        .find_map(|event| match event {
+            Event::SkillTestSucceeded { margin, .. } => Some(*margin),
+            _ => None,
+        })
+        .expect("a difficulty-1 test against 3 or more succeeds")
 }
 
 /// The substitution is round-scoped, so the real enemy phase end, which runs
@@ -332,17 +341,37 @@ fn combat_test_offers_substitution(session: TestSession) -> bool {
 /// open turn instead, and the session comes back to that turn's menu.
 #[test]
 fn add_skill_substitution_is_offered_at_the_next_skill_test() {
+    const BY_COMBAT: i8 = 2;
+    const BY_INTELLECT: i8 = 4;
     let board = || {
-        let mut state = state_with_act(SUBSTITUTE_ACT);
-        state.chaos_bag = ChaosBag::new([ChaosToken::Numeric(0)]);
-        TestSession::new(state)
+        let builder = lead(seat(1).skill(SkillKind::Intellect, 5))
+            .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]));
+        TestSession::new(with_act(builder, SUBSTITUTE_ACT))
     };
-    assert!(
-        !combat_test_offers_substitution(board()),
-        "control: no substitution before the native runs"
+
+    // Control: before the native runs, the test goes straight to its commit
+    // window and is made with Combat.
+    let control = start_combat_test(board());
+    assert_eq!(control.prompt().kind, InputKind::PickMultiple);
+    assert_eq!(success_margin(control), BY_COMBAT);
+
+    // After it, the test first asks whether to substitute: two alternatives.
+    let offered = || {
+        start_combat_test(board().fire_at(TimingEvent::PhaseEnded {
+            phase: state::Phase::Enemy,
+        }))
+    };
+    let prompt = offered().prompt().clone();
+    assert_eq!(prompt.nature, PromptNature::Decision, "{prompt:?}");
+    assert_eq!(prompt.options.len(), 2, "{prompt:?}");
+    assert_eq!(
+        success_margin(offered().pick_nth(0)),
+        BY_INTELLECT,
+        "the first alternative makes the test with Intellect",
     );
-    let fired = board().fire_at(TimingEvent::PhaseEnded {
-        phase: state::Phase::Enemy,
-    });
-    assert!(combat_test_offers_substitution(fired));
+    assert_eq!(
+        success_margin(offered().pick_nth(1)),
+        BY_COMBAT,
+        "the second keeps Combat",
+    );
 }
