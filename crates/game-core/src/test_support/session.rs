@@ -58,7 +58,8 @@ use crate::state::{
 ///   is changed again.
 /// - **Readers** — [`prompt`](Self::prompt), [`offered_at`](Self::offered_at),
 ///   [`assert_at_turn_menu`](Self::assert_at_turn_menu),
-///   [`expect_rejected`](Self::expect_rejected), [`state`](Self::state),
+///   [`expect_rejected`](Self::expect_rejected), [`rejection`](Self::rejection),
+///   [`state`](Self::state),
 ///   [`events`](Self::events) — look at the session
 ///   without moving it, and [`finish`](Self::finish) hands back the last step's
 ///   [`ApplyResult`].
@@ -720,6 +721,17 @@ impl TestSession {
 
     fn respond(self, response: InputResponse) -> Self {
         self.apply(Action::Player(PlayerAction::ResolveInput { response }))
+    }
+
+    /// The reason the last step was rejected, or `None` if it was accepted —
+    /// the non-panicking [`expect_rejected`](Self::expect_rejected), for a
+    /// sweep that submits many actions and sorts them by whether the engine
+    /// accepts each.
+    pub fn rejection(&self) -> Option<&str> {
+        match &self.last_outcome {
+            EngineOutcome::Rejected { reason } => Some(reason),
+            _ => None,
+        }
     }
 }
 
