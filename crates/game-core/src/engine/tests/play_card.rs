@@ -30,7 +30,7 @@ fn play_card_outside_investigation_phase_is_rejected() {
         })
         .with_mythos_draw_remaining([INV])
         .session();
-    assert_handler_rejects(session, &play(0));
+    session.assert_rejects(|s| s.submit_off_menu(&play(0)));
 }
 
 #[test]
@@ -42,7 +42,7 @@ fn play_card_by_non_active_investigator_is_rejected() {
         .with_turn_order([INV, InvestigatorId(2)])
         .open_turn(InvestigatorId(2))
         .session();
-    assert_handler_rejects(session, &play(0));
+    session.assert_rejects(|s| s.submit_off_menu(&play(0)));
 }
 
 #[test]
@@ -54,7 +54,7 @@ fn play_card_by_defeated_investigator_is_rejected() {
     // No seat setter for status: a defeated investigator whose turn is
     // still open is what the handler defends against.
     state.investigators.get_mut(&INV).expect("seated").status = Status::Defeated;
-    assert_handler_rejects(TestSession::new(state), &play(0));
+    TestSession::new(state).assert_rejects(|s| s.submit_off_menu(&play(0)));
 }
 
 #[test]
@@ -63,7 +63,7 @@ fn play_card_with_out_of_bounds_hand_index_is_rejected() {
         .with_seat(seat(1).hand([CARD]))
         .open_turn(INV)
         .session();
-    assert_handler_rejects(session, &play(5));
+    session.assert_rejects(|s| s.submit_off_menu(&play(5)));
 }
 
 #[test]
@@ -72,5 +72,5 @@ fn play_card_with_empty_hand_is_rejected() {
         .with_seat(seat(1))
         .open_turn(INV)
         .session();
-    assert_handler_rejects(session, &play(0));
+    session.assert_rejects(|s| s.submit_off_menu(&play(0)));
 }

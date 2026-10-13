@@ -76,16 +76,6 @@ fn take_committing_nothing(board: GameStateBuilder, action: &TurnAction) -> Test
     board.session().take(action).commit(&[])
 }
 
-/// Send `action` straight to its handler, past the menu that does not offer
-/// it, and assert the handler rejects it with nothing moved: the session
-/// still rests at the prompt it rested at before.
-fn assert_handler_rejects(session: TestSession, action: &TurnAction) {
-    let before = session.prompt().clone();
-    let session = session.submit_off_menu(action);
-    session.expect_rejected();
-    assert_eq!(session.prompt(), &before);
-}
-
 /// `investigator`'s open turn at the Study, which holds `clues` clues behind
 /// `shroud`. Bag is `Numeric(0)` so the test outcome depends purely on
 /// (intellect vs shroud).

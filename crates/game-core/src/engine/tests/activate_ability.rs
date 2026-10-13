@@ -32,7 +32,7 @@ fn activate_ability_outside_investigation_phase_is_rejected() {
         .with_mythos_draw_remaining([INV])
         .session();
     let asset = session.state().in_play(INV, ASSET);
-    assert_handler_rejects(session, &activate(asset));
+    session.assert_rejects(|s| s.submit_off_menu(&activate(asset)));
 }
 
 #[test]
@@ -45,7 +45,7 @@ fn activate_ability_by_non_active_investigator_is_rejected() {
         .open_turn(InvestigatorId(2))
         .session();
     let asset = session.state().in_play(INV, ASSET);
-    assert_handler_rejects(session, &activate(asset));
+    session.assert_rejects(|s| s.submit_off_menu(&activate(asset)));
 }
 
 #[test]
@@ -55,7 +55,7 @@ fn activate_ability_with_unknown_instance_id_is_rejected() {
         .open_turn(INV)
         .session();
     // An id nothing on the board carries.
-    assert_handler_rejects(session, &activate(CardInstanceId(9999)));
+    session.assert_rejects(|s| s.submit_off_menu(&activate(CardInstanceId(9999))));
 }
 
 #[test]
@@ -68,5 +68,5 @@ fn activate_ability_when_defeated_is_rejected() {
     // still open is what the handler defends against.
     state.investigators.get_mut(&INV).expect("seated").status = Status::Defeated;
     let asset = state.in_play(INV, ASSET);
-    assert_handler_rejects(TestSession::new(state), &activate(asset));
+    TestSession::new(state).assert_rejects(|s| s.submit_off_menu(&activate(asset)));
 }

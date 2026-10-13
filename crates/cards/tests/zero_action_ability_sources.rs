@@ -322,19 +322,12 @@ fn assert_offered_and_usable(
 /// enumerated for; see the module header.
 fn assert_out_of_reach(source: impl FnOnce(&GameState) -> AbilitySource, why: &str) {
     let (window, _) = at_player_window(board());
-    let before = window.state().clone();
-    let source = source(&before);
+    let source = source(window.state());
 
-    let session = activate_at_window(window, source);
-    let reason = session.expect_rejected();
+    let reason = window.assert_rejects(|window| activate_at_window(window, source));
     assert!(
         reason.contains("cannot reach"),
         "{why}, so activating it must reject naming reachability, got: {reason}",
-    );
-    assert_eq!(
-        *session.state(),
-        before,
-        "a rejected activation must leave state byte-identical",
     );
 }
 
