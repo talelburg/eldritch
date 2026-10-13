@@ -16,7 +16,7 @@
 
 use card_dsl::card_data::{CardKind, CardMetadata};
 use card_dsl::dsl::{self, InvestigatorTarget};
-use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
+use game_core::action::RosterEntry;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, EngineOutcome};
 use game_core::event::Event;
@@ -27,7 +27,7 @@ use game_core::state::{
     Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId,
     LocationId, Phase,
 };
-use game_core::test_support::{self, MockRegistry, TEST_INV};
+use game_core::test_support::{self, MockRegistry, TestSession, TEST_INV};
 use game_core::{assert_event, scenario_registry};
 
 /// Per-binary code prefix (ADR 0016: probe cards are test-local).
@@ -142,53 +142,42 @@ fn roster() -> Vec<RosterEntry> {
     }]
 }
 
-/// Close the mulligan window `seat_and_open` opens, keeping the whole hand.
-/// Both tests start from Investigation, round 1, and neither asserts on the
-/// events the close emits.
-fn keep_opening_hand(state: GameState) -> GameState {
-    engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        }),
-    )
-    .state
+const INV: InvestigatorId = InvestigatorId(1);
+
+/// The scenario seated and opened through `seat_and_open`, with the mulligan
+/// window it opens closed keeping the whole hand: Investigation, round 1, at
+/// `INV`'s turn menu. Neither test asserts on the events the close emits.
+fn opened() -> TestSession {
+    let session =
+        TestSession::new(engine::seat_and_open(setup(), &roster()).state).choose_from_hand(&[]);
+    assert_eq!(session.state().phase, Phase::Investigation);
+    session
 }
 
 #[test]
 fn scenario_resolves_won_via_act_advance() {
-    let inv = InvestigatorId(1);
-
-    // seat_and_open + close the mulligan window -> Investigation, round 1.
-    let mut state = keep_opening_hand(engine::seat_and_open(setup(), &roster()).state);
-    assert_eq!(state.phase, Phase::Investigation);
-
-    // Seed enough clues to advance both acts (2 + 2), then spend twice.
-    state.investigators.get_mut(&inv).unwrap().clues = 4;
-    let mut all_events = Vec::new();
-    let r = test_support::take_turn_action(state, &TurnAction::AdvanceAct { investigator: inv }); // act 0 -> 1
-    all_events.extend(r.events);
-    let state = r.state;
-    let r = test_support::take_turn_action(state, &TurnAction::AdvanceAct { investigator: inv }); // act 1 -> Won
-    all_events.extend(r.events);
-    let (state, events) = (r.state, all_events);
+    // Seed enough clues to advance both acts (2 + 2), then spend twice. The
+    // clues have no step that grants them, so edit the opened state and settle
+    // it again.
+    let mut state = opened().state().clone();
+    state.investigators.get_mut(&INV).unwrap().clues = 4;
+    let session = TestSession::new(state)
+        .take(&TurnAction::AdvanceAct { investigator: INV }) // act 0 -> 1
+        .take(&TurnAction::AdvanceAct { investigator: INV }); // act 1 -> Won
 
     assert_event!(
-        events,
+        session.events(),
         Event::ScenarioResolved { ending: ScenarioEnding::Resolution(id) }
             if *id == ResolutionId::new(1)
     );
-    assert!(state.ending.is_some());
+    assert!(session.state().ending.is_some());
 }
 
 #[test]
 fn scenario_resolves_lost_via_doom() {
-    // seat_and_open + close mulligan -> Investigation, round 1.
-    let mut state = keep_opening_hand(engine::seat_and_open(setup(), &roster()).state);
-
     // Each round: EndTurn cascades into Mythos, which adds doom (and may
     // advance the agenda) before pausing at step 1.4 for the encounter
-    // draw; DrawEncounterCard then resolves the draw and completes Mythos
+    // draw; confirming the draw then resolves it and completes Mythos
     // back to Investigation. The EndTurn that enters the round whose Mythos
     // crosses the terminal agenda's threshold latches Lost at step 1.3 —
     // *before* the 1.4 draw pause, which is exactly the case #566 names: the
@@ -197,53 +186,45 @@ fn scenario_resolves_lost_via_doom() {
     //
     // Break-on-resolution rather than a fixed count: tolerates cadence
     // drift and only draws when a Mythos draw is actually pending.
-    let mut all_events = Vec::new();
+    let mut session = opened();
     for _ in 0..12 {
-        let r1 = test_support::take_turn_action(state, &TurnAction::EndTurn);
-        all_events.extend(r1.events);
-        let latched = r1.state.ending.is_some();
-        if latched {
-            assert_eq!(
-                r1.outcome,
-                EngineOutcome::Done,
-                "the Mythos 1.4 draw prompt must not be surfaced for an ended scenario",
-            );
-        }
-        state = r1.state;
-        if latched {
+        session = session.take(&TurnAction::EndTurn);
+        if session.state().ending.is_some() {
             assert!(
-                state.current_encounter_drawer().is_none(),
+                session.state().current_encounter_drawer().is_none(),
                 "no encounter draw is pending once the scenario has ended",
             );
+            // A stack invariant is the subject here, so this reads the stack.
             assert!(
-                state.continuations.is_empty(),
+                session.state().continuations.is_empty(),
                 "no stranded frames after the ending: {:?}",
-                state.continuations,
+                session.state().continuations,
             );
             break;
         }
-        if state.current_encounter_drawer().is_some() {
-            let r2 = engine::apply(
-                state,
-                Action::Player(PlayerAction::ResolveInput {
-                    response: InputResponse::Confirm,
-                }),
-            );
-            all_events.extend(r2.events);
-            state = r2.state;
-            if state.ending.is_some() {
+        if session.state().current_encounter_drawer().is_some() {
+            session = session.confirm();
+            if session.state().ending.is_some() {
                 break;
             }
         }
     }
 
     // Agenda 0 advanced once, then the terminal agenda latched Lost via doom.
-    assert_event!(all_events, Event::AgendaAdvanced { from } if *from == 0);
+    assert_event!(session.events(), Event::AgendaAdvanced { from } if *from == 0);
     assert_event!(
-        all_events,
+        session.events(),
         Event::ScenarioResolved {
             ending: ScenarioEnding::Resolution(_)
         }
     );
-    assert!(matches!(state.ending, Some(ScenarioEnding::Resolution(_))));
+    assert!(matches!(
+        session.state().ending,
+        Some(ScenarioEnding::Resolution(_))
+    ));
+    assert_eq!(
+        session.finish().outcome,
+        EngineOutcome::Done,
+        "the Mythos 1.4 draw prompt must not be surfaced for an ended scenario",
+    );
 }

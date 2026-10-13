@@ -1,29 +1,46 @@
 //! Act-3 objective: defeating the Ghoul Priest (01116) advances Act 3
 //! (01110), whose reverse asks the lead investigator which of the two printed
 //! resolution points to reach (#775). The Ghoul Priest enemy + its spawn land
-//! in C3 (#231); here we fire the `EnemyDefeated` timing point directly with the
-//! real registry. End-to-end defeat->ending via a real Fight is C7b (#245).
+//! in C3 (#231); here an enemy printed as the Ghoul Priest is defeated by a
+//! real Fight against the real registry. End-to-end defeat->ending in the
+//! scenario is C7b (#245).
 
 use cards::REGISTRY;
+use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{ApplyResult, EngineOutcome, OptionTarget, TimingEvent};
+use game_core::engine::OptionTarget;
+use game_core::event::Event;
 use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::state::{
-    Act, CardCode, EnemyId, GameState, GameStateBuilder, InvestigatorId, Phase,
+    Act, CardCode, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId,
+    LocationId, TokenModifiers,
 };
-use game_core::test_support::{self, TestSession};
+use game_core::test_support::{self, seat, Seat, TestSession};
+
+const INV: InvestigatorId = InvestigatorId(1);
+const HERE: LocationId = LocationId(10);
+const FOE: EnemyId = EnemyId(1);
 
 #[ctor::ctor(unsafe)]
 fn install() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-fn act3_state() -> GameState {
-    let inv = InvestigatorId(1);
-    let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
-        .with_turn_order([inv])
-        .build();
+/// `investigator`'s open turn at the Study, under Act 3 (01110), with
+/// `board` adding what the test needs.
+fn act3_state(
+    investigator: Seat,
+    board: impl FnOnce(GameStateBuilder) -> GameStateBuilder,
+) -> GameState {
+    let mut state = board(
+        GameStateBuilder::new()
+            .with_location(test_support::test_location(HERE.0, "Study"))
+            .with_seat(investigator)
+            .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+            .with_token_modifiers(TokenModifiers::default()),
+    )
+    .open_turn(INV)
+    .build();
     // Act 3 is current and terminal-Won (mirrors the_gathering setup()).
     state.act_deck = vec![Act {
         code: CardCode("01110".into()),
@@ -32,17 +49,30 @@ fn act3_state() -> GameState {
     state
 }
 
-/// Fire the defeat of an enemy printed as `code`, with no investigator credited.
+/// Defeat an enemy printed as `code`, for real: it is engaged at the Study
+/// one damage from defeat, and a Fight (combat 3 vs fight 2, a `0` token,
+/// committing nothing) deals that damage.
 fn defeat(code: &str) -> TestSession {
-    TestSession::new(act3_state()).fire_at(TimingEvent::EnemyDefeated {
-        enemy: EnemyId(1),
-        by: None,
-        code: CardCode(code.into()),
+    let mut enemy = test_support::test_enemy(FOE.0, "Foe");
+    enemy.code = CardCode(code.into());
+    enemy.max_health = 1;
+    let session = TestSession::new(act3_state(seat(1).at(HERE), |b| {
+        b.with_enemy_engaged(enemy, INV)
+    }))
+    .take(&TurnAction::Fight {
+        investigator: INV,
+        enemy: FOE,
     })
+    .commit(&[]);
+    assert_event!(
+        session.events(),
+        Event::EnemyDefeated { enemy, .. } if *enemy == FOE
+    );
+    session
 }
 
-/// Fire 01110's objective; the session rests on the prompt its reverse
-/// suspends on.
+/// Defeat the Ghoul Priest, 01110's objective; the session rests on the
+/// prompt its reverse suspends on.
 fn defeat_the_ghoul_priest() -> TestSession {
     defeat("01116") // the Ghoul Priest
 }
@@ -96,10 +126,10 @@ fn each_printed_bullet_reaches_its_own_resolution() {
 #[test]
 fn defeating_other_enemy_does_not_advance_act_3() {
     // Some other enemy, not the Ghoul Priest.
-    let ApplyResult { state, outcome, .. } = defeat("01103").finish();
-    assert_eq!(outcome, EngineOutcome::Done);
+    let session = defeat("01103");
+    session.assert_at_turn_menu(INV);
     assert!(
-        state.ending.is_none(),
+        session.state().ending.is_none(),
         "only the Ghoul Priest's defeat advances Act 3"
     );
 }
@@ -113,35 +143,22 @@ fn defeating_other_enemy_does_not_advance_act_3() {
 /// `defeating_ghoul_priest_advances_act_3_to_won` above.
 #[test]
 fn advance_act_action_rejected_for_act_3_objective() {
-    let inv = InvestigatorId(1);
-    let mut investigator = test_support::test_investigator(1);
-    investigator.clues = 5; // plenty — reject must be the objective, not affordability
-    let mut state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_investigator(investigator)
-        .with_active_investigator(inv)
-        .with_turn_order([inv])
-        .build();
-    // Act 3 is current and terminal-Won (mirrors the_gathering setup()).
-    state.act_deck = vec![Act {
-        code: CardCode("01110".into()),
-        clue_threshold: 0,
-    }];
+    // 5 clues: plenty — reject must be the objective, not affordability.
+    let state = act3_state(seat(1).at(HERE).clues(5), |b| b);
 
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::AdvanceAct { investigator: inv },
-    );
+    // The menu does not offer it; submitted off the menu, the handler itself
+    // must reject it.
+    let session =
+        TestSession::new(state).submit_off_menu(&TurnAction::AdvanceAct { investigator: INV });
+    // AdvanceAct must be rejected for Act 3's non-clue objective.
+    session.expect_rejected();
+    let state = session.state();
     assert!(
-        matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "AdvanceAct must be rejected for Act 3's non-clue objective"
-    );
-    assert!(
-        result.state.ending.is_none(),
+        state.ending.is_none(),
         "rejected AdvanceAct must not latch the Won resolution (no instant win)"
     );
-    assert_eq!(result.state.act_index, 0, "act did not advance");
-    assert_eq!(result.state.investigators[&inv].clues, 5, "no clues spent");
+    assert_eq!(state.act_index, 0, "act did not advance");
+    assert_eq!(state.investigators[&INV].clues, 5, "no clues spent");
 }
 
 /// Act 01109 ("The Barrier") advances only at the end of the round (its
@@ -150,25 +167,22 @@ fn advance_act_action_rejected_for_act_3_objective() {
 /// registry, so it lives here rather than as a game-core lib unit test.
 #[test]
 fn advance_act_rejected_for_round_end_advance_act() {
-    let inv = InvestigatorId(1);
-    let mut investigator = test_support::test_investigator(1);
-    investigator.clues = 9; // plenty — reject must be the objective, not affordability
-    let mut state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_investigator(investigator)
-        .with_active_investigator(inv)
-        .with_turn_order([inv])
-        .build();
+    // 9 clues: plenty — reject must be the objective, not affordability.
+    let mut state = act3_state(seat(1).at(HERE).clues(9), |b| b);
     state.act_deck = vec![Act {
         code: CardCode("01109".into()),
         clue_threshold: 3,
     }];
 
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::AdvanceAct { investigator: inv },
+    // The menu does not offer it; submitted off the menu, the handler itself
+    // must reject it.
+    let session =
+        TestSession::new(state).submit_off_menu(&TurnAction::AdvanceAct { investigator: INV });
+    session.expect_rejected();
+    assert_eq!(session.state().act_index, 0, "act did not advance");
+    assert_eq!(
+        session.state().investigators[&INV].clues,
+        9,
+        "no clues spent"
     );
-    assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-    assert_eq!(result.state.act_index, 0, "act did not advance");
-    assert_eq!(result.state.investigators[&inv].clues, 9, "no clues spent");
 }

@@ -1,17 +1,15 @@
 use super::*;
-use crate::state::FastWindowFrame;
 
 #[test]
 fn cancel_effect_sets_pending_cancellation() {
+    // Effect::Cancel asserts an open window frame is present; stage a minimal one.
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(seat(1))
+        .with_open_window(
+            FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
+            FastActorScope::Any,
+        )
         .build();
-    // Effect::Cancel asserts an open window frame is present; push a minimal one.
-    state.continuations.push(FastWindowFrame {
-        candidates: Vec::new(),
-        fast_actors: FastActorScope::Any,
-        kind: FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
-    });
     assert!(!state.pending_cancellation);
     let mut events = Vec::new();
     let outcome = run(
@@ -31,9 +29,7 @@ fn cancel_effect_sets_pending_cancellation() {
 /// in-flight test.
 #[test]
 fn boost_attack_damage_accumulates_on_in_flight_test() {
-    let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
-        .build();
+    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
     let mut events = Vec::new();
 
     // No in-flight test: a clean no-op (no panic, nothing to mutate).
@@ -91,9 +87,7 @@ fn boost_attack_damage_accumulates_on_in_flight_test() {
 /// in-flight test.
 #[test]
 fn discover_additional_clues_accumulates_on_in_flight_test() {
-    let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
-        .build();
+    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
     let mut events = Vec::new();
 
     // No in-flight test: a clean no-op (no panic, nothing to mutate).
@@ -149,14 +143,9 @@ fn discover_additional_clues_accumulates_on_in_flight_test() {
 /// target and emits `CardsDrawn`; `count == 0` is a no-op.
 #[test]
 fn draw_cards_effect_draws_for_target() {
-    let mut inv = test_support::test_investigator(1);
-    inv.deck = vec![
-        CardCode::new("d1"),
-        CardCode::new("d2"),
-        CardCode::new("d3"),
-    ];
-    inv.hand = Vec::new();
-    let mut state = GameStateBuilder::new().with_investigator(inv).build();
+    let mut state = GameStateBuilder::new()
+        .with_seat(seat(1).deck(["d1", "d2", "d3"]))
+        .build();
     let mut events = Vec::new();
 
     let outcome = run(
@@ -190,9 +179,7 @@ fn draw_cards_effect_draws_for_target() {
 
 #[test]
 fn attach_self_to_location_rejects_with_no_pending_event() {
-    let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
-        .build();
+    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
     let mut events = Vec::new();
     let outcome = run(
         &mut Cx {
@@ -208,9 +195,7 @@ fn attach_self_to_location_rejects_with_no_pending_event() {
 #[test]
 fn put_into_threat_area_with_clues_seeds_the_placed_instance() {
     let id = InvestigatorId(1);
-    let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
-        .build();
+    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
     let mut events = Vec::new();
     let mut cx = Cx {
         state: &mut state,
@@ -235,9 +220,7 @@ fn put_into_threat_area_with_clues_seeds_the_placed_instance() {
 #[test]
 fn put_into_threat_area_records_the_revealed_cards_owner() {
     for owner in [Owner::Investigator(InvestigatorId(1)), Owner::EncounterDeck] {
-        let mut state = GameStateBuilder::new()
-            .with_investigator(test_support::test_investigator(1))
-            .build();
+        let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
         let mut events = Vec::new();
         let mut cx = Cx {
             state: &mut state,
@@ -260,9 +243,7 @@ fn put_into_threat_area_records_the_revealed_cards_owner() {
 /// guessed: the effect rejects rather than minting an ownerless instance.
 #[test]
 fn put_into_threat_area_outside_a_revelation_rejects() {
-    let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
-        .build();
+    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
     let mut events = Vec::new();
     let outcome = run(
         &mut Cx {

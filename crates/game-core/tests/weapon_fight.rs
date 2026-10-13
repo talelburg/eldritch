@@ -14,16 +14,17 @@
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Slot, UseKind, Uses};
 use card_dsl::dsl::{self, Cost, IntExpr};
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::assert_event;
-use game_core::engine::enumerate::{self, TurnAction};
-use game_core::engine::{self, ApplyResult, EngineOutcome, InputKind, OptionId};
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{InputKind, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, Phase, TokenModifiers,
+    AbilityAddress, AbilitySource, CardInstanceId, ChaosBag, ChaosToken, Enemy, EnemyId, GameState,
+    GameStateBuilder, InvestigatorId, LocationId, TokenModifiers,
 };
-use game_core::test_support::{self, MockRegistry, TestSession};
+use game_core::test_support::{
+    self, seat, uses, MockRegistry, SeatCard, SeatLookup as _, TestSession,
+};
 
 /// Mock firearm: `Uses (4 ammo)`, `[action] Spend 1 ammo: Fight. +1
 /// [combat], +1 damage.`
@@ -121,57 +122,70 @@ fn install_mock_registry() {
 /// The single location the controller and its enemies share. Co-location is
 /// load-bearing: a weapon Fight targets any enemy *at your location*
 /// (`EntityScope::At(Here)`), so the board must place everyone there.
-const LOC: LocationId = LocationId(1);
+const HERE: LocationId = LocationId(1);
 
-/// Board: the weapon in play (instance 0) with a freshly-seeded 4-ammo
-/// pool, the controller active with combat 3 in the Investigation phase,
-/// at [`LOC`] and engaged with `enemy_count` enemies (fight 3, health 3) that
-/// are co-located there. A `Numeric(0)` chaos bag makes the combat total
+/// A location the controller is not at.
+const ELSEWHERE: LocationId = LocationId(2);
+
+const INV: InvestigatorId = InvestigatorId(1);
+
+/// The first enemy a board seats; the rest follow it.
+const GHOUL: EnemyId = EnemyId(100);
+
+/// A Ghoul (fight 3, health 3) at `location`, engaged with the controller when
+/// `engaged`.
+fn ghoul(id: EnemyId, location: LocationId, engaged: bool) -> Enemy {
+    let mut enemy = test_support::test_enemy(id.0, "Ghoul");
+    enemy.fight = 3;
+    enemy.max_health = 3;
+    enemy.current_location = Some(location);
+    enemy.engaged_with = engaged.then_some(INV);
+    enemy
+}
+
+/// Board: `asset` in play for the controller, whose turn is open at [`HERE`],
+/// with `enemy_count` Ghouls co-located there — engaged with the controller
+/// when `engaged`. A `Numeric(0)` chaos bag makes the combat total
 /// deterministic.
-fn board_with_weapon(enemy_count: u32) -> (GameState, InvestigatorId, CardInstanceId) {
-    board_with_enemies(enemy_count, true)
-}
-
-/// As [`board_with_weapon`], but `engaged` controls whether the co-located
-/// enemies are engaged with the controller. Unengaged-but-co-located is a
-/// legal weapon Fight target (an Aloof enemy, or one engaged with another
-/// investigator in MP) — #451.
-fn board_with_enemies(
-    enemy_count: u32,
-    engaged: bool,
-) -> (GameState, InvestigatorId, CardInstanceId) {
-    let id = InvestigatorId(1);
-    let weapon_inst = CardInstanceId(0);
-
-    let mut inv = test_support::test_investigator(1);
-    inv.skills.combat = 3;
-    let mut weapon = CardInPlay::enter_play(
-        CardCode::new(WEAPON),
-        weapon_inst,
-        Owner::Investigator(InvestigatorId(1)),
-    );
-    weapon.uses.insert(UseKind::Ammo, 4); // seeded as play_card would
-    inv.cards_in_play.push(weapon);
-
-    let mut builder = GameStateBuilder::new()
-        .open_turn(id)
-        .with_location(test_support::test_location(1, "Study"))
+fn board(asset: SeatCard, enemy_count: u32, engaged: bool) -> GameStateBuilder {
+    (0..enemy_count)
+        .fold(GameStateBuilder::new(), |builder, n| {
+            builder.with_enemy(ghoul(EnemyId(GHOUL.0 + n), HERE, engaged))
+        })
+        .with_seat(seat(INV.0).at(HERE).in_play([asset]))
+        .with_location(test_support::test_location(HERE.0, "Study"))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default());
-    for n in 0..enemy_count {
-        let mut enemy = test_support::test_enemy(100 + n, "Ghoul");
-        enemy.fight = 3;
-        enemy.max_health = 3;
-        enemy.current_location = Some(LOC);
-        enemy.engaged_with = engaged.then_some(id);
-        builder = builder.with_enemy(enemy);
-    }
-    let state = builder.with_investigator_at(inv, LOC).build();
-    (state, id, weapon_inst)
+        .with_token_modifiers(TokenModifiers::default())
+        .open_turn(INV)
 }
 
-fn ammo_remaining(state: &GameState, inv: InvestigatorId, weapon: CardInstanceId) -> u8 {
-    state.investigators[&inv]
+/// The weapon with a freshly-seeded 4-ammo pool, seeded as `play_card` would.
+fn loaded_weapon() -> SeatCard {
+    (WEAPON, uses(UseKind::Ammo, 4)).into()
+}
+
+/// [`board`] with the loaded weapon in play, engaged with `enemy_count` Ghouls.
+fn board_with_weapon(enemy_count: u32) -> GameStateBuilder {
+    board(loaded_weapon(), enemy_count, true)
+}
+
+/// The instance of the asset `code` the controller holds.
+fn held(state: &GameState, code: &str) -> CardInstanceId {
+    state.in_play(INV, code)
+}
+
+/// Activate the printed ability of the asset `code` the controller holds.
+fn activate(state: &GameState, code: &str) -> TurnAction {
+    TurnAction::ActivateAbility {
+        investigator: INV,
+        source: AbilitySource::InPlay(held(state, code)),
+        address: AbilityAddress::Printed(0),
+    }
+}
+
+fn ammo_remaining(state: &GameState) -> u8 {
+    let weapon = held(state, WEAPON);
+    state.investigators[&INV]
         .cards_in_play
         .iter()
         .find(|c| c.instance_id == weapon)
@@ -181,34 +195,16 @@ fn ammo_remaining(state: &GameState, inv: InvestigatorId, weapon: CardInstanceId
 
 #[test]
 fn play_card_seeds_the_ammo_pool_from_metadata() {
-    let id = InvestigatorId(1);
-    let mut inv = test_support::test_investigator(1);
-    inv.hand.push(CardCode::new(WEAPON));
-    let state = GameStateBuilder::new()
-        .open_turn(id)
-        .with_investigator(inv)
-        .build();
-
-    let idx = enumerate::legal_actions(&state)
-        .iter()
-        .position(|a| {
-            a == &TurnAction::PlayCard {
-                investigator: id,
-                hand_index: 0,
-            }
-        })
-        .expect("PlayCard must be legal");
-    let result = test_support::apply_no_commits(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
-        }),
-    );
-    assert!(matches!(
-        result.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
-    let weapon = result.state.investigators[&id]
+    let session = GameStateBuilder::new()
+        .with_seat(seat(INV.0).hand([WEAPON]))
+        .open_turn(INV)
+        .session()
+        .take(&TurnAction::PlayCard {
+            investigator: INV,
+            hand_index: 0,
+        });
+    session.assert_at_turn_menu(INV);
+    let weapon = session.state().investigators[&INV]
         .cards_in_play
         .first()
         .expect("weapon entered play");
@@ -217,44 +213,30 @@ fn play_card_seeds_the_ammo_pool_from_metadata() {
 
 #[test]
 fn weapon_fight_spends_ammo_and_deals_bonus_damage() {
-    let (state, id, weapon) = board_with_weapon(1);
-    assert_eq!(ammo_remaining(&state, id, weapon), 4);
+    let session = board_with_weapon(1).session();
+    assert_eq!(ammo_remaining(session.state()), 4);
 
     // Activate → pays 1 ammo up front, then the Combat test resolves
     // (combat 3 + modifier 1 vs fight 3 → success) dealing 1 + 1 = 2.
-    let idx = enumerate::legal_actions(&state)
-        .iter()
-        .position(|a| {
-            a == &TurnAction::ActivateAbility {
-                investigator: id,
-                source: AbilitySource::InPlay(weapon),
-                address: AbilityAddress::Printed(0),
-            }
-        })
-        .expect("ability must be legal");
-    let result = test_support::apply_no_commits(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
-        }),
-    );
+    let action = activate(session.state(), WEAPON);
+    let session = session.take(&action).commit(&[]);
 
-    assert!(matches!(
-        result.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
+    session.assert_at_turn_menu(INV);
     assert_event!(
-        result.events,
+        session.events(),
         Event::UsesSpent {
             kind: UseKind::Ammo,
             amount: 1,
             ..
         }
     );
-    assert_event!(result.events, Event::SkillTestStarted { difficulty: 3, .. });
-    assert_event!(result.events, Event::EnemyDamaged { amount: 2, .. });
-    assert_eq!(ammo_remaining(&result.state, id, weapon), 3);
-    assert_eq!(result.state.enemies[&EnemyId(100)].damage, 2);
+    assert_event!(
+        session.events(),
+        Event::SkillTestStarted { difficulty: 3, .. }
+    );
+    assert_event!(session.events(), Event::EnemyDamaged { amount: 2, .. });
+    assert_eq!(ammo_remaining(session.state()), 3);
+    assert_eq!(session.state().enemies[&GHOUL].damage, 2);
 }
 
 #[test]
@@ -264,178 +246,114 @@ fn weapon_fight_targets_a_co_located_unengaged_enemy() {
     // enemy *at your location* to attack; you need not already be engaged
     // (#451). With exactly one such enemy the target auto-binds (no suspend),
     // mirroring the single-engaged case.
-    let (state, id, weapon) = board_with_enemies(1, false);
+    let session = board(loaded_weapon(), 1, false).session();
     assert_eq!(
-        state.enemies[&EnemyId(100)].engaged_with,
+        session.state().enemies[&GHOUL].engaged_with,
         None,
         "precondition: the enemy is co-located but NOT engaged"
     );
 
-    let idx = enumerate::legal_actions(&state)
-        .iter()
-        .position(|a| {
-            a == &TurnAction::ActivateAbility {
-                investigator: id,
-                source: AbilitySource::InPlay(weapon),
-                address: AbilityAddress::Printed(0),
-            }
-        })
-        .expect("ability must be legal");
-    let result = test_support::apply_no_commits(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
-        }),
-    );
+    let action = activate(session.state(), WEAPON);
+    let session = session.take(&action).commit(&[]);
 
-    assert!(matches!(
-        result.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
-    assert_event!(result.events, Event::SkillTestStarted { difficulty: 3, .. });
+    session.assert_at_turn_menu(INV);
     assert_event!(
-        result.events,
+        session.events(),
+        Event::SkillTestStarted { difficulty: 3, .. }
+    );
+    assert_event!(
+        session.events(),
         Event::EnemyDamaged {
-            enemy: EnemyId(100),
+            enemy: GHOUL,
             amount: 2,
             ..
         }
     );
-    assert_eq!(ammo_remaining(&result.state, id, weapon), 3);
-    assert_eq!(result.state.enemies[&EnemyId(100)].damage, 2);
+    assert_eq!(ammo_remaining(session.state()), 3);
+    assert_eq!(session.state().enemies[&GHOUL].damage, 2);
 }
 
 #[test]
 fn weapon_fight_rejects_an_enemy_at_a_different_location() {
     // The scope is co-located (`At(Here)`), NOT global: an enemy elsewhere is
     // no target, even though it exists. Guards against widening past the basic
-    // Fight action (#451).
-    let id = InvestigatorId(1);
-    let weapon_inst = CardInstanceId(0);
-    let other = LocationId(2);
+    // Fight action (#451). The menu already leaves the activation out, so it
+    // is submitted off the menu, as a client could send it, to prove the
+    // handler itself rejects it.
+    let session = board(loaded_weapon(), 0, false)
+        .with_location(test_support::test_location(ELSEWHERE.0, "Hallway"))
+        .with_enemy(ghoul(GHOUL, ELSEWHERE, false))
+        .session();
+    let action = activate(session.state(), WEAPON);
+    let session = session.submit_off_menu(&action);
 
-    let mut inv = test_support::test_investigator(1);
-    inv.skills.combat = 3;
-    let mut weapon = CardInPlay::enter_play(
-        CardCode::new(WEAPON),
-        weapon_inst,
-        Owner::Investigator(InvestigatorId(1)),
-    );
-    weapon.uses.insert(UseKind::Ammo, 4);
-    inv.cards_in_play.push(weapon);
-
-    let mut enemy = test_support::test_enemy(100, "Ghoul");
-    enemy.fight = 3;
-    enemy.max_health = 3;
-    enemy.current_location = Some(other); // elsewhere, not the controller's LOC
-    let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(id)
-        .with_location(test_support::test_location(1, "Study"))
-        .with_location(test_support::test_location(2, "Hallway"))
-        .with_enemy(enemy)
-        .with_investigator_at(inv, LOC)
-        .build();
-
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::ActivateAbility {
-            investigator: id,
-            source: AbilitySource::InPlay(weapon_inst),
-            address: AbilityAddress::Printed(0),
-        },
-    );
-    let EngineOutcome::Rejected { reason } = &result.outcome else {
-        panic!("expected Rejected; got {:?}", result.outcome);
-    };
+    let reason = session.expect_rejected();
     assert!(
         reason.contains("at your location"),
         "should reject for the missing co-located target, not an unrelated \
          precondition; got: {reason}"
     );
-    assert_eq!(ammo_remaining(&result.state, id, weapon_inst), 4);
-    assert_eq!(result.state.enemies[&EnemyId(100)].damage, 0);
+    assert_eq!(ammo_remaining(session.state()), 4);
+    assert_eq!(session.state().enemies[&GHOUL].damage, 0);
 }
 
 #[test]
 fn weapon_fight_rejects_when_no_co_located_enemy() {
     // No enemy at your location → illegal (no target); reject before charging
-    // anything.
-    let (state, id, weapon) = board_with_weapon(0);
-    let actions_before = state.investigators[&id].actions_remaining;
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::ActivateAbility {
-            investigator: id,
-            source: AbilitySource::InPlay(weapon),
-            address: AbilityAddress::Printed(0),
-        },
-    );
-    assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+    // anything. Submitted off the menu, which already leaves it out, to prove
+    // the handler itself rejects it.
+    let session = board_with_weapon(0).session();
+    let actions_before = session.state().investigators[&INV].actions_remaining;
+    let action = activate(session.state(), WEAPON);
+    let session = session.submit_off_menu(&action);
+
+    session.expect_rejected();
     // Nothing charged: ammo still 4, actions unchanged.
-    assert_eq!(ammo_remaining(&result.state, id, weapon), 4);
+    assert_eq!(ammo_remaining(session.state()), 4);
     assert_eq!(
-        result.state.investigators[&id].actions_remaining,
+        session.state().investigators[&INV].actions_remaining,
         actions_before
     );
 }
 
 #[test]
 fn weapon_fight_with_two_enemies_suspends_for_pick_then_attacks_chosen() {
-    // 2+ engaged → suspends for target pick; after picking enemy 100
-    // (OptionId(0)), the Fight resolves for 1 + 1 = 2 damage (combat 3 + mod 1
-    // vs fight 3 → success; extra_damage == 1 because the weapon's `fight`
-    // hardcodes `1u8` as `extra_damage`, not "sole-engaged" conditional).
-    let (state, id, weapon) = board_with_weapon(2);
+    // 2+ engaged → suspends for target pick; after picking enemy 100, the
+    // Fight resolves for 1 + 1 = 2 damage (combat 3 + mod 1 vs fight 3 →
+    // success; extra_damage == 1 because the weapon's `fight` hardcodes `1u8`
+    // as `extra_damage`, not "sole-engaged" conditional).
+    let session = board_with_weapon(2).session();
+    let other = EnemyId(GHOUL.0 + 1);
 
-    // Step 1: activation suspends for the target pick.
-    let idx = enumerate::legal_actions(&state)
-        .iter()
-        .position(|a| {
-            a == &TurnAction::ActivateAbility {
-                investigator: id,
-                source: AbilitySource::InPlay(weapon),
-                address: AbilityAddress::Printed(0),
-            }
-        })
-        .expect("ability must be legal");
-    let r1 = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
-        }),
-    );
-    assert!(
-        matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }),
-        "expected AwaitingInput for target pick; got {:?}",
-        r1.outcome
+    // Step 1: activation suspends for the target pick, offering both enemies.
+    let action = activate(session.state(), WEAPON);
+    let paused = session.take(&action);
+    assert_eq!(
+        (
+            paused.offered_at(&OptionTarget::Enemy(GHOUL)),
+            paused.offered_at(&OptionTarget::Enemy(other)),
+        ),
+        (1, 1),
+        "expected the target pick; got {:?}",
+        paused.prompt(),
     );
 
-    // Step 2: pick enemy 100 (OptionId(0)), then commit nothing to resolve the test.
-    let r2 = test_support::apply_no_commits(
-        r1.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(0)),
-        }),
-    );
-    assert!(
-        matches!(r2.outcome, EngineOutcome::AwaitingInput { .. }),
-        "expected the open-turn menu after pick + commit; got {:?}",
-        r2.outcome
-    );
+    // Step 2: pick enemy 100, then commit nothing to resolve the test.
+    let session = paused.pick(OptionTarget::Enemy(GHOUL)).commit(&[]);
+    session.assert_at_turn_menu(INV);
     // Enemy 100 was attacked (chosen); enemy 101 was not.
     assert_event!(
-        r2.events,
+        session.events(),
         Event::EnemyDamaged {
-            enemy: EnemyId(100),
+            enemy: GHOUL,
             amount: 2,
             ..
         }
     );
-    assert_eq!(r2.state.enemies[&EnemyId(100)].damage, 2);
-    assert_eq!(r2.state.enemies[&EnemyId(101)].damage, 0);
+    assert_eq!(session.state().enemies[&GHOUL].damage, 2);
+    assert_eq!(session.state().enemies[&other].damage, 0);
     // Ammo was spent on activation.
-    assert_eq!(ammo_remaining(&r2.state, id, weapon), 3);
+    assert_eq!(ammo_remaining(session.state()), 3);
 }
 
 /// **A designated Fight *is* a Fight action** (#805). `glossary/Ability.md`:
@@ -461,17 +379,19 @@ fn weapon_fight_with_two_enemies_suspends_for_pick_then_attacks_chosen() {
 fn a_designated_fight_is_a_fight_action() {
     /// The board of [`board_with_weapon`], with the bare-Fight asset in play
     /// instead of the firearm.
-    fn board_with_bare_asset() -> (GameState, InvestigatorId, CardInstanceId) {
-        let (mut state, id, inst) = board_with_weapon(1);
-        let card = state.investigators.get_mut(&id).expect("controller");
-        card.cards_in_play.clear();
-        card.cards_in_play.push(CardInPlay::enter_play(
-            CardCode::new(BARE),
-            inst,
-            Owner::Investigator(id),
-        ));
-        (state, id, inst)
+    fn board_with_bare_asset() -> TestSession {
+        board(BARE.into(), 1, true).session()
     }
+
+    /// The bare asset's designated Fight, activated.
+    fn designated(session: &TestSession) -> TurnAction {
+        activate(session.state(), BARE)
+    }
+
+    const BASIC: TurnAction = TurnAction::Fight {
+        investigator: INV,
+        enemy: GHOUL,
+    };
 
     /// Everything from the skill test's start onward, as `Debug` strings.
     fn from_the_test_onward(events: &[Event]) -> Vec<String> {
@@ -483,11 +403,11 @@ fn a_designated_fight_is_a_fight_action() {
     }
 
     /// The rows recorded while the fight's test is still in flight. The step
-    /// stops at the commit window — no reply policy answers it — because a
-    /// `Lifetime::SkillTest` row is swept when the test resolves, so after
-    /// resolution both paths read empty and the comparison would be vacuous.
-    fn rows_mid_test(state: GameState, action: &TurnAction) -> usize {
-        let session = TestSession::new(state).take(action);
+    /// stops at the commit window, because a `Lifetime::SkillTest` row is
+    /// swept when the test resolves, so after resolution both paths read empty
+    /// and the comparison would be vacuous.
+    fn rows_mid_test(session: TestSession, action: &TurnAction) -> usize {
+        let session = session.take(action);
         assert_eq!(
             session.prompt().kind,
             InputKind::PickMultiple,
@@ -497,70 +417,41 @@ fn a_designated_fight_is_a_fight_action() {
         session.state().recorded_modifiers.len()
     }
 
-    fn resolve(state: GameState, action: &TurnAction) -> ApplyResult {
-        TestSession::new(state)
-            .resolve_choices(|c| {
-                c.commit_cards(&[]);
-            })
-            .take(action)
-            .finish()
+    /// Take `action` and commit nothing, back to the turn menu.
+    fn resolve(session: TestSession, action: &TurnAction) -> TestSession {
+        let session = session.take(action).commit(&[]);
+        session.assert_at_turn_menu(INV);
+        session
     }
 
-    let (designated_board, id, asset) = board_with_bare_asset();
-    let designated = resolve(
-        designated_board,
-        &TurnAction::ActivateAbility {
-            investigator: id,
-            source: AbilitySource::InPlay(asset),
-            address: AbilityAddress::Printed(0),
-        },
-    );
-
-    let (basic_board, id, _) = board_with_bare_asset();
-    let basic = resolve(
-        basic_board,
-        &TurnAction::Fight {
-            investigator: id,
-            enemy: EnemyId(100),
-        },
-    );
+    let board = board_with_bare_asset();
+    let action = designated(&board);
+    let designated_fight = resolve(board, &action);
+    let basic = resolve(board_with_bare_asset(), &BASIC);
 
     assert_eq!(
-        from_the_test_onward(&designated.events),
-        from_the_test_onward(&basic.events),
+        from_the_test_onward(designated_fight.events()),
+        from_the_test_onward(basic.events()),
         "an unmodified designated Fight must resolve exactly as the basic \
          Fight action does",
     );
     assert_eq!(
-        designated.state.enemies[&EnemyId(100)].damage,
-        basic.state.enemies[&EnemyId(100)].damage,
+        designated_fight.state().enemies[&GHOUL].damage,
+        basic.state().enemies[&GHOUL].damage,
     );
     // The one licensed difference, pinned in both directions while the test is
     // still in flight: the designated Fight carries the ability's modification
     // as a row over the controller's combat (a `+0` one here, since this asset
     // prints no bonus), and the basic action carries none at all.
-    let (designated_board, id, asset) = board_with_bare_asset();
+    let board = board_with_bare_asset();
+    let action = designated(&board);
     assert_eq!(
-        rows_mid_test(
-            designated_board,
-            &TurnAction::ActivateAbility {
-                investigator: id,
-                source: AbilitySource::InPlay(asset),
-                address: AbilityAddress::Printed(0),
-            },
-        ),
+        rows_mid_test(board, &action),
         1,
         "the designated Fight records its modification as one row",
     );
-    let (basic_board, id, _) = board_with_bare_asset();
     assert_eq!(
-        rows_mid_test(
-            basic_board,
-            &TurnAction::Fight {
-                investigator: id,
-                enemy: EnemyId(100),
-            },
-        ),
+        rows_mid_test(board_with_bare_asset(), &BASIC),
         0,
         "the basic Fight action carries no modification",
     );

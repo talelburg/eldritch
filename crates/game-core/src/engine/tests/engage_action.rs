@@ -1,201 +1,113 @@
 use super::*;
 
+const TARGET: EnemyId = EnemyId(300);
+const ENGAGE: TurnAction = TurnAction::Engage {
+    investigator: INV,
+    enemy: TARGET,
+};
+
+/// An enemy at `location`, engaged with no one.
+fn enemy_at(id: u32, name: &str, location: LocationId) -> Enemy {
+    let mut enemy = test_support::test_enemy(id, name);
+    enemy.current_location = Some(location);
+    enemy
+}
+
+/// `investigator`'s open turn at the Study.
+fn engage_board(investigator: Seat) -> GameStateBuilder {
+    GameStateBuilder::new()
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_seat(investigator)
+        .open_turn(INV)
+}
+
+/// Whether `state`'s menu offers `INV` an Engage against `enemy`.
+fn offers_engage(state: &GameState, enemy: EnemyId) -> bool {
+    legal_actions(state).iter().any(
+        |a| matches!(a, TurnAction::Engage { investigator, enemy: e } if *investigator == INV && *e == enemy),
+    )
+}
+
 #[test]
 fn engage_action_engages_unengaged_enemy_at_location() {
-    let inv_id = InvestigatorId(1);
-    let loc = LocationId(10);
-    let enemy_id = EnemyId(300);
-    let mut enemy = test_support::test_enemy(300, "Aloof Ghoul");
-    enemy.current_location = Some(loc);
-    enemy.engaged_with = None;
-    let state = GameStateBuilder::new()
-        .with_location(test_support::test_location(10, "Study"))
-        .with_investigator({
-            let mut i = test_support::test_investigator(1);
-            i.current_location = Some(loc);
-            i
-        })
-        .with_enemy(enemy)
-        .open_turn(inv_id)
-        .build();
+    let session = engage_board(seat(1).at(HERE))
+        .with_enemy(enemy_at(TARGET.0, "Aloof Ghoul", HERE))
+        .session()
+        .take(&ENGAGE);
 
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::Engage {
-            investigator: inv_id,
-            enemy: enemy_id,
-        },
-    );
-
-    assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
-    assert_eq!(result.state.enemies[&enemy_id].engaged_with, Some(inv_id));
-    assert_eq!(result.state.investigators[&inv_id].actions_remaining, 2);
+    session.assert_at_turn_menu(INV);
+    assert_eq!(session.state().enemies[&TARGET].engaged_with, Some(INV));
+    assert_eq!(session.state().investigators[&INV].actions_remaining, 2);
     assert_event!(
-        result.events,
+        session.events(),
         Event::EnemyEngaged { enemy, investigator }
-            if *enemy == enemy_id && *investigator == inv_id
+            if *enemy == TARGET && *investigator == INV
     );
 }
 
 #[test]
 fn engage_action_provokes_aoo_from_other_engaged_enemy_not_the_target() {
-    let inv_id = InvestigatorId(1);
-    let loc = LocationId(10);
-    let target_id = EnemyId(300);
-    let mut target = test_support::test_enemy(300, "Target Ghoul"); // not engaged yet
-    target.current_location = Some(loc);
-    let mut other = test_support::test_enemy(301, "Already-Engaged Ghoul");
-    other.current_location = Some(loc);
-    other.engaged_with = Some(inv_id);
-    other.attack_damage = 1;
-    let state = GameStateBuilder::new()
-        .with_location(test_support::test_location(10, "Study"))
-        .with_investigator({
-            let mut i = test_support::test_investigator(1);
-            i.current_location = Some(loc);
-            i
-        })
-        .with_enemy(target)
-        .with_enemy(other)
-        .open_turn(inv_id)
-        .build();
+    let session = engage_board(seat(1).at(HERE))
+        // Not engaged yet.
+        .with_enemy(enemy_at(TARGET.0, "Target Ghoul", HERE))
+        .with_enemy_engaged(attacker(301, 1, 0), INV)
+        .session()
+        .take(&ENGAGE);
 
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::Engage {
-            investigator: inv_id,
-            enemy: target_id,
-        },
-    );
-
-    assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
+    session.assert_at_turn_menu(INV);
     // The OTHER engaged enemy made the AoO; the target (not engaged at
     // AoO time) did not. Target ends engaged; investigator took 1 damage.
-    assert_eq!(result.state.investigators[&inv_id].damage(), 1);
-    assert_eq!(result.state.enemies[&target_id].engaged_with, Some(inv_id));
+    assert_eq!(session.state().investigators[&INV].damage(), 1);
+    assert_eq!(session.state().enemies[&TARGET].engaged_with, Some(INV));
     assert_event!(
-        result.events,
-        Event::DamageTaken { investigator, amount: 1 } if *investigator == inv_id
+        session.events(),
+        Event::DamageTaken { investigator, amount: 1 } if *investigator == INV
     );
 }
 
 #[test]
 fn engage_action_rejects_enemy_not_at_location() {
-    let inv_id = InvestigatorId(1);
-    let here = LocationId(10);
-    let there = LocationId(11);
-    let enemy_id = EnemyId(300);
-    let mut enemy = test_support::test_enemy(300, "Distant Ghoul");
-    enemy.current_location = Some(there);
-    let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_location(test_support::test_location(10, "Study"))
-        .with_location(test_support::test_location(11, "Hallway"))
-        .with_investigator({
-            let mut i = test_support::test_investigator(1);
-            i.current_location = Some(here);
-            i
-        })
-        .with_active_investigator(inv_id)
-        .with_enemy(enemy)
+    let hallway = LocationId(11);
+    let state = engage_board(seat(1).at(HERE))
+        .with_location(test_support::test_location(hallway.0, "Hallway"))
+        .with_enemy(enemy_at(TARGET.0, "Distant Ghoul", hallway))
         .build();
     // Enemy at a different location → Engage is not legal.
-    assert!(!legal_actions(&state)
-        .iter()
-        .any(|a| matches!(a, TurnAction::Engage { investigator, enemy } if *investigator == inv_id && *enemy == enemy_id)));
+    assert!(!offers_engage(&state, TARGET));
 }
 
 #[test]
 fn engage_action_rejects_already_engaged_enemy() {
-    let inv_id = InvestigatorId(1);
-    let loc = LocationId(10);
-    let enemy_id = EnemyId(300);
-    let mut enemy = test_support::test_enemy(300, "Engaged Ghoul");
-    enemy.current_location = Some(loc);
-    enemy.engaged_with = Some(inv_id);
-    let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_location(test_support::test_location(10, "Study"))
-        .with_investigator({
-            let mut i = test_support::test_investigator(1);
-            i.current_location = Some(loc);
-            i
-        })
-        .with_active_investigator(inv_id)
-        .with_enemy(enemy)
+    let state = engage_board(seat(1).at(HERE))
+        .with_enemy_engaged(test_support::test_enemy(TARGET.0, "Engaged Ghoul"), INV)
         .build();
     // Already engaged → Engage is not legal.
-    assert!(!legal_actions(&state)
-        .iter()
-        .any(|a| matches!(a, TurnAction::Engage { investigator, enemy } if *investigator == inv_id && *enemy == enemy_id)));
+    assert!(!offers_engage(&state, TARGET));
 }
 
 #[test]
 fn engage_action_rejects_unknown_enemy() {
-    let inv_id = InvestigatorId(1);
-    let loc = LocationId(10);
-    let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_location(test_support::test_location(10, "Study"))
-        .with_investigator({
-            let mut i = test_support::test_investigator(1);
-            i.current_location = Some(loc);
-            i
-        })
-        .with_active_investigator(inv_id)
-        .build();
+    let state = engage_board(seat(1).at(HERE)).build();
     // Unknown enemy → Engage is not legal.
-    assert!(!legal_actions(&state)
-        .iter()
-        .any(|a| matches!(a, TurnAction::Engage { investigator, enemy } if *investigator == inv_id && *enemy == EnemyId(999))));
+    assert!(!offers_engage(&state, EnemyId(999)));
 }
 
 #[test]
 fn engage_action_rejects_no_actions_remaining() {
-    let inv_id = InvestigatorId(1);
-    let loc = LocationId(10);
-    let enemy_id = EnemyId(300);
-    let mut enemy = test_support::test_enemy(300, "Ghoul");
-    enemy.current_location = Some(loc);
-    let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_location(test_support::test_location(10, "Study"))
-        .with_investigator({
-            let mut i = test_support::test_investigator(1);
-            i.current_location = Some(loc);
-            i.actions_remaining = 0;
-            i
-        })
-        .with_active_investigator(inv_id)
-        .with_enemy(enemy)
+    let state = engage_board(seat(1).at(HERE).actions(0))
+        .with_enemy(enemy_at(TARGET.0, "Ghoul", HERE))
         .build();
     // No actions remaining → Engage is not legal.
-    assert!(!legal_actions(&state)
-        .iter()
-        .any(|a| matches!(a, TurnAction::Engage { investigator, enemy } if *investigator == inv_id && *enemy == enemy_id)));
+    assert!(!offers_engage(&state, TARGET));
 }
 
 #[test]
 fn engage_action_rejects_when_not_active_status() {
-    let inv_id = InvestigatorId(1);
-    let loc = LocationId(10);
-    let enemy_id = EnemyId(300);
-    let mut enemy = test_support::test_enemy(300, "Ghoul");
-    enemy.current_location = Some(loc);
-    let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_location(test_support::test_location(10, "Study"))
-        .with_investigator({
-            let mut i = test_support::test_investigator(1);
-            i.current_location = Some(loc);
-            i.status = Status::Defeated;
-            i
-        })
-        .with_active_investigator(inv_id)
-        .with_enemy(enemy)
+    let mut state = engage_board(seat(1).at(HERE))
+        .with_enemy(enemy_at(TARGET.0, "Ghoul", HERE))
         .build();
+    // No seat setter carries status.
+    state.investigators.get_mut(&INV).unwrap().status = Status::Defeated;
     // Defeated status → Engage is not legal.
-    assert!(!legal_actions(&state)
-        .iter()
-        .any(|a| matches!(a, TurnAction::Engage { investigator, enemy } if *investigator == inv_id && *enemy == enemy_id)));
+    assert!(!offers_engage(&state, TARGET));
 }

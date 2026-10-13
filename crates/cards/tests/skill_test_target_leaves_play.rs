@@ -44,15 +44,14 @@
 //! Own process → installs `cards::REGISTRY`.
 
 use cards::REGISTRY;
-use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::engine::enumerate::{self, TurnAction};
-use game_core::engine::{ApplyResult, EngineOutcome, InputKind, InputRequest, OptionId};
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, DiscardPile, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Owner, TokenModifiers, Zone,
+    CardCode, ChaosBag, ChaosToken, DiscardPile, EnemyId, GameStateBuilder, InvestigatorId,
+    LocationId, TokenModifiers, Zone,
 };
-use game_core::test_support::{self, ChoiceResolver};
+use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 const BEAT_COP: &str = "01018";
@@ -61,196 +60,137 @@ const BEAT_COP: &str = "01018";
 /// becomes of it at an abandoned teardown is unambiguous.
 const UNEXPECTED_COURAGE: &str = "01093";
 const INV: InvestigatorId = InvestigatorId(1);
-const LOC: LocationId = LocationId(10);
+const HERE: LocationId = LocationId(10);
 const ENEMY: EnemyId = EnemyId(100);
-const COP_INST: CardInstanceId = CardInstanceId(0);
 
 #[ctor::ctor(unsafe)]
 fn install_cards_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// Commit `commit` at the commit window, skip the ST.1 window, and — when
-/// `kill_at_st2` — take the one offered fast ability at the **ST.2** window:
-/// Beat Cop's discard, which defeats the 1-health enemy the in-flight attack
-/// is against. With `kill_at_st2` false both windows are skipped, which is how
-/// the ordinary un-abandoned attack is driven.
-///
-/// Fast player windows arrive as skippable `PickSingle` prompts and the commit
-/// window as a non-skippable `PickMultiple`, so the resolver can tell them
-/// apart without scripting option ids that depend on enumeration order. The
-/// two windows a skill test opens are ST.1 (before the commit window) and ST.2
-/// (after it, before the token), in that order — hence the count.
-#[derive(Default)]
-struct StTwoWindow {
-    /// Whether to buy Beat Cop's ability at the second window.
-    kill_at_st2: bool,
-    /// Hand indices to submit at the commit window (empty for no commits).
-    commit: Vec<OptionId>,
-    windows_seen: u32,
-}
-
-impl ChoiceResolver for StTwoWindow {
-    fn next(&mut self, request: &InputRequest, _state: &GameState) -> InputResponse {
-        if request.skippable && request.kind == InputKind::PickSingle {
-            self.windows_seen += 1;
-            if self.kill_at_st2 && self.windows_seen == 2 {
-                assert_eq!(
-                    request.options.len(),
-                    1,
-                    "Beat Cop's [fast] ability is the one thing eligible at ST.2: {request:?}",
-                );
-                return InputResponse::PickSingle(request.options[0].id);
-            }
-            return InputResponse::Skip;
-        }
-        match request.kind {
-            InputKind::Confirm => InputResponse::Confirm,
-            _ => InputResponse::PickMultiple {
-                selected: self.commit.clone(),
-            },
-        }
-    }
-}
-
-/// Board: Beat Cop in play under the active investigator at `LOC`, `hand` in
+/// Board: Beat Cop in play under the active investigator at `HERE`, `hand` in
 /// hand, and a 1-health enemy there, engaged — so both Fight and Evade are
 /// legal against it, and one point of damage defeats it.
-fn board_with_hand(hand: &[&str]) -> GameState {
-    let mut inv = test_support::test_investigator(1);
-    inv.cards_in_play.push(CardInPlay::enter_play(
-        CardCode::new(BEAT_COP),
-        COP_INST,
-        Owner::Investigator(InvestigatorId(1)),
-    ));
-    inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
-
-    let mut enemy = test_support::test_enemy(100, "Ghoul");
+fn board_with_hand(hand: &[&str]) -> TestSession {
+    let mut enemy = test_support::test_enemy(ENEMY.0, "Ghoul");
     enemy.max_health = 1;
-    enemy.current_location = Some(LOC);
-    enemy.engaged_with = Some(INV);
 
     GameStateBuilder::new()
-        .with_investigator_at(inv, LOC)
-        .with_location(test_support::test_location(10, "Study"))
-        .with_enemy(enemy)
+        .with_seat(
+            seat(1)
+                .at(HERE)
+                .in_play([BEAT_COP])
+                .hand(hand.iter().copied()),
+        )
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_enemy_engaged(enemy, INV)
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
-        .build()
+        .session()
 }
 
-fn board() -> GameState {
+fn board() -> TestSession {
     board_with_hand(&[])
 }
 
-/// Take `action` on `state` through `resolver`, resolving the enumerated turn
-/// action by its index exactly as a client would.
-fn take(state: GameState, action: &TurnAction, resolver: StTwoWindow) -> ApplyResult {
-    let idx = enumerate::legal_actions(&state)
-        .iter()
-        .position(|a| a == action)
-        .unwrap_or_else(|| panic!("{action:?} is not legal on this board"));
-    test_support::drive(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(
-                u32::try_from(idx).expect("action index fits u32"),
-            )),
-        }),
-        resolver,
-    )
+/// Take `action` on `session`, skip the ST.1 window, and commit `commit` at the
+/// commit window, so the session rests at the test's **ST.2** player window —
+/// inside the test, after the commit window and before the token. Beat Cop's
+/// `[fast]` ability makes both windows open.
+fn to_st2(session: TestSession, action: &TurnAction, commit: &[&str]) -> TestSession {
+    let commit: Vec<CardCode> = commit.iter().copied().map(CardCode::new).collect();
+    session.take(action).skip().commit(&commit)
 }
 
-/// [`take`] with the ST.2 kill armed and `commit` submitted at the commit
-/// window.
+/// [`to_st2`], then take the one offered fast ability at the ST.2 window: Beat
+/// Cop's discard, which defeats the 1-health enemy the in-flight attack is
+/// against.
 fn attack_then_kill_the_target_on(
-    state: GameState,
+    session: TestSession,
     action: &TurnAction,
-    commit: Vec<OptionId>,
-) -> ApplyResult {
-    take(
-        state,
-        action,
-        StTwoWindow {
-            kill_at_st2: true,
-            commit,
-            windows_seen: 0,
-        },
-    )
+    commit: &[&str],
+) -> TestSession {
+    let cop = OptionTarget::CardInstance(session.state().in_play(INV, BEAT_COP));
+    let at_st2 = to_st2(session, action, commit);
+    assert_eq!(
+        (at_st2.offered_at(&cop), at_st2.prompt().options.len()),
+        (1, 1),
+        "Beat Cop's [fast] ability is the one thing eligible at ST.2: {:?}",
+        at_st2.prompt(),
+    );
+    at_st2.pick(cop)
 }
 
 /// [`attack_then_kill_the_target_on`] against the bare board, committing
 /// nothing.
-fn attack_then_kill_the_target(action: &TurnAction) -> ApplyResult {
-    attack_then_kill_the_target_on(board(), action, Vec::new())
+fn attack_then_kill_the_target(action: &TurnAction) -> TestSession {
+    attack_then_kill_the_target_on(board(), action, &[])
 }
 
 /// The core assertion, shared by Fight and Evade: the enemy is gone, the test
 /// ended without a verdict, and nothing of it is left on the board.
-fn assert_abandoned(result: &ApplyResult) {
-    assert_event!(result.events, Event::EnemyDefeated { enemy, .. } if *enemy == ENEMY);
+fn assert_abandoned(session: &TestSession) {
+    let (state, events) = (session.state(), session.events());
+    assert_event!(events, Event::EnemyDefeated { enemy, .. } if *enemy == ENEMY);
     assert!(
-        !result.state.enemies.contains_key(&ENEMY),
+        !state.enemies.contains_key(&ENEMY),
         "the attacked enemy left play at the ST.2 window",
     );
 
     // No verdict: the difficulty-0 auto-success is exactly what this pins shut,
     // and a failure would be just as invented.
-    assert_no_event!(result.events, Event::SkillTestSucceeded { .. });
-    assert_no_event!(result.events, Event::SkillTestFailed { .. });
+    assert_no_event!(events, Event::SkillTestSucceeded { .. });
+    assert_no_event!(events, Event::SkillTestFailed { .. });
     // The test *is* over, and `SkillTestEnded` is the documented signal for it.
-    assert_event!(result.events, Event::SkillTestEnded { investigator } if *investigator == INV);
+    assert_event!(events, Event::SkillTestEnded { investigator } if *investigator == INV);
 
     assert!(
-        result.state.current_skill_test().is_none(),
+        state.current_skill_test().is_none(),
         "the abandoned test's frame is torn down",
     );
     assert!(
-        result.state.recorded_modifiers.is_empty(),
+        state.recorded_modifiers.is_empty(),
         "test-scoped rows expire with the test, however it ended",
     );
-    assert!(
-        !matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "abandonment is not a rejection: {:?}",
-        result.outcome,
-    );
+    // Abandonment is not a rejection: play goes back to the turn menu.
+    session.assert_at_turn_menu(INV);
 }
 
 #[test]
 fn a_fight_whose_target_leaves_play_at_st2_is_abandoned() {
-    let result = attack_then_kill_the_target(&TurnAction::Fight {
+    let session = attack_then_kill_the_target(&TurnAction::Fight {
         investigator: INV,
         enemy: ENEMY,
     });
-    assert_abandoned(&result);
+    assert_abandoned(&session);
     // The only damage dealt is Beat Cop's own. The Fight follow-up is
     // success-only, there is no success to trigger it, and no enemy left to
     // damage — before #682 it reached `damage_enemy` against an absent enemy
     // and tripped that handler's state-corruption `unreachable!`.
     assert_eq!(
-        result
-            .events
+        session
+            .events()
             .iter()
             .filter(|e| matches!(e, Event::EnemyDamaged { .. }))
             .count(),
         1,
         "Beat Cop's 1 damage and nothing else: {:?}",
-        result.events,
+        session.events(),
     );
 }
 
 #[test]
 fn an_evade_whose_target_leaves_play_at_st2_is_abandoned() {
-    let result = attack_then_kill_the_target(&TurnAction::Evade {
+    let session = attack_then_kill_the_target(&TurnAction::Evade {
         investigator: INV,
         enemy: ENEMY,
     });
-    assert_abandoned(&result);
+    assert_abandoned(&session);
     // The Evade follow-up would exhaust and disengage the enemy; it never runs.
     // (Defeat emits no paired `EnemyDisengaged` of its own — see `Event::EnemyDefeated`.)
-    assert_no_event!(result.events, Event::EnemyDisengaged { .. });
-    assert_no_event!(result.events, Event::EnemyExhausted { .. });
+    assert_no_event!(session.events(), Event::EnemyDisengaged { .. });
+    assert_no_event!(session.events(), Event::EnemyExhausted { .. });
 }
 
 /// The action is still spent. Abandoning the test rewinds nothing that
@@ -258,13 +198,13 @@ fn an_evade_whose_target_leaves_play_at_st2_is_abandoned() {
 /// test that cannot finish.
 #[test]
 fn abandoning_the_test_does_not_refund_the_action() {
-    let before = board().investigators[&INV].actions_remaining;
-    let result = attack_then_kill_the_target(&TurnAction::Fight {
+    let before = board().state().investigators[&INV].actions_remaining;
+    let session = attack_then_kill_the_target(&TurnAction::Fight {
         investigator: INV,
         enemy: ENEMY,
     });
     assert_eq!(
-        result.state.investigators[&INV].actions_remaining,
+        session.state().investigators[&INV].actions_remaining,
         before - 1,
         "the Fight action was charged and stays charged",
     );
@@ -283,17 +223,17 @@ fn abandoning_the_test_does_not_refund_the_action() {
 /// > discard pile, nor is it in an investigator’s hand.
 #[test]
 fn a_card_committed_to_the_abandoned_test_is_discarded_not_deleted() {
-    let result = attack_then_kill_the_target_on(
+    let session = attack_then_kill_the_target_on(
         board_with_hand(&[UNEXPECTED_COURAGE]),
         &TurnAction::Fight {
             investigator: INV,
             enemy: ENEMY,
         },
-        vec![OptionId(0)],
+        &[UNEXPECTED_COURAGE],
     );
-    assert_abandoned(&result);
+    assert_abandoned(&session);
 
-    let inv = &result.state.investigators[&INV];
+    let inv = &session.state().investigators[&INV];
     assert!(inv.hand.is_empty(), "the commit took it out of hand");
     assert_eq!(
         inv.discard,
@@ -305,7 +245,7 @@ fn a_card_committed_to_the_abandoned_test_is_discarded_not_deleted() {
     // card too — the engine has no `Limbo` zone of its own, and this teardown
     // shares that path rather than inventing a second one.
     assert_event!(
-        result.events,
+        session.events(),
         Event::CardDiscarded {
             from: Zone::Hand,
             to: DiscardPile::Investigator(INV),
@@ -320,24 +260,21 @@ fn a_card_committed_to_the_abandoned_test_is_discarded_not_deleted() {
 /// same board, nothing bought at ST.2.
 #[test]
 fn a_fight_that_defeats_its_own_target_at_st7_still_resolves() {
-    let result = take(
-        board(),
-        &TurnAction::Fight {
-            investigator: INV,
-            enemy: ENEMY,
-        },
-        StTwoWindow::default(),
-    );
+    let fight = TurnAction::Fight {
+        investigator: INV,
+        enemy: ENEMY,
+    };
+    let session = to_st2(board(), &fight, &[]).skip();
 
-    // Combat 3 (Beat Cop's constant +1 on a base 2) + Numeric(0) vs the Ghoul's
-    // fight 2 → succeeds by 1, and the follow-up's 1 damage defeats it.
+    // Combat 4 (a base 3 plus Beat Cop's constant +1) + Numeric(0) vs the
+    // Ghoul's fight 2 → succeeds, and the follow-up's 1 damage defeats it.
     assert_event!(
-        result.events,
+        session.events(),
         Event::SkillTestSucceeded { investigator, .. } if *investigator == INV
     );
-    assert_event!(result.events, Event::EnemyDefeated { enemy, .. } if *enemy == ENEMY);
+    assert_event!(session.events(), Event::EnemyDefeated { enemy, .. } if *enemy == ENEMY);
     assert!(
-        !result.state.enemies.contains_key(&ENEMY),
+        !session.state().enemies.contains_key(&ENEMY),
         "the enemy left play — at ST.7, which is not a reason to abandon anything",
     );
 }

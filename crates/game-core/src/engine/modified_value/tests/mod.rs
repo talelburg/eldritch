@@ -6,7 +6,7 @@ use crate::state::{
     Continuation, EnemyId, GameStateBuilder, InFlightSkillTest, Lifetime, LocationId, Owner,
     RecordedModifier, SkillTestId,
 };
-use crate::test_support;
+use crate::test_support::{self, seat, SeatLookup as _};
 
 mod determination;
 mod difficulty;
@@ -127,22 +127,12 @@ fn mock_registry() -> CardRegistry {
     }
 }
 
+/// Investigator 1 with `codes` in play, in order.
 fn state_with_cards_in_play(codes: &[&str]) -> (GameState, InvestigatorId) {
     let id = InvestigatorId(1);
-    let mut inv = test_support::test_investigator(1);
-    inv.cards_in_play = codes
-        .iter()
-        .enumerate()
-        .map(|(i, c)| {
-            CardInPlay::enter_play(
-                CardCode::new(*c),
-                #[allow(clippy::cast_possible_truncation)]
-                CardInstanceId(i as u32),
-                Owner::Investigator(InvestigatorId(1)),
-            )
-        })
-        .collect();
-    let state = GameStateBuilder::new().with_investigator(inv).build();
+    let state = GameStateBuilder::new()
+        .with_seat(seat(id.0).in_play(codes.iter().copied()))
+        .build();
     (state, id)
 }
 
@@ -186,7 +176,7 @@ fn recorded_for(
 /// (printed shroud 2) and one enemy (printed fight 2, evade 2).
 fn state_with_test(basis: DifficultyBasis) -> GameState {
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(seat(1))
         .with_location(test_support::test_location(3, "Study"))
         .with_enemy(test_support::test_enemy(7, "Ghoul"))
         .build();

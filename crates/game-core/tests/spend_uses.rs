@@ -16,14 +16,15 @@
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Uses};
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
+use game_core::engine::enumerate::TurnAction;
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{ApplyResult, EngineOutcome, NativeCx, TimingEvent};
+use game_core::engine::{EngineOutcome, NativeCx};
 use game_core::event::Event;
 use game_core::state::{
     self, Act, CardCode, CardInPlay, CardInstanceId, DiscardPile, GameState, GameStateBuilder,
     InvestigatorId, Owner, UseKind, Zone,
 };
-use game_core::test_support::{self, MockRegistry, TestSession};
+use game_core::test_support::{seat, MockRegistry, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 /// A synthetic asset printing "Uses (secrets)", discarded when they run out.
@@ -112,39 +113,63 @@ fn install() {
 }
 
 /// [`HOLDER`] (first in turn order, so the forced dispatch binds the
-/// controller to them) and [`OWNER`], `act` as the current act, and — when
-/// `pool` is `Some` — [`HELD`] in the holder's play area with that uses pool.
-fn state(act: &str, pool: Option<&[(UseKind, u8)]>) -> GameState {
-    let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(HOLDER.0))
-        .with_investigator(test_support::test_investigator(OWNER.0))
-        .with_turn_order([HOLDER, OWNER])
-        .build();
+/// controller to them) and [`OWNER`], each with a filler deck so Upkeep 4.4's
+/// draw deals no empty-deck horror, staged by `staging`; then `act` as the
+/// current act and — when `pool` is `Some` — [`HELD`] in the holder's play
+/// area, owned by [`OWNER`], with that uses pool.
+fn board(
+    staging: impl FnOnce(GameStateBuilder) -> GameStateBuilder,
+    act: &str,
+    pool: Option<&[(UseKind, u8)]>,
+) -> GameState {
+    // The natives spend from `HELD` by id, so the pouch is seated at it.
+    let holder = match pool {
+        Some(_) => seat(HOLDER.0).in_play_as(HELD, POUCH),
+        None => seat(HOLDER.0),
+    };
+    let mut state = staging(
+        GameStateBuilder::new()
+            .with_seat(holder.deck(["filler-card"]))
+            .with_seat(seat(OWNER.0).deck(["filler-card"]))
+            .with_turn_order([HOLDER, OWNER]),
+    )
+    .build();
+    // The act deck has no builder setter.
     state.act_deck = vec![Act {
         code: CardCode::new(act),
         clue_threshold: 99,
     }];
     state.act_index = 0;
     if let Some(pool) = pool {
-        let mut pouch =
-            CardInPlay::enter_play(CardCode::new(POUCH), HELD, Owner::Investigator(OWNER));
-        pouch.uses.extend(pool.iter().copied());
-        state
+        // A seat's in-play cards are its own and carry one uses kind; the pouch
+        // belongs to somebody else and may carry two, so set both on the board.
+        let pouch = state
             .investigators
             .get_mut(&HOLDER)
             .expect("holder")
             .cards_in_play
-            .push(pouch);
+            .iter_mut()
+            .find(|c| c.instance_id == HELD)
+            .expect("the seated pouch");
+        pouch.owner = Owner::Investigator(OWNER);
+        pouch.uses.extend(pool.iter().copied());
     }
     state
 }
 
-fn run(state: GameState) -> ApplyResult {
-    TestSession::new(state)
-        .fire_at(TimingEvent::PhaseEnded {
-            phase: state::Phase::Enemy,
-        })
-        .finish()
+/// End the Enemy phase for real — step 3.4, staged with
+/// [`ending_enemy_phase`](GameStateBuilder::ending_enemy_phase) — so `act`'s
+/// forced native runs at `PhaseEnded { Enemy }`. Settling runs the phase end
+/// and play goes on through Upkeep into the next round's Mythos.
+fn end_the_enemy_phase(act: &str, pool: Option<&[(UseKind, u8)]>) -> TestSession {
+    let session = TestSession::new(board(GameStateBuilder::ending_enemy_phase, act, pool));
+    assert_event!(
+        session.events(),
+        Event::PhaseEnded {
+            phase: state::Phase::Enemy
+        }
+    );
+    session
 }
 
 fn pouch_in_play(state: &GameState) -> Option<&CardInPlay> {
@@ -156,20 +181,16 @@ fn pouch_in_play(state: &GameState) -> Option<&CardInPlay> {
 
 #[test]
 fn spending_the_last_use_through_an_effect_discards_the_card_to_its_owner() {
-    let ApplyResult {
-        state,
-        outcome,
-        events,
-        ..
-    } = run(state(SPEND_SECRET_ACT, Some(&[(UseKind::Secrets, 1)])));
-    assert_eq!(outcome, EngineOutcome::Done);
-    assert!(pouch_in_play(&state).is_none(), "the empty pouch left play");
+    let session = end_the_enemy_phase(SPEND_SECRET_ACT, Some(&[(UseKind::Secrets, 1)]));
+    let state = session.state();
+    assert!(pouch_in_play(state).is_none(), "the empty pouch left play");
     assert_eq!(
         state.investigators[&OWNER].discard,
         vec![CardCode::new(POUCH)]
     );
     assert!(state.investigators[&HOLDER].discard.is_empty());
 
+    let events = session.events();
     let spent = events
         .iter()
         .position(|e| {
@@ -199,18 +220,13 @@ fn spending_the_last_use_through_an_effect_discards_the_card_to_its_owner() {
 
 #[test]
 fn a_spend_that_leaves_uses_keeps_the_card_in_play() {
-    let ApplyResult {
-        state,
-        outcome,
-        events,
-        ..
-    } = run(state(SPEND_SECRET_ACT, Some(&[(UseKind::Secrets, 2)])));
-    assert_eq!(outcome, EngineOutcome::Done);
-    let pouch = pouch_in_play(&state).expect("the pouch still has a secret");
+    let session = end_the_enemy_phase(SPEND_SECRET_ACT, Some(&[(UseKind::Secrets, 2)]));
+    let state = session.state();
+    let pouch = pouch_in_play(state).expect("the pouch still has a secret");
     assert_eq!(pouch.uses.get(&UseKind::Secrets), Some(&1));
     assert!(state.investigators[&OWNER].discard.is_empty());
     assert_event!(
-        events,
+        session.events(),
         Event::UsesSpent {
             investigator: HOLDER,
             instance_id: HELD,
@@ -218,33 +234,26 @@ fn a_spend_that_leaves_uses_keeps_the_card_in_play() {
             amount: 1,
         }
     );
-    assert_no_event!(events, Event::CardDiscarded { .. });
+    assert_no_event!(session.events(), Event::CardDiscarded { .. });
 }
 
 #[test]
 fn emptying_a_pool_of_another_kind_keeps_the_card_in_play() {
     // The printed discard-when-empty uses are secrets; the charges run out.
-    let ApplyResult {
-        state,
-        outcome,
-        events,
-        ..
-    } = run(state(
+    let session = end_the_enemy_phase(
         SPEND_CHARGE_ACT,
         Some(&[(UseKind::Charges, 1), (UseKind::Secrets, 2)]),
-    ));
-    assert_eq!(outcome, EngineOutcome::Done);
-    let pouch = pouch_in_play(&state).expect("only the printed kind discards it");
+    );
+    let pouch = pouch_in_play(session.state()).expect("only the printed kind discards it");
     assert_eq!(pouch.uses.get(&UseKind::Charges), Some(&0));
-    assert_no_event!(events, Event::CardDiscarded { .. });
+    assert_no_event!(session.events(), Event::CardDiscarded { .. });
 }
 
 #[test]
 fn spending_more_than_remains_saturates_and_discards() {
-    let ApplyResult { state, outcome, .. } =
-        run(state(SPEND_SECRET_ACT, Some(&[(UseKind::Secrets, 0)])));
-    assert_eq!(outcome, EngineOutcome::Done);
-    assert!(pouch_in_play(&state).is_none(), "an empty pool is empty");
+    let session = end_the_enemy_phase(SPEND_SECRET_ACT, Some(&[(UseKind::Secrets, 0)]));
+    let state = session.state();
+    assert!(pouch_in_play(state).is_none(), "an empty pool is empty");
     assert_eq!(
         state.investigators[&OWNER].discard,
         vec![CardCode::new(POUCH)]
@@ -253,12 +262,17 @@ fn spending_more_than_remains_saturates_and_discards() {
 
 #[test]
 fn spending_from_a_card_not_in_play_is_an_error_the_native_sees() {
-    let ApplyResult {
-        outcome, events, ..
-    } = run(state(SPEND_SECRET_ACT, None));
+    // A rejected phase end cannot be settled into a session, so the Enemy
+    // phase is reached by the step that really gets there: the last
+    // investigator ending their turn ends the Investigation phase, and play
+    // runs on through the Enemy phase to its end, where the native rejects.
+    let session = TestSession::new(board(|b| b.open_turn(HOLDER), SPEND_SECRET_ACT, None))
+        .take(&TurnAction::EndTurn)
+        .take(&TurnAction::EndTurn);
+    let reason = session.expect_rejected();
     assert!(
-        matches!(&outcome, EngineOutcome::Rejected { reason } if reason.contains("NotInPlay")),
-        "the native saw the error: {outcome:?}"
+        reason.contains("NotInPlay"),
+        "the native saw the error: {reason}"
     );
-    assert_no_event!(events, Event::UsesSpent { .. });
+    assert_no_event!(session.events(), Event::UsesSpent { .. });
 }

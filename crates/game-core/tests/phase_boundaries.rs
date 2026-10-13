@@ -22,15 +22,12 @@
 
 use card_dsl::card_data::{CardKind, CardMetadata};
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
-use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::enumerate::TurnAction;
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, EngineOutcome, NativeCx, OptionId};
+use game_core::engine::{EngineOutcome, NativeCx, OptionTarget};
 use game_core::event::{Event, TraumaKind};
-use game_core::state::{
-    self, Act, CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId,
-};
-use game_core::test_support::{self, MockRegistry};
+use game_core::state::{self, Act, CardCode, GameStateBuilder, InvestigatorId, LocationId};
+use game_core::test_support::{self, seat, MockRegistry, TestSession};
 
 /// The act carrying one marker forced ability per phase boundary.
 const ACT: &str = "TEST-BOUNDARIES";
@@ -168,55 +165,48 @@ fn markers_with_observed_phase(events: &[Event]) -> Vec<(u8, u8)> {
     raw.chunks_exact(2).map(|p| (p[0], p[1])).collect()
 }
 
+const INV: InvestigatorId = InvestigatorId(1);
+const HERE: LocationId = LocationId(10);
+
 /// A single investigator mid-Investigation, one turn from the phase's end, with
 /// the marker act current. Mirrors `round_ended`'s fixture: `EndTurn` from here
 /// cascades Investigation → Enemy → Upkeep → Mythos through the real drive loop.
-fn mid_investigation() -> GameState {
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(LocationId(10));
-    inv.actions_remaining = 0;
-    // Non-empty deck so the upkeep 4.4 draw doesn't fire a deckout penalty.
-    inv.deck = vec![CardCode::new("filler-card")];
-
+fn mid_investigation() -> TestSession {
     let mut state = GameStateBuilder::new()
-        .with_investigator(inv)
-        .with_location(test_support::test_location(10, "Study"))
-        .open_turn(InvestigatorId(1))
+        // Non-empty deck so the upkeep 4.4 draw doesn't fire a deckout penalty.
+        .with_seat(seat(1).at(HERE).actions(0).deck(["filler-card"]))
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .open_turn(INV)
         .build();
+    // The act deck has no builder setter: edit the built state.
     state.act_deck = vec![Act {
         code: CardCode::new(ACT),
         clue_threshold: 0,
     }];
     state.act_index = 0;
     state.encounter_deck.push_back(CardCode::new(TREACHERY));
-    state
+    TestSession::new(state)
 }
 
-fn end_turn_action(state: &GameState) -> Action {
-    let idx = enumerate::legal_actions(state)
-        .iter()
-        .position(|a| a == &TurnAction::EndTurn)
-        .expect("EndTurn must be a legal open-turn action");
-    Action::Player(PlayerAction::ResolveInput {
-        response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
-    })
+/// End the turn from [`mid_investigation`]: the cascade runs 2.3 → 3.1 → 3.4 →
+/// 4.1 → 4.6 → 1.1 and parks at the step-1.4 encounter-draw prompt.
+fn end_the_turn_to_the_encounter_draw() -> TestSession {
+    let parked = mid_investigation().take(&TurnAction::EndTurn);
+    assert_eq!(
+        parked.prompt().target,
+        Some(OptionTarget::EncounterDeck),
+        "the cascade parks at the step-1.4 encounter draw; got {:?}",
+        parked.prompt(),
+    );
+    parked
 }
 
 #[test]
 fn every_phase_boundary_fires_its_forced_ability_in_round_order() {
-    let state = mid_investigation();
-    let end_turn = end_turn_action(&state);
-    let cascade = engine::apply(state, end_turn);
+    let cascade = end_the_turn_to_the_encounter_draw();
 
-    // The cascade runs 2.3 → 3.1 → 3.4 → 4.1 → 4.6 → 1.1 and parks at the
-    // step-1.4 encounter-draw prompt.
-    assert!(
-        matches!(cascade.outcome, EngineOutcome::AwaitingInput { .. }),
-        "the cascade parks at the step-1.4 encounter draw; got {:?}",
-        cascade.outcome,
-    );
     assert_eq!(
-        markers(&cascade.events),
+        markers(cascade.events()),
         vec![
             END_INVESTIGATION,
             START_ENEMY,
@@ -235,28 +225,14 @@ fn the_mythos_end_and_the_investigation_start_fire_across_the_draw_prompt() {
     // The last two of the eight sit on the far side of the step-1.4 encounter
     // draw, so this picks the cascade up where the test above parks and confirms
     // the draw, driving 1.4 → 1.5 → 2.1.
-    let state = mid_investigation();
-    let end_turn = end_turn_action(&state);
-    let parked = engine::apply(state, end_turn);
-    assert!(
-        matches!(parked.outcome, EngineOutcome::AwaitingInput { .. }),
-        "parked at the step-1.4 encounter draw; got {:?}",
-        parked.outcome,
-    );
-
-    let resumed = engine::apply(
-        parked.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::Confirm,
-        }),
-    );
+    let resumed = end_the_turn_to_the_encounter_draw().confirm();
     assert_eq!(
-        resumed.state.phase,
+        resumed.state().phase,
         state::Phase::Investigation,
         "confirming the draw runs 1.5 and the Mythos → Investigation transition",
     );
     assert_eq!(
-        markers(&resumed.events),
+        markers(&resumed.finish().events),
         vec![END_MYTHOS, START_INVESTIGATION],
         "steps 1.5 and 2.1 each fire their forced ability, in that order",
     );
@@ -271,12 +247,10 @@ fn a_boundarys_forced_ability_resolves_before_its_drivers_tail_work() {
     // forced ability saw: a step-2.3 ability that saw `Enemy` would mean the
     // transition had been pushed *above* the frame the emit had just queued,
     // which is the #569 shape this discipline exists to prevent.
-    let state = mid_investigation();
-    let end_turn = end_turn_action(&state);
-    let cascade = engine::apply(state, end_turn);
+    let cascade = end_the_turn_to_the_encounter_draw();
 
     assert_eq!(
-        markers_with_observed_phase(&cascade.events),
+        markers_with_observed_phase(cascade.events()),
         vec![
             (END_INVESTIGATION, observed(state::Phase::Investigation)),
             (START_ENEMY, observed(state::Phase::Enemy)),

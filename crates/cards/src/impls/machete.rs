@@ -160,12 +160,14 @@ mod tests {
         /// Board where each enemy is engaged with `engaged_with[i]`.
         fn board(engagements: &[(u32, Option<InvestigatorId>)]) -> GameState {
             let mut builder = GameStateBuilder::new()
-                .with_investigator(test_support::test_investigator(1))
-                .with_investigator(test_support::test_investigator(2));
+                .with_seat(test_support::seat(1))
+                .with_seat(test_support::seat(2));
             for (id, engaged_with) in engagements {
-                let mut enemy = test_support::test_enemy(*id, "Ghoul");
-                enemy.engaged_with = *engaged_with;
-                builder = builder.with_enemy(enemy);
+                let enemy = test_support::test_enemy(*id, "Ghoul");
+                builder = match engaged_with {
+                    Some(investigator) => builder.with_enemy_engaged(enemy, *investigator),
+                    None => builder.with_enemy(enemy),
+                };
             }
             builder.build()
         }
