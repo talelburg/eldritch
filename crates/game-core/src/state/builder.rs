@@ -11,7 +11,6 @@
 //!
 //! ```
 //! use game_core::engine::enumerate::TurnAction;
-//! use game_core::engine::EngineOutcome;
 //! use game_core::state::{GameStateBuilder, InvestigatorId};
 //! use game_core::test_support;
 //!
@@ -24,8 +23,9 @@
 //!     .open_turn(InvestigatorId(1))
 //!     .build();
 //!
-//! let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
-//! assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
+//! // Investigator 1 ends their turn, which opens investigator 2's.
+//! let session = test_support::TestSession::new(state).take(&TurnAction::EndTurn);
+//! session.assert_at_turn_menu(InvestigatorId(2));
 //! ```
 
 use std::collections::{BTreeMap, VecDeque};

@@ -139,7 +139,7 @@ mod tests {
     #[test]
     fn hello_round_trips_through_json() {
         let state = GameStateBuilder::new()
-            .with_investigator(test_support::test_investigator(1))
+            .with_seat(test_support::seat(1))
             .build();
         let events = vec![Event::ScenarioStarted];
         let msg = ServerMessage::Hello {
@@ -167,7 +167,7 @@ mod tests {
     #[test]
     fn applied_round_trips_through_json() {
         let state = GameStateBuilder::new()
-            .with_investigator(test_support::test_investigator(1))
+            .with_seat(test_support::seat(1))
             .build();
         let msg = ServerMessage::Applied {
             state: Box::new(state.clone()),
@@ -187,7 +187,7 @@ mod tests {
     #[test]
     fn applied_round_trips_awaiting_input_option_target() {
         let state = GameStateBuilder::new()
-            .with_investigator(test_support::test_investigator(1))
+            .with_seat(test_support::seat(1))
             .build();
         // The fixture's options are un-anchored; this proves the
         // ChoiceOption.target field survives the ServerMessage envelope

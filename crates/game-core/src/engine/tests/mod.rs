@@ -4,7 +4,7 @@ use card_dsl::dsl::{IntExpr, Stat};
 use super::*;
 use crate::action::{EngineRecord, InputResponse, PlayerAction};
 use crate::event::FailureReason;
-use crate::scenario::{ResolutionId, ScenarioEnding, ScenarioId, ScenarioModule};
+use crate::scenario::ScenarioId;
 use crate::state::{
     AbilityAddress, AbilitySource, Act, CardInstanceId, ChaosBag, ChaosToken, DiscardPile,
     EliminationCause, Enemy, EnemyId, GameStateBuilder, InvestigatorId, Lifetime, LocationId,

@@ -1643,7 +1643,7 @@ fn collect_on_commit(committed: &[CardCode]) -> Vec<Effect> {
 }
 
 /// Start a plain skill test directly, the synthetic entry point behind
-/// [`test_support::perform_skill_test`](crate::test_support::perform_skill_test)
+/// [`TestSession::test_skill`](crate::test_support::TestSession::test_skill)
 /// (the retired `PlayerAction::PerformSkillTest` wire variant, #447).
 ///
 /// Opens the commit window with no action-specific follow-up. The

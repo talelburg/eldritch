@@ -27,9 +27,8 @@
 //! own integration-test process.
 
 use cards::REGISTRY;
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{OptionId, OptionTarget};
+use game_core::engine::OptionTarget;
 use game_core::event::{Event, LapseReason};
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId,
@@ -116,14 +115,11 @@ fn lapse_count(events: &[Event], code: &str) -> usize {
 /// Play one of the two Evidence! copies the after-defeat window offers.
 ///
 /// The window offers each copy as its own option, both anchored to
-/// [`evidence_in_hand`], so `pick` cannot name one; either copy plays. Pending
-/// a decision on how a test names one of two identical hand copies (#1020),
-/// this answers the first option by position, as the test did before.
+/// [`evidence_in_hand`], so `pick` cannot name one; the copies are
+/// interchangeable, so the first one at the anchor plays.
 fn play_one_of_two_evidence(window: TestSession) -> TestSession {
     assert_eq!(window.offered_at(&evidence_in_hand()), 2);
-    window.apply(Action::Player(PlayerAction::ResolveInput {
-        response: InputResponse::PickSingle(OptionId(0)),
-    }))
+    window.pick_nth_at(evidence_in_hand(), 0)
 }
 
 /// How many Evidence! plays `events` holds.
