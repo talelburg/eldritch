@@ -37,8 +37,9 @@ use crate::state::{
 ///   - from the turn menu, [`take`](Self::take);
 ///   - at a prompt, [`pick`](Self::pick), [`pick_nth`](Self::pick_nth),
 ///     [`pick_nth_at`](Self::pick_nth_at), [`confirm`](Self::confirm),
-///     [`skip`](Self::skip), and [`commit`](Self::commit) at a skill test's
-///     commit window;
+///     [`skip`](Self::skip), [`commit`](Self::commit) at a skill test's
+///     commit window, and [`pick_multiple`](Self::pick_multiple) at a
+///     mulligan or hand-size discard;
 ///   - the framework entry points [`fire_at`](Self::fire_at),
 ///     [`take_damage`](Self::take_damage) and [`test_skill`](Self::test_skill);
 ///   - [`submit_off_menu`](Self::submit_off_menu), for a turn action the menu
@@ -333,6 +334,40 @@ impl TestSession {
                 .into_iter()
                 .map(OptionId)
                 .collect();
+        self.respond(InputResponse::PickMultiple { selected })
+    }
+
+    /// Step: answer a `PickMultiple` prompt that is not a skill test's commit
+    /// window — a mulligan, or a hand-size discard — by selecting the hand
+    /// cards at `hand_indices`, then drain. `pick_multiple(&[])` selects none.
+    ///
+    /// For the session that rests at such a prompt: one a fixture settles at
+    /// ([`with_mulligan_remaining`](crate::state::GameStateBuilder::with_mulligan_remaining),
+    /// a seated game's opening mulligan), or one a step stopped at. A prompt a
+    /// step's drain meets is answered by a scripted
+    /// `InputResponse::PickMultiple` set with
+    /// [`resolve_choices`](Self::resolve_choices) before the step.
+    ///
+    /// # Panics
+    ///
+    /// Panics at the turn menu, at a skill test's commit window (commit cards
+    /// by code with [`commit`](Self::commit)), or at a prompt that is not a
+    /// `PickMultiple`.
+    pub fn pick_multiple(self, hand_indices: &[u32]) -> Self {
+        self.assert_off_turn_menu("pick_multiple");
+        let request = self.prompt();
+        assert!(
+            request.kind == InputKind::PickMultiple,
+            "TestSession::pick_multiple: prompt {:?} is a {:?}, not a PickMultiple",
+            request.prompt,
+            request.kind,
+        );
+        assert!(
+            self.state.current_skill_test().is_none(),
+            "TestSession::pick_multiple: the session is at a skill test's commit window; \
+             commit cards by code with `commit(&[CardCode])`",
+        );
+        let selected = hand_indices.iter().copied().map(OptionId).collect();
         self.respond(InputResponse::PickMultiple { selected })
     }
 

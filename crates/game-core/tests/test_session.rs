@@ -226,11 +226,7 @@ fn settling_a_staged_mulligan_shows_its_prompt() {
         .session();
     assert_eq!(session.prompt().kind, InputKind::PickMultiple);
 
-    let session = session.apply(Action::Player(PlayerAction::ResolveInput {
-        response: InputResponse::PickMultiple {
-            selected: vec![OptionId(0)],
-        },
-    }));
+    let session = session.pick_multiple(&[0]);
 
     assert_event!(session.events(), Event::MulliganPerformed { .. });
     assert_eq!(
@@ -362,6 +358,17 @@ fn commit_at_another_pick_multiple_panics() {
         .with_mulligan_remaining([INV])
         .session()
         .commit(&[]);
+}
+
+/// `pick_multiple` answers a `PickMultiple` that is not a commit window: at a
+/// skill test's commit window it panics and sends the author to `commit`.
+#[test]
+#[should_panic(expected = "commit cards by code")]
+fn pick_multiple_at_a_commit_window_panics() {
+    let _ = board()
+        .session()
+        .test_skill(INV, SkillKind::Willpower, 2)
+        .pick_multiple(&[]);
 }
 
 // ---- submit_off_menu ---------------------------------------------------------
