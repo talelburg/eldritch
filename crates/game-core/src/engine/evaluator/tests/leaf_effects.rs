@@ -1,15 +1,15 @@
 use super::*;
-use crate::state::FastWindowFrame;
 
 #[test]
 fn cancel_effect_sets_pending_cancellation() {
-    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
-    // Effect::Cancel asserts an open window frame is present; push a minimal one.
-    state.continuations.push(FastWindowFrame {
-        candidates: Vec::new(),
-        fast_actors: FastActorScope::Any,
-        kind: FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
-    });
+    // Effect::Cancel asserts an open window frame is present; stage a minimal one.
+    let mut state = GameStateBuilder::new()
+        .with_seat(seat(1))
+        .with_open_window(
+            FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
+            FastActorScope::Any,
+        )
+        .build();
     assert!(!state.pending_cancellation);
     let mut events = Vec::new();
     let outcome = run(
