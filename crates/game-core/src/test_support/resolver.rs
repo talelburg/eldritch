@@ -190,14 +190,8 @@ impl ChoiceResolver for ScriptedResolver {
 }
 
 /// Translate scripted commit-card codes to hand indices using the
-/// in-flight skill test's investigator on `state`.
-///
-/// Returns an empty vec for an empty code list (the canonical
-/// commit-nothing case). Each code is matched against the
-/// investigator's hand left-to-right; duplicate codes claim distinct
-/// indices so `&[CardCode("X"), CardCode("X")]` against a hand with
-/// two `X`s yields `[i, j]`. Panics with the prompt and remaining
-/// state if any code can't be matched — that's a test-author error.
+/// in-flight skill test's investigator on `state`, through
+/// [`hand_indices_of`].
 pub(super) fn resolve_commit_codes(
     codes: &[CardCode],
     state: &GameState,
@@ -213,16 +207,32 @@ pub(super) fn resolve_commit_codes(
              resolve time; prompt was: {prompt:?}",
         )
     });
-    let inv = state
-        .investigators
-        .get(&in_flight.investigator)
-        .unwrap_or_else(|| {
-            panic!(
-                "{caller}: in-flight investigator {:?} not in \
-                 state.investigators; prompt was: {prompt:?}",
-                in_flight.investigator,
-            )
-        });
+    hand_indices_of(codes, state, in_flight.investigator, prompt, caller)
+}
+
+/// Translate card codes to indices into `investigator`'s hand — the one
+/// code-to-hand-index translation behind a commit by code and a mulligan or
+/// hand-size discard by code.
+///
+/// Returns an empty vec for an empty code list (the canonical
+/// choose-nothing case). Each code is matched against the
+/// investigator's hand left-to-right; duplicate codes claim distinct
+/// indices so `&[CardCode("X"), CardCode("X")]` against a hand with
+/// two `X`s yields `[i, j]`. Panics with the prompt and remaining
+/// state if any code can't be matched — that's a test-author error.
+pub(super) fn hand_indices_of(
+    codes: &[CardCode],
+    state: &GameState,
+    investigator: InvestigatorId,
+    prompt: &str,
+    caller: &str,
+) -> Vec<u32> {
+    let inv = state.investigators.get(&investigator).unwrap_or_else(|| {
+        panic!(
+            "{caller}: investigator {investigator:?} not in \
+             state.investigators; prompt was: {prompt:?}",
+        )
+    });
     let mut used = vec![false; inv.hand.len()];
     let mut indices = Vec::with_capacity(codes.len());
     for code in codes {
@@ -234,9 +244,9 @@ pub(super) fn resolve_commit_codes(
             .unwrap_or_else(|| {
                 panic!(
                     "{caller}: code {code:?} not found in \
-                     {:?}'s hand (hand = {:?}, already-used indices = {:?}); \
+                     {investigator:?}'s hand (hand = {:?}, already-used indices = {:?}); \
                      prompt was: {prompt:?}",
-                    in_flight.investigator, inv.hand, used,
+                    inv.hand, used,
                 )
             });
         used[idx] = true;

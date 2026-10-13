@@ -18,12 +18,11 @@ use card_dsl::dsl::{
 };
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{OptionId, OptionTarget, TimingEvent};
+use game_core::engine::{OptionId, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CandidateSource, CardCode, ChaosBag, ChaosToken, Continuation,
-    Enemy, EnemyId, GameStateBuilder, InvestigatorId, Location, LocationId, ResolutionCandidate,
-    TokenModifiers,
+    CardCode, ChaosBag, ChaosToken, Enemy, EnemyId, GameStateBuilder, InvestigatorId, Location,
+    LocationId, TokenModifiers,
 };
 use game_core::test_support::{self, seat, MockRegistry, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -140,7 +139,7 @@ fn install_mock_registry() {
 const INV: InvestigatorId = InvestigatorId(1);
 const OTHER: InvestigatorId = InvestigatorId(2);
 const GHOUL: EnemyId = EnemyId(100);
-const LOC: LocationId = LocationId(10);
+const HERE: LocationId = LocationId(10);
 const ELSEWHERE: LocationId = LocationId(11);
 
 /// A Mock Ghoul at 1 of 2 health, so a successful Fight defeats it.
@@ -157,7 +156,7 @@ fn ghoul() -> Enemy {
 /// test investigator's combat 3 against the Ghoul's fight 3 with a `+0` token
 /// always succeeds, so the Fight defeats it.
 fn fight_board(seats: impl IntoIterator<Item = Seat>, location_clues: u8) -> GameStateBuilder {
-    let mut location = test_support::test_location(10, "Mock Location");
+    let mut location = test_support::test_location(HERE.0, "Mock Location");
     location.clues = location_clues;
     seats
         .into_iter()
@@ -172,7 +171,7 @@ fn fight_board(seats: impl IntoIterator<Item = Seat>, location_clues: u8) -> Gam
 /// The Fight-to-defeat board: `INV` alone with `in_play` in play, at a 3-clue
 /// location.
 fn fight_to_defeat_scenario(in_play: &[&str]) -> GameStateBuilder {
-    fight_board([seat(1).at(LOC).in_play(in_play.iter().copied())], 3)
+    fight_board([seat(1).at(HERE).in_play(in_play.iter().copied())], 3)
 }
 
 /// `INV` fights the Ghoul and commits `commit` to the test. The session rests
@@ -198,31 +197,14 @@ fn card(session: &TestSession, investigator: InvestigatorId, code: &str) -> Opti
     OptionTarget::CardInstance(session.state().in_play(investigator, code))
 }
 
-/// The ability source of the card `code` in `investigator`'s play or threat
-/// area, as a pending candidate names it.
-fn source(session: &TestSession, investigator: InvestigatorId, code: &str) -> CandidateSource {
-    CandidateSource::Ability(AbilitySource::InPlay(
-        session.state().in_play(investigator, code),
-    ))
-}
-
-/// The top frame's pending candidates, when it is a reaction window with any.
-fn pending(session: &TestSession) -> Option<&[ResolutionCandidate]> {
-    session
-        .state()
-        .continuations
-        .top()
-        .and_then(Continuation::pending_candidates)
-        .map(Vec::as_slice)
-        .filter(|pending| !pending.is_empty())
-}
-
-/// Assert the session is back at `INV`'s turn menu.
-fn assert_at_turn_menu(session: &TestSession) {
+/// Assert the session rests at a reaction window offering `reactions` options
+/// on `on` and nothing else.
+#[track_caller]
+fn assert_offers_only(session: &TestSession, on: &OptionTarget, reactions: usize) {
     assert_eq!(
-        session.prompt().target,
-        Some(OptionTarget::TurnControl(INV)),
-        "expected the turn menu, got {:?}",
+        (session.offered_at(on), session.prompt().options.len()),
+        (reactions, reactions),
+        "expected {reactions} reaction(s) on {on:?} alone: {:?}",
         session.prompt(),
     );
 }
@@ -234,48 +216,33 @@ fn no_in_play_reaction_means_no_window_opens() {
     // check that the in-play scan is the gate.
     let session = fight_through_commit_window(fight_to_defeat_scenario(&[]));
 
-    assert_at_turn_menu(&session);
+    // No AfterEnemyDefeated reaction window (none in play): the step runs on
+    // to the turn menu rather than resting at one.
+    session.assert_at_turn_menu(INV);
     assert_event!(
         session.events(),
         Event::EnemyDefeated { enemy: e, by: Some(by) } if *e == GHOUL && *by == INV
     );
-    // No AfterEnemyDefeated reaction window (none in play) — no reaction window
-    // is left on the stack.
-    assert!(pending(&session).is_none());
 }
 
 #[test]
 fn matching_reaction_opens_window_and_suspends() {
     // ROLAND_REACTION in play, Fight defeats the enemy → window opens
-    // with one pending trigger; the session rests at it; the window
-    // record on state names the right kind + pending entry.
+    // with one pending trigger; the session rests at it, offering that one
+    // reaction on its card.
     let session = fight_through_commit_window(fight_to_defeat_scenario(&[ROLAND_REACTION]));
 
+    // The window is after the enemy defeat, and suspends the Fight mid-action:
+    // the defeat has landed, the skill test has not ended.
     assert_event!(
         session.events(),
-        Event::EnemyDefeated { enemy: e, .. } if *e == GHOUL
+        Event::EnemyDefeated { enemy: e, by: Some(by) } if *e == GHOUL && *by == INV
     );
-    // The window opened and is still open + suspended.
-    let window = session
-        .state()
-        .continuations
-        .top()
-        .filter(|c| c.pending_candidates().is_some_and(|p| !p.is_empty()))
-        .expect("reaction window must be populated while suspended");
-    assert!(
-        matches!(
-            window.window_timing_event(),
-            Some(TimingEvent::EnemyDefeated { enemy, by: Some(by), .. })
-                if *enemy == GHOUL && *by == INV
-        ),
-        "reaction window must be after the enemy defeat: {:?}",
-        window.window_timing_event(),
-    );
-    let pending = pending(&session).expect("populated");
-    assert_eq!(pending.len(), 1);
-    assert_eq!(pending[0].controller, INV);
-    assert_eq!(pending[0].source, source(&session, INV, ROLAND_REACTION));
-    assert_eq!(pending[0].address, AbilityAddress::Printed(0));
+    assert_no_event!(session.events(), Event::SkillTestEnded { .. });
+    // One pending trigger, the one ability printed on `INV`'s in-play card,
+    // offered on that card.
+    assert_offers_only(&session, &card(&session, INV, ROLAND_REACTION), 1);
+    assert!(session.prompt().skippable, "an optional reaction window");
 }
 
 #[test]
@@ -288,15 +255,13 @@ fn pick_fires_pending_trigger_and_closes_window() {
 
     let resumed = paused.pick(reaction);
 
-    assert_at_turn_menu(&resumed);
+    resumed.assert_at_turn_menu(INV);
     assert_event!(
         resumed.events(),
         Event::CluePlaced { investigator, count: 1 } if *investigator == INV
     );
     assert_eq!(resumed.state().investigators[&INV].clues, 1);
-    assert_eq!(resumed.state().locations[&LOC].clues, 2);
-    // The window closed: no reaction window left on the stack.
-    assert!(pending(&resumed).is_none());
+    assert_eq!(resumed.state().locations[&HERE].clues, 2);
 }
 
 /// A `ChooseOne` inside a reaction's effect offers its branches' authored
@@ -338,12 +303,10 @@ fn skip_closes_an_optional_only_window_without_firing() {
     // closes; the session is back at the turn menu.
     let resumed = fight_through_commit_window(fight_to_defeat_scenario(&[ROLAND_REACTION])).skip();
 
-    assert_at_turn_menu(&resumed);
+    resumed.assert_at_turn_menu(INV);
     assert_no_event!(resumed.events(), Event::CluePlaced { .. });
     assert_eq!(resumed.state().investigators[&INV].clues, 0);
-    assert_eq!(resumed.state().locations[&LOC].clues, 3);
-    // The window closed without firing: no reaction window left on the stack.
-    assert!(pending(&resumed).is_none());
+    assert_eq!(resumed.state().locations[&HERE].clues, 3);
 }
 
 #[test]
@@ -353,7 +316,10 @@ fn by_controller_filter_excludes_unrelated_investigators() {
     // match the defeat (the active investigator made the kill, not
     // the controller of ROLAND_REACTION). No window opens.
     let board = fight_board(
-        [seat(1).at(LOC), seat(2).at(LOC).in_play([ROLAND_REACTION])],
+        [
+            seat(1).at(HERE),
+            seat(2).at(HERE).in_play([ROLAND_REACTION]),
+        ],
         3,
     )
     .with_turn_order([INV, OTHER]);
@@ -361,9 +327,8 @@ fn by_controller_filter_excludes_unrelated_investigators() {
     let session = fight_through_commit_window(board);
 
     // No AfterEnemyDefeated window for the unrelated investigator — resolution
-    // ran straight back to the turn menu with no reaction window on the stack.
-    assert_at_turn_menu(&session);
-    assert!(pending(&session).is_none());
+    // ran straight back to the turn menu without resting at a reaction window.
+    session.assert_at_turn_menu(INV);
 }
 
 #[test]
@@ -374,8 +339,8 @@ fn unqualified_pattern_matches_any_defeat() {
     // opens and the effect fires on resolve.
     let board = fight_board(
         [
-            seat(1).at(LOC),
-            seat(2).at(LOC).in_play([BYSTANDER_REACTION]),
+            seat(1).at(HERE),
+            seat(2).at(HERE).in_play([BYSTANDER_REACTION]),
         ],
         0,
     )
@@ -383,13 +348,12 @@ fn unqualified_pattern_matches_any_defeat() {
 
     let paused = fight_through_commit_window(board);
     let byst_resources_before = paused.state().investigators[&OTHER].resources;
-    let pending = pending(&paused).expect("window must open for an unqualified pattern");
-    assert_eq!(pending.len(), 1);
-    assert_eq!(pending[0].controller, OTHER);
-
+    // The window opens with one reaction, on the card in `OTHER`'s play area.
     let reaction = card(&paused, OTHER, BYSTANDER_REACTION);
+    assert_offers_only(&paused, &reaction, 1);
+
     let resumed = paused.pick(reaction);
-    assert_at_turn_menu(&resumed);
+    resumed.assert_at_turn_menu(INV);
     assert_eq!(
         resumed.state().investigators[&OTHER].resources,
         byst_resources_before + 1,
@@ -401,6 +365,7 @@ fn unqualified_pattern_matches_any_defeat() {
 #[test]
 fn pick_index_out_of_bounds_rejects_window_stays_open() {
     let paused = fight_through_commit_window(fight_to_defeat_scenario(&[ROLAND_REACTION]));
+    let reaction = card(&paused, INV, ROLAND_REACTION);
 
     // The subject is a malformed response, so it is sent raw: an option id the
     // prompt never offered.
@@ -412,8 +377,9 @@ fn pick_index_out_of_bounds_rejects_window_stays_open() {
         reason.contains("out of bounds"),
         "unexpected reason: {reason}"
     );
-    assert!(
-        pending(&bad).is_some(),
+    assert_eq!(
+        bad.offered_at(&reaction),
+        1,
         "window must survive a rejected pick so the client can retry"
     );
 }
@@ -425,34 +391,29 @@ fn multiple_pending_triggers_resolve_one_at_a_time() {
     // window re-prompts with one entry remaining; picking that fires the second
     // (resource); window closes.
     let paused = fight_through_commit_window(fight_to_defeat_scenario(&[TWO_REACTIONS]));
-    assert_eq!(pending(&paused).expect("window populated").len(), 2);
     let two = card(&paused, INV, TWO_REACTIONS);
+    assert_offers_only(&paused, &two, 2);
 
     let after_first = paused.pick_nth_at(two.clone(), 0);
     assert_event!(
         after_first.events(),
         Event::CluePlaced { investigator, count: 1 } if *investigator == INV
     );
-    assert_eq!(
-        pending(&after_first)
-            .expect("window stays open while triggers remain pending")
-            .len(),
-        1,
-    );
+    // The window stays open while a trigger remains pending.
+    assert_offers_only(&after_first, &two, 1);
 
     let resources_before = after_first.state().investigators[&INV].resources;
     let after_second = after_first.pick(two);
-    assert_at_turn_menu(&after_second);
+    after_second.assert_at_turn_menu(INV);
     assert_event!(
         after_second.events(),
         Event::ResourcesGained { investigator, amount: 1 } if *investigator == INV
     );
-    assert_eq!(after_second.state().locations[&LOC].clues, 2);
+    assert_eq!(after_second.state().locations[&HERE].clues, 2);
     assert_eq!(
         after_second.state().investigators[&INV].resources,
         resources_before + 1,
     );
-    assert!(pending(&after_second).is_none());
 }
 
 #[test]
@@ -476,15 +437,14 @@ fn fight_event_sequence_pins_window_between_enemy_defeated_and_skill_test_ended(
     // position (the rules-incorrect "deferred" design that landed initially)
     // requires an intentional decision (and an update here).
     let paused = fight_through_commit_window(fight_to_defeat_scenario(&[ROLAND_REACTION]));
-    assert!(
-        pending(&paused).is_some(),
-        "Fight must suspend at the reaction window before SkillTestEnded fires",
-    );
+    let reaction = card(&paused, INV, ROLAND_REACTION);
+    // The Fight suspends at the reaction window before SkillTestEnded fires.
+    assert_offers_only(&paused, &reaction, 1);
+    assert_no_event!(paused.events(), Event::SkillTestEnded { .. });
 
     // Drive past the window by firing the single pending trigger.
-    let reaction = card(&paused, INV, ROLAND_REACTION);
     let resumed = paused.pick(reaction);
-    assert_at_turn_menu(&resumed);
+    resumed.assert_at_turn_menu(INV);
 
     // Every event since the board was built, across the suspend point.
     let events = resumed.events();
@@ -544,7 +504,7 @@ fn reaction_window_closes_before_on_skill_test_resolution_fires() {
     // window closes BEFORE the discard-and-end sequence.
     let board = fight_board(
         [seat(1)
-            .at(LOC)
+            .at(HERE)
             .in_play([ROLAND_REACTION])
             .hand(["COMMITTED"])],
         3,
@@ -552,14 +512,12 @@ fn reaction_window_closes_before_on_skill_test_resolution_fires() {
 
     // Commit the card → drives through follow-up → queues window → suspends.
     let paused_reaction = fight_committing(board, &[CardCode::new("COMMITTED")]);
-    assert!(
-        pending(&paused_reaction).is_some(),
-        "the commit must suspend at the reaction window",
-    );
+    let reaction = card(&paused_reaction, INV, ROLAND_REACTION);
+    // The commit suspends at the reaction window.
+    assert_offers_only(&paused_reaction, &reaction, 1);
 
     // Fire the reaction → window closes → driver resumes →
     // OnSkillTestResolution step → discard → SkillTestEnded → turn menu.
-    let reaction = card(&paused_reaction, INV, ROLAND_REACTION);
     let resumed = paused_reaction.pick(reaction).finish();
 
     // Verify the final event order from the resumed step: the reaction effect
@@ -595,7 +553,7 @@ fn reaction_window_closes_before_on_skill_test_resolution_fires() {
         vec![CardCode::new("COMMITTED")],
     );
     // The clue Roland's reaction discovered landed.
-    assert_eq!(resumed.state.locations[&LOC].clues, 2);
+    assert_eq!(resumed.state.locations[&HERE].clues, 2);
     assert_eq!(resumed.state.investigators[&INV].clues, 1);
 }
 
@@ -609,30 +567,31 @@ fn pending_triggers_order_active_investigator_first_then_turn_order() {
     // reaction windows.
     let board = fight_board(
         [
-            seat(1).at(LOC).in_play([BYSTANDER_REACTION]),
-            seat(2).at(LOC).in_play([BYSTANDER_REACTION]),
+            seat(1).at(HERE).in_play([BYSTANDER_REACTION]),
+            seat(2).at(HERE).in_play([BYSTANDER_REACTION]),
         ],
         0,
     )
     .with_turn_order([INV, OTHER]);
 
     let paused = fight_through_commit_window(board);
-    let pending =
-        pending(&paused).expect("window must populate when both investigators carry triggers");
+    // Each reaction is offered on the card in its controller's play area, so
+    // the offer order is the candidates' order.
+    let offered: Vec<_> = paused
+        .prompt()
+        .options
+        .iter()
+        .map(|option| option.target.clone())
+        .collect();
 
-    assert_eq!(pending.len(), 2);
     assert_eq!(
-        pending[0].controller, INV,
-        "active investigator's trigger must come first",
-    );
-    assert_eq!(pending[0].source, source(&paused, INV, BYSTANDER_REACTION));
-    assert_eq!(
-        pending[1].controller, OTHER,
-        "non-active investigator's trigger comes after, in turn order",
-    );
-    assert_eq!(
-        pending[1].source,
-        source(&paused, OTHER, BYSTANDER_REACTION)
+        offered,
+        vec![
+            Some(card(&paused, INV, BYSTANDER_REACTION)),
+            Some(card(&paused, OTHER, BYSTANDER_REACTION)),
+        ],
+        "the active investigator's trigger comes first, then the non-active \
+         investigator's, in turn order",
     );
 }
 
@@ -643,18 +602,16 @@ fn skip_after_firing_one_drops_remaining_optionals() {
     // fire — its effect (gain 1 resource) leaves resources unchanged
     // from the post-first-fire baseline. The window closes cleanly.
     let paused = fight_through_commit_window(fight_to_defeat_scenario(&[TWO_REACTIONS]));
-    assert_eq!(pending(&paused).expect("window populated").len(), 2);
     let two = card(&paused, INV, TWO_REACTIONS);
+    assert_offers_only(&paused, &two, 2);
 
-    let after_first = paused.pick_nth_at(two, 0);
-    assert!(
-        pending(&after_first).is_some(),
-        "one optional fired, one remains pending",
-    );
+    let after_first = paused.pick_nth_at(two.clone(), 0);
+    // One optional fired, one remains pending.
+    assert_offers_only(&after_first, &two, 1);
     let resources_after_first = after_first.state().investigators[&INV].resources;
 
     let skipped = after_first.skip();
-    assert_at_turn_menu(&skipped);
+    skipped.assert_at_turn_menu(INV);
     // The skipped optional was the resource-gain — its effect didn't fire.
     assert_eq!(
         skipped.state().investigators[&INV].resources,
@@ -664,15 +621,14 @@ fn skip_after_firing_one_drops_remaining_optionals() {
     // Sanity: the first optional did fire — the location lost a clue
     // (TWO_REACTIONS' first ability discovers 1 clue at the
     // controller's location).
-    assert_eq!(skipped.state().locations[&LOC].clues, 2);
+    assert_eq!(skipped.state().locations[&HERE].clues, 2);
     assert_eq!(skipped.state().investigators[&INV].clues, 1);
-    assert!(pending(&skipped).is_none());
 }
 
 /// The Fight-to-defeat board with `ROLAND_REACTION` in `INV`'s threat area
 /// instead of in play.
 fn threat_area_reaction_board() -> GameStateBuilder {
-    fight_board([seat(1).at(LOC).threat_area([ROLAND_REACTION])], 3)
+    fight_board([seat(1).at(HERE).threat_area([ROLAND_REACTION])], 3)
 }
 
 #[test]
@@ -683,10 +639,8 @@ fn reaction_trigger_in_threat_area_opens_window() {
     // ROLAND_REACTION in the threat area.
     let session = fight_through_commit_window(threat_area_reaction_board());
 
-    let pending = pending(&session).expect("threat-area reaction must populate the window");
-    assert_eq!(pending.len(), 1);
-    assert_eq!(pending[0].controller, INV);
-    assert_eq!(pending[0].source, source(&session, INV, ROLAND_REACTION));
+    // One reaction, offered on the card in `INV`'s threat area.
+    assert_offers_only(&session, &card(&session, INV, ROLAND_REACTION), 1);
 }
 
 #[test]
@@ -720,23 +674,19 @@ fn pick_fires_threat_area_reaction_and_closes_window() {
     // picking it discovers 1 clue, the window closes, and the session is back
     // at the turn menu.
     let paused = fight_through_commit_window(threat_area_reaction_board());
-    assert!(
-        pending(&paused).is_some(),
-        "threat-area reaction must open a window",
-    );
-
     let reaction = card(&paused, INV, ROLAND_REACTION);
+    // The threat-area reaction opens a window.
+    assert_offers_only(&paused, &reaction, 1);
+
     let resumed = paused.pick(reaction);
 
-    assert_at_turn_menu(&resumed);
+    resumed.assert_at_turn_menu(INV);
     assert_event!(
         resumed.events(),
         Event::CluePlaced { investigator, count: 1 } if *investigator == INV
     );
     assert_eq!(resumed.state().investigators[&INV].clues, 1);
-    assert_eq!(resumed.state().locations[&LOC].clues, 2);
-    // The window closed: no reaction window left on the stack.
-    assert!(pending(&resumed).is_none());
+    assert_eq!(resumed.state().locations[&HERE].clues, 2);
 }
 
 // ------------------------------------------------------------------
@@ -745,7 +695,7 @@ fn pick_fires_threat_area_reaction_and_closes_window() {
 
 /// The 1-clue Study (shroud 2).
 fn one_clue_study() -> Location {
-    let mut study = test_support::test_location(10, "Study");
+    let mut study = test_support::test_location(HERE.0, "Study");
     study.clues = 1;
     study
 }
@@ -755,7 +705,7 @@ fn one_clue_study() -> Location {
 /// Investigate succeeds and discovers the clue.
 fn investigate_to_success_scenario(in_play: &[&str]) -> GameStateBuilder {
     GameStateBuilder::new()
-        .with_seat(seat(1).at(LOC).in_play(in_play.iter().copied()))
+        .with_seat(seat(1).at(HERE).in_play(in_play.iter().copied()))
         .with_location(one_clue_study())
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
@@ -771,10 +721,10 @@ fn investigate_to_success_scenario(in_play: &[&str]) -> GameStateBuilder {
 /// by the walk's fallback for an unseated fixture investigator.
 fn investigate_with_a_bystander(bystander_card: &str) -> GameStateBuilder {
     GameStateBuilder::new()
-        .with_seat(seat(1).at(LOC))
+        .with_seat(seat(1).at(HERE))
         .with_seat(seat(2).at(ELSEWHERE).in_play([bystander_card]))
         .with_location(one_clue_study())
-        .with_location(test_support::test_location(11, "Hallway"))
+        .with_location(test_support::test_location(ELSEWHERE.0, "Hallway"))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
         .with_turn_order([INV, OTHER])
@@ -799,12 +749,10 @@ fn an_unqualified_listener_reacts_to_another_investigators_test() {
     let paused =
         investigate_and_commit_nothing(investigate_with_a_bystander(BYSTANDER_TEST_REACTION));
     let before = paused.state().investigators[&OTHER].resources;
-    assert!(
-        pending(&paused).is_some(),
-        "the unqualified listener must open a window on the other investigator's test",
-    );
-
+    // The unqualified listener opens a window on the other investigator's test.
     let reaction = card(&paused, OTHER, BYSTANDER_TEST_REACTION);
+    assert_offers_only(&paused, &reaction, 1);
+
     let resumed = paused.pick(reaction);
     assert_eq!(
         resumed.state().investigators[&OTHER].resources,
@@ -829,10 +777,8 @@ fn a_by_controller_listener_ignores_another_investigators_test() {
         before,
         "a \"after **you** …\" reaction must not fire on someone else's test",
     );
-    assert!(
-        pending(&resumed).is_none(),
-        "no candidate should have been minted at all",
-    );
+    // No candidate was minted at all, so no window held the Investigate.
+    resumed.assert_at_turn_menu(INV);
 }
 
 /// A successful Investigate opens the after-investigate window for the
@@ -844,27 +790,24 @@ fn after_successful_investigate_fires_in_play_reaction() {
     // window opens → suspends.
     let paused_reaction =
         investigate_and_commit_nothing(investigate_to_success_scenario(&[MILAN_REACTION]));
-    assert!(
-        pending(&paused_reaction).is_some(),
-        "after-investigate reaction window must suspend",
-    );
+    let reaction = card(&paused_reaction, INV, MILAN_REACTION);
+    // The after-investigate reaction window suspends the test.
+    assert_offers_only(&paused_reaction, &reaction, 1);
     let resources_before = paused_reaction.state().investigators[&INV].resources;
 
     // Fire the reaction → gain 1 resource → resume the test → turn menu.
-    let reaction = card(&paused_reaction, INV, MILAN_REACTION);
     let resumed = paused_reaction.pick(reaction);
-    assert_at_turn_menu(&resumed);
+    resumed.assert_at_turn_menu(INV);
     assert_eq!(
         resumed.state().investigators[&INV].resources,
         resources_before + 1,
         "Dr. Milan reaction gained a resource",
     );
     assert_eq!(
-        resumed.state().locations[&LOC].clues,
+        resumed.state().locations[&HERE].clues,
         0,
         "clue was discovered"
     );
-    assert!(pending(&resumed).is_none());
 }
 
 /// With no after-investigate reaction in play, a successful Investigate
@@ -877,7 +820,7 @@ fn after_successful_investigate_no_window_without_reaction() {
     // No reaction card is in play, so no AfterSuccessfulInvestigate window can
     // open: the investigate resolves straight through to the open-turn menu in
     // one step (the clue assertions below confirm it resolved).
-    assert_at_turn_menu(&resolved);
+    resolved.assert_at_turn_menu(INV);
     assert_eq!(resolved.state().investigators[&INV].clues, 1);
-    assert_eq!(resolved.state().locations[&LOC].clues, 0);
+    assert_eq!(resolved.state().locations[&HERE].clues, 0);
 }

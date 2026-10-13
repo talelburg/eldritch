@@ -226,13 +226,44 @@ fn settling_a_staged_mulligan_shows_its_prompt() {
         .session();
     assert_eq!(session.prompt().kind, InputKind::PickMultiple);
 
-    let session = session.pick_multiple(&[0]);
+    let session = session.choose_from_hand(&[CardCode::new("_ts_kept_out")]);
 
     assert_event!(session.events(), Event::MulliganPerformed { .. });
     assert_eq!(
         session.state().investigators[&INV].hand,
         vec![CardCode::new("_ts_drawn")],
     );
+}
+
+/// `choose_from_hand` names two copies of one card by repeating its code, as
+/// `commit` does: both copies are redrawn and the card beside them stays.
+#[test]
+fn choose_from_hand_names_duplicate_copies_by_repeating_the_code() {
+    let twin = CardCode::new("_ts_twin");
+    let kept = CardCode::new("_ts_kept");
+    let drawn = CardCode::new("_ts_drawn");
+    let mut inv = test_support::test_investigator(1);
+    inv.hand = vec![twin.clone(), kept.clone(), twin.clone()];
+    inv.deck = vec![drawn.clone(), drawn.clone()];
+    let session = GameStateBuilder::new()
+        .with_investigator_at(inv, HERE)
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_turn_order([INV])
+        .with_mulligan_remaining([INV])
+        .session()
+        .choose_from_hand(&[twin.clone(), twin.clone()]);
+
+    let mut hand = session.state().investigators[&INV].hand.clone();
+    hand.sort();
+    assert_eq!(hand, vec![drawn.clone(), drawn, kept]);
+}
+
+/// `choose_from_hand` answers a mulligan or a hand-size discard and nothing
+/// else: at a Fast window it panics rather than answer it.
+#[test]
+#[should_panic(expected = "not at a mulligan or a hand-size discard")]
+fn choose_from_hand_at_another_prompt_panics() {
+    let _ = turn_begins_window().session().choose_from_hand(&[]);
 }
 
 /// A staged Mythos encounter draw settles at its prompt: the `Confirm`
@@ -266,11 +297,7 @@ fn settling_a_staged_hand_size_discard_shows_its_prompt() {
         .session();
     assert_eq!(session.prompt().kind, InputKind::PickMultiple);
 
-    let session = session.apply(Action::Player(PlayerAction::ResolveInput {
-        response: InputResponse::PickMultiple {
-            selected: vec![OptionId(0)],
-        },
-    }));
+    let session = session.choose_from_hand(&[CardCode::new("_ts_filler")]);
 
     assert_eq!(session.state().investigators[&INV].hand.len(), 8);
     assert_eq!(session.state().investigators[&INV].discard.len(), 1);
@@ -360,15 +387,15 @@ fn commit_at_another_pick_multiple_panics() {
         .commit(&[]);
 }
 
-/// `pick_multiple` answers a `PickMultiple` that is not a commit window: at a
-/// skill test's commit window it panics and sends the author to `commit`.
+/// `choose_from_hand` answers a `PickMultiple` that is not a commit window: at
+/// a skill test's commit window it panics and sends the author to `commit`.
 #[test]
-#[should_panic(expected = "commit cards by code")]
-fn pick_multiple_at_a_commit_window_panics() {
+#[should_panic(expected = "commit cards with `commit(&[CardCode])`")]
+fn choose_from_hand_at_a_commit_window_panics() {
     let _ = board()
         .session()
         .test_skill(INV, SkillKind::Willpower, 2)
-        .pick_multiple(&[]);
+        .choose_from_hand(&[]);
 }
 
 // ---- submit_off_menu ---------------------------------------------------------
@@ -609,12 +636,7 @@ fn pick_nth_at_chooses_among_abilities_printed_on_one_card() {
     let card = OptionTarget::CardInstance(TWO_FREE_INST);
     let session = turn_begins_window_with(TWO_FREE, TWO_FREE_INST).session();
     assert_eq!(
-        session
-            .prompt()
-            .options
-            .iter()
-            .filter(|o| o.target.as_ref() == Some(&card))
-            .count(),
+        session.offered_at(&card),
         2,
         "both abilities are offered on the card: {:?}",
         session.prompt(),
@@ -633,6 +655,49 @@ fn pick_nth_at_a_lone_anchored_option_panics() {
     let _ = turn_begins_window()
         .session()
         .pick_nth_at(OptionTarget::CardInstance(FREE_INST), 0);
+}
+
+// ---- offered_at and assert_at_turn_menu ------------------------------------
+
+/// `offered_at` counts the prompt's options anchored to a target: one for the
+/// lone free ability, none for a card the window does not offer.
+#[test]
+fn offered_at_counts_the_options_at_an_anchor() {
+    let session = turn_begins_window().session();
+
+    assert_eq!(
+        session.offered_at(&OptionTarget::CardInstance(FREE_INST)),
+        1
+    );
+    assert_eq!(
+        session.offered_at(&OptionTarget::CardInstance(SELECT_INST)),
+        0
+    );
+}
+
+/// `assert_at_turn_menu` passes at the named investigator's turn menu.
+#[test]
+fn assert_at_turn_menu_passes_at_the_turn_menu() {
+    board().open_turn(INV).session().assert_at_turn_menu(INV);
+}
+
+/// `assert_at_turn_menu` fails at any other prompt: a Fast window is not the
+/// turn menu.
+#[test]
+#[should_panic(expected = "expected InvestigatorId(1)'s turn menu")]
+fn assert_at_turn_menu_at_another_prompt_panics() {
+    turn_begins_window().session().assert_at_turn_menu(INV);
+}
+
+/// `assert_at_turn_menu` names whose menu: another investigator's turn menu
+/// fails it.
+#[test]
+#[should_panic(expected = "expected InvestigatorId(2)'s turn menu")]
+fn assert_at_turn_menu_of_another_investigator_panics() {
+    board()
+        .open_turn(INV)
+        .session()
+        .assert_at_turn_menu(InvestigatorId(2));
 }
 
 // ---- confirm and skip ------------------------------------------------------

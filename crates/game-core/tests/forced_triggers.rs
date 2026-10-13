@@ -18,12 +18,12 @@ use card_dsl::dsl::{
 };
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{ApplyResult, EngineOutcome, OptionTarget, TimingEvent};
+use game_core::engine::{EngineOutcome, OptionTarget, TimingEvent};
 use game_core::event::Event;
 use game_core::state::{
     self, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation,
-    Enemy, EnemyId, GameState, GameStateBuilder, InvestigatorId, Location, LocationId, Owner,
-    TokenModifiers,
+    Enemy, EnemyId, GameState, GameStateBuilder, InvestigatorId, Location, LocationId,
+    MythosPhaseFrame, MythosResume, Owner, TokenModifiers,
 };
 use game_core::test_support::{self, seat, MockRegistry, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
@@ -227,31 +227,41 @@ const ATTIC: LocationId = LocationId(11);
 const LURKER: EnemyId = EnemyId(1);
 
 /// A location at `id` printed as `code`.
-fn location_as(id: u32, name: &str, code: &str) -> Location {
-    let mut location = test_support::test_location(id, name);
+fn location_as(id: LocationId, name: &str, code: &str) -> Location {
+    let mut location = test_support::test_location(id.0, name);
     location.code = CardCode(code.into());
     location
 }
 
-/// The Hallway, connected to the Attic, with `attachment` attached as a
-/// location attachment.
+/// The Hallway at `HERE`, a plain location connected to the Attic.
+fn hallway() -> Location {
+    let mut hallway = test_support::test_location(HERE.0, "Hallway");
+    hallway.connections = vec![ATTIC];
+    hallway
+}
+
+/// The instance id of the attachment [`hallway_with`] places. A seat cannot
+/// place a location attachment, so the builder does not mint this one; it is
+/// fixed here, and seated cards are minted past it.
+const HALLWAY_ATTACHMENT_ID: CardInstanceId = CardInstanceId(7);
+
+/// The [`hallway`] with `attachment` attached as a location attachment.
 fn hallway_with(attachment: &str) -> Location {
-    let mut from = test_support::test_location(10, "Hallway");
-    from.connections = vec![ATTIC];
-    from.attachments.push(CardInPlay::enter_play(
+    let mut hallway = hallway();
+    hallway.attachments.push(CardInPlay::enter_play(
         CardCode(attachment.into()),
-        CardInstanceId(7),
+        HALLWAY_ATTACHMENT_ID,
         Owner::EncounterDeck,
     ));
-    from
+    hallway
 }
 
 /// The anchor of the attachment [`hallway_with`] places: the abilities printed
 /// on it are offered on it.
-const HALLWAY_ATTACHMENT: OptionTarget = OptionTarget::CardInstance(CardInstanceId(7));
+const HALLWAY_ATTACHMENT: OptionTarget = OptionTarget::CardInstance(HALLWAY_ATTACHMENT_ID);
 
-/// `INV`'s open turn in the Hallway (connected to the Attic), with the Attic
-/// as `attic`.
+/// `INV`'s open turn in `hallway` (connected to the Attic), with the Attic as
+/// `attic`.
 fn move_board(hallway: Location, attic: Location) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_seat(seat(1).at(HERE).actions(3))
@@ -266,69 +276,27 @@ const MOVE_TO_ATTIC: TurnAction = TurnAction::Move {
     destination: ATTIC,
 };
 
+/// `INV` moves from the plain Hallway into the Attic printed as `code`: the
+/// real Move whose arrival fires the Attic's `EnteredLocation` forced
+/// abilities.
+fn move_into_attic_as(code: &str) -> TestSession {
+    move_board(hallway(), location_as(ATTIC, "Attic", code))
+        .session()
+        .take(&MOVE_TO_ATTIC)
+}
+
 fn horror(session: &TestSession) -> u8 {
     session.state().investigators[&INV].horror()
 }
 
-/// Assert the session is back at `INV`'s turn menu.
-fn assert_at_turn_menu(session: &TestSession) {
-    assert_eq!(
-        session.prompt().target,
-        Some(OptionTarget::TurnControl(INV)),
-        "expected the turn menu, got {:?}",
-        session.prompt(),
-    );
-}
-
-/// How many of the session's prompt options are anchored to `target`.
-fn offered_at(session: &TestSession, target: &OptionTarget) -> usize {
-    session
-        .prompt()
-        .options
-        .iter()
-        .filter(|o| o.target.as_ref() == Some(target))
-        .count()
-}
-
+/// The Attic's forced on-enter horror resolves as part of the Move itself:
+/// the step that takes the Move comes back to the turn menu with the horror
+/// dealt and no prompt in between.
 #[test]
 fn forced_on_enter_resolves_immediately() {
-    let state = GameStateBuilder::new()
-        .with_seat(seat(1).at(HERE))
-        .with_location(location_as(10, "Attic", HORROR_ATTIC))
-        .with_active_investigator(INV)
-        .build();
+    let session = move_into_attic_as(HORROR_ATTIC);
 
-    let ApplyResult {
-        state,
-        events,
-        outcome,
-        ..
-    } = TestSession::new(state)
-        .fire_at(TimingEvent::EnteredLocation {
-            investigator: INV,
-            location: HERE,
-        })
-        .finish();
-
-    assert_eq!(outcome, EngineOutcome::Done);
-    assert_eq!(state.investigators[&INV].horror(), 1);
-    assert_event!(
-        events,
-        Event::HorrorTaken { investigator, amount: 1 } if *investigator == INV
-    );
-}
-
-#[test]
-fn move_into_forced_location_fires_its_effect() {
-    // The Hallway (id 10) is a plain starting location, connected to the Attic
-    // (id 11), which has the forced on-enter horror ability.
-    let mut from = test_support::test_location(10, "Hallway");
-    from.connections = vec![ATTIC];
-    let session = move_board(from, location_as(11, "Attic", HORROR_ATTIC))
-        .session()
-        .take(&MOVE_TO_ATTIC);
-
-    assert_at_turn_menu(&session);
+    session.assert_at_turn_menu(INV);
     assert_eq!(
         session.state().investigators[&INV].current_location,
         Some(ATTIC)
@@ -342,44 +310,33 @@ fn move_into_forced_location_fires_its_effect() {
             ..
         }
     );
-    assert_event!(session.events(), Event::HorrorTaken { amount: 1, .. });
+    assert_event!(
+        session.events(),
+        Event::HorrorTaken { investigator, amount: 1 } if *investigator == INV
+    );
 }
 
 #[test]
 fn forced_on_enter_no_op_when_location_has_no_abilities() {
     // "plain-loc" is not HORROR_ATTIC — mock registry returns None.
-    let state = GameStateBuilder::new()
-        .with_seat(seat(1).at(HERE))
-        .with_location(location_as(10, "Plain Room", "plain-loc"))
-        .with_active_investigator(INV)
-        .build();
+    let session = move_into_attic_as("plain-loc");
 
-    let ApplyResult {
-        state,
-        events,
-        outcome,
-        ..
-    } = TestSession::new(state)
-        .fire_at(TimingEvent::EnteredLocation {
-            investigator: INV,
-            location: HERE,
-        })
-        .finish();
-
-    assert_eq!(outcome, EngineOutcome::Done);
-    assert_eq!(state.investigators[&INV].horror(), 0);
-    assert!(
-        events.is_empty(),
-        "no events for a location with no forced abilities"
+    session.assert_at_turn_menu(INV);
+    assert_eq!(
+        session.state().investigators[&INV].current_location,
+        Some(ATTIC),
+        "the investigator entered the location",
     );
+    assert_eq!(horror(&session), 0);
+    assert_no_event!(session.events(), Event::HorrorTaken { .. });
 }
 
 // ── PhaseEnded tests ──────────────────────────────────────────────────────────
 
 /// Set the current act and agenda to `act` and `agenda` (either may be a code
-/// the mock registry does not know). The builder stages neither deck, so they
-/// are set on the built state.
-fn with_act_and_agenda(mut state: GameState, act: Option<&str>, agenda: &str) -> GameState {
+/// the mock registry does not know, or absent). The builder stages neither
+/// deck, so they are set on the built state.
+fn with_act_and_agenda(mut state: GameState, act: Option<&str>, agenda: Option<&str>) -> GameState {
     if let Some(act) = act {
         state.act_deck = vec![Act {
             code: CardCode(act.into()),
@@ -387,357 +344,292 @@ fn with_act_and_agenda(mut state: GameState, act: Option<&str>, agenda: &str) ->
         }];
         state.act_index = 0;
     }
-    state.agenda_deck = vec![Agenda {
-        code: CardCode(agenda.into()),
-        doom_threshold: 3,
-    }];
-    state.agenda_index = 0;
+    if let Some(agenda) = agenda {
+        state.agenda_deck = vec![Agenda {
+            code: CardCode(agenda.into()),
+            doom_threshold: 3,
+        }];
+        state.agenda_index = 0;
+    }
     state
 }
 
-/// One seated investigator, the lead, with no turn open.
+/// One seated investigator, the lead, with a card to draw at Upkeep 4.4 so the
+/// empty-deck horror penalty doesn't muddy the horror assertions of a phase
+/// end that runs on through the round.
 fn lead_alone() -> GameStateBuilder {
     GameStateBuilder::new()
-        .with_seat(seat(1))
+        .with_seat(seat(1).deck(["filler-card"]))
         .with_turn_order([INV])
 }
 
-/// Build a `GameState` with the mock agenda (`test-agenda`, Enemy-phase
-/// forced horror) as the current agenda and `INV` as the lead.
-fn state_with_doom_agenda() -> GameState {
-    with_act_and_agenda(lead_alone().build(), None, DOOM_AGENDA)
+/// End the Enemy phase for real — step 3.4, staged with
+/// [`ending_enemy_phase`](GameStateBuilder::ending_enemy_phase) — with `act`
+/// and `agenda` current. Settling runs the phase end, its `PhaseEnded { Enemy }`
+/// forced abilities, and play on through Upkeep into the next round's Mythos.
+fn end_the_enemy_phase(act: Option<&str>, agenda: Option<&str>) -> TestSession {
+    let session = TestSession::new(with_act_and_agenda(
+        lead_alone().ending_enemy_phase().build(),
+        act,
+        agenda,
+    ));
+    assert_phase_ended(&session, state::Phase::Enemy);
+    session
+}
+
+/// Assert `phase` really ended in the session, so a no-op assertion is about
+/// that phase end rather than a drive that never reached it.
+#[track_caller]
+fn assert_phase_ended(session: &TestSession, phase: state::Phase) {
+    assert_event!(session.events(), Event::PhaseEnded { phase: p } if *p == phase);
+}
+
+/// End the Mythos phase for real, under the Enemy-keyed doom agenda: its
+/// anchor staged after step 1.4's draws, so settling runs step 1.5's
+/// `PhaseEnded { Mythos }` and play goes on into the Investigation phase.
+fn end_the_mythos_phase() -> TestSession {
+    let session = TestSession::new(with_act_and_agenda(
+        lead_alone()
+            .with_phase(state::Phase::Mythos)
+            .with_phase_anchor(MythosPhaseFrame {
+                resume: MythosResume::AfterDraws,
+            })
+            .build(),
+        None,
+        Some(DOOM_AGENDA),
+    ));
+    assert_phase_ended(&session, state::Phase::Mythos);
+    session
+}
+
+/// End the Upkeep phase for real, under the Enemy-keyed doom agenda, staged
+/// with [`ending_upkeep_phase`](GameStateBuilder::ending_upkeep_phase).
+fn end_the_upkeep_phase() -> TestSession {
+    let session = TestSession::new(with_act_and_agenda(
+        lead_alone().ending_upkeep_phase().build(),
+        None,
+        Some(DOOM_AGENDA),
+    ));
+    assert_phase_ended(&session, state::Phase::Upkeep);
+    session
+}
+
+/// Fire `PhaseEnded { Investigation }` on its own over `INV`'s open turn,
+/// under the Enemy-keyed doom agenda. Not the real phase end: ending the
+/// Investigation phase for real runs straight on into the Enemy phase's end,
+/// where the agenda's ability *does* fire, so the Investigation phase end
+/// cannot be told apart from it in one drive.
+fn fire_the_investigation_phase_end() -> TestSession {
+    TestSession::new(with_act_and_agenda(
+        lead_alone().open_turn(INV).build(),
+        None,
+        Some(DOOM_AGENDA),
+    ))
+    .fire_at(TimingEvent::PhaseEnded {
+        phase: state::Phase::Investigation,
+    })
 }
 
 #[test]
 fn forced_on_enemy_phase_end_fires_agenda_ability() {
-    let state = state_with_doom_agenda();
-    let ApplyResult {
-        state,
-        events,
-        outcome,
-        ..
-    } = TestSession::new(state)
-        .fire_at(TimingEvent::PhaseEnded {
-            phase: state::Phase::Enemy,
-        })
-        .finish();
+    let session = end_the_enemy_phase(None, Some(DOOM_AGENDA));
 
-    assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(
-        state.investigators[&INV].horror(),
+        horror(&session),
         1,
         "lead investigator should have taken 1 horror from agenda forced ability"
     );
     assert_event!(
-        events,
+        session.events(),
         Event::HorrorTaken { investigator, amount: 1 } if *investigator == INV
     );
 }
 
 #[test]
 fn forced_on_phase_end_wrong_phase_fires_nothing() {
-    // The agenda ability is keyed to Enemy; firing Mythos should be a no-op.
-    let state = state_with_doom_agenda();
-    let ApplyResult {
-        state,
-        events,
-        outcome,
-        ..
-    } = TestSession::new(state)
-        .fire_at(TimingEvent::PhaseEnded {
-            phase: state::Phase::Mythos,
-        })
-        .finish();
+    // The agenda ability is keyed to Enemy; ending the Mythos phase is a no-op.
+    let session = end_the_mythos_phase();
 
-    assert_eq!(outcome, EngineOutcome::Done);
-    assert_eq!(
-        state.investigators[&INV].horror(),
-        0,
-        "no horror for a non-matching phase"
-    );
-    assert!(
-        events.is_empty(),
-        "no events when phase doesn't match agenda ability"
-    );
+    assert_eq!(horror(&session), 0, "no horror for a non-matching phase");
+    assert_no_event!(session.events(), Event::HorrorTaken { .. });
 }
 
 /// The three non-Enemy phases do not fire an Enemy-keyed forced ability —
 /// exercises the `dsl_phase` mapping's negative side.
 #[test]
 fn dsl_phase_mapping_non_enemy_phases_produce_no_hits() {
-    for phase in [
-        state::Phase::Mythos,
-        state::Phase::Investigation,
-        state::Phase::Upkeep,
-    ] {
-        let state = state_with_doom_agenda();
-        let ApplyResult {
-            state,
-            events,
-            outcome,
-            ..
-        } = TestSession::new(state)
-            .fire_at(TimingEvent::PhaseEnded { phase })
-            .finish();
-
+    let ended = [
+        (state::Phase::Mythos, end_the_mythos_phase()),
+        (
+            state::Phase::Investigation,
+            fire_the_investigation_phase_end(),
+        ),
+        (state::Phase::Upkeep, end_the_upkeep_phase()),
+    ];
+    for (phase, session) in ended {
         assert_eq!(
-            outcome,
-            EngineOutcome::Done,
-            "expected Done for phase {phase:?}"
-        );
-        assert_eq!(
-            state.investigators[&INV].horror(),
+            horror(&session),
             0,
             "no horror for phase {phase:?} (agenda keyed to Enemy only)"
         );
-        assert!(
-            events.is_empty(),
-            "no events for phase {phase:?}; got {events:?}"
-        );
+        assert_no_event!(session.events(), Event::HorrorTaken { .. });
     }
 }
 
 #[test]
 fn forced_on_phase_end_no_op_when_agenda_has_no_abilities() {
     // "plain-agenda" → None from mock registry.
-    let state = with_act_and_agenda(lead_alone().build(), None, "plain-agenda");
+    let session = end_the_enemy_phase(None, Some("plain-agenda"));
 
-    let ApplyResult {
-        state,
-        events,
-        outcome,
-        ..
-    } = TestSession::new(state)
-        .fire_at(TimingEvent::PhaseEnded {
-            phase: state::Phase::Enemy,
-        })
-        .finish();
-
-    assert_eq!(outcome, EngineOutcome::Done);
-    assert_eq!(state.investigators[&INV].horror(), 0);
-    assert!(events.is_empty(), "no events for agenda with no abilities");
+    assert_eq!(horror(&session), 0);
+    assert_no_event!(session.events(), Event::HorrorTaken { .. });
 }
 
 #[test]
 fn forced_on_phase_end_no_op_when_no_act_or_agenda() {
     // Empty decks — common fixture shape for tests not modeling scenarios.
     // state.agenda_deck / act_deck are empty by default from GameStateBuilder.
-    let ApplyResult {
-        events, outcome, ..
-    } = lead_alone()
-        .session()
-        .fire_at(TimingEvent::PhaseEnded {
-            phase: state::Phase::Enemy,
-        })
-        .finish();
+    let session = end_the_enemy_phase(None, None);
 
-    assert_eq!(outcome, EngineOutcome::Done);
-    assert!(events.is_empty(), "no events when decks are empty");
+    assert_eq!(horror(&session), 0);
+    assert_no_event!(session.events(), Event::HorrorTaken { .. });
 }
 
 #[test]
 fn forced_on_phase_end_no_op_when_no_lead_investigator() {
-    // No turn_order set → no lead investigator → early return.
-    let mut state = state_with_doom_agenda();
+    // No turn_order → no lead investigator → early return. No real phase end
+    // runs without a lead — every round needs one — so the timing point is
+    // fired on its own, over a staged turn.
+    let mut state =
+        with_act_and_agenda(lead_alone().open_turn(INV).build(), None, Some(DOOM_AGENDA));
     state.turn_order.clear();
 
-    let ApplyResult {
-        events, outcome, ..
-    } = TestSession::new(state)
-        .fire_at(TimingEvent::PhaseEnded {
-            phase: state::Phase::Enemy,
-        })
-        .finish();
+    let session = TestSession::new(state).fire_at(TimingEvent::PhaseEnded {
+        phase: state::Phase::Enemy,
+    });
 
-    assert_eq!(outcome, EngineOutcome::Done);
-    assert!(events.is_empty(), "no events without a lead investigator");
+    session.assert_at_turn_menu(INV);
+    assert!(
+        session.finish().events.is_empty(),
+        "no events without a lead investigator"
+    );
 }
 
 #[test]
 fn forced_on_phase_end_fires_act_ability() {
     // Set current act to DOOM_ACT, no matching agenda (plain code → None).
-    let state = with_act_and_agenda(lead_alone().build(), Some(DOOM_ACT), "plain-agenda");
+    let session = end_the_enemy_phase(Some(DOOM_ACT), Some("plain-agenda"));
 
-    let ApplyResult {
-        state,
-        events,
-        outcome,
-        ..
-    } = TestSession::new(state)
-        .fire_at(TimingEvent::PhaseEnded {
-            phase: state::Phase::Enemy,
-        })
-        .finish();
-
-    assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(
-        state.investigators[&INV].horror(),
+        horror(&session),
         1,
         "lead investigator should have taken 1 horror from act forced ability"
     );
     assert_event!(
-        events,
+        session.events(),
         Event::HorrorTaken { investigator, amount: 1 } if *investigator == INV
     );
 }
 
 // ── EndOfTurn tests ───────────────────────────────────────────────────────────
 
+/// A lone `INV` at the Study holding `threat_area` ends their turn: the
+/// `EndTurn` whose end of turn fires the threat area's `EndOfTurn` forced
+/// abilities.
+fn end_the_turn(threat_area: &[&str]) -> TestSession {
+    GameStateBuilder::new()
+        .with_seat(
+            seat(1)
+                .at(HERE)
+                // A non-empty deck so Upkeep 4.4 draw_one_with_deckout doesn't
+                // fire its "draw from empty deck" horror penalty and muddy the
+                // horror assertion.
+                .deck(["filler-card"])
+                .threat_area(threat_area.iter().copied()),
+        )
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .open_turn(INV)
+        .session()
+        .take(&TurnAction::EndTurn)
+}
+
 #[test]
 fn end_of_turn_forced_resolves_threat_area_ability() {
-    let ApplyResult {
-        state,
-        events,
-        outcome,
-        ..
-    } = GameStateBuilder::new()
-        .with_seat(seat(1).threat_area([END_OF_TURN_CARD]))
-        .with_turn_order([INV])
-        .session()
-        .fire_at(TimingEvent::EndOfTurn { investigator: INV })
-        .finish();
+    // EndTurn for a lone investigator with an EndOfTurn threat-area card fires
+    // its forced effect as part of ending the turn.
+    let session = end_the_turn(&[END_OF_TURN_CARD]);
 
-    assert_eq!(outcome, EngineOutcome::Done);
-    assert_eq!(state.investigators[&INV].horror(), 1);
+    assert_eq!(horror(&session), 1);
     assert_event!(
-        events,
+        session.events(),
         Event::HorrorTaken { investigator, amount: 1 } if *investigator == INV
     );
 }
 
 #[test]
 fn end_of_turn_forced_no_op_without_threat_area_card() {
-    let ApplyResult {
-        state,
-        events,
-        outcome,
-        ..
-    } = lead_alone()
-        .session()
-        .fire_at(TimingEvent::EndOfTurn { investigator: INV })
-        .finish();
+    let session = end_the_turn(&[]);
 
-    assert_eq!(outcome, EngineOutcome::Done);
-    assert_eq!(state.investigators[&INV].horror(), 0);
-    assert!(events.is_empty());
-}
-
-#[test]
-fn end_turn_fires_end_of_turn_forced_for_the_ending_investigator() {
-    // End-to-end: EndTurn for a lone investigator with an EndOfTurn
-    // threat-area card fires its forced effect as part of ending the
-    // turn.
-    let session = GameStateBuilder::new()
-        .with_seat(
-            seat(1)
-                .at(HERE)
-                .actions(0)
-                // A non-empty deck so Upkeep 4.4 draw_one_with_deckout doesn't
-                // fire its "draw from empty deck" horror penalty and muddy the
-                // horror assertion.
-                .deck(["filler-card"])
-                .threat_area([END_OF_TURN_CARD]),
-        )
-        .with_location(test_support::test_location(10, "Study"))
-        .open_turn(INV)
-        .session()
-        .take(&TurnAction::EndTurn);
-
-    assert_event!(session.events(), Event::HorrorTaken { amount: 1, .. });
-    assert_eq!(horror(&session), 1);
+    assert_event!(session.events(), Event::TurnEnded { investigator } if *investigator == INV);
+    assert_eq!(horror(&session), 0);
+    assert_no_event!(session.events(), Event::HorrorTaken { .. });
 }
 
 // ── AfterLocationInvestigated tests ───────────────────────────────────────────
 
-/// `INV` at the Study (seated in turn order, no turn open), holding
-/// `threat_area` in their threat area.
-fn at_the_study(threat_area: &[&str]) -> GameStateBuilder {
+/// `INV` investigates the Study successfully, holding `threat_area` in their
+/// threat area, and commits nothing: shroud 0, the test investigator's
+/// intellect 3 and a `Numeric(0)` token always succeed.
+fn investigate_successfully(threat_area: &[&str]) -> TestSession {
+    let mut study = test_support::test_location(HERE.0, "Study");
+    study.shroud = 0;
+    study.clues = 1;
     GameStateBuilder::new()
-        .with_seat(seat(1).at(HERE).threat_area(threat_area.iter().copied()))
-        .with_location(test_support::test_location(10, "Study"))
-        .with_turn_order([INV])
-}
-
-/// The after-successful-investigate timing point, fired on its own.
-fn investigate_succeeded() -> TimingEvent {
-    TimingEvent::SkillTestResolved {
-        investigator: INV,
-        kind: SkillTestKind::Investigate,
-        outcome: TestOutcome::Success,
-    }
+        .with_seat(
+            seat(1)
+                .at(HERE)
+                .actions(1)
+                .threat_area(threat_area.iter().copied()),
+        )
+        .with_location(study)
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .with_token_modifiers(TokenModifiers::default())
+        .open_turn(INV)
+        .session()
+        .take(&TurnAction::Investigate { investigator: INV })
+        .commit(&[])
 }
 
 #[test]
 fn after_investigate_forced_resolves_threat_area_ability() {
-    let ApplyResult {
-        state,
-        events,
-        outcome,
-        ..
-    } = at_the_study(&[AFTER_INVESTIGATE_CARD])
-        .session()
-        .fire_at(investigate_succeeded())
-        .finish();
+    // A successful Investigate fires the threat-area AfterLocationInvestigated
+    // forced effect, and the turn goes on.
+    let session = investigate_successfully(&[AFTER_INVESTIGATE_CARD]);
 
-    assert_eq!(outcome, EngineOutcome::Done);
-    assert_eq!(state.investigators[&INV].horror(), 1);
+    session.assert_at_turn_menu(INV);
+    assert_eq!(horror(&session), 1);
     assert_event!(
-        events,
+        session.events(),
         Event::HorrorTaken { investigator, amount: 1 } if *investigator == INV
     );
 }
 
 #[test]
 fn after_investigate_forced_no_op_without_threat_area_card() {
-    let ApplyResult {
-        state,
-        events,
-        outcome,
-        ..
-    } = at_the_study(&[])
-        .session()
-        .fire_at(investigate_succeeded())
-        .finish();
+    let session = investigate_successfully(&[]);
 
-    assert_eq!(outcome, EngineOutcome::Done);
-    assert_eq!(state.investigators[&INV].horror(), 0);
-    assert!(events.is_empty());
-}
-
-#[test]
-fn successful_investigate_fires_after_location_investigated_forced() {
-    // End-to-end: drive a successful Investigate (shroud 0, the test
-    // investigator's intellect 3, Numeric(0) token → always succeeds) and
-    // confirm the threat-area AfterLocationInvestigated forced effect fires.
-    let mut loc = test_support::test_location(10, "Study");
-    loc.shroud = 0;
-    loc.clues = 1;
-    let session = GameStateBuilder::new()
-        .with_seat(
-            seat(1)
-                .at(HERE)
-                .actions(1)
-                .threat_area([AFTER_INVESTIGATE_CARD]),
-        )
-        .with_location(loc)
-        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
-        .open_turn(INV)
-        .session()
-        .take(&TurnAction::Investigate { investigator: INV })
-        .commit(&[]);
-
-    assert_at_turn_menu(&session);
-    assert_event!(session.events(), Event::HorrorTaken { amount: 1, .. });
-    assert_eq!(horror(&session), 1);
+    session.assert_at_turn_menu(INV);
+    assert_eq!(horror(&session), 0);
+    assert_no_event!(session.events(), Event::HorrorTaken { .. });
 }
 
 /// `INV`'s turn in the Hallway, next to the Double-Forced Room (two forced
 /// on-enter abilities printed on the one location).
 fn double_forced_board() -> GameStateBuilder {
-    let mut from = test_support::test_location(10, "Hallway");
-    from.connections = vec![ATTIC];
-    move_board(from, location_as(11, "Double-Forced Room", DOUBLE_FORCED))
+    move_board(
+        hallway(),
+        location_as(ATTIC, "Double-Forced Room", DOUBLE_FORCED),
+    )
 }
 
 #[test]
@@ -750,7 +642,7 @@ fn two_simultaneous_forced_triggers_present_a_choice() {
     let session = double_forced_board().session().take(&MOVE_TO_ATTIC);
 
     assert_eq!(
-        offered_at(&session, &OptionTarget::Location(ATTIC)),
+        session.offered_at(&OptionTarget::Location(ATTIC)),
         2,
         "2+ simultaneous forced triggers must present the lead a choice; got {:?}",
         session.prompt(),
@@ -775,14 +667,14 @@ fn two_simultaneous_forced_triggers_resolved_in_lead_chosen_order() {
     // done yet.
     assert_eq!(horror(&after_first), 1);
     assert_eq!(
-        offered_at(&after_first, &OptionTarget::Location(ATTIC)),
+        after_first.offered_at(&OptionTarget::Location(ATTIC)),
         1,
         "the remaining forced trigger is still to resolve",
     );
 
     // Pick the remaining forced trigger.
     let done = after_first.pick(OptionTarget::Location(ATTIC));
-    assert_at_turn_menu(&done);
+    done.assert_at_turn_menu(INV);
     assert_eq!(horror(&done), 2);
 }
 
@@ -805,16 +697,15 @@ fn two_forced_at_enemy_phase_end_resolve_and_the_phase_still_transitions() {
     // attack loop drains and the final window auto-skips into `enemy_phase_end`).
     let paused = TestSession::new(state).take(&TurnAction::EndTurn);
 
-    let offered: Vec<_> = paused
-        .prompt()
-        .options
-        .iter()
-        .map(|o| o.target.clone())
-        .collect();
     assert_eq!(
-        offered,
-        vec![Some(OptionTarget::Act), Some(OptionTarget::Agenda)],
-        "2+ forced at the enemy phase end must present the lead a choice",
+        (
+            paused.offered_at(&OptionTarget::Act),
+            paused.offered_at(&OptionTarget::Agenda),
+            paused.prompt().options.len(),
+        ),
+        (1, 1, 2),
+        "2+ forced at the enemy phase end must present the lead a choice: {:?}",
+        paused.prompt(),
     );
     assert_eq!(
         horror(&paused),
@@ -875,13 +766,13 @@ fn suspending_left_location_forced_still_engages_and_fires_entered_location() {
     // The destination has its own on-enter forced (1 horror) and a ready enemy.
     let paused = move_board(
         hallway_with(DOUBLE_LEFT_LOCATION),
-        location_as(11, "Attic", HORROR_ATTIC),
+        location_as(ATTIC, "Attic", HORROR_ATTIC),
     )
     .with_enemy(lurker_in_the_attic())
     .session()
     .take(&MOVE_TO_ATTIC);
     assert_eq!(
-        offered_at(&paused, &HALLWAY_ATTACHMENT),
+        paused.offered_at(&HALLWAY_ATTACHMENT),
         2,
         "the two LeftLocation forced abilities must open an ordering run",
     );
@@ -954,7 +845,7 @@ fn a_when_cell_left_location_forced_resolves_before_the_departure_lands() {
     // so the whole tail of the move is visible in one event log.
     let r = move_board(
         hallway_with(WHEN_LEFT_LOCATION),
-        location_as(11, "Attic", HORROR_ATTIC),
+        location_as(ATTIC, "Attic", HORROR_ATTIC),
     )
     .with_enemy(lurker_in_the_attic())
     .session()
@@ -997,7 +888,7 @@ fn a_when_cell_left_location_forced_resolves_before_the_departure_lands() {
 /// *enters* it.
 #[test]
 fn the_destination_reveal_belongs_to_the_arrival_not_the_departure() {
-    let mut attic = location_as(11, "Attic", HORROR_ATTIC);
+    let mut attic = location_as(ATTIC, "Attic", HORROR_ATTIC);
     attic.revealed = false;
 
     let session = move_board(hallway_with(WHEN_LEFT_LOCATION), attic)
@@ -1029,7 +920,7 @@ fn the_destination_reveal_belongs_to_the_arrival_not_the_departure() {
 /// departure finally lands.
 #[test]
 fn a_suspended_when_cell_sees_the_investigator_still_at_the_location_they_are_leaving() {
-    let mut attic = test_support::test_location(11, "Attic");
+    let mut attic = test_support::test_location(ATTIC.0, "Attic");
     attic.connections = vec![HERE];
 
     // Engaged, and exhausted so the departure is not followed by a re-engage at
@@ -1042,7 +933,7 @@ fn a_suspended_when_cell_sees_the_investigator_still_at_the_location_they_are_le
         .session()
         .take(&MOVE_TO_ATTIC);
     assert_eq!(
-        offered_at(&paused, &HALLWAY_ATTACHMENT),
+        paused.offered_at(&HALLWAY_ATTACHMENT),
         2,
         "the two `when`-cell abilities must open an ordering run",
     );
@@ -1061,6 +952,8 @@ fn a_suspended_when_cell_sees_the_investigator_still_at_the_location_they_are_le
     let done = paused
         .pick_nth_at(HALLWAY_ATTACHMENT, 0)
         .pick(HALLWAY_ATTACHMENT);
+    // The move completes with no further prompt.
+    done.assert_at_turn_menu(INV);
     assert_eq!(
         done.state().investigators[&INV].current_location,
         Some(ATTIC),
@@ -1088,12 +981,12 @@ fn upkeep_phase_end_forced_resolves_before_the_round_end() {
     let state = with_act_and_agenda(
         GameStateBuilder::new()
             .with_seat(seat(1).at(HERE))
-            .with_location(test_support::test_location(10, "Study"))
+            .with_location(test_support::test_location(HERE.0, "Study"))
             .with_turn_order([INV])
             .ending_upkeep_phase()
             .build(),
         Some(UPKEEP_END_ACT),
-        ROUND_END_AGENDA,
+        Some(ROUND_END_AGENDA),
     );
 
     let session = TestSession::new(state);
@@ -1128,11 +1021,11 @@ fn board_with_two_phase_end_forced() -> GameState {
                     // the transition.
                     .deck(["filler-card"]),
             )
-            .with_location(test_support::test_location(10, "Study"))
+            .with_location(test_support::test_location(HERE.0, "Study"))
             .open_turn(INV)
             .build(),
         Some(DOOM_ACT),
-        DOOM_AGENDA,
+        Some(DOOM_AGENDA),
     )
 }
 
@@ -1159,18 +1052,9 @@ fn board_with_two_phase_end_forced() -> GameState {
 /// Enter `code`'s location and return the entering investigator's horror, so a
 /// gated `EnteredLocation` forced is measured by whether its 1 horror landed.
 fn horror_after_entering(code: &str) -> u8 {
-    let ApplyResult { state, outcome, .. } = GameStateBuilder::new()
-        .with_seat(seat(1).at(HERE))
-        .with_location(location_as(10, "Attic", code))
-        .with_active_investigator(INV)
-        .session()
-        .fire_at(TimingEvent::EnteredLocation {
-            investigator: INV,
-            location: HERE,
-        })
-        .finish();
-    assert_eq!(outcome, EngineOutcome::Done);
-    state.investigators[&INV].horror()
+    let session = move_into_attic_as(code);
+    session.assert_at_turn_menu(INV);
+    horror(&session)
 }
 
 #[test]

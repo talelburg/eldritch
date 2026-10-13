@@ -7,14 +7,13 @@
 //! gone (#871, ADR 0016) and this file is its successor.
 
 use cards::REGISTRY;
-use game_core::action::{Action, EngineRecord};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{EngineOutcome, OptionTarget};
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::ScenarioId;
 use game_core::state::{
     Act, CardCode, ChaosBag, ChaosToken, Continuation, GameState, GameStateBuilder, InvestigatorId,
-    LocationId, TimingMode, TimingPointWindowFrame,
+    LocationId, MythosPhaseFrame, MythosResume, Phase,
 };
 use game_core::test_support::{self, clues, seat, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
@@ -22,7 +21,7 @@ use game_core::{assert_event, assert_event_count, assert_event_sequence, assert_
 const COVER_UP: &str = "01007";
 const DEDUCTION: &str = "01039";
 const INV: InvestigatorId = InvestigatorId(1);
-const LOC: LocationId = LocationId(10);
+const HERE: LocationId = LocationId(10);
 
 #[ctor::ctor(unsafe)]
 fn install() {
@@ -35,7 +34,7 @@ fn install() {
 /// Investigator 1 at the Study, holding a Cover Up with `held` clues in their
 /// threat area.
 fn holding_cover_up(held: u8) -> Seat {
-    seat(1).at(LOC).threat_area([(COVER_UP, clues(held))])
+    seat(1).at(HERE).threat_area([(COVER_UP, clues(held))])
 }
 
 /// The anchor of the Cover Up in `holder`'s threat area: its reaction and its
@@ -58,23 +57,28 @@ fn cover_up_clues(state: &GameState) -> u8 {
 
 #[test]
 fn revelation_puts_cover_up_in_threat_area_with_three_clues() {
+    // Mythos step 1.4: `INV` is to draw the top encounter card, Cover Up.
     let mut state = GameStateBuilder::new()
-        .with_seat(seat(1).at(LOC))
-        .with_location(test_support::test_location(10, "Study"))
+        .with_seat(seat(1).at(HERE))
+        .with_location(test_support::test_location(HERE.0, "Study"))
         .with_turn_order([INV])
+        .with_phase(Phase::Mythos)
+        .with_phase_anchor(MythosPhaseFrame {
+            resume: MythosResume::AfterDraws,
+        })
+        .with_mythos_draw_remaining([INV])
         .build();
     state.encounter_deck.push_back(CardCode::new(COVER_UP));
+    let drawing = TestSession::new(state);
+    assert_eq!(drawing.prompt().target, Some(OptionTarget::EncounterDeck));
 
-    // Revealing the card outside any phase: it resolves without a prompt and
-    // the stack drains.
-    let r = TestSession::new(state)
-        .apply(Action::Engine(EngineRecord::EncounterCardRevealed {
-            investigator: INV,
-        }))
-        .finish();
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    // Drawing the card reveals it: it resolves without a prompt of its own, and
+    // play runs on out of the Mythos phase to `INV`'s turn.
+    let session = drawing.confirm();
+    session.assert_at_turn_menu(INV);
 
-    let placed: Vec<_> = r.state.investigators[&INV]
+    let state = session.state();
+    let placed: Vec<_> = state.investigators[&INV]
         .threat_area
         .iter()
         .filter(|c| c.code.as_str() == COVER_UP)
@@ -82,7 +86,7 @@ fn revelation_puts_cover_up_in_threat_area_with_three_clues() {
     assert_eq!(placed.len(), 1, "exactly one Cover Up in the threat area");
     assert_eq!(placed[0].clues, 3, "enters with 3 clues");
     assert!(
-        !r.state
+        !state
             .encounter_discard
             .iter()
             .any(|c| c.as_str() == COVER_UP),
@@ -95,7 +99,7 @@ fn revelation_puts_cover_up_in_threat_area_with_three_clues() {
 /// `investigator`'s open turn at the Study holding `location_clues`. +0 chaos
 /// token so the Intellect-3-vs-shroud-2 Investigate always succeeds.
 fn investigate_board(investigator: Seat, location_clues: u8) -> GameStateBuilder {
-    let mut location = test_support::test_location(10, "Study");
+    let mut location = test_support::test_location(HERE.0, "Study");
     location.clues = location_clues;
     GameStateBuilder::new()
         .with_seat(investigator)
@@ -121,12 +125,9 @@ fn playing_cover_up_discards_instead_of_discovering() {
     // the discovery (Axis D #336).
     let cover_up = cover_up_of(offered.state(), INV);
     let session = offered.pick(cover_up);
-    assert_eq!(
-        session.prompt().target,
-        Some(OptionTarget::TurnControl(INV))
-    );
+    session.assert_at_turn_menu(INV);
     let state = session.state();
-    assert_eq!(state.locations[&LOC].clues, 2, "location clues unchanged");
+    assert_eq!(state.locations[&HERE].clues, 2, "location clues unchanged");
     assert_eq!(state.investigators[&INV].clues, 0, "discovered nothing");
     assert_eq!(cover_up_clues(state), 2, "1 clue discarded from Cover Up");
 }
@@ -134,12 +135,9 @@ fn playing_cover_up_discards_instead_of_discovering() {
 #[test]
 fn skip_discovers_normally() {
     let session = investigate_to_interrupt(investigate_board(holding_cover_up(3), 2)).skip();
-    assert_eq!(
-        session.prompt().target,
-        Some(OptionTarget::TurnControl(INV))
-    );
+    session.assert_at_turn_menu(INV);
     let state = session.state();
-    assert_eq!(state.locations[&LOC].clues, 1, "location -1");
+    assert_eq!(state.locations[&HERE].clues, 1, "location -1");
     assert_eq!(state.investigators[&INV].clues, 1, "investigator +1");
     assert_eq!(cover_up_clues(state), 3, "Cover Up untouched on Skip");
 }
@@ -182,7 +180,7 @@ fn deduction_at_a_one_clue_location_discards_one_from_cover_up() {
     let state = session.state();
 
     assert_eq!(
-        state.locations[&LOC].clues, 1,
+        state.locations[&HERE].clues, 1,
         "the discovery was replaced, so the location keeps its clue",
     );
     assert_eq!(state.investigators[&INV].clues, 0, "discovered nothing");
@@ -209,7 +207,7 @@ fn deduction_at_a_two_clue_location_discards_two_in_one_window() {
         investigate_with_deduction_and_play_cover_up(investigate_board_with_deduction(2, 3));
     let state = session.state();
 
-    assert_eq!(state.locations[&LOC].clues, 2, "location untouched");
+    assert_eq!(state.locations[&HERE].clues, 2, "location untouched");
     assert_eq!(state.investigators[&INV].clues, 0, "discovered nothing");
     assert_no_event!(session.events(), Event::CluePlaced { .. });
     assert_eq!(
@@ -242,7 +240,7 @@ fn no_reaction_offered_when_cover_up_has_no_clues() {
         "a clueless Cover Up must not open a before-discover window: {:?}",
         state.open_windows(),
     );
-    assert_eq!(state.locations[&LOC].clues, 1, "location -1");
+    assert_eq!(state.locations[&HERE].clues, 1, "location -1");
     assert_eq!(state.investigators[&INV].clues, 1, "investigator +1");
     assert_eq!(cover_up_clues(state), 0, "nothing to discard");
 }
@@ -264,7 +262,7 @@ fn deduction_discard_is_capped_at_the_clues_cover_up_holds() {
         investigate_with_deduction_and_play_cover_up(investigate_board_with_deduction(2, 1));
     let state = session.state();
 
-    assert_eq!(state.locations[&LOC].clues, 2, "location untouched");
+    assert_eq!(state.locations[&HERE].clues, 2, "location untouched");
     assert_eq!(state.investigators[&INV].clues, 0, "discovered nothing");
     assert_no_event!(session.events(), Event::CluePlaced { .. });
     assert_eq!(
@@ -336,9 +334,11 @@ fn interactive(mut state: GameState) -> GameState {
 /// are about — the `GameEnd` forced that follows it is — so it is answered here.
 fn advance_terminal_act_interactively(state: GameState) -> TestSession {
     let paused = TestSession::new(state).take(&TurnAction::AdvanceAct { investigator: INV });
-    assert!(
-        paused.prompt().target != Some(OptionTarget::TurnControl(INV)),
-        "expected the terminal act's reverse to raise its forced acknowledge",
+    assert_eq!(
+        paused.offered_at(&OptionTarget::Act),
+        1,
+        "expected the terminal act's reverse to raise its forced acknowledge: {:?}",
+        paused.prompt(),
     );
     assert_no_event!(paused.events(), Event::ScenarioResolved { .. });
     paused.pick(OptionTarget::Act)
@@ -390,12 +390,9 @@ fn interactive_game_end_trauma_surfaces_an_acknowledge_before_resolving() {
 
     // The game-end forced acknowledge surfaces, on the Cover Up.
     let cover_up = cover_up_of(paused.state(), INV);
-    assert!(
-        paused
-            .prompt()
-            .options
-            .iter()
-            .any(|option| option.target.as_ref() == Some(&cover_up)),
+    assert_eq!(
+        paused.offered_at(&cover_up),
+        1,
         "the game-end forced acknowledge must surface: {:?}",
         paused.prompt(),
     );
@@ -439,18 +436,10 @@ fn interactive_game_end_trauma_surfaces_an_acknowledge_before_resolving() {
 fn interactive_game_end_with_a_clueless_cover_up_neither_prompts_nor_resolves_it() {
     let session = advance_terminal_act_interactively(interactive(resolving_state(0)));
 
-    assert!(
-        !session
-            .state()
-            .continuations
-            .iter()
-            .any(|c| matches!(c, Continuation::AcknowledgeForced(_))),
-        "no acknowledge frame is pushed; stack = {:?}",
-        session.state().continuations,
-    );
     assert_no_event!(session.events(), Event::TraumaSuffered { .. });
     assert_event!(session.events(), Event::ScenarioResolved { .. });
-    // `finish` would panic at an unanswered prompt; the game is over instead.
+    // No acknowledge surfaces: the step runs on to the game's end rather than
+    // stopping at one. (`finish` would panic at an unanswered prompt.)
     let r = session.finish();
     assert_eq!(
         r.outcome,
@@ -483,22 +472,22 @@ fn two_simultaneous_game_end_forceds_both_resolve() {
     // Two hits, so the emit routes to the lead-ordered forced run rather than
     // the single-hit acknowledge (Rules Reference p.17: the player orders
     // simultaneous triggers, even in solo). Asserted explicitly — the shapes
-    // differ, and only this one exercises `open_forced_resolution`.
-    assert!(
-        matches!(
-            session.state().continuations.top(),
-            Some(Continuation::TimingPointWindow(TimingPointWindowFrame {
-                mode: TimingMode::Forced,
-                ..
-            }))
+    // differ, and only this one exercises `open_forced_resolution`: the run
+    // offers both Cover Ups at once, where an acknowledge offers one.
+    let first = cover_up_of(session.state(), INV);
+    let second = cover_up_of(session.state(), INV2);
+    assert_eq!(
+        (
+            session.offered_at(&first),
+            session.offered_at(&second),
+            session.prompt().options.len(),
         ),
-        "expected the lead-ordered forced run on top, got {:?}",
-        session.state().continuations,
+        (1, 1, 2),
+        "expected the lead-ordered forced run over both Cover Ups, got {:?}",
+        session.prompt(),
     );
 
     // The ordering run: each pick resolves one Cover Up's forced effect.
-    let first = cover_up_of(session.state(), INV);
-    let second = cover_up_of(session.state(), INV2);
     let session = session.pick(first).pick(second);
 
     assert_event_count!(
@@ -523,14 +512,14 @@ fn two_simultaneous_game_end_forceds_both_resolve() {
 /// The investigator who is *not* Roland, standing at his location.
 const OTHER: InvestigatorId = InvestigatorId(2);
 
-/// Roland (`INV`) holds Cover Up with `held_clues` in his threat area; `OTHER`
-/// shares his 2-clue location and has the open turn.
-fn colocated_investigate_board(held_clues: u8, other: Seat) -> GameStateBuilder {
-    let mut location = test_support::test_location(10, "Study");
+/// Roland (`INV`) holds Cover Up with 3 clues in his threat area; `OTHER`, seated
+/// as `other`, shares his 2-clue location and has the open turn.
+fn colocated_investigate_board(other: Seat) -> GameStateBuilder {
+    let mut location = test_support::test_location(HERE.0, "Study");
     location.clues = 2;
     GameStateBuilder::new()
-        .with_seat(holding_cover_up(held_clues))
-        .with_seat(other.at(LOC))
+        .with_seat(holding_cover_up(3))
+        .with_seat(other.at(HERE))
         .with_location(location)
         .with_turn_order([INV, OTHER])
         .open_turn(OTHER)
@@ -558,10 +547,10 @@ fn colocated_investigate_and_play_cover_up(state: GameState) -> TestSession {
 #[test]
 fn a_colocated_investigator_discards_from_rolands_cover_up() {
     let session =
-        colocated_investigate_and_play_cover_up(colocated_investigate_board(3, seat(2)).build());
+        colocated_investigate_and_play_cover_up(colocated_investigate_board(seat(2)).build());
     let state = session.state();
 
-    assert_eq!(state.locations[&LOC].clues, 2, "location untouched");
+    assert_eq!(state.locations[&HERE].clues, 2, "location untouched");
     assert_eq!(state.investigators[&OTHER].clues, 0, "discovered nothing");
     assert_eq!(
         cover_up_clues(state),
@@ -579,8 +568,8 @@ fn game_end_trauma_goes_to_the_investigator_holding_cover_up() {
         GameStateBuilder::new()
             .with_seat(holding_cover_up(2))
             // 1 clue meets the act's clue threshold.
-            .with_seat(seat(2).at(LOC).clues(1))
-            .with_location(test_support::test_location(10, "Study"))
+            .with_seat(seat(2).at(HERE).clues(1))
+            .with_location(test_support::test_location(HERE.0, "Study"))
             .with_turn_order([INV, OTHER])
             .open_turn(OTHER)
             .with_scenario_id(ScenarioId::new("unknown"))
@@ -623,7 +612,7 @@ fn traumas(session: &TestSession) -> Vec<(InvestigatorId, TraumaKind)> {
 fn game_end_trauma_stays_rolands_after_a_colocated_investigator_uses_cover_up() {
     let state = with_terminal_act(
         // 1 clue meets the act's clue threshold.
-        colocated_investigate_board(3, seat(2).clues(1))
+        colocated_investigate_board(seat(2).clues(1))
             .with_scenario_id(ScenarioId::new("unknown"))
             .build(),
     );

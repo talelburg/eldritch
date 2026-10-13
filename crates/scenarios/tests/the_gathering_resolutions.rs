@@ -11,14 +11,13 @@
 use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{
-    self, ApplyResult, EngineOutcome, InputKind, OptionId, OptionTarget, PromptNature, TimingEvent,
+    self, ApplyResult, EngineOutcome, InputKind, OptionId, OptionTarget, PromptNature,
 };
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::state::{
-    AdvanceDeck, AdvanceReverseFrame, AdvanceStep, CardCode, ChaosBag, ChaosToken, Continuation,
-    EliminationCause, EnemyId, GameState, InvestigatorId, Status, TimingMode,
-    TimingPointWindowFrame,
+    CardCode, ChaosBag, ChaosToken, EliminationCause, EnemyId, GameState, InvestigatorId, Phase,
+    Status,
 };
 use game_core::test_support::{self, TestSession};
 use game_core::{assert_event, assert_no_event, scenario_registry};
@@ -60,19 +59,9 @@ fn seated_roland() -> GameState {
         InputKind::PickMultiple,
         "seat_and_open opens the mulligan prompt",
     );
-    let session = session.pick_multiple(&[]);
-    assert_at_turn_menu(&session);
+    let session = session.choose_from_hand(&[]);
+    session.assert_at_turn_menu(INV);
     session.finish().state
-}
-
-/// Assert the session is back at Roland's turn menu.
-fn assert_at_turn_menu(session: &TestSession) {
-    assert_eq!(
-        session.prompt().target,
-        Some(OptionTarget::TurnControl(INV)),
-        "expected Roland's turn menu, got {:?}",
-        session.prompt(),
-    );
 }
 
 #[test]
@@ -142,18 +131,25 @@ fn advance_to_the_terminal_act(state: GameState) -> GameState {
     // opens (Roland holds 3 clues in the Hallway) → spending them on the act
     // advances it, and its reverse spawns the real Ghoul Priest (01116).
     let round_end = advanced.take(&TurnAction::EndTurn);
-    assert!(
-        matches!(
-            round_end.state().continuations.top(),
-            Some(Continuation::TimingPointWindow(TimingPointWindowFrame {
-                event: TimingEvent::RoundEnded,
-                mode: TimingMode::Reaction,
-                ..
-            }))
-        ),
+    // The round has not ended yet — the window is its `when` — and the act's
+    // clue spend is offered on the act card, as a reaction the player may pass.
+    assert_eq!(
+        round_end.state().round,
+        1,
+        "the window sits on round 1's end"
+    );
+    assert_eq!(
+        round_end.state().phase,
+        Phase::Upkeep,
+        "the round ends at the close of Upkeep"
+    );
+    assert_eq!(
+        round_end.offered_at(&OptionTarget::Act),
+        1,
         "EndTurn should open the act-2 round-end window, got {:?}",
         round_end.prompt(),
     );
+    assert!(round_end.prompt().skippable, "a reaction window");
     let after_spend = round_end.pick(OptionTarget::Act);
     assert_eq!(
         after_spend.state().act_index,
@@ -164,7 +160,7 @@ fn advance_to_the_terminal_act(state: GameState) -> GameState {
     // Round 2 begins in the Mythos phase; draw the seeded Ancient Evils
     // (1 doom) to advance into Investigation, where Roland can take the Fight.
     let investigation = after_spend.confirm();
-    assert_at_turn_menu(&investigation);
+    investigation.assert_at_turn_menu(INV);
     investigation.finish().state
 }
 
@@ -376,29 +372,22 @@ fn act_3_advances_in_two_clicks_and_its_choice_follows_the_second() {
 
     // Click 1 — the flip. The Objective fired and raised nothing of its own, so
     // the first thing the player meets is the advance's own on-card pick, with
-    // the act still showing its front (the client reads `AwaitAck`).
+    // the act still showing its front (the client reads `AwaitAck`). The
+    // Objective's acknowledge would read "Forced — What Have You Done?"; the
+    // flip's prompt standing here is what shows it suppressed.
     assert_event!(s.events(), Event::EnemyDefeated { .. });
     assert_event!(s.events(), Event::ActAdvanced { from } if *from == 2);
     let request = s.prompt();
-    assert_eq!(request.prompt, "Act 3 advanced — acknowledge.");
+    assert_eq!(
+        request.prompt, "Act 3 advanced — acknowledge.",
+        "the Objective's own acknowledge is suppressed, so the advance's flip is \
+         the first prompt",
+    );
     assert_eq!(request.options.len(), 1, "one option: {request:?}");
     assert_eq!(
         request.options[0].target,
         Some(OptionTarget::Act),
         "the flip pick anchors to the act card",
-    );
-    assert!(
-        matches!(
-            s.state().continuations.top(),
-            Some(Continuation::AdvanceReverse(AdvanceReverseFrame {
-                deck: AdvanceDeck::Act,
-                step: AdvanceStep::AwaitAck,
-                ..
-            }))
-        ),
-        "the Objective's own acknowledge is suppressed, so nothing sits above the \
-         advance: {:?}",
-        s.state().continuations,
     );
     assert!(
         s.state().ending.is_none(),
@@ -605,14 +594,12 @@ fn dooming_out_the_terminal_agenda_at_act_3_defeats_the_table_and_reaches_no_res
         Some(ScenarioEnding::NoResolution),
         "the act-3 bullet prints no (→R#), so no resolution point is reached",
     );
-    assert!(
-        !result
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::ScenarioResolved { ending }
-                if matches!(ending, ScenarioEnding::Resolution(_)))),
-        "no numbered resolution is ever latched: {:?}",
+    // No numbered resolution is ever latched.
+    assert_no_event!(
         result.events,
+        Event::ScenarioResolved {
+            ending: ScenarioEnding::Resolution(_)
+        }
     );
     assert!(
         result.state.continuations.is_empty(),
