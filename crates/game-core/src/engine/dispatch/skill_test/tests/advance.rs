@@ -1,4 +1,5 @@
 use super::*;
+use crate::state::ChaosBag;
 use crate::test_support::TestSession;
 use crate::{assert_event, assert_no_event};
 
@@ -15,11 +16,11 @@ use crate::{assert_event, assert_no_event};
 #[test]
 fn plain_skill_test_disposes_of_no_encounter_card() {
     let inv = InvestigatorId(1);
-    let mut state = GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_seat(test_support::seat(1))
         .open_turn(inv)
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
-    state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
     let session = TestSession::new(state)
         .test_skill(inv, SkillKind::Intellect, 1)
         .commit(&[]);
@@ -32,12 +33,12 @@ fn plain_skill_test_disposes_of_no_encounter_card() {
 #[test]
 fn skill_test_runs_on_success_effect_on_a_passing_draw() {
     let inv = InvestigatorId(1);
+    // Willpower 3 + Numeric(0) = 3 vs difficulty 2 → success.
     let mut state = GameStateBuilder::new()
         .with_seat(test_support::seat(1))
         .with_active_investigator(inv)
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
-    // Willpower 3 + Numeric(0) = 3 vs difficulty 2 → success.
-    state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
     let mut events = Vec::new();
     let mut cx = Cx {
         state: &mut state,
@@ -71,11 +72,11 @@ fn skill_test_runs_on_success_effect_on_a_passing_draw() {
 #[test]
 fn skill_test_opens_and_auto_skips_both_player_windows() {
     let inv = InvestigatorId(1);
-    let mut state = GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_seat(test_support::seat(1))
         .open_turn(inv)
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
-    state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
 
     // start -> PreCommitWindow auto-skips window 1 -> parks at AwaitingCommit.
     let session = TestSession::new(state).test_skill(inv, SkillKind::Willpower, 2);
@@ -102,8 +103,8 @@ fn closing_a_skill_test_player_window_re_enters_advance() {
     let mut state = GameStateBuilder::new()
         .with_seat(test_support::seat(1))
         .with_active_investigator(inv)
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
-    state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
     // A SkillTest pre-advanced to AwaitingCommit, as if window 1 just opened.
     state
         .continuations
@@ -139,11 +140,11 @@ fn closing_a_skill_test_player_window_re_enters_advance() {
 #[test]
 fn commit_emits_then_resolves_through_advance() {
     let inv = InvestigatorId(1);
-    let mut state = GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_seat(test_support::seat(1))
         .open_turn(inv)
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
-    state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
 
     let session = TestSession::new(state).test_skill(inv, SkillKind::Willpower, 2);
     // advance parked at AwaitingCommit and emitted the commit prompt.
@@ -174,8 +175,8 @@ fn interactive_acknowledge_pauses_for_confirm_then_resolves() {
     let mut state = GameStateBuilder::new()
         .with_seat(test_support::seat(1))
         .open_turn(inv)
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
-    state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
     state.interactive_acknowledge = true;
 
     let session = TestSession::new(state).test_skill(inv, SkillKind::Willpower, 2);
@@ -218,11 +219,11 @@ fn interactive_acknowledge_pauses_for_confirm_then_resolves() {
 #[test]
 fn no_acknowledge_pause_when_flag_off() {
     let inv = InvestigatorId(1);
-    let mut state = GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_seat(test_support::seat(1))
         .open_turn(inv)
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
-    state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
 
     let session = TestSession::new(state).test_skill(inv, SkillKind::Willpower, 2);
     assert_eq!(
@@ -264,8 +265,8 @@ fn finish_skill_test_parks_the_resolution_for_the_loop() {
     let mut state = GameStateBuilder::new()
         .with_seat(test_support::seat(1))
         .with_active_investigator(inv)
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
-    state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
     let mut events = Vec::new();
     let mut cx = Cx {
         state: &mut state,

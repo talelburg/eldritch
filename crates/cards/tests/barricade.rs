@@ -472,26 +472,35 @@ fn assert_phase_reached_enemy(session: &TestSession) {
     );
 }
 
+/// The hub every hunter board below starts its hunter at.
+const HUB: LocationId = LocationId(1);
+/// The barricaded location next to [`HUB`].
+const BLOCKED: LocationId = LocationId(2);
+/// The divergence board's unblocked middle step.
+const MID: LocationId = LocationId(3);
+/// The divergence board's far end, two connections from [`HUB`].
+const FAR: LocationId = LocationId(4);
+
 /// The issue's divergence scenario. The Gathering's own map is a star around
 /// the Hallway, which cannot express "two connections away", so this is a
 /// synthetic board: Hub(1) — Blocked(2, barricaded), and Hub — Mid(3) — Far(4).
 /// Investigator 1 is at Blocked, one connection away; investigator 2 is at
 /// Far, two connections away past an unblocked route.
 fn hallway_attic_cellar() -> TestSession {
-    hallway_attic_cellar_barricading(&[LocationId(2)])
+    hallway_attic_cellar_barricading(&[BLOCKED])
 }
 
 /// [`hallway_attic_cellar`] with Barricades at `barricaded`.
 fn hallway_attic_cellar_barricading(barricaded: &[LocationId]) -> TestSession {
     board(
         vec![
-            linked(LocationId(1), "Hub", &[LocationId(2), LocationId(3)]),
-            linked(LocationId(2), "Blocked", &[LocationId(1)]),
-            linked(LocationId(3), "Mid", &[LocationId(1), LocationId(4)]),
-            linked(LocationId(4), "Far", &[LocationId(3)]),
+            linked(HUB, "Hub", &[BLOCKED, MID]),
+            linked(BLOCKED, "Blocked", &[HUB]),
+            linked(MID, "Mid", &[HUB, FAR]),
+            linked(FAR, "Far", &[MID]),
         ],
-        vec![seat(1).at(LocationId(2)), seat(2).at(LocationId(4))],
-        hunter_at(LocationId(1)),
+        vec![seat(1).at(BLOCKED), seat(2).at(FAR)],
+        hunter_at(HUB),
         barricaded,
     )
 }
@@ -502,14 +511,14 @@ fn a_blocked_nearest_investigator_is_still_the_nearest_and_the_hunter_does_not_m
     let state = session.state();
     assert_eq!(
         state.enemies[&GHOUL].current_location,
-        Some(LocationId(1)),
+        Some(HUB),
         "the barricaded location is still one connection away, so its investigator is \
          nearest; the compelled step is blocked, so the hunter does not move — it \
          must not reroute toward the farther investigator",
     );
     assert_eq!(
         state.investigators[&INV2].current_location,
-        Some(LocationId(4)),
+        Some(FAR),
         "sanity: the far investigator never moved",
     );
 }
@@ -519,35 +528,40 @@ fn an_unblocked_board_moves_the_hunter_toward_the_nearest_investigator() {
     let session = end_the_investigation_phase(hallway_attic_cellar_barricading(&[]), 2);
     assert_eq!(
         session.state().enemies[&GHOUL].current_location,
-        Some(LocationId(2)),
+        Some(BLOCKED),
         "with no barricade the hunter steps to the nearest investigator's location",
     );
 }
 
 #[test]
 fn a_block_off_the_shortest_path_leaves_hunter_movement_alone() {
+    const TARGET: LocationId = LocationId(2);
+    const SIDE: LocationId = LocationId(3);
     // Hub(1) — Target(2) [investigator], and a longer detour
     // Hub — Side(3, barricaded) — Target. The block sits on that detour.
     let state = board(
         vec![
-            linked(LocationId(1), "Hub", &[LocationId(2), LocationId(3)]),
-            linked(LocationId(2), "Target", &[LocationId(1), LocationId(3)]),
-            linked(LocationId(3), "Side", &[LocationId(1), LocationId(2)]),
+            linked(HUB, "Hub", &[TARGET, SIDE]),
+            linked(TARGET, "Target", &[HUB, SIDE]),
+            linked(SIDE, "Side", &[HUB, TARGET]),
         ],
-        vec![seat(1).at(LocationId(2))],
-        hunter_at(LocationId(1)),
-        &[LocationId(3)],
+        vec![seat(1).at(TARGET)],
+        hunter_at(HUB),
+        &[SIDE],
     );
     let session = end_the_investigation_phase(state, 1);
     assert_eq!(
         session.state().enemies[&GHOUL].current_location,
-        Some(LocationId(2)),
+        Some(TARGET),
         "the barricade is not on the shortest path, so the hunter takes it as usual",
     );
 }
 
 #[test]
 fn a_blocked_step_on_the_only_shortest_path_is_not_rerouted_around() {
+    const TARGET: LocationId = LocationId(3);
+    const DETOUR_1: LocationId = LocationId(4);
+    const DETOUR_2: LocationId = LocationId(5);
     // Hub(1) — Blocked(2, barricaded) — Target(3) [investigator] is the
     // shortest path (2 connections). A longer unblocked detour exists:
     // Hub — Detour1(4) — Detour2(5) — Target. `Nearest.md` measures the
@@ -555,44 +569,46 @@ fn a_blocked_step_on_the_only_shortest_path_is_not_rerouted_around() {
     // Blocked; `Hunter.md` then makes that a non-move.
     let state = board(
         vec![
-            linked(LocationId(1), "Hub", &[LocationId(2), LocationId(4)]),
-            linked(LocationId(2), "Blocked", &[LocationId(1), LocationId(3)]),
-            linked(LocationId(3), "Target", &[LocationId(2), LocationId(5)]),
-            linked(LocationId(4), "Detour1", &[LocationId(1), LocationId(5)]),
-            linked(LocationId(5), "Detour2", &[LocationId(4), LocationId(3)]),
+            linked(HUB, "Hub", &[BLOCKED, DETOUR_1]),
+            linked(BLOCKED, "Blocked", &[HUB, TARGET]),
+            linked(TARGET, "Target", &[BLOCKED, DETOUR_2]),
+            linked(DETOUR_1, "Detour1", &[HUB, DETOUR_2]),
+            linked(DETOUR_2, "Detour2", &[DETOUR_1, TARGET]),
         ],
-        vec![seat(1).at(LocationId(3))],
-        hunter_at(LocationId(1)),
-        &[LocationId(2)],
+        vec![seat(1).at(TARGET)],
+        hunter_at(HUB),
+        &[BLOCKED],
     );
     let session = end_the_investigation_phase(state, 1);
     assert_eq!(
         session.state().enemies[&GHOUL].current_location,
-        Some(LocationId(1)),
+        Some(HUB),
         "the hunter does not take the longer unblocked detour",
     );
 }
 
 #[test]
 fn one_blocked_shortest_step_of_two_leaves_the_other_open() {
+    const OPEN: LocationId = LocationId(3);
+    const TARGET: LocationId = LocationId(4);
     // Diamond: Hub(1) — Blocked(2, barricaded) — Target(4) [investigator]
     // and Hub — Open(3) — Target. Both first steps are shortest; only the
     // unblocked one survives as an offered destination.
     let state = board(
         vec![
-            linked(LocationId(1), "Hub", &[LocationId(2), LocationId(3)]),
-            linked(LocationId(2), "Blocked", &[LocationId(1), LocationId(4)]),
-            linked(LocationId(3), "Open", &[LocationId(1), LocationId(4)]),
-            linked(LocationId(4), "Target", &[LocationId(2), LocationId(3)]),
+            linked(HUB, "Hub", &[BLOCKED, OPEN]),
+            linked(BLOCKED, "Blocked", &[HUB, TARGET]),
+            linked(OPEN, "Open", &[HUB, TARGET]),
+            linked(TARGET, "Target", &[BLOCKED, OPEN]),
         ],
-        vec![seat(1).at(LocationId(4))],
-        hunter_at(LocationId(1)),
-        &[LocationId(2)],
+        vec![seat(1).at(TARGET)],
+        hunter_at(HUB),
+        &[BLOCKED],
     );
     let session = end_the_investigation_phase(state, 1);
     assert_eq!(
         session.state().enemies[&GHOUL].current_location,
-        Some(LocationId(3)),
+        Some(OPEN),
         "the blocked step is dropped from the destination set, not the graph",
     );
 }

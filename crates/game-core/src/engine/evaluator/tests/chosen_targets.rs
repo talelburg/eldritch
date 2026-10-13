@@ -1,5 +1,9 @@
 use super::*;
 
+/// Location "A".
+const A: LocationId = LocationId(1);
+/// Location "B".
+const B: LocationId = LocationId(2);
 #[test]
 fn chosen_investigator_single_candidate_auto_binds() {
     // 1 investigator ⇒ auto-bind, no input.
@@ -60,8 +64,8 @@ fn chosen_investigator_two_candidates_suspends_then_binds_the_pick() {
 fn chosen_location_two_candidates_suspends() {
     let mut state = GameStateBuilder::new()
         .with_seat(seat(1))
-        .with_location(test_support::test_location(1, "A"))
-        .with_location(test_support::test_location(2, "B"))
+        .with_location(test_support::test_location(A.0, "A"))
+        .with_location(test_support::test_location(B.0, "B"))
         .build();
     let mut events = Vec::new();
     let outcome = run(
@@ -83,9 +87,9 @@ fn chosen_location_here_auto_binds_the_controllers_location() {
     // singleton ⇒ auto-bind (no Choice frame), unlike `Anywhere` which
     // would offer both and suspend.
     let mut state = GameStateBuilder::new()
-        .with_seat(seat(1).at(LocationId(1)))
-        .with_location(test_support::test_location(1, "A"))
-        .with_location(test_support::test_location(2, "B"))
+        .with_seat(seat(1).at(A))
+        .with_location(test_support::test_location(A.0, "A"))
+        .with_location(test_support::test_location(B.0, "B"))
         .build();
     let mut events = Vec::new();
     let outcome = run(
@@ -118,10 +122,10 @@ fn chosen_at_your_location_auto_binds_the_sole_co_located_investigator() {
     // auto-bind it (1 candidate ⇒ no suspend) — `Anywhere` would see 2 and
     // suspend.
     let mut state = GameStateBuilder::new()
-        .with_seat(seat(1).at(LocationId(1)))
-        .with_seat(seat(2).at(LocationId(2)))
-        .with_location(test_support::test_location(1, "A"))
-        .with_location(test_support::test_location(2, "B"))
+        .with_seat(seat(1).at(A))
+        .with_seat(seat(2).at(B))
+        .with_location(test_support::test_location(A.0, "A"))
+        .with_location(test_support::test_location(B.0, "B"))
         .build();
     let before1 = state.investigators[&InvestigatorId(1)].resources;
     let mut events = Vec::new();
@@ -147,9 +151,9 @@ fn chosen_at_your_location_auto_binds_the_sole_co_located_investigator() {
 #[test]
 fn chosen_at_your_location_suspends_when_two_are_co_located() {
     let mut state = GameStateBuilder::new()
-        .with_seat(seat(1).at(LocationId(1)))
-        .with_seat(seat(2).at(LocationId(1)))
-        .with_location(test_support::test_location(1, "A"))
+        .with_seat(seat(1).at(A))
+        .with_seat(seat(2).at(A))
+        .with_location(test_support::test_location(A.0, "A"))
         .build();
     let mut events = Vec::new();
     let outcome = run(
@@ -189,19 +193,19 @@ fn chosen_at_your_location_rejects_when_controller_between_locations() {
 #[test]
 fn deal_damage_to_chosen_enemy_at_your_location_auto_binds_and_damages() {
     let mut state = GameStateBuilder::new()
-        .with_seat(seat(1).at(LocationId(1)))
-        .with_location(test_support::test_location(1, "A"))
-        .with_location(test_support::test_location(2, "B"))
+        .with_seat(seat(1).at(A))
+        .with_location(test_support::test_location(A.0, "A"))
+        .with_location(test_support::test_location(B.0, "B"))
         .with_enemy({
             let mut e = test_support::test_enemy(100, "Ghoul");
             e.max_health = 3;
-            e.current_location = Some(LocationId(1));
+            e.current_location = Some(A);
             e
         })
         .with_enemy({
             let mut e = test_support::test_enemy(101, "Faraway");
             e.max_health = 3;
-            e.current_location = Some(LocationId(2));
+            e.current_location = Some(B);
             e
         })
         .build();
@@ -234,16 +238,16 @@ fn deal_damage_to_chosen_enemy_at_your_location_auto_binds_and_damages() {
 #[test]
 fn deal_damage_to_chosen_enemy_suspends_when_two_are_co_located() {
     let mut state = GameStateBuilder::new()
-        .with_seat(seat(1).at(LocationId(1)))
-        .with_location(test_support::test_location(1, "A"))
+        .with_seat(seat(1).at(A))
+        .with_location(test_support::test_location(A.0, "A"))
         .with_enemy({
             let mut e = test_support::test_enemy(100, "G1");
-            e.current_location = Some(LocationId(1));
+            e.current_location = Some(A);
             e
         })
         .with_enemy({
             let mut e = test_support::test_enemy(101, "G2");
-            e.current_location = Some(LocationId(1));
+            e.current_location = Some(A);
             e
         })
         .build();
@@ -264,8 +268,8 @@ fn deal_damage_to_chosen_enemy_suspends_when_two_are_co_located() {
 #[test]
 fn deal_damage_to_chosen_enemy_rejects_when_none_co_located() {
     let mut state = GameStateBuilder::new()
-        .with_seat(seat(1).at(LocationId(1)))
-        .with_location(test_support::test_location(1, "A"))
+        .with_seat(seat(1).at(A))
+        .with_location(test_support::test_location(A.0, "A"))
         .build();
     let mut events = Vec::new();
     let outcome = run(
@@ -283,10 +287,10 @@ fn deal_damage_to_chosen_enemy_rejects_when_none_co_located() {
 #[test]
 fn heal_target_chosen_at_your_location_auto_binds() {
     let mut state = GameStateBuilder::new()
-        .with_seat(seat(1).at(LocationId(1)))
-        .with_seat(seat(2).at(LocationId(2)))
-        .with_location(test_support::test_location(1, "A"))
-        .with_location(test_support::test_location(2, "B"))
+        .with_seat(seat(1).at(A))
+        .with_seat(seat(2).at(B))
+        .with_location(test_support::test_location(A.0, "A"))
+        .with_location(test_support::test_location(B.0, "B"))
         .build();
     state
         .investigators
@@ -319,9 +323,9 @@ fn heal_target_chosen_at_your_location_auto_binds() {
 #[test]
 fn heal_target_chosen_suspends_when_two_are_co_located() {
     let mut state = GameStateBuilder::new()
-        .with_seat(seat(1).at(LocationId(1)))
-        .with_seat(seat(2).at(LocationId(1)))
-        .with_location(test_support::test_location(1, "A"))
+        .with_seat(seat(1).at(A))
+        .with_seat(seat(2).at(A))
+        .with_location(test_support::test_location(A.0, "A"))
         .build();
     // Both carry damage: RR "Target" (#639) makes an investigator with
     // nothing to heal an ineligible target, so a suspend needs two
