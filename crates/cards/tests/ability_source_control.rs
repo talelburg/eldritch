@@ -21,12 +21,11 @@
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use card_dsl::dsl::{self, Ability, Cost, InvestigatorTarget};
 use game_core::engine::enumerate::{self, TurnAction};
-use game_core::engine::EngineOutcome;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Owner,
+    AbilityAddress, AbilitySource, CardCode, CardInstanceId, GameState, GameStateBuilder,
+    InvestigatorId, LocationId,
 };
-use game_core::test_support::{self, MockRegistry, TEST_INV};
+use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession, TEST_INV};
 
 /// Synthetic **treachery** sitting in an investigator's threat area — the card
 /// type the zone actually holds (Rules Reference p.20: *"a play area in which
@@ -38,9 +37,7 @@ const THEIRS: &str = "SRCCTL02";
 
 const MINE: InvestigatorId = InvestigatorId(1);
 const THEM: InvestigatorId = InvestigatorId(2);
-const LOC: LocationId = LocationId(10);
-const WARD_INST: CardInstanceId = CardInstanceId(1);
-const THEIRS_INST: CardInstanceId = CardInstanceId(2);
+const HERE: LocationId = LocationId(10);
 
 /// Ability index of the one activation that is legal here.
 const LIVE: u8 = 0;
@@ -136,26 +133,48 @@ fn install_probe_registry() {
 /// an asset in play. Co-location is deliberate — under the control bullet it
 /// must not matter, and it is #708 that makes their threat area reachable.
 fn board() -> GameState {
-    let mut mine = test_support::test_investigator(1);
-    mine.threat_area.push(CardInPlay::enter_play(
-        CardCode::new(WARD),
-        WARD_INST,
-        Owner::EncounterDeck,
-    ));
-    let mut them = test_support::test_investigator(2);
-    them.cards_in_play.push(CardInPlay::enter_play(
-        CardCode::new(THEIRS),
-        THEIRS_INST,
-        Owner::Investigator(InvestigatorId(2)),
-    ));
-
     GameStateBuilder::new()
-        .with_investigator_at(mine, LOC)
-        .with_investigator_at(them, LOC)
-        .with_location(test_support::test_location(10, "Study"))
+        .with_seat(seat(1).at(HERE).threat_area([WARD]))
+        .with_seat(seat(2).at(HERE).in_play([THEIRS]))
+        .with_location(test_support::test_location(HERE.0, "Study"))
         .with_turn_order([MINE, THEM])
         .open_turn(MINE)
         .build()
+}
+
+/// The ward in my threat area.
+fn ward(state: &GameState) -> CardInstanceId {
+    state.in_play(MINE, WARD)
+}
+
+/// Take `action` off the menu; the activation resolves and play is back at my
+/// turn menu.
+fn take_activation(state: GameState, action: &TurnAction) -> TestSession {
+    let session = TestSession::new(state).take(action);
+    session.assert_at_turn_menu(MINE);
+    session
+}
+
+/// Submit `action`, which the menu does not offer, straight to the handler and
+/// assert the handler itself rejects it, leaving state byte-identical. Returns
+/// the reason.
+fn assert_handler_rejects(state: GameState, action: &TurnAction) -> String {
+    assert_rejects(state, |session| session.submit_off_menu(action))
+}
+
+/// Run `step` from the turn menu and assert it is rejected, leaving state
+/// byte-identical. Returns the reason.
+fn assert_rejects(state: GameState, step: impl FnOnce(TestSession) -> TestSession) -> String {
+    let session = TestSession::new(state);
+    let before = session.state().clone();
+    let session = step(session);
+    let reason = session.expect_rejected().to_owned();
+    assert_eq!(
+        *session.state(),
+        before,
+        "a rejected activation must leave state byte-identical",
+    );
+    reason
 }
 
 /// The acting investigator's own investigator-card instance.
@@ -183,14 +202,10 @@ fn an_ability_on_your_own_investigator_card_is_offered_and_activatable() {
         enumerate::legal_actions(&state),
     );
 
-    let result = test_support::dispatch_turn_action_unchecked(state, &action);
-    assert!(
-        !matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "the activation should resolve, got {:?}",
-        result.outcome,
-    );
+    let session = take_activation(state, &action);
     assert_eq!(
-        result.state.investigators[&MINE].resources, 6,
+        session.state().investigators[&MINE].resources,
+        6,
         "the ability's effect should have run",
     );
 }
@@ -198,7 +213,7 @@ fn an_ability_on_your_own_investigator_card_is_offered_and_activatable() {
 #[test]
 fn an_ability_on_a_card_in_your_own_threat_area_is_offered_and_activatable() {
     let state = board();
-    let action = activation(AbilitySource::InPlay(WARD_INST), LIVE);
+    let action = activation(AbilitySource::InPlay(ward(&state)), LIVE);
 
     assert!(
         enumerate::legal_actions(&state).contains(&action),
@@ -206,20 +221,14 @@ fn an_ability_on_a_card_in_your_own_threat_area_is_offered_and_activatable() {
         enumerate::legal_actions(&state),
     );
 
-    let result = test_support::dispatch_turn_action_unchecked(state, &action);
-    assert!(
-        !matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "the activation should resolve, got {:?}",
-        result.outcome,
-    );
-    assert_eq!(result.state.investigators[&MINE].resources, 6);
+    let session = take_activation(state, &action);
+    assert_eq!(session.state().investigators[&MINE].resources, 6);
 }
 
 #[test]
 fn an_ability_on_another_investigators_card_is_neither_offered_nor_activatable() {
     let state = board();
-    let action = activation(AbilitySource::InPlay(THEIRS_INST), LIVE);
-    let before = state.clone();
+    let action = activation(AbilitySource::InPlay(state.in_play(THEM, THEIRS)), LIVE);
 
     assert!(
         !enumerate::legal_actions(&state).contains(&action),
@@ -227,17 +236,11 @@ fn an_ability_on_another_investigators_card_is_neither_offered_nor_activatable()
         enumerate::legal_actions(&state),
     );
 
-    let result = test_support::dispatch_turn_action_unchecked(state, &action);
-    let EngineOutcome::Rejected { reason } = &result.outcome else {
-        panic!("activating another investigator's card must reject, got {result:?}");
-    };
+    // Activating another investigator's card must reject.
+    let reason = assert_handler_rejects(state, &action);
     assert!(
         reason.contains("cannot reach"),
         "the reason should name reachability, got: {reason}",
-    );
-    assert_eq!(
-        result.state, before,
-        "a rejected activation must leave state byte-identical",
     );
 }
 
@@ -250,7 +253,7 @@ fn an_unpayable_or_inert_ability_stays_unoffered_from_every_reachable_source() {
     let menu = enumerate::legal_actions(&state);
     for source in [
         AbilitySource::InPlay(my_investigator_card(&state)),
-        AbilitySource::InPlay(WARD_INST),
+        AbilitySource::InPlay(ward(&state)),
     ] {
         for ability_index in [UNAFFORDABLE, INERT] {
             assert!(
@@ -269,7 +272,7 @@ fn an_unpayable_or_inert_ability_stays_unoffered_from_every_reachable_source() {
 #[test]
 fn discarding_a_threat_area_source_as_a_cost_sends_it_to_the_encounter_discard() {
     let state = board();
-    let action = activation(AbilitySource::InPlay(WARD_INST), SELF_DISCARDING);
+    let action = activation(AbilitySource::InPlay(ward(&state)), SELF_DISCARDING);
 
     assert!(
         enumerate::legal_actions(&state).contains(&action),
@@ -277,23 +280,19 @@ fn discarding_a_threat_area_source_as_a_cost_sends_it_to_the_encounter_discard()
         enumerate::legal_actions(&state),
     );
 
-    let result = test_support::dispatch_turn_action_unchecked(state, &action);
+    let session = take_activation(state, &action);
+    let result = session.state();
     assert!(
-        !matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "the activation should resolve, got {:?}",
-        result.outcome,
-    );
-    assert!(
-        result.state.investigators[&MINE].threat_area.is_empty(),
+        result.investigators[&MINE].threat_area.is_empty(),
         "the source should have left the threat area",
     );
     assert_eq!(
-        result.state.encounter_discard,
+        result.encounter_discard,
         vec![CardCode::new(WARD)],
         "an encounter card goes to the encounter discard",
     );
     assert!(
-        result.state.investigators[&MINE].discard.is_empty(),
+        result.investigators[&MINE].discard.is_empty(),
         "and not to the investigator's own discard pile",
     );
 }
@@ -307,18 +306,11 @@ fn discarding_your_investigator_card_as_a_cost_rejects_rather_than_panicking() {
         AbilitySource::InPlay(my_investigator_card(&state)),
         SELF_DISCARDING,
     );
-    let before = state.clone();
 
-    let result = test_support::dispatch_turn_action_unchecked(state, &action);
-    let EngineOutcome::Rejected { reason } = &result.outcome else {
-        panic!("discarding the investigator card must reject, got {result:?}");
-    };
+    // The menu offers it, and taking it must reject.
+    let reason = assert_rejects(state, |session| session.take(&action));
     assert!(
         reason.contains("cannot be discarded as a cost"),
         "the reason should say why, got: {reason}",
-    );
-    assert_eq!(
-        result.state, before,
-        "a rejected activation must leave state byte-identical",
     );
 }
