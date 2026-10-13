@@ -3,16 +3,19 @@
 //! Own process so the global registries can be installed once.
 
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{ApplyResult, EngineOutcome, OptionId};
+use game_core::engine::{ApplyResult, EngineOutcome, OptionTarget};
 use game_core::event::Event;
 use game_core::scenario::ScenarioId;
 use game_core::state::{
-    Act, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, Owner, Phase, SkillKind, TokenResolution,
+    Act, CardCode, CardInstanceId, ChaosBag, ChaosToken, GameState, GameStateBuilder,
+    InvestigatorId, Location, LocationId, SkillKind, TokenResolution,
 };
-use game_core::test_support::{self, ScriptedResolver};
-use game_core::{assert_event, assert_event_count, scenario_registry};
+use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::{assert_event, assert_event_count, assert_no_event, scenario_registry};
 use scenarios::the_gathering;
+
+const INV: InvestigatorId = InvestigatorId(1);
+const HERE: LocationId = LocationId(1);
 
 #[ctor::ctor(unsafe)]
 fn install_registries() {
@@ -23,71 +26,61 @@ fn install_registries() {
     test_support::install_registry_with_test_cards(cards::REGISTRY);
 }
 
-fn gathering_state(token: ChaosToken, ghouls: u8) -> GameState {
-    let inv = InvestigatorId(1);
-    let loc = LocationId(1);
-    let mut investigator = test_support::test_investigator(1);
-    investigator.current_location = Some(loc);
-    let mut state = GameStateBuilder::new()
-        .with_investigator(investigator)
-        .with_active_investigator(inv)
+/// `INV`'s open turn in a Gathering game at the Study `HERE`, with `ghouls`
+/// Ghoul Minions there, `in_play` in the play area, and a chaos bag holding
+/// only `token`.
+fn gathering_board(token: ChaosToken, ghouls: u8, in_play: &[&str]) -> GameState {
+    let mut builder = GameStateBuilder::new()
+        .with_seat(seat(1).at(HERE).in_play(in_play.iter().copied()))
+        .with_location(test_support::test_location(HERE.0, "Study"))
         .with_chaos_bag(ChaosBag::new([token]))
-        .with_scenario_id(ScenarioId::new(the_gathering::ID))
-        .build();
-    state
-        .locations
-        .insert(loc, test_support::test_location(1, "Study"));
+        .with_scenario_id(ScenarioId::new(the_gathering::ID));
     for i in 0..ghouls {
         // Ghoul Minion 01160 (Humanoid. Monster. Ghoul.): its printed traits
         // drive ghoul_count; test_enemy's name arg is display-only.
         let mut e = test_support::test_enemy(u32::from(i) + 1, "Ghoul");
         e.code = CardCode::new("01160");
-        e.current_location = Some(loc);
-        state.enemies.insert(e.id, e);
+        e.current_location = Some(HERE);
+        builder = builder.with_enemy(e);
     }
-    state
+    builder.open_turn(INV).build()
 }
 
-fn perform(state: GameState, difficulty: i8) -> ApplyResult {
-    // perform_skill_test_no_commits drives past the card-commit window (the bare
-    // helper stops there with AwaitingInput) so the symbol path resolves end-to-end.
-    let r = test_support::perform_skill_test_no_commits(
-        state,
-        InvestigatorId(1),
-        SkillKind::Willpower,
-        difficulty,
-    );
-    assert_eq!(r.outcome, EngineOutcome::Done);
-    r
+/// [`gathering_board`] with nothing in play.
+fn gathering_state(token: ChaosToken, ghouls: u8) -> GameState {
+    gathering_board(token, ghouls, &[])
+}
+
+/// A difficulty-`difficulty` Willpower test from the open turn, committing
+/// nothing, run through to the turn menu so the symbol path resolves
+/// end-to-end. Returns the session back at the turn menu.
+fn perform(state: GameState, difficulty: i8) -> TestSession {
+    let session = TestSession::new(state)
+        .test_skill(INV, SkillKind::Willpower, difficulty)
+        .commit(&[]);
+    session.assert_at_turn_menu(INV);
+    session
 }
 
 #[test]
 fn skull_subtracts_ghoul_count_at_location() {
     // 0 ghouls: Skull → Modifier(0)
     let r0 = perform(gathering_state(ChaosToken::Skull, 0), 0);
-    assert!(
-        r0.events.iter().any(|e| matches!(
-            e,
-            Event::ChaosTokenRevealed {
-                token: ChaosToken::Skull,
-                resolution: TokenResolution::Modifier(0),
-            }
-        )),
-        "expected ChaosTokenRevealed Skull Modifier(0), events: {:?}",
-        r0.events
+    assert_event!(
+        r0.events(),
+        Event::ChaosTokenRevealed {
+            token: ChaosToken::Skull,
+            resolution: TokenResolution::Modifier(0),
+        }
     );
     // 2 ghouls: Skull → Modifier(-2)
     let r2 = perform(gathering_state(ChaosToken::Skull, 2), 0);
-    assert!(
-        r2.events.iter().any(|e| matches!(
-            e,
-            Event::ChaosTokenRevealed {
-                token: ChaosToken::Skull,
-                resolution: TokenResolution::Modifier(-2),
-            }
-        )),
-        "expected ChaosTokenRevealed Skull Modifier(-2), events: {:?}",
-        r2.events
+    assert_event!(
+        r2.events(),
+        Event::ChaosTokenRevealed {
+            token: ChaosToken::Skull,
+            resolution: TokenResolution::Modifier(-2),
+        }
     );
 }
 
@@ -95,68 +88,34 @@ fn skull_subtracts_ghoul_count_at_location() {
 fn cultist_is_minus_one_and_horror_only_on_failure() {
     // Fail: difficulty 99 >> skill 3 + (-1) = 2
     let fail = perform(gathering_state(ChaosToken::Cultist, 0), 99);
-    assert!(
-        fail.events.iter().any(|e| matches!(
-            e,
-            Event::ChaosTokenRevealed {
-                token: ChaosToken::Cultist,
-                resolution: TokenResolution::Modifier(-1),
-            }
-        )),
-        "expected ChaosTokenRevealed Cultist Modifier(-1) on failure, events: {:?}",
-        fail.events
+    assert_event!(
+        fail.events(),
+        Event::ChaosTokenRevealed {
+            token: ChaosToken::Cultist,
+            resolution: TokenResolution::Modifier(-1),
+        }
     );
-    assert!(
-        fail.events
-            .iter()
-            .any(|e| matches!(e, Event::HorrorTaken { amount: 1, .. })),
-        "expected HorrorTaken(1) on cultist failure, events: {:?}",
-        fail.events
-    );
+    assert_event!(fail.events(), Event::HorrorTaken { amount: 1, .. });
     // Win: difficulty 0 ≤ skill 3 + (-1) = 2
     let win = perform(gathering_state(ChaosToken::Cultist, 0), 0);
-    assert!(
-        !win.events
-            .iter()
-            .any(|e| matches!(e, Event::HorrorTaken { .. })),
-        "expected NO HorrorTaken on cultist success, events: {:?}",
-        win.events
-    );
+    assert_no_event!(win.events(), Event::HorrorTaken { .. });
 }
 
 #[test]
 fn tablet_is_minus_two_and_damage_iff_ghoul_present() {
     // Ghoul present: Tablet → Modifier(-2) + DamageTaken(1)
     let with_ghoul = perform(gathering_state(ChaosToken::Tablet, 1), 0);
-    assert!(
-        with_ghoul.events.iter().any(|e| matches!(
-            e,
-            Event::ChaosTokenRevealed {
-                token: ChaosToken::Tablet,
-                resolution: TokenResolution::Modifier(-2),
-            }
-        )),
-        "expected ChaosTokenRevealed Tablet Modifier(-2) with ghoul, events: {:?}",
-        with_ghoul.events
+    assert_event!(
+        with_ghoul.events(),
+        Event::ChaosTokenRevealed {
+            token: ChaosToken::Tablet,
+            resolution: TokenResolution::Modifier(-2),
+        }
     );
-    assert!(
-        with_ghoul
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::DamageTaken { amount: 1, .. })),
-        "expected DamageTaken(1) on tablet with ghoul, events: {:?}",
-        with_ghoul.events
-    );
+    assert_event!(with_ghoul.events(), Event::DamageTaken { amount: 1, .. });
     // No ghoul: Tablet → Modifier(-2), NO DamageTaken
     let no_ghoul = perform(gathering_state(ChaosToken::Tablet, 0), 0);
-    assert!(
-        !no_ghoul
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::DamageTaken { .. })),
-        "expected NO DamageTaken on tablet without ghoul, events: {:?}",
-        no_ghoul.events
-    );
+    assert_no_event!(no_ghoul.events(), Event::DamageTaken { .. });
 }
 
 #[test]
@@ -165,14 +124,14 @@ fn tablet_immediate_damage_precedes_the_determination() {
     // success/failure): Tablet's immediate Damage(1) must land in the event log
     // BEFORE SkillTestSucceeded/Failed. (Difficulty 0; willpower 3 + (-2) = 1
     // succeeds.)
-    let r = perform(gathering_state(ChaosToken::Tablet, 1), 0);
-    let damage = r
-        .events
+    let session = perform(gathering_state(ChaosToken::Tablet, 1), 0);
+    let damage = session
+        .events()
         .iter()
         .position(|e| matches!(e, Event::DamageTaken { amount: 1, .. }))
         .expect("Tablet+ghoul deals immediate damage");
-    let determined = r
-        .events
+    let determined = session
+        .events()
         .iter()
         .position(|e| {
             matches!(
@@ -184,20 +143,21 @@ fn tablet_immediate_damage_precedes_the_determination() {
     assert!(
         damage < determined,
         "ST.4 immediate damage must precede the ST.6 determination; events: {:?}",
-        r.events
+        session.events()
     );
 
     // No-redraw: the token is drawn once at Resolving; pushing the immediate
     // Effect::Deal and resuming at DetermineOutcome must not re-draw it.
-    let reveals = r
-        .events
+    let reveals = session
+        .events()
         .iter()
         .filter(|e| matches!(e, Event::ChaosTokenRevealed { .. }))
         .count();
     assert_eq!(
-        reveals, 1,
+        reveals,
+        1,
         "exactly one ChaosTokenRevealed (no re-draw across the ST.4 push/resume); events: {:?}",
-        r.events
+        session.events()
     );
 }
 
@@ -207,23 +167,25 @@ fn cultist_on_fail_horror_follows_the_determination() {
     // resolves at ST.7, AFTER the ST.6 determination (and after the outcome
     // timing point). Cultist's on_fail Horror(1) must follow SkillTestFailed in
     // the log. (Difficulty 99 >> willpower 3 + (-1) = 2 → fail.)
-    let r = perform(gathering_state(ChaosToken::Cultist, 0), 99);
-    let failed = r
-        .events
+    let session = perform(gathering_state(ChaosToken::Cultist, 0), 99);
+    let failed = session
+        .events()
         .iter()
         .position(|e| matches!(e, Event::SkillTestFailed { .. }))
         .expect("the test fails");
-    let horror = r
-        .events
+    let horror = session
+        .events()
         .iter()
         .position(|e| matches!(e, Event::HorrorTaken { amount: 1, .. }))
         .expect("Cultist on_fail deals horror");
     assert!(
         failed < horror,
         "ST.7 symbol on_fail horror must follow the ST.6 determination; events: {:?}",
-        r.events
+        session.events()
     );
 }
+
+const GUARD_DOG: &str = "01021"; // Ally, 3 health.
 
 #[test]
 fn tablet_immediate_damage_suspends_on_soak_without_redrawing() {
@@ -232,46 +194,24 @@ fn tablet_immediate_damage_suspends_on_soak_without_redrawing() {
     // (one PickSingle prompt) — the symbol effect suspends mid-ST.4. Resuming
     // must finish the test from DetermineOutcome WITHOUT re-drawing the chaos
     // token. (Symbol damage is effect-source, so no Guard Dog reaction window.)
-    let mut state = gathering_state(ChaosToken::Tablet, 1);
-    state
-        .investigators
-        .get_mut(&InvestigatorId(1))
-        .expect("investigator present")
-        .cards_in_play
-        .push(CardInPlay::enter_play(
-            CardCode::new("01021"),
-            CardInstanceId(1),
-            Owner::Investigator(InvestigatorId(1)),
-        ));
+    let state = gathering_board(ChaosToken::Tablet, 1, &[GUARD_DOG]);
+    let dog = state.in_play(INV, GUARD_DOG);
 
-    let mut resolver = ScriptedResolver::new();
-    resolver.commit_cards(&[]); // ST.2 commit window: commit nothing.
-    resolver.pick_single(OptionId(1)); // soak the 1 damage onto Guard Dog (option 1).
-    let r =
-        test_support::drive_skill_test(state, InvestigatorId(1), SkillKind::Willpower, 0, resolver);
+    let session = TestSession::new(state)
+        .test_skill(INV, SkillKind::Willpower, 0)
+        .commit(&[]) // ST.2 commit window: commit nothing.
+        .pick(OptionTarget::CardInstance(dog)); // soak the 1 damage onto Guard Dog.
+    session.assert_at_turn_menu(INV);
 
-    assert_eq!(r.outcome, EngineOutcome::Done);
-    let inv = &r.state.investigators[&InvestigatorId(1)];
+    let inv = &session.state().investigators[&INV];
     assert_eq!(inv.damage(), 0, "damage soaked, investigator took none");
-    let dog = inv
-        .cards_in_play
-        .iter()
-        .find(|c| c.instance_id == CardInstanceId(1));
+    let dog = inv.cards_in_play.iter().find(|c| c.instance_id == dog);
     assert_eq!(
         dog.map(|c| c.accumulated_damage),
         Some(1),
         "1 damage soaked onto Guard Dog",
     );
-    let reveals = r
-        .events
-        .iter()
-        .filter(|e| matches!(e, Event::ChaosTokenRevealed { .. }))
-        .count();
-    assert_eq!(
-        reveals, 1,
-        "exactly one ChaosTokenRevealed across the ST.4 soak suspend; events: {:?}",
-        r.events
-    );
+    assert_event_count!(session.events(), 1, Event::ChaosTokenRevealed { .. });
 }
 
 // ---------------------------------------------------------------------------
@@ -279,46 +219,43 @@ fn tablet_immediate_damage_suspends_on_soak_without_redrawing() {
 // ---------------------------------------------------------------------------
 
 const BEAT_COP: &str = "01018"; // Ally, 2 health, "You get +1 [combat]."
-const COP_INST: CardInstanceId = CardInstanceId(7);
 
 /// The Gathering board for the Beat Cop trace: one Ghoul co-located with the
 /// investigator, a chaos bag holding only `[tablet]` (−2, and 1 damage while a
 /// Ghoul is at your location), and Beat Cop 01018 in play carrying
 /// `cop_damage` damage already.
 fn beat_cop_board(cop_damage: u8) -> GameState {
-    let mut state = gathering_state(ChaosToken::Tablet, 1);
-    // Pushed after `build()`, so it names its own owner: a player card leaving
-    // play goes to its owner's discard pile (#772).
-    let mut cop = CardInPlay::enter_play(
-        CardCode::new(BEAT_COP),
-        COP_INST,
-        Owner::Investigator(InvestigatorId(1)),
-    );
-    cop.accumulated_damage = cop_damage;
+    let mut state = gathering_board(ChaosToken::Tablet, 1, &[BEAT_COP]);
+    // No seat entry carries damage on an ally: set it on the built state.
+    let cop = state.in_play(INV, BEAT_COP);
     state
         .investigators
-        .get_mut(&InvestigatorId(1))
+        .get_mut(&INV)
         .expect("investigator present")
         .cards_in_play
-        .push(cop);
+        .iter_mut()
+        .find(|c| c.instance_id == cop)
+        .expect("Beat Cop in play")
+        .accumulated_damage = cop_damage;
     state
 }
 
 /// Drive a difficulty-2 Combat test on `state`, committing nothing and soaking
-/// the `[tablet]`'s ST.4 damage onto the ally (option 1 — option 0 is the
-/// investigator).
-fn drive_combat_test_soaking_onto_the_ally(state: GameState) -> ApplyResult {
-    let mut resolver = ScriptedResolver::new();
+/// the `[tablet]`'s ST.4 damage onto Beat Cop. Returns the session back at the
+/// turn menu, with Beat Cop's instance id (read before the test: a discarded
+/// ally is gone after it).
+fn drive_combat_test_soaking_onto_the_ally(state: GameState) -> (TestSession, CardInstanceId) {
+    let cop = state.in_play(INV, BEAT_COP);
     // Beat Cop's own [fast] ability makes both RR p.26 player windows live
     // (ST.1→ST.2 and ST.2→ST.3); pass on each.
-    resolver.skip();
-    resolver.commit_cards(&[]);
-    resolver.skip();
-    resolver.pick_single(OptionId(1));
-    let r =
-        test_support::drive_skill_test(state, InvestigatorId(1), SkillKind::Combat, 2, resolver);
-    assert_eq!(r.outcome, EngineOutcome::Done);
-    r
+    let session = TestSession::new(state)
+        .test_skill(INV, SkillKind::Combat, 2)
+        .skip()
+        .commit(&[])
+        .skip()
+        .pick(OptionTarget::CardInstance(cop));
+    session.assert_at_turn_menu(INV);
+    (session, cop)
 }
 
 /// `Appendix_II_Timing_and_Gameplay.md` orders ST.4 (*"Apply chaos symbol
@@ -330,12 +267,12 @@ fn drive_combat_test_soaking_onto_the_ally(state: GameState) -> ApplyResult {
 /// this into a pass.
 #[test]
 fn an_ally_killed_by_the_symbol_damage_does_not_contribute_at_st5() {
-    let r = drive_combat_test_soaking_onto_the_ally(beat_cop_board(1));
+    let (session, cop) = drive_combat_test_soaking_onto_the_ally(beat_cop_board(1));
 
-    let inv = &r.state.investigators[&InvestigatorId(1)];
+    let inv = &session.state().investigators[&INV];
     assert_eq!(inv.damage(), 0, "the damage was soaked, not taken");
     assert!(
-        !inv.cards_in_play.iter().any(|c| c.instance_id == COP_INST),
+        !inv.cards_in_play.iter().any(|c| c.instance_id == cop),
         "Beat Cop took its 2nd damage at ST.4 and left play; in play: {:?}",
         inv.cards_in_play,
     );
@@ -346,7 +283,7 @@ fn an_ally_killed_by_the_symbol_damage_does_not_contribute_at_st5() {
     );
     // combat 3 − 2 = 1 against difficulty 2.
     assert_event!(
-        r.events,
+        session.events(),
         Event::SkillTestFailed {
             skill: SkillKind::Combat,
             by: 1,
@@ -361,18 +298,18 @@ fn an_ally_killed_by_the_symbol_damage_does_not_contribute_at_st5() {
 /// ally's contribution.
 #[test]
 fn an_ally_that_survives_the_symbol_damage_still_contributes_at_st5() {
-    let r = drive_combat_test_soaking_onto_the_ally(beat_cop_board(0));
+    let (session, cop) = drive_combat_test_soaking_onto_the_ally(beat_cop_board(0));
 
-    let inv = &r.state.investigators[&InvestigatorId(1)];
+    let inv = &session.state().investigators[&INV];
     let cop = inv
         .cards_in_play
         .iter()
-        .find(|c| c.instance_id == COP_INST)
+        .find(|c| c.instance_id == cop)
         .expect("Beat Cop survives its 1st damage");
     assert_eq!(cop.accumulated_damage, 1, "1 damage soaked onto Beat Cop");
     // combat 3 + 1 − 2 = 2 against difficulty 2.
     assert_event!(
-        r.events,
+        session.events(),
         Event::SkillTestSucceeded {
             skill: SkillKind::Combat,
             margin: 0,
@@ -387,32 +324,27 @@ fn an_ally_that_survives_the_symbol_damage_still_contributes_at_st5() {
 /// that the determination is computed on the far side of the suspension.
 #[test]
 fn the_soak_suspension_between_st4_and_st5_does_not_redraw_the_token() {
-    let r = drive_combat_test_soaking_onto_the_ally(beat_cop_board(1));
-    assert_event_count!(r.events, 1, Event::ChaosTokenRevealed { .. });
+    let (session, _) = drive_combat_test_soaking_onto_the_ally(beat_cop_board(1));
+    assert_event_count!(session.events(), 1, Event::ChaosTokenRevealed { .. });
 }
 
 // ---------------------------------------------------------------------------
 // Victory display tests (C2 — location VPs at scenario end)
 // ---------------------------------------------------------------------------
 
-/// A terminal-act Gathering state with `attic` revealed/cleared or not,
-/// so a single `AdvanceAct` latches Won and triggers the victory scan.
-fn resolvable_state_with_attic(revealed: bool, clues: u8) -> GameState {
-    let inv = InvestigatorId(1);
-    let mut investigator = test_support::test_investigator(1);
-    investigator.clues = 1;
-    let mut state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_investigator(investigator)
-        .with_active_investigator(inv)
-        .with_turn_order([inv])
+/// `INV`'s open turn in a Gathering game holding the 1 clue a terminal act
+/// needs, with `locations` in play, so a single `AdvanceAct` latches Won and
+/// triggers the victory scan.
+fn resolvable_state(locations: impl IntoIterator<Item = Location>) -> GameState {
+    let mut state = locations
+        .into_iter()
+        .fold(
+            GameStateBuilder::new().with_seat(seat(1).clues(1)),
+            GameStateBuilder::with_location,
+        )
         .with_scenario_id(ScenarioId::new(the_gathering::ID))
+        .open_turn(INV)
         .build();
-    let mut attic = test_support::test_location(1, "Attic");
-    attic.code = CardCode("01113".into());
-    attic.revealed = revealed;
-    attic.clues = clues;
-    state.locations.insert(attic.id, attic);
     state.act_deck = vec![Act {
         // Terminal because it is the only act; advancing it fires the reverse
         // that reaches R1, which is what triggers the victory-display scan.
@@ -422,14 +354,28 @@ fn resolvable_state_with_attic(revealed: bool, clues: u8) -> GameState {
     state
 }
 
+/// The location printed as `code` at `id`, revealed or not, with `clues` on it.
+fn victory_location(id: u32, code: &str, name: &str, revealed: bool, clues: u8) -> Location {
+    let mut location = test_support::test_location(id, name);
+    location.code = CardCode::new(code);
+    location.revealed = revealed;
+    location.clues = clues;
+    location
+}
+
+/// A terminal-act Gathering state with `attic` revealed/cleared or not,
+/// so a single `AdvanceAct` latches Won and triggers the victory scan.
+fn resolvable_state_with_attic(revealed: bool, clues: u8) -> GameState {
+    resolvable_state([victory_location(1, "01113", "Attic", revealed, clues)])
+}
+
+/// Take `AdvanceAct` from the turn menu; the terminal act's reverse ends the
+/// game.
 fn advance_to_resolution(state: GameState) -> ApplyResult {
-    let r = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::AdvanceAct {
-            investigator: InvestigatorId(1),
-        },
-    );
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    let r = TestSession::new(state)
+        .take(&TurnAction::AdvanceAct { investigator: INV })
+        .finish();
+    assert_eq!(r.outcome, EngineOutcome::Done, "the game is over");
     r
 }
 
@@ -437,17 +383,13 @@ fn advance_to_resolution(state: GameState) -> ApplyResult {
 fn cleared_revealed_victory_location_enters_victory_display() {
     let r = advance_to_resolution(resolvable_state_with_attic(true, 0));
     assert!(
-        r.state.victory_display.contains(&CardCode("01113".into())),
+        r.state.victory_display.contains(&CardCode::new("01113")),
         "Attic (01113) should be in victory_display; got: {:?}",
         r.state.victory_display
     );
-    assert!(
-        r.events.iter().any(|e| matches!(
-            e,
-            Event::EnteredVictoryDisplay { code, victory: 1 } if code.as_str() == "01113"
-        )),
-        "expected EnteredVictoryDisplay for 01113 with victory=1, events: {:?}",
-        r.events
+    assert_event!(
+        r.events,
+        Event::EnteredVictoryDisplay { code, victory: 1 } if code.as_str() == "01113"
     );
 }
 
@@ -469,47 +411,19 @@ fn unrevealed_or_clued_victory_location_is_not_placed() {
 
 #[test]
 fn two_cleared_victory_locations_both_enter_display() {
-    let inv = InvestigatorId(1);
-    let mut investigator = test_support::test_investigator(1);
-    investigator.clues = 1;
-    let mut state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_investigator(investigator)
-        .with_active_investigator(inv)
-        .with_turn_order([inv])
-        .with_scenario_id(ScenarioId::new(the_gathering::ID))
-        .build();
-    for (lid, code, name) in [(1u32, "01113", "Attic"), (2u32, "01114", "Cellar")] {
-        let mut loc = test_support::test_location(lid, name);
-        loc.code = CardCode(code.into());
-        loc.revealed = true;
-        loc.clues = 0;
-        state.locations.insert(loc.id, loc);
-    }
-    state.act_deck = vec![Act {
-        // Terminal because it is the only act; advancing it fires the reverse
-        // that reaches R1, which is what triggers the victory-display scan.
-        code: test_support::terminal_code(1),
-        clue_threshold: 1,
-    }];
-    let r = advance_to_resolution(state);
+    let r = advance_to_resolution(resolvable_state([
+        victory_location(1, "01113", "Attic", true, 0),
+        victory_location(2, "01114", "Cellar", true, 0),
+    ]));
     assert!(
-        r.state.victory_display.contains(&CardCode("01113".into())),
+        r.state.victory_display.contains(&CardCode::new("01113")),
         "Attic (01113) should be in victory_display; got: {:?}",
         r.state.victory_display
     );
     assert!(
-        r.state.victory_display.contains(&CardCode("01114".into())),
+        r.state.victory_display.contains(&CardCode::new("01114")),
         "Cellar (01114) should be in victory_display; got: {:?}",
         r.state.victory_display
     );
-    assert_eq!(
-        r.events
-            .iter()
-            .filter(|e| matches!(e, Event::EnteredVictoryDisplay { .. }))
-            .count(),
-        2,
-        "expected exactly 2 EnteredVictoryDisplay events, events: {:?}",
-        r.events
-    );
+    assert_event_count!(r.events, 2, Event::EnteredVictoryDisplay { .. });
 }
