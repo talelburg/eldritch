@@ -31,7 +31,7 @@ fn state_with_window_of(
     prevented: bool,
 ) -> GameState {
     let mut state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
         .with_active_investigator(INV)
         .build();
     state.pending_cancellation = prevented;

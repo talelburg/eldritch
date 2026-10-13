@@ -1151,7 +1151,7 @@ mod grant_resources_tests {
     fn grant_resources_adds_to_wallet_and_emits() {
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_support::test_investigator(1))
+            .with_seat(test_support::seat(1))
             .build();
         let before = state.investigators[&id].resources;
         let mut events = Vec::new();
@@ -1176,7 +1176,7 @@ mod grant_resources_tests {
     fn grant_resources_zero_is_silent_noop() {
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_support::test_investigator(1))
+            .with_seat(test_support::seat(1))
             .build();
         let before = state.investigators[&id].resources;
         let mut events = Vec::new();
@@ -1198,18 +1198,17 @@ mod grant_resources_tests {
 #[cfg(test)]
 mod draw_with_deckout_tests {
     use super::*;
-    use crate::state::{CardCode, GameStateBuilder, InvestigatorId};
+    use crate::state::{GameStateBuilder, InvestigatorId};
     use crate::test_support;
 
     #[test]
     fn draw_one_with_deckout_empty_deck_reshuffles_and_takes_horror() {
         let id = InvestigatorId(1);
-        let mut inv = test_support::test_investigator(1);
-        inv.deck.clear();
-        inv.discard = vec![CardCode::new("filler0"), CardCode::new("filler1")];
         // After #448 cp2a: horror accumulates on investigator_card, accessor reads it.
-        let hand_before = inv.hand.len();
-        let mut state = GameStateBuilder::default().with_investigator(inv).build();
+        let mut state = GameStateBuilder::default()
+            .with_seat(test_support::seat(1).discard(["filler0", "filler1"]))
+            .build();
+        let hand_before = state.investigators[&id].hand.len();
         let mut events = Vec::new();
 
         draw_one_with_deckout(
@@ -1242,15 +1241,14 @@ mod draw_with_deckout_tests {
     #[test]
     fn draw_with_deckout_completes_the_count_across_a_midway_reshuffle() {
         let id = InvestigatorId(1);
-        let mut inv = test_support::test_investigator(1);
-        inv.deck = vec![CardCode::new("filler0")];
-        inv.discard = vec![
-            CardCode::new("filler1"),
-            CardCode::new("filler2"),
-            CardCode::new("filler3"),
-        ];
-        let hand_before = inv.hand.len();
-        let mut state = GameStateBuilder::default().with_investigator(inv).build();
+        let mut state = GameStateBuilder::default()
+            .with_seat(
+                test_support::seat(1)
+                    .deck(["filler0"])
+                    .discard(["filler1", "filler2", "filler3"]),
+            )
+            .build();
+        let hand_before = state.investigators[&id].hand.len();
         let mut events = Vec::new();
 
         draw_with_deckout(
@@ -1280,15 +1278,14 @@ mod draw_with_deckout_tests {
     #[test]
     fn draw_with_deckout_on_a_stocked_deck_neither_reshuffles_nor_takes_horror() {
         let id = InvestigatorId(1);
-        let mut inv = test_support::test_investigator(1);
-        inv.deck = vec![
-            CardCode::new("filler0"),
-            CardCode::new("filler1"),
-            CardCode::new("filler2"),
-        ];
-        inv.discard = vec![CardCode::new("filler3")];
-        let hand_before = inv.hand.len();
-        let mut state = GameStateBuilder::default().with_investigator(inv).build();
+        let mut state = GameStateBuilder::default()
+            .with_seat(
+                test_support::seat(1)
+                    .deck(["filler0", "filler1", "filler2"])
+                    .discard(["filler3"]),
+            )
+            .build();
+        let hand_before = state.investigators[&id].hand.len();
         let mut events = Vec::new();
 
         draw_with_deckout(

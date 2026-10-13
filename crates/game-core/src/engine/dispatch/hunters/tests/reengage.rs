@@ -7,11 +7,7 @@ use crate::{assert_event, assert_no_event, test_support};
 fn reengage_at_location_engages_sole_co_located_survivor() {
     let surv = InvestigatorId(2);
     let loc = LocationId(1);
-    let survivor = {
-        let mut i = test_support::test_investigator(2);
-        i.current_location = Some(loc);
-        i
-    };
+    let survivor = test_support::seat(2).at(loc);
     let enemy = {
         let mut e = test_support::test_enemy(1, "Ghoul");
         e.current_location = Some(loc);
@@ -19,7 +15,7 @@ fn reengage_at_location_engages_sole_co_located_survivor() {
         e
     };
     let mut state = GameStateBuilder::default()
-        .with_investigator(survivor)
+        .with_seat(survivor)
         .with_location(test_support::test_location(1, "Study"))
         .with_enemy(enemy)
         .with_turn_order([surv])
@@ -73,11 +69,6 @@ fn reengage_at_location_tie_auto_picks_lead_first_in_turn_order() {
     let lead = InvestigatorId(2);
     let other = InvestigatorId(3);
     let loc = LocationId(1);
-    let mk = |raw: u32| {
-        let mut i = test_support::test_investigator(raw);
-        i.current_location = Some(loc);
-        i
-    };
     let enemy = {
         let mut e = test_support::test_enemy(1, "Ghoul");
         e.current_location = Some(loc);
@@ -86,8 +77,8 @@ fn reengage_at_location_tie_auto_picks_lead_first_in_turn_order() {
         e
     };
     let mut state = GameStateBuilder::default()
-        .with_investigator(mk(2))
-        .with_investigator(mk(3))
+        .with_seat(test_support::seat(2).at(loc))
+        .with_seat(test_support::seat(3).at(loc))
         .with_location(test_support::test_location(1, "Study"))
         .with_enemy(enemy)
         .with_turn_order([lead, other]) // lead first
@@ -115,11 +106,7 @@ fn reengage_at_location_tie_auto_picks_lead_first_in_turn_order() {
 fn reengage_at_location_exhausted_enemy_does_not_engage() {
     let surv = InvestigatorId(2);
     let loc = LocationId(1);
-    let survivor = {
-        let mut i = test_support::test_investigator(2);
-        i.current_location = Some(loc);
-        i
-    };
+    let survivor = test_support::seat(2).at(loc);
     let enemy = {
         let mut e = test_support::test_enemy(1, "Ghoul");
         e.current_location = Some(loc);
@@ -128,7 +115,7 @@ fn reengage_at_location_exhausted_enemy_does_not_engage() {
         e
     };
     let mut state = GameStateBuilder::default()
-        .with_investigator(survivor)
+        .with_seat(survivor)
         .with_location(test_support::test_location(1, "Study"))
         .with_enemy(enemy)
         .with_turn_order([surv])

@@ -725,7 +725,7 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
 mod turn_menu_tests {
     use crate::engine::outcome::OptionTarget;
     use crate::engine::{dispatch, enumerate};
-    use crate::state::{ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId};
+    use crate::state::{ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId};
     use crate::test_support;
 
     #[test]
@@ -733,24 +733,14 @@ mod turn_menu_tests {
         // An open-turn state with a co-located, engaged enemy so the menu holds
         // at least one Enemy-anchored option (Fight/Evade), proving turn_menu
         // propagates each action's target — not just Global.
-        let mut state = GameStateBuilder::default()
-            .with_investigator(test_support::test_investigator(1))
+        const HERE: LocationId = LocationId(10);
+        let state = GameStateBuilder::default()
+            .with_location(test_support::test_location(HERE.0, "Study"))
+            .with_seat(test_support::seat(1).at(HERE))
+            .with_enemy_engaged(test_support::test_enemy(7, "Ghoul"), InvestigatorId(1))
             .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
             .open_turn(InvestigatorId(1))
             .build();
-        let loc = test_support::test_location(10, "Study");
-        let loc_id = loc.id;
-        state.locations.insert(loc_id, loc);
-        state.locations.get_mut(&loc_id).unwrap().revealed = true;
-        {
-            let inv = state.investigators.get_mut(&InvestigatorId(1)).unwrap();
-            inv.current_location = Some(loc_id);
-            inv.actions_remaining = 3;
-        }
-        let mut e = test_support::test_enemy(7, "Ghoul");
-        e.engaged_with = Some(InvestigatorId(1));
-        e.current_location = Some(loc_id);
-        state.enemies.insert(e.id, e);
 
         let actions = enumerate::legal_actions(&state);
         let menu = dispatch::turn_menu(&state);

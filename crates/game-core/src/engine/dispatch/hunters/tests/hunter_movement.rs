@@ -13,8 +13,6 @@ fn hunter_moves_one_step_toward_investigator_two_hops_away_no_engage() {
     a.connections = vec![LocationId(2)];
     b.connections = vec![LocationId(1), LocationId(3)];
     c.connections = vec![LocationId(2)];
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(LocationId(3));
     let mut ghoul = test_support::test_enemy(1, "Swarm");
     ghoul.hunter = true;
     ghoul.current_location = Some(LocationId(1));
@@ -23,7 +21,7 @@ fn hunter_moves_one_step_toward_investigator_two_hops_away_no_engage() {
         .with_location(a)
         .with_location(b)
         .with_location(c)
-        .with_investigator(inv)
+        .with_seat(test_support::seat(1).at(LocationId(3)))
         .with_turn_order([InvestigatorId(1)])
         .with_enemy(ghoul)
         .build();
@@ -49,8 +47,6 @@ fn hunter_engages_when_it_moves_into_investigators_location() {
     let mut b = test_support::test_location(2, "B");
     a.connections = vec![LocationId(2)];
     b.connections = vec![LocationId(1)];
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(LocationId(2));
     let mut h = test_support::test_enemy(1, "Hunter");
     h.hunter = true;
     h.current_location = Some(LocationId(1));
@@ -58,7 +54,7 @@ fn hunter_engages_when_it_moves_into_investigators_location() {
         .with_phase(Phase::Enemy)
         .with_location(a)
         .with_location(b)
-        .with_investigator(inv)
+        .with_seat(test_support::seat(1).at(LocationId(2)))
         .with_turn_order([InvestigatorId(1)])
         .with_enemy(h)
         .build();
@@ -83,8 +79,6 @@ fn hunter_with_no_path_does_not_move() {
     let mut a = test_support::test_location(1, "A");
     let island = test_support::test_location(9, "Island");
     a.connections = vec![];
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(LocationId(1));
     let mut h = test_support::test_enemy(1, "Hunter");
     h.hunter = true;
     h.current_location = Some(LocationId(9));
@@ -92,7 +86,7 @@ fn hunter_with_no_path_does_not_move() {
         .with_phase(Phase::Enemy)
         .with_location(a)
         .with_location(island)
-        .with_investigator(inv)
+        .with_seat(test_support::seat(1).at(LocationId(1)))
         .with_turn_order([InvestigatorId(1)])
         .with_enemy(h)
         .build();
@@ -114,8 +108,6 @@ fn exhausted_hunter_is_skipped() {
     let mut b = test_support::test_location(2, "B");
     a.connections = vec![LocationId(2)];
     b.connections = vec![LocationId(1)];
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(LocationId(2));
     let mut h = test_support::test_enemy(1, "Hunter");
     h.hunter = true;
     h.exhausted = true;
@@ -124,7 +116,7 @@ fn exhausted_hunter_is_skipped() {
         .with_phase(Phase::Enemy)
         .with_location(a)
         .with_location(b)
-        .with_investigator(inv)
+        .with_seat(test_support::seat(1).at(LocationId(2)))
         .with_turn_order([InvestigatorId(1)])
         .with_enemy(h)
         .build();
@@ -146,8 +138,6 @@ fn non_hunter_enemy_does_not_move() {
     let mut b = test_support::test_location(2, "B");
     a.connections = vec![LocationId(2)];
     b.connections = vec![LocationId(1)];
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(LocationId(2));
     let mut e = test_support::test_enemy(1, "Slug");
     e.hunter = false;
     e.current_location = Some(LocationId(1));
@@ -155,7 +145,7 @@ fn non_hunter_enemy_does_not_move() {
         .with_phase(Phase::Enemy)
         .with_location(a)
         .with_location(b)
-        .with_investigator(inv)
+        .with_seat(test_support::seat(1).at(LocationId(2)))
         .with_turn_order([InvestigatorId(1)])
         .with_enemy(e)
         .build();
@@ -179,8 +169,6 @@ fn hunter_already_co_located_does_not_move_but_engages() {
     let mut b = test_support::test_location(2, "B");
     a.connections = vec![LocationId(2)];
     b.connections = vec![LocationId(1)];
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(LocationId(1));
     let mut h = test_support::test_enemy(1, "Hunter");
     h.hunter = true;
     h.current_location = Some(LocationId(1));
@@ -188,7 +176,7 @@ fn hunter_already_co_located_does_not_move_but_engages() {
         .with_phase(Phase::Enemy)
         .with_location(a)
         .with_location(b)
-        .with_investigator(inv)
+        .with_seat(test_support::seat(1).at(LocationId(1)))
         .with_turn_order([InvestigatorId(1)])
         .with_enemy(h)
         .build();

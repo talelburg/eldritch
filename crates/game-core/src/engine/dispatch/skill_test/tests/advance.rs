@@ -1,4 +1,6 @@
 use super::*;
+use crate::test_support::TestSession;
+use crate::{assert_event, assert_no_event};
 
 // The former `revelation_skill_test_failure_deals_margin_damage_and_discards`
 // unit test is gone (#380): it simulated the removed
@@ -14,21 +16,15 @@ use super::*;
 fn plain_skill_test_disposes_of_no_encounter_card() {
     let inv = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
-        .with_active_investigator(inv)
+        .with_seat(test_support::seat(1))
+        .open_turn(inv)
         .build();
     state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
-    let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
-    let out = perform_skill_test(&mut cx, inv, SkillKind::Intellect, 1);
-    assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
-    let out = finish_skill_test(&mut cx, &[]);
-    let out = dispatch::drive(&mut cx, out);
-    assert_eq!(out, EngineOutcome::Done);
-    assert!(state.encounter_discard.is_empty());
+    let session = TestSession::new(state)
+        .test_skill(inv, SkillKind::Intellect, 1)
+        .commit(&[]);
+    session.assert_at_turn_menu(inv);
+    assert!(session.state().encounter_discard.is_empty());
 }
 
 /// A skill test with an `on_success` effect runs it on a successful
@@ -37,7 +33,7 @@ fn plain_skill_test_disposes_of_no_encounter_card() {
 fn skill_test_runs_on_success_effect_on_a_passing_draw() {
     let inv = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
         .with_active_investigator(inv)
         .build();
     // Willpower 3 + Numeric(0) = 3 vs difficulty 2 → success.
@@ -76,48 +72,23 @@ fn skill_test_runs_on_success_effect_on_a_passing_draw() {
 fn skill_test_opens_and_auto_skips_both_player_windows() {
     let inv = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
-        .with_active_investigator(inv)
+        .with_seat(test_support::seat(1))
+        .open_turn(inv)
         .build();
     state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
-    let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
 
     // start -> PreCommitWindow auto-skips window 1 -> parks at AwaitingCommit.
-    let out = start_skill_test(
-        &mut cx,
-        inv,
-        SkillKind::Willpower,
-        SkillTestKind::Plain,
-        DifficultyBasis::Fixed(2),
-        SkillTestFollowUp::None,
-        None,
-        None,
-        None,
-        None,
-    );
+    let session = TestSession::new(state).test_skill(inv, SkillKind::Willpower, 2);
     assert!(
-        matches!(out, EngineOutcome::AwaitingInput { .. }),
+        session.state().current_skill_test().is_some()
+            && session.prompt().kind == InputKind::PickMultiple,
         "commit prompt (window 1 before commit opened and auto-skipped to it)"
     );
 
     // commit nothing -> PreTokenWindow auto-skips window 2 -> resolves to end.
-    let out = finish_skill_test(&mut cx, &[]);
-    let out = dispatch::drive(&mut cx, out);
-    assert_eq!(
-        out,
-        EngineOutcome::Done,
-        "window 2 (before token) opened and auto-skipped, then resolved",
-    );
-    assert!(
-        events
-            .iter()
-            .any(|e| matches!(e, Event::SkillTestEnded { .. })),
-        "the test resolved to the end: {events:?}",
-    );
+    let session = session.commit(&[]);
+    session.assert_at_turn_menu(inv);
+    assert_event!(session.events(), Event::SkillTestEnded { .. });
 }
 
 /// Closing a skill-test player window re-enters `advance` at the
@@ -129,7 +100,7 @@ fn skill_test_opens_and_auto_skips_both_player_windows() {
 fn closing_a_skill_test_player_window_re_enters_advance() {
     let inv = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
         .with_active_investigator(inv)
         .build();
     state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
@@ -169,59 +140,27 @@ fn closing_a_skill_test_player_window_re_enters_advance() {
 fn commit_emits_then_resolves_through_advance() {
     let inv = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
-        .with_active_investigator(inv)
+        .with_seat(test_support::seat(1))
+        .open_turn(inv)
         .build();
     state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
-    let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
 
-    let out = start_skill_test(
-        &mut cx,
-        inv,
-        SkillKind::Willpower,
-        SkillTestKind::Plain,
-        DifficultyBasis::Fixed(2),
-        SkillTestFollowUp::None,
-        None,
-        None,
-        None,
-        None,
-    );
+    let session = TestSession::new(state).test_skill(inv, SkillKind::Willpower, 2);
     // advance parked at AwaitingCommit and emitted the commit prompt.
-    let EngineOutcome::AwaitingInput { request, .. } = &out else {
-        panic!("expected the commit prompt, got {out:?}");
-    };
     assert!(
-        request.prompt.contains("Commit cards"),
-        "the AwaitingCommit arm emits the commit prompt: {request:?}",
+        session.prompt().prompt.contains("Commit cards"),
+        "the AwaitingCommit arm emits the commit prompt: {:?}",
+        session.prompt(),
     );
-    assert!(matches!(
-        cx.state.continuations.top(),
-        Some(Continuation::SkillTest(_))
-    ));
+    assert!(session.state().current_skill_test().is_some());
 
     // Commit nothing → the hop parks; the loop drives to teardown.
-    let out = finish_skill_test(&mut cx, &[]);
-    let out = dispatch::drive(&mut cx, out);
-    assert_eq!(out, EngineOutcome::Done);
+    let session = session.commit(&[]);
+    session.assert_at_turn_menu(inv);
+    assert_event!(session.events(), Event::SkillTestStarted { .. });
+    assert_event!(session.events(), Event::SkillTestEnded { .. });
     assert!(
-        events
-            .iter()
-            .any(|e| matches!(e, Event::SkillTestStarted { .. }))
-            && events
-                .iter()
-                .any(|e| matches!(e, Event::SkillTestEnded { .. })),
-        "the test ran start-to-end: {events:?}",
-    );
-    assert!(
-        !state
-            .continuations
-            .iter()
-            .any(|c| matches!(c, Continuation::SkillTest(_))),
+        session.state().current_skill_test().is_none(),
         "the SkillTest frame was torn down",
     );
 }
@@ -233,40 +172,22 @@ fn commit_emits_then_resolves_through_advance() {
 fn interactive_acknowledge_pauses_for_confirm_then_resolves() {
     let inv = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
-        .with_active_investigator(inv)
+        .with_seat(test_support::seat(1))
+        .open_turn(inv)
         .build();
     state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
     state.interactive_acknowledge = true;
-    let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
 
-    let out = start_skill_test(
-        &mut cx,
-        inv,
-        SkillKind::Willpower,
-        SkillTestKind::Plain,
-        DifficultyBasis::Fixed(2),
-        SkillTestFollowUp::None,
-        None,
-        None,
-        None,
-        None,
-    );
-    assert!(
-        matches!(out, EngineOutcome::AwaitingInput { .. }),
+    let session = TestSession::new(state).test_skill(inv, SkillKind::Willpower, 2);
+    assert_eq!(
+        session.prompt().kind,
+        InputKind::PickMultiple,
         "commit prompt"
     );
 
     // Commit nothing -> resolution runs, then suspends at the acknowledge step.
-    let out = finish_skill_test(&mut cx, &[]);
-    let out = dispatch::drive(&mut cx, out);
-    let EngineOutcome::AwaitingInput { request, .. } = &out else {
-        panic!("expected the acknowledge Confirm prompt, got {out:?}");
-    };
+    let session = session.commit(&[]);
+    let request = session.prompt();
     assert_eq!(
         request.kind,
         InputKind::Confirm,
@@ -281,37 +202,15 @@ fn interactive_acknowledge_pauses_for_confirm_then_resolves() {
         "the acknowledge pause carries no board anchor (ADR 0011)"
     );
     // The result is already logged when the player is asked to acknowledge.
-    // Read through `cx.events` here: `cx` is still borrowed mutably for the
-    // Confirm resume below, so the outer `events` binding is unavailable.
-    assert!(
-        cx.events
-            .iter()
-            .any(|e| matches!(e, Event::ChaosTokenRevealed { .. })),
-        "token revealed before the ack"
-    );
-    assert!(
-        cx.events
-            .iter()
-            .any(|e| matches!(e, Event::SkillTestSucceeded { .. })),
-        "outcome logged before the ack"
-    );
-    assert!(
-        !cx.events
-            .iter()
-            .any(|e| matches!(e, Event::SkillTestEnded { .. })),
-        "teardown waits on the acknowledgment"
-    );
+    assert_event!(session.events(), Event::ChaosTokenRevealed { .. });
+    assert_event!(session.events(), Event::SkillTestSucceeded { .. });
+    // Teardown waits on the acknowledgment.
+    assert_no_event!(session.events(), Event::SkillTestEnded { .. });
 
     // Confirm -> drive into teardown.
-    let out = acknowledge_outcome(&mut cx);
-    let out = dispatch::drive(&mut cx, out);
-    assert_eq!(out, EngineOutcome::Done);
-    assert!(
-        events
-            .iter()
-            .any(|e| matches!(e, Event::SkillTestEnded { .. })),
-        "after Confirm the test resolved to the end: {events:?}"
-    );
+    let session = session.confirm();
+    session.assert_at_turn_menu(inv);
+    assert_event!(session.events(), Event::SkillTestEnded { .. });
 }
 
 /// Flag off (default): no acknowledge pause — the test resolves straight
@@ -320,42 +219,21 @@ fn interactive_acknowledge_pauses_for_confirm_then_resolves() {
 fn no_acknowledge_pause_when_flag_off() {
     let inv = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
-        .with_active_investigator(inv)
+        .with_seat(test_support::seat(1))
+        .open_turn(inv)
         .build();
     state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
-    let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
 
-    let out = start_skill_test(
-        &mut cx,
-        inv,
-        SkillKind::Willpower,
-        SkillTestKind::Plain,
-        DifficultyBasis::Fixed(2),
-        SkillTestFollowUp::None,
-        None,
-        None,
-        None,
-        None,
-    );
-    assert!(
-        matches!(out, EngineOutcome::AwaitingInput { .. }),
+    let session = TestSession::new(state).test_skill(inv, SkillKind::Willpower, 2);
+    assert_eq!(
+        session.prompt().kind,
+        InputKind::PickMultiple,
         "commit prompt"
     );
-    let out = finish_skill_test(&mut cx, &[]);
-    let out = dispatch::drive(&mut cx, out);
-    assert_eq!(
-        out,
-        EngineOutcome::Done,
-        "no acknowledge pause when the flag is off"
-    );
-    assert!(events
-        .iter()
-        .any(|e| matches!(e, Event::SkillTestEnded { .. })));
+    // No acknowledge pause when the flag is off: straight back to the menu.
+    let session = session.commit(&[]);
+    session.assert_at_turn_menu(inv);
+    assert_event!(session.events(), Event::SkillTestEnded { .. });
 }
 
 /// `acknowledge_outcome` rejects (state untouched) when there is no in-flight
@@ -363,7 +241,7 @@ fn no_acknowledge_pause_when_flag_off() {
 #[test]
 fn acknowledge_outcome_rejects_without_in_flight_test() {
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
         .build();
     let mut events = Vec::new();
     let mut cx = Cx {
@@ -384,7 +262,7 @@ fn acknowledge_outcome_rejects_without_in_flight_test() {
 fn finish_skill_test_parks_the_resolution_for_the_loop() {
     let inv = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
         .with_active_investigator(inv)
         .build();
     state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];

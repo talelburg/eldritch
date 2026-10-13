@@ -213,15 +213,15 @@ fn registry() -> CardRegistry {
 /// The controller at a clueless location, with `PRIMITIVES` in play and
 /// `COSTED_EVENT` in hand.
 fn state() -> GameState {
-    let mut inv = test_support::test_investigator(CONTROLLER.0);
-    inv.cards_in_play.push(CardInPlay::enter_play(
-        CardCode::new(PRIMITIVES),
-        INSTANCE,
-        Owner::Investigator(CONTROLLER),
-    ));
-    inv.hand.push(CardCode::new(COSTED_EVENT));
     GameStateBuilder::new()
-        .with_investigator_at(inv, LOCATION)
+        // `in_play_as`: every candidate this file builds (`in_play`) names
+        // the instance before any state exists, so it is placed at a known id.
+        .with_seat(
+            test_support::seat(CONTROLLER.0)
+                .at(LOCATION)
+                .in_play_as(INSTANCE, PRIMITIVES)
+                .hand([COSTED_EVENT]),
+        )
         .with_location(test_support::test_location(LOCATION.0, "Clueless"))
         .with_turn_order([CONTROLLER])
         .with_round(1)

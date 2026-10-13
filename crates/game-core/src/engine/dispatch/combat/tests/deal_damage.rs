@@ -1,5 +1,6 @@
 use super::*;
-use crate::state::{EmitEventFrame, Owner};
+use crate::state::EmitEventFrame;
+use crate::test_support::SeatLookup as _;
 
 #[test]
 fn soak_and_place_with_no_soakers_matches_old_behavior() {
@@ -8,12 +9,13 @@ fn soak_and_place_with_no_soakers_matches_old_behavior() {
     // soak-bearing assets must land entirely on the investigator, just
     // as the pre-rewrite direct apply_damage/horror_numeric path did.
     let id = InvestigatorId(1);
-    let inv = test_support::test_investigator(1);
     // max_health()/max_sanity() now read from the registry (TEST_INV = 8/8).
     // 2 damage and 1 horror both land below capacity, so no defeat fires.
     // The old explicit max_health = 10 / max_sanity = 10 are vestigial.
 
-    let mut state = GameStateBuilder::new().with_investigator(inv).build();
+    let mut state = GameStateBuilder::new()
+        .with_seat(test_support::seat(1))
+        .build();
     let mut events = Vec::new();
     let mut cx = Cx {
         state: &mut state,
@@ -61,7 +63,7 @@ fn advance_distribution_drains_without_soakers_and_prompts_with_one() {
 fn resume_damage_distribution_rejects_invalid_pick_and_keeps_frame() {
     let inv_id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
         .build();
     // Park a DealDamage frame mid-distribution (2 damage to assign).
     state.continuations.push(DealDamageFrame {
@@ -84,7 +86,8 @@ fn resume_damage_distribution_rejects_invalid_pick_and_keeps_frame() {
     assert!(matches!(wrong, EngineOutcome::Rejected { .. }));
 
     // Out-of-range option (no soakers → only the investigator is eligible,
-    // so any index ≥ 1 is invalid) → reject, frame untouched.
+    // so any index ≥ 1 is invalid) → reject, frame untouched. A malformed
+    // response no step can name, so the resume handler is called with it raw.
     let oob = resume_damage_distribution(&mut cx, &InputResponse::PickSingle(OptionId(5)));
     assert!(matches!(oob, EngineOutcome::Rejected { .. }));
 
@@ -117,7 +120,7 @@ fn resume_damage_distribution_rejects_invalid_pick_and_keeps_frame() {
 fn deal_damage_cursor_walks_distribute_announce_place_finish() {
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
         .build();
     let mut events = Vec::new();
     let mut cx = Cx {
@@ -243,7 +246,7 @@ fn the_two_damage_conditions_are_classified_as_the_adr_says() {
     }
     // The milestone's resolve step changes nothing; the other's places.
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
         .build();
     let before = state.clone();
     let mut events = Vec::new();
@@ -261,26 +264,19 @@ fn the_two_damage_conditions_are_classified_as_the_adr_says() {
 
 #[test]
 fn soak_options_anchor_assets_to_card_instances() {
-    let mut inv = test_support::test_investigator(1);
-    inv.investigator_card.instance_id = CardInstanceId(1);
-    inv.cards_in_play.push(CardInPlay::enter_play(
-        CardCode::new(test_support::TEST_ASSET),
-        CardInstanceId(7),
-        Owner::Investigator(InvestigatorId(1)),
-    ));
-    let state = GameStateBuilder::default().with_investigator(inv).build();
+    let state = GameStateBuilder::default()
+        .with_seat(test_support::seat(1).in_play([test_support::TEST_ASSET]))
+        .build();
+    let asset = state.in_play(InvestigatorId(1), test_support::TEST_ASSET);
     let targets = vec![
         DistributionTarget::Investigator,
-        DistributionTarget::Asset(CardInstanceId(7)),
+        DistributionTarget::Asset(asset),
     ];
-    let me = OptionTarget::CardInstance(CardInstanceId(1));
+    let me = state.investigators[&InvestigatorId(1)].card_anchor();
     let opts = soak_options(&state, &targets, &me);
     // Anchors: the investigator to their own card; a soaker asset to its card.
     assert_eq!(opts[0].target, Some(me), "the investigator's own card");
-    assert_eq!(
-        opts[1].target,
-        Some(OptionTarget::CardInstance(CardInstanceId(7)))
-    );
+    assert_eq!(opts[1].target, Some(OptionTarget::CardInstance(asset)));
     // Labels: each anchored card's name (#989), not the target's Debug form.
     assert_eq!(opts[0].label, "Test Investigator");
     assert_eq!(opts[1].label, "Test Asset");
