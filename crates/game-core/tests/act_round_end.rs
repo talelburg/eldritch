@@ -9,7 +9,11 @@ use game_core::engine::{EngineOutcome, NativeCx, OptionTarget};
 use game_core::state::{
     Act, CardCode, GameState, GameStateBuilder, InvestigatorId, Location, LocationId,
 };
-use game_core::test_support::{self, MockRegistry, TestSession};
+use game_core::test_support::{seat, MockRegistry, TestSession};
+
+const INV: InvestigatorId = InvestigatorId(1);
+/// The Hallway, where the investigator stands.
+const HERE: LocationId = LocationId(2);
 
 /// The advance logic lives in the registry (01109's `When`-`RoundEnded` reaction
 /// native), so the coordinator fires it through the effect evaluator when its
@@ -37,22 +41,19 @@ fn install() {
 /// Act 2 (01109) current, a Hallway investigator with `clues`, at the end of
 /// the Upkeep phase. Act 3 (01110) is the terminal-Won successor.
 fn upkeep_round_end_state(clues: u8) -> GameState {
-    let inv = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
-        .with_turn_order([inv])
+        .with_seat(seat(1).at(HERE).clues(clues))
+        .with_turn_order([INV])
         .ending_upkeep_phase()
         .with_location(Location::new(
-            LocationId(2),
+            HERE,
             CardCode("01112".into()),
             "Hallway",
             1,
             0,
         ))
         .build();
-    let i = state.investigators.get_mut(&inv).unwrap();
-    i.current_location = Some(LocationId(2));
-    i.clues = clues;
+    // No builder setter stages the act deck.
     state.act_deck = vec![
         Act {
             code: CardCode("01109".into()),
@@ -92,11 +93,7 @@ fn resolve_pick_fires_advance() {
     // which pauses at the step-1.4 encounter-draw prompt.
     let session = opened_round_end_window(3).pick(OptionTarget::Act);
     assert_eq!(session.state().act_index, 1, "advanced act 2 -> act 3");
-    assert_eq!(
-        session.state().investigators[&InvestigatorId(1)].clues,
-        0,
-        "spent 3"
-    );
+    assert_eq!(session.state().investigators[&INV].clues, 0, "spent 3");
 }
 
 #[test]
@@ -104,7 +101,7 @@ fn resolve_skip_declines_advance() {
     let session = opened_round_end_window(3).skip();
     assert_eq!(session.state().act_index, 0, "no advance on Skip");
     assert_eq!(
-        session.state().investigators[&InvestigatorId(1)].clues,
+        session.state().investigators[&INV].clues,
         3,
         "no clues spent on Skip"
     );
