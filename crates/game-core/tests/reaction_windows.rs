@@ -336,8 +336,7 @@ fn a_choose_one_inside_a_reaction_anchors_to_the_firing_card() {
 fn skip_closes_an_optional_only_window_without_firing() {
     // Open the window, then Skip → no effect fires; the window
     // closes; the session is back at the turn menu.
-    let resumed =
-        fight_through_commit_window(fight_to_defeat_scenario(&[ROLAND_REACTION])).skip();
+    let resumed = fight_through_commit_window(fight_to_defeat_scenario(&[ROLAND_REACTION])).skip();
 
     assert_at_turn_menu(&resumed);
     assert_no_event!(resumed.events(), Event::CluePlaced { .. });
@@ -354,10 +353,7 @@ fn by_controller_filter_excludes_unrelated_investigators() {
     // match the defeat (the active investigator made the kill, not
     // the controller of ROLAND_REACTION). No window opens.
     let board = fight_board(
-        [
-            seat(1).at(LOC),
-            seat(2).at(LOC).in_play([ROLAND_REACTION]),
-        ],
+        [seat(1).at(LOC), seat(2).at(LOC).in_play([ROLAND_REACTION])],
         3,
     )
     .with_turn_order([INV, OTHER]);
@@ -634,7 +630,10 @@ fn pending_triggers_order_active_investigator_first_then_turn_order() {
         pending[1].controller, OTHER,
         "non-active investigator's trigger comes after, in turn order",
     );
-    assert_eq!(pending[1].source, source(&paused, OTHER, BYSTANDER_REACTION));
+    assert_eq!(
+        pending[1].source,
+        source(&paused, OTHER, BYSTANDER_REACTION)
+    );
 }
 
 #[test]
@@ -797,9 +796,8 @@ fn investigate_and_commit_nothing(board: GameStateBuilder) -> TestSession {
 /// Here the bystander's card fires on a test they did not take (#773).
 #[test]
 fn an_unqualified_listener_reacts_to_another_investigators_test() {
-    let paused = investigate_and_commit_nothing(investigate_with_a_bystander(
-        BYSTANDER_TEST_REACTION,
-    ));
+    let paused =
+        investigate_and_commit_nothing(investigate_with_a_bystander(BYSTANDER_TEST_REACTION));
     let before = paused.state().investigators[&OTHER].resources;
     assert!(
         pending(&paused).is_some(),

@@ -13,8 +13,8 @@ use game_core::engine::{EngineOutcome, OptionTarget};
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::ScenarioId;
 use game_core::state::{
-    Act, CardCode, ChaosBag, ChaosToken, Continuation, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, TimingMode, TimingPointWindowFrame,
+    Act, CardCode, ChaosBag, ChaosToken, Continuation, GameState, GameStateBuilder, InvestigatorId,
+    LocationId, TimingMode, TimingPointWindowFrame,
 };
 use game_core::test_support::{self, clues, seat, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
@@ -121,7 +121,10 @@ fn playing_cover_up_discards_instead_of_discovering() {
     // the discovery (Axis D #336).
     let cover_up = cover_up_of(offered.state(), INV);
     let session = offered.pick(cover_up);
-    assert_eq!(session.prompt().target, Some(OptionTarget::TurnControl(INV)));
+    assert_eq!(
+        session.prompt().target,
+        Some(OptionTarget::TurnControl(INV))
+    );
     let state = session.state();
     assert_eq!(state.locations[&LOC].clues, 2, "location clues unchanged");
     assert_eq!(state.investigators[&INV].clues, 0, "discovered nothing");
@@ -131,7 +134,10 @@ fn playing_cover_up_discards_instead_of_discovering() {
 #[test]
 fn skip_discovers_normally() {
     let session = investigate_to_interrupt(investigate_board(holding_cover_up(3), 2)).skip();
-    assert_eq!(session.prompt().target, Some(OptionTarget::TurnControl(INV)));
+    assert_eq!(
+        session.prompt().target,
+        Some(OptionTarget::TurnControl(INV))
+    );
     let state = session.state();
     assert_eq!(state.locations[&LOC].clues, 1, "location -1");
     assert_eq!(state.investigators[&INV].clues, 1, "investigator +1");
@@ -305,7 +311,11 @@ fn resolving_state(cover_up_clues: u8) -> GameState {
     with_terminal_act(
         GameStateBuilder::new()
             // 1 clue meets the act's clue threshold.
-            .with_seat(seat(1).clues(1).threat_area([(COVER_UP, clues(cover_up_clues))]))
+            .with_seat(
+                seat(1)
+                    .clues(1)
+                    .threat_area([(COVER_UP, clues(cover_up_clues))]),
+            )
             .open_turn(INV)
             .with_scenario_id(ScenarioId::new("unknown"))
             .build(),
