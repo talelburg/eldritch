@@ -157,11 +157,10 @@ mod tests {
         // Sole candidate (controller's location, no connections). With
         // interactive_acknowledge on, the blast target must surface as a
         // one-option pick rather than auto-targeting silently (#466).
-        let loc = test_support::test_location(1, "Lonely Spot"); // no connections by default
-        let mut inv = test_support::test_investigator(1);
-        inv.current_location = Some(LocationId(1));
+        let here = LocationId(1);
+        let loc = test_support::test_location(here.0, "Lonely Spot"); // no connections by default
         let mut state = GameStateBuilder::new()
-            .with_investigator(inv)
+            .with_seat(test_support::seat(1).at(here))
             .with_location(loc)
             .build();
         state.interactive_acknowledge = true;
