@@ -17,10 +17,8 @@
 use card_dsl::dsl::{self, EventPattern, EventTiming, InvestigatorTarget};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{EngineOutcome, NativeCx, OptionTarget};
-use game_core::state::{
-    Act, CardCode, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId, Owner,
-};
-use game_core::test_support::{self, MockRegistry, TestSession};
+use game_core::state::{Act, CardCode, CardInstanceId, GameStateBuilder, InvestigatorId};
+use game_core::test_support::{seat, MockRegistry, TestSession};
 
 const TEST_ACT: &str = "TESTACT";
 const TEST_X: &str = "TESTX";
@@ -75,17 +73,12 @@ fn resources(session: &TestSession) -> u8 {
 /// (the `at`-forced source) in their threat area. Settled, it rests
 /// at the round end's `when` reaction window.
 fn round_end_window() -> TestSession {
-    let inv = InvestigatorId(1);
-    let mut investigator = test_support::test_investigator(1);
-    investigator.threat_area.push(CardInPlay::enter_play(
-        CardCode::new(TEST_X),
-        CardInstanceId(0),
-        Owner::EncounterDeck,
-    ));
     let mut state = GameStateBuilder::new()
         .ending_upkeep_phase()
-        .with_investigator(investigator)
-        .with_turn_order([inv])
+        // `TESTX` is a code the registry doesn't know, so the encounter deck
+        // owns it.
+        .with_seat(seat(1).threat_area([TEST_X]))
+        .with_turn_order([InvestigatorId(1)])
         .build();
     state.act_deck = vec![Act {
         code: CardCode::new(TEST_ACT),

@@ -6,7 +6,7 @@
 //! pattern, on one kind of source, dealing 1 horror to "you" — so the
 //! investigator who takes the horror is the controller the scan bound, and a
 //! fixture that fires twice where it should fire once shows up as the lead's
-//! ordering prompt (`TestSession::finish` refuses to finish at one).
+//! ordering prompt where the session should be back at the turn menu.
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use card_dsl::dsl::{
@@ -14,13 +14,15 @@ use card_dsl::dsl::{
     TargetScope, TestOutcome, TestedLocationScope,
 };
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::engine::enumerate::{self, TurnAction};
-use game_core::engine::{ApplyResult, EngineOutcome, OptionId, OptionTarget, TimingEvent};
+use game_core::assert_event;
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{OptionId, OptionTarget, TimingEvent};
+use game_core::event::Event;
 use game_core::state::{
     Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Owner, Status, TokenModifiers,
+    GameStateBuilder, InvestigatorId, Location, LocationId, Owner, Phase, Status, TokenModifiers,
 };
-use game_core::test_support::{self, MockRegistry, TestSession};
+use game_core::test_support::{self, seat, MockRegistry, Seat, SeatLookup as _, TestSession};
 
 /// A forced ability on `pattern` in `cell`, dealing 1 horror to the
 /// investigator it is bound to.
@@ -169,50 +171,125 @@ fn install_mock_registry() {
         .install();
 }
 
-fn horror(state: &GameState, id: u32) -> u8 {
-    state.investigators[&InvestigatorId(id)].horror()
+const ONE: InvestigatorId = InvestigatorId(1);
+const TWO: InvestigatorId = InvestigatorId(2);
+const STUDY: LocationId = LocationId(10);
+const HALLWAY: LocationId = LocationId(11);
+
+/// Location and enemy attachments: a seat cannot place them, so each has one
+/// named id.
+const STUDY_ATTACHMENT: CardInstanceId = CardInstanceId(60);
+const HALLWAY_ATTACHMENT: CardInstanceId = CardInstanceId(61);
+const GHOUL_ATTACHMENT: CardInstanceId = CardInstanceId(111);
+
+fn horror(state: &GameState, id: InvestigatorId) -> u8 {
+    state.investigators[&id].horror()
 }
 
-/// Investigators 1 and 2 at location 10, with locations 10 and 11 on the map
-/// and `turn_order` `[1, 2]` — so the lead proxy is investigator 1.
-fn table() -> GameState {
-    let at_10 = |id| {
-        let mut inv = test_support::test_investigator(id);
-        inv.current_location = Some(LocationId(10));
-        inv
-    };
+fn study() -> Location {
+    test_support::test_location(STUDY.0, "Study")
+}
+
+fn hallway() -> Location {
+    test_support::test_location(HALLWAY.0, "Hallway")
+}
+
+/// `location`, with `code`'s abilities printed on it.
+fn printing(mut location: Location, code: &str) -> Location {
+    location.code = CardCode::new(code);
+    location
+}
+
+/// An encounter card `code` attached to something on the board, as `id`.
+fn attachment(code: &str, id: CardInstanceId) -> CardInPlay {
+    CardInPlay::enter_play(CardCode::new(code), id, Owner::EncounterDeck)
+}
+
+/// `location`, with `code` attached to it as `id`.
+fn attaching(mut location: Location, code: &str, id: CardInstanceId) -> Location {
+    location.attachments.push(attachment(code, id));
+    location
+}
+
+/// Investigators `one` and `two` seated at the Study, with `study` and
+/// `hallway` on the map and `turn_order` `[1, 2]` — so the lead proxy is
+/// investigator 1.
+fn board(one: Seat, two: Seat, study: Location, hallway: Location) -> GameStateBuilder {
     GameStateBuilder::new()
-        .with_investigator(at_10(1))
-        .with_investigator(at_10(2))
-        .with_location(test_support::test_location(10, "Study"))
-        .with_location(test_support::test_location(11, "Hallway"))
-        .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
-        .build()
+        .with_seat(one.at(STUDY))
+        .with_seat(two.at(STUDY))
+        .with_location(study)
+        .with_location(hallway)
+        .with_turn_order([ONE, TWO])
 }
 
-fn instance(code: &str, id: u32, owner: Owner) -> CardInPlay {
-    CardInPlay::enter_play(CardCode::new(code), CardInstanceId(id), owner)
+/// [`board`] with nothing seated or printed.
+fn table() -> GameStateBuilder {
+    board(seat(ONE.0), seat(TWO.0), study(), hallway())
 }
 
-fn print_on_location(state: &mut GameState, location: u32, code: &str) {
-    state.locations.get_mut(&LocationId(location)).unwrap().code = CardCode::new(code);
+/// Make `code` the current agenda of a built `state`; the agenda deck has no
+/// builder setter.
+fn with_agenda(mut state: GameState, code: &str) -> GameState {
+    state.agenda_deck = vec![Agenda {
+        code: CardCode::new(code),
+        doom_threshold: 10,
+    }];
+    state
 }
 
-fn defeat(by: Option<u32>) -> TimingEvent {
+/// Make `code` the current act of a built `state`; the act deck has no builder
+/// setter.
+fn with_act(mut state: GameState, code: &str) -> GameState {
+    state.act_deck = vec![Act {
+        code: CardCode::new(code),
+        clue_threshold: 10,
+    }];
+    state
+}
+
+/// Mark `id` defeated on a built `state`.
+fn defeated(mut state: GameState, id: InvestigatorId) -> GameState {
+    state.investigators.get_mut(&id).unwrap().status = Status::Defeated;
+    state
+}
+
+fn defeat(by: Option<InvestigatorId>) -> TimingEvent {
     TimingEvent::EnemyDefeated {
         enemy: EnemyId(9),
-        by: by.map(InvestigatorId),
+        by,
         code: CardCode::new("test-defeated-enemy"),
     }
 }
 
-/// Fire `event` and drain it. Panics at an outstanding prompt, so a fixture
-/// that fired twice where it should fire once — the lead's ordering prompt —
-/// fails here.
-fn fire(state: GameState, event: TimingEvent) -> ApplyResult {
-    let result = TestSession::new(state).fire_at(event).finish();
-    assert_eq!(result.outcome, EngineOutcome::Done);
-    result
+/// Fire `event` over the open turn and drain it back to the turn menu. Panics
+/// at an outstanding prompt, so a fixture that fired twice where it should fire
+/// once — the lead's ordering prompt — fails here.
+///
+/// The condition is fired on its own rather than reached by play: the subject
+/// is how the scan narrows on the condition's own data, and the fixtures name
+/// subjects no basic action produces on demand — an uncredited defeat, a defeat
+/// or a move by the investigator whose turn it is not, another agenda's
+/// advance.
+fn fire(state: GameState, event: TimingEvent) -> TestSession {
+    let active = state.active_investigator.expect("an open turn");
+    let session = TestSession::new(state).fire_at(event);
+    session.assert_at_turn_menu(active);
+    session
+}
+
+/// End the round for real — the end of the Upkeep phase, staged with
+/// [`ending_upkeep_phase`](GameStateBuilder::ending_upkeep_phase) — so the
+/// `RoundEnded` scan runs. Play goes on into the next round's Mythos phase.
+fn end_the_round(state: GameState) -> TestSession {
+    let session = TestSession::new(state);
+    assert_event!(
+        session.events(),
+        Event::PhaseEnded {
+            phase: Phase::Upkeep
+        }
+    );
+    session
 }
 
 // ---------------------------------------------------------------------------
@@ -222,70 +299,71 @@ fn fire(state: GameState, event: TimingEvent) -> ApplyResult {
 
 #[test]
 fn an_agendas_forced_ability_fires_on_an_enemy_defeat_bound_to_the_lead_proxy() {
-    let mut state = table();
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new(ON_DEFEAT),
-        doom_threshold: 10,
-    }];
-    let result = fire(state, defeat(Some(2)));
-    assert_eq!(horror(&result.state, 1), 1, "the lead proxy takes it");
-    assert_eq!(horror(&result.state, 2), 0);
+    let state = with_agenda(table().open_turn(ONE).build(), ON_DEFEAT);
+    let session = fire(state, defeat(Some(TWO)));
+    assert_eq!(horror(session.state(), ONE), 1, "the lead proxy takes it");
+    assert_eq!(horror(session.state(), TWO), 0);
 }
 
 #[test]
 fn an_in_play_assets_forced_ability_fires_on_an_enemy_defeat_bound_to_its_controller() {
-    let mut state = table();
-    state
-        .investigators
-        .get_mut(&InvestigatorId(2))
-        .unwrap()
-        .cards_in_play
-        .push(instance(
-            ON_DEFEAT,
-            50,
-            Owner::Investigator(InvestigatorId(2)),
-        ));
-    let result = fire(state, defeat(Some(1)));
-    assert_eq!(horror(&result.state, 2), 1, "its controller takes it");
-    assert_eq!(horror(&result.state, 1), 0);
+    let state = board(
+        seat(ONE.0),
+        seat(TWO.0).in_play([ON_DEFEAT]),
+        study(),
+        hallway(),
+    )
+    .open_turn(ONE)
+    .build();
+    let session = fire(state, defeat(Some(ONE)));
+    assert_eq!(horror(session.state(), TWO), 1, "its controller takes it");
+    assert_eq!(horror(session.state(), ONE), 0);
 }
 
 #[test]
 fn a_locations_forced_ability_fires_on_an_enemy_defeat_bound_to_the_defeating_investigator() {
-    let mut state = table();
-    print_on_location(&mut state, 11, ON_DEFEAT);
-    let result = fire(state, defeat(Some(2)));
-    assert_eq!(horror(&result.state, 2), 1, "the subject, `by`, takes it");
-    assert_eq!(horror(&result.state, 1), 0);
+    let state = board(
+        seat(ONE.0),
+        seat(TWO.0),
+        study(),
+        printing(hallway(), ON_DEFEAT),
+    )
+    .open_turn(ONE)
+    .build();
+    let session = fire(state, defeat(Some(TWO)));
+    assert_eq!(
+        horror(session.state(), TWO),
+        1,
+        "the subject, `by`, takes it"
+    );
+    assert_eq!(horror(session.state(), ONE), 0);
 }
 
 #[test]
 fn an_uncontrolled_cards_forced_ability_with_no_subject_binds_to_the_lead_proxy() {
-    let mut state = table();
-    print_on_location(&mut state, 11, ON_DEFEAT);
-    let result = fire(state, defeat(None));
+    let state = board(
+        seat(ONE.0),
+        seat(TWO.0),
+        study(),
+        printing(hallway(), ON_DEFEAT),
+    )
+    .open_turn(ONE)
+    .build();
+    let session = fire(state, defeat(None));
     assert_eq!(
-        horror(&result.state, 1),
+        horror(session.state(), ONE),
         1,
         "an uncredited defeat has no subject, so the lead proxy takes it"
     );
-    assert_eq!(horror(&result.state, 2), 0);
+    assert_eq!(horror(session.state(), TWO), 0);
 }
 
 #[test]
 fn the_lead_proxy_is_the_first_active_seat() {
-    let mut state = table();
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new(ON_DEFEAT),
-        doom_threshold: 10,
-    }];
-    state
-        .investigators
-        .get_mut(&InvestigatorId(1))
-        .unwrap()
-        .status = Status::Defeated;
-    let result = fire(state, defeat(None));
-    assert_eq!(horror(&result.state, 2), 1);
+    // Investigator 1 is defeated, so the open turn is investigator 2's.
+    let state = defeated(with_agenda(table().open_turn(TWO).build(), ON_DEFEAT), ONE);
+    let session = fire(state, defeat(None));
+    assert_eq!(horror(session.state(), TWO), 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -296,83 +374,68 @@ fn the_lead_proxy_is_the_first_active_seat() {
 
 #[test]
 fn entering_a_location_fires_only_that_locations_ability() {
-    let mut state = table();
-    print_on_location(&mut state, 10, ON_ENTER);
-    print_on_location(&mut state, 11, ON_ENTER);
-    let result = fire(
+    let state = board(
+        seat(ONE.0),
+        seat(TWO.0),
+        printing(study(), ON_ENTER),
+        printing(hallway(), ON_ENTER),
+    )
+    .open_turn(ONE)
+    .build();
+    let session = fire(
         state,
         TimingEvent::EnteredLocation {
-            investigator: InvestigatorId(2),
-            location: LocationId(11),
+            investigator: TWO,
+            location: HALLWAY,
         },
     );
-    assert_eq!(horror(&result.state, 2), 1, "the entering investigator");
-    assert_eq!(horror(&result.state, 1), 0);
+    assert_eq!(horror(session.state(), TWO), 1, "the entering investigator");
+    assert_eq!(horror(session.state(), ONE), 0);
 }
 
 #[test]
 fn leaving_a_location_fires_only_its_attachments_ability() {
-    let mut state = table();
-    for (loc, inst) in [(10, 60), (11, 61)] {
-        state
-            .locations
-            .get_mut(&LocationId(loc))
-            .unwrap()
-            .attachments
-            .push(instance(ON_LEAVE, inst, Owner::EncounterDeck));
-    }
-    let result = fire(
+    let state = board(
+        seat(ONE.0),
+        seat(TWO.0),
+        attaching(study(), ON_LEAVE, STUDY_ATTACHMENT),
+        attaching(hallway(), ON_LEAVE, HALLWAY_ATTACHMENT),
+    )
+    .open_turn(ONE)
+    .build();
+    let session = fire(
         state,
         TimingEvent::LeftLocation {
-            investigator: InvestigatorId(2),
-            location: LocationId(10),
-            destination: LocationId(11),
+            investigator: TWO,
+            location: STUDY,
+            destination: HALLWAY,
         },
     );
-    assert_eq!(horror(&result.state, 2), 1, "the leaving investigator");
-    assert_eq!(horror(&result.state, 1), 0);
+    assert_eq!(horror(session.state(), TWO), 1, "the leaving investigator");
+    assert_eq!(horror(session.state(), ONE), 0);
 }
 
 #[test]
 fn investigating_a_location_fires_only_its_attachments_ability() {
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(LocationId(10));
-    inv.skills.intellect = 3;
-    inv.actions_remaining = 1;
-    let mut studied = test_support::test_location(10, "Study");
+    let mut studied = attaching(study(), ON_ATTACHED_INVESTIGATED, STUDY_ATTACHMENT);
     studied.shroud = 0;
     studied.clues = 1;
-    studied
-        .attachments
-        .push(instance(ON_ATTACHED_INVESTIGATED, 70, Owner::EncounterDeck));
-    let mut elsewhere = test_support::test_location(11, "Hallway");
-    elsewhere
-        .attachments
-        .push(instance(ON_ATTACHED_INVESTIGATED, 71, Owner::EncounterDeck));
-    let state = GameStateBuilder::new()
-        .open_turn(InvestigatorId(1))
-        .with_investigator(inv)
+    let session = GameStateBuilder::new()
+        .with_seat(seat(ONE.0).at(STUDY).actions(1))
         .with_location(studied)
-        .with_location(elsewhere)
+        .with_location(attaching(
+            hallway(),
+            ON_ATTACHED_INVESTIGATED,
+            HALLWAY_ATTACHMENT,
+        ))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
-        .build();
-    let idx = enumerate::legal_actions(&state)
-        .iter()
-        .position(|a| {
-            a == &TurnAction::Investigate {
-                investigator: InvestigatorId(1),
-            }
-        })
-        .expect("Investigate is on the turn menu");
-    let result = test_support::apply_no_commits(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
-        }),
-    );
+        .open_turn(ONE)
+        .session()
+        .take(&TurnAction::Investigate { investigator: ONE })
+        .commit(&[]);
     assert_eq!(
-        horror(&result.state, 1),
+        horror(session.state(), ONE),
         1,
         "only the investigated location's attachment fired — two would have \
          opened the lead's ordering prompt instead"
@@ -381,56 +444,59 @@ fn investigating_a_location_fires_only_its_attachments_ability() {
 
 #[test]
 fn an_enemy_attacking_fires_only_its_own_ability() {
-    let mut state = table();
-    for id in [1, 2] {
+    let acolyte = |id| {
         let mut enemy = test_support::test_enemy(id, "Acolyte");
         enemy.code = CardCode::new(ON_THIS_ATTACKS);
-        enemy.current_location = Some(LocationId(10));
+        enemy.current_location = Some(STUDY);
         enemy.attack_damage = 0;
-        state.enemies.insert(EnemyId(id), enemy);
-    }
-    let result = fire(
+        enemy
+    };
+    let state = table()
+        .with_enemy(acolyte(1))
+        .with_enemy(acolyte(2))
+        .open_turn(ONE)
+        .build();
+    let session = fire(
         state,
         TimingEvent::EnemyAttacks {
             enemy: EnemyId(2),
-            investigator: InvestigatorId(2),
+            investigator: TWO,
         },
     );
-    assert_eq!(horror(&result.state, 2), 1, "the attacked investigator");
-    assert_eq!(horror(&result.state, 1), 0);
+    assert_eq!(horror(session.state(), TWO), 1, "the attacked investigator");
+    assert_eq!(horror(session.state(), ONE), 0);
 }
 
 #[test]
 fn the_end_of_a_turn_fires_only_the_ending_investigators_card() {
-    let mut state = table();
-    for id in [1, 2] {
-        state
-            .investigators
-            .get_mut(&InvestigatorId(id))
-            .unwrap()
-            .threat_area
-            .push(instance(ON_END_OF_TURN, 80 + id, Owner::EncounterDeck));
-    }
-    let result = fire(
-        state,
-        TimingEvent::EndOfTurn {
-            investigator: InvestigatorId(2),
-        },
-    );
-    assert_eq!(horror(&result.state, 2), 1);
-    assert_eq!(horror(&result.state, 1), 0);
+    let state = board(
+        seat(ONE.0).threat_area([ON_END_OF_TURN]),
+        seat(TWO.0).threat_area([ON_END_OF_TURN]),
+        study(),
+        hallway(),
+    )
+    .open_turn(ONE)
+    .build();
+    let session = fire(state, TimingEvent::EndOfTurn { investigator: TWO });
+    assert_eq!(horror(session.state(), TWO), 1);
+    assert_eq!(horror(session.state(), ONE), 0);
 }
 
 #[test]
 fn an_advance_fires_only_the_advancing_cards_ability() {
-    let mut state = table();
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new(ON_AGENDA_ADVANCED),
-        doom_threshold: 10,
-    }];
     // The same pattern on a location never hears an agenda advance: it is not
     // the agenda the ability is printed on.
-    print_on_location(&mut state, 11, ON_AGENDA_ADVANCED);
+    let state = with_agenda(
+        board(
+            seat(ONE.0),
+            seat(TWO.0),
+            study(),
+            printing(hallway(), ON_AGENDA_ADVANCED),
+        )
+        .open_turn(ONE)
+        .build(),
+        ON_AGENDA_ADVANCED,
+    );
     let other = fire(
         state.clone(),
         TimingEvent::AgendaAdvanced {
@@ -438,7 +504,7 @@ fn an_advance_fires_only_the_advancing_cards_ability() {
         },
     );
     assert_eq!(
-        horror(&other.state, 1),
+        horror(other.state(), ONE),
         0,
         "another agenda advancing does not fire this one's reverse"
     );
@@ -448,77 +514,55 @@ fn an_advance_fires_only_the_advancing_cards_ability() {
             code: CardCode::new(ON_AGENDA_ADVANCED),
         },
     );
-    assert_eq!(horror(&own.state, 1), 1, "the lead proxy takes it");
+    assert_eq!(horror(own.state(), ONE), 1, "the lead proxy takes it");
 }
 
 #[test]
 fn elimination_fires_only_the_eliminated_investigators_weaknesses() {
-    let mut state = table();
-    for id in [1, 2] {
-        state
-            .investigators
-            .get_mut(&InvestigatorId(id))
-            .unwrap()
-            .threat_area
-            .push(instance(
-                GAME_END_WEAKNESS,
-                90 + id,
-                Owner::Investigator(InvestigatorId(id)),
-            ));
-    }
-    // Neither of these is "a weakness the eliminated investigator owns": a
-    // non-weakness in their own play area, and the weakness's ability printed
-    // on a location they stand in.
-    state
-        .investigators
-        .get_mut(&InvestigatorId(2))
-        .unwrap()
-        .cards_in_play
-        .push(instance(
-            GAME_END_NON_WEAKNESS,
-            95,
-            Owner::Investigator(InvestigatorId(2)),
-        ));
-    print_on_location(&mut state, 10, GAME_END_WEAKNESS);
-    state
-        .investigators
-        .get_mut(&InvestigatorId(2))
-        .unwrap()
-        .status = Status::Defeated;
-    let before = state.clone();
-    let result = fire(
-        state,
-        TimingEvent::EliminationGameEnd {
-            investigator: InvestigatorId(2),
-        },
+    // Neither of investigator 2's other game-end cards is "a weakness the
+    // eliminated investigator owns": a non-weakness in their own play area,
+    // and the weakness's ability printed on a location they stand in. The
+    // weaknesses are owned by their holders (the registry prints them as
+    // weaknesses).
+    let state = defeated(
+        board(
+            seat(ONE.0).threat_area([GAME_END_WEAKNESS]),
+            seat(TWO.0)
+                .threat_area([GAME_END_WEAKNESS])
+                .in_play([GAME_END_NON_WEAKNESS]),
+            printing(study(), GAME_END_WEAKNESS),
+            hallway(),
+        )
+        .open_turn(ONE)
+        .build(),
+        TWO,
     );
-    let gained = |id| {
-        result.state.investigators[&InvestigatorId(id)].resources
-            - before.investigators[&InvestigatorId(id)].resources
-    };
-    assert_eq!(gained(2), 1, "the eliminated investigator's own weakness");
-    assert_eq!(gained(1), 0);
+    let before = state.clone();
+    // Fired on its own over a defeated seat: a real elimination goes on to
+    // take the eliminated investigator's resources, which the marker counts.
+    let session = fire(state, TimingEvent::EliminationGameEnd { investigator: TWO });
+    let gained =
+        |id| session.state().investigators[&id].resources - before.investigators[&id].resources;
+    assert_eq!(gained(TWO), 1, "the eliminated investigator's own weakness");
+    assert_eq!(gained(ONE), 0);
 }
 
 #[test]
 fn an_eliminated_investigators_cards_are_not_walked() {
-    let mut state = table();
-    for id in [1, 2] {
-        state
-            .investigators
-            .get_mut(&InvestigatorId(id))
-            .unwrap()
-            .threat_area
-            .push(instance(ON_ROUND_END, 100 + id, Owner::EncounterDeck));
-    }
-    state
-        .investigators
-        .get_mut(&InvestigatorId(2))
-        .unwrap()
-        .status = Status::Defeated;
-    let result = fire(state, TimingEvent::RoundEnded);
-    assert_eq!(horror(&result.state, 1), 1);
-    assert_eq!(horror(&result.state, 2), 0);
+    let state = defeated(
+        board(
+            seat(ONE.0).threat_area([ON_ROUND_END]),
+            seat(TWO.0).threat_area([ON_ROUND_END]),
+            study(),
+            hallway(),
+        )
+        .ending_upkeep_phase()
+        .build(),
+        TWO,
+    );
+    let session = end_the_round(state);
+    assert_eq!(horror(session.state(), ONE), 1);
+    assert_eq!(horror(session.state(), TWO), 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -527,24 +571,24 @@ fn an_eliminated_investigators_cards_are_not_walked() {
 
 #[test]
 fn a_board_wide_condition_reaches_every_kind_of_source_in_walk_order() {
-    let mut state = table();
-    state
-        .investigators
-        .get_mut(&InvestigatorId(2))
-        .unwrap()
-        .threat_area
-        .push(instance(ON_ROUND_END, 110, Owner::EncounterDeck));
-    print_on_location(&mut state, 10, ON_ROUND_END);
-    let mut enemy = test_support::test_enemy(3, "Ghoul");
-    enemy
+    let mut ghoul = test_support::test_enemy(3, "Ghoul");
+    ghoul
         .attachments
-        .push(instance(ON_ROUND_END, 111, Owner::EncounterDeck));
-    state.enemies.insert(EnemyId(3), enemy);
-    state.act_deck = vec![Act {
-        code: CardCode::new(ON_ROUND_END),
-        clue_threshold: 10,
-    }];
-    let session = TestSession::new(state).fire_at(TimingEvent::RoundEnded);
+        .push(attachment(ON_ROUND_END, GHOUL_ATTACHMENT));
+    let state = with_act(
+        board(
+            seat(ONE.0),
+            seat(TWO.0).threat_area([ON_ROUND_END]),
+            printing(study(), ON_ROUND_END),
+            hallway(),
+        )
+        .with_enemy(ghoul)
+        .ending_upkeep_phase()
+        .build(),
+        ON_ROUND_END,
+    );
+    let threat = state.in_play(TWO, ON_ROUND_END);
+    let session = end_the_round(state);
     let offered: Vec<_> = session
         .prompt()
         .options
@@ -554,9 +598,9 @@ fn a_board_wide_condition_reaches_every_kind_of_source_in_walk_order() {
     assert_eq!(
         offered,
         vec![
-            Some(OptionTarget::CardInstance(CardInstanceId(110))),
-            Some(OptionTarget::Location(LocationId(10))),
-            Some(OptionTarget::CardInstance(CardInstanceId(111))),
+            Some(OptionTarget::CardInstance(threat)),
+            Some(OptionTarget::Location(STUDY)),
+            Some(OptionTarget::CardInstance(GHOUL_ATTACHMENT)),
             Some(OptionTarget::Act),
         ],
         "investigators, then locations, then enemies' attachments, then the act"
@@ -568,10 +612,15 @@ fn a_board_wide_condition_reaches_every_kind_of_source_in_walk_order() {
 // (ADR 0010), and to nobody else.
 // ---------------------------------------------------------------------------
 
+/// The window `event` opens over the open turn. Fired on its own, as
+/// [`fire`] says why.
+fn window(state: GameState, event: TimingEvent) -> TestSession {
+    TestSession::new(state).fire_at(event)
+}
+
 /// The anchors of the options the reaction window offers after `event`.
 fn offered(state: GameState, event: TimingEvent) -> Vec<Option<OptionTarget>> {
-    TestSession::new(state)
-        .fire_at(event)
+    window(state, event)
         .prompt()
         .options
         .iter()
@@ -579,83 +628,103 @@ fn offered(state: GameState, event: TimingEvent) -> Vec<Option<OptionTarget>> {
         .collect()
 }
 
-/// Fire `event`, pick the `n`th reaction option, and return the state.
-fn react_with(state: GameState, event: TimingEvent, n: u32) -> GameState {
-    TestSession::new(state)
-        .fire_at(event)
-        .apply(Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(n)),
-        }))
-        .state()
-        .clone()
+/// Fire `event`, pick the reaction anchored to `target`, and return the state.
+fn react_with(state: GameState, event: TimingEvent, target: OptionTarget) -> GameState {
+    window(state, event).pick(target).state().clone()
 }
 
 #[test]
 fn a_reaction_on_a_co_located_location_is_offered_to_each_investigator_there() {
-    let mut state = table();
-    print_on_location(&mut state, 10, REACT_ON_DEFEAT);
+    let state = board(
+        seat(ONE.0),
+        seat(TWO.0),
+        printing(study(), REACT_ON_DEFEAT),
+        hallway(),
+    )
+    .open_turn(ONE)
+    .build();
     assert_eq!(
         offered(state.clone(), defeat(None)),
         vec![
-            Some(OptionTarget::Location(LocationId(10))),
-            Some(OptionTarget::Location(LocationId(10))),
+            Some(OptionTarget::Location(STUDY)),
+            Some(OptionTarget::Location(STUDY)),
         ],
         "both investigators stand at the Study"
     );
-    let first = react_with(state.clone(), defeat(None), 0);
-    assert_eq!((horror(&first, 1), horror(&first, 2)), (1, 0));
-    let second = react_with(state, defeat(None), 1);
-    assert_eq!((horror(&second, 1), horror(&second, 2)), (0, 1));
+    // GATE (#1018): the two options share the Study's anchor and differ only
+    // by which investigator they are offered to, so no session step names
+    // either; they are picked by position, raw.
+    let react_nth = |n| {
+        window(state.clone(), defeat(None))
+            .apply(Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickSingle(OptionId(n)),
+            }))
+            .state()
+            .clone()
+    };
+    let first = react_nth(0);
+    assert_eq!((horror(&first, ONE), horror(&first, TWO)), (1, 0));
+    let second = react_nth(1);
+    assert_eq!((horror(&second, ONE), horror(&second, TWO)), (0, 1));
 }
 
 #[test]
 fn a_reaction_on_a_location_nobody_stands_at_is_not_offered() {
-    let mut state = table();
-    print_on_location(&mut state, 11, REACT_ON_DEFEAT);
-    let result = fire(state, defeat(None));
-    assert_eq!((horror(&result.state, 1), horror(&result.state, 2)), (0, 0));
+    let state = board(
+        seat(ONE.0),
+        seat(TWO.0),
+        study(),
+        printing(hallway(), REACT_ON_DEFEAT),
+    )
+    .open_turn(ONE)
+    .build();
+    let session = fire(state, defeat(None));
+    assert_eq!(
+        (horror(session.state(), ONE), horror(session.state(), TWO)),
+        (0, 0)
+    );
 }
 
 #[test]
 fn a_reaction_on_another_investigators_asset_is_offered_only_to_its_controller() {
-    let mut state = table();
-    state
-        .investigators
-        .get_mut(&InvestigatorId(2))
-        .unwrap()
-        .cards_in_play
-        .push(instance(
-            REACT_ON_DEFEAT,
-            80,
-            Owner::Investigator(InvestigatorId(2)),
-        ));
+    let state = board(
+        seat(ONE.0),
+        seat(TWO.0).in_play([REACT_ON_DEFEAT]),
+        study(),
+        hallway(),
+    )
+    .open_turn(ONE)
+    .build();
+    let asset = OptionTarget::CardInstance(state.in_play(TWO, REACT_ON_DEFEAT));
     assert_eq!(
         offered(state.clone(), defeat(None)),
-        vec![Some(OptionTarget::CardInstance(CardInstanceId(80)))],
+        vec![Some(asset.clone())],
         "investigator 1 stands beside the asset but does not control it"
     );
-    let after = react_with(state, defeat(None), 0);
-    assert_eq!((horror(&after, 1), horror(&after, 2)), (0, 1));
+    let after = react_with(state, defeat(None), asset);
+    assert_eq!((horror(&after, ONE), horror(&after, TWO)), (0, 1));
 }
 
 #[test]
 fn a_reaction_on_a_co_located_enemy_or_threat_area_card_is_offered_to_each_investigator_there() {
-    let mut state = table();
-    let mut enemy = test_support::test_enemy(3, "Ghoul");
-    enemy.code = CardCode::new(REACT_ON_DEFEAT);
-    enemy.current_location = Some(LocationId(10));
-    state.enemies.insert(EnemyId(3), enemy);
-    state
-        .investigators
-        .get_mut(&InvestigatorId(2))
-        .unwrap()
-        .threat_area
-        .push(instance(REACT_ON_DEFEAT, 90, Owner::EncounterDeck));
+    let mut ghoul = test_support::test_enemy(3, "Ghoul");
+    ghoul.code = CardCode::new(REACT_ON_DEFEAT);
+    ghoul.current_location = Some(STUDY);
+    let state = board(
+        seat(ONE.0),
+        seat(TWO.0).threat_area([REACT_ON_DEFEAT]),
+        study(),
+        hallway(),
+    )
+    .with_enemy(ghoul)
+    .open_turn(ONE)
+    .build();
+    let threat = OptionTarget::CardInstance(state.in_play(TWO, REACT_ON_DEFEAT));
     assert_eq!(
         offered(state, defeat(None)),
         vec![
-            Some(OptionTarget::CardInstance(CardInstanceId(90))),
-            Some(OptionTarget::CardInstance(CardInstanceId(90))),
+            Some(threat.clone()),
+            Some(threat),
             Some(OptionTarget::Enemy(EnemyId(3))),
             Some(OptionTarget::Enemy(EnemyId(3))),
         ],
@@ -664,68 +733,59 @@ fn a_reaction_on_a_co_located_enemy_or_threat_area_card_is_offered_to_each_inves
 
 #[test]
 fn a_reaction_on_an_enemy_elsewhere_is_not_offered() {
-    let mut state = table();
-    let mut enemy = test_support::test_enemy(3, "Ghoul");
-    enemy.code = CardCode::new(REACT_ON_DEFEAT);
-    enemy.current_location = Some(LocationId(11));
-    state.enemies.insert(EnemyId(3), enemy);
-    let result = fire(state, defeat(None));
-    assert_eq!((horror(&result.state, 1), horror(&result.state, 2)), (0, 0));
+    let mut ghoul = test_support::test_enemy(3, "Ghoul");
+    ghoul.code = CardCode::new(REACT_ON_DEFEAT);
+    ghoul.current_location = Some(HALLWAY);
+    let state = table().with_enemy(ghoul).open_turn(ONE).build();
+    let session = fire(state, defeat(None));
+    assert_eq!(
+        (horror(session.state(), ONE), horror(session.state(), TWO)),
+        (0, 0)
+    );
 }
 
 #[test]
 fn a_reaction_on_the_agenda_is_offered_once_bound_to_the_lead_proxy() {
-    let mut state = table();
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new(REACT_ON_DEFEAT),
-        doom_threshold: 10,
-    }];
+    let state = with_agenda(table().open_turn(ONE).build(), REACT_ON_DEFEAT);
     assert_eq!(
         offered(state.clone(), defeat(None)),
         vec![Some(OptionTarget::Agenda)]
     );
-    let after = react_with(state, defeat(None), 0);
-    assert_eq!((horror(&after, 1), horror(&after, 2)), (1, 0));
+    let after = react_with(state, defeat(None), OptionTarget::Agenda);
+    assert_eq!((horror(&after, ONE), horror(&after, TWO)), (1, 0));
 }
 
 /// The board walk's order — each investigator's cards, the board, the act —
 /// and then the Fast events in hand, which are not on the board.
 #[test]
 fn reaction_options_follow_the_board_walk_then_the_hands() {
-    let mut state = table();
-    for (id, inst) in [(2, 81), (1, 80)] {
-        state
-            .investigators
-            .get_mut(&InvestigatorId(id))
-            .unwrap()
-            .cards_in_play
-            .push(instance(
-                REACT_ON_DEFEAT,
-                inst,
-                Owner::Investigator(InvestigatorId(id)),
-            ));
-    }
-    state
-        .investigators
-        .get_mut(&InvestigatorId(1))
-        .unwrap()
-        .hand
-        .push(CardCode::new(FAST_REACT_ON_DEFEAT));
-    print_on_location(&mut state, 10, REACT_ON_DEFEAT);
-    state.act_deck = vec![Act {
-        code: CardCode::new(REACT_ON_DEFEAT),
-        clue_threshold: 10,
-    }];
+    let state = with_act(
+        board(
+            seat(ONE.0)
+                .in_play([REACT_ON_DEFEAT])
+                .hand([FAST_REACT_ON_DEFEAT]),
+            seat(TWO.0).in_play([REACT_ON_DEFEAT]),
+            printing(study(), REACT_ON_DEFEAT),
+            hallway(),
+        )
+        .open_turn(ONE)
+        .build(),
+        REACT_ON_DEFEAT,
+    );
+    let (mine, theirs) = (
+        state.in_play(ONE, REACT_ON_DEFEAT),
+        state.in_play(TWO, REACT_ON_DEFEAT),
+    );
     assert_eq!(
         offered(state, defeat(None)),
         vec![
-            Some(OptionTarget::CardInstance(CardInstanceId(80))),
-            Some(OptionTarget::CardInstance(CardInstanceId(81))),
-            Some(OptionTarget::Location(LocationId(10))),
-            Some(OptionTarget::Location(LocationId(10))),
+            Some(OptionTarget::CardInstance(mine)),
+            Some(OptionTarget::CardInstance(theirs)),
+            Some(OptionTarget::Location(STUDY)),
+            Some(OptionTarget::Location(STUDY)),
             Some(OptionTarget::Act),
             Some(OptionTarget::HandCardByCode {
-                investigator: InvestigatorId(1),
+                investigator: ONE,
                 code: CardCode::new(FAST_REACT_ON_DEFEAT),
             }),
         ],
