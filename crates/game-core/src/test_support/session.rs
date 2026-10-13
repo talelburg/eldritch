@@ -3,8 +3,8 @@
 //! loop in [`resolver`](super::resolver).
 
 use super::resolver::{
-    drain_with_applier, is_turn_menu, resolve_commit_codes, sole_option_at, turn_action_option,
-    ChoiceResolver, ScriptedResolver,
+    drain_with_applier, hand_indices_of, is_turn_menu, resolve_commit_codes, sole_option_at,
+    turn_action_option, ChoiceResolver, ScriptedResolver,
 };
 use crate::action::{Action, InputResponse, PlayerAction};
 use crate::engine::enumerate::TurnAction;
@@ -15,7 +15,8 @@ use crate::engine::{
 use crate::event::Event;
 use crate::scenario_registry;
 use crate::state::{
-    CardCode, EmitEventFrame, EmitStep, GameState, GameStateBuilder, InvestigatorId, SkillKind,
+    CardCode, Continuation, EmitEventFrame, EmitStep, GameState, GameStateBuilder, HandSizeDiscard,
+    InvestigatorId, MulliganFrame, SkillKind,
 };
 
 /// Step-wise test driver: drive the real engine one step at a time, reading the
@@ -38,7 +39,7 @@ use crate::state::{
 ///   - at a prompt, [`pick`](Self::pick), [`pick_nth`](Self::pick_nth),
 ///     [`pick_nth_at`](Self::pick_nth_at), [`confirm`](Self::confirm),
 ///     [`skip`](Self::skip), [`commit`](Self::commit) at a skill test's
-///     commit window, and [`pick_multiple`](Self::pick_multiple) at a
+///     commit window, and [`choose_from_hand`](Self::choose_from_hand) at a
 ///     mulligan or hand-size discard;
 ///   - the framework entry points [`fire_at`](Self::fire_at),
 ///     [`take_damage`](Self::take_damage) and [`test_skill`](Self::test_skill);
@@ -55,8 +56,10 @@ use crate::state::{
 ///   at every prompt. [`answer_with`](Self::answer_with) installs a
 ///   [`ChoiceResolver`] instead, which answers every prompt until the policy
 ///   is changed again.
-/// - **Readers** — [`prompt`](Self::prompt), [`expect_rejected`](Self::expect_rejected),
-///   [`state`](Self::state), [`events`](Self::events) — look at the session
+/// - **Readers** — [`prompt`](Self::prompt), [`offered_at`](Self::offered_at),
+///   [`assert_at_turn_menu`](Self::assert_at_turn_menu),
+///   [`expect_rejected`](Self::expect_rejected), [`state`](Self::state),
+///   [`events`](Self::events) — look at the session
 ///   without moving it, and [`finish`](Self::finish) hands back the last step's
 ///   [`ApplyResult`].
 ///
@@ -318,7 +321,7 @@ impl TestSession {
     ///
     /// Panics at the turn menu, away from a skill test's commit window (a
     /// mulligan or hand-size discard is a `PickMultiple` too — answer it with
-    /// a scripted [`InputResponse::PickMultiple`]), or if a code is not in
+    /// [`choose_from_hand`](Self::choose_from_hand)), or if a code is not in
     /// the hand.
     pub fn commit(self, codes: &[CardCode]) -> Self {
         self.assert_off_turn_menu("commit");
@@ -337,37 +340,55 @@ impl TestSession {
         self.respond(InputResponse::PickMultiple { selected })
     }
 
-    /// Step: answer a `PickMultiple` prompt that is not a skill test's commit
-    /// window — a mulligan, or a hand-size discard — by selecting the hand
-    /// cards at `hand_indices`, then drain. `pick_multiple(&[])` selects none.
-    ///
-    /// For the session that rests at such a prompt: one a fixture settles at
-    /// ([`with_mulligan_remaining`](crate::state::GameStateBuilder::with_mulligan_remaining),
-    /// a seated game's opening mulligan), or one a step stopped at. A prompt a
-    /// step's drain meets is answered by a scripted
-    /// `InputResponse::PickMultiple` set with
-    /// [`resolve_choices`](Self::resolve_choices) before the step.
+    /// Step: answer a mulligan or a hand-size discard — the hand prompts that
+    /// are not a skill test's commit window — by choosing the cards `codes`
+    /// from the prompted investigator's hand, then drain. A mulligan redraws
+    /// the chosen cards, a hand-size discard discards them, and
+    /// `choose_from_hand(&[])` chooses none (keep the hand). Codes translate to
+    /// hand cards as [`commit`](Self::commit)'s do: each matches the first hand
+    /// card with that code not already claimed, left to right, so two copies
+    /// are named by repeating the code.
     ///
     /// # Panics
     ///
     /// Panics at the turn menu, at a skill test's commit window (commit cards
-    /// by code with [`commit`](Self::commit)), or at a prompt that is not a
-    /// `PickMultiple`.
-    pub fn pick_multiple(self, hand_indices: &[u32]) -> Self {
-        self.assert_off_turn_menu("pick_multiple");
-        let request = self.prompt();
-        assert!(
-            request.kind == InputKind::PickMultiple,
-            "TestSession::pick_multiple: prompt {:?} is a {:?}, not a PickMultiple",
-            request.prompt,
-            request.kind,
-        );
+    /// with [`commit`](Self::commit)), at any other prompt, or if a code is not
+    /// in the hand.
+    pub fn choose_from_hand(self, codes: &[CardCode]) -> Self {
+        self.assert_off_turn_menu("choose_from_hand");
         assert!(
             self.state.current_skill_test().is_none(),
-            "TestSession::pick_multiple: the session is at a skill test's commit window; \
-             commit cards by code with `commit(&[CardCode])`",
+            "TestSession::choose_from_hand: the session is at a skill test's commit window; \
+             commit cards with `commit(&[CardCode])`",
         );
-        let selected = hand_indices.iter().copied().map(OptionId).collect();
+        let request = self.prompt();
+        // The prompt names no investigator; the frame that asks it does. This
+        // reads the stack to translate codes, never to decide where the
+        // session rests.
+        let prompted = match self.state.continuations.top() {
+            Some(Continuation::Mulligan(MulliganFrame { remaining }))
+            | Some(Continuation::HandSizeDiscard(HandSizeDiscard { remaining })) => {
+                remaining.first().copied()
+            }
+            _ => None,
+        }
+        .unwrap_or_else(|| {
+            panic!(
+                "TestSession::choose_from_hand: the session is not at a mulligan or a \
+                 hand-size discard; it rests at {:?}",
+                request.prompt,
+            )
+        });
+        let selected = hand_indices_of(
+            codes,
+            &self.state,
+            prompted,
+            &request.prompt,
+            "TestSession::choose_from_hand",
+        )
+        .into_iter()
+        .map(OptionId)
+        .collect();
         self.respond(InputResponse::PickMultiple { selected })
     }
 
@@ -628,6 +649,42 @@ impl TestSession {
     /// included).
     pub fn events(&self) -> &[Event] {
         &self.events
+    }
+
+    /// How many of the current prompt's options are anchored to `target`:
+    /// `0` when it is not offered, `1` for a lone option [`pick`](Self::pick)
+    /// can name, and more for abilities printed on one card, which
+    /// [`pick_nth_at`](Self::pick_nth_at) tells apart.
+    ///
+    /// # Panics
+    ///
+    /// Panics if no prompt is outstanding, as [`prompt`](Self::prompt) does.
+    pub fn offered_at(&self, target: &OptionTarget) -> usize {
+        self.prompt()
+            .options
+            .iter()
+            .filter(|option| option.target.as_ref() == Some(target))
+            .count()
+    }
+
+    /// Assert the session rests at `investigator`'s turn menu: the prompt
+    /// anchored to their [`TurnControl`](OptionTarget::TurnControl). The state
+    /// assertion for a step that returns to an open turn.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the session rests anywhere else — another prompt, another
+    /// investigator's menu, or `Done`.
+    #[track_caller]
+    pub fn assert_at_turn_menu(&self, investigator: InvestigatorId) {
+        match &self.rest {
+            EngineOutcome::AwaitingInput { request, .. }
+                if request.target == Some(OptionTarget::TurnControl(investigator)) => {}
+            other => panic!(
+                "TestSession::assert_at_turn_menu: expected {investigator:?}'s turn menu; the \
+                 session rests at {other:?}"
+            ),
+        }
     }
 
     /// End the session, returning the last step's [`ApplyResult`]: the current
