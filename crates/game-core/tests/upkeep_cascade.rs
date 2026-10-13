@@ -10,14 +10,14 @@
 //! scenario behavior wired up; skip", which is what these tests want: the round
 //! must not resolve out from under the cascade.
 
-use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
+use game_core::action::RosterEntry;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, EngineOutcome};
+use game_core::engine::{self, EngineOutcome, OptionTarget};
 use game_core::state::{
-    Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Owner, Phase,
+    Act, Agenda, CardCode, CardInPlay, ChaosBag, ChaosToken, GameState, GameStateBuilder,
+    InvestigatorId, LocationId, Owner, Phase,
 };
-use game_core::test_support::{self, MockRegistry, TEST_INV};
+use game_core::test_support::{self, MockRegistry, TestSession, TEST_INV};
 
 /// Per-binary code prefix. None of these codes is looked up — the deck, the
 /// hand and the readied asset are opaque tokens to every step the cascade runs —
@@ -95,17 +95,38 @@ fn roster() -> Vec<RosterEntry> {
     }]
 }
 
-/// Put one exhausted asset into the seated investigator's play area, so the
-/// step-4.3 ready-all has something to ready.
-fn seed_exhausted_asset(state: &mut GameState) {
-    let inv = state.investigators.get_mut(&InvestigatorId(1)).unwrap();
+const INV: InvestigatorId = InvestigatorId(1);
+
+/// Seat the roster with `seat_and_open`, put one exhausted asset into the
+/// seated investigator's play area — so the step-4.3 ready-all has something
+/// to ready — and close the mulligan keeping the hand: Investigation, round 1,
+/// at the turn menu.
+fn opened_with_an_exhausted_asset() -> TestSession {
+    let opened = engine::seat_and_open(setup(), &roster());
+    assert!(
+        matches!(opened.outcome, EngineOutcome::AwaitingInput { .. }),
+        "seat_and_open opens the mulligan prompt, got {:?}",
+        opened.outcome
+    );
+    // The roster seats the investigator, so the asset goes onto the seated
+    // board, with an id minted from the state's counter.
+    let mut state = opened.state;
+    let id = state.card_instance_ids.mint();
     let mut card = CardInPlay::enter_play(
         CardCode::new(format!("{PREFIX}asset")),
-        CardInstanceId(1),
-        Owner::Investigator(InvestigatorId(1)),
+        id,
+        Owner::Investigator(INV),
     );
     card.exhausted = true;
-    inv.cards_in_play.push(card);
+    state
+        .investigators
+        .get_mut(&INV)
+        .unwrap()
+        .cards_in_play
+        .push(card);
+    let session = TestSession::new(state).choose_from_hand(&[]);
+    session.assert_at_turn_menu(INV);
+    session
 }
 
 // ------------------------------------------------------------------
@@ -114,58 +135,37 @@ fn seed_exhausted_asset(state: &mut GameState) {
 
 #[test]
 fn upkeep_full_round_draws_and_grants_then_pauses_at_mythos() {
-    let inv1 = InvestigatorId(1);
-
-    // seat_and_open → seed exhausted asset → mulligan (keep hand).
-    let mut r1 = engine::seat_and_open(setup(), &roster());
-    assert!(
-        matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }),
-        "seat_and_open opens the mulligan prompt, got {:?}",
-        r1.outcome
-    );
-    // Seed one exhausted asset after seating so we can verify ready-all fires.
-    seed_exhausted_asset(&mut r1.state);
-
-    let r2 = engine::apply(
-        r1.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        }),
-    );
-    assert!(matches!(r2.outcome, EngineOutcome::AwaitingInput { .. }));
+    let opened = opened_with_an_exhausted_asset();
 
     // Snapshot baselines at end-of-Investigation (before Upkeep runs).
-    let res_before = r2.state.investigators[&inv1].resources;
-    let hand_before = r2.state.investigators[&inv1].hand.len();
-    let round_before = r2.state.round; // should be 1
+    let res_before = opened.state().investigators[&INV].resources;
+    let hand_before = opened.state().investigators[&INV].hand.len();
+    let round_before = opened.state().round; // should be 1
 
     // EndTurn: Investigation → Enemy → Upkeep → Mythos, pausing at the
-    // step-1.4 encounter-draw prompt (AwaitingInput).
-    let r3 = test_support::take_turn_action(r2.state, &TurnAction::EndTurn);
+    // step-1.4 encounter-draw prompt.
+    let session = opened.take(&TurnAction::EndTurn);
+    let state = session.state();
 
-    assert!(matches!(r3.outcome, EngineOutcome::AwaitingInput { .. }));
-    assert_eq!(r3.state.phase, Phase::Mythos, "cascade must land in Mythos");
-    assert_eq!(
-        r3.state.round,
-        round_before + 1,
-        "round bumped on Mythos entry"
-    );
+    assert_eq!(session.prompt().target, Some(OptionTarget::EncounterDeck));
+    assert_eq!(state.phase, Phase::Mythos, "cascade must land in Mythos");
+    assert_eq!(state.round, round_before + 1, "round bumped on Mythos entry");
     assert!(
-        r3.state.current_encounter_drawer().is_some(),
+        state.current_encounter_drawer().is_some(),
         "draw cursor must be seeded"
     );
     assert_eq!(
-        r3.state.investigators[&inv1].resources,
+        state.investigators[&INV].resources,
         res_before + 1,
         "gained 1 resource during Upkeep"
     );
     assert_eq!(
-        r3.state.investigators[&inv1].hand.len(),
+        state.investigators[&INV].hand.len(),
         hand_before + 1,
         "drew 1 card during Upkeep"
     );
     assert!(
-        !r3.state.investigators[&inv1].cards_in_play[0].exhausted,
+        !state.investigators[&INV].cards_in_play[0].exhausted,
         "exhausted asset was readied during Upkeep"
     );
 }
@@ -177,23 +177,17 @@ fn upkeep_full_round_draws_and_grants_then_pauses_at_mythos() {
 #[test]
 fn upkeep_round_replay_is_deterministic() {
     // Drive the same sequence twice to verify replay determinism.
-    let run_sequence = |initial: GameState| -> GameState {
-        let mut r = engine::seat_and_open(initial, &roster());
-        seed_exhausted_asset(&mut r.state);
-        let state = engine::apply(
-            r.state,
-            Action::Player(PlayerAction::ResolveInput {
-                response: InputResponse::PickMultiple { selected: vec![] },
-            }),
-        )
-        .state;
-        test_support::take_turn_action(state, &TurnAction::EndTurn).state
+    let run_sequence = || -> GameState {
+        opened_with_an_exhausted_asset()
+            .take(&TurnAction::EndTurn)
+            .state()
+            .clone()
     };
 
-    let final_state = run_sequence(setup());
+    let final_state = run_sequence();
 
     // --- Second pass: replay from the same initial state. ---
-    let replayed_state = run_sequence(setup());
+    let replayed_state = run_sequence();
 
     // Replaying the same action log reproduces state bit-for-bit.
     assert_eq!(
