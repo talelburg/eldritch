@@ -76,7 +76,12 @@ fn board_with_hand(hand: &[&str]) -> TestSession {
     enemy.max_health = 1;
 
     GameStateBuilder::new()
-        .with_seat(seat(1).at(HERE).in_play([BEAT_COP]).hand(hand.iter().copied()))
+        .with_seat(
+            seat(1)
+                .at(HERE)
+                .in_play([BEAT_COP])
+                .hand(hand.iter().copied()),
+        )
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_enemy_engaged(enemy, INV)
         .open_turn(INV)
