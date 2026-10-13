@@ -1,136 +1,99 @@
 use super::*;
 
+const RESOURCE: TurnAction = TurnAction::Resource { investigator: INV };
+
+/// `INV`'s open turn at the Study, with `enemy` (if any) engaged with them.
+fn resource_board(enemy: Option<Enemy>) -> GameStateBuilder {
+    let board = GameStateBuilder::new()
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_seat(seat(1).at(HERE).resources(5))
+        .open_turn(INV);
+    match enemy {
+        Some(enemy) => board.with_enemy_engaged(enemy, INV),
+        None => board,
+    }
+}
+
+/// Whether `state`'s menu offers `INV` a Resource action.
+fn offers_resource(state: &GameState) -> bool {
+    legal_actions(state)
+        .iter()
+        .any(|a| matches!(a, TurnAction::Resource { investigator } if *investigator == INV))
+}
+
 #[test]
 fn resource_action_spends_action_and_gains_one_resource() {
-    let inv_id = InvestigatorId(1);
-    let loc = LocationId(10);
-    let state = GameStateBuilder::new()
-        .with_location(test_support::test_location(10, "Study"))
-        .with_investigator({
-            let mut i = test_support::test_investigator(1);
-            i.current_location = Some(loc);
-            i.resources = 5;
-            i
-        })
-        .open_turn(inv_id)
-        .build();
+    let session = resource_board(None).session().take(&RESOURCE);
 
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::Resource {
-            investigator: inv_id,
-        },
-    );
-
-    assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
-    assert_eq!(result.state.investigators[&inv_id].resources, 6);
-    assert_eq!(result.state.investigators[&inv_id].actions_remaining, 2);
+    session.assert_at_turn_menu(INV);
+    assert_eq!(session.state().investigators[&INV].resources, 6);
+    assert_eq!(session.state().investigators[&INV].actions_remaining, 2);
     assert_event!(
-        result.events,
-        Event::ResourcesGained { investigator, amount: 1 } if *investigator == inv_id
+        session.events(),
+        Event::ResourcesGained { investigator, amount: 1 } if *investigator == INV
     );
 }
 
 #[test]
 fn resource_action_fires_aoo_from_ready_engaged_enemy() {
-    let inv_id = InvestigatorId(1);
-    let loc = LocationId(10);
-    let mut enemy = test_support::test_enemy(200, "Engaged Ghoul");
-    enemy.current_location = Some(loc);
-    enemy.engaged_with = Some(inv_id);
-    enemy.attack_damage = 1;
-    let state = GameStateBuilder::new()
-        .with_location(test_support::test_location(10, "Study"))
-        .with_investigator({
-            let mut i = test_support::test_investigator(1);
-            i.current_location = Some(loc);
-            i
-        })
-        .with_enemy(enemy)
-        .open_turn(inv_id)
-        .build();
+    let session = resource_board(Some(attacker(200, 1, 0)))
+        .session()
+        .take(&RESOURCE);
 
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::Resource {
-            investigator: inv_id,
-        },
-    );
-
-    assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
+    session.assert_at_turn_menu(INV);
     // AoO fired: investigator took 1 damage, but the resource is still gained.
-    assert_eq!(result.state.investigators[&inv_id].damage(), 1);
-    assert_eq!(result.state.investigators[&inv_id].resources, 6);
+    assert_eq!(session.state().investigators[&INV].damage(), 1);
+    assert_eq!(session.state().investigators[&INV].resources, 6);
     assert_event!(
-        result.events,
-        Event::DamageTaken { investigator, amount: 1 } if *investigator == inv_id
+        session.events(),
+        Event::DamageTaken { investigator, amount: 1 } if *investigator == INV
     );
 }
 
 #[test]
 fn resource_action_rejects_wrong_phase() {
-    let inv_id = InvestigatorId(1);
     let state = GameStateBuilder::new()
         .with_phase(Phase::Mythos)
-        .with_investigator(test_support::test_investigator(1))
-        .with_active_investigator(inv_id)
+        .with_seat(seat(1))
+        .with_active_investigator(INV)
         .build();
     // Mythos phase → Resource is not a legal open-turn action.
-    assert!(!legal_actions(&state)
-        .iter()
-        .any(|a| matches!(a, TurnAction::Resource { investigator } if *investigator == inv_id)));
+    assert!(!offers_resource(&state));
 }
 
 #[test]
 fn resource_action_rejects_when_not_active_investigator() {
-    let inv_id = InvestigatorId(1);
     let other = InvestigatorId(2);
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_investigator(test_support::test_investigator(1))
-        .with_investigator(test_support::test_investigator(2))
-        .with_active_investigator(other)
+        .with_seat(seat(1))
+        .with_seat(seat(2))
+        .with_turn_order([INV, other])
+        .open_turn(other)
         .build();
     // Non-active investigator → their Resource is not legal.
-    assert!(!legal_actions(&state)
-        .iter()
-        .any(|a| matches!(a, TurnAction::Resource { investigator } if *investigator == inv_id)));
+    assert!(!offers_resource(&state));
 }
 
 #[test]
 fn resource_action_rejects_with_no_actions_remaining() {
-    let inv_id = InvestigatorId(1);
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_investigator({
-            let mut i = test_support::test_investigator(1);
-            i.actions_remaining = 0;
-            i
-        })
-        .with_active_investigator(inv_id)
+        .with_seat(seat(1).actions(0))
+        .open_turn(INV)
         .build();
     // No actions remaining → Resource is not legal.
-    assert!(!legal_actions(&state)
-        .iter()
-        .any(|a| matches!(a, TurnAction::Resource { investigator } if *investigator == inv_id)));
+    assert!(!offers_resource(&state));
 }
 
 #[test]
 fn resource_action_rejects_when_not_active_status() {
-    let inv_id = InvestigatorId(1);
-    let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_investigator({
-            let mut i = test_support::test_investigator(1);
-            i.status = Status::Defeated;
-            i
-        })
-        .with_active_investigator(inv_id)
+    let mut state = GameStateBuilder::new()
+        .with_seat(seat(1))
+        .open_turn(INV)
         .build();
+    // No seat setter carries status.
+    state.investigators.get_mut(&INV).unwrap().status = Status::Defeated;
     // Defeated status → Resource is not legal.
-    assert!(!legal_actions(&state)
-        .iter()
-        .any(|a| matches!(a, TurnAction::Resource { investigator } if *investigator == inv_id)));
+    assert!(!offers_resource(&state));
 }
 
 #[test]
@@ -139,34 +102,18 @@ fn resource_action_aoo_that_eliminates_suppresses_the_gain() {
     // investigator before the resource is gained; the gain is
     // suppressed (no ResourcesGained event) while the AoO damage
     // still lands.
-    let inv_id = InvestigatorId(1);
-    let loc = LocationId(10);
-    let mut enemy = test_support::test_enemy(200, "Lethal Ghoul");
-    enemy.current_location = Some(loc);
-    enemy.engaged_with = Some(inv_id);
-    enemy.attack_damage = 8; // == test_investigator max_health
-    let state = GameStateBuilder::new()
-        .with_location(test_support::test_location(10, "Study"))
-        .with_investigator({
-            let mut i = test_support::test_investigator(1);
-            i.current_location = Some(loc);
-            i
-        })
-        .with_enemy(enemy)
-        .open_turn(inv_id)
-        .build();
+    // 8 == test_investigator max_health.
+    let result = resource_board(Some(attacker(200, 8, 0)))
+        .session()
+        .take(&RESOURCE)
+        .finish();
 
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::Resource {
-            investigator: inv_id,
-        },
-    );
-
+    // The only investigator is defeated: the game is over.
+    assert_eq!(result.outcome, EngineOutcome::Done);
     // Lethal AoO landed.
     assert_event!(
         result.events,
-        Event::DamageTaken { investigator, amount: 8 } if *investigator == inv_id
+        Event::DamageTaken { investigator, amount: 8 } if *investigator == INV
     );
     // ...but the resource gain was suppressed.
     assert_no_event!(result.events, Event::ResourcesGained { .. });
