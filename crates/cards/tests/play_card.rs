@@ -14,14 +14,14 @@
 //!   short-circuit before the registry lookup).
 
 use cards::REGISTRY;
-use game_core::engine::enumerate::TurnAction;
-use game_core::engine::EngineOutcome;
+use game_core::engine::enumerate::{self, TurnAction};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInstanceId, DiscardPile, GameState, GameStateBuilder, InvestigatorId, LocationId,
-    Phase, Status, Zone,
+    CardCode, CardInstanceId, DiscardPile, GameStateBuilder, InvestigatorId, LocationId, Status,
+    Zone,
 };
-use game_core::{assert_event_count, assert_event_sequence, assert_no_event, test_support};
+use game_core::test_support::{self, seat, Seat, TestSession};
+use game_core::{assert_event_count, assert_event_sequence, assert_no_event};
 
 /// Holy Rosary (01059) — Mystic asset, +1 willpower constant.
 const HOLY_ROSARY: &str = "01059";
@@ -49,6 +49,15 @@ const ROLAND_BANKS: &str = "01001";
 
 const UNKNOWN_CODE: &str = "99999";
 
+const INV: InvestigatorId = InvestigatorId(1);
+const HERE: LocationId = LocationId(101);
+
+/// Play the first card in hand.
+const PLAY_FIRST: TurnAction = TurnAction::PlayCard {
+    investigator: INV,
+    hand_index: 0,
+};
+
 /// Install the real card registry exactly once for this integration-
 /// test binary. Idempotent at the `OnceLock` level; this `Once`
 /// wrapper additionally avoids the futile second `install` call.
@@ -60,41 +69,49 @@ fn install_real_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// Build a one-investigator scenario state at the controller's
-/// location, mid-investigation, with `hand` already in hand.
-fn play_state(hand: Vec<&str>) -> (GameState, InvestigatorId, LocationId) {
-    let id = InvestigatorId(1);
-    let loc_id = LocationId(101);
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(loc_id);
-    inv.hand = hand.into_iter().map(CardCode::new).collect();
+/// Investigator 1 at the Study, holding `hand`.
+fn holding(hand: &[&str]) -> Seat {
+    seat(1).at(HERE).hand(hand.iter().copied())
+}
 
-    let location = test_support::test_location(101, "Study");
-
-    let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_investigator(inv)
-        .with_active_investigator(id)
+/// A one-investigator scenario at `investigator`'s turn menu, at the Study,
+/// which holds `clues` clues.
+fn play_board(investigator: Seat, clues: u8) -> TestSession {
+    let mut location = test_support::test_location(HERE.0, "Study");
+    location.clues = clues;
+    GameStateBuilder::new()
+        .with_seat(investigator)
         .with_location(location)
-        .build();
+        .open_turn(INV)
+        .session()
+}
 
-    (state, id, loc_id)
+/// A one-investigator scenario at the controller's turn menu, at a clueless
+/// Study, with `hand` already in hand.
+fn play_state(hand: &[&str]) -> TestSession {
+    play_board(holding(hand), 0)
+}
+
+/// Send the play of the first card in hand straight to its handler, after
+/// checking the menu does not offer it: proving the handler itself rejects
+/// what the menu filters out.
+fn play_off_menu(session: TestSession) -> TestSession {
+    assert!(
+        !enumerate::legal_actions(session.state()).contains(&PLAY_FIRST),
+        "the turn menu does not offer a play its handler rejects",
+    );
+    let refused = session.submit_off_menu(&PLAY_FIRST);
+    refused.expect_rejected();
+    refused
 }
 
 #[test]
 fn play_holy_rosary_emits_card_played_and_lands_in_play() {
-    let (state, id, _loc) = play_state(vec![HOLY_ROSARY]);
+    let session = play_state(&[HOLY_ROSARY]).take(&PLAY_FIRST);
 
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: id,
-            hand_index: 0,
-        },
-    );
-
-    assert_eq!(result.outcome, EngineOutcome::Done);
-    let inv = &result.state.investigators[&id];
+    session.assert_at_turn_menu(INV);
+    let result = session.finish();
+    let inv = &result.state.investigators[&INV];
     assert!(inv.hand.is_empty(), "hand should be empty after play");
     assert_eq!(
         inv.cards_in_play.len(),
@@ -112,7 +129,7 @@ fn play_holy_rosary_emits_card_played_and_lands_in_play() {
         result.events,
         1,
         Event::CardPlayed { investigator, code }
-            if *investigator == id && code.as_str() == HOLY_ROSARY
+            if *investigator == INV && code.as_str() == HOLY_ROSARY
     );
     assert_no_event!(result.events, Event::CardDiscarded { .. });
 }
@@ -122,19 +139,17 @@ fn asset_enters_play_with_instance_id_from_state_counter() {
     // The per-state counter assigns a fresh CardInstanceId to each
     // asset entering play and advances after each assignment.
 
-    let (state, id, _loc) = play_state(vec![HOLY_ROSARY]);
-    assert_eq!(state.card_instance_ids.peek(), 0, "counter starts at 0");
-
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: id,
-            hand_index: 0,
-        },
+    let session = play_state(&[HOLY_ROSARY]);
+    assert_eq!(
+        session.state().card_instance_ids.peek(),
+        0,
+        "counter starts at 0"
     );
-    assert_eq!(result.outcome, EngineOutcome::Done);
 
-    let in_play = &result.state.investigators[&id].cards_in_play;
+    let session = session.take(&PLAY_FIRST);
+    session.assert_at_turn_menu(INV);
+
+    let in_play = &session.state().investigators[&INV].cards_in_play;
     assert_eq!(in_play.len(), 1);
     assert_eq!(
         in_play[0].instance_id,
@@ -142,7 +157,7 @@ fn asset_enters_play_with_instance_id_from_state_counter() {
         "first asset gets id 0",
     );
     assert_eq!(
-        result.state.card_instance_ids.peek(),
+        session.state().card_instance_ids.peek(),
         1,
         "counter advances after assigning",
     );
@@ -154,32 +169,18 @@ fn two_copies_of_magnifying_glass_get_distinct_instance_ids() {
     // is rules-valid (two Hand slots per investigator). The counter
     // must assign distinct ids so per-instance state stays separable.
 
-    let (state, id, _loc) = play_state(vec![MAGNIFYING_GLASS, MAGNIFYING_GLASS]);
+    let after_first = play_state(&[MAGNIFYING_GLASS, MAGNIFYING_GLASS]).take(&PLAY_FIRST);
+    after_first.assert_at_turn_menu(INV);
 
-    let after_first = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: id,
-            hand_index: 0,
-        },
-    );
-    assert_eq!(after_first.outcome, EngineOutcome::Done);
+    let after_second = after_first.take(&PLAY_FIRST);
+    after_second.assert_at_turn_menu(INV);
 
-    let after_second = test_support::dispatch_turn_action_unchecked(
-        after_first.state,
-        &TurnAction::PlayCard {
-            investigator: id,
-            hand_index: 0,
-        },
-    );
-    assert_eq!(after_second.outcome, EngineOutcome::Done);
-
-    let in_play = &after_second.state.investigators[&id].cards_in_play;
+    let in_play = &after_second.state().investigators[&INV].cards_in_play;
     assert_eq!(in_play.len(), 2);
     assert_eq!(in_play[0].instance_id, CardInstanceId(0));
     assert_eq!(in_play[1].instance_id, CardInstanceId(1));
     assert_eq!(
-        after_second.state.card_instance_ids.peek(),
+        after_second.state().card_instance_ids.peek(),
         2,
         "counter advances once per play",
     );
@@ -187,24 +188,15 @@ fn two_copies_of_magnifying_glass_get_distinct_instance_ids() {
 
 #[test]
 fn play_working_a_hunch_resolves_on_play_and_discards() {
-    let (mut state, id, loc_id) = play_state(vec![WORKING_A_HUNCH]);
-
     // Working a Hunch's OnPlay is "discover 1 clue at your location."
     // Seed the location with a clue so the discover is visible in the
     // event stream (rulebook lets you play with 0 clues too — that's
     // a separate no-op test below).
-    state.locations.get_mut(&loc_id).unwrap().clues = 1;
+    let session = play_board(holding(&[WORKING_A_HUNCH]), 1).take(&PLAY_FIRST);
 
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: id,
-            hand_index: 0,
-        },
-    );
-
-    assert_eq!(result.outcome, EngineOutcome::Done);
-    let inv = &result.state.investigators[&id];
+    session.assert_at_turn_menu(INV);
+    let result = session.finish();
+    let inv = &result.state.investigators[&INV];
     assert!(inv.hand.is_empty(), "hand should be empty after play");
     assert!(
         inv.cards_in_play.is_empty(),
@@ -217,7 +209,7 @@ fn play_working_a_hunch_resolves_on_play_and_discards() {
     );
     assert_eq!(inv.clues, 1, "discovered 1 clue from location");
     assert_eq!(
-        result.state.locations[&loc_id].clues, 0,
+        result.state.locations[&HERE].clues, 0,
         "location's clue moved to investigator",
     );
 
@@ -231,13 +223,13 @@ fn play_working_a_hunch_resolves_on_play_and_discards() {
     assert_event_count!(
         result.events,
         1,
-        Event::CluePlaced { investigator, count: 1 } if *investigator == id
+        Event::CluePlaced { investigator, count: 1 } if *investigator == INV
     );
     assert_event_count!(
         result.events,
         1,
         Event::CardDiscarded { code, from: Zone::Hand, to: DiscardPile::Investigator(investigator) }
-            if *investigator == id && code.as_str() == WORKING_A_HUNCH
+            if *investigator == INV && code.as_str() == WORKING_A_HUNCH
     );
 
     // Ordering: CardPlayed < CluePlaced < CardDiscarded. Matters
@@ -258,23 +250,12 @@ fn play_working_a_hunch_on_empty_location_is_rejected() {
     // only effect is "discover 1 clue at your location"; at a 0-clue location it
     // would discover nothing, so the play is **rejected** — not played-and-
     // fizzled. The card stays in hand, nothing is discarded, no clue moves.
-    let (state, id, loc_id) = play_state(vec![WORKING_A_HUNCH]);
-    assert_eq!(state.locations[&loc_id].clues, 0);
+    let session = play_state(&[WORKING_A_HUNCH]);
+    assert_eq!(session.state().locations[&HERE].clues, 0);
 
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: id,
-            hand_index: 0,
-        },
-    );
+    let result = play_off_menu(session).finish();
 
-    assert!(
-        matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "playing a clue-discovery event at a 0-clue location must be rejected, got {:?}",
-        result.outcome,
-    );
-    let inv = &result.state.investigators[&id];
+    let inv = &result.state.investigators[&INV];
     assert_eq!(
         inv.hand,
         vec![CardCode::new(WORKING_A_HUNCH)],
@@ -287,19 +268,11 @@ fn play_working_a_hunch_on_empty_location_is_rejected() {
 
 #[test]
 fn play_unknown_card_code_is_rejected() {
-    let (state, id, _loc) = play_state(vec![UNKNOWN_CODE]);
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: id,
-            hand_index: 0,
-        },
-    );
-    assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+    let result = play_off_menu(play_state(&[UNKNOWN_CODE])).finish();
     assert!(result.events.is_empty());
     // Hand untouched.
     assert_eq!(
-        result.state.investigators[&id].hand,
+        result.state.investigators[&INV].hand,
         vec![CardCode::new(UNKNOWN_CODE)],
     );
 }
@@ -310,19 +283,11 @@ fn play_non_event_or_asset_card_is_rejected() {
     // (and skill, treachery, enemy, location, agenda, act, scenario,
     // story) all reject. Roland Banks (01001) is the in-corpus
     // sample for the non-playable case.
-    let (state, id, _loc) = play_state(vec![ROLAND_BANKS]);
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: id,
-            hand_index: 0,
-        },
-    );
-    assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+    let result = play_off_menu(play_state(&[ROLAND_BANKS])).finish();
     assert!(result.events.is_empty());
     // Hand untouched.
     assert_eq!(
-        result.state.investigators[&id].hand,
+        result.state.investigators[&INV].hand,
         vec![CardCode::new(ROLAND_BANKS)],
     );
 }
@@ -333,15 +298,7 @@ fn play_unimplemented_card_is_rejected() {
     // no ability implementation yet. The deck-import gate (Phase 9)
     // will refuse decks containing unimplemented cards; PlayCard
     // double-checks rather than silently no-op.
-    let (state, id, _loc) = play_state(vec![UNIMPLEMENTED_ASSET]);
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: id,
-            hand_index: 0,
-        },
-    );
-    assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+    let result = play_off_menu(play_state(&[UNIMPLEMENTED_ASSET])).finish();
     assert!(result.events.is_empty());
 }
 
@@ -356,19 +313,12 @@ fn normal_event_play_discards_exactly_once() {
     // Play Emergency Cache 01088 (event, OnPlay GainResources 3) with no
     // engaged enemy (no AoO). Invariant guard for the PlayFromHand frame
     // migration: the card must be discarded exactly once (single disposal site)
-    // and no play may be left in progress on Done.
-    let (state, id, _loc) = play_state(vec![EMERGENCY_CACHE]);
+    // and no play may be left in progress once it completes.
+    let session = play_state(&[EMERGENCY_CACHE]).take(&PLAY_FIRST);
 
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: id,
-            hand_index: 0,
-        },
-    );
-
-    assert_eq!(result.outcome, EngineOutcome::Done);
-    let inv = &result.state.investigators[&id];
+    session.assert_at_turn_menu(INV);
+    let result = session.finish();
+    let inv = &result.state.investigators[&INV];
     // Card left hand and landed in discard.
     assert!(inv.hand.is_empty(), "hand should be empty after play");
     assert!(inv.cards_in_play.is_empty(), "event should not enter play");
@@ -380,24 +330,17 @@ fn normal_event_play_discards_exactly_once() {
     // Resources gained.
     assert!(inv.resources > 0, "resources should be gained");
     // Exactly one CardDiscarded(Hand) — the migration invariant.
-    assert_eq!(
-        result
-            .events
-            .iter()
-            .filter(|e| matches!(
-                e,
-                Event::CardDiscarded {
-                    from: Zone::Hand,
-                    ..
-                }
-            ))
-            .count(),
+    assert_event_count!(
+        result.events,
         1,
-        "exactly one CardDiscarded from Hand"
+        Event::CardDiscarded {
+            from: Zone::Hand,
+            ..
+        }
     );
     assert!(
         result.state.play_in_progress().is_none(),
-        "no play may be left in progress on Done"
+        "no play may be left in progress once it completes"
     );
 }
 
@@ -406,18 +349,11 @@ fn asset_play_enters_play_through_the_frame() {
     // Play Machete 01020 (asset, no OnPlay), no engaged enemy. Invariant
     // guard for the PlayFromHand frame migration: the asset must land in
     // cards_in_play and be removed from hand, and no CardDiscarded fires.
-    let (state, id, _loc) = play_state(vec![MACHETE]);
+    let session = play_state(&[MACHETE]).take(&PLAY_FIRST);
 
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: id,
-            hand_index: 0,
-        },
-    );
-
-    assert_eq!(result.outcome, EngineOutcome::Done);
-    let inv = &result.state.investigators[&id];
+    session.assert_at_turn_menu(INV);
+    let result = session.finish();
+    let inv = &result.state.investigators[&INV];
     // Asset removed from hand.
     assert!(inv.hand.is_empty(), "hand should be empty after play");
     // Asset landed in cards_in_play.
@@ -435,26 +371,15 @@ fn asset_play_enters_play_through_the_frame() {
 #[test]
 fn play_card_after_defeat_is_rejected() {
     // Belt-and-suspenders: even with REGISTRY installed, the status
-    // check should reject before the registry lookup runs.
-    let id = InvestigatorId(1);
-    let mut inv = test_support::test_investigator(1);
-    inv.hand = vec![CardCode::new(HOLY_ROSARY)];
-    inv.status = Status::Defeated;
-
-    let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_investigator(inv)
-        .with_active_investigator(id)
+    // check should reject before the registry lookup runs. A seat has no
+    // status setter, so the defeat is a board edit before settling.
+    let mut state = GameStateBuilder::new()
+        .with_seat(seat(1).hand([HOLY_ROSARY]))
+        .open_turn(INV)
         .build();
+    state.investigators.get_mut(&INV).expect("seated").status = Status::Defeated;
 
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: id,
-            hand_index: 0,
-        },
-    );
-    assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+    let result = play_off_menu(TestSession::new(state)).finish();
     assert!(result.events.is_empty());
 }
 
@@ -467,22 +392,11 @@ fn play_card_after_defeat_is_rejected() {
 
 #[test]
 fn play_card_rejected_when_resources_below_cost() {
-    let (mut state, id, _loc) = play_state(vec![HOLY_ROSARY]); // cost 2
-    state.investigators.get_mut(&id).unwrap().resources = 1;
+    let session = play_board(holding(&[HOLY_ROSARY]).resources(1), 0); // cost 2
 
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: id,
-            hand_index: 0,
-        },
-    );
+    let result = play_off_menu(session).finish();
 
-    assert!(
-        matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "playing a cost-2 card with 1 resource must be rejected",
-    );
-    let inv = &result.state.investigators[&id];
+    let inv = &result.state.investigators[&INV];
     assert_eq!(inv.resources, 1, "resources unchanged on a rejected play");
     assert_eq!(inv.hand.len(), 1, "card stays in hand on a rejected play");
     assert!(inv.cards_in_play.is_empty(), "nothing enters play");
@@ -491,46 +405,30 @@ fn play_card_rejected_when_resources_below_cost() {
 
 #[test]
 fn play_card_deducts_resource_cost_and_emits_resources_paid() {
-    let (mut state, id, _loc) = play_state(vec![HOLY_ROSARY]); // cost 2
-    state.investigators.get_mut(&id).unwrap().resources = 5;
+    let session = play_board(holding(&[HOLY_ROSARY]).resources(5), 0).take(&PLAY_FIRST); // cost 2
 
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: id,
-            hand_index: 0,
-        },
-    );
-
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    session.assert_at_turn_menu(INV);
+    let result = session.finish();
     assert_eq!(
-        result.state.investigators[&id].resources, 3,
+        result.state.investigators[&INV].resources, 3,
         "5 - cost 2 = 3 after a successful play",
     );
     assert_event_count!(
         result.events,
         1,
         Event::ResourcesPaid { investigator, amount }
-            if *investigator == id && *amount == 2
+            if *investigator == INV && *amount == 2
     );
 }
 
 #[test]
 fn play_card_at_exactly_its_cost_succeeds() {
-    let (mut state, id, _loc) = play_state(vec![HOLY_ROSARY]); // cost 2
-    state.investigators.get_mut(&id).unwrap().resources = 2;
+    let session = play_board(holding(&[HOLY_ROSARY]).resources(2), 0).take(&PLAY_FIRST); // cost 2
 
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: id,
-            hand_index: 0,
-        },
-    );
-
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    session.assert_at_turn_menu(INV);
     assert_eq!(
-        result.state.investigators[&id].resources, 0,
+        session.state().investigators[&INV].resources,
+        0,
         "paying the full cost empties the pool",
     );
 }
@@ -538,36 +436,19 @@ fn play_card_at_exactly_its_cost_succeeds() {
 #[test]
 fn play_single_hand_asset_is_not_slot_rejected_on_empty_hands() {
     // Sanity: the new slot gate must not over-reject a normal single-slot asset
-    // with both Hand slots free.
-    let (state, id, _loc) = play_state(vec![MACHETE]); // single Hand slot, costs 3
-                                                       // test_investigator starts with 5 resources (≥ Machete's cost of 3); no
-                                                       // manual override needed.
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: id,
-            hand_index: 0,
-        },
-    );
-    assert_eq!(result.outcome, EngineOutcome::Done);
-    assert_eq!(result.state.investigators[&id].cards_in_play.len(), 1);
+    // with both Hand slots free. Machete takes a single Hand slot and costs 3;
+    // test_investigator starts with 5 resources, so no override is needed.
+    let session = play_state(&[MACHETE]).take(&PLAY_FIRST);
+    session.assert_at_turn_menu(INV);
+    assert_eq!(session.state().investigators[&INV].cards_in_play.len(), 1);
 }
 
 #[test]
 fn play_zero_cost_card_is_free_and_emits_no_resources_paid() {
     // Emergency Cache (01088) costs 0: affordable even at 0 resources, and a
     // 0-resource deduction emits no ResourcesPaid event.
-    let (mut state, id, _loc) = play_state(vec![EMERGENCY_CACHE]);
-    state.investigators.get_mut(&id).unwrap().resources = 0;
+    let session = play_board(holding(&[EMERGENCY_CACHE]).resources(0), 0).take(&PLAY_FIRST);
 
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: id,
-            hand_index: 0,
-        },
-    );
-
-    assert_eq!(result.outcome, EngineOutcome::Done);
-    assert_no_event!(result.events, Event::ResourcesPaid { .. });
+    session.assert_at_turn_menu(INV);
+    assert_no_event!(session.finish().events, Event::ResourcesPaid { .. });
 }

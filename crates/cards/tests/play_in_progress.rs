@@ -39,27 +39,24 @@
 use cards::REGISTRY;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
-use game_core::state::{
-    CardCode, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Status,
-};
-use game_core::test_support::{self, TestSession};
+use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId, Status};
+use game_core::test_support::{self, seat, TestSession};
 
 const DYNAMITE: &str = "01024";
 const DODGE: &str = "01023";
 const MACHETE: &str = "01020";
 const KNIFE: &str = "01086";
 const INV: InvestigatorId = InvestigatorId(1);
-const ATTACKER: EnemyId = EnemyId(100);
-const LOC_A: LocationId = LocationId(10);
-const LOC_B: LocationId = LocationId(11);
+const HERE: LocationId = LocationId(10);
+const HALLWAY: LocationId = LocationId(11);
 
 #[ctor::ctor(unsafe)]
 fn install() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-fn play(state: GameState, hand_index: u8) -> TestSession {
-    TestSession::new(state).take(&TurnAction::PlayCard {
+fn play(session: TestSession, hand_index: u8) -> TestSession {
+    session.take(&TurnAction::PlayCard {
         investigator: INV,
         hand_index,
     })
@@ -73,39 +70,39 @@ fn dodge() -> OptionTarget {
     }
 }
 
-fn at_turn_menu(session: &TestSession) -> bool {
-    session.prompt().target == Some(OptionTarget::TurnControl(INV))
+/// The controller's turn at `HERE` (connected to `HALLWAY`), holding `hand`,
+/// with `resources` to spend, engaged by one ready enemy — so a non-fast play
+/// provokes an attack of opportunity.
+fn board(hand: &[&str], resources: u8) -> TestSession {
+    board_attacked_for(hand, resources, 2)
 }
 
-/// The controller at `LOC_A` (connected to `LOC_B`) holding `hand`, with
-/// `resources` to spend, engaged by one ready enemy — so a non-fast play provokes
-/// an attack of opportunity. The attacker survives a Dynamite Blast (9 health) and
-/// deals 2 damage, so nothing but the play under test is in flight.
-fn board(hand: &[&str], resources: u8) -> GameState {
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(LOC_A);
-    inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
-    inv.resources = resources;
-
-    let mut loc_a = test_support::test_location(10, "Cellar");
-    loc_a.connections = vec![LOC_B];
-    let mut loc_b = test_support::test_location(11, "Hallway");
-    loc_b.connections = vec![LOC_A];
+/// [`board`] with an attacker dealing `attack_damage`. The attacker survives a
+/// Dynamite Blast (9 health) and deals no horror, so nothing but the play under
+/// test is in flight.
+fn board_attacked_for(hand: &[&str], resources: u8, attack_damage: u8) -> TestSession {
+    let mut here = test_support::test_location(HERE.0, "Cellar");
+    here.connections = vec![HALLWAY];
+    let mut hallway = test_support::test_location(HALLWAY.0, "Hallway");
+    hallway.connections = vec![HERE];
 
     let mut attacker = test_support::test_enemy(100, "Ghoul");
-    attacker.current_location = Some(LOC_A);
-    attacker.engaged_with = Some(INV);
     attacker.max_health = 9;
-    attacker.attack_damage = 2;
+    attacker.attack_damage = attack_damage;
     attacker.attack_horror = 0;
 
     GameStateBuilder::new()
-        .with_investigator(inv)
-        .with_location(loc_a)
-        .with_location(loc_b)
-        .with_enemy(attacker)
+        .with_seat(
+            seat(1)
+                .at(HERE)
+                .hand(hand.iter().copied())
+                .resources(resources),
+        )
+        .with_location(here)
+        .with_location(hallway)
+        .with_enemy_engaged(attacker, INV)
         .open_turn(INV)
-        .build()
+        .session()
 }
 
 // -----------------------------------------------------------------------
@@ -146,13 +143,10 @@ fn dodging_the_aoo_of_a_non_fast_event_does_not_erase_it() {
         "the AoO was cancelled by Dodge",
     );
 
-    // Drive the rest of the play: Dynamite Blast's location choice, if it
-    // suspended. LOC_A + LOC_B are both candidates; blast your own.
-    let s = if at_turn_menu(&s) {
-        s
-    } else {
-        s.pick(OptionTarget::Location(LOC_A))
-    };
+    // Drive the rest of the play: Dynamite Blast's location choice. HERE and
+    // HALLWAY are both candidates; blast your own.
+    let s = s.pick(OptionTarget::Location(HERE));
+    s.assert_at_turn_menu(INV);
 
     let discard = &s.state().investigators[&INV].discard;
     let hand = &s.state().investigators[&INV].hand;
@@ -182,14 +176,8 @@ fn dodging_the_aoo_of_a_non_fast_event_does_not_erase_it() {
 /// discard pile of a `Defeated` investigator.
 #[test]
 fn defeated_by_its_own_aoo_the_mid_play_event_is_removed_not_discarded() {
-    let mut state = board(&[DYNAMITE], 6); // no Dodge — the AoO must land
-    state
-        .enemies
-        .get_mut(&ATTACKER)
-        .expect("attacker present")
-        .attack_damage = 8; // the test investigator has 8 health
-
-    let s = play(state, 0);
+    // No Dodge — the AoO must land; the test investigator has 8 health.
+    let s = play(board_attacked_for(&[DYNAMITE], 6, 8), 0);
 
     let inv = &s.state().investigators[&INV];
     assert_ne!(

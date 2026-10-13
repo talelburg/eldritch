@@ -16,37 +16,38 @@ use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{OptionId, OptionTarget};
 use game_core::event::Event;
-use game_core::state::{CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support::{self, TestSession};
+use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId};
+use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
 
 const LIBRARIAN: &str = "01032";
 const OLD_BOOK: &str = "01031"; // Item. Tome. asset
 const MEDICAL_TEXTS: &str = "01035"; // Item. Tome. asset
 const GUTS: &str = "01089"; // a skill — not a Tome asset (filler)
 const INV: InvestigatorId = InvestigatorId(1);
-const LOC: LocationId = LocationId(10);
+const HERE: LocationId = LocationId(10);
 
 #[ctor::ctor(unsafe)]
 fn install() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// Board: the active investigator at `LOC` with Research Librarian in hand
-/// (index 0) and `deck` as their deck.
-fn board(deck: Vec<CardCode>) -> GameState {
-    let mut inv = test_support::test_investigator(1);
-    inv.hand = vec![CardCode::new(LIBRARIAN)];
-    inv.deck = deck;
-
+/// Board: the active investigator's turn at `HERE`, with Research Librarian
+/// in hand (index 0) and `deck` as their deck.
+fn board(deck: &[&str]) -> TestSession {
     GameStateBuilder::new()
-        .with_investigator_at(inv, LOC)
-        .with_location(test_support::test_location(10, "Study"))
+        .with_seat(
+            seat(1)
+                .at(HERE)
+                .hand([LIBRARIAN])
+                .deck(deck.iter().copied()),
+        )
+        .with_location(test_support::test_location(HERE.0, "Study"))
         .open_turn(INV)
-        .build()
+        .session()
 }
 
-fn play(state: GameState) -> TestSession {
-    TestSession::new(state).take(&TurnAction::PlayCard {
+fn play(session: TestSession) -> TestSession {
+    session.take(&TurnAction::PlayCard {
         investigator: INV,
         hand_index: 0,
     })
@@ -55,36 +56,25 @@ fn play(state: GameState) -> TestSession {
 /// Research Librarian as its own reaction window offers it: the in-play
 /// instance it entered play as.
 fn librarian(session: &TestSession) -> OptionTarget {
-    let instance = session.state().investigators[&INV]
-        .cards_in_play
-        .iter()
-        .find(|c| c.code == CardCode::new(LIBRARIAN))
-        .expect("Research Librarian is in play")
-        .instance_id;
-    OptionTarget::CardInstance(instance)
+    OptionTarget::CardInstance(session.state().in_play(INV, LIBRARIAN))
 }
 
-/// Take the `position`th eligible card from the search. A deck search's
-/// options have no board home (ADR 0015 excludes them), so the pick is
-/// positional.
+/// Take the `position`th eligible card from the search.
+///
+/// Exempt from the anchor-pick rule, and sent raw: a deck search's options
+/// are cards **in a deck**, with no board anchor and neither of ADR 0015's
+/// natures, which that ADR knowingly excludes and defers. No session step can
+/// name one, so the pick is positional.
 fn take_searched(position: u32) -> Action {
     Action::Player(PlayerAction::ResolveInput {
         response: InputResponse::PickSingle(OptionId(position)),
     })
 }
 
-fn at_turn_menu(session: &TestSession) -> bool {
-    session.prompt().target == Some(OptionTarget::TurnControl(INV))
-}
-
 #[test]
 fn entering_play_tutors_the_only_tome_asset() {
     // Deck has exactly one Tome asset (Old Book) + non-Tome filler.
-    let s = play(board(vec![
-        CardCode::new(OLD_BOOK),
-        CardCode::new(GUTS),
-        CardCode::new(GUTS),
-    ]));
+    let s = play(board(&[OLD_BOOK, GUTS, GUTS]));
     // Research Librarian entered play → its EnteredPlay reaction window opened.
     assert!(s.prompt().skippable, "EnteredPlay reaction window opens");
 
@@ -92,7 +82,7 @@ fn entering_play_tutors_the_only_tome_asset() {
     // prompt) ⇒ back to the turn menu.
     let target = librarian(&s);
     let s = s.pick(target);
-    assert!(at_turn_menu(&s));
+    s.assert_at_turn_menu(INV);
     let inv = &s.state().investigators[&INV];
     assert!(
         inv.hand.contains(&CardCode::new(OLD_BOOK)),
@@ -113,7 +103,7 @@ fn entering_play_tutors_the_only_tome_asset() {
 /// no window offers it. Research Librarian still enters play normally.
 #[test]
 fn an_empty_deck_does_not_open_the_tutor_reaction() {
-    let s = play(board(Vec::new()));
+    let s = play(board(&[]));
     assert!(
         s.state().investigators[&INV]
             .cards_in_play
@@ -121,11 +111,8 @@ fn an_empty_deck_does_not_open_the_tutor_reaction() {
             .any(|c| c.code == CardCode::new(LIBRARIAN)),
         "Research Librarian still enters play — only its reaction is barred",
     );
-    assert!(
-        at_turn_menu(&s),
-        "no reaction offered for a search that cannot change the game state: {:?}",
-        s.prompt(),
-    );
+    // No reaction offered for a search that cannot change the game state.
+    s.assert_at_turn_menu(INV);
 }
 
 /// A **non-empty** deck with no eligible Tome is deliberately *not* proven inert
@@ -133,7 +120,7 @@ fn an_empty_deck_does_not_open_the_tutor_reaction() {
 /// offered and simply finds nothing (#639's conservative posture).
 #[test]
 fn a_tomeless_but_non_empty_deck_still_offers_the_reaction() {
-    let s = play(board(vec![CardCode::new(GUTS), CardCode::new(GUTS)]));
+    let s = play(board(&[GUTS, GUTS]));
     assert!(
         s.prompt().skippable,
         "EnteredPlay reaction window opens even with no eligible Tome",
@@ -154,11 +141,7 @@ fn a_tomeless_but_non_empty_deck_still_offers_the_reaction() {
 fn two_tome_assets_prompt_a_choice_then_tutor_the_pick() {
     // Two eligible Tome assets (Old Book at eligible index 0, Medical Texts at
     // index 1, deck order preserved) + non-Tome filler between them.
-    let s = play(board(vec![
-        CardCode::new(OLD_BOOK),
-        CardCode::new(GUTS),
-        CardCode::new(MEDICAL_TEXTS),
-    ]));
+    let s = play(board(&[OLD_BOOK, GUTS, MEDICAL_TEXTS]));
     assert!(s.prompt().skippable, "EnteredPlay reaction window opens");
 
     // Fire the reaction → SearchDeck sees 2 eligible Tomes ⇒ suspends for a
@@ -166,7 +149,7 @@ fn two_tome_assets_prompt_a_choice_then_tutor_the_pick() {
     let target = librarian(&s);
     let s = s.pick(target);
     assert!(
-        !at_turn_menu(&s) && !s.prompt().skippable,
+        s.prompt().target != Some(OptionTarget::TurnControl(INV)) && !s.prompt().skippable,
         "2 eligible Tomes ⇒ the search suspends for a pick",
     );
 
@@ -187,5 +170,6 @@ fn two_tome_assets_prompt_a_choice_then_tutor_the_pick() {
         "the unpicked Tome stays in the deck",
     );
     assert_event!(s.events(), Event::DeckShuffled { .. });
-    assert!(at_turn_menu(&s), "the reaction window closed");
+    // The reaction window closed.
+    s.assert_at_turn_menu(INV);
 }
