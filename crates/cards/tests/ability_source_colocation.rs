@@ -39,13 +39,12 @@ use card_dsl::card_data::{CardKind, CardMetadata};
 use card_dsl::dsl::{self, Ability, InvestigatorTarget, UsageLimit, UsagePeriod};
 use game_core::assert_event;
 use game_core::engine::enumerate::{self, TurnAction};
-use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Owner,
+    AbilityAddress, AbilitySource, CardCode, CardInstanceId, EnemyId, GameState, GameStateBuilder,
+    InvestigatorId, LocationId,
 };
-use game_core::test_support::{self, MockRegistry, TEST_INV};
+use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession, TEST_INV};
 
 /// Synthetic **location** card, standing in for the Parlor 01115. Both
 /// locations on the board print it, so "reachable here" and "unreachable
@@ -67,8 +66,6 @@ const HERE: LocationId = LocationId(1);
 const THERE: LocationId = LocationId(2);
 const CULTIST_HERE: EnemyId = EnemyId(1);
 const CULTIST_THERE: EnemyId = EnemyId(2);
-const NEIGHBOURS_WARD: CardInstanceId = CardInstanceId(21);
-const STRANGERS_WARD: CardInstanceId = CardInstanceId(31);
 
 /// Ability index of the one activation that is legal here.
 const LIVE: u8 = 0;
@@ -144,38 +141,22 @@ fn install_probe_registry() {
 /// difference between the reachable one and the unreachable one is where its
 /// bearer stands.
 fn board() -> GameState {
-    let mine = test_support::test_investigator(1);
-
-    let mut neighbour = test_support::test_investigator(2);
-    neighbour.threat_area.push(CardInPlay::enter_play(
-        CardCode::new(WARD),
-        NEIGHBOURS_WARD,
-        Owner::EncounterDeck,
-    ));
-
-    let mut stranger = test_support::test_investigator(3);
-    stranger.threat_area.push(CardInPlay::enter_play(
-        CardCode::new(WARD),
-        STRANGERS_WARD,
-        Owner::EncounterDeck,
-    ));
-
-    let mut here = test_support::test_location(1, "Hall");
+    let mut here = test_support::test_location(HERE.0, "Hall");
     here.code = CardCode::new(HALL);
-    let mut there = test_support::test_location(2, "Far Hall");
+    let mut there = test_support::test_location(THERE.0, "Far Hall");
     there.code = CardCode::new(HALL);
 
-    let mut nearby_cultist = test_support::test_enemy(1, "Cultist");
+    let mut nearby_cultist = test_support::test_enemy(CULTIST_HERE.0, "Cultist");
     nearby_cultist.code = CardCode::new(CULTIST);
     nearby_cultist.current_location = Some(HERE);
-    let mut distant_cultist = test_support::test_enemy(2, "Far Cultist");
+    let mut distant_cultist = test_support::test_enemy(CULTIST_THERE.0, "Far Cultist");
     distant_cultist.code = CardCode::new(CULTIST);
     distant_cultist.current_location = Some(THERE);
 
     GameStateBuilder::new()
-        .with_investigator_at(mine, HERE)
-        .with_investigator_at(neighbour, HERE)
-        .with_investigator_at(stranger, THERE)
+        .with_seat(seat(1).at(HERE))
+        .with_seat(seat(2).at(HERE).threat_area([WARD]))
+        .with_seat(seat(3).at(THERE).threat_area([WARD]))
         .with_location(here)
         .with_location(there)
         .with_enemy(nearby_cultist)
@@ -183,6 +164,11 @@ fn board() -> GameState {
         .with_turn_order([MINE, NEIGHBOUR, STRANGER])
         .open_turn(MINE)
         .build()
+}
+
+/// The ward in the threat area of `bearer`.
+fn ward_of(state: &GameState, bearer: InvestigatorId) -> CardInstanceId {
+    state.in_play(bearer, WARD)
 }
 
 fn activation(source: AbilitySource, ability_index: u8) -> TurnAction {
@@ -204,23 +190,35 @@ fn assert_offered_and_activatable(state: GameState, source: AbilitySource, why: 
     );
 
     let before = state.investigators[&MINE].resources;
-    let result = test_support::dispatch_turn_action_unchecked(state, &action);
-    assert!(
-        !matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "{why}, so the activation should resolve; got {:?}",
-        result.outcome,
-    );
+    let session = TestSession::new(state).take(&action);
+    session.assert_at_turn_menu(MINE);
     assert_eq!(
-        result.state.investigators[&MINE].resources,
+        session.state().investigators[&MINE].resources,
         before + 1,
-        "the ability's effect (gain 1 resource) should have run",
+        "{why}, so the activation should resolve: the ability's effect (gain 1 \
+         resource) should have run",
     );
+}
+
+/// Submit `action`, which the menu does not offer, straight to the handler and
+/// assert the handler itself rejects it, leaving state byte-identical. Returns
+/// the reason.
+fn assert_handler_rejects(state: GameState, action: &TurnAction) -> String {
+    let session = TestSession::new(state);
+    let before = session.state().clone();
+    let session = session.submit_off_menu(action);
+    let reason = session.expect_rejected().to_owned();
+    assert_eq!(
+        *session.state(),
+        before,
+        "a rejected activation must leave state byte-identical",
+    );
+    reason
 }
 
 /// Neither offered nor accepted, and the rejection leaves the board untouched.
 fn assert_out_of_reach(state: GameState, source: AbilitySource, why: &str) {
     let action = activation(source, LIVE);
-    let before = state.clone();
 
     assert!(
         !enumerate::legal_actions(&state).contains(&action),
@@ -228,17 +226,11 @@ fn assert_out_of_reach(state: GameState, source: AbilitySource, why: &str) {
         enumerate::legal_actions(&state),
     );
 
-    let result = test_support::dispatch_turn_action_unchecked(state, &action);
-    let EngineOutcome::Rejected { reason } = &result.outcome else {
-        panic!("{why}, so activating it must reject; got {result:?}");
-    };
+    // Activating it must reject.
+    let reason = assert_handler_rejects(state, &action);
     assert!(
         reason.contains("cannot reach"),
-        "the reason should name reachability, got: {reason}",
-    );
-    assert_eq!(
-        result.state, before,
-        "a rejected activation must leave state byte-identical",
+        "{why}, so the reason should name reachability, got: {reason}",
     );
 }
 
@@ -258,10 +250,9 @@ fn the_location_you_stand_at_offers_its_ability() {
 /// ability.
 #[test]
 fn the_activation_event_names_a_source_with_no_card_instance() {
-    let result = test_support::dispatch_turn_action_unchecked(
-        board(),
-        &activation(AbilitySource::Location(HERE), LIVE),
-    );
+    let result = TestSession::new(board())
+        .take(&activation(AbilitySource::Location(HERE), LIVE))
+        .finish();
     assert_event!(
         result.events,
         Event::AbilityActivated {
@@ -307,18 +298,22 @@ fn an_enemy_at_another_location_does_not() {
 /// location"* — Haunted 01098's ruling, at the apply seam.
 #[test]
 fn a_colocated_investigators_threat_area_card_offers_its_ability() {
+    let state = board();
+    let ward = ward_of(&state, NEIGHBOUR);
     assert_offered_and_activatable(
-        board(),
-        AbilitySource::InPlay(NEIGHBOURS_WARD),
+        state,
+        AbilitySource::InPlay(ward),
         "its bearer is standing at your location",
     );
 }
 
 #[test]
 fn a_threat_area_card_on_an_investigator_elsewhere_does_not() {
+    let state = board();
+    let ward = ward_of(&state, STRANGER);
     assert_out_of_reach(
-        board(),
-        AbilitySource::InPlay(STRANGERS_WARD),
+        state,
+        AbilitySource::InPlay(ward),
         "its bearer is at another location",
     );
 }
@@ -334,7 +329,7 @@ fn an_inert_ability_stays_unoffered_from_every_newly_reachable_source() {
     for source in [
         AbilitySource::Location(HERE),
         AbilitySource::Enemy(CULTIST_HERE),
-        AbilitySource::InPlay(NEIGHBOURS_WARD),
+        AbilitySource::InPlay(ward_of(&state, NEIGHBOUR)),
     ] {
         assert!(
             !menu.contains(&activation(source, INERT)),
@@ -353,7 +348,6 @@ fn an_inert_ability_stays_unoffered_from_every_newly_reachable_source() {
 fn a_usage_limited_ability_on_a_location_rejects_naming_699_rather_than_panicking() {
     let state = board();
     let action = activation(AbilitySource::Location(HERE), LIMITED);
-    let before = state.clone();
 
     assert!(
         !enumerate::legal_actions(&state).contains(&action),
@@ -361,17 +355,11 @@ fn a_usage_limited_ability_on_a_location_rejects_naming_699_rather_than_panickin
         enumerate::legal_actions(&state),
     );
 
-    let result = test_support::dispatch_turn_action_unchecked(state, &action);
-    let EngineOutcome::Rejected { reason } = &result.outcome else {
-        panic!("a usage-limited location ability must reject, got {result:?}");
-    };
+    // A usage-limited location ability must reject.
+    let reason = assert_handler_rejects(state, &action);
     assert!(
         reason.contains("usage limit") && reason.contains("#699"),
         "the reason should name the limit and the issue that builds it, got: {reason}",
-    );
-    assert_eq!(
-        result.state, before,
-        "a rejected activation must leave state byte-identical",
     );
 }
 
@@ -381,8 +369,10 @@ fn a_usage_limited_ability_on_a_location_rejects_naming_699_rather_than_panickin
 fn the_same_limit_on_a_card_instance_is_not_refused() {
     let state = board();
     assert!(
-        enumerate::legal_actions(&state)
-            .contains(&activation(AbilitySource::InPlay(NEIGHBOURS_WARD), LIMITED)),
+        enumerate::legal_actions(&state).contains(&activation(
+            AbilitySource::InPlay(ward_of(&state, NEIGHBOUR)),
+            LIMITED
+        )),
         "a threat-area card carries per-instance usage state; menu was {:?}",
         enumerate::legal_actions(&state),
     );
