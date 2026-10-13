@@ -10,15 +10,16 @@
 //! sibling exit tests (`spend_uses.rs`, `native_cx.rs`) install their own.
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
+use game_core::engine::enumerate::TurnAction;
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{board, ApplyResult, EngineOutcome, NativeCx, TimingEvent};
+use game_core::engine::{board, EngineOutcome, NativeCx, OptionTarget, PromptNature, TimingEvent};
 use game_core::event::{Event, TraumaKind};
 use game_core::state::{
-    self, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation,
-    DiscardPile, GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind,
-    SkillSubstitution, Zone,
+    self, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, DiscardPile,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, SkillSubstitution,
+    Zone,
 };
-use game_core::test_support::{self, MockRegistry, TestSession};
+use game_core::test_support::{self, seat, MockRegistry, Seat, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 const TRAUMA_ACT: &str = "_nx_act_trauma";
@@ -101,13 +102,24 @@ fn install() {
         .install();
 }
 
-/// One Active investigator in turn order (the `PhaseEnded` forced dispatch
-/// binds the controller to the first one), and `act` as the current act.
-fn state_with_act(act: &str) -> GameState {
-    let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
-        .with_turn_order([InvestigatorId(1)])
-        .build();
+const INV: InvestigatorId = InvestigatorId(1);
+/// Where investigator 1 starts on the placement board.
+const HERE: LocationId = LocationId(10);
+
+/// `seated` as the lead on their open turn (the `PhaseEnded` forced dispatch
+/// binds the controller to the first investigator in turn order). A filler
+/// deck keeps Upkeep 4.4's draw from dealing empty-deck horror once the enemy
+/// phase has ended.
+fn lead(seated: Seat) -> GameStateBuilder {
+    GameStateBuilder::new()
+        .with_seat(seated.deck(["filler-card"]))
+        .open_turn(INV)
+}
+
+/// `builder` built, with `act` as the current act.
+fn with_act(builder: GameStateBuilder, act: &str) -> GameState {
+    let mut state = builder.build();
+    // No builder setter stages the act deck.
     state.act_deck = vec![Act {
         code: CardCode::new(act),
         clue_threshold: 99,
@@ -116,24 +128,38 @@ fn state_with_act(act: &str) -> GameState {
     state
 }
 
-fn run(state: GameState) -> ApplyResult {
-    TestSession::new(state)
-        .fire_at(TimingEvent::PhaseEnded {
-            phase: state::Phase::Enemy,
-        })
-        .finish()
+/// The plain lead, and `act` as the current act.
+fn state_with_act(act: &str) -> GameState {
+    with_act(lead(seat(1)), act)
+}
+
+/// End the lead's turn, and with it the Investigation phase, so play runs into
+/// the Enemy phase and its end, where the act's forced native fires. Play then
+/// goes on through Upkeep into the next round's Mythos phase, and rests at its
+/// step-1.4 encounter draw.
+fn run(state: GameState) -> TestSession {
+    let session = TestSession::new(state).take(&TurnAction::EndTurn);
+    assert_event!(
+        session.events(),
+        Event::PhaseEnded {
+            phase: state::Phase::Enemy
+        }
+    );
+    assert_eq!(
+        session.prompt().target,
+        Some(OptionTarget::EncounterDeck),
+        "play went on to the next round's encounter draw"
+    );
+    session
 }
 
 #[test]
 fn suffer_trauma_announces_trauma_suffered() {
-    let ApplyResult {
-        outcome, events, ..
-    } = run(state_with_act(TRAUMA_ACT));
-    assert_eq!(outcome, EngineOutcome::Done);
+    let session = run(state_with_act(TRAUMA_ACT));
     assert_event!(
-        events,
+        session.events(),
         Event::TraumaSuffered {
-            investigator: InvestigatorId(1),
+            investigator: INV,
             kind: TraumaKind::Mental,
             amount: 2,
         }
@@ -143,60 +169,54 @@ fn suffer_trauma_announces_trauma_suffered() {
 #[test]
 fn place_doom_on_agenda_places_doom_on_the_current_agenda() {
     let mut state = state_with_act(DOOM_ACT);
+    // No builder setter stages the agenda deck.
     state.agenda_deck = vec![Agenda {
         code: CardCode::new("TEST-AGENDA"),
         doom_threshold: 10,
     }];
-    let ApplyResult { state, outcome, .. } = run(state);
-    assert_eq!(outcome, EngineOutcome::Done);
-    assert_eq!(state.agenda_doom, 3);
+    let session = run(state);
+    assert_eq!(
+        session.state().agenda_doom,
+        3 + 1,
+        "the native's 3, then the next round's Mythos 1.2 doom"
+    );
 }
 
 #[test]
 fn place_doom_on_agenda_is_a_no_op_on_an_empty_agenda_deck() {
     let state = state_with_act(DOOM_ACT);
     assert!(state.agenda_deck.is_empty());
-    let ApplyResult { state, outcome, .. } = run(state);
-    assert_eq!(outcome, EngineOutcome::Done);
-    assert_eq!(state.agenda_doom, 0, "no agenda to place doom on");
+    let session = run(state);
+    assert_eq!(session.state().agenda_doom, 0, "no agenda to place doom on");
 }
 
-/// `state_with_act(PLACE_ACT)` with locations 10 and `DEST` on the board and
-/// investigator 1 at `at`.
+/// `PLACE_ACT` current, with `HERE` and `DEST` on the board and investigator
+/// 1 at `at`.
 fn placement_state(at: Option<LocationId>) -> GameState {
-    let mut state = state_with_act(PLACE_ACT);
-    for loc in [
-        test_support::test_location(10, "Origin"),
-        test_support::test_location(DEST.0, "Destination"),
-    ] {
-        state.locations.insert(loc.id, loc);
-    }
-    state
-        .investigators
-        .get_mut(&InvestigatorId(1))
-        .expect("investigator 1")
-        .current_location = at;
-    state
+    let seated = match at {
+        Some(location) => seat(1).at(location),
+        None => seat(1),
+    };
+    with_act(
+        lead(seated)
+            .with_location(test_support::test_location(HERE.0, "Origin"))
+            .with_location(test_support::test_location(DEST.0, "Destination")),
+        PLACE_ACT,
+    )
 }
 
 #[test]
 fn place_investigator_moves_and_announces_a_change_of_location() {
-    let ApplyResult {
-        state,
-        outcome,
-        events,
-        ..
-    } = run(placement_state(Some(LocationId(10))));
-    assert_eq!(outcome, EngineOutcome::Done);
+    let session = run(placement_state(Some(HERE)));
     assert_eq!(
-        state.investigators[&InvestigatorId(1)].current_location,
+        session.state().investigators[&INV].current_location,
         Some(DEST)
     );
     assert_event!(
-        events,
+        session.events(),
         Event::InvestigatorMoved {
-            investigator: InvestigatorId(1),
-            from: LocationId(10),
+            investigator: INV,
+            from: HERE,
             to: DEST,
         }
     );
@@ -204,51 +224,37 @@ fn place_investigator_moves_and_announces_a_change_of_location() {
 
 #[test]
 fn place_investigator_already_there_announces_nothing() {
-    let ApplyResult {
-        state,
-        outcome,
-        events,
-        ..
-    } = run(placement_state(Some(DEST)));
-    assert_eq!(outcome, EngineOutcome::Done);
+    let session = run(placement_state(Some(DEST)));
     assert_eq!(
-        state.investigators[&InvestigatorId(1)].current_location,
+        session.state().investigators[&INV].current_location,
         Some(DEST)
     );
-    assert_no_event!(events, Event::InvestigatorMoved { .. });
+    assert_no_event!(session.events(), Event::InvestigatorMoved { .. });
 }
 
 #[test]
 fn place_investigator_from_no_location_places_without_announcing() {
-    let ApplyResult {
-        state,
-        outcome,
-        events,
-        ..
-    } = run(placement_state(None));
-    assert_eq!(outcome, EngineOutcome::Done);
+    let session = run(placement_state(None));
     assert_eq!(
-        state.investigators[&InvestigatorId(1)].current_location,
+        session.state().investigators[&INV].current_location,
         Some(DEST)
     );
-    assert_no_event!(events, Event::InvestigatorMoved { .. });
+    assert_no_event!(session.events(), Event::InvestigatorMoved { .. });
 }
 
-/// `state_with_act(CLUES_ACT)` with `CLUE_CARD` holding `clues` clues,
-/// attached to a location rather than in the controller's areas, since the
-/// exit finds the instance anywhere on the board.
+/// `CLUES_ACT` current, with `CLUE_CARD` holding `clues` clues, attached to a
+/// location rather than in the controller's areas, since the exit finds the
+/// instance anywhere on the board.
 fn clue_card_state(clues: u8) -> GameState {
-    let mut state = state_with_act(CLUES_ACT);
     let mut card = CardInPlay::enter_play(
         CardCode::new("TEST-CLUE-CARD"),
         CLUE_CARD,
         Owner::EncounterDeck,
     );
     card.clues = clues;
-    let mut location = test_support::test_location(10, "Elsewhere");
+    let mut location = test_support::test_location(HERE.0, "Elsewhere");
     location.attachments.push(card);
-    state.locations.insert(location.id, location);
-    state
+    with_act(lead(seat(1)).with_location(location), CLUES_ACT)
 }
 
 fn clues_on_clue_card(state: &GameState) -> u8 {
@@ -260,16 +266,14 @@ fn clues_on_clue_card(state: &GameState) -> u8 {
 
 #[test]
 fn remove_clues_removes_that_many_clues_from_the_instance() {
-    let ApplyResult { state, outcome, .. } = run(clue_card_state(5));
-    assert_eq!(outcome, EngineOutcome::Done);
-    assert_eq!(clues_on_clue_card(&state), 2);
+    let session = run(clue_card_state(5));
+    assert_eq!(clues_on_clue_card(session.state()), 2);
 }
 
 #[test]
 fn remove_clues_saturates_at_zero() {
-    let ApplyResult { state, outcome, .. } = run(clue_card_state(2));
-    assert_eq!(outcome, EngineOutcome::Done);
-    assert_eq!(clues_on_clue_card(&state), 0);
+    let session = run(clue_card_state(2));
+    assert_eq!(clues_on_clue_card(session.state()), 0);
 }
 
 fn codes(codes: &[&str]) -> Vec<CardCode> {
@@ -279,19 +283,18 @@ fn codes(codes: &[&str]) -> Vec<CardCode> {
 #[test]
 fn take_encounter_top_and_discard_encounter_card_move_the_top_card_to_the_discard() {
     let mut state = state_with_act(DIG_ACT);
+    // No builder setter stages the encounter deck or discard.
     state.encounter_deck = codes(&["TOP", "NEXT"]).into();
     state.encounter_discard = codes(&["OLD"]);
-    let ApplyResult {
-        state,
-        outcome,
-        events,
-        ..
-    } = run(state);
-    assert_eq!(outcome, EngineOutcome::Done);
-    assert_eq!(Vec::from(state.encounter_deck), codes(&["NEXT"]));
-    assert_eq!(state.encounter_discard, codes(&["OLD", "TOP"]));
+    let session = run(state);
+    // The next round's encounter draw has not been taken yet.
+    assert_eq!(
+        Vec::from(session.state().encounter_deck.clone()),
+        codes(&["NEXT"])
+    );
+    assert_eq!(session.state().encounter_discard, codes(&["OLD", "TOP"]));
     assert_event!(
-        events,
+        session.events(),
         Event::CardDiscarded {
             code,
             from: Zone::EncounterDeck,
@@ -303,43 +306,47 @@ fn take_encounter_top_and_discard_encounter_card_move_the_top_card_to_the_discar
 #[test]
 fn take_encounter_top_on_an_empty_deck_takes_nothing_and_does_not_reshuffle() {
     let mut state = state_with_act(DIG_ACT);
+    // No builder setter stages the encounter discard.
     state.encounter_discard = codes(&["OLD"]);
-    let ApplyResult {
-        state,
-        outcome,
-        events,
-        ..
-    } = run(state);
-    assert_eq!(outcome, EngineOutcome::Done);
-    assert!(state.encounter_deck.is_empty());
-    assert_eq!(state.encounter_discard, codes(&["OLD"]));
-    assert_no_event!(events, Event::EncounterDeckShuffled);
-    assert_no_event!(events, Event::CardDiscarded { .. });
+    let session = run(state);
+    assert!(session.state().encounter_deck.is_empty());
+    assert_eq!(session.state().encounter_discard, codes(&["OLD"]));
+    assert_no_event!(session.events(), Event::EncounterDeckShuffled);
+    assert_no_event!(session.events(), Event::CardDiscarded { .. });
 }
 
-/// Whether a Combat test started on `state` by investigator 1 offers the
-/// "use Intellect in place of Combat?" prompt.
-fn combat_test_offers_substitution(mut state: GameState) -> bool {
-    state.chaos_bag = ChaosBag::new([ChaosToken::Numeric(0)]);
-    let result = test_support::perform_skill_test(state, InvestigatorId(1), SkillKind::Combat, 1);
-    assert!(
-        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
-        "{:?}",
-        result.outcome
-    );
-    matches!(
-        result.state.continuations.top(),
-        Some(Continuation::SubstitutionPrompt(frame)) if frame.investigator == InvestigatorId(1)
-    )
+/// Whether a Combat test investigator 1 starts from the turn menu `session`
+/// rests at offers the "use Intellect in place of Combat?" decision rather
+/// than going straight to the commit window.
+fn combat_test_offers_substitution(session: TestSession) -> bool {
+    session.assert_at_turn_menu(INV);
+    let started = session.test_skill(INV, SkillKind::Combat, 1);
+    let prompt = started.prompt();
+    prompt.nature == PromptNature::Decision
+        && prompt
+            .options
+            .iter()
+            .map(|o| o.label.as_str())
+            .eq(["Use Intellect", "Keep Combat"])
 }
 
+/// The substitution is round-scoped, so the real enemy phase end, which runs
+/// on into the round end, would clear it before any later test could see it.
+/// The `PhaseEnded { Enemy }` timing point is fired on its own over the lead's
+/// open turn instead, and the session comes back to that turn's menu.
 #[test]
 fn add_skill_substitution_is_offered_at_the_next_skill_test() {
+    let board = || {
+        let mut state = state_with_act(SUBSTITUTE_ACT);
+        state.chaos_bag = ChaosBag::new([ChaosToken::Numeric(0)]);
+        TestSession::new(state)
+    };
     assert!(
-        !combat_test_offers_substitution(state_with_act(SUBSTITUTE_ACT)),
+        !combat_test_offers_substitution(board()),
         "control: no substitution before the native runs"
     );
-    let ApplyResult { state, outcome, .. } = run(state_with_act(SUBSTITUTE_ACT));
-    assert_eq!(outcome, EngineOutcome::Done);
-    assert!(combat_test_offers_substitution(state));
+    let fired = board().fire_at(TimingEvent::PhaseEnded {
+        phase: state::Phase::Enemy,
+    });
+    assert!(combat_test_offers_substitution(fired));
 }
