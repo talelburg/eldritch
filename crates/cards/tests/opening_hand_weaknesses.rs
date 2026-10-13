@@ -47,11 +47,12 @@
 //! ADR 0016 forbids.
 
 use cards::REGISTRY;
-use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
-use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
+use game_core::action::RosterEntry;
+use game_core::engine::{self, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{CardCode, GameState, GameStateBuilder, InvestigatorId, Phase};
-use game_core::test_support;
+use game_core::test_support::{self, seat, TestSession};
+use game_core::{assert_event, assert_no_event};
 
 /// Cover Up — the real Core Set weakness this file sets aside.
 const COVER_UP: &str = "01007";
@@ -85,14 +86,12 @@ fn board() -> GameState {
     state
 }
 
-/// Apply a "keep my whole hand" mulligan response (empty `PickMultiple`).
-fn keep_hand(state: GameState) -> ApplyResult {
-    engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        }),
-    )
+/// Roland, seated with `deck` through the roster.
+fn roland_with(deck: Vec<CardCode>) -> Vec<RosterEntry> {
+    vec![RosterEntry {
+        investigator: CardCode::new(ROLAND),
+        deck,
+    }]
 }
 
 // ---- Test 1: opening-hand weakness is set aside and replaced ---------------
@@ -118,13 +117,9 @@ fn opening_hand_weakness_set_aside_and_returned_to_deck() {
         filler(3),
         filler(4),
     ];
-    let roster = vec![RosterEntry {
-        investigator: CardCode::new(ROLAND),
-        deck,
-    }];
 
     // seat_and_open → initial draw + weakness set-aside, then mulligan prompt.
-    let r1 = engine::seat_and_open(board(), &roster);
+    let r1 = engine::seat_and_open(board(), &roland_with(deck));
     assert!(
         matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }),
         "seat_and_open opens the mulligan prompt, got {:?}",
@@ -132,14 +127,9 @@ fn opening_hand_weakness_set_aside_and_returned_to_deck() {
     );
 
     // The opening-hand weakness-set-aside events fire during seat_and_open.
-    assert!(
-        r1.events.iter().any(|e| matches!(
-            e,
-            Event::WeaknessSetAside { investigator: INV, code }
-            if code.as_str() == COVER_UP
-        )),
-        "WeaknessSetAside must fire for Cover Up during initial draw; events = {:?}",
+    assert_event!(
         r1.events,
+        Event::WeaknessSetAside { investigator: INV, code } if code.as_str() == COVER_UP
     );
 
     // Hand has no weakness after the initial replace.
@@ -157,15 +147,12 @@ fn opening_hand_weakness_set_aside_and_returned_to_deck() {
     );
 
     // Keep-hand mulligan: investigator keeps the remaining 4 non-weakness cards.
-    // At drain, setaside weaknesses are shuffled back into the deck.
-    let r2 = keep_hand(r1.state);
-    assert!(
-        !matches!(r2.outcome, EngineOutcome::Rejected { .. }),
-        "keep-hand mulligan must not reject; outcome = {:?}",
-        r2.outcome,
-    );
+    // At drain, setaside weaknesses are shuffled back into the deck, and the
+    // mulligan, not rejected, closes onto the first turn.
+    let session = TestSession::new(r1.state).choose_from_hand(&[]);
+    session.assert_at_turn_menu(INV);
 
-    let inv2 = &r2.state.investigators[&INV];
+    let inv2 = &session.state().investigators[&INV];
 
     // Hand has no weakness after drain.
     assert!(
@@ -208,21 +195,17 @@ fn opening_hand_weakness_set_aside_and_returned_to_deck() {
 /// `shuffle_player_deck` no-ops below two cards.
 #[test]
 fn mulligan_redraw_weakness_is_set_aside() {
-    let mut inv = test_support::test_investigator(1);
-    // Hand: one non-weakness card to mulligan.
-    inv.hand = vec![filler(1)];
-    // Deck: only the weakness — guarantees the mulligan redraw draws it.
-    inv.deck = vec![CardCode::new(COVER_UP)];
-
-    let state = GameStateBuilder::new()
+    let mulligan = GameStateBuilder::new()
         .with_rng_seed(42)
-        .with_investigator(inv)
+        // Hand: one non-weakness card to mulligan. Deck: only the weakness —
+        // guarantees the mulligan redraw draws it.
+        .with_seat(seat(1).hand([filler(1)]).deck([COVER_UP]))
         .with_phase(Phase::Investigation)
         .with_turn_order([INV])
         .with_mulligan_remaining([INV])
-        .build();
+        .session();
 
-    // Player mulligans index 0 (the filler):
+    // Player mulligans the filler:
     //   → filler set aside (held out of the deck) → deck = [weakness]
     //   → draw 1 → weakness drawn → hand = [weakness], deck = []
     //   → set-aside filler shuffles back → deck = [filler] (1 card: no-op)
@@ -231,32 +214,17 @@ fn mulligan_redraw_weakness_is_set_aside() {
     //   → deck empty, break.
     // MulliganPerformed{redrawn_count:1}.
     // Drain: setaside[weakness] → deck, shuffle.
-    let r = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple {
-                selected: vec![OptionId(0)],
-            },
-        }),
-    );
-    assert!(
-        !matches!(r.outcome, EngineOutcome::Rejected { .. }),
-        "mulligan must not reject; outcome = {:?}",
-        r.outcome,
-    );
+    let session = mulligan.choose_from_hand(&[filler(1)]);
+    // The mulligan, not rejected, closes onto the first turn.
+    session.assert_at_turn_menu(INV);
 
     // WeaknessSetAside fired for the weakness drawn during the mulligan redraw.
-    assert!(
-        r.events.iter().any(|e| matches!(
-            e,
-            Event::WeaknessSetAside { investigator: INV, code }
-            if code.as_str() == COVER_UP
-        )),
-        "WeaknessSetAside must fire for weakness drawn during mulligan; events = {:?}",
-        r.events,
+    assert_event!(
+        session.events(),
+        Event::WeaknessSetAside { investigator: INV, code } if code.as_str() == COVER_UP
     );
 
-    let inv = &r.state.investigators[&INV];
+    let inv = &session.state().investigators[&INV];
 
     // Hand has no weakness.
     assert!(
@@ -298,25 +266,15 @@ fn mulligan_redraw_weakness_is_set_aside() {
 #[test]
 fn non_weakness_deck_produces_no_weakness_events() {
     let deck: Vec<CardCode> = (1u8..=5).map(filler).collect();
-    let roster = vec![RosterEntry {
-        investigator: CardCode::new(ROLAND),
-        deck,
-    }];
 
-    let r1 = engine::seat_and_open(board(), &roster);
+    let r1 = engine::seat_and_open(board(), &roland_with(deck));
     assert!(
         matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }),
         "seat_and_open opens the mulligan prompt",
     );
 
     // No WeaknessSetAside events during initial draw.
-    assert!(
-        !r1.events
-            .iter()
-            .any(|e| matches!(e, Event::WeaknessSetAside { .. })),
-        "no WeaknessSetAside must fire for a weakness-free deck; events = {:?}",
-        r1.events,
-    );
+    assert_no_event!(r1.events, Event::WeaknessSetAside { .. });
 
     // All 5 non-weakness cards are in hand.
     let inv = &r1.state.investigators[&INV];
@@ -328,15 +286,11 @@ fn non_weakness_deck_produces_no_weakness_events() {
     );
 
     // Keep mulligan — no WeaknessSetAside during drain either.
-    let r2 = keep_hand(r1.state);
-    assert!(
-        !r2.events
-            .iter()
-            .any(|e| matches!(e, Event::WeaknessSetAside { .. })),
-        "no WeaknessSetAside must fire during mulligan for a weakness-free deck",
-    );
+    let session = TestSession::new(r1.state).choose_from_hand(&[]);
+    session.assert_at_turn_menu(INV);
+    assert_no_event!(session.events(), Event::WeaknessSetAside { .. });
 
-    let inv2 = &r2.state.investigators[&INV];
+    let inv2 = &session.state().investigators[&INV];
     assert!(
         inv2.setaside.is_empty(),
         "setaside must stay empty for a weakness-free deck",
