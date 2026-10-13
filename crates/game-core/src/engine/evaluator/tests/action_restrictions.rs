@@ -91,10 +91,11 @@ fn surcharge_charges_first_matching_action_then_not_again_until_reset() {
     let (mut state, id) = state_with_cards_in_play(&["frozen-surcharge"]);
     let reg = fake_registry();
 
-    // First move this round: +1, and the source (instance 0) to mark.
+    // First move this round: +1, and the source to mark.
     let (extra, to_mark) = pending_action_surcharge(&state, &reg, id, ActionClass::Move);
     assert_eq!(extra, 1);
-    assert_eq!(to_mark, vec![CardInstanceId(0)]);
+    let frozen = state.in_play(id, "frozen-surcharge");
+    assert_eq!(to_mark, vec![frozen]);
 
     // Mark it spent (what the action handler does on commit).
     state
@@ -102,7 +103,7 @@ fn surcharge_charges_first_matching_action_then_not_again_until_reset() {
         .get_mut(&id)
         .unwrap()
         .action_surcharge_spent_this_round
-        .insert(CardInstanceId(0));
+        .insert(frozen);
 
     // Second matching action this round: no surcharge.
     let (extra, to_mark) = pending_action_surcharge(&state, &reg, id, ActionClass::Fight);
@@ -129,7 +130,12 @@ fn surcharge_two_sources_each_charge_the_first_action() {
         extra, 2,
         "two Frozen in Fear each surcharge the first action"
     );
-    assert_eq!(to_mark, vec![CardInstanceId(0), CardInstanceId(1)]);
+    let both: Vec<_> = state.investigators[&id]
+        .cards_in_play
+        .iter()
+        .map(|card| card.instance_id)
+        .collect();
+    assert_eq!(to_mark, both, "each Frozen in Fear in play, in order");
 }
 
 #[test]
