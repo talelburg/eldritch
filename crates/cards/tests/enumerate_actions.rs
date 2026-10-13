@@ -76,8 +76,8 @@ fn rosary_and_flashlight_board() -> GameState {
 }
 
 /// Take each of `actions` from `state`'s turn menu, asserting none is
-/// rejected. `take` sends the action as the `ResolveInput(PickSingle(OptionId))`
-/// of its place on the menu (#447), so this is the menu's id round-trip.
+/// rejected. `take` answers the turn menu with the option id of the action's
+/// place on it (#447), so this is the menu's id round-trip.
 fn assert_each_applies(state: &GameState, actions: &[TurnAction]) {
     for action in actions {
         let taken = TestSession::new(state.clone()).take(action);

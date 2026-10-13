@@ -462,7 +462,7 @@ fn the_elimination_interleaving_replays_bit_for_bit() {
     // repo's `deck_shuffle_is_deterministic_across_replay` idiom — two seeded
     // runs compared — rather than re-applying a recorded `Vec<Action>`; with the
     // single rigged chaos token no RNG divergence is possible either way.)
-    let drive = || {
+    let run = || {
         reveal_committing(
             drawing_grasping_hands(
                 hurt(7, &[SURVIVAL_INSTINCT]).threat_area([(COVER_UP, clues(3))]),
@@ -471,8 +471,8 @@ fn the_elimination_interleaving_replays_bit_for_bit() {
             &[SURVIVAL_INSTINCT],
         )
     };
-    let first = drive();
-    let second = drive();
+    let first = run();
+    let second = run();
 
     assert_eq!(
         first.state(),
