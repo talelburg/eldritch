@@ -534,7 +534,7 @@ fn forced_on_phase_end_fires_act_ability() {
 // ── EndOfTurn tests ───────────────────────────────────────────────────────────
 
 /// A lone `INV` at the Study holding `threat_area` ends their turn: the
-/// EndTurn whose end of turn fires the threat area's `EndOfTurn` forced
+/// `EndTurn` whose end of turn fires the threat area's `EndOfTurn` forced
 /// abilities.
 fn end_the_turn(threat_area: &[&str]) -> TestSession {
     GameStateBuilder::new()
