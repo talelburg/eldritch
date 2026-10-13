@@ -117,7 +117,7 @@ fn playing_a_non_fast_event_while_engaged_provokes_an_aoo() {
         0,
         Some(ready_attacker(7, 2, 5)),
     );
-    let dog = OptionTarget::CardInstance(session.state().in_play(INV, GUARD_DOG));
+    let dog = session.state().card(INV, GUARD_DOG);
     let resources_before = session.state().investigators[&INV].resources;
 
     // The AoO prompts for the soak distribution (#44/K5b), one prompt per point
@@ -298,7 +298,7 @@ fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
         0,
         Some(ready_attacker(7, 2, 5)),
     );
-    let dog = OptionTarget::CardInstance(session.state().in_play(INV, GUARD_DOG));
+    let dog = session.state().card(INV, GUARD_DOG);
 
     // Step 1: play Machete → AoO soaks onto Guard Dog → soak window; Machete is
     // mid-play — it left hand when the play commenced and enters play only once

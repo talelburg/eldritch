@@ -57,7 +57,7 @@ fn board(intellect: i8, study: impl FnOnce(&mut Location)) -> TestSession {
 /// Investigate and commit nothing; the session rests at the after-investigate
 /// reaction window, which offers Dr. Milan.
 fn investigate_to_dr_milans_window(session: TestSession) -> (TestSession, OptionTarget) {
-    let dr_milan = OptionTarget::CardInstance(session.state().in_play(INV, DR_MILAN));
+    let dr_milan = session.state().card(INV, DR_MILAN);
     let window = session
         .take(&TurnAction::Investigate { investigator: INV })
         .commit(&[]);

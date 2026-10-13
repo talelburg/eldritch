@@ -45,7 +45,6 @@
 
 use cards::REGISTRY;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, DiscardPile, EnemyId, GameStateBuilder, InvestigatorId,
@@ -110,7 +109,7 @@ fn attack_then_kill_the_target_on(
     action: &TurnAction,
     commit: &[&str],
 ) -> TestSession {
-    let cop = OptionTarget::CardInstance(session.state().in_play(INV, BEAT_COP));
+    let cop = session.state().card(INV, BEAT_COP);
     let at_st2 = to_st2(session, action, commit);
     assert_eq!(
         (at_st2.offered_at(&cop), at_st2.prompt().options.len()),

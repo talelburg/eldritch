@@ -280,8 +280,7 @@ fn dissonant_voices_round_end_coexists_with_agenda_01107_doom() {
     // Settling ends the phase into the round end: 2+ At-forced → the lead
     // orders them.
     let opened = TestSession::new(state);
-    let dissonant_voices =
-        OptionTarget::CardInstance(opened.state().in_play(INV, DISSONANT_VOICES));
+    let dissonant_voices = opened.state().card(INV, DISSONANT_VOICES);
     let offered: Vec<_> = opened
         .prompt()
         .options

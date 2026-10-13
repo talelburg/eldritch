@@ -202,7 +202,7 @@ fn evidence_is_withdrawn_when_rolands_reaction_takes_the_last_clue() {
         state.investigators[&INV].resources, 5,
         "fixture invariant: 5 starting resources",
     );
-    let roland = OptionTarget::CardInstance(state.in_play(INV, ROLAND));
+    let roland = state.card(INV, ROLAND);
 
     // Fire Roland's reaction. Evidence! is then withdrawn, so the window closes
     // and play is back at the turn menu — not still offering a resource and a

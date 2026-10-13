@@ -109,7 +109,7 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
             .open_turn(INV)
             .build(),
     );
-    let dissonant = OptionTarget::CardInstance(state.in_play(INV, DISSONANT));
+    let dissonant = state.card(INV, DISSONANT);
 
     // EndTurn drives Investigation → Enemy → Upkeep and reaches step 4.6,
     // where the two round-end forced abilities fire simultaneously. The

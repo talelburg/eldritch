@@ -148,11 +148,6 @@ fn session_holding(codes: &[&str], location_clues: u8) -> TestSession {
         .session()
 }
 
-/// The instance id of the threat-area card `code`.
-fn card(session: &TestSession, code: &str) -> CardInstanceId {
-    session.state().in_play(INV, code)
-}
-
 /// The markers fired so far, in order, with the controller each bound to:
 /// the context-naming markers' `TraumaSuffered` and the constant marker's
 /// `ResourcesGained`.
@@ -206,7 +201,10 @@ fn enemy_7_damages(cards: &[CardInstanceId]) -> TimingEvent {
 /// health, and these probes are healthless threat-area cards, so the timing
 /// point is fired on its own.
 fn attack_damages(session: TestSession, codes: &[&str]) -> TestSession {
-    let ids: Vec<CardInstanceId> = codes.iter().map(|code| card(&session, code)).collect();
+    let ids: Vec<CardInstanceId> = codes
+        .iter()
+        .map(|code| session.state().in_play(INV, *code))
+        .collect();
     session.fire_at(enemy_7_damages(&ids))
 }
 
@@ -225,8 +223,8 @@ fn a_forced_ability_fired_alone_names_the_attacking_enemy_and_records_its_use_li
         &[NAMES_WHAT_IT_HEARS, HEARS_THE_SAME],
     );
     let (names, same) = (
-        card(&paused, NAMES_WHAT_IT_HEARS),
-        card(&paused, HEARS_THE_SAME),
+        paused.state().in_play(INV, NAMES_WHAT_IT_HEARS),
+        paused.state().in_play(INV, HEARS_THE_SAME),
     );
     let in_run = paused
         .pick(OptionTarget::CardInstance(names))
@@ -249,7 +247,11 @@ fn a_forced_ability_fired_alone_names_the_attacking_enemy_and_records_its_use_li
         "the ability fired in a run counts one use"
     );
     assert_eq!(
-        recorded_uses(alone.state(), card(&alone, NAMES_WHAT_IT_HEARS), 0),
+        recorded_uses(
+            alone.state(),
+            alone.state().in_play(INV, NAMES_WHAT_IT_HEARS),
+            0
+        ),
         1,
         "the same ability fired alone counts the same one use"
     );
@@ -293,8 +295,8 @@ fn a_forced_ability_fired_alone_names_the_discovered_count_like_one_in_an_ordere
     alone.assert_at_turn_menu(INV);
     let paused = discovering_3(&[NAMES_WHAT_IT_HEARS, HEARS_THE_SAME]);
     let (names, same) = (
-        card(&paused, NAMES_WHAT_IT_HEARS),
-        card(&paused, HEARS_THE_SAME),
+        paused.state().in_play(INV, NAMES_WHAT_IT_HEARS),
+        paused.state().in_play(INV, HEARS_THE_SAME),
     );
     let in_run = paused
         .pick(OptionTarget::CardInstance(names))
@@ -313,7 +315,11 @@ fn a_forced_ability_fired_alone_names_the_discovered_count_like_one_in_an_ordere
     );
     assert_eq!(
         (
-            recorded_uses(alone.state(), card(&alone, NAMES_WHAT_IT_HEARS), 1),
+            recorded_uses(
+                alone.state(),
+                alone.state().in_play(INV, NAMES_WHAT_IT_HEARS),
+                1
+            ),
             recorded_uses(in_run.state(), names, 1),
         ),
         (1, 1),

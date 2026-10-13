@@ -692,7 +692,7 @@ fn a_reaction_on_another_investigators_asset_is_offered_only_to_its_controller()
     )
     .open_turn(ONE)
     .build();
-    let asset = OptionTarget::CardInstance(state.in_play(TWO, REACT_ON_DEFEAT));
+    let asset = state.card(TWO, REACT_ON_DEFEAT);
     assert_eq!(
         offered(state.clone(), defeat(None)),
         vec![Some(asset.clone())],
@@ -716,7 +716,7 @@ fn a_reaction_on_a_co_located_enemy_or_threat_area_card_is_offered_to_each_inves
     .with_enemy(ghoul)
     .open_turn(ONE)
     .build();
-    let threat = OptionTarget::CardInstance(state.in_play(TWO, REACT_ON_DEFEAT));
+    let threat = state.card(TWO, REACT_ON_DEFEAT);
     assert_eq!(
         offered(state, defeat(None)),
         vec![

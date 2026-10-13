@@ -531,7 +531,7 @@ fn mythos_after_draws_window_stays_open_when_a_fast_play_is_eligible() {
         "the fast window is skippable (pass): {request:?}"
     );
     // The window was NOT auto-skipped: it offers Beat Cop's ability.
-    let beat_cop = OptionTarget::CardInstance(session.state().in_play(INV1, BEAT_COP));
+    let beat_cop = session.state().card(INV1, BEAT_COP);
     assert_eq!(
         session.offered_at(&beat_cop),
         1,
@@ -565,7 +565,7 @@ fn mythos_after_draws_window_closed_by_skip_and_transitions_to_investigation() {
     // Advance through the draw to land in the open-window state (post-#476 a
     // skippable fast-window prompt, not Done-idle).
     let window = at_mythos_draw_with_beat_cop_in_play().confirm();
-    let beat_cop = OptionTarget::CardInstance(window.state().in_play(INV1, BEAT_COP));
+    let beat_cop = window.state().card(INV1, BEAT_COP);
     assert!(
         window.prompt().skippable && window.offered_at(&beat_cop) == 1,
         "the draw lands on the skippable fast-window prompt, got {:?}",

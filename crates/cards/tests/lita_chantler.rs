@@ -272,7 +272,7 @@ fn while_uncontrolled_the_combat_bonus_does_not_apply() {
 /// The anchor of the controlled Lita: her granted reaction is offered on
 /// her.
 fn lita(state: &GameState) -> OptionTarget {
-    OptionTarget::CardInstance(state.in_play(KEEPER, LITA))
+    state.card(KEEPER, LITA)
 }
 
 /// `actor` fights `enemy` committing nothing: the session rests at Lita's

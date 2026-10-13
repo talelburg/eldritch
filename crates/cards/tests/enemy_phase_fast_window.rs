@@ -99,7 +99,7 @@ fn end_turn(board: GameStateBuilder) -> TestSession {
 
 /// The anchor of the seated Beat Cop: its `[fast]` ability is offered on it.
 fn beat_cop(session: &TestSession) -> OptionTarget {
-    OptionTarget::CardInstance(session.state().in_play(INV, BEAT_COP))
+    session.state().card(INV, BEAT_COP)
 }
 
 #[test]

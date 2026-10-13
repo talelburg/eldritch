@@ -56,7 +56,7 @@ fn play(session: TestSession) -> TestSession {
 /// Research Librarian as its own reaction window offers it: the in-play
 /// instance it entered play as.
 fn librarian(session: &TestSession) -> OptionTarget {
-    OptionTarget::CardInstance(session.state().in_play(INV, LIBRARIAN))
+    session.state().card(INV, LIBRARIAN)
 }
 
 /// Take the `position`th eligible card from the search.

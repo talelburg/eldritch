@@ -114,11 +114,6 @@ fn session_holding(codes: &[&str]) -> TestSession {
         .session()
 }
 
-/// The anchor of the threat-area card `code`.
-fn card(session: &TestSession, code: &str) -> OptionTarget {
-    OptionTarget::CardInstance(session.state().in_play(INV, code))
-}
-
 /// The markers fired so far, in order.
 fn marks(session: &TestSession) -> Vec<u8> {
     session
@@ -134,7 +129,7 @@ fn marks(session: &TestSession) -> Vec<u8> {
 #[test]
 fn a_reaction_is_offered_after_the_forced_ability_at_the_same_timing_point() {
     let session = session_holding(&[FORCED_A, REACTION]).fire_at(TimingEvent::RoundEnded);
-    let reaction = card(&session, REACTION);
+    let reaction = session.state().card(INV, REACTION);
 
     assert_eq!(
         marks(&session),
@@ -160,7 +155,10 @@ fn a_reaction_is_offered_after_the_forced_ability_at_the_same_timing_point() {
 #[test]
 fn two_simultaneous_forced_abilities_run_in_the_order_the_lead_picks() {
     let session = session_holding(&[FORCED_A, FORCED_B]).fire_at(TimingEvent::RoundEnded);
-    let (a, b) = (card(&session, FORCED_A), card(&session, FORCED_B));
+    let (a, b) = (
+        session.state().card(INV, FORCED_A),
+        session.state().card(INV, FORCED_B),
+    );
 
     assert!(
         marks(&session).is_empty(),

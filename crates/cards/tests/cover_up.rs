@@ -40,7 +40,7 @@ fn holding_cover_up(held: u8) -> Seat {
 /// The anchor of the Cover Up in `holder`'s threat area: its reaction and its
 /// forced ability are offered on the card.
 fn cover_up_of(state: &GameState, holder: InvestigatorId) -> OptionTarget {
-    OptionTarget::CardInstance(state.in_play(holder, COVER_UP))
+    state.card(holder, COVER_UP)
 }
 
 /// Clues remaining on the Cover Up in `INV`'s threat area.

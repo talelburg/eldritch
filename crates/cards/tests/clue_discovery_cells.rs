@@ -28,7 +28,6 @@
 use card_dsl::dsl::{self, Ability, Effect, EventPattern, EventTiming, InvestigatorTarget};
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::OptionTarget;
 use game_core::event::{Event, LapseReason};
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, Continuation, GameStateBuilder, InvestigatorId, LocationId,
@@ -107,7 +106,7 @@ fn investigate_firing(session: TestSession, fired: &[&str]) -> TestSession {
         .take(&TurnAction::Investigate { investigator: INV })
         .commit(&[]);
     for code in fired {
-        let card = OptionTarget::CardInstance(session.state().in_play(INV, *code));
+        let card = session.state().card(INV, *code);
         session = session.pick(card);
     }
     session.assert_at_turn_menu(INV);

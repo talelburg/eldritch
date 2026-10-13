@@ -12,7 +12,6 @@
 //! for a printed card.
 
 use card_dsl::dsl::{self, EventPattern, EventTiming, InvestigatorTarget, LocationTarget};
-use game_core::engine::OptionTarget;
 use game_core::event::{Event, LapseReason};
 use game_core::state::{
     CardCode, Continuation, GameStateBuilder, InvestigatorId, LocationId, Phase,
@@ -75,11 +74,6 @@ fn round_ends_holding(codes: &[&str]) -> TestSession {
         .session()
 }
 
-/// The anchor of the threat-area card `code`.
-fn card(session: &TestSession, code: &str) -> OptionTarget {
-    OptionTarget::CardInstance(session.state().in_play(INV, code))
-}
-
 /// Every forced option withdrawn so far, with its reason.
 fn lapses(session: &TestSession) -> Vec<(InvestigatorId, CardCode, LapseReason)> {
     session
@@ -100,9 +94,9 @@ fn lapses(session: &TestSession) -> Vec<(InvestigatorId, CardCode, LapseReason)>
 fn an_ability_a_sibling_left_unable_to_change_the_game_state_is_withdrawn_from_the_run() {
     let session = round_ends_holding(&[EMPTIES, DISCOVERS, GAINS]);
     let (empties, discovers, gains) = (
-        card(&session, EMPTIES),
-        card(&session, DISCOVERS),
-        card(&session, GAINS),
+        session.state().card(INV, EMPTIES),
+        session.state().card(INV, DISCOVERS),
+        session.state().card(INV, GAINS),
     );
     assert_eq!(
         session
@@ -149,7 +143,7 @@ fn an_ability_a_sibling_left_unable_to_change_the_game_state_is_withdrawn_from_t
 #[test]
 fn a_run_whose_remaining_abilities_all_lapse_closes_on_its_own() {
     let session = round_ends_holding(&[EMPTIES, DISCOVERS]);
-    let empties = card(&session, EMPTIES);
+    let empties = session.state().card(INV, EMPTIES);
     let session = session.pick(empties);
 
     assert_eq!(

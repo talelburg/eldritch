@@ -533,7 +533,7 @@ fn a_cancelled_use_of_a_limited_activated_ability_still_counts() {
         .open_turn(INV)
         .build();
     let action = activate(INV, state.in_play(INV, ONCE_PER_ROUND_DISCOVERY), 0);
-    let interrupt_card = OptionTarget::CardInstance(state.in_play(INV, CANCEL_DISCOVERY));
+    let interrupt_card = state.card(INV, CANCEL_DISCOVERY);
 
     let cancelled = TestSession::new(state).take(&action).pick(interrupt_card);
 

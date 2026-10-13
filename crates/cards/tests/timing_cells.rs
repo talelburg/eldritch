@@ -49,7 +49,6 @@ use card_dsl::dsl::{
     self, Ability, Effect, EventPattern, EventTiming, InvestigatorTarget, TestOutcome,
     TestedLocationScope,
 };
-use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
     ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, SkillKind, TokenModifiers,
@@ -241,7 +240,7 @@ fn forced_resolves_before_reaction_within_one_cell() {
     let offered = succeed_on(board_with(&[AT, REACT]));
     // The reaction is offered with the forced +1 already resolved.
     assert_eq!(gains(offered.events()), vec![1]);
-    let react = OptionTarget::CardInstance(offered.state().in_play(INV, REACT));
+    let react = offered.state().card(INV, REACT);
     let session = offered.pick(react);
     session.assert_at_turn_menu(INV);
     assert_eq!(

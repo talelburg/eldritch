@@ -160,7 +160,7 @@ fn end_turn_firing(board: GameStateBuilder, fired: &[&str]) -> TestSession {
     fired.iter().fold(
         board.session().take(&TurnAction::EndTurn),
         |session, code| {
-            let card = OptionTarget::CardInstance(session.state().in_play(INV, *code));
+            let card = session.state().card(INV, *code);
             session.pick(card)
         },
     )

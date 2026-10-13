@@ -403,7 +403,7 @@ fn an_enemy_at_another_location_is_out_of_reach_even_in_a_window() {
 fn a_colocated_investigators_threat_area_card_offers_its_zero_action_ability_in_a_window() {
     assert_offered_and_usable(
         |state| ward_of(state, NEIGHBOUR),
-        |state| OptionTarget::CardInstance(state.in_play(NEIGHBOUR, WARD)),
+        |state| state.card(NEIGHBOUR, WARD),
         "its bearer is standing at your location",
     );
 }
