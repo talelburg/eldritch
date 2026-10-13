@@ -366,10 +366,10 @@ impl TestSession {
         // reads the stack to translate codes, never to decide where the
         // session rests.
         let prompted = match self.state.continuations.top() {
-            Some(Continuation::Mulligan(MulliganFrame { remaining }))
-            | Some(Continuation::HandSizeDiscard(HandSizeDiscard { remaining })) => {
-                remaining.first().copied()
-            }
+            Some(
+                Continuation::Mulligan(MulliganFrame { remaining })
+                | Continuation::HandSizeDiscard(HandSizeDiscard { remaining }),
+            ) => remaining.first().copied(),
             _ => None,
         }
         .unwrap_or_else(|| {
