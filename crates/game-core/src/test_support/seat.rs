@@ -331,19 +331,17 @@ impl SeatLookup for GameState {
             .filter(|card| card.code == code)
             .map(|card| card.instance_id)
             .collect();
-        match matches[..] {
-            [id] => id,
-            _ => {
-                let there: Vec<String> = cards()
-                    .map(|card| format!("{} {:?}", card.code, card.instance_id))
-                    .collect();
-                panic!(
-                    "in_play: {investigator:?} has {} cards {code} in play or in their threat \
-                     area, not exactly one; there: [{}]",
-                    matches.len(),
-                    there.join(", "),
-                );
-            }
+        if let [id] = matches[..] {
+            return id;
         }
+        let there: Vec<String> = cards()
+            .map(|card| format!("{} {:?}", card.code, card.instance_id))
+            .collect();
+        panic!(
+            "in_play: {investigator:?} has {} cards {code} in play or in their threat area, \
+             not exactly one; there: [{}]",
+            matches.len(),
+            there.join(", "),
+        );
     }
 }
