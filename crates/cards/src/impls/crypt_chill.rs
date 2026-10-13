@@ -97,8 +97,8 @@ fn discard_asset_instance(cx: &mut NativeCx, instance: CardInstanceId) -> Engine
 #[cfg(test)]
 mod tests {
     use card_dsl::dsl::Effect;
-    use game_core::state::{CardCode, CardInPlay, GameStateBuilder, Owner};
-    use game_core::test_support;
+    use game_core::state::{CardCode, GameStateBuilder};
+    use game_core::test_support::{self, seat};
 
     use super::*;
 
@@ -128,13 +128,9 @@ mod tests {
         // Exactly one discardable asset (Machete 01020) in play. With
         // interactive_acknowledge on, the fail branch must surface the discard as
         // a one-option pick rather than auto-discarding silently (#466).
-        let mut inv = test_support::test_investigator(1);
-        inv.cards_in_play.push(CardInPlay::enter_play(
-            CardCode::new("01020"),
-            CardInstanceId(1),
-            Owner::Investigator(InvestigatorId(1)),
-        ));
-        let mut state = GameStateBuilder::new().with_investigator(inv).build();
+        let mut state = GameStateBuilder::new()
+            .with_seat(seat(1).in_play(["01020"]))
+            .build();
         state.interactive_acknowledge = true;
         let ctx = EvalContext::for_controller(InvestigatorId(1));
         let (out, _) = test_support::run_native(&mut state, crypt_chill_fail, &ctx);
@@ -154,13 +150,9 @@ mod tests {
     fn single_asset_auto_discards_when_flag_off() {
         // Flag off (default): the lone asset auto-discards silently, as today —
         // the n=1 regression guard local to this card (#466).
-        let mut inv = test_support::test_investigator(1);
-        inv.cards_in_play.push(CardInPlay::enter_play(
-            CardCode::new("01020"),
-            CardInstanceId(1),
-            Owner::Investigator(InvestigatorId(1)),
-        ));
-        let mut state = GameStateBuilder::new().with_investigator(inv).build();
+        let mut state = GameStateBuilder::new()
+            .with_seat(seat(1).in_play(["01020"]))
+            .build();
         let ctx = EvalContext::for_controller(InvestigatorId(1));
         let (out, _) = test_support::run_native(&mut state, crypt_chill_fail, &ctx);
         assert!(

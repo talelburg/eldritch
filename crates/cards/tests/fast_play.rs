@@ -38,23 +38,106 @@
 //! other integration test binaries.
 
 use cards::REGISTRY;
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, EngineOutcome, InputKind, OptionTarget};
+use game_core::engine::{InputKind, OptionTarget};
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    EnemyId, FastActorScope, FastWindowKind, GameState, GameStateBuilder, InvestigatorId,
-    LocationId, MythosPhaseFrame, MythosResume, Owner, Phase, PhaseStep, SkillKind,
+    AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, EnemyId, FastActorScope,
+    FastWindowKind, GameState, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume,
+    InvestigatorId, LocationId, MythosPhaseFrame, MythosResume, Phase, PhaseStep, SkillKind,
 };
-use game_core::test_support;
+use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
 
 /// Beat Cop 01018: *"You get +1 \[combat\]."* / *"\[fast\] Discard Beat Cop:
 /// Deal 1 damage to an enemy at your location."*
 const BEAT_COP: &str = "01018";
+/// Magnifying Glass 01030: *"Fast. You get +1 \[intellect\] while
+/// investigating."*
+const MAGNIFYING_GLASS: &str = "01030";
+/// Working a Hunch 01037: *"Fast. Play only during your turn. Discover 1 clue
+/// at your location."*
+const WORKING_A_HUNCH: &str = "01037";
+/// Holy Rosary 01059 — a non-Fast asset, cost 2.
+const HOLY_ROSARY: &str = "01059";
+
+const A: InvestigatorId = InvestigatorId(1);
+const B: InvestigatorId = InvestigatorId(2);
+const HERE: LocationId = LocationId(101);
+const GHOUL: EnemyId = EnemyId(100);
 
 #[ctor::ctor(unsafe)]
 fn install_cards_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
+}
+
+/// The Mythos phase after its draws, with investigator A active and the
+/// step-1.4 player window open — a permissive window outside the
+/// Investigation phase.
+fn mythos_after_draws_window(builder: GameStateBuilder) -> GameStateBuilder {
+    builder
+        .with_phase(Phase::Mythos)
+        .with_active_investigator(A)
+        .with_phase_anchor(MythosPhaseFrame {
+            resume: MythosResume::AfterDraws,
+        })
+        .with_open_window(
+            FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
+            FastActorScope::Any,
+        )
+}
+
+/// The Mythos phase at step 1.4, A to draw an encounter card, A active: a
+/// moment outside the Investigation phase with no player window open.
+fn mythos_encounter_draw(builder: GameStateBuilder) -> GameStateBuilder {
+    builder
+        .with_phase(Phase::Mythos)
+        .with_active_investigator(A)
+        .with_phase_anchor(MythosPhaseFrame {
+            resume: MythosResume::AfterDraws,
+        })
+        .with_mythos_draw_remaining([A])
+}
+
+/// The player window that opens as A's turn begins, with B seated as `b`
+/// and a Study holding a clue at `HERE`. A window that offers nothing closes
+/// on its own, so A holds a Magnifying Glass the window offers them, which
+/// keeps it standing open.
+fn a_turn_begins_window(b: Seat) -> TestSession {
+    let mut study = test_support::test_location(HERE.0, "Study");
+    study.clues = 1;
+    GameStateBuilder::new()
+        .with_location(study)
+        .with_seat(seat(1).hand([MAGNIFYING_GLASS]))
+        .with_seat(b)
+        .with_turn_order([A, B])
+        .with_phase(Phase::Investigation)
+        .with_active_investigator(A)
+        .with_phase_anchor(InvestigationPhaseFrame {
+            resume: InvestigationResume::TurnBegins,
+        })
+        .with_open_window(
+            FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
+            FastActorScope::Any,
+        )
+        .session()
+}
+
+/// The anchor of the card at `hand_index` in `holder`'s hand.
+fn hand_card(holder: InvestigatorId, hand_index: u8) -> OptionTarget {
+    OptionTarget::HandCard {
+        investigator: holder,
+        hand_index,
+    }
+}
+
+/// Assert `session` rests at an open player window still offering A's
+/// Magnifying Glass — the permissive window is standing.
+fn assert_window_offers_as_glass(session: &TestSession) {
+    assert_eq!(
+        session.offered_at(&hand_card(A, 0)),
+        1,
+        "the permissive window is open, offering A's Magnifying Glass: {:?}",
+        session.prompt(),
+    );
 }
 
 #[test]
@@ -63,47 +146,26 @@ fn fast_asset_playable_by_owner_during_permissive_window() {
     // open during a non-Investigation phase: the strict pre-#103 gate would reject
     // (phase != Investigation), but the loosened gate must accept because the
     // window permits and the owner IS the active investigator. This is the
-    // rules-correct positive case for Fast assets. (#476: the window now surfaces
+    // rules-correct positive case for Fast assets. (#476: the window surfaces
     // the play as a choice and auto-closes once nothing remains, so the post-play
     // drive cascades through the MythosPhase anchor to the next phase — hence the
     // realistic anchor; the assertion is that the play executed, not the exact
     // post-cascade outcome.)
-    let mut a = test_support::test_investigator(1);
-    a.resources = 5;
-    a.hand.push(CardCode::new("01030")); // Magnifying Glass — Fast.
-    let state = GameStateBuilder::new()
-        .with_investigator(a)
-        .with_turn_order([InvestigatorId(1)])
-        .with_phase(Phase::Mythos)
-        .with_active_investigator(InvestigatorId(1))
-        .with_phase_anchor(MythosPhaseFrame {
-            resume: MythosResume::AfterDraws,
-        })
-        .with_open_window(
-            FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
-            FastActorScope::Any,
-        )
-        .build();
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: InvestigatorId(1),
-            hand_index: 0,
-        },
-    );
-    assert!(
-        !matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "Magnifying Glass plays Fast for the owner (= active investigator) during a \
-         permissive window in Mythos: {:?}",
-        result.outcome,
-    );
-    let a_after = result.state.investigators.get(&InvestigatorId(1)).unwrap();
+    let window = mythos_after_draws_window(
+        GameStateBuilder::new()
+            .with_seat(seat(1).resources(5).hand([MAGNIFYING_GLASS]))
+            .with_turn_order([A]),
+    )
+    .session();
+    // The window offers the play, and picking it plays the card.
+    let session = window.pick(hand_card(A, 0));
+    let a_after = &session.state().investigators[&A];
     assert_eq!(a_after.hand.len(), 0, "card should have left hand");
     assert!(
         a_after
             .cards_in_play
             .iter()
-            .any(|c| c.code == CardCode::new("01030")),
+            .any(|c| c.code == CardCode::new(MAGNIFYING_GLASS)),
         "Magnifying Glass should be in play",
     );
 }
@@ -113,35 +175,15 @@ fn fast_asset_rejected_by_non_owner_even_with_permissive_window() {
     // Per Rules Reference p. 11: a Fast asset may only be played by its
     // owner (i.e. on the owner's turn — the active investigator). A
     // non-owner attempting the Fast play remains illegal even if an
-    // open window's `fast_actors` scope permits the actor.
-    let a = test_support::test_investigator(1);
-    let mut b = test_support::test_investigator(2);
-    b.resources = 5;
-    b.hand.push(CardCode::new("01030")); // Magnifying Glass — Fast.
-    let state = GameStateBuilder::new()
-        .with_investigator(a)
-        .with_investigator(b)
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(InvestigatorId(1))
-        .with_open_window(
-            FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
-            FastActorScope::Any,
-        )
-        .build();
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: InvestigatorId(2),
-            hand_index: 0,
-        },
-    );
-    let reason = match result.outcome {
-        EngineOutcome::Rejected { reason } => reason,
-        other => panic!(
-            "Fast asset by NON-owner must reject per Rules Reference p. 11, even in a \
-             permissive window: {other:?}",
-        ),
-    };
+    // open window's `fast_actors` scope permits the actor. The window does not
+    // offer it, so it goes straight to the handler, as a client can send it.
+    let window = a_turn_begins_window(seat(2).resources(5).hand([MAGNIFYING_GLASS]));
+    assert_window_offers_as_glass(&window);
+    let session = window.submit_off_menu(&TurnAction::PlayCard {
+        investigator: B,
+        hand_index: 0,
+    });
+    let reason = session.expect_rejected();
     assert!(
         reason.contains("owner")
             || reason.contains("asset")
@@ -153,33 +195,13 @@ fn fast_asset_rejected_by_non_owner_even_with_permissive_window() {
 
 #[test]
 fn non_fast_asset_still_rejected_when_not_active_investigator() {
-    let a = test_support::test_investigator(1);
-    let mut b = test_support::test_investigator(2);
-    b.resources = 5;
-    b.hand.push(CardCode::new("01059")); // Holy Rosary — non-Fast asset, cost 2.
-    let state = GameStateBuilder::new()
-        .with_investigator(a)
-        .with_investigator(b)
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(InvestigatorId(1))
-        .with_open_window(
-            FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
-            FastActorScope::Any,
-        )
-        .build();
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: InvestigatorId(2),
-            hand_index: 0,
-        },
-    );
-    let reason = match result.outcome {
-        EngineOutcome::Rejected { reason } => reason,
-        other => {
-            panic!("Holy Rosary is not Fast — non-active investigator must not play it: {other:?}")
-        }
-    };
+    let window = a_turn_begins_window(seat(2).resources(5).hand([HOLY_ROSARY]));
+    assert_window_offers_as_glass(&window);
+    let session = window.submit_off_menu(&TurnAction::PlayCard {
+        investigator: B,
+        hand_index: 0,
+    });
+    let reason = session.expect_rejected();
     // Make sure the rejection cites the timing-window gate,
     // not (for instance) the missing-from-hand or resource-shortage paths.
     assert!(
@@ -193,109 +215,96 @@ fn non_fast_asset_still_rejected_when_not_active_investigator() {
 
 #[test]
 fn fast_asset_still_playable_by_active_investigator_during_investigation() {
-    let mut a = test_support::test_investigator(1);
-    a.resources = 5;
-    a.hand.push(CardCode::new("01030")); // Magnifying Glass — Fast.
-    let state = GameStateBuilder::new()
-        .with_investigator(a)
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(InvestigatorId(1))
-        .build();
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: InvestigatorId(1),
+    let session = GameStateBuilder::new()
+        .with_seat(seat(1).resources(5).hand([MAGNIFYING_GLASS]))
+        .open_turn(A)
+        .session()
+        .take(&TurnAction::PlayCard {
+            investigator: A,
             hand_index: 0,
-        },
-    );
+        });
+    // Magnifying Glass plays normally for the active investigator (Phase-3
+    // behavior preserved), and the turn goes on.
+    session.assert_at_turn_menu(A);
     assert!(
-        matches!(result.outcome, EngineOutcome::Done),
-        "Magnifying Glass plays normally for active investigator (Phase-3 behavior preserved): {:?}",
-        result.outcome,
+        session.state().investigators[&A]
+            .cards_in_play
+            .iter()
+            .any(|c| c.code == CardCode::new(MAGNIFYING_GLASS)),
+        "Magnifying Glass should be in play",
     );
 }
 
-/// Board for the activated-ability gate: investigator B controls Beat Cop
-/// (instance 1) at a location with a co-located enemy, so the ability has a
-/// live target; A is the active investigator. `open_window` adds a permissive
-/// Mythos player window — the condition the two tests below differ on.
-fn board_with_beat_cop(open_window: bool) -> GameState {
-    let loc = LocationId(101);
-    let a = test_support::test_investigator(1);
-    let mut b = test_support::test_investigator(2);
-    b.current_location = Some(loc);
-    b.cards_in_play.push(CardInPlay::enter_play(
-        CardCode::new(BEAT_COP),
-        CardInstanceId(1),
-        Owner::Investigator(InvestigatorId(2)),
-    ));
-    let mut enemy = test_support::test_enemy(100, "Ghoul");
+/// Board for the activated-ability gate: investigator B controls Beat Cop at
+/// a location with a co-located enemy, so the ability has a live target; A is
+/// the active investigator, in the Mythos phase. `moment` stages where in the
+/// Mythos phase — the open permissive window, or the encounter draw with none
+/// open — the condition the tests below differ on.
+fn board_with_beat_cop(moment: fn(GameStateBuilder) -> GameStateBuilder) -> GameStateBuilder {
+    let mut enemy = test_support::test_enemy(GHOUL.0, "Ghoul");
     enemy.max_health = 3;
-    enemy.current_location = Some(loc);
-    let mut builder = GameStateBuilder::new()
-        .with_investigator(a)
-        .with_investigator(b)
-        .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
-        .with_location(test_support::test_location(101, "Study"))
-        .with_enemy(enemy)
-        .with_phase(Phase::Mythos)
-        .with_active_investigator(InvestigatorId(1));
-    if open_window {
-        builder = builder
-            .with_phase_anchor(MythosPhaseFrame {
-                resume: MythosResume::AfterDraws,
-            })
-            .with_open_window(
-                FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
-                FastActorScope::Any,
-            );
-    }
-    builder.build()
+    enemy.current_location = Some(HERE);
+    moment(
+        GameStateBuilder::new()
+            .with_seat(seat(1))
+            .with_seat(seat(2).at(HERE).in_play([BEAT_COP]))
+            .with_turn_order([A, B])
+            .with_location(test_support::test_location(HERE.0, "Study"))
+            .with_enemy(enemy)
+            .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)])),
+    )
+}
+
+/// The anchor of B's Beat Cop.
+fn beat_cop(state: &GameState) -> OptionTarget {
+    OptionTarget::CardInstance(state.in_play(B, BEAT_COP))
 }
 
 /// Beat Cop's `[fast]` ability is index 1 (index 0 is its constant
 /// `+1 [combat]`).
-const BEAT_COP_FAST: TurnAction = TurnAction::ActivateAbility {
-    investigator: InvestigatorId(2),
-    source: AbilitySource::InPlay(CardInstanceId(1)),
-    address: AbilityAddress::Printed(1),
-};
+fn beat_cop_fast(state: &GameState) -> TurnAction {
+    TurnAction::ActivateAbility {
+        investigator: B,
+        source: AbilitySource::InPlay(state.in_play(B, BEAT_COP)),
+        address: AbilityAddress::Printed(1),
+    }
+}
 
-#[test]
-fn fast_activated_ability_usable_by_non_active_investigator_when_window_permits() {
-    let result =
-        test_support::dispatch_turn_action_unchecked(board_with_beat_cop(true), &BEAT_COP_FAST);
-    // The ability activates (its DiscardSelf cost is paid and the damage
-    // lands). The #476 fast window may re-prompt afterwards, so assert the
-    // activation executed rather than the exact post-activation outcome.
-    assert!(
-        !matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "Beat Cop's [fast] ability should activate from a non-active investigator: {:?}",
-        result.outcome,
-    );
+/// Assert Beat Cop's ability resolved: its damage landed and it paid its own
+/// discard as the cost.
+fn assert_beat_cop_fired(session: &TestSession) {
     assert_eq!(
-        result.state.enemies[&EnemyId(100)].damage,
+        session.state().enemies[&GHOUL].damage,
         1,
         "the ability's damage landed",
     );
     assert!(
-        result.state.investigators[&InvestigatorId(2)]
-            .cards_in_play
-            .is_empty(),
+        session.state().investigators[&B].cards_in_play.is_empty(),
         "Beat Cop paid its own discard as the cost",
     );
 }
 
 #[test]
+fn fast_activated_ability_usable_by_non_active_investigator_when_window_permits() {
+    let window = board_with_beat_cop(mythos_after_draws_window).session();
+    // The window offers B's ability, and it activates from the pick (its
+    // DiscardSelf cost is paid and the damage lands). The #476 fast window may
+    // re-prompt afterwards, so assert the activation executed rather than the
+    // exact post-activation outcome.
+    let beat_cop = beat_cop(window.state());
+    let session = window.pick(beat_cop);
+    assert_beat_cop_fired(&session);
+}
+
+#[test]
 fn fast_activated_ability_rejected_when_no_permissive_window() {
     // Same board, no open window: B is not the active investigator, so
-    // nothing permits the fast activation.
-    let result =
-        test_support::dispatch_turn_action_unchecked(board_with_beat_cop(false), &BEAT_COP_FAST);
-    let reason = match result.outcome {
-        EngineOutcome::Rejected { reason } => reason,
-        other => panic!("non-active investigator with no permissive window must reject: {other:?}"),
-    };
+    // nothing permits the fast activation. Nothing offers it, so it goes
+    // straight to the handler.
+    let drawing = board_with_beat_cop(mythos_encounter_draw).session();
+    let action = beat_cop_fast(drawing.state());
+    let session = drawing.submit_off_menu(&action);
+    let reason = session.expect_rejected();
     assert!(
         reason.contains("Fast") || reason.contains("active") || reason.contains("Investigation"),
         "expected gate-rejection wording; got: {reason}",
@@ -309,43 +318,44 @@ fn fast_event_play_only_during_turn_rejected_outside_investigation() {
     // tightens the Fast gate to the active investigator's Investigation turn,
     // so even a permissive window in the Mythos phase is rejected — per the FAQ,
     // "'your turn' is within the Investigation phase." (Was previously, wrongly,
-    // accepted while the clause was unenforced.)
-    let loc = LocationId(101);
-    let mut a = test_support::test_investigator(1);
-    a.resources = 5;
-    a.current_location = Some(loc);
-    a.hand.push(CardCode::new("01037"));
-    let mut location = test_support::test_location(101, "Study");
+    // accepted while the clause was unenforced.) A's Magnifying Glass keeps the
+    // window standing; the window does not offer the Hunch, so it goes straight
+    // to the handler.
+    let mut location = test_support::test_location(HERE.0, "Study");
     location.clues = 1;
-    let state = GameStateBuilder::new()
-        .with_investigator(a)
-        .with_location(location)
-        .with_phase(Phase::Mythos)
-        .with_active_investigator(InvestigatorId(1))
-        .with_open_window(
-            FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
-            FastActorScope::Any,
-        )
-        .build();
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: InvestigatorId(1),
-            hand_index: 0,
-        },
+    let window = mythos_after_draws_window(
+        GameStateBuilder::new()
+            .with_seat(
+                seat(1)
+                    .resources(5)
+                    .at(HERE)
+                    .hand([WORKING_A_HUNCH, MAGNIFYING_GLASS]),
+            )
+            .with_location(location)
+            .with_turn_order([A]),
+    )
+    .session();
+    assert_eq!(
+        window.offered_at(&hand_card(A, 1)),
+        1,
+        "the permissive window is open, offering A's Magnifying Glass: {:?}",
+        window.prompt(),
     );
-    assert!(
-        matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "'Play only during your turn' is rejected outside the Investigation phase: {:?}",
-        result.outcome,
-    );
+    let session = window.submit_off_menu(&TurnAction::PlayCard {
+        investigator: A,
+        hand_index: 0,
+    });
+    let _ = session.expect_rejected();
     // Unchanged: still in hand, clue not taken.
     assert_eq!(
-        result.state.investigators[&InvestigatorId(1)].hand.len(),
-        1,
+        session.state().investigators[&A].hand,
+        [
+            CardCode::new(WORKING_A_HUNCH),
+            CardCode::new(MAGNIFYING_GLASS)
+        ],
         "card stays in hand on reject",
     );
-    assert_eq!(result.state.locations[&loc].clues, 1, "no clue taken");
+    assert_eq!(session.state().locations[&HERE].clues, 1, "no clue taken");
 }
 
 #[test]
@@ -355,37 +365,13 @@ fn fast_event_play_only_during_turn_rejected_for_non_owner() {
     // cannot play it — it is not inv 2's turn. The `play_only_during_turn`
     // gate (#322) requires the *active* investigator, so a non-owner is
     // rejected even in a permissive window.
-    let a = test_support::test_investigator(1);
-    let loc = LocationId(101);
-    let mut b = test_support::test_investigator(2);
-    b.resources = 5;
-    b.current_location = Some(loc);
-    b.hand.push(CardCode::new("01037"));
-    let mut location = test_support::test_location(101, "Study");
-    location.clues = 1;
-    let state = GameStateBuilder::new()
-        .with_investigator(a)
-        .with_investigator(b)
-        .with_location(location)
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(InvestigatorId(1))
-        .with_open_window(
-            FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
-            FastActorScope::Any,
-        )
-        .build();
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: InvestigatorId(2),
-            hand_index: 0,
-        },
-    );
-    assert!(
-        matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "non-owner cannot play a 'Play only during your turn' event on another's turn: {:?}",
-        result.outcome,
-    );
+    let window = a_turn_begins_window(seat(2).resources(5).at(HERE).hand([WORKING_A_HUNCH]));
+    assert_window_offers_as_glass(&window);
+    let session = window.submit_off_menu(&TurnAction::PlayCard {
+        investigator: B,
+        hand_index: 0,
+    });
+    let _ = session.expect_rejected();
 }
 
 #[test]
@@ -396,28 +382,19 @@ fn fast_asset_rejected_by_owner_outside_investigation_with_no_window() {
     //
     // Magnifying Glass (01030) text: "Fast.\nYou get +1 [intellect]
     // while investigating."
-    let mut a = test_support::test_investigator(1);
-    a.resources = 5;
-    a.hand.push(CardCode::new("01030")); // Magnifying Glass — Fast asset.
-    let state = GameStateBuilder::new()
-        .with_investigator(a)
-        .with_phase(Phase::Mythos)
-        .with_active_investigator(InvestigatorId(1))
-        // No open window.
-        .build();
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: InvestigatorId(1),
-            hand_index: 0,
-        },
-    );
-    let reason = match result.outcome {
-        EngineOutcome::Rejected { reason } => reason,
-        other => panic!(
-            "Fast asset by owner outside Investigation with no window must reject: {other:?}"
-        ),
-    };
+    let drawing = mythos_encounter_draw(
+        GameStateBuilder::new()
+            .with_seat(seat(1).resources(5).hand([MAGNIFYING_GLASS]))
+            .with_turn_order([A]),
+    )
+    .session();
+    // No window is open: the Mythos phase rests at the encounter draw.
+    assert_eq!(drawing.prompt().target, Some(OptionTarget::EncounterDeck));
+    let session = drawing.submit_off_menu(&TurnAction::PlayCard {
+        investigator: A,
+        hand_index: 0,
+    });
+    let reason = session.expect_rejected();
     assert!(
         reason.contains("Fast")
             || reason.contains("active")
@@ -447,12 +424,21 @@ fn fast_asset_rejected_by_owner_outside_investigation_with_no_window() {
 // > him (there is no Player Window to use [fast]free abilities in between
 // > assigning and applying damage).
 //
-// The two tests above submit the activation directly against a builder-seeded
-// window. This one goes through an **engine-opened** window — a skill test's
-// ST.1 player window — and asserts the ability is *offered* there, which is
-// the seam #710 is about: the Parlor's Resign missing from the menu was as
-// much the defect as its being refused on submission, and the same is true of
-// a window's option list.
+// The two tests above activate against a builder-seeded window. This one goes
+// through an **engine-opened** window — a skill test's ST.1 player window —
+// and asserts the ability is *offered* there, which is the seam #710 is about:
+// the Parlor's Resign missing from the menu was as much the defect as its
+// being refused on submission, and the same is true of a window's option list.
+
+/// The anchors of the options `session`'s prompt offers.
+fn offered_anchors(session: &TestSession) -> Vec<OptionTarget> {
+    session
+        .prompt()
+        .options
+        .iter()
+        .map(|o| o.target.clone().expect("every option here is anchored"))
+        .collect()
+}
 
 /// Beat Cop's zero-action ability is offered by an engine-opened player window,
 /// anchored to the card instance carrying it, and resolves from the pick — the
@@ -462,54 +448,29 @@ fn corpus_zero_action_ability_is_offered_by_an_engine_opened_player_window() {
     // No seeded window: the skill test opens its own, so the option list under
     // assertion is the one a real client would be shown. Mythos phase with
     // investigator 1 active, so nothing but the window can permit the
-    // activation.
-    let mut state = board_with_beat_cop(false);
-    // The window opens before any token is revealed, but the test refuses to
-    // start against an empty bag.
-    state.chaos_bag = ChaosBag::new([ChaosToken::Numeric(0)]);
-    let result =
-        test_support::perform_skill_test(state, InvestigatorId(2), SkillKind::Willpower, 4);
-    let EngineOutcome::AwaitingInput { ref request, .. } = result.outcome else {
-        panic!(
-            "the skill test should park at its ST.1 player window, got {:?}",
-            result.outcome,
-        );
-    };
+    // activation. The window opens before any token is revealed, but the test
+    // refuses to start against an empty bag.
+    let opened = board_with_beat_cop(mythos_encounter_draw)
+        .session()
+        .test_skill(B, SkillKind::Willpower, 4);
+    // The skill test parks at its ST.1 player window.
+    let request = opened.prompt();
     assert_eq!(request.kind, InputKind::PickSingle, "{request:?}");
     assert!(
         request.skippable,
         "a player window is skippable: {request:?}"
     );
-    let targets: Vec<_> = request
-        .options
-        .iter()
-        .map(|o| o.target.clone().expect("every option here is anchored"))
-        .collect();
+    let beat_cop = beat_cop(opened.state());
     assert_eq!(
-        targets,
-        vec![OptionTarget::CardInstance(CardInstanceId(1))],
+        offered_anchors(&opened),
+        vec![beat_cop.clone()],
         "Beat Cop's [fast] ability is the one thing eligible on this board, anchored to \
          the instance that carries it",
     );
 
-    let option = request.options[0].id;
-    let picked = engine::apply(
-        result.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(option),
-        }),
-    );
-    assert_eq!(
-        picked.state.enemies[&EnemyId(100)].damage,
-        1,
-        "picking the offered option resolved the ability",
-    );
-    assert!(
-        picked.state.investigators[&InvestigatorId(2)]
-            .cards_in_play
-            .is_empty(),
-        "Beat Cop paid its own discard as the cost",
-    );
+    // Picking the offered option resolves the ability.
+    let picked = opened.pick(beat_cop);
+    assert_beat_cop_fired(&picked);
 }
 
 /// Hyperawareness 01034 (verbatim, <https://arkhamdb.com/card/01034>):
@@ -534,50 +495,35 @@ fn corpus_zero_action_ability_is_offered_by_an_engine_opened_player_window() {
 /// exactly what a ST.1 player window is.
 #[test]
 fn corpus_zero_action_abilities_are_offered_once_per_ability_not_once_per_card() {
-    const HYPERAWARENESS: CardInstanceId = CardInstanceId(2);
-    const PHYSICAL_TRAINING: CardInstanceId = CardInstanceId(3);
+    const HYPERAWARENESS: &str = "01034";
+    const PHYSICAL_TRAINING: &str = "01017";
 
-    let mut inv = test_support::test_investigator(1);
-    inv.resources = 5;
-    inv.cards_in_play.push(CardInPlay::enter_play(
-        CardCode::new("01034"),
-        HYPERAWARENESS,
-        Owner::Investigator(InvestigatorId(1)),
-    ));
-    inv.cards_in_play.push(CardInPlay::enter_play(
-        CardCode::new("01017"),
-        PHYSICAL_TRAINING,
-        Owner::Investigator(InvestigatorId(1)),
-    ));
-    let mut state = GameStateBuilder::new()
-        .with_investigator(inv)
-        // Mythos, so the window is the only thing that can permit the
-        // activations (investigator 1 is not acting in an Investigation turn).
-        .with_phase(Phase::Mythos)
-        .with_active_investigator(InvestigatorId(1))
-        .build();
-    state.chaos_bag = ChaosBag::new([ChaosToken::Numeric(0)]);
+    // Mythos, so the window is the only thing that can permit the activations
+    // (investigator 1 is not acting in an Investigation turn).
+    let opened = mythos_encounter_draw(
+        GameStateBuilder::new()
+            .with_seat(
+                seat(1)
+                    .resources(5)
+                    .in_play([HYPERAWARENESS, PHYSICAL_TRAINING]),
+            )
+            .with_turn_order([A])
+            .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)])),
+    )
+    .session()
+    .test_skill(A, SkillKind::Willpower, 4);
 
-    let result =
-        test_support::perform_skill_test(state, InvestigatorId(1), SkillKind::Willpower, 4);
-    let EngineOutcome::AwaitingInput { ref request, .. } = result.outcome else {
-        panic!(
-            "the skill test should park at its ST.1 player window, got {:?}",
-            result.outcome,
-        );
-    };
-    let targets: Vec<_> = request
-        .options
-        .iter()
-        .map(|o| o.target.clone().expect("every option here is anchored"))
-        .collect();
+    // The skill test parks at its ST.1 player window.
+    let hyperawareness = OptionTarget::CardInstance(opened.state().in_play(A, HYPERAWARENESS));
+    let physical_training =
+        OptionTarget::CardInstance(opened.state().in_play(A, PHYSICAL_TRAINING));
     assert_eq!(
-        targets,
+        offered_anchors(&opened),
         vec![
-            OptionTarget::CardInstance(HYPERAWARENESS),
-            OptionTarget::CardInstance(HYPERAWARENESS),
-            OptionTarget::CardInstance(PHYSICAL_TRAINING),
-            OptionTarget::CardInstance(PHYSICAL_TRAINING),
+            hyperawareness.clone(),
+            hyperawareness,
+            physical_training.clone(),
+            physical_training,
         ],
         "each of the four zero-action abilities is its own option, anchored to the card \
          that prints it",

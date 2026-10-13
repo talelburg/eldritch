@@ -24,17 +24,20 @@
 
 use cards::REGISTRY;
 use game_core::engine::enumerate::{self, TurnAction};
-use game_core::engine::{ApplyResult, EngineOutcome};
+use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameState, GameStateBuilder, InvestigatorId, Owner, SkillKind, TokenModifiers,
+    AbilityAddress, AbilitySource, ChaosBag, ChaosToken, GameState, GameStateBuilder,
+    InvestigatorId, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{self, TakeOneFastPlay};
+use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 const HYPERAWARENESS: &str = "01034";
+const INV: InvestigatorId = InvestigatorId(1);
 
+/// The printed order of Hyperawareness's two `[fast]` abilities: both are
+/// offered on the card, so they are told apart by it.
 const INTELLECT_ABILITY: usize = 0;
 const AGILITY_ABILITY: usize = 1;
 
@@ -43,69 +46,79 @@ fn install_real_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// Build a state with one Hyperawareness already in play (instance
-/// id 0), the controller mid-investigation, 5 resources, a single
-/// `Numeric(0)` chaos bag for predictable arithmetic. We seed in
-/// play (rather than playing from hand) because the activation flow
-/// is what this file tests; `PlayCard` is exercised elsewhere.
-fn state_with_hyperawareness() -> (GameState, InvestigatorId, CardInstanceId) {
-    let id = InvestigatorId(1);
-    let instance_id = CardInstanceId(0);
-    let mut inv = test_support::test_investigator(1);
-    inv.cards_in_play.push(CardInPlay::enter_play(
-        CardCode::new(HYPERAWARENESS),
-        instance_id,
-        Owner::Investigator(InvestigatorId(1)),
-    ));
-
-    let state = GameStateBuilder::new()
-        .with_investigator(inv)
-        .open_turn(id)
+/// A session with one Hyperawareness already in play, the controller at
+/// their open turn with `resources` resources, and a single `Numeric(0)`
+/// chaos bag for predictable arithmetic. We seed in play (rather than playing
+/// from hand) because the activation flow is what this file tests; `PlayCard`
+/// is exercised elsewhere.
+fn with_hyperawareness(resources: u8) -> TestSession {
+    GameStateBuilder::new()
+        .with_seat(seat(1).resources(resources).in_play([HYPERAWARENESS]))
+        .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
-        .build();
-    (state, id, instance_id)
+        .session()
 }
 
-/// Run a `skill` test at `difficulty`, buying the ability at `option_index`
-/// at the test's player window.
+/// The anchor of the seated Hyperawareness: both its abilities are offered on
+/// it.
+fn hyperawareness(state: &GameState) -> OptionTarget {
+    OptionTarget::CardInstance(state.in_play(INV, HYPERAWARENESS))
+}
+
+/// Run a `skill` test at `difficulty` from the turn menu, buying `ability`
+/// at the test's ST.1 player window and nothing more: pass the window once
+/// bought, commit nothing, and pass the window after the commit. The test
+/// comes back to the turn menu.
 fn test_buying(
-    state: GameState,
-    id: InvestigatorId,
+    session: TestSession,
     skill: SkillKind,
     difficulty: i8,
-    option_index: usize,
-) -> ApplyResult {
-    test_support::drive_skill_test(
-        state,
-        id,
-        skill,
-        difficulty,
-        TakeOneFastPlay::at_index(option_index),
-    )
+    ability: usize,
+) -> TestSession {
+    let card = hyperawareness(session.state());
+    let session = session
+        .test_skill(INV, skill, difficulty)
+        .pick_nth_at(card, ability)
+        .skip()
+        .commit(&[])
+        .skip();
+    session.assert_at_turn_menu(INV);
+    session
+}
+
+/// [`test_buying`] with nothing bought: both windows passed.
+fn test_buying_nothing(session: TestSession, skill: SkillKind, difficulty: i8) -> TestSession {
+    let session = session
+        .test_skill(INV, skill, difficulty)
+        .skip()
+        .commit(&[])
+        .skip();
+    session.assert_at_turn_menu(INV);
+    session
 }
 
 #[test]
 fn intellect_ability_buffs_the_intellect_test_it_is_bought_during() {
     // 3 intellect + 1 (the recorded row) + 0 (token) = 4 vs difficulty 4 →
     // succeed by 0. The base 3-intellect investigator would fail without it.
-    let (state, id, _) = state_with_hyperawareness();
-    let resources_before = state.investigators[&id].resources;
+    let session = with_hyperawareness(5);
+    let resources_before = session.state().investigators[&INV].resources;
 
-    let result = test_buying(state, id, SkillKind::Intellect, 4, INTELLECT_ABILITY);
+    let result = test_buying(session, SkillKind::Intellect, 4, INTELLECT_ABILITY);
 
     assert_event!(
-        result.events,
+        result.events(),
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, margin: 0 }
-            if *investigator == id
+            if *investigator == INV
     );
     assert_eq!(
-        result.state.investigators[&id].resources,
+        result.state().investigators[&INV].resources,
         resources_before - 1,
         "1 resource paid",
     );
     assert!(
-        result.state.recorded_modifiers.is_empty(),
+        result.state().recorded_modifiers.is_empty(),
         "a test-scoped row expires with the test it names",
     );
 }
@@ -113,14 +126,17 @@ fn intellect_ability_buffs_the_intellect_test_it_is_bought_during() {
 #[test]
 fn agility_ability_buffs_the_agility_test_it_is_bought_during() {
     // Same as above but the second ability buffs agility.
-    let (state, id, _) = state_with_hyperawareness();
-
-    let result = test_buying(state, id, SkillKind::Agility, 4, AGILITY_ABILITY);
+    let result = test_buying(
+        with_hyperawareness(5),
+        SkillKind::Agility,
+        4,
+        AGILITY_ABILITY,
+    );
 
     assert_event!(
-        result.events,
+        result.events(),
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Agility, margin: 0 }
-            if *investigator == id
+            if *investigator == INV
     );
 }
 
@@ -128,14 +144,17 @@ fn agility_ability_buffs_the_agility_test_it_is_bought_during() {
 fn intellect_ability_does_not_buff_an_agility_test() {
     // The recorded row targets `Stat::Intellect`; an agility test ignores
     // it. 3 + 0 < 4 → fail by 1.
-    let (state, id, _) = state_with_hyperawareness();
-
-    let result = test_buying(state, id, SkillKind::Agility, 4, INTELLECT_ABILITY);
+    let result = test_buying(
+        with_hyperawareness(5),
+        SkillKind::Agility,
+        4,
+        INTELLECT_ABILITY,
+    );
 
     assert_event!(
-        result.events,
+        result.events(),
         Event::SkillTestFailed { investigator, skill: SkillKind::Agility, by: 1, .. }
-            if *investigator == id
+            if *investigator == INV
     );
 }
 
@@ -143,23 +162,26 @@ fn intellect_ability_does_not_buff_an_agility_test() {
 /// next test is unbuffed (#676).
 #[test]
 fn the_buff_does_not_survive_into_the_next_test() {
-    let (state, id, _) = state_with_hyperawareness();
-
-    let first = test_buying(state, id, SkillKind::Intellect, 4, INTELLECT_ABILITY);
+    let first = test_buying(
+        with_hyperawareness(5),
+        SkillKind::Intellect,
+        4,
+        INTELLECT_ABILITY,
+    );
     assert_event!(
-        first.events,
+        first.events(),
         Event::SkillTestSucceeded {
             skill: SkillKind::Intellect,
             ..
         }
     );
+    let seen = first.events().len();
 
-    let second =
-        test_support::perform_skill_test_no_commits(first.state, id, SkillKind::Intellect, 4);
+    let second = test_buying_nothing(first, SkillKind::Intellect, 4);
     assert_event!(
-        second.events,
+        &second.events()[seen..],
         Event::SkillTestFailed { investigator, skill: SkillKind::Intellect, by: 1, .. }
-            if *investigator == id
+            if *investigator == INV
     );
 }
 
@@ -169,16 +191,16 @@ fn the_buff_does_not_survive_into_the_next_test() {
 /// visible happened, and the `+1` surfaced on whatever test came next.
 #[test]
 fn activation_with_no_test_in_flight_is_rejected_and_buffs_nothing_later() {
-    let (state, id, instance_id) = state_with_hyperawareness();
-    let resources_before = state.investigators[&id].resources;
+    let session = with_hyperawareness(5);
+    let resources_before = session.state().investigators[&INV].resources;
     let action = TurnAction::ActivateAbility {
-        investigator: id,
-        source: AbilitySource::InPlay(instance_id),
+        investigator: INV,
+        source: AbilitySource::InPlay(session.state().in_play(INV, HYPERAWARENESS)),
         address: AbilityAddress::Printed(0),
     };
 
     assert!(
-        !enumerate::legal_actions(&state).contains(&action),
+        !enumerate::legal_actions(session.state()).contains(&action),
         "the open-turn menu must not offer a buff that cannot be bought",
     );
 
@@ -186,67 +208,67 @@ fn activation_with_no_test_in_flight_is_rejected_and_buffs_nothing_later() {
     // inert with no test to attach to — the same predicate that kept it off
     // the menu above. (The evaluator's own "no skill test in flight" rejection
     // sits behind it, for the non-activation paths; it is unit-tested in
-    // `engine::evaluator`.)
-    let rejected = test_support::dispatch_turn_action_unchecked(state, &action);
-    let reason = match &rejected.outcome {
-        EngineOutcome::Rejected { reason } => reason.to_string(),
-        other => panic!("expected a rejection, got {other:?}"),
-    };
+    // `engine::evaluator`.) The menu does not offer it, so it goes straight to
+    // the handler.
+    let rejected = session.submit_off_menu(&action);
+    let reason = rejected.expect_rejected();
     assert!(
         reason.contains(HYPERAWARENESS) && reason.contains("cannot be initiated"),
         "the reason must name the card and the problem; got: {reason}",
     );
-    assert_no_event!(rejected.events, Event::AbilityActivated { .. });
+    assert_no_event!(rejected.events(), Event::AbilityActivated { .. });
     assert_eq!(
-        rejected.state.investigators[&id].resources, resources_before,
+        rejected.state().investigators[&INV].resources,
+        resources_before,
         "a refused activation costs nothing",
     );
-    assert!(rejected.state.recorded_modifiers.is_empty());
+    assert!(rejected.state().recorded_modifiers.is_empty());
 
     // And the test that follows is unbuffed: 3 intellect vs difficulty 4.
-    let after_test =
-        test_support::perform_skill_test_no_commits(rejected.state, id, SkillKind::Intellect, 4);
+    let after_test = test_buying_nothing(rejected, SkillKind::Intellect, 4);
     assert_event!(
-        after_test.events,
+        after_test.events(),
         Event::SkillTestFailed { investigator, skill: SkillKind::Intellect, by: 1, .. }
-            if *investigator == id
+            if *investigator == INV
     );
 }
 
 #[test]
 fn activation_rejects_when_controller_lacks_a_resource() {
     // Inside a test (where the ability is buyable at all), with an empty
-    // wallet: the cost gate refuses and nothing is recorded.
-    let (mut state, id, instance_id) = state_with_hyperawareness();
-    state.investigators.get_mut(&id).unwrap().resources = 0;
-    let started = test_support::perform_skill_test(state, id, SkillKind::Intellect, 4);
+    // wallet: the cost gate refuses and nothing is recorded. Nothing is
+    // offered, so the ST.1 window passes on its own and the test rests at its
+    // commit window, where the activation is submitted straight to the
+    // handler.
+    let session = with_hyperawareness(0);
+    let action = TurnAction::ActivateAbility {
+        investigator: INV,
+        source: AbilitySource::InPlay(session.state().in_play(INV, HYPERAWARENESS)),
+        address: AbilityAddress::Printed(0),
+    };
+    let started = session.test_skill(INV, SkillKind::Intellect, 4);
+    let seen = started.events().len();
 
-    let result = test_support::dispatch_turn_action_unchecked(
-        started.state,
-        &TurnAction::ActivateAbility {
-            investigator: id,
-            source: AbilitySource::InPlay(instance_id),
-            address: AbilityAddress::Printed(0),
-        },
-    );
-    assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-    assert!(result.events.is_empty());
+    let result = started.submit_off_menu(&action);
+    let _ = result.expect_rejected();
+    assert_eq!(result.events().len(), seen, "a rejection emits no events");
     // No partial mutation: resources still 0, nothing recorded.
-    assert_eq!(result.state.investigators[&id].resources, 0);
-    assert!(result.state.recorded_modifiers.is_empty());
+    assert_eq!(result.state().investigators[&INV].resources, 0);
+    assert!(result.state().recorded_modifiers.is_empty());
 }
 
 #[test]
 fn buying_the_buff_costs_no_action_points() {
     // `[fast]` activation must not spend an action.
-    let (state, id, _) = state_with_hyperawareness();
-    let actions_before = state.investigators[&id].actions_remaining;
+    let session = with_hyperawareness(5);
+    let actions_before = session.state().investigators[&INV].actions_remaining;
 
-    let result = test_buying(state, id, SkillKind::Intellect, 4, INTELLECT_ABILITY);
+    let result = test_buying(session, SkillKind::Intellect, 4, INTELLECT_ABILITY);
 
     assert_eq!(
-        result.state.investigators[&id].actions_remaining, actions_before,
+        result.state().investigators[&INV].actions_remaining,
+        actions_before,
         "a fast ability spends no action",
     );
-    assert_event!(result.events, Event::AbilityActivated { .. });
+    assert_event!(result.events(), Event::AbilityActivated { .. });
 }

@@ -9,42 +9,55 @@
 //! `cards_in_play` so the action log mirrors a real session.
 
 use cards::REGISTRY;
+use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, SkillKind,
-    TokenModifiers,
+    CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, SkillKind, TokenModifiers,
 };
-use game_core::{assert_event, test_support};
+use game_core::test_support::{self, seat, TestSession};
 
 const HOLY_ROSARY: &str = "01059";
+const INV: InvestigatorId = InvestigatorId(1);
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// Build a state where the controller has Holy Rosary in hand, is the
-/// active investigator in the Investigation phase, has a non-empty
-/// chaos bag (a single Zero token so the skill-test arithmetic is
-/// trivially `skill + 0 vs. difficulty`), and starts with 3 willpower
-/// + 3 intellect from the fixture defaults.
-fn state_with_rosary_in_hand() -> (GameState, InvestigatorId) {
-    let id = InvestigatorId(1);
-    let mut inv = test_support::test_investigator(1);
-    inv.hand = vec![CardCode::new(HOLY_ROSARY)];
-
-    let state = GameStateBuilder::new()
-        .with_investigator(inv)
-        .open_turn(id)
+/// A session where the controller has Holy Rosary in hand, at their open
+/// turn in the Investigation phase, has a non-empty chaos bag (a single Zero
+/// token so the skill-test arithmetic is trivially `skill + 0 vs.
+/// difficulty`), and starts with 3 willpower + 3 intellect from the fixture
+/// defaults.
+fn rosary_in_hand() -> TestSession {
+    GameStateBuilder::new()
+        .with_seat(seat(1).hand([HOLY_ROSARY]))
+        .open_turn(INV)
         // Single-token bag → token-modifier is always 0; the skill
         // test outcome is decided entirely by the base + constant
         // contribution vs. difficulty.
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
-        .build();
-    (state, id)
+        .session()
+}
+
+/// Play Holy Rosary out of hand; the turn goes on with it in play.
+fn rosary_in_play() -> TestSession {
+    let session = rosary_in_hand().take(&TurnAction::PlayCard {
+        investigator: INV,
+        hand_index: 0,
+    });
+    session.assert_at_turn_menu(INV);
+    session
+}
+
+/// Run a plain `skill` test against `difficulty` from the turn menu,
+/// committing nothing; it comes back to the menu.
+fn test_committing_nothing(session: TestSession, skill: SkillKind, difficulty: i8) -> TestSession {
+    let session = session.test_skill(INV, skill, difficulty).commit(&[]);
+    session.assert_at_turn_menu(INV);
+    session
 }
 
 #[test]
@@ -52,65 +65,28 @@ fn willpower_test_succeeds_at_difficulty_4_after_playing_holy_rosary() {
     // Test investigator has 3 willpower. Without the rosary, a
     // difficulty-4 willpower test fails (3 + 0 < 4). With the rosary
     // in play (+1 willpower constant), it succeeds (4 + 0 >= 4).
-    let (state, id) = state_with_rosary_in_hand();
-
-    // Play Holy Rosary out of hand.
-    let after_play = test_support::take_turn_action(
-        state,
-        &TurnAction::PlayCard {
-            investigator: id,
-            hand_index: 0,
-        },
-    );
-    assert!(matches!(
-        after_play.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
-    let in_play = &after_play.state.investigators[&id].cards_in_play;
+    let after_play = rosary_in_play();
+    let in_play = &after_play.state().investigators[&INV].cards_in_play;
     assert_eq!(in_play.len(), 1);
     assert_eq!(in_play[0].code, CardCode::new(HOLY_ROSARY));
 
     // Difficulty-4 willpower test — +1 from the rosary should carry it.
-    let result =
-        test_support::perform_skill_test_no_commits(after_play.state, id, SkillKind::Willpower, 4);
-    assert!(matches!(
-        result.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
+    let result = test_committing_nothing(after_play, SkillKind::Willpower, 4);
     assert_event!(
-        result.events,
+        result.events(),
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Willpower, margin: 0 }
-            if *investigator == id
+            if *investigator == INV
     );
 }
 
 #[test]
 fn willpower_test_fails_at_difficulty_5_even_with_holy_rosary() {
     // +1 isn't a free pass: 3 + 1 + 0 < 5 still fails.
-    let (state, id) = state_with_rosary_in_hand();
-
-    let after_play = test_support::take_turn_action(
-        state,
-        &TurnAction::PlayCard {
-            investigator: id,
-            hand_index: 0,
-        },
-    );
-    assert!(matches!(
-        after_play.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
-
-    let result =
-        test_support::perform_skill_test_no_commits(after_play.state, id, SkillKind::Willpower, 5);
-    assert!(matches!(
-        result.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
+    let result = test_committing_nothing(rosary_in_play(), SkillKind::Willpower, 5);
     assert_event!(
-        result.events,
+        result.events(),
         Event::SkillTestFailed { investigator, skill: SkillKind::Willpower, by: 1, .. }
-            if *investigator == id
+            if *investigator == INV
     );
 }
 
@@ -119,30 +95,11 @@ fn intellect_test_unaffected_by_holy_rosary_in_play() {
     // Holy Rosary modifies Stat::Willpower, not Stat::Intellect.
     // A difficulty-4 intellect test fails (3 + 0 < 4) regardless of
     // the rosary being in play.
-    let (state, id) = state_with_rosary_in_hand();
-
-    let after_play = test_support::take_turn_action(
-        state,
-        &TurnAction::PlayCard {
-            investigator: id,
-            hand_index: 0,
-        },
-    );
-    assert!(matches!(
-        after_play.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
-
-    let result =
-        test_support::perform_skill_test_no_commits(after_play.state, id, SkillKind::Intellect, 4);
-    assert!(matches!(
-        result.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
+    let result = test_committing_nothing(rosary_in_play(), SkillKind::Intellect, 4);
     assert_event!(
-        result.events,
+        result.events(),
         Event::SkillTestFailed { investigator, skill: SkillKind::Intellect, by: 1, .. }
-            if *investigator == id
+            if *investigator == INV
     );
 }
 
@@ -151,18 +108,14 @@ fn willpower_test_without_rosary_in_play_uses_base_value_only() {
     // Belt-and-suspenders: with the rosary still in hand (not played),
     // a difficulty-4 willpower test fails just like the no-card case.
     // Confirms the modifier query reads cards_in_play, not hand.
-    let (state, id) = state_with_rosary_in_hand();
-    assert!(!state.investigators[&id].hand.is_empty());
-    assert!(state.investigators[&id].cards_in_play.is_empty());
+    let session = rosary_in_hand();
+    assert!(!session.state().investigators[&INV].hand.is_empty());
+    assert!(session.state().investigators[&INV].cards_in_play.is_empty());
 
-    let result = test_support::perform_skill_test_no_commits(state, id, SkillKind::Willpower, 4);
-    assert!(matches!(
-        result.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
+    let result = test_committing_nothing(session, SkillKind::Willpower, 4);
     assert_event!(
-        result.events,
+        result.events(),
         Event::SkillTestFailed { investigator, skill: SkillKind::Willpower, by: 1, .. }
-            if *investigator == id
+            if *investigator == INV
     );
 }

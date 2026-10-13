@@ -163,11 +163,8 @@ fn trauma(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
 #[cfg(test)]
 mod tests {
     use card_dsl::dsl::{Effect, Trigger};
-    use game_core::state::{
-        AbilitySource, CardCode, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId,
-        Owner,
-    };
-    use game_core::test_support;
+    use game_core::state::{AbilitySource, GameStateBuilder, InvestigatorId};
+    use game_core::test_support::{clues, seat, SeatLookup as _};
 
     use super::*;
     use crate::impls;
@@ -223,18 +220,12 @@ mod tests {
 
         // Predicate: true while the source instance holds clues, false at 0.
         let pred = impls::native_condition_for("01007:has-clues").expect("registered");
-        let mut inv = test_support::test_investigator(1);
-        let mut card = CardInPlay::enter_play(
-            CardCode::new("01007"),
-            CardInstanceId(0),
-            Owner::Investigator(InvestigatorId(1)),
-        );
-        card.clues = 3;
-        inv.threat_area.push(card);
-        let mut state = GameStateBuilder::new().with_investigator(inv).build();
+        let mut state = GameStateBuilder::new()
+            .with_seat(seat(1).threat_area([(CODE, clues(3))]))
+            .build();
         let ctx = EvalContext::for_controller_with_source(
             InvestigatorId(1),
-            AbilitySource::InPlay(CardInstanceId(0)),
+            AbilitySource::InPlay(state.in_play(InvestigatorId(1), CODE)),
         );
         assert!(pred(&state, &ctx), "3 clues → eligible");
 

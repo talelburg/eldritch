@@ -26,15 +26,15 @@
 //! it is listed in `data/arkhamdb-faq/no-rulings.txt`.
 
 use cards::REGISTRY;
+use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{ApplyResult, EngineOutcome};
+use game_core::engine::{EngineOutcome, OptionTarget};
 use game_core::event::Event;
 use game_core::scenario::ScenarioEnding;
 use game_core::state::{
-    CardCode, Continuation, Enemy, GameState, GameStateBuilder, InvestigatorId,
-    InvestigatorTurnFrame, LocationId, Phase, Status,
+    Continuation, Enemy, GameStateBuilder, InvestigatorId, LocationId, Phase, Status,
 };
-use game_core::test_support;
+use game_core::test_support::{self, seat, TestSession};
 
 /// Emergency Cache (01088): non-fast event → playing it provokes.
 const EMERGENCY_CACHE: &str = "01088";
@@ -60,45 +60,37 @@ fn ready_attacker() -> Enemy {
 
 /// Investigator 1 on 7 damage (one attack of opportunity from dead), engaged,
 /// holding Emergency Cache, with the open turn. `turn_order` decides whether the
-/// rotation has anyone left to hand the turn to.
-fn board(turn_order: &[InvestigatorId]) -> GameState {
-    let mut dying = test_support::test_investigator(1);
-    dying.investigator_card.accumulated_damage = 7; // 7 + 3 ≥ 8 = max_health
-    dying.current_location = Some(HERE);
-    dying.hand = vec![CardCode::new(EMERGENCY_CACHE)];
-
-    let mut state = GameStateBuilder::new()
+/// rotation has anyone left to hand the turn to; the survivor is seated only
+/// when it names them.
+fn board(turn_order: &[InvestigatorId]) -> GameStateBuilder {
+    let builder = GameStateBuilder::new()
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_location(test_support::test_location(ELSEWHERE.0, "Hallway"))
-        .with_investigator(dying)
+        // 7 + 3 ≥ 8 = max_health
+        .with_seat(seat(1).at(HERE).hand([EMERGENCY_CACHE]).harm(7, 0));
+    let builder = if turn_order.contains(&SURVIVOR) {
+        builder.with_seat(seat(2).at(ELSEWHERE))
+    } else {
+        builder
+    };
+    builder
+        .with_turn_order(turn_order.iter().copied())
         .open_turn(DYING)
         .with_enemy_engaged(ready_attacker(), DYING)
-        .build();
-
-    if turn_order.contains(&SURVIVOR) {
-        let mut survivor = test_support::test_investigator(2);
-        survivor.current_location = Some(ELSEWHERE);
-        state.investigators.insert(SURVIVOR, survivor);
-    }
-    state.turn_order = turn_order.to_vec();
-    state
 }
 
 /// Play Emergency Cache, provoking the lethal attack of opportunity.
-fn play_into_the_lethal_aoo(state: GameState) -> ApplyResult {
-    test_support::take_turn_action(
-        state,
-        &TurnAction::PlayCard {
-            investigator: DYING,
-            hand_index: 0,
-        },
-    )
+fn play_into_the_lethal_aoo(board: GameStateBuilder) -> TestSession {
+    board.session().take(&TurnAction::PlayCard {
+        investigator: DYING,
+        hand_index: 0,
+    })
 }
 
 #[test]
 fn defeat_mid_turn_hands_the_turn_to_the_next_investigator() {
-    let result = play_into_the_lethal_aoo(board(&[DYING, SURVIVOR]));
-    let state = &result.state;
+    let session = play_into_the_lethal_aoo(board(&[DYING, SURVIVOR]));
+    let state = session.state();
 
     assert_eq!(state.investigators[&DYING].status, Status::Defeated);
     // 2.2.2 "return to 2.2": the next investigator who has not yet taken a turn.
@@ -107,51 +99,35 @@ fn defeat_mid_turn_hands_the_turn_to_the_next_investigator() {
         Some(SURVIVOR),
         "the turn passes on rather than sticking with the dead investigator"
     );
-    assert!(
-        matches!(
-            state.continuations.top(),
-            Some(Continuation::InvestigatorTurn(InvestigatorTurnFrame {
-                investigator,
-                ending: false,
-            })) if *investigator == SURVIVOR
-        ),
-        "the survivor's open turn is on top, not the dead investigator's: {:?}",
-        state.continuations,
-    );
-    assert!(
-        result
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::TurnEnded { investigator } if *investigator == DYING)),
-        "the turn ending is announced: {:?}",
-        result.events,
+    // The survivor's open turn is where play rests, not the dead investigator's.
+    session.assert_at_turn_menu(SURVIVOR);
+    assert_event!(
+        session.events(),
+        Event::TurnEnded { investigator } if *investigator == DYING
     );
 }
 
 #[test]
 fn a_defeated_investigator_is_never_prompted_for_an_action() {
-    let result = play_into_the_lethal_aoo(board(&[DYING, SURVIVOR]));
+    let session = play_into_the_lethal_aoo(board(&[DYING, SURVIVOR]));
 
     // The acceptance criterion, stated positively so it cannot vacate: the engine
     // *does* ask for something, and the investigator it is addressed to is the
     // survivor rather than the corpse.
-    let EngineOutcome::AwaitingInput { request, .. } = &result.outcome else {
-        panic!(
-            "the survivor's turn must prompt for an action, got {:?}",
-            result.outcome
-        );
-    };
+    let request = session.prompt();
     assert_eq!(
-        result.state.active_investigator,
+        session.state().active_investigator,
         Some(SURVIVOR),
         "the open turn belongs to the survivor, so the menu is addressed to them"
     );
     assert_eq!(
-        request.prompt, "Choose an action",
-        "it is a turn menu — the thing #764 wrongly showed the dead investigator"
+        request.target,
+        Some(OptionTarget::TurnControl(SURVIVOR)),
+        "it is the survivor's turn menu — the thing #764 wrongly showed the dead \
+         investigator: {request:?}"
     );
     assert_ne!(
-        result.state.active_investigator,
+        session.state().active_investigator,
         Some(DYING),
         "a defeated investigator must never be re-prompted: {request:?}"
     );
@@ -161,23 +137,22 @@ fn a_defeated_investigator_is_never_prompted_for_an_action() {
 fn defeat_on_the_last_turn_of_the_round_ends_the_investigation_phase() {
     // The survivor has already taken their turn (they come first in
     // `turn_order`), so 2.2.2 finds nobody left and proceeds to 2.3 → Enemy.
-    let result = play_into_the_lethal_aoo(board(&[SURVIVOR, DYING]));
+    let session = play_into_the_lethal_aoo(board(&[SURVIVOR, DYING]));
 
-    assert_eq!(result.state.investigators[&DYING].status, Status::Defeated);
+    assert_eq!(
+        session.state().investigators[&DYING].status,
+        Status::Defeated
+    );
     assert_ne!(
-        result.state.phase,
+        session.state().phase,
         Phase::Investigation,
         "2.3: the investigation phase ends rather than idling on a dead turn"
     );
-    assert!(
-        result.events.iter().any(|e| matches!(
-            e,
-            Event::PhaseEnded {
-                phase: Phase::Investigation
-            }
-        )),
-        "PhaseEnded(Investigation) is emitted: {:?}",
-        result.events,
+    assert_event!(
+        session.events(),
+        Event::PhaseEnded {
+            phase: Phase::Investigation
+        }
     );
 }
 
@@ -185,13 +160,15 @@ fn defeat_on_the_last_turn_of_the_round_ends_the_investigation_phase() {
 fn solo_defeat_ends_the_scenario_instead_of_rotating() {
     // ADR 0004: the `Lost` latch cancels the armed turn frame rather than
     // resuming it, so the arming never rotates a table with nobody left.
-    let result = play_into_the_lethal_aoo(board(&[DYING]));
+    let result = play_into_the_lethal_aoo(board(&[DYING])).finish();
 
     assert_eq!(result.state.investigators[&DYING].status, Status::Defeated);
     assert!(
         matches!(result.state.ending, Some(ScenarioEnding::NoResolution)),
         "RR p.10 step 6: no remaining players ⇒ the scenario ends"
     );
+    // A stack invariant, so read off the stack: no turn frame is stranded
+    // beneath the ending.
     assert!(
         !result
             .state

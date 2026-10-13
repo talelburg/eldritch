@@ -61,14 +61,13 @@
 use cards::REGISTRY;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::modified_value::{self, ModifiedQuantity, ReadContext};
-use game_core::engine::{ApplyResult, OptionId};
+use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, ModifierTarget, Owner,
-    SkillKind, TokenModifiers,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, ChaosBag, ChaosToken, EnemyId, GameState,
+    GameStateBuilder, InvestigatorId, LocationId, ModifierTarget, Owner, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{self, ScriptedResolver, TestSession};
+use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, card_registry};
 
 /// Lita Chantler.
@@ -91,9 +90,6 @@ const HALLWAY: LocationId = LocationId(2);
 
 const GHOUL: EnemyId = EnemyId(100);
 const NON_MONSTER: EnemyId = EnemyId(101);
-
-const LITA_INST: CardInstanceId = CardInstanceId(50);
-const MACHETE_INST: CardInstanceId = CardInstanceId(51);
 
 #[ctor::ctor(unsafe)]
 fn install() {
@@ -132,81 +128,81 @@ impl Board {
     fn build(self) -> GameState {
         // Both at 8 health, so Dynamite Blast's 3 to each investigator at the
         // chosen location neither defeats nor needs soaking away.
-        let mut keeper = test_support::test_investigator(1);
-        keeper.current_location = Some(PARLOR);
-        keeper.skills.combat = 3;
-
-        let mut other = test_support::test_investigator(2);
-        other.current_location = Some(self.other_at);
-        other.skills.combat = 3;
-
-        if self.controlled {
-            keeper.cards_in_play.push(CardInPlay::enter_play(
-                CardCode::new(LITA),
-                LITA_INST,
-                Owner::Scenario,
-            ));
-        }
-        {
-            let actor = if self.actor == KEEPER {
-                &mut keeper
-            } else {
-                &mut other
-            };
-            if self.machete {
-                actor.cards_in_play.push(CardInPlay::enter_play(
-                    CardCode::new(MACHETE),
-                    MACHETE_INST,
-                    Owner::Investigator(actor.id),
-                ));
-            }
-            if self.dynamite {
-                actor.hand.push(CardCode::new(DYNAMITE));
-            }
-        }
+        let keeper = seat(1).at(PARLOR);
+        let other = seat(2).at(self.other_at);
+        let (keeper, other) = if self.actor == KEEPER {
+            (self.arm(keeper), other)
+        } else {
+            (keeper, self.arm(other))
+        };
 
         // Health well clear of anything dealt below, so every case is read off
         // `damage` rather than off a defeat.
         // Ghoul Minion 01160 (Humanoid. Monster. Ghoul.).
-        let mut ghoul = test_support::test_enemy(100, "Ghoul");
+        // Engaged with the actor, so at the actor's location — which every
+        // case puts where the enemies stand.
+        let mut ghoul = test_support::test_enemy(GHOUL.0, "Ghoul");
         ghoul.code = CardCode::new("01160");
         ghoul.fight = 3;
         ghoul.max_health = 9;
-        ghoul.engaged_with = Some(self.actor);
-        ghoul.current_location = Some(self.enemies_at);
 
-        let mut acolyte = test_support::test_enemy(101, "Silver Twilight Acolyte");
+        let mut acolyte = test_support::test_enemy(NON_MONSTER.0, "Silver Twilight Acolyte");
         acolyte.code = CardCode::new(ACOLYTE);
         acolyte.fight = 3;
         acolyte.max_health = 9;
         acolyte.current_location = Some(self.enemies_at);
 
-        let builder = GameStateBuilder::new()
-            .with_investigator(keeper)
-            .with_investigator(other)
-            .with_location(test_support::test_location(1, "Parlor"))
-            .with_location(test_support::test_location(2, "Hallway"))
-            .with_enemy(ghoul)
+        let mut state = GameStateBuilder::new()
+            .with_seat(keeper)
+            .with_seat(other)
+            .with_location(test_support::test_location(PARLOR.0, "Parlor"))
+            .with_location(test_support::test_location(HALLWAY.0, "Hallway"))
+            .with_enemy_engaged(ghoul, self.actor)
             .with_enemy(acolyte)
             .with_turn_order([KEEPER, OTHER])
             .open_turn(self.actor)
             .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-            .with_token_modifiers(TokenModifiers::default());
-        let uncontrolled = !self.controlled;
-        let mut state = builder.build();
-        if uncontrolled {
+            .with_token_modifiers(TokenModifiers::default())
+            .build();
+        // Lita is the scenario's card wherever she is, so she is placed on the
+        // built state rather than seated (a seat's cards are its
+        // investigator's), with an id minted from its counter.
+        let lita = CardInPlay::enter_play(
+            CardCode::new(LITA),
+            state.card_instance_ids.mint(),
+            Owner::Scenario,
+        );
+        if self.controlled {
+            state
+                .investigators
+                .get_mut(&KEEPER)
+                .expect("the keeper is seated")
+                .cards_in_play
+                .push(lita);
+        } else {
             state
                 .locations
                 .get_mut(&PARLOR)
                 .expect("the Parlor is on the board")
                 .cards_at_location
-                .push(CardInPlay::enter_play(
-                    CardCode::new(LITA),
-                    LITA_INST,
-                    Owner::Scenario,
-                ));
+                .push(lita);
         }
         state
+    }
+
+    /// The actor's seat with Machete in play and Dynamite Blast in hand, as
+    /// the case asks.
+    fn arm(&self, actor: Seat) -> Seat {
+        let actor = if self.machete {
+            actor.in_play([MACHETE])
+        } else {
+            actor
+        };
+        if self.dynamite {
+            actor.hand([DYNAMITE])
+        } else {
+            actor
+        }
     }
 }
 
@@ -273,47 +269,49 @@ fn while_uncontrolled_the_combat_bonus_does_not_apply() {
 
 // ---- "[reaction] When an investigator at your location …" -------------
 
-/// Take `action` and answer the prompts it opens with `script`.
-fn drive(
-    state: GameState,
-    action: &TurnAction,
-    script: impl FnOnce(&mut ScriptedResolver),
-) -> ApplyResult {
+/// The anchor of the controlled Lita: her granted reaction is offered on
+/// her.
+fn lita(state: &GameState) -> OptionTarget {
+    OptionTarget::CardInstance(state.in_play(KEEPER, LITA))
+}
+
+/// `actor` fights `enemy` committing nothing: the session rests at Lita's
+/// reaction window, or back at the turn menu if none opened.
+fn fight(state: GameState, actor: InvestigatorId, enemy: EnemyId) -> TestSession {
     TestSession::new(state)
-        .resolve_choices(script)
-        .take(action)
-        .finish()
+        .take(&TurnAction::Fight {
+            investigator: actor,
+            enemy,
+        })
+        .commit(&[])
 }
 
-/// The script for a Fight that **does** open Lita's reaction window: commit
-/// nothing, then either fire the window's only option or decline it.
-fn fight_and_answer_window(fire: bool) -> impl FnOnce(&mut ScriptedResolver) {
-    move |c: &mut ScriptedResolver| {
-        c.commit_cards(&[]);
-        if fire {
-            c.pick_single(OptionId(0));
-        } else {
-            c.skip();
-        }
-    }
+/// A Fight that **does** open Lita's reaction window, which is then either
+/// fired or declined; the turn goes on.
+fn fight_and_answer_window(state: GameState, enemy: EnemyId, fire: bool) -> TestSession {
+    let window = fight(state, OTHER, enemy);
+    let session = if fire {
+        let lita = lita(window.state());
+        window.pick(lita)
+    } else {
+        window.skip()
+    };
+    session.assert_at_turn_menu(OTHER);
+    session
 }
 
-/// The script for a Fight that must open **no** reaction window at all: the
-/// commit prompt and nothing after it.
+/// A Fight that must open **no** reaction window at all: the commit prompt
+/// and nothing after it.
 ///
 /// This is what distinguishes *"never offered"* from *"offered and declined"*,
-/// which is the whole of RR p.2's potential gate. `ScriptedResolver` panics on
-/// a prompt it has no scripted answer for, so a window opening here fails the
-/// test rather than being silently skipped.
-fn fight_expecting_no_window(c: &mut ScriptedResolver) {
-    c.commit_cards(&[]);
-}
-
-fn fight(actor: InvestigatorId, enemy: EnemyId) -> TurnAction {
-    TurnAction::Fight {
-        investigator: actor,
-        enemy,
-    }
+/// which is the whole of RR p.2's potential gate. The session stops at the
+/// first prompt nothing answers, so a window opening here leaves it resting
+/// there, and the turn-menu assertion fails the test rather than the window
+/// being silently skipped.
+fn fight_expecting_no_window(state: GameState, enemy: EnemyId) -> TestSession {
+    let session = fight(state, OTHER, enemy);
+    session.assert_at_turn_menu(OTHER);
+    session
 }
 
 /// The acceptance case: a **second** investigator, at her location, successfully
@@ -325,32 +323,24 @@ fn fight(actor: InvestigatorId, enemy: EnemyId) -> TurnAction {
 /// investigator's context fired the reaction.
 #[test]
 fn a_co_located_attack_on_a_monster_deals_one_more_damage() {
-    let result = drive(
-        Board::new().build(),
-        &fight(OTHER, GHOUL),
-        fight_and_answer_window(true),
-    );
+    let result = fight_and_answer_window(Board::new().build(), GHOUL, true);
     assert_event!(
-        result.events,
+        result.events(),
         Event::EnemyDamaged {
             enemy: GHOUL,
             amount: 2,
             ..
         }
     );
-    assert_eq!(result.state.enemies[&GHOUL].damage, 2);
+    assert_eq!(result.state().enemies[&GHOUL].damage, 2);
 }
 
 /// Declining the offered reaction leaves the base attack alone — so the `2`
 /// above is the reaction's doing and not the board's.
 #[test]
 fn declining_the_reaction_leaves_the_attack_at_one_damage() {
-    let result = drive(
-        Board::new().build(),
-        &fight(OTHER, GHOUL),
-        fight_and_answer_window(false),
-    );
-    assert_eq!(result.state.enemies[&GHOUL].damage, 1);
+    let result = fight_and_answer_window(Board::new().build(), GHOUL, false);
+    assert_eq!(result.state().enemies[&GHOUL].damage, 1);
 }
 
 /// Against Silver Twilight Acolyte 01102 the reaction is **never offered** — the
@@ -359,15 +349,13 @@ fn declining_the_reaction_leaves_the_attack_at_one_damage() {
 /// decline; the attack simply deals 1.
 #[test]
 fn against_a_non_monster_the_reaction_is_never_offered() {
-    let result = drive(
-        Board::new().build(),
-        &fight(OTHER, NON_MONSTER),
-        fight_expecting_no_window,
-    );
+    let result = fight_expecting_no_window(Board::new().build(), NON_MONSTER);
     assert_eq!(
-        result.state.enemies[&NON_MONSTER].damage, 1,
-        "and `fight_expecting_no_window` scripts no answer for a reaction \
-         prompt, so reaching this line at all is the \"never offered\" half",
+        result.state().enemies[&NON_MONSTER].damage,
+        1,
+        "and `fight_expecting_no_window` asserts the session came straight back \
+         to the turn menu, so reaching this line at all is the \"never offered\" \
+         half",
     );
 }
 
@@ -381,8 +369,8 @@ fn an_attack_away_from_her_gets_no_bonus() {
         ..Board::new()
     }
     .build();
-    let result = drive(state, &fight(OTHER, GHOUL), fight_expecting_no_window);
-    assert_eq!(result.state.enemies[&GHOUL].damage, 1);
+    let result = fight_expecting_no_window(state, GHOUL);
+    assert_eq!(result.state().enemies[&GHOUL].damage, 1);
 }
 
 /// The reaction half of *"while uncontrolled, neither ability applies"*. She is
@@ -396,8 +384,8 @@ fn while_uncontrolled_the_reaction_does_not_apply() {
         ..Board::new()
     }
     .build();
-    let result = drive(state, &fight(OTHER, GHOUL), fight_expecting_no_window);
-    assert_eq!(result.state.enemies[&GHOUL].damage, 1);
+    let result = fight_expecting_no_window(state, GHOUL);
+    assert_eq!(result.state().enemies[&GHOUL].damage, 1);
 }
 
 // ---- her ruling ------------------------------------------------------
@@ -413,24 +401,22 @@ fn a_designated_fight_ability_gets_the_bonus() {
         ..Board::new()
     }
     .build();
-    let result = drive(
-        state,
-        &TurnAction::ActivateAbility {
+    let machete = state.in_play(KEEPER, MACHETE);
+    let lita = lita(&state);
+    let result = TestSession::new(state)
+        .take(&TurnAction::ActivateAbility {
             investigator: KEEPER,
-            source: AbilitySource::InPlay(MACHETE_INST),
+            source: AbilitySource::InPlay(machete),
             address: AbilityAddress::Printed(0),
-        },
-        |c: &mut ScriptedResolver| {
-            // Two enemies stand at the Parlor, so a weapon Fight asks which
-            // (#451 widened a Fight's candidates to every co-located enemy);
-            // the Ghoul is `EnemyId(100)`, first in ascending order.
-            c.pick_single(OptionId(0));
-            c.commit_cards(&[]);
-            c.pick_single(OptionId(0));
-        },
-    );
+        })
+        // Two enemies stand at the Parlor, so a weapon Fight asks which
+        // (#451 widened a Fight's candidates to every co-located enemy).
+        .pick(OptionTarget::Enemy(GHOUL))
+        .commit(&[])
+        .pick(lita);
+    result.assert_at_turn_menu(KEEPER);
     assert_event!(
-        result.events,
+        result.events(),
         Event::EnemyDamaged {
             enemy: GHOUL,
             amount: 3,
@@ -451,20 +437,20 @@ fn a_non_attack_damage_effect_gets_nothing() {
         ..Board::new()
     }
     .build();
-    let result = drive(
-        state,
-        &TurnAction::PlayCard {
+    let keeper = state.investigators[&KEEPER].card_anchor();
+    // The keeper's share of the blast asks where its damage goes — Lita, an
+    // ally in play, can soak it — and he takes it himself. Nothing else is
+    // asked: no reaction window opens.
+    let result = TestSession::new(state)
+        .take(&TurnAction::PlayCard {
             investigator: KEEPER,
             hand_index: 0,
-        },
-        |c: &mut ScriptedResolver| {
-            c.pick_single(OptionId(0));
-            c.pick_single(OptionId(0));
-            c.pick_single(OptionId(0));
-        },
-    );
+        })
+        .pick(keeper);
+    result.assert_at_turn_menu(KEEPER);
     assert_eq!(
-        result.state.enemies[&GHOUL].damage, 3,
+        result.state().enemies[&GHOUL].damage,
+        3,
         "the printed 3 and not a point more",
     );
 }

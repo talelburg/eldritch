@@ -880,3 +880,18 @@ fn finish_at_an_unanswered_prompt_panics() {
         .take(&activate(SELECT_INST))
         .finish();
 }
+
+/// `rejection` reads a rejected step's reason, and `None` after an accepted one.
+#[test]
+fn rejection_reads_the_reason_or_none() {
+    let accepted = board()
+        .open_turn(INV)
+        .session()
+        .take(&TurnAction::Resource { investigator: INV });
+    assert_eq!(accepted.rejection(), None);
+
+    let rejected = accepted.apply(Action::Player(PlayerAction::ResolveInput {
+        response: InputResponse::Confirm,
+    }));
+    assert_eq!(rejected.rejection(), Some(rejected.expect_rejected()));
+}

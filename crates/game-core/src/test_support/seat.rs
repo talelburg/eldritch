@@ -27,7 +27,7 @@ use card_dsl::card_data::{CardKind, CardType};
 use crate::card_registry;
 use crate::state::{
     CardCode, CardInPlay, CardInstanceId, GameState, GameStateBuilder, Investigator,
-    InvestigatorId, LocationId, Owner, Skills, UseKind,
+    InvestigatorId, LocationId, Owner, Skills, Status, UseKind,
 };
 use crate::test_support::test_investigator;
 
@@ -229,6 +229,13 @@ impl Seat {
     /// Set the actions the investigator has remaining.
     pub fn actions(mut self, n: u8) -> Self {
         self.investigator.actions_remaining = n;
+        self
+    }
+
+    /// Set the investigator's status — [`Status::Defeated`] or
+    /// [`Status::Resigned`] seats one already eliminated.
+    pub fn status(mut self, status: Status) -> Self {
+        self.investigator.status = status;
         self
     }
 }

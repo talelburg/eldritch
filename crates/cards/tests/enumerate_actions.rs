@@ -5,46 +5,50 @@
 //! rather than in `game-core`'s registry-less unit tests.
 
 use cards::REGISTRY;
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
-use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::state::{
-    AbilityAddress, AbilitySource, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag,
-    ChaosToken, EnemyId, GameState, GameStateBuilder, Investigator, InvestigatorId, LocationId,
-    Owner, UseKind,
+    AbilityAddress, AbilitySource, Act, Agenda, CardCode, ChaosBag, ChaosToken, EnemyId, GameState,
+    GameStateBuilder, InvestigatorId, LocationId, UseKind,
 };
-use game_core::test_support;
+use game_core::test_support::{self, seat, uses, Seat, SeatLookup as _, TestSession};
 
 const HOLY_ROSARY: &str = "01059"; // Mystic asset, cost 2, constant +1 willpower.
 const FLASHLIGHT: &str = "01087"; // Asset with an activated ability (uses: Supplies).
 const INV: InvestigatorId = InvestigatorId(1);
-const LOC: LocationId = LocationId(10);
+const HERE: LocationId = LocationId(10);
+const HALL: LocationId = LocationId(11);
+const ATTIC: LocationId = LocationId(12);
+const CELLAR: LocationId = LocationId(13);
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// Investigator 1 at the Study (`LOC`) with `hand` in hand and `in_play` in
-/// play, 3 actions, 9 resources.
-fn investigator(hand: &[&str], in_play: Vec<CardInPlay>) -> Investigator {
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(LOC);
-    inv.actions_remaining = 3;
-    inv.resources = 9;
-    inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
-    inv.cards_in_play = in_play;
-    inv
+/// Investigator 1 at the Study (`HERE`) with 3 actions and 9 resources.
+fn me() -> Seat {
+    seat(1).at(HERE).resources(9)
+}
+
+/// [`me`] with Holy Rosary in hand and a ready Flashlight in play with 3
+/// Supplies uses — its `ability_index: 0` activated ability is usable.
+fn me_with_rosary_and_flashlight() -> Seat {
+    me().hand([HOLY_ROSARY])
+        .in_play([(FLASHLIGHT, uses(UseKind::Supplies, 3))])
+}
+
+/// `investigator`'s open turn at the Study, with a +0 bag.
+fn study_board(investigator: Seat) -> GameStateBuilder {
+    GameStateBuilder::new()
+        .with_seat(investigator)
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .open_turn(INV)
 }
 
 #[test]
 fn play_card_offered_for_a_playable_hand_card() {
-    let state = GameStateBuilder::new()
-        .with_investigator(investigator(&[HOLY_ROSARY], Vec::new()))
-        .with_location(test_support::test_location(LOC.0, "Study"))
-        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .open_turn(INV)
-        .build();
+    let state = study_board(me().hand([HOLY_ROSARY])).build();
     assert!(
         enumerate::legal_actions(&state).contains(&TurnAction::PlayCard {
             investigator: INV,
@@ -53,31 +57,13 @@ fn play_card_offered_for_a_playable_hand_card() {
     );
 }
 
-/// Flashlight in play with 3 Supplies uses, ready — its `ability_index: 0`
-/// activated ability is usable.
-fn flashlight_in_play(instance: CardInstanceId) -> CardInPlay {
-    let mut torch = CardInPlay::enter_play(
-        CardCode::new(FLASHLIGHT),
-        instance,
-        Owner::Investigator(InvestigatorId(1)),
-    );
-    torch.uses.insert(UseKind::Supplies, 3);
-    torch
-}
-
 #[test]
 fn activate_offered_for_an_in_play_activated_ability() {
-    let inst = CardInstanceId(0);
-    let state = GameStateBuilder::new()
-        .with_investigator(investigator(&[], vec![flashlight_in_play(inst)]))
-        .with_location(test_support::test_location(LOC.0, "Study"))
-        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .open_turn(INV)
-        .build();
+    let state = study_board(me().in_play([(FLASHLIGHT, uses(UseKind::Supplies, 3))])).build();
     assert!(
         enumerate::legal_actions(&state).contains(&TurnAction::ActivateAbility {
             investigator: INV,
-            source: AbilitySource::InPlay(inst),
+            source: AbilitySource::InPlay(state.in_play(INV, FLASHLIGHT)),
             address: AbilityAddress::Printed(0),
         })
     );
@@ -86,75 +72,53 @@ fn activate_offered_for_an_in_play_activated_ability() {
 /// Investigator 1 at the Study with Holy Rosary in hand and a Flashlight in
 /// play, at an open turn: the fixture of the registry-edition sweep.
 fn rosary_and_flashlight_board() -> GameState {
-    GameStateBuilder::new()
-        .with_investigator(investigator(
-            &[HOLY_ROSARY],
-            vec![flashlight_in_play(CardInstanceId(0))],
-        ))
-        .with_location(test_support::test_location(LOC.0, "Study"))
-        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .open_turn(INV)
-        .build()
+    study_board(me_with_rosary_and_flashlight()).build()
+}
+
+/// Take each of `actions` from `state`'s turn menu, asserting none is
+/// rejected. `take` answers the turn menu with the option id of the action's
+/// place on it (#447), so this is the menu's id round-trip.
+fn assert_each_applies(state: &GameState, actions: &[TurnAction]) {
+    for action in actions {
+        let taken = TestSession::new(state.clone()).take(action);
+        assert_eq!(
+            taken.rejection(),
+            None,
+            "enumerated action {action:?} was rejected",
+        );
+    }
 }
 
 #[test]
 fn every_enumerated_action_applies_without_rejection_with_registry() {
     // Cross-check, registry edition: with real card data the enumeration
     // includes PlayCard (Holy Rosary) and ActivateAbility (Flashlight) alongside
-    // the basic actions; each applies without Rejected (Done or AwaitingInput
-    // are both acceptance).
+    // the basic actions; each applies without Rejected (a prompt or a return to
+    // the menu are both acceptance).
     let state = rosary_and_flashlight_board();
-    // OptionId round-trip: each enumerated action dispatches via
-    // `ResolveInput(PickSingle(OptionId))` at the open turn (#447). None reject.
-    let actions = enumerate::legal_actions(&state);
-    for (i, action) in actions.iter().enumerate() {
-        let result = engine::apply(
-            state.clone(),
-            Action::Player(PlayerAction::ResolveInput {
-                response: InputResponse::PickSingle(OptionId(
-                    u32::try_from(i).expect("action index fits u32"),
-                )),
-            }),
-        );
-        assert!(
-            !matches!(result.outcome, EngineOutcome::Rejected { .. }),
-            "enumerated action {action:?} (OptionId {i}) was rejected: {:?}",
-            result.outcome,
-        );
-    }
+    assert_each_applies(&state, &enumerate::legal_actions(&state));
 }
 
 /// A board offering every action category: the registry-edition fixture plus a
 /// connected destination (Move), an engaged enemy (Fight/Evade), a co-located
 /// unengaged enemy (Engage), and an advanceable act (`AdvanceAct`).
 fn every_category_board() -> GameState {
-    let inst = CardInstanceId(0);
-    let mut state = GameStateBuilder::new()
-        .with_investigator(investigator(&[HOLY_ROSARY], vec![flashlight_in_play(inst)]))
-        .with_location(test_support::test_location(LOC.0, "Study"))
-        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .open_turn(INV)
+    let mut hall = test_support::test_location(HALL.0, "Hall");
+    hall.revealed = true;
+    let mut rat = test_support::test_enemy(8, "Rat");
+    rat.current_location = Some(HERE);
+    let mut state = study_board(me_with_rosary_and_flashlight().clues(2))
+        .with_location(hall)
+        .with_enemy_engaged(test_support::test_enemy(7, "Ghoul"), INV)
+        .with_enemy(rat)
         .build();
-    let mut other = test_support::test_location(11, "Hall");
-    other.revealed = true;
     state
         .locations
-        .get_mut(&LOC)
+        .get_mut(&HERE)
         .unwrap()
         .connections
-        .push(other.id);
-    let other_id = other.id;
-    state.locations.insert(other_id, other);
-
-    let mut foe = test_support::test_enemy(7, "Ghoul");
-    foe.engaged_with = Some(INV);
-    foe.current_location = Some(LOC);
-    state.enemies.insert(EnemyId(7), foe);
-    let mut rat = test_support::test_enemy(8, "Rat");
-    rat.current_location = Some(LOC);
-    state.enemies.insert(EnemyId(8), rat);
-
-    state.investigators.get_mut(&INV).unwrap().clues = 2;
+        .push(HALL);
+    // The builder stages no act deck.
     state.act_deck = vec![
         Act {
             code: CardCode("_act1".into()),
@@ -202,23 +166,8 @@ fn full_enumeration_covers_every_action_category_and_all_apply() {
         "AdvanceAct"
     );
 
-    // And all of them apply without Rejected — via the OptionId round-trip
-    // (`ResolveInput(PickSingle(OptionId))` at the open turn, #447).
-    for (i, action) in actions.iter().enumerate() {
-        let result = engine::apply(
-            state.clone(),
-            Action::Player(PlayerAction::ResolveInput {
-                response: InputResponse::PickSingle(OptionId(
-                    u32::try_from(i).expect("action index fits u32"),
-                )),
-            }),
-        );
-        assert!(
-            !matches!(result.outcome, EngineOutcome::Rejected { .. }),
-            "enumerated action {action:?} (OptionId {i}) was rejected: {:?}",
-            result.outcome,
-        );
-    }
+    // And all of them apply without Rejected, through the menu's id round-trip.
+    assert_each_applies(&state, &actions);
 }
 
 /// The Gathering's real act 1 and agenda 1, current on the board.
@@ -240,12 +189,8 @@ const WHATS_GOING_ON: &str = "01105";
 /// reason.
 #[test]
 fn the_corpus_act_and_agenda_are_reachable_but_offer_no_activation() {
-    let mut state = GameStateBuilder::new()
-        .with_investigator(investigator(&[], Vec::new()))
-        .with_location(test_support::test_location(LOC.0, "Study"))
-        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .open_turn(INV)
-        .build();
+    let mut state = study_board(me()).build();
+    // The builder stages no act or agenda deck.
     state.act_deck = vec![Act {
         code: CardCode::new(TRAPPED),
         clue_threshold: 2,
@@ -266,17 +211,15 @@ fn the_corpus_act_and_agenda_are_reachable_but_offer_no_activation() {
              menu was {menu:?}",
         );
 
-        let result = test_support::dispatch_turn_action_unchecked(
-            state.clone(),
-            &TurnAction::ActivateAbility {
+        // The menu filters it out, so it goes straight to the handler to prove
+        // the handler refuses it too.
+        let session =
+            TestSession::new(state.clone()).submit_off_menu(&TurnAction::ActivateAbility {
                 investigator: INV,
                 source,
                 address: AbilityAddress::Printed(0),
-            },
-        );
-        let EngineOutcome::Rejected { reason } = &result.outcome else {
-            panic!("a Forced ability must not be activatable; got {result:?}");
-        };
+            });
+        let reason = session.expect_rejected();
         assert!(
             reason.contains("not an Activated trigger"),
             "the refusal must be about the trigger, not about reachability — the source is \
@@ -331,8 +274,8 @@ fn assert_menu_offers_every_accepted_basic_action(
     let menu = enumerate::legal_actions(state);
     let mut accepted = Vec::new();
     for action in every_basic_action(state, me) {
-        let result = test_support::dispatch_turn_action_unchecked(state.clone(), &action);
-        if matches!(result.outcome, EngineOutcome::Rejected { .. }) {
+        let submitted = TestSession::new(state.clone()).submit_off_menu(&action);
+        if submitted.rejection().is_some() {
             continue;
         }
         assert!(
@@ -344,40 +287,38 @@ fn assert_menu_offers_every_accepted_basic_action(
     accepted
 }
 
-/// A crowded board for the completeness sweep. The investigator stands at the
-/// revealed Study (`LOC`), connected to a revealed Hall and an unrevealed Attic;
-/// a Cellar is in play but not connected. A second investigator shares the
-/// Study. Enemies:
+/// A crowded board for the completeness sweep, around `investigator`. They
+/// stand at the revealed Study (`HERE`), connected to a revealed Hall and an
+/// unrevealed Attic; a Cellar is in play but not connected. A second
+/// investigator shares the Study. Enemies:
 /// - 7, engaged with me (Fight, Evade);
 /// - 8, unengaged at the Study (Fight, Engage);
 /// - 9, engaged with the other investigator at the Study (Fight, Engage);
 /// - 10, at the Hall (nothing);
 /// - 11, engaged with me with a malformed fight value (Evade only);
 /// - 12, engaged with me with a malformed evade value (Fight only).
-fn crowded_board() -> GameState {
+fn crowded_board(investigator: Seat) -> GameState {
     let other_inv = InvestigatorId(2);
-    let mut second = test_support::test_investigator(2);
-    second.current_location = Some(LOC);
-    let mut study = test_support::test_location(LOC.0, "Study");
+    let mut study = test_support::test_location(HERE.0, "Study");
     study.revealed = true;
-    let mut hall = test_support::test_location(11, "Hall");
+    let mut hall = test_support::test_location(HALL.0, "Hall");
     hall.revealed = true;
-    let mut attic = test_support::test_location(12, "Attic");
+    let mut attic = test_support::test_location(ATTIC.0, "Attic");
     attic.revealed = false;
-    let cellar = test_support::test_location(13, "Cellar");
+    let cellar = test_support::test_location(CELLAR.0, "Cellar");
 
     let mut rat = test_support::test_enemy(8, "Rat");
-    rat.current_location = Some(LOC);
+    rat.current_location = Some(HERE);
     let mut wanderer = test_support::test_enemy(10, "Wanderer");
-    wanderer.current_location = Some(LocationId(11));
+    wanderer.current_location = Some(HALL);
     let mut unhittable = test_support::test_enemy(11, "Unhittable");
     unhittable.fight = -1;
     let mut unshakeable = test_support::test_enemy(12, "Unshakeable");
     unshakeable.evade = -1;
 
     let mut state = GameStateBuilder::new()
-        .with_investigator(investigator(&[], Vec::new()))
-        .with_investigator(second)
+        .with_seat(investigator)
+        .with_seat(seat(2).at(HERE))
         .with_location(study)
         .with_location(hall)
         .with_location(attic)
@@ -391,8 +332,8 @@ fn crowded_board() -> GameState {
         .with_enemy_engaged(unhittable, INV)
         .with_enemy_engaged(unshakeable, INV)
         .build();
-    state.connect(LOC, LocationId(11));
-    state.connect(LOC, LocationId(12));
+    state.connect(HERE, HALL);
+    state.connect(HERE, ATTIC);
     state
 }
 
@@ -404,7 +345,7 @@ fn sorted(mut actions: Vec<TurnAction>) -> Vec<TurnAction> {
 
 #[test]
 fn the_menu_offers_every_basic_action_the_engine_accepts() {
-    let accepted = assert_menu_offers_every_accepted_basic_action(&crowded_board(), INV);
+    let accepted = assert_menu_offers_every_accepted_basic_action(&crowded_board(me()), INV);
 
     // The sweep is only as strong as its fixture, so pin what it accepted: the
     // targets each action's rules scope allows on this board.
@@ -420,16 +361,16 @@ fn the_menu_offers_every_basic_action_the_engine_accepts() {
         investigator: INV,
         enemy: EnemyId(e),
     };
-    let move_to = |l: u32| TurnAction::Move {
+    let move_to = |l: LocationId| TurnAction::Move {
         investigator: INV,
-        destination: LocationId(l),
+        destination: l,
     };
     let expected = vec![
         TurnAction::Resource { investigator: INV },
         TurnAction::Draw { investigator: INV },
         TurnAction::Investigate { investigator: INV },
-        move_to(11),
-        move_to(12),
+        move_to(HALL),
+        move_to(ATTIC),
         fight(7),
         fight(8),
         fight(9),
@@ -442,9 +383,6 @@ fn the_menu_offers_every_basic_action_the_engine_accepts() {
     assert_eq!(sorted(accepted), sorted(expected));
 }
 
-/// The completeness sweep under Frozen in Fear 01164, which surcharges *"one of
-/// the following actions (move, fight, or evade)"*: with 1 action left the
-/// surcharged kinds are neither accepted nor offered, and with 2 they are both.
 /// The completeness sweep over the fixtures the "every enumerated action
 /// applies" sweeps use, so the two directions are checked on the same boards.
 #[test]
@@ -461,17 +399,13 @@ fn the_menu_offers_every_basic_action_the_engine_accepts_on_the_apply_sweep_boar
     }
 }
 
+/// The completeness sweep under Frozen in Fear 01164, which surcharges *"one of
+/// the following actions (move, fight, or evade)"*: with 1 action left the
+/// surcharged kinds are neither accepted nor offered, and with 2 they are both.
 #[test]
 fn the_menu_offers_every_basic_action_the_engine_accepts_under_frozen_in_fear() {
     for (actions_remaining, surcharged_affordable) in [(1, false), (2, true)] {
-        let mut state = crowded_board();
-        let me = state.investigators.get_mut(&INV).expect("investigator 1");
-        me.actions_remaining = actions_remaining;
-        me.threat_area.push(CardInPlay::enter_play(
-            CardCode::new("01164"),
-            CardInstanceId(0),
-            Owner::EncounterDeck,
-        ));
+        let state = crowded_board(me().actions(actions_remaining).threat_area(["01164"]));
         let accepted = assert_menu_offers_every_accepted_basic_action(&state, INV);
         let surcharged = accepted.iter().any(|a| {
             matches!(

@@ -42,16 +42,15 @@
 //! engine path spawns a weakness enemy from a draw yet (#514).
 
 use cards::REGISTRY;
-use game_core::action::{Action, EngineRecord, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, ApplyResult};
+use game_core::engine::{ApplyResult, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, ContinuationStack, DiscardPile,
-    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, Phase, TokenModifiers,
-    Zone,
+    CardCode, CardInPlay, ChaosBag, ChaosToken, DiscardPile, EnemyId, GameState, GameStateBuilder,
+    InvestigatorId, LocationId, Owner, Skills, TokenModifiers, Zone,
 };
-use game_core::{assert_event, assert_event_sequence, test_support};
+use game_core::test_support::{self, seat, TestSession};
+use game_core::{assert_event, assert_event_sequence};
 
 const GHOUL_MINION: &str = "01160";
 const MOB_ENFORCER: &str = "01101";
@@ -61,6 +60,10 @@ const GHOUL_PRIEST: &str = "01116";
 /// printed card (ADR 0016).
 const ATTACHMENT: &str = "_enemy_attachment";
 
+const INV: InvestigatorId = InvestigatorId(1);
+const ENEMY: EnemyId = EnemyId(100);
+const HERE: LocationId = LocationId(10);
+
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
@@ -69,76 +72,80 @@ fn install_real_registry() {
 /// A solo investigator engaged with `code`, one point of damage short of
 /// defeat, with combat high enough that the Fight test cannot fail against the
 /// bag's single `Numeric(0)` token. The unarmed Fight deals 1 damage — enough
-/// to defeat.
+/// to defeat. A spare deck card lets a test end the turn and play on through
+/// Upkeep step 4.4's draw.
 fn solo_investigator_facing(
     code: &str,
     owner: Owner,
     health: u8,
     fight: i8,
     victory: Option<u8>,
-) -> (InvestigatorId, EnemyId, GameState) {
-    let inv_id = InvestigatorId(1);
-    let enemy_id = EnemyId(100);
-    let loc_id = LocationId(10);
-
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(loc_id);
-    inv.skills.combat = 8;
-
-    let mut enemy = test_support::test_enemy(100, "Enemy under test");
+) -> GameState {
+    let mut enemy = test_support::test_enemy(ENEMY.0, "Enemy under test");
     enemy.code = CardCode::new(code);
     enemy.fight = fight;
     enemy.max_health = health;
     enemy.damage = health - 1;
     enemy.victory = victory;
     enemy.owner = owner;
-    enemy.engaged_with = Some(inv_id);
-    enemy.current_location = Some(loc_id); // Fight is location-gated (#401)
 
-    let state = GameStateBuilder::new()
+    GameStateBuilder::new()
         .with_round(0)
-        .open_turn(inv_id)
-        .with_investigator(inv)
-        .with_enemy(enemy)
-        .with_location(test_support::test_location(10, "Study"))
+        .with_seat(
+            seat(1)
+                .at(HERE)
+                .skills(Skills {
+                    willpower: 3,
+                    intellect: 3,
+                    combat: 8,
+                    agility: 3,
+                })
+                .deck(["01088"]),
+        )
+        // Fight is location-gated (#401); an engaged enemy is at its
+        // investigator's location.
+        .with_enemy_engaged(enemy, INV)
+        .with_location(test_support::test_location(HERE.0, "Study"))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
-        .build();
-    (inv_id, enemy_id, state)
+        .open_turn(INV)
+        .build()
 }
 
 /// Fight the enemy to death: the Fight suspends on the commit window, and
 /// committing nothing resolves the test, the damage, and the defeat.
-fn fight_to_defeat(state: GameState, inv_id: InvestigatorId, enemy_id: EnemyId) -> ApplyResult {
-    let after_fight = test_support::take_turn_action(
-        state,
-        &TurnAction::Fight {
-            investigator: inv_id,
-            enemy: enemy_id,
-        },
-    );
-    let result = engine::apply(
-        after_fight.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        }),
-    );
-    assert_event!(result.events, Event::EnemyDefeated { enemy: e, .. } if *e == enemy_id);
+fn fight_to_defeat(state: GameState) -> TestSession {
+    let session = TestSession::new(state)
+        .take(&TurnAction::Fight {
+            investigator: INV,
+            enemy: ENEMY,
+        })
+        .commit(&[]);
+    assert_event!(session.events(), Event::EnemyDefeated { enemy: e, .. } if *e == ENEMY);
     assert!(
-        !result.state.enemies.contains_key(&enemy_id),
+        !session.state().enemies.contains_key(&ENEMY),
         "the defeated enemy leaves play"
     );
-    result
+    session
+}
+
+/// [`fight_to_defeat`], ended: the commit step's state and events.
+fn defeated(state: GameState) -> ApplyResult {
+    fight_to_defeat(state).finish()
 }
 
 #[test]
 fn defeated_ghoul_minion_is_drawn_again_once_the_encounter_deck_runs_out() {
-    let (inv_id, enemy_id, state) =
-        solo_investigator_facing(GHOUL_MINION, Owner::EncounterDeck, 2, 2, None);
-    let after = fight_to_defeat(state, inv_id, enemy_id).state;
+    let after = fight_to_defeat(solo_investigator_facing(
+        GHOUL_MINION,
+        Owner::EncounterDeck,
+        2,
+        2,
+        None,
+    ));
 
     assert_eq!(
-        after.encounter_discard,
+        after.state().encounter_discard,
         vec![CardCode::new(GHOUL_MINION)],
         "a defeated non-weakness enemy is placed on the encounter discard pile"
     );
@@ -149,45 +156,43 @@ fn defeated_ghoul_minion_is_drawn_again_once_the_encounter_deck_runs_out() {
     // encounter discard pile back into the encounter deck") — so the card drawn
     // must be the Ghoul the investigator just killed, which then spawns again.
     // Before this fix the discard was empty and the draw had nothing to find.
-    let mut state = after;
-    assert!(state.encounter_deck.is_empty());
-    state.continuations = ContinuationStack::new(); // drop the open-turn prompt; draw straight
-    state.phase = Phase::Mythos;
+    assert!(after.state().encounter_deck.is_empty());
+    // Ending the turn plays on through the round to the next Mythos phase's
+    // encounter draw.
+    let drawing = after.take(&TurnAction::EndTurn);
+    assert_eq!(drawing.prompt().target, Some(OptionTarget::EncounterDeck));
+    let seen = drawing.events().len();
 
-    let redraw = engine::apply(
-        state,
-        Action::Engine(EngineRecord::EncounterCardRevealed {
-            investigator: inv_id,
-        }),
-    );
+    let redraw = drawing.confirm();
+    let events = &redraw.events()[seen..];
     assert_event!(
-        redraw.events,
+        events,
         Event::CardRevealed { code, .. } if code.as_str() == GHOUL_MINION
     );
     assert!(
         redraw
-            .state
+            .state()
             .enemies
             .values()
             .any(|e| e.code.as_str() == GHOUL_MINION),
         "the reshuffled Ghoul Minion spawns again; enemies = {:?}",
-        redraw.state.enemies
+        redraw.state().enemies
     );
-    assert!(redraw.state.encounter_discard.is_empty());
+    assert!(redraw.state().encounter_discard.is_empty());
 }
 
 #[test]
 fn defeated_enemy_weakness_lands_in_its_owners_discard_pile() {
-    let (inv_id, enemy_id, state) = solo_investigator_facing(
+    let after = defeated(solo_investigator_facing(
         MOB_ENFORCER,
-        Owner::Investigator(InvestigatorId(1)),
+        Owner::Investigator(INV),
         3,
         4,
         None,
-    );
-    let after = fight_to_defeat(state, inv_id, enemy_id).state;
+    ))
+    .state;
 
-    let inv = &after.investigators[&inv_id];
+    let inv = &after.investigators[&INV];
     assert_eq!(
         inv.discard,
         vec![CardCode::new(MOB_ENFORCER)],
@@ -208,29 +213,37 @@ fn defeated_enemy_weakness_lands_in_its_owners_discard_pile() {
 
 #[test]
 fn defeated_victory_enemy_goes_to_the_victory_display_and_no_discard_pile() {
-    let (inv_id, enemy_id, state) =
-        solo_investigator_facing(GHOUL_PRIEST, Owner::EncounterDeck, 5, 4, Some(2));
-    let after = fight_to_defeat(state, inv_id, enemy_id).state;
+    let after = defeated(solo_investigator_facing(
+        GHOUL_PRIEST,
+        Owner::EncounterDeck,
+        5,
+        4,
+        Some(2),
+    ))
+    .state;
 
     assert_eq!(after.victory_display, vec![CardCode::new(GHOUL_PRIEST)]);
     assert!(
         after.encounter_discard.is_empty(),
         "the victory display is instead of the discard pile"
     );
-    assert!(after.investigators[&inv_id].discard.is_empty());
+    assert!(after.investigators[&INV].discard.is_empty());
 }
 
-/// Attach an investigator-owned card to `enemy_id`.
-fn attach_investigators_card(state: &mut GameState, enemy_id: EnemyId, owner: InvestigatorId) {
+/// Attach an investigator-owned card to the enemy under test. A seat places
+/// no enemy attachment, so it goes on the built state, with an id minted from
+/// its counter.
+fn attach_investigators_card(state: &mut GameState) {
+    let id = state.card_instance_ids.mint();
     state
         .enemies
-        .get_mut(&enemy_id)
+        .get_mut(&ENEMY)
         .expect("the enemy under test")
         .attachments
         .push(CardInPlay::enter_play(
             CardCode::new(ATTACHMENT),
-            CardInstanceId(500),
-            Owner::Investigator(owner),
+            id,
+            Owner::Investigator(INV),
         ));
 }
 
@@ -243,23 +256,22 @@ fn attach_investigators_card(state: &mut GameState, enemy_id: EnemyId, owner: In
 /// follow `EnemyDefeated`, the enemy's first.
 #[test]
 fn a_defeated_enemys_attachment_is_discarded_by_its_owner() {
-    let (inv_id, enemy_id, mut state) =
-        solo_investigator_facing(GHOUL_MINION, Owner::EncounterDeck, 2, 2, None);
-    attach_investigators_card(&mut state, enemy_id, inv_id);
-    let result = fight_to_defeat(state, inv_id, enemy_id);
+    let mut state = solo_investigator_facing(GHOUL_MINION, Owner::EncounterDeck, 2, 2, None);
+    attach_investigators_card(&mut state);
+    let result = defeated(state);
 
     assert_eq!(
         result.state.encounter_discard,
         vec![CardCode::new(GHOUL_MINION)]
     );
     assert_eq!(
-        result.state.investigators[&inv_id].discard,
+        result.state.investigators[&INV].discard,
         vec![CardCode::new(ATTACHMENT)],
         "the attachment goes to its owner's discard, not the encounter discard"
     );
     assert_event_sequence!(
         result.events,
-        Event::EnemyDefeated { enemy, .. } if *enemy == enemy_id,
+        Event::EnemyDefeated { enemy, .. } if *enemy == ENEMY,
         Event::CardDiscarded {
             code,
             from: Zone::Enemy,
@@ -269,7 +281,7 @@ fn a_defeated_enemys_attachment_is_discarded_by_its_owner() {
             code,
             from: Zone::EnemyAttachment,
             to: DiscardPile::Investigator(to),
-        } if code.as_str() == ATTACHMENT && *to == inv_id,
+        } if code.as_str() == ATTACHMENT && *to == INV,
     );
 }
 
@@ -279,10 +291,9 @@ fn a_defeated_enemys_attachment_is_discarded_by_its_owner() {
 /// to any other.
 #[test]
 fn a_defeated_victory_enemys_attachment_is_discarded_by_its_owner() {
-    let (inv_id, enemy_id, mut state) =
-        solo_investigator_facing(GHOUL_PRIEST, Owner::EncounterDeck, 5, 4, Some(2));
-    attach_investigators_card(&mut state, enemy_id, inv_id);
-    let result = fight_to_defeat(state, inv_id, enemy_id);
+    let mut state = solo_investigator_facing(GHOUL_PRIEST, Owner::EncounterDeck, 5, 4, Some(2));
+    attach_investigators_card(&mut state);
+    let result = defeated(state);
 
     assert_eq!(
         result.state.victory_display,
@@ -290,17 +301,17 @@ fn a_defeated_victory_enemys_attachment_is_discarded_by_its_owner() {
     );
     assert!(result.state.encounter_discard.is_empty());
     assert_eq!(
-        result.state.investigators[&inv_id].discard,
+        result.state.investigators[&INV].discard,
         vec![CardCode::new(ATTACHMENT)]
     );
     assert_event_sequence!(
         result.events,
-        Event::EnemyDefeated { enemy, .. } if *enemy == enemy_id,
+        Event::EnemyDefeated { enemy, .. } if *enemy == ENEMY,
         Event::EnteredVictoryDisplay { code, victory: 2 } if code.as_str() == GHOUL_PRIEST,
         Event::CardDiscarded {
             code,
             from: Zone::EnemyAttachment,
             to: DiscardPile::Investigator(to),
-        } if code.as_str() == ATTACHMENT && *to == inv_id,
+        } if code.as_str() == ATTACHMENT && *to == INV,
     );
 }

@@ -30,12 +30,11 @@ use card_dsl::dsl::{
     self, Ability, CmpOp, Condition, ControlStatus, GrantTarget, InvestigatorTarget, Quantity,
 };
 use game_core::engine::enumerate::{self, TurnAction};
-use game_core::engine::EngineOutcome;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState,
     GameStateBuilder, InvestigatorId, LocationId, Owner,
 };
-use game_core::test_support::{self, MockRegistry};
+use game_core::test_support::{self, seat, MockRegistry, TestSession};
 
 /// The **granter**: a location whose printed text grants an ability to
 /// [`RECIPIENT`] while nobody controls it — the Parlor 01115's shape.
@@ -54,6 +53,9 @@ const NEEDS_YOU: &str = "GRANTYOU";
 const MINE: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(1);
 const THERE: LocationId = LocationId(2);
+/// The instance ids of the two cards [`board`] puts into play at the
+/// location. A seat cannot place a card at a location, so the builder does not
+/// mint these; they are fixed here, and seated cards are minted past them.
 const RECIPIENT_INST: CardInstanceId = CardInstanceId(50);
 const SECOND_INST: CardInstanceId = CardInstanceId(51);
 
@@ -122,31 +124,25 @@ fn install_probe_registry() {
 /// `granter_code`, with the recipient and a second card put into play there
 /// under nobody's control.
 fn board(granter_code: &str) -> GameState {
-    let mut here = test_support::test_location(1, "Granting Place");
+    let mut here = test_support::test_location(HERE.0, "Granting Place");
     here.code = CardCode::new(granter_code);
     here.clues = 0;
-    let mut state = GameStateBuilder::new()
-        .with_investigator_at(test_support::test_investigator(1), HERE)
-        .with_location(here)
-        .with_location(test_support::test_location(2, "Elsewhere"))
-        .open_turn(MINE)
-        .build();
-    let at_location = &mut state
-        .locations
-        .get_mut(&HERE)
-        .expect("HERE is on the board")
-        .cards_at_location;
-    at_location.push(CardInPlay::enter_play(
+    here.cards_at_location.push(CardInPlay::enter_play(
         CardCode::new(RECIPIENT),
         RECIPIENT_INST,
         Owner::Scenario,
     ));
-    at_location.push(CardInPlay::enter_play(
+    here.cards_at_location.push(CardInPlay::enter_play(
         CardCode::new(SECOND_HAND),
         SECOND_INST,
         Owner::Scenario,
     ));
-    state
+    GameStateBuilder::new()
+        .with_seat(seat(1).at(HERE))
+        .with_location(here)
+        .with_location(test_support::test_location(THERE.0, "Elsewhere"))
+        .open_turn(MINE)
+        .build()
 }
 
 /// The address the grant lands at: the granter's ability 0, sub-ability 0.
@@ -282,12 +278,11 @@ fn a_granted_address_resolves_to_nothing_once_the_granter_is_gone() {
         .expect("HERE is on the board")
         .code = CardCode::new("GRANTNIL");
 
-    let result = test_support::dispatch_turn_action_unchecked(state, &minted);
-    assert!(
-        matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "a stale granted address must reject, got {:?}",
-        result.outcome,
-    );
+    // The menu no longer offers it, so the stale candidate is submitted
+    // straight to the handler, as a client still holding it would.
+    let session = TestSession::new(state).submit_off_menu(&minted);
+    // A stale granted address must reject.
+    let _ = session.expect_rejected();
 }
 
 /// The same shape with the *condition* flipping rather than the granter
@@ -317,12 +312,11 @@ fn a_granted_address_lapses_when_the_condition_flips_mid_window() {
         .cards_in_play
         .push(card);
 
-    let result = test_support::dispatch_turn_action_unchecked(state, &minted);
-    assert!(
-        matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "an address whose grant no longer applies must reject, got {:?}",
-        result.outcome,
-    );
+    // The menu no longer offers it, so the stale candidate is submitted
+    // straight to the handler, as a client still holding it would.
+    let session = TestSession::new(state).submit_off_menu(&minted);
+    // An address whose grant no longer applies must reject.
+    let _ = session.expect_rejected();
 }
 
 /// **A grant reaches only the card it names.** The granter grants to
@@ -350,18 +344,11 @@ fn a_grant_is_not_offered_to_an_investigator_elsewhere() {
 /// triggered trigger fails at resolution rather than silently doing nothing.
 #[test]
 fn resolving_a_grant_as_an_effect_rejects() {
-    let state = board(GRANTER);
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::ActivateAbility {
-            investigator: MINE,
-            source: AbilitySource::Location(HERE),
-            address: AbilityAddress::Printed(1),
-        },
-    );
-    assert!(
-        matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "a Grant is a constant marker; running it is a misuse, got {:?}",
-        result.outcome,
-    );
+    let session = TestSession::new(board(GRANTER)).take(&TurnAction::ActivateAbility {
+        investigator: MINE,
+        source: AbilitySource::Location(HERE),
+        address: AbilityAddress::Printed(1),
+    });
+    // A Grant is a constant marker; running it is a misuse.
+    let _ = session.expect_rejected();
 }
