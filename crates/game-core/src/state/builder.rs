@@ -33,11 +33,11 @@ use std::collections::{BTreeMap, VecDeque};
 use crate::rng::RngState;
 use crate::scenario::ScenarioId;
 use crate::state::{
-    ChaosBag, Continuation, ContinuationStack, Counter, EncounterDrawFrame, Enemy, EnemyId,
-    EnemyPhaseFrame, EnemyResume, FastActorScope, FastWindowFrame, FastWindowKind, GameState,
-    HandSizeDiscard, InvestigationPhaseFrame, InvestigationResume, Investigator, InvestigatorId,
-    InvestigatorTurnFrame, Location, LocationId, MulliganFrame, Phase, TokenModifiers,
-    UpkeepPhaseFrame, UpkeepResume,
+    CardInstanceId, ChaosBag, Continuation, ContinuationStack, Counter, EncounterDrawFrame, Enemy,
+    EnemyId, EnemyPhaseFrame, EnemyResume, FastActorScope, FastWindowFrame, FastWindowKind,
+    GameState, HandSizeDiscard, InvestigationPhaseFrame, InvestigationResume, Investigator,
+    InvestigatorId, InvestigatorTurnFrame, Location, LocationId, MulliganFrame, Phase,
+    TokenModifiers, UpkeepPhaseFrame, UpkeepResume,
 };
 
 /// Fluent builder for a [`GameState`].
@@ -410,7 +410,42 @@ impl GameStateBuilder {
         self
     }
 
+    /// Every card-instance id on a card staged so far — in a play area, a
+    /// threat area, at or attached to a location, or attached to an enemy —
+    /// **except investigator cards'**. A stock test investigator's card takes
+    /// `u32::MAX - id`, out of the range the counter mints from, and seeding
+    /// past it would saturate the counter.
+    pub(crate) fn card_instance_ids_in_use(&self) -> impl Iterator<Item = CardInstanceId> + '_ {
+        let investigators = self
+            .investigators
+            .values()
+            .flat_map(|inv| inv.cards_in_play.iter().chain(&inv.threat_area));
+        let locations = self
+            .locations
+            .values()
+            .flat_map(|loc| loc.attachments.iter().chain(&loc.cards_at_location));
+        let enemies = self.enemies.values().flat_map(|enemy| &enemy.attachments);
+        investigators
+            .chain(locations)
+            .chain(enemies)
+            .map(|card| card.instance_id)
+    }
+
+    /// The id the card-instance counter mints next: one past every id
+    /// [in use](Self::card_instance_ids_in_use), so the engine's first mint
+    /// can never take an id a fixture already placed.
+    pub(crate) fn next_card_instance_id(&self) -> u32 {
+        self.card_instance_ids_in_use()
+            .map(|id| id.0.saturating_add(1))
+            .max()
+            .unwrap_or(0)
+    }
+
     /// Materialize the configured [`GameState`].
+    ///
+    /// The card-instance counter starts one past every card-instance id
+    /// already on the board (investigator cards aside), so the first card the
+    /// engine mints never collides with one the caller placed.
     ///
     /// # Panics
     ///
@@ -418,6 +453,7 @@ impl GameStateBuilder {
     /// [`with_enemy_engaged`](Self::with_enemy_engaged) with an investigator
     /// that was never added.
     pub fn build(mut self) -> GameState {
+        let card_instance_ids = Counter::at(self.next_card_instance_id());
         for (enemy, investigator) in self.engagements {
             let location = self
                 .investigators
@@ -478,7 +514,7 @@ impl GameStateBuilder {
             active_investigator: self.active_investigator,
             turn_order: self.turn_order,
             rng: self.rng,
-            card_instance_ids: Counter::new(),
+            card_instance_ids,
             enemy_ids: Counter::new(),
             location_ids: Counter::new(),
             skill_test_ids: Counter::new(),
