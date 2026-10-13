@@ -556,10 +556,7 @@ mod tests {
     #[test]
     fn a_location_option_is_labelled_with_the_location_name() {
         let state = labelled_board();
-        assert_eq!(
-            anchor_label(&state, &OptionTarget::Location(HERE)),
-            "Study"
-        );
+        assert_eq!(anchor_label(&state, &OptionTarget::Location(HERE)), "Study");
     }
 
     #[test]
@@ -622,10 +619,9 @@ mod tests {
     fn grounded_choice_auto_picks_a_lone_candidate_without_a_prompt() {
         let state = labelled_board();
         let ctx = EvalContext::for_controller(InvestigatorId(1));
-        let out =
-            resolve_grounded_choice(&state, &ctx, &[HERE], "Choose a location", |id| {
-                OptionTarget::Location(*id)
-            });
+        let out = resolve_grounded_choice(&state, &ctx, &[HERE], "Choose a location", |id| {
+            OptionTarget::Location(*id)
+        });
         assert!(matches!(out, Grounded::Picked(HERE)));
     }
 
@@ -635,10 +631,9 @@ mod tests {
         let mut state = labelled_board();
         state.interactive_acknowledge = true;
         let ctx = EvalContext::for_controller(InvestigatorId(1));
-        let out =
-            resolve_grounded_choice(&state, &ctx, &[HERE], "Choose a location", |id| {
-                OptionTarget::Location(*id)
-            });
+        let out = resolve_grounded_choice(&state, &ctx, &[HERE], "Choose a location", |id| {
+            OptionTarget::Location(*id)
+        });
         let Grounded::Suspend(EngineOutcome::AwaitingInput { request, .. }) = out else {
             panic!("expected a one-option suspend");
         };
