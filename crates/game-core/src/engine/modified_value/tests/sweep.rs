@@ -1,6 +1,18 @@
 use super::*;
 use crate::state::Status;
 
+/// The location the investigators stand at.
+const STUDY: LocationId = LocationId(3);
+
+/// Set `investigator`'s status on a built board; a seat has no setter for it.
+fn set_status(state: &mut GameState, investigator: InvestigatorId, status: Status) {
+    state
+        .investigators
+        .get_mut(&investigator)
+        .expect("the investigator is seated")
+        .status = status;
+}
+
 /// The investigator card lives in `investigator_card`, not in
 /// `cards_in_play`; the sweep reads `board::walk`, which yields it
 /// first.
@@ -121,28 +133,26 @@ fn with_no_registry_only_the_base_answers() {
 /// under that investigator's control or in play *at* the location under
 /// nobody's.
 fn granting_card_board(controlled: bool) -> (GameState, InvestigatorId) {
+    const CARD: &str = "self-granting-combat";
+    /// A card put into play at a location, which a seat cannot place, so it
+    /// carries one named id.
+    const AT_STUDY: CardInstanceId = CardInstanceId(0);
     let id = InvestigatorId(1);
-    let loc = LocationId(3);
-    let card = CardInPlay::enter_play(
-        CardCode::new("self-granting-combat"),
-        CardInstanceId(0),
-        if controlled {
-            Owner::Investigator(id)
-        } else {
-            Owner::Scenario
-        },
-    );
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(loc);
-    let mut location = test_support::test_location(3, "Study");
-    if controlled {
-        inv.cards_in_play.push(card);
+    let mut location = test_support::test_location(STUDY.0, "Study");
+    let seated = seat(id.0).at(STUDY);
+    let seated = if controlled {
+        seated.in_play([CARD])
     } else {
-        location.cards_at_location.push(card);
-    }
+        location.cards_at_location.push(CardInPlay::enter_play(
+            CardCode::new(CARD),
+            AT_STUDY,
+            Owner::Scenario,
+        ));
+        seated
+    };
     let state = GameStateBuilder::new()
-        .with_investigator(inv)
         .with_location(location)
+        .with_seat(seated)
         .build();
     (state, id)
 }
@@ -169,7 +179,7 @@ fn a_granted_modifier_is_swept() {
         vec![Contribution {
             source: ContributionSource::Card {
                 code: CardCode::new("self-granting-combat"),
-                instance: Some(CardInstanceId(0)),
+                instance: Some(state.in_play(id, "self-granting-combat")),
             },
             delta: 1,
         }],
@@ -207,19 +217,12 @@ fn a_granted_modifier_vanishes_when_the_grants_condition_flips() {
 /// Investigator 2's combat, with investigator 1 beside them in the Study
 /// controlling a `combat-plus-1-here` card and holding `status`.
 fn neighbours_combat_with_buffer(status: Status) -> i32 {
-    let study = LocationId(3);
-    let mut buffer = test_support::test_investigator(1);
-    buffer.status = status;
-    buffer.cards_in_play.push(CardInPlay::enter_play(
-        CardCode::new("combat-plus-1-here"),
-        CardInstanceId(0),
-        Owner::Investigator(InvestigatorId(1)),
-    ));
-    let state = GameStateBuilder::new()
-        .with_investigator_at(buffer, study)
-        .with_investigator_at(test_support::test_investigator(2), study)
-        .with_location(test_support::test_location(3, "Study"))
+    let mut state = GameStateBuilder::new()
+        .with_location(test_support::test_location(STUDY.0, "Study"))
+        .with_seat(seat(1).at(STUDY).in_play(["combat-plus-1-here"]))
+        .with_seat(seat(2).at(STUDY))
         .build();
+    set_status(&mut state, InvestigatorId(1), status);
     skill(&state, InvestigatorId(2), SkillKind::Combat)
 }
 
@@ -244,23 +247,11 @@ fn an_eliminated_investigators_card_modifier_no_longer_applies() {
 /// controlling a card that grants investigator 2's `grant-recipient` a combat
 /// modifier.
 fn combat_granted_by_neighbour_with(status: Status) -> i32 {
-    let mut granter = test_support::test_investigator(1);
-    granter.status = status;
-    granter.cards_in_play.push(CardInPlay::enter_play(
-        CardCode::new("grants-combat-to-recipient"),
-        CardInstanceId(0),
-        Owner::Investigator(InvestigatorId(1)),
-    ));
-    let mut recipient = test_support::test_investigator(2);
-    recipient.cards_in_play.push(CardInPlay::enter_play(
-        CardCode::new("grant-recipient"),
-        CardInstanceId(1),
-        Owner::Investigator(InvestigatorId(2)),
-    ));
-    let state = GameStateBuilder::new()
-        .with_investigator(granter)
-        .with_investigator(recipient)
+    let mut state = GameStateBuilder::new()
+        .with_seat(seat(1).in_play(["grants-combat-to-recipient"]))
+        .with_seat(seat(2).in_play(["grant-recipient"]))
         .build();
+    set_status(&mut state, InvestigatorId(1), status);
     skill(&state, InvestigatorId(2), SkillKind::Combat)
 }
 

@@ -66,21 +66,21 @@ fn unknown_effects_are_conservatively_state_changing() {
 }
 
 /// Investigator 1 (and, when `others` is non-empty, further investigators)
-/// on location 10, each seeded `(damage, horror, deck_len)`. #639 fixtures.
+/// on [`HERE`], each seeded `(id, damage, horror, deck_len)`. #639 fixtures.
 fn state_with_harm(seeds: &[(u32, u8, u8, usize)]) -> GameState {
-    let mut builder =
-        GameStateBuilder::new().with_location(test_support::test_location(10, "Study"));
-    for &(id, damage, horror, deck_len) in seeds {
-        let mut inv = test_support::test_investigator(id);
-        inv.current_location = Some(LocationId(10));
-        inv.investigator_card.accumulated_damage = damage;
-        inv.investigator_card.accumulated_horror = horror;
-        inv.deck = (0..deck_len)
-            .map(|i| CardCode::new(format!("9000{i}")))
-            .collect();
-        builder = builder.with_investigator(inv);
-    }
-    builder.build()
+    seeds
+        .iter()
+        .map(|&(id, damage, horror, deck_len)| {
+            seat(id)
+                .at(HERE)
+                .harm(damage, horror)
+                .deck((0..deck_len).map(|i| format!("9000{i}")))
+        })
+        .fold(
+            GameStateBuilder::new().with_location(test_support::test_location(HERE.0, "Study")),
+            GameStateBuilder::with_seat,
+        )
+        .build()
 }
 
 #[test]

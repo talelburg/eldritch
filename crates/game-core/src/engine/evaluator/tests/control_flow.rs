@@ -1,18 +1,8 @@
 use super::*;
 
 fn state_with_in_flight_kind(kind: SkillTestKind) -> GameState {
-    let mut state = GameStateBuilder::new()
-        .with_investigator({
-            let mut inv = test_support::test_investigator(1);
-            inv.current_location = Some(LocationId(10));
-            inv
-        })
-        .with_location({
-            let mut l = test_support::test_location(10, "Study");
-            l.clues = 2;
-            l
-        })
-        .build();
+    let mut state = state_with_clues_at_location(2);
+    // Park an in-flight test beneath the effect run, as `run` drives bounded.
     state
         .continuations
         .push(Continuation::SkillTest(InFlightSkillTest {
@@ -22,7 +12,7 @@ fn state_with_in_flight_kind(kind: SkillTestKind) -> GameState {
             kind,
             difficulty_basis: DifficultyBasis::Fixed(2),
             committed_by_active: Vec::new(),
-            tested_location: Some(LocationId(10)),
+            tested_location: Some(HERE),
             follow_up: SkillTestFollowUp::None,
             on_fail: None,
             on_success: None,
@@ -55,7 +45,7 @@ fn if_skill_test_kind_runs_then_branch_when_kind_matches() {
     );
 
     assert_eq!(outcome, EngineOutcome::Done);
-    assert_eq!(state.locations[&LocationId(10)].clues, 1);
+    assert_eq!(state.locations[&HERE].clues, 1);
     assert_eq!(state.investigators[&InvestigatorId(1)].clues, 1);
 }
 
@@ -79,7 +69,7 @@ fn if_skill_test_kind_skips_then_branch_when_kind_differs() {
 
     assert_eq!(outcome, EngineOutcome::Done);
     // No-op: location clues unchanged, no events emitted.
-    assert_eq!(state.locations[&LocationId(10)].clues, 2);
+    assert_eq!(state.locations[&HERE].clues, 2);
     assert_eq!(state.investigators[&InvestigatorId(1)].clues, 0);
     assert!(events.is_empty());
 }
@@ -106,7 +96,7 @@ fn if_skill_test_kind_runs_else_branch_when_present_and_kind_differs() {
 
     assert_eq!(outcome, EngineOutcome::Done);
     // Else branch ran: location untouched, resources +2.
-    assert_eq!(state.locations[&LocationId(10)].clues, 2);
+    assert_eq!(state.locations[&HERE].clues, 2);
     assert_eq!(
         state.investigators[&InvestigatorId(1)].resources,
         resources_before + 2,
@@ -115,9 +105,7 @@ fn if_skill_test_kind_runs_else_branch_when_present_and_kind_differs() {
 
 #[test]
 fn if_skill_test_kind_rejects_without_in_flight_test() {
-    let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
-        .build();
+    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
     let mut events = Vec::new();
     let effect = dsl::if_(
         Condition::SkillTestKind(SkillTestKind::Investigate),
@@ -175,16 +163,7 @@ fn if_skill_test_outcome_condition_remains_todo() {
 #[test]
 fn seq_runs_effects_in_order_then_done() {
     let inv_id = InvestigatorId(1);
-    let loc_id = LocationId(10);
-    let mut investigator = test_support::test_investigator(1);
-    investigator.current_location = Some(loc_id);
-    let mut location = test_support::test_location(10, "Study");
-    location.clues = 1;
-
-    let mut state = GameStateBuilder::new()
-        .with_investigator(investigator)
-        .with_location(location)
-        .build();
+    let mut state = state_with_clues_at_location(1);
     let mut events = Vec::new();
 
     let outcome = run(
@@ -210,16 +189,7 @@ fn seq_runs_effects_in_order_then_done() {
 fn seq_short_circuits_on_rejected() {
     // First effect rejects (Active without active_investigator);
     // second effect should not run.
-    let loc_id = LocationId(10);
-    let mut investigator = test_support::test_investigator(1);
-    investigator.current_location = Some(loc_id);
-    let mut location = test_support::test_location(10, "Study");
-    location.clues = 1;
-
-    let mut state = GameStateBuilder::new()
-        .with_investigator(investigator)
-        .with_location(location)
-        .build();
+    let mut state = state_with_clues_at_location(1);
     let mut events = Vec::new();
 
     let outcome = run(
@@ -237,5 +207,5 @@ fn seq_short_circuits_on_rejected() {
     assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
     // Location's clues should still be 1 — the discover_clue
     // never executed.
-    assert_eq!(state.locations[&loc_id].clues, 1);
+    assert_eq!(state.locations[&HERE].clues, 1);
 }
