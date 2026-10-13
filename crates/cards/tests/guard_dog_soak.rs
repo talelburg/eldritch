@@ -32,14 +32,13 @@
 
 use cards::REGISTRY;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{OptionTarget, TimingEvent};
+use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    AttackLoopFrame, CardCode, CardInPlay, CardInstanceId, Continuation, DiscardPile,
-    EliminationCause, Enemy, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
-    Owner, Status, Zone,
+    CardCode, CardInPlay, CardInstanceId, DiscardPile, EliminationCause, Enemy, EnemyId, GameState,
+    GameStateBuilder, InvestigatorId, LocationId, Status, Zone,
 };
-use game_core::test_support::{self, TestSession};
+use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
 
 /// Guard Dog (01021): Guardian Ally, health 3 / sanity 1, with the
 /// damage-retaliate reaction.
@@ -65,45 +64,62 @@ fn ready_attacker(id: u32, damage: u8, max_health: u8) -> Enemy {
     e
 }
 
+const INV: InvestigatorId = InvestigatorId(1);
+const HERE: LocationId = LocationId(101);
+
 /// Build an Investigation-phase state with one active investigator at a
-/// location, `assets` in play, and `enemies` engaged. Driving
-/// `PlayerAction::EndTurn` from here advances Investigation → Enemy and
-/// runs the per-investigator attack loop (the `BeforeInvestigatorAttacked`
-/// Fast window auto-skips — Guard Dog has no Fast ability — so the loop
-/// runs inline and suspends on the soak reaction window).
-fn soak_state(
-    assets: Vec<(&str, CardInstanceId)>,
-    enemies: Vec<Enemy>,
-) -> (GameState, InvestigatorId, LocationId) {
-    let inv_id = InvestigatorId(1);
-    let loc_id = LocationId(101);
-
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(loc_id);
-    inv.cards_in_play = assets
+/// location carrying `damage` damage, `assets` in play, and `enemies` engaged.
+/// Driving `EndTurn` from here advances Investigation → Enemy and runs the
+/// per-investigator attack loop (the `BeforeInvestigatorAttacked` Fast window
+/// auto-skips — Guard Dog has no Fast ability — so the loop runs inline and
+/// suspends on the soak reaction window).
+fn soak_state(assets: &[&str], damage: u8, enemies: Vec<Enemy>) -> GameState {
+    let investigator = seat(1)
+        .at(HERE)
+        .harm(damage, 0)
+        .in_play(assets.iter().copied())
+        // A deck with cards left in it. The Upkeep draw these cases cascade
+        // through otherwise draws from an empty deck, whose penalty is 1
+        // horror (#429) — which Guard Dog's 1 printed sanity soaks and dies
+        // to, in the middle of a test measuring what the *attack* did to it.
+        .deck(["01087"; 5]);
+    enemies
         .into_iter()
-        .map(|(code, inst)| {
-            CardInPlay::enter_play(
-                CardCode::new(code),
-                inst,
-                Owner::Investigator(InvestigatorId(1)),
-            )
-        })
-        .collect();
-    // A deck with cards left in it. The Upkeep draw these cases cascade through
-    // otherwise draws from an empty deck, whose penalty is 1 horror (#429) —
-    // which Guard Dog's 1 printed sanity soaks and dies to, in the middle of a
-    // test measuring what the *attack* did to it.
-    inv.deck = vec![CardCode::new("01087"); 5];
+        .fold(
+            GameStateBuilder::new()
+                .with_location(test_support::test_location(HERE.0, "Study"))
+                .with_seat(investigator)
+                .open_turn(INV),
+            |builder, enemy| builder.with_enemy_engaged(enemy, INV),
+        )
+        .build()
+}
 
-    let mut builder = GameStateBuilder::new()
-        .with_location(test_support::test_location(101, "Study"))
-        .with_investigator(inv)
-        .open_turn(inv_id);
-    for enemy in enemies {
-        builder = builder.with_enemy_engaged(enemy, inv_id);
-    }
-    (builder.build(), inv_id, loc_id)
+/// Put `damage` on the seated Guard Dog — the damage a prior attack it
+/// survived left on it. A seat enters its cards undamaged, so this is a
+/// built-state edit.
+fn preload_guard_dog(state: &mut GameState, damage: u8) {
+    let dog = state.in_play(INV, GUARD_DOG);
+    state
+        .investigators
+        .get_mut(&INV)
+        .expect("seated")
+        .cards_in_play
+        .iter_mut()
+        .find(|c| c.instance_id == dog)
+        .expect("Guard Dog in play")
+        .accumulated_damage = damage;
+}
+
+/// Assert the enemy phase ran to its end and play went on: the session rests
+/// at the next round's encounter draw, with no attack left parked.
+fn assert_play_went_on_to_the_next_encounter_draw(session: &TestSession) {
+    assert_eq!(
+        session.prompt().target,
+        Some(OptionTarget::EncounterDeck),
+        "the attack loop drained and play went on: {:?}",
+        session.prompt(),
+    );
 }
 
 /// Find the investigator's Guard Dog instance.
@@ -132,7 +148,7 @@ fn distribute_onto(mut session: TestSession, inst: CardInstanceId) -> TestSessio
             session.pick(soaker)
         } else {
             // The sole defender: every fixture here seats investigator 1.
-            let me = session.state().investigators[&InvestigatorId(1)].card_anchor();
+            let me = session.state().investigators[&INV].card_anchor();
             session.pick(me)
         };
     }
@@ -152,11 +168,12 @@ fn fire_retaliate(session: TestSession, dog: CardInstanceId) -> TestSession {
 
 #[test]
 fn enemy_attack_soaks_onto_guard_dog_then_retaliate_damages_attacker() {
-    let dog = CardInstanceId(1);
     let enemy_id = EnemyId(7);
+    let inv_id = INV;
     // Attack deals 2 damage; Guard Dog (health 3) soaks all of it, the
     // investigator takes none.
-    let (state, inv_id, _) = soak_state(vec![(GUARD_DOG, dog)], vec![ready_attacker(7, 2, 3)]);
+    let state = soak_state(&[GUARD_DOG], 0, vec![ready_attacker(7, 2, 3)]);
+    let dog = state.in_play(INV, GUARD_DOG);
 
     // Distribute the attack: assign both points onto Guard Dog (#44/K5b).
     let session = distribute_onto(TestSession::new(state).take(&TurnAction::EndTurn), dog);
@@ -227,11 +244,12 @@ fn enemy_attack_soaks_onto_guard_dog_then_retaliate_damages_attacker() {
 
 #[test]
 fn guard_dog_retaliates_on_a_lethal_assignment_then_is_defeated() {
-    let dog = CardInstanceId(1);
     let enemy_id = EnemyId(7);
+    let inv_id = INV;
     // Attack deals 3 damage = Guard Dog's printed health → the assignment is
     // lethal, and the dog is defeated once it is placed.
-    let (state, inv_id, _) = soak_state(vec![(GUARD_DOG, dog)], vec![ready_attacker(7, 3, 3)]);
+    let state = soak_state(&[GUARD_DOG], 0, vec![ready_attacker(7, 3, 3)]);
+    let dog = state.in_play(INV, GUARD_DOG);
 
     let session = distribute_onto(TestSession::new(state).take(&TurnAction::EndTurn), dog);
     let state = session.state();
@@ -308,12 +326,13 @@ fn guard_dog_retaliates_on_a_lethal_assignment_then_is_defeated() {
 
 #[test]
 fn an_attacker_defeated_by_the_retaliate_mid_attack_has_nothing_to_exhaust() {
-    let dog = CardInstanceId(1);
     let enemy_id = EnemyId(7);
+    let inv_id = INV;
     // The attacker has 1 health, so Guard Dog's 1 retaliate damage defeats it
     // in the `when` cell of its own attack's damage. Enemy phase, so it *would*
     // have exhausted had it survived (unlike the AoO/Retaliate cases).
-    let (state, inv_id, _) = soak_state(vec![(GUARD_DOG, dog)], vec![ready_attacker(7, 2, 1)]);
+    let state = soak_state(&[GUARD_DOG], 0, vec![ready_attacker(7, 2, 1)]);
+    let dog = state.in_play(INV, GUARD_DOG);
 
     let session = fire_retaliate(
         distribute_onto(TestSession::new(state).take(&TurnAction::EndTurn), dog),
@@ -343,14 +362,7 @@ fn an_attacker_defeated_by_the_retaliate_mid_attack_has_nothing_to_exhaust() {
         "the dead attacker's assigned damage still lands on Guard Dog"
     );
     // And the loop drained rather than stalling on a missing attacker.
-    assert!(
-        !state
-            .continuations
-            .iter()
-            .any(|c| matches!(c, Continuation::AttackLoop(_))),
-        "the attack loop completed: {:?}",
-        state.continuations
-    );
+    assert_play_went_on_to_the_next_encounter_draw(&session);
 }
 
 // ---------------------------------------------------------------------
@@ -362,11 +374,12 @@ fn an_attacker_defeated_by_the_retaliate_mid_attack_has_nothing_to_exhaust() {
 fn guard_dog_defeated_on_overflow_is_discarded_from_play() {
     // Pre-load Guard Dog with 2 accumulated damage (a prior attack it
     // survived); a fresh 2-damage attack pushes it to 4 >= 3 → defeated.
-    let dog = CardInstanceId(1);
     let enemy_id = EnemyId(7);
-    let (mut state, inv_id, _) = soak_state(vec![(GUARD_DOG, dog)], vec![ready_attacker(7, 2, 3)]);
+    let inv_id = INV;
+    let mut state = soak_state(&[GUARD_DOG], 0, vec![ready_attacker(7, 2, 3)]);
+    let dog = state.in_play(INV, GUARD_DOG);
     // Survived a prior attack: 2 already accumulated (under health 3).
-    state.investigators.get_mut(&inv_id).unwrap().cards_in_play[0].accumulated_damage = 2;
+    preload_guard_dog(&mut state, 2);
 
     // The assignment's `when` cell opens with the dog still in play; firing its
     // retaliate lets the deal proceed to the placement that defeats it.
@@ -409,9 +422,9 @@ fn guard_dog_defeated_on_overflow_is_discarded_from_play() {
 #[test]
 fn only_guard_dogs_reaction_is_offered_not_another_controlled_soaker() {
     // Two soaking assets controlled by the same investigator, soak-ordered
-    // by CardInstanceId:
-    //   - Guard Dog (Ally slot, health 3), instance 1 — soaks first.
-    //   - Bulletproof Vest (Body slot, health 4), instance 2.
+    // by CardInstanceId (seated in this order, so minted in it):
+    //   - Guard Dog (Ally slot, health 3) — soaks first.
+    //   - Bulletproof Vest (Body slot, health 4).
     // Different slots, so both are legally in play. A 2-damage attack soaks
     // entirely onto Guard Dog (2 < 3 → survives), never reaching the Vest.
     //
@@ -425,13 +438,15 @@ fn only_guard_dogs_reaction_is_offered_not_another_controlled_soaker() {
     // that takes damage is defeated. The honest demonstration is therefore
     // "the keyed instance is the one whose reaction fires," not two live
     // reacting allies — which two Ally slots also forbid.)
-    let dog = CardInstanceId(1);
-    let vest = CardInstanceId(2);
     let enemy_id = EnemyId(7);
-    let (state, inv_id, _) = soak_state(
-        vec![(GUARD_DOG, dog), (BULLETPROOF_VEST, vest)],
+    let inv_id = INV;
+    let state = soak_state(
+        &[GUARD_DOG, BULLETPROOF_VEST],
+        0,
         vec![ready_attacker(7, 2, 3)],
     );
+    let dog = state.in_play(INV, GUARD_DOG);
+    let vest = state.in_play(INV, BULLETPROOF_VEST);
 
     let session = distribute_onto(TestSession::new(state).take(&TurnAction::EndTurn), dog);
     let state = session.state();
@@ -458,24 +473,19 @@ fn only_guard_dogs_reaction_is_offered_not_another_controlled_soaker() {
         Some(0),
         "Bulletproof Vest is not in the assignment (Guard Dog absorbed it all)"
     );
-    // Exactly one pending window, and the assignment it carries names Guard
-    // Dog's instance — not the Vest's (a controlled soaker with no
-    // `EnemyAttackDamagedSelf` ability).
-    let soak_windows: Vec<_> = state
-        .open_windows()
-        .iter()
-        .filter_map(|w| match w.window_timing_event() {
-            Some(TimingEvent::DamageAssigned { assignment, .. }) => {
-                Some(assignment.asset_damage.keys().copied().collect::<Vec<_>>())
-            }
-            _ => None,
-        })
-        .flatten()
-        .collect();
+    // Exactly one reaction is offered, Guard Dog's — not the Vest's (a
+    // controlled soaker with no `EnemyAttackDamagedSelf` ability). That the
+    // assignment names Guard Dog's instance alone is what its placement shows
+    // below: the dog takes all 2, the Vest none.
     assert_eq!(
-        soak_windows,
-        vec![dog],
-        "exactly the Guard Dog instance is in the open window's assignment, not the Vest's"
+        (
+            session.offered_at(&OptionTarget::CardInstance(dog)),
+            session.offered_at(&OptionTarget::CardInstance(vest)),
+            session.prompt().options.len(),
+        ),
+        (1, 0, 1),
+        "the window offers Guard Dog's reaction alone: {:?}",
+        session.prompt()
     );
 
     // Firing the single offered trigger retaliates (it's Guard Dog's, not
@@ -508,17 +518,19 @@ fn only_guard_dogs_reaction_is_offered_not_another_controlled_soaker() {
 
 #[test]
 fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
-    let dog = CardInstanceId(1);
     let first = EnemyId(7);
     let second = EnemyId(8);
+    let inv_id = INV;
     // Two engaged attackers, each dealing 1 damage; Guard Dog (health 3)
     // soaks both. The first attack opens the soak window and suspends; after
     // resolving the reaction, the loop resumes and the second attacker
     // attacks too. Both end exhausted.
-    let (state, inv_id, _) = soak_state(
-        vec![(GUARD_DOG, dog)],
+    let state = soak_state(
+        &[GUARD_DOG],
+        0,
         vec![ready_attacker(7, 1, 3), ready_attacker(8, 1, 3)],
     );
+    let dog = state.in_play(INV, GUARD_DOG);
 
     // Two engaged attackers → the enemy phase first asks the player which
     // attacks next (#143). Pick the first attacker (EnemyId 7).
@@ -551,18 +563,11 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
         !state.enemies[&second].exhausted,
         "second attacker not yet resolved"
     );
-    // The parked loop still carries the attacking head plus the untouched
-    // second attacker; the head comes off when its sequence pops.
+    // The untouched second attacker is still to come: it attacks once the
+    // first attack's sequence completes, below.
     assert_eq!(
-        state.continuations.iter().rev().find_map(|c| match c {
-            Continuation::AttackLoop(AttackLoopFrame {
-                remaining_attackers,
-                ..
-            }) => Some(remaining_attackers.clone()),
-            _ => None,
-        }),
-        Some(vec![first, second]),
-        "the attacking head and the parked second attacker"
+        state.enemies[&second].damage, 0,
+        "second attacker untouched"
     );
 
     // Resolve the first reaction window → the first attacker takes the
@@ -593,18 +598,17 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
         !state.enemies[&second].exhausted,
         "the second attacker's own soak reaction is still pending"
     );
-    // ...and the loop re-suspended on the second attacker's soak window.
+    // ...and the loop re-suspended on the second attacker's soak window,
+    // Guard Dog's reaction offered again.
     assert!(
         session.prompt().skippable,
         "second attacker's soak window re-suspends the resumed loop: {:?}",
         session.prompt()
     );
-    assert!(
-        state
-            .continuations
-            .iter()
-            .any(|c| matches!(c, Continuation::AttackLoop(_))),
-        "loop is parked again after the second attack"
+    assert_eq!(
+        session.offered_at(&OptionTarget::CardInstance(dog)),
+        1,
+        "Guard Dog's reaction is offered on the second attack's window"
     );
 
     // Resolve the second reaction window → second attacker takes the
@@ -622,17 +626,9 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
         2,
         "both attacks' damage has landed once both sequences complete"
     );
-    assert!(
-        !state
-            .continuations
-            .iter()
-            .any(|c| matches!(c, Continuation::AttackLoop(_))),
-        "no parked attack after both attackers fully resolve"
-    );
-    assert!(
-        state.open_windows().is_empty(),
-        "no soak windows left open once both attacks resolve"
-    );
+    // No attack is parked and no soak window left open once both attacks
+    // resolve: play goes on past the Enemy phase.
+    assert_play_went_on_to_the_next_encounter_draw(&session);
 }
 
 // ---------------------------------------------------------------------
@@ -665,24 +661,15 @@ fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
     // damage soaks onto Guard Dog; the soak window opens and suspends;
     // the player fires Guard Dog's reaction; the attacker takes 1 damage;
     // the move then completes as the ActionResolution frame resumes.
-    let dog = CardInstanceId(1);
     let enemy_id = EnemyId(7);
-    let inv_id = InvestigatorId(1);
-    let from = LocationId(101);
+    let inv_id = INV;
+    let from = HERE;
     let dest = LocationId(102);
 
-    let mut study = test_support::test_location(101, "Study");
+    let mut study = test_support::test_location(HERE.0, "Study");
     study.connections = vec![dest];
-    let mut hallway = test_support::test_location(102, "Hallway");
+    let mut hallway = test_support::test_location(dest.0, "Hallway");
     hallway.connections = vec![from];
-
-    let mut investigator = test_support::test_investigator(1);
-    investigator.current_location = Some(from);
-    investigator.cards_in_play = vec![CardInPlay::enter_play(
-        CardCode::new(GUARD_DOG),
-        dog,
-        Owner::Investigator(InvestigatorId(1)),
-    )];
 
     // Engaged ready attacker dealing 2 damage; Guard Dog (health 3) soaks
     // all of it and survives (2 < 3).
@@ -691,10 +678,11 @@ fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
     let state = GameStateBuilder::new()
         .with_location(study)
         .with_location(hallway)
-        .with_investigator(investigator)
+        .with_seat(seat(1).at(from).in_play([GUARD_DOG]))
         .open_turn(inv_id)
         .with_enemy_engaged(attacker, inv_id)
         .build();
+    let dog = state.in_play(INV, GUARD_DOG);
 
     // Step 1: take the Move — AoO runs; Guard Dog has no cancel reaction
     // so the before-attack window is skipped; damage soaks onto Guard Dog;
@@ -788,12 +776,8 @@ fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
         session.events()
     );
 
-    // No reaction windows remain after the full cycle.
-    assert!(
-        state.open_windows().is_empty(),
-        "no windows stranded after Guard Dog reaction + move resume: {:?}",
-        state.open_windows()
-    );
+    // No reaction windows remain after the full cycle: the turn goes on.
+    session.assert_at_turn_menu(inv_id);
 }
 
 // ---------------------------------------------------------------------
@@ -807,13 +791,14 @@ fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
 
 #[test]
 fn an_asset_soaks_first_then_the_investigator_card_takes_the_remainder() {
-    let dog = CardInstanceId(1);
+    let inv_id = INV;
     // Attack deals 5 damage. Guard Dog (printed health 3) soaks 3 and is
     // defeated by reaching its printed health; the remaining 2 must be
     // assigned to the investigator — landing on the investigator card's
     // `accumulated_damage`. The investigator has 8 health, so 2 < 8 →
     // the investigator survives.
-    let (state, inv_id, _) = soak_state(vec![(GUARD_DOG, dog)], vec![ready_attacker(7, 5, 3)]);
+    let state = soak_state(&[GUARD_DOG], 0, vec![ready_attacker(7, 5, 3)]);
+    let dog = state.in_play(INV, GUARD_DOG);
 
     // Distribute soak-first: fill Guard Dog to capacity (3), then the rest
     // onto the investigator.
@@ -874,19 +859,14 @@ fn an_asset_soaks_first_then_the_investigator_card_takes_the_remainder() {
 
 #[test]
 fn investigator_card_overflow_eliminates_the_investigator() {
-    let dog = CardInstanceId(1);
+    let inv_id = INV;
     // The investigator has 8 health. Pre-load the investigator card
     // with 7 damage (survived prior harm). A 4-damage attack: Guard Dog
     // soaks 3 (defeated), the remaining 1 lands on the investigator card →
     // 8 >= 8 → the investigator is eliminated (Defeated), not the card
     // discarded to a pile.
-    let (mut state, inv_id, _) = soak_state(vec![(GUARD_DOG, dog)], vec![ready_attacker(7, 4, 3)]);
-    state
-        .investigators
-        .get_mut(&inv_id)
-        .unwrap()
-        .investigator_card
-        .accumulated_damage = 7;
+    let state = soak_state(&[GUARD_DOG], 7, vec![ready_attacker(7, 4, 3)]);
+    let dog = state.in_play(INV, GUARD_DOG);
 
     let session = distribute_onto(TestSession::new(state).take(&TurnAction::EndTurn), dog);
     // Guard Dog is in the assignment, so its `when` cell opens first.
@@ -939,19 +919,16 @@ fn investigator_card_overflow_eliminates_the_investigator() {
 
 #[test]
 fn co_overflowing_asset_is_removed_from_game_not_discarded_when_investigator_eliminated() {
-    let dog = CardInstanceId(1);
+    let inv_id = INV;
     // The investigator has 8 health. Pre-load 5 onto the investigator card
     // and 2 onto Guard Dog (printed health 3). A 4-damage attack distributed
     // soak-first: Guard Dog takes 1 (→ 3 >= 3, would defeat) and the
     // remaining 3 land on the investigator card (→ 8 >= 8, eliminated). The
     // investigator is eliminated in step 2, draining cards_in_play to
     // removed_from_game before the asset sweep runs.
-    let (mut state, inv_id, _) = soak_state(vec![(GUARD_DOG, dog)], vec![ready_attacker(7, 4, 3)]);
-    {
-        let inv_mut = state.investigators.get_mut(&inv_id).unwrap();
-        inv_mut.investigator_card.accumulated_damage = 5;
-        inv_mut.cards_in_play[0].accumulated_damage = 2;
-    }
+    let mut state = soak_state(&[GUARD_DOG], 5, vec![ready_attacker(7, 4, 3)]);
+    let dog = state.in_play(INV, GUARD_DOG);
+    preload_guard_dog(&mut state, 2);
 
     let session = distribute_onto(TestSession::new(state).take(&TurnAction::EndTurn), dog);
     // Guard Dog is in the assignment, so its `when` cell opens first.
