@@ -319,10 +319,9 @@ mod tests {
     use crate::engine::evaluator::{self, EvalContext};
     use crate::engine::outcome::PromptNature;
     use crate::state::{
-        CardInPlay, CardInstanceId, EnemyId, GameState, GameStateBuilder, InvestigatorId,
-        LocationId, Owner,
+        CardInstanceId, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
     };
-    use crate::test_support;
+    use crate::test_support::{self, SeatLookup as _};
 
     /// A `ChooseOne` branch that is **live** — one `effect_can_change_state`
     /// cannot prove inert, so #664's mode filter keeps it in the offer. (An
@@ -335,7 +334,7 @@ mod tests {
     /// A state holding the investigator [`live_branch`] pays out to.
     fn state_with_investigator() -> GameState {
         GameStateBuilder::default()
-            .with_investigator(test_support::test_investigator(1))
+            .with_seat(test_support::seat(1))
             .build()
     }
 
@@ -477,7 +476,7 @@ mod tests {
             "Choose a target",
             &[
                 OptionTarget::Enemy(EnemyId(1)),
-                OptionTarget::Location(LocationId(10)),
+                OptionTarget::Location(HERE),
             ],
         );
         let EngineOutcome::AwaitingInput { request, .. } = out else {
@@ -532,30 +531,33 @@ mod tests {
         assert!(request.options.iter().all(|o| o.target.is_none()));
     }
 
+    const HERE: LocationId = LocationId(10);
+
     /// A board carrying one of every entity an entity selection anchors to:
-    /// investigator 1 (investigator card instance 100) in the Study (10), a
-    /// Ghoul Minion (enemy 1) there, and a [`test_support::TEST_ASSET`] in play
-    /// as instance 7.
+    /// investigator 1 in the Study ([`HERE`]), a Ghoul Minion (enemy 1) there,
+    /// and a [`test_support::TEST_ASSET`] in play (find it with [`asset`]).
     fn labelled_board() -> GameState {
-        let mut me = test_support::test_investigator(1);
-        me.investigator_card.instance_id = CardInstanceId(100);
-        me.cards_in_play.push(CardInPlay::enter_play(
-            CardCode::new(test_support::TEST_ASSET),
-            CardInstanceId(7),
-            Owner::Investigator(InvestigatorId(1)),
-        ));
         GameStateBuilder::default()
-            .with_location(test_support::test_location(10, "Study"))
-            .with_investigator_at(me, LocationId(10))
+            .with_location(test_support::test_location(HERE.0, "Study"))
+            .with_seat(
+                test_support::seat(1)
+                    .at(HERE)
+                    .in_play([test_support::TEST_ASSET]),
+            )
             .with_enemy(test_support::test_enemy(1, "Ghoul Minion"))
             .build()
+    }
+
+    /// The instance id of [`labelled_board`]'s in-play asset.
+    fn asset(state: &GameState) -> CardInstanceId {
+        state.in_play(InvestigatorId(1), test_support::TEST_ASSET)
     }
 
     #[test]
     fn a_location_option_is_labelled_with_the_location_name() {
         let state = labelled_board();
         assert_eq!(
-            anchor_label(&state, &OptionTarget::Location(LocationId(10))),
+            anchor_label(&state, &OptionTarget::Location(HERE)),
             "Study"
         );
     }
@@ -573,7 +575,7 @@ mod tests {
     fn a_card_instance_option_is_labelled_with_the_card_name() {
         let state = labelled_board();
         assert_eq!(
-            anchor_label(&state, &OptionTarget::CardInstance(CardInstanceId(7))),
+            anchor_label(&state, &OptionTarget::CardInstance(asset(&state))),
             "Test Asset"
         );
     }
@@ -581,8 +583,12 @@ mod tests {
     #[test]
     fn an_investigator_card_option_is_labelled_with_the_investigator_card_name() {
         let state = labelled_board();
-        let anchor = state.investigators[&InvestigatorId(1)].card_anchor();
-        assert_eq!(anchor, OptionTarget::CardInstance(CardInstanceId(100)));
+        let me = &state.investigators[&InvestigatorId(1)];
+        let anchor = me.card_anchor();
+        assert_eq!(
+            anchor,
+            OptionTarget::CardInstance(me.investigator_card.instance_id)
+        );
         // The registry's name for the investigator card, not the fixture's
         // `Investigator::name`.
         assert_eq!(anchor_label(&state, &anchor), "Test Investigator");
@@ -591,6 +597,7 @@ mod tests {
     #[test]
     fn a_card_the_registry_does_not_know_falls_back_to_its_code() {
         let mut state = labelled_board();
+        let asset = asset(&state);
         state
             .investigators
             .get_mut(&InvestigatorId(1))
@@ -598,7 +605,7 @@ mod tests {
             .cards_in_play[0]
             .code = CardCode::new("NOT_A_CARD");
         assert_eq!(
-            anchor_label(&state, &OptionTarget::CardInstance(CardInstanceId(7))),
+            anchor_label(&state, &OptionTarget::CardInstance(asset)),
             "NOT_A_CARD"
         );
         assert_eq!(card_name(&CardCode::new("NOT_A_CARD")), "NOT_A_CARD");
@@ -616,10 +623,10 @@ mod tests {
         let state = labelled_board();
         let ctx = EvalContext::for_controller(InvestigatorId(1));
         let out =
-            resolve_grounded_choice(&state, &ctx, &[LocationId(10)], "Choose a location", |id| {
+            resolve_grounded_choice(&state, &ctx, &[HERE], "Choose a location", |id| {
                 OptionTarget::Location(*id)
             });
-        assert!(matches!(out, Grounded::Picked(LocationId(10))));
+        assert!(matches!(out, Grounded::Picked(HERE)));
     }
 
     #[test]
@@ -629,7 +636,7 @@ mod tests {
         state.interactive_acknowledge = true;
         let ctx = EvalContext::for_controller(InvestigatorId(1));
         let out =
-            resolve_grounded_choice(&state, &ctx, &[LocationId(10)], "Choose a location", |id| {
+            resolve_grounded_choice(&state, &ctx, &[HERE], "Choose a location", |id| {
                 OptionTarget::Location(*id)
             });
         let Grounded::Suspend(EngineOutcome::AwaitingInput { request, .. }) = out else {
@@ -691,8 +698,8 @@ mod tests {
     fn grounded_choice_anchors_investigators_to_their_card() {
         let ctx = EvalContext::for_controller(InvestigatorId(1));
         let state = GameStateBuilder::new()
-            .with_investigator(test_support::test_investigator(1))
-            .with_investigator(test_support::test_investigator(2))
+            .with_seat(test_support::seat(1))
+            .with_seat(test_support::seat(2))
             .build();
         let cands = [InvestigatorId(1), InvestigatorId(2)];
         let out = resolve_grounded_choice(&state, &ctx, &cands, "Choose an investigator", |id| {

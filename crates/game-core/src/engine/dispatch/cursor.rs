@@ -140,14 +140,13 @@ mod tests {
         // gets prompted. inv1 is Defeated, inv2 is Active; only inv2 survives.
         let inv1 = InvestigatorId(1);
         let inv2 = InvestigatorId(2);
-        let mut a = test_support::test_investigator(1);
-        a.status = Status::Defeated;
-        let b = test_support::test_investigator(2);
-        let state = GameStateBuilder::new()
-            .with_investigator(a)
-            .with_investigator(b)
+        let mut state = GameStateBuilder::new()
+            .with_seat(test_support::seat(1))
+            .with_seat(test_support::seat(2))
             .with_turn_order([inv1, inv2])
             .build();
+        // A seat has no status setter; eliminate inv1 on the built board.
+        state.investigators.get_mut(&inv1).expect("seated").status = Status::Defeated;
         assert_eq!(
             active_investigators_in_turn_order(&state),
             vec![inv2],

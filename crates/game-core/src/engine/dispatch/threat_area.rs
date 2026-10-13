@@ -209,7 +209,7 @@ mod tests {
     #[test]
     fn place_mints_id_pushes_instance_and_emits_event() {
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_support::test_investigator(1))
+            .with_seat(test_support::seat(1))
             .build();
         let mut events = Vec::new();
         let id = {

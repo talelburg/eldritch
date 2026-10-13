@@ -234,8 +234,8 @@ mod tests {
         let inv = InvestigatorId(1);
         let loc = LocationId(10);
         let mut state = GameStateBuilder::new()
-            .with_investigator_at(test_support::test_investigator(1), loc)
-            .with_location(test_support::test_location(10, "Study"))
+            .with_seat(test_support::seat(1).at(loc))
+            .with_location(test_support::test_location(loc.0, "Study"))
             .build();
         state
             .continuations
