@@ -239,10 +239,10 @@ const PLAY_FROM_HAND: Take = Take::Action(TurnAction::PlayCard {
     hand_index: 0,
 });
 
-/// Playing a card and activating an ability, each taken through the same step
-/// as the basic actions. A fast play and a fast ability spend no action, so
-/// they take no action at all and provoke nothing.
-fn play_and_activate_rows() -> Vec<Row> {
+/// Playing a card, taken through the same step as the basic actions. A fast
+/// play (and, in [`activate_rows`], a fast ability) spends no action, so it
+/// takes no action at all and provokes nothing.
+fn play_rows() -> Vec<Row> {
     vec![
         // Emergency Cache 01088: *"Gain 3 resources."* A non-fast event.
         Row {
@@ -264,6 +264,13 @@ fn play_and_activate_rows() -> Vec<Row> {
             actions_spent: 0,
             provokes: false,
         },
+    ]
+}
+
+/// Activating an ability on each kind of source, taken through the same step
+/// as the basic actions.
+fn activate_rows() -> Vec<Row> {
+    vec![
         // First Aid 01019: *"[action] Spend 1 supply: Heal 1 damage or horror
         // from an investigator at your location."* No designator. The
         // investigator carries 1 damage so the heal can change the game state.
@@ -382,7 +389,8 @@ fn position(events: &[Event], name: &str, what: &str, p: impl Fn(&Event) -> bool
 fn a_ready_engaged_enemy_attacks_every_action_but_the_exempt_ones() {
     for row in basic_action_rows()
         .into_iter()
-        .chain(play_and_activate_rows())
+        .chain(play_rows())
+        .chain(activate_rows())
     {
         let mut state = board(row.seated);
         (row.setup)(&mut state);
