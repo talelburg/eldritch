@@ -1285,6 +1285,13 @@ fn park_hand_size_discard(cx: &mut Cx, remaining: Vec<InvestigatorId>) -> Engine
     cx.state
         .continuations
         .push(Continuation::HandSizeDiscard(HandSizeDiscard { remaining }));
+    hand_size_discard_prompt()
+}
+
+/// The [`EngineOutcome::AwaitingInput`] a [`HandSizeDiscard`] frame on top
+/// waits on: shown by [`park_hand_size_discard`] when it pushes the frame, and
+/// again by the main loop when it meets the frame on top.
+pub(super) fn hand_size_discard_prompt() -> EngineOutcome {
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_multiple(format!(
             "You have more than {HAND_SIZE_LIMIT} cards in hand — choose cards to discard \

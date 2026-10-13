@@ -9,17 +9,23 @@
 //! alternatives, a free ability a Fast window can offer — and none stands in
 //! for a printed card. They live here, the one binary that reads them.
 
+use std::cell::Cell;
+use std::rc::Rc;
+
 use card_dsl::dsl::{self, Ability, EnemyTarget, InvestigatorTarget};
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{EngineOutcome, InputKind, OptionId, OptionTarget, PromptNature};
+use game_core::engine::{
+    EngineOutcome, InputKind, InputRequest, OptionId, OptionTarget, PromptNature,
+};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    EnemyId, FastActorScope, FastWindowKind, GameStateBuilder, InvestigationPhaseFrame,
-    InvestigationResume, InvestigatorId, LocationId, Owner, Phase, PhaseStep,
+    EnemyId, FastActorScope, FastWindowKind, GameState, GameStateBuilder, InvestigationPhaseFrame,
+    InvestigationResume, InvestigatorId, LocationId, Owner, Phase, PhaseStep, SkillKind,
+    SubstitutionPromptFrame, UpkeepPhaseFrame, UpkeepResume,
 };
-use game_core::test_support::{self, MockRegistry, TestSession};
+use game_core::test_support::{self, ChoiceResolver, MockRegistry, TestSession};
 use game_core::{assert_event, assert_event_count};
 
 /// `[action]: Deal 1 damage to an enemy at your location.` — a choice among
@@ -177,10 +183,261 @@ fn settling_an_open_fast_window_resurfaces_its_prompt() {
 #[test]
 #[should_panic(expected = "cannot re-surface its prompt")]
 fn settling_a_fixture_that_cannot_resurface_its_prompt_panics() {
-    let _ = board()
-        .open_turn(INV)
+    // A substitution prompt's handler surfaces it when it pushes the frame;
+    // the main loop has no way to show it again.
+    let mut state = board().open_turn(INV).build();
+    state.continuations = test_support::from_frames_unchecked(
+        state
+            .continuations
+            .iter()
+            .cloned()
+            .chain([SubstitutionPromptFrame { investigator: INV }.into()]),
+    );
+    let _ = TestSession::new(state);
+}
+
+/// A staged setup mulligan settles at its prompt, and answering it runs the
+/// mulligan: the redrawn card leaves the hand and setup's end opens the turn.
+#[test]
+fn settling_a_staged_mulligan_shows_its_prompt() {
+    let mut inv = test_support::test_investigator(1);
+    inv.hand = vec![CardCode::new("_ts_kept_out")];
+    inv.deck = vec![CardCode::new("_ts_drawn")];
+    let session = GameStateBuilder::new()
+        .with_investigator_at(inv, HERE)
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_turn_order([INV])
+        .with_mulligan_remaining([INV])
+        .session();
+    assert_eq!(session.prompt().kind, InputKind::PickMultiple);
+
+    let session = session.apply(Action::Player(PlayerAction::ResolveInput {
+        response: InputResponse::PickMultiple {
+            selected: vec![OptionId(0)],
+        },
+    }));
+
+    assert_event!(session.events(), Event::MulliganPerformed { .. });
+    assert_eq!(
+        session.state().investigators[&INV].hand,
+        vec![CardCode::new("_ts_drawn")],
+    );
+}
+
+/// A staged Mythos encounter draw settles at its prompt: the `Confirm`
+/// anchored to the encounter deck.
+#[test]
+fn settling_a_staged_encounter_draw_shows_its_prompt() {
+    let session = board()
+        .with_turn_order([INV])
+        .with_mythos_draw_remaining([INV])
+        .session();
+    let prompt = session.prompt();
+    assert_eq!(prompt.kind, InputKind::Confirm);
+    assert_eq!(prompt.target, Some(OptionTarget::EncounterDeck));
+}
+
+/// A staged upkeep hand-size discard settles at its prompt, and answering it
+/// discards down to the cap.
+#[test]
+fn settling_a_staged_hand_size_discard_shows_its_prompt() {
+    let mut inv = test_support::test_investigator(1);
+    inv.hand = (0..9).map(|_| CardCode::new("_ts_filler")).collect();
+    let session = GameStateBuilder::new()
+        .with_investigator_at(inv, HERE)
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_turn_order([INV])
+        .with_phase(Phase::Upkeep)
+        .with_phase_anchor(UpkeepPhaseFrame {
+            resume: UpkeepResume::Begins,
+        })
         .with_hand_size_discard_pending([INV])
         .session();
+    assert_eq!(session.prompt().kind, InputKind::PickMultiple);
+
+    let session = session.apply(Action::Player(PlayerAction::ResolveInput {
+        response: InputResponse::PickMultiple {
+            selected: vec![OptionId(0)],
+        },
+    }));
+
+    assert_eq!(session.state().investigators[&INV].hand.len(), 8);
+    assert_eq!(session.state().investigators[&INV].discard.len(), 1);
+}
+
+// ---- test_skill and commit -------------------------------------------------
+
+/// The commit window a skill test opens: a `PickMultiple` that holds the test
+/// open, so the test has not ended yet.
+fn assert_at_commit_window(session: &TestSession) {
+    assert_eq!(session.prompt().kind, InputKind::PickMultiple);
+    assert_event_count!(session.events(), 0, Event::SkillTestEnded { .. });
+}
+
+/// `test_skill` starts a plain skill test from where the session rests and
+/// stops at its commit window; `commit(&[])` commits nothing and the test
+/// resolves.
+#[test]
+fn test_skill_stops_at_the_commit_window_and_commit_nothing_resolves_it() {
+    let session = board().session().test_skill(INV, SkillKind::Willpower, 2);
+    assert_at_commit_window(&session);
+
+    let session = session.commit(&[]);
+
+    assert_event!(session.events(), Event::SkillTestEnded { .. });
+}
+
+/// `commit` answers the commit window by card code: the named card leaves the
+/// hand and, once the test resolves, lands in the discard pile; the card
+/// beside it stays.
+#[test]
+fn commit_by_code_commits_that_card() {
+    let committed = CardCode::new("_ts_committed");
+    let kept = CardCode::new("_ts_kept");
+    let mut inv = test_support::test_investigator(1);
+    inv.hand = vec![kept.clone(), committed.clone()];
+    let session = GameStateBuilder::new()
+        .with_investigator_at(inv, HERE)
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .session()
+        .test_skill(INV, SkillKind::Willpower, 2)
+        .commit(std::slice::from_ref(&committed));
+
+    assert_event!(session.events(), Event::SkillTestEnded { .. });
+    let me = &session.state().investigators[&INV];
+    assert_eq!(me.hand, vec![kept]);
+    assert_eq!(me.discard, vec![committed]);
+}
+
+/// A skill test started from the turn menu exposes the turn again when it
+/// resolves: the session comes back to the menu.
+#[test]
+fn test_skill_from_the_turn_menu_returns_to_the_menu() {
+    let session = board()
+        .open_turn(INV)
+        .session()
+        .test_skill(INV, SkillKind::Intellect, 2);
+    assert_at_commit_window(&session);
+
+    let session = session.commit(&[]);
+
+    assert_event!(session.events(), Event::SkillTestEnded { .. });
+    assert_eq!(
+        session.prompt().target,
+        Some(OptionTarget::TurnControl(INV))
+    );
+}
+
+/// `commit` answers a prompt, so at the turn menu it panics rather than be
+/// read as a turn action.
+#[test]
+#[should_panic(expected = "at the turn menu")]
+fn commit_at_the_turn_menu_panics() {
+    let _ = board().open_turn(INV).session().commit(&[]);
+}
+
+/// `commit` answers a skill test's commit window and nothing else: at another
+/// `PickMultiple` — a mulligan — it panics rather than answer it.
+#[test]
+#[should_panic(expected = "not at a skill test's commit window")]
+fn commit_at_another_pick_multiple_panics() {
+    let _ = board()
+        .with_turn_order([INV])
+        .with_mulligan_remaining([INV])
+        .session()
+        .commit(&[]);
+}
+
+// ---- submit_off_menu ---------------------------------------------------------
+
+/// `submit_off_menu` sends an action the menu does not offer straight to its
+/// handler — what a client could send over the wire without consulting the
+/// menu. With no actions left the menu withholds the activation, and the
+/// handler itself rejects it: the reason reads back, nothing is spent, and the
+/// turn menu still stands.
+#[test]
+fn submit_off_menu_reaches_the_handler_and_its_rejection_reads_back() {
+    let mut state = board().open_turn(INV).build();
+    state
+        .investigators
+        .get_mut(&INV)
+        .expect("seated")
+        .actions_remaining = 0;
+
+    let session = TestSession::new(state).submit_off_menu(&activate(DECIDE_INST));
+
+    assert!(
+        session.expect_rejected().contains("action"),
+        "the handler names the missing action: {}",
+        session.expect_rejected(),
+    );
+    assert_eq!(resources(&session), 5);
+    assert_eq!(
+        session.prompt().target,
+        Some(OptionTarget::TurnControl(INV))
+    );
+}
+
+// ---- answer_with -------------------------------------------------------------
+
+/// A reply policy that answers every prompt: commits nothing, confirms, and
+/// declines everything else. Counts the prompts it answered.
+#[derive(Default)]
+struct CommitNothing {
+    answered: Rc<Cell<usize>>,
+}
+
+impl ChoiceResolver for CommitNothing {
+    fn next(&mut self, request: &InputRequest, _state: &GameState) -> InputResponse {
+        self.answered.set(self.answered.get() + 1);
+        match request.kind {
+            InputKind::PickMultiple => InputResponse::PickMultiple { selected: vec![] },
+            InputKind::Confirm => InputResponse::Confirm,
+            _ => InputResponse::Skip,
+        }
+    }
+}
+
+/// A resolver installed with `answer_with` answers every prompt a step opens,
+/// so the step drains to rest — and it stays installed for the steps after.
+#[test]
+fn answer_with_drives_each_step_to_rest_and_stays_installed() {
+    let policy = CommitNothing::default();
+    let answered = Rc::clone(&policy.answered);
+    let session = board()
+        .open_turn(INV)
+        .session()
+        .answer_with(policy)
+        .test_skill(INV, SkillKind::Willpower, 2);
+    assert_eq!(
+        session.prompt().target,
+        Some(OptionTarget::TurnControl(INV))
+    );
+    assert_eq!(answered.get(), 1, "the commit window was answered");
+
+    let session = session.test_skill(INV, SkillKind::Agility, 2);
+
+    assert_event_count!(session.events(), 2, Event::SkillTestEnded { .. });
+    assert_eq!(answered.get(), 2);
+    assert_eq!(
+        session.prompt().target,
+        Some(OptionTarget::TurnControl(INV))
+    );
+}
+
+/// `resolve_choices` after `answer_with` puts the script back: with nothing
+/// scripted, the next step stops at the first prompt again.
+#[test]
+fn resolve_choices_after_answer_with_restores_the_script() {
+    let session = board()
+        .open_turn(INV)
+        .session()
+        .answer_with(CommitNothing::default())
+        .resolve_choices(|_| {})
+        .test_skill(INV, SkillKind::Willpower, 2);
+
+    assert_at_commit_window(&session);
 }
 
 // ---- take ----------------------------------------------------------------
