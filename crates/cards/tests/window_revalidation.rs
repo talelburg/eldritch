@@ -32,7 +32,7 @@ use game_core::engine::OptionTarget;
 use game_core::event::{Event, LapseReason};
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId,
-    LocationId, Skills, Status, TokenModifiers,
+    LocationId, SkillKind, Status, TokenModifiers,
 };
 use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
@@ -64,12 +64,7 @@ fn after_defeat_board(location_clues: u8, shape: impl FnOnce(Seat) -> Seat) -> G
     let mut loc = test_support::test_location(HERE.0, "Study");
     loc.clues = location_clues;
 
-    let investigator = seat(1).at(HERE).skills(Skills {
-        willpower: 3,
-        intellect: 3,
-        combat: 4,
-        agility: 3,
-    });
+    let investigator = seat(1).at(HERE).skill(SkillKind::Combat, 4);
 
     GameStateBuilder::new()
         .with_round(0)

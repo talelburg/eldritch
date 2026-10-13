@@ -39,7 +39,7 @@ use game_core::engine::{OptionTarget, TurnAction};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, Skills, Zone,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, Zone,
 };
 use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
 
@@ -72,12 +72,7 @@ fn parlor_with_lita() -> (GameState, CardInstanceId) {
         .with_seat(
             seat(1)
                 .at(PARLOR_ID)
-                .skills(Skills {
-                    willpower: 3,
-                    intellect: 5,
-                    combat: 3,
-                    agility: 3,
-                })
+                .skill(SkillKind::Intellect, 5)
                 .deck(["01088"]),
         )
         .with_location(parlor)

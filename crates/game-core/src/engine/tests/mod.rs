@@ -8,8 +8,7 @@ use crate::scenario::ScenarioId;
 use crate::state::{
     AbilityAddress, AbilitySource, Act, CardInstanceId, ChaosBag, ChaosToken, DiscardPile,
     EliminationCause, Enemy, EnemyId, GameStateBuilder, InvestigatorId, Lifetime, LocationId,
-    Phase, RecordedModifier, SkillKind, SkillTestId, Skills, Status, TokenModifiers,
-    TokenResolution, Zone,
+    Phase, RecordedModifier, SkillKind, SkillTestId, Status, TokenModifiers, TokenResolution, Zone,
 };
 use crate::test_support::{self, seat, Seat, TestSession};
 use crate::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
@@ -51,23 +50,6 @@ const MOVE_TO_CONNECTED: TurnAction = TurnAction::Move {
 /// no-op modifier, so test totals = skill exactly.
 fn bag_only_zero() -> ChaosBag {
     ChaosBag::new([ChaosToken::Numeric(0)])
-}
-
-/// `test_investigator`'s 3/3/3/3 skills with `kind` set to `value`.
-fn skills_with(kind: SkillKind, value: i8) -> Skills {
-    let mut skills = Skills {
-        willpower: 3,
-        intellect: 3,
-        combat: 3,
-        agility: 3,
-    };
-    match kind {
-        SkillKind::Willpower => skills.willpower = value,
-        SkillKind::Intellect => skills.intellect = value,
-        SkillKind::Combat => skills.combat = value,
-        SkillKind::Agility => skills.agility = value,
-    }
-    skills
 }
 
 /// Take `action` from the turn menu and commit nothing to the skill test it

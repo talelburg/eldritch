@@ -42,7 +42,7 @@ use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, Continuation, Enemy, EnemyId, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, Skills, TokenModifiers,
+    InvestigatorId, LocationId, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -80,12 +80,7 @@ fn retaliate_enemy(fight: i8, attack_damage: u8, max_health: u8) -> Enemy {
 /// Investigator 1 at the Study with combat 1, so the Fight always fails:
 /// 1 + Numeric(0) = 1 < 5 (enemy fight).
 fn fighter() -> Seat {
-    seat(1).at(HERE).skills(Skills {
-        willpower: 3,
-        intellect: 3,
-        combat: 1,
-        agility: 3,
-    })
+    seat(1).at(HERE).skill(SkillKind::Combat, 1)
 }
 
 /// An Investigation-phase turn with `investigator` at the Study, `enemy`

@@ -20,7 +20,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
     AbilityUsageRecord, CardCode, CardInPlay, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Skills, TokenModifiers,
+    GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -61,12 +61,7 @@ fn roland_at_location_with_enemy(location_clues: u8, round: u32) -> GameState {
             seat(1)
                 .at(HERE)
                 // Roland's printed combat.
-                .skills(Skills {
-                    willpower: 3,
-                    intellect: 3,
-                    combat: 4,
-                    agility: 3,
-                })
+                .skill(SkillKind::Combat, 4)
                 .in_play([ROLAND]),
         )
         // Co-located: Fight is location-gated (#401).

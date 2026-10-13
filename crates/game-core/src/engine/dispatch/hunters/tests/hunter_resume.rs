@@ -1,7 +1,7 @@
 use super::*;
 use crate::action::{Action, PlayerAction};
 use crate::engine::{enumerate::TurnAction, outcome::OptionTarget};
-use crate::state::{EnemyId, InvestigatorId, LocationId, Phase, Skills};
+use crate::state::{EnemyId, InvestigatorId, LocationId, Phase};
 use crate::{assert_event, test_support};
 
 use card_dsl::card_data::SkillKind;
@@ -139,12 +139,6 @@ fn highest_combat_prey_breaks_move_tie_without_prompt() {
     loc_a.connections = vec![LocationId(2), LocationId(3)];
     loc_b.connections = vec![LocationId(1)];
     loc_c.connections = vec![LocationId(1)];
-    let combat = |combat| Skills {
-        willpower: 3,
-        intellect: 3,
-        combat,
-        agility: 3,
-    };
     let mut hunter = test_support::test_enemy(1, "Ghoul Priest");
     hunter.hunter = true;
     hunter.prey = Prey::Ranked {
@@ -157,8 +151,16 @@ fn highest_combat_prey_breaks_move_tie_without_prompt() {
         .with_location(loc_a)
         .with_location(loc_b)
         .with_location(loc_c)
-        .with_seat(test_support::seat(1).at(LocationId(2)).skills(combat(5)))
-        .with_seat(test_support::seat(2).at(LocationId(3)).skills(combat(2)))
+        .with_seat(
+            test_support::seat(1)
+                .at(LocationId(2))
+                .skill(SkillKind::Combat, 5),
+        )
+        .with_seat(
+            test_support::seat(2)
+                .at(LocationId(3))
+                .skill(SkillKind::Combat, 2),
+        )
         .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
         .with_enemy(hunter)
         .open_turn(InvestigatorId(1))

@@ -52,7 +52,7 @@ use game_core::scenario::{
 };
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInstanceId, ChaosBag, ChaosToken, DiscardPile,
-    GameState, GameStateBuilder, InvestigatorId, LocationId, SkillKind, Skills, TokenModifiers,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenModifiers,
     TokenResolution, Zone,
 };
 use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
@@ -232,12 +232,7 @@ fn board_with(in_play: &[&str], hand: &[&str], bag: ChaosBag) -> (GameState, Inv
     let state = GameStateBuilder::new()
         .with_seat(
             seat(1)
-                .skills(Skills {
-                    willpower: 5,
-                    intellect: 3,
-                    combat: 3,
-                    agility: 3,
-                })
+                .skill(SkillKind::Willpower, 5)
                 .hand(hand.iter().copied())
                 .in_play(in_play.iter().copied()),
         )

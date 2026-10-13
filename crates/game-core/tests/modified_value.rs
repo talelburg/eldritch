@@ -21,7 +21,7 @@ use game_core::engine::modified_value::{
 use game_core::event::Event;
 use game_core::state::{
     Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, Skills, TokenModifiers,
+    GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{self, seat, MockRegistry, Seat, TestSession};
 use game_core::{assert_event, card_registry};
@@ -149,18 +149,6 @@ fn board_of(me: Seat, teammate: Seat) -> GameStateBuilder {
 /// [`board_of`] with [`me`], and my teammate wherever `teammate_at` says.
 fn board(teammate_at: LocationId) -> GameStateBuilder {
     board_of(me(), seat(2).at(teammate_at))
-}
-
-/// The fixture's 3/3/3/3 skills with `edit` applied.
-fn skills_with(edit: impl FnOnce(&mut Skills)) -> Skills {
-    let mut skills = Skills {
-        willpower: 3,
-        intellect: 3,
-        combat: 3,
-        agility: 3,
-    };
-    edit(&mut skills);
-    skills
 }
 
 /// `code` entering play as [`PLACED`], owned by `owner`, for a location's
@@ -451,12 +439,9 @@ fn a_modifier_on_an_enemys_fight_raises_a_fight_actions_difficulty() {
     let attack = |ritual: bool| {
         let mut ghoul = test_support::test_enemy(7, "Ghoul");
         ghoul.current_location = Some(HERE);
-        let mut state = board_of(
-            me().skills(skills_with(|s| s.combat = 2)),
-            seat(2).at(THERE),
-        )
-        .with_enemy(ghoul)
-        .build();
+        let mut state = board_of(me().skill(SkillKind::Combat, 2), seat(2).at(THERE))
+            .with_enemy(ghoul)
+            .build();
         if ritual {
             // No builder setter stages the agenda deck.
             state.agenda_deck = vec![agenda(RITUAL_BEGINS)];
@@ -500,12 +485,9 @@ fn a_modifier_on_an_enemys_fight_raises_a_fight_actions_difficulty() {
 fn a_modifier_on_an_enemys_evade_raises_an_evade_actions_difficulty() {
     let dodge = |ritual: bool| {
         let ghoul = test_support::test_enemy(7, "Ghoul");
-        let mut state = board_of(
-            me().skills(skills_with(|s| s.agility = 2)),
-            seat(2).at(THERE),
-        )
-        .with_enemy_engaged(ghoul, ME)
-        .build();
+        let mut state = board_of(me().skill(SkillKind::Agility, 2), seat(2).at(THERE))
+            .with_enemy_engaged(ghoul, ME)
+            .build();
         if ritual {
             // No builder setter stages the agenda deck.
             state.agenda_deck = vec![agenda(RITUAL_BEGINS)];
@@ -551,12 +533,9 @@ fn a_modifier_on_an_enemys_evade_raises_an_evade_actions_difficulty() {
 fn a_fights_difficulty_is_re_read_after_the_test_started() {
     let mut ghoul = test_support::test_enemy(7, "Ghoul");
     ghoul.current_location = Some(HERE);
-    let mut state = board_of(
-        me().skills(skills_with(|s| s.combat = 2)),
-        seat(2).at(THERE),
-    )
-    .with_enemy(ghoul)
-    .build();
+    let mut state = board_of(me().skill(SkillKind::Combat, 2), seat(2).at(THERE))
+        .with_enemy(ghoul)
+        .build();
     // No builder setter stages the agenda deck.
     state.agenda_deck = vec![agenda("MOCK-QUIET"), agenda(RITUAL_BEGINS)];
     state.agenda_index = 0;

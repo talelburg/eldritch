@@ -16,7 +16,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameState, GameStateBuilder, InvestigatorId, Location, LocationId, Owner, SkillKind, Skills,
+    GameState, GameStateBuilder, InvestigatorId, Location, LocationId, Owner, SkillKind,
     TokenModifiers, UseKind,
 };
 use game_core::test_support::{self, seat, uses, SeatLookup as _, TestSession};
@@ -52,12 +52,7 @@ fn board_at(location: Location, intellect: i8) -> GameStateBuilder {
         .with_seat(
             seat(1)
                 .at(HERE)
-                .skills(Skills {
-                    willpower: 3,
-                    intellect,
-                    combat: 3,
-                    agility: 3,
-                })
+                .skill(SkillKind::Intellect, intellect)
                 .in_play([(FLASHLIGHT, uses(UseKind::Supplies, 3))]),
         )
         .with_location(location)

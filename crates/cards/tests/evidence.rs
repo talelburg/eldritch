@@ -15,7 +15,7 @@ use game_core::engine::{InputKind, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, DiscardPile, EnemyId, GameStateBuilder, InvestigatorId,
-    LocationId, Skills, TokenModifiers, Zone,
+    LocationId, SkillKind, TokenModifiers, Zone,
 };
 use game_core::test_support::{self, seat, Seat, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
@@ -42,12 +42,7 @@ fn install_real_registry() {
 fn holding_evidence() -> Seat {
     seat(1)
         .at(HERE)
-        .skills(Skills {
-            willpower: 3,
-            intellect: 3,
-            combat: 4,
-            agility: 3,
-        })
+        .skill(SkillKind::Combat, 4)
         .hand([EVIDENCE])
 }
 

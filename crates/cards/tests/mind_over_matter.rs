@@ -14,7 +14,7 @@ use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, EnemyId, FastActorScope,
     FastWindowKind, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame, MythosResume,
-    Phase, PhaseStep, Skills,
+    Phase, PhaseStep, SkillKind,
 };
 use game_core::test_support::{self, seat, uses, Seat, SeatLookup as _, TestSession};
 
@@ -36,12 +36,8 @@ fn install() {
 fn fighter(combat: i8, intellect: i8) -> Seat {
     seat(1)
         .at(HERE)
-        .skills(Skills {
-            willpower: 3,
-            intellect,
-            combat,
-            agility: 3,
-        })
+        .skill(SkillKind::Intellect, intellect)
+        .skill(SkillKind::Combat, combat)
         .hand([MOM])
 }
 

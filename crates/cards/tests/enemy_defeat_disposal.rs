@@ -47,7 +47,7 @@ use game_core::engine::{ApplyResult, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, ChaosBag, ChaosToken, DiscardPile, EnemyId, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, Owner, Skills, TokenModifiers, Zone,
+    InvestigatorId, LocationId, Owner, SkillKind, TokenModifiers, Zone,
 };
 use game_core::test_support::{self, seat, TestSession};
 use game_core::{assert_event, assert_event_sequence};
@@ -91,17 +91,7 @@ fn solo_investigator_facing(
 
     GameStateBuilder::new()
         .with_round(0)
-        .with_seat(
-            seat(1)
-                .at(HERE)
-                .skills(Skills {
-                    willpower: 3,
-                    intellect: 3,
-                    combat: 8,
-                    agility: 3,
-                })
-                .deck(["01088"]),
-        )
+        .with_seat(seat(1).at(HERE).skill(SkillKind::Combat, 8).deck(["01088"]))
         // Fight is location-gated (#401); an engaged enemy is at its
         // investigator's location.
         .with_enemy_engaged(enemy, INV)
