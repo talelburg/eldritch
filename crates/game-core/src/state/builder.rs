@@ -569,12 +569,12 @@ mod set_aside_cards_tests {
 mod with_open_window_tests {
     use super::*;
     use crate::state::PhaseStep;
-    use crate::test_support;
+    use crate::test_support::seat;
 
     #[test]
     fn with_open_window_pushes_onto_the_stack() {
         let state = GameStateBuilder::new()
-            .with_investigator(test_support::test_investigator(1))
+            .with_seat(seat(1))
             .with_open_window(
                 FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
                 FastActorScope::Any,
@@ -597,7 +597,7 @@ mod with_open_window_tests {
     #[test]
     fn with_open_window_stacks_in_order() {
         let state = GameStateBuilder::new()
-            .with_investigator(test_support::test_investigator(1))
+            .with_seat(seat(1))
             .with_open_window(
                 FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
                 FastActorScope::Any,

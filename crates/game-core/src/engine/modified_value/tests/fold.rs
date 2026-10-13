@@ -69,14 +69,14 @@ fn a_breakdown_attributes_each_contribution_to_its_source() {
             Contribution {
                 source: ContributionSource::Card {
                     code: CardCode::new("willpower-plus-1"),
-                    instance: Some(CardInstanceId(0)),
+                    instance: Some(state.in_play(id, "willpower-plus-1")),
                 },
                 delta: 1,
             },
             Contribution {
                 source: ContributionSource::Card {
                     code: CardCode::new("willpower-minus-1"),
-                    instance: Some(CardInstanceId(1)),
+                    instance: Some(state.in_play(id, "willpower-minus-1")),
                 },
                 delta: -1,
             },

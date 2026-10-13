@@ -9,6 +9,7 @@ use crate::state::{
     InFlightSkillTest, PhaseStep, RecordedModifierKind, SkillKind, SkillTestFollowUp, SkillTestId,
     SkillTestStep, Status,
 };
+use crate::test_support::{seat, SeatLookup as _};
 use crate::{assert_event, assert_no_event, test_support};
 
 mod act_progress;
@@ -32,15 +33,16 @@ fn ctx(id: u32) -> EvalContext {
     EvalContext::for_controller(InvestigatorId(id))
 }
 
-/// A state with investigator 1 standing on location 10, which holds `clues`.
+/// The location the investigator stands at.
+const HERE: LocationId = LocationId(10);
+
+/// A state with investigator 1 standing on [`HERE`], which holds `clues`.
 fn state_with_clues_at_location(clues: u8) -> GameState {
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(LocationId(10));
-    let mut loc = test_support::test_location(10, "Study");
+    let mut loc = test_support::test_location(HERE.0, "Study");
     loc.clues = clues;
     GameStateBuilder::new()
-        .with_investigator(inv)
         .with_location(loc)
+        .with_seat(seat(1).at(HERE))
         .build()
 }
 
@@ -137,21 +139,11 @@ fn assert_suspended_leaf(state: &GameState) {
     );
 }
 
+/// Investigator 1 with `codes` in play, in order.
 fn state_with_cards_in_play(codes: &[&str]) -> (GameState, InvestigatorId) {
     let id = InvestigatorId(1);
-    let mut inv = test_support::test_investigator(1);
-    inv.cards_in_play = codes
-        .iter()
-        .enumerate()
-        .map(|(i, c)| {
-            CardInPlay::enter_play(
-                CardCode::new(*c),
-                #[allow(clippy::cast_possible_truncation)]
-                CardInstanceId(i as u32),
-                Owner::Investigator(InvestigatorId(1)),
-            )
-        })
-        .collect();
-    let state = GameStateBuilder::new().with_investigator(inv).build();
+    let state = GameStateBuilder::new()
+        .with_seat(seat(id.0).in_play(codes.iter().copied()))
+        .build();
     (state, id)
 }
