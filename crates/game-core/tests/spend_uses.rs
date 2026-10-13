@@ -16,8 +16,8 @@
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Uses};
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
-use game_core::engine::evaluator::EvalContext;
 use game_core::engine::enumerate::TurnAction;
+use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{EngineOutcome, NativeCx};
 use game_core::event::Event;
 use game_core::state::{
@@ -114,11 +114,11 @@ fn install() {
 
 /// [`HOLDER`] (first in turn order, so the forced dispatch binds the
 /// controller to them) and [`OWNER`], each with a filler deck so Upkeep 4.4's
-/// draw deals no empty-deck horror, staged by `stage`; then `act` as the
+/// draw deals no empty-deck horror, staged by `staging`; then `act` as the
 /// current act and — when `pool` is `Some` — [`HELD`] in the holder's play
 /// area, owned by [`OWNER`], with that uses pool.
 fn board(
-    stage: impl FnOnce(GameStateBuilder) -> GameStateBuilder,
+    staging: impl FnOnce(GameStateBuilder) -> GameStateBuilder,
     act: &str,
     pool: Option<&[(UseKind, u8)]>,
 ) -> GameState {
@@ -127,7 +127,7 @@ fn board(
         Some(_) => seat(HOLDER.0).in_play_as(HELD, POUCH),
         None => seat(HOLDER.0),
     };
-    let mut state = stage(
+    let mut state = staging(
         GameStateBuilder::new()
             .with_seat(holder.deck(["filler-card"]))
             .with_seat(seat(OWNER.0).deck(["filler-card"]))
@@ -266,13 +266,9 @@ fn spending_from_a_card_not_in_play_is_an_error_the_native_sees() {
     // phase is reached by the step that really gets there: the last
     // investigator ending their turn ends the Investigation phase, and play
     // runs on through the Enemy phase to its end, where the native rejects.
-    let session = TestSession::new(board(
-        |b| b.open_turn(HOLDER),
-        SPEND_SECRET_ACT,
-        None,
-    ))
-    .take(&TurnAction::EndTurn)
-    .take(&TurnAction::EndTurn);
+    let session = TestSession::new(board(|b| b.open_turn(HOLDER), SPEND_SECRET_ACT, None))
+        .take(&TurnAction::EndTurn)
+        .take(&TurnAction::EndTurn);
     let reason = session.expect_rejected();
     assert!(
         reason.contains("NotInPlay"),

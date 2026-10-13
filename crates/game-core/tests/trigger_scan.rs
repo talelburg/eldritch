@@ -361,10 +361,7 @@ fn an_uncontrolled_cards_forced_ability_with_no_subject_binds_to_the_lead_proxy(
 #[test]
 fn the_lead_proxy_is_the_first_active_seat() {
     // Investigator 1 is defeated, so the open turn is investigator 2's.
-    let state = defeated(
-        with_agenda(table().open_turn(TWO).build(), ON_DEFEAT),
-        ONE,
-    );
+    let state = defeated(with_agenda(table().open_turn(TWO).build(), ON_DEFEAT), ONE);
     let session = fire(state, defeat(None));
     assert_eq!(horror(session.state(), TWO), 1);
 }
@@ -392,11 +389,7 @@ fn entering_a_location_fires_only_that_locations_ability() {
             location: HALLWAY,
         },
     );
-    assert_eq!(
-        horror(session.state(), TWO),
-        1,
-        "the entering investigator"
-    );
+    assert_eq!(horror(session.state(), TWO), 1, "the entering investigator");
     assert_eq!(horror(session.state(), ONE), 0);
 }
 
@@ -470,11 +463,7 @@ fn an_enemy_attacking_fires_only_its_own_ability() {
             investigator: TWO,
         },
     );
-    assert_eq!(
-        horror(session.state(), TWO),
-        1,
-        "the attacked investigator"
-    );
+    assert_eq!(horror(session.state(), TWO), 1, "the attacked investigator");
     assert_eq!(horror(session.state(), ONE), 0);
 }
 
@@ -552,9 +541,8 @@ fn elimination_fires_only_the_eliminated_investigators_weaknesses() {
     // Fired on its own over a defeated seat: a real elimination goes on to
     // take the eliminated investigator's resources, which the marker counts.
     let session = fire(state, TimingEvent::EliminationGameEnd { investigator: TWO });
-    let gained = |id| {
-        session.state().investigators[&id].resources - before.investigators[&id].resources
-    };
+    let gained =
+        |id| session.state().investigators[&id].resources - before.investigators[&id].resources;
     assert_eq!(gained(TWO), 1, "the eliminated investigator's own weakness");
     assert_eq!(gained(ONE), 0);
 }

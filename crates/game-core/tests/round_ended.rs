@@ -174,5 +174,9 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
         Phase::Mythos,
         "upkeep tail resumed: Upkeep → Mythos after both forced resolved",
     );
-    assert_eq!(done.state().round, 1, "round bumped (0 → 1) on Mythos entry");
+    assert_eq!(
+        done.state().round,
+        1,
+        "round bumped (0 → 1) on Mythos entry"
+    );
 }

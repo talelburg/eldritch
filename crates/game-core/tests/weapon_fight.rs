@@ -19,8 +19,8 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{InputKind, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardInstanceId, ChaosBag, ChaosToken, Enemy, EnemyId,
-    GameState, GameStateBuilder, InvestigatorId, LocationId, TokenModifiers,
+    AbilityAddress, AbilitySource, CardInstanceId, ChaosBag, ChaosToken, Enemy, EnemyId, GameState,
+    GameStateBuilder, InvestigatorId, LocationId, TokenModifiers,
 };
 use game_core::test_support::{
     self, seat, uses, MockRegistry, SeatCard, SeatLookup as _, TestSession,

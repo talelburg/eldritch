@@ -149,7 +149,11 @@ fn upkeep_full_round_draws_and_grants_then_pauses_at_mythos() {
 
     assert_eq!(session.prompt().target, Some(OptionTarget::EncounterDeck));
     assert_eq!(state.phase, Phase::Mythos, "cascade must land in Mythos");
-    assert_eq!(state.round, round_before + 1, "round bumped on Mythos entry");
+    assert_eq!(
+        state.round,
+        round_before + 1,
+        "round bumped on Mythos entry"
+    );
     assert!(
         state.current_encounter_drawer().is_some(),
         "draw cursor must be seeded"
