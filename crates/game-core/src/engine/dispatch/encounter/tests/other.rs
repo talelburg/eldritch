@@ -19,7 +19,7 @@ use crate::test_support;
 #[test]
 fn rejects_an_unknown_encounter_card() {
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
         .build();
     // Seed the encounter deck so we can prove the reject fires
     // *before* the draw mutates state. Use a code that no real

@@ -201,7 +201,9 @@ mod tests {
             other => panic!("expected one-option suspend, got {other:?}"),
         }
 
-        // Resume with the single option: frame pops, returns Done.
+        // Resume with the single option: frame pops, returns Done. The subject
+        // is the frame's own resume handler and the response it accepts, so it
+        // is called with the raw response rather than through a session step.
         let out = resume_acknowledge_forced(&mut cx, &InputResponse::PickSingle(OptionId(0)));
         assert!(matches!(out, EngineOutcome::Done));
         assert!(

@@ -1,30 +1,11 @@
-use crate::action::{Action, InputResponse, PlayerAction};
 use crate::engine::enumerate::TurnAction;
-use crate::engine::outcome::{EngineOutcome, OptionId};
-use crate::engine::{enumerate, ApplyResult};
+use crate::engine::outcome::{EngineOutcome, InputKind};
 use crate::event::Event;
 use crate::state::{
     ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Status,
 };
-use crate::{assert_event, assert_event_sequence, assert_no_event, test_support};
-
-/// Drive a turn action that may suspend at a skill-test commit window.
-/// Equivalent to `take_turn_action` but drains `AwaitingInput` (commit
-/// window) by submitting an empty `PickMultiple`, matching `apply_no_commits`.
-fn take_turn_action_no_commits(state: GameState, action: &TurnAction) -> ApplyResult {
-    let actions = enumerate::legal_actions(&state);
-    let idx = actions.iter().position(|a| a == action).unwrap_or_else(|| {
-        panic!("take_turn_action_no_commits: {action:?} is not legal; offered: {actions:?}")
-    });
-    test_support::apply_no_commits(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(
-                u32::try_from(idx).expect("action index fits u32"),
-            )),
-        }),
-    )
-}
+use crate::test_support::{self, TestSession};
+use crate::{assert_event, assert_event_sequence, assert_no_event};
 
 /// Build a Move scenario: investigator at L1, L1 connected to L2,
 /// 3 actions, Investigation phase, active investigator, with one
@@ -38,18 +19,17 @@ fn move_scenario_with_enemy(
     let l2 = LocationId(11);
     let enemy_id = EnemyId(100);
 
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(l1);
-    inv.actions_remaining = 3;
     // After #448 cp2a: max_health() reads from the registry (TEST_INV = 8).
-    // Pre-load accumulated_damage so the old `inv_health` parameter still
-    // determines defeat: total = (8 - inv_health) + attack_damage >= 8
+    // Pre-load the damage so the old `inv_health` parameter still determines
+    // defeat: total = (8 - inv_health) + attack_damage >= 8
     // ⟺ attack_damage >= inv_health (same condition as before).
-    inv.investigator_card.accumulated_damage = 8_u8.saturating_sub(inv_health);
+    let inv = test_support::seat(1)
+        .at(l1)
+        .harm(8_u8.saturating_sub(inv_health), 0);
 
-    let mut loc1 = test_support::test_location(10, "L1");
+    let mut loc1 = test_support::test_location(l1.0, "L1");
     loc1.connections = vec![l2];
-    let loc2 = test_support::test_location(11, "L2");
+    let loc2 = test_support::test_location(l2.0, "L2");
 
     let mut enemy = test_support::test_enemy(100, "Ghoul");
     enemy.current_location = Some(l1);
@@ -59,7 +39,7 @@ fn move_scenario_with_enemy(
     enemy.exhausted = false;
 
     let state = GameStateBuilder::new()
-        .with_investigator(inv)
+        .with_seat(inv)
         .with_location(loc1)
         .with_location(loc2)
         .with_enemy(enemy)
@@ -81,15 +61,14 @@ fn move_with_lethal_aoo_suppresses_relocation_but_keeps_spent_action() {
     // event fires and the investigator does NOT appear at the destination.
     let (inv_id, _l1, l2, _enemy_id, state) = move_scenario_with_enemy(1, 1);
 
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::Move {
-            investigator: inv_id,
-            destination: l2,
-        },
-    );
+    let session = TestSession::new(state).take(&TurnAction::Move {
+        investigator: inv_id,
+        destination: l2,
+    });
 
-    assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
+    // The lone investigator's defeat ends the game.
+    let result = session.finish();
+    assert_eq!(result.outcome, EngineOutcome::Done);
     // Action was still spent.
     assert_event!(
         result.events,
@@ -123,15 +102,13 @@ fn move_with_nonlethal_aoo_relocates_after_the_attack() {
     // No ability in the test registry → no cancel/soak windows → no suspension.
     let (inv_id, _l1, l2, enemy_id, state) = move_scenario_with_enemy(1, 8);
 
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::Move {
-            investigator: inv_id,
-            destination: l2,
-        },
-    );
+    let session = TestSession::new(state).take(&TurnAction::Move {
+        investigator: inv_id,
+        destination: l2,
+    });
 
-    assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
+    session.assert_at_turn_menu(inv_id);
+    let result = session.finish();
     // AoO damage landed.
     assert_event!(
         result.events,
@@ -175,13 +152,11 @@ fn move_into_enemy_scenario() -> (InvestigatorId, LocationId, EnemyId, GameState
     let l2 = LocationId(11);
     let enemy_id = EnemyId(100);
 
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(l1);
-    inv.actions_remaining = 3;
+    let inv = test_support::seat(1).at(l1);
 
-    let mut loc1 = test_support::test_location(10, "L1");
+    let mut loc1 = test_support::test_location(l1.0, "L1");
     loc1.connections = vec![l2];
-    let mut loc2 = test_support::test_location(11, "L2");
+    let mut loc2 = test_support::test_location(l2.0, "L2");
     loc2.connections = vec![l1];
 
     let mut enemy = test_support::test_enemy(100, "Icy Ghoul");
@@ -190,7 +165,7 @@ fn move_into_enemy_scenario() -> (InvestigatorId, LocationId, EnemyId, GameState
     enemy.exhausted = false;
 
     let state = GameStateBuilder::new()
-        .with_investigator(inv)
+        .with_seat(inv)
         .with_location(loc1)
         .with_location(loc2)
         .with_enemy(enemy)
@@ -207,15 +182,13 @@ fn entering_a_location_engages_a_ready_enemy_there() {
     // Ghoul 01119 waiting at the Cellar — no Aloof keyword.)
     let (inv_id, l2, enemy_id, state) = move_into_enemy_scenario();
 
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::Move {
-            investigator: inv_id,
-            destination: l2,
-        },
-    );
+    let session = TestSession::new(state).take(&TurnAction::Move {
+        investigator: inv_id,
+        destination: l2,
+    });
 
-    assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
+    session.assert_at_turn_menu(inv_id);
+    let result = session.finish();
     assert_eq!(
         result.state.investigators[&inv_id].current_location,
         Some(l2),
@@ -240,13 +213,13 @@ fn entering_a_location_does_not_engage_an_exhausted_enemy() {
     let (inv_id, l2, enemy_id, mut state) = move_into_enemy_scenario();
     state.enemies.get_mut(&enemy_id).unwrap().exhausted = true;
 
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::Move {
-            investigator: inv_id,
-            destination: l2,
-        },
-    );
+    let session = TestSession::new(state).take(&TurnAction::Move {
+        investigator: inv_id,
+        destination: l2,
+    });
+
+    session.assert_at_turn_menu(inv_id);
+    let result = session.finish();
 
     assert_eq!(
         result.state.enemies[&enemy_id].engaged_with, None,
@@ -279,13 +252,13 @@ fn entering_engages_all_ready_enemies_and_leaves_already_engaged_alone() {
     state.enemies.insert(enemy_b, b);
     state.enemies.insert(enemy_c, c);
 
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::Move {
-            investigator: inv_id,
-            destination: l2,
-        },
-    );
+    let session = TestSession::new(state).take(&TurnAction::Move {
+        investigator: inv_id,
+        destination: l2,
+    });
+
+    session.assert_at_turn_menu(inv_id);
+    let result = session.finish();
 
     // Both ready, unengaged enemies engage the entering investigator.
     assert_eq!(result.state.enemies[&enemy_a].engaged_with, Some(inv_id),);
@@ -310,14 +283,13 @@ fn investigate_scenario_with_enemy(
     let loc_id = LocationId(10);
     let enemy_id = EnemyId(200);
 
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(loc_id);
-    inv.actions_remaining = 3;
-    // Pre-load accumulated_damage so that max_health() (8 from TEST_INV) minus
-    // accumulated_damage equals inv_health (the "remaining health" the test intended).
-    inv.investigator_card.accumulated_damage = 8_u8.saturating_sub(inv_health);
+    // Pre-load the damage so that max_health() (8 from TEST_INV) minus the
+    // damage equals inv_health (the "remaining health" the test intended).
+    let inv = test_support::seat(1)
+        .at(loc_id)
+        .harm(8_u8.saturating_sub(inv_health), 0);
 
-    let mut loc = test_support::test_location(10, "Study");
+    let mut loc = test_support::test_location(loc_id.0, "Study");
     loc.clues = 2;
     loc.shroud = 2;
 
@@ -329,7 +301,7 @@ fn investigate_scenario_with_enemy(
     enemy.exhausted = false;
 
     let state = GameStateBuilder::new()
-        .with_investigator(inv)
+        .with_seat(inv)
         .with_location(loc)
         .with_enemy(enemy)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -347,39 +319,38 @@ fn investigate_with_nonlethal_aoo_starts_the_test_after_the_attack() {
     // the investigator is still Active, and took 1 damage.
     let (inv_id, _loc_id, enemy_id, state) = investigate_scenario_with_enemy(8, 1);
 
-    let outcome = test_support::take_turn_action(
-        state,
-        &TurnAction::Investigate {
-            investigator: inv_id,
-        },
-    );
+    let session = TestSession::new(state).take(&TurnAction::Investigate {
+        investigator: inv_id,
+    });
 
-    // Outcome should be AwaitingInput (skill-test commit window).
-    assert!(
-        matches!(outcome.outcome, EngineOutcome::AwaitingInput { .. }),
-        "expected AwaitingInput (commit window) after nonlethal AoO, got {:?}",
-        outcome.outcome
+    // The session rests at the skill test's commit window.
+    assert_eq!(
+        session.prompt().kind,
+        InputKind::PickMultiple,
+        "expected the commit window after nonlethal AoO, got {:?}",
+        session.prompt()
     );
+    assert!(session.state().current_skill_test().is_some());
     // AoO damage landed before the test started — prove ordering.
     assert_event_sequence!(
-        outcome.events,
+        session.events(),
         Event::DamageTaken { .. },
         Event::SkillTestStarted { .. }
     );
     // Investigator is still Active.
     assert_eq!(
-        outcome.state.investigators[&inv_id].status,
+        session.state().investigators[&inv_id].status,
         Status::Active,
         "investigator must still be Active after nonlethal AoO"
     );
     // Investigator took 1 damage.
     assert_eq!(
-        outcome.state.investigators[&inv_id].damage(),
+        session.state().investigators[&inv_id].damage(),
         1,
         "investigator must have taken 1 damage from AoO"
     );
     // AoO does not exhaust the attacker (RR p.7).
-    assert!(!outcome.state.enemies[&enemy_id].exhausted);
+    assert!(!session.state().enemies[&enemy_id].exhausted);
 }
 
 #[test]
@@ -388,19 +359,13 @@ fn investigate_with_lethal_aoo_suppresses_the_test() {
     // test starts, outcome is Done, action was spent, investigator not Active.
     let (inv_id, _loc_id, _enemy_id, state) = investigate_scenario_with_enemy(1, 1);
 
-    let result = take_turn_action_no_commits(
-        state,
-        &TurnAction::Investigate {
-            investigator: inv_id,
-        },
-    );
+    let session = TestSession::new(state).take(&TurnAction::Investigate {
+        investigator: inv_id,
+    });
 
-    // Outcome is not Rejected (skill test suppressed, action consumed).
-    assert!(
-        !matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "expected non-Rejected when AoO is lethal, got {:?}",
-        result.outcome
-    );
+    // The lone investigator's defeat ends the game.
+    let result = session.finish();
+    assert_eq!(result.outcome, EngineOutcome::Done);
     // Action was spent.
     assert_event!(
         result.events,
@@ -428,15 +393,14 @@ fn resource_scenario_with_enemy(
     let loc_id = LocationId(10);
     let enemy_id = EnemyId(300);
 
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(loc_id);
-    inv.actions_remaining = 3;
-    // Pre-load accumulated_damage so that max_health() (8 from TEST_INV) minus
-    // accumulated_damage equals inv_health (the "remaining health" the test intended).
-    inv.investigator_card.accumulated_damage = 8_u8.saturating_sub(inv_health);
-    inv.resources = 0;
+    // Pre-load the damage so that max_health() (8 from TEST_INV) minus the
+    // damage equals inv_health (the "remaining health" the test intended).
+    let inv = test_support::seat(1)
+        .at(loc_id)
+        .harm(8_u8.saturating_sub(inv_health), 0)
+        .resources(0);
 
-    let loc = test_support::test_location(10, "Study");
+    let loc = test_support::test_location(loc_id.0, "Study");
 
     let mut enemy = test_support::test_enemy(300, "Ghoul");
     enemy.current_location = Some(loc_id);
@@ -446,7 +410,7 @@ fn resource_scenario_with_enemy(
     enemy.exhausted = false;
 
     let state = GameStateBuilder::new()
-        .with_investigator(inv)
+        .with_seat(inv)
         .with_location(loc)
         .with_enemy(enemy)
         .open_turn(inv_id)
@@ -461,18 +425,13 @@ fn resource_with_lethal_aoo_suppresses_the_gain() {
     // Investigator has 1 health, enemy deals 1 damage → lethal AoO.
     let (inv_id, _enemy_id, state) = resource_scenario_with_enemy(1, 1);
 
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::Resource {
-            investigator: inv_id,
-        },
-    );
+    let session = TestSession::new(state).take(&TurnAction::Resource {
+        investigator: inv_id,
+    });
 
-    assert!(
-        !matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "expected non-Rejected when AoO is lethal, got {:?}",
-        result.outcome
-    );
+    // The lone investigator's defeat ends the game.
+    let result = session.finish();
+    assert_eq!(result.outcome, EngineOutcome::Done);
     // Action was still spent.
     assert_event!(
         result.events,
@@ -502,18 +461,12 @@ fn resource_with_nonlethal_aoo_still_gains() {
     // exhausted (RR p.7), investigator took 1 damage.
     let (inv_id, enemy_id, state) = resource_scenario_with_enemy(1, 8);
 
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::Resource {
-            investigator: inv_id,
-        },
-    );
+    let session = TestSession::new(state).take(&TurnAction::Resource {
+        investigator: inv_id,
+    });
 
-    assert!(
-        !matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "expected non-Rejected after nonlethal AoO + resource gain, got {:?}",
-        result.outcome
-    );
+    session.assert_at_turn_menu(inv_id);
+    let result = session.finish();
     // ResourcesGained IS emitted (primary effect ran after the AoO).
     assert_event!(
         result.events,
@@ -550,31 +503,22 @@ fn resource_with_no_engaged_enemy_gains_normally() {
     let inv_id = InvestigatorId(1);
     let loc_id = LocationId(10);
 
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(loc_id);
-    inv.actions_remaining = 3;
-    inv.resources = 2;
+    let inv = test_support::seat(1).at(loc_id).resources(2);
 
-    let loc = test_support::test_location(10, "Study");
+    let loc = test_support::test_location(loc_id.0, "Study");
 
     let state = GameStateBuilder::new()
-        .with_investigator(inv)
+        .with_seat(inv)
         .with_location(loc)
         .open_turn(inv_id)
         .build();
 
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::Resource {
-            investigator: inv_id,
-        },
-    );
+    let session = TestSession::new(state).take(&TurnAction::Resource {
+        investigator: inv_id,
+    });
 
-    assert!(
-        !matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "expected non-Rejected on no-AoO resource gain, got {:?}",
-        result.outcome
-    );
+    session.assert_at_turn_menu(inv_id);
+    let result = session.finish();
     // Action was spent.
     assert_event!(
         result.events,
@@ -606,14 +550,13 @@ fn engage_scenario_with_aoo_enemy(
     let target_id = EnemyId(400);
     let aoo_enemy_id = EnemyId(401);
 
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(loc_id);
-    inv.actions_remaining = 3;
-    // Pre-load accumulated_damage so that max_health() (8 from TEST_INV) minus
-    // accumulated_damage equals inv_health (the "remaining health" the test intended).
-    inv.investigator_card.accumulated_damage = 8_u8.saturating_sub(inv_health);
+    // Pre-load the damage so that max_health() (8 from TEST_INV) minus the
+    // damage equals inv_health (the "remaining health" the test intended).
+    let inv = test_support::seat(1)
+        .at(loc_id)
+        .harm(8_u8.saturating_sub(inv_health), 0);
 
-    let loc = test_support::test_location(10, "Study");
+    let loc = test_support::test_location(loc_id.0, "Study");
 
     // The target: co-located, not yet engaged — cannot AoO.
     let mut target = test_support::test_enemy(400, "Cultist");
@@ -632,7 +575,7 @@ fn engage_scenario_with_aoo_enemy(
     aoo_enemy.exhausted = false;
 
     let state = GameStateBuilder::new()
-        .with_investigator(inv)
+        .with_seat(inv)
         .with_location(loc)
         .with_enemy(target)
         .with_enemy(aoo_enemy)
@@ -649,19 +592,13 @@ fn engage_with_nonlethal_aoo_engages_after_the_attack() {
     // target's engaged_with == Some(investigator), investigator survived.
     let (inv_id, target_id, aoo_enemy_id, state) = engage_scenario_with_aoo_enemy(8, 1);
 
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::Engage {
-            investigator: inv_id,
-            enemy: target_id,
-        },
-    );
+    let session = TestSession::new(state).take(&TurnAction::Engage {
+        investigator: inv_id,
+        enemy: target_id,
+    });
 
-    assert!(
-        !matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "expected non-Rejected after nonlethal AoO + engage, got {:?}",
-        result.outcome
-    );
+    session.assert_at_turn_menu(inv_id);
+    let result = session.finish();
     // AoO damage landed.
     assert_event!(
         result.events,
@@ -707,19 +644,14 @@ fn engage_with_lethal_aoo_suppresses_the_engagement() {
     // The other engaged enemy's AoO defeats the investigator: no EnemyEngaged.
     let (inv_id, target_id, _aoo_enemy_id, state) = engage_scenario_with_aoo_enemy(1, 1);
 
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::Engage {
-            investigator: inv_id,
-            enemy: target_id,
-        },
-    );
+    let session = TestSession::new(state).take(&TurnAction::Engage {
+        investigator: inv_id,
+        enemy: target_id,
+    });
 
-    assert!(
-        !matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "expected non-Rejected when AoO is lethal, got {:?}",
-        result.outcome
-    );
+    // The lone investigator's defeat ends the game.
+    let result = session.finish();
+    assert_eq!(result.outcome, EngineOutcome::Done);
     // Action was still spent.
     assert_event!(
         result.events,

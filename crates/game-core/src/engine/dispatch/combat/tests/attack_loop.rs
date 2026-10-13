@@ -1,5 +1,9 @@
 use super::*;
-use crate::state::EnemyPhaseFrame;
+use crate::action::{Action, PlayerAction};
+use crate::engine::enumerate::TurnAction;
+use crate::engine::outcome::OptionTarget;
+use crate::state::{EnemyPhaseFrame, LocationId};
+use crate::test_support::TestSession;
 
 /// The parked loop's re-exposure (#704): the head attacker's sequence has
 /// popped, so the loop takes it off, exhausts it, and — with none left —
@@ -17,7 +21,7 @@ fn drive_parked_attack_loop_exhausts_the_head_then_advances_the_cursor() {
     enemy.engaged_with = Some(inv_id);
 
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
         .with_turn_order([inv_id])
         .with_enemy(enemy)
         .with_phase_anchor(EnemyPhaseFrame {
@@ -83,7 +87,7 @@ fn a_head_attacker_that_dealt_nothing_still_exhausts() {
     enemy.engaged_with = Some(inv_id);
 
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
         .with_turn_order([inv_id])
         .with_enemy(enemy)
         .with_phase_anchor(EnemyPhaseFrame {
@@ -127,7 +131,7 @@ fn an_attack_of_opportunity_attacker_never_exhausts() {
     enemy.engaged_with = Some(inv_id);
 
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
         .with_turn_order([inv_id])
         .with_enemy(enemy)
         .build();
@@ -162,7 +166,7 @@ fn drive_retaliate_deals_damage_but_does_not_exhaust_the_attacker() {
     enemy.attack_horror = 0;
     // Not engaged: a retaliate fires regardless of engagement, driven by enemy id.
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
         .with_enemy(enemy)
         .build();
     let mut events = Vec::new();
@@ -199,7 +203,7 @@ fn drive_aoo_deals_damage_but_does_not_exhaust_the_attacker() {
     enemy.attack_damage = 1;
     enemy.attack_horror = 0;
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
         .with_enemy(enemy)
         .build();
     let mut events = Vec::new();
@@ -227,6 +231,24 @@ fn drive_aoo_deals_damage_but_does_not_exhaust_the_attacker() {
     assert_no_event!(events, Event::EnemyExhausted { .. });
 }
 
+/// Investigator 1's open turn at a location, engaged by two ready enemies:
+/// EnemyId(5) dealing 1 damage and EnemyId(6) dealing 2. Any non-exempt
+/// action provokes both attacks of opportunity.
+fn engaged_by_two() -> TestSession {
+    let here = LocationId(10);
+    let mut e_a = test_support::test_enemy(5, "A"); // EnemyId(5), dmg 1
+    e_a.attack_damage = 1;
+    let mut e_b = test_support::test_enemy(6, "B"); // EnemyId(6), dmg 2
+    e_b.attack_damage = 2;
+    GameStateBuilder::new()
+        .with_location(test_support::test_location(here.0, "Study"))
+        .with_seat(test_support::seat(1).at(here))
+        .with_enemy_engaged(e_a, InvestigatorId(1))
+        .with_enemy_engaged(e_b, InvestigatorId(1))
+        .open_turn(InvestigatorId(1))
+        .session()
+}
+
 #[test]
 fn drive_aoo_offers_order_pick_for_two_engaged_enemies() {
     // 2 engaged ready enemies provoking an AoO → the loop suspends on the
@@ -236,34 +258,18 @@ fn drive_aoo_offers_order_pick_for_two_engaged_enemies() {
     // AoO attacker exhausts (RR p.7). Total AoO damage = 3 < 8 = TEST_INV's
     // max_health() (#448 cp2a).
     let inv_id = InvestigatorId(1);
-    let mut e_a = test_support::test_enemy(5, "A"); // EnemyId(5), dmg 1
-    e_a.engaged_with = Some(inv_id);
-    e_a.attack_damage = 1;
-    let mut e_b = test_support::test_enemy(6, "B"); // EnemyId(6), dmg 2
-    e_b.engaged_with = Some(inv_id);
-    e_b.attack_damage = 2;
-
-    let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
-        .with_enemy(e_a)
-        .with_enemy(e_b)
-        .build();
-    let mut events = Vec::new();
-
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
-    let outcome = drive_aoo(&mut cx, inv_id);
-    let outcome = dispatch::drive(&mut cx, outcome);
-    assert!(
-        matches!(outcome, EngineOutcome::AwaitingInput { .. }),
+    let session = engaged_by_two().take(&TurnAction::Resource {
+        investigator: inv_id,
+    });
+    assert_eq!(
+        session.offered_at(&OptionTarget::Enemy(EnemyId(6))),
+        1,
         "2 engaged ready enemies → AoO order pick (#143)"
     );
     // The parked frame carries the AoO source + PickOrder stage (frame spans
-    // the whole AoO, not just a window suspension).
+    // the whole AoO, not just a window suspension) — a stack invariant.
     assert!(matches!(
-        state.continuations.top(),
+        session.state().continuations.top(),
         Some(Continuation::AttackLoop(AttackLoopFrame {
             source: EnemyAttackSource::AttackOfOpportunity,
             stage: AttackLoopStage::PickOrder,
@@ -271,15 +277,11 @@ fn drive_aoo_offers_order_pick_for_two_engaged_enemies() {
         }))
     ));
 
-    // Pick EnemyId(6) (dmg 2) first → option 1 in EnemyId order [5, 6].
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
-    let resumed = dispatch::resolve_input(&mut cx, &InputResponse::PickSingle(OptionId(1)));
-    let resumed = dispatch::drive(&mut cx, resumed);
-    assert!(matches!(resumed, EngineOutcome::Done), "AoO loop drained");
-    let damages: Vec<u8> = events
+    // Pick EnemyId(6) (dmg 2) first.
+    let session = session.pick(OptionTarget::Enemy(EnemyId(6)));
+    session.assert_at_turn_menu(inv_id);
+    let damages: Vec<u8> = session
+        .events()
         .iter()
         .filter_map(|e| match e {
             Event::DamageTaken { amount, .. } => Some(*amount),
@@ -291,6 +293,7 @@ fn drive_aoo_offers_order_pick_for_two_engaged_enemies() {
         vec![2, 1],
         "chosen EnemyId(6) (dmg 2) struck first"
     );
+    let state = session.state();
     assert!(
         !state.enemies[&EnemyId(5)].exhausted && !state.enemies[&EnemyId(6)].exhausted,
         "AoO attackers never exhaust (RR p.7)"
@@ -300,52 +303,26 @@ fn drive_aoo_offers_order_pick_for_two_engaged_enemies() {
 #[test]
 fn resume_attack_order_pick_rejects_invalid_input_and_keeps_frame() {
     // An out-of-range option id and a wrong InputResponse variant both reject,
-    // leaving the PickOrder frame on the stack for the client to retry
-    // (mirrors resume_hunter_choice).
+    // leaving the order pick up for the client to retry (mirrors
+    // resume_hunter_choice).
     let inv_id = InvestigatorId(1);
-    let mut e_a = test_support::test_enemy(5, "A");
-    e_a.engaged_with = Some(inv_id);
-    let mut e_b = test_support::test_enemy(6, "B");
-    e_b.engaged_with = Some(inv_id);
+    let session = engaged_by_two().take(&TurnAction::Resource {
+        investigator: inv_id,
+    });
 
-    let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
-        .with_enemy(e_a)
-        .with_enemy(e_b)
-        .build();
-    let mut events = Vec::new();
-    let _ = drive_aoo(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
-        inv_id,
-    );
-
-    // Out-of-range option (only 0, 1 valid).
-    let rejected = dispatch::resolve_input(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
-        &InputResponse::PickSingle(OptionId(9)),
-    );
-    assert!(matches!(rejected, EngineOutcome::Rejected { .. }));
+    // Out-of-range option (only 0, 1 valid): a malformed wire response no
+    // step can name, so the raw `ResolveInput` is sent as is.
+    let session = session.apply(Action::Player(PlayerAction::ResolveInput {
+        response: InputResponse::PickSingle(OptionId(9)),
+    }));
+    session.expect_rejected();
     // Wrong variant.
-    let rejected2 = dispatch::resolve_input(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
-        &InputResponse::Skip,
-    );
-    assert!(matches!(rejected2, EngineOutcome::Rejected { .. }));
-    // The PickOrder frame survives both rejections for retry.
-    assert!(matches!(
-        state.continuations.top(),
-        Some(Continuation::AttackLoop(AttackLoopFrame {
-            stage: AttackLoopStage::PickOrder,
-            ..
-        }))
-    ));
+    let session = session.skip();
+    session.expect_rejected();
+    // The order pick survives both rejections for retry.
+    assert_eq!(session.offered_at(&OptionTarget::Enemy(EnemyId(5))), 1);
+    assert_eq!(session.offered_at(&OptionTarget::Enemy(EnemyId(6))), 1);
+    session
+        .pick(OptionTarget::Enemy(EnemyId(5)))
+        .assert_at_turn_menu(inv_id);
 }

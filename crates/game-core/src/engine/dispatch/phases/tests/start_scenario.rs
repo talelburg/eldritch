@@ -3,7 +3,7 @@ use card_dsl::card_data::SkillKind;
 use super::*;
 use crate::action::RosterEntry;
 use crate::state::{CardCode, GameStateBuilder, SkillSubstitution};
-use crate::test_support::TEST_INV;
+use crate::test_support::{TestSession, TEST_INV};
 use crate::{engine, test_support};
 
 #[test]
@@ -22,27 +22,28 @@ fn round_end_clears_round_scoped_skill_substitutions() {
     // abilities), not the next Mythos step.
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
         .with_turn_order([id])
-        .with_active_investigator(id)
-        // upkeep_round_end_teardown pops the UpkeepPhase anchor (slice 1a).
-        .with_phase_anchor(UpkeepPhaseFrame {
-            resume: UpkeepResume::Begins,
-        })
+        .with_round(1)
+        .ending_upkeep_phase()
         .build();
-    state.round = 1;
     state.skill_substitutions.push(SkillSubstitution {
         investigator: id,
         use_skill: SkillKind::Intellect,
         for_skills: vec![SkillKind::Combat, SkillKind::Agility],
     });
-    let mut events = Vec::new();
-    upkeep_round_end_teardown(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+
+    // Settling runs the round end; play goes on to round 2's Mythos phase.
+    let session = TestSession::new(state);
+    crate::assert_event!(
+        session.events(),
+        Event::PhaseEnded {
+            phase: Phase::Upkeep
+        }
+    );
+    assert_eq!(session.state().round, 2, "the round ended");
     assert!(
-        state.skill_substitutions.is_empty(),
+        session.state().skill_substitutions.is_empty(),
         "round end (step 4.6) clears round-scoped substitutions",
     );
 }
