@@ -7,10 +7,12 @@
 //! `apply_effect` is `pub(crate)` — same shape as `native_effect.rs`.
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, InvestigatorTarget};
+use game_core::engine::enumerate::TurnAction;
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{ApplyResult, EngineOutcome, TimingEvent};
+use game_core::event::Event;
 use game_core::state::{self, Agenda, CardCode, GameState, GameStateBuilder, InvestigatorId};
-use game_core::test_support::{self, MockRegistry, TestSession};
+use game_core::test_support::{seat, MockRegistry, TestSession};
+use game_core::{assert_event, assert_no_event};
 
 const AGENDA: &str = "TEST-AGENDA";
 const AGENDA_BAD: &str = "TEST-AGENDA-BAD";
@@ -47,14 +49,15 @@ fn install() {
         .install();
 }
 
+/// The lead's open turn under the agenda `code` carrying `doom`. A filler deck
+/// keeps Upkeep 4.4's draw from dealing empty-deck horror once the enemy phase
+/// has ended.
 fn state_with_agenda(code: &str, doom: u8) -> GameState {
-    // `turn_order` must hold an Active investigator: `PhaseEnded` forced
-    // dispatch binds the controller to the first one and returns no hits
-    // otherwise.
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
-        .with_turn_order([INV])
+        .with_seat(seat(1).deck(["filler-card"]))
+        .open_turn(INV)
         .build();
+    // No builder setter stages the agenda deck.
     state.agenda_deck = vec![Agenda {
         code: CardCode::new(code),
         doom_threshold: 10,
@@ -64,34 +67,40 @@ fn state_with_agenda(code: &str, doom: u8) -> GameState {
     state
 }
 
+/// End the lead's turn, and with it the Investigation phase, so play runs into
+/// the Enemy phase and its end, where the agenda's forced ability fires. Play
+/// then goes on through Upkeep (and its resource) into the next round's Mythos
+/// phase, so a branch is read off its `ResourcesGained` event rather than the
+/// pool.
+fn end_the_enemy_phase(state: GameState) -> TestSession {
+    let session = TestSession::new(state).take(&TurnAction::EndTurn);
+    assert_event!(
+        session.events(),
+        Event::PhaseEnded {
+            phase: state::Phase::Enemy
+        }
+    );
+    session
+}
+
 fn resources(state: &GameState) -> u8 {
     state.investigators[&INV].resources
 }
 
 #[test]
 fn native_condition_holding_takes_the_then_branch() {
-    let state = state_with_agenda(AGENDA, 1);
-    let before = resources(&state);
-    let ApplyResult { state, outcome, .. } = TestSession::new(state)
-        .fire_at(TimingEvent::PhaseEnded {
-            phase: state::Phase::Enemy,
-        })
-        .finish();
-    assert_eq!(outcome, EngineOutcome::Done);
-    assert_eq!(resources(&state), before + 2, "predicate true → `then`");
+    let session = end_the_enemy_phase(state_with_agenda(AGENDA, 1));
+    // Predicate true → `then` (2), not `else_` (5).
+    assert_event!(session.events(), Event::ResourcesGained { investigator, amount: 2 } if *investigator == INV);
+    assert_no_event!(session.events(), Event::ResourcesGained { amount: 5, .. });
 }
 
 #[test]
 fn native_condition_failing_takes_the_else_branch() {
-    let state = state_with_agenda(AGENDA, 0);
-    let before = resources(&state);
-    let ApplyResult { state, outcome, .. } = TestSession::new(state)
-        .fire_at(TimingEvent::PhaseEnded {
-            phase: state::Phase::Enemy,
-        })
-        .finish();
-    assert_eq!(outcome, EngineOutcome::Done);
-    assert_eq!(resources(&state), before + 5, "predicate false → `else_`");
+    let session = end_the_enemy_phase(state_with_agenda(AGENDA, 0));
+    // Predicate false → `else_` (5), not `then` (2).
+    assert_event!(session.events(), Event::ResourcesGained { investigator, amount: 5 } if *investigator == INV);
+    assert_no_event!(session.events(), Event::ResourcesGained { amount: 2, .. });
 }
 
 /// An unregistered tag is a card-authoring bug, not a `false` verdict — it
@@ -100,14 +109,9 @@ fn native_condition_failing_takes_the_else_branch() {
 fn native_condition_rejects_unknown_tag() {
     let state = state_with_agenda(AGENDA_BAD, 1);
     let before = resources(&state);
-    let ApplyResult { state, outcome, .. } = TestSession::new(state)
-        .fire_at(TimingEvent::PhaseEnded {
-            phase: state::Phase::Enemy,
-        })
-        .finish();
-    assert!(
-        matches!(outcome, EngineOutcome::Rejected { .. }),
-        "unknown tag rejects; got {outcome:?}"
-    );
-    assert_eq!(resources(&state), before, "no mutation on reject");
+    let session = TestSession::new(state).take(&TurnAction::EndTurn);
+    session.expect_rejected();
+    // The rejection unwinds the whole step back to the turn menu.
+    session.assert_at_turn_menu(INV);
+    assert_eq!(resources(session.state()), before, "no mutation on reject");
 }
