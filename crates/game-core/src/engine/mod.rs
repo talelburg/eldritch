@@ -51,7 +51,7 @@ pub use dispatch::emit::TimingEvent;
 // `pub(crate)`: `apply` routes player actions through `apply_player_action`, and
 // `test_support`'s session drives turn actions and the loop directly.
 pub(crate) use dispatch::{apply_player_action, dispatch_turn_action, drive};
-// `pub(crate)` so `test_support::perform_skill_test` can start a plain skill test
+// `pub(crate)` so `TestSession::test_skill` can start a plain skill test
 // directly (the synthetic entry point that replaced the retired
 // `PlayerAction::PerformSkillTest` wire variant, #447).
 pub(crate) use dispatch::skill_test::perform_skill_test as start_plain_skill_test;
@@ -167,7 +167,7 @@ pub fn seat_and_open(setup_state: GameState, roster: &[RosterEntry]) -> ApplyRes
 /// Builds the [`Cx`], runs `dispatch` to produce the outcome, then applies the
 /// transactional-restore + resolution-hook contract uniformly:
 /// [`apply_with_scenario_registry`] passes the typed-action dispatch;
-/// [`test_support::dispatch_turn_action_unchecked`](crate::test_support::dispatch_turn_action_unchecked)
+/// [`TestSession::submit_off_menu`](crate::test_support::TestSession::submit_off_menu)
 /// passes a [`TurnAction`]-through-handler dispatch that bypasses the
 /// enumeration gate (so handler-level corruption panics are reachable from
 /// tests). Factored out so neither caller copy-pastes the `Cx` build, the

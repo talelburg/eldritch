@@ -26,7 +26,8 @@
 //! use game_core::engine::enumerate::TurnAction;
 //! use game_core::event::Event;
 //! use game_core::state::{GameStateBuilder, InvestigatorId};
-//! use game_core::{assert_event, assert_no_event, test_support};
+//! use game_core::test_support::{self, TestSession};
+//! use game_core::{assert_event, assert_no_event};
 //!
 //! let state = GameStateBuilder::new()
 //!     .with_investigator(test_support::test_investigator(1))
@@ -34,10 +35,10 @@
 //!     .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
 //!     .open_turn(InvestigatorId(1))
 //!     .build();
-//! let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
+//! let session = TestSession::new(state).take(&TurnAction::EndTurn);
 //!
-//! assert_event!(result.events, Event::TurnEnded { .. });
-//! assert_no_event!(result.events, Event::ScenarioStarted);
+//! assert_event!(session.events(), Event::TurnEnded { .. });
+//! assert_no_event!(session.events(), Event::ScenarioStarted);
 //! ```
 
 /// Assert that at least one [`Event`](crate::event::Event) in the slice

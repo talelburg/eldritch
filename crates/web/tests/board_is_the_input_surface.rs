@@ -196,7 +196,9 @@ async fn a_whole_turn_is_driven_from_the_board_alone() {
     // Seed by spending the one action through the engine: what comes back is the
     // engine's own open-turn menu, so nothing about the anchors is reconstructed
     // in the test.
-    let seeded = test_support::take_turn_action(state, &TurnAction::Resource { investigator: INV });
+    let seeded = test_support::TestSession::new(state)
+        .take(&TurnAction::Resource { investigator: INV })
+        .finish();
     let mut h = Harness::mount(seeded.state, seeded.outcome).await;
 
     // 1. The open turn. The banner stays silent — the menu is anchored to the
@@ -293,7 +295,9 @@ async fn a_choice_printed_on_one_card_presents_itself_without_a_second_click() {
 
     // Spend an action through the engine to reach its own open-turn menu, so
     // nothing about the anchors is reconstructed by the test.
-    let seeded = test_support::take_turn_action(state, &TurnAction::Resource { investigator: INV });
+    let seeded = test_support::TestSession::new(state)
+        .take(&TurnAction::Resource { investigator: INV })
+        .finish();
     let mut h = Harness::mount(seeded.state, seeded.outcome).await;
 
     // 1. First Aid glows on the board and opens its Activate menu — a selection,
