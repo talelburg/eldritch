@@ -3,16 +3,8 @@ use super::*;
 #[test]
 fn discover_clue_moves_one_clue_from_location_to_controller() {
     let inv_id = InvestigatorId(1);
-    let loc_id = LocationId(10);
-    let mut investigator = test_support::test_investigator(1);
-    investigator.current_location = Some(loc_id);
-    let mut location = test_support::test_location(10, "Study");
-    location.clues = 3;
-
-    let mut state = GameStateBuilder::new()
-        .with_investigator(investigator)
-        .with_location(location)
-        .build();
+    let loc_id = HERE;
+    let mut state = state_with_clues_at_location(3);
     let mut events = Vec::new();
 
     let outcome = run(
@@ -43,16 +35,8 @@ fn discover_clue_with_no_interrupt_discovers_normally() {
     // interrupt scan finds nothing → discovery proceeds exactly as before.
     // Regression guard for the seam's "fall through" path (C5a #236).
     let inv_id = InvestigatorId(1);
-    let loc_id = LocationId(10);
-    let mut investigator = test_support::test_investigator(1);
-    investigator.current_location = Some(loc_id);
-    let mut location = test_support::test_location(10, "Study");
-    location.clues = 3;
-
-    let mut state = GameStateBuilder::new()
-        .with_investigator(investigator)
-        .with_location(location)
-        .build();
+    let loc_id = HERE;
+    let mut state = state_with_clues_at_location(3);
     let mut events = Vec::new();
 
     let outcome = run(
@@ -77,16 +61,8 @@ fn discover_clue_with_no_interrupt_discovers_normally() {
 fn discover_clue_caps_at_location_clue_count() {
     // Card asks for 3 clues but the location only has 1 — take
     // what's there, no error.
-    let loc_id = LocationId(10);
-    let mut investigator = test_support::test_investigator(1);
-    investigator.current_location = Some(loc_id);
-    let mut location = test_support::test_location(10, "Study");
-    location.clues = 1;
-
-    let mut state = GameStateBuilder::new()
-        .with_investigator(investigator)
-        .with_location(location)
-        .build();
+    let loc_id = HERE;
+    let mut state = state_with_clues_at_location(1);
     let mut events = Vec::new();
 
     let outcome = run(
@@ -114,15 +90,8 @@ fn discover_clue_caps_at_location_clue_count() {
 fn discover_clue_on_empty_location_is_a_silent_noop() {
     // Per the rulebook: a discover-clue effect against an empty
     // location is a no-op, not a rejection.
-    let loc_id = LocationId(10);
-    let mut investigator = test_support::test_investigator(1);
-    investigator.current_location = Some(loc_id);
-    let location = test_support::test_location(10, "Study"); // 0 clues by default
-
-    let mut state = GameStateBuilder::new()
-        .with_investigator(investigator)
-        .with_location(location)
-        .build();
+    let loc_id = HERE;
+    let mut state = state_with_clues_at_location(0);
     let mut events = Vec::new();
 
     let outcome = run(
@@ -145,7 +114,7 @@ fn discover_clue_rejects_when_controller_is_between_locations() {
     // "You" has no current_location — LocationTarget::
     // YourLocation can't resolve.
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1)) // current_location = None
+        .with_seat(seat(1)) // current_location = None
         .build();
     let mut events = Vec::new();
 
@@ -171,16 +140,14 @@ fn discover_clue_tested_location_resolves_to_in_flight_test_location() {
     // discover lands at the tested location.
     let tested = LocationId(20);
     let elsewhere = LocationId(30);
-    let mut investigator = test_support::test_investigator(1);
-    investigator.current_location = Some(elsewhere);
-    let mut tested_loc = test_support::test_location(20, "Study");
+    let mut tested_loc = test_support::test_location(tested.0, "Study");
     tested_loc.clues = 2;
-    let elsewhere_loc = test_support::test_location(30, "Hall");
+    let elsewhere_loc = test_support::test_location(elsewhere.0, "Hall");
 
     let mut state = GameStateBuilder::new()
-        .with_investigator(investigator)
         .with_location(tested_loc)
         .with_location(elsewhere_loc)
+        .with_seat(seat(1).at(elsewhere))
         .build();
     state
         .continuations
@@ -222,16 +189,7 @@ fn discover_clue_tested_location_resolves_to_in_flight_test_location() {
 #[test]
 fn tested_location_rejects_without_in_flight_test() {
     // No in-flight skill test → TestedLocation can't resolve.
-    let mut investigator = test_support::test_investigator(1);
-    investigator.current_location = Some(LocationId(10));
-    let mut state = GameStateBuilder::new()
-        .with_investigator(investigator)
-        .with_location({
-            let mut l = test_support::test_location(10, "Study");
-            l.clues = 1;
-            l
-        })
-        .build();
+    let mut state = state_with_clues_at_location(1);
     let mut events = Vec::new();
 
     let outcome = run(
@@ -251,9 +209,7 @@ fn tested_location_rejects_without_in_flight_test() {
 fn tested_location_rejects_when_test_has_no_location_snapshot() {
     // In-flight test exists but tested_location is None (e.g.
     // a bare plain skill test invoked while between locations).
-    let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
-        .build();
+    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
     state
         .continuations
         .push(Continuation::SkillTest(InFlightSkillTest {

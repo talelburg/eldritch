@@ -3,14 +3,8 @@ use super::*;
 #[test]
 fn heal_reduces_horror_saturating_and_emits_event() {
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(seat(1).harm(0, 1))
         .build();
-    state
-        .investigators
-        .get_mut(&InvestigatorId(1))
-        .unwrap()
-        .investigator_card
-        .accumulated_horror = 1;
     let mut events = Vec::new();
     let outcome = run(
         &mut Cx {
@@ -36,7 +30,7 @@ fn heal_reduces_horror_saturating_and_emits_event() {
 #[test]
 fn deal_damage_adds_damage_and_emits_event() {
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(seat(1))
         .with_active_investigator(InvestigatorId(1))
         .build();
     let mut events = Vec::new();
@@ -60,7 +54,7 @@ fn deal_damage_adds_damage_and_emits_event() {
 #[test]
 fn deal_horror_adds_horror_and_emits_event() {
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(seat(1))
         .with_active_investigator(InvestigatorId(1))
         .build();
     let mut events = Vec::new();
@@ -88,9 +82,9 @@ fn deal_damage_at_max_health_defeats_investigator() {
     // InvestigatorEliminated is emitted. Pre-load 5 accumulated_damage so
     // 5 + 3 = 8 = defeated with a 3-damage deal.
     let id = InvestigatorId(1);
-    let mut inv = test_support::test_investigator(1);
-    inv.investigator_card.accumulated_damage = 5;
-    let mut state = GameStateBuilder::new().with_investigator(inv).build();
+    let mut state = GameStateBuilder::new()
+        .with_seat(seat(id.0).harm(5, 0))
+        .build();
     let mut events = Vec::new();
     let outcome = run(
         &mut Cx {
@@ -116,7 +110,7 @@ fn deal_amount_can_be_a_count_of_failure_margin() {
         IntExpr::Count(Quantity::SkillTestFailedBy),
     );
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(seat(1))
         .with_active_investigator(InvestigatorId(1))
         .build();
     let mut events = Vec::new();
