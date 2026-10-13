@@ -57,7 +57,10 @@ fn an_active_roland_is_offered_his_reaction() {
     let session = roland_defeats_an_enemy(Status::Active);
     let rolands_card = session.state().investigators[&SEAT_1].card_anchor();
     assert_eq!(
-        (session.offered_at(&rolands_card), session.prompt().options.len()),
+        (
+            session.offered_at(&rolands_card),
+            session.prompt().options.len()
+        ),
         (1, 1),
         "the window offers Roland's own reaction alone: {:?}",
         session.prompt(),
