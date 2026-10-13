@@ -1,5 +1,7 @@
 use super::*;
 
+const ADVANCE_ACT: TurnAction = TurnAction::AdvanceAct { investigator: INV };
+
 /// `apply_resolution` that records it ran by stamping the acting
 /// investigator's resources to a sentinel value, so tests can assert
 /// the module hook (not just the event) fired.
@@ -30,24 +32,18 @@ fn stamp_module_for(id: &ScenarioId) -> Option<&'static ScenarioModule> {
 
 /// Build an Investigation-phase state whose current (only) act is
 /// terminal — it is the only card in the deck (ADR 0013) — and whose
-/// investigator holds exactly enough clues to advance it. A single
-/// `AdvanceAct` flips it and its reverse latches `Resolution(1)`, which is
-/// why the test registry has to be installed: the reverse is an ability the
-/// registry serves, not a field on the deck entry.
-fn terminal_act_state(scenario_id: Option<&str>) -> GameState {
-    let inv = InvestigatorId(1);
-    let mut investigator = test_support::test_investigator(1);
-    investigator.clues = 1;
-    // Seat the open-turn frame (InvestigationPhase anchor + InvestigatorTurn)
-    // so `legal_actions` enumerates `AdvanceAct` — the OptionId-routing entry
-    // point these tests drive through `apply_with_scenario_registry`.
-    let mut builder = GameStateBuilder::new()
-        .with_investigator(investigator)
-        .open_turn(inv);
-    if let Some(id) = scenario_id {
-        builder = builder.with_scenario_id(ScenarioId::new(id));
-    }
-    let mut state = builder.build();
+/// investigator holds `clues` clues: one is exactly enough to advance it. A
+/// single `AdvanceAct` flips it and its reverse latches `Resolution(1)`,
+/// which is why the test registry has to be installed: the reverse is an
+/// ability the registry serves, not a field on the deck entry.
+fn terminal_act_state(scenario_id: &str, clues: u8) -> GameState {
+    // Open the turn so `legal_actions` enumerates `AdvanceAct`.
+    let mut state = GameStateBuilder::new()
+        .with_seat(seat(1).clues(clues))
+        .open_turn(INV)
+        .with_scenario_id(ScenarioId::new(scenario_id))
+        .build();
+    // No builder setter for the act deck.
     state.act_deck = vec![Act {
         code: test_support::terminal_code(1),
         clue_threshold: 1,
@@ -55,16 +51,19 @@ fn terminal_act_state(scenario_id: Option<&str>) -> GameState {
     state
 }
 
-/// Route an open-turn [`TurnAction`] through
-/// [`apply_with_scenario_registry`] via `OptionId` (slice 2b, #447):
-/// enumerate `legal_actions`, find the matching action's index, and submit it
-/// as `ResolveInput(PickSingle)`. Mirrors `take_turn_action` but threads the
-/// explicit registry the resolution-hook tests require (which the plain
-/// `take_turn_action` helper cannot supply, as it calls `apply`).
+/// Take `action` from the turn menu through
+/// [`apply_with_scenario_registry`], with `registry` as the scenario
+/// registry.
+///
+/// An exemption from `TestSession::take`: the session reads the
+/// process-global scenario registry, and a game-core unit-test binary
+/// cannot install the stamp module there (installing in one test would
+/// contaminate the others), so these tests thread an explicit registry. The
+/// option id is the action's index on the menu, as `take` computes it.
 fn take_turn_action_with_registry(
     state: GameState,
     action: &TurnAction,
-    registry: Option<&ScenarioRegistry>,
+    registry: ScenarioRegistry,
 ) -> ApplyResult {
     let actions = legal_actions(&state);
     let idx = actions
@@ -76,24 +75,28 @@ fn take_turn_action_with_registry(
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
         }),
-        registry,
+        Some(&registry),
     )
+}
+
+fn stamp_registry() -> ScenarioRegistry {
+    ScenarioRegistry {
+        module_for: stamp_module_for,
+    }
 }
 
 #[test]
 fn resolution_fires_and_applies_when_latch_set_with_module() {
-    let state = terminal_act_state(Some("stamp"));
-    let reg = ScenarioRegistry {
-        module_for: stamp_module_for,
-    };
     let result = take_turn_action_with_registry(
-        state,
-        &TurnAction::AdvanceAct {
-            investigator: InvestigatorId(1),
-        },
-        Some(&reg),
+        terminal_act_state("stamp", 1),
+        &ADVANCE_ACT,
+        stamp_registry(),
     );
-    assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
+    assert_eq!(
+        result.outcome,
+        EngineOutcome::Done,
+        "the scenario has ended"
+    );
     assert_event!(
         result.events,
         Event::ScenarioResolved {
@@ -101,25 +104,23 @@ fn resolution_fires_and_applies_when_latch_set_with_module() {
         } if *id == ResolutionId::new(1)
     );
     assert_eq!(
-        result.state.investigators[&InvestigatorId(1)].resources,
-        99,
+        result.state.investigators[&INV].resources, 99,
         "apply_resolution ran"
     );
 }
 
 #[test]
 fn resolution_event_fires_without_a_registered_module() {
-    // No registry: the event still fires (resolution is engine state),
-    // but apply_resolution can't run.
-    let state = terminal_act_state(Some("unknown"));
-    let result = take_turn_action_with_registry(
-        state,
-        &TurnAction::AdvanceAct {
-            investigator: InvestigatorId(1),
-        },
-        None,
+    // No module registered for the scenario: the event still fires
+    // (resolution is engine state), but apply_resolution can't run.
+    let result = TestSession::new(terminal_act_state("unknown", 1))
+        .take(&ADVANCE_ACT)
+        .finish();
+    assert_eq!(
+        result.outcome,
+        EngineOutcome::Done,
+        "the scenario has ended"
     );
-    assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert_event!(result.events, Event::ScenarioResolved { .. });
 }
 
@@ -128,39 +129,25 @@ fn game_end_is_a_noop_without_a_game_end_ability_in_play() {
     // The GameEnd condition (C5a #236) is emitted at resolution but is a
     // no-op with no card in play carrying a GameEnd ability: the resolution
     // still fires, and no TraumaSuffered is emitted.
-    let state = terminal_act_state(Some("unknown"));
-    let result = take_turn_action_with_registry(
-        state,
-        &TurnAction::AdvanceAct {
-            investigator: InvestigatorId(1),
-        },
-        None,
-    );
+    let result = TestSession::new(terminal_act_state("unknown", 1))
+        .take(&ADVANCE_ACT)
+        .finish();
     assert_event!(result.events, Event::ScenarioResolved { .. });
     assert_no_event!(result.events, Event::TraumaSuffered { .. });
 }
 
 #[test]
 fn resolution_cancels_the_open_turn_and_does_not_refire() {
-    // `terminal_act_state` seats the InvestigationPhase anchor + the
-    // InvestigatorTurn frame (slice 1a / 2a-i, #393): AdvanceAct routes via
-    // OptionId and latches the terminal act's `Won`.
-    let state = terminal_act_state(Some("stamp"));
-    let reg = ScenarioRegistry {
-        module_for: stamp_module_for,
-    };
-    let first = take_turn_action_with_registry(
-        state,
-        &TurnAction::AdvanceAct {
-            investigator: InvestigatorId(1),
-        },
-        Some(&reg),
-    );
+    // `terminal_act_state` opens the turn: AdvanceAct latches the terminal
+    // act's resolution.
+    let reg = stamp_registry();
+    let first = take_turn_action_with_registry(terminal_act_state("stamp", 1), &ADVANCE_ACT, reg);
     assert_event!(first.events, Event::ScenarioResolved { .. });
     // The scenario ended, so the framework sequence it was suspended in is
     // cancelled (#566): the open turn and its phase anchor are gone, and
     // with them every legal action. Before #566 the engine kept offering the
-    // turn menu and cascading into the next round's Mythos phase.
+    // turn menu and cascading into the next round's Mythos phase. A stack
+    // invariant: no frame survives the ending.
     assert!(
         first.state.continuations.is_empty(),
         "the open turn and phase anchor are cancelled: {:?}",
@@ -168,8 +155,9 @@ fn resolution_cancels_the_open_turn_and_does_not_refire() {
     );
     assert!(legal_actions(&first.state).is_empty());
 
-    // A later action finds no prompt outstanding and rejects; the
-    // already-finished resolution does not re-fire.
+    // A later answer finds no prompt outstanding and rejects; the
+    // already-finished resolution does not re-fire. The subject is that
+    // stray wire action itself, so it is sent raw.
     let second = apply_with_scenario_registry(
         first.state,
         Action::Player(PlayerAction::ResolveInput {
@@ -183,9 +171,7 @@ fn resolution_cancels_the_open_turn_and_does_not_refire() {
 
 #[test]
 fn resolution_skipped_on_rejected_outcome() {
-    let inv = InvestigatorId(1);
-    let mut state = terminal_act_state(Some("stamp"));
-    state.investigators.get_mut(&inv).unwrap().clues = 0;
+    let state = terminal_act_state("stamp", 0);
     // With 0 clues AdvanceAct is illegal, so it is not enumerated — there is
     // no OptionId to submit (OptionId-routing #447 expresses illegality as
     // non-enumeration).
@@ -194,16 +180,14 @@ fn resolution_skipped_on_rejected_outcome() {
         .iter()
         .any(|a| matches!(a, TurnAction::AdvanceAct { .. })));
     // Submitting an out-of-range OptionId rejects, and a Rejected outcome must
-    // skip the resolution hook (no ScenarioResolved fires).
-    let reg = ScenarioRegistry {
-        module_for: stamp_module_for,
-    };
+    // skip the resolution hook (no ScenarioResolved fires). The subject is
+    // that malformed wire action itself, so it is sent raw.
     let result = apply_with_scenario_registry(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(u32::try_from(legal.len()).unwrap())),
         }),
-        Some(&reg),
+        Some(&stamp_registry()),
     );
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert_no_event!(result.events, Event::ScenarioResolved { .. });
@@ -213,16 +197,10 @@ fn resolution_skipped_on_rejected_outcome() {
 fn resolution_places_no_victory_without_qualifying_locations() {
     // No victory-bearing locations in play → nothing placed, no event,
     // no panic (covers the registry-absent / no-location path).
-    let state = terminal_act_state(Some("stamp"));
-    let reg = ScenarioRegistry {
-        module_for: stamp_module_for,
-    };
     let result = take_turn_action_with_registry(
-        state,
-        &TurnAction::AdvanceAct {
-            investigator: InvestigatorId(1),
-        },
-        Some(&reg),
+        terminal_act_state("stamp", 1),
+        &ADVANCE_ACT,
+        stamp_registry(),
     );
     assert!(result.state.victory_display.is_empty());
     assert_no_event!(result.events, Event::EnteredVictoryDisplay { .. });

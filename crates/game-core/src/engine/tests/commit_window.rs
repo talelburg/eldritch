@@ -1,62 +1,56 @@
 use super::*;
 
+/// `INV`'s open turn holding `hand`, with a `Numeric(0)` bag.
+fn commit_board(hand: &[&str]) -> GameStateBuilder {
+    GameStateBuilder::new()
+        .with_seat(seat(1).hand(hand.iter().copied()))
+        .with_chaos_bag(bag_only_zero())
+        .open_turn(INV)
+}
+
+/// `INV` starts an Intellect 3 test from the turn menu: the session rests at
+/// its commit window.
+fn paused_at_commit_window(board: GameStateBuilder) -> TestSession {
+    board.session().test_skill(INV, SkillKind::Intellect, 3)
+}
+
 #[test]
 fn perform_skill_test_awaits_input_between_started_and_revealed() {
-    // Acceptance: AwaitingInput must fire between SkillTestStarted
-    // and ChaosTokenRevealed. The first `apply` returns
-    // AwaitingInput with only SkillTestStarted on the events list.
-    let id = InvestigatorId(1);
-    let state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
-        .with_chaos_bag(bag_only_zero())
-        .build();
-    let result = test_support::perform_skill_test(state, id, SkillKind::Intellect, 3);
+    // Acceptance: the commit window must open between SkillTestStarted
+    // and ChaosTokenRevealed. Starting the test stops at that window with
+    // only SkillTestStarted among its events.
+    let paused = paused_at_commit_window(commit_board(&[]));
 
-    assert!(matches!(
-        result.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
+    assert_eq!(paused.prompt().kind, InputKind::PickMultiple);
     assert_event!(
-        result.events,
-        Event::SkillTestStarted { investigator, .. } if *investigator == id
+        paused.events(),
+        Event::SkillTestStarted { investigator, .. } if *investigator == INV
     );
     // The chaos token has NOT been drawn yet — that fires on the
     // resume path after the commit response arrives.
-    assert_no_event!(result.events, Event::ChaosTokenRevealed { .. });
+    assert_no_event!(paused.events(), Event::ChaosTokenRevealed { .. });
     assert!(
-        result.state.has_skill_test_in_flight(),
+        paused.state().has_skill_test_in_flight(),
         "the SkillTest frame must be populated while paused",
     );
 }
 
 #[test]
 fn resolve_input_with_empty_commits_resumes_the_test() {
-    // Pause → resume with `PickMultiple { selected: [] }` →
-    // ChaosTokenRevealed and the rest of resolution fire on the
-    // second apply.
-    let id = InvestigatorId(1);
-    let state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
-        .with_chaos_bag(bag_only_zero())
-        .build();
-    let paused = test_support::perform_skill_test(state, id, SkillKind::Intellect, 3);
+    // Pause → resume committing nothing → ChaosTokenRevealed and the rest
+    // of resolution fire on the commit step.
+    let resumed = paused_at_commit_window(commit_board(&[])).commit(&[]);
 
-    let resumed = apply(
-        paused.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        }),
-    );
-
-    assert_eq!(resumed.outcome, EngineOutcome::Done);
+    resumed.assert_at_turn_menu(INV);
+    let resumed = resumed.finish();
     assert_event!(resumed.events, Event::ChaosTokenRevealed { .. });
     assert_event!(
         resumed.events,
-        Event::SkillTestSucceeded { investigator, .. } if *investigator == id
+        Event::SkillTestSucceeded { investigator, .. } if *investigator == INV
     );
     assert_event!(
         resumed.events,
-        Event::SkillTestEnded { investigator } if *investigator == id
+        Event::SkillTestEnded { investigator } if *investigator == INV
     );
     assert!(
         !resumed.state.has_skill_test_in_flight(),
@@ -68,39 +62,29 @@ fn resolve_input_with_empty_commits_resumes_the_test() {
 fn skill_test_pushes_and_pops_a_continuation_frame() {
     // Axis-B T4: the commit window is a `Continuation::SkillTest` frame
     // on the one stack, pushed when the test parks and popped when it
-    // fully resolves.
-    let id = InvestigatorId(1);
-    let state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
-        .with_chaos_bag(bag_only_zero())
-        .build();
-    let paused = test_support::perform_skill_test(state, id, SkillKind::Intellect, 3);
-    assert!(matches!(
-        paused.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
+    // fully resolves. The stack is the subject here.
+    let at_menu = commit_board(&[]).session();
+    let depth_at_menu = at_menu.state().continuations.len();
+
+    let paused = at_menu.test_skill(INV, SkillKind::Intellect, 3);
     assert_eq!(
-        paused.state.continuations.len(),
-        1,
+        paused.state().continuations.len(),
+        depth_at_menu + 1,
         "parking at the commit window pushes exactly one frame",
     );
     assert!(
         matches!(
-            paused.state.continuations.iter().next(),
+            paused.state().continuations.top(),
             Some(Continuation::SkillTest(_))
         ),
-        "the single frame is the SkillTest frame carrying the in-flight test",
+        "the pushed frame is the SkillTest frame carrying the in-flight test",
     );
 
-    let resumed = apply(
-        paused.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        }),
-    );
-    assert_eq!(resumed.outcome, EngineOutcome::Done);
-    assert!(
-        resumed.state.continuations.is_empty(),
+    let resumed = paused.commit(&[]);
+    resumed.assert_at_turn_menu(INV);
+    assert_eq!(
+        resumed.state().continuations.len(),
+        depth_at_menu,
         "resolving the test pops the SkillTest frame",
     );
 }
@@ -112,26 +96,12 @@ fn commit_window_discards_committed_cards_into_discard_pile() {
     // events fired with `from: Hand`. Icon counting is exercised
     // separately via the cards integration test (this one
     // doesn't install a registry, so icon contribution is 0).
-    let id = InvestigatorId(1);
-    let mut inv = test_support::test_investigator(1);
-    inv.hand = vec![CardCode::new("A"), CardCode::new("B")];
-    let state = GameStateBuilder::new()
-        .with_investigator(inv)
-        .with_chaos_bag(bag_only_zero())
-        .build();
+    let session = paused_at_commit_window(commit_board(&["A", "B"]))
+        .commit(&[CardCode::new("A"), CardCode::new("B")]);
 
-    let result = perform_skill_test_with_response(
-        state,
-        id,
-        SkillKind::Intellect,
-        3,
-        InputResponse::PickMultiple {
-            selected: vec![OptionId(0), OptionId(1)],
-        },
-    );
-
-    assert_eq!(result.outcome, EngineOutcome::Done);
-    let inv_after = &result.state.investigators[&id];
+    session.assert_at_turn_menu(INV);
+    let result = session.finish();
+    let inv_after = &result.state.investigators[&INV];
     assert!(
         inv_after.hand.is_empty(),
         "hand must be empty after commit + discard"
@@ -145,89 +115,49 @@ fn commit_window_discards_committed_cards_into_discard_pile() {
     assert_event!(
         result.events,
         Event::CardDiscarded { code, from: Zone::Hand, to: DiscardPile::Investigator(investigator) }
-            if *investigator == id && *code == CardCode::new("A")
+            if *investigator == INV && *code == CardCode::new("A")
     );
     assert_event!(
         result.events,
         Event::CardDiscarded { code, from: Zone::Hand, to: DiscardPile::Investigator(investigator) }
-            if *investigator == id && *code == CardCode::new("B")
+            if *investigator == INV && *code == CardCode::new("B")
     );
 }
 
-/// Helper: start a plain skill test and drive it through with the
-/// given `InputResponse`. Used by commit-window tests that don't fit
-/// `perform_skill_test_no_commits` (which always submits an empty commit).
-fn perform_skill_test_with_response(
-    state: GameState,
-    investigator: InvestigatorId,
-    skill: SkillKind,
-    difficulty: i8,
-    response: InputResponse,
-) -> ApplyResult {
-    let mut resolver = ScriptedResolver::new();
-    resolver.push(response);
-    test_support::drive_skill_test(state, investigator, skill, difficulty, resolver)
-}
+// The next four tests' subject is a malformed or misplaced `ResolveInput`
+// itself, so each sends it raw rather than through a step.
 
 #[test]
 fn commit_window_rejects_out_of_bounds_index() {
-    let id = InvestigatorId(1);
-    let mut inv = test_support::test_investigator(1);
-    inv.hand = vec![CardCode::new("A")];
-    let state = GameStateBuilder::new()
-        .with_investigator(inv)
-        .with_chaos_bag(bag_only_zero())
-        .build();
-    let paused = test_support::perform_skill_test(state, id, SkillKind::Intellect, 3);
-    let bad = apply(
-        paused.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple {
-                selected: vec![OptionId(5)],
-            },
-        }),
+    let paused = paused_at_commit_window(commit_board(&["A"]));
+    let bad = paused.apply(Action::Player(PlayerAction::ResolveInput {
+        response: InputResponse::PickMultiple {
+            selected: vec![OptionId(5)],
+        },
+    }));
+    let reason = bad.expect_rejected();
+    assert!(
+        reason.contains("out of bounds"),
+        "unexpected reason: {reason}"
     );
-    match bad.outcome {
-        EngineOutcome::Rejected { reason } => {
-            assert!(
-                reason.contains("out of bounds"),
-                "unexpected reason: {reason}"
-            );
-        }
-        other => panic!("expected Rejected, got {other:?}"),
-    }
     // State stays paused (engine still in-flight) so a client
     // can submit a fixed-up response without re-initiating.
-    assert!(bad.state.has_skill_test_in_flight());
+    assert!(bad.state().has_skill_test_in_flight());
 }
 
 #[test]
 fn commit_window_rejects_duplicate_indices() {
-    let id = InvestigatorId(1);
-    let mut inv = test_support::test_investigator(1);
-    inv.hand = vec![CardCode::new("A"), CardCode::new("B")];
-    let state = GameStateBuilder::new()
-        .with_investigator(inv)
-        .with_chaos_bag(bag_only_zero())
-        .build();
-    let paused = test_support::perform_skill_test(state, id, SkillKind::Intellect, 3);
-    let bad = apply(
-        paused.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple {
-                selected: vec![OptionId(0), OptionId(0)],
-            },
-        }),
-    );
-    match bad.outcome {
-        EngineOutcome::Rejected { reason } => {
-            assert!(reason.contains("duplicate"), "unexpected reason: {reason}");
-        }
-        other => panic!("expected Rejected, got {other:?}"),
-    }
+    let paused = paused_at_commit_window(commit_board(&["A", "B"]));
+    let bad = paused.apply(Action::Player(PlayerAction::ResolveInput {
+        response: InputResponse::PickMultiple {
+            selected: vec![OptionId(0), OptionId(0)],
+        },
+    }));
+    let reason = bad.expect_rejected();
+    assert!(reason.contains("duplicate"), "unexpected reason: {reason}");
     // State stays paused so the client can submit a fixed-up
     // response without re-initiating the test.
-    assert!(bad.state.has_skill_test_in_flight());
+    assert!(bad.state().has_skill_test_in_flight());
 }
 
 // NOTE: `non_resolve_input_action_rejects_while_skill_test_paused` was
@@ -243,27 +173,20 @@ fn commit_window_rejects_duplicate_indices() {
 
 #[test]
 fn resolve_input_with_wrong_response_variant_rejects() {
-    let id = InvestigatorId(1);
-    let state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
-        .with_chaos_bag(bag_only_zero())
-        .build();
-    let paused = test_support::perform_skill_test(state, id, SkillKind::Intellect, 3);
-    let bad = apply(
-        paused.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::Confirm,
-        }),
-    );
-    assert!(matches!(bad.outcome, EngineOutcome::Rejected { .. }));
+    let paused = paused_at_commit_window(commit_board(&[]));
+    let bad = paused.apply(Action::Player(PlayerAction::ResolveInput {
+        response: InputResponse::Confirm,
+    }));
+    bad.expect_rejected();
     // Test still paused.
-    assert!(bad.state.has_skill_test_in_flight());
+    assert!(bad.state().has_skill_test_in_flight());
 }
 
 #[test]
 fn resolve_input_without_any_outstanding_prompt_rejects() {
-    // No prior `apply` opened a commit window — the engine has
-    // nothing to resume.
+    // No prior `apply` opened a commit window — the engine has nothing to
+    // resume. The empty stack is the moment under test, so the state is
+    // applied to directly rather than settled into a session.
     let state = GameStateBuilder::new().build();
     let result = apply(
         state,
@@ -283,16 +206,13 @@ fn investigate_canonical_event_sequence_pins_followup_before_test_ended() {
     // after the bracketing end event — silently flipping that
     // back would break downstream listeners that key off the end
     // marker as "all sub-effects already applied."
-    let (inv_id, _loc_id, state) = investigate_scenario(2, 2);
-    let result = take_action_no_commits(
-        state,
-        &TurnAction::Investigate {
-            investigator: inv_id,
-        },
+    let session = take_committing_nothing(
+        investigate_board(seat(1).at(HERE), 2, 2),
+        &TurnAction::Investigate { investigator: INV },
     );
-    assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
+    session.assert_at_turn_menu(INV);
     assert_event_sequence!(
-        result.events,
+        session.events(),
         Event::SkillTestStarted { .. },
         Event::ChaosTokenRevealed { .. },
         Event::SkillTestSucceeded { .. },
