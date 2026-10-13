@@ -322,7 +322,7 @@ fn activating_with_defeated_status_doesnt_need_registry() {
 
 // ---- test-scoped recorded modifiers (#102, #676) -------------------
 
-/// Run an Intellect test at difficulty 4, buying the SKILL_BOOST ability on
+/// Run an Intellect test at difficulty 4, buying the `SKILL_BOOST` ability on
 /// `instance_id` at the test's ST.1 player window, committing nothing and
 /// declining the ST.2 (pre-token) window.
 fn boosted_intellect_test(session: TestSession, instance_id: CardInstanceId) -> TestSession {
