@@ -175,7 +175,7 @@ fn at_mythos_draw(seats: usize) -> TestSession {
 }
 
 /// [`at_mythos_draw`] with the encounter deck then seeded to `codes`, *after*
-/// seat_and_open's shuffle. The draw prompt does not depend on the deck, so it
+/// `seat_and_open`'s shuffle. The draw prompt does not depend on the deck, so it
 /// stands.
 fn at_mythos_draw_of(seats: usize, codes: &[&str]) -> TestSession {
     at_mythos_draw(seats).edit_state(|state| with_encounter_deck(state, codes))
