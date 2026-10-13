@@ -9,21 +9,27 @@
 //!
 //! Dodge 01023: "Fast. Play when an enemy attacks an investigator at your
 //! location. Cancel that attack."
+//!
+//! [`apply`]: game_core::engine::apply
 
 use cards::REGISTRY;
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, EngineOutcome, OptionId, OptionTarget, TimingEvent};
+use game_core::engine::{OptionTarget, TimingEvent};
 use game_core::event::{Event, LapseReason};
 use game_core::state::{
-    Agenda, CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, Owner,
+    Agenda, CardCode, CardInPlay, Enemy, EnemyId, GameStateBuilder, InvestigatorId, LocationId,
+    Owner,
 };
-use game_core::test_support::{self, TestSession};
+use game_core::test_support::{self, seat, Seat, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 /// Dodge (01023): Neutral Tactic, Fast, the before-attack cancel reaction.
 const DODGE: &str = "01023";
+
+const INV: InvestigatorId = InvestigatorId(1);
+const STUDY: LocationId = LocationId(101);
+const HALLWAY: LocationId = LocationId(102);
+const ATTACKER: EnemyId = EnemyId(7);
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
@@ -31,42 +37,35 @@ fn install_real_registry() {
 }
 
 /// A ready enemy dealing 2 damage / 1 horror.
-fn ready_attacker(id: u32) -> Enemy {
-    let mut e = test_support::test_enemy(id, format!("Attacker {id}"));
+fn ready_attacker() -> Enemy {
+    let mut e = test_support::test_enemy(ATTACKER.0, "Attacker");
     e.attack_damage = 2;
     e.attack_horror = 1;
     e
 }
 
-/// Investigation-phase state: one active investigator at a location with
-/// `DODGE` in hand, engaged by one ready attacker. `EndTurn` advances into the
-/// Enemy phase; the `BeforeInvestigatorAttacked` player window auto-skips
-/// (Dodge is a reaction event — `check_play_card` rejects a standalone play, so
-/// it is not a framework Fast play), then the attack loop opens the
-/// `BeforeEnemyAttack` cancel window and offers Dodge.
-fn dodge_state() -> (GameState, InvestigatorId, EnemyId) {
-    let inv_id = InvestigatorId(1);
-    let loc_id = LocationId(101);
-    let enemy_id = EnemyId(7);
-
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(loc_id);
-    inv.hand = vec![CardCode::new(DODGE)];
+/// Investigator 1 at the Study with `DODGE` in hand.
+fn holding_dodge() -> Seat {
     // A spare deck card so the round-ending cascade's upkeep step-4.4 draw has
     // something to draw. Without it, the empty deck reshuffles the discard —
     // and since a played Dodge is discarded the instant its effect completes
     // (RR Appendix I step 4, now flushed at completion rather than the apply
     // boundary — #348), the reshuffle would draw Dodge straight back into hand,
     // obscuring the "Dodge went to discard" assertion.
-    inv.deck = vec![CardCode::new("01088")];
+    seat(1).at(STUDY).hand([DODGE]).deck(["01088"])
+}
 
-    let state = GameStateBuilder::new()
+/// `investigator`'s turn, engaged by `attacker` at the Study. `EndTurn`
+/// advances into the Enemy phase; the `BeforeInvestigatorAttacked` player
+/// window auto-skips (Dodge is a reaction event — `check_play_card` rejects a
+/// standalone play, so it is not a framework Fast play), then the attack loop
+/// opens the `BeforeEnemyAttack` cancel window and offers Dodge.
+fn dodge_board(investigator: Seat, attacker: Enemy) -> GameStateBuilder {
+    GameStateBuilder::new()
         .with_location(test_support::test_location(101, "Study"))
-        .with_investigator(inv)
-        .with_enemy_engaged(ready_attacker(7), inv_id)
-        .open_turn(inv_id)
-        .build();
-    (state, inv_id, enemy_id)
+        .with_seat(investigator)
+        .with_enemy_engaged(attacker, INV)
+        .open_turn(INV)
 }
 
 /// Silver Twilight Acolyte (01102), verbatim from the pinned snapshot:
@@ -79,27 +78,33 @@ fn dodge_state() -> (GameState, InvestigatorId, EnemyId) {
 /// ```
 const ACOLYTE: &str = "01102";
 
-/// The `dodge_state` board with the attacker replaced by a real Silver Twilight
+/// The `dodge_board` with the attacker replaced by a real Silver Twilight
 /// Acolyte and an agenda for it to place doom on. Its **printed** statistics (1
 /// damage, 0 horror — `data/arkhamdb-snapshot/pack/core/core.json`) are set here
 /// rather than read from metadata, matching the rest of this file's fixtures;
 /// the both-tracks-cancelled claim is `ready_attacker`'s to prove, since this
 /// enemy prints no horror to cancel.
-fn acolyte_state() -> (GameState, InvestigatorId, EnemyId) {
-    let (mut state, inv_id, enemy_id) = dodge_state();
-    let enemy = state
-        .enemies
-        .get_mut(&enemy_id)
-        .expect("dodge_state seeds one attacker");
-    enemy.code = CardCode::new(ACOLYTE);
-    enemy.attack_damage = 1;
-    enemy.attack_horror = 0;
+fn acolyte_session() -> TestSession {
+    let mut acolyte = ready_attacker();
+    acolyte.code = CardCode::new(ACOLYTE);
+    acolyte.attack_damage = 1;
+    acolyte.attack_horror = 0;
+    let mut state = dodge_board(holding_dodge(), acolyte).build();
+    // The builder stages no agenda.
     state.agenda_deck = vec![Agenda {
         code: CardCode::new("01105"),
         doom_threshold: 3,
     }];
     state.agenda_index = 0;
-    (state, inv_id, enemy_id)
+    TestSession::new(state)
+}
+
+/// The anchor of `holder`'s Dodge in a reaction window's prompt.
+fn dodge_in_hand_of(holder: InvestigatorId) -> OptionTarget {
+    OptionTarget::HandCardByCode {
+        investigator: holder,
+        code: CardCode::new(DODGE),
+    }
 }
 
 /// The Dodge ruling's own example, inverted — `data/arkhamdb-faq/core/01023.md`,
@@ -114,22 +119,12 @@ fn acolyte_state() -> (GameState, InvestigatorId, EnemyId) {
 /// abilities come from the installed `cards::REGISTRY`.
 #[test]
 fn dodging_a_silver_twilight_acolyte_stops_its_forced_doom() {
-    let (state, inv_id, enemy_id) = acolyte_state();
-
-    let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
-    assert!(
-        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
-        "the `when` cell offers Dodge: {:?}",
-        result.outcome
-    );
-    // Play Dodge → the attack is prevented, so its `after` cell never runs.
-    let result = engine::apply(
-        result.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(0)),
-        }),
-    );
-    let state = result.state;
+    // The `when` cell offers Dodge; play it → the attack is prevented, so its
+    // `after` cell never runs.
+    let session = acolyte_session()
+        .take(&TurnAction::EndTurn)
+        .pick(dodge_in_hand_of(INV));
+    let state = session.state();
 
     // 1, not 0: the `EndTurn` cascade runs on through Upkeep into the next
     // round's Mythos, whose step 1.2 places a doom of its own before parking on
@@ -141,17 +136,13 @@ fn dodging_a_silver_twilight_acolyte_stops_its_forced_doom() {
          attack (only Mythos step 1.2's doom is here)"
     );
     assert_eq!(
-        state.investigators[&inv_id].damage(),
+        state.investigators[&INV].damage(),
         0,
         "the cancelled attack dealt no damage"
     );
-    assert!(
-        result.events.iter().any(|e| matches!(
-            e,
-            Event::EnemyExhausted { enemy } if *enemy == enemy_id
-        )),
-        "the attacker still exhausts (01023 ruling): {:?}",
-        result.events
+    assert_event!(
+        session.events(),
+        Event::EnemyExhausted { enemy } if *enemy == ATTACKER
     );
 }
 
@@ -159,147 +150,78 @@ fn dodging_a_silver_twilight_acolyte_stops_its_forced_doom() {
 /// fires in the `after` cell — once the damage has landed.
 #[test]
 fn an_undodged_silver_twilight_acolyte_places_its_doom_after_the_damage() {
-    let (state, inv_id, _) = acolyte_state();
-
-    let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
-    let result = engine::apply(
-        result.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::Skip,
-        }),
-    );
+    let session = acolyte_session().take(&TurnAction::EndTurn).skip();
 
     // 2 = the Acolyte's forced doom + Mythos step 1.2's, against the dodged
     // run's 1.
     assert_eq!(
-        result.state.agenda_doom, 2,
+        session.state().agenda_doom,
+        2,
         "the Acolyte's forced after-attack doom fired"
     );
     assert_eq!(
-        result.state.investigators[&inv_id].damage(),
+        session.state().investigators[&INV].damage(),
         1,
         "the attack landed its 1 damage"
     );
-    assert!(
-        result
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::DamageTaken { .. })),
-        "damage precedes the `after` cell; events = {:?}",
-        result.events
-    );
+    assert_event!(session.events(), Event::DamageTaken { .. });
 }
 
 #[test]
 fn dodge_cancels_enemy_phase_attack_no_damage_attacker_exhausts() {
-    let (state, inv_id, enemy_id) = dodge_state();
-
     // EndTurn → Enemy phase → the attack loop opens the before-attack cancel
     // window and suspends, offering Dodge from hand.
-    let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
-    let mut state = result.state;
-    assert!(
-        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
-        "the before-attack cancel window suspends the loop: {:?}",
-        result.outcome
-    );
+    let offered = dodge_board(holding_dodge(), ready_attacker())
+        .session()
+        .take(&TurnAction::EndTurn);
     // No damage dealt yet (the attack hasn't resolved).
-    assert_eq!(state.investigators[&inv_id].damage(), 0);
+    assert_eq!(offered.state().investigators[&INV].damage(), 0);
 
-    // Play Dodge (the single offered candidate) → cancel the attack.
-    let result = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(0)),
-        }),
-    );
-    state = result.state;
+    // Play Dodge → cancel the attack.
+    let session = offered.pick(dodge_in_hand_of(INV));
+    let inv = &session.state().investigators[&INV];
 
-    assert_eq!(
-        state.investigators[&inv_id].damage(),
-        0,
-        "the cancelled attack dealt no damage"
-    );
-    assert_eq!(state.investigators[&inv_id].horror(), 0, "…and no horror");
-    assert!(
-        !result
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::DamageTaken { .. } | Event::HorrorTaken { .. })),
-        "a cancelled attack deals neither damage nor horror: {:?}",
-        result.events
+    assert_eq!(inv.damage(), 0, "the cancelled attack dealt no damage");
+    assert_eq!(inv.horror(), 0, "…and no horror");
+    assert_no_event!(
+        session.events(),
+        Event::DamageTaken { .. } | Event::HorrorTaken { .. }
     );
     // The attacker still exhausts (RR p.6 + p.25) — asserted via the event,
     // since the enemy-phase cascade re-readies it at upkeep step 4.3.
-    assert!(
-        result.events.iter().any(|e| matches!(
-            e,
-            Event::EnemyExhausted { enemy } if *enemy == enemy_id
-        )),
-        "the attacker still exhausts after a cancelled attack: {:?}",
-        result.events
+    assert_event!(
+        session.events(),
+        Event::EnemyExhausted { enemy } if *enemy == ATTACKER
     );
     // Dodge left hand and went to discard (a played event).
+    assert!(!inv.hand.contains(&CardCode::new(DODGE)), "Dodge left hand");
     assert!(
-        !state.investigators[&inv_id]
-            .hand
-            .contains(&CardCode::new(DODGE)),
-        "Dodge left hand"
-    );
-    assert!(
-        state.investigators[&inv_id]
-            .discard
-            .contains(&CardCode::new(DODGE)),
+        inv.discard.contains(&CardCode::new(DODGE)),
         "Dodge is in the discard pile after being played"
     );
 }
 
 #[test]
 fn declining_the_before_attack_window_lets_the_attack_land() {
-    let (state, inv_id, enemy_id) = dodge_state();
-
-    let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
-    let mut state = result.state;
-    assert!(matches!(
-        result.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
-
     // Skip the window → the attack resolves normally.
-    let result = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::Skip,
-        }),
-    );
-    state = result.state;
+    let session = dodge_board(holding_dodge(), ready_attacker())
+        .session()
+        .take(&TurnAction::EndTurn)
+        .skip();
+    let inv = &session.state().investigators[&INV];
 
-    assert!(
-        result.events.iter().any(|e| matches!(
-            e,
-            Event::DamageTaken { investigator, amount: 2 } if *investigator == inv_id
-        )),
-        "the un-cancelled attack dealt its 2 damage: {:?}",
-        result.events
+    assert_event!(
+        session.events(),
+        Event::DamageTaken { investigator, amount: 2 } if *investigator == INV
     );
-    assert_eq!(
-        state.investigators[&inv_id].damage(),
-        2,
-        "investigator carries the 2 damage"
-    );
-    assert!(
-        result.events.iter().any(|e| matches!(
-            e,
-            Event::EnemyExhausted { enemy } if *enemy == enemy_id
-        )),
-        "attacker exhausts after attacking: {:?}",
-        result.events
+    assert_eq!(inv.damage(), 2, "investigator carries the 2 damage");
+    assert_event!(
+        session.events(),
+        Event::EnemyExhausted { enemy } if *enemy == ATTACKER
     );
     // Dodge was never played: still in hand, nothing in discard.
     assert!(
-        state.investigators[&inv_id]
-            .hand
-            .contains(&CardCode::new(DODGE)),
+        inv.hand.contains(&CardCode::new(DODGE)),
         "Dodge stays in hand when the window is declined"
     );
 }
@@ -314,28 +236,6 @@ fn declining_the_before_attack_window_lets_the_attack_land() {
 /// Forced - At the end of the round: Discard Dissonant Voices.
 /// ```
 const DISSONANT_VOICES: &str = "01165";
-
-/// Put Dissonant Voices into `inv_id`'s threat area.
-fn put_dissonant_voices_in_threat_area(state: &mut GameState, inv_id: InvestigatorId) {
-    state
-        .investigators
-        .get_mut(&inv_id)
-        .expect("the investigator is seated")
-        .threat_area
-        .push(CardInPlay::enter_play(
-            CardCode::new(DISSONANT_VOICES),
-            CardInstanceId(90),
-            Owner::EncounterDeck,
-        ));
-}
-
-/// The anchor of `holder`'s Dodge in a reaction window's prompt.
-fn dodge_in_hand_of(holder: InvestigatorId) -> OptionTarget {
-    OptionTarget::HandCardByCode {
-        investigator: holder,
-        code: CardCode::new(DODGE),
-    }
-}
 
 /// The anchors of the options the session's prompt offers.
 fn offered(session: &TestSession) -> Vec<Option<OptionTarget>> {
@@ -353,18 +253,20 @@ fn offered(session: &TestSession) -> Vec<Option<OptionTarget>> {
 /// Dodge out of the before-attack window, and the attack lands.
 #[test]
 fn dissonant_voices_keeps_dodge_out_of_the_attack_window() {
-    let (mut state, inv_id, _) = dodge_state();
-    put_dissonant_voices_in_threat_area(&mut state, inv_id);
-
-    let session = TestSession::new(state).take(&TurnAction::EndTurn);
+    let session = dodge_board(
+        holding_dodge().threat_area([DISSONANT_VOICES]),
+        ready_attacker(),
+    )
+    .session()
+    .take(&TurnAction::EndTurn);
 
     assert_event!(
         session.events(),
-        Event::DamageTaken { investigator, amount: 2 } if *investigator == inv_id
+        Event::DamageTaken { investigator, amount: 2 } if *investigator == INV
     );
     assert_no_event!(session.events(), Event::CardPlayed { .. });
     assert!(
-        session.state().investigators[&inv_id]
+        session.state().investigators[&INV]
             .hand
             .contains(&CardCode::new(DODGE)),
         "Dodge was never offered, so it stays in hand",
@@ -377,24 +279,37 @@ fn dissonant_voices_keeps_dodge_out_of_the_attack_window() {
 /// lands.
 #[test]
 fn dodge_lapses_when_dissonant_voices_arrives_before_the_pick() {
-    let (state, inv_id, _) = dodge_state();
-    let offered_dodge = TestSession::new(state).take(&TurnAction::EndTurn);
+    let offered_dodge = dodge_board(holding_dodge(), ready_attacker())
+        .session()
+        .take(&TurnAction::EndTurn);
     assert_eq!(
         offered(&offered_dodge),
-        vec![Some(dodge_in_hand_of(inv_id))],
+        vec![Some(dodge_in_hand_of(INV))],
         "without the ban the window offers Dodge",
     );
 
+    // No step can put a treachery into play while the window is open, so the
+    // ban arrives by a state edit, with an id minted from the state's counter.
     let refused = offered_dodge
-        .edit_state(|state| put_dissonant_voices_in_threat_area(state, inv_id))
-        .pick(dodge_in_hand_of(inv_id));
+        .edit_state(|state| {
+            let id = state.card_instance_ids.mint();
+            let voices =
+                CardInPlay::enter_play(CardCode::new(DISSONANT_VOICES), id, Owner::EncounterDeck);
+            state
+                .investigators
+                .get_mut(&INV)
+                .expect("the investigator is seated")
+                .threat_area
+                .push(voices);
+        })
+        .pick(dodge_in_hand_of(INV));
     let reason = refused.expect_rejected();
     assert!(
         reason.contains("can no longer be initiated"),
         "Dodge can no longer be played, so picking it is refused: {reason}",
     );
     assert!(
-        refused.state().investigators[&inv_id]
+        refused.state().investigators[&INV]
             .hand
             .contains(&CardCode::new(DODGE)),
         "the refused pick left Dodge in hand",
@@ -405,12 +320,12 @@ fn dodge_lapses_when_dissonant_voices_arrives_before_the_pick() {
     assert_event!(
         events,
         Event::ReactionOptionLapsed { investigator, code, reason: LapseReason::PlayBanned }
-            if *investigator == inv_id && code.as_str() == DODGE
+            if *investigator == INV && code.as_str() == DODGE
     );
     assert_no_event!(events, Event::CardPlayed { .. });
     assert_event!(
         events,
-        Event::DamageTaken { investigator, amount: 2 } if *investigator == inv_id
+        Event::DamageTaken { investigator, amount: 2 } if *investigator == INV
     );
 }
 
@@ -422,34 +337,29 @@ fn dodge_lapses_when_dissonant_voices_arrives_before_the_pick() {
 /// eligibility failure.
 #[test]
 fn dodge_lapses_as_out_of_scope_once_its_holder_leaves_the_attacked_location() {
-    let attacked = InvestigatorId(1);
+    let attacked = INV;
     let dodger = InvestigatorId(2);
-    let mut seat_1 = test_support::test_investigator(1);
-    seat_1.current_location = Some(LocationId(101));
-    let mut seat_2 = test_support::test_investigator(2);
-    seat_2.current_location = Some(LocationId(101));
-    seat_2.hand = vec![CardCode::new(DODGE)];
-    let state = GameStateBuilder::new()
+    let opened = GameStateBuilder::new()
         .with_location(test_support::test_location(101, "Study"))
         .with_location(test_support::test_location(102, "Hallway"))
-        .with_investigator(seat_1)
-        .with_investigator(seat_2)
+        .with_seat(seat(1).at(STUDY))
+        .with_seat(seat(2).at(STUDY).hand([DODGE]))
         .with_turn_order([attacked, dodger])
-        .with_enemy_engaged(ready_attacker(7), attacked)
-        .build();
-
-    let opened = TestSession::new(state).fire_at(TimingEvent::EnemyAttacks {
-        enemy: EnemyId(7),
-        investigator: attacked,
-    });
+        .with_enemy_engaged(ready_attacker(), attacked)
+        .session()
+        .fire_at(TimingEvent::EnemyAttacks {
+            enemy: ATTACKER,
+            investigator: attacked,
+        });
     assert_eq!(offered(&opened), vec![Some(dodge_in_hand_of(dodger))]);
 
+    // Settle the moved board afresh, so the window is re-asked against it.
     let mut state = opened.state().clone();
     state
         .investigators
         .get_mut(&dodger)
         .expect("seated")
-        .current_location = Some(LocationId(102));
+        .current_location = Some(HALLWAY);
     let resurfaced = TestSession::new(state);
 
     assert_event!(
