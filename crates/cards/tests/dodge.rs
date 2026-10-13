@@ -14,7 +14,7 @@
 
 use cards::REGISTRY;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{OptionTarget, TimingEvent};
+use game_core::engine::OptionTarget;
 use game_core::event::{Event, LapseReason};
 use game_core::state::{
     Agenda, CardCode, CardInPlay, Enemy, EnemyId, GameStateBuilder, InvestigatorId, LocationId,
@@ -27,7 +27,7 @@ use game_core::{assert_event, assert_no_event};
 const DODGE: &str = "01023";
 
 const INV: InvestigatorId = InvestigatorId(1);
-const STUDY: LocationId = LocationId(101);
+const HERE: LocationId = LocationId(101);
 const HALLWAY: LocationId = LocationId(102);
 const ATTACKER: EnemyId = EnemyId(7);
 
@@ -52,7 +52,7 @@ fn holding_dodge() -> Seat {
     // (RR Appendix I step 4, now flushed at completion rather than the apply
     // boundary — #348), the reshuffle would draw Dodge straight back into hand,
     // obscuring the "Dodge went to discard" assertion.
-    seat(1).at(STUDY).hand([DODGE]).deck(["01088"])
+    seat(1).at(HERE).hand([DODGE]).deck(["01088"])
 }
 
 /// `investigator`'s turn, engaged by `attacker` at the Study. `EndTurn`
@@ -62,7 +62,7 @@ fn holding_dodge() -> Seat {
 /// opens the `BeforeEnemyAttack` cancel window and offers Dodge.
 fn dodge_board(investigator: Seat, attacker: Enemy) -> GameStateBuilder {
     GameStateBuilder::new()
-        .with_location(test_support::test_location(101, "Study"))
+        .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(investigator)
         .with_enemy_engaged(attacker, INV)
         .open_turn(INV)
@@ -237,16 +237,6 @@ fn declining_the_before_attack_window_lets_the_attack_land() {
 /// ```
 const DISSONANT_VOICES: &str = "01165";
 
-/// The anchors of the options the session's prompt offers.
-fn offered(session: &TestSession) -> Vec<Option<OptionTarget>> {
-    session
-        .prompt()
-        .options
-        .iter()
-        .map(|option| option.target.clone())
-        .collect()
-}
-
 /// #917, at the offer. A Fast event is still *played* — `glossary/Fast.md`:
 /// *"A fast card does not cost an action to be played and is not played using
 /// the "Play" action."* — so Dissonant Voices' ban on playing events keeps
@@ -283,9 +273,13 @@ fn dodge_lapses_when_dissonant_voices_arrives_before_the_pick() {
         .session()
         .take(&TurnAction::EndTurn);
     assert_eq!(
-        offered(&offered_dodge),
-        vec![Some(dodge_in_hand_of(INV))],
-        "without the ban the window offers Dodge",
+        (
+            offered_dodge.offered_at(&dodge_in_hand_of(INV)),
+            offered_dodge.prompt().options.len(),
+        ),
+        (1, 1),
+        "without the ban the window offers Dodge alone: {:?}",
+        offered_dodge.prompt(),
     );
 
     // No step can put a treachery into play while the window is open, so the
@@ -331,27 +325,36 @@ fn dodge_lapses_when_dissonant_voices_arrives_before_the_pick() {
 
 /// Dodge's *"Play when an enemy attacks an investigator at your location."*
 /// scopes the window, not the play. Seat 2 holds Dodge at the Study where seat
-/// 1 is attacked, and is offered it; then seat 2 is moved to the Hallway before
-/// the pick. Dodge is still playable — the gate passes it — but no longer
-/// belongs to this window, so it lapses as out of scope rather than as an
-/// eligibility failure.
+/// 1 is attacked in the Enemy phase, and is offered it; then seat 2 is moved
+/// to the Hallway before the pick. Dodge is still playable — the gate passes
+/// it — but no longer belongs to this window, so it lapses as out of scope
+/// rather than as an eligibility failure.
 #[test]
 fn dodge_lapses_as_out_of_scope_once_its_holder_leaves_the_attacked_location() {
     let attacked = INV;
     let dodger = InvestigatorId(2);
+    // Both turns end, and the Enemy phase's attack on seat 1 opens the
+    // before-attack window that offers seat 2 their Dodge.
     let opened = GameStateBuilder::new()
-        .with_location(test_support::test_location(101, "Study"))
-        .with_location(test_support::test_location(102, "Hallway"))
-        .with_seat(seat(1).at(STUDY))
-        .with_seat(seat(2).at(STUDY).hand([DODGE]))
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::test_location(HALLWAY.0, "Hallway"))
+        .with_seat(seat(1).at(HERE))
+        .with_seat(seat(2).at(HERE).hand([DODGE]))
         .with_turn_order([attacked, dodger])
         .with_enemy_engaged(ready_attacker(), attacked)
+        .open_turn(attacked)
         .session()
-        .fire_at(TimingEvent::EnemyAttacks {
-            enemy: ATTACKER,
-            investigator: attacked,
-        });
-    assert_eq!(offered(&opened), vec![Some(dodge_in_hand_of(dodger))]);
+        .take(&TurnAction::EndTurn)
+        .take(&TurnAction::EndTurn);
+    assert_eq!(
+        (
+            opened.offered_at(&dodge_in_hand_of(dodger)),
+            opened.prompt().options.len(),
+        ),
+        (1, 1),
+        "the window offers seat 2's Dodge alone: {:?}",
+        opened.prompt(),
+    );
 
     // Settle the moved board afresh, so the window is re-asked against it.
     let mut state = opened.state().clone();
