@@ -70,7 +70,7 @@ fn revelation_puts_cover_up_in_threat_area_with_three_clues() {
         .build();
     state.encounter_deck.push_back(CardCode::new(COVER_UP));
     let drawing = TestSession::new(state);
-    assert_eq!(drawing.prompt().target, Some(OptionTarget::EncounterDeck));
+    drawing.assert_at_encounter_draw();
 
     // Drawing the card reveals it: it resolves without a prompt of its own, and
     // play runs on out of the Mythos phase to `INV`'s turn.

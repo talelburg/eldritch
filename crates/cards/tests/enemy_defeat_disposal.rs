@@ -43,7 +43,7 @@
 
 use cards::REGISTRY;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{ApplyResult, OptionTarget};
+use game_core::engine::ApplyResult;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, ChaosBag, ChaosToken, DiscardPile, EnemyId, GameState, GameStateBuilder,
@@ -150,7 +150,7 @@ fn defeated_ghoul_minion_is_drawn_again_once_the_encounter_deck_runs_out() {
     // Ending the turn plays on through the round to the next Mythos phase's
     // encounter draw.
     let drawing = after.take(&TurnAction::EndTurn);
-    assert_eq!(drawing.prompt().target, Some(OptionTarget::EncounterDeck));
+    drawing.assert_at_encounter_draw();
     let seen = drawing.events().len();
 
     let redraw = drawing.confirm();

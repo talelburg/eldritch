@@ -66,7 +66,7 @@ use card_dsl::card_data::{CardKind, CardType};
 use cards::REGISTRY;
 use game_core::action::RosterEntry;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, InputKind, OptionTarget};
+use game_core::engine::{self, InputKind};
 use game_core::event::Event;
 use game_core::state::{
     Agenda, CardCode, CardInPlay, ChaosBag, ChaosToken, GameState, GameStateBuilder,
@@ -180,17 +180,6 @@ fn setup_two_investigators_at_mythos_draw(state: GameState) -> TestSession {
         .take(&TurnAction::EndTurn)
 }
 
-/// Assert the session rests at a step-1.4 encounter-draw prompt.
-#[track_caller]
-fn assert_at_encounter_draw(session: &TestSession) {
-    assert_eq!(
-        session.prompt().target,
-        Some(OptionTarget::EncounterDeck),
-        "expected the encounter-draw prompt: {:?}",
-        session.prompt(),
-    );
-}
-
 // ------------------------------------------------------------------
 // Single-treachery happy path
 // ------------------------------------------------------------------
@@ -201,7 +190,7 @@ fn mythos_phase_resolves_single_treachery() {
     with_encounter_deck(&mut base, &[ANCIENT_EVILS]);
 
     let drawing = setup_at_mythos_draw(base);
-    assert_at_encounter_draw(&drawing);
+    drawing.assert_at_encounter_draw();
     assert_eq!(
         drawing.state().phase,
         Phase::Mythos,
@@ -346,7 +335,7 @@ fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
     // Picking engages inv2 and re-enters inv1's chain, which completes; the
     // loop then drains inv1 and re-prompts inv2 — the encounter draw, not the
     // spawn pick.
-    assert_at_encounter_draw(&resumed);
+    resumed.assert_at_encounter_draw();
     let enemy = resumed
         .state()
         .enemies
@@ -389,7 +378,7 @@ fn mythos_phase_multi_investigator_player_order() {
 
     // inv1 draws their card → the loop re-prompts inv2.
     let second = drawing.confirm();
-    assert_at_encounter_draw(&second);
+    second.assert_at_encounter_draw();
     // Still in Mythos; inv2 must draw next.
     assert_eq!(second.state().phase, Phase::Mythos);
     assert_eq!(second.state().current_encounter_drawer(), Some(INV2));
@@ -449,7 +438,7 @@ fn mythos_draw_rejects_when_initial_deck_and_discard_both_empty() {
     );
 
     // Validate-first: state must be unchanged — still Mythos, cursor preserved.
-    assert_at_encounter_draw(&refused);
+    refused.assert_at_encounter_draw();
     assert_eq!(
         refused.state().phase,
         Phase::Mythos,

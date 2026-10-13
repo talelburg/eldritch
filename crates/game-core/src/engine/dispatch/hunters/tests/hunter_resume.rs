@@ -40,7 +40,7 @@ fn hunter_move_tie_suspends_then_resumes_on_pick_location() {
     // the attack windows auto-skip and the cascade runs to Mythos, pausing at
     // the step-1.4 encounter-draw prompt.
     let session = session.pick(OptionTarget::Location(LocationId(3)));
-    assert_eq!(session.prompt().target, Some(OptionTarget::EncounterDeck));
+    session.assert_at_encounter_draw();
     assert_eq!(
         session.state().enemies[&EnemyId(1)].current_location,
         Some(LocationId(3))
@@ -121,7 +121,7 @@ fn hunter_engage_tie_suspends_then_resumes_on_pick_investigator() {
     let session = session.pick(second);
     // Resolving the tie continues the Enemy phase through to Mythos's
     // encounter-draw prompt.
-    assert_eq!(session.prompt().target, Some(OptionTarget::EncounterDeck));
+    session.assert_at_encounter_draw();
     assert_eq!(
         session.state().enemies[&EnemyId(1)].engaged_with,
         Some(InvestigatorId(2))
@@ -168,7 +168,7 @@ fn highest_combat_prey_breaks_move_tie_without_prompt() {
         .take(&TurnAction::EndTurn)
         .take(&TurnAction::EndTurn);
     // No prompt: the round runs on to Mythos's encounter-draw prompt.
-    assert_eq!(session.prompt().target, Some(OptionTarget::EncounterDeck));
+    session.assert_at_encounter_draw();
     // Moves toward inv1 (B) and engages immediately (arrives at B).
     assert_eq!(
         session.state().enemies[&EnemyId(1)].current_location,
@@ -213,7 +213,7 @@ fn multi_hunter_one_suspends_then_next_processed_on_resume() {
         // Resolve hunter 1's tie -> hunter 2 then moves B->D and engages.
         .pick(OptionTarget::Location(LocationId(2)));
     // The cascade runs on to Mythos's encounter-draw prompt.
-    assert_eq!(session.prompt().target, Some(OptionTarget::EncounterDeck));
+    session.assert_at_encounter_draw();
     assert_eq!(
         session.state().enemies[&EnemyId(2)].current_location,
         Some(LocationId(4))

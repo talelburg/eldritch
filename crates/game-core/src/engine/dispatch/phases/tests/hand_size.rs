@@ -1,6 +1,6 @@
 use super::*;
 use crate::action::{Action, PlayerAction};
-use crate::engine::outcome::{InputKind, OptionId, OptionTarget};
+use crate::engine::outcome::{InputKind, OptionId};
 use crate::state::{CardCode, GameStateBuilder, InvestigatorId};
 use crate::test_support::{self, TestSession};
 use crate::{assert_event_count, assert_no_event};
@@ -108,7 +108,7 @@ fn check_hand_size_is_noop_when_all_at_or_below_cap() {
 
     // Nothing to discard: 4.6 runs and play goes on to the next round's
     // encounter draw.
-    assert_eq!(session.prompt().target, Some(OptionTarget::EncounterDeck));
+    session.assert_at_encounter_draw();
     assert_no_event!(session.events(), Event::CardDiscarded { .. });
     assert_eq!(
         session.state().investigators[&InvestigatorId(1)].hand.len(),
@@ -153,7 +153,7 @@ fn resume_hand_size_discard_discards_overflow_and_advances_to_mythos() {
 
     // The discard drains the hand-size queue, so 4.6 runs and the cascade
     // steps into Mythos, pausing at the step-1.4 encounter-draw prompt.
-    assert_eq!(session.prompt().target, Some(OptionTarget::EncounterDeck));
+    session.assert_at_encounter_draw();
     let state = session.state();
     assert_eq!(state.investigators[&id].hand.len(), 8);
     assert_eq!(state.investigators[&id].discard.len(), 2);

@@ -14,7 +14,7 @@
 
 use game_core::action::RosterEntry;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, EngineOutcome, InputKind, OptionTarget};
+use game_core::engine::{self, EngineOutcome, InputKind};
 use game_core::state::{
     Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId,
     LocationId, Phase,
@@ -168,7 +168,7 @@ fn upkeep_prompts_and_discards_down_to_eight() {
 
     // Resolving the discard continues the upkeep cascade into Mythos, which
     // pauses at the encounter-draw prompt: the discard is no longer pending.
-    assert_eq!(session.prompt().target, Some(OptionTarget::EncounterDeck));
+    session.assert_at_encounter_draw();
     assert_eq!(
         session.state().investigators[&INV].hand.len(),
         HAND_SIZE_LIMIT,

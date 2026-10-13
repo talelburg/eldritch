@@ -1,6 +1,6 @@
 use super::*;
 use crate::engine::enumerate::TurnAction;
-use crate::engine::outcome::{EngineOutcome, OptionTarget};
+use crate::engine::outcome::EngineOutcome;
 use crate::event::Event;
 use crate::state::{EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase, Status};
 use crate::test_support::{self, SeatLookup as _, TestSession};
@@ -430,12 +430,7 @@ fn end_turn_cascades_through_upkeep_to_mythos_draw_prompt() {
 
     // The round-ending EndTurn cascades into Mythos and pauses at the
     // step-1.4 encounter-draw prompt.
-    assert_eq!(
-        session.prompt().target,
-        Some(OptionTarget::EncounterDeck),
-        "round-ending EndTurn pauses at the Mythos draw prompt, got {:?}",
-        session.prompt()
-    );
+    session.assert_at_encounter_draw();
     let result = session.state();
     assert_eq!(result.phase, Phase::Mythos);
     assert_eq!(result.round, 2, "round bumped on Mythos entry");

@@ -35,7 +35,7 @@
 
 use cards::REGISTRY;
 use game_core::assert_event;
-use game_core::engine::{OptionTarget, TurnAction};
+use game_core::engine::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
@@ -119,7 +119,7 @@ fn reveal_crypt_chill(controlled: &TestSession) -> TestSession {
     state.chaos_bag.tokens = vec![ChaosToken::AutoFail];
     state.encounter_deck.push_back(CardCode::new(CRYPT_CHILL));
     let drawing = TestSession::new(state).take(&TurnAction::EndTurn);
-    assert_eq!(drawing.prompt().target, Some(OptionTarget::EncounterDeck));
+    drawing.assert_at_encounter_draw();
     drawing.confirm().commit(&[])
 }
 

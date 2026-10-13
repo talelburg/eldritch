@@ -32,7 +32,7 @@
 
 use cards::REGISTRY;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{ApplyResult, EngineOutcome, InputKind, OptionTarget};
+use game_core::engine::{ApplyResult, EngineOutcome, InputKind};
 use game_core::event::{Event, TraumaKind};
 use game_core::state::{
     CardCode, CardInPlay, ChaosBag, ChaosToken, DiscardPile, GameState, GameStateBuilder,
@@ -422,7 +422,7 @@ fn eliminated_investigator_fires_no_further_round_end_forced() {
             phase: Phase::Upkeep
         }
     );
-    assert_eq!(session.prompt().target, Some(OptionTarget::EncounterDeck));
+    session.assert_at_encounter_draw();
     assert_eq!(
         session.state().encounter_discard,
         before,

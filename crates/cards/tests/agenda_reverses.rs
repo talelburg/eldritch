@@ -9,7 +9,7 @@
 //! reverse's effect.
 
 use cards::REGISTRY;
-use game_core::engine::{OptionTarget, PromptNature};
+use game_core::engine::PromptNature;
 use game_core::event::Event;
 use game_core::state::{
     Agenda, CardCode, DiscardPile, EnemyId, GameState, GameStateBuilder, InvestigatorId,
@@ -56,17 +56,6 @@ fn ending_the_round_on(index: usize, lead: Seat, encounter_deck: &[&str]) -> Gam
     state
 }
 
-/// Assert the reverse resolved with nothing left pending: play has gone on to
-/// the Mythos phase's step-1.4 encounter draw.
-fn assert_at_the_encounter_draw(session: &TestSession) {
-    assert_eq!(
-        session.prompt().target,
-        Some(OptionTarget::EncounterDeck),
-        "the reverse resolved and Mythos went on to step 1.4: {:?}",
-        session.prompt(),
-    );
-}
-
 /// 01105's reverse is the lead's interactive `ChooseOne` (Axis A #334): it
 /// suspends with a two-option prompt, and picking branch 1 (the printed
 /// "lead takes 2 horror") resolves it.
@@ -85,7 +74,7 @@ fn agenda_01105_reverse_choice_lead_takes_two_horror() {
 
     // Pick branch 1: the lead takes 2 horror, and nothing is left pending.
     let session = session.pick_nth(1);
-    assert_at_the_encounter_draw(&session);
+    session.assert_at_encounter_draw();
     assert_eq!(
         session.state().investigators[&LEAD].horror(),
         2,
@@ -103,7 +92,7 @@ fn agenda_01105_reverse_choice_random_discard_each() {
     let state = ending_the_round_on(0, seat(1).hand(["01088"]), &[]);
 
     let session = TestSession::new(state).pick_nth(0);
-    assert_at_the_encounter_draw(&session);
+    session.assert_at_encounter_draw();
     let lead_inv = &session.state().investigators[&LEAD];
     assert!(lead_inv.hand.is_empty(), "the one hand card was discarded");
     assert_eq!(
@@ -133,7 +122,7 @@ fn agenda_01106_reverse_digs_until_a_ghoul_and_the_lead_draws_it() {
             "01160", // Ghoul Minion
         ],
     ));
-    assert_at_the_encounter_draw(&session);
+    session.assert_at_encounter_draw();
     let state = session.state();
     let events = session.events();
 
@@ -199,7 +188,7 @@ fn agenda_01106_reverse_discards_non_ghoul_cards() {
             "01136", // treachery, no Ghoul
         ],
     ));
-    assert_at_the_encounter_draw(&session);
+    session.assert_at_encounter_draw();
     let state = session.state();
     let events = session.events();
     let mut discarded = state.encounter_discard.clone();

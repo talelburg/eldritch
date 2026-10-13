@@ -389,7 +389,7 @@ fn fast_asset_rejected_by_owner_outside_investigation_with_no_window() {
     )
     .session();
     // No window is open: the Mythos phase rests at the encounter draw.
-    assert_eq!(drawing.prompt().target, Some(OptionTarget::EncounterDeck));
+    drawing.assert_at_encounter_draw();
     let session = drawing.submit_off_menu(&TurnAction::PlayCard {
         investigator: A,
         hand_index: 0,

@@ -141,11 +141,8 @@ fn last_end_turn_advances_to_mythos_and_pauses_for_draw_two_investigators() {
     // continue to Investigation — that waits for the encounter draws.
     let before = session.events().len();
     let session = session.take(&TurnAction::EndTurn);
-    assert_eq!(
-        session.prompt().target,
-        Some(OptionTarget::EncounterDeck),
-        "round-ending EndTurn pauses at the Mythos draw prompt"
-    );
+    // Round-ending EndTurn pauses at the Mythos draw prompt.
+    session.assert_at_encounter_draw();
     let state = session.state();
     assert_eq!(state.round, 2, "round bumps on Mythos entry");
     assert_eq!(state.phase, Phase::Mythos);
@@ -213,11 +210,8 @@ fn last_end_turn_advances_to_mythos_and_pauses_for_draw_solo() {
 
     let before = session.events().len();
     let session = session.take(&TurnAction::EndTurn);
-    assert_eq!(
-        session.prompt().target,
-        Some(OptionTarget::EncounterDeck),
-        "round-ending EndTurn pauses at the Mythos draw prompt"
-    );
+    // Round-ending EndTurn pauses at the Mythos draw prompt.
+    session.assert_at_encounter_draw();
     let state = session.state();
     assert_eq!(state.round, 2, "round bumps on Mythos entry");
     assert_eq!(state.phase, Phase::Mythos);

@@ -53,7 +53,7 @@ fn enemy_phase_runs_hunters_then_attack_loop_when_no_tie() {
     // cascade runs Enemy→Upkeep→Mythos within this same step, pausing at the
     // step-1.4 encounter-draw prompt. The hunter still moved + engaged during
     // step 3.2 — asserted via the event stream below.
-    assert_eq!(session.prompt().target, Some(OptionTarget::EncounterDeck));
+    session.assert_at_encounter_draw();
     let state = session.state();
     assert_eq!(state.phase, Phase::Mythos);
     assert_eq!(
@@ -106,7 +106,7 @@ fn enemy_phase_suspends_on_hunter_tie_then_resumes_into_attack_loop() {
     // With no ability to offer the attack window auto-skips and the cascade runs
     // Enemy->Upkeep->Mythos within the same step, pausing at the step-1.4
     // encounter-draw prompt.
-    assert_eq!(session.prompt().target, Some(OptionTarget::EncounterDeck));
+    session.assert_at_encounter_draw();
     assert_eq!(session.state().phase, Phase::Mythos);
 }
 #[test]
@@ -580,12 +580,7 @@ fn enemy_phase_resumes_via_skip_input() {
 
     // The Skip resumes the continuation; the cascade runs into Mythos and
     // pauses at the step-1.4 encounter-draw prompt.
-    assert_eq!(
-        session.prompt().target,
-        Some(OptionTarget::EncounterDeck),
-        "expected the Mythos draw prompt after Skip; events = {:?}",
-        session.events()
-    );
+    session.assert_at_encounter_draw();
     let state = session.state();
     assert_eq!(
         state.phase,

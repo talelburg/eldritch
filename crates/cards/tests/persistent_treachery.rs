@@ -196,12 +196,8 @@ fn dissonant_voices_enters_threat_area_and_discards_on_round_end() {
     // investigator ends the turn, and the round runs on through the Enemy and
     // Upkeep phases to its end, and into the next round's Mythos encounter draw.
     let session = revealed.take(&TurnAction::EndTurn);
-    assert_eq!(
-        session.prompt().target,
-        Some(OptionTarget::EncounterDeck),
-        "the round ended and the next Mythos draw is up: {:?}",
-        session.prompt(),
-    );
+    // The round ended and the next Mythos draw is up.
+    session.assert_at_encounter_draw();
     let state = session.state();
     assert!(
         state.investigators[&INV].threat_area.is_empty(),

@@ -366,7 +366,7 @@ fn lita_defeated_by_soaked_damage_is_removed_from_the_game() {
     // The turn ends and the round runs on to the next Mythos phase, whose
     // encounter draw reveals Grasping Hands.
     let drawing = TestSession::new(state).take(&TurnAction::EndTurn);
-    assert_eq!(drawing.prompt().target, Some(OptionTarget::EncounterDeck));
+    drawing.assert_at_encounter_draw();
     // Each point of the failure's damage asks where it goes: the investigator
     // or the one controlled soaker, Lita. Both go to her.
     let lita = OptionTarget::CardInstance(LITA_INST);

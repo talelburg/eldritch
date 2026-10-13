@@ -157,7 +157,7 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
     let done = after_first.pick(dissonant);
     // The upkeep tail runs through to Mythos, which pauses at the step-1.4
     // encounter-draw prompt after placing its +1 doom.
-    assert_eq!(done.prompt().target, Some(OptionTarget::EncounterDeck));
+    done.assert_at_encounter_draw();
     assert_eq!(
         done.state().agenda_doom,
         6,

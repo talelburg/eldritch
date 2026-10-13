@@ -12,7 +12,7 @@
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{board, EngineOutcome, NativeCx, OptionTarget, PromptNature, TimingEvent};
+use game_core::engine::{board, EngineOutcome, NativeCx, PromptNature, TimingEvent};
 use game_core::event::{Event, TraumaKind};
 use game_core::state::{
     self, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, DiscardPile,
@@ -145,11 +145,8 @@ fn run(state: GameState) -> TestSession {
             phase: state::Phase::Enemy
         }
     );
-    assert_eq!(
-        session.prompt().target,
-        Some(OptionTarget::EncounterDeck),
-        "play went on to the next round's encounter draw"
-    );
+    // Play went on to the next round's encounter draw.
+    session.assert_at_encounter_draw();
     session
 }
 

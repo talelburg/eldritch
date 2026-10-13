@@ -38,7 +38,7 @@ use card_dsl::card_data::{CardKind, CardMetadata, CardType};
 use card_dsl::dsl::{self, Ability, InvestigatorTarget};
 use game_core::action::RosterEntry;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, OptionTarget, PromptNature};
+use game_core::engine::{self, PromptNature};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
@@ -181,17 +181,6 @@ fn at_mythos_draw_of(seats: usize, codes: &[&str]) -> TestSession {
     at_mythos_draw(seats).edit_state(|state| with_encounter_deck(state, codes))
 }
 
-/// Assert the session rests at a step-1.4 encounter-draw prompt.
-#[track_caller]
-fn assert_at_encounter_draw(session: &TestSession) {
-    assert_eq!(
-        session.prompt().target,
-        Some(OptionTarget::EncounterDeck),
-        "expected the encounter-draw prompt: {:?}",
-        session.prompt(),
-    );
-}
-
 // ------------------------------------------------------------------
 // Surge chain
 // ------------------------------------------------------------------
@@ -276,7 +265,7 @@ fn mythos_phase_multi_investigator_surge_does_not_spill() {
     // inv1 draws: surge chain pulls TWO cards (surge + plain treachery), then
     // the loop re-prompts inv2.
     let second = drawing.confirm();
-    assert_at_encounter_draw(&second);
+    second.assert_at_encounter_draw();
     // The surge chain resolves within inv1's single draw; still Mythos
     // because inv2 still needs to draw.
     assert_eq!(second.state().phase, Phase::Mythos);

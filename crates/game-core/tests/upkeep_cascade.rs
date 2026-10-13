@@ -12,7 +12,7 @@
 
 use game_core::action::RosterEntry;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, EngineOutcome, OptionTarget};
+use game_core::engine::{self, EngineOutcome};
 use game_core::state::{
     Act, Agenda, CardCode, CardInPlay, ChaosBag, ChaosToken, GameState, GameStateBuilder,
     InvestigatorId, LocationId, Owner, Phase,
@@ -147,7 +147,7 @@ fn upkeep_full_round_draws_and_grants_then_pauses_at_mythos() {
     let session = opened.take(&TurnAction::EndTurn);
     let state = session.state();
 
-    assert_eq!(session.prompt().target, Some(OptionTarget::EncounterDeck));
+    session.assert_at_encounter_draw();
     assert_eq!(state.phase, Phase::Mythos, "cascade must land in Mythos");
     assert_eq!(
         state.round,

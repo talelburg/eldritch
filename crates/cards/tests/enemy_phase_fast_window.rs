@@ -204,12 +204,7 @@ fn the_window_auto_skips_when_nothing_is_fast_eligible() {
 
     // No window is left open on the auto-skip path: play runs on through the
     // round to the next Mythos phase's encounter draw.
-    assert_eq!(
-        session.prompt().target,
-        Some(OptionTarget::EncounterDeck),
-        "no window stops the cascade; prompt = {:?}",
-        session.prompt(),
-    );
+    session.assert_at_encounter_draw();
     // The attack resolves in the same cascade…
     assert_event!(
         session.events(),
