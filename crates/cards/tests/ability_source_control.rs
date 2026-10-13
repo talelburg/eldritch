@@ -155,28 +155,6 @@ fn take_activation(state: GameState, action: &TurnAction) -> TestSession {
     session
 }
 
-/// Submit `action`, which the menu does not offer, straight to the handler and
-/// assert the handler itself rejects it, leaving state byte-identical. Returns
-/// the reason.
-fn assert_handler_rejects(state: GameState, action: &TurnAction) -> String {
-    assert_rejects(state, |session| session.submit_off_menu(action))
-}
-
-/// Run `step` from the turn menu and assert it is rejected, leaving state
-/// byte-identical. Returns the reason.
-fn assert_rejects(state: GameState, step: impl FnOnce(TestSession) -> TestSession) -> String {
-    let session = TestSession::new(state);
-    let before = session.state().clone();
-    let session = step(session);
-    let reason = session.expect_rejected().to_owned();
-    assert_eq!(
-        *session.state(),
-        before,
-        "a rejected activation must leave state byte-identical",
-    );
-    reason
-}
-
 /// The acting investigator's own investigator-card instance.
 fn my_investigator_card(state: &GameState) -> CardInstanceId {
     state.investigators[&MINE].investigator_card.instance_id
@@ -237,7 +215,7 @@ fn an_ability_on_another_investigators_card_is_neither_offered_nor_activatable()
     );
 
     // Activating another investigator's card must reject.
-    let reason = assert_handler_rejects(state, &action);
+    let reason = TestSession::new(state).assert_rejects(|s| s.submit_off_menu(&action));
     assert!(
         reason.contains("cannot reach"),
         "the reason should name reachability, got: {reason}",
@@ -308,7 +286,7 @@ fn discarding_your_investigator_card_as_a_cost_rejects_rather_than_panicking() {
     );
 
     // The menu offers it, and taking it must reject.
-    let reason = assert_rejects(state, |session| session.take(&action));
+    let reason = TestSession::new(state).assert_rejects(|session| session.take(&action));
     assert!(
         reason.contains("cannot be discarded as a cost"),
         "the reason should say why, got: {reason}",

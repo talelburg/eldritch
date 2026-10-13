@@ -55,7 +55,7 @@ use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, Skills, Zone,
+    GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, Zone,
 };
 use game_core::test_support::{self, seat, Seat, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -105,12 +105,7 @@ fn parley() -> TurnAction {
 /// The investigator: intellect 5, so a `[intellect]` (4) test turns on the
 /// chaos token rather than on the investigator.
 fn sharp() -> Seat {
-    seat(1).skills(Skills {
-        willpower: 3,
-        intellect: 5,
-        combat: 3,
-        agility: 3,
-    })
+    seat(1).skill(SkillKind::Intellect, 5)
 }
 
 /// Lita as she is put into play at the Parlor: the scenario's, under nobody's
@@ -371,7 +366,7 @@ fn lita_defeated_by_soaked_damage_is_removed_from_the_game() {
     // The turn ends and the round runs on to the next Mythos phase, whose
     // encounter draw reveals Grasping Hands.
     let drawing = TestSession::new(state).take(&TurnAction::EndTurn);
-    assert_eq!(drawing.prompt().target, Some(OptionTarget::EncounterDeck));
+    drawing.assert_at_encounter_draw();
     // Each point of the failure's damage asks where it goes: the investigator
     // or the one controlled soaker, Lita. Both go to her.
     let lita = OptionTarget::CardInstance(LITA_INST);

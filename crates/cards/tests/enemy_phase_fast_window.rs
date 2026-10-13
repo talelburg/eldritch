@@ -99,7 +99,7 @@ fn end_turn(board: GameStateBuilder) -> TestSession {
 
 /// The anchor of the seated Beat Cop: its `[fast]` ability is offered on it.
 fn beat_cop(session: &TestSession) -> OptionTarget {
-    OptionTarget::CardInstance(session.state().in_play(INV, BEAT_COP))
+    session.state().card(INV, BEAT_COP)
 }
 
 #[test]
@@ -204,12 +204,7 @@ fn the_window_auto_skips_when_nothing_is_fast_eligible() {
 
     // No window is left open on the auto-skip path: play runs on through the
     // round to the next Mythos phase's encounter draw.
-    assert_eq!(
-        session.prompt().target,
-        Some(OptionTarget::EncounterDeck),
-        "no window stops the cascade; prompt = {:?}",
-        session.prompt(),
-    );
+    session.assert_at_encounter_draw();
     // The attack resolves in the same cascade…
     assert_event!(
         session.events(),

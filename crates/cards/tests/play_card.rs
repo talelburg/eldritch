@@ -371,13 +371,11 @@ fn asset_play_enters_play_through_the_frame() {
 #[test]
 fn play_card_after_defeat_is_rejected() {
     // Belt-and-suspenders: even with REGISTRY installed, the status
-    // check should reject before the registry lookup runs. A seat has no
-    // status setter, so the defeat is a board edit before settling.
-    let mut state = GameStateBuilder::new()
-        .with_seat(seat(1).hand([HOLY_ROSARY]))
+    // check should reject before the registry lookup runs.
+    let state = GameStateBuilder::new()
+        .with_seat(seat(1).hand([HOLY_ROSARY]).status(Status::Defeated))
         .open_turn(INV)
         .build();
-    state.investigators.get_mut(&INV).expect("seated").status = Status::Defeated;
 
     let result = play_off_menu(TestSession::new(state)).finish();
     assert!(result.events.is_empty());

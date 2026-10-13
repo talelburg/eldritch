@@ -200,22 +200,6 @@ fn assert_offered_and_activatable(state: GameState, source: AbilitySource, why: 
     );
 }
 
-/// Submit `action`, which the menu does not offer, straight to the handler and
-/// assert the handler itself rejects it, leaving state byte-identical. Returns
-/// the reason.
-fn assert_handler_rejects(state: GameState, action: &TurnAction) -> String {
-    let session = TestSession::new(state);
-    let before = session.state().clone();
-    let session = session.submit_off_menu(action);
-    let reason = session.expect_rejected().to_owned();
-    assert_eq!(
-        *session.state(),
-        before,
-        "a rejected activation must leave state byte-identical",
-    );
-    reason
-}
-
 /// Neither offered nor accepted, and the rejection leaves the board untouched.
 fn assert_out_of_reach(state: GameState, source: AbilitySource, why: &str) {
     let action = activation(source, LIVE);
@@ -227,7 +211,7 @@ fn assert_out_of_reach(state: GameState, source: AbilitySource, why: &str) {
     );
 
     // Activating it must reject.
-    let reason = assert_handler_rejects(state, &action);
+    let reason = TestSession::new(state).assert_rejects(|s| s.submit_off_menu(&action));
     assert!(
         reason.contains("cannot reach"),
         "{why}, so the reason should name reachability, got: {reason}",
@@ -356,7 +340,7 @@ fn a_usage_limited_ability_on_a_location_rejects_naming_699_rather_than_panickin
     );
 
     // A usage-limited location ability must reject.
-    let reason = assert_handler_rejects(state, &action);
+    let reason = TestSession::new(state).assert_rejects(|s| s.submit_off_menu(&action));
     assert!(
         reason.contains("usage limit") && reason.contains("#699"),
         "the reason should name the limit and the issue that builds it, got: {reason}",

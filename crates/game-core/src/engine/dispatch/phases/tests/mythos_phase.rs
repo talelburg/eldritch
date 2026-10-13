@@ -1,7 +1,7 @@
 use super::*;
 use crate::assert_event;
 use crate::engine::dispatch;
-use crate::engine::outcome::{InputKind, OptionTarget};
+use crate::engine::outcome::InputKind;
 use crate::state::{GameStateBuilder, InvestigatorId, Phase, Status};
 use crate::test_support::{self, TestSession};
 
@@ -62,12 +62,8 @@ fn mythos_drives_from_entry_via_the_loop() {
         })
         .with_turn_order([InvestigatorId(1)])
         .session();
-    assert_eq!(
-        session.prompt().target,
-        Some(OptionTarget::EncounterDeck),
-        "the loop advances the Entry anchor and suspends at the draw prompt; got {:?}",
-        session.prompt(),
-    );
+    // The loop advances the Entry anchor and suspends at the draw prompt.
+    session.assert_at_encounter_draw();
     assert_eq!(
         session.state().current_encounter_drawer(),
         Some(InvestigatorId(1))
@@ -296,7 +292,7 @@ fn mythos_phase_with_all_investigators_eliminated_opens_after_draws_window() {
 fn advance_encounter_draw_skips_eliminated_middle_investigator() {
     let mut state = GameStateBuilder::default()
         .with_seat(test_support::seat(1))
-        .with_seat(test_support::seat(2))
+        .with_seat(test_support::seat(2).status(Status::Defeated))
         .with_seat(test_support::seat(3))
         .with_phase(Phase::Mythos)
         .with_phase_anchor(MythosPhaseFrame {
@@ -305,12 +301,6 @@ fn advance_encounter_draw_skips_eliminated_middle_investigator() {
         .with_turn_order([InvestigatorId(1), InvestigatorId(2), InvestigatorId(3)])
         .with_mythos_draw_remaining([InvestigatorId(1), InvestigatorId(2), InvestigatorId(3)])
         .build();
-    // A seat has no status setter; inv2 is eliminated on the built board.
-    state
-        .investigators
-        .get_mut(&InvestigatorId(2))
-        .unwrap()
-        .status = Status::Defeated;
     // The card inv1 draws.
     state
         .encounter_deck
@@ -325,12 +315,8 @@ fn advance_encounter_draw_skips_eliminated_middle_investigator() {
     );
     let session = session.confirm();
 
-    assert_eq!(
-        session.prompt().target,
-        Some(OptionTarget::EncounterDeck),
-        "a remaining drawer re-prompts, got {:?}",
-        session.prompt(),
-    );
+    // A remaining drawer re-prompts.
+    session.assert_at_encounter_draw();
     let state = session.state();
     assert_eq!(
         state.current_encounter_drawer(),

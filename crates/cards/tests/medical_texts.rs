@@ -20,7 +20,7 @@ use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId,
-    LocationId, Skills, TokenModifiers,
+    LocationId, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
 
@@ -43,12 +43,7 @@ fn board(intellect: i8, damage: u8) -> TestSession {
         .with_seat(
             seat(1)
                 .at(HERE)
-                .skills(Skills {
-                    willpower: 3,
-                    intellect,
-                    combat: 3,
-                    agility: 3,
-                })
+                .skill(SkillKind::Intellect, intellect)
                 // Harm accumulates on the investigator card after #448 cp2a.
                 .harm(damage, 0)
                 .in_play([MEDICAL_TEXTS]),

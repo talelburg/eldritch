@@ -43,11 +43,8 @@ fn rejects_non_confirm_response_and_preserves_frame() {
         "unexpected reject reason: {:?}",
         session.expect_rejected(),
     );
-    assert_eq!(
-        session.prompt().target,
-        Some(OptionTarget::EncounterDeck),
-        "the encounter draw must survive a rejected response for retry",
-    );
+    // The encounter draw must survive a rejected response for retry.
+    session.assert_at_encounter_draw();
     assert_eq!(
         session.state().current_encounter_drawer(),
         Some(InvestigatorId(1))

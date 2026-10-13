@@ -26,7 +26,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
     Agenda, CardCode, ChaosBag, ChaosToken, DiscardPile, Enemy, EnemyId, GameStateBuilder,
-    InvestigatorId, LocationId, Owner, Skills, TokenModifiers, Zone,
+    InvestigatorId, LocationId, Owner, SkillKind, TokenModifiers, Zone,
 };
 use game_core::test_support::{self, seat, TestSession};
 
@@ -103,12 +103,7 @@ fn defeated_in_a_two_investigator_game_it_goes_to_its_bearers_discard() {
 
     let session = GameStateBuilder::new()
         .with_location(test_support::test_location(HERE.0, "Study"))
-        .with_seat(seat(1).at(HERE).skills(Skills {
-            willpower: 3,
-            intellect: 3,
-            combat: 8,
-            agility: 3,
-        }))
+        .with_seat(seat(1).at(HERE).skill(SkillKind::Combat, 8))
         .with_seat(seat(2).at(HERE))
         .with_turn_order([fighter, bearer])
         .open_turn(fighter)

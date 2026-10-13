@@ -1,7 +1,7 @@
 use card_dsl::card_data::SkillKind;
 
 use super::*;
-use crate::state::{GameStateBuilder, Skills};
+use crate::state::GameStateBuilder;
 use crate::test_support;
 
 #[test]
@@ -37,18 +37,8 @@ fn resolve_prey_empty_is_none() {
 #[test]
 fn resolve_prey_highest_stat_picks_max() {
     let state = GameStateBuilder::new()
-        .with_seat(test_support::seat(1).skills(Skills {
-            willpower: 3,
-            intellect: 3,
-            combat: 5,
-            agility: 3,
-        }))
-        .with_seat(test_support::seat(2).skills(Skills {
-            willpower: 3,
-            intellect: 3,
-            combat: 2,
-            agility: 3,
-        }))
+        .with_seat(test_support::seat(1).skill(SkillKind::Combat, 5))
+        .with_seat(test_support::seat(2).skill(SkillKind::Combat, 2))
         .build();
     let r = resolve_prey(
         &state,
@@ -64,18 +54,8 @@ fn resolve_prey_highest_stat_picks_max() {
 #[test]
 fn resolve_prey_highest_stat_tie_is_tie() {
     let state = GameStateBuilder::new()
-        .with_seat(test_support::seat(1).skills(Skills {
-            willpower: 3,
-            intellect: 3,
-            combat: 4,
-            agility: 3,
-        }))
-        .with_seat(test_support::seat(2).skills(Skills {
-            willpower: 3,
-            intellect: 3,
-            combat: 4,
-            agility: 3,
-        }))
+        .with_seat(test_support::seat(1).skill(SkillKind::Combat, 4))
+        .with_seat(test_support::seat(2).skill(SkillKind::Combat, 4))
         .build();
     let r = resolve_prey(
         &state,

@@ -3,8 +3,8 @@
 //! loop in [`resolver`](super::resolver).
 
 use super::resolver::{
-    drain_with_applier, hand_indices_of, is_turn_menu, resolve_commit_codes, sole_option_at,
-    turn_action_option, ChoiceResolver, ScriptedResolver,
+    card_codes, drain_with_applier, hand_indices_of, is_turn_menu, options_at,
+    resolve_commit_codes, sole_option_at, turn_action_option, ChoiceResolver, ScriptedResolver,
 };
 use crate::action::{Action, InputResponse, PlayerAction};
 use crate::engine::enumerate::TurnAction;
@@ -15,7 +15,7 @@ use crate::engine::{
 use crate::event::Event;
 use crate::scenario_registry;
 use crate::state::{
-    CardCode, Continuation, EmitEventFrame, EmitStep, GameState, GameStateBuilder, HandSizeDiscard,
+    Continuation, EmitEventFrame, EmitStep, GameState, GameStateBuilder, HandSizeDiscard,
     InvestigatorId, MulliganFrame, SkillKind,
 };
 
@@ -56,13 +56,15 @@ use crate::state::{
 ///   at every prompt. [`answer_with`](Self::answer_with) installs a
 ///   [`ChoiceResolver`] instead, which answers every prompt until the policy
 ///   is changed again.
-/// - **Readers** — [`prompt`](Self::prompt), [`offered_at`](Self::offered_at),
-///   [`assert_at_turn_menu`](Self::assert_at_turn_menu),
+/// - **Readers** — [`prompt`](Self::prompt),
 ///   [`expect_rejected`](Self::expect_rejected), [`rejection`](Self::rejection),
-///   [`state`](Self::state),
-///   [`events`](Self::events) — look at the session
-///   without moving it, and [`finish`](Self::finish) hands back the last step's
-///   [`ApplyResult`].
+///   [`state`](Self::state), [`events`](Self::events),
+///   [`offered_at`](Self::offered_at),
+///   [`assert_at_turn_menu`](Self::assert_at_turn_menu) and
+///   [`assert_at_encounter_draw`](Self::assert_at_encounter_draw) — look at the
+///   session without moving it. [`assert_rejects`](Self::assert_rejects) runs
+///   one step and asserts the engine refused it with nothing moved, and
+///   [`finish`](Self::finish) hands back the last step's [`ApplyResult`].
 ///
 /// Where the session stopped is read off the engine's outcome alone, never off
 /// the continuation stack: the turn menu is the prompt anchored to
@@ -324,7 +326,7 @@ impl TestSession {
     /// mulligan or hand-size discard is a `PickMultiple` too — answer it with
     /// [`choose_from_hand`](Self::choose_from_hand)), or if a code is not in
     /// the hand.
-    pub fn commit(self, codes: &[CardCode]) -> Self {
+    pub fn commit(self, codes: &[&str]) -> Self {
         self.assert_off_turn_menu("commit");
         let request = self.prompt();
         assert!(
@@ -333,11 +335,15 @@ impl TestSession {
              rests at {:?}",
             request.prompt,
         );
-        let selected =
-            resolve_commit_codes(codes, &self.state, &request.prompt, "TestSession::commit")
-                .into_iter()
-                .map(OptionId)
-                .collect();
+        let selected = resolve_commit_codes(
+            &card_codes(codes),
+            &self.state,
+            &request.prompt,
+            "TestSession::commit",
+        )
+        .into_iter()
+        .map(OptionId)
+        .collect();
         self.respond(InputResponse::PickMultiple { selected })
     }
 
@@ -355,12 +361,12 @@ impl TestSession {
     /// Panics at the turn menu, at a skill test's commit window (commit cards
     /// with [`commit`](Self::commit)), at any other prompt, or if a code is not
     /// in the hand.
-    pub fn choose_from_hand(self, codes: &[CardCode]) -> Self {
+    pub fn choose_from_hand(self, codes: &[&str]) -> Self {
         self.assert_off_turn_menu("choose_from_hand");
         assert!(
             self.state.current_skill_test().is_none(),
             "TestSession::choose_from_hand: the session is at a skill test's commit window; \
-             commit cards with `commit(&[CardCode])`",
+             commit cards with `commit(&[code])`",
         );
         let request = self.prompt();
         // The prompt names no investigator; the frame that asks it does. This
@@ -381,7 +387,7 @@ impl TestSession {
             )
         });
         let selected = hand_indices_of(
-            codes,
+            &card_codes(codes),
             &self.state,
             prompted,
             &request.prompt,
@@ -572,10 +578,7 @@ impl TestSession {
     pub fn pick_nth_at(self, target: OptionTarget, n: usize) -> Self {
         self.assert_off_turn_menu("pick_nth_at");
         let request = self.prompt();
-        let anchored: Vec<OptionId> = request
-            .options
-            .iter()
-            .filter(|option| option.target.as_ref() == Some(&target))
+        let anchored: Vec<OptionId> = options_at(request, &target)
             .map(|option| option.id)
             .collect();
         assert!(
@@ -648,6 +651,17 @@ impl TestSession {
         }
     }
 
+    /// The reason the last step was rejected, or `None` if it was accepted —
+    /// the non-panicking [`expect_rejected`](Self::expect_rejected), for a
+    /// sweep that submits many actions and sorts them by whether the engine
+    /// accepts each.
+    pub fn rejection(&self) -> Option<&str> {
+        match &self.last_outcome {
+            EngineOutcome::Rejected { reason } => Some(reason),
+            _ => None,
+        }
+    }
+
     /// The current state.
     pub fn state(&self) -> &GameState {
         &self.state
@@ -661,18 +675,16 @@ impl TestSession {
 
     /// How many of the current prompt's options are anchored to `target`:
     /// `0` when it is not offered, `1` for a lone option [`pick`](Self::pick)
-    /// can name, and more for abilities printed on one card, which
+    /// can name, and more for several options sharing the anchor — several
+    /// abilities printed on one card, one ability offered to several
+    /// investigators, or identical copies in hand — which
     /// [`pick_nth_at`](Self::pick_nth_at) tells apart.
     ///
     /// # Panics
     ///
     /// Panics if no prompt is outstanding, as [`prompt`](Self::prompt) does.
     pub fn offered_at(&self, target: &OptionTarget) -> usize {
-        self.prompt()
-            .options
-            .iter()
-            .filter(|option| option.target.as_ref() == Some(target))
-            .count()
+        options_at(self.prompt(), target).count()
     }
 
     /// Assert the session rests at `investigator`'s turn menu: the prompt
@@ -693,6 +705,55 @@ impl TestSession {
                  session rests at {other:?}"
             ),
         }
+    }
+
+    /// Assert the session rests at a Mythos step-1.4 encounter-draw prompt:
+    /// the prompt anchored to the [`EncounterDeck`](OptionTarget::EncounterDeck).
+    /// Where a step that runs through a round end usually stops.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the session rests anywhere else, or at `Done`.
+    #[track_caller]
+    pub fn assert_at_encounter_draw(&self) {
+        match &self.rest {
+            EngineOutcome::AwaitingInput { request, .. }
+                if request.target == Some(OptionTarget::EncounterDeck) => {}
+            other => panic!(
+                "TestSession::assert_at_encounter_draw: expected the encounter-draw prompt; the \
+                 session rests at {other:?}"
+            ),
+        }
+    }
+
+    /// Run `step` and assert the engine rejects it on its first apply with
+    /// nothing moved: the state is byte-identical to before and the session
+    /// still rests at the prompt it rested at. Returns the reason.
+    ///
+    /// The reader for a handler's own rejection — usually
+    /// `assert_rejects(|s| s.submit_off_menu(&action))`, for an action the
+    /// menu does not offer, or a `take` the handler refuses after the menu
+    /// offered it.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `step` is not rejected, or if the rejection left the state or
+    /// the resting prompt changed.
+    #[track_caller]
+    pub fn assert_rejects(self, step: impl FnOnce(Self) -> Self) -> String {
+        let state_before = self.state.clone();
+        let rest_before = self.rest.clone();
+        let session = step(self);
+        let reason = session.expect_rejected().to_owned();
+        assert_eq!(
+            session.state, state_before,
+            "TestSession::assert_rejects: a rejected step must leave state byte-identical",
+        );
+        assert_eq!(
+            session.rest, rest_before,
+            "TestSession::assert_rejects: a rejected step must rest where it started",
+        );
+        reason
     }
 
     /// End the session, returning the last step's [`ApplyResult`]: the current
@@ -728,17 +789,6 @@ impl TestSession {
 
     fn respond(self, response: InputResponse) -> Self {
         self.apply(Action::Player(PlayerAction::ResolveInput { response }))
-    }
-
-    /// The reason the last step was rejected, or `None` if it was accepted —
-    /// the non-panicking [`expect_rejected`](Self::expect_rejected), for a
-    /// sweep that submits many actions and sorts them by whether the engine
-    /// accepts each.
-    pub fn rejection(&self) -> Option<&str> {
-        match &self.last_outcome {
-            EngineOutcome::Rejected { reason } => Some(reason),
-            _ => None,
-        }
     }
 }
 

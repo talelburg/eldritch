@@ -17,11 +17,10 @@
 use card_dsl::dsl::{UsageLimit, UsagePeriod};
 use cards::REGISTRY;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
     AbilityUsageRecord, CardCode, CardInPlay, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Skills, TokenModifiers,
+    GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -62,12 +61,7 @@ fn roland_at_location_with_enemy(location_clues: u8, round: u32) -> GameState {
             seat(1)
                 .at(HERE)
                 // Roland's printed combat.
-                .skills(Skills {
-                    willpower: 3,
-                    intellect: 3,
-                    combat: 4,
-                    agility: 3,
-                })
+                .skill(SkillKind::Combat, 4)
                 .in_play([ROLAND]),
         )
         // Co-located: Fight is location-gated (#401).
@@ -113,7 +107,7 @@ fn fight(state: GameState) -> TestSession {
 /// [`fight`], then fire Roland's reaction from its window.
 fn fight_and_react(state: GameState) -> TestSession {
     let session = fight(state);
-    let roland = OptionTarget::CardInstance(session.state().in_play(INV, ROLAND));
+    let roland = session.state().card(INV, ROLAND);
     session.pick(roland)
 }
 
@@ -200,7 +194,7 @@ fn skipping_the_reaction_window_does_not_bump_the_counter() {
     // round.
     let at_window = fight(roland_at_location_with_enemy(2, 0));
     // The window opened, offering Roland's reaction.
-    let roland = OptionTarget::CardInstance(at_window.state().in_play(INV, ROLAND));
+    let roland = at_window.state().card(INV, ROLAND);
     assert_eq!(at_window.offered_at(&roland), 1);
     let session = at_window.skip();
 

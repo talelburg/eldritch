@@ -40,7 +40,7 @@ fn holding_cover_up(held: u8) -> Seat {
 /// The anchor of the Cover Up in `holder`'s threat area: its reaction and its
 /// forced ability are offered on the card.
 fn cover_up_of(state: &GameState, holder: InvestigatorId) -> OptionTarget {
-    OptionTarget::CardInstance(state.in_play(holder, COVER_UP))
+    state.card(holder, COVER_UP)
 }
 
 /// Clues remaining on the Cover Up in `INV`'s threat area.
@@ -70,7 +70,7 @@ fn revelation_puts_cover_up_in_threat_area_with_three_clues() {
         .build();
     state.encounter_deck.push_back(CardCode::new(COVER_UP));
     let drawing = TestSession::new(state);
-    assert_eq!(drawing.prompt().target, Some(OptionTarget::EncounterDeck));
+    drawing.assert_at_encounter_draw();
 
     // Drawing the card reveals it: it resolves without a prompt of its own, and
     // play runs on out of the Mythos phase to `INV`'s turn.
@@ -161,7 +161,7 @@ fn investigate_with_deduction_and_play_cover_up(board: GameStateBuilder) -> Test
     let offered = board
         .session()
         .take(&TurnAction::Investigate { investigator: INV })
-        .commit(&[CardCode::new(DEDUCTION)]);
+        .commit(&[DEDUCTION]);
     let cover_up = cover_up_of(offered.state(), INV);
     offered.pick(cover_up)
 }

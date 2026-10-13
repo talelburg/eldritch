@@ -63,7 +63,7 @@ fn with_hyperawareness(resources: u8) -> TestSession {
 /// The anchor of the seated Hyperawareness: both its abilities are offered on
 /// it.
 fn hyperawareness(state: &GameState) -> OptionTarget {
-    OptionTarget::CardInstance(state.in_play(INV, HYPERAWARENESS))
+    state.card(INV, HYPERAWARENESS)
 }
 
 /// Run a `skill` test at `difficulty` from the turn menu, buying `ability`

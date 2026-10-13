@@ -13,11 +13,6 @@ fn mulligan_resolve(indices: &[u32]) -> Action {
     })
 }
 
-/// The hand-card codes `codes` names.
-fn codes(codes: &[&str]) -> Vec<CardCode> {
-    codes.iter().copied().map(CardCode::new).collect()
-}
-
 /// A Mulligan board: one investigator with a known hand of 5 cards + a
 /// remaining deck of 5, the `Mulligan` frame staged. Bypasses scenario
 /// setup (via `seat_and_open`) so tests can control the exact hand
@@ -42,7 +37,7 @@ fn at_mulligan() -> TestSession {
 /// The sole investigator mulligans `redraw`: the loop drains and play goes
 /// on to their turn.
 fn mulligan(redraw: &[&str]) -> TestSession {
-    let session = at_mulligan().choose_from_hand(&codes(redraw));
+    let session = at_mulligan().choose_from_hand(redraw);
     session.assert_at_turn_menu(INV);
     session
 }
@@ -134,7 +129,7 @@ fn mulligan_cards_cannot_be_redrawn_as_their_own_replacements() {
     // `h-*` cards and the deck exactly the five `d-*` ones, so redrawing the
     // whole hand must yield a hand of only `d-*` cards no matter how the
     // shuffle falls.
-    let mulliganed = codes(&WHOLE_HAND);
+    let mulliganed = WHOLE_HAND.map(CardCode::new);
     let session = mulligan(&WHOLE_HAND);
     let inv = &session.state().investigators[&INV];
 
@@ -166,8 +161,9 @@ fn mulligan_cards_cannot_be_redrawn_as_their_own_replacements() {
 fn mulligan_partial_redraw_keeps_the_rejected_cards_out_of_the_replacements() {
     // The same guarantee for a partial mulligan: only the named cards are
     // set aside, and only they are barred from the replacement draw.
-    let rejected = codes(&["h-1", "h-3"]);
-    let session = mulligan(&["h-1", "h-3"]);
+    let redrawn = ["h-1", "h-3"];
+    let rejected = redrawn.map(CardCode::new);
+    let session = mulligan(&redrawn);
     let inv = &session.state().investigators[&INV];
 
     assert_eq!(inv.hand.len(), 5);
@@ -395,7 +391,7 @@ fn multi_investigator_real_redraw_plus_empty_mulligan_combo() {
 
     // inv1 redraws a-h-0 and a-h-2 → those two go to deck, deck
     // shuffles, two new cards come back.
-    let after_inv1 = session.choose_from_hand(&codes(&["a-h-0", "a-h-2"]));
+    let after_inv1 = session.choose_from_hand(&["a-h-0", "a-h-2"]);
     // After inv1 mulligans, the loop re-prompts inv2 (who hasn't yet).
     assert_eq!(after_inv1.state().current_mulligan(), Some(inv2));
     let inv1_after = &after_inv1.state().investigators[&INV];

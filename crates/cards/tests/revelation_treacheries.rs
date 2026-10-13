@@ -199,7 +199,7 @@ fn crypt_chill_with_two_assets_suspends_and_discards_the_chosen_one() {
     // Two controlled assets ⇒ the fail branch suspends for the controller's
     // choice (Axis A #334). AutoFail forces the failure.
     let session = crypt_chill_with_two_assets();
-    let glass = OptionTarget::CardInstance(session.state().in_play(INV, MAGNIFYING_GLASS));
+    let glass = session.state().card(INV, MAGNIFYING_GLASS);
 
     // Commit nothing at the test window, then pick the second asset
     // (Magnifying Glass) at the discard choice, by the instance it anchors to.

@@ -14,7 +14,7 @@
 
 use game_core::action::RosterEntry;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, EngineOutcome, InputKind, OptionTarget};
+use game_core::engine::{self, InputKind};
 use game_core::state::{
     Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId,
     LocationId, Phase,
@@ -105,11 +105,6 @@ const INV: InvestigatorId = InvestigatorId(1);
 /// makes it, so the opened state is edited and settled again.
 fn opened_with_a_padded_hand() -> TestSession {
     let opened = engine::seat_and_open(setup(), &roster());
-    assert!(
-        matches!(opened.outcome, EngineOutcome::AwaitingInput { .. }),
-        "seat_and_open opens the mulligan prompt, got {:?}",
-        opened.outcome
-    );
     let mut state = TestSession::new(opened.state)
         .choose_from_hand(&[])
         .state()
@@ -164,11 +159,11 @@ fn upkeep_prompts_and_discards_down_to_eight() {
     // panics unless the session rests at the hand-size discard.
     let discard_count = hand_at_check - HAND_SIZE_LIMIT;
     let chosen = first_cards(&paused, discard_count);
-    let session = paused.choose_from_hand(&chosen);
+    let session = paused.choose_from_hand(&chosen.iter().map(CardCode::as_str).collect::<Vec<_>>());
 
     // Resolving the discard continues the upkeep cascade into Mythos, which
     // pauses at the encounter-draw prompt: the discard is no longer pending.
-    assert_eq!(session.prompt().target, Some(OptionTarget::EncounterDeck));
+    session.assert_at_encounter_draw();
     assert_eq!(
         session.state().investigators[&INV].hand.len(),
         HAND_SIZE_LIMIT,
@@ -208,7 +203,10 @@ fn upkeep_hand_size_discard_replay_is_deterministic() {
         // triggering the hand-size discard prompt at 4.5.
         let paused = opened_with_a_padded_hand().take(&TurnAction::EndTurn);
         let chosen = first_cards(&paused, discard_count);
-        paused.choose_from_hand(&chosen).state().clone()
+        paused
+            .choose_from_hand(&chosen.iter().map(CardCode::as_str).collect::<Vec<_>>())
+            .state()
+            .clone()
     };
 
     // --- First pass: drive and collect final state. ---

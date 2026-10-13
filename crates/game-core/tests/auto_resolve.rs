@@ -52,7 +52,7 @@ use game_core::scenario::{
 };
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInstanceId, ChaosBag, ChaosToken, DiscardPile,
-    GameState, GameStateBuilder, InvestigatorId, LocationId, SkillKind, Skills, TokenModifiers,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenModifiers,
     TokenResolution, Zone,
 };
 use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
@@ -232,12 +232,7 @@ fn board_with(in_play: &[&str], hand: &[&str], bag: ChaosBag) -> (GameState, Inv
     let state = GameStateBuilder::new()
         .with_seat(
             seat(1)
-                .skills(Skills {
-                    willpower: 5,
-                    intellect: 3,
-                    combat: 3,
-                    agility: 3,
-                })
+                .skill(SkillKind::Willpower, 5)
                 .hand(hand.iter().copied())
                 .in_play(in_play.iter().copied()),
         )
@@ -292,10 +287,6 @@ fn play_from_hand(state: &GameState, code: &str) -> OptionTarget {
     }
 }
 
-fn codes(codes: &[&str]) -> Vec<CardCode> {
-    codes.iter().copied().map(CardCode::new).collect()
-}
-
 /// Resolve a skill test the session has just started, activating the fast
 /// ability on the in-play card `card` at the ST.1 player window and
 /// committing `commit`. The ability stays offered, so the ST.1 window re-opens
@@ -309,7 +300,7 @@ fn activating_through_the_test(
     let session = session
         .pick(OptionTarget::CardInstance(card))
         .skip()
-        .commit(&codes(commit))
+        .commit(commit)
         .skip();
     session.assert_at_turn_menu(INV);
     session
@@ -324,7 +315,7 @@ fn playing_through_the_test(
     play: OptionTarget,
     commit: &[&str],
 ) -> TestSession {
-    let session = session.pick(play).commit(&codes(commit));
+    let session = session.pick(play).commit(commit);
     session.assert_at_turn_menu(INV);
     session
 }

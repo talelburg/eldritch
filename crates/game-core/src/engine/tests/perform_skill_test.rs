@@ -104,7 +104,7 @@ fn perform_skill_test_succeeds_when_total_meets_difficulty() {
 #[test]
 fn perform_skill_test_succeeds_with_positive_margin() {
     // Skill 5 + Numeric(0) vs difficulty 2 → margin 3.
-    let strong = seat(1).skills(skills_with(SkillKind::Combat, 5));
+    let strong = seat(1).skill(SkillKind::Combat, 5);
     let session = run_test(
         skill_test_board(strong, bag_only_zero()).session(),
         SkillKind::Combat,
@@ -146,7 +146,7 @@ fn perform_skill_test_autofail_forces_total_to_zero() {
     // total = 0 (not just "test fails"), so the failure margin is
     // computed against 0. Skill 99 + AutoFail vs difficulty 4 →
     // total 0, by = 4, reason AutoFail.
-    let high = seat(1).skills(skills_with(SkillKind::Willpower, 99));
+    let high = seat(1).skill(SkillKind::Willpower, 99);
     let session = run_test(
         skill_test_board(high, ChaosBag::new([ChaosToken::AutoFail])).session(),
         SkillKind::Willpower,

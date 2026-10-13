@@ -141,7 +141,7 @@ fn activating_a_non_fight_ability_while_engaged_provokes_an_aoo() {
             .harm(1, 0),
         ready_attacker(2),
     );
-    let dog = OptionTarget::CardInstance(session.state().in_play(INV, GUARD_DOG));
+    let dog = session.state().card(INV, GUARD_DOG);
 
     // Activate First Aid (ability 0). Action-cost, non-fight → provokes an AoO
     // after the supply cost is paid and before the heal effect resolves.

@@ -45,7 +45,6 @@
 
 use cards::REGISTRY;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, DiscardPile, EnemyId, GameStateBuilder, InvestigatorId,
@@ -99,8 +98,7 @@ fn board() -> TestSession {
 /// inside the test, after the commit window and before the token. Beat Cop's
 /// `[fast]` ability makes both windows open.
 fn to_st2(session: TestSession, action: &TurnAction, commit: &[&str]) -> TestSession {
-    let commit: Vec<CardCode> = commit.iter().copied().map(CardCode::new).collect();
-    session.take(action).skip().commit(&commit)
+    session.take(action).skip().commit(commit)
 }
 
 /// [`to_st2`], then take the one offered fast ability at the ST.2 window: Beat
@@ -111,7 +109,7 @@ fn attack_then_kill_the_target_on(
     action: &TurnAction,
     commit: &[&str],
 ) -> TestSession {
-    let cop = OptionTarget::CardInstance(session.state().in_play(INV, BEAT_COP));
+    let cop = session.state().card(INV, BEAT_COP);
     let at_st2 = to_st2(session, action, commit);
     assert_eq!(
         (at_st2.offered_at(&cop), at_st2.prompt().options.len()),

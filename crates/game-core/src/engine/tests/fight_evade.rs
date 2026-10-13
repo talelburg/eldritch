@@ -12,7 +12,7 @@ const EVADE: TurnAction = TurnAction::Evade {
 /// The fighter at `HERE` with 1 in `skill`, so a test of it against the
 /// ghoul's 3 fails.
 fn weak_in(skill: SkillKind) -> Seat {
-    seat(1).at(HERE).skills(skills_with(skill, 1))
+    seat(1).at(HERE).skill(skill, 1)
 }
 
 /// The ghoul, retaliating for 1 damage and 1 horror.

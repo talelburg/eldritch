@@ -84,14 +84,13 @@ fn hand_card(session: &TestSession, code: &str) -> OptionTarget {
 /// a play land in the window under test: the session rests at the ST.2→ST.3
 /// Fast window, the first to open after the commit.
 fn investigate_to_st2_window(session: TestSession, commit: &[&str]) -> TestSession {
-    let codes: Vec<CardCode> = commit.iter().copied().map(CardCode::new).collect();
     let st1 = session.take(&TurnAction::Investigate { investigator: INV });
     assert!(
         st1.prompt().skippable,
         "the ST.1 Fast window opens before the commit: {:?}",
         st1.prompt(),
     );
-    let st2 = st1.skip().commit(&codes);
+    let st2 = st1.skip().commit(commit);
     assert!(
         st2.prompt().skippable,
         "a Fast window opens after the commit window closed: {:?}",

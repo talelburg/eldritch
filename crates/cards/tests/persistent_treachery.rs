@@ -196,12 +196,8 @@ fn dissonant_voices_enters_threat_area_and_discards_on_round_end() {
     // investigator ends the turn, and the round runs on through the Enemy and
     // Upkeep phases to its end, and into the next round's Mythos encounter draw.
     let session = revealed.take(&TurnAction::EndTurn);
-    assert_eq!(
-        session.prompt().target,
-        Some(OptionTarget::EncounterDeck),
-        "the round ended and the next Mythos draw is up: {:?}",
-        session.prompt(),
-    );
+    // The round ended and the next Mythos draw is up.
+    session.assert_at_encounter_draw();
     let state = session.state();
     assert!(
         state.investigators[&INV].threat_area.is_empty(),
@@ -280,8 +276,7 @@ fn dissonant_voices_round_end_coexists_with_agenda_01107_doom() {
     // Settling ends the phase into the round end: 2+ At-forced → the lead
     // orders them.
     let opened = TestSession::new(state);
-    let dissonant_voices =
-        OptionTarget::CardInstance(opened.state().in_play(INV, DISSONANT_VOICES));
+    let dissonant_voices = opened.state().card(INV, DISSONANT_VOICES);
     let offered: Vec<_> = opened
         .prompt()
         .options
@@ -446,10 +441,14 @@ fn frozen_in_fear_board(copies: usize, tokens: Vec<ChaosToken>) -> TestSession {
 /// (slice 2a-i absorbed the former `pending_end_turn` into `ending`). A stack
 /// invariant — no stranded frames — so it reads the stack.
 fn assert_no_turn_mid_end(state: &GameState) {
-    assert!(!state.continuations.iter().any(|c| matches!(
-        c,
-        Continuation::InvestigatorTurn(InvestigatorTurnFrame { ending: true, .. })
-    )));
+    assert!(
+        !state.continuations.iter().any(|c| matches!(
+            c,
+            Continuation::InvestigatorTurn(InvestigatorTurnFrame { ending: true, .. })
+        )),
+        "a turn was left mid-end on the stack: {:?}",
+        state.continuations,
+    );
 }
 
 /// End investigator 1's turn, committing nothing to Frozen in Fear's

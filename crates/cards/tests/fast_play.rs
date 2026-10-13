@@ -257,7 +257,7 @@ fn board_with_beat_cop(moment: fn(GameStateBuilder) -> GameStateBuilder) -> Game
 
 /// The anchor of B's Beat Cop.
 fn beat_cop(state: &GameState) -> OptionTarget {
-    OptionTarget::CardInstance(state.in_play(B, BEAT_COP))
+    state.card(B, BEAT_COP)
 }
 
 /// Beat Cop's `[fast]` ability is index 1 (index 0 is its constant
@@ -389,7 +389,7 @@ fn fast_asset_rejected_by_owner_outside_investigation_with_no_window() {
     )
     .session();
     // No window is open: the Mythos phase rests at the encounter draw.
-    assert_eq!(drawing.prompt().target, Some(OptionTarget::EncounterDeck));
+    drawing.assert_at_encounter_draw();
     let session = drawing.submit_off_menu(&TurnAction::PlayCard {
         investigator: A,
         hand_index: 0,
@@ -514,9 +514,8 @@ fn corpus_zero_action_abilities_are_offered_once_per_ability_not_once_per_card()
     .test_skill(A, SkillKind::Willpower, 4);
 
     // The skill test parks at its ST.1 player window.
-    let hyperawareness = OptionTarget::CardInstance(opened.state().in_play(A, HYPERAWARENESS));
-    let physical_training =
-        OptionTarget::CardInstance(opened.state().in_play(A, PHYSICAL_TRAINING));
+    let hyperawareness = opened.state().card(A, HYPERAWARENESS);
+    let physical_training = opened.state().card(A, PHYSICAL_TRAINING);
     assert_eq!(
         offered_anchors(&opened),
         vec![

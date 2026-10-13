@@ -48,6 +48,7 @@
 //! Own process → installs `cards::REGISTRY`.
 
 use cards::REGISTRY;
+use game_core::assert_event;
 use game_core::card_registry;
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::modified_value::{self, ModifiedQuantity, ReadContext};
@@ -161,13 +162,11 @@ fn a_set_aside_asset_enters_play_at_the_named_location() {
         "she enters play undamaged",
     );
     let instance_id = at_parlor[0].instance_id;
-    assert!(
-        events.iter().any(|e| matches!(
-            e,
-            Event::CardPutIntoPlayAtLocation { location, code, instance_id: i }
-                if *location == PARLOR_ID && code.as_str() == LITA && *i == instance_id
-        )),
-        "the entry is announced, got {events:?}",
+    // The entry is announced.
+    assert_event!(
+        events,
+        Event::CardPutIntoPlayAtLocation { location, code, instance_id: i }
+            if *location == PARLOR_ID && code.as_str() == LITA && *i == instance_id
     );
 }
 
@@ -267,8 +266,9 @@ fn an_uncontrolled_asset_cannot_soak_damage_for_a_colocated_investigator() {
 
     // Agility 3 + Numeric(-2) = 1 vs difficulty 3 → fail by 2 → 2 damage.
     state.chaos_bag.tokens = vec![ChaosToken::Numeric(-2)];
-    state.encounter_deck.push_back(CardCode::new("01162")); // Grasping Hands
-                                                            // Draw it, and commit nothing to its Agility test.
+    // Grasping Hands.
+    state.encounter_deck.push_back(CardCode::new("01162"));
+    // Draw it, and commit nothing to its Agility test.
     let session = TestSession::new(state).confirm().commit(&[]);
 
     // A contested point would prompt; instead play runs on out of the Mythos

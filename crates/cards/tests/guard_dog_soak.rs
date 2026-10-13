@@ -111,17 +111,6 @@ fn preload_guard_dog(state: &mut GameState, damage: u8) {
         .accumulated_damage = damage;
 }
 
-/// Assert the enemy phase ran to its end and play went on: the session rests
-/// at the next round's encounter draw, with no attack left parked.
-fn assert_play_went_on_to_the_next_encounter_draw(session: &TestSession) {
-    assert_eq!(
-        session.prompt().target,
-        Some(OptionTarget::EncounterDeck),
-        "the attack loop drained and play went on: {:?}",
-        session.prompt(),
-    );
-}
-
 /// Find the investigator's Guard Dog instance.
 fn guard_dog_card(state: &GameState, inv: InvestigatorId, inst: CardInstanceId) -> &CardInPlay {
     state.investigators[&inv]
@@ -362,7 +351,7 @@ fn an_attacker_defeated_by_the_retaliate_mid_attack_has_nothing_to_exhaust() {
         "the dead attacker's assigned damage still lands on Guard Dog"
     );
     // And the loop drained rather than stalling on a missing attacker.
-    assert_play_went_on_to_the_next_encounter_draw(&session);
+    session.assert_at_encounter_draw();
 }
 
 // ---------------------------------------------------------------------
@@ -628,7 +617,7 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
     );
     // No attack is parked and no soak window left open once both attacks
     // resolve: play goes on past the Enemy phase.
-    assert_play_went_on_to_the_next_encounter_draw(&session);
+    session.assert_at_encounter_draw();
 }
 
 // ---------------------------------------------------------------------

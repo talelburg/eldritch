@@ -13,7 +13,6 @@
 //! location) and no abilities (no Revelation).
 
 use card_dsl::card_data::{CardKind, CardMetadata, HealthValue, Prey};
-use game_core::engine::OptionTarget;
 use game_core::state::{
     CardCode, Continuation, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame,
     MythosResume, Phase,
@@ -76,7 +75,7 @@ fn enemy_encounter_card_spawns_via_the_disposition_frame() {
     // No builder setter stages the encounter deck.
     state.encounter_deck.push_back(CardCode::new(ENEMY));
     let drawing = TestSession::new(state);
-    assert_eq!(drawing.prompt().target, Some(OptionTarget::EncounterDeck));
+    drawing.assert_at_encounter_draw();
 
     // Drawing reveals the enemy; it spawns cleanly without a prompt of its own,
     // and play runs on out of the Mythos phase to `INV`'s turn.

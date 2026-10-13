@@ -2,7 +2,7 @@ use super::*;
 use crate::assert_event;
 use crate::engine::dispatch;
 use crate::engine::enumerate::TurnAction;
-use crate::engine::outcome::{EngineOutcome, OptionTarget};
+use crate::engine::outcome::EngineOutcome;
 use crate::state::{GameStateBuilder, InvestigatorId, Phase, Status};
 use crate::test_support;
 
@@ -253,7 +253,7 @@ fn end_turn_for_last_investigator_ends_phase_and_steps_to_enemy() {
     // Single investigator with no enemies: the round-ending EndTurn
     // cascades Investigation → Enemy → Upkeep → Mythos and pauses at the
     // step-1.4 encounter-draw prompt.
-    assert_eq!(session.prompt().target, Some(OptionTarget::EncounterDeck));
+    session.assert_at_encounter_draw();
     assert!(
         events.iter().any(
             |e| matches!(e, Event::TurnEnded { investigator } if *investigator == InvestigatorId(1))

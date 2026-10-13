@@ -29,7 +29,6 @@ use card_dsl::dsl::{
 };
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, Enemy, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase,
@@ -160,7 +159,7 @@ fn end_turn_firing(board: GameStateBuilder, fired: &[&str]) -> TestSession {
     fired.iter().fold(
         board.session().take(&TurnAction::EndTurn),
         |session, code| {
-            let card = OptionTarget::CardInstance(session.state().in_play(INV, *code));
+            let card = session.state().card(INV, *code);
             session.pick(card)
         },
     )
@@ -256,13 +255,9 @@ fn an_at_ability_resolves_after_the_impact_and_before_any_after_ability() {
 fn a_cancelled_attack_suppresses_the_at_and_after_cells_but_still_exhausts() {
     // One prompt only: the `when` cell. The `at` and `after` cells never open.
     let r = end_turn_firing(board_with(&[CANCEL, AT, AFTER], PLAIN_ENEMY), &[CANCEL]);
-    assert_eq!(
-        r.prompt().target,
-        Some(OptionTarget::EncounterDeck),
-        "no later cell offered its reaction: play ran on to the next round's \
-         encounter draw; prompt = {:?}",
-        r.prompt(),
-    );
+    // No later cell offered its reaction: play ran on to the next round's
+    // encounter draw.
+    r.assert_at_encounter_draw();
     assert_eq!(
         timeline(r.events()),
         Vec::<Option<u8>>::new(),

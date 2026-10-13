@@ -25,7 +25,7 @@
 use card_dsl::dsl::{IntExpr, Stat};
 use cards::REGISTRY;
 use game_core::assert_event_count;
-use game_core::engine::{EngineOutcome, OptionTarget};
+use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosToken, GameState, GameStateBuilder, InvestigatorId, Lifetime, LocationId,
@@ -135,7 +135,7 @@ fn a_row_expires_when_its_test_resolves_across_a_suspension() {
     // Guard Dog — a per-point prompt, so the test's resolution suspends before
     // its teardown runs.
     let state = board(0, &[GUARD_DOG]);
-    let dog = OptionTarget::CardInstance(state.in_play(INV, GUARD_DOG));
+    let dog = state.card(INV, GUARD_DOG);
     let session = reveal(state).pick(dog);
 
     // Play runs on out of the Mythos phase to the investigator's turn.

@@ -8,9 +8,10 @@
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Skills};
 use game_core::engine::enumerate::TurnAction;
+use game_core::engine::OptionTarget;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId, LocationId, Owner,
-    Status, UseKind,
+    SkillKind, Status, UseKind,
 };
 use game_core::test_support::{self, clues, seat, uses, MockRegistry, SeatLookup as _};
 
@@ -120,6 +121,38 @@ fn skills_after_as_card_override_the_printed_ones() {
 }
 
 #[test]
+fn skill_sets_one_skill_and_keeps_the_rest() {
+    let state = GameStateBuilder::new()
+        .with_seat(seat(1).skill(SkillKind::Combat, 5))
+        .build();
+    assert_eq!(
+        state.investigators[&INV].skills,
+        Skills {
+            willpower: 3,
+            intellect: 3,
+            combat: 5,
+            agility: 3,
+        },
+    );
+}
+
+#[test]
+fn skill_after_as_card_overrides_that_printed_skill_alone() {
+    let state = GameStateBuilder::new()
+        .with_seat(seat(1).as_card(SEAT_INV).skill(SkillKind::Willpower, 6))
+        .build();
+    assert_eq!(
+        state.investigators[&INV].skills,
+        Skills {
+            willpower: 6,
+            intellect: 5,
+            combat: 1,
+            agility: 4,
+        },
+    );
+}
+
+#[test]
 fn harm_lands_on_the_investigator_card() {
     let state = GameStateBuilder::new()
         .with_seat(seat(1).harm(2, 3))
@@ -133,7 +166,7 @@ fn harm_lands_on_the_investigator_card() {
 #[test]
 fn the_scalar_and_zone_setters_fill_what_they_name() {
     let state = GameStateBuilder::new()
-        .with_location(test_support::test_location(10, "Study"))
+        .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -241,7 +274,7 @@ fn in_play_as_keeps_its_id_and_minting_skips_past_it() {
 #[test]
 fn a_card_the_engine_mints_after_build_gets_a_fresh_id() {
     let session = GameStateBuilder::new()
-        .with_location(test_support::test_location(10, "Study"))
+        .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -272,7 +305,7 @@ fn a_hand_built_card_present_at_build_is_not_reminted() {
         Owner::Investigator(INV),
     ));
     let session = GameStateBuilder::new()
-        .with_location(test_support::test_location(10, "Study"))
+        .with_location(test_support::test_location(HERE.0, "Study"))
         .with_investigator(investigator)
         .open_turn(INV)
         .session()
@@ -281,6 +314,45 @@ fn a_hand_built_card_present_at_build_is_not_reminted() {
             hand_index: 0,
         });
     assert_ne!(session.state().in_play(INV, ASSET), CardInstanceId(0));
+}
+
+#[test]
+fn card_is_the_anchor_of_the_card_the_lookup_finds() {
+    let state = GameStateBuilder::new()
+        .with_seat(seat(1).in_play(["_first"]).threat_area(["_second"]))
+        .build();
+    assert_eq!(
+        state.card(INV, "_second"),
+        OptionTarget::CardInstance(state.in_play(INV, "_second")),
+    );
+    assert_ne!(state.card(INV, "_first"), state.card(INV, "_second"));
+}
+
+#[test]
+#[should_panic(expected = "_absent")]
+fn card_panics_as_the_lookup_does() {
+    let state = GameStateBuilder::new()
+        .with_seat(seat(1).in_play(["_present"]))
+        .build();
+    let _ = state.card(INV, "_absent");
+}
+
+/// A seat mints only past what was staged before it, so a card staged after
+/// it with a hand-picked id can take an id the seat minted. `build` catches
+/// the collision rather than hand back two cards with one id.
+#[test]
+#[should_panic(expected = "two staged cards share the instance id")]
+fn a_hand_picked_id_staged_after_a_seat_that_minted_it_panics_at_build() {
+    let mut later = test_support::test_investigator(2);
+    later.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new("_later"),
+        CardInstanceId(0),
+        Owner::Investigator(InvestigatorId(2)),
+    ));
+    let _ = GameStateBuilder::new()
+        .with_seat(seat(1).in_play(["_minted"]))
+        .with_investigator(later)
+        .build();
 }
 
 #[test]

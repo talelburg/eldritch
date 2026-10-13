@@ -81,18 +81,13 @@ fn session_with_hand(hand: &[&str]) -> TestSession {
         .session()
 }
 
-/// The card codes `commit` names.
-fn codes(commit: &[&str]) -> Vec<CardCode> {
-    commit.iter().map(|c| CardCode::new(*c)).collect()
-}
-
 /// Run an Intellect plain skill test against `difficulty` from `INV`'s turn
 /// with `hand` in hand, committing `commit`. The session comes back to the
 /// turn menu.
 fn skill_test_with_commits(hand: &[&str], difficulty: i8, commit: &[&str]) -> TestSession {
     session_with_hand(hand)
         .test_skill(INV, SkillKind::Intellect, difficulty)
-        .commit(&codes(commit))
+        .commit(commit)
 }
 
 #[test]
@@ -246,7 +241,7 @@ fn investigate_canonical_event_order_with_on_resolution() {
     // pin is essential as the spec for downstream listeners.
     let session = session_with_hand(&[BONUS_CLUE_SUCCESS])
         .take(&TurnAction::Investigate { investigator: INV })
-        .commit(&codes(&[BONUS_CLUE_SUCCESS]));
+        .commit(&[BONUS_CLUE_SUCCESS]);
 
     session.assert_at_turn_menu(INV);
     assert_eq!(

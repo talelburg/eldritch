@@ -176,7 +176,7 @@ fn fight_to_defeat_scenario(in_play: &[&str]) -> GameStateBuilder {
 
 /// `INV` fights the Ghoul and commits `commit` to the test. The session rests
 /// at the reaction window if one opened, or back at the turn menu.
-fn fight_committing(board: GameStateBuilder, commit: &[CardCode]) -> TestSession {
+fn fight_committing(board: GameStateBuilder, commit: &[&str]) -> TestSession {
     board
         .session()
         .take(&TurnAction::Fight {
@@ -189,12 +189,6 @@ fn fight_committing(board: GameStateBuilder, commit: &[CardCode]) -> TestSession
 /// [`fight_committing`] nothing.
 fn fight_through_commit_window(board: GameStateBuilder) -> TestSession {
     fight_committing(board, &[])
-}
-
-/// The anchor of the card `code` in `investigator`'s play or threat area: the
-/// reactions printed on it are offered on it.
-fn card(session: &TestSession, investigator: InvestigatorId, code: &str) -> OptionTarget {
-    OptionTarget::CardInstance(session.state().in_play(investigator, code))
 }
 
 /// Assert the session rests at a reaction window offering `reactions` options
@@ -241,7 +235,7 @@ fn matching_reaction_opens_window_and_suspends() {
     assert_no_event!(session.events(), Event::SkillTestEnded { .. });
     // One pending trigger, the one ability printed on `INV`'s in-play card,
     // offered on that card.
-    assert_offers_only(&session, &card(&session, INV, ROLAND_REACTION), 1);
+    assert_offers_only(&session, &session.state().card(INV, ROLAND_REACTION), 1);
     assert!(session.prompt().skippable, "an optional reaction window");
 }
 
@@ -251,7 +245,7 @@ fn pick_fires_pending_trigger_and_closes_window() {
     // discovered), the entry drains, the window closes, and the
     // session is back at the turn menu.
     let paused = fight_through_commit_window(fight_to_defeat_scenario(&[ROLAND_REACTION]));
-    let reaction = card(&paused, INV, ROLAND_REACTION);
+    let reaction = paused.state().card(INV, ROLAND_REACTION);
 
     let resumed = paused.pick(reaction);
 
@@ -274,7 +268,7 @@ fn pick_fires_pending_trigger_and_closes_window() {
 #[test]
 fn a_choose_one_inside_a_reaction_anchors_to_the_firing_card() {
     let paused = fight_through_commit_window(fight_to_defeat_scenario(&[MODAL_REACTION]));
-    let modal = card(&paused, INV, MODAL_REACTION);
+    let modal = paused.state().card(INV, MODAL_REACTION);
 
     // Pick the reaction out of its window; its effect's ChooseOne is next.
     let resumed = paused.pick(modal.clone());
@@ -349,7 +343,7 @@ fn unqualified_pattern_matches_any_defeat() {
     let paused = fight_through_commit_window(board);
     let byst_resources_before = paused.state().investigators[&OTHER].resources;
     // The window opens with one reaction, on the card in `OTHER`'s play area.
-    let reaction = card(&paused, OTHER, BYSTANDER_REACTION);
+    let reaction = paused.state().card(OTHER, BYSTANDER_REACTION);
     assert_offers_only(&paused, &reaction, 1);
 
     let resumed = paused.pick(reaction);
@@ -365,7 +359,7 @@ fn unqualified_pattern_matches_any_defeat() {
 #[test]
 fn pick_index_out_of_bounds_rejects_window_stays_open() {
     let paused = fight_through_commit_window(fight_to_defeat_scenario(&[ROLAND_REACTION]));
-    let reaction = card(&paused, INV, ROLAND_REACTION);
+    let reaction = paused.state().card(INV, ROLAND_REACTION);
 
     // The subject is a malformed response, so it is sent raw: an option id the
     // prompt never offered.
@@ -391,7 +385,7 @@ fn multiple_pending_triggers_resolve_one_at_a_time() {
     // window re-prompts with one entry remaining; picking that fires the second
     // (resource); window closes.
     let paused = fight_through_commit_window(fight_to_defeat_scenario(&[TWO_REACTIONS]));
-    let two = card(&paused, INV, TWO_REACTIONS);
+    let two = paused.state().card(INV, TWO_REACTIONS);
     assert_offers_only(&paused, &two, 2);
 
     let after_first = paused.pick_nth_at(two.clone(), 0);
@@ -437,7 +431,7 @@ fn fight_event_sequence_pins_window_between_enemy_defeated_and_skill_test_ended(
     // position (the rules-incorrect "deferred" design that landed initially)
     // requires an intentional decision (and an update here).
     let paused = fight_through_commit_window(fight_to_defeat_scenario(&[ROLAND_REACTION]));
-    let reaction = card(&paused, INV, ROLAND_REACTION);
+    let reaction = paused.state().card(INV, ROLAND_REACTION);
     // The Fight suspends at the reaction window before SkillTestEnded fires.
     assert_offers_only(&paused, &reaction, 1);
     assert_no_event!(paused.events(), Event::SkillTestEnded { .. });
@@ -511,8 +505,8 @@ fn reaction_window_closes_before_on_skill_test_resolution_fires() {
     );
 
     // Commit the card → drives through follow-up → queues window → suspends.
-    let paused_reaction = fight_committing(board, &[CardCode::new("COMMITTED")]);
-    let reaction = card(&paused_reaction, INV, ROLAND_REACTION);
+    let paused_reaction = fight_committing(board, &["COMMITTED"]);
+    let reaction = paused_reaction.state().card(INV, ROLAND_REACTION);
     // The commit suspends at the reaction window.
     assert_offers_only(&paused_reaction, &reaction, 1);
 
@@ -587,8 +581,8 @@ fn pending_triggers_order_active_investigator_first_then_turn_order() {
     assert_eq!(
         offered,
         vec![
-            Some(card(&paused, INV, BYSTANDER_REACTION)),
-            Some(card(&paused, OTHER, BYSTANDER_REACTION)),
+            Some(paused.state().card(INV, BYSTANDER_REACTION)),
+            Some(paused.state().card(OTHER, BYSTANDER_REACTION)),
         ],
         "the active investigator's trigger comes first, then the non-active \
          investigator's, in turn order",
@@ -602,7 +596,7 @@ fn skip_after_firing_one_drops_remaining_optionals() {
     // fire — its effect (gain 1 resource) leaves resources unchanged
     // from the post-first-fire baseline. The window closes cleanly.
     let paused = fight_through_commit_window(fight_to_defeat_scenario(&[TWO_REACTIONS]));
-    let two = card(&paused, INV, TWO_REACTIONS);
+    let two = paused.state().card(INV, TWO_REACTIONS);
     assert_offers_only(&paused, &two, 2);
 
     let after_first = paused.pick_nth_at(two.clone(), 0);
@@ -640,7 +634,7 @@ fn reaction_trigger_in_threat_area_opens_window() {
     let session = fight_through_commit_window(threat_area_reaction_board());
 
     // One reaction, offered on the card in `INV`'s threat area.
-    assert_offers_only(&session, &card(&session, INV, ROLAND_REACTION), 1);
+    assert_offers_only(&session, &session.state().card(INV, ROLAND_REACTION), 1);
 }
 
 #[test]
@@ -674,7 +668,7 @@ fn pick_fires_threat_area_reaction_and_closes_window() {
     // picking it discovers 1 clue, the window closes, and the session is back
     // at the turn menu.
     let paused = fight_through_commit_window(threat_area_reaction_board());
-    let reaction = card(&paused, INV, ROLAND_REACTION);
+    let reaction = paused.state().card(INV, ROLAND_REACTION);
     // The threat-area reaction opens a window.
     assert_offers_only(&paused, &reaction, 1);
 
@@ -750,7 +744,7 @@ fn an_unqualified_listener_reacts_to_another_investigators_test() {
         investigate_and_commit_nothing(investigate_with_a_bystander(BYSTANDER_TEST_REACTION));
     let before = paused.state().investigators[&OTHER].resources;
     // The unqualified listener opens a window on the other investigator's test.
-    let reaction = card(&paused, OTHER, BYSTANDER_TEST_REACTION);
+    let reaction = paused.state().card(OTHER, BYSTANDER_TEST_REACTION);
     assert_offers_only(&paused, &reaction, 1);
 
     let resumed = paused.pick(reaction);
@@ -790,7 +784,7 @@ fn after_successful_investigate_fires_in_play_reaction() {
     // window opens → suspends.
     let paused_reaction =
         investigate_and_commit_nothing(investigate_to_success_scenario(&[MILAN_REACTION]));
-    let reaction = card(&paused_reaction, INV, MILAN_REACTION);
+    let reaction = paused_reaction.state().card(INV, MILAN_REACTION);
     // The after-investigate reaction window suspends the test.
     assert_offers_only(&paused_reaction, &reaction, 1);
     let resources_before = paused_reaction.state().investigators[&INV].resources;

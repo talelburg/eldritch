@@ -9,7 +9,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId,
-    Location, LocationId, Owner, Skills, TokenModifiers,
+    Location, LocationId, Owner, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
 
@@ -39,12 +39,7 @@ fn board(intellect: i8, study: impl FnOnce(&mut Location)) -> TestSession {
         .with_seat(
             seat(1)
                 .at(HERE)
-                .skills(Skills {
-                    willpower: 3,
-                    intellect,
-                    combat: 3,
-                    agility: 3,
-                })
+                .skill(SkillKind::Intellect, intellect)
                 .in_play([DR_MILAN]),
         )
         .with_location(loc)
@@ -57,7 +52,7 @@ fn board(intellect: i8, study: impl FnOnce(&mut Location)) -> TestSession {
 /// Investigate and commit nothing; the session rests at the after-investigate
 /// reaction window, which offers Dr. Milan.
 fn investigate_to_dr_milans_window(session: TestSession) -> (TestSession, OptionTarget) {
-    let dr_milan = OptionTarget::CardInstance(session.state().in_play(INV, DR_MILAN));
+    let dr_milan = session.state().card(INV, DR_MILAN);
     let window = session
         .take(&TurnAction::Investigate { investigator: INV })
         .commit(&[]);

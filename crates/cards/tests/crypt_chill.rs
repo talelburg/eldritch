@@ -35,11 +35,11 @@
 
 use cards::REGISTRY;
 use game_core::assert_event;
-use game_core::engine::{OptionTarget, TurnAction};
+use game_core::engine::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, Skills, Zone,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, Zone,
 };
 use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
 
@@ -72,12 +72,7 @@ fn parlor_with_lita() -> (GameState, CardInstanceId) {
         .with_seat(
             seat(1)
                 .at(PARLOR_ID)
-                .skills(Skills {
-                    willpower: 3,
-                    intellect: 5,
-                    combat: 3,
-                    agility: 3,
-                })
+                .skill(SkillKind::Intellect, 5)
                 .deck(["01088"]),
         )
         .with_location(parlor)
@@ -124,7 +119,7 @@ fn reveal_crypt_chill(controlled: &TestSession) -> TestSession {
     state.chaos_bag.tokens = vec![ChaosToken::AutoFail];
     state.encounter_deck.push_back(CardCode::new(CRYPT_CHILL));
     let drawing = TestSession::new(state).take(&TurnAction::EndTurn);
-    assert_eq!(drawing.prompt().target, Some(OptionTarget::EncounterDeck));
+    drawing.assert_at_encounter_draw();
     drawing.confirm().commit(&[])
 }
 

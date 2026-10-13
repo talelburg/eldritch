@@ -24,7 +24,7 @@ use card_dsl::card_data::{CardKind, CardMetadata};
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{EngineOutcome, NativeCx, OptionTarget};
+use game_core::engine::{EngineOutcome, NativeCx};
 use game_core::event::{Event, TraumaKind};
 use game_core::state::{self, Act, CardCode, GameStateBuilder, InvestigatorId, LocationId};
 use game_core::test_support::{self, seat, MockRegistry, TestSession};
@@ -192,12 +192,8 @@ fn mid_investigation() -> TestSession {
 /// 4.1 → 4.6 → 1.1 and parks at the step-1.4 encounter-draw prompt.
 fn end_the_turn_to_the_encounter_draw() -> TestSession {
     let parked = mid_investigation().take(&TurnAction::EndTurn);
-    assert_eq!(
-        parked.prompt().target,
-        Some(OptionTarget::EncounterDeck),
-        "the cascade parks at the step-1.4 encounter draw; got {:?}",
-        parked.prompt(),
-    );
+    // The cascade parks at the step-1.4 encounter draw.
+    parked.assert_at_encounter_draw();
     parked
 }
 

@@ -21,7 +21,7 @@ use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, ChaosBag, ChaosToken, Enemy, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Skills, TokenModifiers,
+    GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
 
@@ -57,12 +57,7 @@ fn board_with(engaged: u32, unengaged: u32) -> GameStateBuilder {
         .with_seat(
             seat(1)
                 .at(HERE)
-                .skills(Skills {
-                    willpower: 3,
-                    intellect: 3,
-                    combat: 4,
-                    agility: 3,
-                })
+                .skill(SkillKind::Combat, 4)
                 .in_play([MACHETE]),
         )
         .with_location(test_support::test_location(HERE.0, "Study"))

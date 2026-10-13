@@ -8,7 +8,6 @@
 //! the per-point prompt loop still fires via the `DealDamage` frame.
 
 use cards::REGISTRY;
-use game_core::engine::OptionTarget;
 use game_core::state::{
     CardCode, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame,
     MythosResume, Phase,
@@ -55,7 +54,7 @@ fn board_with_soaker(treachery: &str, soaker: &str, token: ChaosToken) -> TestSe
 /// revelation skill-test window, then answering each per-point distribution
 /// prompt with `picks`.
 fn reveal_distributing(session: TestSession, soaker: &str, picks: &[Onto]) -> TestSession {
-    let soaker = OptionTarget::CardInstance(session.state().in_play(INV, soaker));
+    let soaker = session.state().card(INV, soaker);
     let me = session.state().investigators[&INV].card_anchor();
     let session = session.confirm().commit(&[]);
     picks.iter().fold(session, |session, onto| {

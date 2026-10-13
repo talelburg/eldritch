@@ -12,7 +12,7 @@
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{board, EngineOutcome, NativeCx, OptionTarget, PromptNature, TimingEvent};
+use game_core::engine::{board, EngineOutcome, InputKind, NativeCx, PromptNature, TimingEvent};
 use game_core::event::{Event, TraumaKind};
 use game_core::state::{
     self, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, DiscardPile,
@@ -145,11 +145,8 @@ fn run(state: GameState) -> TestSession {
             phase: state::Phase::Enemy
         }
     );
-    assert_eq!(
-        session.prompt().target,
-        Some(OptionTarget::EncounterDeck),
-        "play went on to the next round's encounter draw"
-    );
+    // Play went on to the next round's encounter draw.
+    session.assert_at_encounter_draw();
     session
 }
 
@@ -276,23 +273,22 @@ fn remove_clues_saturates_at_zero() {
     assert_eq!(clues_on_clue_card(session.state()), 0);
 }
 
-fn codes(codes: &[&str]) -> Vec<CardCode> {
-    codes.iter().copied().map(CardCode::new).collect()
-}
-
 #[test]
 fn take_encounter_top_and_discard_encounter_card_move_the_top_card_to_the_discard() {
     let mut state = state_with_act(DIG_ACT);
     // No builder setter stages the encounter deck or discard.
-    state.encounter_deck = codes(&["TOP", "NEXT"]).into();
-    state.encounter_discard = codes(&["OLD"]);
+    state.encounter_deck = ["TOP", "NEXT"].map(CardCode::new).into();
+    state.encounter_discard = vec![CardCode::new("OLD")];
     let session = run(state);
     // The next round's encounter draw has not been taken yet.
     assert_eq!(
         Vec::from(session.state().encounter_deck.clone()),
-        codes(&["NEXT"])
+        [CardCode::new("NEXT")]
     );
-    assert_eq!(session.state().encounter_discard, codes(&["OLD", "TOP"]));
+    assert_eq!(
+        session.state().encounter_discard,
+        ["OLD", "TOP"].map(CardCode::new)
+    );
     assert_event!(
         session.events(),
         Event::CardDiscarded {
@@ -307,27 +303,36 @@ fn take_encounter_top_and_discard_encounter_card_move_the_top_card_to_the_discar
 fn take_encounter_top_on_an_empty_deck_takes_nothing_and_does_not_reshuffle() {
     let mut state = state_with_act(DIG_ACT);
     // No builder setter stages the encounter discard.
-    state.encounter_discard = codes(&["OLD"]);
+    state.encounter_discard = vec![CardCode::new("OLD")];
     let session = run(state);
     assert!(session.state().encounter_deck.is_empty());
-    assert_eq!(session.state().encounter_discard, codes(&["OLD"]));
+    assert_eq!(session.state().encounter_discard, [CardCode::new("OLD")]);
     assert_no_event!(session.events(), Event::EncounterDeckShuffled);
     assert_no_event!(session.events(), Event::CardDiscarded { .. });
 }
 
-/// Whether a Combat test investigator 1 starts from the turn menu `session`
-/// rests at offers the "use Intellect in place of Combat?" decision rather
-/// than going straight to the commit window.
-fn combat_test_offers_substitution(session: TestSession) -> bool {
+/// Investigator 1 starts a difficulty-1 Combat test from the turn menu
+/// `session` rests at.
+fn start_combat_test(session: TestSession) -> TestSession {
     session.assert_at_turn_menu(INV);
-    let started = session.test_skill(INV, SkillKind::Combat, 1);
-    let prompt = started.prompt();
-    prompt.nature == PromptNature::Decision
-        && prompt
-            .options
-            .iter()
-            .map(|o| o.label.as_str())
-            .eq(["Use Intellect", "Keep Combat"])
+    session.test_skill(INV, SkillKind::Combat, 1)
+}
+
+/// Commit nothing to the test `session` is in and let it resolve: the margin
+/// it succeeded by. Combat is 3 and Intellect 5 (see
+/// `add_skill_substitution_is_offered_at_the_next_skill_test`), so the
+/// margin says which skill the test was made with: 2 for Combat, 4 for
+/// Intellect.
+fn success_margin(session: TestSession) -> i8 {
+    let session = session.commit(&[]);
+    session
+        .events()
+        .iter()
+        .find_map(|event| match event {
+            Event::SkillTestSucceeded { margin, .. } => Some(*margin),
+            _ => None,
+        })
+        .expect("a difficulty-1 test against 3 or more succeeds")
 }
 
 /// The substitution is round-scoped, so the real enemy phase end, which runs
@@ -336,17 +341,37 @@ fn combat_test_offers_substitution(session: TestSession) -> bool {
 /// open turn instead, and the session comes back to that turn's menu.
 #[test]
 fn add_skill_substitution_is_offered_at_the_next_skill_test() {
+    const BY_COMBAT: i8 = 2;
+    const BY_INTELLECT: i8 = 4;
     let board = || {
-        let mut state = state_with_act(SUBSTITUTE_ACT);
-        state.chaos_bag = ChaosBag::new([ChaosToken::Numeric(0)]);
-        TestSession::new(state)
+        let builder = lead(seat(1).skill(SkillKind::Intellect, 5))
+            .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]));
+        TestSession::new(with_act(builder, SUBSTITUTE_ACT))
     };
-    assert!(
-        !combat_test_offers_substitution(board()),
-        "control: no substitution before the native runs"
+
+    // Control: before the native runs, the test goes straight to its commit
+    // window and is made with Combat.
+    let control = start_combat_test(board());
+    assert_eq!(control.prompt().kind, InputKind::PickMultiple);
+    assert_eq!(success_margin(control), BY_COMBAT);
+
+    // After it, the test first asks whether to substitute: two alternatives.
+    let offered = || {
+        start_combat_test(board().fire_at(TimingEvent::PhaseEnded {
+            phase: state::Phase::Enemy,
+        }))
+    };
+    let prompt = offered().prompt().clone();
+    assert_eq!(prompt.nature, PromptNature::Decision, "{prompt:?}");
+    assert_eq!(prompt.options.len(), 2, "{prompt:?}");
+    assert_eq!(
+        success_margin(offered().pick_nth(0)),
+        BY_INTELLECT,
+        "the first alternative makes the test with Intellect",
     );
-    let fired = board().fire_at(TimingEvent::PhaseEnded {
-        phase: state::Phase::Enemy,
-    });
-    assert!(combat_test_offers_substitution(fired));
+    assert_eq!(
+        success_margin(offered().pick_nth(1)),
+        BY_COMBAT,
+        "the second keeps Combat",
+    );
 }

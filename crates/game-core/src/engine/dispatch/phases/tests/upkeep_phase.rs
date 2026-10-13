@@ -1,6 +1,6 @@
 use super::*;
 use crate::engine::enumerate::TurnAction;
-use crate::engine::outcome::{EngineOutcome, OptionTarget};
+use crate::engine::outcome::EngineOutcome;
 use crate::event::Event;
 use crate::state::{EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase, Status};
 use crate::test_support::{self, SeatLookup as _, TestSession};
@@ -245,11 +245,14 @@ fn upkeep_draw_and_resource_draws_and_grants_per_active_investigator() {
     let mut state = GameStateBuilder::default()
         .with_seat(test_support::seat(1).deck(["filler0"]))
         .with_seat(test_support::seat(2).deck(["filler1"]))
-        .with_seat(test_support::seat(3).deck(["filler2"]))
+        // Resigned, so skipped.
+        .with_seat(
+            test_support::seat(3)
+                .deck(["filler2"])
+                .status(Status::Resigned),
+        )
         .with_turn_order([a, b, c])
         .build();
-    // A seat has no status setter; inv_c is eliminated on the built board.
-    state.investigators.get_mut(&c).unwrap().status = Status::Resigned; // → skipped
     let res_a = state.investigators[&a].resources;
     let res_b = state.investigators[&b].resources;
     let res_c = state.investigators[&c].resources;
@@ -310,11 +313,9 @@ fn reset_actions_sets_active_to_per_turn_and_skips_eliminated() {
     let (a, b) = (InvestigatorId(1), InvestigatorId(2));
     let mut state = GameStateBuilder::default()
         .with_seat(test_support::seat(1).actions(0))
-        .with_seat(test_support::seat(2).actions(0))
+        .with_seat(test_support::seat(2).actions(0).status(Status::Defeated))
         .with_turn_order([a, b])
         .build();
-    // A seat has no status setter; b is eliminated on the built board.
-    state.investigators.get_mut(&b).unwrap().status = Status::Defeated;
     let mut events = Vec::new();
 
     reset_actions(&mut Cx {
@@ -430,12 +431,7 @@ fn end_turn_cascades_through_upkeep_to_mythos_draw_prompt() {
 
     // The round-ending EndTurn cascades into Mythos and pauses at the
     // step-1.4 encounter-draw prompt.
-    assert_eq!(
-        session.prompt().target,
-        Some(OptionTarget::EncounterDeck),
-        "round-ending EndTurn pauses at the Mythos draw prompt, got {:?}",
-        session.prompt()
-    );
+    session.assert_at_encounter_draw();
     let result = session.state();
     assert_eq!(result.phase, Phase::Mythos);
     assert_eq!(result.round, 2, "round bumped on Mythos entry");

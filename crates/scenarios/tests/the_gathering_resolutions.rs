@@ -455,12 +455,7 @@ fn the_terminal_agendas_ghoul_move_is_a_no_op_when_the_parlor_is_not_in_play() {
 
     // A rejected EndTurn would leave Roland at his turn menu; play instead runs
     // on through the enemy phase and the round end to round 2's encounter draw.
-    assert_eq!(
-        session.prompt().target,
-        Some(OptionTarget::EncounterDeck),
-        "the missing Parlor is a no-op, not a rejected player action: {:?}",
-        session.prompt(),
-    );
+    session.assert_at_encounter_draw();
     assert_no_event!(session.events(), Event::EnemyMoved { .. });
 }
 

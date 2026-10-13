@@ -8,8 +8,7 @@ use crate::scenario::ScenarioId;
 use crate::state::{
     AbilityAddress, AbilitySource, Act, CardInstanceId, ChaosBag, ChaosToken, DiscardPile,
     EliminationCause, Enemy, EnemyId, GameStateBuilder, InvestigatorId, Lifetime, LocationId,
-    Phase, RecordedModifier, SkillKind, SkillTestId, Skills, Status, TokenModifiers,
-    TokenResolution, Zone,
+    Phase, RecordedModifier, SkillKind, SkillTestId, Status, TokenModifiers, TokenResolution, Zone,
 };
 use crate::test_support::{self, seat, Seat, TestSession};
 use crate::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
@@ -53,37 +52,10 @@ fn bag_only_zero() -> ChaosBag {
     ChaosBag::new([ChaosToken::Numeric(0)])
 }
 
-/// `test_investigator`'s 3/3/3/3 skills with `kind` set to `value`.
-fn skills_with(kind: SkillKind, value: i8) -> Skills {
-    let mut skills = Skills {
-        willpower: 3,
-        intellect: 3,
-        combat: 3,
-        agility: 3,
-    };
-    match kind {
-        SkillKind::Willpower => skills.willpower = value,
-        SkillKind::Intellect => skills.intellect = value,
-        SkillKind::Combat => skills.combat = value,
-        SkillKind::Agility => skills.agility = value,
-    }
-    skills
-}
-
 /// Take `action` from the turn menu and commit nothing to the skill test it
 /// starts: the session rests wherever play goes after the test.
 fn take_committing_nothing(board: GameStateBuilder, action: &TurnAction) -> TestSession {
     board.session().take(action).commit(&[])
-}
-
-/// Send `action` straight to its handler, past the menu that does not offer
-/// it, and assert the handler rejects it with nothing moved: the session
-/// still rests at the prompt it rested at before.
-fn assert_handler_rejects(session: TestSession, action: &TurnAction) {
-    let before = session.prompt().clone();
-    let session = session.submit_off_menu(action);
-    session.expect_rejected();
-    assert_eq!(session.prompt(), &before);
 }
 
 /// `investigator`'s open turn at the Study, which holds `clues` clues behind

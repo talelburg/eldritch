@@ -20,7 +20,7 @@
 use card_dsl::card_data::{CardKind, CardMetadata};
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{ApplyResult, EngineOutcome, NativeCx, OptionTarget};
+use game_core::engine::{ApplyResult, EngineOutcome, NativeCx};
 use game_core::event::{Event, TraumaKind};
 use game_core::state::{
     Continuation, GameState, GameStateBuilder, InvestigatorId, LocationId, Status,
@@ -147,10 +147,6 @@ fn board_seated(seated: Seat, code: &str, clues_on_card: u8, in_threat_area: boo
         .build()
 }
 
-/// The anchor of the card `code` the investigator holds.
-fn card(state: &GameState, code: &str) -> OptionTarget {
-    OptionTarget::CardInstance(state.in_play(INV, code))
-}
 #[test]
 fn elimination_fires_an_owned_weaknesss_game_end_ability_before_removing_it() {
     // Step 0 in one assertion: the ability fires, and its clue-gated condition
@@ -269,7 +265,7 @@ fn interactive_elimination_acknowledges_step_zero_before_running_the_steps() {
     let mut state = board(WEAKNESS, 3, true);
     // No builder setter stages `interactive_acknowledge`.
     state.interactive_acknowledge = true;
-    let weakness = card(&state, WEAKNESS);
+    let weakness = state.card(INV, WEAKNESS);
     let paused = TestSession::new(state).take_damage(INV, 8);
 
     // Step 0's forced acknowledge surfaces, anchored to the weakness.

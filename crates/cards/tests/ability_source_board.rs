@@ -166,22 +166,6 @@ fn assert_offered_and_activatable(state: GameState, source: AbilitySource, why: 
     );
 }
 
-/// Submit `action`, which the menu does not offer, straight to the handler and
-/// assert the handler itself rejects it, leaving state byte-identical. Returns
-/// the reason.
-fn assert_handler_rejects(state: GameState, action: &TurnAction) -> String {
-    let session = TestSession::new(state);
-    let before = session.state().clone();
-    let session = session.submit_off_menu(action);
-    let reason = session.expect_rejected().to_owned();
-    assert_eq!(
-        *session.state(),
-        before,
-        "a rejected activation must leave state byte-identical",
-    );
-    reason
-}
-
 /// *"The current act …"* — Uncovering the Conspiracy 01123's group clue-spend,
 /// in the shape the engine can currently prove.
 #[test]
@@ -283,7 +267,8 @@ fn an_absent_act_or_agenda_is_out_of_reach() {
             "{source:?} must stay out of the turn menu with no deck loaded; menu was {menu:?}",
         );
         // Activating it with no deck loaded must reject.
-        let reason = assert_handler_rejects(state.clone(), &activation(source, LIVE));
+        let reason = TestSession::new(state.clone())
+            .assert_rejects(|s| s.submit_off_menu(&activation(source, LIVE)));
         assert!(
             reason.contains("cannot reach"),
             "the reason should name reachability, got: {reason}",
@@ -325,7 +310,7 @@ fn a_usage_limited_board_ability_rejects_naming_699_rather_than_panicking() {
         );
 
         // A usage-limited ability on a board card must reject.
-        let reason = assert_handler_rejects(state.clone(), &action);
+        let reason = TestSession::new(state.clone()).assert_rejects(|s| s.submit_off_menu(&action));
         assert!(
             reason.contains("usage limit") && reason.contains("#699"),
             "the reason should name the limit and the issue that builds it, got: {reason}",
