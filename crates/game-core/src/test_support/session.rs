@@ -550,10 +550,17 @@ impl TestSession {
     /// Step: choose the `n`th (0-based) of the current prompt's options
     /// anchored to `target`, in the order the prompt offers them, then drain.
     ///
-    /// For abilities printed on one card: two reactions, or two forced
-    /// abilities, offered from the same card share that card's anchor, so
-    /// [`pick`](Self::pick) cannot tell them apart. The anchor names the card
-    /// and `n` names the ability, in the order the card prints them.
+    /// For several options sharing one anchor, which [`pick`](Self::pick)
+    /// cannot tell apart:
+    ///
+    /// - several abilities printed on one card (two reactions, or two forced
+    ///   abilities), where `n` names the ability in the order the card prints
+    ///   them;
+    /// - one ability offered to several investigators, where `n` follows the
+    ///   prompt's order (assert first that each option's label names the
+    ///   investigator it is offered to);
+    /// - identical copies of one card in hand, which anchor to the same
+    ///   `HandCardByCode`.
     ///
     /// # Panics
     ///
