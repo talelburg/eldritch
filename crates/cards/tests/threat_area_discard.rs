@@ -25,24 +25,24 @@ use card_dsl::card_data::{CardKind, CardMetadata};
 use card_dsl::dsl::{self, Ability, Cost, InvestigatorTarget};
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, DiscardPile, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Owner, Zone,
+    AbilityAddress, AbilitySource, CardCode, DiscardPile, GameStateBuilder, InvestigatorId,
+    LocationId, Zone,
 };
-use game_core::test_support::{self, MockRegistry};
+use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
 
-/// Synthetic treachery that sits in a threat area and can be discarded by an
-/// activation. The fixture gives it either owner.
+/// Synthetic encounter treachery that sits in a threat area and can be
+/// discarded by an activation: owned by the encounter deck.
 const PROBE: &str = "_td_probe";
+/// The same probe printed as a weakness: owned by its bearer.
+const WEAKNESS_PROBE: &str = "_td_probe_weakness";
 
 /// The investigator whose threat area holds the probe.
 const BEARER: InvestigatorId = InvestigatorId(1);
 /// A second investigator at the bearer's location, who activates it.
 const NEIGHBOUR: InvestigatorId = InvestigatorId(2);
 const HERE: LocationId = LocationId(1);
-const PROBE_INST: CardInstanceId = CardInstanceId(50);
 
 /// `[action] [action]: Discard this card.` — the discard is the effect.
 const DISCARD_AS_EFFECT: u8 = 0;
@@ -60,84 +60,77 @@ fn probe_abilities() -> Vec<Ability> {
     ]
 }
 
+fn probe_card(code: &str, weakness: bool) -> CardMetadata {
+    CardMetadata {
+        code: code.to_string(),
+        name: "Probe".to_string(),
+        text: None,
+        traits: vec![],
+        back_name: None,
+        back_text: None,
+        pack_code: "test".to_string(),
+        weakness,
+        kind: CardKind::Treachery {
+            surge: false,
+            peril: false,
+            quantity: 1,
+        },
+    }
+}
+
 #[ctor::ctor(unsafe)]
 fn install_probe_registry() {
     MockRegistry::new()
-        .with_card(CardMetadata {
-            code: PROBE.to_string(),
-            name: "Probe".to_string(),
-            text: None,
-            traits: vec![],
-            back_name: None,
-            back_text: None,
-            pack_code: "test".to_string(),
-            weakness: false,
-            kind: CardKind::Treachery {
-                surge: false,
-                peril: false,
-                quantity: 1,
-            },
-        })
+        .with_card(probe_card(PROBE, false))
+        .with_card(probe_card(WEAKNESS_PROBE, true))
         .with_abilities(PROBE, probe_abilities)
+        .with_abilities(WEAKNESS_PROBE, probe_abilities)
         .install();
 }
 
-/// Both investigators at one location, the probe owned by `owner` in the
-/// bearer's threat area, and the neighbour's turn open.
-fn board(owner: Owner) -> GameState {
-    let mut bearer = test_support::test_investigator(1);
-    bearer.threat_area.push(CardInPlay::enter_play(
-        CardCode::new(PROBE),
-        PROBE_INST,
-        owner,
-    ));
-    GameStateBuilder::new()
-        .with_investigator_at(bearer, HERE)
-        .with_investigator_at(test_support::test_investigator(2), HERE)
-        .with_location(test_support::test_location(1, "Here"))
+/// Both investigators at one location, the probe `probe` in the bearer's
+/// threat area (owned as its printed card says), and the neighbour's turn
+/// open; the neighbour activates its ability at `index`.
+fn activate(probe: &str, index: u8) -> TestSession {
+    let session = GameStateBuilder::new()
+        .with_seat(seat(1).at(HERE).threat_area([probe]))
+        .with_seat(seat(2).at(HERE))
+        .with_location(test_support::test_location(HERE.0, "Here"))
         .open_turn(NEIGHBOUR)
-        .build()
-}
-
-/// The neighbour activates the probe's ability at `index`.
-fn activate(owner: Owner, index: u8) -> ApplyResult {
-    test_support::take_turn_action(
-        board(owner),
-        &TurnAction::ActivateAbility {
-            investigator: NEIGHBOUR,
-            source: AbilitySource::InPlay(PROBE_INST),
-            address: AbilityAddress::Printed(index),
-        },
-    )
+        .session();
+    let source = AbilitySource::InPlay(session.state().in_play(BEARER, probe));
+    session.take(&TurnAction::ActivateAbility {
+        investigator: NEIGHBOUR,
+        source,
+        address: AbilityAddress::Printed(index),
+    })
 }
 
 #[test]
 fn a_bearers_card_discarded_from_their_threat_area_goes_to_their_discard() {
     for index in [DISCARD_AS_EFFECT, DISCARD_AS_COST] {
-        let r = activate(Owner::Investigator(BEARER), index);
-        assert!(
-            !matches!(r.outcome, EngineOutcome::Rejected { .. }),
-            "ability {index}: {:?}",
-            r.outcome,
-        );
-        assert!(r.state.investigators[&BEARER].threat_area.is_empty());
+        let session = activate(WEAKNESS_PROBE, index);
+        // Not rejected: the activation resolved and the neighbour's turn goes on.
+        session.assert_at_turn_menu(NEIGHBOUR);
+        let state = session.state();
+        assert!(state.investigators[&BEARER].threat_area.is_empty());
         assert_eq!(
-            r.state.investigators[&BEARER].discard,
-            vec![CardCode::new(PROBE)],
+            state.investigators[&BEARER].discard,
+            vec![CardCode::new(WEAKNESS_PROBE)],
             "ability {index}: in its owner's discard",
         );
         assert!(
-            r.state.investigators[&NEIGHBOUR].discard.is_empty(),
+            state.investigators[&NEIGHBOUR].discard.is_empty(),
             "ability {index}: not in the activator's discard",
         );
         assert!(
-            r.state.encounter_discard.is_empty(),
+            state.encounter_discard.is_empty(),
             "ability {index}: not in the encounter discard",
         );
         assert_event!(
-            r.events,
+            session.events(),
             Event::CardDiscarded { code, from: Zone::ThreatArea, to: DiscardPile::Investigator(BEARER) }
-                if code.as_str() == PROBE
+                if code.as_str() == WEAKNESS_PROBE
         );
     }
 }
@@ -145,22 +138,20 @@ fn a_bearers_card_discarded_from_their_threat_area_goes_to_their_discard() {
 #[test]
 fn an_encounter_card_discarded_from_a_threat_area_goes_to_the_encounter_discard() {
     for index in [DISCARD_AS_EFFECT, DISCARD_AS_COST] {
-        let r = activate(Owner::EncounterDeck, index);
-        assert!(
-            !matches!(r.outcome, EngineOutcome::Rejected { .. }),
-            "ability {index}: {:?}",
-            r.outcome,
-        );
-        assert!(r.state.investigators[&BEARER].threat_area.is_empty());
+        let session = activate(PROBE, index);
+        // Not rejected: the activation resolved and the neighbour's turn goes on.
+        session.assert_at_turn_menu(NEIGHBOUR);
+        let state = session.state();
+        assert!(state.investigators[&BEARER].threat_area.is_empty());
         assert_eq!(
-            r.state.encounter_discard,
+            state.encounter_discard,
             vec![CardCode::new(PROBE)],
             "ability {index}: in the encounter discard",
         );
-        assert!(r.state.investigators[&BEARER].discard.is_empty());
-        assert!(r.state.investigators[&NEIGHBOUR].discard.is_empty());
+        assert!(state.investigators[&BEARER].discard.is_empty());
+        assert!(state.investigators[&NEIGHBOUR].discard.is_empty());
         assert_event!(
-            r.events,
+            session.events(),
             Event::CardDiscarded { code, from: Zone::ThreatArea, to: DiscardPile::Encounter }
                 if code.as_str() == PROBE
         );
