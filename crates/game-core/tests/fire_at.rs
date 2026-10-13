@@ -20,11 +20,8 @@ use card_dsl::dsl::{self, Effect, EventPattern, EventTiming, InvestigatorTarget}
 use game_core::engine::{EngineOutcome, InputKind, OptionTarget, TimingEvent};
 use game_core::event::Event;
 use game_core::scenario::{ResolutionId, ScenarioEnding};
-use game_core::state::{
-    Act, CardCode, CardInPlay, CardInstanceId, GameStateBuilder, Investigator, InvestigatorId,
-    Owner, Phase,
-};
-use game_core::test_support::{self, MockRegistry, TestSession};
+use game_core::state::{Act, CardCode, GameStateBuilder, InvestigatorId, Phase};
+use game_core::test_support::{seat, MockRegistry, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_event_sequence};
 
 /// `Forced - At the end of the round: mark 1.`
@@ -103,31 +100,23 @@ fn install() {
         .install();
 }
 
-/// The investigator, holding `codes` in their threat area, instance ids from 1
-/// in order — the round-end scans read the cards each active investigator
-/// controls.
-fn holding(codes: &[&str]) -> Investigator {
-    let mut investigator = test_support::test_investigator(1);
-    for (i, code) in codes.iter().enumerate() {
-        investigator.threat_area.push(CardInPlay::enter_play(
-            CardCode::new(*code),
-            instance(i),
-            Owner::EncounterDeck,
-        ));
-    }
-    investigator
+/// The investigator, holding `codes` in their threat area — the round-end
+/// scans read the cards each active investigator controls.
+fn holding(codes: &[&str]) -> Seat {
+    seat(1).threat_area(codes.iter().copied())
 }
 
 /// One investigator holding `codes`, settled.
 fn session_holding(codes: &[&str]) -> TestSession {
     GameStateBuilder::new()
-        .with_investigator(holding(codes))
+        .with_seat(holding(codes))
         .with_turn_order([INV])
         .session()
 }
 
-fn instance(i: usize) -> CardInstanceId {
-    CardInstanceId(u32::try_from(i + 1).expect("small index"))
+/// The anchor of the threat-area card `code`.
+fn card(session: &TestSession, code: &str) -> OptionTarget {
+    OptionTarget::CardInstance(session.state().in_play(INV, code))
 }
 
 /// The markers fired so far, in order.
@@ -145,6 +134,7 @@ fn marks(session: &TestSession) -> Vec<u8> {
 #[test]
 fn a_reaction_is_offered_after_the_forced_ability_at_the_same_timing_point() {
     let session = session_holding(&[FORCED_A, REACTION]).fire_at(TimingEvent::RoundEnded);
+    let reaction = card(&session, REACTION);
 
     assert_eq!(
         marks(&session),
@@ -159,17 +149,18 @@ fn a_reaction_is_offered_after_the_forced_ability_at_the_same_timing_point() {
             .iter()
             .map(|o| o.target.clone())
             .collect::<Vec<_>>(),
-        vec![Some(OptionTarget::CardInstance(instance(1)))],
+        vec![Some(reaction.clone())],
         "the one option is the reaction, anchored to its card"
     );
 
-    let session = session.pick(OptionTarget::CardInstance(instance(1)));
+    let session = session.pick(reaction);
     assert_eq!(marks(&session), vec![1, 3], "the reaction resolved");
 }
 
 #[test]
 fn two_simultaneous_forced_abilities_run_in_the_order_the_lead_picks() {
     let session = session_holding(&[FORCED_A, FORCED_B]).fire_at(TimingEvent::RoundEnded);
+    let (a, b) = (card(&session, FORCED_A), card(&session, FORCED_B));
 
     assert!(
         marks(&session).is_empty(),
@@ -187,17 +178,12 @@ fn two_simultaneous_forced_abilities_run_in_the_order_the_lead_picks() {
             .iter()
             .map(|o| o.target.clone())
             .collect::<Vec<_>>(),
-        vec![
-            Some(OptionTarget::CardInstance(instance(0))),
-            Some(OptionTarget::CardInstance(instance(1))),
-        ],
+        vec![Some(a.clone()), Some(b.clone())],
         "one option per forced ability, anchored to its card"
     );
 
     // The lead picks the second card's ability first; the other follows.
-    let session = session
-        .pick(OptionTarget::CardInstance(instance(1)))
-        .pick(OptionTarget::CardInstance(instance(0)));
+    let session = session.pick(b).pick(a);
     assert_eq!(
         marks(&session),
         vec![2, 1],
@@ -208,14 +194,8 @@ fn two_simultaneous_forced_abilities_run_in_the_order_the_lead_picks() {
 
 #[test]
 fn a_timing_point_fired_during_a_turn_comes_back_to_the_turn_menu() {
-    let mut investigator = test_support::test_investigator(1);
-    investigator.threat_area.push(CardInPlay::enter_play(
-        CardCode::new(FORCED_A),
-        instance(0),
-        Owner::EncounterDeck,
-    ));
     let session = GameStateBuilder::new()
-        .with_investigator(investigator)
+        .with_seat(holding(&[FORCED_A]))
         .open_turn(INV)
         .session()
         .fire_at(TimingEvent::RoundEnded);
@@ -283,7 +263,7 @@ fn lethal_damage_eliminates_the_last_investigator_and_ends_the_scenario() {
 /// act — settled.
 fn acting(act: &str, held: &[&str], builder: GameStateBuilder) -> TestSession {
     let mut state = builder
-        .with_investigator(holding(held))
+        .with_seat(holding(held))
         .with_turn_order([INV])
         .build();
     state.act_deck = vec![Act {

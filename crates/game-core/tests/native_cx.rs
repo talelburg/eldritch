@@ -12,12 +12,15 @@
 //! sibling exit tests (`spend_uses.rs`, `native_exits.rs`) install their own.
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
+use game_core::assert_event;
+use game_core::engine::enumerate::TurnAction;
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, EngineOutcome, Grounded, NativeCx, OptionTarget, TimingEvent};
+use game_core::engine::{self, EngineOutcome, Grounded, NativeCx, OptionTarget};
+use game_core::event::Event;
 use game_core::state::{
     self, Act, Agenda, CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId,
 };
-use game_core::test_support::{self, MockRegistry, TestSession};
+use game_core::test_support::{self, seat, MockRegistry, TestSession};
 
 const WRITE_THEN_SUSPEND_ACT: &str = "_ncx_act_write_then_suspend";
 const SUSPEND_THEN_WRITE_ACT: &str = "_ncx_act_suspend_then_write";
@@ -85,25 +88,23 @@ fn install() {
         .install();
 }
 
-/// One Active investigator at a third location, [`NEAR`] and [`FAR`] on the
-/// board, an agenda in play, and `act` as the current act.
+const INV: InvestigatorId = InvestigatorId(1);
+/// The investigator's starting location, the third on the board.
+const HERE: LocationId = LocationId(1);
+
+/// The lead's open turn at a third location, [`NEAR`] and [`FAR`] on the
+/// board, an agenda in play, and `act` as the current act. A filler deck keeps
+/// Upkeep 4.4's draw from dealing empty-deck horror once the enemy phase has
+/// ended.
 fn state_with_act(act: &str) -> GameState {
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
-        .with_turn_order([InvestigatorId(1)])
+        .with_seat(seat(1).at(HERE).deck(["filler-card"]))
+        .with_location(test_support::test_location(HERE.0, "Start"))
+        .with_location(test_support::test_location(NEAR.0, "Near"))
+        .with_location(test_support::test_location(FAR.0, "Far"))
+        .open_turn(INV)
         .build();
-    for loc in [
-        test_support::test_location(1, "Start"),
-        test_support::test_location(NEAR.0, "Near"),
-        test_support::test_location(FAR.0, "Far"),
-    ] {
-        state.locations.insert(loc.id, loc);
-    }
-    state
-        .investigators
-        .get_mut(&InvestigatorId(1))
-        .expect("investigator 1")
-        .current_location = Some(LocationId(1));
+    // No builder setter stages the act and agenda decks.
     state.act_deck = vec![Act {
         code: CardCode::new(act),
         clue_threshold: 99,
@@ -116,10 +117,10 @@ fn state_with_act(act: &str) -> GameState {
     state
 }
 
+/// End the lead's turn, and with it the Investigation phase, so play runs into
+/// the Enemy phase and its end, where the act's forced native fires.
 fn end_enemy_phase(session: TestSession) -> TestSession {
-    session.fire_at(TimingEvent::PhaseEnded {
-        phase: state::Phase::Enemy,
-    })
+    session.take(&TurnAction::EndTurn)
 }
 
 #[test]
@@ -149,9 +150,17 @@ fn a_native_that_suspends_before_writing_suspends_and_resumes() {
 
     let session = session.pick(OptionTarget::Location(FAR));
 
-    assert_eq!(session.state().agenda_doom, 3);
+    // The enemy phase ends and play goes on into the next round's Mythos
+    // phase, whose step 1.2 places 1 doom of its own.
+    assert_event!(
+        session.events(),
+        Event::PhaseEnded {
+            phase: state::Phase::Enemy
+        }
+    );
+    assert_eq!(session.state().agenda_doom, 3 + 1);
     assert_eq!(
-        session.state().investigators[&InvestigatorId(1)].current_location,
+        session.state().investigators[&INV].current_location,
         Some(FAR)
     );
 }

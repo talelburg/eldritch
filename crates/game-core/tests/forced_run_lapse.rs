@@ -12,12 +12,12 @@
 //! for a printed card.
 
 use card_dsl::dsl::{self, EventPattern, EventTiming, InvestigatorTarget, LocationTarget};
-use game_core::engine::{EngineOutcome, OptionTarget, TimingEvent};
+use game_core::engine::OptionTarget;
 use game_core::event::{Event, LapseReason};
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId, LocationId, Owner,
+    CardCode, Continuation, GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, MockRegistry, TestSession};
+use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
 
 /// `Forced - At the end of the round: Discover 2 clues at your location.`
 /// Empties [`LOCATION`], which holds [`LOCATION_CLUES`].
@@ -60,29 +60,24 @@ fn install() {
         .install();
 }
 
-fn instance(i: usize) -> CardInstanceId {
-    CardInstanceId(u32::try_from(i + 1).expect("small index"))
-}
-
 /// The investigator at a location with 2 clues, holding `codes` in their
-/// threat area (instance ids from 1, in order), at the end of the round.
+/// threat area, at the end of round 1: settling runs the Upkeep phase end
+/// into the round-end coordinator, which offers the lead the forced run.
 fn round_ends_holding(codes: &[&str]) -> TestSession {
-    let mut investigator = test_support::test_investigator(1);
-    for (i, code) in codes.iter().enumerate() {
-        investigator.threat_area.push(CardInPlay::enter_play(
-            CardCode::new(*code),
-            instance(i),
-            Owner::EncounterDeck,
-        ));
-    }
-    let mut location = test_support::test_location(1, "Mock location");
+    let mut location = test_support::test_location(LOCATION.0, "Mock location");
     location.clues = LOCATION_CLUES;
     GameStateBuilder::new()
         .with_location(location)
-        .with_investigator_at(investigator, LOCATION)
+        .with_seat(seat(1).at(LOCATION).threat_area(codes.iter().copied()))
         .with_turn_order([INV])
+        .with_round(1)
+        .ending_upkeep_phase()
         .session()
-        .fire_at(TimingEvent::RoundEnded)
+}
+
+/// The anchor of the threat-area card `code`.
+fn card(session: &TestSession, code: &str) -> OptionTarget {
+    OptionTarget::CardInstance(session.state().in_play(INV, code))
 }
 
 /// Every forced option withdrawn so far, with its reason.
@@ -101,33 +96,34 @@ fn lapses(session: &TestSession) -> Vec<(InvestigatorId, CardCode, LapseReason)>
         .collect()
 }
 
-/// The anchors the current prompt offers, in order.
-fn offered(session: &TestSession) -> Vec<OptionTarget> {
-    session
-        .prompt()
-        .options
-        .iter()
-        .filter_map(|option| option.target.clone())
-        .collect()
-}
-
 #[test]
 fn an_ability_a_sibling_left_unable_to_change_the_game_state_is_withdrawn_from_the_run() {
     let session = round_ends_holding(&[EMPTIES, DISCOVERS, GAINS]);
+    let (empties, discovers, gains) = (
+        card(&session, EMPTIES),
+        card(&session, DISCOVERS),
+        card(&session, GAINS),
+    );
     assert_eq!(
-        offered(&session),
-        vec![
-            OptionTarget::CardInstance(instance(0)),
-            OptionTarget::CardInstance(instance(1)),
-            OptionTarget::CardInstance(instance(2)),
-        ],
+        session
+            .prompt()
+            .options
+            .iter()
+            .filter_map(|option| option.target.clone())
+            .collect::<Vec<_>>(),
+        vec![empties.clone(), discovers, gains.clone()],
         "with 2 clues on the location, all three abilities can change the game state"
     );
 
-    let session = session.pick(OptionTarget::CardInstance(instance(0)));
+    let session = session.pick(empties);
     assert_eq!(
-        offered(&session),
-        vec![OptionTarget::CardInstance(instance(2))],
+        session
+            .prompt()
+            .options
+            .iter()
+            .filter_map(|option| option.target.clone())
+            .collect::<Vec<_>>(),
+        vec![gains.clone()],
         "the lead's next prompt no longer offers the discovery"
     );
     assert_eq!(
@@ -137,7 +133,7 @@ fn an_ability_a_sibling_left_unable_to_change_the_game_state_is_withdrawn_from_t
     );
 
     let before = session.state().investigators[&INV].resources;
-    let session = session.pick(OptionTarget::CardInstance(instance(2)));
+    let session = session.pick(gains);
     let investigator = &session.state().investigators[&INV];
     assert_eq!(
         investigator.resources,
@@ -152,22 +148,31 @@ fn an_ability_a_sibling_left_unable_to_change_the_game_state_is_withdrawn_from_t
 
 #[test]
 fn a_run_whose_remaining_abilities_all_lapse_closes_on_its_own() {
-    let session =
-        round_ends_holding(&[EMPTIES, DISCOVERS]).pick(OptionTarget::CardInstance(instance(0)));
+    let session = round_ends_holding(&[EMPTIES, DISCOVERS]);
+    let empties = card(&session, EMPTIES);
+    let session = session.pick(empties);
 
     assert_eq!(
         lapses(&session),
         vec![(INV, CardCode::new(DISCOVERS), LapseReason::NoStateChange)],
     );
-    let result = session.finish();
-    assert!(
-        matches!(result.outcome, EngineOutcome::Done),
-        "the emptied run closed rather than prompting the lead with no options, got {:?}",
-        result.outcome,
+    // The emptied run closed rather than prompting the lead with no options:
+    // the round ended and play went on to the next round's Mythos phase.
+    assert_eq!(
+        session.state().phase,
+        Phase::Mythos,
+        "{:?}",
+        session.prompt()
     );
+    assert_eq!(session.state().round, 2);
+    // The subject is the run's frame closing, so the stack is read directly.
     assert!(
-        result.state.continuations.is_empty(),
-        "nothing is left on the stack: {:?}",
-        result.state.continuations,
+        !session
+            .state()
+            .continuations
+            .iter()
+            .any(|c| matches!(c, Continuation::TimingPointWindow(_))),
+        "no window frame is left on the stack: {:?}",
+        session.state().continuations,
     );
 }
