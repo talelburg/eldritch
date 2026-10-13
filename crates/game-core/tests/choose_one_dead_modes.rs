@@ -16,15 +16,14 @@
 //! reach the shape.
 
 use card_dsl::dsl::{self, Ability, InvestigatorTarget};
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, ApplyResult, EngineOutcome, OptionTarget};
+use game_core::engine::{ApplyResult, EngineOutcome, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, TokenModifiers,
+    AbilityAddress, AbilitySource, ChaosBag, ChaosToken, GameState, GameStateBuilder,
+    InvestigatorId, LocationId, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{self, MockRegistry, TestSession};
+use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 /// Mock: `[action] Test intellect(2). If you succeed, heal 1 damage or horror
@@ -33,8 +32,7 @@ use game_core::{assert_event, assert_no_event};
 const MODAL_HEAL_ON_SUCCESS: &str = "MOCK-664";
 
 const INV: InvestigatorId = InvestigatorId(1);
-const LOC: LocationId = LocationId(10);
-const INST: CardInstanceId = CardInstanceId(0);
+const HERE: LocationId = LocationId(10);
 
 fn modal_heal_abilities() -> Vec<Ability> {
     vec![dsl::activated(
@@ -65,39 +63,37 @@ fn install_mock_registry() {
         .install();
 }
 
-/// Board: the mock asset in play, the investigator at `LOC` carrying `damage`
+/// Board: the mock asset in play, the investigator at `HERE` carrying `damage`
 /// damage and `horror` horror, and an all-`Numeric(0)` chaos bag so the
 /// intellect(2) test's outcome is decided by the investigator's stats alone.
 fn board(damage: u8, horror: u8) -> GameState {
-    let mut inv = test_support::test_investigator(1);
-    inv.investigator_card.accumulated_damage = damage;
-    inv.investigator_card.accumulated_horror = horror;
-    inv.cards_in_play.push(CardInPlay::enter_play(
-        CardCode::new(MODAL_HEAL_ON_SUCCESS),
-        INST,
-        Owner::Investigator(InvestigatorId(1)),
-    ));
-
     GameStateBuilder::new()
-        .with_investigator_at(inv, LOC)
-        .with_location(test_support::test_location(10, "Study"))
+        .with_seat(
+            seat(1)
+                .at(HERE)
+                .harm(damage, horror)
+                .in_play([MODAL_HEAL_ON_SUCCESS]),
+        )
+        .with_location(test_support::test_location(HERE.0, "Study"))
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
         .build()
 }
 
+/// The mock asset's activation.
+fn activation(state: &GameState) -> TurnAction {
+    TurnAction::ActivateAbility {
+        investigator: INV,
+        source: AbilitySource::InPlay(state.in_play(INV, MODAL_HEAL_ON_SUCCESS)),
+        address: AbilityAddress::Printed(0),
+    }
+}
+
+/// Activate the mock asset and commit nothing to its test.
 fn activate(state: GameState) -> ApplyResult {
-    TestSession::new(state)
-        .resolve_choices(|r| {
-            r.commit_cards(&[]);
-        })
-        .take(&TurnAction::ActivateAbility {
-            investigator: INV,
-            source: AbilitySource::InPlay(INST),
-            address: AbilityAddress::Printed(0),
-        })
-        .finish()
+    let action = activation(&state);
+    TestSession::new(state).take(&action).commit(&[]).finish()
 }
 
 /// The control: with damage to heal the modal `on_success` has a live mode, so
@@ -153,23 +149,12 @@ fn every_mode_dead_under_a_skill_test_skips_rather_than_rejecting() {
 #[test]
 fn a_modal_on_success_keeps_the_activating_cards_anchor_across_the_test() {
     // Both modes live, so the ChooseOne suspends instead of auto-resolving.
-    let started = test_support::take_turn_action(
-        board(2, 2),
-        &TurnAction::ActivateAbility {
-            investigator: INV,
-            source: AbilitySource::InPlay(INST),
-            address: AbilityAddress::Printed(0),
-        },
-    );
-    let r = engine::apply(
-        started.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        }),
-    );
-    let EngineOutcome::AwaitingInput { request, .. } = &r.outcome else {
-        panic!("expected the on_success ChooseOne, got {:?}", r.outcome);
-    };
+    let state = board(2, 2);
+    let action = activation(&state);
+    let card = state.in_play(INV, MODAL_HEAL_ON_SUCCESS);
+    let session = TestSession::new(state).take(&action).commit(&[]);
+    // The session rests at the `on_success` ChooseOne.
+    let request = session.prompt();
     assert_eq!(
         request
             .options
@@ -181,7 +166,7 @@ fn a_modal_on_success_keeps_the_activating_cards_anchor_across_the_test() {
     for option in &request.options {
         assert_eq!(
             option.target,
-            Some(OptionTarget::CardInstance(INST)),
+            Some(OptionTarget::CardInstance(card)),
             "still anchored to the activated card after the test resolved",
         );
     }
