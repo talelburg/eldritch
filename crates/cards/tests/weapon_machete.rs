@@ -17,18 +17,17 @@
 use cards::REGISTRY;
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{ApplyResult, EngineOutcome, OptionTarget};
+use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, TokenModifiers,
+    AbilityAddress, AbilitySource, ChaosBag, ChaosToken, Enemy, EnemyId, GameState,
+    GameStateBuilder, InvestigatorId, LocationId, Skills, TokenModifiers,
 };
-use game_core::test_support::{self, TestSession};
+use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
 
 const MACHETE: &str = "01020";
 const INV: InvestigatorId = InvestigatorId(1);
-const LOC: LocationId = LocationId(10);
-const MACHETE_INST: CardInstanceId = CardInstanceId(0);
+const HERE: LocationId = LocationId(10);
 
 #[ctor::ctor(unsafe)]
 fn install() {
@@ -39,116 +38,118 @@ fn install() {
 ///
 /// `combat 4 vs fight 3` with a `Numeric(0)` bag → always succeeds.
 fn board(enemy_count: u32) -> GameState {
-    board_with(enemy_count, 0)
+    board_with(enemy_count, 0).build()
+}
+
+/// A fight-3, health-3 Ghoul. Placed at the actor's location by the builder.
+fn ghoul(id: u32, name: &str) -> Enemy {
+    let mut enemy = test_support::test_enemy(id, name);
+    enemy.fight = 3;
+    enemy.max_health = 3;
+    enemy
 }
 
 /// Board with Machete in play, `engaged` enemies engaged with the actor and
 /// `unengaged` enemies merely *co-located* with them (the scope #451 widened
-/// a Fight to). Engaged enemies take ids `100+n`, unengaged `200+n`, so
-/// the `BTreeMap`-ascending `OptionId` order is engaged-first.
-fn board_with(engaged: u32, unengaged: u32) -> GameState {
-    let mut inv = test_support::test_investigator(1);
-    inv.skills.combat = 4;
-    let machete = CardInPlay::enter_play(
-        CardCode::new(MACHETE),
-        MACHETE_INST,
-        Owner::Investigator(InvestigatorId(1)),
-    );
-    inv.cards_in_play.push(machete);
-
-    let location = test_support::test_location(10, "Study");
-
+/// a Fight to). Engaged enemies take ids `100+n`, unengaged `200+n`.
+fn board_with(engaged: u32, unengaged: u32) -> GameStateBuilder {
     let mut builder = GameStateBuilder::new()
-        .with_investigator_at(inv, LOC)
-        .with_location(location)
+        .with_seat(
+            seat(1)
+                .at(HERE)
+                .skills(Skills {
+                    willpower: 3,
+                    intellect: 3,
+                    combat: 4,
+                    agility: 3,
+                })
+                .in_play([MACHETE]),
+        )
+        .with_location(test_support::test_location(HERE.0, "Study"))
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default());
 
     for n in 0..engaged {
-        let mut enemy = test_support::test_enemy(100 + n, "Ghoul");
-        enemy.fight = 3;
-        enemy.max_health = 3;
-        enemy.engaged_with = Some(INV);
-        enemy.current_location = Some(LOC); // co-located: weapon Fight targets enemies at your location
-        builder = builder.with_enemy(enemy);
+        // Co-located: weapon Fight targets enemies at your location.
+        builder = builder.with_enemy_engaged(ghoul(100 + n, "Ghoul"), INV);
     }
     for n in 0..unengaged {
-        let mut enemy = test_support::test_enemy(200 + n, "Aloof Ghoul");
-        enemy.fight = 3;
-        enemy.max_health = 3;
-        enemy.engaged_with = None;
-        enemy.current_location = Some(LOC);
+        let mut enemy = ghoul(200 + n, "Aloof Ghoul");
+        enemy.current_location = Some(HERE);
         builder = builder.with_enemy(enemy);
     }
 
-    builder.build()
+    builder
 }
 
-fn activate_machete(state: GameState) -> ApplyResult {
-    TestSession::new(state)
-        .resolve_choices(|c| {
-            c.commit_cards(&[]);
-        })
-        .take(&TurnAction::ActivateAbility {
-            investigator: INV,
-            source: AbilitySource::InPlay(MACHETE_INST),
-            address: AbilityAddress::Printed(0),
-        })
-        .finish()
+/// Activating Machete's Fight ability on `state`.
+fn machete_fight(state: &GameState) -> TurnAction {
+    TurnAction::ActivateAbility {
+        investigator: INV,
+        source: AbilitySource::InPlay(state.in_play(INV, MACHETE)),
+        address: AbilityAddress::Printed(0),
+    }
+}
+
+/// Activate Machete against its lone candidate, committing nothing, back to
+/// the open-turn menu.
+fn activate_machete(state: GameState) -> TestSession {
+    let fight = machete_fight(&state);
+    let session = TestSession::new(state).take(&fight).commit(&[]);
+    session.assert_at_turn_menu(INV);
+    session
 }
 
 /// With exactly one enemy engaged, a successful Machete Fight deals
 /// `1 (base) + 1 (sole-engaged) = 2` damage.
 #[test]
 fn sole_engaged_enemy_gets_bonus_damage() {
-    let r = activate_machete(board(1));
-    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
-    assert_event!(r.events, Event::EnemyDamaged { amount: 2, .. });
-    assert_eq!(r.state.enemies[&EnemyId(100)].damage, 2);
+    let session = activate_machete(board(1));
+    assert_event!(session.events(), Event::EnemyDamaged { amount: 2, .. });
+    assert_eq!(session.state().enemies[&EnemyId(100)].damage, 2);
+}
+
+/// Activate Machete on a board with 2+ candidates: the session rests at the
+/// target pick.
+fn to_target_pick(state: GameState) -> TestSession {
+    let fight = machete_fight(&state);
+    TestSession::new(state).take(&fight)
+}
+
+/// [`to_target_pick`], attack `enemy`, then commit nothing back to the
+/// open-turn menu.
+fn activate_and_attack(state: GameState, enemy: EnemyId) -> TestSession {
+    let session = to_target_pick(state)
+        .pick(OptionTarget::Enemy(enemy))
+        .commit(&[]);
+    session.assert_at_turn_menu(INV);
+    session
 }
 
 /// With two enemies engaged, activating Machete suspends for a target pick.
-/// After picking enemy 100 (OptionId(0)), the Fight resolves against it for
-/// `1 + 0 = 1` damage — the attacked enemy is engaged, but it is not the *only*
-/// enemy engaged with the actor. Enemy 101 is untouched.
+/// After picking enemy 100, the Fight resolves against it for `1 + 0 = 1`
+/// damage — the attacked enemy is engaged, but it is not the *only* enemy
+/// engaged with the actor. Enemy 101 is untouched.
 #[test]
 fn two_enemies_engaged_suspends_for_pick_then_attacks_chosen() {
-    let state = board(2);
-
     // Step 1: activate → should suspend for enemy target pick (NOT rejected).
-    let session = TestSession::new(state).take(&TurnAction::ActivateAbility {
-        investigator: INV,
-        source: AbilitySource::InPlay(MACHETE_INST),
-        address: AbilityAddress::Printed(0),
-    });
-    assert!(
-        session
-            .prompt()
-            .options
-            .iter()
-            .any(|o| o.target == Some(OptionTarget::Enemy(EnemyId(101)))),
+    let session = to_target_pick(board(2));
+    assert_eq!(
+        session.offered_at(&OptionTarget::Enemy(EnemyId(101))),
+        1,
         "expected the target pick; got {:?}",
         session.prompt()
     );
 
-    // Step 2: pick enemy 100, then drain the commit window (no commits) back to
-    // the open-turn menu.
-    let r2 = session
-        .resolve_choices(|c| {
-            c.commit_cards(&[]);
-        })
-        .pick(OptionTarget::Enemy(EnemyId(100)))
-        .finish();
-    assert!(
-        matches!(r2.outcome, EngineOutcome::AwaitingInput { .. }),
-        "expected the open-turn menu after pick + commit; got {:?}",
-        r2.outcome
-    );
+    // Step 2: pick enemy 100, then answer the commit window (no commits): play
+    // comes back to the open-turn menu.
+    let session = session.pick(OptionTarget::Enemy(EnemyId(100))).commit(&[]);
+    session.assert_at_turn_menu(INV);
 
     // Enemy 100 (chosen) took 1 damage; enemy 101 (not chosen) took 0.
     assert_event!(
-        r2.events,
+        session.events(),
         Event::EnemyDamaged {
             enemy: EnemyId(100),
             amount: 1,
@@ -156,31 +157,15 @@ fn two_enemies_engaged_suspends_for_pick_then_attacks_chosen() {
         }
     );
     assert_eq!(
-        r2.state.enemies[&EnemyId(100)].damage,
+        session.state().enemies[&EnemyId(100)].damage,
         1,
         "chosen enemy took 1 damage"
     );
     assert_eq!(
-        r2.state.enemies[&EnemyId(101)].damage,
+        session.state().enemies[&EnemyId(101)].damage,
         0,
         "unchosen enemy untouched"
     );
-}
-
-/// Activate Machete on a board with 2+ candidates: suspend for the target pick,
-/// attack `enemy`, then drain the commit window to the open-turn menu.
-fn activate_and_attack(state: GameState, enemy: EnemyId) -> ApplyResult {
-    TestSession::new(state)
-        .take(&TurnAction::ActivateAbility {
-            investigator: INV,
-            source: AbilitySource::InPlay(MACHETE_INST),
-            address: AbilityAddress::Printed(0),
-        })
-        .resolve_choices(|c| {
-            c.commit_cards(&[]);
-        })
-        .pick(OptionTarget::Enemy(enemy))
-        .finish()
 }
 
 /// #592: engaged with exactly one enemy, attacking a *different*, unengaged
@@ -193,10 +178,10 @@ fn activate_and_attack(state: GameState, enemy: EnemyId) -> ApplyResult {
 #[test]
 fn unengaged_co_located_target_gets_no_bonus() {
     // Enemy 100 engaged, enemy 200 co-located but unengaged; attack 200.
-    let r = activate_and_attack(board_with(1, 1), EnemyId(200));
+    let session = activate_and_attack(board_with(1, 1).build(), EnemyId(200));
 
     assert_event!(
-        r.events,
+        session.events(),
         Event::EnemyDamaged {
             enemy: EnemyId(200),
             amount: 1,
@@ -204,12 +189,12 @@ fn unengaged_co_located_target_gets_no_bonus() {
         }
     );
     assert_eq!(
-        r.state.enemies[&EnemyId(200)].damage,
+        session.state().enemies[&EnemyId(200)].damage,
         1,
         "attacked enemy is unengaged → base damage only, no sole-engaged bonus"
     );
     assert_eq!(
-        r.state.enemies[&EnemyId(100)].damage,
+        session.state().enemies[&EnemyId(100)].damage,
         0,
         "the engaged enemy was not the target"
     );
@@ -226,10 +211,10 @@ fn unengaged_co_located_target_gets_no_bonus() {
 #[test]
 fn no_engaged_enemies_at_all_gets_no_bonus() {
     // Single co-located unengaged enemy → target auto-binds, no pick needed.
-    let r = activate_machete(board_with(0, 1));
+    let session = activate_machete(board_with(0, 1).build());
 
     assert_event!(
-        r.events,
+        session.events(),
         Event::EnemyDamaged {
             enemy: EnemyId(200),
             amount: 1,
@@ -237,7 +222,7 @@ fn no_engaged_enemies_at_all_gets_no_bonus() {
         }
     );
     assert_eq!(
-        r.state.enemies[&EnemyId(200)].damage,
+        session.state().enemies[&EnemyId(200)].damage,
         1,
         "engaged with nothing → base damage only"
     );
@@ -255,19 +240,18 @@ fn no_engaged_enemies_at_all_gets_no_bonus() {
 fn enemy_engaged_with_another_investigator_gets_no_bonus() {
     const OTHER: InvestigatorId = InvestigatorId(2);
 
-    let mut state = board_with(1, 1);
-    // Seat a second investigator at the same location and engage enemy 200
-    // with them. The actor remains engaged with enemy 100 only.
-    let mut other = test_support::test_investigator(2);
-    other.current_location = Some(LOC);
-    state.investigators.insert(OTHER, other);
-    state.enemies.get_mut(&EnemyId(200)).unwrap().engaged_with = Some(OTHER);
+    // A second investigator at the same location, engaged with enemy 200. The
+    // actor remains engaged with enemy 100 only.
+    let state = board_with(1, 0)
+        .with_seat(seat(2).at(HERE))
+        .with_enemy_engaged(ghoul(200, "Aloof Ghoul"), OTHER)
+        .build();
 
     // Attack enemy 200.
-    let r = activate_and_attack(state, EnemyId(200));
+    let session = activate_and_attack(state, EnemyId(200));
 
     assert_event!(
-        r.events,
+        session.events(),
         Event::EnemyDamaged {
             enemy: EnemyId(200),
             amount: 1,
@@ -275,39 +259,30 @@ fn enemy_engaged_with_another_investigator_gets_no_bonus() {
         }
     );
     assert_eq!(
-        r.state.enemies[&EnemyId(200)].damage,
+        session.state().enemies[&EnemyId(200)].damage,
         1,
         "enemy engaged to another player → base damage only"
     );
     assert_eq!(
-        r.state.enemies[&EnemyId(100)].damage,
+        session.state().enemies[&EnemyId(100)].damage,
         0,
         "the actor's own engaged enemy was not the target"
     );
 }
 
 /// With no enemy at your location, the activation is rejected before any cost
-/// is paid.
+/// is paid — by the handler itself, which a client can reach without
+/// consulting the menu (the menu does not offer it).
 #[test]
 fn no_co_located_enemy_activation_is_rejected_precost() {
     let state = board(0);
     let actions_before = state.investigators[&INV].actions_remaining;
-    let r = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::ActivateAbility {
-            investigator: INV,
-            source: AbilitySource::InPlay(MACHETE_INST),
-            address: AbilityAddress::Printed(0),
-        },
-    );
-    assert!(
-        matches!(r.outcome, EngineOutcome::Rejected { .. }),
-        "expected Rejected; got {:?}",
-        r.outcome
-    );
+    let fight = machete_fight(&state);
+    let session = TestSession::new(state).submit_off_menu(&fight);
+    session.expect_rejected();
     // No cost paid: actions unchanged.
     assert_eq!(
-        r.state.investigators[&INV].actions_remaining,
+        session.state().investigators[&INV].actions_remaining,
         actions_before
     );
 }
