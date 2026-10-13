@@ -13,10 +13,9 @@ use card_dsl::dsl::{
     self, Ability, AttackerScope, EventPattern, EventTiming, InvestigatorTarget, SkillTestKind,
     TargetScope, TestOutcome, TestedLocationScope,
 };
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{OptionId, OptionTarget, TimingEvent};
+use game_core::engine::{OptionTarget, TimingEvent};
 use game_core::event::Event;
 use game_core::state::{
     Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
@@ -651,14 +650,12 @@ fn a_reaction_on_a_co_located_location_is_offered_to_each_investigator_there() {
         ],
         "both investigators stand at the Study"
     );
-    // GATE (#1018): the two options share the Study's anchor and differ only
-    // by which investigator they are offered to, so no session step names
-    // either; they are picked by position, raw.
+    // The two options share the Study's anchor and label; nothing in them names
+    // the investigator each is offered to (#1024). So they are picked by
+    // position, and the horror assertions pin whose option each position is.
     let react_nth = |n| {
         window(state.clone(), defeat(None))
-            .apply(Action::Player(PlayerAction::ResolveInput {
-                response: InputResponse::PickSingle(OptionId(n)),
-            }))
+            .pick_nth_at(OptionTarget::Location(STUDY), n)
             .state()
             .clone()
     };
