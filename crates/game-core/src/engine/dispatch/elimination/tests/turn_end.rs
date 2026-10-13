@@ -76,7 +76,7 @@ fn defeat_with_no_turn_frame_at_all_is_a_no_op() {
     let dead = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
         .with_phase(Phase::Mythos)
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
         .with_turn_order([dead])
         .build();
     let mut events = Vec::new();
