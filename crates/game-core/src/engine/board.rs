@@ -435,89 +435,127 @@ fn instance_zone_mut(state: &mut GameState, placement: Placement) -> Option<&mut
 mod tests {
     use super::*;
     use crate::state::{GameStateBuilder, Owner};
-    use crate::test_support;
+    use crate::test_support::{self, seat, SeatLookup as _};
 
     const STUDY: LocationId = LocationId(1);
     const HALLWAY: LocationId = LocationId(2);
     const ROLAND: InvestigatorId = InvestigatorId(1);
     const GHOUL: EnemyId = EnemyId(1);
 
-    fn card(code: &str, instance: u32, owner: Owner) -> CardInPlay {
-        CardInPlay::enter_play(CardCode::new(code), CardInstanceId(instance), owner)
+    /// The card in investigator 1's play area.
+    const IN_PLAY: &str = "01020";
+    /// The card in investigator 1's threat area.
+    const THREAT: &str = "01007";
+
+    // A seat cannot place location or enemy attachments, nor a card at a
+    // location, so those are staged by hand under named ids; seated cards are
+    // minted past them.
+    const STUDY_ATTACHMENT: CardInstanceId = CardInstanceId(40);
+    const GHOUL_ATTACHMENT: CardInstanceId = CardInstanceId(50);
+    const AT_STUDY: CardInstanceId = CardInstanceId(60);
+
+    fn card(code: &str, instance: CardInstanceId, owner: Owner) -> CardInPlay {
+        CardInPlay::enter_play(CardCode::new(code), instance, owner)
     }
 
-    /// One card in every zone: investigator 1's investigator card (10), play
-    /// area (11) and threat area (12); the Study's attachment (40) and the card
-    /// put into play there (60); and an attachment (50) on a ghoul in the
-    /// Hallway.
+    /// One card in every zone: investigator 1's investigator card, play
+    /// area and threat area; the Study's attachment and the card put into
+    /// play there; and an attachment on a ghoul in the Hallway. Built with
+    /// [`board_builder`].
     fn board() -> GameState {
-        let mut roland = test_support::test_investigator(1);
-        roland.investigator_card.instance_id = CardInstanceId(10);
-        roland
-            .cards_in_play
-            .push(card("01020", 11, Owner::Investigator(ROLAND)));
-        roland
-            .threat_area
-            .push(card("01007", 12, Owner::Investigator(ROLAND)));
+        board_builder().build()
+    }
 
-        let mut study = test_support::test_location(1, "Study");
+    /// The builder behind [`board`], for a test that seats more on it.
+    fn board_builder() -> GameStateBuilder {
+        let mut study = test_support::test_location(STUDY.0, "Study");
         study
             .attachments
-            .push(card("01168", 40, Owner::EncounterDeck));
+            .push(card("01168", STUDY_ATTACHMENT, Owner::EncounterDeck));
         study
             .cards_at_location
-            .push(card("01117", 60, Owner::Scenario));
+            .push(card("01117", AT_STUDY, Owner::Scenario));
 
-        let mut ghoul = test_support::test_enemy(1, "Ghoul");
+        let mut ghoul = test_support::test_enemy(GHOUL.0, "Ghoul");
         ghoul.current_location = Some(HALLWAY);
         ghoul
             .attachments
-            .push(card("02256", 50, Owner::EncounterDeck));
+            .push(card("02256", GHOUL_ATTACHMENT, Owner::EncounterDeck));
 
         GameStateBuilder::new()
-            .with_investigator_at(roland, STUDY)
             .with_location(study)
-            .with_location(test_support::test_location(2, "Hallway"))
+            .with_location(test_support::test_location(HALLWAY.0, "Hallway"))
             .with_enemy(ghoul)
-            .build()
+            .with_seat(
+                seat(ROLAND.0)
+                    .at(STUDY)
+                    .in_play([IN_PLAY])
+                    .threat_area([THREAT]),
+            )
     }
 
-    /// Every zone's instance, with the code it carries and the placement it
-    /// must report.
-    const EVERY_ZONE: [(u32, &str, Placement); 6] = [
-        (10, "TEST_INV", Placement::InvestigatorCard(ROLAND)),
-        (11, "01020", Placement::PlayArea(ROLAND)),
-        (12, "01007", Placement::ThreatArea(ROLAND)),
-        (40, "01168", Placement::LocationAttachment(STUDY)),
-        (60, "01117", Placement::AtLocation(STUDY)),
-        (50, "02256", Placement::EnemyAttachment(GHOUL)),
-    ];
+    /// The instance id of `investigator`'s investigator card.
+    fn investigator_card(state: &GameState, investigator: InvestigatorId) -> CardInstanceId {
+        state.investigators[&investigator]
+            .investigator_card
+            .instance_id
+    }
+
+    /// Every zone's instance on [`board`], with the code it carries and the
+    /// placement it must report.
+    fn every_zone(state: &GameState) -> [(CardInstanceId, &'static str, Placement); 6] {
+        [
+            (
+                investigator_card(state, ROLAND),
+                test_support::TEST_INV,
+                Placement::InvestigatorCard(ROLAND),
+            ),
+            (
+                state.in_play(ROLAND, IN_PLAY),
+                IN_PLAY,
+                Placement::PlayArea(ROLAND),
+            ),
+            (
+                state.in_play(ROLAND, THREAT),
+                THREAT,
+                Placement::ThreatArea(ROLAND),
+            ),
+            (
+                STUDY_ATTACHMENT,
+                "01168",
+                Placement::LocationAttachment(STUDY),
+            ),
+            (AT_STUDY, "01117", Placement::AtLocation(STUDY)),
+            (GHOUL_ATTACHMENT, "02256", Placement::EnemyAttachment(GHOUL)),
+        ]
+    }
 
     #[test]
     fn find_instance_finds_a_card_in_every_zone_and_reports_its_placement() {
         let state = board();
-        for (instance, code, placement) in EVERY_ZONE {
-            let (found, at) = find_instance(&state, CardInstanceId(instance))
-                .unwrap_or_else(|| panic!("instance {instance} is on the board"));
-            assert_eq!(found.code.as_str(), code, "instance {instance}");
-            assert_eq!(at, placement, "instance {instance}");
+        for (instance, code, placement) in every_zone(&state) {
+            let (found, at) = find_instance(&state, instance)
+                .unwrap_or_else(|| panic!("instance {instance:?} is on the board"));
+            assert_eq!(found.code.as_str(), code, "instance {instance:?}");
+            assert_eq!(at, placement, "instance {instance:?}");
         }
     }
 
     #[test]
     fn find_instance_mut_reaches_a_card_in_every_zone_and_reports_its_placement() {
         let mut state = board();
-        for (instance, _, placement) in EVERY_ZONE {
-            let (found, at) = find_instance_mut(&mut state, CardInstanceId(instance))
-                .unwrap_or_else(|| panic!("instance {instance} is on the board"));
+        let zones = every_zone(&state);
+        for (instance, _, placement) in zones {
+            let (found, at) = find_instance_mut(&mut state, instance)
+                .unwrap_or_else(|| panic!("instance {instance:?} is on the board"));
             found.clues = 1;
-            assert_eq!(at, placement, "instance {instance}");
+            assert_eq!(at, placement, "instance {instance:?}");
         }
-        for (instance, _, _) in EVERY_ZONE {
+        for (instance, _, _) in zones {
             assert_eq!(
-                find_instance(&state, CardInstanceId(instance)).map(|(card, _)| card.clues),
+                find_instance(&state, instance).map(|(card, _)| card.clues),
                 Some(1),
-                "the write landed on instance {instance}",
+                "the write landed on instance {instance:?}",
             );
         }
     }
@@ -528,12 +566,12 @@ mod tests {
     #[test]
     fn the_walk_visits_every_card_in_adr_0018_order() {
         const SECOND: InvestigatorId = InvestigatorId(2);
-        let mut state = board();
-        let mut second = test_support::test_investigator(2);
-        second.investigator_card.instance_id = CardInstanceId(20);
-        state.investigators.insert(SECOND, second);
-        state.turn_order = vec![ROLAND, SECOND];
-        state.active_investigator = Some(SECOND);
+        let mut state = board_builder()
+            .with_seat(seat(SECOND.0))
+            .with_turn_order([ROLAND, SECOND])
+            .with_active_investigator(SECOND)
+            .build();
+        // No builder setter loads the act or agenda deck.
         state.act_deck = vec![Act {
             code: CardCode::new("01108"),
             clue_threshold: 2,
@@ -547,23 +585,41 @@ mod tests {
             .iter()
             .map(|card| (card.placement, card.source))
             .collect();
-        let instance = |id| AbilitySource::InPlay(CardInstanceId(id));
+        let instance = AbilitySource::InPlay;
         assert_eq!(
             walked,
             vec![
-                (Placement::InvestigatorCard(SECOND), instance(20)),
-                (Placement::InvestigatorCard(ROLAND), instance(10)),
-                (Placement::PlayArea(ROLAND), instance(11)),
-                (Placement::ThreatArea(ROLAND), instance(12)),
+                (
+                    Placement::InvestigatorCard(SECOND),
+                    instance(investigator_card(&state, SECOND))
+                ),
+                (
+                    Placement::InvestigatorCard(ROLAND),
+                    instance(investigator_card(&state, ROLAND))
+                ),
+                (
+                    Placement::PlayArea(ROLAND),
+                    instance(state.in_play(ROLAND, IN_PLAY))
+                ),
+                (
+                    Placement::ThreatArea(ROLAND),
+                    instance(state.in_play(ROLAND, THREAT))
+                ),
                 (Placement::Location(STUDY), AbilitySource::Location(STUDY)),
-                (Placement::LocationAttachment(STUDY), instance(40)),
-                (Placement::AtLocation(STUDY), instance(60)),
+                (
+                    Placement::LocationAttachment(STUDY),
+                    instance(STUDY_ATTACHMENT)
+                ),
+                (Placement::AtLocation(STUDY), instance(AT_STUDY)),
                 (
                     Placement::Location(HALLWAY),
                     AbilitySource::Location(HALLWAY)
                 ),
                 (Placement::Enemy(GHOUL), AbilitySource::Enemy(GHOUL)),
-                (Placement::EnemyAttachment(GHOUL), instance(50)),
+                (
+                    Placement::EnemyAttachment(GHOUL),
+                    instance(GHOUL_ATTACHMENT)
+                ),
                 (Placement::Act, AbilitySource::Act),
                 (Placement::Agenda, AbilitySource::Agenda),
             ],
@@ -610,18 +666,18 @@ mod tests {
             .get_mut(&ROLAND)
             .expect("Roland is on the board")
             .status = Status::Defeated;
-        let (_, at) = find_instance(&state, CardInstanceId(12)).expect("still on the board");
+        let (_, at) =
+            find_instance(&state, state.in_play(ROLAND, THREAT)).expect("still on the board");
         assert_eq!(at, Placement::ThreatArea(ROLAND));
     }
 
     #[test]
     fn a_placement_names_the_investigator_whose_area_holds_the_card() {
         let state = board();
-        let investigators: Vec<_> = EVERY_ZONE
+        let investigators: Vec<_> = every_zone(&state)
             .iter()
             .map(|(instance, _, _)| {
-                find_instance(&state, CardInstanceId(*instance))
-                    .and_then(|(_, at)| at.investigator())
+                find_instance(&state, *instance).and_then(|(_, at)| at.investigator())
             })
             .collect();
         assert_eq!(
@@ -633,11 +689,10 @@ mod tests {
     #[test]
     fn a_placement_names_the_location_the_card_is_at() {
         let state = board();
-        let locations: Vec<_> = EVERY_ZONE
+        let locations: Vec<_> = every_zone(&state)
             .iter()
             .map(|(instance, _, _)| {
-                find_instance(&state, CardInstanceId(*instance))
-                    .and_then(|(_, at)| at.location(&state))
+                find_instance(&state, *instance).and_then(|(_, at)| at.location(&state))
             })
             .collect();
         assert_eq!(
