@@ -1,8 +1,33 @@
 use super::*;
+use crate::engine::enumerate::TurnAction;
+use crate::state::{EnemyId, LocationId};
+use crate::test_support::TestSession;
+
+const HERE: LocationId = LocationId(10);
+const GHOUL: EnemyId = EnemyId(7);
+
+/// `inv`'s open turn at [`HERE`], engaged by [`GHOUL`], with a round-scoped
+/// Intellect-for-Combat/Agility substitution active (Mind over Matter 01036's
+/// shape). Taking Fight or Evade starts a test the substitution applies to.
+fn substitution_turn(inv: InvestigatorId) -> TestSession {
+    let mut state = GameStateBuilder::new()
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_seat(test_support::seat(1).at(HERE))
+        .with_enemy_engaged(test_support::test_enemy(GHOUL.0, "Ghoul"), inv)
+        .open_turn(inv)
+        .build();
+    state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
+    state.skill_substitutions.push(SkillSubstitution {
+        investigator: inv,
+        use_skill: SkillKind::Intellect,
+        for_skills: vec![SkillKind::Combat, SkillKind::Agility],
+    });
+    TestSession::new(state)
+}
 
 fn substitution_state(inv: InvestigatorId) -> GameState {
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
         .with_active_investigator(inv)
         .build();
     state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
@@ -52,6 +77,9 @@ fn combat_test_with_substitution_prompts_then_becomes_intellect_on_yes() {
             state: &mut state,
             events: &mut events,
         };
+        // The Decision's first option, "yes". The weapon's initiator modifier
+        // below is one no session step can supply, so this test drives the
+        // entry point and the resume handler directly.
         resume_substitution_choice(&mut cx, &InputResponse::PickSingle(OptionId(0)))
     };
     let out = {
@@ -147,46 +175,19 @@ fn substitution_prompt_keeps_the_test_on_its_frame() {
 #[test]
 fn substitution_choice_no_keeps_the_printed_skill() {
     let inv = InvestigatorId(1);
-    let mut state = substitution_state(inv);
-    let mut events = Vec::new();
-    {
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
-        let _ = start_skill_test(
-            &mut cx,
-            inv,
-            SkillKind::Agility,
-            SkillTestKind::Evade,
-            DifficultyBasis::Fixed(3),
-            SkillTestFollowUp::None,
-            None,
-            None,
-            None,
-            None,
-        );
-    }
-    let out = {
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
-        resume_substitution_choice(&mut cx, &InputResponse::PickSingle(OptionId(1)))
-    };
-    let out = {
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
-        dispatch::drive(&mut cx, out)
-    };
+    let session = substitution_turn(inv).take(&TurnAction::Evade {
+        investigator: inv,
+        enemy: GHOUL,
+    });
+    // The substitution prompt is a Decision: "yes" then "no". Decline.
+    let session = session.pick_nth(1);
     assert!(
-        matches!(out, EngineOutcome::AwaitingInput { .. }),
+        session.state().current_skill_test().is_some()
+            && session.prompt().kind == InputKind::PickMultiple,
         "commit window"
     );
     assert_eq!(
-        state.current_skill_test().unwrap().skill,
+        session.state().current_skill_test().unwrap().skill,
         SkillKind::Agility,
         "declined — keeps the printed skill",
     );
@@ -225,8 +226,9 @@ fn resume_substitution_choice_parks_for_the_loop() {
         "substitution prompt"
     );
 
-    // Choose the substitution: the resume PARKS — it does not itself open the
-    // commit window.
+    // Choose the substitution (the Decision's first option, "yes"): the resume
+    // PARKS — it does not itself open the commit window. The resume handler's
+    // own return is the subject, so it is called directly.
     let out = {
         let mut cx = Cx {
             state: &mut state,
@@ -273,37 +275,16 @@ fn resume_substitution_choice_parks_for_the_loop() {
 #[test]
 fn no_active_substitution_opens_commit_window_directly() {
     let inv = InvestigatorId(1);
-    let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
-        .with_active_investigator(inv)
-        .build();
-    state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
-    let mut events = Vec::new();
-    let out = {
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
-        start_skill_test(
-            &mut cx,
-            inv,
-            SkillKind::Combat,
-            SkillTestKind::Fight,
-            DifficultyBasis::Fixed(3),
-            SkillTestFollowUp::None,
-            None,
-            None,
-            None,
-            None,
-        )
-    };
-    assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
-    assert!(
-        !matches!(
-            state.continuations.top(),
-            Some(Continuation::SubstitutionPrompt(_))
-        ),
-        "no prompt"
+    let mut state = substitution_turn(inv).state().clone();
+    state.skill_substitutions.clear();
+    let session = TestSession::new(state).take(&TurnAction::Fight {
+        investigator: inv,
+        enemy: GHOUL,
+    });
+    // No prompt: straight to the commit window.
+    assert_eq!(session.prompt().kind, InputKind::PickMultiple);
+    assert_eq!(
+        session.state().current_skill_test().unwrap().skill,
+        SkillKind::Combat,
     );
-    assert_eq!(state.current_skill_test().unwrap().skill, SkillKind::Combat,);
 }

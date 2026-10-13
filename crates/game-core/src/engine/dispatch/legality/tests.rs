@@ -5,7 +5,7 @@ use crate::test_support;
 #[test]
 fn check_play_card_returns_err_for_unknown_hand_index() {
     let state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
         .with_active_investigator(InvestigatorId(1))
         .build();
     let err = check_play_card(&state, InvestigatorId(1), 0).expect_err("empty hand should reject");
@@ -29,7 +29,7 @@ fn check_play_card_returns_err_when_investigator_missing() {
 #[test]
 fn check_activate_ability_returns_err_for_unreachable_source() {
     let state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
         .with_active_investigator(InvestigatorId(1))
         .build();
     let err = check_activate_ability(
