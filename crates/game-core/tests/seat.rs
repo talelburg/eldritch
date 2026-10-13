@@ -10,7 +10,7 @@ use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Skills};
 use game_core::engine::enumerate::TurnAction;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId, LocationId, Owner,
-    UseKind,
+    Status, UseKind,
 };
 use game_core::test_support::{self, clues, seat, uses, MockRegistry, SeatLookup as _};
 
@@ -309,4 +309,13 @@ fn the_lookup_panics_when_two_cards_match() {
 #[should_panic(expected = "_seat_unknown")]
 fn as_card_with_an_unknown_code_panics_naming_it() {
     let _ = seat(1).as_card("_seat_unknown");
+}
+
+/// `status` seats an investigator already eliminated.
+#[test]
+fn status_sets_the_investigators_status() {
+    let state = GameStateBuilder::new()
+        .with_seat(seat(1).status(Status::Defeated))
+        .build();
+    assert_eq!(state.investigators[&INV].status, Status::Defeated);
 }
