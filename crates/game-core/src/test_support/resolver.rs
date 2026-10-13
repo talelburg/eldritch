@@ -55,13 +55,14 @@ use crate::engine::{
 use crate::scenario_registry;
 use crate::state::{CardCode, GameState, InvestigatorId, SkillKind};
 
-/// Provide a response for an `AwaitingInput` prompt during a
-/// [`drive`]-style session.
+/// The test harness's reply-policy seam: provide a response for an
+/// `AwaitingInput` prompt while a test drives the engine.
 ///
-/// Tests use [`ScriptedResolver`]. Future hosts (server, web client)
-/// will implement this trait against their own UI/transport layer; the
-/// trait is the boundary between the engine's pause-and-resume protocol
-/// and the consumer's input-collection mechanism.
+/// A [`TestSession`](super::TestSession) answers prompts through a
+/// [`ScriptedResolver`] by default; a flow that needs a stateful reply rule
+/// installs its own implementation with
+/// [`answer_with`](super::TestSession::answer_with). Every implementation is
+/// test-side — hosts answer prompts over the wire, not through this trait.
 pub trait ChoiceResolver {
     /// Produce the next response for the given prompt.
     ///
@@ -169,10 +170,15 @@ impl ChoiceResolver for ScriptedResolver {
         match step {
             ScriptedStep::Response(r) => r,
             ScriptedStep::CommitCards(codes) => InputResponse::PickMultiple {
-                selected: resolve_commit_codes(&codes, state, &request.prompt)
-                    .into_iter()
-                    .map(OptionId)
-                    .collect(),
+                selected: resolve_commit_codes(
+                    &codes,
+                    state,
+                    &request.prompt,
+                    "ScriptedResolver::commit_cards",
+                )
+                .into_iter()
+                .map(OptionId)
+                .collect(),
             },
             ScriptedStep::Pick(target) => InputResponse::PickSingle(sole_option_at(
                 request,
@@ -192,13 +198,18 @@ impl ChoiceResolver for ScriptedResolver {
 /// indices so `&[CardCode("X"), CardCode("X")]` against a hand with
 /// two `X`s yields `[i, j]`. Panics with the prompt and remaining
 /// state if any code can't be matched — that's a test-author error.
-fn resolve_commit_codes(codes: &[CardCode], state: &GameState, prompt: &str) -> Vec<u32> {
+pub(super) fn resolve_commit_codes(
+    codes: &[CardCode],
+    state: &GameState,
+    prompt: &str,
+    caller: &str,
+) -> Vec<u32> {
     if codes.is_empty() {
         return Vec::new();
     }
     let in_flight = state.current_skill_test().unwrap_or_else(|| {
         panic!(
-            "ScriptedResolver::commit_cards: state has no in-flight skill test at \
+            "{caller}: state has no in-flight skill test at \
              resolve time; prompt was: {prompt:?}",
         )
     });
@@ -207,7 +218,7 @@ fn resolve_commit_codes(codes: &[CardCode], state: &GameState, prompt: &str) -> 
         .get(&in_flight.investigator)
         .unwrap_or_else(|| {
             panic!(
-                "ScriptedResolver::commit_cards: in-flight investigator {:?} not in \
+                "{caller}: in-flight investigator {:?} not in \
                  state.investigators; prompt was: {prompt:?}",
                 in_flight.investigator,
             )
@@ -222,7 +233,7 @@ fn resolve_commit_codes(codes: &[CardCode], state: &GameState, prompt: &str) -> 
             .find_map(|(i, c)| (!used[i] && c == code).then_some(i))
             .unwrap_or_else(|| {
                 panic!(
-                    "ScriptedResolver::commit_cards: code {code:?} not found in \
+                    "{caller}: code {code:?} not found in \
                      {:?}'s hand (hand = {:?}, already-used indices = {:?}); \
                      prompt was: {prompt:?}",
                     in_flight.investigator, inv.hand, used,
