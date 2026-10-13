@@ -30,7 +30,8 @@ use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
 use game_core::event::{Event, LapseReason};
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, Continuation, GameStateBuilder, InvestigatorId, LocationId,
+    CardCode, ChaosBag, ChaosToken, Continuation, GameState, GameStateBuilder, InvestigatorId,
+    LocationId,
 };
 use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
 
@@ -126,14 +127,18 @@ fn timeline(events: &[Event]) -> Vec<Option<u8>> {
         .collect()
 }
 
-/// Whether the walk left nothing behind: no coordinator, timing point, window
+/// Assert the walk left nothing behind: no coordinator, timing point, window
 /// or effect frame outlives the sequence. The idle `InvestigatorTurn` sentinel
 /// stays on the stack for the whole turn and is not one.
-fn no_queued_frames(r: &TestSession) -> bool {
-    !r.state()
-        .continuations
-        .iter()
-        .any(Continuation::is_queued_ability)
+fn assert_no_queued_frames(state: &GameState, why: &str) {
+    assert!(
+        !state
+            .continuations
+            .iter()
+            .any(Continuation::is_queued_ability),
+        "{why}: {:?}",
+        state.continuations,
+    );
 }
 
 /// The headline claim: the discovery happens *between* the `when` and `at`
@@ -142,16 +147,24 @@ fn no_queued_frames(r: &TestSession) -> bool {
 /// `after` cells did not exist for this condition at all.
 #[test]
 fn the_discovery_resolves_between_the_when_and_at_cells() {
-    let r = investigate_firing(board_with(&[WHEN, AT, AFTER], 2), &[WHEN, AT, AFTER]);
+    let session = investigate_firing(board_with(&[WHEN, AT, AFTER], 2), &[WHEN, AT, AFTER]);
     assert_eq!(
-        timeline(r.events()),
+        timeline(session.events()),
         vec![Some(4), None, Some(1), Some(2)],
         "expected when → discovery → at → after; events = {:?}",
-        r.events()
+        session.events()
     );
-    assert_eq!(r.state().locations[&HERE].clues, 1, "location -1");
-    assert_eq!(r.state().investigators[&INV].clues, 1, "investigator +1");
-    assert_eq!(r.state().investigators[&INV].resources, 7, "4 + 1 + 2");
+    assert_eq!(session.state().locations[&HERE].clues, 1, "location -1");
+    assert_eq!(
+        session.state().investigators[&INV].clues,
+        1,
+        "investigator +1"
+    );
+    assert_eq!(
+        session.state().investigators[&INV].resources,
+        7,
+        "4 + 1 + 2"
+    );
 }
 
 /// An after-discovery ability is declarable for the first time, and it resolves
@@ -160,17 +173,16 @@ fn the_discovery_resolves_between_the_when_and_at_cells() {
 /// fully resolved"*.
 #[test]
 fn an_after_ability_resolves_once_the_clues_have_moved() {
-    let r = investigate_firing(board_with(&[AFTER], 2), &[AFTER]);
+    let session = investigate_firing(board_with(&[AFTER], 2), &[AFTER]);
     assert_eq!(
-        timeline(r.events()),
+        timeline(session.events()),
         vec![None, Some(2)],
         "the discovery must precede the `after` ability; events = {:?}",
-        r.events()
+        session.events()
     );
-    assert!(
-        no_queued_frames(&r),
-        "the empty `when`/`at` cells left frames behind: {:?}",
-        r.state().continuations
+    assert_no_queued_frames(
+        session.state(),
+        "the empty `when`/`at` cells left frames behind",
     );
 }
 
@@ -180,12 +192,12 @@ fn an_after_ability_resolves_once_the_clues_have_moved() {
 /// the condition's impact lands.
 #[test]
 fn an_at_ability_resolves_after_the_clues_move_and_before_any_after_ability() {
-    let r = investigate_firing(board_with(&[AT, AFTER], 2), &[AT, AFTER]);
+    let session = investigate_firing(board_with(&[AT, AFTER], 2), &[AT, AFTER]);
     assert_eq!(
-        timeline(r.events()),
+        timeline(session.events()),
         vec![None, Some(1), Some(2)],
         "expected discovery → at → after; events = {:?}",
-        r.events()
+        session.events()
     );
 }
 
@@ -202,30 +214,34 @@ fn an_at_ability_resolves_after_the_clues_move_and_before_any_after_ability() {
 fn a_cancelled_discovery_suppresses_the_at_and_after_cells() {
     // One window only: the `when` cell. The `at` and `after` cells never open,
     // and the session would stop short of the turn menu if they did.
-    let r = investigate_firing(board_with(&[CANCEL, AT, AFTER], 2), &[CANCEL]);
+    let session = investigate_firing(board_with(&[CANCEL, AT, AFTER], 2), &[CANCEL]);
     assert_eq!(
-        timeline(r.events()),
+        timeline(session.events()),
         Vec::<Option<u8>>::new(),
         "neither the discovery nor any later cell may run; events = {:?}",
-        r.events()
+        session.events()
     );
-    assert_eq!(r.state().locations[&HERE].clues, 2, "location untouched");
-    assert_eq!(r.state().investigators[&INV].clues, 0, "discovered nothing");
     assert_eq!(
-        r.state().investigators[&INV].resources,
+        session.state().locations[&HERE].clues,
+        2,
+        "location untouched"
+    );
+    assert_eq!(
+        session.state().investigators[&INV].clues,
+        0,
+        "discovered nothing"
+    );
+    assert_eq!(
+        session.state().investigators[&INV].resources,
         0,
         "no marker fired"
     );
     assert!(
-        !r.state().pending_cancellation,
+        !session.state().pending_cancellation,
         "the signal must be consumed at the resolve step, not left to catch the \
          next condition"
     );
-    assert!(
-        no_queued_frames(&r),
-        "the abandoned sequence left frames behind: {:?}",
-        r.state().continuations
-    );
+    assert_no_queued_frames(session.state(), "the abandoned sequence left frames behind");
 }
 
 /// Suppression reaches the rest of the **current** cell too, per the same Dodge
@@ -237,24 +253,28 @@ fn a_cancel_withdraws_the_remaining_when_cell_abilities() {
     // The `when` cell opens with two candidates (CANCEL first, in threat-area
     // order); firing CANCEL withdraws WHEN rather than re-prompting, so one
     // pick is the whole drive.
-    let r = investigate_firing(board_with(&[CANCEL, WHEN, AT, AFTER], 2), &[CANCEL]);
+    let session = investigate_firing(board_with(&[CANCEL, WHEN, AT, AFTER], 2), &[CANCEL]);
     assert_eq!(
-        timeline(r.events()),
+        timeline(session.events()),
         Vec::<Option<u8>>::new(),
         "no sibling `when` ability may resolve after the cancel; events = {:?}",
-        r.events()
+        session.events()
     );
     assert_event!(
-        r.events(),
+        session.events(),
         Event::ReactionOptionLapsed {
             code,
             reason: LapseReason::ConditionPrevented,
             ..
         } if *code == CardCode::new(WHEN)
     );
-    assert_eq!(r.state().locations[&HERE].clues, 2, "location untouched");
     assert_eq!(
-        r.state().investigators[&INV].resources,
+        session.state().locations[&HERE].clues,
+        2,
+        "location untouched"
+    );
+    assert_eq!(
+        session.state().investigators[&INV].resources,
         0,
         "no marker fired"
     );
@@ -264,17 +284,13 @@ fn a_cancel_withdraws_the_remaining_when_cell_abilities() {
 /// the emit when the location holds no clues, so no cell runs at all.
 #[test]
 fn no_condition_is_emitted_when_the_location_has_no_clues() {
-    let r = investigate_firing(board_with(&[AT, AFTER], 0), &[]);
+    let session = investigate_firing(board_with(&[AT, AFTER], 0), &[]);
     assert_eq!(
-        timeline(r.events()),
+        timeline(session.events()),
         Vec::<Option<u8>>::new(),
         "no discovery, so no sequence; events = {:?}",
-        r.events()
+        session.events()
     );
-    assert_eq!(r.state().investigators[&INV].resources, 0);
-    assert!(
-        no_queued_frames(&r),
-        "no frames left behind: {:?}",
-        r.state().continuations
-    );
+    assert_eq!(session.state().investigators[&INV].resources, 0);
+    assert_no_queued_frames(session.state(), "no frames left behind");
 }

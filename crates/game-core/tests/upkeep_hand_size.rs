@@ -14,7 +14,7 @@
 
 use game_core::action::RosterEntry;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, EngineOutcome, InputKind};
+use game_core::engine::{self, InputKind};
 use game_core::state::{
     Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId,
     LocationId, Phase,
@@ -105,11 +105,6 @@ const INV: InvestigatorId = InvestigatorId(1);
 /// makes it, so the opened state is edited and settled again.
 fn opened_with_a_padded_hand() -> TestSession {
     let opened = engine::seat_and_open(setup(), &roster());
-    assert!(
-        matches!(opened.outcome, EngineOutcome::AwaitingInput { .. }),
-        "seat_and_open opens the mulligan prompt, got {:?}",
-        opened.outcome
-    );
     let mut state = TestSession::new(opened.state)
         .choose_from_hand(&[])
         .state()

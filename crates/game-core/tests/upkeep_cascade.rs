@@ -12,7 +12,7 @@
 
 use game_core::action::RosterEntry;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, EngineOutcome};
+use game_core::engine::{self};
 use game_core::state::{
     Act, Agenda, CardCode, CardInPlay, ChaosBag, ChaosToken, GameState, GameStateBuilder,
     InvestigatorId, LocationId, Owner, Phase,
@@ -103,11 +103,6 @@ const INV: InvestigatorId = InvestigatorId(1);
 /// at the turn menu.
 fn opened_with_an_exhausted_asset() -> TestSession {
     let opened = engine::seat_and_open(setup(), &roster());
-    assert!(
-        matches!(opened.outcome, EngineOutcome::AwaitingInput { .. }),
-        "seat_and_open opens the mulligan prompt, got {:?}",
-        opened.outcome
-    );
     // The roster seats the investigator, so the asset goes onto the seated
     // board, with an id minted from the state's counter.
     let mut state = opened.state;

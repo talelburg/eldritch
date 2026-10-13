@@ -441,10 +441,14 @@ fn frozen_in_fear_board(copies: usize, tokens: Vec<ChaosToken>) -> TestSession {
 /// (slice 2a-i absorbed the former `pending_end_turn` into `ending`). A stack
 /// invariant — no stranded frames — so it reads the stack.
 fn assert_no_turn_mid_end(state: &GameState) {
-    assert!(!state.continuations.iter().any(|c| matches!(
-        c,
-        Continuation::InvestigatorTurn(InvestigatorTurnFrame { ending: true, .. })
-    )));
+    assert!(
+        !state.continuations.iter().any(|c| matches!(
+            c,
+            Continuation::InvestigatorTurn(InvestigatorTurnFrame { ending: true, .. })
+        )),
+        "a turn was left mid-end on the stack: {:?}",
+        state.continuations,
+    );
 }
 
 /// End investigator 1's turn, committing nothing to Frozen in Fear's
