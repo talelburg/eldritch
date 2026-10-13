@@ -546,6 +546,13 @@ pub(in crate::engine) fn draw_with_deckout(cx: &mut Cx, investigator: Investigat
 /// non-empty; callers ensure this.
 pub(super) fn prompt_mulligan(cx: &mut Cx, remaining: Vec<InvestigatorId>) -> EngineOutcome {
     cx.state.continuations.push(MulliganFrame { remaining });
+    mulligan_prompt()
+}
+
+/// The [`EngineOutcome::AwaitingInput`] a [`MulliganFrame`] on top waits on:
+/// shown by [`prompt_mulligan`] when it pushes the frame, and again by the main
+/// loop when it meets the frame on top.
+pub(super) fn mulligan_prompt() -> EngineOutcome {
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_multiple(
             "Mulligan: choose cards to redraw (an empty selection keeps your hand).",

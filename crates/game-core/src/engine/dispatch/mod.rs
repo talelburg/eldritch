@@ -238,8 +238,9 @@ pub(crate) fn drive(cx: &mut Cx, mut outcome: EngineOutcome) -> EngineOutcome {
 ///   the loop continues on whatever is then on top;
 /// - a **Prompt** frame is either stepped by a driver that surfaces or advances
 ///   it (the open turn's menu, a skill test's commit window, a window's next
-///   candidate), or left on top — its handler already surfaced the prompt, and
-///   the loop returns `Done`;
+///   candidate, a mulligan / encounter-draw / hand-size queue's prompt), or
+///   left on top — its handler already surfaced the prompt, and the loop
+///   returns `Done`;
 /// - an **Inert** frame is a phase anchor, woken via
 ///   [`phases::anchor_on_child_pop`] (which at a phase boundary pops itself and
 ///   pushes the next phase's anchor), or the ending frame at
@@ -394,14 +395,17 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
                     ScenarioEndStep::Finalize;
                 emit::queue_event(cx, &TimingEvent::GameEnd)
             }
+            // Queue prompts whose request is rebuilt from the frame alone: show
+            // it again, through the builder the handler that pushed the frame
+            // uses. Reached when a state is settled with one of them on top.
+            Continuation::Mulligan(_) => return cards::mulligan_prompt(),
+            Continuation::EncounterDraw(_) => return encounter::prompt_encounter_draw(cx),
+            Continuation::HandSizeDiscard(_) => return phases::hand_size_discard_prompt(),
             // Prompts whose handler surfaced `AwaitingInput` when it pushed
             // them: nothing to drive until `resolve_input` answers.
             Continuation::SubstitutionPrompt(_)
             | Continuation::HunterMove(_)
             | Continuation::SpawnEngage(_)
-            | Continuation::HandSizeDiscard(_)
-            | Continuation::Mulligan(_)
-            | Continuation::EncounterDraw(_)
             | Continuation::SlotDiscard(_) => return EngineOutcome::Done,
         };
         // A stepped frame: `Done` means it advanced (child pushed, frame
