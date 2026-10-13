@@ -10,111 +10,116 @@
 //! own integration-test process.
 
 use cards::REGISTRY;
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, EngineOutcome, InputKind, OptionId};
+use game_core::engine::{InputKind, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, DiscardPile, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Owner, TokenModifiers, Zone,
+    CardCode, ChaosBag, ChaosToken, DiscardPile, EnemyId, GameStateBuilder, InvestigatorId,
+    LocationId, Skills, TokenModifiers, Zone,
 };
-use game_core::test_support::{self, TestSession};
-use game_core::{assert_event, assert_no_event};
+use game_core::test_support::{self, seat, Seat, TestSession};
+use game_core::{assert_event, assert_event_count, assert_no_event};
 
 /// `ArkhamDB` code for original-Core Evidence!.
 const EVIDENCE: &str = "01022";
+
+const INV: InvestigatorId = InvestigatorId(1);
+const ENEMY: EnemyId = EnemyId(100);
+const HERE: LocationId = LocationId(10);
+
+const FIGHT: TurnAction = TurnAction::Fight {
+    investigator: INV,
+    enemy: ENEMY,
+};
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// Solo investigator (NOT Roland — no in-play reaction) engaged with a 1-HP
-/// enemy at a location with `location_clues` clues, holding Evidence! in hand.
-/// A successful Combat test defeats the enemy and opens the after-defeat
-/// window.
-fn investigator_with_evidence_and_enemy(
-    location_clues: u8,
-) -> (InvestigatorId, EnemyId, LocationId, GameState) {
-    let inv_id = InvestigatorId(1);
-    let enemy_id = EnemyId(100);
-    let loc_id = LocationId(10);
+/// Solo investigator (NOT Roland — no in-play reaction) at the Study with
+/// combat 4, holding Evidence! in hand.
+fn holding_evidence() -> Seat {
+    seat(1)
+        .at(HERE)
+        .skills(Skills {
+            willpower: 3,
+            intellect: 3,
+            combat: 4,
+            agility: 3,
+        })
+        .hand([EVIDENCE])
+}
 
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(loc_id);
-    inv.skills.combat = 4;
-    inv.hand.push(CardCode::new(EVIDENCE));
-
-    let mut enemy = test_support::test_enemy(100, "Mock Ghoul");
+/// `investigator`'s open turn, engaged with a 1-HP enemy at a location with
+/// `location_clues` clues. A successful Combat test defeats the enemy and
+/// opens the after-defeat window.
+fn fight_board(investigator: Seat, location_clues: u8) -> GameStateBuilder {
+    let mut enemy = test_support::test_enemy(ENEMY.0, "Mock Ghoul");
     enemy.fight = 1;
     enemy.max_health = 1;
     enemy.damage = 0;
-    enemy.engaged_with = Some(inv_id);
-    enemy.current_location = Some(loc_id); // co-located: Fight is location-gated (#401)
 
-    let mut loc = test_support::test_location(10, "Study");
+    let mut loc = test_support::test_location(HERE.0, "Study");
     loc.clues = location_clues;
 
-    let state = GameStateBuilder::new()
+    GameStateBuilder::new()
         .with_round(0)
-        .open_turn(inv_id)
-        .with_investigator(inv)
-        .with_enemy(enemy)
+        .with_seat(investigator)
+        // Co-located by engagement: Fight is location-gated (#401).
+        .with_enemy_engaged(enemy, INV)
         .with_location(loc)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
-        .build();
-    (inv_id, enemy_id, loc_id, state)
+        .open_turn(INV)
 }
 
-fn fight_action(inv: InvestigatorId, enemy: EnemyId) -> TurnAction {
-    TurnAction::Fight {
-        investigator: inv,
-        enemy,
+/// Fight the enemy committing nothing: the session rests at the after-defeat
+/// window, or back at the turn menu if none opened.
+fn defeat_the_enemy(board: GameStateBuilder) -> TestSession {
+    board.session().take(&FIGHT).commit(&[])
+}
+
+/// The anchor of the Evidence! in `INV`'s hand, as a reaction window offers it.
+fn evidence_in_hand() -> OptionTarget {
+    OptionTarget::HandCardByCode {
+        investigator: INV,
+        code: CardCode::new(EVIDENCE),
     }
+}
+
+/// Defeat the enemy, then play Evidence! from the after-defeat window.
+fn play_evidence(board: GameStateBuilder) -> TestSession {
+    defeat_the_enemy(board).pick(evidence_in_hand())
 }
 
 #[test]
 fn after_defeat_window_opens_and_offers_evidence_with_no_in_play_reaction() {
-    let (inv_id, enemy_id, loc_id, state) = investigator_with_evidence_and_enemy(2);
-
     // Apply the Fight, then commit nothing to the resulting skill-test prompt;
     // the engine must then SUSPEND on the after-defeat reaction window — that
     // suspend is how "a window opened" is observed (the dedicated WindowOpened
     // event was removed as redundant with the AwaitingInput channel). The
     // window opens even though no in-play card reacts: the hand match alone
-    // opens it, observable as the offered "Play <Evidence> from hand" option.
-    let after_fight = test_support::take_turn_action(state, &fight_action(inv_id, enemy_id));
-    let EngineOutcome::AwaitingInput { .. } = &after_fight.outcome else {
-        panic!("Fight must suspend on the commit window; got {after_fight:?}");
-    };
-    let result = engine::apply(
-        after_fight.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        }),
-    );
+    // opens it, observable as the offered Evidence! hand play.
+    let session = defeat_the_enemy(fight_board(holding_evidence(), 2));
 
-    match &result.outcome {
-        EngineOutcome::AwaitingInput { request, .. } => {
-            assert!(
-                request.options.iter().any(|o| o.label.contains(EVIDENCE)),
-                "after-defeat window must offer the Evidence! hand play; request = {request:?}",
-            );
-            // A non-forced reaction window is a PickSingle the player may pass:
-            // the client must offer a Skip control.
-            assert_eq!(request.kind, InputKind::PickSingle);
-            assert!(
-                request.skippable,
-                "a non-forced reaction window must be skippable; request = {request:?}",
-            );
-        }
-        other => panic!("after-defeat window must open (AwaitingInput); got {other:?}"),
-    }
+    let request = session.prompt();
+    assert_eq!(
+        session.offered_at(&evidence_in_hand()),
+        1,
+        "after-defeat window must offer the Evidence! hand play; request = {request:?}",
+    );
+    // A non-forced reaction window is a PickSingle the player may pass:
+    // the client must offer a Skip control.
+    assert_eq!(request.kind, InputKind::PickSingle);
+    assert!(
+        request.skippable,
+        "a non-forced reaction window must be skippable; request = {request:?}",
+    );
     // The window is still open: no clue discovered yet, Evidence! still in hand.
-    assert_no_event!(result.events, Event::CluePlaced { .. });
-    assert_eq!(result.state.locations[&loc_id].clues, 2);
-    assert!(result.state.investigators[&inv_id]
+    assert_no_event!(session.events(), Event::CluePlaced { .. });
+    assert_eq!(session.state().locations[&HERE].clues, 2);
+    assert!(session.state().investigators[&INV]
         .hand
         .iter()
         .any(|c| c.as_str() == EVIDENCE));
@@ -127,33 +132,16 @@ fn evidence_not_offered_when_location_has_no_clues() {
     // a defeat (RR: an event can't be played if its effect can't change the game
     // state). Mirror of the in-play Roland suppression — same ability, sourced
     // from hand.
-    let (inv_id, enemy_id, loc_id, state) = investigator_with_evidence_and_enemy(0);
-
-    let after_fight = test_support::take_turn_action(state, &fight_action(inv_id, enemy_id));
-    let result = engine::apply(
-        after_fight.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        }),
-    );
+    let session = defeat_the_enemy(fight_board(holding_evidence(), 0));
 
     // The defeat happened, but no after-defeat window offering Evidence! opened:
-    // the pending input is the open-turn menu, which never lists the hand play.
-    assert_event!(result.events, Event::EnemyDefeated { enemy: e, .. } if *e == enemy_id);
-    let EngineOutcome::AwaitingInput { request, .. } = &result.outcome else {
-        panic!(
-            "expected AwaitingInput (open turn), got {:?}",
-            result.outcome
-        );
-    };
+    // play is back at the open-turn menu, which never lists the hand play.
+    assert_event!(session.events(), Event::EnemyDefeated { enemy: e, .. } if *e == ENEMY);
+    session.assert_at_turn_menu(INV);
+    assert_no_event!(session.events(), Event::CluePlaced { .. });
+    assert_eq!(session.state().locations[&HERE].clues, 0);
     assert!(
-        !request.options.iter().any(|o| o.label.contains(EVIDENCE)),
-        "Evidence! must not be offered at a 0-clue location; request = {request:?}",
-    );
-    assert_no_event!(result.events, Event::CluePlaced { .. });
-    assert_eq!(result.state.locations[&loc_id].clues, 0);
-    assert!(
-        result.state.investigators[&inv_id]
+        session.state().investigators[&INV]
             .hand
             .iter()
             .any(|c| c.as_str() == EVIDENCE),
@@ -166,70 +154,58 @@ fn evidence_cannot_be_played_as_a_standalone_action() {
     // #304 acceptance: Evidence! is illegal outside its named window. Playing
     // it via the ordinary PlayCard action (here, during the turn with no defeat)
     // must reject — otherwise it would run no OnPlay effect and silently fizzle.
-    let (inv_id, _enemy_id, loc_id, state) = investigator_with_evidence_and_enemy(2);
+    // The menu does not offer it, so it goes straight to the handler, which a
+    // client can do over the wire.
+    let session = fight_board(holding_evidence(), 2).session();
     assert_eq!(
-        state.investigators[&inv_id].hand[0].as_str(),
+        session.state().investigators[&INV].hand[0].as_str(),
         EVIDENCE,
         "fixture invariant: Evidence! is the only hand card, at index 0",
     );
 
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: inv_id,
-            hand_index: 0,
-        },
-    );
+    let session = session.submit_off_menu(&TurnAction::PlayCard {
+        investigator: INV,
+        hand_index: 0,
+    });
 
-    assert!(
-        matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "Evidence! must be illegal as a standalone play; got {:?}",
-        result.outcome,
-    );
+    let _ = session.expect_rejected();
     // State unchanged: still in hand, not discarded, no clue moved.
-    assert!(result.state.investigators[&inv_id]
+    let state = session.state();
+    assert!(state.investigators[&INV]
         .hand
         .iter()
         .any(|c| c.as_str() == EVIDENCE));
-    assert!(result.state.investigators[&inv_id].discard.is_empty());
-    assert_eq!(result.state.locations[&loc_id].clues, 2);
+    assert!(state.investigators[&INV].discard.is_empty());
+    assert_eq!(state.locations[&HERE].clues, 2);
 }
 
 #[test]
 fn picking_evidence_plays_it_and_discovers_a_clue() {
-    let (inv_id, enemy_id, loc_id, state) = investigator_with_evidence_and_enemy(2);
+    // Commit nothing, then pick the hand Evidence! play; there is no in-play
+    // trigger.
+    let session = play_evidence(fight_board(holding_evidence(), 2));
 
-    // Commit nothing, then pick the single offered option (OptionId(0) = the
-    // hand Evidence! play; there is no in-play trigger).
-    let result = TestSession::new(state)
-        .resolve_choices(|c| {
-            c.commit_cards(&[]).pick_single(OptionId(0));
-        })
-        .take(&fight_action(inv_id, enemy_id))
-        .finish();
-
-    assert!(matches!(
-        result.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
+    session.assert_at_turn_menu(INV);
+    let events = session.events();
     assert_event!(
-        result.events,
-        Event::CardPlayed { investigator, code } if *investigator == inv_id && code.as_str() == EVIDENCE
+        events,
+        Event::CardPlayed { investigator, code } if *investigator == INV && code.as_str() == EVIDENCE
     );
     assert_event!(
-        result.events,
-        Event::CluePlaced { investigator, count: 1 } if *investigator == inv_id
+        events,
+        Event::CluePlaced { investigator, count: 1 } if *investigator == INV
     );
     assert_event!(
-        result.events,
+        events,
         Event::CardDiscarded { code, from: Zone::Hand, to: DiscardPile::Investigator(investigator) }
-            if *investigator == inv_id && code.as_str() == EVIDENCE
+            if *investigator == INV && code.as_str() == EVIDENCE
     );
 
     // 1 clue moved from the Study to the investigator; Evidence! is in discard.
-    assert_eq!(result.state.locations[&loc_id].clues, 1);
-    assert_eq!(result.state.investigators[&inv_id].clues, 1);
-    let inv = &result.state.investigators[&inv_id];
+    let state = session.state();
+    assert_eq!(state.locations[&HERE].clues, 1);
+    assert_eq!(state.investigators[&INV].clues, 1);
+    let inv = &state.investigators[&INV];
     assert!(!inv.hand.iter().any(|c| c.as_str() == EVIDENCE));
     assert!(inv.discard.iter().any(|c| c.as_str() == EVIDENCE));
 }
@@ -239,30 +215,15 @@ fn evidence_fast_event_discards_exactly_once() {
     // Defeat an enemy to open the after-defeat window, then play Evidence!
     // 01022 from hand in it. Invariant guard for the PlayFromHand migration
     // (Slice D #423): the event must be discarded exactly once — no double-flush.
-    let (inv_id, enemy_id, _loc_id, state) = investigator_with_evidence_and_enemy(2);
+    let session = play_evidence(fight_board(holding_evidence(), 2));
 
-    let result = TestSession::new(state)
-        .resolve_choices(|c| {
-            c.commit_cards(&[]).pick_single(OptionId(0));
-        })
-        .take(&fight_action(inv_id, enemy_id))
-        .finish();
-
-    assert_eq!(
-        result
-            .events
-            .iter()
-            .filter(|e| {
-                matches!(
-                    e,
-                    Event::CardDiscarded {
-                        from: Zone::Hand,
-                        ..
-                    }
-                )
-            })
-            .count(),
+    assert_event_count!(
+        session.events(),
         1,
+        Event::CardDiscarded {
+            from: Zone::Hand,
+            ..
+        }
     );
 }
 
@@ -272,25 +233,23 @@ fn playing_evidence_from_hand_pays_its_resource_cost() {
     // window deducts the cost (RR p.22, Initiation Sequence) — a Fast play
     // skips the *action* cost, not the *resource* cost. The fixture starts at
     // the default 5 resources.
-    let (inv_id, enemy_id, _loc_id, state) = investigator_with_evidence_and_enemy(2);
+    let board = fight_board(holding_evidence(), 2);
+    let session = board.session();
     assert_eq!(
-        state.investigators[&inv_id].resources, 5,
+        session.state().investigators[&INV].resources,
+        5,
         "fixture invariant: 5 starting resources",
     );
 
-    let result = TestSession::new(state)
-        .resolve_choices(|c| {
-            c.commit_cards(&[]).pick_single(OptionId(0));
-        })
-        .take(&fight_action(inv_id, enemy_id))
-        .finish();
+    let session = session.take(&FIGHT).commit(&[]).pick(evidence_in_hand());
 
     assert_event!(
-        result.events,
-        Event::ResourcesPaid { investigator, amount } if *investigator == inv_id && *amount == 1
+        session.events(),
+        Event::ResourcesPaid { investigator, amount } if *investigator == INV && *amount == 1
     );
     assert_eq!(
-        result.state.investigators[&inv_id].resources, 4,
+        session.state().investigators[&INV].resources,
+        4,
         "5 - cost 1 = 4 after playing Evidence!",
     );
 }
@@ -301,89 +260,49 @@ fn evidence_not_offered_when_resources_below_cost() {
     // after-defeat window must not offer it (RR p.22: the cost must be
     // established as payable before initiation). Mirror of the #495 change-
     // game-state suppression, but on affordability.
-    let (inv_id, enemy_id, _loc_id, mut state) = investigator_with_evidence_and_enemy(2);
-    state.investigators.get_mut(&inv_id).unwrap().resources = 0;
+    let session = defeat_the_enemy(fight_board(holding_evidence().resources(0), 2));
 
-    let after_fight = test_support::take_turn_action(state, &fight_action(inv_id, enemy_id));
-    let result = engine::apply(
-        after_fight.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        }),
-    );
-
-    let EngineOutcome::AwaitingInput { request, .. } = &result.outcome else {
-        panic!("expected AwaitingInput, got {:?}", result.outcome);
-    };
+    // No window offering Evidence! opened: play is back at the turn menu.
+    session.assert_at_turn_menu(INV);
     assert!(
-        !request.options.iter().any(|o| o.label.contains(EVIDENCE)),
-        "Evidence! must not be offered with insufficient resources; request = {request:?}",
-    );
-    assert!(
-        result.state.investigators[&inv_id]
+        session.state().investigators[&INV]
             .hand
             .iter()
             .any(|c| c.as_str() == EVIDENCE),
         "Evidence! stays in hand (never played)",
     );
-    assert_no_event!(result.events, Event::CluePlaced { .. });
+    assert_no_event!(session.events(), Event::CluePlaced { .. });
 }
 
 #[test]
 fn window_offers_both_in_play_reaction_and_hand_evidence() {
-    let inv_id = InvestigatorId(1);
-    let enemy_id = EnemyId(100);
-    let loc_id = LocationId(10);
-
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(loc_id);
-    inv.skills.combat = 4;
-    inv.hand.push(CardCode::new(EVIDENCE));
-    // Roland's investigator card in play → his after-defeat reaction also matches.
-    inv.cards_in_play.push(CardInPlay::enter_play(
-        CardCode::new("01001"),
-        CardInstanceId(1),
-        Owner::Investigator(InvestigatorId(1)),
+    // Roland Banks seated (01001, combat 4): his investigator card's
+    // after-defeat reaction also matches.
+    let offered = defeat_the_enemy(fight_board(
+        seat(1).at(HERE).as_card("01001").hand([EVIDENCE]),
+        2,
     ));
+    let rolands_card = offered.state().investigators[&INV].card_anchor();
+    assert_eq!(
+        (
+            offered.offered_at(&rolands_card),
+            offered.offered_at(&evidence_in_hand()),
+            offered.prompt().options.len(),
+        ),
+        (1, 1, 2),
+        "the window offers Roland's reaction and the hand Evidence!: {:?}",
+        offered.prompt(),
+    );
 
-    let mut enemy = test_support::test_enemy(100, "Mock Ghoul");
-    enemy.fight = 1;
-    enemy.max_health = 1;
-    enemy.damage = 0;
-    enemy.engaged_with = Some(inv_id);
-    enemy.current_location = Some(loc_id); // co-located: Fight is location-gated (#401)
+    // Pick the hand play, then skip the remaining reaction.
+    let session = offered.pick(evidence_in_hand()).skip();
 
-    let mut loc = test_support::test_location(10, "Study");
-    loc.clues = 2;
-
-    let state = GameStateBuilder::new()
-        .with_round(0)
-        .open_turn(inv_id)
-        .with_investigator(inv)
-        .with_enemy(enemy)
-        .with_location(loc)
-        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
-        .build();
-
-    // Two options: OptionId(0) = Roland's in-play reaction, OptionId(1) = hand
-    // Evidence!. Pick the hand play, then skip the remaining reaction.
-    let result = TestSession::new(state)
-        .resolve_choices(|c| {
-            c.commit_cards(&[]).pick_single(OptionId(1)).skip();
-        })
-        .take(&fight_action(inv_id, enemy_id))
-        .finish();
-
-    assert!(matches!(
-        result.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
+    session.assert_at_turn_menu(INV);
     assert_event!(
-        result.events,
-        Event::CardPlayed { investigator, code } if *investigator == inv_id && code.as_str() == EVIDENCE
+        session.events(),
+        Event::CardPlayed { investigator, code } if *investigator == INV && code.as_str() == EVIDENCE
     );
     // Evidence! discovered its clue; Roland's reaction was skipped.
-    assert_event!(result.events, Event::CluePlaced { investigator, count: 1 } if *investigator == inv_id);
-    assert_eq!(result.state.investigators[&inv_id].clues, 1);
+    assert_event!(session.events(), Event::CluePlaced { investigator, count: 1 } if *investigator == INV);
+    assert_eq!(session.state().investigators[&INV].clues, 1);
 }
