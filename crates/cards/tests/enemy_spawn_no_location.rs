@@ -12,60 +12,60 @@
 //! encounter discard pile without any further effects."
 
 use cards::REGISTRY;
-use game_core::action::{Action, EngineRecord};
-use game_core::engine::{ApplyResult, EngineOutcome};
-use game_core::state::{CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support::{self, ScriptedResolver};
+use game_core::state::{
+    CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame,
+    MythosResume, Phase,
+};
+use game_core::test_support::{self, seat, TestSession};
 
 /// Flesh-Eater (01118) — Core enemy, "Spawn - Attic" (location 01113).
 const FLESH_EATER: &str = "01118";
 /// The Study (01111) — The Gathering's starting location.
 const STUDY: &str = "01111";
 
+const INV: InvestigatorId = InvestigatorId(1);
+const HERE: LocationId = LocationId(20);
+
 #[ctor::ctor(unsafe)]
 fn install_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// Reveal the top encounter card for investigator 1.
-fn reveal_top(state: GameState) -> ApplyResult {
-    test_support::drive(
-        state,
-        Action::Engine(EngineRecord::EncounterCardRevealed {
-            investigator: InvestigatorId(1),
-        }),
-        ScriptedResolver::new(),
-    )
+/// Mythos step 1.4: investigator 1, at the Study, to draw `state`'s top
+/// encounter card.
+fn drawing(top: &str) -> GameState {
+    let mut study = test_support::test_location(HERE.0, "Study");
+    study.code = CardCode::new(STUDY);
+    let mut state = GameStateBuilder::new()
+        .with_seat(seat(1).at(HERE))
+        .with_location(study)
+        .with_turn_order([INV])
+        .with_phase(Phase::Mythos)
+        .with_phase_anchor(MythosPhaseFrame {
+            resume: MythosResume::AfterDraws,
+        })
+        .with_mythos_draw_remaining([INV])
+        .build();
+    state.encounter_deck.push_back(CardCode::new(top));
+    state
 }
 
 #[test]
 fn enemy_with_offboard_spawn_location_is_discarded_not_rejected() {
     // Investigator at the Study; the Attic (Flesh-Eater's spawn location) is
     // NOT in play. Flesh-Eater on top of the encounter deck.
-    let mut study = test_support::test_location(20, "Study");
-    study.code = CardCode::new(STUDY);
-    let mut state = GameStateBuilder::new()
-        .with_investigator_at(test_support::test_investigator(1), LocationId(20))
-        .with_location(study)
-        .with_turn_order([InvestigatorId(1)])
-        .build();
-    state.encounter_deck.push_back(CardCode::new(FLESH_EATER));
+    let session = TestSession::new(drawing(FLESH_EATER)).confirm();
 
-    let result = reveal_top(state);
-
-    assert_eq!(
-        result.outcome,
-        EngineOutcome::Done,
-        "an off-board spawn location must not reject the draw: {:?}",
-        result.outcome,
-    );
+    // An off-board spawn location must not reject the draw: play runs on out
+    // of the Mythos phase to the turn.
+    session.assert_at_turn_menu(INV);
     assert!(
-        result.state.enemies.is_empty(),
+        session.state().enemies.is_empty(),
         "the enemy does not spawn (its location is not in play)",
     );
     assert!(
-        result
-            .state
+        session
+            .state()
             .encounter_discard
             .contains(&CardCode::new(FLESH_EATER)),
         "the enemy card is placed in the encounter discard pile (RR p.24)",
