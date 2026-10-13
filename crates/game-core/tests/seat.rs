@@ -7,8 +7,12 @@
 //! after build. Neither stands in for a printed card.
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Skills};
-use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support::{self, seat, MockRegistry};
+use game_core::engine::enumerate::TurnAction;
+use game_core::state::{
+    CardCode, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId, LocationId, Owner,
+    UseKind,
+};
+use game_core::test_support::{self, clues, seat, uses, MockRegistry, SeatLookup as _};
 
 /// An investigator card printed 2/5/1/4, 7 health, 9 sanity.
 const SEAT_INV: &str = "_seat_inv";
@@ -67,13 +71,18 @@ fn install_mock_registry() {
                 play_only_during_turn: false,
             },
         ))
+        // Registered, so it is playable: the engine plays only cards it knows.
+        .with_abilities(ASSET, Vec::new)
         .install();
 }
 
 #[test]
 fn a_bare_seat_is_the_stock_test_investigator() {
     let state = GameStateBuilder::new().with_seat(seat(1)).build();
-    assert_eq!(state.investigators[&INV], test_support::test_investigator(1));
+    assert_eq!(
+        state.investigators[&INV],
+        test_support::test_investigator(1)
+    );
 }
 
 #[test]
@@ -148,10 +157,152 @@ fn the_scalar_and_zone_setters_fill_what_they_name() {
             CardCode::new("_x3")
         ],
     );
+    assert_eq!((inv.resources, inv.clues, inv.actions_remaining), (2, 4, 1));
+}
+
+#[test]
+fn in_play_cards_get_distinct_ids_and_are_found_by_code() {
+    let state = GameStateBuilder::new()
+        .with_seat(seat(1).in_play(["_p1", "_p2"]))
+        .with_seat(seat(2).in_play(["_p3"]))
+        .build();
+    let ids = [
+        state.in_play(INV, "_p1"),
+        state.in_play(INV, "_p2"),
+        state.in_play(InvestigatorId(2), "_p3"),
+    ];
+    assert_ne!(ids[0], ids[1]);
+    assert_ne!(ids[0], ids[2]);
+    assert_ne!(ids[1], ids[2]);
+    let inv = &state.investigators[&INV];
+    let p1 = &inv.cards_in_play[0];
+    assert_eq!((p1.code.as_str(), p1.instance_id), ("_p1", ids[0]));
+    assert_eq!(p1.owner, Owner::Investigator(INV));
+    assert!(p1.uses.is_empty(), "a plain code enters with no uses");
+}
+
+#[test]
+fn a_card_entry_carries_its_uses_and_clues() {
+    let state = GameStateBuilder::new()
+        .with_seat(
+            seat(1)
+                .in_play([("_supplies", uses(UseKind::Supplies, 3))])
+                .threat_area([("_clued", clues(2))]),
+        )
+        .build();
+    let inv = &state.investigators[&INV];
+    assert_eq!(inv.cards_in_play[0].uses[&UseKind::Supplies], 3);
+    assert_eq!(inv.threat_area[0].clues, 2);
+}
+
+#[test]
+fn threat_area_cards_land_there_and_the_lookup_finds_them() {
+    let state = GameStateBuilder::new()
+        .with_seat(seat(1).threat_area(["_treachery"]))
+        .build();
+    let inv = &state.investigators[&INV];
+    assert!(inv.cards_in_play.is_empty());
+    assert_eq!(inv.threat_area[0].code.as_str(), "_treachery");
     assert_eq!(
-        (inv.resources, inv.clues, inv.actions_remaining),
-        (2, 4, 1)
+        inv.threat_area[0].owner,
+        Owner::EncounterDeck,
+        "a card with no printed player cardtype is the encounter deck's",
     );
+    assert_eq!(
+        state.in_play(INV, "_treachery"),
+        inv.threat_area[0].instance_id
+    );
+}
+
+#[test]
+fn a_player_card_in_the_threat_area_is_its_bearers() {
+    let state = GameStateBuilder::new()
+        .with_seat(seat(1).threat_area([ASSET]))
+        .build();
+    assert_eq!(
+        state.investigators[&INV].threat_area[0].owner,
+        Owner::Investigator(INV)
+    );
+}
+
+#[test]
+fn in_play_as_keeps_its_id_and_minting_skips_past_it() {
+    let state = GameStateBuilder::new()
+        .with_seat(
+            seat(1)
+                .in_play(["_minted"])
+                .in_play_as(CardInstanceId(0), "_chosen"),
+        )
+        .build();
+    assert_eq!(state.in_play(INV, "_chosen"), CardInstanceId(0));
+    assert_ne!(state.in_play(INV, "_minted"), CardInstanceId(0));
+}
+
+#[test]
+fn a_card_the_engine_mints_after_build_gets_a_fresh_id() {
+    let session = GameStateBuilder::new()
+        .with_location(test_support::test_location(10, "Study"))
+        .with_seat(
+            seat(1)
+                .at(HERE)
+                .hand([ASSET])
+                .in_play_as(CardInstanceId(0), "_chosen")
+                .in_play(["_minted"]),
+        )
+        .open_turn(INV)
+        .session()
+        .take(&TurnAction::PlayCard {
+            investigator: INV,
+            hand_index: 0,
+        });
+    let state = session.state();
+    let played = state.in_play(INV, ASSET);
+    assert_ne!(played, state.in_play(INV, "_chosen"));
+    assert_ne!(played, state.in_play(INV, "_minted"));
+}
+
+#[test]
+fn a_hand_built_card_present_at_build_is_not_reminted() {
+    let mut investigator = test_support::test_investigator(1);
+    investigator.current_location = Some(HERE);
+    investigator.hand = vec![CardCode::new(ASSET)];
+    investigator.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new("_hand_built"),
+        CardInstanceId(0),
+        Owner::Investigator(INV),
+    ));
+    let session = GameStateBuilder::new()
+        .with_location(test_support::test_location(10, "Study"))
+        .with_investigator(investigator)
+        .open_turn(INV)
+        .session()
+        .take(&TurnAction::PlayCard {
+            investigator: INV,
+            hand_index: 0,
+        });
+    assert_ne!(session.state().in_play(INV, ASSET), CardInstanceId(0));
+}
+
+#[test]
+#[should_panic(expected = "_absent")]
+fn the_lookup_panics_when_no_card_matches() {
+    let state = GameStateBuilder::new()
+        .with_seat(seat(1).in_play(["_present"]))
+        .build();
+    let _ = state.in_play(INV, "_absent");
+}
+
+#[test]
+#[should_panic(expected = "2 cards")]
+fn the_lookup_panics_when_two_cards_match() {
+    let state = GameStateBuilder::new()
+        .with_seat(
+            seat(1)
+                .in_play_as(CardInstanceId(5), "_twice")
+                .in_play_as(CardInstanceId(6), "_twice"),
+        )
+        .build();
+    let _ = state.in_play(INV, "_twice");
 }
 
 #[test]

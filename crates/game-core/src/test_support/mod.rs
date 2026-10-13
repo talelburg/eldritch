@@ -325,5 +325,5 @@ pub use resolver::{
     perform_skill_test_no_commits, take_turn_action, ChoiceResolver, ScriptedResolver,
     TakeOneFastPlay,
 };
-pub use seat::{seat, Seat};
+pub use seat::{clues, seat, uses, CardSetup, Seat, SeatCard, SeatLookup};
 pub use session::TestSession;
