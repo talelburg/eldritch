@@ -37,7 +37,7 @@ fn at_commit_window(copies: usize) -> TestSession {
 /// Committing two copies of a `Max 1 committed` card to one test is rejected.
 #[test]
 fn committing_over_the_cap_is_rejected() {
-    let session = at_commit_window(2).commit(&[CardCode::new(GUTS), CardCode::new(GUTS)]);
+    let session = at_commit_window(2).commit(&[GUTS, GUTS]);
     // Two copies of Guts (Max 1 committed) must be rejected.
     session.expect_rejected();
     // Validate-first: the in-flight test is untouched, still awaiting commit.
@@ -47,7 +47,7 @@ fn committing_over_the_cap_is_rejected() {
 /// Committing a single copy is within the cap and resolves normally.
 #[test]
 fn committing_at_the_cap_is_allowed() {
-    let session = at_commit_window(1).commit(&[CardCode::new(GUTS)]);
+    let session = at_commit_window(1).commit(&[GUTS]);
     session.assert_at_turn_menu(INV);
     assert!(!session.state().has_skill_test_in_flight());
     assert!(

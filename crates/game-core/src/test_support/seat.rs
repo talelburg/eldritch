@@ -25,9 +25,10 @@ use std::collections::BTreeMap;
 use card_dsl::card_data::{CardKind, CardType};
 
 use crate::card_registry;
+use crate::engine::OptionTarget;
 use crate::state::{
     CardCode, CardInPlay, CardInstanceId, GameState, GameStateBuilder, Investigator,
-    InvestigatorId, LocationId, Owner, Skills, Status, UseKind,
+    InvestigatorId, LocationId, Owner, SkillKind, Skills, Status, UseKind,
 };
 use crate::test_support::test_investigator;
 
@@ -141,6 +142,21 @@ impl Seat {
     /// Set the investigator's skills, overriding any printed ones.
     pub fn skills(mut self, skills: Skills) -> Self {
         self.investigator.skills = skills;
+        self
+    }
+
+    /// Set one skill to `value`, keeping the other three: `seat(1).skill(SkillKind::Combat, 5)`
+    /// is the stock 3/3/3/3 with combat 5. Like [`skills`](Self::skills), a
+    /// later call wins over [`as_card`](Self::as_card)'s printed value.
+    pub fn skill(mut self, kind: SkillKind, value: i8) -> Self {
+        let skills = &mut self.investigator.skills;
+        let slot = match kind {
+            SkillKind::Willpower => &mut skills.willpower,
+            SkillKind::Intellect => &mut skills.intellect,
+            SkillKind::Combat => &mut skills.combat,
+            SkillKind::Agility => &mut skills.agility,
+        };
+        *slot = value;
         self
     }
 
@@ -267,9 +283,11 @@ fn owner(zone: SeatZone, code: &CardCode, investigator: InvestigatorId) -> Owner
 impl GameStateBuilder {
     /// Add the investigator `seat` describes, minting instance ids for the
     /// cards it places. Minting continues past every id already staged on the
-    /// builder and every [`in_play_as`](Seat::in_play_as) id, so no two cards
-    /// share one, and [`build`](GameStateBuilder::build) seeds the state's
-    /// counter past them all.
+    /// builder and every [`in_play_as`](Seat::in_play_as) id, and
+    /// [`build`](GameStateBuilder::build) seeds the state's counter past them
+    /// all. A card staged *after* this seat, with a hand-picked id a seat
+    /// already minted, is caught at `build`, which panics on any two cards
+    /// sharing an id.
     ///
     /// Lives here (test-only), like [`session`](GameStateBuilder::session), so
     /// the production builder carries no test dependency.
@@ -282,19 +300,19 @@ impl GameStateBuilder {
             mut investigator,
             cards,
         } = seat;
+        let chosen: Vec<CardInstanceId> = cards.iter().filter_map(|placed| placed.id).collect();
         let mut taken: Vec<CardInstanceId> = self.card_instance_ids_in_use().collect();
-        for id in cards.iter().filter_map(|placed| placed.id) {
+        for &id in &chosen {
             assert!(
                 !taken.contains(&id),
                 "with_seat: in_play_as({id:?}) is already in use on this board"
             );
             taken.push(id);
         }
-        let mut next = taken
+        let mut next = chosen
             .iter()
             .map(|id| id.0.saturating_add(1))
-            .max()
-            .unwrap_or(0);
+            .fold(self.next_card_instance_id(), u32::max);
         for Placed { zone, id, card } in cards {
             let instance_id = id.unwrap_or_else(|| {
                 let minted = CardInstanceId(next);
@@ -324,6 +342,18 @@ pub trait SeatLookup {
     /// Panics unless exactly one card matches, listing what is there. Seat two
     /// copies with [`Seat::in_play_as`] and address them by id.
     fn in_play(&self, investigator: InvestigatorId, code: impl Into<CardCode>) -> CardInstanceId;
+
+    /// The [`CardInstance`](OptionTarget::CardInstance) anchor of that same
+    /// card — what [`pick`](super::TestSession::pick) and
+    /// [`offered_at`](super::TestSession::offered_at) take for a reaction,
+    /// forced or Fast ability on a seated card.
+    ///
+    /// # Panics
+    ///
+    /// As [`in_play`](Self::in_play).
+    fn card(&self, investigator: InvestigatorId, code: impl Into<CardCode>) -> OptionTarget {
+        OptionTarget::CardInstance(self.in_play(investigator, code))
+    }
 }
 
 impl SeatLookup for GameState {

@@ -16,8 +16,7 @@ use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId, LocationId,
-    TokenModifiers,
+    ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId, LocationId, TokenModifiers,
 };
 use game_core::test_support::{self, seat, MockRegistry, TestSession};
 
@@ -82,7 +81,7 @@ fn board() -> GameStateBuilder {
 
 /// Fight the Ghoul, committing `commit` to the test. The attack resolves back
 /// to the turn menu.
-fn fight_committing(commit: &[CardCode]) -> TestSession {
+fn fight_committing(commit: &[&str]) -> TestSession {
     let session = board()
         .session()
         .take(&TurnAction::Fight {
@@ -98,7 +97,7 @@ fn fight_committing(commit: &[CardCode]) -> TestSession {
 /// `1 base + 1 bonus = 2` damage.
 #[test]
 fn committing_vicious_blow_adds_one_attack_damage() {
-    let session = fight_committing(&[CardCode::new(SKILL)]);
+    let session = fight_committing(&[SKILL]);
 
     assert_event!(session.events(), Event::EnemyDamaged { amount: 2, .. });
     assert_eq!(session.state().enemies[&GHOUL].damage, 2);

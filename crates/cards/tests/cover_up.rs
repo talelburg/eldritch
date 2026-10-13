@@ -161,7 +161,7 @@ fn investigate_with_deduction_and_play_cover_up(board: GameStateBuilder) -> Test
     let offered = board
         .session()
         .take(&TurnAction::Investigate { investigator: INV })
-        .commit(&[CardCode::new(DEDUCTION)]);
+        .commit(&[DEDUCTION]);
     let cover_up = cover_up_of(offered.state(), INV);
     offered.pick(cover_up)
 }

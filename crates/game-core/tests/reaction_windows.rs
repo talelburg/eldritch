@@ -176,7 +176,7 @@ fn fight_to_defeat_scenario(in_play: &[&str]) -> GameStateBuilder {
 
 /// `INV` fights the Ghoul and commits `commit` to the test. The session rests
 /// at the reaction window if one opened, or back at the turn menu.
-fn fight_committing(board: GameStateBuilder, commit: &[CardCode]) -> TestSession {
+fn fight_committing(board: GameStateBuilder, commit: &[&str]) -> TestSession {
     board
         .session()
         .take(&TurnAction::Fight {
@@ -511,7 +511,7 @@ fn reaction_window_closes_before_on_skill_test_resolution_fires() {
     );
 
     // Commit the card → drives through follow-up → queues window → suspends.
-    let paused_reaction = fight_committing(board, &[CardCode::new("COMMITTED")]);
+    let paused_reaction = fight_committing(board, &["COMMITTED"]);
     let reaction = card(&paused_reaction, INV, ROLAND_REACTION);
     // The commit suspends at the reaction window.
     assert_offers_only(&paused_reaction, &reaction, 1);

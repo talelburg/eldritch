@@ -113,8 +113,7 @@ fn drawing_grasping_hands(investigator: Seat, survivor: bool) -> GameState {
 /// Draw the top encounter card for investigator 1, committing `commit` at the
 /// revelation's skill-test window, and play on to the next rest.
 fn reveal_committing(state: GameState, commit: &[&str]) -> TestSession {
-    let commit: Vec<CardCode> = commit.iter().map(|c| CardCode::new(*c)).collect();
-    TestSession::new(state).confirm().commit(&commit)
+    TestSession::new(state).confirm().commit(commit)
 }
 
 /// [`reveal_committing`], ended: the commit step's state, events and outcome.

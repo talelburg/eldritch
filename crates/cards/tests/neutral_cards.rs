@@ -66,7 +66,7 @@ fn guts_board(investigator: Seat, token: ChaosToken) -> TestSession {
 fn perform_and_commit_guts(session: TestSession) -> TestSession {
     session
         .test_skill(INV, SkillKind::Willpower, 1)
-        .commit(&[CardCode::new(GUTS)])
+        .commit(&[GUTS])
 }
 
 #[test]

@@ -96,8 +96,7 @@ fn commit_window_discards_committed_cards_into_discard_pile() {
     // events fired with `from: Hand`. Icon counting is exercised
     // separately via the cards integration test (this one
     // doesn't install a registry, so icon contribution is 0).
-    let session = paused_at_commit_window(commit_board(&["A", "B"]))
-        .commit(&[CardCode::new("A"), CardCode::new("B")]);
+    let session = paused_at_commit_window(commit_board(&["A", "B"])).commit(&["A", "B"]);
 
     session.assert_at_turn_menu(INV);
     let result = session.finish();

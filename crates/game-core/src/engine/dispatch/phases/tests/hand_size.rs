@@ -95,7 +95,7 @@ fn check_hand_size_suspends_for_over_cap_investigator() {
         }
     );
     // The prompt is investigator 1's: their cards answer it.
-    let session = session.choose_from_hand(&[CardCode::new("x0"), CardCode::new("x1")]);
+    let session = session.choose_from_hand(&["x0", "x1"]);
     assert_eq!(
         session.state().investigators[&InvestigatorId(1)].hand.len(),
         8
@@ -149,8 +149,7 @@ fn upkeep_resume_parks_at_hand_size_discard() {
 fn resume_hand_size_discard_discards_overflow_and_advances_to_mythos() {
     let id = InvestigatorId(1);
     // 10-card hand: discard exactly 2 (c0 and c1) → land at 8.
-    let session = ending_upkeep_with_hands(&[(1, hand("c", 10))])
-        .choose_from_hand(&[CardCode::new("c0"), CardCode::new("c1")]);
+    let session = ending_upkeep_with_hands(&[(1, hand("c", 10))]).choose_from_hand(&["c0", "c1"]);
 
     // The discard drains the hand-size queue, so 4.6 runs and the cascade
     // steps into Mythos, pausing at the step-1.4 encounter-draw prompt.
@@ -184,7 +183,7 @@ fn resume_hand_size_discard_rejects_wrong_count() {
     // Need to discard 2; choosing 1 must reject with state untouched.
     let session = ending_upkeep_with_hands(&[(1, hand("c", 10))]);
     let events_before = session.events().len();
-    let session = session.choose_from_hand(&[CardCode::new("c0")]);
+    let session = session.choose_from_hand(&["c0"]);
 
     session.expect_rejected();
     assert_eq!(
@@ -195,7 +194,7 @@ fn resume_hand_size_discard_rejects_wrong_count() {
     assert_eq!(session.events().len(), events_before, "rejected: no events");
     // Rejected: still pending — the same prompt takes a correct answer.
     assert_at_hand_size_discard(&session);
-    let session = session.choose_from_hand(&[CardCode::new("c0"), CardCode::new("c1")]);
+    let session = session.choose_from_hand(&["c0", "c1"]);
     assert_eq!(session.state().investigators[&id].hand.len(), 8);
 }
 
@@ -231,13 +230,13 @@ fn resume_hand_size_discard_sequences_investigators_in_player_order() {
     let session = ending_upkeep_with_hands(&[(1, hand("a", 9)), (2, hand("b", 9))]);
 
     // inv1 resolves first → still pending for inv2, phase still Upkeep.
-    let session = session.choose_from_hand(&[CardCode::new("a0")]);
+    let session = session.choose_from_hand(&["a0"]);
     assert_at_hand_size_discard(&session);
     assert_eq!(session.state().investigators[&inv1].hand.len(), 8);
     assert_eq!(session.state().investigators[&inv2].hand.len(), 9);
 
     // The prompt is now inv2's: their card answers it.
-    let session = session.choose_from_hand(&[CardCode::new("b0")]);
+    let session = session.choose_from_hand(&["b0"]);
     assert_eq!(session.state().investigators[&inv2].hand.len(), 8);
 }
 

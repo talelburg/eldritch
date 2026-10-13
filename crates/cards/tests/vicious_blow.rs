@@ -10,8 +10,7 @@ use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId, LocationId,
-    TokenModifiers,
+    ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId, LocationId, TokenModifiers,
 };
 use game_core::test_support::{self, seat, TestSession};
 
@@ -29,7 +28,7 @@ fn install() {
 /// dealt damage is observable, not clamped), Vicious Blow in hand, a
 /// `Numeric(0)` chaos bag for a deterministic success, fighting it and
 /// committing `commit`.
-fn fight_committing(commit: &[CardCode]) -> TestSession {
+fn fight_committing(commit: &[&str]) -> TestSession {
     let mut enemy = test_support::test_enemy(ENEMY.0, "Ghoul");
     enemy.fight = 2;
     enemy.max_health = 10;
@@ -53,7 +52,7 @@ fn fight_committing(commit: &[CardCode]) -> TestSession {
 /// Committing Vicious Blow to a successful Fight deals `1 base + 1 = 2`.
 #[test]
 fn committing_vicious_blow_adds_one_attack_damage() {
-    let session = fight_committing(&[CardCode::new(VICIOUS_BLOW)]);
+    let session = fight_committing(&[VICIOUS_BLOW]);
 
     session.assert_at_turn_menu(INV);
     assert_event!(session.events(), Event::EnemyDamaged { amount: 2, .. });

@@ -28,7 +28,7 @@
 //! session.assert_at_turn_menu(InvestigatorId(2));
 //! ```
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::rng::RngState;
 use crate::scenario::ScenarioId;
@@ -449,10 +449,18 @@ impl GameStateBuilder {
     ///
     /// # Panics
     ///
-    /// Panics if an enemy was engaged via
+    /// Panics if two staged cards share a card-instance id (investigator
+    /// cards aside), or if an enemy was engaged via
     /// [`with_enemy_engaged`](Self::with_enemy_engaged) with an investigator
     /// that was never added.
     pub fn build(mut self) -> GameState {
+        let mut seen = BTreeSet::new();
+        for id in self.card_instance_ids_in_use() {
+            assert!(
+                seen.insert(id),
+                "GameStateBuilder::build: two staged cards share the instance id {id:?}",
+            );
+        }
         let card_instance_ids = Counter::at(self.next_card_instance_id());
         for (enemy, investigator) in self.engagements {
             let location = self

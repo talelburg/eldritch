@@ -99,8 +99,7 @@ fn board() -> TestSession {
 /// inside the test, after the commit window and before the token. Beat Cop's
 /// `[fast]` ability makes both windows open.
 fn to_st2(session: TestSession, action: &TurnAction, commit: &[&str]) -> TestSession {
-    let commit: Vec<CardCode> = commit.iter().copied().map(CardCode::new).collect();
-    session.take(action).skip().commit(&commit)
+    session.take(action).skip().commit(commit)
 }
 
 /// [`to_st2`], then take the one offered fast ability at the ST.2 window: Beat

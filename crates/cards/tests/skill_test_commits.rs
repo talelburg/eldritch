@@ -60,8 +60,7 @@ fn test_with_hand(hand: &[&str]) -> TestSession {
 
 /// [`test_with_hand`], committing `commit`.
 fn commit_from(hand: &[&str], commit: &[&str]) -> TestSession {
-    let codes: Vec<CardCode> = commit.iter().copied().map(CardCode::new).collect();
-    test_with_hand(hand).commit(&codes)
+    test_with_hand(hand).commit(commit)
 }
 
 #[test]

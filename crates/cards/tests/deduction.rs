@@ -49,10 +49,9 @@ fn board_with_deduction(initial_clues: u8, shroud: u8) -> TestSession {
 /// Investigate at `HERE`, committing `commits`; the investigation resolves
 /// and play is back at the turn menu.
 fn investigate_committing(session: TestSession, commits: &[&str]) -> ApplyResult {
-    let codes: Vec<CardCode> = commits.iter().copied().map(CardCode::new).collect();
     let session = session
         .take(&TurnAction::Investigate { investigator: INV })
-        .commit(&codes);
+        .commit(commits);
     session.assert_at_turn_menu(INV);
     session.finish()
 }
@@ -152,7 +151,7 @@ fn non_investigate_test_does_not_fire_deductions_bonus() {
     let session = board_with_deduction(1, 4);
     let session = session
         .test_skill(INV, SkillKind::Intellect, 4)
-        .commit(&[CardCode::new(DEDUCTION)]);
+        .commit(&[DEDUCTION]);
     session.assert_at_turn_menu(INV);
     let result = session.finish();
 

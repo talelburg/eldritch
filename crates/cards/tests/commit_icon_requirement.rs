@@ -35,7 +35,6 @@ fn install() {
 /// Drive a difficulty-1 test of `skill`, on the investigator's turn holding
 /// `hand` with a deterministic bag, to the commit window and commit `commits`.
 fn commit_to(hand: &[&str], skill: SkillKind, commits: &[&str]) -> TestSession {
-    let codes: Vec<CardCode> = commits.iter().copied().map(CardCode::new).collect();
     GameStateBuilder::new()
         // Somewhere for a success draw to land; an empty deck would apply the
         // deck-out horror (#636), irrelevant noise here.
@@ -49,7 +48,7 @@ fn commit_to(hand: &[&str], skill: SkillKind, commits: &[&str]) -> TestSession {
         .open_turn(INV)
         .session()
         .test_skill(INV, skill, 1)
-        .commit(&codes)
+        .commit(commits)
 }
 
 /// Assert `session`'s commit was rejected and left the hand and the in-flight

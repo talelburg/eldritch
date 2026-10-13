@@ -276,23 +276,22 @@ fn remove_clues_saturates_at_zero() {
     assert_eq!(clues_on_clue_card(session.state()), 0);
 }
 
-fn codes(codes: &[&str]) -> Vec<CardCode> {
-    codes.iter().copied().map(CardCode::new).collect()
-}
-
 #[test]
 fn take_encounter_top_and_discard_encounter_card_move_the_top_card_to_the_discard() {
     let mut state = state_with_act(DIG_ACT);
     // No builder setter stages the encounter deck or discard.
-    state.encounter_deck = codes(&["TOP", "NEXT"]).into();
-    state.encounter_discard = codes(&["OLD"]);
+    state.encounter_deck = ["TOP", "NEXT"].map(CardCode::new).into();
+    state.encounter_discard = vec![CardCode::new("OLD")];
     let session = run(state);
     // The next round's encounter draw has not been taken yet.
     assert_eq!(
         Vec::from(session.state().encounter_deck.clone()),
-        codes(&["NEXT"])
+        [CardCode::new("NEXT")]
     );
-    assert_eq!(session.state().encounter_discard, codes(&["OLD", "TOP"]));
+    assert_eq!(
+        session.state().encounter_discard,
+        ["OLD", "TOP"].map(CardCode::new)
+    );
     assert_event!(
         session.events(),
         Event::CardDiscarded {
@@ -307,10 +306,10 @@ fn take_encounter_top_and_discard_encounter_card_move_the_top_card_to_the_discar
 fn take_encounter_top_on_an_empty_deck_takes_nothing_and_does_not_reshuffle() {
     let mut state = state_with_act(DIG_ACT);
     // No builder setter stages the encounter discard.
-    state.encounter_discard = codes(&["OLD"]);
+    state.encounter_discard = vec![CardCode::new("OLD")];
     let session = run(state);
     assert!(session.state().encounter_deck.is_empty());
-    assert_eq!(session.state().encounter_discard, codes(&["OLD"]));
+    assert_eq!(session.state().encounter_discard, [CardCode::new("OLD")]);
     assert_no_event!(session.events(), Event::EncounterDeckShuffled);
     assert_no_event!(session.events(), Event::CardDiscarded { .. });
 }

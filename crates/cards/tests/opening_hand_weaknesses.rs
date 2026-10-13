@@ -214,7 +214,7 @@ fn mulligan_redraw_weakness_is_set_aside() {
     //   → deck empty, break.
     // MulliganPerformed{redrawn_count:1}.
     // Drain: setaside[weakness] → deck, shuffle.
-    let session = mulligan.choose_from_hand(&[filler(1)]);
+    let session = mulligan.choose_from_hand(&[filler(1).as_str()]);
     // The mulligan, not rejected, closes onto the first turn.
     session.assert_at_turn_menu(INV);
 

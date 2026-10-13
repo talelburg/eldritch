@@ -47,7 +47,9 @@ use std::collections::VecDeque;
 
 use crate::action::{Action, InputResponse, PlayerAction};
 use crate::engine::enumerate::TurnAction;
-use crate::engine::{enumerate, ApplyResult, EngineOutcome, InputRequest, OptionId, OptionTarget};
+use crate::engine::{
+    enumerate, ApplyResult, ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget,
+};
 use crate::state::{CardCode, GameState, InvestigatorId};
 
 /// The test harness's reply-policy seam: provide a response for an
@@ -140,9 +142,9 @@ impl ScriptedResolver {
     /// Pass `&[]` to commit nothing — the canonical empty-commit
     /// helper for tests that aren't exercising the commit-window
     /// itself.
-    pub fn commit_cards(&mut self, codes: &[CardCode]) -> &mut Self {
+    pub fn commit_cards(&mut self, codes: &[&str]) -> &mut Self {
         self.steps
-            .push_back(ScriptedStep::CommitCards(codes.to_vec()));
+            .push_back(ScriptedStep::CommitCards(card_codes(codes)));
         self
     }
 
@@ -182,6 +184,13 @@ impl ChoiceResolver for ScriptedResolver {
             )),
         }
     }
+}
+
+/// The [`CardCode`]s a by-code hand step names. The steps take `&[&str]`
+/// rather than generic `Into<CardCode>` items so `&[]` (choose nothing) needs
+/// no type annotation.
+pub(super) fn card_codes(codes: &[&str]) -> Vec<CardCode> {
+    codes.iter().copied().map(CardCode::new).collect()
 }
 
 /// Translate scripted commit-card codes to hand indices using the
@@ -261,6 +270,18 @@ pub(super) fn is_turn_menu(request: &InputRequest) -> bool {
     matches!(request.target, Some(OptionTarget::TurnControl(_)))
 }
 
+/// The options of `request` anchored to `target`, in the order the prompt
+/// offers them — the one anchor filter behind every by-anchor step and reader.
+pub(super) fn options_at<'a>(
+    request: &'a InputRequest,
+    target: &'a OptionTarget,
+) -> impl Iterator<Item = &'a ChoiceOption> {
+    request
+        .options
+        .iter()
+        .filter(move |option| option.target.as_ref() == Some(target))
+}
+
 /// The id of the one option of `request` anchored to `target`, or a panic
 /// naming `caller` and why there isn't one. The anchor lookup behind
 /// [`ScriptedResolver::pick`] and the session's `pick` step.
@@ -269,10 +290,7 @@ pub(super) fn sole_option_at(
     target: &OptionTarget,
     caller: &str,
 ) -> OptionId {
-    let mut matching = request
-        .options
-        .iter()
-        .filter(|o| o.target.as_ref() == Some(target));
+    let mut matching = options_at(request, target);
     let Some(option) = matching.next() else {
         panic!(
             "{caller}: no option anchored to {target:?}; prompt {:?} offers {:?}",
@@ -380,7 +398,7 @@ where
         iterations += 1;
         assert!(
             iterations <= MAX_ITERATIONS,
-            "drive: exceeded {MAX_ITERATIONS} iterations without reaching Done/Rejected; \
+            "drain_with_applier: exceeded {MAX_ITERATIONS} iterations without reaching Done/Rejected; \
              resolver or engine appears to be cycling",
         );
         let result = applier(
@@ -473,7 +491,7 @@ mod tests {
     #[test]
     fn commit_cards_translates_codes_to_hand_indices_in_order() {
         let mut r = ScriptedResolver::new();
-        r.commit_cards(&[CardCode::new("X"), CardCode::new("Y")]);
+        r.commit_cards(&["X", "Y"]);
         let state = state_with_in_flight_hand(&["X", "Y", "Z"]);
         let response = r.next(&req("commit"), &state);
         assert_eq!(
@@ -487,7 +505,7 @@ mod tests {
     #[test]
     fn commit_cards_duplicate_code_picks_distinct_indices_left_to_right() {
         let mut r = ScriptedResolver::new();
-        r.commit_cards(&[CardCode::new("X"), CardCode::new("X")]);
+        r.commit_cards(&["X", "X"]);
         let state = state_with_in_flight_hand(&["A", "X", "B", "X"]);
         let response = r.next(&req("commit"), &state);
         assert_eq!(
@@ -502,7 +520,7 @@ mod tests {
     #[should_panic(expected = "no in-flight skill test")]
     fn commit_cards_panics_when_no_in_flight_skill_test() {
         let mut r = ScriptedResolver::new();
-        r.commit_cards(&[CardCode::new("X")]);
+        r.commit_cards(&["X"]);
         let _ = r.next(&req("commit"), &empty_state());
     }
 
@@ -510,7 +528,7 @@ mod tests {
     #[should_panic(expected = "not found")]
     fn commit_cards_panics_when_code_not_in_hand() {
         let mut r = ScriptedResolver::new();
-        r.commit_cards(&[CardCode::new("MISSING")]);
+        r.commit_cards(&["MISSING"]);
         let state = state_with_in_flight_hand(&["X", "Y"]);
         let _ = r.next(&req("commit"), &state);
     }

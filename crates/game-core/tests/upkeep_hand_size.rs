@@ -164,7 +164,7 @@ fn upkeep_prompts_and_discards_down_to_eight() {
     // panics unless the session rests at the hand-size discard.
     let discard_count = hand_at_check - HAND_SIZE_LIMIT;
     let chosen = first_cards(&paused, discard_count);
-    let session = paused.choose_from_hand(&chosen);
+    let session = paused.choose_from_hand(&chosen.iter().map(CardCode::as_str).collect::<Vec<_>>());
 
     // Resolving the discard continues the upkeep cascade into Mythos, which
     // pauses at the encounter-draw prompt: the discard is no longer pending.
@@ -208,7 +208,10 @@ fn upkeep_hand_size_discard_replay_is_deterministic() {
         // triggering the hand-size discard prompt at 4.5.
         let paused = opened_with_a_padded_hand().take(&TurnAction::EndTurn);
         let chosen = first_cards(&paused, discard_count);
-        paused.choose_from_hand(&chosen).state().clone()
+        paused
+            .choose_from_hand(&chosen.iter().map(CardCode::as_str).collect::<Vec<_>>())
+            .state()
+            .clone()
     };
 
     // --- First pass: drive and collect final state. ---

@@ -137,7 +137,7 @@ fn substituted_intellect_test_rejects_a_committed_combat_icon() {
     let s = play_card(board(fighter(4, 2).hand([MOM, OVERPOWER])), 0);
     let s = substitute(fight(s), true); // use Intellect → it's now an Intellect test
     assert_eq!(s.prompt().kind, InputKind::PickMultiple, "commit window");
-    let s = s.commit(&[CardCode::new(OVERPOWER)]); // combat icons
+    let s = s.commit(&[OVERPOWER]); // combat icons
     assert!(!s.expect_rejected().is_empty());
     // Validate-first: the card is still in hand and the test still paused.
     assert_eq!(
