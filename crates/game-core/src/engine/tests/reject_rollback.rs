@@ -1,5 +1,10 @@
 use super::*;
 
+// The subject of this file is the rejection of a `ResolveInput` itself, so
+// each test sends one raw. The first two send it with no prompt outstanding:
+// that empty stack is the moment under test, so the state is applied to
+// directly rather than settled into a session.
+
 #[test]
 fn rejected_actions_do_not_mutate_state() {
     let state = GameStateBuilder::new().build();
@@ -35,8 +40,8 @@ fn guard_ladder_reject_leaves_state_byte_identical() {
     // and the integration test in `crates/cards/tests/reject_rollback.rs`.
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
-        .with_investigator(test_support::test_investigator(1))
-        .with_active_investigator(InvestigatorId(1))
+        .with_seat(seat(1))
+        .with_active_investigator(INV)
         .build();
     let before = state.clone();
 
@@ -60,32 +65,27 @@ fn rejected_resolve_input_rewinds_to_pause_state_not_pre_action() {
     // Drive a skill test to its commit-window AwaitingInput, then submit
     // a malformed response. The reject must rewind to the *pause* state
     // (in_flight_skill_test still set), not to before the skill test.
-    let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_investigator(test_support::test_investigator(1))
-        .with_active_investigator(InvestigatorId(1))
+    let paused = GameStateBuilder::new()
+        .with_seat(seat(1))
         .with_chaos_bag(bag_only_zero())
-        .build();
-
-    let paused =
-        test_support::perform_skill_test(state, InvestigatorId(1), SkillKind::Willpower, 2);
-    assert!(
-        matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
-        "skill test should pause at the commit window, got {:?}",
-        paused.outcome,
+        .open_turn(INV)
+        .session()
+        .test_skill(INV, SkillKind::Willpower, 2);
+    assert_eq!(
+        paused.prompt().kind,
+        InputKind::PickMultiple,
+        "skill test should pause at the commit window",
     );
-    assert!(paused.state.has_skill_test_in_flight());
-    let s1 = paused.state.clone();
+    assert!(paused.state().has_skill_test_in_flight());
+    let s1 = paused.state().clone();
 
     // Malformed response: commit window expects PickMultiple; send Skip.
-    let result = apply(
-        paused.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::Skip,
-        }),
-    );
+    let rejected = paused.apply(Action::Player(PlayerAction::ResolveInput {
+        response: InputResponse::Skip,
+    }));
+    rejected.expect_rejected();
+    let result = rejected.finish();
 
-    assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert_eq!(
         result.state, s1,
         "rejected ResolveInput rewinds to the pause state, not pre-action",

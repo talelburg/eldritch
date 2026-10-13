@@ -7,120 +7,88 @@
 //! This file closes that loop with the real card and real registry.
 
 use cards::REGISTRY;
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::assert_event;
-use game_core::engine::enumerate::{self, TurnAction};
-use game_core::engine::{EngineOutcome, OptionId};
+use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId,
-    SkillKind, TokenModifiers,
+    CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
+    TokenModifiers,
 };
-use game_core::test_support::{self, TestSession};
+use game_core::test_support::{self, seat, TestSession};
 
 const MAGNIFYING_GLASS: &str = "01030";
+
+const INV: InvestigatorId = InvestigatorId(1);
+const HERE: LocationId = LocationId(101);
+
+const PLAY_MAGNIFYING_GLASS: TurnAction = TurnAction::PlayCard {
+    investigator: INV,
+    hand_index: 0,
+};
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// Build a state with Magnifying Glass in hand, the controller in the
-/// Investigation phase placed at a 4-shroud location with a clue, and
-/// a single-Numeric(0) chaos bag so the token modifier is always 0.
-/// Skill defaults (3 intellect) plus the card's bonus (when in play)
-/// cleanly cross / miss difficulty 4 depending on whether the bonus
-/// applies.
-fn state_with_mg_in_hand() -> (GameState, InvestigatorId, LocationId) {
-    let id = InvestigatorId(1);
-    let loc_id = LocationId(101);
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(loc_id);
-    inv.hand = vec![CardCode::new(MAGNIFYING_GLASS)];
-
-    let mut location = test_support::test_location(101, "Study");
+/// A session at the controller's turn menu, with Magnifying Glass in hand,
+/// placed at a 4-shroud location with a clue, and a single-Numeric(0) chaos
+/// bag so the token modifier is always 0. Skill defaults (3 intellect) plus
+/// the card's bonus (when in play) cleanly cross / miss difficulty 4 depending
+/// on whether the bonus applies.
+fn mg_in_hand() -> TestSession {
+    let mut location = test_support::test_location(HERE.0, "Study");
     location.shroud = 4;
     location.clues = 1;
 
-    let state = GameStateBuilder::new()
-        .with_investigator(inv)
-        .open_turn(id)
+    GameStateBuilder::new()
         .with_location(location)
+        .with_seat(seat(1).at(HERE).hand([MAGNIFYING_GLASS]))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
-        .build();
-    (state, id, loc_id)
+        .open_turn(INV)
+        .session()
 }
 
 #[test]
 fn investigate_succeeds_at_shroud_4_after_playing_magnifying_glass() {
     // 3 intellect + 1 (Magnifying Glass) + 0 (token) = 4 vs shroud 4 → succeed by 0.
-    let (state, id, _loc) = state_with_mg_in_hand();
-
-    let after_play = test_support::take_turn_action(
-        state,
-        &TurnAction::PlayCard {
-            investigator: id,
-            hand_index: 0,
-        },
-    );
-    assert!(matches!(
-        after_play.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
+    let after_play = mg_in_hand().take(&PLAY_MAGNIFYING_GLASS);
+    after_play.assert_at_turn_menu(INV);
     assert_eq!(
-        after_play.state.investigators[&id].cards_in_play[0].code,
+        after_play.state().investigators[&INV].cards_in_play[0].code,
         CardCode::new(MAGNIFYING_GLASS),
     );
 
-    let result = TestSession::new(after_play.state)
-        .resolve_choices(|c| {
-            c.commit_cards(&[]);
-        })
-        .take(&TurnAction::Investigate { investigator: id })
-        .finish();
-    assert!(matches!(
-        result.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
+    let session = after_play
+        .take(&TurnAction::Investigate { investigator: INV })
+        .commit(&[]);
+    session.assert_at_turn_menu(INV);
     assert_event!(
-        result.events,
+        session.finish().events,
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, margin: 0 }
-            if *investigator == id
+            if *investigator == INV
     );
 }
 
 #[test]
 fn investigate_fails_at_shroud_4_without_magnifying_glass_in_play() {
     // Same setup minus the card in play — 3 + 0 < 4 → fail by 1.
-    //
-    // MG is in hand (an Asset, not yet played) so the commit window parks
-    // (`FastWindow` idle, returns Done) rather than suspending as AwaitingInput.
-    // `apply_no_commits` drives through parked windows by skipping them;
-    // we submit via OptionId (not the typed PlayerAction::Investigate) to stay
-    // on the new dispatch path.
-    let (state, id, _loc) = state_with_mg_in_hand();
-    assert!(state.investigators[&id].cards_in_play.is_empty());
+    let session = mg_in_hand();
+    assert!(session.state().investigators[&INV].cards_in_play.is_empty());
 
-    let actions = enumerate::legal_actions(&state);
-    let idx = actions
-        .iter()
-        .position(|a| a == &TurnAction::Investigate { investigator: id })
-        .expect("Investigate must be legal");
-    let result = test_support::apply_no_commits(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
-        }),
-    );
-    assert!(matches!(
-        result.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
+    // Magnifying Glass is Fast and still in hand, so the test's player windows
+    // offer it, before the commit window and after it; pass on both.
+    let session = session
+        .take(&TurnAction::Investigate { investigator: INV })
+        .skip()
+        .commit(&[])
+        .skip();
+    session.assert_at_turn_menu(INV);
     assert_event!(
-        result.events,
+        session.events(),
         Event::SkillTestFailed { investigator, skill: SkillKind::Intellect, by: 1, .. }
-            if *investigator == id
+            if *investigator == INV
     );
 }
 
@@ -131,29 +99,16 @@ fn bare_intellect_test_unaffected_by_magnifying_glass_in_play() {
     // through a plain skill test (`SkillTestKind::Plain`) —
     // the Magnifying Glass contribution must NOT apply. 3 + 0 < 4
     // → fail by 1, even with the card in play.
-    let (state, id, _loc) = state_with_mg_in_hand();
+    let after_play = mg_in_hand().take(&PLAY_MAGNIFYING_GLASS);
+    after_play.assert_at_turn_menu(INV);
 
-    let after_play = test_support::take_turn_action(
-        state,
-        &TurnAction::PlayCard {
-            investigator: id,
-            hand_index: 0,
-        },
-    );
-    assert!(matches!(
-        after_play.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
-
-    let result =
-        test_support::perform_skill_test_no_commits(after_play.state, id, SkillKind::Intellect, 4);
-    assert!(matches!(
-        result.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
+    let session = after_play
+        .test_skill(INV, SkillKind::Intellect, 4)
+        .commit(&[]);
+    session.assert_at_turn_menu(INV);
     assert_event!(
-        result.events,
+        session.finish().events,
         Event::SkillTestFailed { investigator, skill: SkillKind::Intellect, by: 1, .. }
-            if *investigator == id
+            if *investigator == INV
     );
 }

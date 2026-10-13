@@ -11,13 +11,10 @@
 //! installs the registry, mirroring `commit_cap.rs`.
 
 use cards::REGISTRY;
-use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, Phase, SkillKind,
-    TokenModifiers,
+    CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, SkillKind, TokenModifiers,
 };
-use game_core::test_support;
+use game_core::test_support::{self, seat, TestSession};
 
 /// Overpower — two [combat] icons, no wild.
 const OVERPOWER: &str = "01091";
@@ -35,52 +32,31 @@ fn install() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// Investigator holding `hand`, mid-Investigation, with a deterministic bag.
-fn board(hand: &[&str]) -> GameState {
-    let mut inv = test_support::test_investigator(1);
-    inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
-    // Somewhere for a success draw to land; an empty deck would apply the
-    // deck-out horror (#636), irrelevant noise here.
-    inv.deck = vec![CardCode::new("spare-1"), CardCode::new("spare-2")];
+/// Drive a difficulty-1 test of `skill`, on the investigator's turn holding
+/// `hand` with a deterministic bag, to the commit window and commit `commits`.
+fn commit_to(hand: &[&str], skill: SkillKind, commits: &[&str]) -> TestSession {
+    let codes: Vec<CardCode> = commits.iter().copied().map(CardCode::new).collect();
     GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator(inv)
+        // Somewhere for a success draw to land; an empty deck would apply the
+        // deck-out horror (#636), irrelevant noise here.
+        .with_seat(
+            seat(1)
+                .hand(hand.iter().copied())
+                .deck(["spare-1", "spare-2"]),
+        )
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
-        .build()
+        .open_turn(INV)
+        .session()
+        .test_skill(INV, skill, 1)
+        .commit(&codes)
 }
 
-fn commit(indices: Vec<u32>) -> Action {
-    Action::Player(PlayerAction::ResolveInput {
-        response: InputResponse::PickMultiple {
-            selected: indices.into_iter().map(OptionId).collect(),
-        },
-    })
-}
-
-/// Drive a difficulty-1 test of `skill` to the commit window and answer it
-/// with `indices`.
-fn commit_to(hand: &[&str], skill: SkillKind, indices: Vec<u32>) -> ApplyResult {
-    let paused = test_support::perform_skill_test(board(hand), INV, skill, 1);
-    assert!(
-        matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
-        "expected the commit window, got {:?}",
-        paused.outcome,
-    );
-    engine::apply(paused.state, commit(indices))
-}
-
-/// Assert `result` rejected the commit and left the hand and the in-flight
+/// Assert `session`'s commit was rejected and left the hand and the in-flight
 /// test exactly as they were (validate-first).
-fn assert_rejected_with_hand_intact(result: &ApplyResult, hand: &[&str]) {
-    assert!(
-        matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "expected Rejected, got {:?}",
-        result.outcome,
-    );
-    let inv = &result.state.investigators[&INV];
+fn assert_rejected_with_hand_intact(session: &TestSession, hand: &[&str]) {
+    session.expect_rejected();
+    let inv = &session.state().investigators[&INV];
     assert_eq!(
         inv.hand,
         hand.iter().map(|c| CardCode::new(*c)).collect::<Vec<_>>(),
@@ -88,8 +64,21 @@ fn assert_rejected_with_hand_intact(result: &ApplyResult, hand: &[&str]) {
     );
     assert!(inv.discard.is_empty(), "a rejected commit discards nothing");
     assert!(
-        result.state.has_skill_test_in_flight(),
+        session.state().has_skill_test_in_flight(),
         "the test stays paused at the commit window so the client can retry",
+    );
+}
+
+/// Assert `session`'s commit was accepted: the test resolved, play is back at
+/// the turn menu, and the committed `card` was discarded.
+fn assert_committed(session: &TestSession, card: &str) {
+    session.assert_at_turn_menu(INV);
+    assert!(!session.state().has_skill_test_in_flight());
+    assert!(
+        session.state().investigators[&INV]
+            .discard
+            .contains(&CardCode::new(card)),
+        "the committed {card} resolved and was discarded",
     );
 }
 
@@ -97,15 +86,15 @@ fn assert_rejected_with_hand_intact(result: &ApplyResult, hand: &[&str]) {
 /// test, and it prints no wild.
 #[test]
 fn non_matching_icon_commit_is_rejected() {
-    let result = commit_to(&[OVERPOWER], SkillKind::Intellect, vec![0]);
-    assert_rejected_with_hand_intact(&result, &[OVERPOWER]);
+    let session = commit_to(&[OVERPOWER], SkillKind::Intellect, &[OVERPOWER]);
+    assert_rejected_with_hand_intact(&session, &[OVERPOWER]);
 }
 
 /// The free-discard hole: a card with no icons at all cannot be committed.
 #[test]
 fn zero_icon_card_commit_is_rejected() {
-    let result = commit_to(&[EMERGENCY_CACHE], SkillKind::Intellect, vec![0]);
-    assert_rejected_with_hand_intact(&result, &[EMERGENCY_CACHE]);
+    let session = commit_to(&[EMERGENCY_CACHE], SkillKind::Intellect, &[EMERGENCY_CACHE]);
+    assert_rejected_with_hand_intact(&session, &[EMERGENCY_CACHE]);
 }
 
 /// One bad card rejects the whole batch — the commit is a single submission,
@@ -113,15 +102,15 @@ fn zero_icon_card_commit_is_rejected() {
 #[test]
 fn one_iconless_card_rejects_the_whole_batch() {
     let hand = [PERCEPTION, OVERPOWER];
-    let result = commit_to(&hand, SkillKind::Intellect, vec![0, 1]);
-    assert_rejected_with_hand_intact(&result, &hand);
+    let session = commit_to(&hand, SkillKind::Intellect, &hand);
+    assert_rejected_with_hand_intact(&session, &hand);
 }
 
 /// A matching icon is appropriate: Overpower to a [combat] test commits.
 #[test]
 fn matching_icon_card_commits() {
-    let result = commit_to(&[OVERPOWER], SkillKind::Combat, vec![0]);
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    let session = commit_to(&[OVERPOWER], SkillKind::Combat, &[OVERPOWER]);
+    assert_committed(&session, OVERPOWER);
 }
 
 /// A wild icon is appropriate for every skill (glossary, *Wild Skill Icons*:
@@ -134,11 +123,7 @@ fn wild_icon_card_commits_to_any_skill() {
         SkillKind::Combat,
         SkillKind::Agility,
     ] {
-        let result = commit_to(&[UNEXPECTED_COURAGE], skill, vec![0]);
-        assert_eq!(
-            result.outcome,
-            EngineOutcome::Done,
-            "Unexpected Courage's wild icons must commit to a {skill:?} test",
-        );
+        let session = commit_to(&[UNEXPECTED_COURAGE], skill, &[UNEXPECTED_COURAGE]);
+        assert_committed(&session, UNEXPECTED_COURAGE);
     }
 }

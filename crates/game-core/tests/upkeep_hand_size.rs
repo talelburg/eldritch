@@ -3,8 +3,8 @@
 //! Drives a full apply cycle through a locally-built scenario shell (via
 //! `seat_and_open`) → `Mulligan` → `EndTurn`, padding the sole investigator's
 //! hand so that — after the step-4.4 draw — they hold more than the cap at step
-//! 4.5. The round-ending `EndTurn` must cascade into upkeep and pause with
-//! `AwaitingInput`; resolving the prompt with `PickMultiple` must land the hand
+//! 4.5. The round-ending `EndTurn` must cascade into upkeep and pause at the
+//! discard prompt; choosing the discards must land the hand
 //! at exactly the cap and let the round proceed.
 //!
 //! Moved down from `crates/scenarios/tests/upkeep_hand_size.rs` (#873): no card
@@ -12,14 +12,14 @@
 //! shell. No scenario registry is installed, so the resolution hook is skipped
 //! and the round cannot end mid-cascade.
 
-use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
+use game_core::action::RosterEntry;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, EngineOutcome, OptionId};
+use game_core::engine::{self, EngineOutcome, InputKind, OptionTarget};
 use game_core::state::{
-    Act, Agenda, CardCode, ChaosBag, ChaosToken, Continuation, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, Phase,
+    Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId,
+    LocationId, Phase,
 };
-use game_core::test_support::{self, MockRegistry, TEST_INV};
+use game_core::test_support::{self, MockRegistry, TestSession, TEST_INV};
 
 /// Per-binary code prefix. Nothing here is looked up in the registry — the
 /// hand-size discard path only moves cards between hand and discard — so the
@@ -97,68 +97,59 @@ fn roster() -> Vec<RosterEntry> {
     }]
 }
 
-/// Pad the sole investigator's hand to [`PADDED_HAND`] with opaque filler.
-fn pad_hand(state: &mut GameState) {
-    let inv = state.investigators.get_mut(&InvestigatorId(1)).unwrap();
+const INV: InvestigatorId = InvestigatorId(1);
+
+/// Seat the roster with `seat_and_open`, close the mulligan keeping the hand,
+/// and pad the sole investigator's hand to [`PADDED_HAND`] with opaque filler:
+/// Investigation, round 1, at the turn menu. The padding has no step that
+/// makes it, so the opened state is edited and settled again.
+fn opened_with_a_padded_hand() -> TestSession {
+    let opened = engine::seat_and_open(setup(), &roster());
+    assert!(
+        matches!(opened.outcome, EngineOutcome::AwaitingInput { .. }),
+        "seat_and_open opens the mulligan prompt, got {:?}",
+        opened.outcome
+    );
+    let mut state = TestSession::new(opened.state)
+        .choose_from_hand(&[])
+        .state()
+        .clone();
+    let inv = state.investigators.get_mut(&INV).unwrap();
     while inv.hand.len() < PADDED_HAND {
         inv.hand.push(CardCode::new(format!("{PREFIX}filler")));
     }
+    let session = TestSession::new(state);
+    // No discard is pending before the round-ending EndTurn: the session rests
+    // at the turn menu.
+    session.assert_at_turn_menu(INV);
+    session
+}
+
+/// The first `n` cards of `INV`'s hand, by code: the hand-size discard's choice.
+fn first_cards(session: &TestSession, n: usize) -> Vec<CardCode> {
+    session.state().investigators[&INV].hand[..n].to_vec()
 }
 
 #[test]
-#[allow(clippy::too_many_lines)] // end-to-end upkeep walkthrough; length is inherent
 fn upkeep_prompts_and_discards_down_to_eight() {
-    let inv1 = InvestigatorId(1);
-
-    // seat_and_open → mulligan (keep hand).
-    let r1 = engine::seat_and_open(setup(), &roster());
-    assert!(
-        matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }),
-        "seat_and_open opens the mulligan prompt, got {:?}",
-        r1.outcome
-    );
-
-    let r2 = engine::apply(
-        r1.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        }),
-    );
-    assert!(matches!(r2.outcome, EngineOutcome::AwaitingInput { .. }));
-
-    // Pad the hand so we're over cap at 4.5. The step-4.4 draw adds one
-    // card; padding to 11 here lands us at 12 cards at the 4.5 check,
-    // requiring a discard of (11 + 1 draw) - HAND_SIZE_LIMIT = 4.
-    let mut state = r2.state;
-    pad_hand(&mut state);
-    let hand_before_end = state.investigators[&inv1].hand.len();
-    let discard_pile_before = state.investigators[&inv1].discard.len();
-    assert!(
-        !matches!(
-            state.continuations.top(),
-            Some(Continuation::HandSizeDiscard(_))
-        ),
-        "no discard should be pending before the round-ending EndTurn"
-    );
+    // Padding to 11 lands us at 12 cards at the 4.5 check once the step-4.4
+    // draw adds one, requiring a discard of (11 + 1 draw) - HAND_SIZE_LIMIT = 4.
+    let opened = opened_with_a_padded_hand();
+    let hand_before_end = opened.state().investigators[&INV].hand.len();
+    let discard_pile_before = opened.state().investigators[&INV].discard.len();
 
     // Act 1: the round-ending EndTurn cascades Investigation → Enemy →
     // Upkeep (4.2 reset, 4.3 ready, 4.4 draw +1, 4.5 hand-size check).
     // The +1 draw pushes the hand to 12 (> cap), so 4.5 suspends.
-    let r3 = test_support::take_turn_action(state, &TurnAction::EndTurn);
+    let paused = opened.take(&TurnAction::EndTurn);
 
-    assert!(
-        matches!(r3.outcome, EngineOutcome::AwaitingInput { .. }),
+    assert_eq!(
+        (paused.state().phase, paused.prompt().kind),
+        (Phase::Upkeep, InputKind::PickMultiple),
         "upkeep 4.5 must prompt for a discard, got {:?}",
-        r3.outcome,
+        paused.prompt(),
     );
-    assert!(
-        matches!(
-            r3.state.continuations.top(),
-            Some(Continuation::HandSizeDiscard(_))
-        ),
-        "a HandSizeDiscard frame must be on the stack while awaiting the discard"
-    );
-    let hand_at_check = r3.state.investigators[&inv1].hand.len();
+    let hand_at_check = paused.state().investigators[&INV].hand.len();
     assert_eq!(
         hand_at_check,
         hand_before_end + 1,
@@ -169,50 +160,35 @@ fn upkeep_prompts_and_discards_down_to_eight() {
         "hand ({hand_at_check}) must be over the cap at 4.5"
     );
 
-    // Act 2: submit PickMultiple with exactly (hand_len - cap) indices.
+    // Act 2: discard exactly (hand_len - cap) cards. `choose_from_hand`
+    // panics unless the session rests at the hand-size discard.
     let discard_count = hand_at_check - HAND_SIZE_LIMIT;
-    let indices: Vec<u32> = (0..u32::try_from(discard_count).unwrap()).collect();
-    let r4 = engine::apply(
-        r3.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple {
-                selected: indices.into_iter().map(OptionId).collect(),
-            },
-        }),
-    );
+    let chosen = first_cards(&paused, discard_count);
+    let session = paused.choose_from_hand(&chosen);
 
-    assert!(
-        matches!(r4.outcome, EngineOutcome::AwaitingInput { .. }),
-        "resolving the discard continues the upkeep cascade into Mythos, which \
-         pauses at the encounter-draw prompt"
-    );
+    // Resolving the discard continues the upkeep cascade into Mythos, which
+    // pauses at the encounter-draw prompt: the discard is no longer pending.
+    assert_eq!(session.prompt().target, Some(OptionTarget::EncounterDeck));
     assert_eq!(
-        r4.state.investigators[&inv1].hand.len(),
+        session.state().investigators[&INV].hand.len(),
         HAND_SIZE_LIMIT,
         "investigator must land at exactly the hand-size cap"
     );
     assert_eq!(
-        r4.state.investigators[&inv1].discard.len(),
+        session.state().investigators[&INV].discard.len(),
         discard_pile_before + discard_count,
         "discarded cards must move to the investigator's discard pile"
-    );
-    assert!(
-        !matches!(
-            r4.state.continuations.top(),
-            Some(Continuation::HandSizeDiscard(_))
-        ),
-        "discard-pending must be cleared once the queue drains"
     );
 
     // The round proceeded: the upkeep cascade completed and advanced to
     // the Mythos phase of the next round.
     assert_eq!(
-        r4.state.phase,
+        session.state().phase,
         Phase::Mythos,
         "round must proceed into Mythos after the discard resolves"
     );
     assert!(
-        r4.state.current_encounter_drawer().is_some(),
+        session.state().current_encounter_drawer().is_some(),
         "Mythos draw cursor must be seeded once the round proceeds"
     );
 }
@@ -223,40 +199,23 @@ fn upkeep_prompts_and_discards_down_to_eight() {
 
 #[test]
 fn upkeep_hand_size_discard_replay_is_deterministic() {
-    // discard_count = 12 - HAND_SIZE_LIMIT = 4; indices 0..4.
-    let discard_count = u32::try_from(PADDED_HAND + 1 - HAND_SIZE_LIMIT).unwrap();
-    let selected: Vec<OptionId> = (0..discard_count).map(OptionId).collect();
+    // discard_count = 12 - HAND_SIZE_LIMIT = 4: the first four cards.
+    let discard_count = PADDED_HAND + 1 - HAND_SIZE_LIMIT;
 
     // Drive the same sequence twice to verify replay determinism.
-    let run_sequence = |initial: GameState| -> GameState {
-        let mut state = engine::seat_and_open(initial, &roster()).state;
-        state = engine::apply(
-            state,
-            Action::Player(PlayerAction::ResolveInput {
-                response: InputResponse::PickMultiple { selected: vec![] },
-            }),
-        )
-        .state;
-        // Pad hand to 11 so that the upkeep draw (4.4) pushes it to 12,
+    let run_sequence = || -> GameState {
+        // Padded to 11 so that the upkeep draw (4.4) pushes the hand to 12,
         // triggering the hand-size discard prompt at 4.5.
-        pad_hand(&mut state);
-        state = test_support::take_turn_action(state, &TurnAction::EndTurn).state;
-        engine::apply(
-            state,
-            Action::Player(PlayerAction::ResolveInput {
-                response: InputResponse::PickMultiple {
-                    selected: selected.clone(),
-                },
-            }),
-        )
-        .state
+        let paused = opened_with_a_padded_hand().take(&TurnAction::EndTurn);
+        let chosen = first_cards(&paused, discard_count);
+        paused.choose_from_hand(&chosen).state().clone()
     };
 
     // --- First pass: drive and collect final state. ---
-    let final_state = run_sequence(setup());
+    let final_state = run_sequence();
 
     // --- Second pass: replay from the same initial state. ---
-    let replayed_state = run_sequence(setup());
+    let replayed_state = run_sequence();
 
     // Replaying the same action sequence from the same initial state must
     // reproduce identical state bit-for-bit — the PickMultiple discard path is

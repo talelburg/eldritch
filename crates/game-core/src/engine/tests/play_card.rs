@@ -1,124 +1,76 @@
 use super::*;
+use crate::state::{MythosPhaseFrame, MythosResume};
 
-// Card actions can't use the non-enumeration form here: these states
-// carry no `InvestigatorTurn` frame (so `legal_actions` returns empty
-// and the assertion would be vacuous), and game-core's `TEST_INV`-only
-// registry never enumerates a card-bearing PlayCard anyway. Instead we
-// reach the handler directly via `dispatch_turn_action_unchecked`
-// (bypassing the enumeration gate) and assert it rejects — testing the
-// handler's defensive validation, exactly as the pre-#447 typed-action
-// `apply(PlayCard)` tests did. (The *positive* PlayCard enumeration +
-// the registry-backed flow live in `enumerate.rs` and
-// `crates/cards/tests/play_card.rs`.)
-fn play_card_state(active: bool, hand: Vec<CardCode>) -> (GameState, InvestigatorId) {
-    let id = InvestigatorId(1);
-    let mut inv = test_support::test_investigator(1);
-    inv.hand = hand;
-    let mut builder = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_investigator(inv);
-    if active {
-        builder = builder.with_active_investigator(id);
+// Card actions can't use the enumeration form here: game-core's
+// `TEST_INV`-only registry never enumerates a card-bearing PlayCard, so the
+// menu never offers one. Instead we reach the handler with
+// `submit_off_menu` (bypassing the enumeration gate) and assert it
+// rejects — testing the handler's defensive validation, exactly as the
+// pre-#447 typed-action `apply(PlayCard)` tests did. (The *positive*
+// PlayCard enumeration + the registry-backed flow live in `enumerate.rs`
+// and `crates/cards/tests/play_card.rs`.)
+const CARD: &str = "01059";
+
+fn play(hand_index: u8) -> TurnAction {
+    TurnAction::PlayCard {
+        investigator: INV,
+        hand_index,
     }
-    (builder.build(), id)
 }
 
 #[test]
 fn play_card_outside_investigation_phase_is_rejected() {
-    let id = InvestigatorId(1);
-    let mut inv = test_support::test_investigator(1);
-    inv.hand = vec![CardCode::new("01059")];
-    let state = GameStateBuilder::new()
+    // Mythos step 1.4: `INV` is to draw an encounter card.
+    let session = GameStateBuilder::new()
+        .with_seat(seat(1).hand([CARD]))
+        .with_turn_order([INV])
         .with_phase(Phase::Mythos)
-        .with_investigator(inv)
-        .with_active_investigator(id)
-        .build();
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: id,
-            hand_index: 0,
-        },
-    );
-    assert!(
-        matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "{:?}",
-        result.outcome
-    );
+        .with_phase_anchor(MythosPhaseFrame {
+            resume: MythosResume::AfterDraws,
+        })
+        .with_mythos_draw_remaining([INV])
+        .session();
+    assert_handler_rejects(session, &play(0));
 }
 
 #[test]
 fn play_card_by_non_active_investigator_is_rejected() {
-    let (state, id) = play_card_state(false, vec![CardCode::new("01059")]);
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: id,
-            hand_index: 0,
-        },
-    );
-    assert!(
-        matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "{:?}",
-        result.outcome
-    );
+    // Investigator 2's turn is open; investigator 1 tries to play.
+    let session = GameStateBuilder::new()
+        .with_seat(seat(1).hand([CARD]))
+        .with_seat(seat(2))
+        .with_turn_order([INV, InvestigatorId(2)])
+        .open_turn(InvestigatorId(2))
+        .session();
+    assert_handler_rejects(session, &play(0));
 }
 
 #[test]
 fn play_card_by_defeated_investigator_is_rejected() {
-    let id = InvestigatorId(1);
-    let mut inv = test_support::test_investigator(1);
-    inv.hand = vec![CardCode::new("01059")];
-    inv.status = Status::Defeated;
-    let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_investigator(inv)
-        .with_active_investigator(id)
+    let mut state = GameStateBuilder::new()
+        .with_seat(seat(1).hand([CARD]))
+        .open_turn(INV)
         .build();
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: id,
-            hand_index: 0,
-        },
-    );
-    assert!(
-        matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "{:?}",
-        result.outcome
-    );
+    // No seat setter for status: a defeated investigator whose turn is
+    // still open is what the handler defends against.
+    state.investigators.get_mut(&INV).expect("seated").status = Status::Defeated;
+    assert_handler_rejects(TestSession::new(state), &play(0));
 }
 
 #[test]
 fn play_card_with_out_of_bounds_hand_index_is_rejected() {
-    let (state, id) = play_card_state(true, vec![CardCode::new("01059")]);
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: id,
-            hand_index: 5,
-        },
-    );
-    assert!(
-        matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "{:?}",
-        result.outcome
-    );
+    let session = GameStateBuilder::new()
+        .with_seat(seat(1).hand([CARD]))
+        .open_turn(INV)
+        .session();
+    assert_handler_rejects(session, &play(5));
 }
 
 #[test]
 fn play_card_with_empty_hand_is_rejected() {
-    let (state, id) = play_card_state(true, vec![]);
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: id,
-            hand_index: 0,
-        },
-    );
-    assert!(
-        matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "{:?}",
-        result.outcome
-    );
+    let session = GameStateBuilder::new()
+        .with_seat(seat(1))
+        .open_turn(INV)
+        .session();
+    assert_handler_rejects(session, &play(0));
 }

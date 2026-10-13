@@ -29,68 +29,77 @@
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, EngineOutcome, OptionId, OptionTarget, TimingEvent};
+use game_core::engine::{OptionId, OptionTarget};
 use game_core::event::{Event, LapseReason};
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, Investigator, InvestigatorId, LocationId, Owner, Status, TokenModifiers,
+    CardCode, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId,
+    LocationId, Skills, Status, TokenModifiers,
 };
-use game_core::test_support::{self, TestSession};
-use game_core::{assert_event, assert_no_event};
+use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
+use game_core::{assert_event, assert_event_count, assert_no_event};
 
 /// `ArkhamDB` code for original-Core Evidence!.
 const EVIDENCE: &str = "01022";
 /// `ArkhamDB` code for Roland Banks.
 const ROLAND: &str = "01001";
 
+const INV: InvestigatorId = InvestigatorId(1);
+const ENEMY: EnemyId = EnemyId(100);
+const HERE: LocationId = LocationId(10);
+
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// A solo investigator engaged with a 1-HP enemy at a `location_clues`-clue
-/// location, with a stacked bag so a Fight auto-succeeds and the defeat opens the
-/// after-defeat reaction window. `shape` fills in what each test varies — hand
-/// contents, wallet, whether Roland's investigator card is in play.
-fn after_defeat_board(
-    location_clues: u8,
-    shape: impl FnOnce(&mut Investigator),
-) -> (InvestigatorId, EnemyId, LocationId, GameState) {
-    let inv_id = InvestigatorId(1);
-    let enemy_id = EnemyId(100);
-    let loc_id = LocationId(10);
-
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(loc_id);
-    inv.skills.combat = 4;
-    shape(&mut inv);
-
-    let mut enemy = test_support::test_enemy(100, "Mock Ghoul");
+/// A solo investigator (combat 4) engaged with a 1-HP enemy at a
+/// `location_clues`-clue location, with a stacked bag so a Fight auto-succeeds
+/// and the defeat opens the after-defeat reaction window. `shape` fills in what
+/// each test varies — hand contents, wallet, whether Roland's investigator card
+/// is in play.
+fn after_defeat_board(location_clues: u8, shape: impl FnOnce(Seat) -> Seat) -> GameState {
+    let mut enemy = test_support::test_enemy(ENEMY.0, "Mock Ghoul");
     enemy.fight = 1;
     enemy.max_health = 1;
-    enemy.damage = 0;
-    enemy.engaged_with = Some(inv_id);
-    enemy.current_location = Some(loc_id); // co-located: Fight is location-gated (#401)
 
-    let mut loc = test_support::test_location(10, "Study");
+    let mut loc = test_support::test_location(HERE.0, "Study");
     loc.clues = location_clues;
 
-    let state = GameStateBuilder::new()
+    let investigator = seat(1).at(HERE).skills(Skills {
+        willpower: 3,
+        intellect: 3,
+        combat: 4,
+        agility: 3,
+    });
+
+    GameStateBuilder::new()
         .with_round(0)
-        .open_turn(inv_id)
-        .with_investigator(inv)
-        .with_enemy(enemy)
+        .open_turn(INV)
+        .with_seat(shape(investigator))
+        // Co-located: Fight is location-gated (#401).
+        .with_enemy_engaged(enemy, INV)
         .with_location(loc)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
-        .build();
-    (inv_id, enemy_id, loc_id, state)
+        .build()
 }
 
-fn fight_action(inv: InvestigatorId, enemy: EnemyId) -> TurnAction {
-    TurnAction::Fight {
-        investigator: inv,
-        enemy,
+/// Fight the enemy on `state`, committing nothing: the defeat opens the
+/// after-defeat window, where the session rests.
+fn defeat_the_enemy(state: GameState) -> TestSession {
+    TestSession::new(state)
+        .take(&TurnAction::Fight {
+            investigator: INV,
+            enemy: ENEMY,
+        })
+        .commit(&[])
+}
+
+/// The anchor of the Evidence! copies in `INV`'s hand.
+fn evidence_in_hand() -> OptionTarget {
+    OptionTarget::HandCardByCode {
+        investigator: INV,
+        code: CardCode::new(EVIDENCE),
     }
 }
 
@@ -104,6 +113,27 @@ fn lapse_count(events: &[Event], code: &str) -> usize {
         .count()
 }
 
+/// Play one of the two Evidence! copies the after-defeat window offers.
+///
+/// The window offers each copy as its own option, both anchored to
+/// [`evidence_in_hand`], so `pick` cannot name one; either copy plays. Pending
+/// a decision on how a test names one of two identical hand copies (#1020),
+/// this answers the first option by position, as the test did before.
+fn play_one_of_two_evidence(window: TestSession) -> TestSession {
+    assert_eq!(window.offered_at(&evidence_in_hand()), 2);
+    window.apply(Action::Player(PlayerAction::ResolveInput {
+        response: InputResponse::PickSingle(OptionId(0)),
+    }))
+}
+
+/// How many Evidence! plays `events` holds.
+fn evidence_plays(events: &[Event]) -> usize {
+    events
+        .iter()
+        .filter(|e| matches!(e, Event::CardPlayed { code, .. } if code.as_str() == EVIDENCE))
+        .count()
+}
+
 #[test]
 fn a_second_evidence_is_withdrawn_once_the_first_empties_the_wallet() {
     // #568 acceptance 1. Two copies of Evidence! (cost 1 each) on a 1-resource
@@ -114,57 +144,32 @@ fn a_second_evidence_is_withdrawn_once_the_first_empties_the_wallet() {
     // Pre-fix, the window re-prompted the stored candidate unfiltered and
     // `pay_play_cost`'s `saturating_sub` took 1 from 0, emitting a **false**
     // `ResourcesPaid { amount: 1 }` and resolving the card for free.
-    let (inv_id, enemy_id, loc_id, state) = after_defeat_board(2, |inv| {
-        inv.hand.push(CardCode::new(EVIDENCE));
-        inv.hand.push(CardCode::new(EVIDENCE));
-        inv.resources = 1;
-    });
+    let state = after_defeat_board(2, |inv| inv.hand([EVIDENCE, EVIDENCE]).resources(1));
 
     // Commit nothing to the Fight's skill test, then play the first Evidence!.
-    // The window closes on its own afterwards: its only remaining option lapsed.
-    // The second `pick_single` is the pre-fix path — unused once the option is
-    // withdrawn, and what makes this test fail on the *defect* (a second play, a
-    // second `ResourcesPaid`) rather than on a missing scripted response.
-    let result = TestSession::new(state)
-        .resolve_choices(|c| {
-            c.commit_cards(&[])
-                .pick_single(OptionId(0))
-                .pick_single(OptionId(0));
-        })
-        .take(&fight_action(inv_id, enemy_id))
-        .finish();
+    // The window closes on its own afterwards: its only remaining option lapsed,
+    // so play is back at the turn menu with no second offer to take.
+    let session = play_one_of_two_evidence(defeat_the_enemy(state));
+    session.assert_at_turn_menu(INV);
+    let events = session.events();
 
     // Exactly one play, one payment, one clue — not two of anything.
     assert_eq!(
-        result
-            .events
-            .iter()
-            .filter(|e| matches!(e, Event::CardPlayed { code, .. } if code.as_str() == EVIDENCE))
-            .count(),
+        evidence_plays(events),
         1,
-        "only the affordable copy may be played; events = {:?}",
-        result.events,
+        "only the affordable copy may be played; events = {events:?}",
     );
-    assert_eq!(
-        result
-            .events
-            .iter()
-            .filter(|e| matches!(e, Event::ResourcesPaid { .. }))
-            .count(),
-        1,
-        "a second ResourcesPaid would be the false event #568 describes; events = {:?}",
-        result.events,
-    );
+    assert_event_count!(events, 1, Event::ResourcesPaid { .. });
     assert_event!(
-        result.events,
+        events,
         Event::ReactionOptionLapsed { code, reason: LapseReason::CostUnpayable, investigator }
-            if code.as_str() == EVIDENCE && *investigator == inv_id
+            if code.as_str() == EVIDENCE && *investigator == INV
     );
-    assert_eq!(lapse_count(&result.events, EVIDENCE), 1);
+    assert_eq!(lapse_count(events, EVIDENCE), 1);
 
     // The wallet paid exactly the one cost it could afford, the unplayed copy is
     // still in hand, and only one clue moved.
-    let inv = &result.state.investigators[&inv_id];
+    let inv = &session.state().investigators[&INV];
     assert_eq!(inv.resources, 0, "1 - cost 1 = 0, and nothing further");
     assert_eq!(
         inv.hand.iter().filter(|c| c.as_str() == EVIDENCE).count(),
@@ -179,7 +184,7 @@ fn a_second_evidence_is_withdrawn_once_the_first_empties_the_wallet() {
         1,
     );
     assert_eq!(inv.clues, 1);
-    assert_eq!(result.state.locations[&loc_id].clues, 1);
+    assert_eq!(session.state().locations[&HERE].clues, 1);
 }
 
 #[test]
@@ -193,54 +198,37 @@ fn evidence_is_withdrawn_when_rolands_reaction_takes_the_last_clue() {
     // Pre-fix it did: playing it paid a resource and discarded the card, then
     // `discover_clue` found 0 clues and no-opped silently — one resource and one
     // card spent for nothing, with no error.
-    let (inv_id, enemy_id, loc_id, state) = after_defeat_board(1, |inv| {
-        inv.hand.push(CardCode::new(EVIDENCE));
-        // Roland's investigator card in play → his after-defeat reaction matches
-        // alongside the hand play.
-        inv.cards_in_play.push(CardInPlay::enter_play(
-            CardCode::new(ROLAND),
-            CardInstanceId(1),
-            Owner::Investigator(InvestigatorId(1)),
-        ));
-    });
+    //
+    // Roland's investigator card in play → his after-defeat reaction matches
+    // alongside the hand play.
+    let state = after_defeat_board(1, |inv| inv.hand([EVIDENCE]).in_play([ROLAND]));
     assert_eq!(
-        state.investigators[&inv_id].resources, 5,
+        state.investigators[&INV].resources, 5,
         "fixture invariant: 5 starting resources",
     );
+    let roland = OptionTarget::CardInstance(state.in_play(INV, ROLAND));
 
-    // OptionId(0) = Roland's in-play reaction (in-play triggers are offered
-    // before hand plays); OptionId(1) would be the Evidence! play. The second
-    // `pick_single` is the pre-fix path — unused once Evidence! is withdrawn, and
-    // what makes this test fail on the *defect* (a resource and a card spent for
-    // a no-op discovery) rather than on a missing scripted response.
-    let result = TestSession::new(state)
-        .resolve_choices(|c| {
-            c.commit_cards(&[])
-                .pick_single(OptionId(0))
-                .pick_single(OptionId(0));
-        })
-        .take(&fight_action(inv_id, enemy_id))
-        .finish();
+    // Fire Roland's reaction. Evidence! is then withdrawn, so the window closes
+    // and play is back at the turn menu — not still offering a resource and a
+    // card spent for a no-op discovery.
+    let offered = defeat_the_enemy(state);
+    assert_eq!(offered.offered_at(&evidence_in_hand()), 1);
+    let session = offered.pick(roland);
+    session.assert_at_turn_menu(INV);
+    let events = session.events();
 
     assert_event!(
-        result.events,
+        events,
         Event::ReactionOptionLapsed { code, reason: LapseReason::NoStateChange, investigator }
-            if code.as_str() == EVIDENCE && *investigator == inv_id
+            if code.as_str() == EVIDENCE && *investigator == INV
     );
-    assert_eq!(lapse_count(&result.events, EVIDENCE), 1);
+    assert_eq!(lapse_count(events, EVIDENCE), 1);
     // Roland's clue moved; Evidence! never resolved.
-    assert_no_event!(result.events, Event::CardPlayed { .. });
-    assert_no_event!(result.events, Event::ResourcesPaid { .. });
-    assert_eq!(
-        result
-            .events
-            .iter()
-            .filter(|e| matches!(e, Event::CluePlaced { .. }))
-            .count(),
-        1,
-    );
+    assert_no_event!(events, Event::CardPlayed { .. });
+    assert_no_event!(events, Event::ResourcesPaid { .. });
+    assert_event_count!(events, 1, Event::CluePlaced { .. });
 
-    let inv = &result.state.investigators[&inv_id];
+    let inv = &session.state().investigators[&INV];
     assert_eq!(inv.clues, 1);
     assert_eq!(inv.resources, 5, "Evidence! was never paid for");
     assert!(
@@ -248,7 +236,7 @@ fn evidence_is_withdrawn_when_rolands_reaction_takes_the_last_clue() {
         "Evidence! stays in hand",
     );
     assert!(inv.discard.is_empty());
-    assert_eq!(result.state.locations[&loc_id].clues, 0);
+    assert_eq!(session.state().locations[&HERE].clues, 0);
 }
 
 #[test]
@@ -257,35 +245,21 @@ fn a_still_payable_second_evidence_is_not_withdrawn() {
     // payable, and with 2 clues both stay able to discover, so firing the first
     // must leave the second on offer. Same fixture as the wallet test, one
     // resource richer.
-    let (inv_id, enemy_id, loc_id, state) = after_defeat_board(2, |inv| {
-        inv.hand.push(CardCode::new(EVIDENCE));
-        inv.hand.push(CardCode::new(EVIDENCE));
-        inv.resources = 2;
-    });
+    let state = after_defeat_board(2, |inv| inv.hand([EVIDENCE, EVIDENCE]).resources(2));
 
-    let result = TestSession::new(state)
-        .resolve_choices(|c| {
-            c.commit_cards(&[])
-                .pick_single(OptionId(0))
-                .pick_single(OptionId(0));
-        })
-        .take(&fight_action(inv_id, enemy_id))
-        .finish();
+    let first = play_one_of_two_evidence(defeat_the_enemy(state));
+    // The second copy is still on offer.
+    assert_eq!(first.offered_at(&evidence_in_hand()), 1);
+    let session = first.pick(evidence_in_hand());
+    session.assert_at_turn_menu(INV);
 
-    assert_eq!(lapse_count(&result.events, EVIDENCE), 0);
-    assert_eq!(
-        result
-            .events
-            .iter()
-            .filter(|e| matches!(e, Event::CardPlayed { code, .. } if code.as_str() == EVIDENCE))
-            .count(),
-        2,
-    );
-    let inv = &result.state.investigators[&inv_id];
+    assert_eq!(lapse_count(session.events(), EVIDENCE), 0);
+    assert_eq!(evidence_plays(session.events()), 2);
+    let inv = &session.state().investigators[&INV];
     assert_eq!(inv.resources, 0, "2 - two costs of 1 = 0");
     assert_eq!(inv.clues, 2);
     assert!(!inv.hand.iter().any(|c| c.as_str() == EVIDENCE));
-    assert_eq!(result.state.locations[&loc_id].clues, 0);
+    assert_eq!(session.state().locations[&HERE].clues, 0);
 }
 
 #[test]
@@ -300,111 +274,71 @@ fn firing_a_candidate_whose_card_left_hand_rejects_instead_of_panicking() {
     //
     // Pre-fix this path was an `unreachable!` in `play_fast_event`: a reachable
     // panic that would take the session down.
-    let (inv_id, enemy_id, loc_id, state) = after_defeat_board(2, |inv| {
-        inv.hand.push(CardCode::new(EVIDENCE));
-    });
-    let after_fight = test_support::take_turn_action(state, &fight_action(inv_id, enemy_id));
-    let mut opened = engine::apply(
-        after_fight.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        }),
-    );
-    let EngineOutcome::AwaitingInput { request, .. } = &opened.outcome else {
-        panic!("after-defeat window must open; got {:?}", opened.outcome);
-    };
-    assert_eq!(request.options.len(), 1, "Evidence! alone is on offer");
-    opened
-        .state
-        .investigators
-        .get_mut(&inv_id)
-        .expect("seated")
-        .hand
-        .clear();
-
-    let result = engine::apply(
-        opened.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(0)),
-        }),
+    let opened = defeat_the_enemy(after_defeat_board(2, |inv| inv.hand([EVIDENCE])));
+    assert_eq!(
+        (
+            opened.offered_at(&evidence_in_hand()),
+            opened.prompt().options.len()
+        ),
+        (1, 1),
+        "Evidence! alone is on offer: {:?}",
+        opened.prompt(),
     );
 
-    let EngineOutcome::Rejected { reason } = &result.outcome else {
-        panic!(
-            "a candidate that can no longer be initiated must reject, not panic; got {:?}",
-            result.outcome,
-        );
-    };
+    // No step can empty the hand while the prompt is open, so the stale option
+    // is made by editing the state under it.
+    let result = opened
+        .edit_state(|state| {
+            state
+                .investigators
+                .get_mut(&INV)
+                .expect("seated")
+                .hand
+                .clear();
+        })
+        .pick(evidence_in_hand());
+
+    let reason = result.expect_rejected();
     assert!(
         reason.contains("can no longer be initiated"),
         "rejected by the initiation gate: {reason}",
     );
     // Rejection leaves state and events untouched (the `apply_via` contract):
     // nothing paid, nothing played, no clue moved.
+    let result = result.finish();
     assert_no_event!(result.events, Event::ResourcesPaid { .. });
     assert_no_event!(result.events, Event::CardPlayed { .. });
-    assert_eq!(result.state.investigators[&inv_id].resources, 5);
-    assert_eq!(result.state.locations[&loc_id].clues, 2);
+    assert_eq!(result.state.investigators[&INV].resources, 5);
+    assert_eq!(result.state.locations[&HERE].clues, 2);
 }
 
 #[test]
 fn a_lone_evidence_still_opens_and_resolves_its_window() {
     // Regression floor: re-validation must not disturb the ordinary single-option
     // window. Same board as the wallet test with one copy and a full wallet.
-    let (inv_id, enemy_id, loc_id, state) = after_defeat_board(2, |inv| {
-        inv.hand.push(CardCode::new(EVIDENCE));
-    });
+    let opened = defeat_the_enemy(after_defeat_board(2, |inv| inv.hand([EVIDENCE])));
+    assert_eq!(opened.offered_at(&evidence_in_hand()), 1);
+    assert_eq!(lapse_count(opened.events(), EVIDENCE), 0);
 
-    let after_fight = test_support::take_turn_action(state, &fight_action(inv_id, enemy_id));
-    let opened = engine::apply(
-        after_fight.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        }),
-    );
-    let EngineOutcome::AwaitingInput { request, .. } = &opened.outcome else {
-        panic!("after-defeat window must open; got {:?}", opened.outcome);
-    };
-    assert!(request.options.iter().any(|o| o.label.contains(EVIDENCE)));
-    assert_eq!(lapse_count(&opened.events, EVIDENCE), 0);
-
-    let result = engine::apply(
-        opened.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(0)),
-        }),
-    );
+    let session = opened.pick(evidence_in_hand());
+    session.assert_at_turn_menu(INV);
     assert_event!(
-        result.events,
-        Event::CluePlaced { investigator, count: 1 } if *investigator == inv_id
+        session.events(),
+        Event::CluePlaced { investigator, count: 1 } if *investigator == INV
     );
-    assert_eq!(result.state.locations[&loc_id].clues, 1);
+    assert_eq!(session.state().locations[&HERE].clues, 1);
 }
 
-/// Roland Banks's seat.
-const ROLAND_SEAT: InvestigatorId = InvestigatorId(1);
-
-/// Roland Banks seated, solo, at a 1-clue Study, with the after-defeat window
-/// for an enemy he defeated open and offering his reaction. Returns the
-/// settled state.
+/// Roland Banks, seated from his printed card, solo at a 1-clue Study, with the
+/// after-defeat window for an enemy he defeated open and offering his
+/// reaction. Returns the settled state.
 fn rolands_window_open() -> GameState {
-    let inv_id = ROLAND_SEAT;
-    let mut roland = test_support::test_investigator(1);
-    roland.investigator_card.code = CardCode::new(ROLAND);
-    roland.current_location = Some(LocationId(10));
-    let rolands_card = OptionTarget::CardInstance(roland.investigator_card.instance_id);
-    let mut study = test_support::test_location(10, "Study");
-    study.clues = 1;
-    let state = GameStateBuilder::new()
-        .with_investigator(roland)
-        .with_location(study)
-        .open_turn(inv_id)
-        .build();
-    let opened = TestSession::new(state).fire_at(TimingEvent::EnemyDefeated {
-        enemy: EnemyId(100),
-        by: Some(inv_id),
-        code: CardCode::new("01160"),
-    });
+    let opened = defeat_the_enemy(after_defeat_board(1, |inv| inv.as_card(ROLAND)));
+    let rolands_card = OptionTarget::CardInstance(
+        opened.state().investigators[&INV]
+            .investigator_card
+            .instance_id,
+    );
     let offered: Vec<_> = opened
         .prompt()
         .options
@@ -429,7 +363,7 @@ fn rolands_reaction_lapses_as_usage_limit_reached_once_its_limit_is_used() {
     // His reaction is the first ability printed on his card (`roland_banks.rs`).
     state
         .investigators
-        .get_mut(&ROLAND_SEAT)
+        .get_mut(&INV)
         .expect("seated")
         .investigator_card
         .bump_ability_usage(0, round);
@@ -439,7 +373,7 @@ fn rolands_reaction_lapses_as_usage_limit_reached_once_its_limit_is_used() {
     assert_event!(
         resurfaced.events(),
         Event::ReactionOptionLapsed { code, reason: LapseReason::UsageLimitReached, investigator }
-            if code.as_str() == ROLAND && *investigator == ROLAND_SEAT
+            if code.as_str() == ROLAND && *investigator == INV
     );
     assert_no_event!(resurfaced.events(), Event::CluePlaced { .. });
 }
@@ -449,18 +383,14 @@ fn rolands_reaction_lapses_as_usage_limit_reached_once_its_limit_is_used() {
 #[test]
 fn rolands_reaction_lapses_as_not_active_once_he_is_eliminated() {
     let mut state = rolands_window_open();
-    state
-        .investigators
-        .get_mut(&ROLAND_SEAT)
-        .expect("seated")
-        .status = Status::Defeated;
+    state.investigators.get_mut(&INV).expect("seated").status = Status::Defeated;
 
     let resurfaced = TestSession::new(state);
 
     assert_event!(
         resurfaced.events(),
         Event::ReactionOptionLapsed { code, reason: LapseReason::NotActive, investigator }
-            if code.as_str() == ROLAND && *investigator == ROLAND_SEAT
+            if code.as_str() == ROLAND && *investigator == INV
     );
     assert_no_event!(resurfaced.events(), Event::CluePlaced { .. });
 }

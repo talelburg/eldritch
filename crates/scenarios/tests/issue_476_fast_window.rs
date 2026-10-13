@@ -6,12 +6,16 @@
 //! `Done`-idle strand). Skipping reaches the open turn; picking the option plays
 //! the asset.
 
-use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
+use game_core::action::RosterEntry;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, EngineOutcome, InputKind, OptionId};
-use game_core::state::{CardCode, ChaosToken, GameState, InvestigatorId, Phase};
-use game_core::{scenario_registry, test_support};
+use game_core::engine::{self, InputKind, OptionTarget};
+use game_core::scenario_registry;
+use game_core::state::{CardCode, ChaosToken, InvestigatorId, Phase};
+use game_core::test_support::{self, TestSession};
 use scenarios::the_gathering;
+
+const INV: InvestigatorId = InvestigatorId(1);
+const MAGNIFYING_GLASS: &str = "01030";
 
 #[ctor::ctor(unsafe)]
 fn install_registries() {
@@ -21,53 +25,40 @@ fn install_registries() {
 
 /// Drive to the post-Mythos-draw fast window: Roland holds Magnifying Glass,
 /// fails the Rotting Remains willpower test (Cultist -1), and the
-/// `InvestigatorTurnBegins` fast window prompts. Returns the state + outcome there.
-fn to_fast_window() -> (GameState, EngineOutcome) {
+/// `InvestigatorTurnBegins` fast window prompts. Returns the session there.
+fn to_fast_window() -> TestSession {
     let roster = vec![RosterEntry {
-        investigator: CardCode("01001".into()),
+        investigator: CardCode::new("01001"),
         deck: vec![],
     }];
-    let mut state = engine::seat_and_open(the_gathering::setup(), &roster).state;
-    state = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        }),
-    )
-    .state;
-    state.encounter_deck = vec![CardCode("01163".into())].into();
+    // seat_and_open rests at the mulligan; Roland keeps his (empty) hand.
+    let mut state = TestSession::new(engine::seat_and_open(the_gathering::setup(), &roster).state)
+        .choose_from_hand(&[])
+        .finish()
+        .state;
+    state.encounter_deck = vec![CardCode::new("01163")].into();
     state.encounter_discard.clear();
     state.chaos_bag.tokens = vec![ChaosToken::Cultist];
     state
         .investigators
-        .get_mut(&InvestigatorId(1))
+        .get_mut(&INV)
         .unwrap()
         .hand
-        .push(CardCode("01030".into()));
+        .push(CardCode::new(MAGNIFYING_GLASS));
 
-    let state = test_support::take_turn_action(state, &TurnAction::EndTurn).state;
-    let state = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::Confirm,
-        }),
-    )
-    .state;
-    let r = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        }),
-    );
-    (r.state, r.outcome)
+    // End the turn into round 2's Mythos draw, draw Rotting Remains, and
+    // commit nothing to its willpower test.
+    TestSession::new(state)
+        .take(&TurnAction::EndTurn)
+        .confirm()
+        .commit(&[])
 }
 
 #[test]
 fn parked_fast_window_prompts_instead_of_stranding() {
-    let (state, outcome) = to_fast_window();
-    let EngineOutcome::AwaitingInput { request, .. } = &outcome else {
-        panic!("expected a skippable fast-window prompt, got {outcome:?} (strand regression)");
-    };
+    let session = to_fast_window();
+    // `prompt()` panics on a `Done` rest, so reaching it is the no-strand claim.
+    let request = session.prompt();
     assert_eq!(request.kind, InputKind::PickSingle, "{request:?}");
     assert!(
         request.skippable,
@@ -77,40 +68,34 @@ fn parked_fast_window_prompts_instead_of_stranding() {
         !request.options.is_empty(),
         "the fast window lists the eligible fast plays: {request:?}"
     );
-    assert_eq!(state.phase, Phase::Investigation);
-    assert_eq!(state.round, 2);
+    assert_eq!(session.state().phase, Phase::Investigation);
+    assert_eq!(session.state().round, 2);
 }
 
 #[test]
 fn skipping_the_fast_window_reaches_the_open_turn() {
-    let (state, _) = to_fast_window();
-    let r = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::Skip,
-        }),
-    );
-    let EngineOutcome::AwaitingInput { request, .. } = &r.outcome else {
-        panic!("Skip must reach the open turn, got {:?}", r.outcome);
-    };
-    assert_eq!(request.prompt, "Choose an action");
+    to_fast_window().skip().assert_at_turn_menu(INV);
 }
 
 #[test]
 fn playing_the_fast_card_puts_magnifying_glass_in_play() {
-    let (state, _) = to_fast_window();
-    // Option 0 is the only eligible fast play (Magnifying Glass).
-    let r = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(0)),
-        }),
-    );
+    let session = to_fast_window();
+    // The Fast window anchors each play to the hand card it plays.
+    let glass = OptionTarget::HandCard {
+        investigator: INV,
+        hand_index: session.state().investigators[&INV]
+            .hand
+            .iter()
+            .position(|c| *c == CardCode::new(MAGNIFYING_GLASS))
+            .and_then(|i| u8::try_from(i).ok())
+            .expect("Magnifying Glass is in hand"),
+    };
+    let session = session.pick(glass);
     assert!(
-        r.state.investigators[&InvestigatorId(1)]
+        session.state().investigators[&INV]
             .cards_in_play
             .iter()
-            .any(|c| c.code == CardCode("01030".into())),
+            .any(|c| c.code == CardCode::new(MAGNIFYING_GLASS)),
         "Magnifying Glass entered play after the fast-window pick"
     );
 }

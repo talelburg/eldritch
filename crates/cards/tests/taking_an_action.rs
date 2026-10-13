@@ -3,7 +3,7 @@
 //! take each action from the turn menu through
 //! [`TestSession`](game_core::test_support::TestSession); the refusal test
 //! submits it past the menu with
-//! [`dispatch_turn_action_unchecked`](game_core::test_support::dispatch_turn_action_unchecked),
+//! [`submit_off_menu`](game_core::test_support::TestSession::submit_off_menu),
 //! as a client that never read the menu would. The real card corpus is
 //! installed so the play and activation rows can seat printed cards.
 //!
@@ -39,13 +39,12 @@ use card_dsl::dsl::{self, Ability, InvestigatorTarget};
 use cards::REGISTRY;
 use game_core::card_registry::CardRegistry;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, Status, UseKind,
+    AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, EnemyId, GameState,
+    GameStateBuilder, InvestigatorId, LocationId, Status, UseKind,
 };
-use game_core::test_support::{self, TestSession};
+use game_core::test_support::{self, seat, uses, Seat, SeatLookup as _, TestSession};
 
 /// A probe whose only property is an activated ability costing two actions:
 /// *"\[action\]\[action\]: gain 1 resource."*
@@ -67,14 +66,6 @@ const FLASHLIGHT: &str = "01087";
 const PARLOR: &str = "01115";
 /// Beat Cop (01018), whose ability 1 is a fast ability.
 const BEAT_COP: &str = "01018";
-
-/// The in-play instances the activation rows seat, numbered clear of any the
-/// engine mints.
-const KIT: CardInstanceId = CardInstanceId(901);
-const BLADE: CardInstanceId = CardInstanceId(902);
-const TORCH: CardInstanceId = CardInstanceId(903);
-const PROBE: CardInstanceId = CardInstanceId(904);
-const COP: CardInstanceId = CardInstanceId(905);
 
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(1);
@@ -104,12 +95,11 @@ fn install() {
 }
 
 /// [`INV`] at [`HERE`] (connected to [`THERE`]) with 3 actions and First Aid
-/// in deck, [`ATTACKER`] engaged with them, and [`BYSTANDER`] beside them, and
-/// a chaos bag for the tested actions to start their test against. The
-/// attacker deals 1 damage and has the health to survive any fight.
-fn board() -> GameState {
-    let mut inv = test_support::test_investigator(1);
-    inv.deck = vec![CardCode::new(FIRST_AID)];
+/// in deck, seated as `seated` makes them, [`ATTACKER`] engaged with them, and
+/// [`BYSTANDER`] beside them, and a chaos bag for the tested actions to start
+/// their test against. The attacker deals 1 damage and has the health to
+/// survive any fight.
+fn board(seated: fn(Seat) -> Seat) -> GameState {
     let mut attacker = test_support::test_enemy(ATTACKER.0, "Attacker");
     attacker.attack_damage = 1;
     attacker.attack_horror = 0;
@@ -119,7 +109,7 @@ fn board() -> GameState {
     let mut state = GameStateBuilder::new()
         .with_location(test_support::test_location(HERE.0, "Here"))
         .with_location(test_support::test_location(THERE.0, "There"))
-        .with_investigator_at(inv, HERE)
+        .with_seat(seated(seat(1).at(HERE).deck([FIRST_AID])))
         .with_enemy(bystander)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(INV)
@@ -129,13 +119,36 @@ fn board() -> GameState {
     state
 }
 
-/// One way of taking an action: the board it needs beyond [`board`], what to
-/// take, the event that marks its effect landing, how many actions it spends,
-/// and whether it provokes.
+/// What a row takes: a turn action as written, or the activation of ability
+/// `index` of the card `code` in [`INV`]'s play area, whose instance id the
+/// seat mints.
+#[derive(Clone)]
+enum Take {
+    Action(TurnAction),
+    Activate { code: &'static str, index: u8 },
+}
+
+impl Take {
+    fn on(&self, state: &GameState) -> TurnAction {
+        match self {
+            Self::Action(action) => action.clone(),
+            Self::Activate { code, index } => TurnAction::ActivateAbility {
+                investigator: INV,
+                source: AbilitySource::InPlay(state.in_play(INV, *code)),
+                address: AbilityAddress::Printed(*index),
+            },
+        }
+    }
+}
+
+/// One way of taking an action: the seat and board it needs beyond [`board`],
+/// what to take, the event that marks its effect landing, how many actions it
+/// spends, and whether it provokes.
 struct Row {
     name: &'static str,
+    seated: fn(Seat) -> Seat,
     setup: fn(&mut GameState),
-    action: TurnAction,
+    take: Take,
     effect: fn(&Event) -> bool,
     actions_spent: u8,
     provokes: bool,
@@ -151,8 +164,9 @@ impl Row {
     ) -> Self {
         Self {
             name,
+            seated: |seat| seat,
             setup: |_| {},
-            action,
+            take: Take::Action(action),
             effect,
             actions_spent: 1,
             provokes,
@@ -219,48 +233,23 @@ fn basic_action_rows() -> Vec<Row> {
     ]
 }
 
-/// Put `code` into [`INV`]'s play area as `instance`, with `supplies` supply
-/// uses if it has any.
-fn seat_in_play(state: &mut GameState, code: &str, instance: CardInstanceId, supplies: u8) {
-    let mut card = CardInPlay::enter_play(CardCode::new(code), instance, Owner::Investigator(INV));
-    if supplies > 0 {
-        card.uses.insert(UseKind::Supplies, supplies);
-    }
-    state
-        .investigators
-        .get_mut(&INV)
-        .unwrap()
-        .cards_in_play
-        .push(card);
-}
+/// Playing the one card in [`INV`]'s hand.
+const PLAY_FROM_HAND: Take = Take::Action(TurnAction::PlayCard {
+    investigator: INV,
+    hand_index: 0,
+});
 
-/// Put `code` alone into [`INV`]'s hand, at index 0.
-fn seat_in_hand(state: &mut GameState, code: &str) {
-    state.investigators.get_mut(&INV).unwrap().hand = vec![CardCode::new(code)];
-}
-
-/// The activation for ability `index` of the card `instance` in [`INV`]'s play area.
-fn activate(instance: CardInstanceId, index: u8) -> TurnAction {
-    TurnAction::ActivateAbility {
-        investigator: INV,
-        source: AbilitySource::InPlay(instance),
-        address: AbilityAddress::Printed(index),
-    }
-}
-
-/// Playing a card and activating an ability, each taken through the same step
-/// as the basic actions. A fast play and a fast ability spend no action, so
-/// they take no action at all and provoke nothing.
-fn play_and_activate_rows() -> Vec<Row> {
+/// Playing a card, taken through the same step as the basic actions. A fast
+/// play (and, in [`activate_rows`], a fast ability) spends no action, so it
+/// takes no action at all and provokes nothing.
+fn play_rows() -> Vec<Row> {
     vec![
         // Emergency Cache 01088: *"Gain 3 resources."* A non-fast event.
         Row {
             name: "Play (non-fast event)",
-            setup: |state| seat_in_hand(state, EMERGENCY_CACHE),
-            action: TurnAction::PlayCard {
-                investigator: INV,
-                hand_index: 0,
-            },
+            seated: |seat| seat.hand([EMERGENCY_CACHE]),
+            setup: |_| {},
+            take: PLAY_FROM_HAND,
             effect: |e| matches!(e, Event::ResourcesGained { amount: 3, .. }),
             actions_spent: 1,
             provokes: true,
@@ -268,30 +257,34 @@ fn play_and_activate_rows() -> Vec<Row> {
         // Magnifying Glass 01030: *"Fast."* Played without the Play action.
         Row {
             name: "Play (fast asset)",
-            setup: |state| seat_in_hand(state, MAGNIFYING_GLASS),
-            action: TurnAction::PlayCard {
-                investigator: INV,
-                hand_index: 0,
-            },
+            seated: |seat| seat.hand([MAGNIFYING_GLASS]),
+            setup: |_| {},
+            take: PLAY_FROM_HAND,
             effect: |e| matches!(e, Event::CardPlayed { .. }),
             actions_spent: 0,
             provokes: false,
         },
+    ]
+}
+
+/// Activating an ability on each kind of source, taken through the same step
+/// as the basic actions.
+fn activate_rows() -> Vec<Row> {
+    vec![
         // First Aid 01019: *"[action] Spend 1 supply: Heal 1 damage or horror
         // from an investigator at your location."* No designator. The
         // investigator carries 1 damage so the heal can change the game state.
         Row {
             name: "Activate (no designator)",
-            setup: |state| {
-                seat_in_play(state, FIRST_AID, KIT, 3);
-                state
-                    .investigators
-                    .get_mut(&INV)
-                    .unwrap()
-                    .investigator_card
-                    .accumulated_damage = 1;
+            seated: |seat| {
+                seat.in_play([(FIRST_AID, uses(UseKind::Supplies, 3))])
+                    .harm(1, 0)
             },
-            action: activate(KIT, 0),
+            setup: |_| {},
+            take: Take::Activate {
+                code: FIRST_AID,
+                index: 0,
+            },
             effect: |e| matches!(e, Event::Healed { .. }),
             actions_spent: 1,
             provokes: true,
@@ -301,11 +294,14 @@ fn play_and_activate_rows() -> Vec<Row> {
         // the attacker is the one enemy here to fight.
         Row {
             name: "Activate (designated Fight)",
+            seated: |seat| seat.in_play([MACHETE]),
             setup: |state| {
-                seat_in_play(state, MACHETE, BLADE, 0);
                 state.enemies.remove(&BYSTANDER);
             },
-            action: activate(BLADE, 0),
+            take: Take::Activate {
+                code: MACHETE,
+                index: 0,
+            },
             effect: |e| matches!(e, Event::SkillTestStarted { .. }),
             actions_spent: 1,
             provokes: false,
@@ -315,8 +311,12 @@ fn play_and_activate_rows() -> Vec<Row> {
         // action does.
         Row {
             name: "Activate (designated Investigate)",
-            setup: |state| seat_in_play(state, FLASHLIGHT, TORCH, 3),
-            action: activate(TORCH, 0),
+            seated: |seat| seat.in_play([(FLASHLIGHT, uses(UseKind::Supplies, 3))]),
+            setup: |_| {},
+            take: Take::Activate {
+                code: FLASHLIGHT,
+                index: 0,
+            },
             effect: |e| matches!(e, Event::SkillTestStarted { .. }),
             actions_spent: 1,
             provokes: true,
@@ -325,16 +325,17 @@ fn play_and_activate_rows() -> Vec<Row> {
         // reached by standing in it. Resign is exempt.
         Row {
             name: "Activate (Resign)",
+            seated: |seat| seat,
             setup: |state| {
                 let here = state.locations.get_mut(&HERE).unwrap();
                 here.code = CardCode::new(PARLOR);
                 here.revealed = true;
             },
-            action: TurnAction::ActivateAbility {
+            take: Take::Action(TurnAction::ActivateAbility {
                 investigator: INV,
                 source: AbilitySource::Location(HERE),
                 address: AbilityAddress::Printed(0),
-            },
+            }),
             effect: |e| matches!(e, Event::InvestigatorEliminated { .. }),
             actions_spent: 1,
             provokes: false,
@@ -343,8 +344,12 @@ fn play_and_activate_rows() -> Vec<Row> {
         // still one attack from the one engaged enemy.
         Row {
             name: "Activate (two actions)",
-            setup: |state| seat_in_play(state, TWO_ACTION_PROBE, PROBE, 0),
-            action: activate(PROBE, 0),
+            seated: |seat| seat.in_play([TWO_ACTION_PROBE]),
+            setup: |_| {},
+            take: Take::Activate {
+                code: TWO_ACTION_PROBE,
+                index: 0,
+            },
             effect: |e| matches!(e, Event::ResourcesGained { amount: 1, .. }),
             actions_spent: 2,
             provokes: true,
@@ -354,11 +359,14 @@ fn play_and_activate_rows() -> Vec<Row> {
         // one enemy here to choose.
         Row {
             name: "Activate (fast)",
+            seated: |seat| seat.in_play([BEAT_COP]),
             setup: |state| {
-                seat_in_play(state, BEAT_COP, COP, 0);
                 state.enemies.remove(&BYSTANDER);
             },
-            action: activate(COP, 1),
+            take: Take::Activate {
+                code: BEAT_COP,
+                index: 1,
+            },
             effect: |e| matches!(e, Event::EnemyDamaged { enemy, .. } if *enemy == ATTACKER),
             actions_spent: 0,
             provokes: false,
@@ -381,11 +389,13 @@ fn position(events: &[Event], name: &str, what: &str, p: impl Fn(&Event) -> bool
 fn a_ready_engaged_enemy_attacks_every_action_but_the_exempt_ones() {
     for row in basic_action_rows()
         .into_iter()
-        .chain(play_and_activate_rows())
+        .chain(play_rows())
+        .chain(activate_rows())
     {
-        let mut state = board();
+        let mut state = board(row.seated);
         (row.setup)(&mut state);
-        let session = TestSession::new(state).take(&row.action);
+        let action = row.take.on(&state);
+        let session = TestSession::new(state).take(&action);
         let events = session.events();
 
         let effect = position(events, row.name, "effect", row.effect);
@@ -451,18 +461,14 @@ fn a_ready_engaged_enemy_attacks_every_action_but_the_exempt_ones() {
 
 /// The step refuses a basic action, with a reason, for an investigator who may
 /// not take one. It does so even when the action reaches the handler without
-/// passing the turn menu, and before anything is paid.
+/// passing the turn menu (`submit_off_menu`: a client that never read the menu),
+/// and before anything is paid.
 #[test]
 fn a_basic_action_is_refused_for_an_investigator_who_is_not_active_or_out_of_actions() {
-    let mut not_active = board();
+    let mut not_active = board(|seat| seat);
     not_active.investigators.get_mut(&INV).unwrap().status = Status::Resigned;
-    let mut no_actions = board();
-    no_actions
-        .investigators
-        .get_mut(&INV)
-        .unwrap()
-        .actions_remaining = 0;
-    let mut missing = board();
+    let no_actions = board(|seat| seat.actions(0));
+    let mut missing = board(|seat| seat);
     missing.investigators.remove(&INV);
     let cases = [
         ("not Active", not_active),
@@ -471,18 +477,13 @@ fn a_basic_action_is_refused_for_an_investigator_who_is_not_active_or_out_of_act
     ];
     for (case, state) in cases {
         for row in basic_action_rows() {
-            let result = test_support::dispatch_turn_action_unchecked(state.clone(), &row.action);
-            match result.outcome {
-                EngineOutcome::Rejected { reason } => assert!(
-                    !reason.is_empty(),
-                    "{} for an investigator {case}: refused without a reason",
-                    row.name,
-                ),
-                other => panic!(
-                    "{} for an investigator {case}: expected a refusal, got {other:?}",
-                    row.name,
-                ),
-            }
+            let action = row.take.on(&state);
+            let session = TestSession::new(state.clone()).submit_off_menu(&action);
+            assert!(
+                !session.expect_rejected().is_empty(),
+                "{} for an investigator {case}: refused without a reason",
+                row.name,
+            );
         }
     }
 }

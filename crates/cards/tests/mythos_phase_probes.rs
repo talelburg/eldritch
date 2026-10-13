@@ -36,15 +36,20 @@
 
 use card_dsl::card_data::{CardKind, CardMetadata, CardType};
 use card_dsl::dsl::{self, Ability, InvestigatorTarget};
-use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
+use game_core::action::RosterEntry;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
+use game_core::engine::{self, OptionTarget, PromptNature};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, MockRegistry, TEST_INV};
+use game_core::test_support::{self, MockRegistry, TestSession, TEST_INV};
 use game_core::{assert_event, assert_event_sequence};
+
+const INV1: InvestigatorId = InvestigatorId(1);
+const INV2: InvestigatorId = InvestigatorId(2);
+/// The probe location's id, and the roster's starting location.
+const HERE: LocationId = LocationId(10);
 
 /// Probe: a treachery whose Revelation is a bare *"You gain 1 resource"* — the
 /// engine primitive "a Revelation that resolves inline and discards", with
@@ -132,17 +137,17 @@ fn install_probe_registry() {
 
 /// The board every test starts from: one probe location, set as the starting
 /// location, and a +0 chaos bag. No investigators — callers supply the roster
-/// to [`seat_and_open`]. No act or agenda deck: nothing here discovers a clue
-/// or places doom.
+/// to [`seat_and_open`](engine::seat_and_open). No act or agenda deck: nothing
+/// here discovers a clue or places doom.
 fn board() -> GameState {
-    let mut location = test_support::test_location(10, "Probe Location");
+    let mut location = test_support::test_location(HERE.0, "Probe Location");
     location.code = CardCode::new(PROBE_LOCATION);
 
     let mut state = GameStateBuilder::new()
         .with_location(location)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
-    state.starting_location = Some(LocationId(10));
+    state.starting_location = Some(HERE);
     state
 }
 
@@ -153,52 +158,38 @@ fn with_encounter_deck(state: &mut GameState, codes: &[&str]) {
     state.encounter_deck = codes.iter().map(|c| CardCode::new(*c)).collect();
 }
 
-/// Close one investigator's mulligan prompt, keeping the whole opening hand.
-fn keep_hand(state: GameState) -> GameState {
-    engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        }),
-    )
-    .state
-}
-
-fn roster(seats: usize) -> Vec<RosterEntry> {
-    (0..seats)
+/// Seat `seats` test investigators through `seat_and_open`, keep every opening
+/// hand at the mulligan, and end every turn — the last `EndTurn` in
+/// `turn_order` ticks through Investigation → Enemy → Upkeep into Mythos
+/// (round 2), pausing with the encounter-draw cursor on inv1.
+fn at_mythos_draw(seats: usize) -> TestSession {
+    let roster: Vec<RosterEntry> = (0..seats)
         .map(|_| RosterEntry {
             investigator: CardCode::new(TEST_INV),
             deck: vec![],
         })
-        .collect()
+        .collect();
+    let session = TestSession::new(engine::seat_and_open(board(), &roster).state);
+    let session = (0..seats).fold(session, |s, _| s.choose_from_hand(&[]));
+    (0..seats).fold(session, |s, _| s.take(&TurnAction::EndTurn))
 }
 
-/// Seat one investigator, close the mulligan, and end their turn — which ticks
-/// through Investigation → Enemy → Upkeep into Mythos (round 2), pausing with
-/// the encounter-draw cursor on inv1.
-fn setup_at_mythos_draw(state: GameState) -> GameState {
-    let state = keep_hand(engine::seat_and_open(state, &roster(1)).state);
-    test_support::take_turn_action(state, &TurnAction::EndTurn).state
+/// [`at_mythos_draw`] with the encounter deck then seeded to `codes`, *after*
+/// `seat_and_open`'s shuffle. The draw prompt does not depend on the deck, so it
+/// stands.
+fn at_mythos_draw_of(seats: usize, codes: &[&str]) -> TestSession {
+    at_mythos_draw(seats).edit_state(|state| with_encounter_deck(state, codes))
 }
 
-/// The two-investigator equivalent: both mulliganed, both turns ended — the
-/// second `EndTurn` is the last in `turn_order`, so it ticks into Mythos.
-fn setup_two_investigators_at_mythos_draw(state: GameState) -> GameState {
-    let mut state = keep_hand(keep_hand(engine::seat_and_open(state, &roster(2)).state));
-    // inv1 ends turn → rotates to inv2.
-    state = test_support::take_turn_action(state, &TurnAction::EndTurn).state;
-    // inv2 is last in turn_order → auto-advances into Mythos.
-    test_support::take_turn_action(state, &TurnAction::EndTurn).state
-}
-
-/// The `Confirm` that answers the step-1.4 encounter-draw prompt.
-fn draw_encounter_card(state: GameState) -> ApplyResult {
-    engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::Confirm,
-        }),
-    )
+/// Assert the session rests at a step-1.4 encounter-draw prompt.
+#[track_caller]
+fn assert_at_encounter_draw(session: &TestSession) {
+    assert_eq!(
+        session.prompt().target,
+        Some(OptionTarget::EncounterDeck),
+        "expected the encounter-draw prompt: {:?}",
+        session.prompt(),
+    );
 }
 
 // ------------------------------------------------------------------
@@ -211,33 +202,29 @@ fn mythos_phase_surge_chains_into_next_card() {
     // treachery, so no corpus card can carry the keyword. When #138 lands, flip
     // this test to a real Surge card — False Lead 01136 is the Core one — unless
     // the probe is better tailored to what the test asks (ADR 0016).
-    let mut state = setup_at_mythos_draw(board());
-    assert_eq!(state.phase, Phase::Mythos);
+    //
+    // Surge treachery on top, plain treachery below.
+    let drawing = at_mythos_draw_of(1, &[PROBE_SURGE_TREACHERY, PROBE_TREACHERY]);
+    assert_eq!(drawing.state().phase, Phase::Mythos);
 
-    // Seed the controlled draw order *after* seat_and_open's shuffle:
-    // surge treachery on top, plain treachery below.
-    with_encounter_deck(&mut state, &[PROBE_SURGE_TREACHERY, PROBE_TREACHERY]);
+    let session = drawing.confirm();
 
-    let result = draw_encounter_card(state);
-
-    assert!(matches!(
-        result.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
+    session.assert_at_turn_menu(INV1);
+    let state = session.state();
     assert!(
-        result.state.encounter_deck.is_empty(),
+        state.encounter_deck.is_empty(),
         "both cards consumed by surge chain"
     );
     assert_eq!(
-        result.state.encounter_discard.len(),
+        state.encounter_discard.len(),
         2,
         "both treacheries must be in discard after surge chain",
     );
-    assert_eq!(result.state.phase, Phase::Investigation);
+    assert_eq!(state.phase, Phase::Investigation);
 
     // Both cards were revealed; surge treachery first.
     assert_event_sequence!(
-        result.events,
+        session.finish().events,
         Event::CardRevealed { code, .. }
             if *code == CardCode::new(PROBE_SURGE_TREACHERY),
         Event::CardRevealed { code, .. }
@@ -250,7 +237,6 @@ fn mythos_phase_surge_chains_into_next_card() {
 // ------------------------------------------------------------------
 
 #[test]
-#[allow(clippy::too_many_lines)] // end-to-end multi-investigator surge-isolation walkthrough
 fn mythos_phase_multi_investigator_surge_does_not_spill() {
     // PROVISIONAL against #138: the pipeline hardcodes `surge: false` for every
     // treachery, so no corpus card can carry the keyword. When #138 lands, flip
@@ -258,99 +244,86 @@ fn mythos_phase_multi_investigator_surge_does_not_spill() {
     // the probe is better tailored to what the test asks (ADR 0016).
     //
     // Verifies that a surge in inv1's draw chain resolves entirely within
-    // inv1's DrawEncounterCard apply — consuming two cards from the shared
-    // encounter deck — without disrupting inv2's subsequent draw.
+    // inv1's encounter draw — consuming two cards from the shared encounter
+    // deck — without disrupting inv2's subsequent draw.
     //
     // Encounter deck (top → bottom):
     //   [PROBE_SURGE_TREACHERY, PROBE_TREACHERY, PROBE_TREACHERY]
     //
     // Drive: seat_and_open → mulligans → EndTurn(inv1) → EndTurn(inv2)
-    //        → DrawEncounterCard(inv1) → DrawEncounterCard(inv2)
+    //        → draw (inv1) → draw (inv2)
     //
     // Expected:
-    //   - inv1's DrawEncounterCard: draws the surge treachery, which
+    //   - inv1's draw: draws the surge treachery, which
     //     triggers an immediate chain-draw of the next card (plain
     //     treachery). Both cards resolve, 2× CardRevealed, discard grows
     //     by 2. Still Mythos after; the cursor sits on inv2.
-    //   - inv2's DrawEncounterCard: draws the third card (plain treachery),
+    //   - inv2's draw: draws the third card (plain treachery),
     //     1× CardRevealed, discard grows by 1 more (3 total).
     //     Phase transitions to Investigation; the cursor clears.
-    let inv1 = InvestigatorId(1);
-    let inv2 = InvestigatorId(2);
-
-    let mut state = setup_two_investigators_at_mythos_draw(board());
-
-    assert_eq!(state.phase, Phase::Mythos);
-    assert_eq!(
-        state.current_encounter_drawer(),
-        Some(inv1),
-        "inv1 draws first"
-    );
-
-    // Seed the controlled draw order *after* seat_and_open's shuffle:
-    // surge on top, then two plain treacheries.
-    with_encounter_deck(
-        &mut state,
+    let drawing = at_mythos_draw_of(
+        2,
         &[PROBE_SURGE_TREACHERY, PROBE_TREACHERY, PROBE_TREACHERY],
     );
 
-    // inv1 draws: surge chain pulls TWO cards (surge + plain treachery), then
-    // the loop re-prompts inv2 (AwaitingInput).
-    let result1 = draw_encounter_card(state);
-    assert!(matches!(
-        result1.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
-    // The surge chain resolves within inv1's single apply; still Mythos
-    // because inv2 still needs to draw.
-    assert_eq!(result1.state.phase, Phase::Mythos);
+    assert_eq!(drawing.state().phase, Phase::Mythos);
     assert_eq!(
-        result1.state.current_encounter_drawer(),
-        Some(inv2),
+        drawing.state().current_encounter_drawer(),
+        Some(INV1),
+        "inv1 draws first"
+    );
+
+    // inv1 draws: surge chain pulls TWO cards (surge + plain treachery), then
+    // the loop re-prompts inv2.
+    let second = drawing.confirm();
+    assert_at_encounter_draw(&second);
+    // The surge chain resolves within inv1's single draw; still Mythos
+    // because inv2 still needs to draw.
+    assert_eq!(second.state().phase, Phase::Mythos);
+    assert_eq!(
+        second.state().current_encounter_drawer(),
+        Some(INV2),
         "cursor advances to inv2 after inv1's chain completes"
     );
     assert_eq!(
-        result1.state.encounter_discard.len(),
+        second.state().encounter_discard.len(),
         2,
         "surge + plain treachery both discarded after inv1's chain"
     );
     assert_eq!(
-        result1.state.encounter_deck.len(),
+        second.state().encounter_deck.len(),
         1,
         "one card remains for inv2"
     );
     // Both cards emitted CardRevealed attributed to inv1.
     assert_event!(
-        result1.events,
+        second.events(),
         Event::CardRevealed { investigator, code, .. }
-            if *investigator == inv1
+            if *investigator == INV1
                 && *code == CardCode::new(PROBE_SURGE_TREACHERY)
     );
     assert_event!(
-        result1.events,
+        second.events(),
         Event::CardRevealed { investigator, code, .. }
-            if *investigator == inv1
+            if *investigator == INV1
                 && *code == CardCode::new(PROBE_TREACHERY)
     );
 
     // inv2 draws: one plain treachery, no surge.
-    let result2 = draw_encounter_card(result1.state);
-    assert!(matches!(
-        result2.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
-    assert_eq!(result2.state.phase, Phase::Investigation);
-    assert_eq!(result2.state.current_encounter_drawer(), None);
-    assert!(result2.state.encounter_deck.is_empty());
+    let done = second.confirm();
+    done.assert_at_turn_menu(INV1);
+    assert_eq!(done.state().phase, Phase::Investigation);
+    assert_eq!(done.state().current_encounter_drawer(), None);
+    assert!(done.state().encounter_deck.is_empty());
     assert_eq!(
-        result2.state.encounter_discard.len(),
+        done.state().encounter_discard.len(),
         3,
         "all three cards in discard after both investigators draw"
     );
     assert_event!(
-        result2.events,
+        done.finish().events,
         Event::CardRevealed { investigator, code, .. }
-            if *investigator == inv2
+            if *investigator == INV2
                 && *code == CardCode::new(PROBE_TREACHERY)
     );
 }
@@ -361,45 +334,39 @@ fn mythos_phase_multi_investigator_surge_does_not_spill() {
 
 #[test]
 fn revelation_suspending_into_a_choice_discards_after_the_pick() {
-    let inv = InvestigatorId(1);
-    let mut state = setup_at_mythos_draw(board());
-    with_encounter_deck(&mut state, &[PROBE_CHOICE_TREACHERY]);
+    let drawing = at_mythos_draw_of(1, &[PROBE_CHOICE_TREACHERY]);
 
     // Confirm the draw → the Revelation's ChooseOne suspends for the pick.
-    let drawn = draw_encounter_card(state);
-    assert!(
-        matches!(drawn.outcome, EngineOutcome::AwaitingInput { .. }),
+    let drawn = drawing.confirm();
+    assert_eq!(
+        drawn.prompt().nature,
+        PromptNature::Decision,
         "the Revelation choice suspends, got {:?}",
-        drawn.outcome
+        drawn.prompt(),
     );
-    let res_before = drawn.state.investigators[&inv].resources;
+    let res_before = drawn.state().investigators[&INV1].resources;
+    // The card was revealed as a treachery on the way in.
+    assert_event!(
+        drawn.events(),
+        Event::CardRevealed { investigator, code, card_type }
+            if *investigator == INV1
+                && *code == CardCode::new(PROBE_CHOICE_TREACHERY)
+                && *card_type == CardType::Treachery
+    );
 
     // Pick branch 0 (gain 2 resources). The choice resolves, and the framework
     // disposes of the treachery to encounter_discard.
-    let resolved = engine::apply(
-        drawn.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(0)),
-        }),
-    );
+    let resolved = drawn.pick_nth(0);
     assert_eq!(
-        resolved.state.investigators[&inv].resources,
+        resolved.state().investigators[&INV1].resources,
         res_before + 2,
         "branch 0 granted 2 resources",
     );
     assert!(
         resolved
-            .state
+            .state()
             .encounter_discard
             .contains(&CardCode::new(PROBE_CHOICE_TREACHERY)),
         "the treachery discards once its directly-suspended choice resolves",
-    );
-    // The card was revealed as a treachery on the way in.
-    assert_event!(
-        drawn.events,
-        Event::CardRevealed { investigator, code, card_type }
-            if *investigator == inv
-                && *code == CardCode::new(PROBE_CHOICE_TREACHERY)
-                && *card_type == CardType::Treachery
     );
 }

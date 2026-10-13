@@ -39,9 +39,10 @@ use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
 use game_core::scenario::ScenarioEnding;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, EliminationCause,
-    GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, Status,
+    AbilityAddress, AbilitySource, CardCode, EliminationCause, GameStateBuilder, InvestigatorId,
+    LocationId, Status,
 };
+use game_core::test_support::seat;
 use game_core::{assert_event, test_support};
 
 /// The Parlor.
@@ -66,40 +67,35 @@ fn install_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// The resigner stands at the Parlor holding 2 clues and 3 resources, with a
-/// Machete in play and a Rosary in hand; a survivor stands in the Hallway so
-/// the scenario keeps running. `solo` drops the survivor, which is what makes
-/// Elimination step 6 reachable.
-fn board(solo: bool) -> GameState {
-    let mut resigner = test_support::test_investigator(1);
-    resigner.clues = 2;
-    resigner.resources = 3;
-    resigner.hand = vec![CardCode::new(ROSARY)];
-    resigner.cards_in_play = vec![CardInPlay::enter_play(
-        CardCode::new(MACHETE),
-        CardInstanceId(1),
-        Owner::Investigator(InvestigatorId(1)),
-    )];
-
-    let mut parlor = test_support::test_location(1, "Parlor");
+/// The resigner's turn: they stand at the Parlor holding 2 clues and 3
+/// resources, with a Machete in play and a Rosary in hand; a survivor stands
+/// in the Hallway so the scenario keeps running. `solo` drops the survivor,
+/// which is what makes Elimination step 6 reachable.
+fn board(solo: bool) -> GameStateBuilder {
+    let mut parlor = test_support::test_location(PARLOR.0, "Parlor");
     parlor.code = CardCode::new(PARLOR_CODE);
     parlor.clues = 1;
 
-    let mut builder = GameStateBuilder::new()
-        .with_investigator_at(resigner, PARLOR)
+    let builder = GameStateBuilder::new()
+        .with_seat(
+            seat(RESIGNER.0)
+                .at(PARLOR)
+                .clues(2)
+                .resources(3)
+                .hand([ROSARY])
+                .in_play([MACHETE]),
+        )
         .with_location(parlor)
         .open_turn(RESIGNER);
 
-    builder = if solo {
+    if solo {
         builder.with_turn_order([RESIGNER])
     } else {
-        let survivor = test_support::test_investigator(2);
         builder
-            .with_investigator_at(survivor, HALLWAY)
-            .with_location(test_support::test_location(2, "Hallway"))
+            .with_seat(seat(SURVIVOR.0).at(HALLWAY))
+            .with_location(test_support::test_location(HALLWAY.0, "Hallway"))
             .with_turn_order([RESIGNER, SURVIVOR])
-    };
-    builder.build()
+    }
 }
 
 fn resign_action() -> TurnAction {
@@ -110,8 +106,8 @@ fn resign_action() -> TurnAction {
     }
 }
 
-fn resign(state: GameState) -> ApplyResult {
-    let result = test_support::dispatch_turn_action_unchecked(state, &resign_action());
+fn resign(board: GameStateBuilder) -> ApplyResult {
+    let result = board.session().take(&resign_action()).finish();
     assert!(
         !matches!(result.outcome, EngineOutcome::Rejected { .. }),
         "the Parlor's Resign should resolve; got {:?}",
@@ -125,7 +121,7 @@ fn resign(state: GameState) -> ApplyResult {
 /// has to offer it.
 #[test]
 fn standing_at_the_parlor_offers_the_resign_action() {
-    let state = board(false);
+    let state = board(false).build();
     assert!(
         enumerate::legal_actions(&state).contains(&resign_action()),
         "the Parlor's Resign belongs in the turn menu; menu was {:?}",
@@ -211,14 +207,10 @@ fn the_resigners_cards_are_removed_from_the_game() {
 /// (#696).
 #[test]
 fn an_engaged_enemy_is_left_at_the_parlor_and_takes_no_parting_shot() {
-    let mut state = board(false);
-    let mut ghoul = test_support::test_enemy(1, "Ghoul Minion");
-    ghoul.current_location = Some(PARLOR);
-    ghoul.engaged_with = Some(RESIGNER);
+    let ghoul = test_support::test_enemy(1, "Ghoul Minion");
     let ghoul_id = ghoul.id;
-    state.enemies.insert(ghoul_id, ghoul);
 
-    let result = resign(state);
+    let result = resign(board(false).with_enemy_engaged(ghoul, RESIGNER));
 
     assert_eq!(
         result.state.enemies[&ghoul_id].engaged_with, None,

@@ -11,13 +11,11 @@ use card_dsl::dsl::{
     self, EventPattern, EventTiming, InvestigatorTarget, TestOutcome, TestedLocationScope,
 };
 use game_core::assert_event;
-use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, Owner, Phase, SkillKind, TokenModifiers,
+    ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{self, MockRegistry};
+use game_core::test_support::{self, seat, MockRegistry, TestSession};
 
 /// Mock threat-area card: a **forced** ability keyed to *any* successful skill
 /// test (`kind: None`), dealing 1 horror to the controller. Forced (not a
@@ -45,46 +43,38 @@ fn install_mock_registry() {
         .install();
 }
 
-/// Build a state with the investigator at `LocationId(10)`, a single-`Numeric(0)`
-/// chaos bag, and the given threat-area card codes in play.
-fn state_with_threat_area(threat: &[&str]) -> (GameState, InvestigatorId) {
-    let id = InvestigatorId(1);
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(LocationId(10));
-    for (i, code) in threat.iter().enumerate() {
-        inv.threat_area.push(CardInPlay::enter_play(
-            CardCode::new(*code),
-            CardInstanceId(u32::try_from(i).unwrap() + 1),
-            Owner::EncounterDeck,
-        ));
-    }
-    let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(id)
-        .with_investigator(inv)
-        .with_location(test_support::test_location(10, "Study"))
+const INV: InvestigatorId = InvestigatorId(1);
+const HERE: LocationId = LocationId(10);
+
+/// `INV`'s open turn at `HERE`, with a single-`Numeric(0)` chaos bag and the
+/// given threat-area card codes in play.
+fn session_with_threat_area(threat: &[&str]) -> TestSession {
+    GameStateBuilder::new()
+        .with_seat(seat(1).at(HERE).threat_area(threat.iter().copied()))
+        .with_location(test_support::test_location(HERE.0, "Study"))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
-        .build();
-    (state, id)
+        .open_turn(INV)
+        .session()
 }
 
 #[test]
 fn general_timing_point_fires_for_non_investigate_test() {
-    // A bare PerformSkillTest is kind = Plain (not Investigate). Base intellect
+    // A bare plain skill test is kind = Plain (not Investigate). Base intellect
     // 3 + Numeric(0) = 3 >= difficulty 2 -> success. The forced ability keyed to
     // `SkillTestResolved { Success, kind: None }` must fire on this Plain test.
-    let (state, id) = state_with_threat_area(&[ANY_SUCCESS_FORCED]);
-    let result = test_support::perform_skill_test_no_commits(state, id, SkillKind::Intellect, 2);
+    let session = session_with_threat_area(&[ANY_SUCCESS_FORCED])
+        .test_skill(INV, SkillKind::Intellect, 2)
+        .commit(&[]);
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    session.assert_at_turn_menu(INV);
     assert_event!(
-        result.events,
+        session.events(),
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, .. }
-            if *investigator == id
+            if *investigator == INV
     );
     assert_eq!(
-        result.state.investigators[&id].horror(),
+        session.state().investigators[&INV].horror(),
         1,
         "the general SkillTestResolved timing point must fire the forced ability \
          on a passing Plain (non-Investigate) test",
@@ -93,19 +83,19 @@ fn general_timing_point_fires_for_non_investigate_test() {
 
 #[test]
 fn general_timing_point_opens_no_window_without_a_listener() {
-    // A passing Plain test with no listening card resolves straight to Done and
-    // takes no horror — generalizing the emit adds no spurious window/prompt.
-    let (state, id) = state_with_threat_area(&[]);
-    let result = test_support::perform_skill_test_no_commits(state, id, SkillKind::Intellect, 2);
+    // A passing Plain test with no listening card resolves straight back to the
+    // turn menu and takes no horror — generalizing the emit adds no spurious
+    // window/prompt.
+    let session = session_with_threat_area(&[])
+        .test_skill(INV, SkillKind::Intellect, 2)
+        .commit(&[]);
 
-    assert_eq!(
-        result.outcome,
-        EngineOutcome::Done,
-        "a plain test with no listener opens no window",
-    );
+    // A plain test with no listener opens no window: the commit runs on to the
+    // turn menu rather than resting at one.
+    session.assert_at_turn_menu(INV);
     assert_event!(
-        result.events,
-        Event::SkillTestSucceeded { investigator, .. } if *investigator == id
+        session.events(),
+        Event::SkillTestSucceeded { investigator, .. } if *investigator == INV
     );
-    assert_eq!(result.state.investigators[&id].horror(), 0);
+    assert_eq!(session.state().investigators[&INV].horror(), 0);
 }

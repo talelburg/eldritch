@@ -14,21 +14,22 @@
 //! walked and an ability declaring interrupt timing on it is rejected rather
 //! than silently dropped.
 //!
-//! Driven through `TestSession::fire_at` against a mock registry:
-//! the point under test is which cells the coordinator walks for a given
+//! Driven through the real moments — the Upkeep phase's end and a terminal
+//! act's advance — against a mock registry: the point under test is which cells the coordinator walks for a given
 //! classification, so the abilities are mock declarations that mark the cell
 //! they fired in rather than real cards. The corpus-level counterpart for
 //! `GameEnd` is `cards::tests::cover_up`, which drives the real 01007 through a
 //! real scenario ending.
 
 use card_dsl::dsl::{self, Ability, Effect, EventPattern, EventTiming, InvestigatorTarget};
-use game_core::engine::{ApplyResult, EngineOutcome, TimingEvent};
+use game_core::assert_event;
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
-    self, Act, CardCode, CardInPlay, CardInstanceId, EmitStep, GameState, GameStateBuilder,
-    InvestigatorId, Owner,
+    self, Act, CardCode, EmitStep, GameState, GameStateBuilder, InvestigatorId,
 };
-use game_core::test_support::{self, MockRegistry, TestSession};
+use game_core::test_support::{self, seat, MockRegistry, TestSession};
 
 /// Declares a `when`-timed forced on `PhaseEnded { Upkeep }` — a caller-owned
 /// condition, so the coordinator must reject rather than resolve it.
@@ -97,34 +98,63 @@ fn install() {
         .install();
 }
 
-/// One investigator, one act — `act` is the card whose declared timing is on
+const INV: InvestigatorId = InvestigatorId(1);
+
+/// The investigator, alone.
+fn lead_alone() -> GameStateBuilder {
+    GameStateBuilder::new()
+        .with_seat(seat(INV.0))
+        .with_turn_order([INV])
+}
+
+/// Build `board` with `act` current — the card whose declared timing is on
 /// trial (the `PhaseEnded` / `RoundEnded` forced scans read the current act).
-fn state_with_act(act: &str) -> GameState {
-    let inv = InvestigatorId(1);
-    let mut state = GameStateBuilder::new()
-        .with_phase(state::Phase::Upkeep)
-        .with_investigator(test_support::test_investigator(1))
-        .with_turn_order([inv])
-        .build();
+/// The act deck has no builder setter, so it is set on the built state.
+fn with_act(board: GameStateBuilder, act: impl Into<CardCode>, clue_threshold: u8) -> GameState {
+    let mut state = board.build();
     state.act_deck = vec![Act {
-        code: CardCode::new(act),
-        clue_threshold: 0,
+        code: act.into(),
+        clue_threshold,
     }];
     state.act_index = 0;
     state
 }
 
+/// The end of the Upkeep phase, and with it the round, staged with
+/// [`ending_upkeep_phase`](GameStateBuilder::ending_upkeep_phase) under `act`.
+/// Settling runs step 4.6 — `PhaseEnded { Upkeep }`, then `RoundEnded` — and
+/// play goes on into the next round's Mythos phase; settling would panic had
+/// the walk been rejected.
+fn end_the_upkeep_phase(act: &str) -> TestSession {
+    let session = TestSession::new(with_act(lead_alone().ending_upkeep_phase(), act, 0));
+    assert_event!(
+        session.events(),
+        Event::PhaseEnded {
+            phase: state::Phase::Upkeep
+        }
+    );
+    session
+}
+
+/// The cell markers that fired, in order.
+fn cells(events: &[Event]) -> Vec<u8> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            Event::ResourcesGained { amount, .. } => Some(*amount),
+            _ => None,
+        })
+        .collect()
+}
+
 #[test]
 fn caller_owned_condition_rejects_a_declared_interrupt() {
-    let state = state_with_act(WHEN_ACT);
-    let ApplyResult { outcome: out, .. } = TestSession::new(state)
-        .fire_at(TimingEvent::PhaseEnded {
-            phase: state::Phase::Upkeep,
-        })
-        .finish();
-    let EngineOutcome::Rejected { reason } = out else {
-        panic!("a `when`-timed ability on a caller-owned condition must reject, got {out:?}");
-    };
+    // A rejected phase end cannot be settled into a session, so the Upkeep
+    // phase end is reached by the step that really gets there: ending the
+    // last turn runs the Investigation, Enemy and Upkeep phases to step 4.6.
+    let session = TestSession::new(with_act(lead_alone().open_turn(INV), WHEN_ACT, 0))
+        .take(&TurnAction::EndTurn);
+    let reason = session.expect_rejected();
     assert!(
         reason.contains("caller-owned"),
         "the reject names the classification: {reason}"
@@ -145,52 +175,22 @@ fn caller_owned_condition_rejects_a_declared_interrupt() {
 
 #[test]
 fn caller_owned_condition_walks_the_cells_after_its_resolve_step() {
-    let state = state_with_act(AT_ACT);
-    let ApplyResult {
-        events,
-        outcome: out,
-        ..
-    } = TestSession::new(state)
-        .fire_at(TimingEvent::PhaseEnded {
-            phase: state::Phase::Upkeep,
-        })
-        .finish();
+    let session = end_the_upkeep_phase(AT_ACT);
     assert!(
-        matches!(out, EngineOutcome::Done),
-        "walk completes: {out:?}"
-    );
-    assert!(
-        events.contains(&Event::ResourcesGained {
-            investigator: InvestigatorId(1),
+        session.events().contains(&Event::ResourcesGained {
+            investigator: INV,
             amount: 2,
         }),
-        "the `at` cell fires past the skipped `when` cell and the no-op resolve step: {events:?}"
+        "the `at` cell fires past the skipped `when` cell and the no-op resolve step: {:?}",
+        session.events(),
     );
 }
 
 #[test]
 fn coordinator_owned_condition_walks_its_when_cell_before_its_at_cell() {
-    let state = state_with_act(ROUND_ACT);
-    let ApplyResult {
-        events,
-        outcome: out,
-        ..
-    } = TestSession::new(state)
-        .fire_at(TimingEvent::RoundEnded)
-        .finish();
-    assert!(
-        matches!(out, EngineOutcome::Done),
-        "walk completes: {out:?}"
-    );
-    let cells: Vec<u8> = events
-        .iter()
-        .filter_map(|e| match e {
-            Event::ResourcesGained { amount, .. } => Some(*amount),
-            _ => None,
-        })
-        .collect();
+    let session = end_the_upkeep_phase(ROUND_ACT);
     assert_eq!(
-        cells,
+        cells(session.events()),
         vec![1, 2],
         "the round end is coordinator-owned: its `when` cell is walked, and the resolve step \
          between the cells does not disturb the order"
@@ -209,38 +209,31 @@ fn coordinator_owned_condition_walks_its_when_cell_before_its_at_cell() {
 /// boundary, after the whole sequence has drained.
 #[test]
 fn the_game_ending_is_a_bare_milestone_that_walks_its_when_cell() {
-    let inv = InvestigatorId(1);
-    let mut investigator = test_support::test_investigator(1);
-    investigator.threat_area.push(CardInPlay::enter_play(
-        CardCode::new(GAME_END_CARD),
-        CardInstanceId(1),
-        Owner::EncounterDeck,
-    ));
-    let state = GameStateBuilder::new()
-        .with_investigator(investigator)
-        .with_turn_order([inv])
-        .build();
+    // The game really ends: the investigator spends a clue to advance the
+    // terminal act, whose reverse reaches a resolution. `GAME_END_CARD` is a
+    // code the registry doesn't know, so the encounter deck owns it.
+    let board = GameStateBuilder::new()
+        .with_seat(seat(INV.0).clues(1).threat_area([GAME_END_CARD]))
+        .with_turn_order([INV])
+        .open_turn(INV);
+    let session = TestSession::new(with_act(board, test_support::terminal_code(1), 1))
+        .take(&TurnAction::AdvanceAct { investigator: INV });
+
+    assert!(
+        session.state().ending.is_some(),
+        "the terminal act ended the game"
+    );
     let ApplyResult {
         events,
         outcome: out,
         ..
-    } = TestSession::new(state)
-        .fire_at(TimingEvent::GameEnd)
-        .finish();
-
+    } = session.finish();
     assert!(
         matches!(out, EngineOutcome::Done),
         "the walk completes rather than rejecting the `when` declaration: {out:?}"
     );
-    let cells: Vec<u8> = events
-        .iter()
-        .filter_map(|e| match e {
-            Event::ResourcesGained { amount, .. } => Some(*amount),
-            _ => None,
-        })
-        .collect();
     assert_eq!(
-        cells,
+        cells(&events),
         vec![1, 2],
         "the `when` cell is walked and precedes the `at` cell, with the no-op resolve step \
          between them leaving the order undisturbed"

@@ -10,9 +10,8 @@
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use card_dsl::dsl::{self, InvestigatorTarget, ModifierScope, Stat};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::EngineOutcome;
-use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId, Phase};
-use game_core::test_support::{self, MockRegistry};
+use game_core::state::{GameStateBuilder, InvestigatorId, LocationId};
+use game_core::test_support::{self, seat, MockRegistry};
 
 /// Code for the synthetic probe card. Not in the real corpus; only the mock
 /// registry below resolves it.
@@ -66,34 +65,27 @@ fn install_probe_registry() {
 #[test]
 fn mid_resolution_reject_leaves_state_and_events_untouched() {
     let id = InvestigatorId(1);
-    let loc_id = LocationId(101);
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(loc_id);
-    inv.hand = vec![CardCode::new(PROBE)];
-
-    let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_investigator(inv)
-        .with_active_investigator(id)
-        .with_location(test_support::test_location(101, "Study"))
-        .build();
+    let here = LocationId(101);
+    let session = GameStateBuilder::new()
+        .with_seat(seat(1).at(here).hand([PROBE]))
+        .with_location(test_support::test_location(here.0, "Study"))
+        .open_turn(id)
+        .session();
 
     // Capture the pre-action state to compare against byte-for-byte.
-    let before = state.clone();
+    let before = session.state().clone();
 
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: id,
-            hand_index: 0,
-        },
-    );
+    let session = session.take(&TurnAction::PlayCard {
+        investigator: id,
+        hand_index: 0,
+    });
 
+    let reason = session.expect_rejected();
     assert!(
-        matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "ThisTurn Modify stub should reject, got {:?}",
-        result.outcome,
+        !reason.is_empty(),
+        "ThisTurn Modify stub should reject: {reason}",
     );
+    let result = session.finish();
     assert_eq!(
         result.state, before,
         "rejected play must leave state byte-identical \

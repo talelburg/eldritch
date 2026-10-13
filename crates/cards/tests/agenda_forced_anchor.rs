@@ -11,21 +11,27 @@
 //! un-anchored option is silently rendered in the banner instead.
 
 use cards::REGISTRY;
-use game_core::engine::{OptionTarget, PromptNature, TimingEvent};
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{OptionTarget, PromptNature};
 use game_core::state::{Agenda, CardCode, GameState, GameStateBuilder, InvestigatorId};
-use game_core::test_support::{self, TestSession};
+use game_core::test_support::{self, seat, TestSession};
+
+const LEAD: InvestigatorId = InvestigatorId(1);
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
+/// The lead's turn on agenda 01105, one doom short of its threshold, so ending
+/// the turn runs the round out and the next Mythos phase's step-1.2 doom
+/// advances the agenda.
 fn state_on_agenda_01105() -> GameState {
-    let lead = InvestigatorId(1);
-    let inv = test_support::test_investigator(1);
+    // A filler deck card so Upkeep step 4.4's draw doesn't deal empty-deck
+    // horror.
     let mut state = GameStateBuilder::new()
-        .with_investigator(inv)
-        .with_turn_order([lead])
+        .with_seat(seat(1).deck(["01088"]))
+        .open_turn(LEAD)
         .build();
     // The current agenda must be in the deck for the scan to reach 01105's
     // ability at all; the candidate it mints names `AbilitySource::Agenda`, and
@@ -35,21 +41,31 @@ fn state_on_agenda_01105() -> GameState {
         doom_threshold: 3,
     }];
     state.agenda_index = 0;
+    state.agenda_doom = 2;
     state.interactive_acknowledge = true;
     state
 }
 
-/// Fire 01105's `AgendaAdvanced` forced, which pauses on the acknowledge.
+/// Advance 01105 for real and acknowledge its flip (#558), so the session
+/// rests at 01105's `AgendaAdvanced` forced, paused on the acknowledge.
 fn advance_01105() -> TestSession {
-    TestSession::new(state_on_agenda_01105()).fire_at(TimingEvent::AgendaAdvanced {
-        code: CardCode::new("01105"),
-    })
+    let flipped = TestSession::new(state_on_agenda_01105()).take(&TurnAction::EndTurn);
+    assert_eq!(
+        flipped.prompt().prompt,
+        "Agenda 1 advanced — acknowledge.",
+        "the round runs out and the Mythos doom advances the agenda",
+    );
+    flipped.pick(OptionTarget::Agenda)
 }
 
 #[test]
 fn agenda_01105_forced_ack_anchors_to_the_agenda_card() {
     let session = advance_01105();
     let request = session.prompt();
+    assert!(
+        request.prompt.starts_with("Forced"),
+        "past the flip, the session rests at 01105's forced: {request:?}",
+    );
     assert_eq!(
         request.options.len(),
         1,

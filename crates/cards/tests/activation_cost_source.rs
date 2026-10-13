@@ -17,12 +17,12 @@
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Uses};
 use card_dsl::dsl::{self, Ability, Cost, InvestigatorTarget};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::EngineOutcome;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Owner, UseKind,
+    AbilityAddress, AbilitySource, GameStateBuilder, InvestigatorId, LocationId, UseKind,
 };
-use game_core::test_support::{self, MockRegistry};
+use game_core::test_support::{
+    self, seat, uses, MockRegistry, SeatCard, SeatLookup as _, TestSession,
+};
 
 /// Synthetic asset: `Uses (1 supply)`, discards itself when they deplete, and
 /// its ability spends that last supply *and then* exhausts. Not in the corpus.
@@ -32,9 +32,7 @@ const DEPLETER: &str = "SRCID001";
 const BYSTANDER: &str = "SRCID002";
 
 const INV: InvestigatorId = InvestigatorId(1);
-const LOC: LocationId = LocationId(10);
-const DEPLETER_INST: CardInstanceId = CardInstanceId(0);
-const BYSTANDER_INST: CardInstanceId = CardInstanceId(1);
+const HERE: LocationId = LocationId(10);
 
 fn probe_abilities() -> Vec<Ability> {
     vec![dsl::activated(
@@ -93,57 +91,48 @@ fn install_probe_registry() {
         .install();
 }
 
-/// Depleter at position 0 with its last supply, bystander behind it at 1.
-fn board() -> GameState {
-    let mut inv = test_support::test_investigator(1);
-    let mut depleter = CardInPlay::enter_play(
-        CardCode::new(DEPLETER),
-        DEPLETER_INST,
-        Owner::Investigator(InvestigatorId(1)),
-    );
-    depleter.uses.insert(UseKind::Supplies, 1);
-    inv.cards_in_play.push(depleter);
-    inv.cards_in_play.push(CardInPlay::enter_play(
-        CardCode::new(BYSTANDER),
-        BYSTANDER_INST,
-        Owner::Investigator(InvestigatorId(1)),
-    ));
-
+/// The investigator's turn at the Study with `in_play` in play, in order.
+fn board(in_play: [SeatCard; 2]) -> TestSession {
     GameStateBuilder::new()
-        .with_investigator_at(inv, LOC)
-        .with_location(test_support::test_location(10, "Study"))
+        .with_seat(seat(1).at(HERE).in_play(in_play))
+        .with_location(test_support::test_location(HERE.0, "Study"))
         .open_turn(INV)
-        .build()
+        .session()
+}
+
+/// The depleter's ability, activated from `session`'s board.
+fn activate_depleter(session: &TestSession) -> TurnAction {
+    TurnAction::ActivateAbility {
+        investigator: INV,
+        source: AbilitySource::InPlay(session.state().in_play(INV, DEPLETER)),
+        address: AbilityAddress::Printed(0),
+    }
 }
 
 #[test]
 fn cost_after_the_source_leaves_play_rejects_rather_than_hitting_another_card() {
-    let state = board();
-    let before = state.clone();
+    // Depleter at position 0 with its last supply, bystander behind it at 1.
+    let session = board([
+        (DEPLETER, uses(UseKind::Supplies, 1)).into(),
+        BYSTANDER.into(),
+    ]);
+    let before = session.state().clone();
 
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::ActivateAbility {
-            investigator: INV,
-            source: AbilitySource::InPlay(DEPLETER_INST),
-            address: AbilityAddress::Printed(0),
-        },
-    );
+    let activate = activate_depleter(&session);
+    let session = session.take(&activate);
 
-    assert!(
-        matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "Exhaust after the source self-discarded must reject, got {:?}",
-        result.outcome,
-    );
+    // Exhaust after the source self-discarded must reject.
+    session.expect_rejected();
     assert_eq!(
-        result.state, before,
+        *session.state(),
+        before,
         "a rejected activation must leave state byte-identical \
          (pre-#706: the stale position exhausted the bystander)",
     );
+    let events = session.finish().events;
     assert!(
-        result.events.is_empty(),
-        "a rejected activation must emit no events, got {:?}",
-        result.events,
+        events.is_empty(),
+        "a rejected activation must emit no events, got {events:?}",
     );
 }
 
@@ -153,53 +142,29 @@ fn cost_after_the_source_leaves_play_rejects_rather_than_hitting_another_card() 
 /// regression guard for the rewrite rather than a pre-existing bug.
 #[test]
 fn costs_land_on_the_source_when_it_is_not_first_in_play() {
-    let mut inv = test_support::test_investigator(1);
-    inv.cards_in_play.push(CardInPlay::enter_play(
-        CardCode::new(BYSTANDER),
-        BYSTANDER_INST,
-        Owner::Investigator(InvestigatorId(1)),
-    ));
-    let mut depleter = CardInPlay::enter_play(
-        CardCode::new(DEPLETER),
-        DEPLETER_INST,
-        Owner::Investigator(InvestigatorId(1)),
-    );
     // Two supplies: spending one does not deplete, so the source stays in play
     // and the following Exhaust cost has something to find.
-    depleter.uses.insert(UseKind::Supplies, 2);
-    inv.cards_in_play.push(depleter);
+    let session = board([
+        BYSTANDER.into(),
+        (DEPLETER, uses(UseKind::Supplies, 2)).into(),
+    ]);
+    let bystander_id = session.state().in_play(INV, BYSTANDER);
+    let depleter_id = session.state().in_play(INV, DEPLETER);
 
-    let state = GameStateBuilder::new()
-        .with_investigator_at(inv, LOC)
-        .with_location(test_support::test_location(10, "Study"))
-        .open_turn(INV)
-        .build();
+    let activate = activate_depleter(&session);
+    let session = session.take(&activate);
 
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::ActivateAbility {
-            investigator: INV,
-            source: AbilitySource::InPlay(DEPLETER_INST),
-            address: AbilityAddress::Printed(0),
-        },
-    );
+    // The activation resolves and play is back at the turn menu.
+    session.assert_at_turn_menu(INV);
 
-    // The drive loop carries on to the turn menu once the effect resolves, so
-    // the success signal here is "not rejected" rather than `Done`.
-    assert!(
-        !matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "the activation should resolve, got {:?}",
-        result.outcome,
-    );
-
-    let in_play = &result.state.investigators[&INV].cards_in_play;
+    let in_play = &session.state().investigators[&INV].cards_in_play;
     let bystander = in_play
         .iter()
-        .find(|c| c.instance_id == BYSTANDER_INST)
+        .find(|c| c.instance_id == bystander_id)
         .expect("bystander stays in play");
     let source = in_play
         .iter()
-        .find(|c| c.instance_id == DEPLETER_INST)
+        .find(|c| c.instance_id == depleter_id)
         .expect("source stays in play with a supply left");
 
     assert!(source.exhausted, "the Exhaust cost must hit the source");

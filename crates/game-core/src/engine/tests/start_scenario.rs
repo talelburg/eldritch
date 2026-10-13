@@ -62,18 +62,11 @@ fn start_scenario_advances_to_investigation_with_round_one() {
         }
     );
 
-    // After the sole investigator mulligans (an empty "keep my hand"
-    // PickMultiple), the phase begins and the lead becomes active.
-    let mulligan_result = apply(
-        start_result.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        }),
-    );
-    assert!(matches!(
-        mulligan_result.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
+    // After the sole investigator mulligans (keeping their hand), the phase
+    // begins and the lead becomes active.
+    let mulligan_result = TestSession::new(start_result.state)
+        .choose_from_hand(&[])
+        .finish();
     assert_eq!(
         mulligan_result.state.current_mulligan(),
         None,

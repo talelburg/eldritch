@@ -7,23 +7,32 @@
 //!
 //! And the **reverse's branch** (#809), through the same real registry: which of
 //! the two printed bullets fires depends on the act cursor, and only the first
-//! carries a `(→R#)`. Driven by firing the `AgendaAdvanced` timing point — the
-//! one the flip itself fires — rather than a
-//! full Mythos doom-to-threshold cascade, which is
-//! `scenarios/tests/the_gathering_resolutions.rs`'s job. This is the seam that
+//! carries a `(→R#)`. Driven the way play reaches it: the table ends its turns
+//! one doom short of the threshold, and the next Mythos phase's doom advances
+//! the agenda, firing the `AgendaAdvanced` timing point its reverse hangs on.
+//! The scenario's own act and agenda progression is
+//! `scenarios/tests/the_gathering_resolutions.rs`'s job; this is the seam that
 //! carries the *multi-investigator* claims the solo end-to-end cannot: the fan-out
 //! order, and the investigator it must leave alone.
 
 use cards::REGISTRY;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{ApplyResult, EngineOutcome, OptionTarget, TimingEvent};
+use game_core::engine::OptionTarget;
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::state::{
     Act, Agenda, CardCode, EliminationCause, Enemy, EnemyId, GameState, GameStateBuilder,
     InvestigatorId, Location, LocationId, Phase, Status,
 };
-use game_core::test_support::{self, TestSession};
+use game_core::test_support::{self, seat, Seat, TestSession};
+use game_core::{assert_event, assert_no_event};
+
+const INV: InvestigatorId = InvestigatorId(1);
+const HALLWAY: LocationId = LocationId(2);
+const ATTIC: LocationId = LocationId(3);
+const PARLOR: LocationId = LocationId(5);
+const GHOUL: EnemyId = EnemyId(1);
+const SECOND_GHOUL: EnemyId = EnemyId(2);
 
 #[ctor::ctor(unsafe)]
 fn install() {
@@ -31,29 +40,24 @@ fn install() {
 }
 
 /// Ghoul Minion 01160 (Humanoid. Monster. Ghoul.), not Elite.
-fn ghoul(id: u32, at: LocationId) -> Enemy {
-    let mut e = test_support::test_enemy(id, "Ghoul");
+fn ghoul(id: EnemyId, at: LocationId) -> Enemy {
+    let mut e = test_support::test_enemy(id.0, "Ghoul");
     e.code = CardCode::new("01160");
     e.current_location = Some(at);
     e
 }
 
-/// The agenda board, in the Enemy phase.
-fn board_with_agenda() -> GameState {
-    board_from(GameStateBuilder::new().with_phase(Phase::Enemy))
-}
-
-/// The agenda board — 01107 current, a Hallway and a Parlor, one investigator —
-/// on top of `builder`, which names the moment.
-fn board_from(builder: GameStateBuilder) -> GameState {
-    let loc = |id, code: &str, name| Location::new(LocationId(id), CardCode::new(code), name, 1, 0);
+/// The agenda board — 01107 current, a Hallway and a Parlor, `investigator`
+/// seated alone — on top of `builder`, which names the moment.
+fn board_from(builder: GameStateBuilder, investigator: Seat) -> GameState {
+    let loc = |id: LocationId, code: &str, name| Location::new(id, CardCode::new(code), name, 1, 0);
     let mut state = builder
-        .with_investigator(test_support::test_investigator(1))
-        .with_turn_order([InvestigatorId(1)])
-        .with_location(loc(2, "01112", "Hallway"))
-        .with_location(loc(5, "01115", "Parlor"))
+        .with_seat(investigator)
+        .with_turn_order([INV])
+        .with_location(loc(HALLWAY, "01112", "Hallway"))
+        .with_location(loc(PARLOR, "01115", "Parlor"))
         .build();
-    state.connect(LocationId(2), LocationId(5));
+    state.connect(HALLWAY, PARLOR);
     state.agenda_deck = vec![Agenda {
         code: CardCode::new("01107"),
         doom_threshold: 10,
@@ -62,63 +66,37 @@ fn board_from(builder: GameStateBuilder) -> GameState {
     state
 }
 
-#[test]
-fn enemy_phase_end_moves_ghoul_toward_parlor() {
-    let mut state = board_with_agenda();
-    state.enemies.insert(EnemyId(1), ghoul(1, LocationId(2))); // Hallway
-    let ApplyResult {
-        state,
-        events,
-        outcome,
-        ..
-    } = TestSession::new(state)
-        .fire_at(TimingEvent::PhaseEnded {
-            phase: Phase::Enemy,
-        })
-        .finish();
-    assert_eq!(outcome, EngineOutcome::Done);
-    assert_eq!(
-        state.enemies[&EnemyId(1)].current_location,
-        Some(LocationId(5)),
-        "Ghoul stepped Hallway -> Parlor"
-    );
-    assert!(events
-        .iter()
-        .any(|e| matches!(e, Event::EnemyMoved { to, .. } if *to == LocationId(5))));
-}
-
 /// Regression (#569): the move must fire through the *real* step-3.4 site, not
 /// only when its timing point is fired on its own. `enemy_phase_end` queues
 /// the agenda's forced ability as a frame and returns `Done`; before the fix it
 /// read that `Done` as "nothing happened" and pushed the Upkeep anchor on top of
 /// the queued frame, orphaning it at the bottom of the stack for the rest of the
 /// scenario — agenda 3's Ghoul movement never happened in real play.
+///
+/// Also the plain claim: the Enemy phase's end moves a Ghoul toward the Parlor.
 #[test]
 fn enemy_phase_end_moves_ghoul_before_the_upkeep_transition() {
-    // The step-3.4 site runs once the Enemy phase's attacks are done.
-    let mut state = board_from(GameStateBuilder::new().ending_enemy_phase());
-    {
-        // The cascade runs on into Upkeep: give the investigator a card to draw.
-        let inv = state.investigators.get_mut(&InvestigatorId(1)).unwrap();
-        inv.current_location = Some(LocationId(2));
-        inv.deck = vec![CardCode::new("01006")];
-    }
-    // One Ghoul in the Hallway, one step from the Parlor.
-    state.enemies.insert(EnemyId(1), ghoul(1, LocationId(2)));
-
-    let session = TestSession::new(state);
+    // The step-3.4 site runs once the Enemy phase's attacks are done. One Ghoul
+    // in the Hallway, one step from the Parlor. The cascade runs on into
+    // Upkeep: give the investigator a card to draw.
+    let session = TestSession::new(board_from(
+        GameStateBuilder::new()
+            .ending_enemy_phase()
+            .with_enemy(ghoul(GHOUL, HALLWAY)),
+        seat(1).at(HALLWAY).deck(["01006"]),
+    ));
     let (state, events) = (session.state(), session.events());
 
     assert_eq!(
-        state.enemies[&EnemyId(1)].current_location,
-        Some(LocationId(5)),
+        state.enemies[&GHOUL].current_location,
+        Some(PARLOR),
         "Ghoul stepped Hallway -> Parlor at the end of the enemy phase"
     );
     // Ordering is the defect: the queued ability resolves BEFORE the phase
     // transition's tail work, not after it (and not never).
     let moved = events
         .iter()
-        .position(|e| matches!(e, Event::EnemyMoved { to, .. } if *to == LocationId(5)))
+        .position(|e| matches!(e, Event::EnemyMoved { to, .. } if *to == PARLOR))
         .expect("the Ghoul move must fire at the enemy phase end");
     let upkeep_started = events
         .iter()
@@ -149,48 +127,43 @@ fn enemy_phase_end_moves_ghoul_before_the_upkeep_transition() {
 /// in the Hallway beside the investigator forever.
 #[test]
 fn ghoul_moved_into_the_investigator_engages_then_attacks_next_enemy_phase() {
-    // Step 3.4 runs once the Enemy phase's attacks are done.
-    let mut state = board_from(GameStateBuilder::new().ending_enemy_phase());
-    // Add the Attic (01113) as a third room so a Ghoul can step Attic ->
-    // Hallway on its way to the Parlor.
-    state.locations.insert(
-        LocationId(3),
-        Location::new(LocationId(3), CardCode::new("01113"), "Attic", 1, 0),
+    let mut walker = ghoul(GHOUL, ATTIC); // Attic, one step from the Hallway
+    walker.attack_damage = 1;
+    walker.attack_horror = 0;
+    assert!(!walker.hunter, "the divergence needs a non-Hunter Ghoul");
+    // Step 3.4 runs once the Enemy phase's attacks are done. The Attic (01113)
+    // is a third room so a Ghoul can step Attic -> Hallway on its way to the
+    // Parlor.
+    let mut state = board_from(
+        GameStateBuilder::new()
+            .ending_enemy_phase()
+            .with_location(Location::new(ATTIC, CardCode::new("01113"), "Attic", 1, 0))
+            .with_enemy(walker),
+        seat(1).at(HALLWAY).deck(["01088"]),
     );
-    state.connect(LocationId(2), LocationId(3));
-    {
-        let inv = state.investigators.get_mut(&InvestigatorId(1)).unwrap();
-        // Hallway.
-        inv.current_location = Some(LocationId(2));
-        inv.deck = vec![CardCode::new("01088")];
-    }
+    state.connect(HALLWAY, ATTIC);
     // The next Mythos phase draws an encounter card. Obscuring Fog 01168 —
     // *"Revelation - Attach to your location. Limit 1 per location."* — leaves
     // the attack this test is about alone.
     state.encounter_deck.push_back(CardCode::new("01168"));
-    let mut walker = ghoul(1, LocationId(3)); // Attic, one step from the Hallway
-    walker.attack_damage = 1;
-    walker.attack_horror = 0;
-    assert!(!walker.hunter, "the divergence needs a non-Hunter Ghoul");
-    state.enemies.insert(EnemyId(1), walker);
 
     let session = TestSession::new(state);
     let (state, events) = (session.state(), session.events());
 
     assert_eq!(
-        state.enemies[&EnemyId(1)].current_location,
-        Some(LocationId(2)),
+        state.enemies[&GHOUL].current_location,
+        Some(HALLWAY),
         "the Ghoul stepped Attic -> Hallway"
     );
     assert_eq!(
-        state.enemies[&EnemyId(1)].engaged_with,
-        Some(InvestigatorId(1)),
+        state.enemies[&GHOUL].engaged_with,
+        Some(INV),
         "and engaged the investigator it arrived on top of"
     );
     assert!(
         events.iter().any(|e| matches!(e,
             Event::EnemyEngaged { enemy, investigator }
-                if *enemy == EnemyId(1) && *investigator == InvestigatorId(1))),
+                if *enemy == GHOUL && *investigator == INV)),
         "engage-on-arrival is announced: {events:?}"
     );
 
@@ -199,16 +172,12 @@ fn ghoul_moved_into_the_investigator_engages_then_attacks_next_enemy_phase() {
     // next Mythos phase, whose step-1.4 encounter draw is the one prompt on the
     // way to the investigator's next turn; ending that turn, the cascade runs
     // Investigation -> Enemy and resolves step 3.3.
-    let damage_before = state.investigators[&InvestigatorId(1)].damage();
+    let damage_before = state.investigators[&INV].damage();
     let session = session.confirm();
     // A ready enemy attacks; the Upkeep readying in between would have done
     // this anyway, but assert the precondition rather than assume it.
-    assert!(!session.state().enemies[&EnemyId(1)].exhausted);
-    assert_eq!(
-        session.prompt().target,
-        Some(OptionTarget::TurnControl(InvestigatorId(1))),
-        "play runs on to the next turn",
-    );
+    assert!(!session.state().enemies[&GHOUL].exhausted);
+    session.assert_at_turn_menu(INV);
 
     let before = session.events().len();
     let result = session.take(&TurnAction::EndTurn);
@@ -217,26 +186,39 @@ fn ghoul_moved_into_the_investigator_engages_then_attacks_next_enemy_phase() {
     assert!(
         events.iter().any(|e| matches!(
             e,
-            Event::DamageTaken { investigator, amount: 1 } if *investigator == InvestigatorId(1)
+            Event::DamageTaken { investigator, amount: 1 } if *investigator == INV
         )),
         "the now-engaged Ghoul attacks in the next Enemy phase: {events:?}",
     );
     assert!(
-        result.state().investigators[&InvestigatorId(1)].damage() > damage_before,
+        result.state().investigators[&INV].damage() > damage_before,
         "the attack landed"
     );
 }
 
 #[test]
 fn round_end_places_doom_per_ghoul_in_hallway_or_parlor() {
-    let mut state = board_with_agenda();
-    state.enemies.insert(EnemyId(1), ghoul(1, LocationId(2)));
-    state.enemies.insert(EnemyId(2), ghoul(2, LocationId(5)));
-    let ApplyResult { state, outcome, .. } = TestSession::new(state)
-        .fire_at(TimingEvent::RoundEnded)
-        .finish();
-    assert_eq!(outcome, EngineOutcome::Done);
-    assert_eq!(state.agenda_doom, 2, "1 doom per Ghoul in Hallway/Parlor");
+    // The round ends once the Upkeep phase does.
+    let session = TestSession::new(board_from(
+        GameStateBuilder::new()
+            .ending_upkeep_phase()
+            .with_enemy(ghoul(GHOUL, HALLWAY))
+            .with_enemy(ghoul(SECOND_GHOUL, PARLOR)),
+        seat(1),
+    ));
+    assert_event!(
+        session.events(),
+        Event::PhaseEnded {
+            phase: Phase::Upkeep
+        }
+    );
+    // 3, not 2: the round end runs on into the next round's Mythos, whose step
+    // 1.2 places a doom of its own.
+    assert_eq!(
+        session.state().agenda_doom,
+        3,
+        "1 doom per Ghoul in Hallway/Parlor (plus Mythos step 1.2's)"
+    );
 }
 
 #[test]
@@ -245,22 +227,21 @@ fn round_end_act_when_window_opens_before_agenda_at_doom() {
     // window; agenda 01107 carries the "at the end of the round" doom. Per the
     // RR "At" entry, `when` resolves before `at`, so the act window must open
     // BEFORE any doom is placed.
-    let mut state = board_from(GameStateBuilder::new().ending_upkeep_phase());
-
-    // Affordable act window: investigator in the Hallway (01112) with >= 3 clues.
+    //
+    // Affordable act window: investigator in the Hallway (01112) with >= 3
+    // clues. Two Ghouls in Hallway/Parlor -> agenda 01107 would place 2 doom.
+    let mut state = board_from(
+        GameStateBuilder::new()
+            .ending_upkeep_phase()
+            .with_enemy(ghoul(GHOUL, HALLWAY))
+            .with_enemy(ghoul(SECOND_GHOUL, PARLOR)),
+        seat(1).at(HALLWAY).clues(3),
+    );
     state.act_deck = vec![Act {
         code: CardCode::new("01109"),
         clue_threshold: 3,
     }];
     state.act_index = 0;
-    {
-        let inv = state.investigators.get_mut(&InvestigatorId(1)).unwrap();
-        inv.current_location = Some(LocationId(2)); // Hallway
-        inv.clues = 3;
-    }
-    // Two Ghouls in Hallway/Parlor -> agenda 01107 would place 2 doom.
-    state.enemies.insert(EnemyId(1), ghoul(1, LocationId(2)));
-    state.enemies.insert(EnemyId(2), ghoul(2, LocationId(5)));
 
     let window = TestSession::new(state);
 
@@ -295,18 +276,18 @@ fn round_end_act_when_window_opens_before_agenda_at_doom() {
 // The reverse's branch (#809)
 // ---------------------------------------------------------------------------
 
-/// A table of `n` seated investigators in turn order, with The Gathering's
-/// three-card act deck and 01107 as the sole (and therefore terminal) agenda.
-fn table_at_act(n: usize, act_index: usize) -> GameState {
-    let mut builder = GameStateBuilder::new();
-    for i in 1..=n {
-        let inv = test_support::test_investigator(u32::try_from(i).expect("small"));
-        builder = builder.with_investigator(inv);
-    }
-    let order: Vec<InvestigatorId> = (1..=n)
-        .map(|i| InvestigatorId(u32::try_from(i).expect("small")))
-        .collect();
-    let mut state = builder.with_turn_order(order).build();
+/// A table of `n` seated investigators in turn order, the first's turn open,
+/// with The Gathering's three-card act deck and 01107 as the sole (and
+/// therefore terminal) agenda, one doom short of its threshold — so the next
+/// Mythos phase's step 1.2 doom tips it at 1.3 and its reverse fires.
+fn table_at_act(n: u32, act_index: usize) -> GameState {
+    // A card each for Upkeep 4.4 to draw.
+    let mut state = (1..=n)
+        .map(|i| seat(i).deck(["01088"]))
+        .fold(GameStateBuilder::new(), GameStateBuilder::with_seat)
+        .with_turn_order((1..=n).map(InvestigatorId))
+        .open_turn(INV)
+        .build();
     state.act_deck = ["01108", "01109", "01110"]
         .iter()
         .map(|code| Act {
@@ -320,16 +301,20 @@ fn table_at_act(n: usize, act_index: usize) -> GameState {
         doom_threshold: 10,
     }];
     state.agenda_index = 0;
+    state.agenda_doom = 9;
     state
 }
 
-/// Fire 01107's `AgendaAdvanced` forced — its reverse — on `state`.
-fn advance_01107(state: GameState) -> ApplyResult {
-    TestSession::new(state)
-        .fire_at(TimingEvent::AgendaAdvanced {
-            code: CardCode::new("01107"),
-        })
-        .finish()
+/// Play `state`'s round out: every investigator still in it ends their turn,
+/// and the round runs on into the next Mythos phase, where 01107 advances and
+/// its reverse — the `AgendaAdvanced` forced — resolves.
+fn advance_01107(state: GameState) -> TestSession {
+    let mut session = TestSession::new(state);
+    while session.state().ending.is_none() {
+        session = session.take(&TurnAction::EndTurn);
+    }
+    assert_event!(session.events(), Event::AgendaAdvanced { .. });
+    session
 }
 
 fn defeat_order(events: &[Event]) -> Vec<InvestigatorId> {
@@ -348,22 +333,17 @@ fn defeat_order(events: &[Event]) -> Vec<InvestigatorId> {
 #[test]
 fn agenda_01107_reverse_at_act_1_or_2_reaches_resolution_3() {
     for act_index in [0, 1] {
-        let ApplyResult {
-            state,
-            events,
-            outcome,
-            ..
-        } = advance_01107(table_at_act(2, act_index));
+        let session = advance_01107(table_at_act(2, act_index));
+        let events = session.events();
 
-        assert_eq!(outcome, EngineOutcome::Done);
         assert_eq!(
-            state.ending,
+            session.state().ending,
             Some(ScenarioEnding::Resolution(ResolutionId::new(3))),
             "act cursor {act_index} is the card's Act {}",
             act_index + 1,
         );
         assert!(
-            defeat_order(&events).is_empty(),
+            defeat_order(events).is_empty(),
             "nobody is defeated on this branch: {events:?}",
         );
     }
@@ -384,16 +364,11 @@ fn agenda_01107_reverse_at_act_3_defeats_the_unresigned_in_turn_order() {
     let (a, b, c) = (InvestigatorId(1), InvestigatorId(2), InvestigatorId(3));
     let mut state = table_at_act(3, 2);
     state.investigators.get_mut(&b).expect("seated").status = Status::Resigned;
-    let ApplyResult {
-        state,
-        events,
-        outcome,
-        ..
-    } = advance_01107(state);
+    let session = advance_01107(state);
+    let (state, events) = (session.state(), session.events());
 
-    assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(
-        defeat_order(&events),
+        defeat_order(events),
         vec![a, c],
         "turn order, and the resigned investigator is left alone",
     );
@@ -403,16 +378,15 @@ fn agenda_01107_reverse_at_act_3_defeats_the_unresigned_in_turn_order() {
             Status::Defeated,
             "defeated by a card ability — neither killed nor driven insane",
         );
-        assert!(events
-            .iter()
-            .any(|e| matches!(e, Event::InvestigatorEliminated {
-                investigator, cause
-            } if *investigator == id && *cause == EliminationCause::CardAbility)),);
-        assert!(
-            events.iter().any(|e| matches!(e, Event::TraumaSuffered {
-                investigator, kind, amount
-            } if *investigator == id && *kind == TraumaKind::Physical && *amount == 1)),
-            "1 physical trauma, announced per investigator",
+        assert_event!(
+            events,
+            Event::InvestigatorEliminated { investigator, cause }
+                if *investigator == id && *cause == EliminationCause::CardAbility
+        );
+        assert_event!(
+            events,
+            Event::TraumaSuffered { investigator, kind, amount }
+                if *investigator == id && *kind == TraumaKind::Physical && *amount == 1
         );
     }
     assert_eq!(
@@ -420,16 +394,12 @@ fn agenda_01107_reverse_at_act_3_defeats_the_unresigned_in_turn_order() {
         Status::Resigned,
         "*that has not resigned*",
     );
-    assert!(
-        !events.iter().any(|e| matches!(
-            e,
-            Event::TraumaSuffered { investigator, .. } if *investigator == b
-        )),
-        "no trauma for an investigator this card never defeated",
+    // No trauma for an investigator this card never defeated.
+    assert_no_event!(
+        events,
+        Event::TraumaSuffered { investigator, .. } if *investigator == b
     );
-    assert!(events
-        .iter()
-        .any(|e| matches!(e, Event::AllInvestigatorsEliminated)));
+    assert_event!(events, Event::AllInvestigatorsEliminated);
     assert_eq!(
         state.ending,
         Some(ScenarioEnding::NoResolution),

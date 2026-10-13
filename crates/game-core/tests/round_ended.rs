@@ -2,15 +2,13 @@
 //! Forced ability fires at the end of the round (step 4.6).
 
 use card_dsl::dsl::{self, EventPattern, EventTiming, InvestigatorTarget};
-use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::enumerate::TurnAction;
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, ApplyResult, EngineOutcome, NativeCx, OptionId, TimingEvent};
+use game_core::engine::{EngineOutcome, NativeCx, OptionTarget};
 use game_core::state::{
-    Agenda, CardCode, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId, LocationId,
-    Owner, Phase,
+    Agenda, CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, MockRegistry, TestSession};
+use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
 
 const AGENDA: &str = "TEST-AGENDA";
 
@@ -48,22 +46,44 @@ fn install() {
         .install();
 }
 
-#[test]
-fn round_ended_fires_agenda_forced_ability() {
-    let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
-        .with_turn_order([InvestigatorId(1)])
-        .build();
+const INV: InvestigatorId = InvestigatorId(1);
+const HERE: LocationId = LocationId(10);
+
+/// Make the test agenda current on a built `state`; the agenda deck has no
+/// builder setter.
+fn with_test_agenda(mut state: GameState) -> GameState {
     state.agenda_deck = vec![Agenda {
         code: CardCode::new(AGENDA),
         doom_threshold: 10,
     }];
     state.agenda_index = 0;
-    let ApplyResult { state, outcome, .. } = TestSession::new(state)
-        .fire_at(TimingEvent::RoundEnded)
-        .finish();
-    assert_eq!(outcome, EngineOutcome::Done);
-    assert_eq!(state.agenda_doom, 5, "RoundEnded fired the agenda ability");
+    state
+}
+
+#[test]
+fn round_ended_fires_agenda_forced_ability() {
+    // The end of the Upkeep phase, and with it the round: settling runs step
+    // 4.6, where the agenda's round-end forced fires, and play goes on into the
+    // next round's Mythos phase.
+    let state = with_test_agenda(
+        GameStateBuilder::new()
+            .with_seat(seat(1).at(HERE))
+            .with_location(test_support::test_location(HERE.0, "Study"))
+            .with_turn_order([INV])
+            .ending_upkeep_phase()
+            .build(),
+    );
+    let session = TestSession::new(state);
+
+    // The round really ended: play is in the next round's Mythos phase.
+    assert_eq!(session.state().phase, Phase::Mythos);
+    assert_eq!(session.state().round, 1, "round bumped on Mythos entry");
+    assert_eq!(
+        session.state().agenda_doom,
+        6,
+        "RoundEnded fired the agenda ability (native placed 5), then Mythos entry \
+         placed its +1 doom",
+    );
 }
 
 #[test]
@@ -74,75 +94,59 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
     // closes the run, whose `UpkeepAfterRoundEnded` continuation resumes the
     // upkeep tail — the Upkeep→Mythos transition — that a terminal close would
     // have dropped.
-
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(LocationId(10));
-    inv.actions_remaining = 0;
-    // Non-empty deck so the upkeep 4.4 draw doesn't fire a deckout horror
-    // penalty and muddy the horror assertion.
-    inv.deck = vec![CardCode::new("filler-card")];
-    inv.threat_area.push(CardInPlay::enter_play(
-        CardCode::new(DISSONANT),
-        CardInstanceId(1),
-        Owner::EncounterDeck,
-    ));
-
-    let mut state = GameStateBuilder::new()
-        .with_investigator(inv)
-        .with_location(test_support::test_location(10, "Study"))
-        .open_turn(InvestigatorId(1))
-        .build();
-    state.agenda_deck = vec![Agenda {
-        code: CardCode::new(AGENDA),
-        doom_threshold: 10,
-    }];
-    state.agenda_index = 0;
+    let state = with_test_agenda(
+        GameStateBuilder::new()
+            .with_seat(
+                seat(1)
+                    .at(HERE)
+                    .actions(0)
+                    // Non-empty deck so the upkeep 4.4 draw doesn't fire a
+                    // deckout horror penalty and muddy the horror assertion.
+                    .deck(["filler-card"])
+                    .threat_area([DISSONANT]),
+            )
+            .with_location(test_support::test_location(HERE.0, "Study"))
+            .open_turn(INV)
+            .build(),
+    );
+    let dissonant = OptionTarget::CardInstance(state.in_play(INV, DISSONANT));
 
     // EndTurn drives Investigation → Enemy → Upkeep and reaches step 4.6,
     // where the two round-end forced abilities fire simultaneously. The
     // forced run suspends for the lead's ordering choice rather than
-    // transitioning to Mythos. Submitted via the enumeration round-trip
-    // (the typed `PlayerAction::EndTurn` removed in 2b, #447).
-    let end_turn = {
-        let idx = enumerate::legal_actions(&state)
-            .iter()
-            .position(|a| a == &TurnAction::EndTurn)
-            .expect("EndTurn must be a legal open-turn action");
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
-        })
-    };
-    let paused = engine::apply(state, end_turn);
-    assert!(
-        matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
-        "two round-end forced must present the lead a choice; got {:?}",
-        paused.outcome,
+    // transitioning to Mythos.
+    let paused = TestSession::new(state).take(&TurnAction::EndTurn);
+    assert_eq!(
+        (
+            paused.offered_at(&OptionTarget::Agenda),
+            paused.offered_at(&dissonant),
+        ),
+        (1, 1),
+        "two round-end forced must present the lead a choice: {:?}",
+        paused.prompt(),
     );
     assert_eq!(
-        paused.state.phase,
+        paused.state().phase,
         Phase::Upkeep,
         "no Upkeep→Mythos transition until both forced resolve",
     );
     assert_eq!(
-        paused.state.agenda_doom, 0,
+        paused.state().agenda_doom,
+        0,
         "no forced resolves until ordered"
     );
-    assert_eq!(paused.state.investigators[&InvestigatorId(1)].horror(), 0);
+    assert_eq!(paused.state().investigators[&INV].horror(), 0);
 
     // Resolve the first ordered forced; the second is still pending.
-    let after_first = engine::apply(
-        paused.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(0)),
-        }),
-    );
-    assert!(
-        matches!(after_first.outcome, EngineOutcome::AwaitingInput { .. }),
-        "second round-end forced still pending; got {:?}",
-        after_first.outcome,
+    let after_first = paused.pick(OptionTarget::Agenda);
+    assert_eq!(
+        after_first.offered_at(&dissonant),
+        1,
+        "second round-end forced still pending: {:?}",
+        after_first.prompt(),
     );
     assert_eq!(
-        after_first.state.phase,
+        after_first.state().phase,
         Phase::Upkeep,
         "still mid-forced-run; no transition yet",
     );
@@ -150,29 +154,29 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
     // Resolve the second: the forced run closes, its UpkeepAfterRoundEnded
     // continuation runs the upkeep tail (no act round-end window here) and
     // transitions Upkeep → Mythos.
-    let done = engine::apply(
-        after_first.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(0)),
-        }),
-    );
+    let done = after_first.pick(dissonant);
     // The upkeep tail runs through to Mythos, which pauses at the step-1.4
-    // encounter-draw prompt (AwaitingInput) after placing its +1 doom.
-    assert!(matches!(done.outcome, EngineOutcome::AwaitingInput { .. }));
+    // encounter-draw prompt after placing its +1 doom.
+    assert_eq!(done.prompt().target, Some(OptionTarget::EncounterDeck));
     assert_eq!(
-        done.state.agenda_doom, 6,
+        done.state().agenda_doom,
+        6,
         "agenda round-end forced resolved (native placed 5), then Mythos entry \
          placed its +1 doom — the upkeep tail ran through to the next phase",
     );
     assert_eq!(
-        done.state.investigators[&InvestigatorId(1)].horror(),
+        done.state().investigators[&INV].horror(),
         1,
         "threat-area round-end forced resolved",
     );
     assert_eq!(
-        done.state.phase,
+        done.state().phase,
         Phase::Mythos,
         "upkeep tail resumed: Upkeep → Mythos after both forced resolved",
     );
-    assert_eq!(done.state.round, 1, "round bumped (0 → 1) on Mythos entry");
+    assert_eq!(
+        done.state().round,
+        1,
+        "round bumped (0 → 1) on Mythos entry"
+    );
 }
