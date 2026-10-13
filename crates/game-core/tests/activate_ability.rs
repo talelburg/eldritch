@@ -14,17 +14,16 @@ use card_dsl::dsl::{
     self, Cost, Effect, EventPattern, EventTiming, IntExpr, InvestigatorTarget, LocationTarget,
     ModifierScope, Stat, UsageLimit, UsagePeriod,
 };
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, EngineOutcome, OptionTarget};
+use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameState, GameStateBuilder, InvestigatorId, Lifetime, LocationId, Owner, Phase,
-    RecordedModifierKind, SkillKind, Status, TokenModifiers,
+    GameState, GameStateBuilder, InvestigatorId, Lifetime, LocationId, Owner, RecordedModifierKind,
+    SkillKind, Status, TokenModifiers,
 };
-use game_core::test_support::{self, MockRegistry, TakeOneFastPlay, TestSession};
+use game_core::test_support::{self, seat, MockRegistry, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
 
 /// Mock card code: `[fast] Spend 1 resource: gain 1 resource.` —
@@ -154,27 +153,47 @@ fn install_mock_registry() {
         .install();
 }
 
-/// Build a state with one in-play instance of `code` (instance id 0),
-/// in the Investigation phase, the controller active and Active,
-/// 3 actions remaining, 5 starting resources (per the test fixture).
-fn state_with_in_play(code: &str) -> (GameState, InvestigatorId, CardInstanceId) {
-    let id = InvestigatorId(1);
-    let instance_id = CardInstanceId(0);
-    let mut inv = test_support::test_investigator(1);
-    inv.cards_in_play.push(CardInPlay::enter_play(
-        CardCode::new(code),
-        instance_id,
-        Owner::Investigator(InvestigatorId(1)),
-    ));
+const INV: InvestigatorId = InvestigatorId(1);
+/// The investigator's location, for the tests that need one.
+const HERE: LocationId = LocationId(10);
 
+/// `seated` with one in-play instance of `code`, on its open turn: 3 actions
+/// remaining, 5 starting resources (per the test fixture). Returns the built
+/// state, the investigator and the instance id of `code`.
+fn state_seated(seated: Seat, code: &str) -> (GameState, InvestigatorId, CardInstanceId) {
     let state = GameStateBuilder::new()
-        .with_investigator(inv)
-        .open_turn(id)
+        .with_seat(seated.in_play([code]))
+        .open_turn(INV)
         // Chaos bag content doesn't matter here — no skill test fires.
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
         .build();
-    (state, id, instance_id)
+    let instance_id = state.in_play(INV, code);
+    (state, INV, instance_id)
+}
+
+/// [`state_seated`] with the plain test investigator.
+fn state_with_in_play(code: &str) -> (GameState, InvestigatorId, CardInstanceId) {
+    state_seated(seat(1), code)
+}
+
+fn activate(investigator: InvestigatorId, instance_id: CardInstanceId, index: u8) -> TurnAction {
+    TurnAction::ActivateAbility {
+        investigator,
+        source: AbilitySource::InPlay(instance_id),
+        address: AbilityAddress::Printed(index),
+    }
+}
+
+/// Submit `action`, which the menu does not offer, straight to its handler,
+/// and assert the handler refuses it without emitting anything. Returns the
+/// state after the refusal.
+fn refused_off_menu(session: TestSession, action: &TurnAction) -> GameState {
+    let refused = session.submit_off_menu(action);
+    refused.expect_rejected();
+    let result = refused.finish();
+    assert!(result.events.is_empty(), "{:?}", result.events);
+    result.state
 }
 
 #[test]
@@ -185,14 +204,9 @@ fn fast_resource_loop_activates_and_resolves_effect() {
     let (state, id, instance_id) = state_with_in_play(FAST_RESOURCE_LOOP);
     let actions_before = state.investigators[&id].actions_remaining;
 
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::ActivateAbility {
-            investigator: id,
-            source: AbilitySource::InPlay(instance_id),
-            address: AbilityAddress::Printed(0),
-        },
-    );
+    let result = TestSession::new(state)
+        .take(&activate(id, instance_id, 0))
+        .finish();
     let inv = &result.state.investigators[&id];
     assert_eq!(
         inv.actions_remaining, actions_before,
@@ -229,16 +243,10 @@ fn fast_resource_loop_activates_and_resolves_effect() {
 fn action_exhaust_gain_exhausts_source_and_blocks_reactivation() {
     let (state, id, instance_id) = state_with_in_play(ACTION_EXHAUST_GAIN);
     let actions_before = state.investigators[&id].actions_remaining;
+    let action = activate(id, instance_id, 0);
 
-    let after_first = test_support::take_turn_action(
-        state,
-        &TurnAction::ActivateAbility {
-            investigator: id,
-            source: AbilitySource::InPlay(instance_id),
-            address: AbilityAddress::Printed(0),
-        },
-    );
-    let inv = &after_first.state.investigators[&id];
+    let after_first = TestSession::new(state).take(&action);
+    let inv = &after_first.state().investigators[&id];
     assert_eq!(inv.actions_remaining, actions_before - 1);
     assert_eq!(inv.resources, 5 + 1);
     assert!(
@@ -246,64 +254,32 @@ fn action_exhaust_gain_exhausts_source_and_blocks_reactivation() {
         "source must exhaust after activation",
     );
     assert_event!(
-        after_first.events,
+        after_first.events(),
         Event::CardExhausted { investigator, instance_id: iid, .. }
             if *investigator == id && *iid == instance_id
     );
 
     // Second activation: source is exhausted; Cost::Exhaust check
     // rejects without mutating state.
-    let after_second = test_support::dispatch_turn_action_unchecked(
-        after_first.state,
-        &TurnAction::ActivateAbility {
-            investigator: id,
-            source: AbilitySource::InPlay(instance_id),
-            address: AbilityAddress::Printed(0),
-        },
-    );
-    assert!(matches!(
-        after_second.outcome,
-        EngineOutcome::Rejected { .. }
-    ));
-    assert!(after_second.events.is_empty());
+    refused_off_menu(after_first, &action);
 }
 
 #[test]
 fn insufficient_resources_reject_without_payment() {
-    let (mut state, id, instance_id) = state_with_in_play(FAST_RESOURCE_LOOP);
-    state.investigators.get_mut(&id).unwrap().resources = 0;
+    let (state, id, instance_id) = state_seated(seat(1).resources(0), FAST_RESOURCE_LOOP);
 
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::ActivateAbility {
-            investigator: id,
-            source: AbilitySource::InPlay(instance_id),
-            address: AbilityAddress::Printed(0),
-        },
-    );
-    assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-    assert!(result.events.is_empty());
+    let after = refused_off_menu(TestSession::new(state), &activate(id, instance_id, 0));
     // Wallet untouched.
-    assert_eq!(result.state.investigators[&id].resources, 0);
+    assert_eq!(after.investigators[&id].resources, 0);
 }
 
 #[test]
 fn insufficient_actions_reject_action_cost_ability() {
-    let (mut state, id, instance_id) = state_with_in_play(ACTION_EXHAUST_GAIN);
-    state.investigators.get_mut(&id).unwrap().actions_remaining = 0;
+    let (state, id, instance_id) = state_seated(seat(1).actions(0), ACTION_EXHAUST_GAIN);
 
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::ActivateAbility {
-            investigator: id,
-            source: AbilitySource::InPlay(instance_id),
-            address: AbilityAddress::Printed(0),
-        },
-    );
-    assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-    assert!(result.events.is_empty());
+    let after = refused_off_menu(TestSession::new(state), &activate(id, instance_id, 0));
     // Source still ready (not exhausted), resources untouched.
-    let inv = &result.state.investigators[&id];
+    let inv = &after.investigators[&id];
     assert!(!inv.cards_in_play[0].exhausted);
     assert_eq!(inv.resources, 5);
 }
@@ -312,113 +288,75 @@ fn insufficient_actions_reject_action_cost_ability() {
 fn ability_index_pointing_at_non_activated_trigger_rejects() {
     let (state, id, instance_id) = state_with_in_play(CONSTANT_ONLY);
 
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::ActivateAbility {
-            investigator: id,
-            source: AbilitySource::InPlay(instance_id),
-            address: AbilityAddress::Printed(0),
-        },
-    );
-    assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-    assert!(result.events.is_empty());
+    refused_off_menu(TestSession::new(state), &activate(id, instance_id, 0));
 }
 
 #[test]
 fn ability_index_out_of_bounds_rejects() {
     let (state, id, instance_id) = state_with_in_play(FAST_RESOURCE_LOOP);
 
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::ActivateAbility {
-            investigator: id,
-            source: AbilitySource::InPlay(instance_id),
-            address: AbilityAddress::Printed(9),
-        },
-    );
-    assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-    assert!(result.events.is_empty());
+    refused_off_menu(TestSession::new(state), &activate(id, instance_id, 9));
 }
 
 #[test]
 fn discard_card_from_hand_cost_rejects_with_todo() {
     let (state, id, instance_id) = state_with_in_play(DISCARD_COST_ABILITY);
 
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::ActivateAbility {
-            investigator: id,
-            source: AbilitySource::InPlay(instance_id),
-            address: AbilityAddress::Printed(0),
-        },
-    );
-    assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     // No partial mutation: source still ready, no events fired.
-    assert!(result.events.is_empty());
-    assert!(!result.state.investigators[&id].cards_in_play[0].exhausted);
+    let after = refused_off_menu(TestSession::new(state), &activate(id, instance_id, 0));
+    assert!(!after.investigators[&id].cards_in_play[0].exhausted);
 }
 
 #[test]
 fn activating_with_defeated_status_doesnt_need_registry() {
     // Belt-and-suspenders: even with registry installed, the status
     // check rejects before the registry lookup runs.
-    let id = InvestigatorId(1);
-    let instance_id = CardInstanceId(0);
-    let mut inv = test_support::test_investigator(1);
-    inv.status = Status::Defeated;
-    inv.cards_in_play.push(CardInPlay::enter_play(
-        CardCode::new(FAST_RESOURCE_LOOP),
-        instance_id,
-        Owner::Investigator(InvestigatorId(1)),
-    ));
+    let (mut state, id, instance_id) = state_with_in_play(FAST_RESOURCE_LOOP);
+    // No seat setter stages a status.
+    state.investigators.get_mut(&id).unwrap().status = Status::Defeated;
 
-    let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_investigator(inv)
-        .with_active_investigator(id)
-        .build();
-
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::ActivateAbility {
-            investigator: id,
-            source: AbilitySource::InPlay(instance_id),
-            address: AbilityAddress::Printed(0),
-        },
-    );
-    assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-    assert_no_event!(result.events, Event::AbilityActivated { .. });
+    let refused = TestSession::new(state).submit_off_menu(&activate(id, instance_id, 0));
+    refused.expect_rejected();
+    assert_no_event!(refused.finish().events, Event::AbilityActivated { .. });
 }
 
 // ---- test-scoped recorded modifiers (#102, #676) -------------------
+
+/// Run an Intellect test at difficulty 4, buying the SKILL_BOOST ability on
+/// `instance_id` at the test's ST.1 player window, committing nothing and
+/// declining the ST.2 (pre-token) window.
+fn boosted_intellect_test(session: TestSession, instance_id: CardInstanceId) -> TestSession {
+    session
+        .test_skill(INV, SkillKind::Intellect, 4)
+        .pick(OptionTarget::CardInstance(instance_id))
+        // The ST.1 window re-opens after the play resolves; decline it.
+        .skip()
+        .commit(&[])
+        .skip()
+}
 
 #[test]
 fn a_test_scoped_modifier_buffs_the_test_it_was_bought_during() {
     // Activate SKILL_BOOST at the running test's player window: pay 1
     // resource, record +1 intellect for *this* test. Base 3 intellect + 1
     // exactly clears difficulty 4.
-    let (state, id, _) = state_with_in_play(SKILL_BOOST);
+    let (state, id, instance_id) = state_with_in_play(SKILL_BOOST);
     let resources_before = state.investigators[&id].resources;
 
-    let result = test_support::drive_skill_test(
-        state,
-        id,
-        SkillKind::Intellect,
-        4,
-        TakeOneFastPlay::at_index(0),
-    );
+    let session = boosted_intellect_test(TestSession::new(state), instance_id);
+    session.assert_at_turn_menu(id);
     assert_event!(
-        result.events,
+        session.events(),
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, margin: 0 }
             if *investigator == id
     );
     assert_eq!(
-        result.state.investigators[&id].resources,
+        session.state().investigators[&id].resources,
         resources_before - 1,
         "the ability's cost was paid",
     );
     assert!(
-        result.state.recorded_modifiers.is_empty(),
+        session.state().recorded_modifiers.is_empty(),
         "a test-scoped row expires with the test that owns it",
     );
 }
@@ -427,17 +365,15 @@ fn a_test_scoped_modifier_buffs_the_test_it_was_bought_during() {
 fn a_test_scoped_modifier_does_not_leak_into_a_second_test() {
     // Buy the boost inside one test, then run a second identical test
     // without buying it: 3 intellect vs difficulty 4 fails by 1.
-    let (state, id, _) = state_with_in_play(SKILL_BOOST);
+    let (state, id, instance_id) = state_with_in_play(SKILL_BOOST);
 
-    let first = test_support::drive_skill_test(
-        state,
-        id,
-        SkillKind::Intellect,
-        4,
-        TakeOneFastPlay::at_index(0),
-    );
-    let second =
-        test_support::perform_skill_test_no_commits(first.state, id, SkillKind::Intellect, 4);
+    let second = boosted_intellect_test(TestSession::new(state), instance_id)
+        .test_skill(id, SkillKind::Intellect, 4)
+        // Decline both player windows, commit nothing.
+        .skip()
+        .commit(&[])
+        .skip()
+        .finish();
     assert_event!(
         second.events,
         Event::SkillTestFailed { investigator, skill: SkillKind::Intellect, by: 1, .. }
@@ -453,25 +389,17 @@ fn a_test_scoped_row_is_stamped_with_the_running_test_and_carries_its_source() {
     let (state, id, instance_id) = state_with_in_play(SKILL_BOOST);
 
     // Start the test, then take the offered fast play at its player window.
-    let started = test_support::perform_skill_test(state, id, SkillKind::Intellect, 4);
-    let EngineOutcome::AwaitingInput { request, .. } = &started.outcome else {
-        panic!("expected the ST.1 fast window, got {:?}", started.outcome);
-    };
-    let option = request.options[0].id;
-    let after_activate = engine::apply(
-        started.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(option),
-        }),
-    );
+    let after_activate = TestSession::new(state)
+        .test_skill(id, SkillKind::Intellect, 4)
+        .pick(OptionTarget::CardInstance(instance_id));
 
     let in_flight = after_activate
-        .state
+        .state()
         .current_skill_test()
         .expect("the test is still running")
         .id;
-    assert_eq!(after_activate.state.recorded_modifiers.len(), 1);
-    let row = &after_activate.state.recorded_modifiers[0];
+    assert_eq!(after_activate.state().recorded_modifiers.len(), 1);
+    let row = &after_activate.state().recorded_modifiers[0];
     assert_eq!(row.investigator, id);
     assert_eq!(
         row.kind,
@@ -492,23 +420,17 @@ fn a_test_scoped_row_is_stamped_with_the_running_test_and_carries_its_source() {
 fn activating_a_test_scoped_modifier_outside_a_test_is_rejected() {
     let (state, id, instance_id) = state_with_in_play(SKILL_BOOST);
     let resources_before = state.investigators[&id].resources;
-    let action = TurnAction::ActivateAbility {
-        investigator: id,
-        source: AbilitySource::InPlay(instance_id),
-        address: AbilityAddress::Printed(0),
-    };
+    let action = activate(id, instance_id, 0);
 
     assert!(
         !enumerate::legal_actions(&state).contains(&action),
         "the open-turn menu must not offer an activation that would reject",
     );
 
-    let result = test_support::dispatch_turn_action_unchecked(state, &action);
-    assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-    assert!(result.events.is_empty());
+    let after = refused_off_menu(TestSession::new(state), &action);
     // State unchanged by the rejection: no resource spent, nothing recorded.
-    assert_eq!(result.state.investigators[&id].resources, resources_before);
-    assert!(result.state.recorded_modifiers.is_empty());
+    assert_eq!(after.investigators[&id].resources, resources_before);
+    assert!(after.recorded_modifiers.is_empty());
 }
 
 /// A "Limit once per round" activated ability is offered once, refused once it
@@ -518,11 +440,7 @@ fn activating_a_test_scoped_modifier_outside_a_test_is_rejected() {
 #[test]
 fn a_once_per_round_activated_ability_is_offered_once_per_round() {
     let (state, id, instance_id) = state_with_in_play(ONCE_PER_ROUND_GAIN);
-    let action = TurnAction::ActivateAbility {
-        investigator: id,
-        source: AbilitySource::InPlay(instance_id),
-        address: AbilityAddress::Printed(0),
-    };
+    let action = activate(id, instance_id, 0);
     assert!(
         enumerate::legal_actions(&state).contains(&action),
         "an unused limited ability is offered",
@@ -534,12 +452,8 @@ fn a_once_per_round_activated_ability_is_offered_once_per_round() {
         !enumerate::legal_actions(after_first.state()).contains(&action),
         "a once-per-round ability used this round is not offered again",
     );
-    let refused =
-        test_support::dispatch_turn_action_unchecked(after_first.state().clone(), &action);
-    assert!(matches!(refused.outcome, EngineOutcome::Rejected { .. }));
-    assert!(refused.events.is_empty());
+    let mut next_round = refused_off_menu(after_first, &action);
 
-    let mut next_round = after_first.state().clone();
     next_round.round += 1;
     assert!(
         enumerate::legal_actions(&next_round).contains(&action),
@@ -552,28 +466,23 @@ fn a_once_per_round_activated_ability_is_offered_once_per_round() {
 /// card, wherever it sits, and is refused for the rest of the round.
 #[test]
 fn a_limited_ability_on_a_card_the_activator_does_not_control_counts_its_use() {
-    let id = InvestigatorId(1);
-    let instance_id = CardInstanceId(0);
-    let location = LocationId(10);
-    let mut loc = test_support::test_location(location.0, "Somewhere");
+    // A seat cannot place a location attachment, so its id is named here.
+    const ATTACHMENT: CardInstanceId = CardInstanceId(0);
+    let mut loc = test_support::test_location(HERE.0, "Somewhere");
     loc.attachments.push(CardInPlay::enter_play(
         CardCode::new(ONCE_PER_ROUND_GAIN),
-        instance_id,
+        ATTACHMENT,
         Owner::EncounterDeck,
     ));
     let state = GameStateBuilder::new()
-        .with_investigator_at(test_support::test_investigator(1), location)
+        .with_seat(seat(1).at(HERE))
         .with_location(loc)
-        .open_turn(id)
+        .open_turn(INV)
         .build();
-    let action = TurnAction::ActivateAbility {
-        investigator: id,
-        source: AbilitySource::InPlay(instance_id),
-        address: AbilityAddress::Printed(0),
-    };
+    let action = activate(INV, ATTACHMENT, 0);
 
     let after_first = TestSession::new(state).take(&action);
-    assert_eq!(after_first.state().investigators[&id].resources, 5 + 1);
+    assert_eq!(after_first.state().investigators[&INV].resources, 5 + 1);
     assert!(
         !enumerate::legal_actions(after_first.state()).contains(&action),
         "the use is counted against the attached card",
@@ -588,18 +497,12 @@ fn a_limited_ability_on_a_card_the_activator_does_not_control_counts_its_use() {
 fn a_tagged_activated_ability_is_not_offered_while_its_condition_is_false() {
     let (state, id, instance_id) = state_with_in_play(CLUE_GATED_GAIN);
     assert_eq!(state.investigators[&id].clues, 0);
-    let action = TurnAction::ActivateAbility {
-        investigator: id,
-        source: AbilitySource::InPlay(instance_id),
-        address: AbilityAddress::Printed(0),
-    };
+    let action = activate(id, instance_id, 0);
     assert!(
         !enumerate::legal_actions(&state).contains(&action),
         "a false eligibility condition keeps the ability off the menu",
     );
-    let refused = test_support::dispatch_turn_action_unchecked(state.clone(), &action);
-    assert!(matches!(refused.outcome, EngineOutcome::Rejected { .. }));
-    assert!(refused.events.is_empty());
+    refused_off_menu(TestSession::new(state.clone()), &action);
 
     let mut with_a_clue = state;
     with_a_clue.investigators.get_mut(&id).unwrap().clues = 1;
@@ -617,43 +520,29 @@ fn a_tagged_activated_ability_is_not_offered_while_its_condition_is_false() {
 /// would make, and the ability is not offered again this round.
 #[test]
 fn a_cancelled_use_of_a_limited_activated_ability_still_counts() {
-    let id = InvestigatorId(1);
-    let ability_card = CardInstanceId(0);
-    let interrupt_card = CardInstanceId(1);
-    let location = LocationId(10);
-    let mut inv = test_support::test_investigator(1);
-    inv.cards_in_play.push(CardInPlay::enter_play(
-        CardCode::new(ONCE_PER_ROUND_DISCOVERY),
-        ability_card,
-        Owner::Investigator(InvestigatorId(1)),
-    ));
-    inv.threat_area.push(CardInPlay::enter_play(
-        CardCode::new(CANCEL_DISCOVERY),
-        interrupt_card,
-        Owner::EncounterDeck,
-    ));
-    let mut loc = test_support::test_location(location.0, "Study");
+    let mut loc = test_support::test_location(HERE.0, "Study");
     loc.clues = 2;
     let state = GameStateBuilder::new()
-        .with_investigator_at(inv, location)
+        .with_seat(
+            seat(1)
+                .at(HERE)
+                .in_play([ONCE_PER_ROUND_DISCOVERY])
+                .threat_area([CANCEL_DISCOVERY]),
+        )
         .with_location(loc)
-        .open_turn(id)
+        .open_turn(INV)
         .build();
-    let action = TurnAction::ActivateAbility {
-        investigator: id,
-        source: AbilitySource::InPlay(ability_card),
-        address: AbilityAddress::Printed(0),
-    };
+    let action = activate(INV, state.in_play(INV, ONCE_PER_ROUND_DISCOVERY), 0);
+    let interrupt_card = OptionTarget::CardInstance(state.in_play(INV, CANCEL_DISCOVERY));
 
-    let interrupted = TestSession::new(state).take(&action);
-    let cancelled = interrupted.pick(OptionTarget::CardInstance(interrupt_card));
+    let cancelled = TestSession::new(state).take(&action).pick(interrupt_card);
 
     assert_eq!(
-        cancelled.state().investigators[&id].clues,
+        cancelled.state().investigators[&INV].clues,
         0,
         "the discovery was cancelled",
     );
-    assert_eq!(cancelled.state().locations[&location].clues, 2);
+    assert_eq!(cancelled.state().locations[&HERE].clues, 2);
     assert!(
         !enumerate::legal_actions(cancelled.state()).contains(&action),
         "the cancelled use counts against the once-per-round limit",
