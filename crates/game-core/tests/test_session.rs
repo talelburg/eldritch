@@ -39,6 +39,9 @@ const FREE: &str = "_ts_free";
 /// `[action]: Heal 1 damage from an investigator at your location.` — a choice
 /// among investigators, whose options anchor to each investigator's card.
 const HEAL: &str = "_ts_heal";
+/// `[free]: Gain 1 resource.` and `[free]: Gain 2 resources.` — two abilities
+/// printed on one card, which a Fast window offers on the same anchor.
+const TWO_FREE: &str = "_ts_two_free";
 
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
@@ -46,6 +49,7 @@ const SELECT_INST: CardInstanceId = CardInstanceId(1);
 const DECIDE_INST: CardInstanceId = CardInstanceId(2);
 const FREE_INST: CardInstanceId = CardInstanceId(3);
 const HEAL_INST: CardInstanceId = CardInstanceId(4);
+const TWO_FREE_INST: CardInstanceId = CardInstanceId(5);
 const FIRST: EnemyId = EnemyId(7);
 const SECOND: EnemyId = EnemyId(8);
 
@@ -89,6 +93,12 @@ fn install_mock_registry() {
                 dsl::gain_resources(InvestigatorTarget::You, 1),
             )]
         })
+        .with_abilities(TWO_FREE, || -> Vec<Ability> {
+            vec![
+                dsl::activated(0, vec![], dsl::gain_resources(InvestigatorTarget::You, 1)),
+                dsl::activated(0, vec![], dsl::gain_resources(InvestigatorTarget::You, 2)),
+            ]
+        })
         .install();
 }
 
@@ -102,7 +112,12 @@ fn board() -> GameStateBuilder {
 /// engine leaves it just before the turn's actions, with the free-ability probe
 /// in play so the window has something to offer.
 fn turn_begins_window() -> GameStateBuilder {
-    board_with(&[(FREE, FREE_INST)])
+    turn_begins_window_with(FREE, FREE_INST)
+}
+
+/// The turn-begins Fast window with `code` in play as `inst`.
+fn turn_begins_window_with(code: &str, inst: CardInstanceId) -> GameStateBuilder {
+    board_with(&[(code, inst)])
         .with_phase(Phase::Investigation)
         .with_active_investigator(INV)
         .with_turn_order([INV])
@@ -211,11 +226,7 @@ fn settling_a_staged_mulligan_shows_its_prompt() {
         .session();
     assert_eq!(session.prompt().kind, InputKind::PickMultiple);
 
-    let session = session.apply(Action::Player(PlayerAction::ResolveInput {
-        response: InputResponse::PickMultiple {
-            selected: vec![OptionId(0)],
-        },
-    }));
+    let session = session.pick_multiple(&[0]);
 
     assert_event!(session.events(), Event::MulliganPerformed { .. });
     assert_eq!(
@@ -347,6 +358,17 @@ fn commit_at_another_pick_multiple_panics() {
         .with_mulligan_remaining([INV])
         .session()
         .commit(&[]);
+}
+
+/// `pick_multiple` answers a `PickMultiple` that is not a commit window: at a
+/// skill test's commit window it panics and sends the author to `commit`.
+#[test]
+#[should_panic(expected = "commit cards by code")]
+fn pick_multiple_at_a_commit_window_panics() {
+    let _ = board()
+        .session()
+        .test_skill(INV, SkillKind::Willpower, 2)
+        .pick_multiple(&[]);
 }
 
 // ---- submit_off_menu ---------------------------------------------------------
@@ -575,6 +597,42 @@ fn pick_nth_on_a_selection_panics() {
         .session()
         .take(&activate(SELECT_INST))
         .pick_nth(1);
+}
+
+// ---- pick_nth_at -----------------------------------------------------------
+
+/// Two abilities printed on one card share its anchor in a Fast window, so
+/// `pick` cannot name either; `pick_nth_at` names the card and the ability by
+/// the order the card prints it.
+#[test]
+fn pick_nth_at_chooses_among_abilities_printed_on_one_card() {
+    let card = OptionTarget::CardInstance(TWO_FREE_INST);
+    let session = turn_begins_window_with(TWO_FREE, TWO_FREE_INST).session();
+    assert_eq!(
+        session
+            .prompt()
+            .options
+            .iter()
+            .filter(|o| o.target.as_ref() == Some(&card))
+            .count(),
+        2,
+        "both abilities are offered on the card: {:?}",
+        session.prompt(),
+    );
+
+    let session = session.pick_nth_at(card, 1);
+
+    assert_eq!(resources(&session), 7, "the second ability gains 2");
+}
+
+/// With a lone option at the anchor, `pick` names it, and `pick_nth_at` sends
+/// the author there.
+#[test]
+#[should_panic(expected = "pick a lone one with `pick(OptionTarget)`")]
+fn pick_nth_at_a_lone_anchored_option_panics() {
+    let _ = turn_begins_window()
+        .session()
+        .pick_nth_at(OptionTarget::CardInstance(FREE_INST), 0);
 }
 
 // ---- confirm and skip ------------------------------------------------------

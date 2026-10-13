@@ -36,8 +36,10 @@ use crate::state::{
 /// - **Every step applies once, then drains to the next rest.** The steps are:
 ///   - from the turn menu, [`take`](Self::take);
 ///   - at a prompt, [`pick`](Self::pick), [`pick_nth`](Self::pick_nth),
-///     [`confirm`](Self::confirm), [`skip`](Self::skip), and
-///     [`commit`](Self::commit) at a skill test's commit window;
+///     [`pick_nth_at`](Self::pick_nth_at), [`confirm`](Self::confirm),
+///     [`skip`](Self::skip), [`commit`](Self::commit) at a skill test's
+///     commit window, and [`pick_multiple`](Self::pick_multiple) at a
+///     mulligan or hand-size discard;
 ///   - the framework entry points [`fire_at`](Self::fire_at),
 ///     [`take_damage`](Self::take_damage) and [`test_skill`](Self::test_skill);
 ///   - [`submit_off_menu`](Self::submit_off_menu), for a turn action the menu
@@ -335,6 +337,40 @@ impl TestSession {
         self.respond(InputResponse::PickMultiple { selected })
     }
 
+    /// Step: answer a `PickMultiple` prompt that is not a skill test's commit
+    /// window — a mulligan, or a hand-size discard — by selecting the hand
+    /// cards at `hand_indices`, then drain. `pick_multiple(&[])` selects none.
+    ///
+    /// For the session that rests at such a prompt: one a fixture settles at
+    /// ([`with_mulligan_remaining`](crate::state::GameStateBuilder::with_mulligan_remaining),
+    /// a seated game's opening mulligan), or one a step stopped at. A prompt a
+    /// step's drain meets is answered by a scripted
+    /// `InputResponse::PickMultiple` set with
+    /// [`resolve_choices`](Self::resolve_choices) before the step.
+    ///
+    /// # Panics
+    ///
+    /// Panics at the turn menu, at a skill test's commit window (commit cards
+    /// by code with [`commit`](Self::commit)), or at a prompt that is not a
+    /// `PickMultiple`.
+    pub fn pick_multiple(self, hand_indices: &[u32]) -> Self {
+        self.assert_off_turn_menu("pick_multiple");
+        let request = self.prompt();
+        assert!(
+            request.kind == InputKind::PickMultiple,
+            "TestSession::pick_multiple: prompt {:?} is a {:?}, not a PickMultiple",
+            request.prompt,
+            request.kind,
+        );
+        assert!(
+            self.state.current_skill_test().is_none(),
+            "TestSession::pick_multiple: the session is at a skill test's commit window; \
+             commit cards by code with `commit(&[CardCode])`",
+        );
+        let selected = hand_indices.iter().copied().map(OptionId).collect();
+        self.respond(InputResponse::PickMultiple { selected })
+    }
+
     /// Apply one framework entry point `dispatch` through the production
     /// `apply` scaffolding, then drive on and drain.
     fn framework_step(self, dispatch: impl FnOnce(&mut Cx) -> EngineOutcome) -> Self {
@@ -486,6 +522,47 @@ impl TestSession {
                 )
             })
             .id;
+        self.respond(InputResponse::PickSingle(id))
+    }
+
+    /// Step: choose the `n`th (0-based) of the current prompt's options
+    /// anchored to `target`, in the order the prompt offers them, then drain.
+    ///
+    /// For abilities printed on one card: two reactions, or two forced
+    /// abilities, offered from the same card share that card's anchor, so
+    /// [`pick`](Self::pick) cannot tell them apart. The anchor names the card
+    /// and `n` names the ability, in the order the card prints them.
+    ///
+    /// # Panics
+    ///
+    /// Panics at the turn menu, unless at least two options are anchored to
+    /// `target` (pick a lone one with [`pick`](Self::pick)), or if there is no
+    /// `n`th.
+    // By value, like `pick`.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn pick_nth_at(self, target: OptionTarget, n: usize) -> Self {
+        self.assert_off_turn_menu("pick_nth_at");
+        let request = self.prompt();
+        let anchored: Vec<OptionId> = request
+            .options
+            .iter()
+            .filter(|option| option.target.as_ref() == Some(&target))
+            .map(|option| option.id)
+            .collect();
+        assert!(
+            anchored.len() >= 2,
+            "TestSession::pick_nth_at: {} option(s) anchored to {target:?}, not several; pick \
+             a lone one with `pick(OptionTarget)`. Prompt {:?} offers {:?}",
+            anchored.len(),
+            request.prompt,
+            request.options,
+        );
+        let id = *anchored.get(n).unwrap_or_else(|| {
+            panic!(
+                "TestSession::pick_nth_at: no option {n} among the {} anchored to {target:?}",
+                anchored.len(),
+            )
+        });
         self.respond(InputResponse::PickSingle(id))
     }
 
