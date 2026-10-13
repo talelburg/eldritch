@@ -108,11 +108,11 @@ fn move_board(investigator: Seat, attacker_health: u8) -> TestSession {
 /// Verifies the end-to-end suspend/resume chain:
 ///   Move → push `ActionResolution` → `drive_aoo` → `drive_attack_loop` →
 ///   `BeforeEnemyAttack` window opens → `AwaitingInput` →
-///   `ResolveInput{PickSingle(0)}` → plays Dodge → cancel → the coordinator
+///   pick Dodge → plays Dodge → cancel → the coordinator
 ///   abandons the attack's sequence at its resolve step → no damage → the
 ///   parked `AttackLoop` is re-exposed and drains (`AoO` source, so no
 ///   exhaust) → `drive` → `ActionResolution` on top →
-///   `resume_action_resolution` → `move::perform` → `Done`.
+///   `resume_action_resolution` → `move::perform` → the turn menu.
 #[test]
 fn dodge_cancels_attack_of_opportunity_no_damage_move_completes_attacker_not_exhausted() {
     // Step 1: take the Move — AoO fires; Dodge is in hand so the
