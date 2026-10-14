@@ -306,18 +306,12 @@ fn upkeep_draws_in_player_order_then_grants_resources() {
             .with_turn_order([b, a]),
     );
 
-    let order: Vec<(&str, InvestigatorId)> = session
-        .events()
-        .iter()
-        .filter_map(|e| match e {
-            Event::CardsDrawn { investigator, .. } => Some(("draw", *investigator)),
-            Event::ResourcesGained { investigator, .. } => Some(("resource", *investigator)),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(
-        order,
-        vec![("draw", b), ("draw", a), ("resource", b), ("resource", a)],
+    assert_event_sequence!(
+        session.events(),
+        Event::CardsDrawn { investigator, .. } if *investigator == b,
+        Event::CardsDrawn { investigator, .. } if *investigator == a,
+        Event::ResourcesGained { investigator, .. } if *investigator == b,
+        Event::ResourcesGained { investigator, .. } if *investigator == a,
     );
 }
 

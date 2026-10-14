@@ -27,6 +27,7 @@ use game_core::state::{
     GameState, GameStateBuilder, InvestigatorId, LocationId, Status,
 };
 use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 /// *"\[fast\] Exhaust and take 1 horror: gain 1 resource."*
 const FAST_PROBE: &str = "_take_harm_fast";
@@ -75,18 +76,6 @@ fn activate(state: &GameState, probe: &str) -> TurnAction {
     }
 }
 
-fn resources_gained(session: &TestSession) -> Option<usize> {
-    session.events().iter().position(|e| {
-        matches!(
-            e,
-            Event::ResourcesGained {
-                investigator: INV,
-                ..
-            }
-        )
-    })
-}
-
 /// The harm cost stops at the soak prompt with the effect parked beneath it:
 /// a `DealDamage { Effect }` frame on top of the actor-`Active` gate that holds
 /// the ability's effect. The resource is gained only once the horror is placed.
@@ -114,12 +103,15 @@ fn a_harm_cost_offers_the_soak_and_the_effect_waits_for_the_horror() {
         .cards_in_play
         .iter()
         .any(|c| c.code.as_str() == FAST_PROBE && c.exhausted));
-    assert!(session
-        .events()
-        .iter()
-        .any(|e| matches!(e, Event::AbilityActivated { .. })));
+    assert_event!(session.events(), Event::AbilityActivated { .. });
     assert_eq!(session.state().investigators[&INV].resources, 0);
-    assert_eq!(resources_gained(&session), None);
+    assert_no_event!(
+        session.events(),
+        Event::ResourcesGained {
+            investigator: INV,
+            ..
+        }
+    );
 
     // The harm cost's deal frame is on top.
     let mut frames = session.state().continuations.iter().rev();
@@ -148,24 +140,17 @@ fn a_harm_cost_offers_the_soak_and_the_effect_waits_for_the_horror() {
         "a fast ability takes no action"
     );
 
-    let horror = session
-        .events()
-        .iter()
-        .position(|e| {
-            matches!(
-                e,
-                Event::HorrorTaken {
-                    investigator: INV,
-                    amount: 1
-                }
-            )
-        })
-        .expect("the cost's horror is placed");
-    let gained = resources_gained(&session).expect("the resource is gained");
-    assert!(
-        horror < gained,
-        "the horror is placed before the effect resolves: {:?}",
-        session.events()
+    // The horror is placed before the effect resolves.
+    assert_event_sequence!(
+        session.events(),
+        Event::HorrorTaken {
+            investigator: INV,
+            amount: 1
+        },
+        Event::ResourcesGained {
+            investigator: INV,
+            ..
+        },
     );
 }
 
@@ -193,24 +178,19 @@ fn a_lethal_harm_cost_eliminates_the_payer_and_the_effect_does_not_resolve() {
 
     // The cost was paid — the probe exhausted and the ability activated — and
     // the horror it cost eliminated the payer before the effect could resolve.
-    assert!(
-        session.events().iter().any(|e| matches!(
-            e,
-            Event::CardExhausted { instance_id, .. } if *instance_id == probe
-        )),
-        "the exhaust cost was paid: {:?}",
-        session.events()
+    assert_event!(
+        session.events(),
+        Event::CardExhausted { instance_id, .. } if *instance_id == probe
     );
-    assert!(
-        session
-            .events()
-            .iter()
-            .any(|e| matches!(e, Event::AbilityActivated { .. })),
-        "the ability was activated: {:?}",
-        session.events()
-    );
+    assert_event!(session.events(), Event::AbilityActivated { .. });
     assert_ne!(session.state().investigators[&INV].status, Status::Active);
-    assert_eq!(resources_gained(&session), None, "{:?}", session.events());
+    assert_no_event!(
+        session.events(),
+        Event::ResourcesGained {
+            investigator: INV,
+            ..
+        }
+    );
     assert_eq!(session.state().investigators[&INV].resources, 0);
 }
 
@@ -247,7 +227,13 @@ fn a_harm_cost_soaked_by_an_asset_is_still_paid() {
         .expect("Holy Rosary still in play");
     assert_eq!(rosary_card.accumulated_horror, 1, "soaked by the player");
     assert_eq!(investigator.resources, 1, "the cost is still paid");
-    assert!(resources_gained(&session).is_some());
+    assert_event!(
+        session.events(),
+        Event::ResourcesGained {
+            investigator: INV,
+            ..
+        }
+    );
 }
 
 /// On an `[action]` ability the harm would have to resolve before the attacks

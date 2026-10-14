@@ -24,6 +24,7 @@ use game_core::state::{
     GameStateBuilder, InvestigatorId, LocationId, Phase, UpkeepPhaseFrame, UpkeepResume,
 };
 use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 /// Cover Up 01007: *"Revelation - Put Cover Up into play in your threat area,
 /// with 3 clues on it."* A persistent treachery weakness.
@@ -89,28 +90,14 @@ fn deck_out_horror_lands_before_the_drawn_weakness_revelation_resolves() {
     let session = session.pick(me);
 
     session.assert_at_turn_menu(INV);
-    let events = session.events();
-    let horror = events
-        .iter()
-        .position(|e| {
-            matches!(
-                e,
-                Event::HorrorTaken {
-                    investigator: INV,
-                    amount: 1
-                }
-            )
-        })
-        .expect("the deck-out horror is placed");
-    let revelation = events
-        .iter()
-        .position(
-            |e| matches!(e, Event::CardEnteredThreatArea { code, .. } if code.as_str() == COVER_UP),
-        )
-        .expect("Cover Up's Revelation resolves");
-    assert!(
-        horror < revelation,
-        "the horror completes the draw before the Revelation resolves: {events:?}"
+    // The horror completes the draw before the Revelation resolves.
+    assert_event_sequence!(
+        session.events(),
+        Event::HorrorTaken {
+            investigator: INV,
+            amount: 1
+        },
+        Event::CardEnteredThreatArea { code, .. } if code.as_str() == COVER_UP,
     );
 }
 
@@ -130,31 +117,40 @@ fn upkeep_resolves_each_investigators_draw_completely_in_player_order() {
         })
         .session();
 
-    let order: Vec<(&str, InvestigatorId)> = session
-        .events()
-        .iter()
-        .filter_map(|e| match e {
-            Event::CardsDrawn { investigator, .. } => Some(("draw", *investigator)),
-            Event::HorrorTaken { investigator, .. } => Some(("horror", *investigator)),
-            Event::CardEnteredThreatArea { investigator, .. } => {
-                Some(("revelation", *investigator))
-            }
-            Event::ResourcesGained { investigator, .. } => Some(("resource", *investigator)),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(
-        order,
-        vec![
-            ("draw", INV),
-            ("horror", INV),
-            ("revelation", INV),
-            ("draw", INV2),
-            ("horror", INV2),
-            ("revelation", INV2),
-            ("resource", INV),
-            ("resource", INV2),
-        ],
+    assert_event_sequence!(
+        session.events(),
+        Event::CardsDrawn {
+            investigator: INV,
+            ..
+        },
+        Event::HorrorTaken {
+            investigator: INV,
+            ..
+        },
+        Event::CardEnteredThreatArea {
+            investigator: INV,
+            ..
+        },
+        Event::CardsDrawn {
+            investigator: INV2,
+            ..
+        },
+        Event::HorrorTaken {
+            investigator: INV2,
+            ..
+        },
+        Event::CardEnteredThreatArea {
+            investigator: INV2,
+            ..
+        },
+        Event::ResourcesGained {
+            investigator: INV,
+            ..
+        },
+        Event::ResourcesGained {
+            investigator: INV2,
+            ..
+        },
     );
     assert_eq!(session.state().phase, Phase::Mythos, "upkeep completed");
 }
@@ -181,15 +177,13 @@ fn upkeep_deck_out_soak_prompt_holds_the_next_investigators_draw() {
 
     let rosary = session.state().in_play(INV, HOLY_ROSARY);
     assert_eq!(session.offered_at(&OptionTarget::CardInstance(rosary)), 1);
-    assert!(
-        !session.events().iter().any(|e| matches!(
-            e,
-            Event::CardsDrawn {
-                investigator: INV2,
-                ..
-            }
-        )),
-        "investigator 2 waits for investigator 1's draw to complete"
+    // Investigator 2 waits for investigator 1's draw to complete.
+    assert_no_event!(
+        session.events(),
+        Event::CardsDrawn {
+            investigator: INV2,
+            ..
+        }
     );
 
     let session = session.pick(OptionTarget::CardInstance(rosary));
@@ -202,12 +196,12 @@ fn upkeep_deck_out_soak_prompt_holds_the_next_investigators_draw() {
         rosary_card.accumulated_horror, 1,
         "soaked by the player's choice"
     );
-    assert!(session.events().iter().any(|e| matches!(
-        e,
+    assert_event!(
+        session.events(),
         Event::CardsDrawn {
             investigator: INV2,
             ..
         }
-    )));
+    );
     assert_eq!(session.state().phase, Phase::Mythos, "upkeep completed");
 }
