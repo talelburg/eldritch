@@ -441,8 +441,9 @@ fn restrictions_met(
 /// The designator is the ability's, whichever trigger reached it (see
 /// [`ActionDesignator`]), so an event's designated `OnPlay` ability skips the
 /// residual check too. Its action check is then the play path's to ask, as the
-/// activation path asks it; no implemented event prints a designator yet, and
-/// Blinding Light 01066 brings that check with it (#1054).
+/// activation path asks it: `check_play_card` asks `designator::can_perform`
+/// before this gate, so Blinding Light 01066's **Evade** with no enemy engaged
+/// is refused there.
 fn performs_an_action(ability: &Ability) -> bool {
     matches!(
         &ability.designator,

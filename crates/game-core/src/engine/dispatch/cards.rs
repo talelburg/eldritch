@@ -4,7 +4,7 @@
 use std::cmp;
 
 use card_dsl::card_data::{CardMetadata, CardType};
-use card_dsl::dsl::{Ability, Effect, Trigger};
+use card_dsl::dsl::{Ability, ActionDesignator, Effect, Trigger};
 
 use crate::action::InputResponse;
 use crate::card_registry::CardRegistry;
@@ -901,7 +901,10 @@ pub(super) fn resolve_play_target(
 /// [`PlayFromHand`](crate::state::Continuation::PlayFromHand) frame
 /// (Slice D #423) that holds the card; when that effect pops, the frame's
 /// disposal places it — into `cards_in_play` for assets, or into `discard`
-/// (with an emitted [`Event::CardDiscarded`]) for events.
+/// (with an emitted [`Event::CardDiscarded`]) for events. Only then, at step 4,
+/// is the completed play announced to the timing system as
+/// `TimingEvent::CardPlayed` (Heirloom of Hyperborea 01012); the step-3
+/// [`Event::CardPlayed`] is the log entry, not that announcement.
 ///
 /// # State-mutation contract
 ///
@@ -915,7 +918,7 @@ pub(super) fn play_card(
     hand_index: u8,
 ) -> EngineOutcome {
     let PlayCheckResult {
-        abilities: _,
+        abilities,
         is_fast,
         card_type: _,
     } = match legality::check_play_card(cx.state, cx.cards, investigator, hand_index) {
@@ -945,10 +948,10 @@ pub(super) fn play_card(
     // A non-fast play is taken as an action: the step pays its one action, and
     // provokes attacks of opportunity before the play completes on resume. Its
     // hook pays the resource cost (RR p.22, before any attack resolves, #501)
-    // and commences the play: `CardPlayed` is announced and the card leaves hand
+    // and commences the play: `Event::CardPlayed` is logged and the card leaves hand
     // to ride the frames until it is placed (RR Appendix I step 3 → 4). The
     // card itself rides the `ActionResolution` frame through the attacks.
-    let description = ActionDescription::play(code.clone());
+    let description = ActionDescription::play(code.clone(), play_designator(&abilities).cloned());
     take::take(cx, investigator, &description, |cx| {
         pay_play_cost(cx, investigator, &code);
         let card = commence_play(cx, investigator, idx);
@@ -1088,6 +1091,13 @@ pub(super) fn dispose_play_from_hand(cx: &mut Cx) -> EngineOutcome {
 /// `OnPlay`); the rejecting `DiscoverClue` cards (Working a Hunch 01037,
 /// Evidence! 01022) are all Fast and never park. Give this suppress-on-lapse
 /// when a board-changing `AoO` reaction lands.
+///
+/// An event printing a bold designator on its `OnPlay` ability (Blinding Light
+/// 01066's **Evade**) performs that action when played, as an activated
+/// ability does (`abilities::push_activation_resolution`): the designated
+/// action goes on top of the residual effect, so it resolves first, and the
+/// card is disposed of only once both have. The legality check asked
+/// `designator::can_perform` before anything was paid.
 fn complete_play(cx: &mut Cx, investigator: InvestigatorId, card: CardCode) -> EngineOutcome {
     let (_destination, abilities, _is_fast, _card_type) = match resolve_play_target(cx.cards, &card)
     {
@@ -1102,16 +1112,32 @@ fn complete_play(cx: &mut Cx, investigator: InvestigatorId, card: CardCode) -> E
         investigator,
         card: Some(card),
     });
+    let eval_ctx = EvalContext::for_controller(investigator);
     let on_play: Vec<Effect> = abilities
-        .into_iter()
+        .iter()
         .filter(|a| a.trigger == Trigger::OnPlay)
-        .map(|a| a.effect)
+        .map(|a| a.effect.clone())
         .collect();
     if !on_play.is_empty() {
-        let eval_ctx = EvalContext::for_controller(investigator);
         evaluator::push_effect(cx, &Effect::Seq(on_play), eval_ctx);
     }
+    if let Some(designator) = play_designator(&abilities) {
+        evaluator::push_designated_action(cx, designator, eval_ctx);
+    }
     EngineOutcome::Done
+}
+
+/// The bold action designator a card's `OnPlay` ability prints, if any:
+/// Blinding Light 01066's **Evade**. Playing the card performs that action
+/// (`ActionDesignator`'s "It lives on the ability, not on the trigger"), so the
+/// play's legality, its action description and its resolution all read it from
+/// here. No card prints more than one `OnPlay` ability with a designator; the
+/// first is the one read.
+pub(super) fn play_designator(abilities: &[Ability]) -> Option<&ActionDesignator> {
+    abilities
+        .iter()
+        .filter(|a| a.trigger == Trigger::OnPlay)
+        .find_map(|a| a.designator.as_ref())
 }
 
 /// Complete a non-fast card play after its `AoO` loop (#378). The actor-`Active`

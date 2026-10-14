@@ -31,9 +31,9 @@
 //! probe models that primitive and impersonates no printed card (ADR 0016).
 //!
 //! The Parley exemption, which no implemented card prints, is
-//! `crates/game-core/tests/action_designator_aoo.rs`. A designated Evade or
-//! Move ability is refused before it is taken (`engine::designator`), so it has
-//! no row yet.
+//! `crates/game-core/tests/action_designator_aoo.rs`. A designated Move ability
+//! is refused before it is taken (`engine::designator`, `TODO(#1059)`), so it
+//! has no row yet.
 
 use card_dsl::dsl::{self, Ability, InvestigatorTarget};
 use cards::TEST_REGISTRY;
@@ -58,6 +58,9 @@ const TWO_ACTION_PROBE: &str = "_aoo_two_action";
 const FIRST_AID: &str = "01019";
 /// Emergency Cache (01088), a non-fast event costing 0.
 const EMERGENCY_CACHE: &str = "01088";
+/// Blinding Light (01066), a non-fast event whose `OnPlay` ability is a
+/// designated Evade.
+const BLINDING_LIGHT: &str = "01066";
 /// Magnifying Glass (01030), a fast asset.
 const MAGNIFYING_GLASS: &str = "01030";
 /// Machete (01020), whose action ability is a designated Fight.
@@ -260,6 +263,20 @@ fn play_rows() -> Vec<Row> {
             actions_spent: 1,
             provokes: true,
         },
+        // Blinding Light 01066: *"<b>Evade.</b> This evasion attempt uses
+        // [willpower] instead of [agility]. …"* Playing it is an evade action,
+        // so it is exempt. Official FAQ, on Backstab 01051: *"Abilities with a
+        // bold action designator (like Fight, Evade or Investigate) count as an
+        // action of that type."* The attacker is the one enemy engaged to evade.
+        Row {
+            name: "Play (designated Evade event)",
+            seated: |seat| seat.hand([BLINDING_LIGHT]).resources(2),
+            setup: |_| {},
+            take: PLAY_FROM_HAND,
+            effect: |e| matches!(e, Event::SkillTestStarted { .. }),
+            actions_spent: 1,
+            provokes: false,
+        },
         // Magnifying Glass 01030: *"Fast."* Played without the Play action.
         Row {
             name: "Play (fast asset)",
@@ -387,7 +404,7 @@ fn position(events: &[Event], name: &str, what: &str, p: impl Fn(&Event) -> bool
         .unwrap_or_else(|| panic!("{name}: no {what} event in {events:#?}"))
 }
 
-/// Every action but Fight, Evade, a designated Fight and a Resign is attacked
+/// Every action but Fight, Evade, a designated Fight or Evade and a Resign is attacked
 /// by a ready engaged enemy, once, after its actions are paid and before its
 /// effect lands. The exempt actions are paid for and take effect with no attack
 /// at all, and a fast play or fast ability spends nothing and is not attacked.

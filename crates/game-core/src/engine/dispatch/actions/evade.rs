@@ -2,7 +2,7 @@
 //! after-test step: an Agility test against an enemy engaged with the
 //! investigator, which on success disengages and exhausts it.
 
-use card_dsl::dsl::SkillTestKind;
+use card_dsl::dsl::{Effect, RevealClause, SkillTestKind};
 
 use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
 use crate::engine::dispatch::skill_test;
@@ -10,8 +10,8 @@ use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
-    ActionResume, DifficultyBasis, Enemy, EnemyId, GameState, InvestigatorId, SkillKind,
-    SkillTestFollowUp,
+    AbilitySource, ActionResume, DifficultyBasis, Enemy, EnemyId, GameState, InvestigatorId,
+    SkillKind, SkillTestFollowUp,
 };
 
 /// The enemies an Evade may target: every enemy engaged with `investigator`, in
@@ -22,10 +22,9 @@ use crate::state::{
 /// [`candidates`](super::fight::candidates).
 ///
 /// The rules scope only; a malformed evade value is [`has_malformed_value`]'s
-/// question. Read by the basic action's target validation and by the turn
-/// menu. A designated **Evade** is not implemented yet
-/// ([`designated_unimplemented`](super::designated_unimplemented)), so the
-/// designator gate rejects it without reading this.
+/// question. Read by the basic action's target validation, the turn menu, the
+/// designator gate (`designator::can_perform`) and the evaluator's grounding of
+/// a designated **Evade**'s target.
 pub(crate) fn candidates(state: &GameState, investigator: InvestigatorId) -> Vec<EnemyId> {
     state
         .enemies
@@ -91,48 +90,64 @@ pub(in crate::engine::dispatch) fn handle(
     })
 }
 
-/// Perform an **evade** against `enemy_id`: an Agility test whose difficulty
-/// *is* that enemy's modified evade value, read at ST.6, which on success
-/// disengages and exhausts the enemy ([`after_test`]).
+/// How an evasion attempt differs from a basic Evade: the modification an
+/// **Evade** designator carries (`glossary/Ability.md`: *"performs the
+/// designated action as described in the rules, but modified in the manner
+/// described by the ability"*). [`Default`] is the basic Evade action's: an
+/// agility test with no clause. The twin of
+/// [`FightModification`](super::fight::FightModification).
+#[derive(Debug, Clone, Default)]
+pub(crate) struct EvadeModification {
+    /// The skill tested instead of `[agility]` (Blinding Light 01066's
+    /// `[willpower]`).
+    pub skill_override: Option<SkillKind>,
+    /// The card's *"If a \<symbol\> is revealed during this evasion attempt"*.
+    pub reveal_clause: Option<RevealClause>,
+    /// The card's *"If you succeed, …"*, resolved at ST.7 after the enemy is
+    /// evaded, while the test (and so the evaded enemy on its follow-up) is
+    /// still in flight.
+    pub on_success: Option<Effect>,
+}
+
+/// Perform an **evade** against `enemy_id`: an Agility test (or the skill
+/// `modification` tests instead) whose difficulty *is* that enemy's modified
+/// evade value, read at ST.6, which on success disengages and exhausts the
+/// enemy ([`after_test`]).
 ///
 /// The one perform entry for both ways of evading, as
 /// [`fight::perform`](super::fight::perform) is for fighting: the basic
 /// Evade action reaches it after taking the action, and a designated **Evade**
-/// will reach it once it carries a modification. It takes no modification
-/// parameter until then.
-///
-/// Evade's share of the #818 blocker
-/// ([`designated_unimplemented`](super::designated_unimplemented)): the
-/// `ActionDesignator::Evade` variant carries no modification, because the
-/// corpus's two `Trigger::Activated` printings disagree about its shape. Fire
-/// Extinguisher 02114: *"\[action\] Exile Fire Extinguisher: **Evade.** You get
-/// +3 \[agility\] for this test. If you are successful, evade each other enemy
-/// engaged with you, as well."*, a row like the Fight designator's combat
-/// modifier plus a sweep. Strange Solution 02264: *"\[action\] Spend 1 supply:
-/// **Evade.** Evade with a base \[agility\] skill of 6."*, a base-value
-/// replacement. Neither is built, so nothing reaches this through activation.
+/// (Blinding Light 01066) reaches it with its [`EvadeModification`], the only
+/// thing that differs.
 ///
 /// Callers validate the target; this takes the id as given.
 pub(crate) fn perform(
     cx: &mut Cx,
     investigator: InvestigatorId,
     enemy_id: EnemyId,
+    modification: EvadeModification,
+    source: Option<AbilitySource>,
 ) -> EngineOutcome {
+    let EvadeModification {
+        skill_override,
+        reveal_clause,
+        on_success,
+    } = modification;
     skill_test::start_skill_test(
         cx,
         investigator,
-        SkillKind::Agility,
+        skill_override.unwrap_or(SkillKind::Agility),
         SkillTestKind::Evade,
         // The difficulty *is* the enemy's modified evade value, read at
         // ST.6 — Cold Spring Glen 02244's "Each enemy in Cold Spring Glen
         // gets -1 evade" reaches this test (#677).
         DifficultyBasis::Evade(enemy_id),
         SkillTestFollowUp::Evade { enemy: enemy_id },
+        on_success,
         None,
-        None,
-        None,
-        None, // no weapon/effect modifier on a base Evade
-        None,
+        source,
+        None, // no Evade designator prints a skill modifier yet
+        reveal_clause,
     )
 }
 
