@@ -9,10 +9,7 @@ fn search_deck_top_n_auto_takes_single_eligible() {
         .build();
     let mut events = Vec::new();
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::search_deck(InvestigatorTarget::You, SearchScope::Top(3), None),
         ctx(1),
     );
@@ -31,10 +28,7 @@ fn search_deck_with_no_eligible_cards_is_find_nothing_not_reject() {
     // A seat's deck is empty unless set.
     let mut events = Vec::new();
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::search_deck(InvestigatorTarget::You, SearchScope::Top(3), None),
         ctx(1),
     );
@@ -50,14 +44,7 @@ fn search_deck_top_n_suspends_on_two_eligible_then_takes_pick() {
         .build();
     let mut events = Vec::new();
     let effect = dsl::search_deck(InvestigatorTarget::You, SearchScope::Top(3), None);
-    let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
-        &effect,
-        ctx(1),
-    );
+    let outcome = run(&mut Cx::for_test(&mut state, &mut events), &effect, ctx(1));
     assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
     let _ = &effect;
 
@@ -79,10 +66,7 @@ fn search_deck_options_are_labelled_with_card_names_and_unanchored() {
         .build();
     let mut events = Vec::new();
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::search_deck(InvestigatorTarget::You, SearchScope::Top(3), None),
         ctx(1),
     );

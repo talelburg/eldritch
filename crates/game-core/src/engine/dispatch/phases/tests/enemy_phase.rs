@@ -280,10 +280,7 @@ fn enemy_phase_emits_phase_started_and_cascades_to_mythos_in_no_eligibility_case
         .build();
     let mut events = Vec::new();
 
-    step_phase(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    }); // Investigation → Enemy
+    step_phase(&mut Cx::for_test(&mut state, &mut events)); // Investigation → Enemy
 
     // Positional ordering of the major events.
     let pos = |pred: &dyn Fn(&Event) -> bool| events.iter().position(pred);
@@ -352,10 +349,7 @@ fn enemy_phase_with_two_investigators_iterates_in_turn_order() {
         .build();
     let mut events = Vec::new();
 
-    step_phase(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    }); // Investigation → Enemy
+    step_phase(&mut Cx::for_test(&mut state, &mut events)); // Investigation → Enemy
 
     // One per-investigator attack landed for each, in turn order.
     let dmg1 = events
@@ -402,10 +396,7 @@ fn enemy_phase_skips_eliminated_investigator_in_advance() {
     state.investigators.get_mut(&id2).unwrap().status = Status::Defeated;
     let mut events = Vec::new();
 
-    step_phase(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    }); // Investigation → Enemy
+    step_phase(&mut Cx::for_test(&mut state, &mut events)); // Investigation → Enemy
 
     assert!(
         events
@@ -438,10 +429,7 @@ fn enemy_phase_with_all_eliminated_opens_after_all_directly() {
     state.investigators.get_mut(&id1).unwrap().status = Status::Defeated;
     let mut events = Vec::new();
 
-    step_phase(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    }); // Investigation → Enemy
+    step_phase(&mut Cx::for_test(&mut state, &mut events)); // Investigation → Enemy
 
     // With all investigators eliminated, no per-investigator attack step
     // runs (nobody to attack) and the cascade keeps going:
@@ -470,10 +458,7 @@ fn enemy_phase_attack_lands_in_full_cascade() {
         .build();
     let mut events = Vec::new();
 
-    step_phase(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    }); // Investigation → Enemy
+    step_phase(&mut Cx::for_test(&mut state, &mut events)); // Investigation → Enemy
 
     // The attack landed. Event-stream evidence — state.enemies's
     // `exhausted` flag is reset by Upkeep step 4.3 later in the
@@ -508,10 +493,7 @@ fn step_phase_from_enemy_does_not_emit_phase_ended_enemy() {
     // Use a state where Upkeep's cascade can complete (Active investigator exists).
     let mut events = Vec::new();
 
-    step_phase(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    }); // Enemy → Upkeep
+    step_phase(&mut Cx::for_test(&mut state, &mut events)); // Enemy → Upkeep
 
     // step_phase itself MUST NOT emit PhaseEnded(Enemy); only
     // enemy_phase_end is allowed to (which doesn't run here — we

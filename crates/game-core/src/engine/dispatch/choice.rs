@@ -394,10 +394,7 @@ mod tests {
         // deleted `apply_effect` bounded entry's test-only successor); a
         // 2-branch ChooseOne suspends in place for a pick.
         let out = {
-            let mut cx = Cx {
-                state: &mut state,
-                events: &mut events,
-            };
+            let mut cx = Cx::for_test(&mut state, &mut events);
             evaluator::push_effect(&mut cx, &effect, ctx);
             dispatch::drive(&mut cx, EngineOutcome::Done)
         };
@@ -429,10 +426,7 @@ mod tests {
         state.interactive_acknowledge = true;
         let mut events = Vec::new();
         let out = {
-            let mut cx = Cx {
-                state: &mut state,
-                events: &mut events,
-            };
+            let mut cx = Cx::for_test(&mut state, &mut events);
             evaluator::push_effect(&mut cx, &effect, ctx);
             dispatch::drive(&mut cx, EngineOutcome::Done)
         };
@@ -455,10 +449,7 @@ mod tests {
         let mut state = state_with_investigator(); // flag defaults false
         let mut events = Vec::new();
         let out = {
-            let mut cx = Cx {
-                state: &mut state,
-                events: &mut events,
-            };
+            let mut cx = Cx::for_test(&mut state, &mut events);
             evaluator::push_effect(&mut cx, &effect, ctx);
             dispatch::drive(&mut cx, EngineOutcome::Done)
         };

@@ -360,8 +360,12 @@ mod tests {
 
     /// Run `f` for investigator 1, assert it finished, and return its events.
     fn run_done(state: &mut GameState, f: NativeEffectFn) -> Vec<Event> {
-        let (out, events) =
-            test_support::run_native(state, f, &EvalContext::for_controller(InvestigatorId(1)));
+        let (out, events) = test_support::run_native(
+            state,
+            &REGISTRY,
+            f,
+            &EvalContext::for_controller(InvestigatorId(1)),
+        );
         assert_eq!(out, EngineOutcome::Done);
         events
     }

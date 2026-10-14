@@ -10,10 +10,9 @@ use crate::action::{Action, InputResponse, PlayerAction};
 use crate::engine::enumerate::TurnAction;
 use crate::engine::{
     self, ApplyResult, Cx, EngineOutcome, InputKind, InputRequest, OptionId, OptionTarget,
-    PromptNature, TimingEvent,
+    PromptNature, Registries, TimingEvent,
 };
 use crate::event::Event;
-use crate::scenario_registry;
 use crate::state::{
     Continuation, EmitEventFrame, EmitStep, GameState, GameStateBuilder, HandSizeDiscard,
     InvestigatorId, MulliganFrame, SkillKind,
@@ -158,7 +157,7 @@ impl TestSession {
     /// engine never rests at. Build the state before the prompt and drive into
     /// it instead.
     pub fn new(state: GameState) -> Self {
-        let settled = engine::apply_via(state, scenario_registry::current(), |cx| {
+        let settled = engine::apply_via(state, Registries::from_globals(), |cx| {
             let outcome = engine::drive(cx, EngineOutcome::Done);
             if matches!(outcome, EngineOutcome::Done) {
                 if let Some(top) = cx.state.continuations.top() {
@@ -403,7 +402,7 @@ impl TestSession {
     /// Apply one framework entry point `dispatch` through the production
     /// `apply` scaffolding, then drive on and drain.
     fn framework_step(self, dispatch: impl FnOnce(&mut Cx) -> EngineOutcome) -> Self {
-        self.advance(|state| engine::apply_via(state, scenario_registry::current(), dispatch))
+        self.advance(|state| engine::apply_via(state, Registries::from_globals(), dispatch))
     }
 
     /// The one step body: apply `first` to the resting state, then drain its

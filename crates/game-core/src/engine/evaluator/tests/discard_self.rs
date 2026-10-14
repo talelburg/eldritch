@@ -17,10 +17,7 @@ fn discard_self_removes_threat_area_instance_to_encounter_discard() {
     let inst = state.in_play(InvestigatorId(1), "01165");
     let mut events = Vec::new();
     let outcome = {
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
         let c =
             EvalContext::for_controller_with_source(InvestigatorId(1), AbilitySource::InPlay(inst));
         run(&mut cx, &Effect::DiscardSelf, c)
@@ -50,10 +47,7 @@ fn discard_self_removes_location_attachment_to_encounter_discard() {
         .build();
     let mut events = Vec::new();
     let outcome = {
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
         let c = EvalContext::for_controller_with_source(
             InvestigatorId(1),
             AbilitySource::InPlay(STUDY_ATTACHMENT),
@@ -73,10 +67,7 @@ fn discard_self_removes_location_attachment_to_encounter_discard() {
 fn discard_self_rejects_without_source() {
     let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let outcome = run(
         &mut cx,
         &Effect::DiscardSelf,

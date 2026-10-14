@@ -1,12 +1,15 @@
 //! Calling a card-local native directly, outside the evaluator.
 
+use crate::card_registry::CardRegistry;
 use crate::engine::evaluator::EvalContext;
 use crate::engine::{Cx, EngineOutcome, NativeCx};
 use crate::event::Event;
 use crate::state::GameState;
 
-/// Run `native` once against `state` in `eval_ctx`, returning its outcome and
-/// the events it emitted. `state` keeps whatever the native wrote.
+/// Run `native` once against `state` in `eval_ctx`, with `cards` as the card
+/// registry [`NativeCx::cards`] answers with and no scenario module, returning
+/// its outcome and the events it emitted. `state` keeps whatever the native
+/// wrote.
 ///
 /// A direct call, for a unit test of one native's resolution: no apply, so no
 /// rollback on `Rejected`, and none of the evaluator's handling of a suspend
@@ -15,6 +18,7 @@ use crate::state::GameState;
 /// [`TestSession`](crate::test_support::TestSession).
 pub fn run_native(
     state: &mut GameState,
+    cards: &CardRegistry,
     native: impl FnOnce(&mut NativeCx, &EvalContext) -> EngineOutcome,
     eval_ctx: &EvalContext,
 ) -> (EngineOutcome, Vec<Event>) {
@@ -22,6 +26,8 @@ pub fn run_native(
     let mut cx = NativeCx::new(Cx {
         state,
         events: &mut events,
+        cards,
+        scenario: None,
     });
     let outcome = native(&mut cx, eval_ctx);
     (outcome, events)

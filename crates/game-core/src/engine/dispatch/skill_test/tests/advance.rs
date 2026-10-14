@@ -40,10 +40,7 @@ fn skill_test_runs_on_success_effect_on_a_passing_draw() {
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let out = start_skill_test(
         &mut cx,
         inv,
@@ -117,10 +114,7 @@ fn closing_a_skill_test_player_window_re_enters_advance() {
         )));
     let mut events = Vec::new();
     let out = reaction_windows::run_fast_continuation(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         FastWindowKind::SkillTest {
             before_token: false,
         },
@@ -245,10 +239,7 @@ fn acknowledge_outcome_rejects_without_in_flight_test() {
         .with_seat(test_support::seat(1))
         .build();
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let out = acknowledge_outcome(&mut cx);
     assert!(matches!(out, EngineOutcome::Rejected { .. }), "got {out:?}");
     assert!(events.is_empty(), "rejection emits no events");
@@ -268,10 +259,7 @@ fn finish_skill_test_parks_the_resolution_for_the_loop() {
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
 
     // Park at AwaitingCommit (the commit prompt).
     let out = start_skill_test(

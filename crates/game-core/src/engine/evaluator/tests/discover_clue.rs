@@ -8,10 +8,7 @@ fn discover_clue_moves_one_clue_from_location_to_controller() {
     let mut events = Vec::new();
 
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::discover_clue(LocationTarget::YourLocation, 1),
         ctx(1),
     );
@@ -40,10 +37,7 @@ fn discover_clue_with_no_interrupt_discovers_normally() {
     let mut events = Vec::new();
 
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::discover_clue(LocationTarget::YourLocation, 1),
         ctx(1),
     );
@@ -66,10 +60,7 @@ fn discover_clue_caps_at_location_clue_count() {
     let mut events = Vec::new();
 
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::discover_clue(LocationTarget::YourLocation, 3),
         ctx(1),
     );
@@ -95,10 +86,7 @@ fn discover_clue_on_empty_location_is_a_silent_noop() {
     let mut events = Vec::new();
 
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::discover_clue(LocationTarget::YourLocation, 1),
         ctx(1),
     );
@@ -119,10 +107,7 @@ fn discover_clue_rejects_when_controller_is_between_locations() {
     let mut events = Vec::new();
 
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::discover_clue(LocationTarget::YourLocation, 1),
         ctx(1),
     );
@@ -172,10 +157,7 @@ fn discover_clue_tested_location_resolves_to_in_flight_test_location() {
     let mut events = Vec::new();
 
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::discover_clue(LocationTarget::TestedLocation, 1),
         ctx(1),
     );
@@ -193,10 +175,7 @@ fn tested_location_rejects_without_in_flight_test() {
     let mut events = Vec::new();
 
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::discover_clue(LocationTarget::TestedLocation, 1),
         ctx(1),
     );
@@ -233,10 +212,7 @@ fn tested_location_rejects_when_test_has_no_location_snapshot() {
     let mut events = Vec::new();
 
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::discover_clue(LocationTarget::TestedLocation, 1),
         ctx(1),
     );

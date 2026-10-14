@@ -172,7 +172,7 @@ mod tests {
             .build();
         state.interactive_acknowledge = true;
         let ctx = EvalContext::for_controller(InvestigatorId(1));
-        let (out, _) = test_support::run_native(&mut state, dynamite_blast, &ctx);
+        let (out, _) = test_support::run_native(&mut state, &crate::REGISTRY, dynamite_blast, &ctx);
         match out {
             EngineOutcome::AwaitingInput { request, .. } => {
                 assert_eq!(
@@ -197,7 +197,7 @@ mod tests {
             .with_location(test_support::test_location(HERE.0, "Lonely Spot"))
             .build();
         let ctx = EvalContext::for_controller(InvestigatorId(1));
-        let (out, _) = test_support::run_native(&mut state, dynamite_blast, &ctx);
+        let (out, _) = test_support::run_native(&mut state, &crate::REGISTRY, dynamite_blast, &ctx);
         assert_eq!(out, EngineOutcome::Done);
 
         // Top first.

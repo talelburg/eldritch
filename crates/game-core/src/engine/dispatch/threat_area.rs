@@ -184,10 +184,7 @@ mod tests {
             .build();
         let mut events = Vec::new();
         let id = {
-            let mut cx = Cx {
-                state: &mut state,
-                events: &mut events,
-            };
+            let mut cx = Cx::for_test(&mut state, &mut events);
             attach_to_location(
                 &mut cx,
                 LocationId(7),
@@ -213,10 +210,7 @@ mod tests {
             .build();
         let mut events = Vec::new();
         let id = {
-            let mut cx = Cx {
-                state: &mut state,
-                events: &mut events,
-            };
+            let mut cx = Cx::for_test(&mut state, &mut events);
             place_in_threat_area(
                 &mut cx,
                 InvestigatorId(1),

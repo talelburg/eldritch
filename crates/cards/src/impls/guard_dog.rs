@@ -121,7 +121,7 @@ mod tests {
         let mut ctx = EvalContext::for_controller(InvestigatorId(1));
         ctx.set_attacking_enemy(eid);
 
-        let (out, events) = test_support::run_native(&mut state, retaliate, &ctx);
+        let (out, events) = test_support::run_native(&mut state, &crate::REGISTRY, retaliate, &ctx);
         assert_eq!(out, EngineOutcome::Done);
         assert_eq!(state.enemies[&eid].damage, 1, "attacker took 1 damage");
         assert!(
@@ -137,7 +137,7 @@ mod tests {
     fn retaliate_rejects_when_attacking_enemy_unbound() {
         let mut state = GameStateBuilder::new().build();
         let ctx = EvalContext::for_controller(InvestigatorId(1));
-        let (out, events) = test_support::run_native(&mut state, retaliate, &ctx);
+        let (out, events) = test_support::run_native(&mut state, &crate::REGISTRY, retaliate, &ctx);
         assert!(
             matches!(out, EngineOutcome::Rejected { .. }),
             "unbound attacker rejects: {out:?}"

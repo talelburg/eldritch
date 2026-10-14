@@ -15,10 +15,7 @@ fn elimination_step1_removes_controlled_and_owned_cards() {
     let mut events = Vec::new();
 
     apply_investigator_elimination(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         id,
         EliminationCause::Damage,
     );
@@ -56,10 +53,7 @@ fn elimination_step2_places_clues_at_location_and_zeroes_resources() {
     let mut events = Vec::new();
 
     apply_investigator_elimination(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         id,
         EliminationCause::Damage,
     );
@@ -102,10 +96,7 @@ fn elimination_step3_disengages_then_reengages_ready_enemy_onto_survivor() {
     let mut events = Vec::new();
 
     apply_investigator_elimination(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         dead,
         EliminationCause::Damage,
     );
@@ -147,10 +138,7 @@ fn elimination_step3_solo_defeat_leaves_enemy_unengaged() {
     let mut events = Vec::new();
 
     apply_investigator_elimination(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         dead,
         EliminationCause::Damage,
     );
@@ -178,10 +166,7 @@ fn last_investigator_defeated_latches_lost_resolution() {
 
     // Defeat the only investigator by horror through the standard defeat path.
     apply_investigator_elimination(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         inv,
         EliminationCause::Horror,
     );
@@ -220,10 +205,7 @@ fn elimination_runs_on_horror_defeat_too() {
     let mut events = Vec::new();
 
     apply_investigator_elimination(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         dead,
         EliminationCause::Horror,
     );
@@ -262,10 +244,7 @@ fn elimination_step3_exhausted_engaged_enemy_disengages_but_does_not_reengage() 
     let mut events = Vec::new();
 
     apply_investigator_elimination(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         dead,
         EliminationCause::Damage,
     );
@@ -289,10 +268,7 @@ fn elimination_without_location_skips_clue_placement_and_does_not_panic() {
     let mut events = Vec::new();
 
     apply_investigator_elimination(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         id,
         EliminationCause::Damage,
     );
@@ -324,10 +300,7 @@ fn elimination_discards_an_encounter_owned_threat_card_at_step_four() {
     let mut events = Vec::new();
 
     apply_investigator_elimination(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         id,
         EliminationCause::Damage,
     );

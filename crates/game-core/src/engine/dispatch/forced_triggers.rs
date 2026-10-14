@@ -187,10 +187,7 @@ mod tests {
             ),
         });
         let mut events = Vec::new();
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
 
         // Drive: one-option suspend.
         let out = drive_acknowledge_forced(&mut cx);
@@ -226,10 +223,7 @@ mod tests {
             ),
         });
         let mut events = Vec::new();
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
         let out = resume_acknowledge_forced(&mut cx, &InputResponse::Confirm);
         assert!(matches!(out, EngineOutcome::Rejected { .. }));
         assert!(
@@ -255,10 +249,7 @@ mod tests {
             ),
         });
         let mut events = Vec::new();
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
         match drive_acknowledge_forced(&mut cx) {
             EngineOutcome::AwaitingInput { request, .. } => {
                 assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
@@ -285,10 +276,7 @@ mod tests {
             ),
         });
         let mut events = Vec::new();
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
         match drive_acknowledge_forced(&mut cx) {
             EngineOutcome::AwaitingInput { request, .. } => {
                 assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
@@ -320,10 +308,7 @@ mod tests {
             ),
         });
         let mut events = Vec::new();
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
         match drive_acknowledge_forced(&mut cx) {
             EngineOutcome::AwaitingInput { request, .. } => {
                 assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");

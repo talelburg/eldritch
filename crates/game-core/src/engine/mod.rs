@@ -59,10 +59,37 @@ pub(crate) use dispatch::skill_test::perform_skill_test as start_plain_skill_tes
 use card_dsl::card_data::CardKind;
 
 use crate::action::{Action, RosterEntry};
+use crate::card_registry::CardRegistry;
 use crate::event::Event;
 use crate::scenario::ScenarioRegistry;
 use crate::state::{CardCode, Continuation, GameState, ScenarioEndFrame, ScenarioEndStep};
 use crate::{card_registry, scenario_registry};
+
+/// The card and scenario registries one [`apply`] runs against. The host
+/// hands them in; the engine carries them on its `Cx` for the length of the
+/// apply, looking the scenario module up once from `state.scenario_id`.
+///
+/// `Copy`: both halves are shared references to fn-pointer bundles, and
+/// `'static` so a value can be stored on a builder or a host's state.
+#[derive(Debug, Clone, Copy)]
+pub struct Registries {
+    /// The card registry: metadata, abilities, natives.
+    pub cards: &'static CardRegistry,
+    /// The scenario registry: modules by scenario id.
+    pub scenarios: &'static ScenarioRegistry,
+}
+
+impl Registries {
+    /// The installed globals, each falling back to its knows-nothing `EMPTY`
+    /// when none is installed: what the global-reading entry points ([`apply`],
+    /// [`seat_and_open`]) run against.
+    pub(crate) fn from_globals() -> Self {
+        Self {
+            cards: card_registry::current().unwrap_or(&CardRegistry::EMPTY),
+            scenarios: scenario_registry::current().unwrap_or(&ScenarioRegistry::EMPTY),
+        }
+    }
+}
 
 /// The result of a single [`apply`] call.
 #[derive(Debug, Clone)]
@@ -116,32 +143,28 @@ pub struct ApplyResult {
 /// ([`PlayerAction::ResolveInput`](crate::action::PlayerAction::ResolveInput))
 /// drives the rest of resolution in a subsequent `apply` call. While
 /// paused, every non-`ResolveInput` player action rejects.
+///
+/// Runs against the installed global registries, each falling back to its
+/// `EMPTY` when none is installed; [`apply_with_registries`] takes them as
+/// a value instead.
 pub fn apply(state: GameState, action: Action) -> ApplyResult {
-    apply_with_scenario_registry(state, action, scenario_registry::current())
+    apply_with_registries(state, action, Registries::from_globals())
 }
 
-/// Apply a single action with an explicit [`ScenarioRegistry`].
-///
-/// [`apply`] is the production entry point and reads the registry from
-/// the global
-/// [`scenario_registry::current`].
-/// This variant exists so engine unit tests can drive the post-apply
-/// resolution hook against a locally-constructed mock registry
-/// without touching the process-global `OnceLock`.
-///
-/// The same firing rule applies regardless of how the registry is
-/// supplied: a `Rejected` outcome clears events and skips the hook;
-/// any non-`Rejected` outcome (`Done` or `AwaitingInput`) fires the
-/// hook iff this apply left the scenario's
+/// [`apply`] against the [`Registries`] it is handed rather than the installed
+/// globals. The contract is `apply`'s, including the post-apply scenario
+/// resolution hook: a `Rejected` outcome clears events and skips it; any
+/// non-`Rejected` outcome (`Done` or `AwaitingInput`) fires it iff this apply
+/// left the scenario's
 /// [`ScenarioEnd`](crate::state::Continuation::ScenarioEnd) frame on top at its
 /// finalize step — i.e. the resolution latched *and* the game-end Forced
 /// abilities it queued have finished (#566).
-pub fn apply_with_scenario_registry(
+pub fn apply_with_registries(
     state: GameState,
     action: Action,
-    registry: Option<&ScenarioRegistry>,
+    registries: Registries,
 ) -> ApplyResult {
-    apply_via(state, registry, |cx| match action {
+    apply_via(state, registries, |cx| match action {
         Action::Player(p) => apply_player_action(cx, &p),
         Action::Engine(e) => dispatch::apply_engine_record(cx, &e),
     })
@@ -156,17 +179,32 @@ pub fn apply_with_scenario_registry(
 /// replay never re-runs setup RNG. Validation mirrors a player action: an
 /// empty roster, an unknown/non-investigator code, or an already-started
 /// state rejects with state unchanged.
+///
+/// Runs against the installed global registries, each falling back to its
+/// `EMPTY` when none is installed; [`seat_and_open_with_registries`] takes
+/// them as a value instead.
 pub fn seat_and_open(setup_state: GameState, roster: &[RosterEntry]) -> ApplyResult {
-    apply_via(setup_state, scenario_registry::current(), |cx| {
+    seat_and_open_with_registries(setup_state, roster, Registries::from_globals())
+}
+
+/// [`seat_and_open`] against the [`Registries`] it is handed rather than the
+/// installed globals.
+pub fn seat_and_open_with_registries(
+    setup_state: GameState,
+    roster: &[RosterEntry],
+    registries: Registries,
+) -> ApplyResult {
+    apply_via(setup_state, registries, |cx| {
         dispatch::seat_and_open(cx, roster)
     })
 }
 
 /// The shared `apply` scaffolding, parameterized by the dispatch step.
 ///
-/// Builds the [`Cx`], runs `dispatch` to produce the outcome, then applies the
+/// Builds the [`Cx`] — resolving the scenario module once, from
+/// `state.scenario_id` — runs `dispatch` to produce the outcome, then applies the
 /// transactional-restore + resolution-hook contract uniformly:
-/// [`apply_with_scenario_registry`] passes the typed-action dispatch;
+/// [`apply_with_registries`] passes the typed-action dispatch;
 /// [`TestSession::submit_off_menu`](crate::test_support::TestSession::submit_off_menu)
 /// passes a [`TurnAction`]-through-handler dispatch that bypasses the
 /// enumeration gate (so handler-level corruption panics are reachable from
@@ -174,11 +212,17 @@ pub fn seat_and_open(setup_state: GameState, roster: &[RosterEntry]) -> ApplyRes
 /// snapshot/restore, or the `None`->`Some` resolution-latch firing.
 pub(crate) fn apply_via(
     state: GameState,
-    registry: Option<&ScenarioRegistry>,
+    registries: Registries,
     dispatch: impl FnOnce(&mut Cx) -> EngineOutcome,
 ) -> ApplyResult {
     let mut state = state;
     let mut events = Vec::new();
+    // `scenario_id` is set only when the state is built, never during
+    // dispatch, so one lookup here serves the whole apply.
+    let scenario = state
+        .scenario_id
+        .as_ref()
+        .and_then(|id| (registries.scenarios.module_for)(id));
     // Transactional snapshot: a Rejected outcome must leave the returned
     // state byte-identical to the input (the engine's "Rejected => state
     // unchanged" contract). Taken before any handler runs and restored
@@ -196,6 +240,8 @@ pub(crate) fn apply_via(
         let mut cx = Cx {
             state: &mut state,
             events: &mut events,
+            cards: registries.cards,
+            scenario,
         };
         let outcome = dispatch(&mut cx);
         if matches!(outcome, EngineOutcome::Rejected { .. }) {
@@ -209,7 +255,7 @@ pub(crate) fn apply_via(
             // Done AND AwaitingInput: the ending itself never awaits input, but
             // an unrelated suspension can be surfaced by the same apply that
             // finalized nothing, and the check is cheap and self-guarding.
-            finalize_scenario_end(&mut cx, registry);
+            finalize_scenario_end(&mut cx);
             // The rest invariant (#938): `Done` means the game is over, so the
             // stack is empty; `AwaitingInput` means a prompt is on top for the
             // next `apply` to answer. It holds because every prompt frame's push
@@ -260,16 +306,16 @@ pub(crate) fn apply_via(
 /// interactive acknowledge — drain above it, across as many `apply` calls as
 /// that takes. Only when the frame is exposed again at
 /// [`ScenarioEndStep::Finalize`](crate::state::ScenarioEndStep::Finalize) does
-/// the ending finish, and it finishes **here** because this is the only place
-/// holding the [`ScenarioRegistry`].
+/// the ending finish, and it finishes **here**, at the apply boundary, reading
+/// the scenario module the apply resolved onto `cx`.
 ///
 /// Short-circuits on every other apply. Popping the frame is what makes this
 /// fire-once: it is pushed exactly once (`end_scenario` is
 /// first-writer-wins) and popped exactly once, so no "already finalized" flag
 /// is needed. The `ScenarioResolved` event is a property of engine state, so it
 /// fires even when no module is registered (or `scenario_id` is `None`); only
-/// `apply_resolution` needs the registry/module.
-fn finalize_scenario_end(cx: &mut Cx, registry: Option<&ScenarioRegistry>) {
+/// `apply_resolution` needs the module.
+fn finalize_scenario_end(cx: &mut Cx) {
     if !matches!(
         cx.state.continuations.top(),
         Some(Continuation::ScenarioEnd(ScenarioEndFrame {
@@ -322,11 +368,7 @@ fn finalize_scenario_end(cx: &mut Cx, registry: Option<&ScenarioRegistry>) {
         }
     }
 
-    let Some(id) = cx.state.scenario_id.as_ref() else {
-        return;
-    };
-    let Some(reg) = registry else { return };
-    let Some(module) = (reg.module_for)(id) else {
+    let Some(module) = cx.scenario else {
         return;
     };
     (module.apply_resolution)(ending, cx.state, cx.events);

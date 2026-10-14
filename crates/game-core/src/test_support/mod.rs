@@ -267,9 +267,25 @@ pub fn metadata_for_test_inv(code: &CardCode) -> Option<&'static CardMetadata> {
     (code.as_str() == TEST_INV).then(test_inv_metadata)
 }
 
-/// Install a minimal game-core test registry that knows `TEST_INV`, the
-/// synthetic cardtype cards ([`TEST_ASSET`], [`TEST_TREACHERY`]) and the
-/// synthetic terminal cards ([`terminal_code`]), and nothing else. Idempotent;
+/// game-core's test registry: it knows `TEST_INV`, the synthetic cardtype cards
+/// ([`TEST_ASSET`], [`TEST_TREACHERY`]) and the synthetic terminal cards
+/// ([`terminal_code`]), and nothing else. [`install_test_registry`] installs it;
+/// a test that hands the engine its registries directly passes it as a value.
+pub const TEST_REGISTRY: CardRegistry = CardRegistry {
+    metadata_for: test_registry_metadata_for,
+    abilities_for: test_registry_abilities_for,
+    ..CardRegistry::EMPTY
+};
+
+fn test_registry_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
+    metadata_for_test_inv(code).or_else(|| metadata_for_test_cardtypes(code))
+}
+
+fn test_registry_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
+    abilities_for_terminal(code).or_else(|| abilities_for_test_cardtypes(code))
+}
+
+/// Install [`TEST_REGISTRY`], game-core's minimal test registry. Idempotent;
 /// safe to call from any test. Capacity-reading code (`max_health()` /
 /// `max_sanity()` / soak / defeat) needs this installed, and so does any fixture
 /// whose act/agenda deck ends in a terminal card — without the registry its
@@ -282,20 +298,7 @@ pub fn metadata_for_test_inv(code: &CardCode) -> Option<&'static CardMetadata> {
 /// One registry for the whole crate because `OnceLock<CardRegistry>` is
 /// process-global: a second per-test install would collide.
 pub fn install_test_registry() {
-    static INSTALL: OnceLock<()> = OnceLock::new();
-    INSTALL.get_or_init(|| {
-        fn metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
-            metadata_for_test_inv(code).or_else(|| metadata_for_test_cardtypes(code))
-        }
-        fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-            abilities_for_terminal(code).or_else(|| abilities_for_test_cardtypes(code))
-        }
-        let _ = card_registry::install(CardRegistry {
-            metadata_for,
-            abilities_for,
-            ..CardRegistry::EMPTY
-        });
-    });
+    let _ = card_registry::install(TEST_REGISTRY);
 }
 
 /// Install [`install_test_registry`] before the harness `main` of game-core's

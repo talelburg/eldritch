@@ -8,10 +8,7 @@ fn choose_one_single_branch_auto_resolves() {
     let before = state.investigators[&id].resources;
     let mut events = Vec::new();
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::choose_one([(
             "Gain 2 resources",
             dsl::gain_resources(InvestigatorTarget::You, 2),
@@ -32,10 +29,7 @@ fn choose_one_offers_only_its_live_branches() {
     let before = state.investigators[&id].resources;
     let mut events = Vec::new();
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::choose_one([
             (
                 "Discover 1 clue",
@@ -67,10 +61,7 @@ fn choose_one_with_every_branch_dead_skips() {
     let mut state = state_with_clues_at_location(0);
     let mut events = Vec::new();
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::choose_one([
             (
                 "Discover 1 clue",
@@ -95,10 +86,7 @@ fn choose_one_with_no_branches_still_rejects() {
     let mut state = state_with_clues_at_location(0);
     let mut events = Vec::new();
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &Effect::ChooseOne(vec![]),
         ctx(1),
     );
@@ -115,10 +103,7 @@ fn choose_one_two_branches_suspends_with_a_choice_frame() {
     let before = state.investigators[&id].resources;
     let mut events = Vec::new();
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::choose_one([
             (
                 "Gain 1 resource",
@@ -146,10 +131,7 @@ fn choose_one_resumes_the_pick() {
     let before = state.investigators[&id].resources;
     let mut events = Vec::new();
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::choose_one([
             (
                 "Gain 1 resource",
@@ -191,14 +173,7 @@ fn choice_after_earlier_seq_step_no_longer_rejects() {
         ]),
     ]);
     let mut events = Vec::new();
-    let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
-        &effect,
-        ctx(1),
-    );
+    let outcome = run(&mut Cx::for_test(&mut state, &mut events), &effect, ctx(1));
     assert!(
         matches!(outcome, EngineOutcome::AwaitingInput { .. }),
         "a choice after an earlier Seq step suspends, not rejects: {outcome:?}",
@@ -242,14 +217,7 @@ fn choose_one_then_chosen_target_resumes_both_picks() {
     let mut events = Vec::new();
 
     // Suspend on the branch choice.
-    let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
-        &effect,
-        ctx(1),
-    );
+    let outcome = run(&mut Cx::for_test(&mut state, &mut events), &effect, ctx(1));
     assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
     // Pick branch 1 (+9) → suspends again on its chosen target.
     let outcome = resume_pick(&mut state, &mut events, 1);
@@ -291,14 +259,7 @@ fn two_choices_resume_one_round_trip_at_a_time() {
     let mut events = Vec::new();
 
     // First suspend: the branch choice.
-    let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
-        &effect,
-        ctx(1),
-    );
+    let outcome = run(&mut Cx::for_test(&mut state, &mut events), &effect, ctx(1));
     assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
 
     // Resume the branch pick (the +9 branch) → suspends again on the

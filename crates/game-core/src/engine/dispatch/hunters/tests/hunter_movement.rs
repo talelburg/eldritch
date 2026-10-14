@@ -34,10 +34,7 @@ fn hunter_moves_one_step_toward_investigator_two_hops_away_no_engage() {
         .with_enemy(ghoul)
         .build();
     let mut events = Vec::new();
-    let outcome = drive_hunter_moves(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    let outcome = drive_hunter_moves(&mut Cx::for_test(&mut state, &mut events));
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(state.enemies[&EnemyId(1)].current_location, Some(B));
     assert_eq!(state.enemies[&EnemyId(1)].engaged_with, None);
@@ -64,10 +61,7 @@ fn hunter_engages_when_it_moves_into_investigators_location() {
         .with_enemy(h)
         .build();
     let mut events = Vec::new();
-    drive_hunter_moves(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    drive_hunter_moves(&mut Cx::for_test(&mut state, &mut events));
     assert_eq!(state.enemies[&EnemyId(1)].current_location, Some(B));
     assert_eq!(
         state.enemies[&EnemyId(1)].engaged_with,
@@ -93,10 +87,7 @@ fn hunter_with_no_path_does_not_move() {
         .with_enemy(h)
         .build();
     let mut events = Vec::new();
-    drive_hunter_moves(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    drive_hunter_moves(&mut Cx::for_test(&mut state, &mut events));
     assert_eq!(state.enemies[&EnemyId(1)].current_location, Some(ISLAND));
     assert_no_event!(events, Event::EnemyMoved { .. });
 }
@@ -120,10 +111,7 @@ fn exhausted_hunter_is_skipped() {
         .with_enemy(h)
         .build();
     let mut events = Vec::new();
-    drive_hunter_moves(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    drive_hunter_moves(&mut Cx::for_test(&mut state, &mut events));
     assert_eq!(state.enemies[&EnemyId(1)].current_location, Some(A));
     assert_no_event!(events, Event::EnemyMoved { .. });
 }
@@ -146,10 +134,7 @@ fn non_hunter_enemy_does_not_move() {
         .with_enemy(e)
         .build();
     let mut events = Vec::new();
-    drive_hunter_moves(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    drive_hunter_moves(&mut Cx::for_test(&mut state, &mut events));
     assert_eq!(state.enemies[&EnemyId(1)].current_location, Some(A));
     assert_no_event!(events, Event::EnemyMoved { .. });
 }
@@ -174,10 +159,7 @@ fn hunter_already_co_located_does_not_move_but_engages() {
         .with_enemy(h)
         .build();
     let mut events = Vec::new();
-    let outcome = drive_hunter_moves(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    let outcome = drive_hunter_moves(&mut Cx::for_test(&mut state, &mut events));
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(state.enemies[&EnemyId(1)].current_location, Some(A));
     assert_eq!(

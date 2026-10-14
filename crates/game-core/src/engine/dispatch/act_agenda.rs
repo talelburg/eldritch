@@ -406,21 +406,9 @@ mod doom_agenda_tests {
             doom_threshold: 2,
         }];
         let mut events = Vec::new();
-        place_doom_on_agenda(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            1,
-        );
+        place_doom_on_agenda(&mut Cx::for_test(&mut state, &mut events), 1);
         assert_eq!(state.agenda_doom, 1);
-        place_doom_on_agenda(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            1,
-        );
+        place_doom_on_agenda(&mut Cx::for_test(&mut state, &mut events), 1);
         assert_eq!(state.agenda_doom, 2);
     }
 
@@ -438,24 +426,12 @@ mod doom_agenda_tests {
             },
         ];
         let mut events = Vec::new();
-        place_doom_on_agenda(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            1,
-        );
-        check_doom_threshold(&mut Cx {
-            state: &mut state,
-            events: &mut events,
-        });
+        place_doom_on_agenda(&mut Cx::for_test(&mut state, &mut events), 1);
+        check_doom_threshold(&mut Cx::for_test(&mut state, &mut events));
         // The advance is deferred to an AdvanceReverse frame (#482); drive it
         // (the test registry serves no reverse for it ⇒ it drives straight through).
         dispatch::drive(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
+            &mut Cx::for_test(&mut state, &mut events),
             EngineOutcome::Done,
         );
         // Doom reached threshold (1) → agenda advanced + doom reset.
@@ -478,16 +454,10 @@ mod doom_agenda_tests {
         ];
         state.agenda_doom = 2;
         let mut events = Vec::new();
-        check_doom_threshold(&mut Cx {
-            state: &mut state,
-            events: &mut events,
-        });
+        check_doom_threshold(&mut Cx::for_test(&mut state, &mut events));
         // The advance is deferred to an AdvanceReverse frame (#482); drive it.
         dispatch::drive(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
+            &mut Cx::for_test(&mut state, &mut events),
             EngineOutcome::Done,
         );
         assert_eq!(state.agenda_index, 1);
@@ -520,15 +490,9 @@ mod doom_agenda_tests {
         }];
         state.agenda_doom = 2;
         let mut events = Vec::new();
-        check_doom_threshold(&mut Cx {
-            state: &mut state,
-            events: &mut events,
-        });
+        check_doom_threshold(&mut Cx::for_test(&mut state, &mut events));
         dispatch::drive(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
+            &mut Cx::for_test(&mut state, &mut events),
             EngineOutcome::Done,
         );
         assert_eq!(
@@ -554,10 +518,7 @@ mod doom_agenda_tests {
         }];
         state.agenda_doom = 2;
         let mut events = Vec::new();
-        check_doom_threshold(&mut Cx {
-            state: &mut state,
-            events: &mut events,
-        });
+        check_doom_threshold(&mut Cx::for_test(&mut state, &mut events));
         assert_eq!(state.agenda_index, 0);
         assert_eq!(state.agenda_doom, 2);
         assert!(events.is_empty());

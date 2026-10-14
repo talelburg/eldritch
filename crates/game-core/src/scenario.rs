@@ -262,6 +262,15 @@ pub struct ScenarioRegistry {
     pub module_for: fn(&ScenarioId) -> Option<&'static ScenarioModule>,
 }
 
+impl ScenarioRegistry {
+    /// The knows-nothing registry: every id is unknown. `const`, so it can
+    /// back a `&'static` [`Registries`](crate::engine::Registries) half for a
+    /// host or test that runs no scenario module.
+    pub const EMPTY: Self = Self {
+        module_for: |_| None,
+    };
+}
+
 /// The active scenario's [`LocationLayout`], or `&[]` when there is no
 /// active scenario, no installed registry, or an unknown id. Routes
 /// `state.scenario_id` → installed scenario registry → `module_for` →

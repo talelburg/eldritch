@@ -139,14 +139,7 @@ mod tests {
 
     fn run(state: &mut GameState, code: &str) -> (EngineOutcome, Vec<Event>) {
         let mut events = Vec::new();
-        let outcome = take_control(
-            &mut Cx {
-                state,
-                events: &mut events,
-            },
-            INV,
-            code,
-        );
+        let outcome = take_control(&mut Cx::for_test(state, &mut events), INV, code);
         (outcome, events)
     }
 

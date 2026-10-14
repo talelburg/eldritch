@@ -15,10 +15,7 @@ fn hand_size_discard_prompt_is_player_facing() {
         .build();
     let mut events = Vec::new();
     let outcome = park_hand_size_discard(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         vec![InvestigatorId(1)],
     );
     let EngineOutcome::AwaitingInput { request, .. } = outcome else {
@@ -51,10 +48,7 @@ fn upkeep_phase_emits_phase_started_and_auto_skips_to_mythos() {
         .build();
 
     let mut events = Vec::new();
-    step_phase(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    }); // Enemy → Upkeep, cascades to Mythos
+    step_phase(&mut Cx::for_test(&mut state, &mut events)); // Enemy → Upkeep, cascades to Mythos
 
     let pos = |pred: &dyn Fn(&Event) -> bool| events.iter().position(pred);
     let started = pos(&|e| {
@@ -111,10 +105,7 @@ fn ready_exhausted_cards_readies_investigator_cards_and_enemies() {
     state.investigators.get_mut(&inv_id).unwrap().cards_in_play[0].exhausted = true;
     let mut events = Vec::new();
 
-    ready_exhausted_cards(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    ready_exhausted_cards(&mut Cx::for_test(&mut state, &mut events));
 
     assert!(
         !state.investigators[&inv_id].cards_in_play[0].exhausted,
@@ -144,10 +135,7 @@ fn ready_exhausted_cards_reengages_co_located_unengaged_enemy() {
         .build();
     let mut events = Vec::new();
 
-    ready_exhausted_cards(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    ready_exhausted_cards(&mut Cx::for_test(&mut state, &mut events));
 
     assert!(!state.enemies[&enemy_id].exhausted, "enemy readied");
     assert_eq!(
@@ -174,10 +162,7 @@ fn ready_exhausted_cards_leaves_ready_cards_untouched() {
         .build();
     let mut events = Vec::new();
 
-    ready_exhausted_cards(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    ready_exhausted_cards(&mut Cx::for_test(&mut state, &mut events));
 
     assert!(
         events.is_empty(),
@@ -201,10 +186,7 @@ fn ready_exhausted_cards_no_engage_when_no_co_located_investigator() {
         .build();
     let mut events = Vec::new();
 
-    ready_exhausted_cards(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    ready_exhausted_cards(&mut Cx::for_test(&mut state, &mut events));
 
     assert!(!state.enemies[&enemy_id].exhausted, "enemy readied");
     assert_eq!(
@@ -227,10 +209,7 @@ fn ready_exhausted_cards_keeps_existing_engagement_no_duplicate() {
         .build();
     let mut events = Vec::new();
 
-    ready_exhausted_cards(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    ready_exhausted_cards(&mut Cx::for_test(&mut state, &mut events));
 
     assert!(!state.enemies[&enemy_id].exhausted, "enemy readied");
     assert_eq!(
@@ -325,10 +304,7 @@ fn reset_actions_sets_active_to_per_turn_and_skips_eliminated() {
         .build();
     let mut events = Vec::new();
 
-    reset_actions(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    reset_actions(&mut Cx::for_test(&mut state, &mut events));
 
     assert_eq!(state.investigators[&a].actions_remaining, ACTIONS_PER_TURN);
     assert_eq!(
@@ -354,10 +330,7 @@ fn reset_actions_emits_nothing_for_already_full() {
         .build();
     let mut events = Vec::new();
 
-    reset_actions(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    reset_actions(&mut Cx::for_test(&mut state, &mut events));
 
     assert_eq!(state.investigators[&id].actions_remaining, ACTIONS_PER_TURN);
     assert!(events.is_empty(), "no event when value is unchanged");
@@ -371,13 +344,7 @@ fn rotate_to_active_does_not_refresh_actions() {
         .build();
     let mut events = Vec::new();
 
-    rotate_to_active(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
-        id,
-    );
+    rotate_to_active(&mut Cx::for_test(&mut state, &mut events), id);
 
     assert_eq!(state.active_investigator, Some(id));
     assert_eq!(
@@ -404,10 +371,7 @@ fn round_increments_on_mythos_entry_via_driver() {
         .build();
 
     let mut events = Vec::new();
-    step_phase(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    }); // Upkeep → ... → Mythos via the cascade
+    step_phase(&mut Cx::for_test(&mut state, &mut events)); // Upkeep → ... → Mythos via the cascade
 
     assert_eq!(state.round, 5, "round bumps on Mythos entry");
     assert_eq!(state.phase, Phase::Mythos);
