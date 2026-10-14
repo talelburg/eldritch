@@ -141,6 +141,7 @@ mod tests {
         let inv1 = InvestigatorId(1);
         let inv2 = InvestigatorId(2);
         let state = GameStateBuilder::new()
+            .with_registries(crate::engine::TEST_REGISTRIES)
             .with_seat(test_support::seat(1).status(Status::Defeated))
             .with_seat(test_support::seat(2))
             .with_turn_order([inv1, inv2])

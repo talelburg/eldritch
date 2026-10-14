@@ -23,6 +23,7 @@ fn activate(source: CardInstanceId) -> TurnAction {
 fn activate_ability_outside_investigation_phase_is_rejected() {
     // Mythos step 1.4: `INV` is to draw an encounter card.
     let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).in_play([ASSET]))
         .with_turn_order([INV])
         .with_phase(Phase::Mythos)
@@ -39,6 +40,7 @@ fn activate_ability_outside_investigation_phase_is_rejected() {
 fn activate_ability_by_non_active_investigator_is_rejected() {
     // Investigator 2's turn is open; investigator 1 tries to activate.
     let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).in_play([ASSET]))
         .with_seat(seat(2))
         .with_turn_order([INV, InvestigatorId(2)])
@@ -51,6 +53,7 @@ fn activate_ability_by_non_active_investigator_is_rejected() {
 #[test]
 fn activate_ability_with_unknown_instance_id_is_rejected() {
     let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).in_play([ASSET]))
         .open_turn(INV)
         .session();
@@ -61,6 +64,7 @@ fn activate_ability_with_unknown_instance_id_is_rejected() {
 #[test]
 fn activate_ability_when_defeated_is_rejected() {
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).in_play([ASSET]))
         .open_turn(INV)
         .build();
@@ -68,5 +72,6 @@ fn activate_ability_when_defeated_is_rejected() {
     // still open is what the handler defends against.
     state.investigators.get_mut(&INV).expect("seated").status = Status::Defeated;
     let asset = state.in_play(INV, ASSET);
-    TestSession::new(state).assert_rejects(|s| s.submit_off_menu(&activate(asset)));
+    TestSession::new_with_registries(state, TEST_REGISTRIES)
+        .assert_rejects(|s| s.submit_off_menu(&activate(asset)));
 }

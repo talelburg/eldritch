@@ -1,8 +1,8 @@
-//! The production server installs the real `scenarios` + `cards`
-//! registries (C7a): `POST /games` for The Gathering succeeds and real
-//! card codes resolve. Process-isolated: this test binary installs the
-//! *production* registries via `server::install_registries()`, distinct
-//! from the mock registry other test binaries install via `common`.
+//! The production server runs on the real `scenarios` + `cards` registries
+//! (C7a): `POST /games` for The Gathering succeeds and real card codes
+//! resolve. This binary hands the server the *production* pairing,
+//! `server::REGISTRIES`, where the other test binaries pass the mock pairing
+//! from `common`.
 
 mod common;
 
@@ -10,7 +10,6 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use game_core::scenario::ScenarioId;
 use game_core::state::CardCode;
-use game_core::{card_registry, scenario_registry};
 use scenarios::the_gathering::ID as GATHERING_SCENARIO_ID;
 use server::AppState;
 use tower::ServiceExt as _;
@@ -20,17 +19,15 @@ use tower::ServiceExt as _;
 const REAL_CARD: &str = "01033";
 
 #[test]
-fn install_registries_resolves_the_gathering_and_real_cards() {
-    server::install_registries();
-
-    let scenario = scenario_registry::current().expect("scenario registry installed");
+fn the_production_registries_resolve_the_gathering_and_real_cards() {
+    let scenario = server::REGISTRIES.scenarios;
     let id = ScenarioId::new(GATHERING_SCENARIO_ID);
     assert!(
         (scenario.module_for)(&id).is_some(),
         "The Gathering scenario module must resolve"
     );
 
-    let cards = card_registry::current().expect("card registry installed");
+    let cards = server::REGISTRIES.cards;
     let code = CardCode(REAL_CARD.into());
     assert!(
         (cards.metadata_for)(&code).is_some(),
@@ -43,10 +40,9 @@ fn install_registries_resolves_the_gathering_and_real_cards() {
 }
 
 #[tokio::test]
-async fn post_games_creates_the_gathering_against_installed_registries() {
-    server::install_registries();
+async fn post_games_creates_the_gathering_against_the_production_registries() {
     let pool = common::memory_pool().await;
-    let app = server::app(AppState::new(pool));
+    let app = server::app(AppState::new(pool, server::REGISTRIES));
 
     // Seat Roland Banks (01001) — a real investigator from the production
     // card registry.

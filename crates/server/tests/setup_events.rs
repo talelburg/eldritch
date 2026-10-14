@@ -17,13 +17,13 @@ use crate::common::TEST_SCENARIO_ID;
 
 #[tokio::test]
 async fn hello_carries_setup_events_after_reload_from_db() {
-    common::install_registry();
     let pool = common::memory_pool().await;
     // Create + persist a game (as `POST /games` does), then spin a server that
     // serves it purely from the DB — proving the events come from the persisted
     // column, not a retained in-memory session.
     GameSession::create(
         pool.clone(),
+        common::REGISTRIES,
         "g-setup-events",
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),

@@ -203,6 +203,7 @@ mod tests {
     #[test]
     fn place_mints_id_pushes_instance_and_emits_event() {
         let mut state = GameStateBuilder::new()
+            .with_registries(crate::engine::TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
             .build();
         let mut events = Vec::new();

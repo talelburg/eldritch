@@ -1,6 +1,6 @@
 //! C2: 01104 reference-card symbol-token effects, end-to-end through the
-//! real card registry (Ghoul metadata) + the installed scenario module.
-//! Own process so the global registries can be installed once.
+//! real card registry (Ghoul metadata) + the scenario module, both named by
+//! `scenarios::TEST_REGISTRIES`.
 
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{ApplyResult, EngineOutcome, OptionTarget};
@@ -11,26 +11,18 @@ use game_core::state::{
     InvestigatorId, Location, LocationId, SkillKind, TokenResolution,
 };
 use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
-use game_core::{assert_event, assert_event_count, assert_no_event, scenario_registry};
+use game_core::{assert_event, assert_event_count, assert_no_event};
 use scenarios::the_gathering;
 
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(1);
-
-#[ctor::ctor(unsafe)]
-fn install_registries() {
-    let _ = scenario_registry::install(scenarios::REGISTRY);
-    // The victory-display fixtures below end their act deck in a synthetic
-    // terminal card, which reaches its resolution point by running an effect on
-    // its reverse (ADR 0013) and so needs the registry to serve it.
-    test_support::install_registry_with_test_cards(cards::REGISTRY);
-}
 
 /// `INV`'s open turn in a Gathering game at the Study `HERE`, with `ghouls`
 /// Ghoul Minions there, `in_play` in the play area, and a chaos bag holding
 /// only `token`.
 fn gathering_board(token: ChaosToken, ghouls: u8, in_play: &[&str]) -> GameState {
     let mut builder = GameStateBuilder::new()
+        .with_registries(scenarios::TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE).in_play(in_play.iter().copied()))
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_chaos_bag(ChaosBag::new([token]))
@@ -55,7 +47,7 @@ fn gathering_state(token: ChaosToken, ghouls: u8) -> GameState {
 /// nothing, run through to the turn menu so the symbol path resolves
 /// end-to-end. Returns the session back at the turn menu.
 fn perform(state: GameState, difficulty: i8) -> TestSession {
-    let session = TestSession::new(state)
+    let session = TestSession::new_with_registries(state, scenarios::TEST_REGISTRIES)
         .test_skill(INV, SkillKind::Willpower, difficulty)
         .commit(&[]);
     session.assert_at_turn_menu(INV);
@@ -197,7 +189,7 @@ fn tablet_immediate_damage_suspends_on_soak_without_redrawing() {
     let state = gathering_board(ChaosToken::Tablet, 1, &[GUARD_DOG]);
     let dog = state.in_play(INV, GUARD_DOG);
 
-    let session = TestSession::new(state)
+    let session = TestSession::new_with_registries(state, scenarios::TEST_REGISTRIES)
         .test_skill(INV, SkillKind::Willpower, 0)
         .commit(&[]) // ST.2 commit window: commit nothing.
         .pick(OptionTarget::CardInstance(dog)); // soak the 1 damage onto Guard Dog.
@@ -248,7 +240,7 @@ fn drive_combat_test_soaking_onto_the_ally(state: GameState) -> (TestSession, Ca
     let cop = state.in_play(INV, BEAT_COP);
     // Beat Cop's own [fast] ability makes both RR p.26 player windows live
     // (ST.1→ST.2 and ST.2→ST.3); pass on each.
-    let session = TestSession::new(state)
+    let session = TestSession::new_with_registries(state, scenarios::TEST_REGISTRIES)
         .test_skill(INV, SkillKind::Combat, 2)
         .skip()
         .commit(&[])
@@ -339,7 +331,9 @@ fn resolvable_state(locations: impl IntoIterator<Item = Location>) -> GameState 
     let mut state = locations
         .into_iter()
         .fold(
-            GameStateBuilder::new().with_seat(seat(1).clues(1)),
+            GameStateBuilder::new()
+                .with_registries(scenarios::TEST_REGISTRIES)
+                .with_seat(seat(1).clues(1)),
             GameStateBuilder::with_location,
         )
         .with_scenario_id(ScenarioId::new(the_gathering::ID))
@@ -372,7 +366,7 @@ fn resolvable_state_with_attic(revealed: bool, clues: u8) -> GameState {
 /// Take `AdvanceAct` from the turn menu; the terminal act's reverse ends the
 /// game.
 fn advance_to_resolution(state: GameState) -> ApplyResult {
-    let r = TestSession::new(state)
+    let r = TestSession::new_with_registries(state, scenarios::TEST_REGISTRIES)
         .take(&TurnAction::AdvanceAct { investigator: INV })
         .finish();
     assert_eq!(r.outcome, EngineOutcome::Done, "the game is over");

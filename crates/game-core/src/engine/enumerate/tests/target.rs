@@ -6,6 +6,7 @@ fn target_maps_each_variant() {
     // implicit anchor resolves to that location.
     let loc_id = LocationId(10);
     let state = GameStateBuilder::default()
+        .with_registries(engine::TEST_REGISTRIES)
         .with_location(test_support::test_location(loc_id.0, "Study"))
         .with_seat(seat(1).at(loc_id))
         .open_turn(InvestigatorId(1))
@@ -94,6 +95,7 @@ fn end_turn_target_is_none_without_an_open_turn() {
     // turn frame; off-turn there is nothing to anchor to.
     // The Investigation phase with investigator 1 active, but no turn open.
     let state = GameStateBuilder::default()
+        .with_registries(engine::TEST_REGISTRIES)
         .with_seat(seat(1))
         .with_phase(Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
@@ -105,6 +107,7 @@ fn end_turn_target_is_none_without_an_open_turn() {
 fn investigate_target_is_none_without_a_location() {
     // A seat stands at no location unless placed with `at`.
     let state = GameStateBuilder::default()
+        .with_registries(engine::TEST_REGISTRIES)
         .with_seat(seat(1))
         .open_turn(InvestigatorId(1))
         .build();

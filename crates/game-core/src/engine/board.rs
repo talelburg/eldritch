@@ -483,6 +483,7 @@ mod tests {
             .push(card("02256", GHOUL_ATTACHMENT, Owner::EncounterDeck));
 
         GameStateBuilder::new()
+            .with_registries(crate::engine::TEST_REGISTRIES)
             .with_location(study)
             .with_location(test_support::test_location(HALLWAY.0, "Hallway"))
             .with_enemy(ghoul)

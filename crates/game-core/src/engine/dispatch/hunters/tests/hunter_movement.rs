@@ -25,6 +25,7 @@ fn hunter_moves_one_step_toward_investigator_two_hops_away_no_engage() {
     ghoul.hunter = true;
     ghoul.current_location = Some(A);
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_phase(Phase::Enemy)
         .with_location(a)
         .with_location(b)
@@ -53,6 +54,7 @@ fn hunter_engages_when_it_moves_into_investigators_location() {
     h.hunter = true;
     h.current_location = Some(A);
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_phase(Phase::Enemy)
         .with_location(a)
         .with_location(b)
@@ -79,6 +81,7 @@ fn hunter_with_no_path_does_not_move() {
     h.hunter = true;
     h.current_location = Some(ISLAND);
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_phase(Phase::Enemy)
         .with_location(a)
         .with_location(island)
@@ -103,6 +106,7 @@ fn exhausted_hunter_is_skipped() {
     h.exhausted = true;
     h.current_location = Some(A);
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_phase(Phase::Enemy)
         .with_location(a)
         .with_location(b)
@@ -126,6 +130,7 @@ fn non_hunter_enemy_does_not_move() {
     e.hunter = false;
     e.current_location = Some(A);
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_phase(Phase::Enemy)
         .with_location(a)
         .with_location(b)
@@ -151,6 +156,7 @@ fn hunter_already_co_located_does_not_move_but_engages() {
     h.hunter = true;
     h.current_location = Some(A);
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_phase(Phase::Enemy)
         .with_location(a)
         .with_location(b)

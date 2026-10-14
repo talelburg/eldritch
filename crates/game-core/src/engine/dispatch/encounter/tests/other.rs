@@ -16,6 +16,7 @@ use crate::test_support;
 #[test]
 fn rejects_an_unknown_encounter_card() {
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .build();
     // Seed the encounter deck so we can prove the reject fires

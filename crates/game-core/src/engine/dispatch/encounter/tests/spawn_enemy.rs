@@ -76,6 +76,7 @@ fn spawn_enemy_at_places_enemy_at_the_given_location_not_the_drawers() {
     let mut there = test_support::test_location(THERE.0, "There");
     there.code = CardCode("_there".into());
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(HERE))
         .with_location(here)
         .with_location(there)
@@ -109,6 +110,7 @@ fn spawn_enemy_reads_combat_stats_and_keywords_from_metadata() {
     let mut loc = test_support::test_location(HERE.0, "Loc");
     loc.code = CardCode("_l".into());
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(HERE))
         .with_location(loc)
         .with_turn_order([InvestigatorId(1)])
@@ -149,6 +151,7 @@ fn spawn_enemy_scales_per_investigator_health_by_investigator_count() {
     let mut loc = test_support::test_location(HERE.0, "Loc");
     loc.code = CardCode("_l".into());
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(HERE))
         .with_seat(test_support::seat(2).at(HERE))
         .with_location(loc)
@@ -184,6 +187,7 @@ fn spawn_enemy_reads_victory_from_metadata() {
     let mut loc = test_support::test_location(HERE.0, "Loc");
     loc.code = CardCode("_l".into());
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(HERE))
         .with_location(loc)
         .with_turn_order([InvestigatorId(1)])
@@ -218,6 +222,7 @@ fn spawn_at_specific_location_with_one_investigator_engages_them() {
     let mut loc = test_support::test_location(HERE.0, "Synth Loc");
     loc.code = CardCode("_synth_loc".into());
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(HERE))
         .with_location(loc)
         .with_turn_order([InvestigatorId(1)])
@@ -258,6 +263,7 @@ fn spawn_at_specific_location_with_no_investigators_leaves_unengaged() {
     let mut loc = test_support::test_location(HERE.0, "Synth Loc");
     loc.code = CardCode("_synth_loc".into());
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_location(loc)
         .build();
@@ -290,6 +296,7 @@ fn spawn_at_specific_location_discards_when_location_not_in_play() {
     // instead." Flesh-Eater FAQ: "place that enemy card into the encounter
     // discard pile without any further effects." So the draw does NOT reject.
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .build();
     let metadata = synth_enemy_metadata(Some(Spawn {
@@ -322,6 +329,7 @@ fn spawn_with_unrepresented_instruction_rejects_without_mutating() {
     let mut loc = test_support::test_location(HERE.0, "Demo");
     loc.code = CardCode("_demo_loc".into());
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(HERE))
         .with_location(loc)
         .with_turn_order([InvestigatorId(1)])
@@ -361,6 +369,7 @@ fn spawn_with_no_instruction_places_at_drawing_investigators_location() {
     let mut loc = test_support::test_location(HERE.0, "Demo");
     loc.code = CardCode("_demo_loc".into());
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(HERE))
         .with_location(loc)
         .with_turn_order([InvestigatorId(1)])
@@ -390,6 +399,7 @@ fn spawn_with_no_instruction_places_at_drawing_investigators_location() {
 #[test]
 fn spawn_with_no_instruction_rejects_when_drawing_investigator_has_no_location() {
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .build();
     // Investigator has no current_location.
@@ -419,6 +429,7 @@ fn spawn_engages_sole_colocated_investigator() {
     let mut loc = test_support::test_location(HALL.0, "Hall");
     loc.code = CardCode("_loc".into());
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_phase(Phase::Mythos)
         .with_location(loc)
         .with_seat(test_support::seat(1).at(HALL))
@@ -442,6 +453,7 @@ fn spawn_tie_suspends_for_lead_pick() {
     let mut loc = test_support::test_location(HALL.0, "Hall");
     loc.code = CardCode("_loc".into());
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_phase(Phase::Mythos)
         .with_location(loc)
         .with_seat(test_support::seat(1).at(HALL))
@@ -474,6 +486,7 @@ fn resume_spawn_engage_rejects_bad_pick_and_preserves_pending() {
     let mut loc = test_support::test_location(HALL.0, "Hall");
     loc.code = CardCode("_loc".into());
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_phase(Phase::Mythos)
         .with_location(loc)
         .with_seat(test_support::seat(1).at(HALL))
@@ -521,6 +534,7 @@ fn spawn_mints_distinct_enemy_ids() {
     let mut loc = test_support::test_location(HERE.0, "L");
     loc.code = CardCode("_l".into());
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(HERE))
         .with_location(loc)
         .build();

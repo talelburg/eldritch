@@ -16,8 +16,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();
 
-    server::install_registries();
-
     let database_url =
         env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:eldritch.db".to_string());
     let pool = db::connect_pool(&database_url).await?;
@@ -28,6 +26,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let listener = TcpListener::bind(addr).await?;
     tracing::info!("eldritch server listening on http://{addr}");
 
-    axum::serve(listener, server::app(AppState::new(pool))).await?;
+    axum::serve(
+        listener,
+        server::app(AppState::new(pool, server::REGISTRIES)),
+    )
+    .await?;
     Ok(())
 }

@@ -51,7 +51,7 @@ async fn get_or_load_room(state: &AppState, game_id: &GameId) -> Option<Arc<Game
     if let Some(room) = rooms.get(game_id) {
         return Some(room.clone());
     }
-    let session = match GameSession::load(state.db.clone(), game_id).await {
+    let session = match GameSession::load(state.db.clone(), state.registries, game_id).await {
         Ok(session) => session?,
         Err(err) => {
             tracing::error!(

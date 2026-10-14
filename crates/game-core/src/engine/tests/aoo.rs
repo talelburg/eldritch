@@ -4,6 +4,7 @@ use super::*;
 /// without the empty-deck horror path muddying an `AoO` assertion).
 fn draw_board() -> GameStateBuilder {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(seat(1).at(HERE).deck(["_test_card_1"]))
         .open_turn(INV)

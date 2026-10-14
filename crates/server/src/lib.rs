@@ -17,7 +17,7 @@ use std::path::PathBuf;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::{routing, Router};
-use game_core::{card_registry, scenario_registry};
+use game_core::engine::Registries;
 use sqlx::SqlitePool;
 use tower_http::services::{ServeDir, ServeFile};
 
@@ -28,6 +28,9 @@ use crate::ws::Rooms;
 pub struct AppState {
     /// Connection pool for the `SQLite` action-log database.
     pub db: SqlitePool,
+    /// The card and scenario registries every game is created, played and
+    /// replayed against.
+    registries: Registries,
     /// Live games keyed by `game_id`, each with its broadcast group.
     rooms: Rooms,
     /// Directory holding the built client bundle (`index.html`, JS, wasm),
@@ -36,40 +39,37 @@ pub struct AppState {
 }
 
 impl AppState {
-    /// Build application state over a database pool, serving the client
-    /// bundle from the default dev location (`crates/web/dist`, relative
-    /// to the workspace root).
+    /// Build application state over a database pool and the registries its
+    /// games run against, serving the client bundle from the default dev
+    /// location (`crates/web/dist`, relative to the workspace root).
     #[must_use]
-    pub fn new(db: SqlitePool) -> Self {
-        Self::new_with_dist(db, PathBuf::from("crates/web/dist"))
+    pub fn new(db: SqlitePool, registries: Registries) -> Self {
+        Self::new_with_dist(db, registries, PathBuf::from("crates/web/dist"))
     }
 
     /// Build application state with an explicit client-bundle directory.
     #[must_use]
-    pub fn new_with_dist(db: SqlitePool, dist_dir: PathBuf) -> Self {
+    pub fn new_with_dist(db: SqlitePool, registries: Registries, dist_dir: PathBuf) -> Self {
         Self {
             db,
+            registries,
             rooms: ws::rooms(),
             dist_dir,
         }
     }
 }
 
-/// Install the process-global scenario + card registries the server
-/// needs to create and play games. Call once at startup.
-///
-/// Installs the real `scenarios::REGISTRY` (which includes The Gathering)
-/// and the real `cards::REGISTRY` (the corpus + hand-written abilities) —
-/// C7a's registry swap, now that real content is servable. Tests install
-/// their own registries per process and build any mock scenario module
-/// locally (`crates/server/tests/common/mod.rs`); there is no shared
-/// fixture crate-side to install instead (#878, ADR 0016).
-/// Idempotent: a second call is a no-op (the underlying `OnceLock`s reject
-/// re-installation).
-pub fn install_registries() {
-    let _ = scenario_registry::install(scenarios::REGISTRY);
-    let _ = card_registry::install(cards::REGISTRY);
-}
+/// The registries the production server creates and plays games against:
+/// the real `scenarios::REGISTRY` (which includes The Gathering) and the
+/// real `cards::REGISTRY` (the corpus + hand-written abilities). `main`
+/// hands them to [`AppState::new`]. Tests pass their own pairing instead and
+/// build any mock scenario module locally
+/// (`crates/server/tests/common/mod.rs`); there is no shared fixture
+/// crate-side (#878, ADR 0016).
+pub const REGISTRIES: Registries = Registries {
+    cards: &cards::REGISTRY,
+    scenarios: &scenarios::REGISTRY,
+};
 
 /// Build the application router with all routes and shared state. The
 /// JSON API and WebSocket take precedence; everything else falls back

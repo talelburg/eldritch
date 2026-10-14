@@ -43,6 +43,7 @@ fn state_with(cards: &[&str], damage: u8) -> GameState {
     // combat 3, max_health() = 8 from the TEST_INV registry. After #448 cp2a
     // harm accumulates on the investigator card.
     GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(
             test_support::seat(1)
                 .harm(damage, 0)

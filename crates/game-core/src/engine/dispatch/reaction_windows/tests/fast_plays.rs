@@ -12,6 +12,7 @@ fn returns_false_when_no_investigators() {
 #[test]
 fn returns_false_when_hands_and_in_play_empty() {
     let state = GameStateBuilder::default()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .build();
     assert!(!any_fast_play_eligible(&state, &TEST_REGISTRY));
@@ -22,6 +23,7 @@ fn open_fast_window_with_no_eligibility_auto_skips_inline() {
     // No reactions, no Fast-eligible cards → auto-skip: window
     // opens and closes without ever landing on state.open_windows.
     let mut state = GameStateBuilder::default()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         // The MythosAfterDraws window now closes onto the MythosPhase anchor
         // (slice 1a); stage it so the auto-skip continuation has its frame.
@@ -49,6 +51,7 @@ fn open_fast_window_with_no_eligibility_auto_skips_inline() {
 fn enumerate_fast_plays_empty_when_nothing_eligible() {
     let inv = InvestigatorId(1);
     let state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_phase(Phase::Investigation)
         .with_active_investigator(inv)
         .with_seat(test_support::seat(1))

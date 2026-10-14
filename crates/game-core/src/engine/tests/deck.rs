@@ -8,11 +8,12 @@ use super::*;
 #[test]
 fn deck_shuffled_engine_record_with_unknown_investigator_is_rejected() {
     let state = GameStateBuilder::new().build();
-    let result = apply(
+    let result = apply_with_registries(
         state,
         Action::Engine(EngineRecord::DeckShuffled {
             investigator: InvestigatorId(999),
         }),
+        TEST_REGISTRIES,
     );
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert!(result.events.is_empty());
@@ -30,8 +31,8 @@ fn deck_shuffle_is_deterministic_across_replay() {
         }]
     };
 
-    let result_a = seat_and_open(state_a, &make_roster());
-    let result_b = seat_and_open(state_b, &make_roster());
+    let result_a = seat_and_open_with_registries(state_a, &make_roster(), TEST_REGISTRIES);
+    let result_b = seat_and_open_with_registries(state_b, &make_roster(), TEST_REGISTRIES);
     let id = InvestigatorId(1);
 
     assert_eq!(
@@ -50,12 +51,14 @@ fn deck_shuffled_engine_record_shuffles_named_investigator() {
     let id = INV;
     let original_deck = make_test_deck(8);
     let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).deck(original_deck.clone()))
         .with_rng_seed(99)
         .build();
-    let result = apply(
+    let result = apply_with_registries(
         state,
         Action::Engine(EngineRecord::DeckShuffled { investigator: id }),
+        TEST_REGISTRIES,
     );
 
     assert_eq!(result.outcome, EngineOutcome::Done);

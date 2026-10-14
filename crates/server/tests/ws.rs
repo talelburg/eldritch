@@ -19,6 +19,7 @@ use crate::common::TEST_SCENARIO_ID;
 async fn seed_game(pool: &SqlitePool, game_id: &str) {
     GameSession::create(
         pool.clone(),
+        common::REGISTRIES,
         game_id,
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
@@ -29,7 +30,6 @@ async fn seed_game(pool: &SqlitePool, game_id: &str) {
 
 #[tokio::test]
 async fn connect_receives_hello_with_current_state() {
-    common::install_registry();
     let pool = common::memory_pool().await;
     seed_game(&pool, "g-hello").await;
     let addr = common::spawn_server(pool).await;
@@ -51,7 +51,6 @@ async fn connect_receives_hello_with_current_state() {
 
 #[tokio::test]
 async fn accepted_action_broadcasts_applied_to_all_clients() {
-    common::install_registry();
     let pool = common::memory_pool().await;
     seed_game(&pool, "g-bcast").await;
     let addr = common::spawn_server(pool).await;
@@ -93,7 +92,6 @@ async fn accepted_action_broadcasts_applied_to_all_clients() {
 
 #[tokio::test]
 async fn rejected_action_returns_rejected_to_sender_only() {
-    common::install_registry();
     let pool = common::memory_pool().await;
     seed_game(&pool, "g-reject").await;
     let addr = common::spawn_server(pool).await;

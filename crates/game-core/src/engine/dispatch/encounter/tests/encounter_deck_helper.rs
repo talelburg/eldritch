@@ -162,7 +162,11 @@ fn engine_record_encounter_deck_shuffled_drives_shuffle() {
     }
     let original: Vec<_> = state.encounter_deck.iter().cloned().collect();
 
-    let result = engine::apply(state, Action::Engine(EngineRecord::EncounterDeckShuffled));
+    let result = engine::apply_with_registries(
+        state,
+        Action::Engine(EngineRecord::EncounterDeckShuffled),
+        engine::TEST_REGISTRIES,
+    );
 
     assert!(
         matches!(result.outcome, EngineOutcome::Done),

@@ -3,9 +3,12 @@
 //! opens act 01109's `When`-`RoundEnded` reaction as a board candidate;
 //! picking it fires the advance / `Skip` declines.
 
+use std::sync::LazyLock;
+
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{EngineOutcome, NativeCx, OptionTarget};
+use game_core::engine::{EngineOutcome, NativeCx, OptionTarget, Registries};
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     Act, CardCode, GameState, GameStateBuilder, InvestigatorId, Location, LocationId,
 };
@@ -30,18 +33,22 @@ fn advance_reaction() -> Vec<Ability> {
     )]
 }
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    MockRegistry::new()
-        .with_abilities("01109", advance_reaction)
-        .with_native_effect("test:advance", advance_native)
-        .install();
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        cards: MockRegistry::new()
+            .with_abilities("01109", advance_reaction)
+            .with_native_effect("test:advance", advance_native)
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 /// Act 2 (01109) current, a Hallway investigator with `clues`, at the end of
 /// the Upkeep phase. Act 3 (01110) is the terminal-Won successor.
 fn upkeep_round_end_state(clues: u8) -> GameState {
     let mut state = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).at(HERE).clues(clues))
         .with_turn_order([INV])
         .ending_upkeep_phase()
@@ -72,7 +79,7 @@ fn upkeep_round_end_state(clues: u8) -> GameState {
 /// the round-end coordinator, which scans act 01109's `When`-`RoundEnded`
 /// reaction and suspends on it.
 fn opened_round_end_window(clues: u8) -> TestSession {
-    let session = TestSession::new(upkeep_round_end_state(clues));
+    let session = TestSession::new_with_registries(upkeep_round_end_state(clues), registries());
     let offered: Vec<_> = session
         .prompt()
         .options

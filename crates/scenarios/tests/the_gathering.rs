@@ -1,7 +1,8 @@
 //! C1a end-to-end: the-gathering `setup()` seats a roster at the Study and
 //! reaches a resolution; the Attic/Cellar forced-on-enter abilities fire
-//! through the real card registry. Own process so it can install the
-//! process-global registries against the real `cards` corpus.
+//! through the real card registry, named as `scenarios::TEST_REGISTRIES` (the
+//! real `cards` corpus with the synthetic test cards, plus this crate's
+//! scenario modules).
 
 use std::collections::BTreeSet;
 
@@ -13,17 +14,11 @@ use game_core::state::{
     CardCode, CardInPlay, DiscardPile, GameState, GameStateBuilder, InvestigatorId, LocationId,
     Owner, Phase, Zone,
 };
+use game_core::test_support;
 use game_core::test_support::{seat, TestSession};
-use game_core::{scenario_registry, test_support};
 use scenarios::the_gathering;
 
 const INV: InvestigatorId = InvestigatorId(1);
-
-#[ctor::ctor(unsafe)]
-fn install_registries() {
-    let _ = scenario_registry::install(scenarios::REGISTRY);
-    test_support::install_registry_with_test_cards(cards::REGISTRY);
-}
 
 /// Seat solo Roland (01001, empty deck) and keep his opening hand at the
 /// mulligan, leaving him at his first turn menu.
@@ -33,8 +28,16 @@ fn setup_and_seat() -> GameState {
         deck: vec![],
     }];
     // seat_and_open rests at the mulligan; the session settles there.
-    let session = TestSession::new(engine::seat_and_open(the_gathering::setup(), &roster).state)
-        .choose_from_hand(&[]);
+    let session = TestSession::new_with_registries(
+        engine::seat_and_open_with_registries(
+            the_gathering::setup(),
+            &roster,
+            scenarios::TEST_REGISTRIES,
+        )
+        .state,
+        scenarios::TEST_REGISTRIES,
+    )
+    .choose_from_hand(&[]);
     session.assert_at_turn_menu(INV);
     session.finish().state
 }
@@ -101,7 +104,8 @@ fn drives_act_1_then_act_2_via_round_end_window() {
 
     // Act 1: the normal Investigation-phase clue spend. Board builds and the
     // investigator relocates to the Hallway (01112) — the act-2 contributors.
-    let session = TestSession::new(state).take(&TurnAction::AdvanceAct { investigator: inv });
+    let session = TestSession::new_with_registries(state, scenarios::TEST_REGISTRIES)
+        .take(&TurnAction::AdvanceAct { investigator: inv });
     session.assert_at_turn_menu(inv);
     let state = session.state();
     assert_eq!(state.act_index, 1, "act 1 advanced to act 2");
@@ -118,10 +122,7 @@ fn drives_act_1_then_act_2_via_round_end_window() {
         !state.locations[&parlor_id].revealed,
         "the Parlor enters play unrevealed",
     );
-    let offered = enumerate::legal_actions(
-        state,
-        game_core::card_registry::current().expect("card registry installed"),
-    );
+    let offered = enumerate::legal_actions(state, scenarios::TEST_REGISTRIES.cards);
     assert!(
         !offered.contains(&TurnAction::Move {
             investigator: inv,
@@ -212,7 +213,7 @@ fn drives_act_1_then_act_2_via_round_end_window() {
     assert!(
         engine::investigator_can_enter_location(
             r,
-            game_core::card_registry::current().expect("card registry installed"),
+            scenarios::TEST_REGISTRIES.cards,
             location_id(r, "01115")
         ),
         "the reveal lifts the barrier",
@@ -243,6 +244,7 @@ fn move_into(code: &str, name: &str) -> TestSession {
     let mut entered = test_support::test_location(ENTERED.0, name);
     entered.code = CardCode::new(code);
     GameStateBuilder::new()
+        .with_registries(scenarios::TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
         .with_location(here)
         .with_location(entered)
@@ -307,7 +309,8 @@ fn advancing_act_1_rebuilds_the_board() {
     let inv = INV;
     let state = act_1_ready_to_advance();
 
-    let session = TestSession::new(state).take(&TurnAction::AdvanceAct { investigator: inv });
+    let session = TestSession::new_with_registries(state, scenarios::TEST_REGISTRIES)
+        .take(&TurnAction::AdvanceAct { investigator: inv });
     session.assert_at_turn_menu(inv);
     let result = session.finish();
 
@@ -408,7 +411,8 @@ fn removing_the_study_discards_its_attachments_by_owner() {
         Owner::Investigator(inv),
     ));
 
-    let session = TestSession::new(state).take(&TurnAction::AdvanceAct { investigator: inv });
+    let session = TestSession::new_with_registries(state, scenarios::TEST_REGISTRIES)
+        .take(&TurnAction::AdvanceAct { investigator: inv });
     session.assert_at_turn_menu(inv);
     let result = session.finish();
 

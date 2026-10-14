@@ -3,7 +3,7 @@
 //! ability.
 //!
 //! Lives at `crates/game-core/tests/` so it runs in its own integration-
-//! test process (separate `OnceLock<CardRegistry>`), letting it install
+//! test process (separate `OnceLock<CardRegistry>`), letting it build
 //! a mock registry without colliding with game-core's in-crate tests
 //! or with other `tests/*.rs` files. Mirrors `activate_ability.rs`.
 //!
@@ -11,9 +11,13 @@
 //! follow-up issue (#39 Deduction) is the first consumer. Until then,
 //! mock cards are the only way to exercise the full path.
 
+use std::sync::LazyLock;
+
 use card_dsl::dsl::{self, LocationTarget, ModifierScope, Stat, TestOutcome};
 use game_core::engine::enumerate::TurnAction;
+use game_core::engine::Registries;
 use game_core::event::Event;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
     TokenModifiers,
@@ -39,31 +43,34 @@ const MIXED_TRIGGERS: &str = "MOCK-OSR-MIXED";
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
 
-#[ctor::ctor(unsafe)]
-fn install_mock_registry() {
-    MockRegistry::new()
-        .with_abilities(BONUS_CLUE_SUCCESS, || {
-            vec![dsl::on_skill_test_resolution(
-                TestOutcome::Success,
-                dsl::discover_clue(LocationTarget::TestedLocation, 1),
-            )]
-        })
-        .with_abilities(BONUS_CLUE_FAILURE, || {
-            vec![dsl::on_skill_test_resolution(
-                TestOutcome::Failure,
-                dsl::discover_clue(LocationTarget::TestedLocation, 1),
-            )]
-        })
-        .with_abilities(MIXED_TRIGGERS, || {
-            vec![
-                dsl::constant(dsl::modify(Stat::Intellect, 1, ModifierScope::WhileInPlay)),
-                dsl::on_skill_test_resolution(
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        cards: MockRegistry::new()
+            .with_abilities(BONUS_CLUE_SUCCESS, || {
+                vec![dsl::on_skill_test_resolution(
                     TestOutcome::Success,
                     dsl::discover_clue(LocationTarget::TestedLocation, 1),
-                ),
-            ]
-        })
-        .install();
+                )]
+            })
+            .with_abilities(BONUS_CLUE_FAILURE, || {
+                vec![dsl::on_skill_test_resolution(
+                    TestOutcome::Failure,
+                    dsl::discover_clue(LocationTarget::TestedLocation, 1),
+                )]
+            })
+            .with_abilities(MIXED_TRIGGERS, || {
+                vec![
+                    dsl::constant(dsl::modify(Stat::Intellect, 1, ModifierScope::WhileInPlay)),
+                    dsl::on_skill_test_resolution(
+                        TestOutcome::Success,
+                        dsl::discover_clue(LocationTarget::TestedLocation, 1),
+                    ),
+                ]
+            })
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 /// `INV`'s open turn with `hand` in hand, standing at `HERE` (3 clues), a
@@ -73,6 +80,7 @@ fn session_with_hand(hand: &[&str]) -> TestSession {
     let mut location = test_support::test_location(HERE.0, "Study");
     location.clues = 3;
     GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).at(HERE).hand(hand.iter().copied()))
         .with_location(location)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))

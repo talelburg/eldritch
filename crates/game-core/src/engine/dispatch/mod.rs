@@ -736,6 +736,7 @@ mod turn_menu_tests {
         // propagates each action's target — not just Global.
         const HERE: LocationId = LocationId(10);
         let state = GameStateBuilder::default()
+            .with_registries(crate::engine::TEST_REGISTRIES)
             .with_location(test_support::test_location(HERE.0, "Study"))
             .with_seat(test_support::seat(1).at(HERE))
             .with_enemy_engaged(test_support::test_enemy(7, "Ghoul"), InvestigatorId(1))

@@ -272,6 +272,7 @@ mod tests {
         let mut enemy = test_support::test_enemy(7, "Goon");
         enemy.max_health = 10; // avoid clamping so the dealt damage is observable
         let mut state = GameStateBuilder::new()
+            .with_registries(crate::engine::TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
             .with_enemy(enemy)
             .build();

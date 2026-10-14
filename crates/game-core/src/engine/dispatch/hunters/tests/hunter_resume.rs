@@ -33,6 +33,7 @@ fn hunter_move_tie_suspends_then_resumes_on_pick_location() {
     hunter.hunter = true;
     hunter.current_location = Some(A);
     let session = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_location(loc_a)
         .with_location(loc_b)
         .with_location(loc_c)
@@ -71,6 +72,7 @@ fn hunter_move_tie_rejects_invalid_pick() {
     hunter.hunter = true;
     hunter.current_location = Some(A);
     let session = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_location(loc_a)
         .with_location(loc_b)
         .with_location(loc_c)
@@ -102,6 +104,7 @@ fn hunter_engage_tie_suspends_then_resumes_on_pick_investigator() {
     h.hunter = true;
     h.current_location = Some(A);
     let session = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_location(a)
         .with_location(b)
         .with_seat(test_support::seat(1).at(B))
@@ -150,6 +153,7 @@ fn highest_combat_prey_breaks_move_tie_without_prompt() {
     hunter.current_location = Some(A);
     // Ending both turns runs the Enemy phase's hunter step.
     let session = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_location(loc_a)
         .with_location(loc_b)
         .with_location(loc_c)
@@ -194,6 +198,7 @@ fn multi_hunter_one_suspends_then_next_processed_on_resume() {
     clean_hunter.hunter = true;
     clean_hunter.current_location = Some(B); // single step B->D
     let session = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_location(loc_a)
         .with_location(loc_b)
         .with_location(loc_c)
@@ -236,6 +241,7 @@ fn hunter_move_tie_rejects_wrong_response_kind() {
     hunter.hunter = true;
     hunter.current_location = Some(A);
     let session = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_location(loc_a)
         .with_location(loc_b)
         .with_location(loc_c)
@@ -268,6 +274,7 @@ fn hunter_engage_tie_rejects_wrong_response_kind() {
     hunter.hunter = true;
     hunter.current_location = Some(A);
     let session = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_location(loc_a)
         .with_location(loc_b)
         .with_seat(test_support::seat(1).at(B))

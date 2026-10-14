@@ -10,14 +10,16 @@
 
 use game_core::assert_event_sequence;
 use game_core::engine::enumerate::TurnAction;
+use game_core::engine::Registries;
 use game_core::event::Event;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{GameStateBuilder, InvestigatorId, LocationId, Phase};
-use game_core::test_support::{self, seat};
+use game_core::test_support::{self, seat, TEST_REGISTRY};
 
-#[ctor::ctor(unsafe)]
-fn install_registry() {
-    test_support::install_test_registry();
-}
+const REGISTRIES: Registries = Registries {
+    cards: &TEST_REGISTRY,
+    scenarios: &ScenarioRegistry::EMPTY,
+};
 
 const MINE: InvestigatorId = InvestigatorId(1);
 const OTHER: InvestigatorId = InvestigatorId(2);
@@ -29,6 +31,7 @@ const HERE: LocationId = LocationId(10);
 #[test]
 fn an_open_turn_resumes_at_the_turn_menu_after_an_action() {
     let session = GameStateBuilder::new()
+        .with_registries(REGISTRIES)
         .with_seat(seat(1).at(HERE))
         .with_location(test_support::test_location(HERE.0, "Study"))
         .open_turn(MINE)
@@ -44,6 +47,7 @@ fn an_open_turn_resumes_at_the_turn_menu_after_an_action() {
 #[test]
 fn open_turn_defaults_the_turn_order_to_the_investigator() {
     let state = GameStateBuilder::new()
+        .with_registries(REGISTRIES)
         .with_seat(seat(1).at(HERE))
         .with_location(test_support::test_location(HERE.0, "Study"))
         .open_turn(MINE)
@@ -57,6 +61,7 @@ fn open_turn_defaults_the_turn_order_to_the_investigator() {
 #[test]
 fn open_turn_respects_a_turn_order_already_set() {
     let session = GameStateBuilder::new()
+        .with_registries(REGISTRIES)
         .with_seat(seat(1).at(HERE))
         .with_seat(seat(2).at(HERE))
         .with_location(test_support::test_location(HERE.0, "Study"))
@@ -77,6 +82,7 @@ fn engaged_board() -> GameStateBuilder {
     attacker.max_health = 5;
 
     GameStateBuilder::new()
+        .with_registries(REGISTRIES)
         .with_seat(seat(1).at(HERE))
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_enemy_engaged(attacker, MINE)

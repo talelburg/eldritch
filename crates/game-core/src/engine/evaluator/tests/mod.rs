@@ -41,6 +41,7 @@ fn state_with_clues_at_location(clues: u8) -> GameState {
     let mut loc = test_support::test_location(HERE.0, "Study");
     loc.clues = clues;
     GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_location(loc)
         .with_seat(seat(1).at(HERE))
         .build()
@@ -143,6 +144,7 @@ fn assert_suspended_leaf(state: &GameState) {
 fn state_with_cards_in_play(codes: &[&str]) -> (GameState, InvestigatorId) {
     let id = InvestigatorId(1);
     let state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(seat(id.0).in_play(codes.iter().copied()))
         .build();
     (state, id)

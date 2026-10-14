@@ -8,20 +8,13 @@
 
 use game_core::action::RosterEntry;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, InputKind, OptionTarget};
-use game_core::scenario_registry;
+use game_core::engine::{InputKind, OptionTarget};
 use game_core::state::{CardCode, ChaosToken, InvestigatorId, Phase};
-use game_core::test_support::{self, TestSession};
+use game_core::test_support::TestSession;
 use scenarios::the_gathering;
 
 const INV: InvestigatorId = InvestigatorId(1);
 const MAGNIFYING_GLASS: &str = "01030";
-
-#[ctor::ctor(unsafe)]
-fn install_registries() {
-    let _ = scenario_registry::install(scenarios::REGISTRY);
-    test_support::install_registry_with_test_cards(cards::REGISTRY);
-}
 
 /// Drive to the post-Mythos-draw fast window: Roland holds Magnifying Glass,
 /// fails the Rotting Remains willpower test (Cultist -1), and the
@@ -32,10 +25,18 @@ fn to_fast_window() -> TestSession {
         deck: vec![],
     }];
     // seat_and_open rests at the mulligan; Roland keeps his (empty) hand.
-    let mut state = TestSession::new(engine::seat_and_open(the_gathering::setup(), &roster).state)
-        .choose_from_hand(&[])
-        .finish()
-        .state;
+    let mut state = TestSession::new_with_registries(
+        game_core::engine::seat_and_open_with_registries(
+            the_gathering::setup(),
+            &roster,
+            scenarios::TEST_REGISTRIES,
+        )
+        .state,
+        scenarios::TEST_REGISTRIES,
+    )
+    .choose_from_hand(&[])
+    .finish()
+    .state;
     state.encounter_deck = vec![CardCode::new("01163")].into();
     state.encounter_discard.clear();
     state.chaos_bag.tokens = vec![ChaosToken::Cultist];
@@ -48,7 +49,7 @@ fn to_fast_window() -> TestSession {
 
     // End the turn into round 2's Mythos draw, draw Rotting Remains, and
     // commit nothing to its willpower test.
-    TestSession::new(state)
+    TestSession::new_with_registries(state, scenarios::TEST_REGISTRIES)
         .take(&TurnAction::EndTurn)
         .confirm()
         .commit(&[])

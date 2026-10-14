@@ -10,9 +10,12 @@
 //! scenario behavior wired up; skip", which is what these tests want: the round
 //! must not resolve out from under the cascade.
 
+use std::sync::LazyLock;
+
 use game_core::action::RosterEntry;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self};
+use game_core::engine::Registries;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     Act, Agenda, CardCode, CardInPlay, ChaosBag, ChaosToken, GameState, GameStateBuilder,
     InvestigatorId, LocationId, Owner, Phase,
@@ -24,12 +27,15 @@ use game_core::test_support::{self, MockRegistry, TestSession, TEST_INV};
 /// so they are deliberately not ArkhamDB-shaped (ADR 0016).
 const PREFIX: &str = "_uc_";
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    // No probe cards. `install` composes `metadata_for_test_inv` (capacity reads
-    // for `TEST_INV`) and `abilities_for_terminal` (the terminal act/agenda
-    // reverses that `setup` seeds), which is everything the cascade touches.
-    MockRegistry::new().install();
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        // No probe cards. `build` composes `metadata_for_test_inv` (capacity reads
+        // for `TEST_INV`) and `abilities_for_terminal` (the terminal act/agenda
+        // reverses that `setup` seeds), which is everything the cascade touches.
+        cards: MockRegistry::new().build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 /// One deck card, distinct per index.
@@ -102,7 +108,7 @@ const INV: InvestigatorId = InvestigatorId(1);
 /// to ready — and close the mulligan keeping the hand: Investigation, round 1,
 /// at the turn menu.
 fn opened_with_an_exhausted_asset() -> TestSession {
-    let opened = engine::seat_and_open(setup(), &roster());
+    let opened = game_core::engine::seat_and_open_with_registries(setup(), &roster(), registries());
     // The roster seats the investigator, so the asset goes onto the seated
     // board, with an id minted from the state's counter.
     let mut state = opened.state;
@@ -119,7 +125,7 @@ fn opened_with_an_exhausted_asset() -> TestSession {
         .unwrap()
         .cards_in_play
         .push(card);
-    let session = TestSession::new(state).choose_from_hand(&[]);
+    let session = TestSession::new_with_registries(state, registries()).choose_from_hand(&[]);
     session.assert_at_turn_menu(INV);
     session
 }

@@ -31,6 +31,7 @@ fn state_with_window_of(
     prevented: bool,
 ) -> GameState {
     let mut state = GameStateBuilder::default()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_active_investigator(INV)
         .build();

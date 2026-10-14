@@ -264,6 +264,7 @@ fn fight_against_co_located_unengaged_enemy_is_accepted() {
     let mut enemy = ghoul();
     enemy.current_location = Some(HERE);
     let board = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
         .with_location(test_support::test_location(HERE.0, "Hall"))
         .with_enemy(enemy)
@@ -285,6 +286,7 @@ fn fight_against_enemy_at_a_different_location_is_rejected() {
     let mut enemy = ghoul();
     enemy.current_location = Some(attic);
     let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
         .with_location(test_support::test_location(HERE.0, "Hall"))
         .with_location(test_support::test_location(attic.0, "Attic"))
@@ -301,6 +303,7 @@ fn evade_when_not_engaged_with_target_is_rejected() {
     let mut enemy = ghoul();
     enemy.current_location = Some(HERE);
     let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
         .with_location(test_support::test_location(HERE.0, "Test Hall"))
         .with_enemy(enemy)

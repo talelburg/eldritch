@@ -17,11 +17,14 @@
 //! Lives at `crates/game-core/tests/` alongside `forced_triggers.rs` /
 //! `native_effect.rs`, whose idiom it follows.
 
+use std::sync::LazyLock;
+
 use card_dsl::card_data::{CardKind, CardMetadata};
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{ApplyResult, EngineOutcome, NativeCx};
+use game_core::engine::{ApplyResult, EngineOutcome, NativeCx, Registries};
 use game_core::event::{Event, TraumaKind};
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     Continuation, GameState, GameStateBuilder, InvestigatorId, LocationId, Status,
 };
@@ -101,19 +104,22 @@ fn trauma(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    // `TEST_INV` rides `install`'s composed `metadata_for_test_inv`, so
-    // `max_health()` resolves for the fixture investigator.
-    MockRegistry::new()
-        .with_card(metadata(WEAKNESS, true))
-        .with_card(metadata(WEAKNESS_WHEN_CELL, true))
-        .with_card(metadata(NOT_A_WEAKNESS, false))
-        .with_abilities(WEAKNESS, || game_end_trauma(EventTiming::After))
-        .with_abilities(NOT_A_WEAKNESS, || game_end_trauma(EventTiming::After))
-        .with_abilities(WEAKNESS_WHEN_CELL, || game_end_trauma(EventTiming::When))
-        .with_native_effect(TRAUMA_TAG, trauma)
-        .install();
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        // `TEST_INV` rides `build`'s composed `metadata_for_test_inv`, so
+        // `max_health()` resolves for the fixture investigator.
+        cards: MockRegistry::new()
+            .with_card(metadata(WEAKNESS, true))
+            .with_card(metadata(WEAKNESS_WHEN_CELL, true))
+            .with_card(metadata(NOT_A_WEAKNESS, false))
+            .with_abilities(WEAKNESS, || game_end_trauma(EventTiming::After))
+            .with_abilities(NOT_A_WEAKNESS, || game_end_trauma(EventTiming::After))
+            .with_abilities(WEAKNESS_WHEN_CELL, || game_end_trauma(EventTiming::When))
+            .with_native_effect(TRAUMA_TAG, trauma)
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -141,6 +147,7 @@ fn board_seated(seated: Seat, code: &str, clues_on_card: u8, in_threat_area: boo
         seated.in_play([card])
     };
     GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seated)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .open_turn(INV)
@@ -157,7 +164,9 @@ fn elimination_fires_an_owned_weaknesss_game_end_ability_before_removing_it() {
         events,
         outcome,
         ..
-    } = TestSession::new(state).take_damage(INV, 8).finish();
+    } = TestSession::new_with_registries(state, registries())
+        .take_damage(INV, 8)
+        .finish();
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(state.investigators[&INV].status, Status::Defeated);
@@ -191,7 +200,9 @@ fn elimination_does_not_fire_a_non_weaknesss_game_end_ability() {
         events,
         outcome,
         ..
-    } = TestSession::new(state).take_damage(INV, 8).finish();
+    } = TestSession::new_with_registries(state, registries())
+        .take_damage(INV, 8)
+        .finish();
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(state.investigators[&INV].status, Status::Defeated);
@@ -204,7 +215,9 @@ fn elimination_fires_an_owned_weakness_held_outside_the_threat_area() {
     // play", not "in the threat area" — a weakness among `cards_in_play` (a
     // weakness asset) fires too. Same scan, different zone.
     let state = board(WEAKNESS, 1, false);
-    let ApplyResult { events, .. } = TestSession::new(state).take_damage(INV, 8).finish();
+    let ApplyResult { events, .. } = TestSession::new_with_registries(state, registries())
+        .take_damage(INV, 8)
+        .finish();
 
     assert_event!(events, Event::TraumaSuffered { investigator, .. }
         if *investigator == INV);
@@ -215,7 +228,9 @@ fn a_weakness_whose_condition_fails_suffers_nothing() {
     // The ability fires either way; its own "if there are any clues" condition
     // is what decides. Keeps the positive tests honest about *why* they pass.
     let state = board(WEAKNESS, 0, true);
-    let ApplyResult { state, events, .. } = TestSession::new(state).take_damage(INV, 8).finish();
+    let ApplyResult { state, events, .. } = TestSession::new_with_registries(state, registries())
+        .take_damage(INV, 8)
+        .finish();
 
     assert_eq!(state.investigators[&INV].status, Status::Defeated);
     assert_no_event!(events, Event::TraumaSuffered { .. });
@@ -233,7 +248,9 @@ fn elimination_without_a_step_zero_ability_still_runs_its_steps() {
         events,
         outcome,
         ..
-    } = TestSession::new(state).take_damage(INV, 8).finish();
+    } = TestSession::new_with_registries(state, registries())
+        .take_damage(INV, 8)
+        .finish();
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(state.investigators[&INV].status, Status::Defeated);
@@ -266,7 +283,7 @@ fn interactive_elimination_acknowledges_step_zero_before_running_the_steps() {
     // No builder setter stages `interactive_acknowledge`.
     state.interactive_acknowledge = true;
     let weakness = state.card(INV, WEAKNESS);
-    let paused = TestSession::new(state).take_damage(INV, 8);
+    let paused = TestSession::new_with_registries(state, registries()).take_damage(INV, 8);
 
     // Step 0's forced acknowledge surfaces, anchored to the weakness.
     assert_eq!(
@@ -325,7 +342,9 @@ fn elimination_fires_a_when_cell_weakness_ability() {
         events,
         outcome,
         ..
-    } = TestSession::new(state).take_damage(INV, 8).finish();
+    } = TestSession::new_with_registries(state, registries())
+        .take_damage(INV, 8)
+        .finish();
 
     assert_eq!(
         outcome,

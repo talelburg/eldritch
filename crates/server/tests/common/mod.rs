@@ -1,5 +1,4 @@
-//! Shared helpers for server integration tests: a mock scenario
-//! registry, an in-memory pool, a spawned server, and a websocket
+//! Shared helpers for server integration tests: the mock registries, an in-memory pool, a spawned server, and a websocket
 //! client. Not every test binary uses every helper.
 #![allow(dead_code)]
 
@@ -7,10 +6,11 @@ use std::net::SocketAddr;
 
 use futures_util::{SinkExt as _, StreamExt as _};
 use game_core::action::RosterEntry;
+use game_core::engine::Registries;
 use game_core::event::Event;
 use game_core::scenario::{ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRegistry};
 use game_core::state::{CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder};
-use game_core::{scenario_registry, test_support};
+use game_core::test_support;
 use protocol::{ClientMessage, ServerMessage};
 use server::db::MIGRATOR;
 use server::AppState;
@@ -45,12 +45,12 @@ fn module_for(id: &ScenarioId) -> Option<&'static ScenarioModule> {
     (id.as_str() == TEST_SCENARIO_ID).then_some(&TEST_MODULE)
 }
 
-/// Install the mock scenario registry + the synthetic card registry
-/// (idempotent: second install is a no-op).
-pub fn install_registry() {
-    let _ = scenario_registry::install(ScenarioRegistry { module_for });
-    test_support::install_test_registry();
-}
+/// The mock scenario registry + game-core's synthetic card registry: what
+/// every test that creates a game hands the server.
+pub const REGISTRIES: Registries = Registries {
+    cards: &test_support::TEST_REGISTRY,
+    scenarios: &ScenarioRegistry { module_for },
+};
 
 /// A one-investigator roster using the synthetic `TEST_INV` code.
 pub fn roster() -> Vec<RosterEntry> {
@@ -73,7 +73,7 @@ pub async fn memory_pool() -> SqlitePool {
 
 /// Spawn the server on an ephemeral port; return its bound address.
 pub async fn spawn_server(pool: SqlitePool) -> SocketAddr {
-    let app = server::app(AppState::new(pool));
+    let app = server::app(AppState::new(pool, REGISTRIES));
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind ephemeral port");

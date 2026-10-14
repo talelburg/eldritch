@@ -37,6 +37,7 @@ fn advance_current_act_non_terminal_bumps_cursor() {
 #[test]
 fn advance_current_act_on_a_terminal_act_lets_its_reverse_end_the_scenario() {
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(seat(1))
         .with_turn_order([InvestigatorId(1)])
         .build();

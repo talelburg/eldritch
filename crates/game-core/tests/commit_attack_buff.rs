@@ -10,11 +10,15 @@
 //! `OnCommit` ability yet — Vicious Blow 01025 (the consumer, #240) is the
 //! first; until then this mock skill exercises the full commit path.
 
+use std::sync::LazyLock;
+
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use card_dsl::dsl;
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
+use game_core::engine::Registries;
 use game_core::event::Event;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId, LocationId, TokenModifiers,
 };
@@ -49,12 +53,15 @@ fn skill_metadata() -> CardMetadata {
     }
 }
 
-#[ctor::ctor(unsafe)]
-fn install_mock_registry() {
-    MockRegistry::new()
-        .with_card(skill_metadata())
-        .with_abilities(SKILL, || vec![dsl::on_commit(dsl::boost_attack_damage(1))])
-        .install();
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        cards: MockRegistry::new()
+            .with_card(skill_metadata())
+            .with_abilities(SKILL, || vec![dsl::on_commit(dsl::boost_attack_damage(1))])
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -70,6 +77,7 @@ fn board() -> GameStateBuilder {
     enemy.max_health = 10;
 
     GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).at(HERE).hand([SKILL]))
         .with_location(test_support::test_location(HERE.0, "Study"))
         // Co-located: Fight is location-gated (#401).

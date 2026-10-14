@@ -10,13 +10,18 @@ fn offers_end_turn(state: &GameState) -> bool {
 
 /// `roster` seated through real setup, settled at its mulligan.
 fn seated_at_mulligan(roster: &[RosterEntry]) -> TestSession {
-    TestSession::new(seat_and_open(GameStateBuilder::new().build(), roster).state)
+    TestSession::new_with_registries(
+        seat_and_open_with_registries(GameStateBuilder::new().build(), roster, TEST_REGISTRIES)
+            .state,
+        TEST_REGISTRIES,
+    )
 }
 
 #[test]
 fn end_turn_drains_actions_and_emits_turn_ended() {
     let inv2 = InvestigatorId(2);
     let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .with_seat(seat(2))
         .with_turn_order([INV, inv2])
@@ -50,6 +55,7 @@ fn end_turn_with_no_active_investigator_is_rejected() {
 #[test]
 fn end_turn_outside_investigation_phase_is_rejected() {
     let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_phase(Phase::Mythos)
         .with_seat(seat(1))
         .with_active_investigator(INV)

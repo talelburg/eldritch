@@ -8,6 +8,8 @@
 //! fixture that fires twice where it should fire once shows up as the lead's
 //! ordering prompt where the session should be back at the turn menu.
 
+use std::sync::LazyLock;
+
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use card_dsl::dsl::{
     self, Ability, AttackerScope, EventPattern, EventTiming, InvestigatorTarget, SkillTestKind,
@@ -15,8 +17,9 @@ use card_dsl::dsl::{
 };
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{OptionTarget, TimingEvent};
+use game_core::engine::{OptionTarget, Registries, TimingEvent};
 use game_core::event::Event;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
     GameStateBuilder, InvestigatorId, Location, LocationId, Owner, Phase, Status, TokenModifiers,
@@ -126,50 +129,53 @@ fn game_end_mark() -> Vec<Ability> {
     )]
 }
 
-#[ctor::ctor(unsafe)]
-fn install_mock_registry() {
-    MockRegistry::new()
-        .with_abilities(ON_DEFEAT, || {
-            after_horror(EventPattern::EnemyDefeated {
-                by_controller: false,
-                code: None,
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        cards: MockRegistry::new()
+            .with_abilities(ON_DEFEAT, || {
+                after_horror(EventPattern::EnemyDefeated {
+                    by_controller: false,
+                    code: None,
+                })
             })
-        })
-        .with_abilities(ON_ENTER, || after_horror(EventPattern::EnteredLocation))
-        .with_abilities(ON_LEAVE, || after_horror(EventPattern::LeftLocation))
-        .with_abilities(ON_ATTACHED_INVESTIGATED, || {
-            after_horror(EventPattern::SkillTestResolved {
-                outcome: TestOutcome::Success,
-                kind: Some(SkillTestKind::Investigate),
-                by_controller: false,
-                tested_location: TestedLocationScope::Attached,
+            .with_abilities(ON_ENTER, || after_horror(EventPattern::EnteredLocation))
+            .with_abilities(ON_LEAVE, || after_horror(EventPattern::LeftLocation))
+            .with_abilities(ON_ATTACHED_INVESTIGATED, || {
+                after_horror(EventPattern::SkillTestResolved {
+                    outcome: TestOutcome::Success,
+                    kind: Some(SkillTestKind::Investigate),
+                    by_controller: false,
+                    tested_location: TestedLocationScope::Attached,
+                })
             })
-        })
-        .with_abilities(ON_THIS_ATTACKS, || {
-            after_horror(EventPattern::EnemyAttacks {
-                attacker: AttackerScope::This,
-                target: TargetScope::Any,
+            .with_abilities(ON_THIS_ATTACKS, || {
+                after_horror(EventPattern::EnemyAttacks {
+                    attacker: AttackerScope::This,
+                    target: TargetScope::Any,
+                })
             })
-        })
-        .with_abilities(ON_END_OF_TURN, || {
-            horror_on(EventPattern::EndOfTurn, EventTiming::At)
-        })
-        .with_card(treachery(ON_END_OF_TURN, false))
-        .with_abilities(ON_AGENDA_ADVANCED, || {
-            after_horror(EventPattern::AgendaAdvanced)
-        })
-        .with_abilities(GAME_END_WEAKNESS, game_end_mark)
-        .with_card(treachery(GAME_END_WEAKNESS, true))
-        .with_abilities(GAME_END_NON_WEAKNESS, game_end_mark)
-        .with_card(treachery(GAME_END_NON_WEAKNESS, false))
-        .with_abilities(ON_ROUND_END, || {
-            horror_on(EventPattern::RoundEnded, EventTiming::At)
-        })
-        .with_abilities(REACT_ON_DEFEAT, react_on_defeat)
-        .with_card(treachery(REACT_ON_DEFEAT, false))
-        .with_abilities(FAST_REACT_ON_DEFEAT, react_on_defeat)
-        .with_card(fast_event(FAST_REACT_ON_DEFEAT))
-        .install();
+            .with_abilities(ON_END_OF_TURN, || {
+                horror_on(EventPattern::EndOfTurn, EventTiming::At)
+            })
+            .with_card(treachery(ON_END_OF_TURN, false))
+            .with_abilities(ON_AGENDA_ADVANCED, || {
+                after_horror(EventPattern::AgendaAdvanced)
+            })
+            .with_abilities(GAME_END_WEAKNESS, game_end_mark)
+            .with_card(treachery(GAME_END_WEAKNESS, true))
+            .with_abilities(GAME_END_NON_WEAKNESS, game_end_mark)
+            .with_card(treachery(GAME_END_NON_WEAKNESS, false))
+            .with_abilities(ON_ROUND_END, || {
+                horror_on(EventPattern::RoundEnded, EventTiming::At)
+            })
+            .with_abilities(REACT_ON_DEFEAT, react_on_defeat)
+            .with_card(treachery(REACT_ON_DEFEAT, false))
+            .with_abilities(FAST_REACT_ON_DEFEAT, react_on_defeat)
+            .with_card(fast_event(FAST_REACT_ON_DEFEAT))
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 const ONE: InvestigatorId = InvestigatorId(1);
@@ -217,6 +223,7 @@ fn attaching(mut location: Location, code: &str, id: CardInstanceId) -> Location
 /// investigator 1.
 fn board(one: Seat, two: Seat, study: Location, hallway: Location) -> GameStateBuilder {
     GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(one.at(STUDY))
         .with_seat(two.at(STUDY))
         .with_location(study)
@@ -274,7 +281,7 @@ fn defeat(by: Option<InvestigatorId>) -> TimingEvent {
 /// advance.
 fn fire(state: GameState, event: TimingEvent) -> TestSession {
     let active = state.active_investigator.expect("an open turn");
-    let session = TestSession::new(state).fire_at(event);
+    let session = TestSession::new_with_registries(state, registries()).fire_at(event);
     session.assert_at_turn_menu(active);
     session
 }
@@ -283,7 +290,7 @@ fn fire(state: GameState, event: TimingEvent) -> TestSession {
 /// [`ending_upkeep_phase`](GameStateBuilder::ending_upkeep_phase) — so the
 /// `RoundEnded` scan runs. Play goes on into the next round's Mythos phase.
 fn end_the_round(state: GameState) -> TestSession {
-    let session = TestSession::new(state);
+    let session = TestSession::new_with_registries(state, registries());
     assert_event!(
         session.events(),
         Event::PhaseEnded {
@@ -422,6 +429,7 @@ fn investigating_a_location_fires_only_its_attachments_ability() {
     studied.shroud = 0;
     studied.clues = 1;
     let session = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(ONE.0).at(STUDY).actions(1))
         .with_location(studied)
         .with_location(attaching(
@@ -616,7 +624,7 @@ fn a_board_wide_condition_reaches_every_kind_of_source_in_walk_order() {
 /// The window `event` opens over the open turn. Fired on its own, as
 /// [`fire`] says why.
 fn window(state: GameState, event: TimingEvent) -> TestSession {
-    TestSession::new(state).fire_at(event)
+    TestSession::new_with_registries(state, registries()).fire_at(event)
 }
 
 /// The anchors of the options the reaction window offers after `event`.

@@ -20,6 +20,7 @@ fn mulligan_resolve(indices: &[u32]) -> Action {
 /// composition.
 fn mulligan_board() -> GameStateBuilder {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(
             seat(1)
                 .hand(["h-0", "h-1", "h-2", "h-3", "h-4"])
@@ -226,7 +227,7 @@ fn mulligan_replays_from_the_action_log_bit_for_bit() {
         let mut state = make_initial();
         let mut events = Vec::new();
         for a in log {
-            let result = apply(state, a.clone());
+            let result = apply_with_registries(state, a.clone(), TEST_REGISTRIES);
             assert!(
                 !matches!(result.outcome, EngineOutcome::Rejected { .. }),
                 "replay log action was rejected: {:?}",
@@ -278,7 +279,7 @@ fn mulligan_resolve_with_no_frame_outstanding_is_rejected() {
     // built state rather than through a session.
     let mut state = mulligan_board().build();
     state.continuations = crate::state::ContinuationStack::new();
-    let result = apply(state, mulligan_resolve(&[0]));
+    let result = apply_with_registries(state, mulligan_resolve(&[0]), TEST_REGISTRIES);
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert!(result.events.is_empty());
 }
@@ -311,7 +312,7 @@ fn start_scenario_seeds_mulligan_loop() {
         investigator: CardCode::new(test_support::TEST_INV),
         deck: make_test_deck(10),
     }];
-    let result = seat_and_open(state, &roster);
+    let result = seat_and_open_with_registries(state, &roster, TEST_REGISTRIES);
     assert!(
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
         "seat_and_open opens the mulligan prompt, got {:?}",
@@ -329,6 +330,7 @@ fn non_resolve_input_action_while_mulligan_pending_is_rejected() {
     let mut here = test_support::test_location(HERE.0, "A");
     here.connections = vec![CONNECTED];
     let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
         .with_location(here)
         .with_location(test_support::test_location(CONNECTED.0, "B"))
@@ -358,6 +360,7 @@ fn multi_investigator_mulligan_advances_in_player_order() {
     // each mulligans in player order.
     let inv2 = InvestigatorId(2);
     let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).hand(["a-0"]))
         .with_seat(seat(2).hand(["b-0"]))
         .with_turn_order([INV, inv2])
@@ -379,6 +382,7 @@ fn multi_investigator_real_redraw_plus_empty_mulligan_combo() {
     // hand. Both mulligan; the loop drains after the second.
     let inv2 = InvestigatorId(2);
     let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(
             seat(1)
                 .hand(["a-h-0", "a-h-1", "a-h-2"])

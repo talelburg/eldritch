@@ -91,6 +91,14 @@ impl Registries {
     }
 }
 
+/// The registries game-core's unit tests run against: the test card registry
+/// ([`TEST_REGISTRY`](crate::test_support::TEST_REGISTRY)) and no scenarios.
+#[cfg(test)]
+pub(crate) const TEST_REGISTRIES: Registries = Registries {
+    cards: &crate::test_support::TEST_REGISTRY,
+    scenarios: &ScenarioRegistry::EMPTY,
+};
+
 /// The result of a single [`apply`] call.
 #[derive(Debug, Clone)]
 #[must_use = "the post-apply GameState lives in ApplyResult.state; dropping the result drops the new state"]

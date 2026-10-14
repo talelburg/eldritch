@@ -12,7 +12,11 @@
 //! synthetic enemy `CardMetadata` with `spawn: None` (spawns at the drawer's
 //! location) and no abilities (no Revelation).
 
+use std::sync::LazyLock;
+
 use card_dsl::card_data::{CardKind, CardMetadata, HealthValue, Prey};
+use game_core::engine::Registries;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     CardCode, Continuation, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame,
     MythosResume, Phase,
@@ -49,11 +53,14 @@ fn synth_enemy_metadata() -> CardMetadata {
     }
 }
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    MockRegistry::new()
-        .with_card(synth_enemy_metadata())
-        .install();
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        cards: MockRegistry::new()
+            .with_card(synth_enemy_metadata())
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -63,6 +70,7 @@ const HERE: LocationId = LocationId(1);
 fn enemy_encounter_card_spawns_via_the_disposition_frame() {
     // Mythos step 1.4: `INV` is to draw the top encounter card, the enemy.
     let mut state = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).at(HERE))
         .with_location(test_support::test_location(HERE.0, "Here"))
         .with_turn_order([INV])
@@ -74,7 +82,7 @@ fn enemy_encounter_card_spawns_via_the_disposition_frame() {
         .build();
     // No builder setter stages the encounter deck.
     state.encounter_deck.push_back(CardCode::new(ENEMY));
-    let drawing = TestSession::new(state);
+    let drawing = TestSession::new_with_registries(state, registries());
     drawing.assert_at_encounter_draw();
 
     // Drawing reveals the enemy; it spawns cleanly without a prompt of its own,

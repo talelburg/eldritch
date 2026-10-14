@@ -6,6 +6,7 @@ const RESOURCE: TurnAction = TurnAction::Resource { investigator: INV };
 /// `INV`'s open turn at the Study, with `enemy` (if any) engaged with them.
 fn resource_board(enemy: Option<Enemy>) -> GameStateBuilder {
     let board = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(seat(1).at(HERE).resources(5))
         .open_turn(INV);
@@ -54,6 +55,7 @@ fn resource_action_fires_aoo_from_ready_engaged_enemy() {
 #[test]
 fn resource_action_rejects_wrong_phase() {
     let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_phase(Phase::Mythos)
         .with_seat(seat(1))
         .with_active_investigator(INV)
@@ -66,6 +68,7 @@ fn resource_action_rejects_wrong_phase() {
 fn resource_action_rejects_when_not_active_investigator() {
     let other = InvestigatorId(2);
     let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .with_seat(seat(2))
         .with_turn_order([INV, other])
@@ -78,6 +81,7 @@ fn resource_action_rejects_when_not_active_investigator() {
 #[test]
 fn resource_action_rejects_with_no_actions_remaining() {
     let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).actions(0))
         .open_turn(INV)
         .build();
@@ -88,6 +92,7 @@ fn resource_action_rejects_with_no_actions_remaining() {
 #[test]
 fn resource_action_rejects_when_not_active_status() {
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .open_turn(INV)
         .build();

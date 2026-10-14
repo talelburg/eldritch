@@ -59,6 +59,7 @@ fn registries(cards: &'static CardRegistry) -> Registries {
 /// from dealing empty-deck horror.
 fn state() -> GameState {
     let mut state = GameStateBuilder::new()
+        .with_registries(registries(&TEST_REGISTRY))
         .with_seat(seat(1).deck(["filler-card"]))
         .open_turn(INV)
         .build();
