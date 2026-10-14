@@ -45,6 +45,7 @@ pub const ROLAND_DEFAULT_DECK: &[&str] = &[
 /// [`ROLAND_DEFAULT_DECK`].
 pub const AGNES_DEFAULT_DECK: &[&str] = &[
     "01059", "01059", // Holy Rosary
+    "01061", "01061", // Scrying
     "01062", "01062", // Arcane Studies
     "01064", "01064", // Drawn to the Flame
     "01067", "01067", // Fearless
