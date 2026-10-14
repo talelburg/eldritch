@@ -2301,8 +2301,8 @@ pub struct EmitEventFrame {
     /// this field.
     pub step: EmitStep,
     /// Whether a `when`-cell ability has **prevented** this condition — set by
-    /// [`Effect::Cancel`](card_dsl::dsl::Effect::Cancel) on the topmost frame
-    /// still at [`EmitStep::When`] (Axis D #336; Cover Up 01007, Dodge 01023,
+    /// [`Effect::Cancel`] on the topmost frame still at [`EmitStep::When`]
+    /// (Axis D #336; Cover Up 01007, Dodge 01023,
     /// Ward of Protection 01065). While set, the rest of the sequence is
     /// abandoned: the rest of the `when` cell, the resolve step, and the `at`
     /// and `after` cells (#714). The citations live on
