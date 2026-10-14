@@ -946,8 +946,8 @@ fn draw_cards_effect(
 /// Resolve [`Effect::SearchDeck`]: the resolved investigator looks at a deck
 /// region (`scope`) ∩ `filter`, takes one eligible card to hand (Rules
 /// Reference p.18: obligated if any exist; 0 ⇒ find nothing), then shuffles
-/// the deck. The select reuses the Axis-A choice machinery (cursor replay /
-/// suspend on 2+), exactly like [`apply_choose_one`]. A `Chosen` target is
+/// the deck. The select is a pick among cards in a deck, so it goes through
+/// [`choice::resolve_card_choice`], as a native's would. A `Chosen` target is
 /// already bound by [`ground_chosen_targets`]; the take + shuffle are the only
 /// mutations and run after the pick resolves.
 fn apply_search_deck(
@@ -992,34 +992,23 @@ fn apply_search_deck(
         .collect();
 
     // 3. Choice convention — but 0 ⇒ find nothing (not reject).
-    let chosen_deck_index: Option<usize> =
-        match choice::resolve_choice_count(eligible.len(), cx.state.interactive_acknowledge) {
-            ChoiceResolution::Empty => None,
-            ChoiceResolution::Auto(i) => Some(eligible[i].0),
-            ChoiceResolution::Suspend => {
-                if let Some(OptionId(i)) = eval_ctx.chosen_option() {
-                    match eligible.get(i as usize) {
-                        Some((idx, _)) => Some(*idx),
-                        None => {
-                            return EngineOutcome::Rejected {
-                                reason: format!(
-                                    "SearchDeck: pick {i} out of range (0..{})",
-                                    eligible.len()
-                                )
-                                .into(),
-                            }
-                        }
-                    }
-                } else {
-                    let labels = eligible
-                        .iter()
-                        .map(|(_, c)| choice::card_name(cx.cards, c))
-                        .collect();
-                    suspend_leaf_in_place(cx, node, eval_ctx);
-                    return choice::awaiting_choice("Search: choose a card to take", labels);
-                }
+    let eligible_codes: Vec<CardCode> = eligible.iter().map(|(_, c)| c.clone()).collect();
+    let chosen_deck_index: Option<usize> = match choice::resolve_card_choice(
+        cx.state,
+        cx.cards,
+        &eval_ctx,
+        &eligible_codes,
+        "Search: choose a card to take",
+    ) {
+        Grounded::Empty => None,
+        Grounded::Picked(i) => Some(eligible[i].0),
+        Grounded::Suspend(outcome) => {
+            if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
+                suspend_leaf_in_place(cx, node, eval_ctx);
             }
-        };
+            return outcome;
+        }
+    };
 
     // 4. Take chosen → hand.
     if let Some(idx) = chosen_deck_index {

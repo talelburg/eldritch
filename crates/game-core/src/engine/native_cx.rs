@@ -14,7 +14,7 @@ use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::event::TraumaKind;
 use crate::state::{
-    CardCode, CardInstanceId, EnemyId, GameState, InvestigatorId, LocationId, Owner,
+    CardCode, CardInstanceId, Deck, EnemyId, GameState, InvestigatorId, LocationId, Owner,
     SkillSubstitution, UseKind, Zone,
 };
 
@@ -49,7 +49,8 @@ use crate::state::{
 /// apply's snapshot rollback then undoes what it wrote (#571).
 ///
 /// Read-only helpers, such as
-/// [`resolve_grounded_choice`](crate::engine::resolve_grounded_choice) and
+/// [`resolve_grounded_choice`](crate::engine::resolve_grounded_choice),
+/// [`resolve_card_choice`](crate::engine::resolve_card_choice) and
 /// [`enemy_can_enter_location`](crate::engine::enemy_can_enter_location), are
 /// free functions called on [`state`](Self::state), so asking never counts as
 /// writing. No exit suspends by itself: one that needs a later step, such as an
@@ -253,6 +254,15 @@ impl<'a> NativeCx<'a> {
     /// `None` for an empty hand.
     pub fn discard_random_from_hand(&mut self, investigator: InvestigatorId) -> Option<CardCode> {
         cards::discard_random_from_hand(self.write_access(), investigator)
+    }
+
+    // --- Decks ---
+
+    /// Move the card `from` cards below the top of `deck` to `to` cards below
+    /// the top, returning whether anything moved (an index past the bottom is
+    /// a no-op). No event announces it: a deck's order is hidden.
+    pub fn move_card_in_deck(&mut self, deck: Deck, from: usize, to: usize) -> bool {
+        cards::move_card_in_deck(self.write_access(), deck, from, to)
     }
 
     // --- The encounter deck ---

@@ -19,8 +19,8 @@ use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
-    ActionResume, AssetEntry, CardCode, CardInPlay, DiscardPile, InvestigatorId, MulliganFrame,
-    Owner, PlayFromHandFrame, Zone,
+    ActionResume, AssetEntry, CardCode, CardInPlay, Deck, DiscardPile, InvestigatorId,
+    MulliganFrame, Owner, PlayFromHandFrame, Zone,
 };
 
 /// Starting hand size at scenario setup. Per the Rules Reference,
@@ -367,6 +367,39 @@ pub fn discard_random_from_hand(cx: &mut Cx, investigator: InvestigatorId) -> Op
         to: DiscardPile::Investigator(investigator),
     });
     Some(card)
+}
+
+/// Move the card `from` cards below the top of `deck` to `to` cards below the
+/// top, shifting the cards between them by one (#1047: Scrying 01061 returns
+/// the cards it looked at *"to the top of that deck in any order"*). Returns
+/// whether it moved anything: an index past the bottom, or a missing
+/// investigator, is a no-op.
+///
+/// No event announces it. The deck's order is hidden information, and an event
+/// naming the moved card would put it in every player's log, while one naming
+/// no card would announce nothing the activation hasn't.
+pub(crate) fn move_card_in_deck(cx: &mut Cx, deck: Deck, from: usize, to: usize) -> bool {
+    match deck {
+        Deck::Investigator(id) => {
+            let Some(inv) = cx.state.investigators.get_mut(&id) else {
+                return false;
+            };
+            if from >= inv.deck.len() || to >= inv.deck.len() {
+                return false;
+            }
+            let card = inv.deck.remove(from);
+            inv.deck.insert(to, card);
+        }
+        Deck::Encounter => {
+            let deck = &mut cx.state.encounter_deck;
+            if from >= deck.len() || to >= deck.len() {
+                return false;
+            }
+            let card = deck.remove(from).expect("index checked above");
+            deck.insert(to, card);
+        }
+    }
+    true
 }
 
 /// Grant `amount` resources to `investigator`: saturating-add to the

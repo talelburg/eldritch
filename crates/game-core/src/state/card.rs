@@ -53,6 +53,16 @@ impl fmt::Display for CardCode {
     }
 }
 
+/// One of the decks a card effect can look into: an investigator's deck or
+/// the encounter deck. Both keep their top card at index 0.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Deck {
+    /// This investigator's deck.
+    Investigator(InvestigatorId),
+    /// The encounter deck.
+    Encounter,
+}
+
 /// A card-bearing zone, used as the `from` field on movement events
 /// (e.g. [`Event::CardDiscarded`](crate::event::Event::CardDiscarded)).
 ///
