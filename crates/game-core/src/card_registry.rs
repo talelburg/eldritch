@@ -301,12 +301,13 @@ mod tests {
         assert!((reg.abilities_for)(&code).is_none());
     }
 
-    /// Process-global install. The unit-test binary installs the standard
-    /// test registry (which knows `TEST_INV`) before any test runs (#971), so
-    /// the slot is already occupied here and a further `install` must fail
-    /// (idempotent-by-error semantics of `OnceLock::set`).
+    /// Process-global install. The test installs the standard test registry
+    /// (which knows `TEST_INV`) — no other unit test reads the global, since
+    /// each names its registries — so the slot is occupied and a further
+    /// `install` must fail (idempotent-by-error semantics of `OnceLock::set`).
     #[test]
     fn install_is_idempotent_and_current_reflects_installed_value() {
+        let _ = install(test_support::TEST_REGISTRY);
         let installed = current().expect("registry should be present after install");
         // A second install attempt must return Err (already set).
         assert!(install(fake_registry()).is_err());

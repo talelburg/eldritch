@@ -342,6 +342,7 @@ mod tests {
         let mut ghoul = test_support::test_enemy(1, "Ghoul");
         ghoul.current_location = Some(STUDY);
         GameStateBuilder::new()
+            .with_registries(crate::engine::TEST_REGISTRIES)
             .with_seat(seat(CONTROLLER.0).at(STUDY))
             .with_seat(seat(OWNER.0).at(STUDY))
             .with_location(test_support::test_location(STUDY.0, "Study"))

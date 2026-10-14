@@ -194,6 +194,7 @@ mod tests {
         // Empty set-aside zone — the call must reject before touching the
         // registry or the board, and mint nothing.
         let mut state = GameStateBuilder::new()
+            .with_registries(crate::engine::TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
             .with_turn_order([InvestigatorId(1)])
             .build();
@@ -218,6 +219,7 @@ mod tests {
         // registry — the call must reject without removing the code from the
         // zone (validate-first: no mutation on reject).
         let mut state = GameStateBuilder::new()
+            .with_registries(crate::engine::TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
             .with_turn_order([InvestigatorId(1)])
             .build();

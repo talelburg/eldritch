@@ -39,6 +39,7 @@ fn move_scenario_with_enemy(
     enemy.exhausted = false;
 
     let state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(inv)
         .with_location(loc1)
         .with_location(loc2)
@@ -61,10 +62,12 @@ fn move_with_lethal_aoo_suppresses_relocation_but_keeps_spent_action() {
     // event fires and the investigator does NOT appear at the destination.
     let (inv_id, _l1, l2, _enemy_id, state) = move_scenario_with_enemy(1, 1);
 
-    let session = TestSession::new(state).take(&TurnAction::Move {
-        investigator: inv_id,
-        destination: l2,
-    });
+    let session = TestSession::new_with_registries(state, crate::engine::TEST_REGISTRIES).take(
+        &TurnAction::Move {
+            investigator: inv_id,
+            destination: l2,
+        },
+    );
 
     // The lone investigator's defeat ends the game.
     let result = session.finish();
@@ -102,10 +105,12 @@ fn move_with_nonlethal_aoo_relocates_after_the_attack() {
     // No ability in the test registry → no cancel/soak windows → no suspension.
     let (inv_id, _l1, l2, enemy_id, state) = move_scenario_with_enemy(1, 8);
 
-    let session = TestSession::new(state).take(&TurnAction::Move {
-        investigator: inv_id,
-        destination: l2,
-    });
+    let session = TestSession::new_with_registries(state, crate::engine::TEST_REGISTRIES).take(
+        &TurnAction::Move {
+            investigator: inv_id,
+            destination: l2,
+        },
+    );
 
     session.assert_at_turn_menu(inv_id);
     let result = session.finish();
@@ -165,6 +170,7 @@ fn move_into_enemy_scenario() -> (InvestigatorId, LocationId, EnemyId, GameState
     enemy.exhausted = false;
 
     let state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(inv)
         .with_location(loc1)
         .with_location(loc2)
@@ -182,10 +188,12 @@ fn entering_a_location_engages_a_ready_enemy_there() {
     // Ghoul 01119 waiting at the Cellar — no Aloof keyword.)
     let (inv_id, l2, enemy_id, state) = move_into_enemy_scenario();
 
-    let session = TestSession::new(state).take(&TurnAction::Move {
-        investigator: inv_id,
-        destination: l2,
-    });
+    let session = TestSession::new_with_registries(state, crate::engine::TEST_REGISTRIES).take(
+        &TurnAction::Move {
+            investigator: inv_id,
+            destination: l2,
+        },
+    );
 
     session.assert_at_turn_menu(inv_id);
     let result = session.finish();
@@ -213,10 +221,12 @@ fn entering_a_location_does_not_engage_an_exhausted_enemy() {
     let (inv_id, l2, enemy_id, mut state) = move_into_enemy_scenario();
     state.enemies.get_mut(&enemy_id).unwrap().exhausted = true;
 
-    let session = TestSession::new(state).take(&TurnAction::Move {
-        investigator: inv_id,
-        destination: l2,
-    });
+    let session = TestSession::new_with_registries(state, crate::engine::TEST_REGISTRIES).take(
+        &TurnAction::Move {
+            investigator: inv_id,
+            destination: l2,
+        },
+    );
 
     session.assert_at_turn_menu(inv_id);
     let result = session.finish();
@@ -252,10 +262,12 @@ fn entering_engages_all_ready_enemies_and_leaves_already_engaged_alone() {
     state.enemies.insert(enemy_b, b);
     state.enemies.insert(enemy_c, c);
 
-    let session = TestSession::new(state).take(&TurnAction::Move {
-        investigator: inv_id,
-        destination: l2,
-    });
+    let session = TestSession::new_with_registries(state, crate::engine::TEST_REGISTRIES).take(
+        &TurnAction::Move {
+            investigator: inv_id,
+            destination: l2,
+        },
+    );
 
     session.assert_at_turn_menu(inv_id);
     let result = session.finish();
@@ -301,6 +313,7 @@ fn investigate_scenario_with_enemy(
     enemy.exhausted = false;
 
     let state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(inv)
         .with_location(loc)
         .with_enemy(enemy)
@@ -319,9 +332,11 @@ fn investigate_with_nonlethal_aoo_starts_the_test_after_the_attack() {
     // the investigator is still Active, and took 1 damage.
     let (inv_id, _loc_id, enemy_id, state) = investigate_scenario_with_enemy(8, 1);
 
-    let session = TestSession::new(state).take(&TurnAction::Investigate {
-        investigator: inv_id,
-    });
+    let session = TestSession::new_with_registries(state, crate::engine::TEST_REGISTRIES).take(
+        &TurnAction::Investigate {
+            investigator: inv_id,
+        },
+    );
 
     // The session rests at the skill test's commit window.
     assert_eq!(
@@ -359,9 +374,11 @@ fn investigate_with_lethal_aoo_suppresses_the_test() {
     // test starts, outcome is Done, action was spent, investigator not Active.
     let (inv_id, _loc_id, _enemy_id, state) = investigate_scenario_with_enemy(1, 1);
 
-    let session = TestSession::new(state).take(&TurnAction::Investigate {
-        investigator: inv_id,
-    });
+    let session = TestSession::new_with_registries(state, crate::engine::TEST_REGISTRIES).take(
+        &TurnAction::Investigate {
+            investigator: inv_id,
+        },
+    );
 
     // The lone investigator's defeat ends the game.
     let result = session.finish();
@@ -410,6 +427,7 @@ fn resource_scenario_with_enemy(
     enemy.exhausted = false;
 
     let state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(inv)
         .with_location(loc)
         .with_enemy(enemy)
@@ -425,9 +443,11 @@ fn resource_with_lethal_aoo_suppresses_the_gain() {
     // Investigator has 1 health, enemy deals 1 damage → lethal AoO.
     let (inv_id, _enemy_id, state) = resource_scenario_with_enemy(1, 1);
 
-    let session = TestSession::new(state).take(&TurnAction::Resource {
-        investigator: inv_id,
-    });
+    let session = TestSession::new_with_registries(state, crate::engine::TEST_REGISTRIES).take(
+        &TurnAction::Resource {
+            investigator: inv_id,
+        },
+    );
 
     // The lone investigator's defeat ends the game.
     let result = session.finish();
@@ -461,9 +481,11 @@ fn resource_with_nonlethal_aoo_still_gains() {
     // exhausted (RR p.7), investigator took 1 damage.
     let (inv_id, enemy_id, state) = resource_scenario_with_enemy(1, 8);
 
-    let session = TestSession::new(state).take(&TurnAction::Resource {
-        investigator: inv_id,
-    });
+    let session = TestSession::new_with_registries(state, crate::engine::TEST_REGISTRIES).take(
+        &TurnAction::Resource {
+            investigator: inv_id,
+        },
+    );
 
     session.assert_at_turn_menu(inv_id);
     let result = session.finish();
@@ -508,14 +530,17 @@ fn resource_with_no_engaged_enemy_gains_normally() {
     let loc = test_support::test_location(loc_id.0, "Study");
 
     let state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(inv)
         .with_location(loc)
         .open_turn(inv_id)
         .build();
 
-    let session = TestSession::new(state).take(&TurnAction::Resource {
-        investigator: inv_id,
-    });
+    let session = TestSession::new_with_registries(state, crate::engine::TEST_REGISTRIES).take(
+        &TurnAction::Resource {
+            investigator: inv_id,
+        },
+    );
 
     session.assert_at_turn_menu(inv_id);
     let result = session.finish();
@@ -575,6 +600,7 @@ fn engage_scenario_with_aoo_enemy(
     aoo_enemy.exhausted = false;
 
     let state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(inv)
         .with_location(loc)
         .with_enemy(target)
@@ -592,10 +618,12 @@ fn engage_with_nonlethal_aoo_engages_after_the_attack() {
     // target's engaged_with == Some(investigator), investigator survived.
     let (inv_id, target_id, aoo_enemy_id, state) = engage_scenario_with_aoo_enemy(8, 1);
 
-    let session = TestSession::new(state).take(&TurnAction::Engage {
-        investigator: inv_id,
-        enemy: target_id,
-    });
+    let session = TestSession::new_with_registries(state, crate::engine::TEST_REGISTRIES).take(
+        &TurnAction::Engage {
+            investigator: inv_id,
+            enemy: target_id,
+        },
+    );
 
     session.assert_at_turn_menu(inv_id);
     let result = session.finish();
@@ -644,10 +672,12 @@ fn engage_with_lethal_aoo_suppresses_the_engagement() {
     // The other engaged enemy's AoO defeats the investigator: no EnemyEngaged.
     let (inv_id, target_id, _aoo_enemy_id, state) = engage_scenario_with_aoo_enemy(1, 1);
 
-    let session = TestSession::new(state).take(&TurnAction::Engage {
-        investigator: inv_id,
-        enemy: target_id,
-    });
+    let session = TestSession::new_with_registries(state, crate::engine::TEST_REGISTRIES).take(
+        &TurnAction::Engage {
+            investigator: inv_id,
+            enemy: target_id,
+        },
+    );
 
     // The lone investigator's defeat ends the game.
     let result = session.finish();

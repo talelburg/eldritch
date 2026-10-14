@@ -5,6 +5,7 @@ fn search_deck_top_n_auto_takes_single_eligible() {
     // One card in the deck top; no filter ⇒ sole eligible ⇒ auto-take.
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(seat(1).deck(["90001"]))
         .build();
     let mut events = Vec::new();
@@ -24,7 +25,10 @@ fn search_deck_with_no_eligible_cards_is_find_nothing_not_reject() {
     // Empty deck: 0 eligible ⇒ find nothing, still Done (RR p.18 — a search
     // may legally find nothing; it is NOT a rejection).
     let id = InvestigatorId(1);
-    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
+    let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_seat(seat(1))
+        .build();
     // A seat's deck is empty unless set.
     let mut events = Vec::new();
     let outcome = run(
@@ -40,6 +44,7 @@ fn search_deck_with_no_eligible_cards_is_find_nothing_not_reject() {
 fn search_deck_top_n_suspends_on_two_eligible_then_takes_pick() {
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(seat(1).deck(["90001", "90002", "90003"]))
         .build();
     let mut events = Vec::new();
@@ -62,6 +67,7 @@ fn search_deck_top_n_suspends_on_two_eligible_then_takes_pick() {
 #[test]
 fn search_deck_options_are_labelled_with_card_names_and_unanchored() {
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(seat(1).deck([test_support::TEST_ASSET, test_support::TEST_TREACHERY]))
         .build();
     let mut events = Vec::new();

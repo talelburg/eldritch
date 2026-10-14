@@ -6,6 +6,7 @@ const DRAW: TurnAction = TurnAction::Draw { investigator: INV };
 /// `drawer`'s open turn at A.
 fn draw_board(drawer: Seat) -> GameStateBuilder {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(drawer.at(HERE))
         .with_location(test_support::test_location(HERE.0, "A"))
         .with_rng_seed(13)

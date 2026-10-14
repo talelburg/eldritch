@@ -234,6 +234,7 @@ mod tests {
         let inv = InvestigatorId(1);
         let loc = LocationId(10);
         let mut state = GameStateBuilder::new()
+            .with_registries(crate::engine::TEST_REGISTRIES)
             .with_seat(test_support::seat(1).at(loc))
             .with_location(test_support::test_location(loc.0, "Study"))
             .build();

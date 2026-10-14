@@ -214,6 +214,7 @@ fn registry() -> CardRegistry {
 /// `COSTED_EVENT` in hand.
 fn state() -> GameState {
     GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         // `in_play_as`: every candidate this file builds (`in_play`) names
         // the instance before any state exists, so it is placed at a known id.
         .with_seat(

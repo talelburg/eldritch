@@ -24,9 +24,12 @@ fn assert_at_hand_size_discard(session: &TestSession) {
 fn ending_upkeep_with_hands(hands: &[(u32, Vec<String>)]) -> TestSession {
     hands
         .iter()
-        .fold(GameStateBuilder::new(), |builder, (id, hand)| {
-            builder.with_seat(test_support::seat(*id).hand(hand.iter().map(String::as_str)))
-        })
+        .fold(
+            GameStateBuilder::new().with_registries(crate::engine::TEST_REGISTRIES),
+            |builder, (id, hand)| {
+                builder.with_seat(test_support::seat(*id).hand(hand.iter().map(String::as_str)))
+            },
+        )
         .with_turn_order(hands.iter().map(|(id, _)| InvestigatorId(*id)))
         .ending_upkeep_phase()
         .session()
@@ -38,6 +41,7 @@ fn over_cap_investigators_lists_only_over_eight_in_player_order() {
     let inv2 = InvestigatorId(2);
     // inv1: 9 cards (over), inv2: 8 cards (at cap, not over).
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(test_support::seat(1).hand(["x"; 9]))
         .with_seat(test_support::seat(2).hand(["x"; 8]))
         .with_turn_order([inv2, inv1]) // player order: inv2 first
@@ -57,6 +61,7 @@ fn upkeep_anchor_present_while_suspended_at_hand_size() {
     // The anchor's place on the stack is the subject, so this reads the stack.
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         // Step 4.4 draws 1.
         .with_seat(test_support::seat(1).hand(["x"; 10]).deck(["y"]))
         .with_turn_order([id])
@@ -119,6 +124,7 @@ fn upkeep_resume_parks_at_hand_size_discard() {
     // 13 cards in hand after the step-4.4 draw, still above the 8-card cap;
     // a small deck so the draw doesn't deck out.
     let session = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(
             test_support::seat(1)
                 .hand(hand("h", 12).iter().map(String::as_str))

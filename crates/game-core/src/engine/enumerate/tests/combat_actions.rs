@@ -17,6 +17,7 @@ fn engaged_enemy(id: u32, loc: LocationId) -> Enemy {
 /// Investigator 1's open turn at [`HERE`], the Study.
 fn open_turn_here() -> GameStateBuilder {
     GameStateBuilder::default()
+        .with_registries(engine::TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(seat(1).at(HERE))
         .open_turn(InvestigatorId(1))

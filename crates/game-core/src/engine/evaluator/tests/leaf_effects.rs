@@ -4,6 +4,7 @@ use super::*;
 fn cancel_effect_sets_pending_cancellation() {
     // Effect::Cancel asserts an open window frame is present; stage a minimal one.
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(seat(1))
         .with_open_window(
             FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
@@ -26,7 +27,10 @@ fn cancel_effect_sets_pending_cancellation() {
 /// in-flight test.
 #[test]
 fn boost_attack_damage_accumulates_on_in_flight_test() {
-    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
+    let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_seat(seat(1))
+        .build();
     let mut events = Vec::new();
 
     // No in-flight test: a clean no-op (no panic, nothing to mutate).
@@ -78,7 +82,10 @@ fn boost_attack_damage_accumulates_on_in_flight_test() {
 /// in-flight test.
 #[test]
 fn discover_additional_clues_accumulates_on_in_flight_test() {
-    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
+    let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_seat(seat(1))
+        .build();
     let mut events = Vec::new();
 
     // No in-flight test: a clean no-op (no panic, nothing to mutate).
@@ -129,6 +136,7 @@ fn discover_additional_clues_accumulates_on_in_flight_test() {
 #[test]
 fn draw_cards_effect_draws_for_target() {
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(seat(1).deck(["d1", "d2", "d3"]))
         .build();
     let mut events = Vec::new();
@@ -158,7 +166,10 @@ fn draw_cards_effect_draws_for_target() {
 
 #[test]
 fn attach_self_to_location_rejects_with_no_pending_event() {
-    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
+    let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_seat(seat(1))
+        .build();
     let mut events = Vec::new();
     let outcome = run(
         &mut Cx::for_test(&mut state, &mut events),
@@ -171,7 +182,10 @@ fn attach_self_to_location_rejects_with_no_pending_event() {
 #[test]
 fn put_into_threat_area_with_clues_seeds_the_placed_instance() {
     let id = InvestigatorId(1);
-    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
+    let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_seat(seat(1))
+        .build();
     let mut events = Vec::new();
     let mut cx = Cx::for_test(&mut state, &mut events);
     let outcome = run(
@@ -193,7 +207,10 @@ fn put_into_threat_area_with_clues_seeds_the_placed_instance() {
 #[test]
 fn put_into_threat_area_records_the_revealed_cards_owner() {
     for owner in [Owner::Investigator(InvestigatorId(1)), Owner::EncounterDeck] {
-        let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
+        let mut state = GameStateBuilder::new()
+            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_seat(seat(1))
+            .build();
         let mut events = Vec::new();
         let mut cx = Cx::for_test(&mut state, &mut events);
         let outcome = run(
@@ -213,7 +230,10 @@ fn put_into_threat_area_records_the_revealed_cards_owner() {
 /// guessed: the effect rejects rather than minting an ownerless instance.
 #[test]
 fn put_into_threat_area_outside_a_revelation_rejects() {
-    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
+    let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_seat(seat(1))
+        .build();
     let mut events = Vec::new();
     let outcome = run(
         &mut Cx::for_test(&mut state, &mut events),

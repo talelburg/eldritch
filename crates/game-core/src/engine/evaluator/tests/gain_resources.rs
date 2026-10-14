@@ -3,7 +3,10 @@ use super::*;
 #[test]
 fn gain_resources_increments_target_wallet_and_emits_event() {
     let id = InvestigatorId(1);
-    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
+    let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_seat(seat(1))
+        .build();
     let resources_before = state.investigators[&id].resources;
     let mut events = Vec::new();
 
@@ -27,7 +30,10 @@ fn gain_resources_increments_target_wallet_and_emits_event() {
 #[test]
 fn push_effect_then_drive_runs_to_completion() {
     let id = InvestigatorId(1);
-    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
+    let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_seat(seat(1))
+        .build();
     let resources_before = state.investigators[&id].resources;
     let mut events = Vec::new();
     let mut cx = Cx::for_test(&mut state, &mut events);
@@ -55,7 +61,10 @@ fn gain_resources_zero_amount_is_a_silent_noop() {
     // skips target resolution, so an `Active` target with no
     // active investigator doesn't reject for amount=0.
     let id = InvestigatorId(1);
-    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
+    let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_seat(seat(1))
+        .build();
     let resources_before = state.investigators[&id].resources;
     let mut events = Vec::new();
 
@@ -74,7 +83,10 @@ fn gain_resources_zero_amount_is_a_silent_noop() {
 fn gain_resources_active_target_rejects_without_active_investigator() {
     // No active investigator (default phase is Mythos), so
     // InvestigatorTarget::Active should fail to resolve.
-    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
+    let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_seat(seat(1))
+        .build();
     let mut events = Vec::new();
 
     let outcome = run(

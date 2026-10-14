@@ -15,6 +15,7 @@ fn reengage_at_location_engages_sole_co_located_survivor() {
         e
     };
     let mut state = GameStateBuilder::default()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(survivor)
         .with_location(test_support::test_location(1, "Study"))
         .with_enemy(enemy)
@@ -65,6 +66,7 @@ fn reengage_at_location_tie_auto_picks_lead_first_in_turn_order() {
         e
     };
     let mut state = GameStateBuilder::default()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(test_support::seat(2).at(loc))
         .with_seat(test_support::seat(3).at(loc))
         .with_location(test_support::test_location(1, "Study"))
@@ -97,6 +99,7 @@ fn reengage_at_location_exhausted_enemy_does_not_engage() {
         e
     };
     let mut state = GameStateBuilder::default()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(survivor)
         .with_location(test_support::test_location(1, "Study"))
         .with_enemy(enemy)

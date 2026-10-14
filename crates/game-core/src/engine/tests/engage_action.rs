@@ -17,6 +17,7 @@ fn enemy_at(id: u32, name: &str, location: LocationId) -> Enemy {
 /// `investigator`'s open turn at the Study.
 fn engage_board(investigator: Seat) -> GameStateBuilder {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(investigator)
         .open_turn(INV)

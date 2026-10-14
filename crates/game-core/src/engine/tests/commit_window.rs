@@ -3,6 +3,7 @@ use super::*;
 /// `INV`'s open turn holding `hand`, with a `Numeric(0)` bag.
 fn commit_board(hand: &[&str]) -> GameStateBuilder {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).hand(hand.iter().copied()))
         .with_chaos_bag(bag_only_zero())
         .open_turn(INV)
@@ -187,11 +188,12 @@ fn resolve_input_without_any_outstanding_prompt_rejects() {
     // resume. The empty stack is the moment under test, so the state is
     // applied to directly rather than settled into a session.
     let state = GameStateBuilder::new().build();
-    let result = apply(
+    let result = apply_with_registries(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple { selected: vec![] },
         }),
+        TEST_REGISTRIES,
     );
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
 }

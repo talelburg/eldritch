@@ -69,6 +69,7 @@ fn defeat_with_no_turn_frame_at_all_is_a_no_op() {
     // `InvestigatorTurn` frame exists, so there is nothing to end.
     let dead = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_phase(Phase::Mythos)
         .with_seat(test_support::seat(1))
         .with_turn_order([dead])

@@ -121,6 +121,7 @@ mod tests {
     /// A board with one card in play *at* a location under nobody's control.
     fn board_with_uncontrolled_card() -> GameState {
         let mut state = GameStateBuilder::new()
+            .with_registries(crate::engine::TEST_REGISTRIES)
             .with_seat(test_support::seat(1).at(HERE))
             .with_location(test_support::test_location(HERE.0, "Study"))
             .build();

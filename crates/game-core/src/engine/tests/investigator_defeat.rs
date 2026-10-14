@@ -304,6 +304,7 @@ fn defeated_investigator_cannot_perform_skill_test() {
     // investigator 1 test.
     let inv2 = InvestigatorId(2);
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .with_seat(seat(2))
         .with_turn_order([INV, inv2])
@@ -311,7 +312,11 @@ fn defeated_investigator_cannot_perform_skill_test() {
         .open_turn(inv2)
         .build();
     state.investigators.get_mut(&INV).unwrap().status = Status::Defeated;
-    let session = TestSession::new(state).test_skill(INV, SkillKind::Willpower, 0);
+    let session = TestSession::new_with_registries(state, TEST_REGISTRIES).test_skill(
+        INV,
+        SkillKind::Willpower,
+        0,
+    );
     session.expect_rejected();
     session.assert_at_turn_menu(inv2);
     assert!(session.finish().events.is_empty());

@@ -30,12 +30,19 @@
 //! ```
 //! use game_core::action::{Action, InputResponse, PlayerAction};
 //! use game_core::engine::EngineOutcome;
+//! use game_core::engine::Registries;
+//! use game_core::scenario::ScenarioRegistry;
 //! use game_core::state::GameStateBuilder;
+//! use game_core::test_support::TEST_REGISTRY;
 //!
 //! // A `ResolveInput` against a bare state with no outstanding prompt
 //! // rejects — a tiny smoke test for the fluent API without needing a
 //! // real chaos bag or any setup.
 //! let session = GameStateBuilder::new()
+//!     .with_registries(Registries {
+//!         cards: &TEST_REGISTRY,
+//!         scenarios: &ScenarioRegistry::EMPTY,
+//!     })
 //!     .session()
 //!     .apply(Action::Player(PlayerAction::ResolveInput {
 //!         response: InputResponse::Skip,
@@ -741,7 +748,7 @@ mod tests {
                 response: InputResponse::Confirm,
             }),
             &mut ScriptedResolver::new(),
-            engine::apply,
+            |state, action| engine::apply_with_registries(state, action, engine::TEST_REGISTRIES),
         );
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     }
@@ -753,6 +760,7 @@ mod tests {
     fn flag_on_confirming_the_acknowledge_resolves_the_test() {
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
+            .with_registries(engine::TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
             .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
             .open_turn(inv)
@@ -760,7 +768,7 @@ mod tests {
         // No builder setter for the acknowledge flag.
         state.interactive_acknowledge = true;
 
-        let session = TestSession::new(state)
+        let session = TestSession::new_with_registries(state, engine::TEST_REGISTRIES)
             .test_skill(inv, SkillKind::Willpower, 2)
             .commit(&[]);
         assert_eq!(

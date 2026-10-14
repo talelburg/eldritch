@@ -125,6 +125,7 @@ fn mock_registry() -> CardRegistry {
 fn state_with_cards_in_play(codes: &[&str]) -> (GameState, InvestigatorId) {
     let id = InvestigatorId(1);
     let state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(seat(id.0).in_play(codes.iter().copied()))
         .build();
     (state, id)
@@ -170,6 +171,7 @@ fn recorded_for(
 /// (printed shroud 2) and one enemy (printed fight 2, evade 2).
 fn state_with_test(basis: DifficultyBasis) -> GameState {
     let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
         .with_seat(seat(1))
         .with_location(test_support::test_location(3, "Study"))
         .with_enemy(test_support::test_enemy(7, "Ghoul"))

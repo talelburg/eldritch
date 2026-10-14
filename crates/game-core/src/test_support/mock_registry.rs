@@ -40,7 +40,7 @@ static TABLES: OnceLock<MockRegistry> = OnceLock::new();
 /// use card_dsl::dsl::{self, ModifierScope, Stat};
 /// use game_core::test_support::MockRegistry;
 ///
-/// MockRegistry::new()
+/// let cards = MockRegistry::new()
 ///     .with_abilities("_doc_probe", || {
 ///         vec![dsl::constant(dsl::modify(
 ///             Stat::Willpower,
@@ -48,7 +48,8 @@ static TABLES: OnceLock<MockRegistry> = OnceLock::new();
 ///             ModifierScope::WhileInPlay,
 ///         ))]
 ///     })
-///     .install();
+///     .build();
+/// # assert!((cards.abilities_for)(&"_doc_probe".into()).is_some());
 /// ```
 ///
 /// A card's metadata rides [`with_card`](MockRegistry::with_card), which takes a

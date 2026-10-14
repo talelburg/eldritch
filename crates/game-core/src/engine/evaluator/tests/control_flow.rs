@@ -84,7 +84,10 @@ fn if_skill_test_kind_runs_else_branch_when_present_and_kind_differs() {
 
 #[test]
 fn if_skill_test_kind_rejects_without_in_flight_test() {
-    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
+    let mut state = GameStateBuilder::new()
+        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_seat(seat(1))
+        .build();
     let mut events = Vec::new();
     let effect = dsl::if_(
         Condition::SkillTestKind(SkillTestKind::Investigate),

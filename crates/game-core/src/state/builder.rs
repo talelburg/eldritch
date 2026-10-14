@@ -13,6 +13,12 @@
 //! use game_core::engine::enumerate::TurnAction;
 //! use game_core::state::{GameStateBuilder, InvestigatorId};
 //! use game_core::test_support;
+//! # use game_core::engine::Registries;
+//! # use game_core::scenario::ScenarioRegistry;
+//! # let registries = Registries {
+//! #     cards: &test_support::TEST_REGISTRY,
+//! #     scenarios: &ScenarioRegistry::EMPTY,
+//! # };
 //!
 //! let state = GameStateBuilder::new()
 //!     .with_investigator(test_support::test_investigator(1))
@@ -24,7 +30,8 @@
 //!     .build();
 //!
 //! // Investigator 1 ends their turn, which opens investigator 2's.
-//! let session = test_support::TestSession::new(state).take(&TurnAction::EndTurn);
+//! let session = test_support::TestSession::new_with_registries(state, registries)
+//!     .take(&TurnAction::EndTurn);
 //! session.assert_at_turn_menu(InvestigatorId(2));
 //! ```
 
@@ -601,6 +608,7 @@ mod with_open_window_tests {
     #[test]
     fn with_open_window_pushes_onto_the_stack() {
         let state = GameStateBuilder::new()
+            .with_registries(crate::engine::TEST_REGISTRIES)
             .with_seat(seat(1))
             .with_open_window(
                 FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
@@ -624,6 +632,7 @@ mod with_open_window_tests {
     #[test]
     fn with_open_window_stacks_in_order() {
         let state = GameStateBuilder::new()
+            .with_registries(crate::engine::TEST_REGISTRIES)
             .with_seat(seat(1))
             .with_open_window(
                 FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
