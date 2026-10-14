@@ -8,10 +8,9 @@
 //! `Numeric(0)`, so the only thing that can push the total over the
 //! line is the committed cards.
 //!
-//! Lives at `crates/cards/tests/` so it can install
-//! [`cards::REGISTRY`] without colliding with `game-core`'s in-crate
-//! tests (which deliberately don't install one and would see
-//! `metadata_for == None`, contributing zero icons).
+//! Lives at `crates/cards/tests/` so it can run against
+//! `cards::TEST_REGISTRIES`; `game-core`'s in-crate tests can't reach the
+//! corpus and would see `metadata_for == None`, contributing zero icons.
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::InputKind;
@@ -184,7 +183,7 @@ fn committing_overpower_to_an_intellect_test_is_rejected() {
 #[test]
 fn awaiting_input_emits_between_started_and_revealed_for_real_card_state() {
     // Sanity check that the pause point lands in the right spot when
-    // the registry is installed and the hand has real cards. Starting the
+    // the registry is the real one and the hand has real cards. Starting the
     // test rests at the commit window; the chaos token hasn't been drawn yet.
     let paused = test_with_hand(&[PERCEPTION]);
     assert_eq!(paused.prompt().kind, InputKind::PickMultiple);

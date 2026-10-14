@@ -1,7 +1,7 @@
 //! Registry-backed tests for the legal-action enumerator (#393 slice 2a-ii):
 //! the card actions (`PlayCard`, `ActivateAbility`, added in 2a-ii-3) plus the
 //! whole-enumeration sweep covering every action category (2a-ii-4). These need
-//! real card metadata/abilities, so they install `cards::REGISTRY` and live here
+//! real card metadata/abilities, so they run against `cards::TEST_REGISTRIES` and live here
 //! rather than in `game-core`'s registry-less unit tests.
 
 use cards::TEST_REGISTRIES;

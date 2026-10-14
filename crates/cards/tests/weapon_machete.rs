@@ -12,7 +12,7 @@
 //! - engaged with nothing → `1`;
 //! - enemy engaged with another investigator → `1` (both FAQ exclusions).
 //!
-//! Own process → installs `cards::REGISTRY`.
+//! Runs against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
 use game_core::assert_event;

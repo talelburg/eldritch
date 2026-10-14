@@ -1,6 +1,6 @@
 //! End-to-end Dodge 01023 + Guard Dog 01021 against attacks of opportunity
-//! (`AoO`), driven step by step through a `TestSession` with the real card corpus
-//! installed (#293 acceptance — K1 keystone integration test).
+//! (`AoO`), driven step by step through a `TestSession` against the real card
+//! corpus (#293 acceptance — K1 keystone integration test).
 //!
 //! These are the registry-backed proofs that the mid-action park / resume
 //! mechanism works end-to-end: when a basic action (Move) fires an `AoO`, the
@@ -9,7 +9,7 @@
 //! engine suspends with `AwaitingInput`, and the action's primary effect
 //! (the move) resumes correctly after `ResolveInput` closes the window.
 //!
-//! `game-core`'s unit tests can't install `cards::REGISTRY` (the engine crate
+//! `game-core`'s unit tests can't reach `cards::REGISTRY` (the engine crate
 //! can't depend on `cards`), so this lives in `crates/cards/tests/`.
 //!
 //! ## Verified card text (`ArkhamDB`, 2026-06-21)

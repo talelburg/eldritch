@@ -11,7 +11,7 @@
 //! (RR Appendix I step 4) rather than stranded in hand — it rides its
 //! `Continuation::PlayFromHand` frame in the meantime.
 //!
-//! Own process → installs `cards::REGISTRY`.
+//! Runs against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;

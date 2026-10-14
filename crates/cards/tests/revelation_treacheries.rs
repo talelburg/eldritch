@@ -1,7 +1,7 @@
 //! Integration: The Gathering's four one-shot Revelation treacheries
 //! (C4b, #234) resolved through the real `cards` registry and the full
-//! `apply` → commit-window → resolve → discard pipeline. Own process so
-//! it can install the process-global registry against the real corpus.
+//! `apply` → commit-window → resolve → discard pipeline, against the real
+//! corpus.
 //!
 //! The skill-test margin math and the suspended-revelation discard
 //! mechanism are unit-tested in game-core (#286); here we prove the

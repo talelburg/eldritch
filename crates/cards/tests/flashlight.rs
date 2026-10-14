@@ -8,7 +8,7 @@
 //! activation rejects before spending a supply when there is no revealed
 //! location to investigate.
 //!
-//! Own process → installs `cards::REGISTRY`.
+//! Runs against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
 use game_core::assert_event;

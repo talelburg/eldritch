@@ -8,7 +8,7 @@
 //! co-located investigator), so the only suspend is the top-3 card pick. The
 //! exhaust cost is paid before the effect runs.
 //!
-//! Own process → installs `cards::REGISTRY`.
+//! Runs against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
 use game_core::action::{Action, InputResponse, PlayerAction};

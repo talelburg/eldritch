@@ -4,10 +4,9 @@
 //! `EndTurn` → `DrawEncounterCard`, verifying the per-card 5-step
 //! sub-sequence and the post-1.4 Fast window end-to-end.
 //!
-//! Lives in `crates/cards/tests/` (ADR 0016) so it can install the real
-//! `cards::REGISTRY`: `game-core` cannot reach the corpus by crate direction,
-//! and each `tests/*.rs` is its own process, so this install does not collide
-//! with the registries other integration binaries claim.
+//! Lives in `crates/cards/tests/` (ADR 0016) so it can run against
+//! `cards::TEST_REGISTRIES`: `game-core` cannot reach the corpus by crate
+//! direction.
 //!
 //! The cards, all Core Set, all verified against
 //! `data/arkhamdb-snapshot/pack/core/` and their rulings files:
@@ -113,7 +112,7 @@ fn agenda_doom_threshold(code: &str) -> u8 {
 /// not hand-stamped onto a `test_location`: shroud, printed clues and victory
 /// come off card 01113 rather than from a fixture wearing its code, which is
 /// the impersonation ADR 0016 forbids. Its *"**Forced** - After you enter the
-/// Attic: Take 1 horror."* is live in the installed registry and simply never
+/// Attic: Take 1 horror."* is live in the registry and simply never
 /// fires — only the Move action emits `EnteredLocation`, and `seat_and_open`
 /// *places* the roster rather than moving it.
 fn board() -> (GameState, LocationId) {

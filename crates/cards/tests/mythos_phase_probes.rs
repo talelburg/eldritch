@@ -4,9 +4,9 @@
 //! The rest of the group runs against real Core Set cards in
 //! `mythos_phase.rs`. These three tests need card *shapes* the corpus does not
 //! supply, so their probes are declared inline here (ADR 0016: a probe card is
-//! test-local, and belongs in the file that reads it). The binary installs a
-//! [`MockRegistry`] rather than `cards::REGISTRY`; the two cannot coexist in
-//! one process, which is why this is its own file.
+//! test-local, and belongs in the file that reads it). The binary builds a
+//! [`MockRegistry`] rather than naming `cards::TEST_REGISTRIES`, and a process
+//! builds at most one mock, which is why this is its own file.
 //!
 //! # Why each probe is not a real card
 //!

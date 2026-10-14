@@ -2,7 +2,7 @@
 //! real `cards::REGISTRY` — the +1 intellect constant ability and the
 //! after-successful-investigate reaction (engine window from #241).
 //!
-//! Own process → installs `cards::REGISTRY`.
+//! Runs against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;

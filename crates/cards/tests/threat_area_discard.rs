@@ -19,7 +19,7 @@
 //! bearer's location, so the pile that receives the card is decided by the
 //! owner, not by who activated it or whose threat area held it.
 //!
-//! Own integration-test binary so it can install its own `MockRegistry`.
+//! Own integration-test binary so it can build its own `MockRegistry`.
 
 use card_dsl::card_data::{CardKind, CardMetadata};
 use card_dsl::dsl::{self, Ability, Cost, InvestigatorTarget};

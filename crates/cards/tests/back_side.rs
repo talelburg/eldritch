@@ -1,7 +1,6 @@
 //! Integration: double-sided cards carry their reverse side
 //! (`back_name`/`back_text`) through the pipeline into the corpus (#558,
-//! slice 1). Own process so it can install the process-global registry
-//! against the real `cards` corpus.
+//! slice 1), against the real `cards` corpus.
 
 use cards::TEST_REGISTRIES;
 use game_core::state::CardCode;

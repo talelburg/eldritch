@@ -1,6 +1,6 @@
 //! Integration (#735): an attacking enemy's own forced ability anchors its
-//! acknowledge to **that enemy**, not to the flat prompt bar. Own process →
-//! installs the real `cards::REGISTRY`.
+//! acknowledge to **that enemy**, not to the flat prompt bar. Runs against
+//! `cards::TEST_REGISTRIES`.
 //!
 //! The corpus card is Silver Twilight Acolyte 01102, whose printed text is
 //! verbatim:

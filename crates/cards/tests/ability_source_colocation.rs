@@ -25,7 +25,7 @@
 //! answers, without a registry — is `engine::ability_source`'s unit tests,
 //! which build the same board shape one crate down.
 //!
-//! Own integration-test binary so it can install its own `MockRegistry`.
+//! Own integration-test binary so it can build its own `MockRegistry`.
 //! The abilities are **purpose-built** rather than borrowed from the corpus, so
 //! that "reachable here" and "unreachable there" differ only in the source: the
 //! same three probes sit on the location, on the enemy, on the threat-area card

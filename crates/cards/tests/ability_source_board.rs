@@ -23,7 +23,7 @@
 //! checking that the widening did not turn the forced act and agenda abilities
 //! The Gathering ships into activations, is `enumerate_actions.rs`.
 //!
-//! Own integration-test binary so it can install its own `MockRegistry`.
+//! Own integration-test binary so it can build its own `MockRegistry`.
 //! **No corpus card can exercise this**: the act and agenda abilities the
 //! corpus prints — the resigns on Predator or Prey? 01121a and Time Is Running
 //! Short 01122 (*"[action]: **Resign.** You don't want to risk taking too long,

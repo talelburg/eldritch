@@ -1,6 +1,6 @@
 //! Attacks of opportunity provoked by **activated abilities** (#361, K3 of the
-//! keystone arc), driven through the public [`apply`] API with the real card
-//! corpus installed.
+//! keystone arc), driven through the public [`apply`] API against the real card
+//! corpus.
 //!
 //! Per the Rules Reference (p.5, "Attack of Opportunity"): an investigator
 //! engaged with one or more ready enemies who takes an action **other than to
@@ -12,7 +12,7 @@
 //! fast ability (`action_cost == 0`, e.g. Beat Cop 01018) is not an action and
 //! never provokes.
 //!
-//! `game-core`'s unit tests can't install `cards::REGISTRY` (the engine crate
+//! `game-core`'s unit tests can't reach `cards::REGISTRY` (the engine crate
 //! can't depend on `cards`), so this lives in `crates/cards/tests/`. The `AoO`
 //! window/suspend mechanism itself is covered by `dodge_aoo.rs` /
 //! `guard_dog_soak.rs` (K1); these tests prove the **new firing sites** route

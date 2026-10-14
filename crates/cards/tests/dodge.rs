@@ -1,8 +1,8 @@
 //! End-to-end Dodge 01023: cancel an enemy-phase attack, driven through the
-//! public [`apply`] API with the real card corpus installed (#305 / Axis D
+//! public [`apply`] API against the real card corpus (#305 / Axis D
 //! #336).
 //!
-//! `game-core`'s unit tests can't install `cards::REGISTRY` (the engine crate
+//! `game-core`'s unit tests can't reach `cards::REGISTRY` (the engine crate
 //! can't depend on `cards`), so the before-attack cancel window's end-to-end
 //! behaviour — Dodge offered from hand, played, the attack cancelled — is
 //! covered here.
@@ -112,7 +112,7 @@ fn dodge_in_hand_of(holder: InvestigatorId) -> OptionTarget {
 /// The suppression is #714's, in the coordinator; what #704 adds is that the
 /// attack now walks its cells at all, so the Acolyte's forced ability sits in a
 /// cell the cancel can suppress. Verified against the real corpus: 01102's
-/// abilities come from the installed `cards::REGISTRY`.
+/// abilities come from the real `cards::REGISTRY`.
 #[test]
 fn dodging_a_silver_twilight_acolyte_stops_its_forced_doom() {
     // The `when` cell offers Dodge; play it → the attack is prevented, so its

@@ -6,9 +6,9 @@
 //! Before this, the commit window accepted anything in hand, which made
 //! commit a free discard outlet (dump a weakness, cf. #646).
 //!
-//! Driven against the real `cards::REGISTRY` so the icons under test are the
-//! ones the pipeline actually compiled, not fabricated fixtures. Own process →
-//! installs the registry, mirroring `commit_cap.rs`.
+//! Driven against the real corpus (`cards::TEST_REGISTRIES`) so the icons under
+//! test are the ones the pipeline actually compiled, not fabricated fixtures,
+//! mirroring `commit_cap.rs`.
 
 use cards::TEST_REGISTRIES;
 use game_core::state::{

@@ -1,6 +1,6 @@
 //! Attacks of opportunity provoked by **playing an action-cost card** (#378, K3
-//! of the keystone arc), driven through the public [`apply`] API with the real
-//! card corpus installed.
+//! of the keystone arc), driven through the public [`apply`] API against the
+//! real card corpus.
 //!
 //! Per the Rules Reference (p.5, "Attack of Opportunity"), playing a card is an
 //! action, so playing a **non-fast** card (asset or event) while engaged with a
@@ -14,7 +14,7 @@
 //! This also covers the missing non-fast play-action charge folded into #378:
 //! before this slice, playing a non-fast card spent no action at all.
 //!
-//! `game-core`'s unit tests can't install `cards::REGISTRY`, so this lives in
+//! `game-core`'s unit tests can't reach `cards::REGISTRY`, so this lives in
 //! `crates/cards/tests/`. The `AoO` window/suspend mechanism is covered by
 //! `dodge_aoo.rs` / `guard_dog_soak.rs` (K1); these tests prove the **new
 //! firing site** routes through it.

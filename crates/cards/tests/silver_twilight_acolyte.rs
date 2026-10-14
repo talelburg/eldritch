@@ -1,5 +1,5 @@
-//! Silver Twilight Acolyte 01102 carries its owner (#977). Own process →
-//! installs the real `cards::REGISTRY`.
+//! Silver Twilight Acolyte 01102 carries its owner (#977). Runs against
+//! `cards::TEST_REGISTRIES`.
 //!
 //! The card is a basic weakness enemy, printed verbatim:
 //!

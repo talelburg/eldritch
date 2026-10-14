@@ -47,7 +47,7 @@
 //! the recipient has not got, an address that goes stale — are in
 //! `granted_ability.rs`, on a synthetic registry.
 //!
-//! Own process → installs `cards::REGISTRY`.
+//! Runs against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{self, TurnAction};

@@ -2,7 +2,7 @@
 //! `cards::REGISTRY` — the 3-clue threat-area Revelation, the before-timing
 //! clue-discovery interrupt, and the game-end mental-trauma forced point.
 //!
-//! Own process → installs `cards::REGISTRY`. The interrupt / game-end shapes
+//! Runs against `cards::TEST_REGISTRIES`. The interrupt / game-end shapes
 //! were first proved by the C5a synthetic fixture; that fixture's test binary is
 //! gone (#871, ADR 0016) and this file is its successor.
 

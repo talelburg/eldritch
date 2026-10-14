@@ -2,7 +2,7 @@
 //! 1 damage) surfaces a one-option acknowledge *before* the harm lands when
 //! `interactive_acknowledge` is on, and resolves synchronously when it is off.
 //!
-//! Own process → installs `cards::REGISTRY`. The forced effect is driven through
+//! Runs against `cards::TEST_REGISTRIES`. The forced effect is driven through
 //! the real `EnteredLocation` timing point by taking the Move into the location;
 //! the interactive pause is then resumed by picking the acknowledge (the same
 //! way a host resumes an `AwaitingInput`).

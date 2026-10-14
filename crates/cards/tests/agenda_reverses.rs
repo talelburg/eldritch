@@ -1,6 +1,5 @@
 //! Integration: The Gathering's agenda reverses fire on advance, through
-//! the real card registry (#281). Own process so it can install the
-//! process-global registry against the real `cards` corpus.
+//! the real card registry (#281).
 //!
 //! Drives the reverses through the real advance: the round ends one doom
 //! short of the agenda's threshold, so the next Mythos phase's step-1.2 doom

@@ -3,7 +3,7 @@
 //! on success, adds +1 to the attack's damage via its `OnCommit`
 //! `BoostAttackDamage(1)` ability (engine machinery from #307 / PR #308).
 //!
-//! Own process → installs `cards::REGISTRY`.
+//! Runs against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
 use game_core::assert_event;

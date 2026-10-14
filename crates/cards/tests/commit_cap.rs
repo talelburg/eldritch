@@ -3,7 +3,7 @@
 //! carries `commit_limit: Some(1)`, so committing two copies to one test
 //! is rejected; committing one is fine.
 //!
-//! Own process → installs `cards::REGISTRY`.
+//! Runs against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
 use game_core::state::{

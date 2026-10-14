@@ -45,7 +45,7 @@
 //! 01109b's own contract — printed order, and preconditions checked up front —
 //! separately.
 //!
-//! Own process → installs `cards::REGISTRY`.
+//! Runs against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
 use game_core::assert_event;

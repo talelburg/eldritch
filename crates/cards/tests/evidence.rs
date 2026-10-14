@@ -6,8 +6,8 @@
 //! > Fast. Play after you defeat an enemy.
 //! > Discover 1 clue at your location.
 //!
-//! Lives at `crates/cards/tests/` so it can install [`cards::REGISTRY`] in its
-//! own integration-test process.
+//! Lives at `crates/cards/tests/` so it can run against
+//! `cards::TEST_REGISTRIES`, which `game-core` cannot reach by crate direction.
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;

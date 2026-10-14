@@ -1,5 +1,5 @@
 //! A defeated active investigator's turn ends (#764), driven through the public
-//! `apply` loop with the real card corpus installed.
+//! `apply` loop against the real card corpus.
 //!
 //! Before this, `apply_investigator_elimination` flipped the status and ran the
 //! elimination steps but left the `InvestigatorTurn` frame on top with

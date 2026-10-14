@@ -2,7 +2,7 @@
 //! the real `cards::REGISTRY`. Verifies the clue-conditional combat
 //! modifier (+3 with a clue on the location, +1 without) and ammo spend.
 //!
-//! Own process → installs `cards::REGISTRY`.
+//! Runs against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;

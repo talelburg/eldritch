@@ -10,7 +10,7 @@
 //! investigator. In solo the choice auto-binds to the controller (one
 //! candidate at the location), so no choice suspend occurs.
 //!
-//! Own process → installs `cards::REGISTRY`.
+//! Runs against `cards::TEST_REGISTRIES`.
 
 use card_dsl::dsl::HarmKind;
 use cards::TEST_REGISTRIES;

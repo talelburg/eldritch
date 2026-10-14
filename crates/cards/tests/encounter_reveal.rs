@@ -10,10 +10,9 @@
 //!   its Revelation effect, and discards the card.
 //! - Empty-deck reject when both deck and discard are empty.
 //!
-//! Lives in `crates/cards/tests/` (ADR 0016) because it installs the real
-//! `cards::REGISTRY`: `game-core` cannot reach the corpus by crate direction,
-//! and each `tests/*.rs` is its own process, so this install does not collide
-//! with the registries other integration binaries claim.
+//! Lives in `crates/cards/tests/` (ADR 0016) because it runs against
+//! `cards::TEST_REGISTRIES`: `game-core` cannot reach the corpus by crate
+//! direction.
 //!
 //! The cards, all Core Set, all verified against
 //! `data/arkhamdb-snapshot/pack/core/` and their rulings files:

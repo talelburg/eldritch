@@ -33,9 +33,7 @@
 //!
 //! Why this file exists at the `cards/tests/` layer: it needs real card
 //! metadata + abilities from the `cards` corpus, which `game-core` itself
-//! cannot reach by crate-dependency direction. Each `tests/*.rs` is its
-//! own process so `install(cards::REGISTRY)` does not collide with the
-//! other integration test binaries.
+//! cannot reach by crate-dependency direction.
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;

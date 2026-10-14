@@ -1,7 +1,7 @@
 //! B2: seating a roster resolves investigator stats from the real corpus
 //! ([`game_core::card_registry::CardRegistry`]) and takes the deck from the payload. Integration test so
-//! it can install `cards::REGISTRY` in its own process (per the test layering
-//! in `docs/agents/standards.md`).
+//! it can run against `cards::TEST_REGISTRIES` (per the test layering in
+//! `docs/agents/standards.md`).
 
 use cards::TEST_REGISTRIES;
 use game_core::action::RosterEntry;

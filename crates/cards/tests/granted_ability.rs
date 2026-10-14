@@ -20,7 +20,7 @@
 //! `docs/adr/0014-a-granted-ability-is-a-constant-effect-swept-off-the-board.md`
 //! has the argument.
 //!
-//! Own integration-test binary so it can install its own `MockRegistry`.
+//! Own integration-test binary so it can build its own `MockRegistry`.
 //! The corpus peer — the Parlor 01115 granting Lita Chantler 01117 her Parley,
 //! end to end — is `lita_parley.rs`; these cases are the ones no printed card
 //! reaches (a granted grant, a grant conditioned on a "you" the recipient has

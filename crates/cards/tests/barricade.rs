@@ -11,7 +11,7 @@
 //! The movement tests drive the real Enemy phase via `EndTurn` (hunter
 //! movement is step 3.2) — the same entry `dodge.rs` uses.
 //!
-//! Own process → installs `cards::REGISTRY`.
+//! Runs against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;

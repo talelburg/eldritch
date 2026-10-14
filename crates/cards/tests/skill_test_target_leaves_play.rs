@@ -41,7 +41,7 @@
 //! > him (there is no Player Window to use \[fast\]free abilities in between
 //! > assigning and applying damage).
 //!
-//! Own process → installs `cards::REGISTRY`.
+//! Runs against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;

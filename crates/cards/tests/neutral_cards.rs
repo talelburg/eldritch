@@ -8,7 +8,7 @@
 //! The other three draw-skills (Perception/Overpower/Manual Dexterity) are
 //! structurally identical to Guts; their impl unit tests cover them.
 //!
-//! Own process → installs `cards::REGISTRY`.
+//! Runs against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;

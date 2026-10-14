@@ -1,9 +1,6 @@
-//! The contract of [`test_support::install_registry_with_test_cards`] over the
-//! real corpus (#934): a binary that installs `cards::REGISTRY` through it can
-//! seat a plain [`test_support::test_investigator`], while every real card and
-//! the synthetic terminal acts/agendas still resolve.
-//!
-//! Own process, so it can install the process-global registry.
+//! The contract of `cards::TEST_REGISTRY` over the real corpus (#934): a test
+//! that names it can seat a plain [`test_support::test_investigator`], while
+//! every real card and the synthetic terminal acts/agendas still resolve.
 
 use cards::TEST_REGISTRIES;
 use game_core::assert_event;

@@ -2,7 +2,7 @@
 //! state and then rejects mid-resolution leaves state AND events
 //! byte-identical to the pre-action state.
 //!
-//! Own integration-test binary so it can install its own `MockRegistry` (a
+//! Own integration-test binary so it can build its own `MockRegistry` (a
 //! probe card whose `OnPlay` effect mutates then rejects) without colliding
 //! with `game-core`'s registry-free unit tests or the real-corpus
 //! `play_card.rs` binary.

@@ -4,8 +4,8 @@
 //! [`TestSession`](game_core::test_support::TestSession); the refusal test
 //! submits it past the menu with
 //! [`submit_off_menu`](game_core::test_support::TestSession::submit_off_menu),
-//! as a client that never read the menu would. The real card corpus is
-//! installed so the play and activation rows can seat printed cards.
+//! as a client that never read the menu would. The tests run against the real
+//! card corpus so the play and activation rows can seat printed cards.
 //!
 //! `glossary/Attack_of_Opportunity.md`, verbatim:
 //!
@@ -24,7 +24,7 @@
 //! and that it attacks after the action is paid for and before the action's
 //! effect.
 //!
-//! The registry is `cards::REGISTRY` with one probe card composed in,
+//! The registry is `cards::TEST_REGISTRY` with one probe card composed in,
 //! [`TWO_ACTION_PROBE`]. No printed card in the corpus has a two-action
 //! activation, and the rule's *"An ability that costs more than one action only
 //! provokes one attack of opportunity from each engaged enemy"* needs one. The

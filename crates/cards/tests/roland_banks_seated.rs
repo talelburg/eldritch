@@ -7,7 +7,7 @@
 //! > [reaction] After you defeat an enemy: Discover 1 clue at your
 //! > location. (Limit once per round.)
 //!
-//! Integration test so it can install `cards::REGISTRY` in its own process.
+//! Integration test so it can run against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;

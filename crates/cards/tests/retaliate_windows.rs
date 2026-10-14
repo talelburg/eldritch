@@ -8,7 +8,7 @@
 //! `AfterEnemyAttackDamagedAsset` window) → `ResolveInput` → resume →
 //! `advance` (teardown: `SkillTestEnded`, pop `SkillTest` frame)
 //! cycle.  That resume seam is not exercised by the unit tests in
-//! `game-core` (those don't install the real card registry and so the
+//! `game-core` (those can't reach the real card registry and so the
 //! windows never open).
 //!
 //! ## Verified card text (`ArkhamDB`, 2026-06-21)

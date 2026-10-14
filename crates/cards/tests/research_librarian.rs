@@ -8,7 +8,7 @@
 //! pick, which also drives the choice-from-reaction reentrancy
 //! (`resume_choice` re-driving the window).
 //!
-//! Own process → installs `cards::REGISTRY`.
+//! Runs against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
 use game_core::action::{Action, InputResponse, PlayerAction};

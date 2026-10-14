@@ -3,7 +3,7 @@
 //! and the weapon-bonus interaction, end-to-end against the real
 //! `cards::REGISTRY`.
 //!
-//! Own process → installs `cards::REGISTRY`.
+//! Runs against `cards::TEST_REGISTRIES`.
 
 use card_dsl::card_data::UseKind;
 use cards::TEST_REGISTRIES;

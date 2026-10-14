@@ -1,8 +1,8 @@
 //! End-to-end enemy-attack damage soak + Guard Dog reaction, driven
-//! through the public [`apply`] API with the real card corpus installed.
+//! through the public [`apply`] API against the real card corpus.
 //!
 //! These cover the coverage deferred from `game-core`'s unit tests, which
-//! can't install the real `cards::REGISTRY` (the engine crate can't depend
+//! can't reach the real `cards::REGISTRY` (the engine crate can't depend
 //! on `cards`):
 //!
 //! 1. Happy path: an enemy attack assigns damage to Guard Dog; the

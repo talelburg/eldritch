@@ -12,7 +12,7 @@
 //! Parlor's Resign missing from the menu is as much the defect as its being
 //! refused on submission.
 //!
-//! Own integration-test binary so it can install its own `MockRegistry`:
+//! Own integration-test binary so it can build its own `MockRegistry`:
 //! no corpus card carries an activated ability on an investigator card or on a
 //! threat-area card, and none can be shipped to fake one (Haunted 01098's
 //! discard has nowhere to go until #708/#644). Prior art:

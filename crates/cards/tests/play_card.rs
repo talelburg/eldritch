@@ -1,17 +1,15 @@
 //! End-to-end `PlayCard` integration tests with the real card corpus.
 //!
-//! These tests install the `cards::REGISTRY` global once and exercise
+//! These tests run against `cards::TEST_REGISTRIES` and exercise
 //! the engine's `PlayCard` handler against actual Phase-2 cards (Holy
 //! Rosary, Working a Hunch). Lives in `cards/tests/` rather than
 //! `game-core/src/engine/`'s unit tests because:
 //!
 //! - The engine crate can't depend on `cards` (cycle) so it has no
 //!   way to access real card metadata or abilities.
-//! - Installing `REGISTRY` is process-global. As an integration test
-//!   binary this file gets its own process, so its install doesn't
-//!   collide with `game-core`'s own tests (which deliberately don't
-//!   install a registry, exercising only validation paths that
-//!   short-circuit before the registry lookup).
+//! - `game-core`'s own tests deliberately run without the corpus,
+//!   exercising only validation paths that short-circuit before the
+//!   registry lookup.
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{self, TurnAction};
@@ -360,7 +358,7 @@ fn asset_play_enters_play_through_the_frame() {
 
 #[test]
 fn play_card_after_defeat_is_rejected() {
-    // Belt-and-suspenders: even with REGISTRY installed, the status
+    // Belt-and-suspenders: even with the real registry named, the status
     // check should reject before the registry lookup runs.
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)

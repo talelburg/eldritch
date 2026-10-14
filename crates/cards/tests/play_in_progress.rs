@@ -15,7 +15,7 @@
 //! non-fast play provokes an attack of opportunity while it is itself mid-play,
 //! and a Fast event played to cancel that attack is a second play running inside
 //! the first. Every test here drives that interleaving through the public
-//! [`apply`] API with the real corpus installed.
+//! [`apply`] API against the real corpus.
 //!
 //! ## Verified card text (`ArkhamDB`, 2026-08-13)
 //!

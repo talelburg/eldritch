@@ -49,7 +49,7 @@
 //! corpus: the Parlor's front and back abilities, resolved through
 //! `cards::REGISTRY`.
 //!
-//! Own process → installs `cards::REGISTRY`.
+//! Runs against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
 use game_core::engine;

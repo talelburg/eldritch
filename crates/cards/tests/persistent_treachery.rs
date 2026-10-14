@@ -1,8 +1,6 @@
 //! Integration: The Gathering's three persistent treacheries (C4c, #235)
 //! resolved through the real `cards` registry — they stay in play, enforce
-//! their constant restriction, and discard at a forced timing point. Own
-//! process so it can install the process-global registry against the real
-//! corpus.
+//! their constant restriction, and discard at a forced timing point.
 
 use cards::REGISTRY;
 use cards::TEST_REGISTRIES;

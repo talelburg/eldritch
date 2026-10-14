@@ -10,9 +10,9 @@
 //! `[elder_sign]` half stays on its `+0` placeholder; #118 picks it
 //! up alongside the dynamic skill-test modifier DSL primitive.
 //!
-//! Lives at `crates/cards/tests/` so it can install [`cards::REGISTRY`]
-//! in its own integration-test process without colliding with the
-//! mock-registry tests in `crates/game-core/tests/reaction_windows.rs`.
+//! Lives at `crates/cards/tests/` so it can run against
+//! `cards::TEST_REGISTRIES`, which `game-core` cannot reach by crate
+//! direction.
 
 use card_dsl::dsl::{UsageLimit, UsagePeriod};
 use cards::REGISTRY;

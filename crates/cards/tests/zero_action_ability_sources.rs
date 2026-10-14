@@ -52,9 +52,9 @@
 //!
 //! The **real-corpus** peer — that the zero-action abilities already on cards
 //! in play are offered and resolve unchanged — is `fast_play.rs`, which
-//! installs `cards::REGISTRY` in its own process.
+//! runs against `cards::TEST_REGISTRIES`.
 //!
-//! Own integration-test binary so it can install its own `MockRegistry`.
+//! Own integration-test binary so it can build its own `MockRegistry`.
 //!
 //! # The player window these tests use
 //!

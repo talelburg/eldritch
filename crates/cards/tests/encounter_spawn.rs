@@ -18,10 +18,9 @@
 //! Default-spawn and location-not-in-play coverage lives in
 //! `enemy_spawn_no_location.rs` and `enemy_spawn_unrepresented.rs`.
 //!
-//! Lives in `crates/cards/tests/` (ADR 0016) because it installs the real
-//! `cards::REGISTRY`: `game-core` cannot reach the corpus by crate direction,
-//! and each `tests/*.rs` is its own process, so this install does not collide
-//! with the registries other integration binaries claim.
+//! Lives in `crates/cards/tests/` (ADR 0016) because it runs against
+//! `cards::TEST_REGISTRIES`: `game-core` cannot reach the corpus by crate
+//! direction.
 //!
 //! The cards, all Core Set, all verified against
 //! `data/arkhamdb-snapshot/pack/core/` and their rulings files:
@@ -37,7 +36,7 @@
 //!   corpus metadata (`GameState::add_location`) rather than hand-stamped onto a
 //!   `test_location`, which is the impersonation ADR 0016 forbids. Its
 //!   *"**Forced** - After you enter the Attic: Take 1 horror."* is live in the
-//!   installed registry and simply never fires — only the Move action emits
+//!   registry and simply never fires — only the Move action emits
 //!   `EnteredLocation`, and these tests place their investigators. Its ruling —
 //!   *"The **Forced** ability triggers each time an investigator enters this
 //!   location"* (<https://arkhamdb.com/card/01113>) — scopes that same entry.

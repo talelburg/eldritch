@@ -31,7 +31,7 @@
 //! now leaves play through the engine's discard-from-play exit, which files a
 //! card by its **owner** — the scenario, for Lita.
 //!
-//! Own process → installs `cards::REGISTRY`.
+//! Runs against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
 use game_core::assert_event;

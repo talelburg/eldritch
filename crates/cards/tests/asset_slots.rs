@@ -1,6 +1,6 @@
 //! Asset slot limits + discard-to-make-room (#498), against the real corpus.
 //!
-//! Mirrors the `play_card.rs` harness: a process-global registry install and a
+//! Mirrors the `play_card.rs` harness: the real registries, named, and a
 //! one-investigator mid-investigation state.
 
 use cards::TEST_REGISTRIES;

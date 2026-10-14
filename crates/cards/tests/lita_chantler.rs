@@ -56,7 +56,7 @@
 //! discriminates the printed predicate (*"each investigator at your location"*)
 //! from its 1p reading.
 //!
-//! Own process → installs `cards::REGISTRY`.
+//! Runs against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
 use game_core::assert_event;

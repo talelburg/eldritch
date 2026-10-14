@@ -1,6 +1,6 @@
 //! The Enemy phase's per-investigator `BeforeInvestigatorAttacked` player
 //! window **pauses** when a Fast play is eligible (#842), driven end-to-end
-//! through the public [`apply`] API with the real card corpus installed.
+//! through the public [`apply`] API against the real card corpus.
 //!
 //! Rules Reference, Appendix II — the flow chart's Enemy phase, verbatim:
 //!
@@ -13,7 +13,7 @@
 //! ```
 //!
 //! `game-core`'s own unit test for that window covers the **Skip-resume** path
-//! against a synthetic (empty) window, because the engine crate cannot install
+//! against a synthetic (empty) window, because the engine crate cannot reach
 //! `cards::REGISTRY` and so cannot make anything Fast-eligible. The other half
 //! — the window pausing for input instead of auto-skipping — needs a real
 //! eligible play, which is what this file supplies.

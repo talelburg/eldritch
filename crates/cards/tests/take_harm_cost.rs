@@ -9,7 +9,7 @@
 //! for an attack of opportunity: *"If the enemies' attacks defeat you, the
 //! effects won't resolve."*
 //!
-//! The registry is `cards::REGISTRY` with two probes composed in. No printed
+//! The registry is `cards::TEST_REGISTRY` with two probes composed in. No printed
 //! card declares the cost yet (Forbidden Knowledge 01058 does in #777), so
 //! [`FAST_PROBE`] models the primitive — *"\[fast\] Exhaust and take 1 horror:
 //! gain 1 resource"* — and impersonates no printed card (ADR 0016).

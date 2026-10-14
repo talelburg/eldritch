@@ -6,7 +6,7 @@
 //! proxy, the first Active investigator in `turn_order` (GLOSSARY "Lead
 //! investigator"), so they survive the first seat's elimination.
 //!
-//! Integration test so it can install `cards::REGISTRY` in its own process.
+//! Integration test so it can run against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;

@@ -5,7 +5,7 @@
 //!
 //! Lives in `crates/cards/tests/` because every assertion needs real card
 //! abilities (Grasping Hands' revelation, Cover Up's step-0 Forced) — `game-core`
-//! can't reach the corpus by crate direction, and `install_test_registry`
+//! can't reach the corpus by crate direction, and its test registry
 //! resolves metadata for `TEST_INV` only. The threat area is routed by each
 //! card's owner, not by its metadata (#982).
 //!

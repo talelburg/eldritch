@@ -5,8 +5,8 @@
 //! Card text (`data/arkhamdb-snapshot/pack/core/core.json`, 01001):
 //! > [elder_sign] effect: +1 for each clue on your location.
 //!
-//! Integration test so it installs the real `cards::REGISTRY` (which carries
-//! Roland's `Trigger::ElderSign` ability) in its own process.
+//! Integration test so it runs against the real corpus (which carries
+//! Roland's `Trigger::ElderSign` ability), via `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
 use game_core::assert_event;
