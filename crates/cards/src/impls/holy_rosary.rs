@@ -27,8 +27,8 @@ pub const CODE: &str = "01059";
 /// This card's registration, listed in [`ALL`](super::ALL).
 pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
-/// Holy Rosary's +1 willpower constant ability. The 2-horror-soak
-/// capacity printed on the card is not yet modeled (see module doc).
+/// Holy Rosary's +1 willpower constant ability. Its printed 2-horror-soak
+/// capacity rides on corpus metadata, not on an ability (see module doc).
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![dsl::constant(dsl::modify(
