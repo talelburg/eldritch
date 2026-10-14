@@ -33,11 +33,9 @@
 //!
 //! Why this file exists at the `cards/tests/` layer: it needs real card
 //! metadata + abilities from the `cards` corpus, which `game-core` itself
-//! cannot reach by crate-dependency direction. Each `tests/*.rs` is its
-//! own process so `install(cards::REGISTRY)` does not collide with the
-//! other integration test binaries.
+//! cannot reach by crate-dependency direction.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{InputKind, OptionTarget};
 use game_core::state::{
@@ -63,11 +61,6 @@ const A: InvestigatorId = InvestigatorId(1);
 const B: InvestigatorId = InvestigatorId(2);
 const HERE: LocationId = LocationId(101);
 const GHOUL: EnemyId = EnemyId(100);
-
-#[ctor::ctor(unsafe)]
-fn install_cards_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 /// The Mythos phase after its draws, with investigator A active and the
 /// step-1.4 player window open — a permissive window outside the
@@ -105,6 +98,7 @@ fn a_turn_begins_window(b: Seat) -> TestSession {
     let mut study = test_support::test_location(HERE.0, "Study");
     study.clues = 1;
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(study)
         .with_seat(seat(1).hand([MAGNIFYING_GLASS]))
         .with_seat(b)
@@ -153,6 +147,7 @@ fn fast_asset_playable_by_owner_during_permissive_window() {
     // post-cascade outcome.)
     let window = mythos_after_draws_window(
         GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
             .with_seat(seat(1).resources(5).hand([MAGNIFYING_GLASS]))
             .with_turn_order([A]),
     )
@@ -216,6 +211,7 @@ fn non_fast_asset_still_rejected_when_not_active_investigator() {
 #[test]
 fn fast_asset_still_playable_by_active_investigator_during_investigation() {
     let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).resources(5).hand([MAGNIFYING_GLASS]))
         .open_turn(A)
         .session()
@@ -246,6 +242,7 @@ fn board_with_beat_cop(moment: fn(GameStateBuilder) -> GameStateBuilder) -> Game
     enemy.current_location = Some(HERE);
     moment(
         GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
             .with_seat(seat(1))
             .with_seat(seat(2).at(HERE).in_play([BEAT_COP]))
             .with_turn_order([A, B])
@@ -325,6 +322,7 @@ fn fast_event_play_only_during_turn_rejected_outside_investigation() {
     location.clues = 1;
     let window = mythos_after_draws_window(
         GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
             .with_seat(
                 seat(1)
                     .resources(5)
@@ -384,6 +382,7 @@ fn fast_asset_rejected_by_owner_outside_investigation_with_no_window() {
     // while investigating."
     let drawing = mythos_encounter_draw(
         GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
             .with_seat(seat(1).resources(5).hand([MAGNIFYING_GLASS]))
             .with_turn_order([A]),
     )
@@ -502,6 +501,7 @@ fn corpus_zero_action_abilities_are_offered_once_per_ability_not_once_per_card()
     // (investigator 1 is not acting in an Investigation turn).
     let opened = mythos_encounter_draw(
         GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
             .with_seat(
                 seat(1)
                     .resources(5)

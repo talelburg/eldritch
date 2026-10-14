@@ -12,7 +12,7 @@
 //! Parlor's Resign missing from the menu is as much the defect as its being
 //! refused on submission.
 //!
-//! Own integration-test binary so it can install its own `MockRegistry`:
+//! Own integration-test binary so it can build its own `MockRegistry`:
 //! no corpus card carries an activated ability on an investigator card or on a
 //! threat-area card, and none can be shipped to fake one (Haunted 01098's
 //! discard has nowhere to go until #708/#644). Prior art:
@@ -21,11 +21,14 @@
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use card_dsl::dsl::{self, Ability, Cost, InvestigatorTarget};
 use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::Registries;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInstanceId, GameState, GameStateBuilder,
     InvestigatorId, LocationId,
 };
 use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession, TEST_INV};
+use std::sync::LazyLock;
 
 /// Synthetic **treachery** sitting in an investigator's threat area — the card
 /// type the zone actually holds (Rules Reference p.20: *"a play area in which
@@ -117,23 +120,12 @@ fn treachery_kind() -> CardKind {
     }
 }
 
-#[ctor::ctor(unsafe)]
-fn install_probe_registry() {
-    // `TEST_INV`'s metadata rides `install`'s composed `metadata_for_test_inv`.
-    MockRegistry::new()
-        .with_card(metadata(WARD, "Ward", treachery_kind()))
-        .with_card(metadata(THEIRS, "Theirs", asset_kind()))
-        .with_abilities(TEST_INV, probe_abilities)
-        .with_abilities(WARD, probe_abilities)
-        .with_abilities(THEIRS, probe_abilities)
-        .install();
-}
-
 /// Two investigators at the same location: mine holds a threat-area card, theirs
 /// an asset in play. Co-location is deliberate — under the control bullet it
 /// must not matter, and it is #708 that makes their threat area reachable.
 fn board() -> GameState {
     GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).at(HERE).threat_area([WARD]))
         .with_seat(seat(2).at(HERE).in_play([THEIRS]))
         .with_location(test_support::test_location(HERE.0, "Study"))
@@ -150,7 +142,7 @@ fn ward(state: &GameState) -> CardInstanceId {
 /// Take `action` off the menu; the activation resolves and play is back at my
 /// turn menu.
 fn take_activation(state: GameState, action: &TurnAction) -> TestSession {
-    let session = TestSession::new(state).take(action);
+    let session = TestSession::new_with_registries(state, registries()).take(action);
     session.assert_at_turn_menu(MINE);
     session
 }
@@ -168,23 +160,32 @@ fn activation(source: AbilitySource, ability_index: u8) -> TurnAction {
     }
 }
 
+/// The binary's one mock, built once on first use.
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        // `TEST_INV`'s metadata rides `build`'s composed `metadata_for_test_inv`.
+        cards: MockRegistry::new()
+            .with_card(metadata(WARD, "Ward", treachery_kind()))
+            .with_card(metadata(THEIRS, "Theirs", asset_kind()))
+            .with_abilities(TEST_INV, probe_abilities)
+            .with_abilities(WARD, probe_abilities)
+            .with_abilities(THEIRS, probe_abilities)
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
+}
+
 #[test]
 fn an_ability_on_your_own_investigator_card_is_offered_and_activatable() {
     let state = board();
     let action = activation(AbilitySource::InPlay(my_investigator_card(&state)), LIVE);
 
     assert!(
-        enumerate::legal_actions(
-            &state,
-            game_core::card_registry::current().expect("card registry installed")
-        )
-        .contains(&action),
+        enumerate::legal_actions(&state, registries().cards).contains(&action),
         "the investigator card is a card in play under your control, so its ability \
          belongs in the turn menu; menu was {:?}",
-        enumerate::legal_actions(
-            &state,
-            game_core::card_registry::current().expect("card registry installed")
-        ),
+        enumerate::legal_actions(&state, registries().cards),
     );
 
     let session = take_activation(state, &action);
@@ -201,16 +202,9 @@ fn an_ability_on_a_card_in_your_own_threat_area_is_offered_and_activatable() {
     let action = activation(AbilitySource::InPlay(ward(&state)), LIVE);
 
     assert!(
-        enumerate::legal_actions(
-            &state,
-            game_core::card_registry::current().expect("card registry installed")
-        )
-        .contains(&action),
+        enumerate::legal_actions(&state, registries().cards).contains(&action),
         "a card in your own threat area is in play and under your control; menu was {:?}",
-        enumerate::legal_actions(
-            &state,
-            game_core::card_registry::current().expect("card registry installed")
-        ),
+        enumerate::legal_actions(&state, registries().cards),
     );
 
     let session = take_activation(state, &action);
@@ -223,20 +217,14 @@ fn an_ability_on_another_investigators_card_is_neither_offered_nor_activatable()
     let action = activation(AbilitySource::InPlay(state.in_play(THEM, THEIRS)), LIVE);
 
     assert!(
-        !enumerate::legal_actions(
-            &state,
-            game_core::card_registry::current().expect("card registry installed")
-        )
-        .contains(&action),
+        !enumerate::legal_actions(&state, registries().cards).contains(&action),
         "a card another investigator controls is out of reach; menu was {:?}",
-        enumerate::legal_actions(
-            &state,
-            game_core::card_registry::current().expect("card registry installed")
-        ),
+        enumerate::legal_actions(&state, registries().cards),
     );
 
     // Activating another investigator's card must reject.
-    let reason = TestSession::new(state).assert_rejects(|s| s.submit_off_menu(&action));
+    let reason = TestSession::new_with_registries(state, registries())
+        .assert_rejects(|s| s.submit_off_menu(&action));
     assert!(
         reason.contains("cannot reach"),
         "the reason should name reachability, got: {reason}",
@@ -249,10 +237,7 @@ fn an_ability_on_another_investigators_card_is_neither_offered_nor_activatable()
 #[test]
 fn an_unpayable_or_inert_ability_stays_unoffered_from_every_reachable_source() {
     let state = board();
-    let menu = enumerate::legal_actions(
-        &state,
-        game_core::card_registry::current().expect("card registry installed"),
-    );
+    let menu = enumerate::legal_actions(&state, registries().cards);
     for source in [
         AbilitySource::InPlay(my_investigator_card(&state)),
         AbilitySource::InPlay(ward(&state)),
@@ -277,16 +262,9 @@ fn discarding_a_threat_area_source_as_a_cost_sends_it_to_the_encounter_discard()
     let action = activation(AbilitySource::InPlay(ward(&state)), SELF_DISCARDING);
 
     assert!(
-        enumerate::legal_actions(
-            &state,
-            game_core::card_registry::current().expect("card registry installed")
-        )
-        .contains(&action),
+        enumerate::legal_actions(&state, registries().cards).contains(&action),
         "menu was {:?}",
-        enumerate::legal_actions(
-            &state,
-            game_core::card_registry::current().expect("card registry installed")
-        ),
+        enumerate::legal_actions(&state, registries().cards),
     );
 
     let session = take_activation(state, &action);
@@ -317,7 +295,8 @@ fn discarding_your_investigator_card_as_a_cost_rejects_rather_than_panicking() {
     );
 
     // The menu offers it, and taking it must reject.
-    let reason = TestSession::new(state).assert_rejects(|session| session.take(&action));
+    let reason = TestSession::new_with_registries(state, registries())
+        .assert_rejects(|session| session.take(&action));
     assert!(
         reason.contains("cannot be discarded as a cost"),
         "the reason should say why, got: {reason}",

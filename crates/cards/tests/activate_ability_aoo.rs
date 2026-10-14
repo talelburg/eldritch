@@ -1,6 +1,6 @@
 //! Attacks of opportunity provoked by **activated abilities** (#361, K3 of the
-//! keystone arc), driven through the public [`apply`] API with the real card
-//! corpus installed.
+//! keystone arc), driven through the public [`apply`] API against the real card
+//! corpus.
 //!
 //! Per the Rules Reference (p.5, "Attack of Opportunity"): an investigator
 //! engaged with one or more ready enemies who takes an action **other than to
@@ -12,7 +12,7 @@
 //! fast ability (`action_cost == 0`, e.g. Beat Cop 01018) is not an action and
 //! never provokes.
 //!
-//! `game-core`'s unit tests can't install `cards::REGISTRY` (the engine crate
+//! `game-core`'s unit tests can't reach `cards::REGISTRY` (the engine crate
 //! can't depend on `cards`), so this lives in `crates/cards/tests/`. The `AoO`
 //! window/suspend mechanism itself is covered by `dodge_aoo.rs` /
 //! `guard_dog_soak.rs` (K1); these tests prove the **new firing sites** route
@@ -38,7 +38,7 @@
 //! `crates/game-core/tests/action_designator_aoo.rs`.
 #![allow(clippy::too_many_lines)]
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{OptionTarget, PromptNature};
 use game_core::event::Event;
@@ -70,11 +70,6 @@ const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(101);
 const ATTACKER: EnemyId = EnemyId(7);
 
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// A ready enemy dealing `damage` / 0 horror, with 5 health. Engage it with
 /// `with_enemy_engaged`, which places it at the investigator's location.
 fn ready_attacker(damage: u8) -> Enemy {
@@ -89,6 +84,7 @@ fn ready_attacker(damage: u8) -> Enemy {
 /// single-`0` chaos bag (for a skill test the activation starts).
 fn engaged_session(investigator: Seat, attacker: Enemy) -> TestSession {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(investigator)
         .open_turn(INV)

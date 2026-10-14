@@ -315,7 +315,7 @@ mod tests {
     use game_core::state::{
         Agenda, CardCode, CardInPlay, Enemy, GameStateBuilder, InvestigatorId, Location, Owner,
     };
-    use game_core::{card_registry, test_support};
+    use game_core::test_support;
 
     use super::*;
     use crate::REGISTRY;
@@ -481,7 +481,6 @@ mod tests {
     /// the defeats rather than latched by the card.
     #[test]
     fn the_act_three_branch_defeats_the_table_and_reaches_no_resolution() {
-        let _ = card_registry::install(REGISTRY);
         let (a, b) = (InvestigatorId(1), InvestigatorId(2));
         let mut state = two_investigators();
 
@@ -523,7 +522,6 @@ mod tests {
     /// alone, and announces no trauma.
     #[test]
     fn an_investigator_who_has_resigned_is_left_alone() {
-        let _ = card_registry::install(REGISTRY);
         let (a, b) = (InvestigatorId(1), InvestigatorId(2));
         let mut state = two_investigators();
         state.investigators.get_mut(&a).expect("seated").status = Status::Resigned;
@@ -589,7 +587,6 @@ mod tests {
         // A Barricade (01038) on the Parlor blocks the non-Elite Ghoul's
         // compelled step, so it does not move. Needs the real registry so the
         // attachment's `EnemyMovementBlocked` restriction is read.
-        let _ = card_registry::install(REGISTRY);
         let mut state = star_board();
         state.enemies.insert(EnemyId(1), ghoul(1, LocationId(2))); // Hallway
         barricade(&mut state, LocationId(5));
@@ -646,7 +643,6 @@ mod tests {
     /// not a detour (#797).
     #[test]
     fn ghoul_does_not_reroute_around_a_barricaded_shortest_step() {
-        let _ = card_registry::install(REGISTRY);
         let mut state = detour_board();
         state.enemies.insert(EnemyId(1), ghoul(1, LocationId(3))); // Attic
         barricade(&mut state, LocationId(2)); // Hallway — the only shortest step
@@ -674,7 +670,6 @@ mod tests {
 
     #[test]
     fn a_barricade_off_the_shortest_path_does_not_affect_the_move() {
-        let _ = card_registry::install(REGISTRY);
         let mut state = detour_board();
         state.enemies.insert(EnemyId(1), ghoul(1, LocationId(3))); // Attic
         barricade(&mut state, LocationId(6)); // Study — on the long route only

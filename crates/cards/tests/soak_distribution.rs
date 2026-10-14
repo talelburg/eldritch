@@ -2,7 +2,7 @@
 //! across themselves and eligible soakers, one point at a time (RR p.7),
 //! driven through the real `apply` enemy-phase path against the corpus registry.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::state::{
@@ -14,11 +14,6 @@ const GUARD_DOG: &str = "01021"; // Ally, 3 health / 1 sanity, retaliate reactio
 
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(101);
-
-#[ctor::ctor(unsafe)]
-fn install_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 /// One ready enemy dealing `damage` / 0 horror. `attack_state` engages it.
 fn ready_attacker(id: u32, damage: u8) -> Enemy {
@@ -36,6 +31,7 @@ fn attack_state(enemy: Enemy) -> GameState {
     // draw-from-empty horror penalty (which, per K5a, soaks onto a sanity asset
     // and would muddy these damage-only tests).
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(seat(1).at(HERE).in_play([GUARD_DOG]).deck([GUARD_DOG; 5]))
         .with_enemy_engaged(enemy, INV)
@@ -71,7 +67,7 @@ fn two_damage_attack_splits_one_to_guard_dog_one_to_self() {
 
     // EndTurn → enemy phase → distribution prompt (Guard Dog has capacity).
     // First point → Guard Dog; still contested → second prompt → self.
-    let session = TestSession::new(state)
+    let session = TestSession::new_with_registries(state, TEST_REGISTRIES)
         .take(&TurnAction::EndTurn)
         .pick(OptionTarget::CardInstance(dog))
         .pick(me.clone());
@@ -117,7 +113,7 @@ fn player_may_decline_to_soak_taking_all_damage() {
     let me = state.investigators[&INV].card_anchor();
 
     // Both points to the investigator — decline to soak.
-    let session = TestSession::new(state)
+    let session = TestSession::new_with_registries(state, TEST_REGISTRIES)
         .take(&TurnAction::EndTurn)
         .pick(me.clone())
         .pick(me);
@@ -142,7 +138,7 @@ fn a_full_soaker_drops_out_of_the_next_prompt() {
     state.investigators.get_mut(&INV).unwrap().cards_in_play[0].accumulated_damage = 2;
 
     // First point → Guard Dog (its last point of capacity).
-    let session = TestSession::new(state)
+    let session = TestSession::new_with_registries(state, TEST_REGISTRIES)
         .take(&TurnAction::EndTurn)
         .pick(OptionTarget::CardInstance(dog));
 

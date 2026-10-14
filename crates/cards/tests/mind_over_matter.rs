@@ -3,10 +3,10 @@
 //! and the weapon-bonus interaction, end-to-end against the real
 //! `cards::REGISTRY`.
 //!
-//! Own process → installs `cards::REGISTRY`.
+//! Runs against `cards::TEST_REGISTRIES`.
 
 use card_dsl::card_data::UseKind;
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{InputKind, OptionTarget, PromptNature};
@@ -25,11 +25,6 @@ const MAGNIFYING_GLASS: &str = "01030"; // a Fast asset
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
 const ENEMY: EnemyId = EnemyId(100);
-
-#[ctor::ctor(unsafe)]
-fn install() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 /// Investigator 1 at `HERE` with `combat` / `intellect`, holding Mind over
 /// Matter first in hand.
@@ -50,6 +45,7 @@ fn board(investigator: Seat) -> TestSession {
     enemy.max_health = 5; // survives so we can read `damage`
 
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(investigator)
         // Co-located (copied from the seat): Fight is location-gated (#401).
@@ -163,6 +159,7 @@ fn mind_over_matter_rejected_outside_your_turn() {
     // it does not offer MoM. The play is then sent off the menu to prove the
     // handler itself refuses it (`submit_off_menu`'s second use).
     let window = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_phase(Phase::Mythos)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(seat(1).at(HERE).hand([MOM, MAGNIFYING_GLASS]))

@@ -8,22 +8,17 @@
 //! modifier query (#92). Setup uses `PlayCard` to land the rosary in
 //! `cards_in_play` so the action log mirrors a real session.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{self, seat, TestSession};
+use game_core::test_support::{seat, TestSession};
 
 const HOLY_ROSARY: &str = "01059";
 const INV: InvestigatorId = InvestigatorId(1);
-
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 /// A session where the controller has Holy Rosary in hand, at their open
 /// turn in the Investigation phase, has a non-empty chaos bag (a single Zero
@@ -32,6 +27,7 @@ fn install_real_registry() {
 /// defaults.
 fn rosary_in_hand() -> TestSession {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).hand([HOLY_ROSARY]))
         .open_turn(INV)
         // Single-token bag → token-modifier is always 0; the skill

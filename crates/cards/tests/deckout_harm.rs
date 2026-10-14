@@ -16,7 +16,7 @@
 //! lead investigator performs his or her part of the sequence first, followed
 //! by the other players in clockwise order."*
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
@@ -36,15 +36,11 @@ const INV: InvestigatorId = InvestigatorId(1);
 const INV2: InvestigatorId = InvestigatorId(2);
 const HERE: LocationId = LocationId(101);
 
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// Investigator 1 takes the Draw action on an empty deck, with `discard` to
 /// shuffle back and Holy Rosary in play.
 fn draw_from_empty_deck(discard: &[&'static str]) -> TestSession {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(
             seat(1)
@@ -107,6 +103,7 @@ fn deck_out_horror_lands_before_the_drawn_weakness_revelation_resolves() {
 #[test]
 fn upkeep_resolves_each_investigators_draw_completely_in_player_order() {
     let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(seat(1).at(HERE).discard([COVER_UP]))
         .with_seat(seat(2).at(HERE).discard([COVER_UP]))
@@ -160,6 +157,7 @@ fn upkeep_resolves_each_investigators_draw_completely_in_player_order() {
 #[test]
 fn upkeep_deck_out_soak_prompt_holds_the_next_investigators_draw() {
     let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(
             seat(1)

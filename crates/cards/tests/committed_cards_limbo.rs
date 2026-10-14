@@ -16,7 +16,7 @@
 //! divergence only reproduces with cards whose printed icons and Fast play
 //! gates come from `cards::REGISTRY`.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
@@ -37,11 +37,6 @@ const DEDUCTION: &str = "01039";
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(20);
 
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// The investigator's turn at a 3-clue, shroud-2 location, `hand` in hand,
 /// `resources` resources (Working a Hunch costs 2), and a single-`Numeric(0)`
 /// chaos bag so only the committed icons move the total.
@@ -51,6 +46,7 @@ fn board(hand: &[&str], resources: u8) -> TestSession {
     loc.shroud = 2;
 
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(loc)
         .with_seat(
             seat(1)

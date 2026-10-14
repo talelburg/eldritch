@@ -1,6 +1,6 @@
 //! Integration (#735): an attacking enemy's own forced ability anchors its
-//! acknowledge to **that enemy**, not to the flat prompt bar. Own process →
-//! installs the real `cards::REGISTRY`.
+//! acknowledge to **that enemy**, not to the flat prompt bar. Runs against
+//! `cards::TEST_REGISTRIES`.
 //!
 //! The corpus card is Silver Twilight Acolyte 01102, whose printed text is
 //! verbatim:
@@ -22,7 +22,7 @@
 //! turn engaged with the Acolyte, the Enemy phase deals its attack, and the
 //! `after` cell the card prints then offers the acknowledge.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::state::{Agenda, CardCode, EnemyId, GameStateBuilder, InvestigatorId, LocationId};
@@ -32,16 +32,12 @@ const LEAD: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
 const ATTACKER: EnemyId = EnemyId(7);
 
-#[ctor::ctor(unsafe)]
-fn install_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 #[test]
 fn enemy_01102_forced_ack_anchors_to_the_attacking_enemy() {
     let mut attacker = test_support::test_enemy(ATTACKER.0, "Silver Twilight Acolyte");
     attacker.code = CardCode::new("01102");
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(seat(1).at(HERE))
         .with_enemy_engaged(attacker, LEAD)
@@ -57,7 +53,8 @@ fn enemy_01102_forced_ack_anchors_to_the_attacking_enemy() {
     state.interactive_acknowledge = true;
 
     // Ending the turn runs into the Enemy phase, where the Acolyte attacks.
-    let session = TestSession::new(state).take(&TurnAction::EndTurn);
+    let session =
+        TestSession::new_with_registries(state, TEST_REGISTRIES).take(&TurnAction::EndTurn);
     let request = session.prompt();
     assert_eq!(
         request.options.len(),

@@ -6,15 +6,15 @@
 //! Before this, the commit window accepted anything in hand, which made
 //! commit a free discard outlet (dump a weakness, cf. #646).
 //!
-//! Driven against the real `cards::REGISTRY` so the icons under test are the
-//! ones the pipeline actually compiled, not fabricated fixtures. Own process →
-//! installs the registry, mirroring `commit_cap.rs`.
+//! Driven against the real corpus (`cards::TEST_REGISTRIES`) so the icons under
+//! test are the ones the pipeline actually compiled, not fabricated fixtures,
+//! mirroring `commit_cap.rs`.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{self, seat, TestSession};
+use game_core::test_support::{seat, TestSession};
 
 /// Overpower — two [combat] icons, no wild.
 const OVERPOWER: &str = "01091";
@@ -27,15 +27,11 @@ const EMERGENCY_CACHE: &str = "01088";
 
 const INV: InvestigatorId = InvestigatorId(1);
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// Drive a difficulty-1 test of `skill`, on the investigator's turn holding
 /// `hand` with a deterministic bag, to the commit window and commit `commits`.
 fn commit_to(hand: &[&str], skill: SkillKind, commits: &[&str]) -> TestSession {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         // Somewhere for a success draw to land; an empty deck would apply the
         // deck-out horror (#636), irrelevant noise here.
         .with_seat(

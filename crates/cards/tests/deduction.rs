@@ -11,7 +11,7 @@
 //! icon + the discovery-count bonus both work end-to-end with the
 //! real card and real registry.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::ApplyResult;
 use game_core::event::Event;
@@ -26,11 +26,6 @@ const DEDUCTION: &str = "01039";
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
 
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// The investigator at `HERE` holding Deduction, `initial_clues` clues there
 /// at shroud `shroud`, on their turn against a single-`Numeric(0)` chaos bag.
 fn board_with_deduction(initial_clues: u8, shroud: u8) -> TestSession {
@@ -38,6 +33,7 @@ fn board_with_deduction(initial_clues: u8, shroud: u8) -> TestSession {
     location.shroud = shroud;
     location.clues = initial_clues;
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE).hand([DEDUCTION]))
         .with_location(location)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))

@@ -2,9 +2,9 @@
 //! the real `cards::REGISTRY`. Verifies the clue-conditional combat
 //! modifier (+3 with a clue on the location, +1 without) and ammo spend.
 //!
-//! Own process → installs `cards::REGISTRY`.
+//! Runs against `cards::TEST_REGISTRIES`.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
@@ -19,11 +19,6 @@ const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
 const ENEMY: EnemyId = EnemyId(100);
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// Board: .38 Special in play with 4 ammo, the active investigator (combat
 /// 3) at a location holding `loc_clues`, engaged with a fight-**5** enemy
 /// (health 3). Fight 5 distinguishes the modifier branches: +3 → total 6
@@ -37,6 +32,7 @@ fn board(loc_clues: u8) -> GameState {
     location.clues = loc_clues;
 
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -64,7 +60,7 @@ fn ammo(state: &GameState) -> u8 {
 /// Fire the .38 Special's Fight ability, committing nothing.
 fn fire(state: GameState) -> TestSession {
     let weapon = state.in_play(INV, SPECIAL);
-    let session = TestSession::new(state)
+    let session = TestSession::new_with_registries(state, TEST_REGISTRIES)
         .take(&TurnAction::ActivateAbility {
             investigator: INV,
             source: AbilitySource::InPlay(weapon),
