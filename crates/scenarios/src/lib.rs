@@ -26,6 +26,8 @@
 
 pub mod the_gathering;
 
+#[cfg(feature = "test-support")]
+use game_core::engine::Registries;
 use game_core::scenario::{ScenarioId, ScenarioModule, ScenarioRegistry};
 
 /// Look up a scenario module by id. Returns `None` for ids not
@@ -48,7 +50,7 @@ pub const REGISTRY: ScenarioRegistry = ScenarioRegistry { module_for };
 /// [`REGISTRY`]. Lives here because `cards` cannot see `scenarios`; a card
 /// test, which needs no scenario module, names [`cards::TEST_REGISTRIES`].
 #[cfg(feature = "test-support")]
-pub const TEST_REGISTRIES: game_core::engine::Registries = game_core::engine::Registries {
+pub const TEST_REGISTRIES: Registries = Registries {
     cards: &cards::TEST_REGISTRY,
     scenarios: &REGISTRY,
 };
