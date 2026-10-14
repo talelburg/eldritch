@@ -24,7 +24,7 @@ use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, ActionResolutionFrame, ActionResume, CardCode, Continuation,
-    DamageSource, DealDamageFrame, GameState, GameStateBuilder, InvestigatorId, LocationId, Status,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, Status,
 };
 use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
 
@@ -121,19 +121,9 @@ fn a_harm_cost_offers_the_soak_and_the_effect_waits_for_the_horror() {
     assert_eq!(session.state().investigators[&INV].resources, 0);
     assert_eq!(resources_gained(&session), None);
 
+    // The harm cost's deal frame is on top.
     let mut frames = session.state().continuations.iter().rev();
-    assert!(
-        matches!(
-            frames.next(),
-            Some(Continuation::DealDamage(DealDamageFrame {
-                investigator: INV,
-                source: DamageSource::Effect,
-                ..
-            }))
-        ),
-        "the harm cost's deal frame is on top: {:?}",
-        session.state().continuations
-    );
+    test_support::assert_effect_deal(frames.next(), INV, 0, 1);
     assert!(
         matches!(
             frames.next(),
@@ -197,12 +187,67 @@ fn a_lethal_harm_cost_eliminates_the_payer_and_the_effect_does_not_resolve() {
         .with_turn_order([INV, INV2])
         .open_turn(INV)
         .build();
+    let probe = state.in_play(INV, FAST_PROBE);
     let action = activate(&state, FAST_PROBE);
     let session = TestSession::new(state).take(&action);
 
+    // The cost was paid — the probe exhausted and the ability activated — and
+    // the horror it cost eliminated the payer before the effect could resolve.
+    assert!(
+        session.events().iter().any(|e| matches!(
+            e,
+            Event::CardExhausted { instance_id, .. } if *instance_id == probe
+        )),
+        "the exhaust cost was paid: {:?}",
+        session.events()
+    );
+    assert!(
+        session
+            .events()
+            .iter()
+            .any(|e| matches!(e, Event::AbilityActivated { .. })),
+        "the ability was activated: {:?}",
+        session.events()
+    );
     assert_ne!(session.state().investigators[&INV].status, Status::Active);
     assert_eq!(resources_gained(&session), None, "{:?}", session.events());
     assert_eq!(session.state().investigators[&INV].resources, 0);
+}
+
+/// Sending the cost's horror to an asset still pays the cost, so the effect
+/// resolves. `glossary/Costs.md`: *"If an investigator takes damage or horror
+/// as a cost and reassigns any of it to an asset, the cost is still considered
+/// paid."*
+#[test]
+fn a_harm_cost_soaked_by_an_asset_is_still_paid() {
+    let state = GameStateBuilder::new()
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_seat(
+            seat(1)
+                .at(HERE)
+                .actions(3)
+                .resources(0)
+                .in_play([FAST_PROBE, HOLY_ROSARY]),
+        )
+        .open_turn(INV)
+        .build();
+    let rosary = state.in_play(INV, HOLY_ROSARY);
+    let action = activate(&state, FAST_PROBE);
+    let session = TestSession::new(state)
+        .take(&action)
+        .pick(OptionTarget::CardInstance(rosary));
+
+    session.assert_at_turn_menu(INV);
+    let investigator = &session.state().investigators[&INV];
+    assert_eq!(investigator.horror(), 0, "the horror went to the rosary");
+    let rosary_card = investigator
+        .cards_in_play
+        .iter()
+        .find(|c| c.instance_id == rosary)
+        .expect("Holy Rosary still in play");
+    assert_eq!(rosary_card.accumulated_horror, 1, "soaked by the player");
+    assert_eq!(investigator.resources, 1, "the cost is still paid");
+    assert!(resources_gained(&session).is_some());
 }
 
 /// On an `[action]` ability the harm would have to resolve before the attacks
