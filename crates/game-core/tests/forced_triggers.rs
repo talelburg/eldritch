@@ -3,8 +3,8 @@
 //!
 //! Lives at `crates/game-core/tests/` (a separate integration-test
 //! binary, hence its own process and its own `OnceLock<CardRegistry>`)
-//! so installing a mock registry here doesn't collide with game-core's
-//! in-crate tests or with `card_registry::tests::install_is_idempotent`.
+//! so building a mock registry here doesn't collide with game-core's
+//! in-crate tests.
 //! Mirrors `activate_ability.rs` / `on_skill_test_resolution.rs`.
 //!
 //! No real card carries `EventPattern::EnteredLocation` yet — the
@@ -12,14 +12,17 @@
 //! location-entry forced ability is implemented. Until then, mock
 //! cards are the only way to exercise the full path.
 
+use std::sync::LazyLock;
+
 use card_dsl::dsl::{
     self, Ability, EventPattern, EventTiming, InvestigatorTarget, SkillTestKind, TestOutcome,
     TestedLocationScope,
 };
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{EngineOutcome, OptionTarget, TimingEvent};
+use game_core::engine::{EngineOutcome, OptionTarget, Registries, TimingEvent};
 use game_core::event::Event;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     self, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation,
     Enemy, EnemyId, GameState, GameStateBuilder, InvestigatorId, Location, LocationId,
@@ -145,80 +148,83 @@ fn never(_: &GameState, _: &EvalContext) -> bool {
     false
 }
 
-#[ctor::ctor(unsafe)]
-fn install_mock_registry() {
-    // `TEST_INV` rides `install`'s composed `metadata_for_test_inv`, so capacity
-    // reads (`max_health()` / `max_sanity()`) work under this registry.
-    MockRegistry::new()
-        .with_abilities(HORROR_ATTIC, || {
-            vec![forced_horror(
-                EventPattern::EnteredLocation,
-                EventTiming::After,
-                1,
-            )]
-        })
-        .with_abilities(DOOM_AGENDA, enemy_phase_end_horror)
-        .with_abilities(DOOM_ACT, enemy_phase_end_horror)
-        // Two distinct forced `EnteredLocation` abilities at the same timing
-        // point — exercises ordered multi-resolution (both fire in order).
-        .with_abilities(DOUBLE_FORCED, || {
-            vec![
-                forced_horror(EventPattern::EnteredLocation, EventTiming::After, 1),
-                forced_horror(EventPattern::EnteredLocation, EventTiming::After, 1),
-            ]
-        })
-        .with_abilities(UPKEEP_END_ACT, || {
-            vec![forced_horror(
-                EventPattern::PhaseEnded {
-                    phase: dsl::Phase::Upkeep,
-                },
-                EventTiming::After,
-                1,
-            )]
-        })
-        .with_abilities(ROUND_END_AGENDA, || {
-            vec![forced_horror(EventPattern::RoundEnded, EventTiming::At, 2)]
-        })
-        .with_abilities(DOUBLE_LEFT_LOCATION, || {
-            vec![
-                left_location(EventTiming::After),
-                left_location(EventTiming::After),
-            ]
-        })
-        .with_abilities(WHEN_LEFT_LOCATION, || {
-            vec![left_location(EventTiming::When)]
-        })
-        .with_abilities(DOUBLE_WHEN_LEFT_LOCATION, || {
-            vec![
-                left_location(EventTiming::When),
-                left_location(EventTiming::When),
-            ]
-        })
-        .with_abilities(END_OF_TURN_CARD, || {
-            vec![forced_horror(
-                EventPattern::EndOfTurn,
-                EventTiming::After,
-                1,
-            )]
-        })
-        .with_abilities(GATED_ELIGIBLE, || gated_on_enter(ALWAYS_TAG))
-        .with_abilities(GATED_INELIGIBLE, || gated_on_enter(NEVER_TAG))
-        .with_abilities(GATED_UNKNOWN_TAG, || gated_on_enter(UNKNOWN_TAG))
-        .with_abilities(AFTER_INVESTIGATE_CARD, || {
-            vec![forced_horror(
-                EventPattern::SkillTestResolved {
-                    outcome: TestOutcome::Success,
-                    kind: Some(SkillTestKind::Investigate),
-                    by_controller: true,
-                    tested_location: TestedLocationScope::Any,
-                },
-                EventTiming::After,
-                1,
-            )]
-        })
-        .with_native_condition(ALWAYS_TAG, always)
-        .with_native_condition(NEVER_TAG, never)
-        .install();
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        // `TEST_INV` rides `build`'s composed `metadata_for_test_inv`, so capacity
+        // reads (`max_health()` / `max_sanity()`) work under this registry.
+        cards: MockRegistry::new()
+            .with_abilities(HORROR_ATTIC, || {
+                vec![forced_horror(
+                    EventPattern::EnteredLocation,
+                    EventTiming::After,
+                    1,
+                )]
+            })
+            .with_abilities(DOOM_AGENDA, enemy_phase_end_horror)
+            .with_abilities(DOOM_ACT, enemy_phase_end_horror)
+            // Two distinct forced `EnteredLocation` abilities at the same timing
+            // point — exercises ordered multi-resolution (both fire in order).
+            .with_abilities(DOUBLE_FORCED, || {
+                vec![
+                    forced_horror(EventPattern::EnteredLocation, EventTiming::After, 1),
+                    forced_horror(EventPattern::EnteredLocation, EventTiming::After, 1),
+                ]
+            })
+            .with_abilities(UPKEEP_END_ACT, || {
+                vec![forced_horror(
+                    EventPattern::PhaseEnded {
+                        phase: dsl::Phase::Upkeep,
+                    },
+                    EventTiming::After,
+                    1,
+                )]
+            })
+            .with_abilities(ROUND_END_AGENDA, || {
+                vec![forced_horror(EventPattern::RoundEnded, EventTiming::At, 2)]
+            })
+            .with_abilities(DOUBLE_LEFT_LOCATION, || {
+                vec![
+                    left_location(EventTiming::After),
+                    left_location(EventTiming::After),
+                ]
+            })
+            .with_abilities(WHEN_LEFT_LOCATION, || {
+                vec![left_location(EventTiming::When)]
+            })
+            .with_abilities(DOUBLE_WHEN_LEFT_LOCATION, || {
+                vec![
+                    left_location(EventTiming::When),
+                    left_location(EventTiming::When),
+                ]
+            })
+            .with_abilities(END_OF_TURN_CARD, || {
+                vec![forced_horror(
+                    EventPattern::EndOfTurn,
+                    EventTiming::After,
+                    1,
+                )]
+            })
+            .with_abilities(GATED_ELIGIBLE, || gated_on_enter(ALWAYS_TAG))
+            .with_abilities(GATED_INELIGIBLE, || gated_on_enter(NEVER_TAG))
+            .with_abilities(GATED_UNKNOWN_TAG, || gated_on_enter(UNKNOWN_TAG))
+            .with_abilities(AFTER_INVESTIGATE_CARD, || {
+                vec![forced_horror(
+                    EventPattern::SkillTestResolved {
+                        outcome: TestOutcome::Success,
+                        kind: Some(SkillTestKind::Investigate),
+                        by_controller: true,
+                        tested_location: TestedLocationScope::Any,
+                    },
+                    EventTiming::After,
+                    1,
+                )]
+            })
+            .with_native_condition(ALWAYS_TAG, always)
+            .with_native_condition(NEVER_TAG, never)
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -264,6 +270,7 @@ const HALLWAY_ATTACHMENT: OptionTarget = OptionTarget::CardInstance(HALLWAY_ATTA
 /// `attic`.
 fn move_board(hallway: Location, attic: Location) -> GameStateBuilder {
     GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).at(HERE).actions(3))
         .with_location(hallway)
         .with_location(attic)
@@ -359,6 +366,7 @@ fn with_act_and_agenda(mut state: GameState, act: Option<&str>, agenda: Option<&
 /// end that runs on through the round.
 fn lead_alone() -> GameStateBuilder {
     GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).deck(["filler-card"]))
         .with_turn_order([INV])
 }
@@ -368,11 +376,10 @@ fn lead_alone() -> GameStateBuilder {
 /// and `agenda` current. Settling runs the phase end, its `PhaseEnded { Enemy }`
 /// forced abilities, and play on through Upkeep into the next round's Mythos.
 fn end_the_enemy_phase(act: Option<&str>, agenda: Option<&str>) -> TestSession {
-    let session = TestSession::new(with_act_and_agenda(
-        lead_alone().ending_enemy_phase().build(),
-        act,
-        agenda,
-    ));
+    let session = TestSession::new_with_registries(
+        with_act_and_agenda(lead_alone().ending_enemy_phase().build(), act, agenda),
+        registries(),
+    );
     assert_phase_ended(&session, state::Phase::Enemy);
     session
 }
@@ -388,16 +395,19 @@ fn assert_phase_ended(session: &TestSession, phase: state::Phase) {
 /// anchor staged after step 1.4's draws, so settling runs step 1.5's
 /// `PhaseEnded { Mythos }` and play goes on into the Investigation phase.
 fn end_the_mythos_phase() -> TestSession {
-    let session = TestSession::new(with_act_and_agenda(
-        lead_alone()
-            .with_phase(state::Phase::Mythos)
-            .with_phase_anchor(MythosPhaseFrame {
-                resume: MythosResume::AfterDraws,
-            })
-            .build(),
-        None,
-        Some(DOOM_AGENDA),
-    ));
+    let session = TestSession::new_with_registries(
+        with_act_and_agenda(
+            lead_alone()
+                .with_phase(state::Phase::Mythos)
+                .with_phase_anchor(MythosPhaseFrame {
+                    resume: MythosResume::AfterDraws,
+                })
+                .build(),
+            None,
+            Some(DOOM_AGENDA),
+        ),
+        registries(),
+    );
     assert_phase_ended(&session, state::Phase::Mythos);
     session
 }
@@ -405,11 +415,14 @@ fn end_the_mythos_phase() -> TestSession {
 /// End the Upkeep phase for real, under the Enemy-keyed doom agenda, staged
 /// with [`ending_upkeep_phase`](GameStateBuilder::ending_upkeep_phase).
 fn end_the_upkeep_phase() -> TestSession {
-    let session = TestSession::new(with_act_and_agenda(
-        lead_alone().ending_upkeep_phase().build(),
-        None,
-        Some(DOOM_AGENDA),
-    ));
+    let session = TestSession::new_with_registries(
+        with_act_and_agenda(
+            lead_alone().ending_upkeep_phase().build(),
+            None,
+            Some(DOOM_AGENDA),
+        ),
+        registries(),
+    );
     assert_phase_ended(&session, state::Phase::Upkeep);
     session
 }
@@ -420,11 +433,10 @@ fn end_the_upkeep_phase() -> TestSession {
 /// where the agenda's ability *does* fire, so the Investigation phase end
 /// cannot be told apart from it in one drive.
 fn fire_the_investigation_phase_end() -> TestSession {
-    TestSession::new(with_act_and_agenda(
-        lead_alone().open_turn(INV).build(),
-        None,
-        Some(DOOM_AGENDA),
-    ))
+    TestSession::new_with_registries(
+        with_act_and_agenda(lead_alone().open_turn(INV).build(), None, Some(DOOM_AGENDA)),
+        registries(),
+    )
     .fire_at(TimingEvent::PhaseEnded {
         phase: state::Phase::Investigation,
     })
@@ -504,9 +516,10 @@ fn forced_on_phase_end_no_op_when_no_lead_investigator() {
         with_act_and_agenda(lead_alone().open_turn(INV).build(), None, Some(DOOM_AGENDA));
     state.turn_order.clear();
 
-    let session = TestSession::new(state).fire_at(TimingEvent::PhaseEnded {
-        phase: state::Phase::Enemy,
-    });
+    let session =
+        TestSession::new_with_registries(state, registries()).fire_at(TimingEvent::PhaseEnded {
+            phase: state::Phase::Enemy,
+        });
 
     session.assert_at_turn_menu(INV);
     assert!(
@@ -538,6 +551,7 @@ fn forced_on_phase_end_fires_act_ability() {
 /// abilities.
 fn end_the_turn(threat_area: &[&str]) -> TestSession {
     GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -585,6 +599,7 @@ fn investigate_successfully(threat_area: &[&str]) -> TestSession {
     study.shroud = 0;
     study.clues = 1;
     GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -695,7 +710,7 @@ fn two_forced_at_enemy_phase_end_resolve_and_the_phase_still_transitions() {
 
     // EndTurn cascades Investigation → Enemy → step 3.4 (no enemies, so the
     // attack loop drains and the final window auto-skips into `enemy_phase_end`).
-    let paused = TestSession::new(state).take(&TurnAction::EndTurn);
+    let paused = TestSession::new_with_registries(state, registries()).take(&TurnAction::EndTurn);
 
     assert_eq!(
         (
@@ -980,6 +995,7 @@ fn a_suspended_when_cell_sees_the_investigator_still_at_the_location_they_are_le
 fn upkeep_phase_end_forced_resolves_before_the_round_end() {
     let state = with_act_and_agenda(
         GameStateBuilder::new()
+            .with_registries(registries())
             .with_seat(seat(1).at(HERE))
             .with_location(test_support::test_location(HERE.0, "Study"))
             .with_turn_order([INV])
@@ -989,7 +1005,7 @@ fn upkeep_phase_end_forced_resolves_before_the_round_end() {
         Some(ROUND_END_AGENDA),
     );
 
-    let session = TestSession::new(state);
+    let session = TestSession::new_with_registries(state, registries());
     let events = session.events();
 
     let phase_end = events
@@ -1012,6 +1028,7 @@ fn upkeep_phase_end_forced_resolves_before_the_round_end() {
 fn board_with_two_phase_end_forced() -> GameState {
     with_act_and_agenda(
         GameStateBuilder::new()
+            .with_registries(registries())
             .with_seat(
                 seat(1)
                     .at(HERE)

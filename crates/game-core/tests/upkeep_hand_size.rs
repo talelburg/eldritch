@@ -12,9 +12,12 @@
 //! shell. No scenario registry is installed, so the resolution hook is skipped
 //! and the round cannot end mid-cascade.
 
+use std::sync::LazyLock;
+
 use game_core::action::RosterEntry;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, InputKind};
+use game_core::engine::{InputKind, Registries};
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId,
     LocationId, Phase,
@@ -36,12 +39,15 @@ const HAND_SIZE_LIMIT: usize = 8;
 /// one, landing on 12 at the 4.5 check — a discard of 12 - cap = 4.
 const PADDED_HAND: usize = 11;
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    // No probe cards: `install` composes `metadata_for_test_inv` (capacity reads
-    // for `TEST_INV`) and `abilities_for_terminal` (the terminal act/agenda
-    // reverses `setup` seeds), which is all the cascade touches.
-    MockRegistry::new().install();
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        // No probe cards: `build` composes `metadata_for_test_inv` (capacity reads
+        // for `TEST_INV`) and `abilities_for_terminal` (the terminal act/agenda
+        // reverses `setup` seeds), which is all the cascade touches.
+        cards: MockRegistry::new().build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 /// The locally-built scenario shell's state: one revealed location to seat onto,
@@ -104,8 +110,8 @@ const INV: InvestigatorId = InvestigatorId(1);
 /// Investigation, round 1, at the turn menu. The padding has no step that
 /// makes it, so the opened state is edited and settled again.
 fn opened_with_a_padded_hand() -> TestSession {
-    let opened = engine::seat_and_open(setup(), &roster());
-    let mut state = TestSession::new(opened.state)
+    let opened = game_core::engine::seat_and_open_with_registries(setup(), &roster(), registries());
+    let mut state = TestSession::new_with_registries(opened.state, registries())
         .choose_from_hand(&[])
         .state()
         .clone();
@@ -113,7 +119,7 @@ fn opened_with_a_padded_hand() -> TestSession {
     while inv.hand.len() < PADDED_HAND {
         inv.hand.push(CardCode::new(format!("{PREFIX}filler")));
     }
-    let session = TestSession::new(state);
+    let session = TestSession::new_with_registries(state, registries());
     // No discard is pending before the round-ending EndTurn: the session rests
     // at the turn menu.
     session.assert_at_turn_menu(INV);

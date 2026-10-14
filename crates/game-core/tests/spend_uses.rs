@@ -11,15 +11,18 @@
 //! asset ([`POUCH`]) printing `discard_when_empty` secrets. The fixtures model
 //! the primitive, not a printed card (ADR 0016).
 //!
-//! Its own test binary: the mock registry installs once per process, and the
-//! sibling exit tests (`native_exits.rs`, `native_cx.rs`) install their own.
+//! Its own test binary: the mock registry is built once per process, and the
+//! sibling exit tests (`native_exits.rs`, `native_cx.rs`) build their own.
+
+use std::sync::LazyLock;
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Uses};
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{EngineOutcome, NativeCx};
+use game_core::engine::{EngineOutcome, NativeCx, Registries};
 use game_core::event::Event;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     self, Act, CardCode, CardInPlay, CardInstanceId, DiscardPile, GameState, GameStateBuilder,
     InvestigatorId, Owner, UseKind, Zone,
@@ -101,15 +104,18 @@ fn spend_charge(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     spend_one(cx, ctx, UseKind::Charges)
 }
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    MockRegistry::new()
-        .with_card(pouch_metadata())
-        .with_abilities(SPEND_SECRET_ACT, || forced_native("test:spend-secret"))
-        .with_native_effect("test:spend-secret", spend_secret)
-        .with_abilities(SPEND_CHARGE_ACT, || forced_native("test:spend-charge"))
-        .with_native_effect("test:spend-charge", spend_charge)
-        .install();
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        cards: MockRegistry::new()
+            .with_card(pouch_metadata())
+            .with_abilities(SPEND_SECRET_ACT, || forced_native("test:spend-secret"))
+            .with_native_effect("test:spend-secret", spend_secret)
+            .with_abilities(SPEND_CHARGE_ACT, || forced_native("test:spend-charge"))
+            .with_native_effect("test:spend-charge", spend_charge)
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 /// [`HOLDER`] (first in turn order, so the forced dispatch binds the
@@ -129,6 +135,7 @@ fn board(
     };
     let mut state = staging(
         GameStateBuilder::new()
+            .with_registries(registries())
             .with_seat(holder.deck(["filler-card"]))
             .with_seat(seat(OWNER.0).deck(["filler-card"]))
             .with_turn_order([HOLDER, OWNER]),
@@ -162,7 +169,10 @@ fn board(
 /// forced native runs at `PhaseEnded { Enemy }`. Settling runs the phase end
 /// and play goes on through Upkeep into the next round's Mythos.
 fn end_the_enemy_phase(act: &str, pool: Option<&[(UseKind, u8)]>) -> TestSession {
-    let session = TestSession::new(board(GameStateBuilder::ending_enemy_phase, act, pool));
+    let session = TestSession::new_with_registries(
+        board(GameStateBuilder::ending_enemy_phase, act, pool),
+        registries(),
+    );
     assert_event!(
         session.events(),
         Event::PhaseEnded {
@@ -266,9 +276,12 @@ fn spending_from_a_card_not_in_play_is_an_error_the_native_sees() {
     // phase is reached by the step that really gets there: the last
     // investigator ending their turn ends the Investigation phase, and play
     // runs on through the Enemy phase to its end, where the native rejects.
-    let session = TestSession::new(board(|b| b.open_turn(HOLDER), SPEND_SECRET_ACT, None))
-        .take(&TurnAction::EndTurn)
-        .take(&TurnAction::EndTurn);
+    let session = TestSession::new_with_registries(
+        board(|b| b.open_turn(HOLDER), SPEND_SECRET_ACT, None),
+        registries(),
+    )
+    .take(&TurnAction::EndTurn)
+    .take(&TurnAction::EndTurn);
     let reason = session.expect_rejected();
     assert!(
         reason.contains("NotInPlay"),

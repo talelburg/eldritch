@@ -6,14 +6,19 @@
 //! printed cards (ADR 0016). An act hosts them rather than an agenda so the
 //! empty-agenda-deck guard can be exercised with no agenda in play.
 //!
-//! Its own test binary: the mock registry installs once per process, and the
-//! sibling exit tests (`spend_uses.rs`, `native_cx.rs`) install their own.
+//! Its own test binary: the mock registry is built once per process, and the
+//! sibling exit tests (`spend_uses.rs`, `native_cx.rs`) build their own.
+
+use std::sync::LazyLock;
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{board, EngineOutcome, InputKind, NativeCx, PromptNature, TimingEvent};
+use game_core::engine::{
+    board, EngineOutcome, InputKind, NativeCx, PromptNature, Registries, TimingEvent,
+};
 use game_core::event::{Event, TraumaKind};
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     self, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, DiscardPile,
     GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, SkillSubstitution,
@@ -84,22 +89,25 @@ fn substitute(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    MockRegistry::new()
-        .with_abilities(TRAUMA_ACT, || forced_native("test:trauma"))
-        .with_native_effect("test:trauma", trauma)
-        .with_abilities(DOOM_ACT, || forced_native("test:doom"))
-        .with_native_effect("test:doom", doom)
-        .with_abilities(PLACE_ACT, || forced_native("test:place"))
-        .with_native_effect("test:place", place)
-        .with_abilities(CLUES_ACT, || forced_native("test:clues"))
-        .with_native_effect("test:clues", clues)
-        .with_abilities(DIG_ACT, || forced_native("test:dig"))
-        .with_native_effect("test:dig", dig)
-        .with_abilities(SUBSTITUTE_ACT, || forced_native("test:substitute"))
-        .with_native_effect("test:substitute", substitute)
-        .install();
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        cards: MockRegistry::new()
+            .with_abilities(TRAUMA_ACT, || forced_native("test:trauma"))
+            .with_native_effect("test:trauma", trauma)
+            .with_abilities(DOOM_ACT, || forced_native("test:doom"))
+            .with_native_effect("test:doom", doom)
+            .with_abilities(PLACE_ACT, || forced_native("test:place"))
+            .with_native_effect("test:place", place)
+            .with_abilities(CLUES_ACT, || forced_native("test:clues"))
+            .with_native_effect("test:clues", clues)
+            .with_abilities(DIG_ACT, || forced_native("test:dig"))
+            .with_native_effect("test:dig", dig)
+            .with_abilities(SUBSTITUTE_ACT, || forced_native("test:substitute"))
+            .with_native_effect("test:substitute", substitute)
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -112,6 +120,7 @@ const HERE: LocationId = LocationId(10);
 /// phase has ended.
 fn lead(seated: Seat) -> GameStateBuilder {
     GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seated.deck(["filler-card"]))
         .open_turn(INV)
 }
@@ -138,7 +147,7 @@ fn state_with_act(act: &str) -> GameState {
 /// goes on through Upkeep into the next round's Mythos phase, and rests at its
 /// step-1.4 encounter draw.
 fn run(state: GameState) -> TestSession {
-    let session = TestSession::new(state).take(&TurnAction::EndTurn);
+    let session = TestSession::new_with_registries(state, registries()).take(&TurnAction::EndTurn);
     assert_event!(
         session.events(),
         Event::PhaseEnded {
@@ -346,7 +355,7 @@ fn add_skill_substitution_is_offered_at_the_next_skill_test() {
     let board = || {
         let builder = lead(seat(1).skill(SkillKind::Intellect, 5))
             .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]));
-        TestSession::new(with_act(builder, SUBSTITUTE_ACT))
+        TestSession::new_with_registries(with_act(builder, SUBSTITUTE_ACT), registries())
     };
 
     // Control: before the native runs, the test goes straight to its commit

@@ -1,10 +1,13 @@
 //! The `RoundEnded` condition: an agenda's `OnEvent(RoundEnded)`
 //! Forced ability fires at the end of the round (step 4.6).
 
+use std::sync::LazyLock;
+
 use card_dsl::dsl::{self, EventPattern, EventTiming, InvestigatorTarget};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{EngineOutcome, NativeCx, OptionTarget};
+use game_core::engine::{EngineOutcome, NativeCx, OptionTarget, Registries};
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     Agenda, CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
@@ -23,27 +26,30 @@ fn set_doom(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    // `TEST_INV` rides `install`'s composed `metadata_for_test_inv`, so capacity
-    // reads work under this registry.
-    MockRegistry::new()
-        .with_abilities(AGENDA, || {
-            vec![dsl::forced_on_event(
-                EventPattern::RoundEnded,
-                EventTiming::At,
-                dsl::native("test:set-doom"),
-            )]
-        })
-        .with_abilities(DISSONANT, || {
-            vec![dsl::forced_on_event(
-                EventPattern::RoundEnded,
-                EventTiming::At,
-                dsl::deal_horror(InvestigatorTarget::You, 1u8),
-            )]
-        })
-        .with_native_effect("test:set-doom", set_doom)
-        .install();
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        // `TEST_INV` rides `build`'s composed `metadata_for_test_inv`, so capacity
+        // reads work under this registry.
+        cards: MockRegistry::new()
+            .with_abilities(AGENDA, || {
+                vec![dsl::forced_on_event(
+                    EventPattern::RoundEnded,
+                    EventTiming::At,
+                    dsl::native("test:set-doom"),
+                )]
+            })
+            .with_abilities(DISSONANT, || {
+                vec![dsl::forced_on_event(
+                    EventPattern::RoundEnded,
+                    EventTiming::At,
+                    dsl::deal_horror(InvestigatorTarget::You, 1u8),
+                )]
+            })
+            .with_native_effect("test:set-doom", set_doom)
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -67,13 +73,14 @@ fn round_ended_fires_agenda_forced_ability() {
     // next round's Mythos phase.
     let state = with_test_agenda(
         GameStateBuilder::new()
+            .with_registries(registries())
             .with_seat(seat(1).at(HERE))
             .with_location(test_support::test_location(HERE.0, "Study"))
             .with_turn_order([INV])
             .ending_upkeep_phase()
             .build(),
     );
-    let session = TestSession::new(state);
+    let session = TestSession::new_with_registries(state, registries());
 
     // The round really ended: play is in the next round's Mythos phase.
     assert_eq!(session.state().phase, Phase::Mythos);
@@ -96,6 +103,7 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
     // have dropped.
     let state = with_test_agenda(
         GameStateBuilder::new()
+            .with_registries(registries())
             .with_seat(
                 seat(1)
                     .at(HERE)
@@ -115,7 +123,7 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
     // where the two round-end forced abilities fire simultaneously. The
     // forced run suspends for the lead's ordering choice rather than
     // transitioning to Mythos.
-    let paused = TestSession::new(state).take(&TurnAction::EndTurn);
+    let paused = TestSession::new_with_registries(state, registries()).take(&TurnAction::EndTurn);
     assert_eq!(
         (
             paused.offered_at(&OptionTarget::Agenda),

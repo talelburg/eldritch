@@ -15,10 +15,13 @@
 //! No corpus card carries a modal `on_success` yet, so a mock is the only way to
 //! reach the shape.
 
+use std::sync::LazyLock;
+
 use card_dsl::dsl::{self, Ability, InvestigatorTarget};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{ApplyResult, EngineOutcome, OptionTarget};
+use game_core::engine::{ApplyResult, EngineOutcome, OptionTarget, Registries};
 use game_core::event::Event;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     AbilityAddress, AbilitySource, ChaosBag, ChaosToken, GameState, GameStateBuilder,
     InvestigatorId, LocationId, SkillKind, TokenModifiers,
@@ -56,11 +59,14 @@ fn modal_heal_abilities() -> Vec<Ability> {
     )]
 }
 
-#[ctor::ctor(unsafe)]
-fn install_mock_registry() {
-    MockRegistry::new()
-        .with_abilities(MODAL_HEAL_ON_SUCCESS, modal_heal_abilities)
-        .install();
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        cards: MockRegistry::new()
+            .with_abilities(MODAL_HEAL_ON_SUCCESS, modal_heal_abilities)
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 /// Board: the mock asset in play, the investigator at `HERE` carrying `damage`
@@ -68,6 +74,7 @@ fn install_mock_registry() {
 /// intellect(2) test's outcome is decided by the investigator's stats alone.
 fn board(damage: u8, horror: u8) -> GameState {
     GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -93,7 +100,10 @@ fn activation(state: &GameState) -> TurnAction {
 /// Activate the mock asset and commit nothing to its test.
 fn activate(state: GameState) -> ApplyResult {
     let action = activation(&state);
-    TestSession::new(state).take(&action).commit(&[]).finish()
+    TestSession::new_with_registries(state, registries())
+        .take(&action)
+        .commit(&[])
+        .finish()
 }
 
 /// The control: with damage to heal the modal `on_success` has a live mode, so
@@ -152,7 +162,9 @@ fn a_modal_on_success_keeps_the_activating_cards_anchor_across_the_test() {
     let state = board(2, 2);
     let action = activation(&state);
     let card = state.in_play(INV, MODAL_HEAL_ON_SUCCESS);
-    let session = TestSession::new(state).take(&action).commit(&[]);
+    let session = TestSession::new_with_registries(state, registries())
+        .take(&action)
+        .commit(&[]);
     // The session rests at the `on_success` ChooseOne.
     let request = session.prompt();
     assert_eq!(

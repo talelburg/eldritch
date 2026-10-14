@@ -4,14 +4,18 @@
 //! nothing listens.
 //!
 //! Own integration-test process (separate `OnceLock<CardRegistry>`) so it can
-//! install a mock registry without colliding with other `tests/*.rs`. Mirrors
+//! build a mock registry without colliding with other `tests/*.rs`. Mirrors
 //! `on_skill_test_resolution.rs`.
+
+use std::sync::LazyLock;
 
 use card_dsl::dsl::{
     self, EventPattern, EventTiming, InvestigatorTarget, TestOutcome, TestedLocationScope,
 };
 use game_core::assert_event;
+use game_core::engine::Registries;
 use game_core::event::Event;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenModifiers,
 };
@@ -23,24 +27,27 @@ use game_core::test_support::{self, seat, MockRegistry, TestSession};
 /// reaction-window resolution needed to observe the timing point.
 const ANY_SUCCESS_FORCED: &str = "MOCK-STR-ANY-SUCCESS";
 
-#[ctor::ctor(unsafe)]
-fn install_mock_registry() {
-    // `TEST_INV` rides `install`'s composed `metadata_for_test_inv`, so capacity
-    // reads work under this registry.
-    MockRegistry::new()
-        .with_abilities(ANY_SUCCESS_FORCED, || {
-            vec![dsl::forced_on_event(
-                EventPattern::SkillTestResolved {
-                    outcome: TestOutcome::Success,
-                    kind: None,
-                    by_controller: true,
-                    tested_location: TestedLocationScope::Any,
-                },
-                EventTiming::After,
-                dsl::deal_horror(InvestigatorTarget::You, 1u8),
-            )]
-        })
-        .install();
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        // `TEST_INV` rides `build`'s composed `metadata_for_test_inv`, so capacity
+        // reads work under this registry.
+        cards: MockRegistry::new()
+            .with_abilities(ANY_SUCCESS_FORCED, || {
+                vec![dsl::forced_on_event(
+                    EventPattern::SkillTestResolved {
+                        outcome: TestOutcome::Success,
+                        kind: None,
+                        by_controller: true,
+                        tested_location: TestedLocationScope::Any,
+                    },
+                    EventTiming::After,
+                    dsl::deal_horror(InvestigatorTarget::You, 1u8),
+                )]
+            })
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -50,6 +57,7 @@ const HERE: LocationId = LocationId(10);
 /// given threat-area card codes in play.
 fn session_with_threat_area(threat: &[&str]) -> TestSession {
     GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).at(HERE).threat_area(threat.iter().copied()))
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))

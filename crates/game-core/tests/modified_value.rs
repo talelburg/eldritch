@@ -3,7 +3,7 @@
 //!
 //! Lives at `crates/game-core/tests/` so it runs in its own
 //! integration-test process (separate `OnceLock<CardRegistry>`), letting
-//! it install a mock registry without colliding with game-core's
+//! it build a mock registry without colliding with game-core's
 //! in-crate tests or with other `tests/*.rs` files. Mirrors
 //! `activate_ability.rs`.
 //!
@@ -13,18 +13,22 @@
 //! mock cards shaped after them are the only way to exercise the sweep.
 //! Each mock below names the printed card it is shaped after.
 
+use std::sync::LazyLock;
+
 use card_dsl::dsl::{self, ModifierAudience, ModifierScope, Stat};
+use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::modified_value::{
     self, ContributionSource, ModifiedQuantity, ModifierTarget, ReadContext,
 };
+use game_core::engine::Registries;
 use game_core::event::Event;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
     GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{self, seat, MockRegistry, Seat, TestSession};
-use game_core::{assert_event, card_registry};
 
 /// Shaped after Lita Chantler 01117: *"Each investigator at your
 /// location gets +1 [combat]."* An asset one investigator controls that
@@ -54,66 +58,69 @@ const TOWERING_BEASTS: &str = "MOCK-TOWERING";
 /// +1 evade."*
 const RITUAL_BEGINS: &str = "MOCK-RITUAL";
 
-#[ctor::ctor(unsafe)]
-fn install_mock_registry() {
-    MockRegistry::new()
-        .with_abilities(LITA, || {
-            vec![dsl::constant(dsl::modify_for(
-                ModifierAudience::EachInvestigatorAtSourceLocation,
-                Stat::Combat,
-                1,
-                ModifierScope::WhileInPlay,
-            ))]
-        })
-        .with_abilities(WHATELEY, || {
-            vec![dsl::constant(dsl::modify_for(
-                ModifierAudience::EachInvestigatorAtSourceLocation,
-                Stat::Willpower,
-                -1,
-                ModifierScope::WhileInPlay,
-            ))]
-        })
-        .with_abilities(FOG, || {
-            vec![dsl::constant(dsl::modify_for(
-                ModifierAudience::AttachedCard,
-                Stat::Shroud,
-                2,
-                ModifierScope::WhileInPlay,
-            ))]
-        })
-        .with_abilities(WHIPPOORWILL, || {
-            vec![dsl::constant(dsl::modify_for(
-                ModifierAudience::EachInvestigatorAtSourceLocation,
-                Stat::Intellect,
-                -1,
-                ModifierScope::WhileInPlay,
-            ))]
-        })
-        .with_abilities(TOWERING_BEASTS, || {
-            vec![dsl::constant(dsl::modify_for(
-                ModifierAudience::AttachedCard,
-                Stat::Fight,
-                1,
-                ModifierScope::WhileInPlay,
-            ))]
-        })
-        .with_abilities(RITUAL_BEGINS, || {
-            vec![
-                dsl::constant(dsl::modify_for(
-                    ModifierAudience::EachEnemy,
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        cards: MockRegistry::new()
+            .with_abilities(LITA, || {
+                vec![dsl::constant(dsl::modify_for(
+                    ModifierAudience::EachInvestigatorAtSourceLocation,
+                    Stat::Combat,
+                    1,
+                    ModifierScope::WhileInPlay,
+                ))]
+            })
+            .with_abilities(WHATELEY, || {
+                vec![dsl::constant(dsl::modify_for(
+                    ModifierAudience::EachInvestigatorAtSourceLocation,
+                    Stat::Willpower,
+                    -1,
+                    ModifierScope::WhileInPlay,
+                ))]
+            })
+            .with_abilities(FOG, || {
+                vec![dsl::constant(dsl::modify_for(
+                    ModifierAudience::AttachedCard,
+                    Stat::Shroud,
+                    2,
+                    ModifierScope::WhileInPlay,
+                ))]
+            })
+            .with_abilities(WHIPPOORWILL, || {
+                vec![dsl::constant(dsl::modify_for(
+                    ModifierAudience::EachInvestigatorAtSourceLocation,
+                    Stat::Intellect,
+                    -1,
+                    ModifierScope::WhileInPlay,
+                ))]
+            })
+            .with_abilities(TOWERING_BEASTS, || {
+                vec![dsl::constant(dsl::modify_for(
+                    ModifierAudience::AttachedCard,
                     Stat::Fight,
                     1,
                     ModifierScope::WhileInPlay,
-                )),
-                dsl::constant(dsl::modify_for(
-                    ModifierAudience::EachEnemy,
-                    Stat::Evade,
-                    1,
-                    ModifierScope::WhileInPlay,
-                )),
-            ]
-        })
-        .install();
+                ))]
+            })
+            .with_abilities(RITUAL_BEGINS, || {
+                vec![
+                    dsl::constant(dsl::modify_for(
+                        ModifierAudience::EachEnemy,
+                        Stat::Fight,
+                        1,
+                        ModifierScope::WhileInPlay,
+                    )),
+                    dsl::constant(dsl::modify_for(
+                        ModifierAudience::EachEnemy,
+                        Stat::Evade,
+                        1,
+                        ModifierScope::WhileInPlay,
+                    )),
+                ]
+            })
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 const ME: InvestigatorId = InvestigatorId(1);
@@ -136,6 +143,7 @@ fn me() -> Seat {
 /// so the token never moves a total.
 fn board_of(me: Seat, teammate: Seat) -> GameStateBuilder {
     GameStateBuilder::new()
+        .with_registries(registries())
         .with_turn_order([ME, TEAMMATE])
         .open_turn(ME)
         .with_seat(me)
@@ -410,7 +418,7 @@ fn a_modifier_answers_differently_either_side_of_a_board_change() {
     let intellect = |state: &GameState| {
         modified_value::modified_value(
             state,
-            card_registry::current().expect("card registry installed"),
+            registries().cards,
             ModifierTarget::Investigator(ME),
             ModifiedQuantity::Skill(SkillKind::Intellect),
             ReadContext::OutsideTest,
@@ -447,7 +455,7 @@ fn a_modifier_on_an_enemys_fight_raises_a_fight_actions_difficulty() {
             state.agenda_deck = vec![agenda(RITUAL_BEGINS)];
             state.agenda_index = 0;
         }
-        let session = TestSession::new(state)
+        let session = TestSession::new_with_registries(state, registries())
             .take(&TurnAction::Fight {
                 investigator: ME,
                 enemy: EnemyId(7),
@@ -493,7 +501,7 @@ fn a_modifier_on_an_enemys_evade_raises_an_evade_actions_difficulty() {
             state.agenda_deck = vec![agenda(RITUAL_BEGINS)];
             state.agenda_index = 0;
         }
-        let session = TestSession::new(state)
+        let session = TestSession::new_with_registries(state, registries())
             .take(&TurnAction::Evade {
                 investigator: ME,
                 enemy: EnemyId(7),
@@ -541,7 +549,7 @@ fn a_fights_difficulty_is_re_read_after_the_test_started() {
     state.agenda_index = 0;
 
     // ST.1: announced against the unmodified fight of 2.
-    let started = TestSession::new(state).take(&TurnAction::Fight {
+    let started = TestSession::new_with_registries(state, registries()).take(&TurnAction::Fight {
         investigator: ME,
         enemy: EnemyId(7),
     });
@@ -579,7 +587,7 @@ fn a_breakdown_reads_back_its_base_and_every_contribution() {
 
     let willpower = modified_value::modified_value(
         &state,
-        card_registry::current().expect("card registry installed"),
+        registries().cards,
         ModifierTarget::Investigator(ME),
         ModifiedQuantity::Skill(SkillKind::Willpower),
         ReadContext::OutsideTest,
@@ -598,7 +606,7 @@ fn a_breakdown_reads_back_its_base_and_every_contribution() {
 
     let intellect = modified_value::modified_value(
         &state,
-        card_registry::current().expect("card registry installed"),
+        registries().cards,
         ModifierTarget::Investigator(ME),
         ModifiedQuantity::Skill(SkillKind::Intellect),
         ReadContext::OutsideTest,
@@ -633,7 +641,7 @@ fn act(code: &str) -> Act {
 fn read(state: &GameState, target: ModifierTarget, quantity: ModifiedQuantity) -> i32 {
     modified_value::modified_value(
         state,
-        card_registry::current().expect("card registry installed"),
+        registries().cards,
         target,
         quantity,
         ReadContext::from_state(state),

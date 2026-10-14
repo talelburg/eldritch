@@ -2,22 +2,22 @@
 //! reverse latches a resolution.
 //!
 //! Moved out of `engine/tests/resolution.rs` (#1022): these tests need a
-//! scenario module that stamps the state when its hook runs, and the session
-//! reads the process-global scenario registry. A unit-test binary cannot
-//! install the stamp module there without contaminating every other test in
-//! it, so this binary installs it process-wide (prior art:
-//! `tests/scenario_resolution.rs`).
+//! scenario module that stamps the state when its hook runs, and a mock card
+//! registry alongside it; a process builds one mock, so this binary names its
+//! own registries (prior art: `tests/scenario_resolution.rs`).
+
+use std::sync::LazyLock;
 
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{legal_actions, TurnAction};
-use game_core::engine::{EngineOutcome, OptionId};
+use game_core::engine::{EngineOutcome, OptionId, Registries};
 use game_core::event::Event;
 use game_core::scenario::{
     ResolutionId, ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRegistry,
 };
 use game_core::state::{Act, GameState, GameStateBuilder, InvestigatorId};
 use game_core::test_support::{self, seat, MockRegistry, TestSession};
-use game_core::{assert_event, assert_no_event, scenario_registry};
+use game_core::{assert_event, assert_no_event};
 
 /// The scenario id the stamp module answers to.
 const STAMP: &str = "stamp";
@@ -30,15 +30,17 @@ const ADVANCE_ACT: TurnAction = TurnAction::AdvanceAct { investigator: INV };
 /// The resources the stamp module sets, so a test can tell its hook ran.
 const STAMPED: u8 = 99;
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    let _ = scenario_registry::install(ScenarioRegistry {
-        module_for: stamp_module_for,
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        // `build` composes `abilities_for_terminal`, which serves the reverse of
+        // the terminal act card: without it the advance would reach no ending
+        // (ADR 0013).
+        cards: MockRegistry::new().build(),
+        scenarios: &ScenarioRegistry {
+            module_for: stamp_module_for,
+        },
     });
-    // `install` composes `abilities_for_terminal`, which serves the reverse of
-    // the terminal act card: without it the advance would reach no ending
-    // (ADR 0013).
-    MockRegistry::new().install();
+    *REGISTRIES
 }
 
 /// `apply_resolution` that records it ran by stamping the acting
@@ -72,6 +74,7 @@ fn stamp_module_for(id: &ScenarioId) -> Option<&'static ScenarioModule> {
 /// latches `Resolution(1)`.
 fn terminal_act_state(clues: u8) -> GameState {
     let mut state = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).clues(clues))
         .open_turn(INV)
         .with_scenario_id(ScenarioId::new(STAMP))
@@ -86,7 +89,7 @@ fn terminal_act_state(clues: u8) -> GameState {
 
 /// The stamp scenario after `INV` advances its terminal act.
 fn advanced() -> TestSession {
-    TestSession::new(terminal_act_state(1)).take(&ADVANCE_ACT)
+    TestSession::new_with_registries(terminal_act_state(1), registries()).take(&ADVANCE_ACT)
 }
 
 #[test]
@@ -125,11 +128,7 @@ fn resolution_cancels_the_open_turn_and_does_not_refire() {
         "the open turn and phase anchor are cancelled: {:?}",
         session.state().continuations,
     );
-    assert!(legal_actions(
-        session.state(),
-        game_core::card_registry::current().expect("card registry installed")
-    )
-    .is_empty());
+    assert!(legal_actions(session.state(), registries().cards).is_empty());
 
     // A later answer finds no prompt outstanding and rejects; the
     // already-finished resolution does not re-fire. The subject is that
@@ -145,14 +144,11 @@ fn resolution_cancels_the_open_turn_and_does_not_refire() {
 
 #[test]
 fn resolution_skipped_on_rejected_outcome() {
-    let session = TestSession::new(terminal_act_state(0));
+    let session = TestSession::new_with_registries(terminal_act_state(0), registries());
     // With 0 clues AdvanceAct is illegal, so it is not enumerated — there is
     // no OptionId to submit (OptionId-routing #447 expresses illegality as
     // non-enumeration).
-    let legal = legal_actions(
-        session.state(),
-        game_core::card_registry::current().expect("card registry installed"),
-    );
+    let legal = legal_actions(session.state(), registries().cards);
     assert!(!legal
         .iter()
         .any(|a| matches!(a, TurnAction::AdvanceAct { .. })));
