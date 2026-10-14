@@ -162,7 +162,7 @@ fn once_per_phase_refuses_a_second_fire_but_allows_a_later_phase_of_the_round() 
     );
 }
 
-/// *"[elder_sign] effect: +1 for each horror on Agnes Baker."* Willpower 5 vs
+/// *"`[elder_sign]` effect: +1 for each horror on Agnes Baker."* Willpower 5 vs
 /// difficulty 5 with N horror on her succeeds by N.
 #[test]
 fn elder_sign_adds_one_per_horror_on_her() {

@@ -296,7 +296,7 @@ impl AbilityUsageRecord {
     /// `(round, phase)`. A `Round` period ignores the phase, so a round limit
     /// does not reset at a phase change; a `Phase` period needs both to match,
     /// since the same phase recurs every round.
-    fn in_period(&self, period: UsagePeriod, round: u32, phase: Phase) -> bool {
+    fn in_period(self, period: UsagePeriod, round: u32, phase: Phase) -> bool {
         match period {
             UsagePeriod::Round => self.round == round,
             UsagePeriod::Phase => self.round == round && self.phase == phase,
