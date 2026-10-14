@@ -1448,8 +1448,9 @@ pub enum SkillTestStep {
     /// [`Resolving`](Self::Resolving). (#374.)
     PreTokenWindow,
     /// Commit submitted: the next driver iteration reveals the chaos token
-    /// (RR ST.3) and pushes the symbol's immediate effects (RR ST.4), then
-    /// pre-advances to [`DetermineOutcome`](Self::DetermineOutcome). It records
+    /// (RR ST.3) and pushes its outcome's `immediate` part — a scenario
+    /// symbol's or the elder sign's (RR ST.4), then pre-advances to
+    /// [`DetermineOutcome`](Self::DetermineOutcome). It records
     /// the token's modifier (or the elder sign's expression) as a
     /// [`RecordedModifier`](crate::state::game_state::RecordedModifier) scoped to this test — an `[auto_fail]` records a
     /// [`Determination`](card_dsl::dsl::Determination) instead — and computes

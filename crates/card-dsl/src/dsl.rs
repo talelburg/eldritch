@@ -424,10 +424,29 @@ pub enum Trigger {
     /// own `effect` slot stays the inert empty `Seq`; the sign's effects live
     /// in the outcome's `immediate` / `on_success` / `on_fail` arms.
     ///
-    /// **Scope:** only the `modifier` is read for an elder sign today. The
-    /// three effect arms are carried and walked for native refs, but the
-    /// engine does not yet push them for an elder sign — that lands with
-    /// #1041.
+    /// The arms run with the investigator card as their source, so anything
+    /// they latch names that card. `immediate` runs at ST.4, where the
+    /// ability initiates; `on_success` / `on_fail` ("If you succeed, gain 2
+    /// resources", "Skids" O'Toole 01003) are skill test results and run at
+    /// ST.7.
+    ///
+    /// An automatic success is an `immediate` effect, not an override of the
+    /// outcome: Wendy Adams 01005's sign is
+    /// `If(<Amulet in play>, AutoResolve(AutomaticSuccess))`, a test-scoped
+    /// determination that ST.6 reads (ADR 0007). The token has already been
+    /// revealed, so nothing is skipped
+    /// (`data/rules-reference/rules/glossary/Automatic_Failure_Success.md`):
+    ///
+    /// > If a chaos token effect causes an investigator to automatically
+    /// > succeed or fail at a skill test, continue with Steps 3 and 4, as
+    /// > normal.
+    ///
+    /// The determination substitutes the difficulty, not the skill value, so
+    /// ST.5 still determines the modified skill value. Wendy's ruling
+    /// (<https://arkhamdb.com/card/01005>):
+    ///
+    /// > If a skill test automatically succeeds, the total difficulty of that
+    /// > test is considered 0.
     ElderSign {
         /// What the elder sign does when revealed.
         outcome: TokenOutcome,
@@ -2681,10 +2700,8 @@ pub fn activated_as(
 }
 
 /// Construct a modifier-only [`Trigger::ElderSign`]-driven [`Ability`]: its
-/// [`TokenOutcome`] carries `modifier` and no effects. The ability's own
-/// `effect` slot is the inert empty `Seq` for every elder sign; a sign's
-/// effects belong in its outcome's `immediate` / `on_success` / `on_fail`
-/// arms, never in that slot.
+/// [`TokenOutcome`] carries `modifier` and no effects (Roland Banks 01001).
+/// [`elder_sign_with`] builds a sign that also has effects.
 ///
 /// Called by investigator card impls in the `cards` crate and by tests in
 /// `game-core` that build mock registries. (The `Ability` struct is
@@ -2692,10 +2709,18 @@ pub fn activated_as(
 /// so a struct literal is only legal inside `card-dsl` itself.)
 #[must_use]
 pub fn elder_sign(modifier: IntExpr) -> Ability {
+    elder_sign_with(TokenOutcome::modifier(modifier))
+}
+
+/// Construct a [`Trigger::ElderSign`]-driven [`Ability`] carrying the whole
+/// `outcome`: its modifier and its `immediate` / `on_success` / `on_fail`
+/// effects. The ability's own `effect` slot is the inert empty `Seq` for
+/// every elder sign; a sign's effects belong in its outcome's arms, never in
+/// that slot.
+#[must_use]
+pub fn elder_sign_with(outcome: TokenOutcome) -> Ability {
     Ability {
-        trigger: Trigger::ElderSign {
-            outcome: TokenOutcome::modifier(modifier),
-        },
+        trigger: Trigger::ElderSign { outcome },
         costs: Vec::new(),
         effect: Effect::Seq(Vec::new()),
         usage_limit: None,

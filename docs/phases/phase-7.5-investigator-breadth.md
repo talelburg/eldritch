@@ -92,23 +92,29 @@ This is where the stress test bites. Verbatim from
 | Agnes 01004 | `+1 for each horror on Agnes Baker.` | a horror `Quantity` |
 | "Skids" 01003 | `+2. If you succeed, gain 2 resources.` | a success-conditional **effect** |
 | Daisy 01002 | `+0. If you succeed, draw 1 card for each [[Tome]] you control.` | that, plus trait-counting |
-| Wendy 01005 | `+0. If Wendy's Amulet is in play, you automatically succeed instead.` | an outcome override |
+| Wendy 01005 | `+0. If Wendy's Amulet is in play, you automatically succeed instead.` | an `immediate` automatic success, plus a "card is in play" condition (#780) |
 
 `Trigger::ElderSign` carries a `TokenOutcome` — the shape a scenario's symbol table
-returns too: a modifier, an `immediate` part, and `on_success` / `on_fail` parts
-(#1040). The modifier is copied unevaluated into a test-scoped row at ST.3 and read
-at ST.5; the elder sign's three effect arms are carried but not yet pushed (#1041).
+returns too: a modifier, an `immediate` part, and `on_success` / `on_fail` parts.
+The modifier is copied unevaluated into a test-scoped row at ST.3 and read at ST.5.
+`immediate` runs at ST.4, where the ability initiates. `on_success` / `on_fail` are
+skill test results and run at ST.7, after the action's own result (the clue an
+investigation discovers). All three run with the investigator card as source.
 
-**The one question worth arguing about is Wendy's**, and it is deliberately isolated
-in #776 rather than buried in her slice: is *"you automatically succeed instead"* an
-elder-sign effect at all, or a `SkillTestOutcome` override the elder sign merely
-triggers? Whatever shape wins must preserve what
-`data/official-faq/Rulings_and_Clarifications.md` establishes with its Hope/Patrice
-worked example — an automatically-successful test **still takes place**: cards commit,
-the modified skill value is still determined, and only ST.3 and ST.4 are skipped. The
-same document distinguishes that from Stray Cat 01076's *"Automatically evade"*, where
-*"no skill test is made whatsoever."* Auto-success is not "skip the test", and the two
-must not be conflated — 01076 is in Wendy's own slice.
+**Wendy's automatic success is an elder-sign effect, not an outcome override**:
+`immediate: If(<Amulet in play>, AutoResolve(AutomaticSuccess))`, a test-scoped
+determination that ST.6 reads (ADR 0007). The token is already revealed, so
+`data/rules-reference/rules/glossary/Automatic_Failure_Success.md` skips nothing:
+*"If a chaos token effect causes an investigator to automatically succeed or fail at
+a skill test, continue with Steps 3 and 4, as normal."* The determination
+substitutes the difficulty, not the skill value — Wendy's ruling, *"If a skill test
+automatically succeeds, the total difficulty of that test is considered 0"*
+(https://arkhamdb.com/card/01005) — so ST.5 still determines the modified skill
+value, as `data/official-faq/Rulings_and_Clarifications.md`'s Hope/Patrice example
+requires of every automatically-successful test. The same document distinguishes
+that from Stray Cat 01076's *"Automatically evade"*, where *"no skill test is made
+whatsoever."* Auto-success is not "skip the test", and the two must not be
+conflated — 01076 is in Wendy's own slice.
 
 ## Decks are constructed, not transcribed
 
