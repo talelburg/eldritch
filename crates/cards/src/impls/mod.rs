@@ -102,6 +102,7 @@ pub mod dr_milan_christopher;
 pub mod dynamite_blast;
 pub mod emergency_cache;
 pub mod evidence;
+pub mod fearless;
 pub mod first_aid;
 pub mod flashlight;
 pub mod frozen_in_fear;
@@ -227,6 +228,7 @@ pub const ALL: &[CardRecord] = &[
     dynamite_blast::CARD,
     emergency_cache::CARD,
     evidence::CARD,
+    fearless::CARD,
     first_aid::CARD,
     flashlight::CARD,
     frozen_in_fear::CARD,
