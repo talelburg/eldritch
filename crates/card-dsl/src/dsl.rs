@@ -883,6 +883,19 @@ pub enum EventPattern {
     /// engine's matcher hears it only on an attachment of the *left* location,
     /// and binds the leaving investigator.
     LeftLocation,
+    /// **You** played a card the `filter` passes — Heirloom of Hyperborea
+    /// 01012's *"\[reaction\] After you play a \[\[Spell\]\] card: Draw 1
+    /// card."* Scoped to plays by the ability's controller; the filter reads
+    /// the played card's printed metadata ([`CardFilter::matches`]).
+    ///
+    /// The condition is the play's *completion*, after Appendix I step 4: the
+    /// 01012 ruling puts the trigger *"after the Spell card has resolved in
+    /// full"* — an event already in its owner's discard pile, an asset already
+    /// in play.
+    CardPlayed {
+        /// Which played cards the ability listens to.
+        filter: CardFilter,
+    },
 }
 
 impl EventPattern {
@@ -917,6 +930,7 @@ impl EventPattern {
             EventPattern::EnemyAttacks { .. } => TriggeringCondition::EnemyAttacks,
             EventPattern::EnteredPlay => TriggeringCondition::EnteredPlay,
             EventPattern::LeftLocation => TriggeringCondition::LeftLocation,
+            EventPattern::CardPlayed { .. } => TriggeringCondition::CardPlayed,
         }
     }
 }
@@ -1019,6 +1033,8 @@ pub enum TriggeringCondition {
     EnteredPlay,
     /// An investigator left a location.
     LeftLocation,
+    /// An investigator's play of a card completed (after Appendix I step 4).
+    CardPlayed,
 }
 
 /// The four game phases, mirrored in `card-dsl` so [`EventPattern`] can

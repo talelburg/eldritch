@@ -957,8 +957,9 @@ pub(super) fn play_card(
 }
 
 /// Move the asset **instance** `card` into `investigator`'s play area (RR
-/// Appendix I step 4, "placed in play"): push it to `cards_in_play` and announce
-/// it via the `EnteredPlay` timing event. The emit outcome is intentionally
+/// Appendix I step 4, "placed in play"): push it to `cards_in_play` and, for a
+/// card played from hand, announce the completed play (`CardPlayed`) and its
+/// entering play (`EnteredPlay`). The emit outcomes are intentionally
 /// discarded — the frame driving this call is already popped, so the `drive`
 /// loop opens any after-enters-play reaction window (Research Librarian 01032)
 /// itself. Called by `slots::enter_asset_making_room` once the asset's slots are
@@ -977,6 +978,7 @@ pub(in crate::engine) fn enter_asset_into_play(
     entry: AssetEntry,
 ) {
     let instance = card.instance_id;
+    let code = card.code.clone();
     cx.state
         .investigators
         .get_mut(&investigator)
@@ -987,6 +989,9 @@ pub(in crate::engine) fn enter_asset_into_play(
     // was already in play and stays there, so announcing it would fire every
     // after-enters-play reaction a second time (#772).
     if entry == AssetEntry::PlayedFromHand {
+        // The play is complete (Appendix I step 4). Queued first so that
+        // `EnteredPlay`'s sequence, pushed above it, resolves first.
+        let _ = emit::queue_event(cx, &TimingEvent::CardPlayed { investigator, code });
         let _ = emit::queue_event(
             cx,
             &TimingEvent::EnteredPlay {
@@ -1003,17 +1008,18 @@ pub(in crate::engine) fn enter_asset_into_play(
 /// or in its owner's discard pile if it's an event)". Pops the frame first (which
 /// takes the card off it), then places the card by destination: an **event** goes
 /// to its owner's discard pile, an **asset** is minted into play and announced via
-/// `EnteredPlay`. Because the frame is popped *before* `queue_event`, a reaction
-/// window the latter queues (Research Librarian 01032) lands on top and the drive
-/// loop opens it — no manual window open, no second stage. Returns `Done`
-/// (disposal never awaits input); a missing-registry re-derive surfaces as
-/// `Rejected`.
+/// `EnteredPlay`. Either way the completed play is then announced via
+/// `CardPlayed` (Heirloom of Hyperborea 01012). Because the frame is popped
+/// *before* `queue_event`, a reaction window the latter queues (Research
+/// Librarian 01032) lands on top and the drive loop opens it — no manual window
+/// open, no second stage. Returns `Done` (disposal never awaits input); a
+/// missing-registry re-derive surfaces as `Rejected`.
 ///
 /// The frame holds no card when something else already placed it: elimination's
 /// sweep removed it from the game (RR p.10 step 1), or
 /// [`Effect::AttachSelfToLocation`](card_dsl::dsl::Effect::AttachSelfToLocation)
 /// re-homed it (Barricade 01038). Either way there is nothing left to place and
-/// the pop is the whole disposal.
+/// the pop is the whole disposal, with no `CardPlayed` announced.
 pub(super) fn dispose_play_from_hand(cx: &mut Cx) -> EngineOutcome {
     let PlayFromHandFrame { investigator, card } =
         cx.state.continuations.pop_expect::<PlayFromHandFrame>();
@@ -1030,8 +1036,16 @@ pub(super) fn dispose_play_from_hand(cx: &mut Cx) -> EngineOutcome {
 
     match destination {
         PlayDestination::Discard => {
-            discard_played_card(cx, investigator, card);
-            EngineOutcome::Done
+            discard_played_card(cx, investigator, card.clone());
+            // The play is complete (Appendix I step 4): announced in tail
+            // position (ADR 0003).
+            emit::queue_event(
+                cx,
+                &TimingEvent::CardPlayed {
+                    investigator,
+                    code: card,
+                },
+            )
         }
         PlayDestination::InPlay => {
             // Play from hand mints the instance here, at the door: the card is

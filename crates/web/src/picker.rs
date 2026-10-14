@@ -44,6 +44,7 @@ pub const ROLAND_DEFAULT_DECK: &[&str] = &[
 /// each lands (#777). NOT a legal deck — a scaffold for UI testing, like
 /// [`ROLAND_DEFAULT_DECK`].
 pub const AGNES_DEFAULT_DECK: &[&str] = &[
+    "01012", // Heirloom of Hyperborea (signature)
     "01059", "01059", // Holy Rosary
     "01060", "01060", // Shrivelling
     "01061", "01061", // Scrying
