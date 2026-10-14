@@ -2418,12 +2418,13 @@ pub struct PlayerDrawFrame {
 /// A drawn encounter card whose Revelation is mid-resolution (#380), tagged
 /// with how the framework disposes of it once the Revelation's whole
 /// sub-resolution completes (#423). Pushed by `resolve_encounter_card`
-/// *before* it runs the Revelation; sits beneath any suspension the
+/// *before* it announces the draw, whose resolve step runs the Revelation
+/// (#1056); sits beneath the draw condition's sequence and any suspension the
 /// Revelation opens (a skill test, a choice, a nested effect). When that
-/// sub-resolution completes and this frame is top again, the **framework**
+/// sequence completes and this frame is top again, the **framework**
 /// disposes of the card per its [`EncounterDisposition`] and pops:
-/// a treachery (`Discard`) goes to `encounter_discard` (or — if persistent —
-/// is skipped, having placed itself during its Revelation); an enemy
+/// a treachery (`Discard`) goes to `encounter_discard` (or — if persistent and
+/// its Revelation ran — is skipped, having placed itself); an enemy
 /// (`Spawn`) is minted into play. Suspension-reason-agnostic. Never emits
 /// `AwaitingInput`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2432,6 +2433,11 @@ pub struct EncounterCardFrame {
     pub card: CardCode,
     /// How the framework disposes of the card once its Revelation resolves.
     pub disposition: EncounterDisposition,
+    /// Whether the card's Revelation ran — set by the draw condition's resolve
+    /// step, and left `false` when a `when` ability cancelled it (Ward of
+    /// Protection 01065, #1056). A persistent treachery whose Revelation was
+    /// cancelled never placed itself, so disposal discards it.
+    pub revelation_resolved: bool,
 }
 
 /// A card being played from hand, mid-resolution (Slice D #423). Pushed

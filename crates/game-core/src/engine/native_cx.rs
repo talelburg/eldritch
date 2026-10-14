@@ -325,9 +325,10 @@ impl<'a> NativeCx<'a> {
     }
 
     /// Resolve the already-drawn encounter card `code` for `investigator`: it
-    /// is revealed, and its Revelation and its disposal (discard or spawn) are
-    /// pushed as frames for the drive loop to step. `Rejected` for a cardtype
-    /// that cannot be drawn this way.
+    /// is revealed, and the draw — whose resolve step is the Revelation, which
+    /// a `when` ability may cancel — and the card's disposal (discard or spawn)
+    /// are pushed as frames for the drive loop to step. `Rejected` for a
+    /// cardtype that cannot be drawn this way.
     pub fn resolve_encounter_card(
         &mut self,
         investigator: InvestigatorId,

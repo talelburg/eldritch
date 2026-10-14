@@ -84,6 +84,7 @@ mod tests {
                 filter: Some(CardFilter {
                     trait_: Some(TOME.into()),
                     kind: Some(CardType::Asset),
+                    non_weakness: false,
                 }),
             },
         );
