@@ -87,6 +87,7 @@ use card_dsl::dsl::Ability;
 use game_core::card_registry::{NativeConditionFn, NativeEffectFn};
 
 pub mod ancient_evils;
+pub mod arcane_initiate;
 pub mod attic;
 pub mod automatic_45;
 pub mod barricade;
@@ -211,6 +212,7 @@ impl CardRecord {
 /// is playable iff it is listed here.
 pub const ALL: &[CardRecord] = &[
     ancient_evils::CARD,
+    arcane_initiate::CARD,
     attic::CARD,
     automatic_45::CARD,
     barricade::CARD,

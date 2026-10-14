@@ -184,6 +184,13 @@ pub struct CardInPlay {
     /// and location clue pools. Most cards never carry clues (0). Required
     /// on the wire (#453).
     pub clues: u8,
+    /// Doom sitting on this card instance (Arcane Initiate 01063: *"Place 1
+    /// doom on it."*). It counts toward the agenda's threshold —
+    /// `glossary/Doom.md`: *"Doom on cards other than the agenda (such as
+    /// enemies, allies, locations, etc.) counts towards the amount of doom in
+    /// play."* — through [`board::doom_in_play`](crate::engine::board::doom_in_play),
+    /// and it leaves play with the card. Required on the wire (#453).
+    pub doom: u8,
     /// Per-ability usage counter for "Limit X per \[period\]" caps. Key
     /// is the ability index within the card's `abilities()`; value
     /// records the last round the ability fired and how many times.
@@ -349,6 +356,7 @@ impl CardInPlay {
             accumulated_damage: 0,
             accumulated_horror: 0,
             clues: 0,
+            doom: 0,
             ability_usage: BTreeMap::new(),
             owner,
         }
@@ -410,13 +418,13 @@ mod tests {
 
     #[test]
     fn omitting_any_required_field_is_rejected() {
-        // `clues`, `ability_usage` and `owner` are required on the wire
-        // (#453): a payload missing one fails loudly rather than silently
-        // defaulting.
+        // `clues`, `doom`, `ability_usage` and `owner` are required on the
+        // wire (#453): a payload missing one fails loudly rather than
+        // silently defaulting.
         let c = CardInPlay::enter_play(CardCode("_x".into()), CardInstanceId(1), Owner::Scenario);
         let full = serde_json::to_value(&c).expect("serialize");
         serde_json::from_value::<CardInPlay>(full.clone()).expect("full object deserializes");
-        for field in ["clues", "ability_usage", "owner"] {
+        for field in ["clues", "doom", "ability_usage", "owner"] {
             let mut v = full.clone();
             v.as_object_mut()
                 .expect("card serializes to a JSON object")

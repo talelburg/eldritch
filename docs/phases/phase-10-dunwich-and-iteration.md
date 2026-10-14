@@ -39,7 +39,7 @@ From the 2026-05-01/02 strategy phase:
 - **Dunwich card implementations.** Substantial volume — hundreds of cards across the cycle. Per the project's "no manual-resolution fallback" rule, every card a player wants to use needs an implementation; the deck-import gate enforces this. Iterative.
 - **Encounter sets specific to Dunwich.** New encounter sets per scenario.
 - **New DSL primitives surfaced by Dunwich cards.** Some Dunwich cards will need primitives that Core didn't (horror redirect / damage soak with state — `#44` already filed; conditional `Effect::If` consumers with richer predicates; etc.). `#716` is the first of these to land: the doom-placement clause nests inside a `Seq` / `ChooseOne` / `If` on Saracenic Script 02240 and Blood on the Altar 02195, which a card-local native tag cannot do.
-- **Doom on cards other than the agenda.** `#572`. *"Place 1 doom on each [[Cultist]] enemy in play"* (01120) and *"on each [[Criminal]] enemy at your location"* (02082) target a card in play, which the engine does not model at all — `check_doom_threshold` sums the agenda only. Deliberately out of `#716`'s scope.
+- **Doom on enemies.** `#572`. *"Place 1 doom on each [[Cultist]] enemy in play"* (01120) and *"on each [[Criminal]] enemy at your location"* (02082) target an enemy. Doom on card instances (`CardInPlay.doom`, Arcane Initiate 01063, `#1049`) is modeled and counted by `check_doom_threshold`; doom on an `Enemy` is not. Deliberately out of `#716`'s scope.
 - **Polish backlog.** Whatever rough edges Phases 5–9 left. UX improvements, error-message tweaks, performance.
 - **CI strictness expansion.** Add test coverage gates? Property-test infrastructure?
 

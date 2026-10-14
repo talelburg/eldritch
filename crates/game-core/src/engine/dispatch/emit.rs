@@ -202,8 +202,9 @@ pub enum TimingEvent {
         /// quantity, not the requested one (#471).
         count: u8,
     },
-    /// A card entered play (reaction-only, After). Opens the `AfterEnteredPlay`
-    /// window — Research Librarian 01032's tutor.
+    /// A card entered play (After). Opens the `AfterEnteredPlay` window —
+    /// Research Librarian 01032's tutor (a reaction) and Arcane Initiate
+    /// 01063's doom (a forced).
     EnteredPlay {
         /// The card instance that entered play (self-binding scope).
         instance: CardInstanceId,
