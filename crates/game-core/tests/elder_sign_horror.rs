@@ -14,11 +14,15 @@ use std::sync::LazyLock;
 use card_dsl::card_data::{CardKind, CardMetadata, Class, Skills};
 use card_dsl::dsl::{self, Effect, HarmKind, IntExpr, InvestigatorTarget, Quantity, TokenOutcome};
 use game_core::assert_event;
+use game_core::engine::modified_value::{
+    self, Contribution, ContributionSource, ModifiedQuantity, ReadContext,
+};
 use game_core::engine::Registries;
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
-    ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenModifiers,
+    ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId, ModifierTarget,
+    SkillKind, TokenModifiers,
 };
 use game_core::test_support::{self, seat, MockRegistry, TestSession};
 
@@ -86,6 +90,11 @@ fn registries() -> Registries {
 /// The investigator printed as `code`, at `HERE`, with `horror` horror on
 /// them, drawing only `[elder_sign]`, with play at their turn menu.
 fn session(code: &str, horror: u8) -> TestSession {
+    TestSession::new(board(code, horror), registries())
+}
+
+/// The board [`session`] starts from.
+fn board(code: &str, horror: u8) -> GameState {
     GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(1).as_card(code).at(HERE).harm(0, horror))
@@ -93,7 +102,7 @@ fn session(code: &str, horror: u8) -> TestSession {
         .with_chaos_bag(ChaosBag::new([ChaosToken::ElderSign]))
         .with_token_modifiers(TokenModifiers::default())
         .open_turn(INV)
-        .session()
+        .build()
 }
 
 /// A difficulty-1 willpower test, committing nothing, run to the end.
@@ -142,5 +151,35 @@ fn horror_placed_at_st4_counts_at_st5() {
             margin: 4,
             ..
         }
+    );
+}
+
+/// The ST.5 breakdown names the elder-sign row after the investigator card
+/// whose ability it is, as the elder sign's ST.4 and ST.7 parts already are.
+/// Read at the post-ST.6 acknowledge, while the test frame is still open.
+#[test]
+fn the_elder_sign_row_is_sourced_to_the_investigator_card() {
+    let mut state = board(COUNTS_HORROR, 2);
+    state.interactive_acknowledge = true;
+    let session = TestSession::new(state, registries())
+        .test_skill(INV, SkillKind::Willpower, 1)
+        .commit(&[]);
+    let state = session.state();
+    let card = state.investigators[&INV].investigator_card.instance_id;
+    let breakdown = modified_value::modified_value(
+        state,
+        registries().cards,
+        ModifierTarget::Investigator(INV),
+        ModifiedQuantity::Skill(SkillKind::Willpower),
+        ReadContext::from_state(state),
+    );
+    assert_eq!(
+        breakdown.contributions,
+        vec![Contribution {
+            source: ContributionSource::Recorded {
+                instance: Some(card),
+            },
+            delta: 2,
+        }]
     );
 }
