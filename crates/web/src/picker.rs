@@ -52,6 +52,7 @@ pub const AGNES_DEFAULT_DECK: &[&str] = &[
     "01062", "01062", // Arcane Studies
     "01063", "01063", // Arcane Initiate
     "01064", "01064", // Drawn to the Flame
+    "01065", "01065", // Ward of Protection
     "01067", "01067", // Fearless
     "01086", "01086", // Knife
     "01087", "01087", // Flashlight
