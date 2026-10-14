@@ -414,7 +414,7 @@ pub(super) fn acknowledge_outcome(cx: &mut Cx) -> EngineOutcome {
 }
 
 /// Run the token half of a skill test (RR ST.3–ST.4): reveal the chaos token
-/// (ST.3) and push the symbol's unconditional
+/// (ST.3) and push the revealed symbol's unconditional
 /// [`immediate`](card_dsl::dsl::TokenOutcome::immediate) effect (ST.4).
 ///
 /// **No total, margin, or verdict is computed here.** ST.5 (*"all active card
@@ -482,41 +482,54 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
         return;
     }
 
-    // ST.3 reveal the chaos token; resolve any scenario symbol outcome.
+    // ST.3 reveal the chaos token, and build the chaos symbol effect it
+    // initiates: the scenario reference card's for a scenario symbol, the
+    // performer's investigator card's for the elder sign. A scenario symbol's
+    // effects run with the controller-only context — the reference card is
+    // not a card in play to source them from — and an elder sign's with the
+    // investigator card as source, so whatever it latches names that card.
     let token_idx = cx.state.rng.next_index(cx.state.chaos_bag.tokens.len());
     let token = cx.state.chaos_bag.tokens[token_idx];
-    let symbol_outcome = match token {
-        ChaosToken::Skull | ChaosToken::Cultist | ChaosToken::Tablet | ChaosToken::ElderThing => {
-            scenario::resolve_symbol_token(cx.scenario, cx.state, token, investigator)
-        }
-        _ => None,
-    };
-    // A scenario symbol's effects run with the controller-only context: the
-    // scenario reference card is not a card in play to source them from.
-    let symbol_ctx = EvalContext::for_controller(investigator);
-    let resolution = match &symbol_outcome {
-        // Evaluated once for the announcement only; the row below stays the
-        // unevaluated expression. An unexpressible condition contributes
-        // nothing to the fold, so it announces `0`.
-        Some(o) => TokenResolution::Modifier(
-            evaluator::eval_int_expr(cx.state, cx.cards, &symbol_ctx, &o.modifier).unwrap_or(0),
+    let (outcome, source) = match token {
+        ChaosToken::Skull | ChaosToken::Cultist | ChaosToken::Tablet | ChaosToken::ElderThing => (
+            scenario::resolve_symbol_token(cx.scenario, cx.state, token, investigator),
+            None,
         ),
-        None => state::resolve_token(token, &cx.state.token_modifiers),
+        ChaosToken::ElderSign => (
+            modified_value::elder_sign_outcome(cx.state, cx.cards, investigator),
+            cx.state
+                .investigators
+                .get(&investigator)
+                .map(|inv| AbilitySource::InPlay(inv.investigator_card.instance_id)),
+        ),
+        _ => (None, None),
+    };
+    let ctx = EvalContext::for_controller_with_optional_source(investigator, source);
+    let resolution = match &outcome {
+        // A scenario symbol's modifier is evaluated once for the announcement
+        // only; the row below stays the unevaluated expression. An
+        // unexpressible condition contributes nothing to the fold, so it
+        // announces `0`. The elder sign keeps its own resolution label.
+        Some(o) if token != ChaosToken::ElderSign => TokenResolution::Modifier(
+            evaluator::eval_int_expr(cx.state, cx.cards, &ctx, &o.modifier).unwrap_or(0),
+        ),
+        _ => state::resolve_token(token, &cx.state.token_modifiers),
     };
     cx.events
         .push(Event::ChaosTokenRevealed { token, resolution });
-    record_token_contribution(cx, investigator, resolution, symbol_outcome.as_ref());
+    record_token_contribution(cx, investigator, resolution, outcome.as_ref());
 
-    // Park the ST.7 result-conditional parts (Cultist horror) for later. Parked
-    // unconditionally — the result is not known until ST.6, and the
+    // Park the ST.7 result-conditional parts (Cultist horror, an elder sign's
+    // "If you succeed") for later, with the source they evaluate under.
+    // Parked unconditionally — the result is not known until ST.6, and the
     // `ApplyTokenResult` step picks the arm by it.
-    let (immediate, token_results) = match symbol_outcome {
+    let (immediate, token_results) = match outcome {
         Some(o) => (
             o.immediate,
             TokenResults {
                 on_success: o.on_success,
                 on_fail: o.on_fail,
-                source: None,
+                source,
             },
         ),
         None => (None, TokenResults::default()),
@@ -536,12 +549,12 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
         t.continuation = SkillTestStep::DetermineOutcome;
     }
 
-    // ST.4 push the symbol's immediate part (Tablet damage when Ghouls are
+    // ST.4 push the outcome's immediate part (Tablet damage when Ghouls are
     // present; an `Effect::Deal` routes through the interactive soak and may
     // suspend). If pushed, it becomes the top frame and the loop resumes at
     // DetermineOutcome.
     if let Some(effect) = &immediate {
-        evaluator::push_effect(cx, effect, symbol_ctx);
+        evaluator::push_effect(cx, effect, ctx);
     }
 }
 
@@ -559,10 +572,10 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
 ///
 /// - [`Modifier(n)`](TokenResolution::Modifier) records `n` as a literal,
 ///   including `0`, so the breakdown always names the token — unless the
-///   token is a scenario symbol, whose `symbol` outcome's modifier is recorded
+///   token is a scenario symbol, whose `outcome`'s modifier is recorded
 ///   **unevaluated** instead (`n` is only its value at reveal).
-/// - [`ElderSign`](TokenResolution::ElderSign) records the investigator
-///   card's elder-sign [`IntExpr`] **unevaluated**. Roland Banks 01001's
+/// - [`ElderSign`](TokenResolution::ElderSign) records the modifier of the
+///   investigator card's elder-sign `outcome` **unevaluated**. Roland Banks 01001's
 ///   *"`[elder_sign]` effect: +1 for each clue on your location."*
 ///   (`data/arkhamdb-snapshot/pack/core/core.json`) counts the clues on his
 ///   location when ST.5 reads the row, not the ones that were there when the
@@ -582,7 +595,7 @@ fn record_token_contribution(
     cx: &mut Cx,
     investigator: InvestigatorId,
     resolution: TokenResolution,
-    symbol: Option<&TokenOutcome>,
+    outcome: Option<&TokenOutcome>,
 ) {
     let (test_id, skill) = {
         let t = cx
@@ -593,14 +606,13 @@ fn record_token_contribution(
     };
     let delta = match resolution {
         TokenResolution::Modifier(n) => {
-            symbol.map_or(IntExpr::Lit(n), |outcome| outcome.modifier.clone())
+            outcome.map_or(IntExpr::Lit(n), |outcome| outcome.modifier.clone())
         }
         TokenResolution::ElderSign => {
-            let Some(expr) = modified_value::elder_sign_expr(cx.state, cx.cards, investigator)
-            else {
+            let Some(outcome) = outcome else {
                 return;
             };
-            expr
+            outcome.modifier.clone()
         }
         TokenResolution::AutoFail => {
             cx.state
