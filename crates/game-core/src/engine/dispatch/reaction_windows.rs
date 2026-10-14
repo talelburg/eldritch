@@ -142,8 +142,10 @@ pub(super) fn candidate_anchor(cand: &ResolutionCandidate) -> OptionTarget {
 /// [`ChoiceOption`] per pending candidate, in `pending_triggers` order.
 /// `OptionId(i)` is the index into the returned list — the Axis-A convention
 /// shared with [`super::choice`]. The label distinguishes a hand Fast-event
-/// play ([`CandidateSource::Hand`]) from an in-play reaction.
-fn build_resolution_options(candidates: &[ResolutionCandidate]) -> Vec<ChoiceOption> {
+/// play ([`CandidateSource::Hand`] in a reaction window) from an in-play
+/// reaction, and from a `forced` run's ability on a card in hand, which fires
+/// without being played (Dark Memory 01013, #1046).
+fn build_resolution_options(candidates: &[ResolutionCandidate], forced: bool) -> Vec<ChoiceOption> {
     candidates
         .iter()
         .enumerate()
@@ -152,6 +154,7 @@ fn build_resolution_options(candidates: &[ResolutionCandidate]) -> Vec<ChoiceOpt
             // Label distinguishes a hand Fast-event play from an ability fired
             // in place; the anchor is the shared `candidate_anchor` (#553).
             let label = match cand.source {
+                CandidateSource::Hand if forced => format!("Resolve {} in hand", cand.code),
                 CandidateSource::Hand => format!("Play {} from hand", cand.code),
                 CandidateSource::Ability(_) => format!("Resolve reaction: {}", cand.code),
             };
@@ -492,6 +495,7 @@ pub(crate) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
         window
             .pending_candidates()
             .expect("open_queued_reaction_window: top window has candidates"),
+        window.is_forced(),
     );
     let mut request = InputRequest::pick_single(
         format!(
@@ -571,7 +575,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // responding to. Operate on it directly; the stack-is-resolution-order
     // invariant means the active window is always `last()` (Slice C-plumbing).
     // Snapshot to avoid borrowing state across the apply_effect call.
-    let (trigger, pending_idx, event) = {
+    let (trigger, pending_idx, event, forced) = {
         let window = cx
             .state
             .continuations
@@ -606,7 +610,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
                 )
             })
             .clone();
-        (candidates[idx].clone(), idx, event)
+        (candidates[idx].clone(), idx, event, window.is_forced())
     };
 
     // The initiation gate, at initiation (#568). Both prompt sites withdraw
@@ -628,11 +632,14 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
         };
     }
 
-    // Axis C (#335): a hand candidate is *played*, not fired in place. Remove
-    // it from the run first (so a suspending play resumes the remaining
-    // siblings, not this one again — mirrors the in-play path below), then
-    // play it.
-    if trigger.source == CandidateSource::Hand {
+    // Axis C (#335): a hand candidate in a reaction window is a Fast event,
+    // *played* rather than fired in place. Remove it from the run first (so a
+    // suspending play resumes the remaining siblings, not this one again —
+    // mirrors the in-play path below), then play it. A hand candidate in a
+    // forced run is a forced ability working from hand (Dark Memory 01013,
+    // #1046): it fires in place like any other forced hit, and the card stays
+    // in hand.
+    if trigger.source == CandidateSource::Hand && !forced {
         cx.state
             .continuations
             .top_frame_mut()
@@ -835,7 +842,7 @@ pub(super) fn advance_resolution(cx: &mut Cx) -> EngineOutcome {
     } else {
         ", or InputResponse::Skip to close"
     };
-    let options = build_resolution_options(candidates);
+    let options = build_resolution_options(candidates, window.is_forced());
     let mut request = InputRequest::pick_single(
         format!(
             "Resolution window: {} option(s). \

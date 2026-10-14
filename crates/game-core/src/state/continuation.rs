@@ -1846,10 +1846,12 @@ pub enum CandidateSource {
     /// (the Attic's forced horror), an enemy (Silver Twilight Acolyte 01102's
     /// forced doom), the current act or the current agenda.
     Ability(AbilitySource),
-    /// A Fast event in the controller's hand (Axis C) — *played* rather than
-    /// fired. No instance until it would enter play (events never do), and not
-    /// an ability source: no bullet of `glossary/Triggered_Abilities.md` names
-    /// a card in hand.
+    /// A card in the controller's hand. In a reaction window it is a Fast event
+    /// (Axis C), *played* rather than fired; in a forced run it is a forced
+    /// ability that works from hand (Dark Memory 01013, #1046), fired with the
+    /// card left in hand. No instance until it would enter play (events never
+    /// do), and not an ability source: no bullet of
+    /// `glossary/Triggered_Abilities.md` names a card in hand.
     Hand,
 }
 

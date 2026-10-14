@@ -221,7 +221,7 @@ fn resolution_options_anchor_by_candidate_source() {
             source: CandidateSource::Ability(AbilitySource::Act),
         },
     ];
-    let opts = build_resolution_options(&cands);
+    let opts = build_resolution_options(&cands, false);
     assert_eq!(
         opts[0].target,
         Some(OptionTarget::CardInstance(CardInstanceId(9)))

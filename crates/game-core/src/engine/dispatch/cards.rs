@@ -31,8 +31,10 @@ pub(super) const INITIAL_HAND_SIZE: u8 = 5;
 /// code has no metadata — so the engine's unit tests, whose test registry knows
 /// no real card, behave as if no card is a weakness.
 ///
-/// One consumer: the opening-hand set-aside below. Where a card goes when it
-/// leaves play is its owner's question, not this one's (#976).
+/// Two consumers: the opening-hand set-aside below, and the upkeep hand-size
+/// discard, which may not choose a weakness (`phases::hand_size_discard_count`).
+/// Where a card goes when it leaves play is its owner's question, not this
+/// one's (#976).
 pub(super) fn is_weakness_code(cards: &CardRegistry, code: &CardCode) -> bool {
     (cards.metadata_for)(code).is_some_and(CardMetadata::is_weakness)
 }
