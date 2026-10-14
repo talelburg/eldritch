@@ -26,7 +26,7 @@ use card_dsl::dsl::{
     TriggerKind,
 };
 
-use crate::card_registry::{self, CardRegistry};
+use crate::card_registry::CardRegistry;
 use crate::engine::board::{self, Placement};
 use crate::engine::dispatch::cursor;
 use crate::engine::dispatch::emit::TimingEvent;
@@ -77,21 +77,25 @@ pub(super) struct BoardSource<'a> {
 /// The walk does not filter by kind, timing or pattern. The forced collector
 /// ignores the hand slot (no corpus card prints a forced ability that works
 /// from hand); [`collect_reactions`] uses it for Fast events.
-pub(super) fn board_walk<'a>(state: &'a GameState, event: &'a TimingEvent) -> Vec<BoardSource<'a>> {
+pub(super) fn board_walk<'a>(
+    state: &'a GameState,
+    cards: &'a CardRegistry,
+    event: &'a TimingEvent,
+) -> Vec<BoardSource<'a>> {
     let exempt = match event {
         TimingEvent::EliminationGameEnd { investigator } => Some(*investigator),
         _ => None,
     };
-    let reg = card_registry::current();
     // The Fast events in `id`'s hand.
     let hand = |id: InvestigatorId| {
-        let held = reg
-            .zip(state.investigators.get(&id))
-            .map(|(reg, inv)| {
+        let held = state
+            .investigators
+            .get(&id)
+            .map(|inv| {
                 inv.hand
                     .iter()
                     .filter(|code| {
-                        (reg.metadata_for)(code).is_some_and(|meta| {
+                        (cards.metadata_for)(code).is_some_and(|meta| {
                             meta.is_fast() && meta.card_type() == CardType::Event
                         })
                     })
@@ -174,15 +178,13 @@ pub(super) fn board_walk<'a>(state: &'a GameState, event: &'a TimingEvent) -> Ve
 /// A hit with no one to bind (no lead and no subject) is not collected.
 pub(super) fn collect_forced(
     state: &GameState,
+    cards: &CardRegistry,
     event: &TimingEvent,
     bucket: EventTiming,
 ) -> Vec<ResolutionCandidate> {
-    let Some(reg) = card_registry::current() else {
-        return Vec::new();
-    };
     let lead = cursor::first_active_investigator(state);
     let mut hits = Vec::new();
-    for walked in board_walk(state, event) {
+    for walked in board_walk(state, cards, event) {
         // Forced abilities on cards out of play are not scanned: no corpus
         // card prints one.
         let CandidateSource::Ability(source) = walked.source else {
@@ -202,7 +204,7 @@ pub(super) fn collect_forced(
         // `when`-`RoundEnded` *reaction* this scan must not collect.
         let forced = triggers_at(
             state,
-            reg,
+            cards,
             walked.source,
             walked.code,
             TriggerKind::Forced,
@@ -211,6 +213,7 @@ pub(super) fn collect_forced(
         for (address, pattern) in forced {
             if pattern_matches(
                 state,
+                cards,
                 event,
                 &pattern,
                 walked.source,
@@ -232,7 +235,7 @@ pub(super) fn collect_forced(
     // change-state and eligibility checks — Cover Up 01007's *"if there are any
     // clues on Cover Up"* is an eligibility condition, and without it a clueless
     // Cover Up prompted at game end (#786).
-    hits.retain(|hit| initiation::check(state, hit, InitiationKind::Forced).is_ok());
+    hits.retain(|hit| initiation::check(state, cards, hit, InitiationKind::Forced).is_ok());
     hits
 }
 
@@ -261,21 +264,19 @@ pub(super) fn collect_forced(
 /// Every other candidate is gated as a [`Reaction`](InitiationKind::Reaction).
 pub(super) fn collect_reactions(
     state: &GameState,
+    cards: &CardRegistry,
     event: &TimingEvent,
     bucket: EventTiming,
 ) -> Vec<ResolutionCandidate> {
-    let Some(reg) = card_registry::current() else {
-        return Vec::new();
-    };
     let lead = cursor::first_active_investigator(state);
     // Each investigator's reachable sources, asked once per scan and only if a
     // board hit needs them.
     let mut reach: Option<Vec<(InvestigatorId, Vec<AbilitySource>)>> = None;
     let mut hits = Vec::new();
-    for walked in board_walk(state, event) {
+    for walked in board_walk(state, cards, event) {
         let reactions = triggers_at(
             state,
-            reg,
+            cards,
             walked.source,
             walked.code,
             TriggerKind::Reaction,
@@ -297,7 +298,7 @@ pub(super) fn collect_reactions(
                     board::investigator_order(state)
                         .into_iter()
                         .map(|id| {
-                            let sources = ability_source::reachable_sources(state, id)
+                            let sources = ability_source::reachable_sources(state, cards, id)
                                 .into_iter()
                                 .map(|(source, _)| source)
                                 .collect();
@@ -317,6 +318,7 @@ pub(super) fn collect_reactions(
             for (address, pattern) in &reactions {
                 if !pattern_matches(
                     state,
+                    cards,
                     event,
                     pattern,
                     walked.source,
@@ -339,7 +341,7 @@ pub(super) fn collect_reactions(
                 // it is not the binding check — the wallet is shared, so a
                 // sibling option can empty it after this ran, and initiation
                 // re-asks (#568).
-                if initiation::check(state, &candidate, kind).is_err() {
+                if initiation::check(state, cards, &candidate, kind).is_err() {
                     continue;
                 }
                 hits.push(candidate);
@@ -360,13 +362,13 @@ pub(super) fn collect_reactions(
 /// of play).
 fn triggers_at(
     state: &GameState,
-    reg: &CardRegistry,
+    cards: &CardRegistry,
     source: CandidateSource,
     code: &CardCode,
     kind: TriggerKind,
     bucket: EventTiming,
 ) -> Vec<(AbilityAddress, EventPattern)> {
-    abilities_in_effect::for_candidate_source_with(state, reg, source, code)
+    abilities_in_effect::for_candidate_source(state, cards, source, code)
         .unwrap_or_default()
         .into_iter()
         .filter_map(|(address, ability)| match ability.trigger {
@@ -386,6 +388,7 @@ fn triggers_at(
 /// [`scope_matches`] for where the card is.
 pub(super) fn pattern_matches(
     state: &GameState,
+    cards: &CardRegistry,
     event: &TimingEvent,
     pattern: &EventPattern,
     source: CandidateSource,
@@ -393,7 +396,7 @@ pub(super) fn pattern_matches(
     controller: InvestigatorId,
 ) -> bool {
     trigger_matches(event, pattern, controller)
-        && scope_matches(state, event, pattern, source, code, controller)
+        && scope_matches(state, cards, event, pattern, source, code, controller)
 }
 
 /// Whether an ability declaring `pattern`, owned by `controller`, matches
@@ -520,6 +523,7 @@ pub(super) fn trigger_matches(
 /// has already paired the pattern with the event's condition.
 fn scope_matches(
     state: &GameState,
+    cards: &CardRegistry,
     event: &TimingEvent,
     pattern: &EventPattern,
     source: CandidateSource,
@@ -587,7 +591,7 @@ fn scope_matches(
         // represent, since a weakness enters its owner's threat area and nothing
         // models one player controlling another's card.
         TimingEvent::EliminationGameEnd { investigator } => {
-            controlled_weakness(state, source, *investigator)
+            controlled_weakness(state, cards, source, *investigator)
         }
         // "When an enemy attack deals damage to **Guard Dog**" (01021): only an
         // asset the assignment gives damage to. It reads the *event's*
@@ -645,6 +649,7 @@ fn attached_to(state: &GameState, source: CandidateSource, location: LocationId)
 /// Whether `source` is a weakness `investigator` controls.
 fn controlled_weakness(
     state: &GameState,
+    cards: &CardRegistry,
     source: CandidateSource,
     investigator: InvestigatorId,
 ) -> bool {
@@ -655,9 +660,7 @@ fn controlled_weakness(
         return false;
     };
     placement.investigator() == Some(investigator)
-        && card_registry::current()
-            .and_then(|reg| (reg.metadata_for)(&card.code))
-            .is_some_and(|meta| meta.weakness)
+        && (cards.metadata_for)(&card.code).is_some_and(|meta| meta.weakness)
 }
 
 /// Whether investigators `a` and `b` share a current location. Two

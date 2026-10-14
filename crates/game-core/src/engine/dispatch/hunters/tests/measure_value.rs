@@ -1,14 +1,10 @@
-use card_dsl::card_data::{CardMetadata, SkillKind};
+use card_dsl::card_data::SkillKind;
 use card_dsl::dsl::{self, Ability, ModifierScope, Stat};
 
 use super::*;
 use crate::card_registry::CardRegistry;
 use crate::state::{CardCode, GameStateBuilder};
 use crate::test_support;
-
-fn no_metadata(_: &CardCode) -> Option<&'static CardMetadata> {
-    None
-}
 
 fn fake_abilities(code: &CardCode) -> Option<Vec<Ability>> {
     match code.as_str() {
@@ -31,11 +27,12 @@ fn fake_abilities(code: &CardCode) -> Option<Vec<Ability>> {
     }
 }
 
+/// The unit-test registry (for `TEST_INV`'s printed capacity), with the
+/// modifier probes' abilities.
 fn fake_registry() -> CardRegistry {
     CardRegistry {
-        metadata_for: no_metadata,
         abilities_for: fake_abilities,
-        ..CardRegistry::EMPTY
+        ..test_support::TEST_REGISTRY
     }
 }
 
@@ -55,11 +52,16 @@ fn state_with(cards: &[&str], damage: u8) -> GameState {
 }
 
 #[test]
-fn base_value_when_no_registry() {
+fn base_value_when_no_modifier_is_registered() {
     let state = state_with(&[], 0);
     let inv = &state.investigators[&InvestigatorId(1)];
     assert_eq!(
-        measure_value(&state, None, inv, PreyMeasure::Skill(SkillKind::Combat)),
+        measure_value(
+            &state,
+            &test_support::TEST_REGISTRY,
+            inv,
+            PreyMeasure::Skill(SkillKind::Combat)
+        ),
         3
     );
 }
@@ -70,12 +72,7 @@ fn folds_constant_skill_modifier() {
     let inv = &state.investigators[&InvestigatorId(1)];
     let reg = fake_registry();
     assert_eq!(
-        measure_value(
-            &state,
-            Some(&reg),
-            inv,
-            PreyMeasure::Skill(SkillKind::Combat)
-        ),
+        measure_value(&state, &reg, inv, PreyMeasure::Skill(SkillKind::Combat)),
         4
     );
 }
@@ -87,7 +84,7 @@ fn folds_max_health_modifier_into_remaining_health() {
     let inv = &state.investigators[&InvestigatorId(1)];
     let reg = fake_registry();
     assert_eq!(
-        measure_value(&state, Some(&reg), inv, PreyMeasure::RemainingHealth),
+        measure_value(&state, &reg, inv, PreyMeasure::RemainingHealth),
         9
     );
 }
@@ -99,12 +96,7 @@ fn clamps_at_zero() {
     let inv = &state.investigators[&InvestigatorId(1)];
     let reg = fake_registry();
     assert_eq!(
-        measure_value(
-            &state,
-            Some(&reg),
-            inv,
-            PreyMeasure::Skill(SkillKind::Combat)
-        ),
+        measure_value(&state, &reg, inv, PreyMeasure::Skill(SkillKind::Combat)),
         0
     );
 }

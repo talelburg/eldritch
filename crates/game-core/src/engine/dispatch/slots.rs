@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use card_dsl::card_data::Slot;
 
 use crate::action::InputResponse;
-use crate::card_registry;
+use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::{cards, choice};
 use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken};
 use crate::engine::{board, Cx};
@@ -72,12 +72,10 @@ pub(super) fn slot_need_exceeds_capacity(need: &SlotCounts) -> Option<Slot> {
         .map(|(&slot, _)| slot)
 }
 
-/// The slot multiset `code` needs to enter play, read from the installed
-/// registry. Empty when no registry is installed, the code is unknown, or it
-/// is a non-asset / slot-less asset.
-pub(super) fn card_slot_need(code: &CardCode) -> SlotCounts {
-    card_registry::current()
-        .and_then(|reg| (reg.metadata_for)(code))
+/// The slot multiset `code` needs to enter play, read from `cards`. Empty
+/// when the code is unknown, or it is a non-asset / slot-less asset.
+pub(super) fn card_slot_need(cards: &CardRegistry, code: &CardCode) -> SlotCounts {
+    (cards.metadata_for)(code)
         .map(|meta| count_slots(meta.slots()))
         .unwrap_or_default()
 }
@@ -85,20 +83,20 @@ pub(super) fn card_slot_need(code: &CardCode) -> SlotCounts {
 /// The slot type `code` needs more of than the investigator has capacity for, or
 /// `None` if it can fit (possibly after discarding occupiers). See
 /// [`slot_need_exceeds_capacity`]. Empty-need cards (slot-less, non-asset,
-/// registry-free) always return `None`.
-pub(super) fn unsatisfiable_slot(code: &CardCode) -> Option<Slot> {
-    slot_need_exceeds_capacity(&card_slot_need(code))
+/// unknown) always return `None`.
+pub(super) fn unsatisfiable_slot(cards: &CardRegistry, code: &CardCode) -> Option<Slot> {
+    slot_need_exceeds_capacity(&card_slot_need(cards, code))
 }
 
 /// Slots occupied by `investigator`'s in-play assets. The investigator card is
 /// deliberately not in `cards_in_play`, so it is correctly excluded; slot-less
-/// and non-asset in-play cards contribute nothing. Empty when no registry is
-/// installed.
-pub(super) fn occupied_slots(state: &GameState, investigator: InvestigatorId) -> SlotCounts {
+/// and non-asset in-play cards contribute nothing.
+pub(super) fn occupied_slots(
+    state: &GameState,
+    reg: &CardRegistry,
+    investigator: InvestigatorId,
+) -> SlotCounts {
     let mut occ = SlotCounts::new();
-    let Some(reg) = card_registry::current() else {
-        return occ;
-    };
     let Some(inv) = state.investigators.get(&investigator) else {
         return occ;
     };
@@ -113,17 +111,18 @@ pub(super) fn occupied_slots(state: &GameState, investigator: InvestigatorId) ->
 }
 
 /// Per-type shortfall for playing `code` now: `max(0, occupied + need - cap)`.
-/// Empty when the asset fits without discarding (or registry-free / unknown).
+/// Empty when the asset fits without discarding (or the code is unknown).
 pub(super) fn slot_deficit(
     state: &GameState,
+    cards: &CardRegistry,
     investigator: InvestigatorId,
     code: &CardCode,
 ) -> SlotCounts {
-    let need = card_slot_need(code);
+    let need = card_slot_need(cards, code);
     if need.is_empty() {
         return SlotCounts::new();
     }
-    deficit_from(&occupied_slots(state, investigator), &need)
+    deficit_from(&occupied_slots(state, cards, investigator), &need)
 }
 
 /// `investigator`'s in-play assets occupying at least one slot type currently in
@@ -132,12 +131,10 @@ pub(super) fn slot_deficit(
 /// its resume.
 pub(super) fn make_room_candidates(
     state: &GameState,
+    reg: &CardRegistry,
     investigator: InvestigatorId,
     deficit: &SlotCounts,
 ) -> Vec<(CardInstanceId, CardCode)> {
-    let Some(reg) = card_registry::current() else {
-        return Vec::new();
-    };
     let Some(inv) = state.investigators.get(&investigator) else {
         return Vec::new();
     };
@@ -179,12 +176,12 @@ pub(in crate::engine) fn enter_asset_making_room(
     card: CardInPlay,
     entry: AssetEntry,
 ) -> EngineOutcome {
-    let deficit = slot_deficit(cx.state, investigator, &card.code);
+    let deficit = slot_deficit(cx.state, cx.cards, investigator, &card.code);
     if deficit.is_empty() {
         cards::enter_asset_into_play(cx, investigator, card, entry);
         return EngineOutcome::Done;
     }
-    let candidates = make_room_candidates(cx.state, investigator, &deficit);
+    let candidates = make_room_candidates(cx.state, cx.cards, investigator, &deficit);
     debug_assert!(
         !candidates.is_empty(),
         "slot deficit with no candidate to discard — check_play_card's need<=cap \
@@ -213,7 +210,7 @@ fn prompt_slot_discard(
     investigator: InvestigatorId,
     deficit: &SlotCounts,
 ) -> EngineOutcome {
-    let candidates = make_room_candidates(cx.state, investigator, deficit);
+    let candidates = make_room_candidates(cx.state, cx.cards, investigator, deficit);
     let prompt = format!(
         "Investigator {investigator:?}: choose an asset to discard to make room \
          (slots needed: {deficit:?})."
@@ -221,7 +218,7 @@ fn prompt_slot_discard(
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_single(
             prompt,
-            choice::candidate_options(cx.state, &candidates, |(inst, _)| {
+            choice::candidate_options(cx.state, cx.cards, &candidates, |(inst, _)| {
                 OptionTarget::CardInstance(*inst)
             }),
         ),
@@ -260,8 +257,8 @@ pub(super) fn resume_slot_discard(cx: &mut Cx, response: &InputResponse) -> Engi
                 .into(),
         };
     };
-    let deficit = slot_deficit(cx.state, investigator, &card.code);
-    let candidates = make_room_candidates(cx.state, investigator, &deficit);
+    let deficit = slot_deficit(cx.state, cx.cards, investigator, &card.code);
+    let candidates = make_room_candidates(cx.state, cx.cards, investigator, &deficit);
     let Some(&(inst, _)) = candidates.get(*i as usize) else {
         return EngineOutcome::Rejected {
             reason: format!(

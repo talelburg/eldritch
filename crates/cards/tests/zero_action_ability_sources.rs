@@ -79,6 +79,7 @@
 //! Investigation-phase board would satisfy the first disjunct and mask the one
 //! under test.
 
+use card_dsl::card_data::{CardKind, CardMetadata};
 use card_dsl::dsl::{self, Ability, InvestigatorTarget};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{InputKind, OptionTarget};
@@ -149,6 +150,26 @@ fn probe_abilities() -> Vec<Ability> {
     ]
 }
 
+/// [`WARD`]'s printed cardtype: co-location reaches a threat-area card only
+/// as an encounter card, so the registry has to know it is a treachery.
+fn ward_metadata() -> CardMetadata {
+    CardMetadata {
+        code: WARD.to_owned(),
+        name: WARD.to_owned(),
+        traits: vec![],
+        text: None,
+        back_name: None,
+        back_text: None,
+        pack_code: "_test".to_owned(),
+        weakness: false,
+        kind: CardKind::Treachery {
+            surge: false,
+            peril: false,
+            quantity: 1,
+        },
+    }
+}
+
 #[ctor::ctor(unsafe)]
 fn install_probe_registry() {
     // `TEST_INV`'s metadata rides `install`'s composed `metadata_for_test_inv`.
@@ -156,6 +177,7 @@ fn install_probe_registry() {
         .with_abilities(HALL, probe_abilities)
         .with_abilities(CULTIST, probe_abilities)
         .with_abilities(WARD, probe_abilities)
+        .with_card(ward_metadata())
         .with_abilities(ACT, probe_abilities)
         .with_abilities(AGENDA, probe_abilities)
         .install();

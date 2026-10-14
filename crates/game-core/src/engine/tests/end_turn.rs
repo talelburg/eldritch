@@ -1,8 +1,9 @@
 use super::*;
+use crate::test_support::TEST_REGISTRY;
 
 /// Whether `state`'s menu offers an `EndTurn`.
 fn offers_end_turn(state: &GameState) -> bool {
-    legal_actions(state)
+    legal_actions(state, &TEST_REGISTRY)
         .iter()
         .any(|a| matches!(a, TurnAction::EndTurn))
 }

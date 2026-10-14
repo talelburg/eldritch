@@ -97,7 +97,11 @@ fn play_state(hand: &[&str]) -> TestSession {
 /// what the menu filters out.
 fn play_off_menu(session: TestSession) -> TestSession {
     assert!(
-        !enumerate::legal_actions(session.state()).contains(&PLAY_FIRST),
+        !enumerate::legal_actions(
+            session.state(),
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&PLAY_FIRST),
         "the turn menu does not offer a play its handler rejects",
     );
     let refused = session.submit_off_menu(&PLAY_FIRST);

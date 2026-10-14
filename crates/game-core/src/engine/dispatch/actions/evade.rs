@@ -57,7 +57,7 @@ pub(in crate::engine::dispatch) fn handle(
     enemy_id: EnemyId,
 ) -> EngineOutcome {
     let description = ActionDescription::basic(ActionKind::Evade);
-    if let Err(reason) = take::check(cx.state, investigator, &description) {
+    if let Err(reason) = take::check(cx.state, cx.cards, investigator, &description) {
         return EngineOutcome::Rejected { reason };
     }
     let Some(enemy) = cx.state.enemies.get(&enemy_id) else {

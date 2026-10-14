@@ -76,7 +76,7 @@ pub(in crate::engine::dispatch) fn handle(
     investigator: InvestigatorId,
 ) -> EngineOutcome {
     let description = ActionDescription::basic(ActionKind::Investigate);
-    if let Err(reason) = take::check(cx.state, investigator, &description) {
+    if let Err(reason) = take::check(cx.state, cx.cards, investigator, &description) {
         return EngineOutcome::Rejected { reason };
     }
     let inv = &cx.state.investigators[&investigator];

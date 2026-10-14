@@ -66,6 +66,7 @@ fn crypt_chill_fail(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     let assets = controlled_assets(cx.state(), controller);
     match engine::resolve_grounded_choice(
         cx.state(),
+        cx.cards(),
         ctx,
         &assets,
         "Choose an asset to discard",

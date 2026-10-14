@@ -9,6 +9,7 @@
 //! ones.
 
 use crate::action::{EngineRecord, InputResponse, PlayerAction, RosterEntry};
+use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::enumerate::TurnAction;
 use crate::engine::outcome::{
@@ -120,8 +121,8 @@ pub(crate) fn dispatch_turn_action(cx: &mut Cx, action: &TurnAction) -> EngineOu
 /// surfaced as a structured [`InputRequest`](crate::engine::InputRequest).
 /// `OptionId(i)` indexes [`legal_actions`](crate::engine::enumerate::legal_actions);
 /// the `InvestigatorTurn` arm of [`resolve_input`] re-enumerates and dispatches.
-fn turn_menu(state: &GameState) -> InputRequest {
-    let options = enumerate::legal_actions(state)
+fn turn_menu(state: &GameState, cards: &CardRegistry) -> InputRequest {
+    let options = enumerate::legal_actions(state, cards)
         .iter()
         .enumerate()
         .map(|(i, a)| {
@@ -361,7 +362,7 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // than cached — see the open-turn arm of `resolve_input`.
             Continuation::InvestigatorTurn(_) if top.awaits_input() => {
                 return EngineOutcome::AwaitingInput {
-                    request: turn_menu(cx.state),
+                    request: turn_menu(cx.state, cx.cards),
                     // Deterministic resume-token is #458; placeholder like every
                     // other `AwaitingInput` site until then.
                     resume_token: ResumeToken(0),
@@ -551,7 +552,7 @@ fn resume_window(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
         InputResponse::Skip => reaction_windows::close_reaction_window(cx),
         InputResponse::PickSingle(opt) => {
             let i = opt.0;
-            let plays = reaction_windows::enumerate_fast_plays(cx.state);
+            let plays = reaction_windows::enumerate_fast_plays(cx.state, cx.cards);
             let Some(action) = plays.get(i as usize).cloned() else {
                 return EngineOutcome::Rejected {
                     reason: format!(
@@ -688,7 +689,7 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
                     reason: "ResolveInput: the open turn expects PickSingle(OptionId)".into(),
                 };
             };
-            let actions = enumerate::legal_actions(cx.state);
+            let actions = enumerate::legal_actions(cx.state, cx.cards);
             let Some(action) = actions.get(opt.0 as usize).cloned() else {
                 return EngineOutcome::Rejected {
                     reason: format!(
@@ -742,8 +743,8 @@ mod turn_menu_tests {
             .open_turn(InvestigatorId(1))
             .build();
 
-        let actions = enumerate::legal_actions(&state);
-        let menu = dispatch::turn_menu(&state);
+        let actions = enumerate::legal_actions(&state, &test_support::TEST_REGISTRY);
+        let menu = dispatch::turn_menu(&state, &test_support::TEST_REGISTRY);
         assert_eq!(menu.options.len(), actions.len());
         for (i, action) in actions.iter().enumerate() {
             assert_eq!(menu.options[i].target, action.target(&state));

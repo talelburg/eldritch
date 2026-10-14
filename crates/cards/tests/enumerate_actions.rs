@@ -49,24 +49,28 @@ fn study_board(investigator: Seat) -> GameStateBuilder {
 #[test]
 fn play_card_offered_for_a_playable_hand_card() {
     let state = study_board(me().hand([HOLY_ROSARY])).build();
-    assert!(
-        enumerate::legal_actions(&state).contains(&TurnAction::PlayCard {
-            investigator: INV,
-            hand_index: 0,
-        })
-    );
+    assert!(enumerate::legal_actions(
+        &state,
+        game_core::card_registry::current().expect("card registry installed")
+    )
+    .contains(&TurnAction::PlayCard {
+        investigator: INV,
+        hand_index: 0,
+    }));
 }
 
 #[test]
 fn activate_offered_for_an_in_play_activated_ability() {
     let state = study_board(me().in_play([(FLASHLIGHT, uses(UseKind::Supplies, 3))])).build();
-    assert!(
-        enumerate::legal_actions(&state).contains(&TurnAction::ActivateAbility {
-            investigator: INV,
-            source: AbilitySource::InPlay(state.in_play(INV, FLASHLIGHT)),
-            address: AbilityAddress::Printed(0),
-        })
-    );
+    assert!(enumerate::legal_actions(
+        &state,
+        game_core::card_registry::current().expect("card registry installed")
+    )
+    .contains(&TurnAction::ActivateAbility {
+        investigator: INV,
+        source: AbilitySource::InPlay(state.in_play(INV, FLASHLIGHT)),
+        address: AbilityAddress::Printed(0),
+    }));
 }
 
 /// Investigator 1 at the Study with Holy Rosary in hand and a Flashlight in
@@ -96,7 +100,13 @@ fn every_enumerated_action_applies_without_rejection_with_registry() {
     // the basic actions; each applies without Rejected (a prompt or a return to
     // the menu are both acceptance).
     let state = rosary_and_flashlight_board();
-    assert_each_applies(&state, &enumerate::legal_actions(&state));
+    assert_each_applies(
+        &state,
+        &enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed"),
+        ),
+    );
 }
 
 /// A board offering every action category: the registry-edition fixture plus a
@@ -135,7 +145,10 @@ fn every_category_board() -> GameState {
 #[test]
 fn full_enumeration_covers_every_action_category_and_all_apply() {
     let state = every_category_board();
-    let actions = enumerate::legal_actions(&state);
+    let actions = enumerate::legal_actions(
+        &state,
+        game_core::card_registry::current().expect("card registry installed"),
+    );
 
     // Every category is represented.
     let has = |p: fn(&TurnAction) -> bool| actions.iter().any(p);
@@ -200,7 +213,10 @@ fn the_corpus_act_and_agenda_are_reachable_but_offer_no_activation() {
         doom_threshold: 3,
     }];
 
-    let menu = enumerate::legal_actions(&state);
+    let menu = enumerate::legal_actions(
+        &state,
+        game_core::card_registry::current().expect("card registry installed"),
+    );
     for source in [AbilitySource::Act, AbilitySource::Agenda] {
         assert!(
             !menu.iter().any(|a| matches!(
@@ -271,7 +287,10 @@ fn assert_menu_offers_every_accepted_basic_action(
     state: &GameState,
     me: InvestigatorId,
 ) -> Vec<TurnAction> {
-    let menu = enumerate::legal_actions(state);
+    let menu = enumerate::legal_actions(
+        state,
+        game_core::card_registry::current().expect("card registry installed"),
+    );
     let mut accepted = Vec::new();
     for action in every_basic_action(state, me) {
         let submitted = TestSession::new(state.clone()).submit_off_menu(&action);

@@ -184,9 +184,16 @@ fn activation(source: AbilitySource, ability_index: u8) -> TurnAction {
 fn assert_offered_and_activatable(state: GameState, source: AbilitySource, why: &str) {
     let action = activation(source, LIVE);
     assert!(
-        enumerate::legal_actions(&state).contains(&action),
+        enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&action),
         "{why}, so its ability belongs in the turn menu; menu was {:?}",
-        enumerate::legal_actions(&state),
+        enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        ),
     );
 
     let before = state.investigators[&MINE].resources;
@@ -205,9 +212,16 @@ fn assert_out_of_reach(state: GameState, source: AbilitySource, why: &str) {
     let action = activation(source, LIVE);
 
     assert!(
-        !enumerate::legal_actions(&state).contains(&action),
+        !enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&action),
         "{why}, so it must stay out of the turn menu; menu was {:?}",
-        enumerate::legal_actions(&state),
+        enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        ),
     );
 
     // Activating it must reject.
@@ -309,7 +323,10 @@ fn a_threat_area_card_on_an_investigator_elsewhere_does_not() {
 #[test]
 fn an_inert_ability_stays_unoffered_from_every_newly_reachable_source() {
     let state = board();
-    let menu = enumerate::legal_actions(&state);
+    let menu = enumerate::legal_actions(
+        &state,
+        game_core::card_registry::current().expect("card registry installed"),
+    );
     for source in [
         AbilitySource::Location(HERE),
         AbilitySource::Enemy(CULTIST_HERE),
@@ -334,9 +351,16 @@ fn a_usage_limited_ability_on_a_location_rejects_naming_699_rather_than_panickin
     let action = activation(AbilitySource::Location(HERE), LIMITED);
 
     assert!(
-        !enumerate::legal_actions(&state).contains(&action),
+        !enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&action),
         "an ability the engine cannot cap must not be offered; menu was {:?}",
-        enumerate::legal_actions(&state),
+        enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        ),
     );
 
     // A usage-limited location ability must reject.
@@ -353,12 +377,19 @@ fn a_usage_limited_ability_on_a_location_rejects_naming_699_rather_than_panickin
 fn the_same_limit_on_a_card_instance_is_not_refused() {
     let state = board();
     assert!(
-        enumerate::legal_actions(&state).contains(&activation(
+        enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&activation(
             AbilitySource::InPlay(ward_of(&state, NEIGHBOUR)),
             LIMITED
         )),
         "a threat-area card carries per-instance usage state; menu was {:?}",
-        enumerate::legal_actions(&state),
+        enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        ),
     );
 }
 

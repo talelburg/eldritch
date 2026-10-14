@@ -7,7 +7,6 @@
 
 use card_dsl::card_data::CardKind;
 
-use crate::card_registry;
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{CardCode, CardInPlay, CardInstanceId, InvestigatorId, LocationId, Owner};
@@ -31,12 +30,10 @@ use crate::state::{CardCode, CardInPlay, CardInstanceId, InvestigatorId, Locatio
 /// [#296]: https://github.com/talelburg/eldritch/issues/296
 pub(super) fn new_in_play_instance(cx: &mut Cx, code: CardCode, owner: Owner) -> CardInPlay {
     let instance_id = cx.state.card_instance_ids.mint();
-    let uses = card_registry::current()
-        .and_then(|reg| (reg.metadata_for)(&code))
-        .and_then(|m| match &m.kind {
-            CardKind::Asset { uses, .. } => *uses,
-            _ => None,
-        });
+    let uses = (cx.cards.metadata_for)(&code).and_then(|m| match &m.kind {
+        CardKind::Asset { uses, .. } => *uses,
+        _ => None,
+    });
     let mut card = CardInPlay::enter_play(code, instance_id, owner);
     if let Some(u) = uses {
         card.uses.insert(u.kind, u.count);

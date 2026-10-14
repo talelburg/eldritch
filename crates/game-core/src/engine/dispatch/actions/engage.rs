@@ -52,7 +52,7 @@ pub(in crate::engine::dispatch) fn handle(
     enemy_id: EnemyId,
 ) -> EngineOutcome {
     let description = ActionDescription::basic(ActionKind::Engage);
-    if let Err(reason) = take::check(cx.state, investigator, &description) {
+    if let Err(reason) = take::check(cx.state, cx.cards, investigator, &description) {
         return EngineOutcome::Rejected { reason };
     }
     let inv = &cx.state.investigators[&investigator];

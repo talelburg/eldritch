@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::TEST_REGISTRY;
 
 /// The enemy engaged with `INV` on a Move board.
 const ENGAGED: EnemyId = EnemyId(200);
@@ -265,7 +266,7 @@ fn defeated_investigator_cannot_move() {
         move_board(seat(1).at(HERE)).with_enemy_engaged(attacker(ENGAGED.0, 1, 0), INV),
     );
     // Defeated status → Move is not legal.
-    assert!(!legal_actions(&state)
+    assert!(!legal_actions(&state, &TEST_REGISTRY)
         .iter()
         .any(|a| matches!(a, TurnAction::Move { investigator, destination } if *investigator == INV && *destination == CONNECTED)));
 }
@@ -274,7 +275,7 @@ fn defeated_investigator_cannot_move() {
 fn defeated_investigator_cannot_investigate() {
     let state = with_inv_defeated(investigate_board(seat(1).at(HERE), 2, 2));
     // Defeated status → Investigate is not legal.
-    assert!(!legal_actions(&state)
+    assert!(!legal_actions(&state, &TEST_REGISTRY)
         .iter()
         .any(|a| matches!(a, TurnAction::Investigate { investigator } if *investigator == INV)));
 }
@@ -283,7 +284,7 @@ fn defeated_investigator_cannot_investigate() {
 fn defeated_investigator_cannot_fight() {
     let state = with_inv_defeated(fight_evade_board(seat(1).at(HERE), ghoul()));
     // Defeated status → Fight is not legal.
-    assert!(!legal_actions(&state)
+    assert!(!legal_actions(&state, &TEST_REGISTRY)
         .iter()
         .any(|a| matches!(a, TurnAction::Fight { investigator, enemy } if *investigator == INV && *enemy == GHOUL)));
 }
@@ -292,7 +293,7 @@ fn defeated_investigator_cannot_fight() {
 fn defeated_investigator_cannot_evade() {
     let state = with_inv_defeated(fight_evade_board(seat(1).at(HERE), ghoul()));
     // Defeated status → Evade is not legal.
-    assert!(!legal_actions(&state)
+    assert!(!legal_actions(&state, &TEST_REGISTRY)
         .iter()
         .any(|a| matches!(a, TurnAction::Evade { investigator, enemy } if *investigator == INV && *enemy == GHOUL)));
 }

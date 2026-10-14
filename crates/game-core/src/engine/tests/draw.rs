@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::TEST_REGISTRY;
 
 const DRAW: TurnAction = TurnAction::Draw { investigator: INV };
 
@@ -13,7 +14,7 @@ fn draw_board(drawer: Seat) -> GameStateBuilder {
 
 /// Whether `state`'s menu offers `investigator` a Draw.
 fn offers_draw(state: &GameState, investigator: InvestigatorId) -> bool {
-    legal_actions(state)
+    legal_actions(state, &TEST_REGISTRY)
         .iter()
         .any(|a| matches!(a, TurnAction::Draw { investigator: i } if *i == investigator))
 }

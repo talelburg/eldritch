@@ -123,9 +123,16 @@ fn resign(board: GameStateBuilder) -> ApplyResult {
 fn standing_at_the_parlor_offers_the_resign_action() {
     let state = board(false).build();
     assert!(
-        enumerate::legal_actions(&state).contains(&resign_action()),
+        enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&resign_action()),
         "the Parlor's Resign belongs in the turn menu; menu was {:?}",
-        enumerate::legal_actions(&state),
+        enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        ),
     );
 }
 

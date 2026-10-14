@@ -229,12 +229,20 @@ fn an_undamaged_solo_investigator_cannot_activate_first_aid() {
 fn the_turn_menu_does_not_offer_first_aid_with_nothing_to_heal() {
     let harmed = board_with_harm(3, 2, 2).build();
     assert!(
-        enumerate::legal_actions(&harmed).contains(&activation(&harmed)),
+        enumerate::legal_actions(
+            &harmed,
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&activation(&harmed)),
         "sanity: a damaged investigator is offered the activation",
     );
     let unharmed = board_with_harm(3, 0, 0).build();
     assert!(
-        !enumerate::legal_actions(&unharmed).contains(&activation(&unharmed)),
+        !enumerate::legal_actions(
+            &unharmed,
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&activation(&unharmed)),
         "an unharmed investigator is not offered an activation that would reject",
     );
 }

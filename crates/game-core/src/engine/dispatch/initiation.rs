@@ -30,7 +30,7 @@ use std::borrow::Cow;
 use card_dsl::card_data::{CardMetadata, CardType};
 use card_dsl::dsl::{Ability, ActionDesignator, Effect, Trigger, UsageLimit};
 
-use crate::card_registry::{self, CardRegistry};
+use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::abilities;
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::evaluator::{self, EvalContext};
@@ -214,20 +214,9 @@ const _: () = {
 /// against the controller and the source, and for a Play whether the card's
 /// resource cost can. Cost *modifiers* are not modelled.
 ///
-/// Refuses with [`Refusal::SideNotInEffect`] when no registry is installed:
-/// with nothing to resolve the address against, nothing is in effect.
+/// Refuses with [`Refusal::SideNotInEffect`] when the address resolves to
+/// no ability in effect.
 pub(super) fn check(
-    state: &GameState,
-    candidate: &ResolutionCandidate,
-    kind: InitiationKind,
-) -> Result<(), Refusal> {
-    let reg = card_registry::current().ok_or(Refusal::SideNotInEffect)?;
-    check_with(state, reg, candidate, kind)
-}
-
-/// [`check`] against an explicitly supplied registry — the gate seam's tests
-/// pass a mock rather than installing one into the process-global `OnceLock`.
-pub(super) fn check_with(
     state: &GameState,
     reg: &CardRegistry,
     candidate: &ResolutionCandidate,
@@ -240,7 +229,7 @@ pub(super) fn check_with(
         &candidate.code,
         kind,
         || {
-            let ability = abilities_in_effect::resolve_with(
+            let ability = abilities_in_effect::resolve(
                 state,
                 reg,
                 candidate.source,
@@ -288,21 +277,9 @@ pub(super) fn check_with(
 /// other Play check — status, play-ban, cost — is the same code [`check`]
 /// runs.
 ///
-/// Refuses with [`Refusal::SideNotInEffect`] when no registry is installed or
-/// it does not know `code`, as [`check`] does for an address it cannot
-/// resolve.
+/// Refuses with [`Refusal::SideNotInEffect`] when the registry does not know
+/// `code`, as [`check`] does for an address it cannot resolve.
 pub(super) fn check_play(
-    state: &GameState,
-    controller: InvestigatorId,
-    code: &CardCode,
-) -> Result<(), Refusal> {
-    let reg = card_registry::current().ok_or(Refusal::SideNotInEffect)?;
-    check_play_with(state, reg, controller, code)
-}
-
-/// [`check_play`] against an explicitly supplied registry, for the gate seam's
-/// tests.
-pub(super) fn check_play_with(
     state: &GameState,
     reg: &CardRegistry,
     controller: InvestigatorId,
@@ -432,7 +409,7 @@ fn restrictions_met(
     }
     if applies(Check::Eligibility, kind) {
         if let Some(eligibility) = &ability.eligibility {
-            match evaluator::eval_condition_against(state, Some(reg), &ctx, eligibility) {
+            match evaluator::eval_condition(state, reg, &ctx, eligibility) {
                 Ok(true) => {}
                 Ok(false) => return Err(Refusal::NotEligible),
                 // A content or engine fault rather than a board answer, so loud
@@ -545,7 +522,7 @@ fn ability_cost_payable(
 ///   in the compiled corpus, so this arm is reachable the moment an X-cost
 ///   card gets an implementation.
 ///
-/// `Ok` for a card with no metadata — the registry-free validation paths
+/// `Ok` for a card with no metadata — the unknown-code validation paths
 /// the engine's own unit tests exercise.
 fn play_cost_payable(
     reg: &CardRegistry,
@@ -692,6 +669,7 @@ pub(super) fn initiate(
 ) -> Result<Effect, Refusal> {
     let ability = abilities_in_effect::resolve(
         cx.state,
+        cx.cards,
         candidate.source,
         &candidate.code,
         &candidate.address,

@@ -14,6 +14,7 @@ use card_dsl::dsl::{
 };
 
 use crate::action::InputResponse;
+use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::actions::{evade, fight, investigate};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{choice, emit, reaction_windows};
@@ -24,6 +25,7 @@ use crate::engine::modified_value::{
 use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId, ResumeToken};
 use crate::engine::Cx;
 use crate::event::{Event, FailureReason};
+use crate::scenario;
 use crate::scenario::TokenEffect;
 use crate::state::{
     self, AbilitySource, CardCode, ChaosToken, Continuation, DifficultyBasis, DiscardPile,
@@ -31,7 +33,6 @@ use crate::state::{
     ResolvedTest, SkillKind, SkillSubstitution, SkillTestFollowUp, SkillTestStep, Status,
     SubstitutionPromptFrame, TokenResolution, Zone,
 };
-use crate::{card_registry, scenario};
 
 /// The one-shot modifier an initiator grants the test it starts: a weapon's
 /// *"+N \[combat\] for this attack"* (the
@@ -198,7 +199,7 @@ pub(in crate::engine) fn start_skill_test(
     cx.events.push(Event::SkillTestStarted {
         investigator,
         skill,
-        difficulty: current_difficulty(cx.state),
+        difficulty: current_difficulty(cx.state, cx.cards),
     });
 
     // "Use X in place of Y?" (Mind over Matter 01036): if this is a Combat or
@@ -336,7 +337,8 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
     // Validate the commit indices against the resolving
     // investigator's hand. On Err, state is untouched and the engine
     // stays paused so the client can retry.
-    let indices_u8 = match validate_commit_indices(cx.state, investigator, skill, indices) {
+    let indices_u8 = match validate_commit_indices(cx.state, cx.cards, investigator, skill, indices)
+    {
         Ok(v) => v,
         Err(rejected) => return rejected,
     };
@@ -478,7 +480,7 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
     let token = cx.state.chaos_bag.tokens[token_idx];
     let symbol_outcome = match token {
         ChaosToken::Skull | ChaosToken::Cultist | ChaosToken::Tablet | ChaosToken::ElderThing => {
-            scenario::resolve_symbol_token(cx.state, token, investigator)
+            scenario::resolve_symbol_token(cx.scenario, cx.state, token, investigator)
         }
         _ => None,
     };
@@ -565,8 +567,7 @@ fn record_token_contribution(
     let delta = match resolution {
         TokenResolution::Modifier(n) => IntExpr::Lit(n),
         TokenResolution::ElderSign => {
-            let Some(expr) = card_registry::current()
-                .and_then(|reg| modified_value::elder_sign_expr(cx.state, reg, investigator))
+            let Some(expr) = modified_value::elder_sign_expr(cx.state, cx.cards, investigator)
             else {
                 return;
             };
@@ -628,7 +629,7 @@ fn resolved(cx: &Cx) -> ResolvedTest {
 /// `Seq` and re-dispatches this `SkillTest` at `ApplyFollowUp`, which reads the
 /// now-populated accumulators.
 fn fire_on_commit_step(cx: &mut Cx, investigator: InvestigatorId, committed: &[CardCode]) {
-    let effects = collect_on_commit(committed);
+    let effects = collect_on_commit(cx.cards, committed);
     cx.state
         .current_skill_test_mut()
         .expect("the SkillTest frame must persist across driver steps")
@@ -733,12 +734,12 @@ fn determine_outcome_step(
     // the board as it stands now, not as it stood at ST.1. An enemy's
     // modified fight value *is* the difficulty of a Fight action, so a card
     // that changed it since initiation has changed this test (#677).
-    let difficulty = current_difficulty(cx.state);
+    let difficulty = current_difficulty(cx.state, cx.cards);
 
     // ST.5 modified skill value — read off the board as the ST.4 symbol effects
     // left it, with the revealed token's own row already among the modifiers
     // it folds and the clamp applied once at the end (#684).
-    let total = sum_skill_value(cx.state, investigator, skill, kind, committed);
+    let total = sum_skill_value(cx.state, cx.cards, investigator, skill, kind, committed);
     // Both quantities above already carry the ST.6 substitution, applied as
     // the last stage of the fold that produced them:
     // `glossary/Automatic_Failure_Success.md` — *"If a skill test
@@ -885,7 +886,7 @@ fn fire_on_resolution_step(
     next: u32,
 ) {
     let succeeded = resolved(cx).succeeded;
-    let effects = collect_on_skill_test_resolution(committed, succeeded);
+    let effects = collect_on_skill_test_resolution(cx.cards, committed, succeeded);
     let idx = next as usize;
     if idx < effects.len() {
         cx.state
@@ -917,7 +918,7 @@ fn emit_commit_window(cx: &Cx, _investigator: InvestigatorId) -> EngineOutcome {
         .skill;
     // The difficulty as it stands at the commit window — what a player
     // decides how many cards to commit against. ST.6 re-reads it.
-    let difficulty = current_difficulty(cx.state);
+    let difficulty = current_difficulty(cx.state, cx.cards);
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_multiple(format!(
             "Commit cards to the {skill:?} test (difficulty {difficulty}). \
@@ -1322,6 +1323,7 @@ fn abandon_test(
 /// elsewhere in state).
 fn validate_commit_indices(
     state: &GameState,
+    cards: &CardRegistry,
     investigator: InvestigatorId,
     skill: SkillKind,
     indices: &[u32],
@@ -1362,58 +1364,54 @@ fn validate_commit_indices(
 
     // Enforce per-card "Max N committed per skill test" caps (#311). The
     // limit is printed metadata (`CardKind::Skill.commit_limit`); a card
-    // with no cap, or no registry entry, is unconstrained. No-op without an
-    // installed registry — engine-only tests that don't touch card data
-    // never commit real cards, mirroring `sum_skill_value`.
-    if let Some(reg) = card_registry::current() {
-        // RR Appendix II ST.2: *"An appropriate skill icon is either one that
-        // matches the skill being tested, or a wild icon. […] Cards that lack
-        // an appropriate skill icon may not be committed to a skill test."*
-        // Without this, commit is a free discard outlet for any card in hand
-        // — a weakness included (#763, cf. #646).
-        //
-        // `skill` is the test's skill *as it stands at the commit window*, so
-        // a substitution that already rewrote it (Mind over Matter 01036 makes
-        // the test an Intellect test) is what the icons are matched against.
-        //
-        // A card with no registry entry is unconstrained, matching the cap
-        // check below and `push_committed_icons`: engine-only tests run
-        // against a registry that knows no real cards.
-        for &i in &indices_u8 {
-            let code = &inv.hand[usize::from(i)];
-            let Some(meta) = (reg.metadata_for)(code) else {
-                continue;
-            };
-            if !meta.skill_icons().appropriate_for(skill) {
+    // with no cap, or no registry entry, is unconstrained.
+    // RR Appendix II ST.2: *"An appropriate skill icon is either one that
+    // matches the skill being tested, or a wild icon. […] Cards that lack
+    // an appropriate skill icon may not be committed to a skill test."*
+    // Without this, commit is a free discard outlet for any card in hand
+    // — a weakness included (#763, cf. #646).
+    //
+    // `skill` is the test's skill *as it stands at the commit window*, so
+    // a substitution that already rewrote it (Mind over Matter 01036 makes
+    // the test an Intellect test) is what the icons are matched against.
+    //
+    // A card with no registry entry is unconstrained, matching the cap
+    // check below and `push_committed_icons`: engine-only tests run
+    // against a registry that knows no real cards.
+    for &i in &indices_u8 {
+        let code = &inv.hand[usize::from(i)];
+        let Some(meta) = (cards.metadata_for)(code) else {
+            continue;
+        };
+        if !meta.skill_icons().appropriate_for(skill) {
+            return Err(EngineOutcome::Rejected {
+                reason: format!(
+                    "skill-test commit: {code} prints no {skill:?} icon and no wild icon, \
+                     so it may not be committed to this {skill:?} test (RR ST.2)"
+                )
+                .into(),
+            });
+        }
+    }
+
+    let mut counts: BTreeMap<&CardCode, u8> = BTreeMap::new();
+    for &i in &indices_u8 {
+        *counts.entry(&inv.hand[usize::from(i)]).or_insert(0) += 1;
+    }
+    for (code, count) in counts {
+        let cap = (cards.metadata_for)(code).and_then(|m| match m.kind {
+            CardKind::Skill { commit_limit, .. } => commit_limit,
+            _ => None,
+        });
+        if let Some(limit) = cap {
+            if count > limit {
                 return Err(EngineOutcome::Rejected {
                     reason: format!(
-                        "skill-test commit: {code} prints no {skill:?} icon and no wild icon, \
-                         so it may not be committed to this {skill:?} test (RR ST.2)"
+                        "skill-test commit: {code} allows at most {limit} committed per skill \
+                         test, but {count} were committed"
                     )
                     .into(),
                 });
-            }
-        }
-
-        let mut counts: BTreeMap<&CardCode, u8> = BTreeMap::new();
-        for &i in &indices_u8 {
-            *counts.entry(&inv.hand[usize::from(i)]).or_insert(0) += 1;
-        }
-        for (code, count) in counts {
-            let cap = (reg.metadata_for)(code).and_then(|m| match m.kind {
-                CardKind::Skill { commit_limit, .. } => commit_limit,
-                _ => None,
-            });
-            if let Some(limit) = cap {
-                if count > limit {
-                    return Err(EngineOutcome::Rejected {
-                        reason: format!(
-                            "skill-test commit: {code} allows at most {limit} committed per skill \
-                             test, but {count} were committed"
-                        )
-                        .into(),
-                    });
-                }
             }
         }
     }
@@ -1432,11 +1430,11 @@ fn validate_commit_indices(
 ///
 /// `0` with no test in flight. Saturates into `i8` for the absurd case;
 /// realistic difficulties are 0–6.
-fn current_difficulty(state: &GameState) -> i8 {
+fn current_difficulty(state: &GameState, cards: &CardRegistry) -> i8 {
     i8::try_from(
         modified_value::modified_value(
             state,
-            card_registry::current(),
+            cards,
             ModifierTarget::Test,
             ModifiedQuantity::Difficulty,
             ReadContext::from_state(state),
@@ -1461,10 +1459,11 @@ fn current_difficulty(state: &GameState) -> i8 {
 /// and `Modifiers.md`'s worked example comes out right — base 4 with a
 /// −8 token and a +2 is −2 → 0, not 0 + 2 → 2.
 ///
-/// Cards the installed registry can't address contribute 0 — the same
+/// Cards the registry can't address contribute 0 — the same
 /// silent-skip policy the sweep uses.
 fn sum_skill_value(
     state: &GameState,
+    cards: &CardRegistry,
     investigator: InvestigatorId,
     skill: SkillKind,
     kind: SkillTestKind,
@@ -1477,12 +1476,12 @@ fn sum_skill_value(
     );
     let mut breakdown = modified_value::modified_value(
         state,
-        card_registry::current(),
+        cards,
         ModifierTarget::Investigator(investigator),
         ModifiedQuantity::Skill(skill),
         ReadContext::DuringTest(kind),
     );
-    push_committed_icons(&mut breakdown, committed, skill);
+    push_committed_icons(cards, &mut breakdown, committed, skill);
     i8::try_from(
         breakdown
             .total()
@@ -1494,8 +1493,7 @@ fn sum_skill_value(
 /// Push the skill-icon contribution of the `committed` cards (RR ST.5) onto
 /// a breakdown: each card adds its matching-skill icons plus its wild icons,
 /// attributed to the card that was committed. Cards whose code isn't in the
-/// installed registry contribute nothing; no registry installed = no
-/// contributions at all.
+/// registry contribute nothing.
 ///
 /// They are contributions rather than a number added to the fold's result so
 /// that the clamp stays last (see [`sum_skill_value`]) and so the breakdown
@@ -1504,12 +1502,14 @@ fn sum_skill_value(
 /// Reads the codes the commit hop moved into limbo, **not** the hand — the
 /// ST.2→ST.3 player window sits between the commit and this sum and is free to
 /// mutate the hand (#631).
-fn push_committed_icons(out: &mut ModifierBreakdown, committed: &[CardCode], skill: SkillKind) {
-    let Some(reg) = card_registry::current() else {
-        return;
-    };
+fn push_committed_icons(
+    cards: &CardRegistry,
+    out: &mut ModifierBreakdown,
+    committed: &[CardCode],
+    skill: SkillKind,
+) {
     for code in committed {
-        let Some(meta) = (reg.metadata_for)(code) else {
+        let Some(meta) = (cards.metadata_for)(code) else {
             continue;
         };
         let icons = meta.skill_icons();
@@ -1574,14 +1574,15 @@ fn discard_committed_cards(cx: &mut Cx, investigator: InvestigatorId, committed:
 /// still holds the tested location, so [`LocationTarget::TestedLocation`]
 /// resolves cleanly.
 ///
-/// No registry installed, or no abilities for the codes → empty list:
+/// No abilities for the codes → empty list:
 /// engine-only tests that don't touch card data never reach
 /// `OnSkillTestResolution`. Silent skip mirrors `constant_skill_modifier`'s
 /// behavior.
-fn collect_on_skill_test_resolution(committed: &[CardCode], succeeded: bool) -> Vec<Effect> {
-    let Some(reg) = card_registry::current() else {
-        return Vec::new();
-    };
+fn collect_on_skill_test_resolution(
+    cards: &CardRegistry,
+    committed: &[CardCode],
+    succeeded: bool,
+) -> Vec<Effect> {
     let outcome_now = if succeeded {
         TestOutcome::Success
     } else {
@@ -1590,7 +1591,7 @@ fn collect_on_skill_test_resolution(committed: &[CardCode], succeeded: bool) -> 
 
     let mut effects = Vec::new();
     for code in committed {
-        let Some(abilities) = (reg.abilities_for)(code) else {
+        let Some(abilities) = (cards.abilities_for)(code) else {
             continue;
         };
         for ability in abilities {
@@ -1620,16 +1621,13 @@ fn collect_on_skill_test_resolution(committed: &[CardCode], succeeded: bool) -> 
 /// are in limbo on the in-flight record at this point (discard happens at
 /// teardown).
 ///
-/// No registry installed, or no abilities for the codes → empty list:
+/// No abilities for the codes → empty list:
 /// engine-only tests that don't touch card data never commit real cards. Silent
 /// skip mirrors `constant_skill_modifier`'s behavior.
-fn collect_on_commit(committed: &[CardCode]) -> Vec<Effect> {
-    let Some(reg) = card_registry::current() else {
-        return Vec::new();
-    };
+fn collect_on_commit(cards: &CardRegistry, committed: &[CardCode]) -> Vec<Effect> {
     let mut effects = Vec::new();
     for code in committed {
-        let Some(abilities) = (reg.abilities_for)(code) else {
+        let Some(abilities) = (cards.abilities_for)(code) else {
             continue;
         };
         for ability in abilities {

@@ -40,7 +40,7 @@ fn a_breakdown_with_no_contributions_is_its_base() {
     let (state, id) = state_with_cards_in_play(&[]);
     let breakdown = modified_value(
         &state,
-        Some(&mock_registry()),
+        &mock_registry(),
         ModifierTarget::Investigator(id),
         ModifiedQuantity::Skill(SkillKind::Willpower),
         ReadContext::DuringTest(SkillTestKind::Plain),
@@ -57,7 +57,7 @@ fn a_breakdown_attributes_each_contribution_to_its_source() {
     let (state, id) = state_with_cards_in_play(&["willpower-plus-1", "willpower-minus-1"]);
     let breakdown = modified_value(
         &state,
-        Some(&mock_registry()),
+        &mock_registry(),
         ModifierTarget::Investigator(id),
         ModifiedQuantity::Skill(SkillKind::Willpower),
         ReadContext::DuringTest(SkillTestKind::Plain),
@@ -104,7 +104,10 @@ fn an_elder_sign_modifier_evaluates_its_expression() {
     let expr = elder_sign_expr(&state, &mock_registry(), InvestigatorId(1))
         .expect("the investigator card carries an elder-sign ability");
     let ctx = EvalContext::for_controller(InvestigatorId(1));
-    assert_eq!(evaluator::eval_int_expr(&state, &ctx, &expr), Ok(2));
+    assert_eq!(
+        evaluator::eval_int_expr(&state, &test_support::TEST_REGISTRY, &ctx, &expr),
+        Ok(2)
+    );
 
     let mut plain = test_support::test_investigator(2);
     plain.investigator_card.code = CardCode::new("no-elder-sign");

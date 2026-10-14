@@ -75,14 +75,14 @@ fn a_capacity_modifier_never_lands_on_a_skill() {
     }
 }
 
-/// Max health reads the printed capacity off the installed registry
+/// Max health reads the printed capacity off the registry
 /// and folds the same sweep over it.
 #[test]
 fn a_capacity_modifier_lands_on_max_health() {
     let (state, id) = state_with_cards_in_play(&["max-health-plus-1", "willpower-plus-1"]);
     let health = modified_value(
         &state,
-        Some(&mock_registry()),
+        &mock_registry(),
         ModifierTarget::Investigator(id),
         ModifiedQuantity::MaxHealth,
         ReadContext::OutsideTest,
@@ -105,7 +105,7 @@ fn an_unknown_investigator_has_no_value_at_all() {
     let state = GameStateBuilder::new().build();
     let breakdown = modified_value(
         &state,
-        Some(&mock_registry()),
+        &mock_registry(),
         ModifierTarget::Investigator(InvestigatorId(99)),
         ModifiedQuantity::Skill(SkillKind::Willpower),
         ReadContext::DuringTest(SkillTestKind::Plain),
@@ -115,11 +115,11 @@ fn an_unknown_investigator_has_no_value_at_all() {
 }
 
 #[test]
-fn with_no_registry_only_the_base_answers() {
+fn with_an_empty_registry_only_the_base_answers() {
     let (state, id) = state_with_cards_in_play(&["willpower-plus-1"]);
     let breakdown = modified_value(
         &state,
-        None,
+        &CardRegistry::EMPTY,
         ModifierTarget::Investigator(id),
         ModifiedQuantity::Skill(SkillKind::Willpower),
         ReadContext::DuringTest(SkillTestKind::Plain),
@@ -168,7 +168,7 @@ fn a_granted_modifier_is_swept() {
     let (state, id) = granting_card_board(true);
     let breakdown = modified_value(
         &state,
-        Some(&mock_registry()),
+        &mock_registry(),
         ModifierTarget::Investigator(id),
         ModifiedQuantity::Skill(SkillKind::Combat),
         ReadContext::DuringTest(SkillTestKind::Plain),
@@ -200,7 +200,7 @@ fn a_granted_modifier_vanishes_when_the_grants_condition_flips() {
     let (state, id) = granting_card_board(false);
     let breakdown = modified_value(
         &state,
-        Some(&mock_registry()),
+        &mock_registry(),
         ModifierTarget::Investigator(id),
         ModifiedQuantity::Skill(SkillKind::Combat),
         ReadContext::DuringTest(SkillTestKind::Plain),

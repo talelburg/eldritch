@@ -171,9 +171,16 @@ fn activation(instance: CardInstanceId, address: AbilityAddress) -> TurnAction {
 fn a_granted_ability_is_offered_on_its_recipient() {
     let state = board(GRANTER);
     assert!(
-        enumerate::legal_actions(&state).contains(&activation(RECIPIENT_INST, granted_address())),
+        enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&activation(RECIPIENT_INST, granted_address())),
         "the granted activation is offered on the recipient, got {:?}",
-        enumerate::legal_actions(&state),
+        enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        ),
     );
 }
 
@@ -200,9 +207,16 @@ fn a_grant_vanishes_when_its_condition_stops_holding() {
         .push(card);
 
     assert!(
-        !enumerate::legal_actions(&state).contains(&activation(RECIPIENT_INST, granted_address())),
+        !enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&activation(RECIPIENT_INST, granted_address())),
         "the grant lapses once a player controls the recipient, got {:?}",
-        enumerate::legal_actions(&state),
+        enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        ),
     );
 }
 
@@ -214,7 +228,10 @@ fn a_grant_vanishes_when_its_condition_stops_holding() {
 #[test]
 fn a_granted_grant_does_not_apply() {
     let state = board(GRANTER);
-    let offered = enumerate::legal_actions(&state);
+    let offered = enumerate::legal_actions(
+        &state,
+        game_core::card_registry::current().expect("card registry installed"),
+    );
     assert!(
         !offered.iter().any(|action| matches!(
             action,
@@ -249,9 +266,16 @@ fn a_condition_needing_a_you_does_not_hold_for_an_uncontrolled_recipient() {
         sub: 0,
     };
     assert!(
-        !enumerate::legal_actions(&state).contains(&activation(RECIPIENT_INST, address)),
+        !enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&activation(RECIPIENT_INST, address)),
         "a condition needing a controller does not hold on an uncontrolled recipient, got {:?}",
-        enumerate::legal_actions(&state),
+        enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        ),
     );
 }
 
@@ -266,7 +290,11 @@ fn a_granted_address_resolves_to_nothing_once_the_granter_is_gone() {
     let mut state = board(GRANTER);
     let minted = activation(RECIPIENT_INST, granted_address());
     assert!(
-        enumerate::legal_actions(&state).contains(&minted),
+        enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&minted),
         "precondition: the activation is live before the granter goes",
     );
 
@@ -295,7 +323,11 @@ fn a_granted_address_lapses_when_the_condition_flips_mid_window() {
     let mut state = board(GRANTER);
     let minted = activation(RECIPIENT_INST, granted_address());
     assert!(
-        enumerate::legal_actions(&state).contains(&minted),
+        enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&minted),
         "precondition: the activation is live while nobody controls the recipient",
     );
 
@@ -332,9 +364,16 @@ fn a_grant_is_not_offered_to_an_investigator_elsewhere() {
         .expect("investigator present")
         .current_location = Some(THERE);
     assert!(
-        !enumerate::legal_actions(&state).contains(&activation(RECIPIENT_INST, granted_address())),
+        !enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&activation(RECIPIENT_INST, granted_address())),
         "an investigator elsewhere cannot reach the recipient, got {:?}",
-        enumerate::legal_actions(&state),
+        enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        ),
     );
 }
 

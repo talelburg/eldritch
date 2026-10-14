@@ -423,7 +423,11 @@ fn activating_a_test_scoped_modifier_outside_a_test_is_rejected() {
     let action = activate(id, instance_id, 0);
 
     assert!(
-        !enumerate::legal_actions(&state).contains(&action),
+        !enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&action),
         "the open-turn menu must not offer an activation that would reject",
     );
 
@@ -442,21 +446,33 @@ fn a_once_per_round_activated_ability_is_offered_once_per_round() {
     let (state, id, instance_id) = state_with_in_play(ONCE_PER_ROUND_GAIN);
     let action = activate(id, instance_id, 0);
     assert!(
-        enumerate::legal_actions(&state).contains(&action),
+        enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&action),
         "an unused limited ability is offered",
     );
 
     let after_first = TestSession::new(state).take(&action);
     assert_eq!(after_first.state().investigators[&id].resources, 5 + 1);
     assert!(
-        !enumerate::legal_actions(after_first.state()).contains(&action),
+        !enumerate::legal_actions(
+            after_first.state(),
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&action),
         "a once-per-round ability used this round is not offered again",
     );
     let mut next_round = refused_off_menu(after_first, &action);
 
     next_round.round += 1;
     assert!(
-        enumerate::legal_actions(&next_round).contains(&action),
+        enumerate::legal_actions(
+            &next_round,
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&action),
         "the limit resets when the round advances",
     );
 }
@@ -484,7 +500,11 @@ fn a_limited_ability_on_a_card_the_activator_does_not_control_counts_its_use() {
     let after_first = TestSession::new(state).take(&action);
     assert_eq!(after_first.state().investigators[&INV].resources, 5 + 1);
     assert!(
-        !enumerate::legal_actions(after_first.state()).contains(&action),
+        !enumerate::legal_actions(
+            after_first.state(),
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&action),
         "the use is counted against the attached card",
     );
 }
@@ -499,7 +519,11 @@ fn a_tagged_activated_ability_is_not_offered_while_its_condition_is_false() {
     assert_eq!(state.investigators[&id].clues, 0);
     let action = activate(id, instance_id, 0);
     assert!(
-        !enumerate::legal_actions(&state).contains(&action),
+        !enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&action),
         "a false eligibility condition keeps the ability off the menu",
     );
     refused_off_menu(TestSession::new(state.clone()), &action);
@@ -507,7 +531,11 @@ fn a_tagged_activated_ability_is_not_offered_while_its_condition_is_false() {
     let mut with_a_clue = state;
     with_a_clue.investigators.get_mut(&id).unwrap().clues = 1;
     assert!(
-        enumerate::legal_actions(&with_a_clue).contains(&action),
+        enumerate::legal_actions(
+            &with_a_clue,
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&action),
         "the ability is offered once its condition holds",
     );
 }
@@ -544,7 +572,11 @@ fn a_cancelled_use_of_a_limited_activated_ability_still_counts() {
     );
     assert_eq!(cancelled.state().locations[&HERE].clues, 2);
     assert!(
-        !enumerate::legal_actions(cancelled.state()).contains(&action),
+        !enumerate::legal_actions(
+            cancelled.state(),
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&action),
         "the cancelled use counts against the once-per-round limit",
     );
 }

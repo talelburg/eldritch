@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::TEST_REGISTRY;
 
 /// The investigator's location.
 const HERE: LocationId = LocationId(10);
@@ -23,7 +24,7 @@ fn end_turn_is_always_offered_at_the_open_turn() {
         .with_seat(seat(1))
         .open_turn(InvestigatorId(1))
         .build();
-    assert!(legal_actions(&state).contains(&TurnAction::EndTurn));
+    assert!(legal_actions(&state, &TEST_REGISTRY).contains(&TurnAction::EndTurn));
 }
 
 #[test]
@@ -34,7 +35,7 @@ fn no_actions_when_not_the_open_turn() {
         .with_phase(Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .build();
-    assert!(legal_actions(&state).is_empty());
+    assert!(legal_actions(&state, &TEST_REGISTRY).is_empty());
 }
 
 #[test]
@@ -48,7 +49,7 @@ fn basic_actions_offered_with_a_revealed_location_and_an_action() {
         .open_turn(InvestigatorId(1))
         .build();
 
-    let actions = legal_actions(&state);
+    let actions = legal_actions(&state, &TEST_REGISTRY);
     assert!(actions.contains(&TurnAction::Resource {
         investigator: InvestigatorId(1)
     }));
@@ -67,7 +68,10 @@ fn no_action_points_offers_only_end_turn() {
         .open_turn(InvestigatorId(1))
         .build();
     // With 0 actions, only EndTurn (which needs no action point) is legal.
-    assert_eq!(legal_actions(&state), vec![TurnAction::EndTurn]);
+    assert_eq!(
+        legal_actions(&state, &TEST_REGISTRY),
+        vec![TurnAction::EndTurn]
+    );
 }
 
 #[test]
@@ -79,16 +83,18 @@ fn investigate_absent_on_an_unrevealed_location() {
         .with_seat(seat(1).at(HERE).actions(3))
         .open_turn(InvestigatorId(1))
         .build();
-    assert!(!legal_actions(&state).contains(&TurnAction::Investigate {
-        investigator: InvestigatorId(1)
-    }));
+    assert!(
+        !legal_actions(&state, &TEST_REGISTRY).contains(&TurnAction::Investigate {
+            investigator: InvestigatorId(1)
+        })
+    );
 }
 
 #[test]
 fn move_offers_one_option_per_connected_destination() {
     let state = open_turn_on_two_rooms(|s| s.actions(3)).build();
 
-    let actions = legal_actions(&state);
+    let actions = legal_actions(&state, &TEST_REGISTRY);
     assert!(actions.contains(&TurnAction::Move {
         investigator: InvestigatorId(1),
         destination: NEXT_DOOR,
@@ -103,7 +109,7 @@ fn move_offers_one_option_per_connected_destination() {
 #[test]
 fn move_absent_when_unaffordable() {
     let state = open_turn_on_two_rooms(|s| s.actions(0)).build();
-    assert!(!legal_actions(&state)
+    assert!(!legal_actions(&state, &TEST_REGISTRY)
         .iter()
         .any(|a| matches!(a, TurnAction::Move { .. })));
 }
@@ -149,7 +155,7 @@ fn every_enumerated_action_is_accepted_by_its_handler() {
             clue_threshold: 99,
         },
     ];
-    let actions = legal_actions(&state);
+    let actions = legal_actions(&state, &TEST_REGISTRY);
     for (i, action) in actions.iter().enumerate() {
         let result = engine::apply(
             state.clone(),
@@ -179,7 +185,7 @@ fn resolve_input_optionid_dispatches_enumerated_turn_action() {
         .with_seat(seat(1))
         .open_turn(InvestigatorId(1))
         .build();
-    let actions = legal_actions(&state);
+    let actions = legal_actions(&state, &TEST_REGISTRY);
     let idx = actions
         .iter()
         .position(|a| *a == TurnAction::EndTurn)

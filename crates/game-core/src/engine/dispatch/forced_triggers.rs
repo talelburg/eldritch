@@ -55,7 +55,7 @@ pub(crate) fn queue_forced_triggers(
     // At most one hit reaches here: the coordinator / emit `<2` guard routes 2+
     // simultaneous forced abilities to the ordered forced-run frame
     // (`open_forced_resolution`, #213), so there is no ordering to preserve.
-    let hits = trigger_scan::collect_forced(cx.state, event, bucket);
+    let hits = trigger_scan::collect_forced(cx.state, cx.cards, event, bucket);
     debug_assert!(
         hits.len() <= 1,
         "queue_forced_triggers: expected 0/1 forced hit (2+ routes through \
@@ -139,7 +139,7 @@ pub(crate) fn drive_acknowledge_forced(cx: &mut Cx) -> EngineOutcome {
         .continuations
         .top_expect::<AcknowledgeForcedFrame>()
         .candidate;
-    let name = choice::card_name(&candidate.code);
+    let name = choice::card_name(cx.cards, &candidate.code);
     let anchor = reaction_windows::candidate_anchor(candidate);
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_single(

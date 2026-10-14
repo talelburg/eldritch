@@ -5,7 +5,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use card_dsl::card_data::CardKind;
-use game_core::card_registry;
+use game_core::card_registry::{self, CardRegistry};
 use game_core::engine::{ChoiceOption, OptionTarget};
 use game_core::state::{CardCode, CardInPlay, GameState, Location, LocationId};
 use leptos::prelude::*;
@@ -274,6 +274,9 @@ pub fn location_map(game: &GameState) -> impl IntoView {
         .map(|l| (l.id, l.code.clone()))
         .collect();
     let positions = layout_positions(&locs);
+    // Installed at startup; an uninstalled registry knows no investigator, and
+    // the capacity read below panics, as it did before a registry was passed.
+    let cards = card_registry::current().unwrap_or(&CardRegistry::EMPTY);
 
     // The live prompt's options, for glow + per-node context menus (#536).
     // Absent (native / no prompt) → empty → no node is actionable.
@@ -294,8 +297,8 @@ pub fn location_map(game: &GameState) -> impl IntoView {
                 .map(|i| {
                     view! {
                         <div class="inv-token">
-                            {i.name.clone()} " " {i.damage()} "/" {i.max_health()} " hp · "
-                            {i.horror()} "/" {i.max_sanity()} " san · clues " {i.clues}
+                            {i.name.clone()} " " {i.damage()} "/" {i.max_health(cards)} " hp · "
+                            {i.horror()} "/" {i.max_sanity(cards)} " san · clues " {i.clues}
                         </div>
                     }
                 })

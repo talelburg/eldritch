@@ -410,7 +410,7 @@ fn a_modifier_answers_differently_either_side_of_a_board_change() {
     let intellect = |state: &GameState| {
         modified_value::modified_value(
             state,
-            card_registry::current(),
+            card_registry::current().expect("card registry installed"),
             ModifierTarget::Investigator(ME),
             ModifiedQuantity::Skill(SkillKind::Intellect),
             ReadContext::OutsideTest,
@@ -579,7 +579,7 @@ fn a_breakdown_reads_back_its_base_and_every_contribution() {
 
     let willpower = modified_value::modified_value(
         &state,
-        card_registry::current(),
+        card_registry::current().expect("card registry installed"),
         ModifierTarget::Investigator(ME),
         ModifiedQuantity::Skill(SkillKind::Willpower),
         ReadContext::OutsideTest,
@@ -598,7 +598,7 @@ fn a_breakdown_reads_back_its_base_and_every_contribution() {
 
     let intellect = modified_value::modified_value(
         &state,
-        card_registry::current(),
+        card_registry::current().expect("card registry installed"),
         ModifierTarget::Investigator(ME),
         ModifiedQuantity::Skill(SkillKind::Intellect),
         ReadContext::OutsideTest,
@@ -633,7 +633,7 @@ fn act(code: &str) -> Act {
 fn read(state: &GameState, target: ModifierTarget, quantity: ModifiedQuantity) -> i32 {
     modified_value::modified_value(
         state,
-        card_registry::current(),
+        card_registry::current().expect("card registry installed"),
         target,
         quantity,
         ReadContext::from_state(state),

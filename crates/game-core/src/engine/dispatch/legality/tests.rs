@@ -1,6 +1,7 @@
 use super::*;
 use crate::state::{CardInstanceId, GameStateBuilder};
 use crate::test_support;
+use crate::test_support::TEST_REGISTRY;
 
 #[test]
 fn check_play_card_returns_err_for_unknown_hand_index() {
@@ -8,7 +9,8 @@ fn check_play_card_returns_err_for_unknown_hand_index() {
         .with_seat(test_support::seat(1))
         .with_active_investigator(InvestigatorId(1))
         .build();
-    let err = check_play_card(&state, InvestigatorId(1), 0).expect_err("empty hand should reject");
+    let err = check_play_card(&state, &TEST_REGISTRY, InvestigatorId(1), 0)
+        .expect_err("empty hand should reject");
     assert!(
         err.contains("hand_index"),
         "error should mention hand_index, got: {err}"
@@ -18,7 +20,7 @@ fn check_play_card_returns_err_for_unknown_hand_index() {
 #[test]
 fn check_play_card_returns_err_when_investigator_missing() {
     let state = GameStateBuilder::default().build();
-    let err = check_play_card(&state, InvestigatorId(99), 0)
+    let err = check_play_card(&state, &TEST_REGISTRY, InvestigatorId(99), 0)
         .expect_err("missing investigator should reject");
     assert!(
         err.contains("not in state"),
@@ -34,6 +36,7 @@ fn check_activate_ability_returns_err_for_unreachable_source() {
         .build();
     let err = check_activate_ability(
         &state,
+        &TEST_REGISTRY,
         InvestigatorId(1),
         AbilitySource::InPlay(CardInstanceId(999)),
         &AbilityAddress::Printed(0),
@@ -50,6 +53,7 @@ fn check_activate_ability_returns_err_when_investigator_missing() {
     let state = GameStateBuilder::default().build();
     let err = check_activate_ability(
         &state,
+        &TEST_REGISTRY,
         InvestigatorId(99),
         AbilitySource::InPlay(CardInstanceId(1)),
         &AbilityAddress::Printed(0),

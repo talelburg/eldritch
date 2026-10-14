@@ -1,10 +1,11 @@
 use super::*;
+use crate::test_support::TEST_REGISTRY;
 
 const INVESTIGATE: TurnAction = TurnAction::Investigate { investigator: INV };
 
 /// Whether `state`'s menu offers `investigator` an Investigate.
 fn offers_investigate(state: &GameState, investigator: InvestigatorId) -> bool {
-    legal_actions(state)
+    legal_actions(state, &TEST_REGISTRY)
         .iter()
         .any(|a| matches!(a, TurnAction::Investigate { investigator: i } if *i == investigator))
 }

@@ -44,9 +44,14 @@ fn forced_native(tag: &'static str) -> Vec<Ability> {
 
 /// Offer the controller a pick between [`NEAR`] and [`FAR`].
 fn pick_location(cx: &NativeCx, ctx: &EvalContext) -> Grounded<LocationId> {
-    engine::resolve_grounded_choice(cx.state(), ctx, &[NEAR, FAR], "Choose a location", |&loc| {
-        OptionTarget::Location(loc)
-    })
+    engine::resolve_grounded_choice(
+        cx.state(),
+        cx.cards(),
+        ctx,
+        &[NEAR, FAR],
+        "Choose a location",
+        |&loc| OptionTarget::Location(loc),
+    )
 }
 
 /// The contract violation: place doom, *then* ask for a location.

@@ -6,7 +6,7 @@
 //! `scenarios` crate (which depends on `game-core`) provides a static
 //! [`ScenarioRegistry`] of function pointers, and the host installs it
 //! once at startup via
-//! [`scenario_registry::install`].
+//! [`scenario_registry::install`](crate::scenario_registry::install).
 //! The engine watches `GameState.ending` for a `None`->`Some`
 //! transition during an apply (a push-model latch set at discrete
 //! trigger sites); on that transition it looks up the active
@@ -32,7 +32,6 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::event::Event;
-use crate::scenario_registry;
 use crate::state::{ChaosToken, GameState, InvestigatorId, LocationId};
 
 /// Stable, serializable identifier for a scenario module.
@@ -254,7 +253,7 @@ pub struct ScenarioModule {
 /// The `scenarios` crate exposes a `pub const REGISTRY: ScenarioRegistry`
 /// wrapping its own `by_id` lookup; hosts install it once at startup
 /// via
-/// [`scenario_registry::install`].
+/// [`scenario_registry::install`](crate::scenario_registry::install).
 #[derive(Debug, Clone, Copy)]
 pub struct ScenarioRegistry {
     /// Look up a scenario module by its id. Returns `None` for ids
@@ -271,45 +270,33 @@ impl ScenarioRegistry {
     };
 }
 
-/// The active scenario's [`LocationLayout`], or `&[]` when there is no
-/// active scenario, no installed registry, or an unknown id. Routes
-/// `state.scenario_id` → installed scenario registry → `module_for` →
-/// [`ScenarioModule::layout`], mirroring [`resolve_symbol_token`].
+/// The active scenario's [`LocationLayout`], or `&[]` when the apply runs
+/// no scenario module (no active scenario, or an id the scenario registry
+/// doesn't know). `scenario` is the module the apply resolved once from
+/// `state.scenario_id`; mirrors [`resolve_symbol_token`].
 ///
 /// An absent layout is not an error: a board with no set-aside locations
 /// never asks, and a scenario that laid its whole board out in `setup()`
 /// has already wired it.
 #[must_use]
-pub fn scenario_layout(state: &GameState) -> LocationLayout {
-    let Some(id) = state.scenario_id.as_ref() else {
-        return &[];
-    };
-    let Some(registry) = scenario_registry::current() else {
-        return &[];
-    };
-    let Some(module) = (registry.module_for)(id) else {
-        return &[];
-    };
-    module.layout
+pub fn scenario_layout(scenario: Option<&ScenarioModule>) -> LocationLayout {
+    scenario.map_or(&[], |module| module.layout)
 }
 
 /// Resolve a drawn chaos symbol token against the active scenario's
-/// reference-card effects, if any. Routes
-/// `state.scenario_id` → installed scenario registry → `module_for` →
-/// [`ScenarioModule::resolve_symbol`]. Returns `None` when there is no
-/// active scenario, no registry, an unknown id, or the module has no
-/// symbol hook — callers then fall back to the static
+/// reference-card effects, if any, through
+/// [`ScenarioModule::resolve_symbol`] on `scenario` — the module the apply
+/// resolved once from `state.scenario_id`. Returns `None` when the apply runs
+/// no scenario module, or the module has no symbol hook — callers then fall back to the static
 /// [`TokenModifiers`](crate::state::TokenModifiers) path.
 #[must_use]
 pub fn resolve_symbol_token(
+    scenario: Option<&ScenarioModule>,
     state: &GameState,
     token: ChaosToken,
     investigator: InvestigatorId,
 ) -> Option<SymbolOutcome> {
-    let id = state.scenario_id.as_ref()?;
-    let registry = scenario_registry::current()?;
-    let module = (registry.module_for)(id)?;
-    let hook = module.resolve_symbol?;
+    let hook = scenario?.resolve_symbol?;
     Some(hook(token, &SymbolCtx::new(state, investigator)))
 }
 

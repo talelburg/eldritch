@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::TEST_REGISTRY;
 
 /// The investigator's location.
 const HERE: LocationId = LocationId(10);
@@ -25,7 +26,7 @@ fn open_turn_here() -> GameStateBuilder {
 fn fight_and_evade_offered_for_each_engaged_enemy() {
     let state = open_turn_here().with_enemy(engaged_enemy(7, HERE)).build();
 
-    let actions = legal_actions(&state);
+    let actions = legal_actions(&state, &TEST_REGISTRY);
     assert!(actions.contains(&TurnAction::Fight {
         investigator: InvestigatorId(1),
         enemy: EnemyId(7),
@@ -45,7 +46,7 @@ fn fight_but_not_evade_for_an_unengaged_co_located_enemy() {
     e.current_location = Some(HERE); // co-located, but engaged with nobody
     let state = open_turn_here().with_enemy(e).build();
 
-    let actions = legal_actions(&state);
+    let actions = legal_actions(&state, &TEST_REGISTRY);
     assert!(actions.contains(&TurnAction::Fight {
         investigator: InvestigatorId(1),
         enemy: EnemyId(7),
@@ -66,7 +67,7 @@ fn no_combat_for_an_enemy_at_a_different_location() {
         .with_location(test_support::test_location(ELSEWHERE.0, "Attic"))
         .with_enemy(e)
         .build();
-    assert!(!legal_actions(&state)
+    assert!(!legal_actions(&state, &TEST_REGISTRY)
         .iter()
         .any(|a| matches!(a, TurnAction::Fight { .. } | TurnAction::Evade { .. })));
 }
@@ -77,7 +78,7 @@ fn negative_fight_value_offers_evade_only() {
     e.fight = -1; // malformed-but-handled: handler rejects Fight, allows Evade
     let state = open_turn_here().with_enemy(e).build();
 
-    let actions = legal_actions(&state);
+    let actions = legal_actions(&state, &TEST_REGISTRY);
     assert!(!actions.contains(&TurnAction::Fight {
         investigator: InvestigatorId(1),
         enemy: EnemyId(7),
@@ -100,10 +101,12 @@ fn engage_offered_for_co_located_enemy_engaged_with_another() {
         .with_enemy(e)
         .build();
 
-    assert!(legal_actions(&state).contains(&TurnAction::Engage {
-        investigator: InvestigatorId(1),
-        enemy: EnemyId(7),
-    }));
+    assert!(
+        legal_actions(&state, &TEST_REGISTRY).contains(&TurnAction::Engage {
+            investigator: InvestigatorId(1),
+            enemy: EnemyId(7),
+        })
+    );
 }
 
 #[test]
@@ -119,7 +122,7 @@ fn no_engage_for_an_enemy_already_engaged_with_me_or_elsewhere() {
         .with_enemy(away)
         .build();
 
-    let engages: Vec<_> = legal_actions(&state)
+    let engages: Vec<_> = legal_actions(&state, &TEST_REGISTRY)
         .into_iter()
         .filter(|a| matches!(a, TurnAction::Engage { .. }))
         .collect();

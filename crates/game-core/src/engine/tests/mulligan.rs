@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::TEST_REGISTRY;
 
 /// A raw setup-mulligan answer: `indices` are the hand indices to redraw
 /// (empty = keep the hand). Only for the tests whose subject is the wire
@@ -337,7 +338,7 @@ fn non_resolve_input_action_while_mulligan_pending_is_rejected() {
         .with_mulligan_remaining([INV])
         .build();
     // Mulligan frame gates all open-turn actions → Move is not legal.
-    assert!(!legal_actions(&state)
+    assert!(!legal_actions(&state, &TEST_REGISTRY)
         .iter()
         .any(|a| matches!(a, TurnAction::Move { investigator, destination } if *investigator == INV && *destination == CONNECTED)));
 }

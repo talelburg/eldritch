@@ -268,7 +268,7 @@ fn move_ghouls_toward_parlor(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOut
         // barricaded first step is a non-move, never a detour (#797).
         let mut steps: Vec<LocationId> = engine::shortest_first_steps(cx.state(), from, parlor)
             .into_iter()
-            .filter(|&loc| engine::enemy_can_enter_location(cx.state(), e, loc))
+            .filter(|&loc| engine::enemy_can_enter_location(cx.state(), cx.cards(), e, loc))
             .collect();
         steps.sort_unstable();
         if let Some(&to) = steps.first() {

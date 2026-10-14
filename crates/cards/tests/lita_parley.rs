@@ -157,9 +157,16 @@ fn parley_on(board: GameStateBuilder) -> TestSession {
 fn an_investigator_in_the_parlor_is_offered_litas_parley() {
     let state = board(ChaosToken::Numeric(0)).build();
     assert!(
-        enumerate::legal_actions(&state).contains(&parley()),
+        enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&parley()),
         "the Parley is offered on Lita, got {:?}",
-        enumerate::legal_actions(&state),
+        enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        ),
     );
 }
 
@@ -174,9 +181,16 @@ fn an_investigator_elsewhere_is_not_offered_the_parley() {
     )
     .build();
     assert!(
-        !enumerate::legal_actions(&state).contains(&parley()),
+        !enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&parley()),
         "the Parley is out of reach from the Hallway, got {:?}",
-        enumerate::legal_actions(&state),
+        enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        ),
     );
 }
 
@@ -187,9 +201,16 @@ fn an_investigator_elsewhere_is_not_offered_the_parley() {
 fn the_parley_is_no_longer_offered_once_she_is_controlled() {
     let result = parley_on(board(ChaosToken::Numeric(0)));
     assert!(
-        !enumerate::legal_actions(result.state()).contains(&parley()),
+        !enumerate::legal_actions(
+            result.state(),
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&parley()),
         "the grant lapses the instant a player controls her, got {:?}",
-        enumerate::legal_actions(result.state()),
+        enumerate::legal_actions(
+            result.state(),
+            game_core::card_registry::current().expect("card registry installed")
+        ),
     );
 }
 

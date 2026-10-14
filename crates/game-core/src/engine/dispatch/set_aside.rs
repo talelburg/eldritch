@@ -23,8 +23,8 @@ use card_dsl::card_data::CardKind;
 use crate::engine::dispatch::{encounter, threat_area};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::{evaluator, Cx};
+use crate::scenario::{self, ScenarioModule};
 use crate::state::{CardCode, GameState, LocationId, Owner};
-use crate::{card_registry, scenario};
 
 /// Bring the set-aside card `code` into play, owned by `owner`, dispatching on
 /// its printed cardtype.
@@ -50,8 +50,7 @@ use crate::{card_registry, scenario};
 ///   somebody takes control of her.
 ///
 /// Validate-first: rejects, mutating nothing, if `code` isn't in the
-/// set-aside zone, no card registry is installed, the code has no
-/// metadata, the cardtype's target argument is wrong, or the named spawn
+/// set-aside zone, the code has no metadata, the cardtype's target argument is wrong, or the named spawn
 /// location isn't in play. A rejection is additionally rolled back
 /// wholesale by `apply_via`'s snapshot-restore, so validate-first here is
 /// about precise reasons, not state safety.
@@ -71,11 +70,7 @@ pub fn put_set_aside_card_into_play(
             reason: format!("put_set_aside_card_into_play: {code} is not set aside").into(),
         };
     };
-    let Some(registry) = card_registry::current() else {
-        return EngineOutcome::Rejected {
-            reason: "put_set_aside_card_into_play: no card registry installed".into(),
-        };
-    };
+    let registry = cx.cards;
     let Some(metadata) = (registry.metadata_for)(&CardCode::new(code)) else {
         return EngineOutcome::Rejected {
             reason: format!("put_set_aside_card_into_play: no metadata for {code}").into(),
@@ -95,7 +90,7 @@ pub fn put_set_aside_card_into_play(
             // All checks passed — mutate.
             cx.state.set_aside_cards.remove(pos);
             let id = cx.state.add_location(metadata);
-            wire_layout_connections(cx.state, id);
+            wire_layout_connections(cx.state, cx.scenario, id);
             EngineOutcome::Done
         }
         CardKind::Enemy { .. } => {
@@ -160,9 +155,13 @@ pub fn put_set_aside_card_into_play(
 /// Connections are bidirectional, so the pass is symmetric — whichever of
 /// a pair enters second is the one that wires it, and a pair whose other
 /// half never enters play stays unwired.
-fn wire_layout_connections(state: &mut GameState, id: LocationId) {
+fn wire_layout_connections(
+    state: &mut GameState,
+    scenario: Option<&ScenarioModule>,
+    id: LocationId,
+) {
     let code = state.locations[&id].code.as_str().to_owned();
-    let layout = scenario::scenario_layout(state);
+    let layout = scenario::scenario_layout(scenario);
     let neighbours: Vec<LocationId> = layout
         .iter()
         .filter_map(|&(a, b)| {

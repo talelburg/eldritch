@@ -101,8 +101,9 @@ pub(in crate::engine) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
     };
     let caller_owned = matches!(resolution, ConditionResolution::Caller);
     // Per-cell re-scan (#434): the prior cell may have changed board state.
-    let has_forced = !trigger_scan::collect_forced(cx.state, &event, bucket).is_empty();
-    let has_reaction = !trigger_scan::collect_reactions(cx.state, &event, bucket).is_empty();
+    let has_forced = !trigger_scan::collect_forced(cx.state, cx.cards, &event, bucket).is_empty();
+    let has_reaction =
+        !trigger_scan::collect_reactions(cx.state, cx.cards, &event, bucket).is_empty();
     if caller_owned && step == EmitStep::When {
         if has_forced || has_reaction {
             return EngineOutcome::Rejected {
@@ -177,7 +178,7 @@ pub(in crate::engine) fn dispatch_timing_point(cx: &mut Cx) -> EngineOutcome {
             // Advance our own cursor first (see the `Reaction`-resumes-correctly
             // note above), then fire forced.
             set_timing_sub(cx, TimingSub::Reaction);
-            let candidates = trigger_scan::collect_forced(cx.state, &event, bucket);
+            let candidates = trigger_scan::collect_forced(cx.state, cx.cards, &event, bucket);
             if candidates.len() >= 2 {
                 // 2+ forced: the lead orders them (#213). The run carries no
                 // continuation (#434) — when it closes the loop re-dispatches the
@@ -188,7 +189,7 @@ pub(in crate::engine) fn dispatch_timing_point(cx: &mut Cx) -> EngineOutcome {
             }
         }
         TimingSub::Reaction => {
-            let candidates = trigger_scan::collect_reactions(cx.state, &event, bucket);
+            let candidates = trigger_scan::collect_reactions(cx.state, cx.cards, &event, bucket);
             if candidates.is_empty() {
                 finish_timing_point(cx);
                 EngineOutcome::Done

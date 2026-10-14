@@ -103,7 +103,13 @@ fn as_card_seats_the_printed_investigator() {
         },
     );
     assert_eq!(inv.name, "Seat Probe");
-    assert_eq!((inv.max_health(), inv.max_sanity()), (7, 9));
+    assert_eq!(
+        (
+            inv.max_health(game_core::card_registry::current().expect("card registry installed")),
+            inv.max_sanity(game_core::card_registry::current().expect("card registry installed"))
+        ),
+        (7, 9)
+    );
 }
 
 #[test]

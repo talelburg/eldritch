@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use card_dsl::card_data::{Prey, PreyDirection, PreyMeasure};
 
 use crate::action::InputResponse;
-use crate::card_registry::{self, CardRegistry};
+use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::{choice, cursor, movement, phases};
 use crate::engine::modified_value::{self, ModifiedQuantity, ModifierTarget, ReadContext};
 use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken};
@@ -44,11 +44,10 @@ pub(super) enum PreyResolution {
 /// Prey resolves outside any skill test, so the read passes
 /// [`ReadContext::OutsideTest`] explicitly: only unconditional
 /// (`WhileInPlay`) modifiers apply, whatever happens to be in flight
-/// elsewhere. `registry` is `None` in engine-only tests with no card
-/// data installed (base values only).
+/// elsewhere.
 fn measure_value(
     state: &GameState,
-    registry: Option<&CardRegistry>,
+    registry: &CardRegistry,
     inv: &Investigator,
     measure: PreyMeasure,
 ) -> i32 {
@@ -78,13 +77,13 @@ fn measure_value(
 /// movement; co-located investigators for engagement).
 pub(super) fn resolve_prey(
     state: &GameState,
+    registry: &CardRegistry,
     prey: Prey,
     candidates: &[InvestigatorId],
 ) -> PreyResolution {
     if candidates.is_empty() {
         return PreyResolution::None;
     }
-    let registry = card_registry::current();
     let best: Vec<InvestigatorId> = match prey {
         Prey::Default => candidates.to_vec(),
         Prey::Ranked { direction, measure } => {
@@ -169,6 +168,7 @@ fn is_eligible_hunter(enemy: &Enemy) -> bool {
 /// reading has nowhere to live until the choice is remodelled (#795).
 fn hunter_destinations(
     state: &GameState,
+    cards: &CardRegistry,
     from: LocationId,
     prey: Prey,
     enemy: &Enemy,
@@ -199,7 +199,7 @@ fn hunter_destinations(
         .filter(|(_, d)| *d == min)
         .map(|(id, _)| *id)
         .collect();
-    let chosen: Vec<InvestigatorId> = match resolve_prey(state, prey, &nearest_ids) {
+    let chosen: Vec<InvestigatorId> = match resolve_prey(state, cards, prey, &nearest_ids) {
         PreyResolution::One(id) => vec![id],
         PreyResolution::Tie(v) => v,
         PreyResolution::None => return Vec::new(),
@@ -217,7 +217,9 @@ fn hunter_destinations(
             // The block bites here and only here: a barricaded step is one the
             // enemy cannot be compelled into, so it drops out of the offered
             // set rather than out of the graph the distances were measured on.
-            if movement::enemy_can_enter_location(state, enemy, step) && !dests.contains(&step) {
+            if movement::enemy_can_enter_location(state, cards, enemy, step)
+                && !dests.contains(&step)
+            {
                 dests.push(step);
             }
         }
@@ -316,7 +318,7 @@ fn engage_on_arrival(cx: &mut Cx, enemy_id: EnemyId) -> Option<HunterChoice> {
         });
     let prey = cx.state.enemies[&enemy_id].prey;
     let candidates = cursor::active_investigators_at(cx.state, loc);
-    match resolve_prey(cx.state, prey, &candidates) {
+    match resolve_prey(cx.state, cx.cards, prey, &candidates) {
         PreyResolution::None => None,
         PreyResolution::One(target) => {
             engage_enemy_with(cx, enemy_id, target);
@@ -360,7 +362,7 @@ pub(super) fn reengage_at_location(cx: &mut Cx, enemy_id: EnemyId) {
     };
     let prey = enemy.prey;
     let candidates = cursor::active_investigators_at(cx.state, loc);
-    match resolve_prey(cx.state, prey, &candidates) {
+    match resolve_prey(cx.state, cx.cards, prey, &candidates) {
         PreyResolution::None => {}
         PreyResolution::One(target) => engage_enemy_with(cx, enemy_id, target),
         PreyResolution::Tie(tied) => engage_enemy_with(cx, enemy_id, tied[0]),
@@ -378,7 +380,8 @@ fn process_one_hunter(cx: &mut Cx, enemy_id: EnemyId) -> Option<HunterChoice> {
     let here = cursor::active_investigators_at(cx.state, from);
     if here.is_empty() {
         let prey = cx.state.enemies[&enemy_id].prey;
-        let dests = hunter_destinations(cx.state, from, prey, &cx.state.enemies[&enemy_id]);
+        let dests =
+            hunter_destinations(cx.state, cx.cards, from, prey, &cx.state.enemies[&enemy_id]);
         match dests.as_slice() {
             [] => return None,
             [one] => place_enemy_at(cx, enemy_id, *one),
@@ -430,14 +433,16 @@ fn suspend_hunter_choice(cx: &mut Cx, choice: HunterChoice) -> EngineOutcome {
                 "Hunter {enemy:?} movement: lead investigator picks a destination among \
                  {candidates:?}"
             ),
-            choice::candidate_options(cx.state, candidates, |l| OptionTarget::Location(*l)),
+            choice::candidate_options(cx.state, cx.cards, candidates, |l| {
+                OptionTarget::Location(*l)
+            }),
         ),
         HunterChoice::Engage { enemy, candidates } => (
             format!(
                 "Hunter {enemy:?} engagement: lead investigator picks whom to engage among \
                  {candidates:?}"
             ),
-            choice::candidate_options(cx.state, candidates, |i| {
+            choice::candidate_options(cx.state, cx.cards, candidates, |i| {
                 cx.state.investigators[i].card_anchor()
             }),
         ),

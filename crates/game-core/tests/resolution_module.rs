@@ -125,7 +125,11 @@ fn resolution_cancels_the_open_turn_and_does_not_refire() {
         "the open turn and phase anchor are cancelled: {:?}",
         session.state().continuations,
     );
-    assert!(legal_actions(session.state()).is_empty());
+    assert!(legal_actions(
+        session.state(),
+        game_core::card_registry::current().expect("card registry installed")
+    )
+    .is_empty());
 
     // A later answer finds no prompt outstanding and rejects; the
     // already-finished resolution does not re-fire. The subject is that
@@ -145,7 +149,10 @@ fn resolution_skipped_on_rejected_outcome() {
     // With 0 clues AdvanceAct is illegal, so it is not enumerated — there is
     // no OptionId to submit (OptionId-routing #447 expresses illegality as
     // non-enumeration).
-    let legal = legal_actions(session.state());
+    let legal = legal_actions(
+        session.state(),
+        game_core::card_registry::current().expect("card registry installed"),
+    );
     assert!(!legal
         .iter()
         .any(|a| matches!(a, TurnAction::AdvanceAct { .. })));

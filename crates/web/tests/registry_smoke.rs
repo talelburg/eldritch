@@ -24,6 +24,14 @@ fn roland_banks_capacity_resolves_with_real_registry() {
     let mut inv = test_support::test_investigator(1);
     inv.investigator_card.code = CardCode::new("01001");
 
-    assert_eq!(inv.max_health(), 9, "Roland Banks health should be 9");
-    assert_eq!(inv.max_sanity(), 5, "Roland Banks sanity should be 5");
+    assert_eq!(
+        inv.max_health(game_core::card_registry::current().expect("card registry installed")),
+        9,
+        "Roland Banks health should be 9"
+    );
+    assert_eq!(
+        inv.max_sanity(game_core::card_registry::current().expect("card registry installed")),
+        5,
+        "Roland Banks sanity should be 5"
+    );
 }

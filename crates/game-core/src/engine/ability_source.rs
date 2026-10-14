@@ -58,7 +58,7 @@ use std::borrow::Cow;
 
 use card_dsl::card_data::CardType;
 
-use crate::card_registry;
+use crate::card_registry::CardRegistry;
 use crate::engine::board::{self, BoardCard, Placement, SourceCard};
 use crate::state::{AbilitySource, CardCode, CardInPlay, GameState, InvestigatorId, LocationId};
 
@@ -92,10 +92,11 @@ use crate::state::{AbilitySource, CardCode, CardInPlay, GameState, InvestigatorI
 /// Not filtered by elimination: an investigator who has left the board is at no
 /// location, so co-location already reaches nothing of theirs, and their own
 /// control bullet answers an activation they cannot take anyway.
-pub(crate) fn reachable_sources(
-    state: &GameState,
+pub(crate) fn reachable_sources<'a>(
+    state: &'a GameState,
+    cards: &CardRegistry,
     investigator: InvestigatorId,
-) -> Vec<(AbilitySource, SourceCard<'_>)> {
+) -> Vec<(AbilitySource, SourceCard<'a>)> {
     let Some(inv) = state.investigators.get(&investigator) else {
         return Vec::new();
     };
@@ -105,7 +106,7 @@ pub(crate) fn reachable_sources(
         .filter(|id| state.locations.contains_key(id));
     board::walk(state)
         .into_iter()
-        .filter(|card| reaches(state, investigator, here, card))
+        .filter(|card| reaches(state, cards, investigator, here, card))
         .map(|card| (card.source, card.card))
         .collect()
 }
@@ -114,6 +115,7 @@ pub(crate) fn reachable_sources(
 /// one of the three bullets.
 fn reaches(
     state: &GameState,
+    cards: &CardRegistry,
     investigator: InvestigatorId,
     here: Option<LocationId>,
     card: &BoardCard<'_>,
@@ -142,7 +144,9 @@ fn reaches(
         // (Haunted 01098's ruling), but only their **encounter** cards (#975):
         // a player card there is its bearer's alone.
         Placement::ThreatArea(_) => {
-            here.is_some() && card.placement.location(state) == here && is_encounter_card(card)
+            here.is_some()
+                && card.placement.location(state) == here
+                && is_encounter_card(cards, card)
         }
         // Co-location is not control: a co-located investigator's own
         // investigator card and assets are theirs alone.
@@ -172,12 +176,20 @@ fn reaches(
     }
 }
 
-/// Whether the card has an encounter cardtype, read through the registry. A
-/// card the registry has no metadata for counts as one, matching the other
-/// metadata fallbacks: it is excluded only when it is known to be a player card.
-fn is_encounter_card(card: &BoardCard<'_>) -> bool {
-    let Some(meta) = card_registry::current().and_then(|reg| (reg.metadata_for)(card.code()))
-    else {
+/// Whether the card has an encounter cardtype, read through the registry.
+///
+/// A code the registry doesn't know is a fixture or corpus gap: it panics in
+/// debug builds, and in release counts as an encounter card, matching the
+/// other metadata fallbacks — excluded only when it is known to be a player
+/// card.
+fn is_encounter_card(cards: &CardRegistry, card: &BoardCard<'_>) -> bool {
+    let meta = (cards.metadata_for)(card.code());
+    debug_assert!(
+        meta.is_some(),
+        "reachability: the card registry has no metadata for threat-area card {:?}",
+        card.code(),
+    );
+    let Some(meta) = meta else {
         return true;
     };
     !matches!(
@@ -243,9 +255,10 @@ pub(crate) fn source_card(state: &GameState, source: AbilitySource) -> Option<So
 /// answer.
 pub(crate) fn reachable_source_codes(
     state: &GameState,
+    cards: &CardRegistry,
     investigator: InvestigatorId,
 ) -> Vec<(AbilitySource, CardCode)> {
-    reachable_sources(state, investigator)
+    reachable_sources(state, cards, investigator)
         .into_iter()
         .map(|(source, card)| (source, card.code().clone()))
         .collect()
@@ -257,12 +270,13 @@ pub(crate) fn reachable_source_codes(
 /// Defined as a lookup in [`reachable_sources`] rather than as its own scan, so
 /// "can this investigator reach this source" and "which sources does this
 /// investigator have" are the same sentence read in two directions.
-pub(crate) fn resolve(
-    state: &GameState,
+pub(crate) fn resolve<'a>(
+    state: &'a GameState,
+    cards: &CardRegistry,
     investigator: InvestigatorId,
     source: AbilitySource,
-) -> Result<SourceCard<'_>, Cow<'static, str>> {
-    reachable_sources(state, investigator)
+) -> Result<SourceCard<'a>, Cow<'static, str>> {
+    reachable_sources(state, cards, investigator)
         .into_iter()
         .find(|(candidate, _)| *candidate == source)
         .map(|(_, card)| card)
@@ -287,12 +301,13 @@ pub(crate) fn resolve(
 /// co-located threat areas — must still be payable against. Deciding
 /// reachability twice is how the validator and the cost path would come to
 /// disagree.
-pub(crate) fn resolve_mut(
-    state: &mut GameState,
+pub(crate) fn resolve_mut<'a>(
+    state: &'a mut GameState,
+    cards: &CardRegistry,
     investigator: InvestigatorId,
     source: AbilitySource,
-) -> Option<&mut CardInPlay> {
-    let instance = resolve(state, investigator, source)
+) -> Option<&'a mut CardInPlay> {
+    let instance = resolve(state, cards, investigator, source)
         .ok()?
         .instance()?
         .instance_id;
@@ -317,6 +332,7 @@ mod tests {
     use crate::state::{
         AbilityAddress, Act, Agenda, CardInstanceId, EnemyId, GameStateBuilder, Owner,
     };
+    use crate::test_support::TEST_REGISTRY;
     use crate::test_support::{self, seat, SeatLookup as _};
 
     const STUDY: LocationId = LocationId(1);
@@ -327,7 +343,9 @@ mod tests {
     /// The card in investigator 1's own threat area.
     const MY_THREAT: &str = "01098";
     /// The card in the threat area of investigator 2, co-located in the Study.
-    const NEIGHBOUR_THREAT: &str = "01099";
+    /// Co-location reaches it only as an encounter card, so the registry must
+    /// know its cardtype.
+    const NEIGHBOUR_THREAT: &str = test_support::TEST_TREACHERY;
     /// The card in the threat area of investigator 3, in the Hallway.
     const ELSEWHERE_THREAT: &str = "01100";
 
@@ -391,7 +409,7 @@ mod tests {
     }
 
     fn sources_for(state: &GameState, investigator: InvestigatorId) -> Vec<AbilitySource> {
-        reachable_sources(state, investigator)
+        reachable_sources(state, &TEST_REGISTRY, investigator)
             .into_iter()
             .map(|(source, _)| source)
             .collect()
@@ -444,6 +462,22 @@ mod tests {
                 "{why} should be reachable; sources were {sources:?}",
             );
         }
+    }
+
+    /// A co-located threat-area card is reached only as an encounter card, so
+    /// a code the registry doesn't know is a fixture or corpus gap rather than
+    /// an encounter card: a debug build says so.
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "reachability: the card registry has no metadata for \
+                               threat-area card CardCode(\"NOT_A_CARD\")")]
+    fn an_unknown_colocated_threat_area_card_panics_in_debug() {
+        let state = GameStateBuilder::new()
+            .with_location(test_support::test_location(STUDY.0, "Study"))
+            .with_seat(seat(1).at(STUDY))
+            .with_seat(seat(2).at(STUDY).threat_area(["NOT_A_CARD"]))
+            .build();
+        let _ = sources_for(&state, InvestigatorId(1));
     }
 
     #[test]
@@ -592,7 +626,7 @@ mod tests {
 
         let state = threat_area_with_a_player_card_and_a_treachery(b);
         let (player_card, treachery) = player_card_and_treachery(&state);
-        let menu = enumerate::legal_actions(&state);
+        let menu = enumerate::legal_actions(&state, &TEST_REGISTRY);
         assert!(
             menu.contains(&activation(b, treachery)),
             "the co-located investigator is offered the treachery's action; menu was {menu:?}",
@@ -605,7 +639,7 @@ mod tests {
 
         let state = threat_area_with_a_player_card_and_a_treachery(a);
         let (player_card, treachery) = player_card_and_treachery(&state);
-        let menu = enumerate::legal_actions(&state);
+        let menu = enumerate::legal_actions(&state, &TEST_REGISTRY);
         assert!(
             menu.contains(&activation(a, player_card)) && menu.contains(&activation(a, treachery)),
             "the bearer is offered both actions; menu was {menu:?}",
@@ -634,6 +668,7 @@ mod tests {
         let state = board();
         let err = resolve(
             &state,
+            &TEST_REGISTRY,
             InvestigatorId(1),
             AbilitySource::InPlay(state.in_play(InvestigatorId(3), ELSEWHERE_THREAT)),
         )
@@ -649,6 +684,7 @@ mod tests {
         let state = board();
         let ward = resolve(
             &state,
+            &TEST_REGISTRY,
             InvestigatorId(1),
             AbilitySource::InPlay(state.in_play(InvestigatorId(1), MY_THREAT)),
         )
@@ -659,16 +695,26 @@ mod tests {
             Some(state.in_play(InvestigatorId(1), MY_THREAT)),
         );
 
-        let study = resolve(&state, InvestigatorId(1), AbilitySource::Location(STUDY))
-            .expect("the location an investigator stands at is reachable");
+        let study = resolve(
+            &state,
+            &TEST_REGISTRY,
+            InvestigatorId(1),
+            AbilitySource::Location(STUDY),
+        )
+        .expect("the location an investigator stands at is reachable");
         assert_eq!(study.code(), &state.locations[&STUDY].code);
         assert!(
             study.instance().is_none() && !study.exhausted() && study.uses().is_empty(),
             "a location carries no per-instance state",
         );
 
-        let ghoul = resolve(&state, InvestigatorId(1), AbilitySource::Enemy(EnemyId(1)))
-            .expect("a co-located enemy is reachable");
+        let ghoul = resolve(
+            &state,
+            &TEST_REGISTRY,
+            InvestigatorId(1),
+            AbilitySource::Enemy(EnemyId(1)),
+        )
+        .expect("a co-located enemy is reachable");
         assert_eq!(ghoul.code(), &state.enemies[&EnemyId(1)].code);
         assert!(ghoul.instance().is_none());
     }
@@ -676,7 +722,7 @@ mod tests {
     #[test]
     fn an_investigator_absent_from_state_reaches_nothing() {
         let state = board();
-        assert!(reachable_sources(&state, InvestigatorId(9)).is_empty());
+        assert!(reachable_sources(&state, &TEST_REGISTRY, InvestigatorId(9)).is_empty());
     }
 
     /// An investigator who is not on the board (setup, or eliminated) still
@@ -716,6 +762,7 @@ mod tests {
         ] {
             let card = resolve_mut(
                 &mut state,
+                &TEST_REGISTRY,
                 InvestigatorId(1),
                 AbilitySource::InPlay(instance),
             )
@@ -735,18 +782,21 @@ mod tests {
         let elsewhere = state.in_play(InvestigatorId(3), ELSEWHERE_THREAT);
         assert!(resolve_mut(
             &mut state,
+            &TEST_REGISTRY,
             InvestigatorId(1),
             AbilitySource::InPlay(elsewhere),
         )
         .is_none());
         assert!(resolve_mut(
             &mut state,
+            &TEST_REGISTRY,
             InvestigatorId(1),
             AbilitySource::Location(STUDY)
         )
         .is_none());
         assert!(resolve_mut(
             &mut state,
+            &TEST_REGISTRY,
             InvestigatorId(1),
             AbilitySource::Enemy(EnemyId(1))
         )
@@ -833,19 +883,29 @@ mod tests {
     fn the_source_follows_the_cursor_to_the_current_act() {
         let mut state = board_with_scenario_decks();
         assert_eq!(
-            resolve(&state, InvestigatorId(1), AbilitySource::Act)
-                .expect("act one is current")
-                .code()
-                .as_str(),
+            resolve(
+                &state,
+                &TEST_REGISTRY,
+                InvestigatorId(1),
+                AbilitySource::Act
+            )
+            .expect("act one is current")
+            .code()
+            .as_str(),
             ACT_ONE,
         );
 
         state.act_index = 1;
         assert_eq!(
-            resolve(&state, InvestigatorId(1), AbilitySource::Act)
-                .expect("act two is now current")
-                .code()
-                .as_str(),
+            resolve(
+                &state,
+                &TEST_REGISTRY,
+                InvestigatorId(1),
+                AbilitySource::Act
+            )
+            .expect("act two is now current")
+            .code()
+            .as_str(),
             ACT_TWO,
             "the superseded act is no longer what the source names",
         );
@@ -873,11 +933,23 @@ mod tests {
                 "{why}, so neither board card is reachable; sources were {sources:?}",
             );
             assert!(
-                resolve(&state, InvestigatorId(1), AbilitySource::Act).is_err(),
+                resolve(
+                    &state,
+                    &TEST_REGISTRY,
+                    InvestigatorId(1),
+                    AbilitySource::Act
+                )
+                .is_err(),
                 "{why}, so resolving the act must fail",
             );
             assert!(
-                resolve(&state, InvestigatorId(1), AbilitySource::Agenda).is_err(),
+                resolve(
+                    &state,
+                    &TEST_REGISTRY,
+                    InvestigatorId(1),
+                    AbilitySource::Agenda
+                )
+                .is_err(),
                 "{why}, so resolving the agenda must fail",
             );
         }
@@ -889,12 +961,13 @@ mod tests {
     fn neither_board_card_carries_per_instance_state() {
         let mut state = board_with_scenario_decks();
         for source in [AbilitySource::Act, AbilitySource::Agenda] {
-            let card = resolve(&state, InvestigatorId(1), source).expect("reachable");
+            let card =
+                resolve(&state, &TEST_REGISTRY, InvestigatorId(1), source).expect("reachable");
             assert!(
                 card.instance().is_none() && !card.exhausted() && card.uses().is_empty(),
                 "{source:?} should carry no per-instance state",
             );
-            assert!(resolve_mut(&mut state, InvestigatorId(1), source).is_none());
+            assert!(resolve_mut(&mut state, &TEST_REGISTRY, InvestigatorId(1), source).is_none());
         }
     }
 }

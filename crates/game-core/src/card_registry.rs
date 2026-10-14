@@ -190,14 +190,11 @@ pub fn current() -> Option<&'static CardRegistry> {
 /// the engine that asks "is this card a Tome asset?" or "is this enemy
 /// Elite?" asks it here, keyed by code, so the kernel never names a trait.
 ///
-/// Returns `false` when no registry is installed or the registry has no
-/// metadata for `code`. A filtered deck search then finds nothing rather
-/// than panicking; only registry-less test paths hit this.
+/// Returns `false` when `cards` has no metadata for `code`. A filtered deck
+/// search then finds nothing rather than panicking.
 #[must_use]
-pub fn card_matches(code: &CardCode, filter: &CardFilter) -> bool {
-    current()
-        .and_then(|reg| (reg.metadata_for)(code))
-        .is_some_and(|meta| filter.matches(meta))
+pub fn card_matches(cards: &CardRegistry, code: &CardCode, filter: &CardFilter) -> bool {
+    (cards.metadata_for)(code).is_some_and(|meta| filter.matches(meta))
 }
 
 #[cfg(test)]

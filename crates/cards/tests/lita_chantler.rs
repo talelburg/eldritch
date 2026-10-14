@@ -210,7 +210,7 @@ impl Board {
 fn combat(state: &GameState, who: InvestigatorId) -> i32 {
     modified_value::modified_value(
         state,
-        card_registry::current(),
+        card_registry::current().expect("card registry installed"),
         ModifierTarget::Investigator(who),
         ModifiedQuantity::Skill(SkillKind::Combat),
         ReadContext::OutsideTest,
