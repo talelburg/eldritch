@@ -96,13 +96,8 @@ mod tests {
                 kind: TriggerKind::Forced,
             },
         );
-        assert_eq!(
-            abilities[1].trigger,
-            Trigger::Activated {
-                action_cost: 0,
-                designator: None,
-            },
-        );
+        assert_eq!(abilities[1].trigger, Trigger::Activated { action_cost: 0 });
+        assert_eq!(abilities[1].designator, None);
         assert_eq!(abilities[1].costs, vec![Cost::Exhaust]);
         assert_eq!(
             abilities[1].effect,
