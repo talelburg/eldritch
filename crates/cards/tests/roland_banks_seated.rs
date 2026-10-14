@@ -9,13 +9,14 @@
 //!
 //! Integration test so it can run against `cards::TEST_REGISTRIES`.
 
+use card_dsl::dsl::UsagePeriod;
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
     AbilityUsageRecord, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId,
-    LocationId, TokenModifiers,
+    LocationId, Phase, TokenModifiers,
 };
 use game_core::test_support::{self, seat, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -92,7 +93,7 @@ fn seated_roland_reaction_fires_with_no_in_play_injection() {
     let inv = &session.state().investigators[&INV];
     assert_eq!(
         inv.investigator_card.ability_usage.get(&0),
-        Some(&AbilityUsageRecord::new(0, 1)),
+        Some(&AbilityUsageRecord::new(0, Phase::Investigation, 1)),
         "seated Roland's reaction recorded one fire on investigator_card.ability_usage",
     );
 }
@@ -107,7 +108,7 @@ fn seated_roland_reaction_capped_once_per_round() {
         .get_mut(&INV)
         .unwrap()
         .investigator_card
-        .bump_ability_usage(0, 0);
+        .bump_ability_usage(0, UsagePeriod::Round, 0, Phase::Investigation);
 
     let session = fight(state);
 

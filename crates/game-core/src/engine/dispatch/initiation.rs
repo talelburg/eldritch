@@ -467,7 +467,7 @@ fn usage_exhausted(
     ability_source::source_card(state, source)
         .and_then(|card| {
             card.instance()
-                .map(|instance| instance.is_usage_exhausted(index, limit, state.round))
+                .map(|instance| instance.is_usage_exhausted(index, limit, state.round, state.phase))
         })
         .unwrap_or(false)
 }
@@ -597,10 +597,10 @@ pub(super) fn record_initiation(
     candidate: &ResolutionCandidate,
     usage_limit: Option<UsageLimit>,
 ) {
-    if usage_limit.is_none() {
+    let Some(usage_limit) = usage_limit else {
         return;
-    }
-    let current_round = state.round;
+    };
+    let (current_round, current_phase) = (state.round, state.phase);
     match candidate.source {
         CandidateSource::Ability(AbilitySource::InPlay(instance_id)) => {
             let (card, _) = board::find_instance_mut(state, instance_id).unwrap_or_else(|| {
@@ -611,7 +611,7 @@ pub(super) fn record_initiation(
                 )
             });
             if let Some(index) = candidate.address.printed_index() {
-                card.bump_ability_usage(index, current_round);
+                card.bump_ability_usage(index, usage_limit.period, current_round, current_phase);
             }
         }
         // Listed kind by kind rather than wildcarded: a sixth `AbilitySource`

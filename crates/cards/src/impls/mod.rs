@@ -86,6 +86,7 @@
 use card_dsl::dsl::Ability;
 use game_core::card_registry::{NativeConditionFn, NativeEffectFn};
 
+pub mod agnes_baker;
 pub mod ancient_evils;
 pub mod attic;
 pub mod automatic_45;
@@ -210,6 +211,7 @@ impl CardRecord {
 /// Every implemented card's registration, one entry per card module. A card
 /// is playable iff it is listed here.
 pub const ALL: &[CardRecord] = &[
+    agnes_baker::CARD,
     ancient_evils::CARD,
     attic::CARD,
     automatic_45::CARD,

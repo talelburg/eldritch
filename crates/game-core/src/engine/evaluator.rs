@@ -2221,6 +2221,23 @@ pub(crate) fn effect_can_change_state(
             ..
         }
         | Effect::AutoResolve { .. } => state.current_skill_test().is_some(),
+        // Dealing damage to a chosen enemy needs an enemy to choose: with none
+        // in the scope grounding would find no candidate and reject, so the
+        // ability is provably inert. Agnes Baker 01004's *"Deal 1 damage to an
+        // enemy at your location"* is not offered with no enemy there. Scans the
+        // same candidates `ground_enemy_choice` enumerates, so the gate and
+        // the grounding agree; once an enemy is bound (re-entry within an
+        // evaluation) it is the target. Beat Cop 01018's activation keeps its
+        // own pre-cost check (`legality::check_activation_target_available`),
+        // which runs first and words the rejection.
+        Effect::DealDamageToEnemy {
+            target: EnemyTarget::Chosen(choose),
+            amount,
+        } => {
+            *amount > 0
+                && (ctx.chosen_enemy().is_some()
+                    || !combat::enemies_in_scope(state, ctx.controller, choose.scope).is_empty())
+        }
         // A sequence changes state iff any step can (an empty `Seq` is inert).
         Effect::Seq(steps) => steps
             .iter()
