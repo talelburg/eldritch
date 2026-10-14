@@ -471,7 +471,11 @@ fn latching_a_determination_outside_a_test_is_rejected() {
     };
 
     assert!(
-        !enumerate::legal_actions(&state).contains(&action),
+        !enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&action),
         "the open-turn menu must not offer an activation that would reject",
     );
 
@@ -497,13 +501,15 @@ fn latching_a_determination_outside_a_test_is_rejected() {
 #[test]
 fn an_unrelated_activation_is_still_offered_outside_a_test() {
     let (state, id, instance_id) = board(PLAIN_GAIN);
-    assert!(
-        enumerate::legal_actions(&state).contains(&TurnAction::ActivateAbility {
-            investigator: id,
-            source: AbilitySource::InPlay(instance_id),
-            address: AbilityAddress::Printed(0),
-        })
-    );
+    assert!(enumerate::legal_actions(
+        &state,
+        game_core::card_registry::current().expect("card registry installed")
+    )
+    .contains(&TurnAction::ActivateAbility {
+        investigator: id,
+        source: AbilitySource::InPlay(instance_id),
+        address: AbilityAddress::Printed(0),
+    }));
 }
 
 /// A determination is a test-scoped row, so it expires with the test that

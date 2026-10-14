@@ -25,7 +25,7 @@ use std::fmt;
 
 use card_dsl::dsl::{ActionClass, ActionDesignator};
 
-use crate::card_registry;
+use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::actions::{draw, engage, evade, fight, investigate, r#move, resource};
 use crate::engine::dispatch::{abilities, cards, combat};
 use crate::engine::outcome::EngineOutcome;
@@ -196,14 +196,16 @@ struct Quote {
 /// client message.
 pub(crate) fn check(
     state: &GameState,
+    cards: &CardRegistry,
     investigator: InvestigatorId,
     description: &ActionDescription,
 ) -> Result<u8, Cow<'static, str>> {
-    quote(state, investigator, description).map(|quote| quote.total)
+    quote(state, cards, investigator, description).map(|quote| quote.total)
 }
 
 fn quote(
     state: &GameState,
+    cards: &CardRegistry,
     investigator: InvestigatorId,
     description: &ActionDescription,
 ) -> Result<Quote, Cow<'static, str>> {
@@ -232,8 +234,16 @@ fn quote(
         )
         .into());
     }
+    // The `ExtraActionCost` surcharge, plus the `first_each_round` sources to
+    // mark spent once the action is paid; no card data for a code means no
+    // surcharge. [`check`] and [`take`] price every action here, an
+    // activation included, whose bold designator names the class via
+    // [`ActionDesignator::action_class`] (#754). Nothing outside the step
+    // prices a surcharge: the play and activation validators ask [`check`].
+    // One pricing is the point: a surcharge only one path applies is the bug
+    // that made shooting a weapon cheaper than punching.
     let (extra, surcharge_sources) = match description.action_class() {
-        Some(class) => action_surcharge(state, investigator, class),
+        Some(class) => evaluator::pending_action_surcharge(state, cards, investigator, class),
         None => (0, Vec::new()),
     };
     let total = description.action_cost.saturating_add(extra);
@@ -273,7 +283,7 @@ pub(crate) fn take(
     let Quote {
         total,
         surcharge_sources,
-    } = match quote(cx.state, investigator, description) {
+    } = match quote(cx.state, cx.cards, investigator, description) {
         Ok(quote) => quote,
         Err(reason) => return EngineOutcome::Rejected { reason },
     };
@@ -363,30 +373,5 @@ pub(in crate::engine::dispatch) fn perform(
             };
             cards::resume_play_card(cx, investigator, card)
         }
-    }
-}
-
-/// The `ExtraActionCost` surcharge on `action_class` for `investigator`, plus
-/// the `first_each_round` sources to mark spent once the action is paid.
-///
-/// The registry-optional wrapper around
-/// [`pending_action_surcharge`](crate::engine::evaluator::pending_action_surcharge):
-/// no registry, or no card data for a code, means no surcharge. Pure, so a
-/// caller can price an action before deciding to pay for it.
-///
-/// [`check`] and [`take`] read it for every action they price, an activation
-/// included, whose bold designator names the class via
-/// [`ActionDesignator::action_class`] (#754). Nothing outside the step prices a
-/// surcharge: the play and activation validators ask [`check`]. One pricing is
-/// the point: a surcharge only one path applies is the bug that made shooting a
-/// weapon cheaper than punching.
-fn action_surcharge(
-    state: &GameState,
-    investigator: InvestigatorId,
-    action_class: ActionClass,
-) -> (u8, Vec<CardInstanceId>) {
-    match card_registry::current() {
-        Some(reg) => evaluator::pending_action_surcharge(state, reg, investigator, action_class),
-        None => (0, Vec::new()),
     }
 }

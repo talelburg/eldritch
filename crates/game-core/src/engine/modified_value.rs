@@ -285,8 +285,6 @@ impl ModifierBreakdown {
 /// The modified value of `quantity` for `target`, recalculated from the
 /// board as it stands.
 ///
-/// `registry` is `None` in engine-only tests with no card data
-/// installed; the base value still answers and no modifier contributes.
 /// A card in play whose code the registry cannot resolve is skipped
 /// silently — the deck-import gate keeps unimplemented codes out of
 /// play, so a missing entry means engine-only test data rather than a
@@ -298,35 +296,35 @@ impl ModifierBreakdown {
 #[must_use]
 pub fn modified_value(
     state: &GameState,
-    registry: Option<&CardRegistry>,
+    registry: &CardRegistry,
     target: ModifierTarget,
     quantity: ModifiedQuantity,
     context: ReadContext,
 ) -> ModifierBreakdown {
-    let mut breakdown =
-        if let (ModifierTarget::Test, ModifiedQuantity::Difficulty) = (target, quantity) {
-            difficulty(state, registry, context)
-        } else {
-            let mut breakdown = ModifierBreakdown::flat(base_value(state, target, quantity));
-            if let Some(registry) = registry {
-                sweep(
-                    state,
-                    registry,
-                    target,
-                    quantity,
-                    context,
-                    &mut breakdown.contributions,
-                );
-            }
-            collect_recorded(
-                state,
-                target,
-                quantity,
-                context,
-                &mut breakdown.contributions,
-            );
-            breakdown
-        };
+    let mut breakdown = if let (ModifierTarget::Test, ModifiedQuantity::Difficulty) =
+        (target, quantity)
+    {
+        difficulty(state, registry, context)
+    } else {
+        let mut breakdown = ModifierBreakdown::flat(base_value(state, registry, target, quantity));
+        sweep(
+            state,
+            registry,
+            target,
+            quantity,
+            context,
+            &mut breakdown.contributions,
+        );
+        collect_recorded(
+            state,
+            registry,
+            target,
+            quantity,
+            context,
+            &mut breakdown.contributions,
+        );
+        breakdown
+    };
     // Stage 5, last: the in-flight test's determination substitutes the
     // whole quantity. Applied here rather than inside either branch so the
     // difficulty read gets it too — and after the delegation, so the
@@ -441,7 +439,7 @@ fn substitution(
 /// asking about a test that is on its way out.
 fn difficulty(
     state: &GameState,
-    registry: Option<&CardRegistry>,
+    registry: &CardRegistry,
     context: ReadContext,
 ) -> ModifierBreakdown {
     let Some(basis) = state.current_skill_test().map(|t| t.difficulty_basis) else {
@@ -467,7 +465,12 @@ fn difficulty(
 /// 8), **this value can then be modified by other abilities**."* So a stage-1
 /// replacement must return here rather than short-circuit the fold — which is
 /// what #673 will build Duke against.
-fn base_value(state: &GameState, target: ModifierTarget, quantity: ModifiedQuantity) -> i32 {
+fn base_value(
+    state: &GameState,
+    registry: &CardRegistry,
+    target: ModifierTarget,
+    quantity: ModifiedQuantity,
+) -> i32 {
     match (target, quantity) {
         (ModifierTarget::Investigator(id), ModifiedQuantity::Skill(skill)) => state
             .investigators
@@ -476,11 +479,11 @@ fn base_value(state: &GameState, target: ModifierTarget, quantity: ModifiedQuant
         (ModifierTarget::Investigator(id), ModifiedQuantity::MaxHealth) => state
             .investigators
             .get(&id)
-            .map_or(0, |inv| i32::from(inv.max_health())),
+            .map_or(0, |inv| i32::from(inv.max_health(registry))),
         (ModifierTarget::Investigator(id), ModifiedQuantity::MaxSanity) => state
             .investigators
             .get(&id)
-            .map_or(0, |inv| i32::from(inv.max_sanity())),
+            .map_or(0, |inv| i32::from(inv.max_sanity(registry))),
         (ModifierTarget::Location(id), ModifiedQuantity::Shroud) => state
             .locations
             .get(&id)
@@ -563,8 +566,7 @@ fn sweep(
         // board grants this card (#772). The address each ability comes paired
         // with names it across a suspension; a modifier is read fresh at every
         // read and never suspended, so it is dropped here.
-        let Some(abilities) = abilities_in_effect::for_source_with(state, registry, source, code)
-        else {
+        let Some(abilities) = abilities_in_effect::for_source(state, registry, source, code) else {
             return;
         };
         for (_, ability) in &abilities {
@@ -641,6 +643,7 @@ fn sweep(
 /// superseded `elder_sign_modifier` carried in its own `unwrap_or(0)`.
 fn collect_recorded(
     state: &GameState,
+    cards: &CardRegistry,
     target: ModifierTarget,
     quantity: ModifiedQuantity,
     context: ReadContext,
@@ -674,7 +677,7 @@ fn collect_recorded(
             row.investigator,
             row.source.map(AbilitySource::InPlay),
         );
-        let Ok(delta) = evaluator::eval_int_expr(state, &eval_ctx, delta) else {
+        let Ok(delta) = evaluator::eval_int_expr(state, cards, &eval_ctx, delta) else {
             continue;
         };
         out.push(Contribution {

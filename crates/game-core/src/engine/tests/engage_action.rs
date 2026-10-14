@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::TEST_REGISTRY;
 
 const TARGET: EnemyId = EnemyId(300);
 const ENGAGE: TurnAction = TurnAction::Engage {
@@ -23,7 +24,7 @@ fn engage_board(investigator: Seat) -> GameStateBuilder {
 
 /// Whether `state`'s menu offers `INV` an Engage against `enemy`.
 fn offers_engage(state: &GameState, enemy: EnemyId) -> bool {
-    legal_actions(state).iter().any(
+    legal_actions(state, &TEST_REGISTRY).iter().any(
         |a| matches!(a, TurnAction::Engage { investigator, enemy: e } if *investigator == INV && *e == enemy),
     )
 }

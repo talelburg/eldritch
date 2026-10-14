@@ -2,6 +2,7 @@ use super::*;
 use crate::engine::enumerate::TurnAction;
 use crate::state::{EnemyId, LocationId};
 use crate::test_support::TestSession;
+use crate::test_support::TEST_REGISTRY;
 
 const HERE: LocationId = LocationId(10);
 const GHOUL: EnemyId = EnemyId(7);
@@ -93,7 +94,7 @@ fn combat_test_with_substitution_prompts_then_becomes_intellect_on_yes() {
     let read = |skill| {
         modified_value::modified_value(
             &state,
-            card_registry::current(),
+            &TEST_REGISTRY,
             ModifierTarget::Investigator(inv),
             ModifiedQuantity::Skill(skill),
             ReadContext::DuringTest(SkillTestKind::Fight),

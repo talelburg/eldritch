@@ -118,7 +118,10 @@ fn drives_act_1_then_act_2_via_round_end_window() {
         !state.locations[&parlor_id].revealed,
         "the Parlor enters play unrevealed",
     );
-    let offered = enumerate::legal_actions(state);
+    let offered = enumerate::legal_actions(
+        state,
+        game_core::card_registry::current().expect("card registry installed"),
+    );
     assert!(
         !offered.contains(&TurnAction::Move {
             investigator: inv,
@@ -207,7 +210,11 @@ fn drives_act_1_then_act_2_via_round_end_window() {
     // point of 01109b's *"The barrier blocking passage into the parlor has
     // vanished. Reveal the Parlor."* The Hallway investigator can now move in.
     assert!(
-        engine::investigator_can_enter_location(r, location_id(r, "01115")),
+        engine::investigator_can_enter_location(
+            r,
+            game_core::card_registry::current().expect("card registry installed"),
+            location_id(r, "01115")
+        ),
         "the reveal lifts the barrier",
     );
 }

@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use card_dsl::dsl::{ActionDesignator, Cost, Effect, Trigger, UsageLimit};
 
-use crate::card_registry;
+use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::{
     actions::take::{self, ActionDescription},
     combat, initiation,
@@ -122,7 +122,7 @@ pub(super) fn activate_ability(
         effect,
         usage_limit,
         source_exhausted: _,
-    } = match legality::check_activate_ability(cx.state, investigator, source, address) {
+    } = match legality::check_activate_ability(cx.state, cx.cards, investigator, source, address) {
         Ok(r) => r,
         Err(reason) => return EngineOutcome::Rejected { reason },
     };
@@ -375,7 +375,7 @@ fn require_source_reachable<'a>(
     cost: &Cost,
     source_code: &CardCode,
 ) -> Result<&'a mut CardInPlay, Cow<'static, str>> {
-    ability_source::resolve_mut(cx.state, investigator, source).ok_or_else(|| {
+    ability_source::resolve_mut(cx.state, cx.cards, investigator, source).ok_or_else(|| {
         format!(
             "ActivateAbility: the {} cost needs its source {source_code} \
              ({source:?}), but an earlier cost on the same ability removed it \
@@ -466,24 +466,23 @@ pub(super) struct ActivatedAbility {
 /// [`play_card`].
 pub(super) fn resolve_activated_ability(
     state: &GameState,
+    cards: &CardRegistry,
     source: AbilitySource,
     code: &CardCode,
     address: &AbilityAddress,
 ) -> Result<ActivatedAbility, EngineOutcome> {
-    if card_registry::current().is_none() {
-        return Err(EngineOutcome::Rejected {
-            reason: "ActivateAbility: no card registry installed; engine cannot resolve abilities."
-                .into(),
-        });
-    }
     // Re-derived from the address (#772), against the side in effect (#774) and
     // the grants currently on the board — which is what the enumerator listed
     // from, so an address means the same ability on both ends of the round
     // trip. A granted ability whose granter has left play or whose condition
     // has flipped is simply not there, and rejects like an unknown one.
-    let Some(ability) =
-        abilities_in_effect::resolve(state, CandidateSource::Ability(source), code, address)
-    else {
+    let Some(ability) = abilities_in_effect::resolve(
+        state,
+        cards,
+        CandidateSource::Ability(source),
+        code,
+        address,
+    ) else {
         return Err(EngineOutcome::Rejected {
             reason: format!(
                 "ActivateAbility: {address:?} names no ability in effect on {code} \

@@ -8,7 +8,7 @@
 //! natives share (#990). No replay, no separate choice frame (umbrella §3.4).
 
 use crate::action::InputResponse;
-use crate::card_registry;
+use crate::card_registry::CardRegistry;
 use crate::engine::outcome::{
     ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
 };
@@ -77,6 +77,7 @@ pub enum Grounded<T> {
 /// transient pick (`set_chosen_option(None)`) if it threads the context onward.
 pub fn resolve_grounded_choice<T: Clone>(
     state: &GameState,
+    cards: &CardRegistry,
     ctx: &EvalContext,
     candidates: &[T],
     prompt: &str,
@@ -95,7 +96,7 @@ pub fn resolve_grounded_choice<T: Clone>(
         ChoiceResolution::Auto(i) => Grounded::Picked(candidates[i].clone()),
         ChoiceResolution::Suspend => {
             let anchors: Vec<_> = candidates.iter().map(anchor).collect();
-            Grounded::Suspend(awaiting_selection(state, prompt, &anchors))
+            Grounded::Suspend(awaiting_selection(state, cards, prompt, &anchors))
         }
     }
 }
@@ -110,13 +111,14 @@ pub fn resolve_grounded_choice<T: Clone>(
 /// checked indexing.
 fn awaiting_selection(
     state: &GameState,
+    cards: &CardRegistry,
     prompt: impl Into<String>,
     anchors: &[OptionTarget],
 ) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_single(
             prompt,
-            candidate_options(state, anchors, OptionTarget::clone),
+            candidate_options(state, cards, anchors, OptionTarget::clone),
         ),
         resume_token: ResumeToken(0),
     }
@@ -147,6 +149,7 @@ fn option_id(i: usize) -> OptionId {
 /// no label, so it cannot forget one or name a different entity than it anchors.
 pub(super) fn candidate_options<T>(
     state: &GameState,
+    cards: &CardRegistry,
     candidates: &[T],
     anchor: impl Fn(&T) -> OptionTarget,
 ) -> Vec<ChoiceOption> {
@@ -155,7 +158,7 @@ pub(super) fn candidate_options<T>(
         .enumerate()
         .map(|(i, c)| {
             let target = anchor(c);
-            ChoiceOption::new(option_id(i), anchor_label(state, &target)).at(target)
+            ChoiceOption::new(option_id(i), anchor_label(state, cards, &target)).at(target)
         })
         .collect()
 }
@@ -170,12 +173,12 @@ pub(super) fn candidate_options<T>(
 /// engine bug, because every candidate is enumerated from `state`. It trips a
 /// `debug_assert!` in tests and degrades to a neutral placeholder in a live
 /// game, never to an id's `Debug` form.
-fn anchor_label(state: &GameState, anchor: &OptionTarget) -> String {
+fn anchor_label(state: &GameState, cards: &CardRegistry, anchor: &OptionTarget) -> String {
     let found = match anchor {
         OptionTarget::Location(id) => state.locations.get(id).map(|l| l.name.clone()),
         OptionTarget::Enemy(id) => state.enemies.get(id).map(|e| e.name.clone()),
         OptionTarget::CardInstance(id) => {
-            board::find_instance(state, *id).map(|(card, _)| card_name(&card.code))
+            board::find_instance(state, *id).map(|(card, _)| card_name(cards, &card.code))
         }
         OptionTarget::HandCard {
             investigator,
@@ -184,16 +187,16 @@ fn anchor_label(state: &GameState, anchor: &OptionTarget) -> String {
             .investigators
             .get(investigator)
             .and_then(|inv| inv.hand.get(usize::from(*hand_index)))
-            .map(card_name),
-        OptionTarget::HandCardByCode { code, .. } => Some(card_name(code)),
+            .map(|code| card_name(cards, code)),
+        OptionTarget::HandCardByCode { code, .. } => Some(card_name(cards, code)),
         OptionTarget::Act => state
             .act_deck
             .get(state.act_index)
-            .map(|act| card_name(&act.code)),
+            .map(|act| card_name(cards, &act.code)),
         OptionTarget::Agenda => state
             .agenda_deck
             .get(state.agenda_index)
-            .map(|agenda| card_name(&agenda.code)),
+            .map(|agenda| card_name(cards, &agenda.code)),
         OptionTarget::TurnControl(id)
         | OptionTarget::ResourcePool(id)
         | OptionTarget::PlayerDeck(id) => state.investigators.get(id).map(|inv| inv.name.clone()),
@@ -208,14 +211,11 @@ fn anchor_label(state: &GameState, anchor: &OptionTarget) -> String {
     })
 }
 
-/// A card's printed name, looked up through the installed card registry's
-/// metadata. Falls back to the bare code when no registry is installed or the
-/// corpus lacks the code, so a gap degrades readably rather than crashing a live
+/// A card's printed name, looked up through the card registry's metadata.
+/// Falls back to the bare code when the registry lacks the code, so a gap degrades readably rather than crashing a live
 /// game (#989).
-pub(crate) fn card_name(code: &CardCode) -> String {
-    card_registry::current()
-        .and_then(|r| (r.metadata_for)(code))
-        .map_or_else(|| code.0.clone(), |m| m.name.clone())
+pub(crate) fn card_name(cards: &CardRegistry, code: &CardCode) -> String {
+    (cards.metadata_for)(code).map_or_else(|| code.0.clone(), |m| m.name.clone())
 }
 
 /// Build the `AwaitingInput` for a **decision** — a choice among alternatives
@@ -321,6 +321,7 @@ mod tests {
     use crate::state::{
         CardInstanceId, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
     };
+    use crate::test_support::TEST_REGISTRY;
     use crate::test_support::{self, SeatLookup as _};
 
     /// A `ChooseOne` branch that is **live** — one `effect_can_change_state`
@@ -464,6 +465,7 @@ mod tests {
         let state = labelled_board();
         let out = awaiting_selection(
             &state,
+            &TEST_REGISTRY,
             "Choose a target",
             &[
                 OptionTarget::Enemy(EnemyId(1)),
@@ -547,14 +549,17 @@ mod tests {
     #[test]
     fn a_location_option_is_labelled_with_the_location_name() {
         let state = labelled_board();
-        assert_eq!(anchor_label(&state, &OptionTarget::Location(HERE)), "Study");
+        assert_eq!(
+            anchor_label(&state, &TEST_REGISTRY, &OptionTarget::Location(HERE)),
+            "Study"
+        );
     }
 
     #[test]
     fn an_enemy_option_is_labelled_with_the_enemy_name() {
         let state = labelled_board();
         assert_eq!(
-            anchor_label(&state, &OptionTarget::Enemy(EnemyId(1))),
+            anchor_label(&state, &TEST_REGISTRY, &OptionTarget::Enemy(EnemyId(1))),
             "Ghoul Minion"
         );
     }
@@ -563,7 +568,11 @@ mod tests {
     fn a_card_instance_option_is_labelled_with_the_card_name() {
         let state = labelled_board();
         assert_eq!(
-            anchor_label(&state, &OptionTarget::CardInstance(asset(&state))),
+            anchor_label(
+                &state,
+                &TEST_REGISTRY,
+                &OptionTarget::CardInstance(asset(&state))
+            ),
             "Test Asset"
         );
     }
@@ -579,7 +588,10 @@ mod tests {
         );
         // The registry's name for the investigator card, not the fixture's
         // `Investigator::name`.
-        assert_eq!(anchor_label(&state, &anchor), "Test Investigator");
+        assert_eq!(
+            anchor_label(&state, &TEST_REGISTRY, &anchor),
+            "Test Investigator"
+        );
     }
 
     #[test]
@@ -593,10 +605,13 @@ mod tests {
             .cards_in_play[0]
             .code = CardCode::new("NOT_A_CARD");
         assert_eq!(
-            anchor_label(&state, &OptionTarget::CardInstance(asset)),
+            anchor_label(&state, &TEST_REGISTRY, &OptionTarget::CardInstance(asset)),
             "NOT_A_CARD"
         );
-        assert_eq!(card_name(&CardCode::new("NOT_A_CARD")), "NOT_A_CARD");
+        assert_eq!(
+            card_name(&TEST_REGISTRY, &CardCode::new("NOT_A_CARD")),
+            "NOT_A_CARD"
+        );
     }
 
     /// `ctx` with `pick` threaded in, as resume re-steps a suspended node.
@@ -610,9 +625,14 @@ mod tests {
     fn grounded_choice_auto_picks_a_lone_candidate_without_a_prompt() {
         let state = labelled_board();
         let ctx = EvalContext::for_controller(InvestigatorId(1));
-        let out = resolve_grounded_choice(&state, &ctx, &[HERE], "Choose a location", |id| {
-            OptionTarget::Location(*id)
-        });
+        let out = resolve_grounded_choice(
+            &state,
+            &TEST_REGISTRY,
+            &ctx,
+            &[HERE],
+            "Choose a location",
+            |id| OptionTarget::Location(*id),
+        );
         assert!(matches!(out, Grounded::Picked(HERE)));
     }
 
@@ -622,9 +642,14 @@ mod tests {
         let mut state = labelled_board();
         state.interactive_acknowledge = true;
         let ctx = EvalContext::for_controller(InvestigatorId(1));
-        let out = resolve_grounded_choice(&state, &ctx, &[HERE], "Choose a location", |id| {
-            OptionTarget::Location(*id)
-        });
+        let out = resolve_grounded_choice(
+            &state,
+            &TEST_REGISTRY,
+            &ctx,
+            &[HERE],
+            "Choose a location",
+            |id| OptionTarget::Location(*id),
+        );
         let Grounded::Suspend(EngineOutcome::AwaitingInput { request, .. }) = out else {
             panic!("expected a one-option suspend");
         };
@@ -637,6 +662,7 @@ mod tests {
         let ctx = EvalContext::for_controller(InvestigatorId(1));
         let out = resolve_grounded_choice(
             &state,
+            &TEST_REGISTRY,
             &ctx,
             &[] as &[LocationId],
             "Choose a location",
@@ -654,6 +680,7 @@ mod tests {
             .build();
         let out = resolve_grounded_choice(
             &state,
+            &TEST_REGISTRY,
             &ctx,
             &[EnemyId(4), EnemyId(9)],
             "Choose an enemy",
@@ -688,9 +715,14 @@ mod tests {
             .with_seat(test_support::seat(2))
             .build();
         let cands = [InvestigatorId(1), InvestigatorId(2)];
-        let out = resolve_grounded_choice(&state, &ctx, &cands, "Choose an investigator", |id| {
-            state.investigators[id].card_anchor()
-        });
+        let out = resolve_grounded_choice(
+            &state,
+            &TEST_REGISTRY,
+            &ctx,
+            &cands,
+            "Choose an investigator",
+            |id| state.investigators[id].card_anchor(),
+        );
         let Grounded::Suspend(EngineOutcome::AwaitingInput { request, .. }) = out else {
             panic!("2 candidates suspend for a pick");
         };
@@ -706,6 +738,7 @@ mod tests {
         let state = labelled_board();
         let out = resolve_grounded_choice(
             &state,
+            &TEST_REGISTRY,
             &picking(1),
             &[EnemyId(4), EnemyId(9)],
             "Choose an enemy",
@@ -721,10 +754,14 @@ mod tests {
         let state = labelled_board();
         let lists: [&[EnemyId]; 3] = [&[], &[EnemyId(4)], &[EnemyId(4), EnemyId(9)]];
         for candidates in lists {
-            let out =
-                resolve_grounded_choice(&state, &picking(2), candidates, "Choose an enemy", |id| {
-                    OptionTarget::Enemy(*id)
-                });
+            let out = resolve_grounded_choice(
+                &state,
+                &TEST_REGISTRY,
+                &picking(2),
+                candidates,
+                "Choose an enemy",
+                |id| OptionTarget::Enemy(*id),
+            );
             assert!(
                 matches!(out, Grounded::Suspend(EngineOutcome::Rejected { .. })),
                 "pick 2 of {} candidates must be rejected",

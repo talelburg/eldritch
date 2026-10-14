@@ -174,10 +174,17 @@ fn an_ability_on_your_own_investigator_card_is_offered_and_activatable() {
     let action = activation(AbilitySource::InPlay(my_investigator_card(&state)), LIVE);
 
     assert!(
-        enumerate::legal_actions(&state).contains(&action),
+        enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&action),
         "the investigator card is a card in play under your control, so its ability \
          belongs in the turn menu; menu was {:?}",
-        enumerate::legal_actions(&state),
+        enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        ),
     );
 
     let session = take_activation(state, &action);
@@ -194,9 +201,16 @@ fn an_ability_on_a_card_in_your_own_threat_area_is_offered_and_activatable() {
     let action = activation(AbilitySource::InPlay(ward(&state)), LIVE);
 
     assert!(
-        enumerate::legal_actions(&state).contains(&action),
+        enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&action),
         "a card in your own threat area is in play and under your control; menu was {:?}",
-        enumerate::legal_actions(&state),
+        enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        ),
     );
 
     let session = take_activation(state, &action);
@@ -209,9 +223,16 @@ fn an_ability_on_another_investigators_card_is_neither_offered_nor_activatable()
     let action = activation(AbilitySource::InPlay(state.in_play(THEM, THEIRS)), LIVE);
 
     assert!(
-        !enumerate::legal_actions(&state).contains(&action),
+        !enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&action),
         "a card another investigator controls is out of reach; menu was {:?}",
-        enumerate::legal_actions(&state),
+        enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        ),
     );
 
     // Activating another investigator's card must reject.
@@ -228,7 +249,10 @@ fn an_ability_on_another_investigators_card_is_neither_offered_nor_activatable()
 #[test]
 fn an_unpayable_or_inert_ability_stays_unoffered_from_every_reachable_source() {
     let state = board();
-    let menu = enumerate::legal_actions(&state);
+    let menu = enumerate::legal_actions(
+        &state,
+        game_core::card_registry::current().expect("card registry installed"),
+    );
     for source in [
         AbilitySource::InPlay(my_investigator_card(&state)),
         AbilitySource::InPlay(ward(&state)),
@@ -253,9 +277,16 @@ fn discarding_a_threat_area_source_as_a_cost_sends_it_to_the_encounter_discard()
     let action = activation(AbilitySource::InPlay(ward(&state)), SELF_DISCARDING);
 
     assert!(
-        enumerate::legal_actions(&state).contains(&action),
+        enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&action),
         "menu was {:?}",
-        enumerate::legal_actions(&state),
+        enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        ),
     );
 
     let session = take_activation(state, &action);

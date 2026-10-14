@@ -186,7 +186,11 @@ fn playing_a_non_fast_card_with_no_actions_is_rejected() {
     // 0 actions remaining → PlayCard not offered; send it off the menu to prove
     // the handler itself refuses it.
     assert!(
-        !enumerate::legal_actions(session.state()).contains(&PLAY_FIRST),
+        !enumerate::legal_actions(
+            session.state(),
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&PLAY_FIRST),
         "the menu does not offer a non-fast play with 0 actions",
     );
     let result = session.submit_off_menu(&PLAY_FIRST);

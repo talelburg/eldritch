@@ -6,7 +6,7 @@ use std::iter;
 
 use card_dsl::dsl::{EventPattern, EventTiming, Trigger, TriggerKind};
 
-use crate::card_registry;
+use crate::card_registry::CardRegistry;
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::{evaluator, Cx};
 use crate::scenario::ScenarioEnding;
@@ -20,11 +20,8 @@ use crate::state::{
 /// which case the `AdvanceAct` action is rejected. Detected from the registry
 /// (#434 — replaces the former `Act.round_end_advance` data field; the
 /// contributor location is now printed-in-card on the ability's native).
-fn act_advances_at_round_end(state: &GameState) -> bool {
+fn act_advances_at_round_end(state: &GameState, reg: &CardRegistry) -> bool {
     let Some(act) = state.act_deck.get(state.act_index) else {
-        return false;
-    };
-    let Some(reg) = card_registry::current() else {
         return false;
     };
     let Some(abilities) = (reg.abilities_for)(&act.code) else {
@@ -135,6 +132,7 @@ fn clue_contributors(state: &GameState, acting: InvestigatorId) -> Vec<Investiga
 /// calls it then mutates.
 pub(crate) fn check_advance_act(
     state: &GameState,
+    cards: &CardRegistry,
     investigator: InvestigatorId,
 ) -> Result<u8, Cow<'static, str>> {
     if state.phase != Phase::Investigation {
@@ -147,7 +145,7 @@ pub(crate) fn check_advance_act(
     if state.act_deck.is_empty() {
         return Err("AdvanceAct: no act deck is modeled for this scenario".into());
     }
-    if act_advances_at_round_end(state) {
+    if act_advances_at_round_end(state, cards) {
         return Err(
             "this act advances only at the end of the round (its round-end \
                     objective), not via the AdvanceAct action"
@@ -162,8 +160,8 @@ pub(crate) fn check_advance_act(
     // the Ghoul Priest. Offering the action there would let the player "spend 0
     // clues to advance", bypassing the objective (#486 — an instant win on a
     // terminal-Won act). Unlike `act_advances_at_round_end` (registry-based, so
-    // it silently fails open with no registry installed), this is a self-contained
-    // invariant. Act 01109's round-end objective carries a positive threshold and
+    // it silently fails open for an act the registry doesn't know), this is a
+    // self-contained invariant. Act 01109's round-end objective carries a positive threshold and
     // stays excluded by `act_advances_at_round_end` above.
     if threshold == 0 {
         return Err(
@@ -192,7 +190,7 @@ pub(crate) fn check_advance_act(
 /// advance the act — terminal or not (ADR 0013); a terminal act's ending comes
 /// from the reverse the advance fires, not from this handler.
 pub(super) fn advance_act_action(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
-    let threshold = match check_advance_act(cx.state, investigator) {
+    let threshold = match check_advance_act(cx.state, cx.cards, investigator) {
         Ok(t) => t,
         Err(reason) => return EngineOutcome::Rejected { reason },
     };
@@ -543,6 +541,7 @@ mod advance_act_tests {
     use crate::event::Event;
     use crate::scenario::ResolutionId;
     use crate::state::{Act, CardCode, GameStateBuilder, InvestigatorId};
+    use crate::test_support::TEST_REGISTRY;
     use crate::test_support::{self, TestSession};
 
     #[test]
@@ -595,7 +594,7 @@ mod advance_act_tests {
 
         // Insufficient clues (1 < 2): AdvanceAct is not legal.
         assert!(
-            !enumerate::legal_actions(&state)
+            !enumerate::legal_actions(&state, &TEST_REGISTRY)
                 .iter()
                 .any(|a| matches!(a, TurnAction::AdvanceAct { .. })),
             "AdvanceAct must not be legal when clues < threshold"
@@ -622,7 +621,7 @@ mod advance_act_tests {
         }];
 
         assert!(
-            !enumerate::legal_actions(&state)
+            !enumerate::legal_actions(&state, &TEST_REGISTRY)
                 .iter()
                 .any(|a| matches!(a, TurnAction::AdvanceAct { .. })),
             "AdvanceAct must not be offered for a zero-threshold objective act"

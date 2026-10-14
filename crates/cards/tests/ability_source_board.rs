@@ -150,9 +150,16 @@ fn activation(source: AbilitySource, ability_index: u8) -> TurnAction {
 fn assert_offered_and_activatable(state: GameState, source: AbilitySource, why: &str) {
     let action = activation(source, LIVE);
     assert!(
-        enumerate::legal_actions(&state).contains(&action),
+        enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&action),
         "{why}, so its ability belongs in the turn menu; menu was {:?}",
-        enumerate::legal_actions(&state),
+        enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        ),
     );
 
     let before = state.investigators[&MINE].resources;
@@ -259,7 +266,10 @@ fn an_absent_act_or_agenda_is_out_of_reach() {
     let mut state = board();
     state.act_deck.clear();
     state.agenda_deck.clear();
-    let menu = enumerate::legal_actions(&state);
+    let menu = enumerate::legal_actions(
+        &state,
+        game_core::card_registry::current().expect("card registry installed"),
+    );
 
     for source in [AbilitySource::Act, AbilitySource::Agenda] {
         assert!(
@@ -283,7 +293,10 @@ fn an_absent_act_or_agenda_is_out_of_reach() {
 #[test]
 fn an_inert_ability_stays_unoffered_from_the_board_cards() {
     let state = board();
-    let menu = enumerate::legal_actions(&state);
+    let menu = enumerate::legal_actions(
+        &state,
+        game_core::card_registry::current().expect("card registry installed"),
+    );
     for source in [AbilitySource::Act, AbilitySource::Agenda] {
         assert!(
             !menu.contains(&activation(source, INERT)),
@@ -304,9 +317,16 @@ fn a_usage_limited_board_ability_rejects_naming_699_rather_than_panicking() {
         let action = activation(source, LIMITED);
 
         assert!(
-            !enumerate::legal_actions(&state).contains(&action),
+            !enumerate::legal_actions(
+                &state,
+                game_core::card_registry::current().expect("card registry installed")
+            )
+            .contains(&action),
             "an ability the engine cannot cap must not be offered; menu was {:?}",
-            enumerate::legal_actions(&state),
+            enumerate::legal_actions(
+                &state,
+                game_core::card_registry::current().expect("card registry installed")
+            ),
         );
 
         // A usage-limited ability on a board card must reject.

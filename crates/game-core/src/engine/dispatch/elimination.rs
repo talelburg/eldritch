@@ -1,6 +1,7 @@
 //! Investigator elimination helpers: defeat application, elimination
 //! steps, horror application, and no-remaining-players detection.
 
+use crate::card_registry::CardRegistry;
 use crate::engine::board::{self, Placement};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{act_agenda, cursor, emit, hunters, trigger_scan};
@@ -86,7 +87,7 @@ pub(super) fn apply_investigator_elimination(
     // Rules Reference p.10 Elimination step 0 (#638). The rule, why the steps
     // have to ride a frame to honour it, and what that costs are all documented
     // once on `Continuation::Elimination`; this is the fork it describes.
-    if has_weakness_game_end_ability(cx.state, investigator) {
+    if has_weakness_game_end_ability(cx.state, cx.cards, investigator) {
         cx.state.continuations.push(EliminationFrame {
             investigator,
             step: EliminationStep::FireWeaknessGameEnd,
@@ -201,10 +202,15 @@ fn end_turn_on_elimination(cx: &mut Cx, investigator: InvestigatorId) {
 /// `After` here would have silently swallowed it.
 /// [`EmitStep::cells`](crate::state::EmitStep::cells) derives the list from the
 /// coordinator's own cursor, so a fourth cell cannot be forgotten here.
-fn has_weakness_game_end_ability(state: &GameState, investigator: InvestigatorId) -> bool {
+fn has_weakness_game_end_ability(
+    state: &GameState,
+    cards: &CardRegistry,
+    investigator: InvestigatorId,
+) -> bool {
     EmitStep::cells().any(|cell| {
         !trigger_scan::collect_forced(
             state,
+            cards,
             &TimingEvent::EliminationGameEnd { investigator },
             cell,
         )

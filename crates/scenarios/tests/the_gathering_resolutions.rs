@@ -90,7 +90,9 @@ fn enemy_attack_defeats_roland_and_latches_no_resolution() {
     // source of truth; max_health() reads from cards::REGISTRY (9 for Roland).
     {
         let roland = state.investigators.get_mut(&INV).expect("Roland seated");
-        roland.investigator_card.accumulated_damage = roland.max_health() - 1;
+        roland.investigator_card.accumulated_damage = roland
+            .max_health(game_core::card_registry::current().expect("card registry installed"))
+            - 1;
     }
     let loc = state.investigators[&INV]
         .current_location
@@ -714,7 +716,10 @@ fn apply_logged(state: GameState, action: Action, log: &mut Vec<Action>) -> Appl
 /// re-does the enumeration rather than taking the action through a session,
 /// which does not hand back the wire actions it sends.
 fn logged_turn(state: GameState, action: &TurnAction, log: &mut Vec<Action>) -> ApplyResult {
-    let legal = enumerate::legal_actions(&state);
+    let legal = enumerate::legal_actions(
+        &state,
+        game_core::card_registry::current().expect("card registry installed"),
+    );
     let idx = legal
         .iter()
         .position(|a| a == action)

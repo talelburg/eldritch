@@ -9,7 +9,7 @@ fn a_during_scope_contributes_only_to_its_own_test_kind() {
     let read = |context| {
         modified_value(
             &state,
-            Some(&mock_registry()),
+            &mock_registry(),
             ModifierTarget::Investigator(id),
             ModifiedQuantity::Skill(SkillKind::Intellect),
             context,
@@ -37,7 +37,7 @@ fn an_unqualified_scope_contributes_to_every_read() {
         assert_eq!(
             modified_value(
                 &state,
-                Some(&mock_registry()),
+                &mock_registry(),
                 ModifierTarget::Investigator(id),
                 ModifiedQuantity::Skill(SkillKind::Willpower),
                 context,
@@ -57,7 +57,7 @@ fn a_during_scope_still_respects_the_stat() {
     assert_eq!(
         modified_value(
             &state,
-            Some(&mock_registry()),
+            &mock_registry(),
             ModifierTarget::Investigator(id),
             ModifiedQuantity::Skill(SkillKind::Willpower),
             ReadContext::DuringTest(SkillTestKind::Investigate),

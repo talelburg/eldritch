@@ -105,7 +105,7 @@ fn a_difficulty_with_no_test_in_flight_is_zero() {
     let state = GameStateBuilder::new().build();
     let breakdown = modified_value(
         &state,
-        Some(&mock_registry()),
+        &mock_registry(),
         ModifierTarget::Test,
         ModifiedQuantity::Difficulty,
         ReadContext::OutsideTest,

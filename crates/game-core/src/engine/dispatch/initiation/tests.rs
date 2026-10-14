@@ -251,13 +251,13 @@ fn gate(
     candidate: &ResolutionCandidate,
     kind: InitiationKind,
 ) -> Result<(), Refusal> {
-    check_with(state, &registry(), candidate, kind)
+    check(state, &registry(), candidate, kind)
 }
 
 /// The gate asked as a Play of `code` from hand, with no ability address — the
 /// play validator's question.
 fn play(state: &GameState, code: &str) -> Result<(), Refusal> {
-    check_play_with(state, &registry(), CONTROLLER, &CardCode::new(code))
+    check_play(state, &registry(), CONTROLLER, &CardCode::new(code))
 }
 
 // ---- potential to change the game state ---------------------------------

@@ -164,9 +164,8 @@ pub struct GameState {
     /// resolution; in that case the engine's post-apply resolution
     /// hook short-circuits. `Some(id)` is the normal case: when the
     /// [`ScenarioEnd`](Continuation::ScenarioEnd) frame reaches its finalize
-    /// step the engine looks up the module via
-    /// [`scenario_registry::current`](crate::scenario_registry::current)
-    /// and runs its `apply_resolution`.
+    /// step the engine runs the `apply_resolution` of the module the apply's
+    /// scenario registry gives for this id.
     ///
     /// Serializable so action-log replay reproduces the lookup
     /// deterministically across host restarts.

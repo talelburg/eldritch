@@ -6,7 +6,7 @@ use std::iter;
 use card_dsl::card_data::CardKind;
 use serde::{Deserialize, Serialize};
 
-use crate::card_registry;
+use crate::card_registry::CardRegistry;
 use crate::engine::OptionTarget;
 use crate::state::{CardCode, CardInPlay, CardInstanceId, LocationId, Skills};
 
@@ -192,27 +192,24 @@ impl Investigator {
     }
 
     /// Maximum health (printed) — reads `CardKind::Investigator` metadata from
-    /// the installed registry (#448 cp2a). Panics if the registry is absent or
-    /// the investigator card's code is not a `CardKind::Investigator`.
+    /// `cards` (#448 cp2a). Panics if the investigator card's code is not a
+    /// `CardKind::Investigator` in `cards`.
     #[must_use]
-    pub fn max_health(&self) -> u8 {
-        investigator_capacity(&self.investigator_card.code).0
+    pub fn max_health(&self, cards: &CardRegistry) -> u8 {
+        investigator_capacity(cards, &self.investigator_card.code).0
     }
 
     /// Maximum sanity (printed). See [`Self::max_health`].
     #[must_use]
-    pub fn max_sanity(&self) -> u8 {
-        investigator_capacity(&self.investigator_card.code).1
+    pub fn max_sanity(&self, cards: &CardRegistry) -> u8 {
+        investigator_capacity(cards, &self.investigator_card.code).1
     }
 }
 
-/// (health, sanity) printed capacity for an investigator card, from the
-/// installed registry. Panics if the registry is uninstalled or the code is
-/// not an investigator card — a state-shape invariant violation, surfaced
+/// (health, sanity) printed capacity for an investigator card, from `reg`.
+/// Panics if the code is not an investigator card — a state-shape invariant violation, surfaced
 /// rather than silently defaulted.
-fn investigator_capacity(code: &CardCode) -> (u8, u8) {
-    let reg = card_registry::current()
-        .expect("investigator capacity read before a CardRegistry was installed");
+fn investigator_capacity(reg: &CardRegistry, code: &CardCode) -> (u8, u8) {
     match &(reg.metadata_for)(code)
         .expect("investigator card code absent from registry")
         .kind
@@ -450,8 +447,8 @@ mod harm_accessor_tests {
         assert_eq!(inv.damage(), 2);
         assert_eq!(inv.horror(), 1);
         // Capacity reads from the registry (TEST_INV has 8/8).
-        assert_eq!(inv.max_health(), 8);
-        assert_eq!(inv.max_sanity(), 8);
+        assert_eq!(inv.max_health(&test_support::TEST_REGISTRY), 8);
+        assert_eq!(inv.max_sanity(&test_support::TEST_REGISTRY), 8);
     }
 }
 
@@ -476,7 +473,7 @@ mod investigator_card_tests {
         let mut inv = test_support::test_investigator(1);
         inv.investigator_card.accumulated_damage = 8; // == TEST_INV health
         assert!(
-            inv.damage() >= inv.max_health(),
+            inv.damage() >= inv.max_health(&test_support::TEST_REGISTRY),
             "defeat threshold reached via accessors"
         );
     }

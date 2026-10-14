@@ -45,7 +45,7 @@
 
 use card_dsl::dsl::{Ability, CardFilter, Effect, Restriction, Trigger};
 
-use crate::card_registry;
+use crate::card_registry::{self, CardRegistry};
 use crate::engine::abilities_in_effect;
 use crate::state::{Enemy, GameState, LocationId};
 
@@ -56,7 +56,6 @@ use crate::state::{Enemy, GameState, LocationId};
 /// `Trigger::Constant` ability whose effect is `Effect::Restrict(r)` with
 /// `bites(r)`. A predicate rather than an equality, because a restriction can
 /// carry data the reader inspects (the enemy side's exemption filter).
-/// `false` with no registry installed.
 ///
 /// **TODO(#826): this does not read
 /// [`Location::cards_at_location`](crate::state::Location::cards_at_location).**
@@ -72,6 +71,7 @@ use crate::state::{Enemy, GameState, LocationId};
 /// that puts a restriction-carrying card into play at a location forces it.
 fn location_carries_restriction(
     state: &GameState,
+    reg: &CardRegistry,
     loc: LocationId,
     bites: impl Fn(&Restriction) -> bool,
 ) -> bool {
@@ -82,13 +82,10 @@ fn location_carries_restriction(
         })
     };
     if carries(&abilities_in_effect::location_abilities_or_empty(
-        state, loc,
+        state, reg, loc,
     )) {
         return true;
     }
-    let Some(reg) = card_registry::current() else {
-        return false;
-    };
     let Some(location) = state.locations.get(&loc) else {
         return false;
     };
@@ -104,7 +101,7 @@ fn location_carries_restriction(
 /// supplies its own *"Non-\[\[Elite\]\]"* as that exemption.
 ///
 /// The exemption is checked by code through
-/// [`card_registry::card_matches`], so with no registry installed it fails
+/// [`card_registry::card_matches`], so a code `cards` doesn't know fails
 /// closed and the enemy is blocked.
 ///
 /// Shared by Hunter movement and forced enemy-movement effects (agenda
@@ -112,16 +109,21 @@ fn location_carries_restriction(
 /// what moves the enemy — and, per 01115's ruling above, an enemy is **not**
 /// stopped by the Parlor's investigator-side barrier.
 #[must_use]
-pub fn enemy_can_enter_location(state: &GameState, enemy: &Enemy, loc: LocationId) -> bool {
+pub fn enemy_can_enter_location(
+    state: &GameState,
+    cards: &CardRegistry,
+    enemy: &Enemy,
+    loc: LocationId,
+) -> bool {
     // Exempt only when the restriction names a filter and this enemy matches it.
     let is_exempt = |exempt: Option<&CardFilter>| {
-        exempt.is_some_and(|f| card_registry::card_matches(&enemy.code, f))
+        exempt.is_some_and(|f| card_registry::card_matches(cards, &enemy.code, f))
     };
     let blocks_enemy = |r: &Restriction| match r {
         Restriction::EnemyMovementBlocked { exempt } => !is_exempt(exempt.as_ref()),
         _ => false,
     };
-    !location_carries_restriction(state, loc, blocks_enemy)
+    !location_carries_restriction(state, cards, loc, blocks_enemy)
 }
 
 /// Whether an investigator may move into `loc`. Blocked when `loc` carries
@@ -135,8 +137,12 @@ pub fn enemy_can_enter_location(state: &GameState, enemy: &Enemy, loc: LocationI
 /// validate-first — so the barrier is enforced whether the player picks from
 /// the menu or submits at the `apply` seam.
 #[must_use]
-pub fn investigator_can_enter_location(state: &GameState, loc: LocationId) -> bool {
-    !location_carries_restriction(state, loc, |r| {
+pub fn investigator_can_enter_location(
+    state: &GameState,
+    cards: &CardRegistry,
+    loc: LocationId,
+) -> bool {
+    !location_carries_restriction(state, cards, loc, |r| {
         *r == Restriction::InvestigatorMovementBlocked
     })
 }

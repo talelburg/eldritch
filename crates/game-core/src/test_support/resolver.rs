@@ -311,7 +311,7 @@ pub(super) fn sole_option_at(
 /// panic naming `caller` and listing what is offered. Behind the session's
 /// `take` step.
 pub(super) fn turn_action_option(state: &GameState, action: &TurnAction, caller: &str) -> OptionId {
-    let actions = enumerate::legal_actions(state);
+    let actions = enumerate::legal_actions(state, crate::engine::Registries::from_globals().cards);
     let idx = actions
         .iter()
         .position(|a| a == action)

@@ -562,7 +562,7 @@ fn perform_designated_fight(
     combat_modifier: &IntExpr,
     extra_damage: &IntExpr,
 ) -> EngineOutcome {
-    let extra_damage_n = match eval_int_expr(cx.state, eval_ctx, extra_damage) {
+    let extra_damage_n = match eval_int_expr(cx.state, cx.cards, eval_ctx, extra_damage) {
         Ok(v) => u8::try_from(v.max(0)).unwrap_or(u8::MAX),
         Err(reason) => {
             return EngineOutcome::Rejected {
@@ -635,7 +635,7 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
             target,
             amount,
         } => {
-            let n = match eval_int_expr(cx.state, &eval_ctx, amount) {
+            let n = match eval_int_expr(cx.state, cx.cards, &eval_ctx, amount) {
                 Ok(v) => u8::try_from(v.max(0)).unwrap_or(u8::MAX),
                 Err(reason) => {
                     return EngineOutcome::Rejected {
@@ -671,7 +671,7 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
             then,
             else_,
         } => {
-            let holds = match eval_condition(cx.state, &eval_ctx, condition) {
+            let holds = match eval_condition(cx.state, cx.cards, &eval_ctx, condition) {
                 Ok(b) => b,
                 Err(reason) => {
                     return EngineOutcome::Rejected {
@@ -884,12 +884,7 @@ fn step_choose_one(
 /// [`NativeCx`], which notes any exit call, and a native that suspends after
 /// one is `Rejected`. The apply's snapshot rollback then undoes its writes.
 fn step_native(cx: &mut Cx, tag: &str, eval_ctx: EvalContext, node: &Effect) -> EngineOutcome {
-    let Some(reg) = card_registry::current() else {
-        return EngineOutcome::Rejected {
-            reason: format!("Native effect {tag:?}: no card registry installed").into(),
-        };
-    };
-    let Some(f) = (reg.native_effect_for)(tag) else {
+    let Some(f) = (cx.cards.native_effect_for)(tag) else {
         return EngineOutcome::Rejected {
             reason: format!("Native effect {tag:?}: no handler registered").into(),
         };
@@ -991,7 +986,7 @@ fn apply_search_deck(
         .enumerate()
         .filter(|(_, code)| match filter {
             None => true,
-            Some(f) => card_registry::card_matches(code, f),
+            Some(f) => card_registry::card_matches(cx.cards, code, f),
         })
         .map(|(i, code)| (i, code.clone()))
         .collect();
@@ -1016,7 +1011,10 @@ fn apply_search_deck(
                         }
                     }
                 } else {
-                    let labels = eligible.iter().map(|(_, c)| choice::card_name(c)).collect();
+                    let labels = eligible
+                        .iter()
+                        .map(|(_, c)| choice::card_name(cx.cards, c))
+                        .collect();
                     suspend_leaf_in_place(cx, node, eval_ctx);
                     return choice::awaiting_choice("Search: choose a card to take", labels);
                 }
@@ -1186,20 +1184,11 @@ pub(crate) fn card_control_status(state: &GameState, code: &str) -> ControlStatu
 /// Returns `Err` for conditions that aren't expressible yet (the
 /// state shape they'd query against doesn't exist) — the caller
 /// turns those into [`EngineOutcome::Rejected`].
+///
+/// A [`Condition::Native`] tag resolves in `reg`.
 pub(crate) fn eval_condition(
     state: &GameState,
-    eval_ctx: &EvalContext,
-    condition: &Condition,
-) -> Result<bool, String> {
-    eval_condition_against(state, card_registry::current(), eval_ctx, condition)
-}
-
-/// [`eval_condition`] against an explicit registry — the one a
-/// [`Condition::Native`] tag resolves in — for a caller that already holds it
-/// (the initiation gate). `None` is the no-registry-installed case.
-pub(crate) fn eval_condition_against(
-    state: &GameState,
-    reg: Option<&CardRegistry>,
+    reg: &CardRegistry,
     eval_ctx: &EvalContext,
     condition: &Condition,
 ) -> Result<bool, String> {
@@ -1232,8 +1221,6 @@ pub(crate) fn eval_condition_against(
             })
         }
         Condition::Native { tag } => {
-            let reg =
-                reg.ok_or_else(|| format!("Native condition {tag:?}: no card registry installed"))?;
             let predicate = (reg.native_condition_for)(tag)
                 .ok_or_else(|| format!("Native condition {tag:?}: no predicate registered"))?;
             Ok(predicate(state, eval_ctx))
@@ -1293,6 +1280,7 @@ fn eval_quantity(state: &GameState, eval_ctx: &EvalContext, q: Quantity) -> i8 {
 /// which the caller turns into [`EngineOutcome::Rejected`].
 pub(super) fn eval_int_expr(
     state: &GameState,
+    cards: &CardRegistry,
     eval_ctx: &EvalContext,
     expr: &IntExpr,
 ) -> Result<i8, String> {
@@ -1302,7 +1290,7 @@ pub(super) fn eval_int_expr(
             when,
             then,
             otherwise,
-        } => Ok(if eval_condition(state, eval_ctx, when)? {
+        } => Ok(if eval_condition(state, cards, eval_ctx, when)? {
             *then
         } else {
             *otherwise
@@ -1854,7 +1842,7 @@ fn apply_place_doom_on_current_agenda(
     count: &IntExpr,
     may_advance: bool,
 ) -> EngineOutcome {
-    let n = match eval_int_expr(cx.state, eval_ctx, count) {
+    let n = match eval_int_expr(cx.state, cx.cards, eval_ctx, count) {
         Ok(v) => u8::try_from(v.max(0)).unwrap_or(u8::MAX),
         Err(reason) => {
             return EngineOutcome::Rejected {
@@ -1985,6 +1973,7 @@ fn ground_investigator_choice(
     let id = picked_or_reject(
         choice::resolve_grounded_choice(
             cx.state,
+            cx.cards,
             &eval_ctx,
             &candidates,
             "Choose an investigator",
@@ -2010,6 +1999,7 @@ fn ground_location_choice(
     let id = picked_or_reject(
         choice::resolve_grounded_choice(
             cx.state,
+            cx.cards,
             &eval_ctx,
             &candidates,
             "Choose a location",
@@ -2034,6 +2024,7 @@ fn ground_enemy_choice(
     let id = picked_or_reject(
         choice::resolve_grounded_choice(
             cx.state,
+            cx.cards,
             &eval_ctx,
             &candidates,
             "Choose an enemy",
@@ -2070,6 +2061,7 @@ fn ground_fight_target_choice(
     let id = picked_or_reject(
         choice::resolve_grounded_choice(
             cx.state,
+            cx.cards,
             &eval_ctx,
             &candidates,
             "Choose an enemy to attack",

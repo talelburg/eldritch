@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::TEST_REGISTRY;
 
 #[test]
 fn location_has_clues_condition_tracks_clue_count() {
@@ -12,6 +13,7 @@ fn location_has_clues_condition_tracks_clue_count() {
     assert_eq!(
         eval_condition(
             &state_with_clues_at_location(1),
+            &TEST_REGISTRY,
             &EvalContext::for_controller(inv_id),
             &has_clues
         ),
@@ -20,6 +22,7 @@ fn location_has_clues_condition_tracks_clue_count() {
     assert_eq!(
         eval_condition(
             &state_with_clues_at_location(0),
+            &TEST_REGISTRY,
             &EvalContext::for_controller(inv_id),
             &has_clues
         ),
@@ -63,6 +66,7 @@ fn eval_count_and_compare_over_clues() {
     assert_eq!(
         eval_int_expr(
             &state_with_clues_at_location(2),
+            &TEST_REGISTRY,
             &ctx,
             &IntExpr::Count(Quantity::CluesAtControllerLocation)
         )
@@ -75,6 +79,6 @@ fn eval_count_and_compare_over_clues() {
         op: CmpOp::Gt,
         value: 0,
     };
-    assert!(eval_condition(&state_with_clues_at_location(1), &ctx, &has).unwrap());
-    assert!(!eval_condition(&state_with_clues_at_location(0), &ctx, &has).unwrap());
+    assert!(eval_condition(&state_with_clues_at_location(1), &TEST_REGISTRY, &ctx, &has).unwrap());
+    assert!(!eval_condition(&state_with_clues_at_location(0), &TEST_REGISTRY, &ctx, &has).unwrap());
 }

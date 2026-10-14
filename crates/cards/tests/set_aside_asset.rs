@@ -302,7 +302,7 @@ fn a_card_at_a_location_is_swept_by_the_modifier_query() {
 
     let combat = modified_value::modified_value(
         &state,
-        card_registry::current(),
+        card_registry::current().expect("card registry installed"),
         ModifierTarget::Investigator(INV),
         ModifiedQuantity::Skill(SkillKind::Combat),
         ReadContext::OutsideTest,

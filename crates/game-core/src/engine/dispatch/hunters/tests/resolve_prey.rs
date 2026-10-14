@@ -3,13 +3,14 @@ use card_dsl::card_data::SkillKind;
 use super::*;
 use crate::state::GameStateBuilder;
 use crate::test_support;
+use crate::test_support::TEST_REGISTRY;
 
 #[test]
 fn resolve_prey_default_single_candidate_is_one() {
     let state = GameStateBuilder::new()
         .with_seat(test_support::seat(1))
         .build();
-    let r = resolve_prey(&state, Prey::Default, &[InvestigatorId(1)]);
+    let r = resolve_prey(&state, &TEST_REGISTRY, Prey::Default, &[InvestigatorId(1)]);
     assert!(matches!(r, PreyResolution::One(id) if id == InvestigatorId(1)));
 }
 
@@ -21,6 +22,7 @@ fn resolve_prey_default_multiple_is_tie() {
         .build();
     let r = resolve_prey(
         &state,
+        &TEST_REGISTRY,
         Prey::Default,
         &[InvestigatorId(1), InvestigatorId(2)],
     );
@@ -30,7 +32,7 @@ fn resolve_prey_default_multiple_is_tie() {
 #[test]
 fn resolve_prey_empty_is_none() {
     let state = GameStateBuilder::new().build();
-    let r = resolve_prey(&state, Prey::Default, &[]);
+    let r = resolve_prey(&state, &TEST_REGISTRY, Prey::Default, &[]);
     assert!(matches!(r, PreyResolution::None));
 }
 
@@ -42,6 +44,7 @@ fn resolve_prey_highest_stat_picks_max() {
         .build();
     let r = resolve_prey(
         &state,
+        &TEST_REGISTRY,
         Prey::Ranked {
             direction: PreyDirection::Highest,
             measure: PreyMeasure::Skill(SkillKind::Combat),
@@ -59,6 +62,7 @@ fn resolve_prey_highest_stat_tie_is_tie() {
         .build();
     let r = resolve_prey(
         &state,
+        &TEST_REGISTRY,
         Prey::Ranked {
             direction: PreyDirection::Highest,
             measure: PreyMeasure::Skill(SkillKind::Combat),
@@ -79,6 +83,7 @@ fn resolve_prey_lowest_remaining_health_picks_min() {
         .build();
     let r = resolve_prey(
         &state,
+        &TEST_REGISTRY,
         Prey::Ranked {
             direction: PreyDirection::Lowest,
             measure: PreyMeasure::RemainingHealth,
@@ -99,6 +104,7 @@ fn resolve_prey_lowest_remaining_health_tie_is_tie() {
         .build();
     let r = resolve_prey(
         &state,
+        &TEST_REGISTRY,
         Prey::Ranked {
             direction: PreyDirection::Lowest,
             measure: PreyMeasure::RemainingHealth,

@@ -1,6 +1,7 @@
 //! The Move basic action, and the departure and enter steps a move
 //! resolves through.
 
+use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{emit, hunters, movement, reveal};
@@ -24,7 +25,11 @@ use crate::state::{ActionResume, EnemyId, GameState, InvestigatorId, LocationId,
 /// loudly, so the menu offers nothing rather than panicking. A designated
 /// **Move** is not implemented yet
 /// ([`designated_unimplemented`](super::designated_unimplemented)).
-pub(crate) fn candidates(state: &GameState, investigator: InvestigatorId) -> Vec<LocationId> {
+pub(crate) fn candidates(
+    state: &GameState,
+    cards: &CardRegistry,
+    investigator: InvestigatorId,
+) -> Vec<LocationId> {
     let Some(from) = state
         .investigators
         .get(&investigator)
@@ -42,7 +47,7 @@ pub(crate) fn candidates(state: &GameState, investigator: InvestigatorId) -> Vec
         .filter(|&dest| {
             dest != from
                 && state.locations.contains_key(&dest)
-                && movement::investigator_can_enter_location(state, dest)
+                && movement::investigator_can_enter_location(state, cards, dest)
         })
         .collect()
 }
@@ -74,7 +79,7 @@ pub(in crate::engine::dispatch) fn handle(
     destination: LocationId,
 ) -> EngineOutcome {
     let description = ActionDescription::basic(ActionKind::Move);
-    if let Err(reason) = take::check(cx.state, investigator, &description) {
+    if let Err(reason) = take::check(cx.state, cx.cards, investigator, &description) {
         return EngineOutcome::Rejected { reason };
     }
     let inv = &cx.state.investigators[&investigator];
@@ -99,7 +104,7 @@ pub(in crate::engine::dispatch) fn handle(
              locations map; this is a state-corruption invariant violation"
         )
     });
-    if !candidates(cx.state, investigator).contains(&destination) {
+    if !candidates(cx.state, cx.cards, investigator).contains(&destination) {
         // Say why, destination-in-state first so the message is informative
         // when several fail. The barrier (#774) is the last reason: the `apply`
         // seam is submittable directly, so a client that never read the menu,
@@ -162,7 +167,7 @@ pub(in crate::engine::dispatch) fn perform(
         // (return Done) defensively rather than panic.
         return EngineOutcome::Done;
     };
-    if !candidates(cx.state, investigator).contains(&destination) {
+    if !candidates(cx.state, cx.cards, investigator).contains(&destination) {
         return EngineOutcome::Done; // precondition lapsed: suppress
     }
 
@@ -270,7 +275,7 @@ pub(in crate::engine::dispatch) fn resolve_departure(
                  and the drag-along; this is a state-corruption invariant violation"
             )
         });
-        let follows = movement::enemy_can_enter_location(cx.state, enemy, destination);
+        let follows = movement::enemy_can_enter_location(cx.state, cx.cards, enemy, destination);
         let enemy = cx
             .state
             .enemies

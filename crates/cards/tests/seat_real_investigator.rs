@@ -33,5 +33,13 @@ fn a_seated_roland_has_his_printed_skills_name_and_capacity() {
         },
     );
     assert_eq!(roland.name, "Roland Banks");
-    assert_eq!((roland.max_health(), roland.max_sanity()), (9, 5));
+    assert_eq!(
+        (
+            roland
+                .max_health(game_core::card_registry::current().expect("card registry installed")),
+            roland
+                .max_sanity(game_core::card_registry::current().expect("card registry installed"))
+        ),
+        (9, 5)
+    );
 }

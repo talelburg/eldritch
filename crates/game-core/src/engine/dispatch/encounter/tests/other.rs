@@ -11,11 +11,8 @@ use crate::test_support;
 /// proceed past the registry / metadata checks, it must reject
 /// without drawing from the deck and without emitting any events.
 ///
-/// The installed test registry doesn't know the synthetic code
-/// `"__no_such_card"`, so the reveal rejects with `"unknown card code: ..."`.
-/// Nothing pins the `"no card registry installed"` branch: every test binary
-/// installs a registry from a `#[ctor]` before the first test runs, so none
-/// of them can reach a process with the slot still empty.
+/// The test registry doesn't know the synthetic code `"__no_such_card"`, so
+/// the reveal rejects with `"unknown card code: ..."`.
 #[test]
 fn rejects_an_unknown_encounter_card() {
     let mut state = GameStateBuilder::new()

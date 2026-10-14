@@ -49,8 +49,14 @@ fn seats_roland_with_corpus_stats_and_payload_deck() {
             agility: 2
         }
     );
-    assert_eq!(inv.max_health(), 9);
-    assert_eq!(inv.max_sanity(), 5);
+    assert_eq!(
+        inv.max_health(game_core::card_registry::current().expect("card registry installed")),
+        9
+    );
+    assert_eq!(
+        inv.max_sanity(game_core::card_registry::current().expect("card registry installed")),
+        5
+    );
     // Deck + hand together account for the 2 supplied cards (the 5-card
     // opening-hand draw takes only what's available).
     assert_eq!(inv.deck.len() + inv.hand.len(), deck.len());

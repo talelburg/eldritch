@@ -12,7 +12,7 @@
 use card_dsl::dsl::{EventTiming, Trigger};
 
 use crate::action::InputResponse;
-use crate::card_registry;
+use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::emit::{ConditionResolution, TimingEvent};
 use crate::engine::dispatch::initiation::{self, InitiationKind, Refusal};
 use crate::engine::dispatch::legality::{check_activate_ability, check_play_card};
@@ -242,7 +242,7 @@ fn withdraw_lapsed_candidates(cx: &mut Cx) -> usize {
         return 0;
     }
 
-    let mut fresh = rescan(cx.state, &event, bucket, &mode);
+    let mut fresh = rescan(cx.state, cx.cards, &event, bucket, &mode);
     let mut kept: Vec<ResolutionCandidate> = Vec::with_capacity(stored.len());
     let mut lapsed: Vec<ResolutionCandidate> = Vec::new();
     for candidate in stored {
@@ -262,7 +262,7 @@ fn withdraw_lapsed_candidates(cx: &mut Cx) -> usize {
         cx.events.push(Event::ReactionOptionLapsed {
             investigator: candidate.controller,
             code: candidate.code.clone(),
-            reason: lapse_reason(cx.state, candidate, &mode),
+            reason: lapse_reason(cx.state, cx.cards, candidate, &mode),
         });
     }
     cx.state
@@ -356,13 +356,14 @@ fn open_window_cell(state: &GameState) -> Option<(&TimingEvent, EventTiming, &Ti
 /// reaction scan for a reaction window, the forced collector for a forced run.
 fn rescan(
     state: &GameState,
+    cards: &CardRegistry,
     event: &TimingEvent,
     bucket: EventTiming,
     mode: &TimingMode,
 ) -> Vec<ResolutionCandidate> {
     match mode {
-        TimingMode::Reaction => trigger_scan::collect_reactions(state, event, bucket),
-        TimingMode::Forced => trigger_scan::collect_forced(state, event, bucket),
+        TimingMode::Reaction => trigger_scan::collect_reactions(state, cards, event, bucket),
+        TimingMode::Forced => trigger_scan::collect_forced(state, cards, event, bucket),
     }
 }
 
@@ -380,6 +381,7 @@ fn rescan(
 /// [`LapseReason::OutOfScope`].
 fn lapse_reason(
     state: &GameState,
+    cards: &CardRegistry,
     candidate: &ResolutionCandidate,
     mode: &TimingMode,
 ) -> LapseReason {
@@ -391,7 +393,7 @@ fn lapse_reason(
         (TimingMode::Reaction, CandidateSource::Hand) => InitiationKind::Play,
         (TimingMode::Reaction, CandidateSource::Ability(_)) => InitiationKind::Reaction,
     };
-    match initiation::check(state, candidate, kind) {
+    match initiation::check(state, cards, candidate, kind) {
         Ok(()) => LapseReason::OutOfScope,
         Err(refusal) => lapse_reason_for(&refusal),
     }
@@ -443,11 +445,15 @@ fn candidate_source_present(state: &GameState, candidate: &ResolutionCandidate) 
 /// frame — a [`FastWindow`] carries no reaction candidates to re-scan.
 ///
 /// [`FastWindow`]: Continuation::FastWindow
-fn candidate_still_offerable(state: &GameState, candidate: &ResolutionCandidate) -> bool {
+fn candidate_still_offerable(
+    state: &GameState,
+    cards: &CardRegistry,
+    candidate: &ResolutionCandidate,
+) -> bool {
     let Some((event, bucket, mode)) = open_window_cell(state) else {
         return true;
     };
-    rescan(state, event, bucket, mode).contains(candidate)
+    rescan(state, cards, event, bucket, mode).contains(candidate)
 }
 
 /// Return [`AwaitingInput`] for the reaction window / forced run
@@ -609,7 +615,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // pick — an option id replayed from an earlier prompt, or one fired by a
     // future path that reaches here without re-prompting. Rejecting is what keeps
     // `play_fast_event`'s `pay_play_cost` from saturating a cost it cannot pay.
-    if !candidate_still_offerable(cx.state, &trigger) {
+    if !candidate_still_offerable(cx.state, cx.cards, &trigger) {
         return EngineOutcome::Rejected {
             reason: format!(
                 "ResolveInput: reaction-window PickSingle(OptionId({i})) names {code}, which can \
@@ -655,7 +661,9 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // is touched, so a rejected pick leaves the window as it was. `initiate`
     // resolves it again below, and nothing in between changes the answer.
     let code = trigger.code.clone();
-    if abilities_in_effect::resolve(cx.state, trigger.source, &code, &trigger.address).is_none() {
+    if abilities_in_effect::resolve(cx.state, cx.cards, trigger.source, &code, &trigger.address)
+        .is_none()
+    {
         return EngineOutcome::Rejected {
             reason: format!(
                 "ResolveInput: reaction-window PickSingle(OptionId({i})) names {code}, which no \
@@ -751,13 +759,7 @@ fn play_fast_event(
     let card = cards::commence_play(cx, controller, hand_idx);
 
     // Look up the matched OnEvent ability's effect from the registry.
-    let reg = card_registry::current().unwrap_or_else(|| {
-        unreachable!(
-            "play_fast_event: registry installed at scan time is now missing; \
-             the OnceLock contract guarantees once-set-stays-set"
-        )
-    });
-    let abilities = (reg.abilities_for)(&candidate.code).unwrap_or_else(|| {
+    let abilities = (cx.cards.abilities_for)(&candidate.code).unwrap_or_else(|| {
         unreachable!(
             "play_fast_event: registry lost abilities for {:?} between scan and play",
             candidate.code,
@@ -1003,7 +1005,7 @@ pub(super) fn open_fast_window(cx: &mut Cx, kind: FastWindowKind) -> EngineOutco
         .pending_candidates()
         .expect("top_window is an open window/run")
         .is_empty();
-    let has_fast_eligible = any_fast_play_eligible(cx.state);
+    let has_fast_eligible = any_fast_play_eligible(cx.state, cx.cards);
 
     if !has_pending && !has_fast_eligible {
         // Auto-skip: nothing to do. Pop the window we just pushed and run the
@@ -1028,11 +1030,8 @@ pub(super) fn open_fast_window(cx: &mut Cx, kind: FastWindowKind) -> EngineOutco
 /// [`check_activate_ability`] validators so the gate is exactly the
 /// existing `PlayCard` / `ActivateAbility` gate — no parallel
 /// implementation, no drift.
-///
-/// Returns `false` when the card registry isn't installed — same fallback as
-/// [`trigger_scan::collect_reactions`].
-pub(super) fn any_fast_play_eligible(state: &GameState) -> bool {
-    !enumerate_fast_plays(state).is_empty()
+pub(super) fn any_fast_play_eligible(state: &GameState, cards: &CardRegistry) -> bool {
+    !enumerate_fast_plays(state, cards).is_empty()
 }
 
 /// Drive a framework Fast window that is on top of the stack (#476): surface the
@@ -1042,7 +1041,7 @@ pub(super) fn any_fast_play_eligible(state: &GameState) -> bool {
 /// re-exposed after a fast play resolves (the re-open loop). The window stays on
 /// top across the prompt; `resume_window` dispatches the pick, or closes on Skip.
 pub(super) fn drive_fast_window(cx: &mut Cx) -> EngineOutcome {
-    let plays = enumerate_fast_plays(cx.state);
+    let plays = enumerate_fast_plays(cx.state, cx.cards);
     if plays.is_empty() {
         // Nothing (more) to play: close + run the window's continuation.
         return close_reaction_window(cx);
@@ -1074,19 +1073,16 @@ pub(super) fn drive_fast_window(cx: &mut Cx) -> EngineOutcome {
 /// Returns the plays as [`TurnAction`]s in deterministic (investigator,
 /// hand-index / ability-index) order — the same shape the open-turn menu
 /// dispatches via `dispatch_turn_action`, so the #476 fast-window prompt reuses
-/// that dispatch path verbatim. Empty when the registry isn't installed.
-pub(super) fn enumerate_fast_plays(state: &GameState) -> Vec<TurnAction> {
+/// that dispatch path verbatim.
+pub(super) fn enumerate_fast_plays(state: &GameState, cards: &CardRegistry) -> Vec<TurnAction> {
     let mut out = Vec::new();
-    if card_registry::current().is_none() {
-        return out;
-    }
     for (&inv_id, inv) in &state.investigators {
         // Fast events / Fast assets in hand.
         for hand_idx_usize in 0..inv.hand.len() {
             let Ok(hand_index) = u8::try_from(hand_idx_usize) else {
                 break;
             };
-            if let Ok(result) = check_play_card(state, inv_id, hand_index) {
+            if let Ok(result) = check_play_card(state, cards, inv_id, hand_index) {
                 if result.is_fast {
                     out.push(TurnAction::PlayCard {
                         investigator: inv_id,
@@ -1099,15 +1095,16 @@ pub(super) fn enumerate_fast_plays(state: &GameState) -> Vec<TurnAction> {
         // reach. The rules bullets are written once for `[free]`, `[reaction]`
         // and `[action]` together, so the fast window consults the same
         // reachability predicate the turn menu does (#707).
-        for (source, code) in ability_source::reachable_source_codes(state, inv_id) {
-            let Some(abilities) = abilities_in_effect::for_source(state, source, &code) else {
+        for (source, code) in ability_source::reachable_source_codes(state, cards, inv_id) {
+            let Some(abilities) = abilities_in_effect::for_source(state, cards, source, &code)
+            else {
                 continue;
             };
             for (address, ability) in abilities {
                 let Trigger::Activated { action_cost: 0, .. } = ability.trigger else {
                     continue;
                 };
-                if check_activate_ability(state, inv_id, source, &address).is_ok() {
+                if check_activate_ability(state, cards, inv_id, source, &address).is_ok() {
                     out.push(TurnAction::ActivateAbility {
                         investigator: inv_id,
                         source,

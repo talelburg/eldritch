@@ -200,7 +200,11 @@ fn activation_with_no_test_in_flight_is_rejected_and_buffs_nothing_later() {
     };
 
     assert!(
-        !enumerate::legal_actions(session.state()).contains(&action),
+        !enumerate::legal_actions(
+            session.state(),
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&action),
         "the open-turn menu must not offer a buff that cannot be bought",
     );
 

@@ -89,7 +89,7 @@
 
 use card_dsl::dsl::{Ability, Condition, Effect, GrantTarget, Trigger};
 
-use crate::card_registry::{self, CardRegistry};
+use crate::card_registry::CardRegistry;
 use crate::engine::board;
 use crate::engine::evaluator::{self, EvalContext};
 use crate::state::{
@@ -99,26 +99,13 @@ use crate::state::{
 /// The abilities in effect on the location `id`: its back's while it is
 /// unrevealed, its front's while it is revealed.
 ///
-/// `None` when no registry is installed, when `id` is not in play, or when
-/// the side in effect implements nothing — the same *"this card implements
-/// nothing"* signal `abilities_for` gives, kept so the callers that reject on
-/// it keep their reason. [`location_abilities_or_empty`] is the form for
-/// callers that only want to scan.
+/// `None` when `id` is not in play, or when the side in effect implements
+/// nothing — the same *"this card implements nothing"* signal `abilities_for`
+/// gives, kept so the callers that reject on it keep their reason.
+/// [`location_abilities_or_empty`] is the form for callers that only want to
+/// scan.
 #[must_use]
-pub(crate) fn location_abilities(state: &GameState, id: LocationId) -> Option<Vec<Ability>> {
-    location_abilities_with(state, card_registry::current()?, id)
-}
-
-/// [`location_abilities`] against an explicitly supplied registry.
-///
-/// The installed registry is a process-global `OnceLock`, but
-/// [`modified_value`](crate::engine::modified_value) takes its registry **by
-/// argument** — a modified value is a pure query over `(state, registry)`, and
-/// its unit tests pass a mock rather than installing one. So the whole funnel
-/// has a registry-taking core with a global-reading wrapper over it, rather
-/// than two ways to find a card's abilities.
-#[must_use]
-pub(crate) fn location_abilities_with(
+pub(crate) fn location_abilities(
     state: &GameState,
     reg: &CardRegistry,
     id: LocationId,
@@ -132,11 +119,15 @@ pub(crate) fn location_abilities_with(
     lookup(&location.code)
 }
 
-/// [`location_abilities`] with the three "nothing to scan" cases folded into
-/// the empty vector, for callers that iterate rather than reject.
+/// [`location_abilities`] with the "nothing to scan" cases folded into the
+/// empty vector, for callers that iterate rather than reject.
 #[must_use]
-pub(crate) fn location_abilities_or_empty(state: &GameState, id: LocationId) -> Vec<Ability> {
-    location_abilities(state, id).unwrap_or_default()
+pub(crate) fn location_abilities_or_empty(
+    state: &GameState,
+    reg: &CardRegistry,
+    id: LocationId,
+) -> Vec<Ability> {
+    location_abilities(state, reg, id).unwrap_or_default()
 }
 
 /// The abilities in effect on the card behind `source`: the ones **printed**
@@ -154,17 +145,6 @@ pub(crate) fn location_abilities_or_empty(state: &GameState, id: LocationId) -> 
 #[must_use]
 pub(crate) fn for_source(
     state: &GameState,
-    source: AbilitySource,
-    code: &CardCode,
-) -> Option<Vec<(AbilityAddress, Ability)>> {
-    for_source_with(state, card_registry::current()?, source, code)
-}
-
-/// [`for_source`] against an explicitly supplied registry — see
-/// [`location_abilities_with`] for why the funnel has this shape.
-#[must_use]
-pub(crate) fn for_source_with(
-    state: &GameState,
     reg: &CardRegistry,
     source: AbilitySource,
     code: &CardCode,
@@ -179,19 +159,19 @@ pub(crate) fn for_source_with(
     Some(out)
 }
 
-/// [`for_source_with`] for a [`CandidateSource`]. A [`Hand`](CandidateSource::Hand)
+/// [`for_source`] for a [`CandidateSource`]. A [`Hand`](CandidateSource::Hand)
 /// candidate is a card being *played*, never a board card with two faces, so
 /// it reads the front — and nothing grants to a card in hand, which is not in
 /// play, so every address it yields is [`AbilityAddress::Printed`].
 #[must_use]
-pub(crate) fn for_candidate_source_with(
+pub(crate) fn for_candidate_source(
     state: &GameState,
     reg: &CardRegistry,
     source: CandidateSource,
     code: &CardCode,
 ) -> Option<Vec<(AbilityAddress, Ability)>> {
     match source {
-        CandidateSource::Ability(source) => for_source_with(state, reg, source, code),
+        CandidateSource::Ability(source) => for_source(state, reg, source, code),
         CandidateSource::Hand => Some(addressed_as_printed((reg.abilities_for)(code)?)),
     }
 }
@@ -222,24 +202,12 @@ fn addressed_as_printed(abilities: Vec<Ability>) -> Vec<(AbilityAddress, Ability
 #[must_use]
 pub(crate) fn resolve(
     state: &GameState,
-    source: CandidateSource,
-    code: &CardCode,
-    address: &AbilityAddress,
-) -> Option<Ability> {
-    resolve_with(state, card_registry::current()?, source, code, address)
-}
-
-/// [`resolve`] against an explicitly supplied registry — see
-/// [`location_abilities_with`] for why the funnel has this shape.
-#[must_use]
-pub(crate) fn resolve_with(
-    state: &GameState,
     reg: &CardRegistry,
     source: CandidateSource,
     code: &CardCode,
     address: &AbilityAddress,
 ) -> Option<Ability> {
-    for_candidate_source_with(state, reg, source, code)?
+    for_candidate_source(state, reg, source, code)?
         .into_iter()
         .find(|(candidate, _)| candidate == address)
         .map(|(_, ability)| ability)
@@ -264,7 +232,7 @@ fn printed_in_effect(
     code: &CardCode,
 ) -> Option<Vec<Ability>> {
     if let AbilitySource::Location(id) = source {
-        return location_abilities_with(state, reg, id);
+        return location_abilities(state, reg, id);
     }
     (reg.abilities_for)(code)
 }
@@ -319,7 +287,7 @@ fn granted_to(
                 continue;
             }
             if let Some(condition) = condition {
-                if !condition_holds(state, condition, you, recipient) {
+                if !condition_holds(state, reg, condition, you, recipient) {
                     continue;
                 }
             }
@@ -363,11 +331,12 @@ fn controller_of(state: &GameState, source: AbilitySource) -> Option<Investigato
 #[must_use]
 fn condition_holds(
     state: &GameState,
+    cards: &CardRegistry,
     condition: &Condition,
     you: Option<InvestigatorId>,
     source: AbilitySource,
 ) -> bool {
-    try_condition(state, condition, you, source).unwrap_or(false)
+    try_condition(state, cards, condition, you, source).unwrap_or(false)
 }
 
 /// [`condition_holds`]'s three-valued core: `None` means *"this condition needs
@@ -380,6 +349,7 @@ fn condition_holds(
 /// keeping the shape three-valued is what leaves that trap already sprung.
 fn try_condition(
     state: &GameState,
+    cards: &CardRegistry,
     condition: &Condition,
     you: Option<InvestigatorId>,
     source: AbilitySource,
@@ -398,7 +368,7 @@ fn try_condition(
             // and a constant sweep has no rejection channel — so it does not
             // hold, exactly as the modified-value sweep skips an `IntExpr` it
             // cannot resolve rather than counting it as zero.
-            Some(evaluator::eval_condition(state, &eval_ctx, other).unwrap_or(false))
+            Some(evaluator::eval_condition(state, cards, &eval_ctx, other).unwrap_or(false))
         }
     }
 }

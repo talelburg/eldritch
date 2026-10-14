@@ -7,7 +7,7 @@ use card_dsl::card_data::{CardMetadata, CardType};
 use card_dsl::dsl::{Ability, Effect, Trigger};
 
 use crate::action::InputResponse;
-use crate::card_registry;
+use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::actions::take::{self, ActionDescription};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::legality::PlayCheckResult;
@@ -27,17 +27,14 @@ use crate::state::{
 /// each investigator draws 5 cards before mulligan.
 pub(super) const INITIAL_HAND_SIZE: u8 = 5;
 
-/// Whether `code` is a weakness per the installed registry. Returns `false`
-/// when no registry is installed or the card code has no metadata — so the
-/// engine's unit tests, whose test registry knows no real card, behave as if no
-/// card is a weakness.
+/// Whether `code` is a weakness per `cards`. Returns `false` when the card
+/// code has no metadata — so the engine's unit tests, whose test registry knows
+/// no real card, behave as if no card is a weakness.
 ///
 /// One consumer: the opening-hand set-aside below. Where a card goes when it
 /// leaves play is its owner's question, not this one's (#976).
-pub(super) fn is_weakness_code(code: &CardCode) -> bool {
-    card_registry::current()
-        .and_then(|reg| (reg.metadata_for)(code))
-        .is_some_and(CardMetadata::is_weakness)
+pub(super) fn is_weakness_code(cards: &CardRegistry, code: &CardCode) -> bool {
+    (cards.metadata_for)(code).is_some_and(CardMetadata::is_weakness)
 }
 
 /// Replace weaknesses currently in `investigator`'s hand per Rules Reference
@@ -55,7 +52,7 @@ pub(super) fn is_weakness_code(code: &CardCode) -> bool {
 ///   by drawing another card" has no card left to draw). That needs a deck of
 ///   almost entirely weaknesses, which a legal deck never is; the guard exists
 ///   only so a pathological deck can't spin the loop forever.
-/// - No metadata (no registry installed, or a code it doesn't know):
+/// - No metadata (a code the registry doesn't know):
 ///   `is_weakness_code` returns `false`, so this function is a no-op, which
 ///   is what the engine's unit tests rely on.
 pub(super) fn replace_opening_hand_weaknesses(cx: &mut Cx, investigator: InvestigatorId) {
@@ -69,7 +66,7 @@ pub(super) fn replace_opening_hand_weaknesses(cx: &mut Cx, investigator: Investi
             .hand
             .iter()
             .enumerate()
-            .filter(|(_, code)| is_weakness_code(code))
+            .filter(|(_, code)| is_weakness_code(cx.cards, code))
             .map(|(i, _)| i)
             .collect();
 
@@ -140,8 +137,7 @@ pub(super) fn replace_opening_hand_weaknesses(cx: &mut Cx, investigator: Investi
 ///
 /// Non-persistent treachery weaknesses and weakness enemies/assets are **left in
 /// hand untouched** — deferred to #514 (none reachable in the corpus draw path).
-/// No-op without metadata for the hand's codes (no registry installed, or
-/// codes it doesn't know).
+/// No-op for hand codes the registry doesn't know.
 ///
 /// **The shape — draw everything, then resolve every Revelation — is the rule,
 /// not a convenience.** This function is called once the whole draw has landed
@@ -164,9 +160,7 @@ pub(super) fn replace_opening_hand_weaknesses(cx: &mut Cx, investigator: Investi
 /// MUST NOT be called from the setup opening-hand / mulligan path — those *set
 /// aside* weaknesses (#508), they do not resolve them.
 pub(in crate::engine) fn resolve_drawn_weaknesses(cx: &mut Cx, investigator: InvestigatorId) {
-    let Some(reg) = card_registry::current() else {
-        return;
-    };
+    let reg = cx.cards;
     // Collect indices of drawn persistent treachery weaknesses, in hand order.
     let matches: Vec<(usize, CardCode)> = {
         let Some(inv) = cx.state.investigators.get(&investigator) else {
@@ -414,8 +408,7 @@ pub(crate) fn grant_resources(cx: &mut Cx, investigator: InvestigatorId, amount:
 ///
 /// Caller guarantees `investigator` exists in `state.investigators`.
 pub(super) fn pay_play_cost(cx: &mut Cx, investigator: InvestigatorId, code: &CardCode) {
-    let cost = card_registry::current()
-        .and_then(|reg| (reg.metadata_for)(code))
+    let cost = (cx.cards.metadata_for)(code)
         .and_then(CardMetadata::play_cost)
         .and_then(|c| u8::try_from(c).ok())
         .unwrap_or(0);
@@ -791,16 +784,9 @@ pub(super) fn resume_mulligan(cx: &mut Cx, response: &InputResponse) -> EngineOu
 /// and because the registry-side validations are conceptually
 /// separate from the state-side prefix.
 pub(super) fn resolve_play_target(
+    registry: &CardRegistry,
     code: &CardCode,
 ) -> Result<(PlayDestination, Vec<Ability>, bool, CardType), EngineOutcome> {
-    let Some(registry) = card_registry::current() else {
-        return Err(EngineOutcome::Rejected {
-            reason: "PlayCard: no card registry installed; engine cannot resolve card \
-                     metadata or abilities. Install game_core::card_registry before \
-                     dispatching PlayCard."
-                .into(),
-        });
-    };
     let Some(metadata) = (registry.metadata_for)(code) else {
         return Err(EngineOutcome::Rejected {
             reason: format!("PlayCard: unknown card code {code}").into(),
@@ -835,7 +821,7 @@ pub(super) fn resolve_play_target(
 /// Handler for `TurnAction::PlayCard`.
 ///
 /// Validates the standard player-action prefix, looks up the card's
-/// metadata and abilities via the installed [`card_registry`], routes
+/// metadata and abilities via the apply's card registry, routes
 /// the card to its destination zone based on its
 /// [`CardType`](card_dsl::card_data::CardType), and runs every
 /// [`Trigger::OnPlay`] ability through the DSL evaluator.
@@ -897,7 +883,7 @@ pub(super) fn play_card(
         abilities: _,
         is_fast,
         card_type: _,
-    } = match legality::check_play_card(cx.state, investigator, hand_index) {
+    } = match legality::check_play_card(cx.state, cx.cards, investigator, hand_index) {
         Ok(r) => r,
         Err(reason) => return EngineOutcome::Rejected { reason },
     };
@@ -1000,7 +986,7 @@ pub(super) fn dispose_play_from_hand(cx: &mut Cx) -> EngineOutcome {
         return EngineOutcome::Done;
     };
 
-    let destination = match resolve_play_target(&card) {
+    let destination = match resolve_play_target(cx.cards, &card) {
         Ok((destination, _abilities, _is_fast, _card_type)) => destination,
         // Unreachable post-play (this code already resolved at play time); a
         // Rejected here would strand the played card, so surface it loudly.
@@ -1054,7 +1040,8 @@ pub(super) fn dispose_play_from_hand(cx: &mut Cx) -> EngineOutcome {
 /// Evidence! 01022) are all Fast and never park. Give this suppress-on-lapse
 /// when a board-changing `AoO` reaction lands.
 fn complete_play(cx: &mut Cx, investigator: InvestigatorId, card: CardCode) -> EngineOutcome {
-    let (_destination, abilities, _is_fast, _card_type) = match resolve_play_target(&card) {
+    let (_destination, abilities, _is_fast, _card_type) = match resolve_play_target(cx.cards, &card)
+    {
         Ok(v) => v,
         Err(outcome) => return outcome,
     };

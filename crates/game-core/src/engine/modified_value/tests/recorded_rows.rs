@@ -73,7 +73,7 @@ fn a_recorded_row_is_invisible_to_an_outside_test_read() {
     assert_eq!(
         modified_value(
             &state,
-            Some(&mock_registry()),
+            &mock_registry(),
             ModifierTarget::Investigator(id),
             ModifiedQuantity::Skill(SkillKind::Willpower),
             ReadContext::OutsideTest,

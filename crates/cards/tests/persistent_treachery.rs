@@ -124,7 +124,7 @@ fn obscuring_fog_attaches_raises_shroud_and_discards_on_investigate() {
     assert_eq!(
         modified_value::modified_value(
             state,
-            Some(&REGISTRY),
+            &REGISTRY,
             ModifierTarget::Location(loc.id),
             ModifiedQuantity::Shroud,
             ReadContext::from_state(state),
@@ -229,7 +229,11 @@ fn dissonant_voices_forbids_playing_an_asset() {
         .open_turn(INV)
         .session();
     assert!(
-        !enumerate::legal_actions(session.state()).contains(&play),
+        !enumerate::legal_actions(
+            session.state(),
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&play),
         "the menu does not offer a play Dissonant Voices forbids",
     );
     let result = session.submit_off_menu(&play);
@@ -399,7 +403,10 @@ fn the_action_menu_offers_only_what_the_frozen_in_fear_surcharge_leaves_affordab
         },
     ];
 
-    let menu = enumerate::legal_actions(&board(1).build());
+    let menu = enumerate::legal_actions(
+        &board(1).build(),
+        game_core::card_registry::current().expect("card registry installed"),
+    );
     for surcharged in [&move_to(ELSEWHERE), &fight, &evade] {
         assert!(
             !menu.contains(surcharged),
@@ -411,7 +418,11 @@ fn the_action_menu_offers_only_what_the_frozen_in_fear_surcharge_leaves_affordab
     }
 
     assert!(
-        enumerate::legal_actions(&board(2).build()).contains(&move_to(ELSEWHERE)),
+        enumerate::legal_actions(
+            &board(2).build(),
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&move_to(ELSEWHERE)),
         "2 actions pay for the surcharged move",
     );
 
@@ -419,7 +430,11 @@ fn the_action_menu_offers_only_what_the_frozen_in_fear_surcharge_leaves_affordab
     let session = board(3).session().take(&move_to(ELSEWHERE));
     assert_eq!(session.state().investigators[&me].actions_remaining, 1);
     assert!(
-        enumerate::legal_actions(session.state()).contains(&move_to(HERE)),
+        enumerate::legal_actions(
+            session.state(),
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&move_to(HERE)),
         "with the surcharge spent this round, a move costs 1",
     );
 }
@@ -702,13 +717,21 @@ fn a_designated_fight_consumes_the_once_each_round_surcharge() {
 fn the_action_menu_hides_a_designated_fight_the_surcharge_makes_unaffordable() {
     let three = frozen_in_fear_with_weapon_board(3);
     assert!(
-        enumerate::legal_actions(three.state()).contains(&weapon_fight(&three)),
+        enumerate::legal_actions(
+            three.state(),
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&weapon_fight(&three)),
         "with 3 actions the surcharged Fight (cost 2) is affordable",
     );
 
     let one = frozen_in_fear_with_weapon_board(1);
     assert!(
-        !enumerate::legal_actions(one.state()).contains(&weapon_fight(&one)),
+        !enumerate::legal_actions(
+            one.state(),
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&weapon_fight(&one)),
         "1 action left cannot pay the surcharged cost of 2, so the menu omits it",
     );
 }

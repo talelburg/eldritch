@@ -154,6 +154,7 @@ fn install_mock_registry() {
         .with_abilities(ON_END_OF_TURN, || {
             horror_on(EventPattern::EndOfTurn, EventTiming::At)
         })
+        .with_card(treachery(ON_END_OF_TURN, false))
         .with_abilities(ON_AGENDA_ADVANCED, || {
             after_horror(EventPattern::AgendaAdvanced)
         })
@@ -165,6 +166,7 @@ fn install_mock_registry() {
             horror_on(EventPattern::RoundEnded, EventTiming::At)
         })
         .with_abilities(REACT_ON_DEFEAT, react_on_defeat)
+        .with_card(treachery(REACT_ON_DEFEAT, false))
         .with_abilities(FAST_REACT_ON_DEFEAT, react_on_defeat)
         .with_card(fast_event(FAST_REACT_ON_DEFEAT))
         .install();

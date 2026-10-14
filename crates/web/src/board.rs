@@ -2,6 +2,7 @@
 //! helper fns; `BoardView` is the only component. Cards and locations render as
 //! their names via `crate::names` (the client installs `cards::REGISTRY`).
 
+use game_core::card_registry::{self, CardRegistry};
 use game_core::engine::OptionTarget;
 use game_core::scenario::ScenarioEnding;
 use game_core::state::GameState;
@@ -45,6 +46,9 @@ pub fn BoardView() -> impl IntoView {
 /// health (`damage/max_health`), sanity (`horror/max_sanity`), clues,
 /// status; hand and cards-in-play as text lists of card names.
 fn investigators_panel(game: &GameState) -> impl IntoView {
+    // Installed at startup; an uninstalled registry knows no investigator, and
+    // the capacity read below panics, as it did before a registry was passed.
+    let cards = card_registry::current().unwrap_or(&CardRegistry::EMPTY);
     let panels: Vec<_> = game
         .investigators
         .values()
@@ -88,8 +92,8 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
                         "W" {inv.skills.willpower} " I" {inv.skills.intellect}
                         " C" {inv.skills.combat} " A" {inv.skills.agility}
                     </span>
-                    <span class="inv-hp">"hp " {inv.damage()} "/" {inv.max_health()}</span>
-                    <span class="inv-san">"san " {inv.horror()} "/" {inv.max_sanity()}</span>
+                    <span class="inv-hp">"hp " {inv.damage()} "/" {inv.max_health(cards)}</span>
+                    <span class="inv-san">"san " {inv.horror()} "/" {inv.max_sanity(cards)}</span>
                 </div>
             };
             let pips: Vec<_> = (0..inv.actions_remaining)

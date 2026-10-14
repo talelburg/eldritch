@@ -1,11 +1,12 @@
 use super::*;
 use crate::state::{FastWindowKind, GameStateBuilder, MythosPhaseFrame, MythosResume, PhaseStep};
 use crate::test_support;
+use crate::test_support::TEST_REGISTRY;
 
 #[test]
 fn returns_false_when_no_investigators() {
     let state = GameStateBuilder::default().build();
-    assert!(!any_fast_play_eligible(&state));
+    assert!(!any_fast_play_eligible(&state, &TEST_REGISTRY));
 }
 
 #[test]
@@ -13,7 +14,7 @@ fn returns_false_when_hands_and_in_play_empty() {
     let state = GameStateBuilder::default()
         .with_seat(test_support::seat(1))
         .build();
-    assert!(!any_fast_play_eligible(&state));
+    assert!(!any_fast_play_eligible(&state, &TEST_REGISTRY));
 }
 
 #[test]
@@ -52,5 +53,5 @@ fn enumerate_fast_plays_empty_when_nothing_eligible() {
         .with_active_investigator(inv)
         .with_seat(test_support::seat(1))
         .build();
-    assert!(enumerate_fast_plays(&state).is_empty());
+    assert!(enumerate_fast_plays(&state, &TEST_REGISTRY).is_empty());
 }

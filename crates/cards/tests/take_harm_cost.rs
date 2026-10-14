@@ -249,7 +249,11 @@ fn a_harm_cost_on_an_action_ability_is_refused_by_name() {
     let action = activate(&state, ACTION_PROBE);
 
     assert!(
-        !enumerate::legal_actions(&state).contains(&action),
+        !enumerate::legal_actions(
+            &state,
+            game_core::card_registry::current().expect("card registry installed")
+        )
+        .contains(&action),
         "a refused activation must not be offered"
     );
     let reason = TestSession::new(state).assert_rejects(|s| s.submit_off_menu(&action));

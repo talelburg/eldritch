@@ -122,10 +122,13 @@ fn fight_ghoul(lita_in_play: bool) -> Vec<Pause> {
         investigator: OTHER,
         enemy: GHOUL,
     };
-    let idx = enumerate::legal_actions(&state)
-        .iter()
-        .position(|a| *a == fight)
-        .expect("the Fight is a legal action on this board");
+    let idx = enumerate::legal_actions(
+        &state,
+        game_core::card_registry::current().expect("card registry installed"),
+    )
+    .iter()
+    .position(|a| *a == fight)
+    .expect("the Fight is a legal action on this board");
     let mut result = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {

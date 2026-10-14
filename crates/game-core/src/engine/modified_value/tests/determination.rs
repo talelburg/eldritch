@@ -5,7 +5,7 @@ use super::*;
 fn skill_of(state: &GameState, skill: SkillKind) -> i32 {
     modified_value(
         state,
-        Some(&mock_registry()),
+        &mock_registry(),
         ModifierTarget::Investigator(InvestigatorId(1)),
         ModifiedQuantity::Skill(skill),
         ReadContext::DuringTest(SkillTestKind::Investigate),
@@ -51,7 +51,7 @@ fn an_automatic_failure_keeps_the_breakdown_it_substitutes() {
         .push(recorded(InvestigatorId(1), Stat::Intellect, 2));
     let breakdown = modified_value(
         &state,
-        Some(&mock_registry()),
+        &mock_registry(),
         ModifierTarget::Investigator(InvestigatorId(1)),
         ModifiedQuantity::Skill(SkillKind::Intellect),
         ReadContext::DuringTest(SkillTestKind::Investigate),
@@ -73,7 +73,7 @@ fn an_automatic_success_substitutes_the_tests_total_difficulty() {
     assert_eq!(
         modified_value(
             &state,
-            Some(&mock_registry()),
+            &mock_registry(),
             ModifierTarget::Location(LocationId(3)),
             ModifiedQuantity::Shroud,
             ReadContext::DuringTest(SkillTestKind::Investigate),
@@ -165,7 +165,7 @@ fn a_read_outside_a_test_sees_no_determination() {
     assert_eq!(
         modified_value(
             &state,
-            Some(&mock_registry()),
+            &mock_registry(),
             ModifierTarget::Investigator(InvestigatorId(1)),
             ModifiedQuantity::Skill(SkillKind::Intellect),
             ReadContext::OutsideTest,

@@ -14,7 +14,6 @@
 
 use card_dsl::card_data::CardKind;
 
-use crate::card_registry;
 use crate::engine::{board, Cx};
 use crate::event::Event;
 use crate::state::{CardInstanceId, InvestigatorId, UseKind};
@@ -74,8 +73,7 @@ pub fn spend_uses(
         kind,
         amount,
     });
-    let discards_when_empty = card_registry::current()
-        .and_then(|r| (r.metadata_for)(&code))
+    let discards_when_empty = (cx.cards.metadata_for)(&code)
         .and_then(|m| match m.kind {
             CardKind::Asset { uses, .. } => uses,
             _ => None,

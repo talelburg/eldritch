@@ -52,7 +52,13 @@ fn test_investigator_takes_harm_under_the_real_registry() {
     let inv = &session.state().investigators[&INV];
     assert_eq!(inv.horror(), 2);
     assert_eq!(inv.status, Status::Active);
-    assert_eq!((inv.max_health(), inv.max_sanity()), (8, 8));
+    assert_eq!(
+        (
+            inv.max_health(game_core::card_registry::current().expect("card registry installed")),
+            inv.max_sanity(game_core::card_registry::current().expect("card registry installed"))
+        ),
+        (8, 8)
+    );
 }
 
 /// The composition adds to the real registry rather than shadowing it.
@@ -64,7 +70,15 @@ fn a_real_investigator_keeps_its_corpus_capacity() {
     let roland = &state.investigators[&INV];
     // Roland Banks 01001 prints 9 health / 5 sanity
     // (`data/arkhamdb-snapshot/pack/core/core.json`).
-    assert_eq!((roland.max_health(), roland.max_sanity()), (9, 5));
+    assert_eq!(
+        (
+            roland
+                .max_health(game_core::card_registry::current().expect("card registry installed")),
+            roland
+                .max_sanity(game_core::card_registry::current().expect("card registry installed"))
+        ),
+        (9, 5)
+    );
 }
 
 /// A terminal act's reverse is still served, so advancing it ends the scenario.

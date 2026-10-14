@@ -82,6 +82,7 @@ fn dynamite_blast(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     let locations = candidate_locations(cx.state(), controller);
     match engine::resolve_grounded_choice(
         cx.state(),
+        cx.cards(),
         ctx,
         &locations,
         "Choose a location to blast",

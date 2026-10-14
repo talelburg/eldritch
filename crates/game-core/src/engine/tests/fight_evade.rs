@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::TEST_REGISTRY;
 
 const FIGHT: TurnAction = TurnAction::Fight {
     investigator: INV,
@@ -26,14 +27,14 @@ fn retaliating_ghoul() -> Enemy {
 
 /// Whether `state`'s menu offers a Fight by `investigator` against `enemy`.
 fn offers_fight(state: &GameState, investigator: InvestigatorId, enemy: EnemyId) -> bool {
-    legal_actions(state).iter().any(|a| {
+    legal_actions(state, &TEST_REGISTRY).iter().any(|a| {
         matches!(a, TurnAction::Fight { investigator: i, enemy: e } if *i == investigator && *e == enemy)
     })
 }
 
 /// Whether `state`'s menu offers `INV` an Evade against `GHOUL`.
 fn offers_evade(state: &GameState) -> bool {
-    legal_actions(state).iter().any(
+    legal_actions(state, &TEST_REGISTRY).iter().any(
         |a| matches!(a, TurnAction::Evade { investigator, enemy } if *investigator == INV && *enemy == GHOUL),
     )
 }

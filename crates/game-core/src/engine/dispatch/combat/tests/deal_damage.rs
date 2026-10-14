@@ -1,6 +1,7 @@
 use super::*;
 use crate::state::EmitEventFrame;
 use crate::test_support::SeatLookup as _;
+use crate::test_support::TEST_REGISTRY;
 
 #[test]
 fn advance_distribution_drains_without_soakers_and_prompts_with_one() {
@@ -232,7 +233,7 @@ fn soak_options_anchor_assets_to_card_instances() {
         DistributionTarget::Asset(asset),
     ];
     let me = state.investigators[&InvestigatorId(1)].card_anchor();
-    let opts = soak_options(&state, &targets, &me);
+    let opts = soak_options(&state, &TEST_REGISTRY, &targets, &me);
     // Anchors: the investigator to their own card; a soaker asset to its card.
     assert_eq!(opts[0].target, Some(me), "the investigator's own card");
     assert_eq!(opts[1].target, Some(OptionTarget::CardInstance(asset)));

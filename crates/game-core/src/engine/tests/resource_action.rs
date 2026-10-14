@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::TEST_REGISTRY;
 
 const RESOURCE: TurnAction = TurnAction::Resource { investigator: INV };
 
@@ -16,7 +17,7 @@ fn resource_board(enemy: Option<Enemy>) -> GameStateBuilder {
 
 /// Whether `state`'s menu offers `INV` a Resource action.
 fn offers_resource(state: &GameState) -> bool {
-    legal_actions(state)
+    legal_actions(state, &TEST_REGISTRY)
         .iter()
         .any(|a| matches!(a, TurnAction::Resource { investigator } if *investigator == INV))
 }

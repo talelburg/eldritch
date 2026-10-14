@@ -339,33 +339,32 @@ fn finalize_scenario_end(cx: &mut Cx) {
     // `(module.apply_resolution)(...)` so the scan captures board state
     // at the moment the resolution latches, before any post-resolution
     // cleanup (apply_resolution, Phase 9) runs. Generic across scenarios;
-    // reads victory values from the card registry. No registry → no
-    // metadata → nothing placed (graceful).
+    // reads victory values from the card registry; a code it doesn't know
+    // has no victory value and is not placed.
     //
     // RR p.21: "At the end of a scenario, place each victory point
     // location that is in play, revealed, and with no clues on it in the
     // victory display."
-    if let Some(card_reg) = card_registry::current() {
-        let placed: Vec<(CardCode, u8)> = cx
-            .state
-            .locations
-            .values()
-            .filter(|loc| loc.revealed && loc.clues == 0)
-            .filter_map(|loc| {
-                let meta = (card_reg.metadata_for)(&loc.code)?;
-                match meta.kind {
-                    CardKind::Location {
-                        victory: Some(v), ..
-                    } if v > 0 => Some((loc.code.clone(), v)),
-                    _ => None,
-                }
-            })
-            .collect();
-        for (code, victory) in placed {
-            cx.state.victory_display.push(code.clone());
-            cx.events
-                .push(Event::EnteredVictoryDisplay { code, victory });
-        }
+    let card_reg = cx.cards;
+    let placed: Vec<(CardCode, u8)> = cx
+        .state
+        .locations
+        .values()
+        .filter(|loc| loc.revealed && loc.clues == 0)
+        .filter_map(|loc| {
+            let meta = (card_reg.metadata_for)(&loc.code)?;
+            match meta.kind {
+                CardKind::Location {
+                    victory: Some(v), ..
+                } if v > 0 => Some((loc.code.clone(), v)),
+                _ => None,
+            }
+        })
+        .collect();
+    for (code, victory) in placed {
+        cx.state.victory_display.push(code.clone());
+        cx.events
+            .push(Event::EnteredVictoryDisplay { code, victory });
     }
 
     let Some(module) = cx.scenario else {
