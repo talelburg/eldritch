@@ -10,15 +10,18 @@
 //! What these tests need is a two-card act deck that ends in a couple of clicks
 //! and a scenario module to hang `apply_resolution` off — no scenario *content*
 //! at all — so under ADR 0016 the module shell and its `setup()` state are built
-//! here rather than pulled from a shared fixture, and the registry installed is
+//! here rather than pulled from a shared fixture, and the registry named is
 //! this file's rather than the `scenarios` crate's. Building it locally also
 //! makes it structural that nothing under `src/` can start a toy scenario.
+
+use std::sync::LazyLock;
 
 use card_dsl::card_data::{CardKind, CardMetadata};
 use card_dsl::dsl::{self, InvestigatorTarget};
 use game_core::action::RosterEntry;
+use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, EngineOutcome};
+use game_core::engine::{EngineOutcome, Registries};
 use game_core::event::Event;
 use game_core::scenario::{
     ResolutionId, ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRegistry,
@@ -28,7 +31,6 @@ use game_core::state::{
     LocationId, Phase,
 };
 use game_core::test_support::{self, MockRegistry, TestSession, TEST_INV};
-use game_core::{assert_event, scenario_registry};
 
 /// Per-binary code prefix (ADR 0016: probe cards are test-local).
 const PREFIX: &str = "_sr_";
@@ -60,21 +62,23 @@ fn treachery_metadata() -> CardMetadata {
     }
 }
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    let _ = scenario_registry::install(ScenarioRegistry { module_for });
-    // `install` composes `abilities_for_terminal`, which serves the reverses of
-    // the terminal act/agenda cards `setup` seeds — without them a terminal
-    // advance would reach no ending (ADR 0013).
-    MockRegistry::new()
-        .with_card(treachery_metadata())
-        .with_abilities(TREACHERY, || {
-            vec![dsl::revelation(dsl::gain_resources(
-                InvestigatorTarget::You,
-                1,
-            ))]
-        })
-        .install();
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        // `build` composes `abilities_for_terminal`, which serves the reverses of
+        // the terminal act/agenda cards `setup` seeds — without them a terminal
+        // advance would reach no ending (ADR 0013).
+        cards: MockRegistry::new()
+            .with_card(treachery_metadata())
+            .with_abilities(TREACHERY, || {
+                vec![dsl::revelation(dsl::gain_resources(
+                    InvestigatorTarget::You,
+                    1,
+                ))]
+            })
+            .build(),
+        scenarios: &ScenarioRegistry { module_for },
+    });
+    *REGISTRIES
 }
 
 // ------------------------------------------------------------------
@@ -148,8 +152,11 @@ const INV: InvestigatorId = InvestigatorId(1);
 /// window it opens closed keeping the whole hand: Investigation, round 1, at
 /// `INV`'s turn menu. Neither test asserts on the events the close emits.
 fn opened() -> TestSession {
-    let session =
-        TestSession::new(engine::seat_and_open(setup(), &roster()).state).choose_from_hand(&[]);
+    let session = TestSession::new(
+        game_core::engine::seat_and_open(setup(), &roster(), registries()).state,
+        registries(),
+    )
+    .choose_from_hand(&[]);
     assert_eq!(session.state().phase, Phase::Investigation);
     session
 }
@@ -161,7 +168,7 @@ fn scenario_resolves_won_via_act_advance() {
     // it again.
     let mut state = opened().state().clone();
     state.investigators.get_mut(&INV).unwrap().clues = 4;
-    let session = TestSession::new(state)
+    let session = TestSession::new(state, registries())
         .take(&TurnAction::AdvanceAct { investigator: INV }) // act 0 -> 1
         .take(&TurnAction::AdvanceAct { investigator: INV }); // act 1 -> Won
 

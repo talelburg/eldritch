@@ -1,8 +1,7 @@
 //! Integration (#517): an encounter enemy whose designated spawn location is
 //! not in play is placed in the encounter discard pile — the draw must NOT
 //! reject. Driven through the real `cards` registry and the full `apply` →
-//! resolve → disposal pipeline. Own process so it can install the
-//! process-global registry against the real corpus.
+//! resolve → disposal pipeline, against the real corpus.
 //!
 //! Rules Reference p.24: "If an enemy has no legal location to spawn at (for
 //! example, if its spawn instruction directs it to a specific location that is
@@ -11,7 +10,7 @@
 //! in play (i.e. while you're at the Study), place that enemy card into the
 //! encounter discard pile without any further effects."
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::state::{
     CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame,
     MythosResume, Phase,
@@ -26,17 +25,13 @@ const STUDY: &str = "01111";
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(20);
 
-#[ctor::ctor(unsafe)]
-fn install_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// Mythos step 1.4: investigator 1, at the Study, to draw `state`'s top
 /// encounter card.
 fn drawing(top: &str) -> GameState {
     let mut study = test_support::test_location(HERE.0, "Study");
     study.code = CardCode::new(STUDY);
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
         .with_location(study)
         .with_turn_order([INV])
@@ -54,7 +49,7 @@ fn drawing(top: &str) -> GameState {
 fn enemy_with_offboard_spawn_location_is_discarded_not_rejected() {
     // Investigator at the Study; the Attic (Flesh-Eater's spawn location) is
     // NOT in play. Flesh-Eater on top of the encounter deck.
-    let session = TestSession::new(drawing(FLESH_EATER)).confirm();
+    let session = TestSession::new(drawing(FLESH_EATER), TEST_REGISTRIES).confirm();
 
     // An off-board spawn location must not reject the draw: play runs on out
     // of the Mythos phase to the turn.

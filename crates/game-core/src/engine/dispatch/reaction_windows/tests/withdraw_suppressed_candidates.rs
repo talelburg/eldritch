@@ -1,6 +1,6 @@
 use super::*;
 use crate::state::{CardInstanceId, GameStateBuilder, LocationId, TimingPointFrame, TimingSub};
-use crate::test_support;
+use crate::test_support::{self, TEST_REGISTRIES};
 
 const INV: InvestigatorId = InvestigatorId(1);
 /// Deliberately resolved by no registry — the test registry knows none. The
@@ -31,6 +31,7 @@ fn state_with_window_of(
     prevented: bool,
 ) -> GameState {
     let mut state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_active_investigator(INV)
         .build();
@@ -51,10 +52,7 @@ fn state_with_window_of(
 
 fn withdraw(state: &mut GameState) -> (usize, Vec<Event>) {
     let mut events = Vec::new();
-    let n = withdraw_suppressed_candidates(&mut Cx {
-        state,
-        events: &mut events,
-    });
+    let n = withdraw_suppressed_candidates(&mut Cx::for_test(state, &mut events));
     (n, events)
 }
 

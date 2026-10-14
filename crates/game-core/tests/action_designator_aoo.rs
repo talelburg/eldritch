@@ -24,7 +24,7 @@
 //! [`SATCHEL`] prints the *same residual effect* twice, once under a **Fight**
 //! designator and once under none, and only the designated one is exempt.
 //!
-//! Own integration-test binary so it can install its own mock registry.
+//! Own integration-test binary so it can build its own mock registry.
 //! **No corpus card can exercise any of these shapes:** no shipped weapon
 //! prints a residual beside its designated Fight, and the Parley cards (the
 //! Midnight Masks cultists 01138-01140, Mob Enforcer 01101) have no ability
@@ -39,11 +39,15 @@
 //! is `crates/cards/tests/activate_ability_aoo.rs`, and the attack-of-opportunity
 //! table over every way of taking an action is `crates/cards/tests/taking_an_action.rs`.
 
+use std::sync::LazyLock;
+
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use card_dsl::dsl::{self, Ability, ActionDesignator, Effect, InvestigatorTarget};
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
+use game_core::engine::Registries;
 use game_core::event::Event;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, EnemyId, GameState,
     GameStateBuilder, InvestigatorId, LocationId,
@@ -137,14 +141,17 @@ fn satchel_metadata() -> CardMetadata {
     }
 }
 
-#[ctor::ctor(unsafe)]
-fn install_probe_registry() {
-    MockRegistry::new()
-        .with_card(satchel_metadata())
-        .with_abilities(SATCHEL, satchel_abilities)
-        .with_abilities(PARLOR, parlor_abilities)
-        .with_abilities(ENFORCER, enforcer_abilities)
-        .install();
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        cards: MockRegistry::new()
+            .with_card(satchel_metadata())
+            .with_abilities(SATCHEL, satchel_abilities)
+            .with_abilities(PARLOR, parlor_abilities)
+            .with_abilities(ENFORCER, enforcer_abilities)
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 /// One location printing the Parlor's card, the acting investigator standing on
@@ -166,6 +173,7 @@ fn board() -> GameState {
     attacker.attack_horror = 0;
 
     GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).at(HERE).in_play([SATCHEL]))
         .with_location(parlor)
         .with_enemy_engaged(attacker, MINE)
@@ -200,7 +208,7 @@ fn damage_after_activating(
     let action = activation(source(&state), ability_index);
     // `take` panics unless the menu offers the activation; the
     // `AbilityActivated` event proves the handler did not reject it.
-    let session = TestSession::new(state).take(&action);
+    let session = TestSession::new(state, registries()).take(&action);
     assert_event!(session.events(), Event::AbilityActivated { investigator, .. } if *investigator == MINE);
     session.state().investigators[&MINE].damage()
 }

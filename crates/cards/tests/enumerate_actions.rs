@@ -1,10 +1,10 @@
 //! Registry-backed tests for the legal-action enumerator (#393 slice 2a-ii):
 //! the card actions (`PlayCard`, `ActivateAbility`, added in 2a-ii-3) plus the
 //! whole-enumeration sweep covering every action category (2a-ii-4). These need
-//! real card metadata/abilities, so they install `cards::REGISTRY` and live here
+//! real card metadata/abilities, so they run against `cards::TEST_REGISTRIES` and live here
 //! rather than in `game-core`'s registry-less unit tests.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::state::{
     AbilityAddress, AbilitySource, Act, Agenda, CardCode, ChaosBag, ChaosToken, EnemyId, GameState,
@@ -19,11 +19,6 @@ const HERE: LocationId = LocationId(10);
 const HALL: LocationId = LocationId(11);
 const ATTIC: LocationId = LocationId(12);
 const CELLAR: LocationId = LocationId(13);
-
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 /// Investigator 1 at the Study (`HERE`) with 3 actions and 9 resources.
 fn me() -> Seat {
@@ -40,6 +35,7 @@ fn me_with_rosary_and_flashlight() -> Seat {
 /// `investigator`'s open turn at the Study, with a +0 bag.
 fn study_board(investigator: Seat) -> GameStateBuilder {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(investigator)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -50,7 +46,7 @@ fn study_board(investigator: Seat) -> GameStateBuilder {
 fn play_card_offered_for_a_playable_hand_card() {
     let state = study_board(me().hand([HOLY_ROSARY])).build();
     assert!(
-        enumerate::legal_actions(&state).contains(&TurnAction::PlayCard {
+        enumerate::legal_actions(&state, TEST_REGISTRIES.cards).contains(&TurnAction::PlayCard {
             investigator: INV,
             hand_index: 0,
         })
@@ -61,11 +57,13 @@ fn play_card_offered_for_a_playable_hand_card() {
 fn activate_offered_for_an_in_play_activated_ability() {
     let state = study_board(me().in_play([(FLASHLIGHT, uses(UseKind::Supplies, 3))])).build();
     assert!(
-        enumerate::legal_actions(&state).contains(&TurnAction::ActivateAbility {
-            investigator: INV,
-            source: AbilitySource::InPlay(state.in_play(INV, FLASHLIGHT)),
-            address: AbilityAddress::Printed(0),
-        })
+        enumerate::legal_actions(&state, TEST_REGISTRIES.cards).contains(
+            &TurnAction::ActivateAbility {
+                investigator: INV,
+                source: AbilitySource::InPlay(state.in_play(INV, FLASHLIGHT)),
+                address: AbilityAddress::Printed(0),
+            }
+        )
     );
 }
 
@@ -80,7 +78,7 @@ fn rosary_and_flashlight_board() -> GameState {
 /// place on it (#447), so this is the menu's id round-trip.
 fn assert_each_applies(state: &GameState, actions: &[TurnAction]) {
     for action in actions {
-        let taken = TestSession::new(state.clone()).take(action);
+        let taken = TestSession::new(state.clone(), TEST_REGISTRIES).take(action);
         assert_eq!(
             taken.rejection(),
             None,
@@ -96,7 +94,10 @@ fn every_enumerated_action_applies_without_rejection_with_registry() {
     // the basic actions; each applies without Rejected (a prompt or a return to
     // the menu are both acceptance).
     let state = rosary_and_flashlight_board();
-    assert_each_applies(&state, &enumerate::legal_actions(&state));
+    assert_each_applies(
+        &state,
+        &enumerate::legal_actions(&state, TEST_REGISTRIES.cards),
+    );
 }
 
 /// A board offering every action category: the registry-edition fixture plus a
@@ -135,7 +136,7 @@ fn every_category_board() -> GameState {
 #[test]
 fn full_enumeration_covers_every_action_category_and_all_apply() {
     let state = every_category_board();
-    let actions = enumerate::legal_actions(&state);
+    let actions = enumerate::legal_actions(&state, TEST_REGISTRIES.cards);
 
     // Every category is represented.
     let has = |p: fn(&TurnAction) -> bool| actions.iter().any(p);
@@ -200,7 +201,7 @@ fn the_corpus_act_and_agenda_are_reachable_but_offer_no_activation() {
         doom_threshold: 3,
     }];
 
-    let menu = enumerate::legal_actions(&state);
+    let menu = enumerate::legal_actions(&state, TEST_REGISTRIES.cards);
     for source in [AbilitySource::Act, AbilitySource::Agenda] {
         assert!(
             !menu.iter().any(|a| matches!(
@@ -213,12 +214,13 @@ fn the_corpus_act_and_agenda_are_reachable_but_offer_no_activation() {
 
         // The menu filters it out, so it goes straight to the handler to prove
         // the handler refuses it too.
-        let session =
-            TestSession::new(state.clone()).submit_off_menu(&TurnAction::ActivateAbility {
+        let session = TestSession::new(state.clone(), TEST_REGISTRIES).submit_off_menu(
+            &TurnAction::ActivateAbility {
                 investigator: INV,
                 source,
                 address: AbilityAddress::Printed(0),
-            });
+            },
+        );
         let reason = session.expect_rejected();
         assert!(
             reason.contains("not an Activated trigger"),
@@ -271,10 +273,10 @@ fn assert_menu_offers_every_accepted_basic_action(
     state: &GameState,
     me: InvestigatorId,
 ) -> Vec<TurnAction> {
-    let menu = enumerate::legal_actions(state);
+    let menu = enumerate::legal_actions(state, TEST_REGISTRIES.cards);
     let mut accepted = Vec::new();
     for action in every_basic_action(state, me) {
-        let submitted = TestSession::new(state.clone()).submit_off_menu(&action);
+        let submitted = TestSession::new(state.clone(), TEST_REGISTRIES).submit_off_menu(&action);
         if submitted.rejection().is_some() {
             continue;
         }
@@ -317,6 +319,7 @@ fn crowded_board(investigator: Seat) -> GameState {
     unshakeable.evade = -1;
 
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(investigator)
         .with_seat(seat(2).at(HERE))
         .with_location(study)

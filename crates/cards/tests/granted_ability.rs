@@ -20,7 +20,7 @@
 //! `docs/adr/0014-a-granted-ability-is-a-constant-effect-swept-off-the-board.md`
 //! has the argument.
 //!
-//! Own integration-test binary so it can install its own `MockRegistry`.
+//! Own integration-test binary so it can build its own `MockRegistry`.
 //! The corpus peer — the Parlor 01115 granting Lita Chantler 01117 her Parley,
 //! end to end — is `lita_parley.rs`; these cases are the ones no printed card
 //! reaches (a granted grant, a grant conditioned on a "you" the recipient has
@@ -30,11 +30,14 @@ use card_dsl::dsl::{
     self, Ability, CmpOp, Condition, ControlStatus, GrantTarget, InvestigatorTarget, Quantity,
 };
 use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::Registries;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState,
     GameStateBuilder, InvestigatorId, LocationId, Owner,
 };
 use game_core::test_support::{self, seat, MockRegistry, TestSession};
+use std::sync::LazyLock;
 
 /// The **granter**: a location whose printed text grants an ability to
 /// [`RECIPIENT`] while nobody controls it — the Parlor 01115's shape.
@@ -111,15 +114,6 @@ fn needs_you_abilities() -> Vec<Ability> {
     ))]
 }
 
-#[ctor::ctor(unsafe)]
-fn install_probe_registry() {
-    // `TEST_INV`'s metadata rides `install`'s composed `metadata_for_test_inv`.
-    MockRegistry::new()
-        .with_abilities(GRANTER, granter_abilities)
-        .with_abilities(NEEDS_YOU, needs_you_abilities)
-        .install();
-}
-
 /// The board: the investigator standing at [`HERE`], whose location card is
 /// `granter_code`, with the recipient and a second card put into play there
 /// under nobody's control.
@@ -138,6 +132,7 @@ fn board(granter_code: &str) -> GameState {
         Owner::Scenario,
     ));
     GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).at(HERE))
         .with_location(here)
         .with_location(test_support::test_location(THERE.0, "Elsewhere"))
@@ -164,6 +159,19 @@ fn activation(instance: CardInstanceId, address: AbilityAddress) -> TurnAction {
 
 // ---- the sweep -------------------------------------------------------
 
+/// The binary's one mock, built once on first use.
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        // `TEST_INV`'s metadata rides `build`'s composed `metadata_for_test_inv`.
+        cards: MockRegistry::new()
+            .with_abilities(GRANTER, granter_abilities)
+            .with_abilities(NEEDS_YOU, needs_you_abilities)
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
+}
+
 /// The recipient prints nothing at all, and is offered the granted activation
 /// anyway. *"the card functions as if it possesses the gained characteristic"*
 /// — so the ability is hers, and the source the menu names is her instance.
@@ -171,9 +179,10 @@ fn activation(instance: CardInstanceId, address: AbilityAddress) -> TurnAction {
 fn a_granted_ability_is_offered_on_its_recipient() {
     let state = board(GRANTER);
     assert!(
-        enumerate::legal_actions(&state).contains(&activation(RECIPIENT_INST, granted_address())),
+        enumerate::legal_actions(&state, registries().cards)
+            .contains(&activation(RECIPIENT_INST, granted_address())),
         "the granted activation is offered on the recipient, got {:?}",
-        enumerate::legal_actions(&state),
+        enumerate::legal_actions(&state, registries().cards),
     );
 }
 
@@ -200,9 +209,10 @@ fn a_grant_vanishes_when_its_condition_stops_holding() {
         .push(card);
 
     assert!(
-        !enumerate::legal_actions(&state).contains(&activation(RECIPIENT_INST, granted_address())),
+        !enumerate::legal_actions(&state, registries().cards)
+            .contains(&activation(RECIPIENT_INST, granted_address())),
         "the grant lapses once a player controls the recipient, got {:?}",
-        enumerate::legal_actions(&state),
+        enumerate::legal_actions(&state, registries().cards),
     );
 }
 
@@ -214,7 +224,7 @@ fn a_grant_vanishes_when_its_condition_stops_holding() {
 #[test]
 fn a_granted_grant_does_not_apply() {
     let state = board(GRANTER);
-    let offered = enumerate::legal_actions(&state);
+    let offered = enumerate::legal_actions(&state, registries().cards);
     assert!(
         !offered.iter().any(|action| matches!(
             action,
@@ -249,9 +259,10 @@ fn a_condition_needing_a_you_does_not_hold_for_an_uncontrolled_recipient() {
         sub: 0,
     };
     assert!(
-        !enumerate::legal_actions(&state).contains(&activation(RECIPIENT_INST, address)),
+        !enumerate::legal_actions(&state, registries().cards)
+            .contains(&activation(RECIPIENT_INST, address)),
         "a condition needing a controller does not hold on an uncontrolled recipient, got {:?}",
-        enumerate::legal_actions(&state),
+        enumerate::legal_actions(&state, registries().cards),
     );
 }
 
@@ -266,7 +277,7 @@ fn a_granted_address_resolves_to_nothing_once_the_granter_is_gone() {
     let mut state = board(GRANTER);
     let minted = activation(RECIPIENT_INST, granted_address());
     assert!(
-        enumerate::legal_actions(&state).contains(&minted),
+        enumerate::legal_actions(&state, registries().cards).contains(&minted),
         "precondition: the activation is live before the granter goes",
     );
 
@@ -280,7 +291,7 @@ fn a_granted_address_resolves_to_nothing_once_the_granter_is_gone() {
 
     // The menu no longer offers it, so the stale candidate is submitted
     // straight to the handler, as a client still holding it would.
-    let session = TestSession::new(state).submit_off_menu(&minted);
+    let session = TestSession::new(state, registries()).submit_off_menu(&minted);
     // A stale granted address must reject.
     let _ = session.expect_rejected();
 }
@@ -295,7 +306,7 @@ fn a_granted_address_lapses_when_the_condition_flips_mid_window() {
     let mut state = board(GRANTER);
     let minted = activation(RECIPIENT_INST, granted_address());
     assert!(
-        enumerate::legal_actions(&state).contains(&minted),
+        enumerate::legal_actions(&state, registries().cards).contains(&minted),
         "precondition: the activation is live while nobody controls the recipient",
     );
 
@@ -314,7 +325,7 @@ fn a_granted_address_lapses_when_the_condition_flips_mid_window() {
 
     // The menu no longer offers it, so the stale candidate is submitted
     // straight to the handler, as a client still holding it would.
-    let session = TestSession::new(state).submit_off_menu(&minted);
+    let session = TestSession::new(state, registries()).submit_off_menu(&minted);
     // An address whose grant no longer applies must reject.
     let _ = session.expect_rejected();
 }
@@ -332,9 +343,10 @@ fn a_grant_is_not_offered_to_an_investigator_elsewhere() {
         .expect("investigator present")
         .current_location = Some(THERE);
     assert!(
-        !enumerate::legal_actions(&state).contains(&activation(RECIPIENT_INST, granted_address())),
+        !enumerate::legal_actions(&state, registries().cards)
+            .contains(&activation(RECIPIENT_INST, granted_address())),
         "an investigator elsewhere cannot reach the recipient, got {:?}",
-        enumerate::legal_actions(&state),
+        enumerate::legal_actions(&state, registries().cards),
     );
 }
 
@@ -344,11 +356,12 @@ fn a_grant_is_not_offered_to_an_investigator_elsewhere() {
 /// triggered trigger fails at resolution rather than silently doing nothing.
 #[test]
 fn resolving_a_grant_as_an_effect_rejects() {
-    let session = TestSession::new(board(GRANTER)).take(&TurnAction::ActivateAbility {
-        investigator: MINE,
-        source: AbilitySource::Location(HERE),
-        address: AbilityAddress::Printed(1),
-    });
+    let session =
+        TestSession::new(board(GRANTER), registries()).take(&TurnAction::ActivateAbility {
+            investigator: MINE,
+            source: AbilitySource::Location(HERE),
+            address: AbilityAddress::Printed(1),
+        });
     // A Grant is a constant marker; running it is a misuse.
     let _ = session.expect_rejected();
 }

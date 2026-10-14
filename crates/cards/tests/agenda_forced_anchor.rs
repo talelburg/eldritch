@@ -1,6 +1,6 @@
 //! Integration (#556): an agenda's forced-on-advance acknowledge anchors to the
-//! agenda card on the board, not the flat prompt bar. Own process → installs the
-//! real `cards::REGISTRY`.
+//! agenda card on the board, not the flat prompt bar. Runs against
+//! `cards::TEST_REGISTRIES`.
 //!
 //! Drives What's Going On?! (01105)'s `AgendaAdvanced` forced with
 //! `interactive_acknowledge` on, so the one-option "Resolve" acknowledge surfaces
@@ -10,18 +10,13 @@
 //! anchors to the agenda too; the second test below pins that, because an
 //! un-anchored option is silently rendered in the banner instead.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{OptionTarget, PromptNature};
 use game_core::state::{Agenda, CardCode, GameState, GameStateBuilder, InvestigatorId};
-use game_core::test_support::{self, seat, TestSession};
+use game_core::test_support::{seat, TestSession};
 
 const LEAD: InvestigatorId = InvestigatorId(1);
-
-#[ctor::ctor(unsafe)]
-fn install_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 /// The lead's turn on agenda 01105, one doom short of its threshold, so ending
 /// the turn runs the round out and the next Mythos phase's step-1.2 doom
@@ -30,6 +25,7 @@ fn state_on_agenda_01105() -> GameState {
     // A filler deck card so Upkeep step 4.4's draw doesn't deal empty-deck
     // horror.
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).deck(["01088"]))
         .open_turn(LEAD)
         .build();
@@ -49,7 +45,8 @@ fn state_on_agenda_01105() -> GameState {
 /// Advance 01105 for real and acknowledge its flip (#558), so the session
 /// rests at 01105's `AgendaAdvanced` forced, paused on the acknowledge.
 fn advance_01105() -> TestSession {
-    let flipped = TestSession::new(state_on_agenda_01105()).take(&TurnAction::EndTurn);
+    let flipped =
+        TestSession::new(state_on_agenda_01105(), TEST_REGISTRIES).take(&TurnAction::EndTurn);
     assert_eq!(
         flipped.prompt().prompt,
         "Agenda 1 advanced — acknowledge.",

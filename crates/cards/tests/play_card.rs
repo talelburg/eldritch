@@ -1,19 +1,17 @@
 //! End-to-end `PlayCard` integration tests with the real card corpus.
 //!
-//! These tests install the `cards::REGISTRY` global once and exercise
+//! These tests run against `cards::TEST_REGISTRIES` and exercise
 //! the engine's `PlayCard` handler against actual Phase-2 cards (Holy
 //! Rosary, Working a Hunch). Lives in `cards/tests/` rather than
 //! `game-core/src/engine/`'s unit tests because:
 //!
 //! - The engine crate can't depend on `cards` (cycle) so it has no
 //!   way to access real card metadata or abilities.
-//! - Installing `REGISTRY` is process-global. As an integration test
-//!   binary this file gets its own process, so its install doesn't
-//!   collide with `game-core`'s own tests (which deliberately don't
-//!   install a registry, exercising only validation paths that
-//!   short-circuit before the registry lookup).
+//! - `game-core`'s own tests deliberately run without the corpus,
+//!   exercising only validation paths that short-circuit before the
+//!   registry lookup.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::event::Event;
 use game_core::state::{
@@ -58,17 +56,6 @@ const PLAY_FIRST: TurnAction = TurnAction::PlayCard {
     hand_index: 0,
 };
 
-/// Install the real card registry exactly once for this integration-
-/// test binary. Idempotent at the `OnceLock` level; this `Once`
-/// wrapper additionally avoids the futile second `install` call.
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    // It's fine if this is `Err` — another test in this binary
-    // already installed. The function-pointer struct is `Copy`
-    // and stateless, so re-install attempts are harmless.
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// Investigator 1 at the Study, holding `hand`.
 fn holding(hand: &[&str]) -> Seat {
     seat(1).at(HERE).hand(hand.iter().copied())
@@ -80,6 +67,7 @@ fn play_board(investigator: Seat, clues: u8) -> TestSession {
     let mut location = test_support::test_location(HERE.0, "Study");
     location.clues = clues;
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(investigator)
         .with_location(location)
         .open_turn(INV)
@@ -97,7 +85,7 @@ fn play_state(hand: &[&str]) -> TestSession {
 /// what the menu filters out.
 fn play_off_menu(session: TestSession) -> TestSession {
     assert!(
-        !enumerate::legal_actions(session.state()).contains(&PLAY_FIRST),
+        !enumerate::legal_actions(session.state(), TEST_REGISTRIES.cards).contains(&PLAY_FIRST),
         "the turn menu does not offer a play its handler rejects",
     );
     let refused = session.submit_off_menu(&PLAY_FIRST);
@@ -370,14 +358,15 @@ fn asset_play_enters_play_through_the_frame() {
 
 #[test]
 fn play_card_after_defeat_is_rejected() {
-    // Belt-and-suspenders: even with REGISTRY installed, the status
+    // Belt-and-suspenders: even with the real registry named, the status
     // check should reject before the registry lookup runs.
     let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).hand([HOLY_ROSARY]).status(Status::Defeated))
         .open_turn(INV)
         .build();
 
-    let result = play_off_menu(TestSession::new(state)).finish();
+    let result = play_off_menu(TestSession::new(state, TEST_REGISTRIES)).finish();
     assert!(result.events.is_empty());
 }
 

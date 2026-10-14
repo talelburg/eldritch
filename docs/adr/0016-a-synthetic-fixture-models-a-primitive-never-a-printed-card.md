@@ -82,19 +82,19 @@ alternative at the kernel. These build entities, not cards.
 
 **Probe cards are test-local.** A degenerate code that isolates one mechanism has
 one reader, and belongs in that reader's file. `crates/cards/tests/` already does
-this at scale and correctly: 11 of its 81 binaries install `CardRegistry::EMPTY`
-plus hand-written probes — `timing_cells.rs` (`_tc_when` / `_tc_at` / `_tc_after`),
+this at scale and correctly: 11 of its 81 binaries name a registry of
+hand-written probes over `CardRegistry::EMPTY` — `timing_cells.rs` (`_tc_when` / `_tc_at` / `_tc_after`),
 `clue_discovery_cells.rs`, `enemy_attack_cells.rs`, `ability_source_*.rs`
 (`SRCCTL01`…), `zero_action_ability_sources.rs` — and never touch the corpus. Each
 probe exists to make one cell fire in isolation, which no printed card does
-cleanly. The other 70 run against the corpus: 68 install the real
-`cards::REGISTRY`, and `enemies.rs` and `registry_smoke.rs` read it directly
-through `cards::by_code` without installing anything. That split is the posture
+cleanly. The other 70 run against the corpus: 68 name the real corpus
+(`cards::TEST_REGISTRIES`), and `enemies.rs` and `registry_smoke.rs` read it
+directly through `cards::by_code` without a registry. That split is the posture
 already working; this ADR names it rather than inventing it.
 
 **The toy scenario splits at the seam where sharing is real.** The
 `ScenarioModule` shell — a no-op `apply_resolution`, `resolve_symbol: None`,
-`layout: &[]`, and the local registry install — is identical across every reader,
+`layout: &[]`, and the local scenario registry — is identical across every reader,
 so where several tests in one crate need it, it is shared *there*, in that crate's
 own `tests/common/`. The `setup()` *state* is local, composed per test with
 `GameStateBuilder`. `crates/server/tests/common/mod.rs:19-42` already demonstrates
@@ -246,4 +246,5 @@ readers having all been migrated by the four children ahead of it.*
 
 *Folded in: [#868](https://github.com/talelburg/eldritch/issues/868) — the
 `board.rs` instance is resolved, and a rendering test's substrate is the real
-corpus.*
+corpus; [#1038](https://github.com/talelburg/eldritch/issues/1038) — a test
+names its registry rather than installing one.*

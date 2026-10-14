@@ -1,10 +1,12 @@
 use super::*;
+use crate::test_support::{TEST_REGISTRIES, TEST_REGISTRY};
 
 const DRAW: TurnAction = TurnAction::Draw { investigator: INV };
 
 /// `drawer`'s open turn at A.
 fn draw_board(drawer: Seat) -> GameStateBuilder {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(drawer.at(HERE))
         .with_location(test_support::test_location(HERE.0, "A"))
         .with_rng_seed(13)
@@ -13,7 +15,7 @@ fn draw_board(drawer: Seat) -> GameStateBuilder {
 
 /// Whether `state`'s menu offers `investigator` a Draw.
 fn offers_draw(state: &GameState, investigator: InvestigatorId) -> bool {
-    legal_actions(state)
+    legal_actions(state, &TEST_REGISTRY)
         .iter()
         .any(|a| matches!(a, TurnAction::Draw { investigator: i } if *i == investigator))
 }

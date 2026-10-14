@@ -10,11 +10,10 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use game_core::action::{Action, PlayerAction, RosterEntry};
-use game_core::engine::{self, EngineOutcome};
+use game_core::engine::{self, EngineOutcome, Registries};
 use game_core::event::Event;
 use game_core::rng::RngState;
 use game_core::scenario::ScenarioId;
-use game_core::scenario_registry;
 use game_core::state::GameState;
 use protocol::GameId;
 use sqlx::SqlitePool;
@@ -79,6 +78,8 @@ pub struct GameSession {
     seq: i64,
     /// Connection pool for persistence.
     db: SqlitePool,
+    /// The registries every apply runs against.
+    registries: Registries,
 }
 
 impl GameSession {
@@ -86,8 +87,8 @@ impl GameSession {
     /// state, persists the seated seed and its outcome, and returns a live
     /// session at the mulligan prompt.
     ///
-    /// Looks the scenario module up via the installed
-    /// [`scenario_registry`].
+    /// Looks the scenario module up in `registries`, and seats and later
+    /// applies against them.
     ///
     /// # Errors
     ///
@@ -99,12 +100,12 @@ impl GameSession {
     ///   state fails.
     pub async fn create(
         db: SqlitePool,
+        registries: Registries,
         game_id: impl Into<GameId>,
         scenario_id: ScenarioId,
         roster: Vec<RosterEntry>,
     ) -> Result<Self, SessionError> {
-        let module = scenario_registry::current()
-            .and_then(|registry| (registry.module_for)(&scenario_id))
+        let module = (registries.scenarios.module_for)(&scenario_id)
             .ok_or_else(|| SessionError::UnknownScenario(scenario_id.clone()))?;
 
         let mut setup = (module.setup)();
@@ -120,7 +121,7 @@ impl GameSession {
         // (#478); the engine gates that pause on this flag (default off for tests
         // and non-interactive consumers). The flag persists through seating.
         setup.interactive_acknowledge = true;
-        let result = engine::seat_and_open(setup, &roster);
+        let result = engine::seat_and_open(setup, &roster, registries);
         let outcome = match result.outcome {
             EngineOutcome::Rejected { reason } => {
                 return Err(SessionError::Seating(reason.to_string()))
@@ -154,6 +155,7 @@ impl GameSession {
             setup_events,
             seq: 0,
             db,
+            registries,
         })
     }
 
@@ -174,7 +176,7 @@ impl GameSession {
         action: PlayerAction,
     ) -> Result<(Vec<Event>, EngineOutcome), SessionError> {
         let logged = Action::Player(action);
-        let result = engine::apply(self.state.clone(), logged.clone());
+        let result = engine::apply(self.state.clone(), logged.clone(), self.registries);
 
         if !matches!(result.outcome, EngineOutcome::Rejected { .. }) {
             let action_json = serde_json::to_string(&logged)?;
@@ -188,7 +190,8 @@ impl GameSession {
     }
 
     /// Reconstruct a session by replaying its action log over the seed
-    /// state. Returns `None` if no game with `game_id` exists.
+    /// state against `registries`. Returns `None` if no game with `game_id`
+    /// exists.
     ///
     /// `outcome` is initialised from the persisted seed outcome (not
     /// `Done`), so a freshly-created game with an empty log — whose seed
@@ -200,7 +203,11 @@ impl GameSession {
     /// [`SessionError::Db`] if a query fails, [`SessionError::Serde`] if the
     /// persisted seed state or a logged action fails to deserialize, or
     /// [`SessionError::Replay`] if a logged action replays to a rejection.
-    pub async fn load(db: SqlitePool, game_id: &GameId) -> Result<Option<Self>, SessionError> {
+    pub async fn load(
+        db: SqlitePool,
+        registries: Registries,
+        game_id: &GameId,
+    ) -> Result<Option<Self>, SessionError> {
         let Some((_scenario_id, seed_state, seed_outcome, seed_setup_events)) =
             store::load_game(&db, game_id).await?
         else {
@@ -216,7 +223,7 @@ impl GameSession {
         let mut seq: i64 = 0;
         for action_json in store::load_actions(&db, game_id).await? {
             let action: Action = serde_json::from_str(&action_json)?;
-            let result = engine::apply(state, action);
+            let result = engine::apply(state, action, registries);
             // A rejection means the log no longer reproduces the session it
             // recorded. Stop loudly rather than serving the prefix that did
             // replay (#707) — see `SessionError::Replay`.
@@ -238,6 +245,7 @@ impl GameSession {
             setup_events,
             seq,
             db,
+            registries,
         }))
     }
 }

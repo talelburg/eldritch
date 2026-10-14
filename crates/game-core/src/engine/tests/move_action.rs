@@ -1,8 +1,9 @@
 use super::*;
+use crate::test_support::TEST_REGISTRY;
 
 /// Whether `state`'s menu offers `investigator` a Move to `destination`.
 fn offers_move(state: &GameState, investigator: InvestigatorId, destination: LocationId) -> bool {
-    legal_actions(state).iter().any(|a| {
+    legal_actions(state, &TEST_REGISTRY).iter().any(|a| {
         matches!(a, TurnAction::Move { investigator: i, destination: d } if *i == investigator && *d == destination)
     })
 }

@@ -3,7 +3,6 @@
 //! `PickSingle`; an inert instance has no glow.
 #![cfg(target_arch = "wasm32")]
 
-use cards::REGISTRY;
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
@@ -16,6 +15,7 @@ use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::card::InPlayCardView;
 use web::interaction::PendingOptions;
+use web::registry::provide_cards;
 use web::store::ClientState;
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlElement};
@@ -33,7 +33,6 @@ fn last_slot() -> Element {
 /// Mount `InPlayCardView` (Machete 01020, instance 3) with a store carrying
 /// `outcome`, a derived `PendingOptions`, and a capturing channel.
 async fn mount(outcome: EngineOutcome) -> UnboundedReceiver<ClientMessage> {
-    test_support::install_registry_with_test_cards(REGISTRY);
     let store = RwSignal::new(ClientState::default());
     store.update(|s| s.outcome = Some(outcome));
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
@@ -44,6 +43,7 @@ async fn mount(outcome: EngineOutcome) -> UnboundedReceiver<ClientMessage> {
         CardOwner::Investigator(InvestigatorId(1)),
     );
     mount_to_body(move || {
+        provide_cards(&cards::TEST_REGISTRY);
         provide_context(store);
         provide_context::<OutboundTx>(tx_for_mount.clone());
         let pending = Signal::derive(move || store.with(web::interaction::pending_options));

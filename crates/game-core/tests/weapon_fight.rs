@@ -7,7 +7,7 @@
 //! co-located enemy" check, and the attack itself all read.
 //!
 //! Lives at `crates/game-core/tests/` (its own integration-test binary,
-//! hence its own process + `OnceLock<CardRegistry>`) so the mock
+//! hence its own process and its own `MockRegistry`) so the mock
 //! registry doesn't collide with the in-crate tests. No real card has a
 //! weapon ability yet — Roland's .38 Special (C5c) is the first; until
 //! then a mock card exercises the full path.
@@ -16,8 +16,9 @@ use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Slot, UseKi
 use card_dsl::dsl::{self, Cost, IntExpr};
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{InputKind, OptionTarget};
+use game_core::engine::{InputKind, OptionTarget, Registries};
 use game_core::event::Event;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardInstanceId, ChaosBag, ChaosToken, Enemy, EnemyId, GameState,
     GameStateBuilder, InvestigatorId, LocationId, TokenModifiers,
@@ -25,6 +26,7 @@ use game_core::state::{
 use game_core::test_support::{
     self, seat, uses, MockRegistry, SeatCard, SeatLookup as _, TestSession,
 };
+use std::sync::LazyLock;
 
 /// Mock firearm: `Uses (4 ammo)`, `[action] Spend 1 ammo: Fight. +1
 /// [combat], +1 damage.`
@@ -90,33 +92,36 @@ fn bare_metadata() -> CardMetadata {
     }
 }
 
-#[ctor::ctor(unsafe)]
-fn install_mock_registry() {
-    MockRegistry::new()
-        .with_card(weapon_metadata())
-        .with_card(bare_metadata())
-        // [action] Spend 1 ammo: Fight. +1 [combat], +1 damage.
-        .with_abilities(WEAPON, || {
-            vec![dsl::activated_as(
-                dsl::fight(IntExpr::Lit(1), 1u8),
-                1,
-                vec![Cost::SpendUses {
-                    kind: UseKind::Ammo,
-                    count: 1,
-                }],
-                dsl::seq([]),
-            )]
-        })
-        // [action]: Fight. No modification at all.
-        .with_abilities(BARE, || {
-            vec![dsl::activated_as(
-                dsl::fight(0u8, 0u8),
-                1,
-                vec![],
-                dsl::seq([]),
-            )]
-        })
-        .install();
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        cards: MockRegistry::new()
+            .with_card(weapon_metadata())
+            .with_card(bare_metadata())
+            // [action] Spend 1 ammo: Fight. +1 [combat], +1 damage.
+            .with_abilities(WEAPON, || {
+                vec![dsl::activated_as(
+                    dsl::fight(IntExpr::Lit(1), 1u8),
+                    1,
+                    vec![Cost::SpendUses {
+                        kind: UseKind::Ammo,
+                        count: 1,
+                    }],
+                    dsl::seq([]),
+                )]
+            })
+            // [action]: Fight. No modification at all.
+            .with_abilities(BARE, || {
+                vec![dsl::activated_as(
+                    dsl::fight(0u8, 0u8),
+                    1,
+                    vec![],
+                    dsl::seq([]),
+                )]
+            })
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 /// The single location the controller and its enemies share. Co-location is
@@ -149,9 +154,10 @@ fn ghoul(id: EnemyId, location: LocationId, engaged: bool) -> Enemy {
 /// deterministic.
 fn board(asset: SeatCard, enemy_count: u32, engaged: bool) -> GameStateBuilder {
     (0..enemy_count)
-        .fold(GameStateBuilder::new(), |builder, n| {
-            builder.with_enemy(ghoul(EnemyId(GHOUL.0 + n), HERE, engaged))
-        })
+        .fold(
+            GameStateBuilder::new().with_registries(registries()),
+            |builder, n| builder.with_enemy(ghoul(EnemyId(GHOUL.0 + n), HERE, engaged)),
+        )
         .with_seat(seat(INV.0).at(HERE).in_play([asset]))
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -196,6 +202,7 @@ fn ammo_remaining(state: &GameState) -> u8 {
 #[test]
 fn play_card_seeds_the_ammo_pool_from_metadata() {
     let session = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(INV.0).hand([WEAPON]))
         .open_turn(INV)
         .session()

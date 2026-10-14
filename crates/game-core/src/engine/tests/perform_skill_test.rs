@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::TEST_REGISTRIES;
 
 /// Standard-difficulty Night of the Zealot symbol-token values.
 fn night_of_the_zealot_standard() -> TokenModifiers {
@@ -13,6 +14,7 @@ fn night_of_the_zealot_standard() -> TokenModifiers {
 /// `tester`'s open turn, with `bag` as the chaos bag.
 fn skill_test_board(tester: Seat, bag: ChaosBag) -> GameStateBuilder {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(tester)
         .with_chaos_bag(bag)
         .open_turn(INV)
@@ -52,7 +54,10 @@ fn perform_skill_test_with_unknown_investigator_is_rejected() {
 
 #[test]
 fn perform_skill_test_with_empty_bag_is_rejected() {
-    let board = GameStateBuilder::new().with_seat(seat(1)).open_turn(INV);
+    let board = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(seat(1))
+        .open_turn(INV);
     assert_rejected_at_start(board, INV, SkillKind::Willpower, 0);
 }
 
@@ -303,7 +308,11 @@ fn a_skill_tests_teardown_expires_only_its_own_recorded_rows() {
         None,
     )];
 
-    let session = run_test(TestSession::new(state), SkillKind::Willpower, 4);
+    let session = run_test(
+        TestSession::new(state, TEST_REGISTRIES),
+        SkillKind::Willpower,
+        4,
+    );
     // A row belonging to another test contributes nothing: skill 3
     // against difficulty 4 fails by 1, +1 row or no.
     assert_event!(session.events(), Event::SkillTestFailed { by: 1, .. });
@@ -334,8 +343,16 @@ fn perform_skill_test_advances_rng_and_log_round_trips() {
     .with_token_modifiers(night_of_the_zealot_standard())
     .with_rng_seed(123)
     .build();
-    let first = run_test(TestSession::new(initial.clone()), SkillKind::Willpower, 3);
-    let second = run_test(TestSession::new(initial), SkillKind::Willpower, 3);
+    let first = run_test(
+        TestSession::new(initial.clone(), TEST_REGISTRIES),
+        SkillKind::Willpower,
+        3,
+    );
+    let second = run_test(
+        TestSession::new(initial, TEST_REGISTRIES),
+        SkillKind::Willpower,
+        3,
+    );
 
     assert_eq!(first.state().rng, second.state().rng);
     assert_eq!(first.state().rng.draws, 1);

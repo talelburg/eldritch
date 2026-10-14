@@ -11,8 +11,12 @@
 //! there, one that changes the state whatever the board — and none stands in
 //! for a printed card.
 
+use std::sync::LazyLock;
+
 use card_dsl::dsl::{self, EventPattern, EventTiming, InvestigatorTarget, LocationTarget};
+use game_core::engine::Registries;
 use game_core::event::{Event, LapseReason};
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     CardCode, Continuation, GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
@@ -34,29 +38,34 @@ const LOCATION: LocationId = LocationId(1);
 /// The clues on [`LOCATION`] at the end of the round.
 const LOCATION_CLUES: u8 = 2;
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    let at_round_end = |effect| {
-        vec![dsl::forced_on_event(
-            EventPattern::RoundEnded,
-            EventTiming::At,
-            effect,
-        )]
-    };
-    MockRegistry::new()
-        .with_abilities(EMPTIES, move || {
-            at_round_end(dsl::discover_clue(
-                LocationTarget::YourLocation,
-                LOCATION_CLUES,
-            ))
-        })
-        .with_abilities(DISCOVERS, move || {
-            at_round_end(dsl::discover_clue(LocationTarget::YourLocation, 1))
-        })
-        .with_abilities(GAINS, move || {
-            at_round_end(dsl::gain_resources(InvestigatorTarget::You, 2))
-        })
-        .install();
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| {
+        let at_round_end = |effect| {
+            vec![dsl::forced_on_event(
+                EventPattern::RoundEnded,
+                EventTiming::At,
+                effect,
+            )]
+        };
+        Registries {
+            cards: MockRegistry::new()
+                .with_abilities(EMPTIES, move || {
+                    at_round_end(dsl::discover_clue(
+                        LocationTarget::YourLocation,
+                        LOCATION_CLUES,
+                    ))
+                })
+                .with_abilities(DISCOVERS, move || {
+                    at_round_end(dsl::discover_clue(LocationTarget::YourLocation, 1))
+                })
+                .with_abilities(GAINS, move || {
+                    at_round_end(dsl::gain_resources(InvestigatorTarget::You, 2))
+                })
+                .build(),
+            scenarios: &ScenarioRegistry::EMPTY,
+        }
+    });
+    *REGISTRIES
 }
 
 /// The investigator at a location with 2 clues, holding `codes` in their
@@ -66,6 +75,7 @@ fn round_ends_holding(codes: &[&str]) -> TestSession {
     let mut location = test_support::test_location(LOCATION.0, "Mock location");
     location.clues = LOCATION_CLUES;
     GameStateBuilder::new()
+        .with_registries(registries())
         .with_location(location)
         .with_seat(seat(1).at(LOCATION).threat_area(codes.iter().copied()))
         .with_turn_order([INV])

@@ -24,8 +24,7 @@
 //! constant-modifier queries during skill tests, …) goes through
 //! [`game_core::card_registry`]. This crate exposes [`REGISTRY`] as a
 //! ready-made [`game_core::card_registry::CardRegistry`] value that the host
-//! installs via [`game_core::card_registry::install`] before running
-//! actions that touch card data.
+//! hands to every [`game_core::engine::apply`].
 //!
 //! [`card-data-pipeline`]: ../../card_data_pipeline/index.html
 
@@ -34,6 +33,10 @@ use std::sync::OnceLock;
 use card_dsl::card_data::CardMetadata;
 use card_dsl::dsl::Ability;
 use game_core::card_registry::{CardRegistry, NativeConditionFn, NativeEffectFn};
+#[cfg(feature = "test-support")]
+use game_core::engine::Registries;
+#[cfg(feature = "test-support")]
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::CardCode;
 
 pub mod generated;
@@ -60,8 +63,7 @@ pub fn by_code(code: &str) -> Option<&'static CardMetadata> {
 /// in the corpus. Spell the trait with a [`generated::traits`] constant.
 ///
 /// Reads the corpus directly, so card and scenario code asking about an
-/// entity's traits (an enemy's, through its code) needs no installed
-/// registry.
+/// entity's traits (an enemy's, through its code) needs no registry.
 #[must_use]
 pub fn has_trait(code: &str, trait_name: &str) -> bool {
     by_code(code).is_some_and(|m| m.has_trait(trait_name))
@@ -115,9 +117,8 @@ fn registry_native_condition_for(tag: &str) -> Option<NativeConditionFn> {
 }
 
 /// Ready-made [`CardRegistry`] backed by this crate's corpus and
-/// implementations. The host installs it once at startup with
-/// [`game_core::card_registry::install`]; engine code then calls
-/// [`game_core::card_registry::current`] when it needs a lookup.
+/// implementations. The host passes it to every [`game_core::engine::apply`]
+/// inside a [`Registries`].
 pub const REGISTRY: CardRegistry = CardRegistry {
     metadata_for: registry_metadata_for,
     abilities_for: registry_abilities_for,
@@ -125,6 +126,43 @@ pub const REGISTRY: CardRegistry = CardRegistry {
     native_effect_for: registry_native_effect_for,
     native_condition_for: registry_native_condition_for,
 };
+
+/// [`REGISTRY`] with game-core's synthetic test cards composed in: the
+/// investigator [`TEST_INV`](game_core::test_support::TEST_INV) in
+/// `metadata_for`, and the terminal acts/agendas
+/// ([`terminal_code`](game_core::test_support::terminal_code)) in
+/// `abilities_for`. Every real card is served unchanged, so a test seats a
+/// plain [`test_investigator`](game_core::test_support::test_investigator)
+/// next to the corpus without borrowing a real investigator's code (#934).
+///
+/// The value a real-card test names. Pair it with a scenario registry in
+/// [`TEST_REGISTRIES`], or in `scenarios`' pairing for a scenario test.
+#[cfg(feature = "test-support")]
+pub const TEST_REGISTRY: CardRegistry = CardRegistry {
+    metadata_for: test_registry_metadata_for,
+    abilities_for: test_registry_abilities_for,
+    // `back_abilities_for` and the native slots stay the real ones: the
+    // terminal cards have no reverse side and no natives to compose in.
+    ..REGISTRY
+};
+
+/// [`TEST_REGISTRY`] with no scenario modules: the registries a card test runs
+/// against, since no card test needs a scenario module.
+#[cfg(feature = "test-support")]
+pub const TEST_REGISTRIES: Registries = Registries {
+    cards: &TEST_REGISTRY,
+    scenarios: &ScenarioRegistry::EMPTY,
+};
+
+#[cfg(feature = "test-support")]
+fn test_registry_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
+    game_core::test_support::metadata_for_test_inv(code).or_else(|| registry_metadata_for(code))
+}
+
+#[cfg(feature = "test-support")]
+fn test_registry_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
+    game_core::test_support::abilities_for_terminal(code).or_else(|| registry_abilities_for(code))
+}
 
 #[cfg(test)]
 mod tests {

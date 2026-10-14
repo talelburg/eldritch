@@ -1,6 +1,7 @@
 use super::*;
 use crate::engine::Cx;
 use crate::state::GameStateBuilder;
+use crate::test_support::TEST_REGISTRIES;
 use crate::{assert_event, assert_no_event, test_support};
 
 #[test]
@@ -15,6 +16,7 @@ fn reengage_at_location_engages_sole_co_located_survivor() {
         e
     };
     let mut state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(survivor)
         .with_location(test_support::test_location(1, "Study"))
         .with_enemy(enemy)
@@ -22,13 +24,7 @@ fn reengage_at_location_engages_sole_co_located_survivor() {
         .build();
     let mut events = Vec::new();
 
-    reengage_at_location(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
-        EnemyId(1),
-    );
+    reengage_at_location(&mut Cx::for_test(&mut state, &mut events), EnemyId(1));
 
     assert_eq!(state.enemies[&EnemyId(1)].engaged_with, Some(surv));
     assert_event!(events, Event::EnemyEngaged { enemy, investigator }
@@ -51,13 +47,7 @@ fn reengage_at_location_no_co_located_investigator_leaves_unengaged() {
         .build();
     let mut events = Vec::new();
 
-    reengage_at_location(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
-        EnemyId(1),
-    );
+    reengage_at_location(&mut Cx::for_test(&mut state, &mut events), EnemyId(1));
 
     assert_eq!(state.enemies[&EnemyId(1)].engaged_with, None);
     assert_no_event!(events, Event::EnemyEngaged { .. });
@@ -77,6 +67,7 @@ fn reengage_at_location_tie_auto_picks_lead_first_in_turn_order() {
         e
     };
     let mut state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(2).at(loc))
         .with_seat(test_support::seat(3).at(loc))
         .with_location(test_support::test_location(1, "Study"))
@@ -85,13 +76,7 @@ fn reengage_at_location_tie_auto_picks_lead_first_in_turn_order() {
         .build();
     let mut events = Vec::new();
 
-    reengage_at_location(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
-        EnemyId(1),
-    );
+    reengage_at_location(&mut Cx::for_test(&mut state, &mut events), EnemyId(1));
 
     assert_eq!(
         state.enemies[&EnemyId(1)].engaged_with,
@@ -115,6 +100,7 @@ fn reengage_at_location_exhausted_enemy_does_not_engage() {
         e
     };
     let mut state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(survivor)
         .with_location(test_support::test_location(1, "Study"))
         .with_enemy(enemy)
@@ -122,13 +108,7 @@ fn reengage_at_location_exhausted_enemy_does_not_engage() {
         .build();
     let mut events = Vec::new();
 
-    reengage_at_location(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
-        EnemyId(1),
-    );
+    reengage_at_location(&mut Cx::for_test(&mut state, &mut events), EnemyId(1));
 
     assert_eq!(state.enemies[&EnemyId(1)].engaged_with, None);
     assert_no_event!(events, Event::EnemyEngaged { .. });
@@ -144,13 +124,7 @@ fn reengage_at_location_enemy_without_location_is_noop() {
     };
     let mut state = GameStateBuilder::default().with_enemy(enemy).build();
     let mut events = Vec::new();
-    reengage_at_location(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
-        EnemyId(1),
-    );
+    reengage_at_location(&mut Cx::for_test(&mut state, &mut events), EnemyId(1));
     assert_eq!(state.enemies[&EnemyId(1)].engaged_with, None);
     assert_no_event!(events, Event::EnemyEngaged { .. });
 }

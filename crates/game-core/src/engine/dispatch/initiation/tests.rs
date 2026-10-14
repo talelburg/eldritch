@@ -17,7 +17,7 @@ use crate::card_registry::NativeConditionFn;
 use crate::state::{
     AbilityAddress, CardInPlay, CardInstanceId, GameStateBuilder, LocationId, Owner,
 };
-use crate::test_support;
+use crate::test_support::{self, TEST_REGISTRIES};
 
 /// The card carrying every ability primitive under test, one per printed index.
 const PRIMITIVES: &str = "_gate_primitives";
@@ -214,6 +214,7 @@ fn registry() -> CardRegistry {
 /// `COSTED_EVENT` in hand.
 fn state() -> GameState {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         // `in_play_as`: every candidate this file builds (`in_play`) names
         // the instance before any state exists, so it is placed at a known id.
         .with_seat(
@@ -251,13 +252,13 @@ fn gate(
     candidate: &ResolutionCandidate,
     kind: InitiationKind,
 ) -> Result<(), Refusal> {
-    check_with(state, &registry(), candidate, kind)
+    check(state, &registry(), candidate, kind)
 }
 
 /// The gate asked as a Play of `code` from hand, with no ability address — the
 /// play validator's question.
 fn play(state: &GameState, code: &str) -> Result<(), Refusal> {
-    check_play_with(state, &registry(), CONTROLLER, &CardCode::new(code))
+    check_play(state, &registry(), CONTROLLER, &CardCode::new(code))
 }
 
 // ---- potential to change the game state ---------------------------------

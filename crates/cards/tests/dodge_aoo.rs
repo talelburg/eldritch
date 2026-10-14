@@ -1,6 +1,6 @@
 //! End-to-end Dodge 01023 + Guard Dog 01021 against attacks of opportunity
-//! (`AoO`), driven step by step through a `TestSession` with the real card corpus
-//! installed (#293 acceptance — K1 keystone integration test).
+//! (`AoO`), driven step by step through a `TestSession` against the real card
+//! corpus (#293 acceptance — K1 keystone integration test).
 //!
 //! These are the registry-backed proofs that the mid-action park / resume
 //! mechanism works end-to-end: when a basic action (Move) fires an `AoO`, the
@@ -9,7 +9,7 @@
 //! engine suspends with `AwaitingInput`, and the action's primary effect
 //! (the move) resumes correctly after `ResolveInput` closes the window.
 //!
-//! `game-core`'s unit tests can't install `cards::REGISTRY` (the engine crate
+//! `game-core`'s unit tests can't reach `cards::REGISTRY` (the engine crate
 //! can't depend on `cards`), so this lives in `crates/cards/tests/`.
 //!
 //! ## Verified card text (`ArkhamDB`, 2026-06-21)
@@ -31,7 +31,7 @@
 //! no `AoO` carve-out — Guard Dog retaliates against `AoO` attacks.
 #![allow(clippy::too_many_lines)]
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
@@ -55,11 +55,6 @@ const MOVE_TO_HALLWAY: TurnAction = TurnAction::Move {
     investigator: INV,
     destination: HALLWAY,
 };
-
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 /// Dodge as the cancel window offers it: a card in hand, by code.
 fn dodge_in_hand(investigator: InvestigatorId) -> OptionTarget {
@@ -88,6 +83,7 @@ fn move_board(investigator: Seat, attacker_health: u8) -> TestSession {
     hallway.connections = vec![HERE];
 
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(study)
         .with_location(hallway)
         .with_seat(investigator.at(HERE))

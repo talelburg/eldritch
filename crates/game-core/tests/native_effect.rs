@@ -3,12 +3,15 @@
 //! Exercised via the forced-trigger path (the real apply route) since
 //! `apply_effect` is `pub(crate)`.
 
+use std::sync::LazyLock;
+
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{EngineOutcome, NativeCx};
+use game_core::engine::{EngineOutcome, NativeCx, Registries};
 use game_core::event::Event;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{self, Agenda, CardCode, GameState, GameStateBuilder, InvestigatorId};
 use game_core::test_support::{seat, MockRegistry, TestSession};
 
@@ -33,19 +36,23 @@ fn set_doom(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    MockRegistry::new()
-        .with_abilities(AGENDA, || forced_native("test:set-doom"))
-        .with_abilities(AGENDA_BAD, || forced_native("test:missing"))
-        .with_native_effect("test:set-doom", set_doom)
-        .install();
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        cards: MockRegistry::new()
+            .with_abilities(AGENDA, || forced_native("test:set-doom"))
+            .with_abilities(AGENDA_BAD, || forced_native("test:missing"))
+            .with_native_effect("test:set-doom", set_doom)
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 /// The lead's open turn under the agenda `code`. A filler deck keeps Upkeep
 /// 4.4's draw from dealing empty-deck horror once the enemy phase has ended.
 fn state_with_agenda(code: &str) -> GameState {
     let mut state = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).deck(["filler-card"]))
         .open_turn(INV)
         .build();
@@ -62,7 +69,7 @@ fn state_with_agenda(code: &str) -> GameState {
 /// the Enemy phase and its end, where the agenda's forced ability fires. Play
 /// then goes on through Upkeep into the next round's Mythos phase.
 fn end_the_enemy_phase(state: GameState) -> TestSession {
-    TestSession::new(state).take(&TurnAction::EndTurn)
+    TestSession::new(state, registries()).take(&TurnAction::EndTurn)
 }
 
 #[test]

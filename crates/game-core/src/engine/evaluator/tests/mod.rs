@@ -9,7 +9,7 @@ use crate::state::{
     InFlightSkillTest, PhaseStep, RecordedModifierKind, SkillKind, SkillTestFollowUp, SkillTestId,
     SkillTestStep, Status,
 };
-use crate::test_support::{seat, SeatLookup as _};
+use crate::test_support::{seat, SeatLookup as _, TEST_REGISTRIES};
 use crate::{assert_event, assert_no_event, test_support};
 
 mod act_progress;
@@ -41,6 +41,7 @@ fn state_with_clues_at_location(clues: u8) -> GameState {
     let mut loc = test_support::test_location(HERE.0, "Study");
     loc.clues = clues;
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(loc)
         .with_seat(seat(1).at(HERE))
         .build()
@@ -100,7 +101,7 @@ fn run(cx: &mut Cx, effect: &Effect, ctx: EvalContext) -> EngineOutcome {
 /// loop), then drives the resumed top effect run **bounded** — in a unit
 /// test there is no `apply()`→`drive()` afterward to step it (Slice D #423).
 fn resume_pick(state: &mut GameState, events: &mut Vec<Event>, i: u32) -> EngineOutcome {
-    let mut cx = Cx { state, events };
+    let mut cx = Cx::for_test(state, events);
     let recorded = choice::resume_effect_choice(&mut cx, &InputResponse::PickSingle(OptionId(i)));
     // A reject (bad pick / top not a Leaf) propagates as-is; otherwise the
     // pick is recorded and the resumed run is driven bounded (base = depth
@@ -143,6 +144,7 @@ fn assert_suspended_leaf(state: &GameState) {
 fn state_with_cards_in_play(codes: &[&str]) -> (GameState, InvestigatorId) {
     let id = InvestigatorId(1);
     let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(id.0).in_play(codes.iter().copied()))
         .build();
     (state, id)

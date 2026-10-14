@@ -18,10 +18,9 @@
 //! Default-spawn and location-not-in-play coverage lives in
 //! `enemy_spawn_no_location.rs` and `enemy_spawn_unrepresented.rs`.
 //!
-//! Lives in `crates/cards/tests/` (ADR 0016) because it installs the real
-//! `cards::REGISTRY`: `game-core` cannot reach the corpus by crate direction,
-//! and each `tests/*.rs` is its own process, so this install does not collide
-//! with the registries other integration binaries claim.
+//! Lives in `crates/cards/tests/` (ADR 0016) because it runs against
+//! `cards::TEST_REGISTRIES`: `game-core` cannot reach the corpus by crate
+//! direction.
 //!
 //! The cards, all Core Set, all verified against
 //! `data/arkhamdb-snapshot/pack/core/` and their rulings files:
@@ -37,19 +36,19 @@
 //!   corpus metadata (`GameState::add_location`) rather than hand-stamped onto a
 //!   `test_location`, which is the impersonation ADR 0016 forbids. Its
 //!   *"**Forced** - After you enter the Attic: Take 1 horror."* is live in the
-//!   installed registry and simply never fires — only the Move action emits
+//!   registry and simply never fires — only the Move action emits
 //!   `EnteredLocation`, and these tests place their investigators. Its ruling —
 //!   *"The **Forced** ability triggers each time an investigator enters this
 //!   location"* (<https://arkhamdb.com/card/01113>) — scopes that same entry.
 
 use card_dsl::card_data::CardType;
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame, MythosResume, Owner,
     Phase,
 };
-use game_core::test_support::{self, seat, TestSession};
+use game_core::test_support::{seat, TestSession};
 use game_core::{assert_event_sequence, assert_no_event};
 
 /// Flesh-Eater — *"**Spawn** - Attic."*
@@ -59,11 +58,6 @@ const ATTIC: &str = "01113";
 
 const INV: InvestigatorId = InvestigatorId(1);
 
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// The board every test starts from: Mythos step 1.4 with investigator 1 to
 /// draw, one Flesh-Eater on the encounter deck, and the Attic in play with
 /// the `seated` investigators (in turn order) standing in it. Returns the
@@ -72,9 +66,10 @@ fn install_real_registry() {
 fn drawing_flesh_eater(seated: &[InvestigatorId]) -> (TestSession, LocationId) {
     let mut state = seated
         .iter()
-        .fold(GameStateBuilder::new(), |builder, id| {
-            builder.with_seat(seat(id.0))
-        })
+        .fold(
+            GameStateBuilder::new().with_registries(TEST_REGISTRIES),
+            |builder, id| builder.with_seat(seat(id.0)),
+        )
         .with_turn_order(seated.iter().copied())
         .with_phase(Phase::Mythos)
         .with_phase_anchor(MythosPhaseFrame {
@@ -87,7 +82,7 @@ fn drawing_flesh_eater(seated: &[InvestigatorId]) -> (TestSession, LocationId) {
         inv.current_location = Some(attic);
     }
     state.encounter_deck.push_back(CardCode::new(FLESH_EATER));
-    (TestSession::new(state), attic)
+    (TestSession::new(state, TEST_REGISTRIES), attic)
 }
 
 /// **An enemy drawn from the encounter deck is the encounter deck's**

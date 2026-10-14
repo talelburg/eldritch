@@ -9,14 +9,16 @@
 //! alternatives, a free ability a Fast window can offer — and none stands in
 //! for a printed card. They live here, the one binary that reads them.
 
+use game_core::scenario::ScenarioRegistry;
 use std::cell::Cell;
 use std::rc::Rc;
+use std::sync::LazyLock;
 
 use card_dsl::dsl::{self, Ability, EnemyTarget, InvestigatorTarget};
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{
-    EngineOutcome, InputKind, InputRequest, OptionId, OptionTarget, PromptNature,
+    EngineOutcome, InputKind, InputRequest, OptionId, OptionTarget, PromptNature, Registries,
 };
 use game_core::event::Event;
 use game_core::state::{
@@ -50,53 +52,56 @@ const HERE: LocationId = LocationId(10);
 const FIRST: EnemyId = EnemyId(7);
 const SECOND: EnemyId = EnemyId(8);
 
-#[ctor::ctor(unsafe)]
-fn install_mock_registry() {
-    MockRegistry::new()
-        .with_abilities(SELECT, || -> Vec<Ability> {
-            vec![dsl::activated(
-                1,
-                vec![],
-                dsl::deal_damage_to_enemy(EnemyTarget::chosen_at_your_location(), 1),
-            )]
-        })
-        .with_abilities(DECIDE, || -> Vec<Ability> {
-            vec![dsl::activated(
-                1,
-                vec![],
-                dsl::choose_one([
-                    (
-                        "Gain 1 resource",
-                        dsl::gain_resources(InvestigatorTarget::You, 1),
-                    ),
-                    (
-                        "Gain 2 resources",
-                        dsl::gain_resources(InvestigatorTarget::You, 2),
-                    ),
-                ]),
-            )]
-        })
-        .with_abilities(HEAL, || -> Vec<Ability> {
-            vec![dsl::activated(
-                1,
-                vec![],
-                dsl::heal_damage(InvestigatorTarget::chosen_at_your_location(), 1),
-            )]
-        })
-        .with_abilities(FREE, || -> Vec<Ability> {
-            vec![dsl::activated(
-                0,
-                vec![],
-                dsl::gain_resources(InvestigatorTarget::You, 1),
-            )]
-        })
-        .with_abilities(TWO_FREE, || -> Vec<Ability> {
-            vec![
-                dsl::activated(0, vec![], dsl::gain_resources(InvestigatorTarget::You, 1)),
-                dsl::activated(0, vec![], dsl::gain_resources(InvestigatorTarget::You, 2)),
-            ]
-        })
-        .install();
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        cards: MockRegistry::new()
+            .with_abilities(SELECT, || -> Vec<Ability> {
+                vec![dsl::activated(
+                    1,
+                    vec![],
+                    dsl::deal_damage_to_enemy(EnemyTarget::chosen_at_your_location(), 1),
+                )]
+            })
+            .with_abilities(DECIDE, || -> Vec<Ability> {
+                vec![dsl::activated(
+                    1,
+                    vec![],
+                    dsl::choose_one([
+                        (
+                            "Gain 1 resource",
+                            dsl::gain_resources(InvestigatorTarget::You, 1),
+                        ),
+                        (
+                            "Gain 2 resources",
+                            dsl::gain_resources(InvestigatorTarget::You, 2),
+                        ),
+                    ]),
+                )]
+            })
+            .with_abilities(HEAL, || -> Vec<Ability> {
+                vec![dsl::activated(
+                    1,
+                    vec![],
+                    dsl::heal_damage(InvestigatorTarget::chosen_at_your_location(), 1),
+                )]
+            })
+            .with_abilities(FREE, || -> Vec<Ability> {
+                vec![dsl::activated(
+                    0,
+                    vec![],
+                    dsl::gain_resources(InvestigatorTarget::You, 1),
+                )]
+            })
+            .with_abilities(TWO_FREE, || -> Vec<Ability> {
+                vec![
+                    dsl::activated(0, vec![], dsl::gain_resources(InvestigatorTarget::You, 1)),
+                    dsl::activated(0, vec![], dsl::gain_resources(InvestigatorTarget::You, 2)),
+                ]
+            })
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 /// One investigator at `HERE` with the two action probes in play, two
@@ -133,6 +138,7 @@ fn board_with(in_play: &[&str]) -> GameStateBuilder {
     let mut second = test_support::test_enemy(SECOND.0, "Second");
     second.current_location = Some(HERE);
     GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).at(HERE).in_play(in_play.iter().copied()))
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_enemy(first)
@@ -205,7 +211,7 @@ fn settling_a_fixture_that_cannot_resurface_its_prompt_panics() {
             .cloned()
             .chain([SubstitutionPromptFrame { investigator: INV }.into()]),
     );
-    let _ = TestSession::new(state);
+    let _ = TestSession::new(state, registries());
 }
 
 /// A staged setup mulligan settles at its prompt, and answering it runs the
@@ -213,6 +219,7 @@ fn settling_a_fixture_that_cannot_resurface_its_prompt_panics() {
 #[test]
 fn settling_a_staged_mulligan_shows_its_prompt() {
     let session = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).at(HERE).hand(["_ts_kept_out"]).deck(["_ts_drawn"]))
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_turn_order([INV])
@@ -235,6 +242,7 @@ fn settling_a_staged_mulligan_shows_its_prompt() {
 fn choose_from_hand_names_duplicate_copies_by_repeating_the_code() {
     let (twin, kept, drawn) = ("_ts_twin", "_ts_kept", "_ts_drawn");
     let session = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -278,6 +286,7 @@ fn settling_a_staged_encounter_draw_shows_its_prompt() {
 #[test]
 fn settling_a_staged_hand_size_discard_shows_its_prompt() {
     let session = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).at(HERE).hand(["_ts_filler"; 9]))
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_turn_order([INV])
@@ -324,6 +333,7 @@ fn test_skill_stops_at_the_commit_window_and_commit_nothing_resolves_it() {
 fn commit_by_code_commits_that_card() {
     let (committed, kept) = ("_ts_committed", "_ts_kept");
     let session = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).at(HERE).hand([kept, committed]))
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -404,7 +414,7 @@ fn submit_off_menu_reaches_the_handler_and_its_rejection_reads_back() {
         .actions_remaining = 0;
 
     let action = activate(&state, DECIDE);
-    let session = TestSession::new(state).submit_off_menu(&action);
+    let session = TestSession::new(state, registries()).submit_off_menu(&action);
 
     assert!(
         session.expect_rejected().contains("action"),
@@ -554,6 +564,7 @@ fn pick_of_an_unoffered_target_panics() {
 #[test]
 fn pick_chooses_an_investigator_by_their_card() {
     let board = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).at(HERE).harm(1, 0).in_play([HEAL]))
         .with_seat(seat(2).at(HERE).harm(1, 0))
         .with_location(test_support::test_location(HERE.0, "Study"))
@@ -687,7 +698,7 @@ fn assert_at_encounter_draw_at_the_turn_menu_panics() {
 fn confirm_acknowledges_a_pause() {
     let mut state = board().open_turn(INV).build();
     state.interactive_acknowledge = true;
-    let session = TestSession::new(state)
+    let session = TestSession::new(state, registries())
         .resolve_choices(|c| {
             c.commit_cards(&[]);
         })
@@ -878,7 +889,8 @@ fn assert_rejects_returns_the_reason_of_a_step_that_moved_nothing() {
         .expect("seated")
         .actions_remaining = 0;
 
-    let reason = TestSession::new(state).assert_rejects(|s| s.submit_off_menu(&action));
+    let reason =
+        TestSession::new(state, registries()).assert_rejects(|s| s.submit_off_menu(&action));
 
     assert!(
         reason.contains("action"),

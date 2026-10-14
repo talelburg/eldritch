@@ -1,6 +1,7 @@
 //! Read-only render of `GameState` into the DOM (P6.5). Panels are plain
 //! helper fns; `BoardView` is the only component. Cards and locations render as
-//! their names via `crate::names` (the client installs `cards::REGISTRY`).
+//! their names, read from the registry provided at mount
+//! ([`registry::use_cards`]).
 
 use game_core::engine::OptionTarget;
 use game_core::scenario::ScenarioEnding;
@@ -10,7 +11,7 @@ use leptos::prelude::*;
 use crate::card::{HandCardView, InPlayCardView};
 use crate::controls::{AnchoredControl, PlayerDeckView};
 use crate::enemy_card::EnemyCard;
-use crate::{act_agenda, map, store};
+use crate::{act_agenda, map, registry, store};
 
 /// Read-only board. Always renders a status line (connection status +
 /// last rejection); renders the panels when a game is present, else a
@@ -45,6 +46,7 @@ pub fn BoardView() -> impl IntoView {
 /// health (`damage/max_health`), sanity (`horror/max_sanity`), clues,
 /// status; hand and cards-in-play as text lists of card names.
 fn investigators_panel(game: &GameState) -> impl IntoView {
+    let cards = registry::use_cards();
     let panels: Vec<_> = game
         .investigators
         .values()
@@ -88,8 +90,8 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
                         "W" {inv.skills.willpower} " I" {inv.skills.intellect}
                         " C" {inv.skills.combat} " A" {inv.skills.agility}
                     </span>
-                    <span class="inv-hp">"hp " {inv.damage()} "/" {inv.max_health()}</span>
-                    <span class="inv-san">"san " {inv.horror()} "/" {inv.max_sanity()}</span>
+                    <span class="inv-hp">"hp " {inv.damage()} "/" {inv.max_health(cards)}</span>
+                    <span class="inv-san">"san " {inv.horror()} "/" {inv.max_sanity(cards)}</span>
                 </div>
             };
             let pips: Vec<_> = (0..inv.actions_remaining)

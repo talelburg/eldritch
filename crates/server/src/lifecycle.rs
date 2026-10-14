@@ -21,6 +21,7 @@ pub(crate) async fn create_game(
     let scenario_id = ScenarioId::new(request.scenario_id);
     match GameSession::create(
         state.db.clone(),
+        state.registries,
         id::random_game_id(),
         scenario_id,
         request.roster,

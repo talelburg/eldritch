@@ -15,7 +15,7 @@
 //! carries the *multi-investigator* claims the solo end-to-end cannot: the fan-out
 //! order, and the investigator it must leave alone.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::event::{Event, TraumaKind};
@@ -33,11 +33,6 @@ const ATTIC: LocationId = LocationId(3);
 const PARLOR: LocationId = LocationId(5);
 const GHOUL: EnemyId = EnemyId(1);
 const SECOND_GHOUL: EnemyId = EnemyId(2);
-
-#[ctor::ctor(unsafe)]
-fn install() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 /// Ghoul Minion 01160 (Humanoid. Monster. Ghoul.), not Elite.
 fn ghoul(id: EnemyId, at: LocationId) -> Enemy {
@@ -79,12 +74,16 @@ fn enemy_phase_end_moves_ghoul_before_the_upkeep_transition() {
     // The step-3.4 site runs once the Enemy phase's attacks are done. One Ghoul
     // in the Hallway, one step from the Parlor. The cascade runs on into
     // Upkeep: give the investigator a card to draw.
-    let session = TestSession::new(board_from(
-        GameStateBuilder::new()
-            .ending_enemy_phase()
-            .with_enemy(ghoul(GHOUL, HALLWAY)),
-        seat(1).at(HALLWAY).deck(["01006"]),
-    ));
+    let session = TestSession::new(
+        board_from(
+            GameStateBuilder::new()
+                .with_registries(TEST_REGISTRIES)
+                .ending_enemy_phase()
+                .with_enemy(ghoul(GHOUL, HALLWAY)),
+            seat(1).at(HALLWAY).deck(["01006"]),
+        ),
+        TEST_REGISTRIES,
+    );
     let (state, events) = (session.state(), session.events());
 
     assert_eq!(
@@ -136,6 +135,7 @@ fn ghoul_moved_into_the_investigator_engages_then_attacks_next_enemy_phase() {
     // Parlor.
     let mut state = board_from(
         GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
             .ending_enemy_phase()
             .with_location(Location::new(ATTIC, CardCode::new("01113"), "Attic", 1, 0))
             .with_enemy(walker),
@@ -147,7 +147,7 @@ fn ghoul_moved_into_the_investigator_engages_then_attacks_next_enemy_phase() {
     // the attack this test is about alone.
     state.encounter_deck.push_back(CardCode::new("01168"));
 
-    let session = TestSession::new(state);
+    let session = TestSession::new(state, TEST_REGISTRIES);
     let (state, events) = (session.state(), session.events());
 
     assert_eq!(
@@ -199,13 +199,17 @@ fn ghoul_moved_into_the_investigator_engages_then_attacks_next_enemy_phase() {
 #[test]
 fn round_end_places_doom_per_ghoul_in_hallway_or_parlor() {
     // The round ends once the Upkeep phase does.
-    let session = TestSession::new(board_from(
-        GameStateBuilder::new()
-            .ending_upkeep_phase()
-            .with_enemy(ghoul(GHOUL, HALLWAY))
-            .with_enemy(ghoul(SECOND_GHOUL, PARLOR)),
-        seat(1),
-    ));
+    let session = TestSession::new(
+        board_from(
+            GameStateBuilder::new()
+                .with_registries(TEST_REGISTRIES)
+                .ending_upkeep_phase()
+                .with_enemy(ghoul(GHOUL, HALLWAY))
+                .with_enemy(ghoul(SECOND_GHOUL, PARLOR)),
+            seat(1),
+        ),
+        TEST_REGISTRIES,
+    );
     assert_event!(
         session.events(),
         Event::PhaseEnded {
@@ -232,6 +236,7 @@ fn round_end_act_when_window_opens_before_agenda_at_doom() {
     // clues. Two Ghouls in Hallway/Parlor -> agenda 01107 would place 2 doom.
     let mut state = board_from(
         GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
             .ending_upkeep_phase()
             .with_enemy(ghoul(GHOUL, HALLWAY))
             .with_enemy(ghoul(SECOND_GHOUL, PARLOR)),
@@ -243,7 +248,7 @@ fn round_end_act_when_window_opens_before_agenda_at_doom() {
     }];
     state.act_index = 0;
 
-    let window = TestSession::new(state);
+    let window = TestSession::new(state, TEST_REGISTRIES);
 
     // The act's `when the round ends` window opens first...
     let offered: Vec<_> = window
@@ -284,7 +289,10 @@ fn table_at_act(n: u32, act_index: usize) -> GameState {
     // A card each for Upkeep 4.4 to draw.
     let mut state = (1..=n)
         .map(|i| seat(i).deck(["01088"]))
-        .fold(GameStateBuilder::new(), GameStateBuilder::with_seat)
+        .fold(
+            GameStateBuilder::new().with_registries(TEST_REGISTRIES),
+            GameStateBuilder::with_seat,
+        )
         .with_turn_order((1..=n).map(InvestigatorId))
         .open_turn(INV)
         .build();
@@ -309,7 +317,7 @@ fn table_at_act(n: u32, act_index: usize) -> GameState {
 /// and the round runs on into the next Mythos phase, where 01107 advances and
 /// its reverse — the `AgendaAdvanced` forced — resolves.
 fn advance_01107(state: GameState) -> TestSession {
-    let mut session = TestSession::new(state);
+    let mut session = TestSession::new(state, TEST_REGISTRIES);
     while session.state().ending.is_none() {
         session = session.take(&TurnAction::EndTurn);
     }

@@ -23,7 +23,7 @@
 //! soaker for that damage.
 
 use card_dsl::dsl::{IntExpr, Stat};
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::assert_event_count;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
@@ -44,11 +44,6 @@ const THE_TEST: SkillTestId = SkillTestId(0);
 /// Some other test's id — a row that must survive either teardown.
 const ANOTHER_TEST: SkillTestId = SkillTestId(99);
 
-#[ctor::ctor(unsafe)]
-fn install_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// Mythos step 1.4, the test investigator (8 health) to draw: at a location
 /// with `damage` already on them and `soakers` in play, Grasping Hands on top
 /// of the encounter deck and a rigged `Numeric(-2)` token. The seeded row for
@@ -56,6 +51,7 @@ fn install_registry() {
 /// 3 → fail by 1 → 1 damage.
 fn board(damage: u8, soakers: &[&str]) -> GameState {
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -93,7 +89,9 @@ fn row_for(test: SkillTestId) -> RecordedModifier {
 /// Draw and reveal the top encounter card for investigator 1, committing
 /// nothing to its test.
 fn reveal(state: GameState) -> TestSession {
-    TestSession::new(state).confirm().commit(&[])
+    TestSession::new(state, TEST_REGISTRIES)
+        .confirm()
+        .commit(&[])
 }
 
 /// The rows left after a run, as the tests want to read them.

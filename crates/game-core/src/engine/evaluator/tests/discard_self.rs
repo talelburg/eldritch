@@ -1,5 +1,6 @@
 use super::*;
 use crate::state::{DiscardPile, Zone};
+use crate::test_support::TEST_REGISTRIES;
 
 /// The Study, where [`STUDY_ATTACHMENT`] sits.
 const STUDY: LocationId = LocationId(3);
@@ -12,15 +13,13 @@ fn discard_self_removes_threat_area_instance_to_encounter_discard() {
     // An encounter card the unit registry does not know, so the seat files
     // it as the encounter deck's.
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).threat_area(["01165"]))
         .build();
     let inst = state.in_play(InvestigatorId(1), "01165");
     let mut events = Vec::new();
     let outcome = {
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
         let c =
             EvalContext::for_controller_with_source(InvestigatorId(1), AbilitySource::InPlay(inst));
         run(&mut cx, &Effect::DiscardSelf, c)
@@ -45,15 +44,13 @@ fn discard_self_removes_location_attachment_to_encounter_discard() {
         Owner::EncounterDeck,
     ));
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .with_location(loc)
         .build();
     let mut events = Vec::new();
     let outcome = {
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
         let c = EvalContext::for_controller_with_source(
             InvestigatorId(1),
             AbilitySource::InPlay(STUDY_ATTACHMENT),
@@ -71,12 +68,12 @@ fn discard_self_removes_location_attachment_to_encounter_discard() {
 
 #[test]
 fn discard_self_rejects_without_source() {
-    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
+    let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(seat(1))
+        .build();
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let outcome = run(
         &mut cx,
         &Effect::DiscardSelf,

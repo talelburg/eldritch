@@ -49,9 +49,9 @@
 //! corpus: the Parlor's front and back abilities, resolved through
 //! `cards::REGISTRY`.
 //!
-//! Own process → installs `cards::REGISTRY`.
+//! Runs against `cards::TEST_REGISTRIES`.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine;
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::state::{
@@ -77,11 +77,6 @@ const PARLOR: LocationId = LocationId(2);
 const ATTIC: LocationId = LocationId(3);
 const ATT_INST: CardInstanceId = CardInstanceId(900);
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// The Parlor as the board actually holds it: the real card code (so the
 /// registry resolves its front and back), `revealed` set by the caller.
 fn parlor(revealed: bool) -> Location {
@@ -101,6 +96,7 @@ fn board(parlor_revealed: bool) -> GameState {
     attic.connections = vec![HALLWAY];
 
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(INV.0).at(HALLWAY))
         .with_location(hallway)
         .with_location(parlor(parlor_revealed))
@@ -128,7 +124,7 @@ fn move_to(destination: LocationId) -> TurnAction {
 fn unrevealed_parlor_shows_its_back_and_revealed_shows_its_front() {
     // Unrevealed: the barrier is in effect, the Resign is not offered.
     let state = board(false);
-    let actions = enumerate::legal_actions(&state);
+    let actions = enumerate::legal_actions(&state, TEST_REGISTRIES.cards);
     assert!(
         !actions
             .iter()
@@ -140,11 +136,12 @@ fn unrevealed_parlor_shows_its_back_and_revealed_shows_its_front() {
     // Revealed: the front is in effect, so the Resign is offered — and the
     // barrier is gone (asserted on the move, below).
     let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(INV.0).at(PARLOR))
         .with_location(parlor(true))
         .open_turn(INV)
         .build();
-    let actions = enumerate::legal_actions(&state);
+    let actions = enumerate::legal_actions(&state, TEST_REGISTRIES.cards);
     assert!(
         actions
             .iter()
@@ -164,7 +161,7 @@ fn unrevealed_parlor_shows_its_back_and_revealed_shows_its_front() {
 #[test]
 fn move_does_not_offer_the_unrevealed_parlor_but_still_offers_its_neighbours() {
     let state = board(false);
-    let actions = enumerate::legal_actions(&state);
+    let actions = enumerate::legal_actions(&state, TEST_REGISTRIES.cards);
     assert!(
         !actions.contains(&move_to(PARLOR)),
         "the unrevealed Parlor's barrier blocks the move; got {actions:?}",
@@ -181,7 +178,7 @@ fn move_does_not_offer_the_unrevealed_parlor_but_still_offers_its_neighbours() {
 fn submitting_a_move_into_the_unrevealed_parlor_is_rejected() {
     // Submitted straight at the `apply` seam, bypassing the menu — which is
     // exactly the case the handler's own check exists for.
-    let r = TestSession::new(board(false)).submit_off_menu(&move_to(PARLOR));
+    let r = TestSession::new(board(false), TEST_REGISTRIES).submit_off_menu(&move_to(PARLOR));
     let reason = r.expect_rejected();
     assert!(
         !reason.is_empty(),
@@ -205,12 +202,12 @@ fn submitting_a_move_into_the_unrevealed_parlor_is_rejected() {
 fn revealing_the_parlor_makes_the_move_legal() {
     let state = board(true);
     assert!(
-        enumerate::legal_actions(&state).contains(&move_to(PARLOR)),
+        enumerate::legal_actions(&state, TEST_REGISTRIES.cards).contains(&move_to(PARLOR)),
         "a revealed Parlor is an ordinary destination",
     );
 
     // The move resolves, back to the turn menu.
-    let r = TestSession::new(state).take(&move_to(PARLOR));
+    let r = TestSession::new(state, TEST_REGISTRIES).take(&move_to(PARLOR));
     r.assert_at_turn_menu(INV);
     assert_eq!(
         r.state().investigators[&INV].current_location,
@@ -224,7 +221,7 @@ fn revealing_the_parlor_makes_the_move_legal() {
 /// act 01109b's `reveal_location` does to it — makes the same move legal.
 #[test]
 fn the_reveal_alone_flips_the_answer() {
-    let r = TestSession::new(board(false)).submit_off_menu(&move_to(PARLOR));
+    let r = TestSession::new(board(false), TEST_REGISTRIES).submit_off_menu(&move_to(PARLOR));
     r.expect_rejected();
 
     let mut state = r.state().clone();
@@ -234,7 +231,7 @@ fn the_reveal_alone_flips_the_answer() {
         .expect("the Parlor is on the board")
         .revealed = true;
     assert!(
-        enumerate::legal_actions(&state).contains(&move_to(PARLOR)),
+        enumerate::legal_actions(&state, TEST_REGISTRIES.cards).contains(&move_to(PARLOR)),
         "nothing moved but the Parlor's `revealed` flag, and the barrier is gone",
     );
 }
@@ -255,11 +252,11 @@ fn an_enemy_can_enter_the_unrevealed_parlor() {
     ghoul.current_location = Some(HALLWAY);
 
     assert!(
-        engine::enemy_can_enter_location(&state, &ghoul, PARLOR),
+        engine::enemy_can_enter_location(&state, TEST_REGISTRIES.cards, &ghoul, PARLOR),
         "01115's ruling: the barrier stops investigators, not enemies",
     );
     assert!(
-        !enumerate::legal_actions(&state).contains(&move_to(PARLOR)),
+        !enumerate::legal_actions(&state, TEST_REGISTRIES.cards).contains(&move_to(PARLOR)),
         "and the investigator is still blocked on the same board — the point of \
          the ruling is that the two answers differ",
     );
@@ -287,11 +284,11 @@ fn a_barricaded_location_blocks_a_non_elite_enemy_and_not_an_investigator() {
     ghoul.current_location = Some(HALLWAY);
 
     assert!(
-        !engine::enemy_can_enter_location(&state, &ghoul, ATTIC),
+        !engine::enemy_can_enter_location(&state, TEST_REGISTRIES.cards, &ghoul, ATTIC),
         "*\"Non-Elite enemies cannot move into attached location.\"*",
     );
     assert!(
-        enumerate::legal_actions(&state).contains(&move_to(ATTIC)),
+        enumerate::legal_actions(&state, TEST_REGISTRIES.cards).contains(&move_to(ATTIC)),
         "Barricade says nothing about investigators, so the move stays legal",
     );
 }

@@ -5,13 +5,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use card_dsl::card_data::CardKind;
-use game_core::card_registry;
+use game_core::card_registry::CardRegistry;
 use game_core::engine::{ChoiceOption, OptionTarget};
 use game_core::state::{CardCode, CardInPlay, GameState, Location, LocationId};
 use leptos::prelude::*;
 
 use crate::interaction::{self, PendingOptions};
-use crate::{card, names};
+use crate::{card, names, registry};
 
 /// Authored grid cell `(col, row)` for a known location code — the layout the
 /// client ships for scenarios it knows. The Gathering: the Study sits isolated
@@ -225,12 +225,13 @@ fn map_extent(positions: &BTreeMap<LocationId, (u16, u16)>) -> (u16, u16) {
 /// `class` is the token's hue class and `note` the parenthetical that says which
 /// zone it is in.
 fn card_token(
+    cards: &CardRegistry,
     card: &CardInPlay,
     class: &'static str,
     note: &'static str,
     pending: &[ChoiceOption],
 ) -> impl IntoView {
-    let name = names::card_name(&card.code);
+    let name = names::card_name(cards, &card.code);
     let exhausted = card.exhausted;
     let menu_opts = interaction::options_for(pending, OptionTarget::CardInstance(card.instance_id));
     let actionable = !menu_opts.is_empty();
@@ -274,6 +275,7 @@ pub fn location_map(game: &GameState) -> impl IntoView {
         .map(|l| (l.id, l.code.clone()))
         .collect();
     let positions = layout_positions(&locs);
+    let cards = registry::use_cards();
 
     // The live prompt's options, for glow + per-node context menus (#536).
     // Absent (native / no prompt) → empty → no node is actionable.
@@ -294,8 +296,8 @@ pub fn location_map(game: &GameState) -> impl IntoView {
                 .map(|i| {
                     view! {
                         <div class="inv-token">
-                            {i.name.clone()} " " {i.damage()} "/" {i.max_health()} " hp · "
-                            {i.horror()} "/" {i.max_sanity()} " san · clues " {i.clues}
+                            {i.name.clone()} " " {i.damage()} "/" {i.max_health(cards)} " hp · "
+                            {i.horror()} "/" {i.max_sanity(cards)} " san · clues " {i.clues}
                         </div>
                     }
                 })
@@ -320,14 +322,14 @@ pub fn location_map(game: &GameState) -> impl IntoView {
             let at_location: Vec<_> = loc
                 .cards_at_location
                 .iter()
-                .map(|c| card_token(c, "at-location-token", " (uncontrolled)", &pending))
+                .map(|c| card_token(cards, c, "at-location-token", " (uncontrolled)", &pending))
                 .collect();
             // The location's own attachments (Obscuring Fog 01168). Same zone
             // shape, same reason the node has to show them.
             let attachments: Vec<_> = loc
                 .attachments
                 .iter()
-                .map(|c| card_token(c, "attachment-token", " (attached)", &pending))
+                .map(|c| card_token(cards, c, "attachment-token", " (attached)", &pending))
                 .collect();
             let style = format!(
                 "left:{left}px;top:{top}px;width:{NODE_W}px;\
@@ -362,9 +364,7 @@ pub fn location_map(game: &GameState) -> impl IntoView {
             // or an unknown code yields none).
             let meta = loc
                 .revealed
-                .then(|| {
-                    card_registry::current().and_then(|r| (r.metadata_for)(&loc.code))
-                })
+                .then(|| (cards.metadata_for)(&loc.code))
                 .flatten();
             let traits = meta
                 .map(|m| {

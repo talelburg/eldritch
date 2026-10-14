@@ -21,11 +21,14 @@
 //! `GameEnd` is `cards::tests::cover_up`, which drives the real 01007 through a
 //! real scenario ending.
 
+use std::sync::LazyLock;
+
 use card_dsl::dsl::{self, Ability, Effect, EventPattern, EventTiming, InvestigatorTarget};
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{ApplyResult, EngineOutcome};
+use game_core::engine::{ApplyResult, EngineOutcome, Registries};
 use game_core::event::Event;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     self, Act, CardCode, EmitStep, GameState, GameStateBuilder, InvestigatorId,
 };
@@ -76,26 +79,29 @@ fn upkeep_ended() -> EventPattern {
     }
 }
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    MockRegistry::new()
-        .with_abilities(WHEN_ACT, || {
-            vec![dsl::forced_on_event(
-                upkeep_ended(),
-                EventTiming::When,
-                mark_when(),
-            )]
-        })
-        .with_abilities(AT_ACT, || {
-            vec![dsl::forced_on_event(
-                upkeep_ended(),
-                EventTiming::At,
-                mark_at(),
-            )]
-        })
-        .with_abilities(ROUND_ACT, || both_cells(EventPattern::RoundEnded))
-        .with_abilities(GAME_END_CARD, || both_cells(EventPattern::GameEnd))
-        .install();
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        cards: MockRegistry::new()
+            .with_abilities(WHEN_ACT, || {
+                vec![dsl::forced_on_event(
+                    upkeep_ended(),
+                    EventTiming::When,
+                    mark_when(),
+                )]
+            })
+            .with_abilities(AT_ACT, || {
+                vec![dsl::forced_on_event(
+                    upkeep_ended(),
+                    EventTiming::At,
+                    mark_at(),
+                )]
+            })
+            .with_abilities(ROUND_ACT, || both_cells(EventPattern::RoundEnded))
+            .with_abilities(GAME_END_CARD, || both_cells(EventPattern::GameEnd))
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -103,6 +109,7 @@ const INV: InvestigatorId = InvestigatorId(1);
 /// The investigator, alone.
 fn lead_alone() -> GameStateBuilder {
     GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(INV.0))
         .with_turn_order([INV])
 }
@@ -126,7 +133,10 @@ fn with_act(board: GameStateBuilder, act: impl Into<CardCode>, clue_threshold: u
 /// play goes on into the next round's Mythos phase; settling would panic had
 /// the walk been rejected.
 fn end_the_upkeep_phase(act: &str) -> TestSession {
-    let session = TestSession::new(with_act(lead_alone().ending_upkeep_phase(), act, 0));
+    let session = TestSession::new(
+        with_act(lead_alone().ending_upkeep_phase(), act, 0),
+        registries(),
+    );
     assert_event!(
         session.events(),
         Event::PhaseEnded {
@@ -152,8 +162,11 @@ fn caller_owned_condition_rejects_a_declared_interrupt() {
     // A rejected phase end cannot be settled into a session, so the Upkeep
     // phase end is reached by the step that really gets there: ending the
     // last turn runs the Investigation, Enemy and Upkeep phases to step 4.6.
-    let session = TestSession::new(with_act(lead_alone().open_turn(INV), WHEN_ACT, 0))
-        .take(&TurnAction::EndTurn);
+    let session = TestSession::new(
+        with_act(lead_alone().open_turn(INV), WHEN_ACT, 0),
+        registries(),
+    )
+    .take(&TurnAction::EndTurn);
     let reason = session.expect_rejected();
     assert!(
         reason.contains("caller-owned"),
@@ -213,11 +226,15 @@ fn the_game_ending_is_a_bare_milestone_that_walks_its_when_cell() {
     // terminal act, whose reverse reaches a resolution. `GAME_END_CARD` is a
     // code the registry doesn't know, so the encounter deck owns it.
     let board = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(INV.0).clues(1).threat_area([GAME_END_CARD]))
         .with_turn_order([INV])
         .open_turn(INV);
-    let session = TestSession::new(with_act(board, test_support::terminal_code(1), 1))
-        .take(&TurnAction::AdvanceAct { investigator: INV });
+    let session = TestSession::new(
+        with_act(board, test_support::terminal_code(1), 1),
+        registries(),
+    )
+    .take(&TurnAction::AdvanceAct { investigator: INV });
 
     assert!(
         session.state().ending.is_some(),

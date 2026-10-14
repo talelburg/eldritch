@@ -1,9 +1,11 @@
 use super::*;
+use crate::test_support::TEST_REGISTRIES;
 
 #[test]
 fn cancel_effect_sets_pending_cancellation() {
     // Effect::Cancel asserts an open window frame is present; stage a minimal one.
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .with_open_window(
             FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
@@ -13,10 +15,7 @@ fn cancel_effect_sets_pending_cancellation() {
     assert!(!state.pending_cancellation);
     let mut events = Vec::new();
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &Effect::Cancel,
         ctx(1),
     );
@@ -29,15 +28,15 @@ fn cancel_effect_sets_pending_cancellation() {
 /// in-flight test.
 #[test]
 fn boost_attack_damage_accumulates_on_in_flight_test() {
-    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
+    let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(seat(1))
+        .build();
     let mut events = Vec::new();
 
     // No in-flight test: a clean no-op (no panic, nothing to mutate).
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::boost_attack_damage(1),
         ctx(1),
     );
@@ -66,10 +65,7 @@ fn boost_attack_damage_accumulates_on_in_flight_test() {
 
     for _ in 0..2 {
         run(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
+            &mut Cx::for_test(&mut state, &mut events),
             &dsl::boost_attack_damage(1),
             ctx(1),
         );
@@ -87,15 +83,15 @@ fn boost_attack_damage_accumulates_on_in_flight_test() {
 /// in-flight test.
 #[test]
 fn discover_additional_clues_accumulates_on_in_flight_test() {
-    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
+    let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(seat(1))
+        .build();
     let mut events = Vec::new();
 
     // No in-flight test: a clean no-op (no panic, nothing to mutate).
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::discover_additional_clues(1),
         ctx(1),
     );
@@ -124,10 +120,7 @@ fn discover_additional_clues_accumulates_on_in_flight_test() {
 
     for _ in 0..2 {
         run(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
+            &mut Cx::for_test(&mut state, &mut events),
             &dsl::discover_additional_clues(1),
             ctx(1),
         );
@@ -144,15 +137,13 @@ fn discover_additional_clues_accumulates_on_in_flight_test() {
 #[test]
 fn draw_cards_effect_draws_for_target() {
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).deck(["d1", "d2", "d3"]))
         .build();
     let mut events = Vec::new();
 
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::draw_cards(InvestigatorTarget::You, 2),
         ctx(1),
     );
@@ -166,10 +157,7 @@ fn draw_cards_effect_draws_for_target() {
     // count == 0 → clean no-op (no further draw, no event).
     let mut events0 = Vec::new();
     run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events0,
-        },
+        &mut Cx::for_test(&mut state, &mut events0),
         &dsl::draw_cards(InvestigatorTarget::You, 0),
         ctx(1),
     );
@@ -179,13 +167,13 @@ fn draw_cards_effect_draws_for_target() {
 
 #[test]
 fn attach_self_to_location_rejects_with_no_pending_event() {
-    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
+    let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(seat(1))
+        .build();
     let mut events = Vec::new();
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &Effect::AttachSelfToLocation,
         ctx(1),
     );
@@ -195,12 +183,12 @@ fn attach_self_to_location_rejects_with_no_pending_event() {
 #[test]
 fn put_into_threat_area_with_clues_seeds_the_placed_instance() {
     let id = InvestigatorId(1);
-    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
+    let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(seat(1))
+        .build();
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let outcome = run(
         &mut cx,
         &dsl::put_into_threat_area_with_clues("01007", 3),
@@ -220,12 +208,12 @@ fn put_into_threat_area_with_clues_seeds_the_placed_instance() {
 #[test]
 fn put_into_threat_area_records_the_revealed_cards_owner() {
     for owner in [Owner::Investigator(InvestigatorId(1)), Owner::EncounterDeck] {
-        let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
+        let mut state = GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
+            .with_seat(seat(1))
+            .build();
         let mut events = Vec::new();
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
         let outcome = run(
             &mut cx,
             &dsl::put_into_threat_area("01164"),
@@ -243,13 +231,13 @@ fn put_into_threat_area_records_the_revealed_cards_owner() {
 /// guessed: the effect rejects rather than minting an ownerless instance.
 #[test]
 fn put_into_threat_area_outside_a_revelation_rejects() {
-    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
+    let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(seat(1))
+        .build();
     let mut events = Vec::new();
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::put_into_threat_area("01164"),
         EvalContext::for_controller(InvestigatorId(1)),
     );

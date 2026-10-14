@@ -45,7 +45,7 @@ The act-3 branch then reaches its ending by the rules' own route rather than by 
 
 ## Consequences
 
-**The sweep is the cost, and it was known before the decision.** 104 construction sites across 38 files carried `resolution:` — 83 `None` (mechanical deletion) and 21 `Some`, against only 3 read sites. The 21 are the real work: each is a fixture whose point is *"this card is terminal, so reaching it ends the scenario"*, and under this ADR a card reaches a resolution point only via an ability from the card registry. Nine of them are **in-crate `game-core` unit tests**, where `OnceLock<CardRegistry>` is process-global and per-test installs collide — the constraint that already pushed `fire_forced_on_enter` into `test_support`. They are served by one synthetic terminal card there, composed into each mock's `abilities_for` the way `metadata_for_test_inv` is documented to be composed today, rather than by relocating tests or by pointing fixtures at real corpus codes that a snapshot bump could move.
+**The sweep is the cost, and it was known before the decision.** 104 construction sites across 38 files carried `resolution:` — 83 `None` (mechanical deletion) and 21 `Some`, against only 3 read sites. The 21 are the real work: each is a fixture whose point is *"this card is terminal, so reaching it ends the scenario"*, and under this ADR a card reaches a resolution point only via an ability from the card registry. Nine of them are **in-crate `game-core` unit tests**, which cannot reach the corpus by crate direction. They are served by one synthetic terminal card there, composed into game-core's test registry and into each mock's `abilities_for` the way `metadata_for_test_inv` is, rather than by relocating tests or by pointing fixtures at real corpus codes that a snapshot bump could move.
 
 **Terminal cards now emit `AgendaAdvanced` / `ActAdvanced` before the ending latches**, so any test asserting an exact event sequence across a terminal advance changed. `advance_reverse::finalize`'s past-the-end assertion is replaced by its inverse: a terminal card does not bump the cursor, and the ending must be latched by the time it finishes — so a terminal card that reaches neither a `ReachResolution` nor a defeat fails loudly instead of silently running off the end of the deck.
 
@@ -54,3 +54,7 @@ The act-3 branch then reaches its ending by the rules' own route rather than by 
 **Physical trauma will be announced, not recorded.** The act-3 branch emits `Event::TraumaSuffered { kind: Physical, count: 1 }` per investigator, following Cover Up 01007's mental-trauma precedent; nothing persists it until the phase-9 campaign log (#766). An ending that announced nothing would leave #766 nothing to log.
 
 ADR 0012's substance is untouched — the ending shape, the `u8`, and the deliberate omission of the invoking deck all stand. Only its description of the two card fields was stale, so it is **folded** rather than superseded: the fields are named in the past tense there, with a pointer here and a one-line changelog footer.
+
+---
+
+*Folded #1038: the test registry the unit tests share is a value they name, no longer a process-global install, so the reason the terminal card is synthetic is crate direction alone.*

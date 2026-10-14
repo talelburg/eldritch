@@ -19,13 +19,14 @@ Why the direction matters: editing the engine must not recompile 5600 lines of g
 
 ## CardRegistry — the only cross-crate bridge
 
-`game_core::card_registry` is a `OnceLock<CardRegistry>` holding five function pointers: `metadata_for` and `abilities_for` / `back_abilities_for` keyed by `&CardCode`, and `native_effect_for` / `native_condition_for` keyed by a native tag. `native_condition_for` is the one read-only native slot: a `Condition::Native` resolves there whether it guards an effect or an ability's eligibility. A native *effect* gets a `NativeCx`, not the engine's `Cx`: full read access to the state, and the engine's exits as its only way to change the game. A native that suspends for a choice after calling an exit is `Rejected`, so its writes roll back with the apply (standards.md, "A native changes the game only through an engine exit"). `cards` provides `pub const REGISTRY`, whose slots are searches over `cards::impls::ALL`, one registration record per card (#986); hosts install once at startup:
+`game_core::card_registry::CardRegistry` is a `Copy` bundle of five function pointers: `metadata_for` and `abilities_for` / `back_abilities_for` keyed by `&CardCode`, and `native_effect_for` / `native_condition_for` keyed by a native tag. `native_condition_for` is the one read-only native slot: a `Condition::Native` resolves there whether it guards an effect or an ability's eligibility. A native *effect* gets a `NativeCx`, not the engine's `Cx`: full read access to the state, and the engine's exits as its only way to change the game. A native that suspends for a choice after calling an exit is `Rejected`, so its writes roll back with the apply (standards.md, "A native changes the game only through an engine exit"). `cards` provides `pub const REGISTRY`, whose slots are searches over `cards::impls::ALL`, one registration record per card (#986). The host hands it, with `scenarios::REGISTRY`, to every `apply` and `seat_and_open`:
 
 ```rust
-let _ = game_core::card_registry::install(cards::REGISTRY);
+const REGISTRIES: Registries = Registries { cards: &cards::REGISTRY, scenarios: &scenarios::REGISTRY };
+let result = game_core::engine::apply(state, action, REGISTRIES);
 ```
 
-Engine handlers that need card data (`PlayCard`, future skill-test modifier queries) call `card_registry::current()` and reject cleanly on `None`. Tests that don't touch card data never install — most rejection paths short-circuit before the lookup. The fn pointers reference `card_dsl::{CardMetadata, Ability}` and `game_core::state::CardCode` directly (survived the `card-dsl` split, #93).
+The engine looks the scenario module up once per apply and carries both on `Cx`; a handler reads `cx.cards`, and a read-only query that needs card data takes `cards: &CardRegistry` as a parameter. There is no process global, so "no registry" cannot happen — the only absence is a registry that doesn't know a code — and each test chooses its registry: `.with_registries(..)` on the board builder, or `TestSession::new(state, regs)`. The fn pointers reference `card_dsl::{CardMetadata, Ability}` and `game_core::state::CardCode` directly (survived the `card-dsl` split, #93).
 
 ## Event-sourced state — Action → apply → ApplyResult
 

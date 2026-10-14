@@ -1,6 +1,6 @@
 use super::*;
 use crate::state::ChaosBag;
-use crate::test_support::TestSession;
+use crate::test_support::{TestSession, TEST_REGISTRIES};
 use crate::{assert_event, assert_no_event};
 
 // The former `revelation_skill_test_failure_deals_margin_damage_and_discards`
@@ -17,11 +17,12 @@ use crate::{assert_event, assert_no_event};
 fn plain_skill_test_disposes_of_no_encounter_card() {
     let inv = InvestigatorId(1);
     let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .open_turn(inv)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
-    let session = TestSession::new(state)
+    let session = TestSession::new(state, TEST_REGISTRIES)
         .test_skill(inv, SkillKind::Intellect, 1)
         .commit(&[]);
     session.assert_at_turn_menu(inv);
@@ -35,15 +36,13 @@ fn skill_test_runs_on_success_effect_on_a_passing_draw() {
     let inv = InvestigatorId(1);
     // Willpower 3 + Numeric(0) = 3 vs difficulty 2 → success.
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_active_investigator(inv)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let out = start_skill_test(
         &mut cx,
         inv,
@@ -73,13 +72,14 @@ fn skill_test_runs_on_success_effect_on_a_passing_draw() {
 fn skill_test_opens_and_auto_skips_both_player_windows() {
     let inv = InvestigatorId(1);
     let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .open_turn(inv)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
 
     // start -> PreCommitWindow auto-skips window 1 -> parks at AwaitingCommit.
-    let session = TestSession::new(state).test_skill(inv, SkillKind::Willpower, 2);
+    let session = TestSession::new(state, TEST_REGISTRIES).test_skill(inv, SkillKind::Willpower, 2);
     assert!(
         session.state().current_skill_test().is_some()
             && session.prompt().kind == InputKind::PickMultiple,
@@ -101,6 +101,7 @@ fn skill_test_opens_and_auto_skips_both_player_windows() {
 fn closing_a_skill_test_player_window_re_enters_advance() {
     let inv = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_active_investigator(inv)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -117,10 +118,7 @@ fn closing_a_skill_test_player_window_re_enters_advance() {
         )));
     let mut events = Vec::new();
     let out = reaction_windows::run_fast_continuation(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         FastWindowKind::SkillTest {
             before_token: false,
         },
@@ -141,12 +139,13 @@ fn closing_a_skill_test_player_window_re_enters_advance() {
 fn commit_emits_then_resolves_through_advance() {
     let inv = InvestigatorId(1);
     let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .open_turn(inv)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
 
-    let session = TestSession::new(state).test_skill(inv, SkillKind::Willpower, 2);
+    let session = TestSession::new(state, TEST_REGISTRIES).test_skill(inv, SkillKind::Willpower, 2);
     // advance parked at AwaitingCommit and emitted the commit prompt.
     assert!(
         session.prompt().prompt.contains("Commit cards"),
@@ -173,13 +172,14 @@ fn commit_emits_then_resolves_through_advance() {
 fn interactive_acknowledge_pauses_for_confirm_then_resolves() {
     let inv = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .open_turn(inv)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
     state.interactive_acknowledge = true;
 
-    let session = TestSession::new(state).test_skill(inv, SkillKind::Willpower, 2);
+    let session = TestSession::new(state, TEST_REGISTRIES).test_skill(inv, SkillKind::Willpower, 2);
     assert_eq!(
         session.prompt().kind,
         InputKind::PickMultiple,
@@ -220,12 +220,13 @@ fn interactive_acknowledge_pauses_for_confirm_then_resolves() {
 fn no_acknowledge_pause_when_flag_off() {
     let inv = InvestigatorId(1);
     let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .open_turn(inv)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
 
-    let session = TestSession::new(state).test_skill(inv, SkillKind::Willpower, 2);
+    let session = TestSession::new(state, TEST_REGISTRIES).test_skill(inv, SkillKind::Willpower, 2);
     assert_eq!(
         session.prompt().kind,
         InputKind::PickMultiple,
@@ -242,13 +243,11 @@ fn no_acknowledge_pause_when_flag_off() {
 #[test]
 fn acknowledge_outcome_rejects_without_in_flight_test() {
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .build();
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let out = acknowledge_outcome(&mut cx);
     assert!(matches!(out, EngineOutcome::Rejected { .. }), "got {out:?}");
     assert!(events.is_empty(), "rejection emits no events");
@@ -263,15 +262,13 @@ fn acknowledge_outcome_rejects_without_in_flight_test() {
 fn finish_skill_test_parks_the_resolution_for_the_loop() {
     let inv = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_active_investigator(inv)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
 
     // Park at AwaitingCommit (the commit prompt).
     let out = start_skill_test(

@@ -5,20 +5,18 @@ use crate::action::EngineRecord;
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::{dispatch, Cx};
 use crate::state::{CardCode, GameStateBuilder, InvestigatorId};
-use crate::test_support;
+use crate::test_support::{self, TEST_REGISTRIES};
 
 /// Exercises the early-reject guard: when the handler cannot
 /// proceed past the registry / metadata checks, it must reject
 /// without drawing from the deck and without emitting any events.
 ///
-/// The installed test registry doesn't know the synthetic code
-/// `"__no_such_card"`, so the reveal rejects with `"unknown card code: ..."`.
-/// Nothing pins the `"no card registry installed"` branch: every test binary
-/// installs a registry from a `#[ctor]` before the first test runs, so none
-/// of them can reach a process with the slot still empty.
+/// The test registry doesn't know the synthetic code `"__no_such_card"`, so
+/// the reveal rejects with `"unknown card code: ..."`.
 #[test]
 fn rejects_an_unknown_encounter_card() {
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .build();
     // Seed the encounter deck so we can prove the reject fires
@@ -31,10 +29,7 @@ fn rejects_an_unknown_encounter_card() {
     let mut events = Vec::new();
 
     let outcome = dispatch::apply_engine_record(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &EngineRecord::EncounterCardRevealed {
             investigator: InvestigatorId(1),
         },

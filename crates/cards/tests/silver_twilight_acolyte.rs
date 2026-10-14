@@ -1,5 +1,5 @@
-//! Silver Twilight Acolyte 01102 carries its owner (#977). Own process →
-//! installs the real `cards::REGISTRY`.
+//! Silver Twilight Acolyte 01102 carries its owner (#977). Runs against
+//! `cards::TEST_REGISTRIES`.
 //!
 //! The card is a basic weakness enemy, printed verbatim:
 //!
@@ -20,7 +20,7 @@
 //! enemy has as much or more damage on it as it has health, that enemy is
 //! defeated and placed on the encounter discard pile (or on its owner's discard
 //! pile if it is a weakness)."* Printed health 3, fight 2.
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::assert_event_sequence;
 use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
@@ -33,11 +33,6 @@ use game_core::test_support::{self, seat, TestSession};
 const ACOLYTE: &str = "01102";
 const ACOLYTE_ID: EnemyId = EnemyId(7);
 const HERE: LocationId = LocationId(10);
-
-#[ctor::ctor(unsafe)]
-fn install_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 /// A Silver Twilight Acolyte borne by `bearer`.
 fn acolyte_of(bearer: InvestigatorId) -> Enemy {
@@ -54,6 +49,7 @@ fn the_acolyte_keeps_its_bearer_as_owner_through_its_attack() {
     // Enemy phase, where the Acolyte attacks. A filler deck so Upkeep 4.4's
     // draw does not deal empty-deck horror.
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(seat(1).at(HERE).deck(["01088"]))
         .with_enemy_engaged(acolyte_of(bearer), bearer)
@@ -66,7 +62,7 @@ fn the_acolyte_keeps_its_bearer_as_owner_through_its_attack() {
     }];
     state.agenda_index = 0;
 
-    let session = TestSession::new(state).take(&TurnAction::EndTurn);
+    let session = TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::EndTurn);
 
     // 2, not 1: the `EndTurn` cascade runs on through Upkeep into the next
     // round's Mythos, whose step 1.2 places a doom of its own before parking on
@@ -102,6 +98,7 @@ fn defeated_in_a_two_investigator_game_it_goes_to_its_bearers_discard() {
     acolyte.damage = 2;
 
     let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(seat(1).at(HERE).skill(SkillKind::Combat, 8))
         .with_seat(seat(2).at(HERE))

@@ -19,18 +19,21 @@
 //! bearer's location, so the pile that receives the card is decided by the
 //! owner, not by who activated it or whose threat area held it.
 //!
-//! Own integration-test binary so it can install its own `MockRegistry`.
+//! Own integration-test binary so it can build its own `MockRegistry`.
 
 use card_dsl::card_data::{CardKind, CardMetadata};
 use card_dsl::dsl::{self, Ability, Cost, InvestigatorTarget};
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
+use game_core::engine::Registries;
 use game_core::event::Event;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, DiscardPile, GameStateBuilder, InvestigatorId,
     LocationId, Zone,
 };
 use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
+use std::sync::LazyLock;
 
 /// Synthetic encounter treachery that sits in a threat area and can be
 /// discarded by an activation: owned by the encounter deck.
@@ -78,21 +81,12 @@ fn probe_card(code: &str, weakness: bool) -> CardMetadata {
     }
 }
 
-#[ctor::ctor(unsafe)]
-fn install_probe_registry() {
-    MockRegistry::new()
-        .with_card(probe_card(PROBE, false))
-        .with_card(probe_card(WEAKNESS_PROBE, true))
-        .with_abilities(PROBE, probe_abilities)
-        .with_abilities(WEAKNESS_PROBE, probe_abilities)
-        .install();
-}
-
 /// Both investigators at one location, the probe `probe` in the bearer's
 /// threat area (owned as its printed card says), and the neighbour's turn
 /// open; the neighbour activates its ability at `index`.
 fn activate(probe: &str, index: u8) -> TestSession {
     let session = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).at(HERE).threat_area([probe]))
         .with_seat(seat(2).at(HERE))
         .with_location(test_support::test_location(HERE.0, "Here"))
@@ -104,6 +98,20 @@ fn activate(probe: &str, index: u8) -> TestSession {
         source,
         address: AbilityAddress::Printed(index),
     })
+}
+
+/// The binary's one mock, built once on first use.
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        cards: MockRegistry::new()
+            .with_card(probe_card(PROBE, false))
+            .with_card(probe_card(WEAKNESS_PROBE, true))
+            .with_abilities(PROBE, probe_abilities)
+            .with_abilities(WEAKNESS_PROBE, probe_abilities)
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 #[test]

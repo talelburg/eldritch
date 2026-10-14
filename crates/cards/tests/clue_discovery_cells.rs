@@ -28,12 +28,15 @@
 use card_dsl::dsl::{self, Ability, Effect, EventPattern, EventTiming, InvestigatorTarget};
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
+use game_core::engine::Registries;
 use game_core::event::{Event, LapseReason};
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, Continuation, GameState, GameStateBuilder, InvestigatorId,
     LocationId,
 };
 use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
+use std::sync::LazyLock;
 
 /// `when`-tagged reaction: +4 resources. Declaring interrupt timing on this
 /// condition is accepted now that it is coordinator-owned — before #703 the
@@ -57,22 +60,6 @@ fn on_discovery(timing: EventTiming, amount: u8) -> Ability {
     )
 }
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    MockRegistry::new()
-        .with_abilities(WHEN, || vec![on_discovery(EventTiming::When, 4)])
-        .with_abilities(AT, || vec![on_discovery(EventTiming::At, 1)])
-        .with_abilities(AFTER, || vec![on_discovery(EventTiming::After, 2)])
-        .with_abilities(CANCEL, || {
-            vec![dsl::reaction_on_event(
-                EventPattern::DiscoverClues,
-                EventTiming::When,
-                Effect::Cancel,
-            )]
-        })
-        .install();
-}
-
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
 
@@ -84,6 +71,7 @@ fn board_with(codes: &[&str], location_clues: u8) -> TestSession {
     let mut location = test_support::test_location(HERE.0, "Study");
     location.clues = location_clues;
     GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -139,6 +127,26 @@ fn assert_no_queued_frames(state: &GameState, why: &str) {
         "{why}: {:?}",
         state.continuations,
     );
+}
+
+/// The binary's one mock, built once on first use.
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        cards: MockRegistry::new()
+            .with_abilities(WHEN, || vec![on_discovery(EventTiming::When, 4)])
+            .with_abilities(AT, || vec![on_discovery(EventTiming::At, 1)])
+            .with_abilities(AFTER, || vec![on_discovery(EventTiming::After, 2)])
+            .with_abilities(CANCEL, || {
+                vec![dsl::reaction_on_event(
+                    EventPattern::DiscoverClues,
+                    EventTiming::When,
+                    Effect::Cancel,
+                )]
+            })
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 /// The headline claim: the discovery happens *between* the `when` and `at`

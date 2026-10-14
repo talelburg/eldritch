@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::TEST_REGISTRIES;
 
 fn state_with_in_flight_kind(kind: SkillTestKind) -> GameState {
     let mut state = state_with_clues_at_location(2);
@@ -35,14 +36,7 @@ fn if_skill_test_kind_runs_then_branch_when_kind_matches() {
         dsl::discover_clue(LocationTarget::TestedLocation, 1),
     );
 
-    let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
-        &effect,
-        ctx(1),
-    );
+    let outcome = run(&mut Cx::for_test(&mut state, &mut events), &effect, ctx(1));
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(state.locations[&HERE].clues, 1);
@@ -58,14 +52,7 @@ fn if_skill_test_kind_skips_then_branch_when_kind_differs() {
         dsl::discover_clue(LocationTarget::TestedLocation, 1),
     );
 
-    let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
-        &effect,
-        ctx(1),
-    );
+    let outcome = run(&mut Cx::for_test(&mut state, &mut events), &effect, ctx(1));
 
     assert_eq!(outcome, EngineOutcome::Done);
     // No-op: location clues unchanged, no events emitted.
@@ -85,14 +72,7 @@ fn if_skill_test_kind_runs_else_branch_when_present_and_kind_differs() {
     );
     let resources_before = state.investigators[&InvestigatorId(1)].resources;
 
-    let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
-        &effect,
-        ctx(1),
-    );
+    let outcome = run(&mut Cx::for_test(&mut state, &mut events), &effect, ctx(1));
 
     assert_eq!(outcome, EngineOutcome::Done);
     // Else branch ran: location untouched, resources +2.
@@ -105,21 +85,17 @@ fn if_skill_test_kind_runs_else_branch_when_present_and_kind_differs() {
 
 #[test]
 fn if_skill_test_kind_rejects_without_in_flight_test() {
-    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
+    let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(seat(1))
+        .build();
     let mut events = Vec::new();
     let effect = dsl::if_(
         Condition::SkillTestKind(SkillTestKind::Investigate),
         dsl::discover_clue(LocationTarget::TestedLocation, 1),
     );
 
-    let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
-        &effect,
-        ctx(1),
-    );
+    let outcome = run(&mut Cx::for_test(&mut state, &mut events), &effect, ctx(1));
 
     assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
     assert!(events.is_empty());
@@ -140,14 +116,7 @@ fn if_skill_test_outcome_condition_remains_todo() {
         dsl::discover_clue(LocationTarget::TestedLocation, 1),
     );
 
-    let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
-        &effect,
-        ctx(1),
-    );
+    let outcome = run(&mut Cx::for_test(&mut state, &mut events), &effect, ctx(1));
 
     match outcome {
         EngineOutcome::Rejected { reason } => {
@@ -167,10 +136,7 @@ fn seq_runs_effects_in_order_then_done() {
     let mut events = Vec::new();
 
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::seq([
             dsl::gain_resources(InvestigatorTarget::You, 2),
             dsl::discover_clue(LocationTarget::YourLocation, 1),
@@ -193,10 +159,7 @@ fn seq_short_circuits_on_rejected() {
     let mut events = Vec::new();
 
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::seq([
             dsl::gain_resources(InvestigatorTarget::Active, 1), // rejects
             dsl::discover_clue(LocationTarget::YourLocation, 1), // shouldn't run

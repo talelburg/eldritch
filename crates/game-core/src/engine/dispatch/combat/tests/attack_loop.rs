@@ -3,7 +3,7 @@ use crate::action::{Action, PlayerAction};
 use crate::engine::enumerate::TurnAction;
 use crate::engine::outcome::OptionTarget;
 use crate::state::{EnemyPhaseFrame, LocationId};
-use crate::test_support::TestSession;
+use crate::test_support::{TestSession, TEST_REGISTRIES};
 
 /// The parked loop's re-exposure (#704): the head attacker's sequence has
 /// popped, so the loop takes it off, exhausts it, and — with none left —
@@ -11,7 +11,7 @@ use crate::test_support::TestSession;
 ///
 /// One attacker, not two: with 2+ remaining the drain would re-prompt for
 /// the player attack order (#143), which the order-pick tests cover. The
-/// test registry (`TEST_INV`) is installed so `max_health()`/`max_sanity()`
+/// test registry (`TEST_INV`) is named so `max_health()`/`max_sanity()`
 /// resolve (#448 cp2a).
 #[test]
 fn drive_parked_attack_loop_exhausts_the_head_then_advances_the_cursor() {
@@ -21,6 +21,7 @@ fn drive_parked_attack_loop_exhausts_the_head_then_advances_the_cursor() {
     enemy.engaged_with = Some(inv_id);
 
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_turn_order([inv_id])
         .with_enemy(enemy)
@@ -37,10 +38,7 @@ fn drive_parked_attack_loop_exhausts_the_head_then_advances_the_cursor() {
     });
 
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let outcome = drive_parked_attack_loop(&mut cx);
 
     assert!(
@@ -87,6 +85,7 @@ fn a_head_attacker_that_dealt_nothing_still_exhausts() {
     enemy.engaged_with = Some(inv_id);
 
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_turn_order([inv_id])
         .with_enemy(enemy)
@@ -103,10 +102,7 @@ fn a_head_attacker_that_dealt_nothing_still_exhausts() {
     });
 
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let _ = drive_parked_attack_loop(&mut cx);
 
     assert_eq!(
@@ -131,6 +127,7 @@ fn an_attack_of_opportunity_attacker_never_exhausts() {
     enemy.engaged_with = Some(inv_id);
 
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_turn_order([inv_id])
         .with_enemy(enemy)
@@ -143,10 +140,7 @@ fn an_attack_of_opportunity_attacker_never_exhausts() {
     });
 
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let _ = drive_parked_attack_loop(&mut cx);
 
     assert!(
@@ -166,14 +160,12 @@ fn drive_retaliate_deals_damage_but_does_not_exhaust_the_attacker() {
     enemy.attack_horror = 0;
     // Not engaged: a retaliate fires regardless of engagement, driven by enemy id.
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_enemy(enemy)
         .build();
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
 
     // The attack is queued on the coordinator (#704), so drive it out: the
     // loop's `Done` means *queued*, not *dealt*.
@@ -203,14 +195,12 @@ fn drive_aoo_deals_damage_but_does_not_exhaust_the_attacker() {
     enemy.attack_damage = 1;
     enemy.attack_horror = 0;
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_enemy(enemy)
         .build();
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
 
     let outcome = drive_aoo(&mut cx, inv_id);
     let outcome = dispatch::drive(&mut cx, outcome);
@@ -241,6 +231,7 @@ fn engaged_by_two() -> TestSession {
     let mut e_b = test_support::test_enemy(6, "B"); // EnemyId(6), dmg 2
     e_b.attack_damage = 2;
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(here.0, "Study"))
         .with_seat(test_support::seat(1).at(here))
         .with_enemy_engaged(e_a, InvestigatorId(1))

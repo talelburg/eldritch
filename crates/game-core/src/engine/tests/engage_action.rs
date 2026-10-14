@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::{TEST_REGISTRIES, TEST_REGISTRY};
 
 const TARGET: EnemyId = EnemyId(300);
 const ENGAGE: TurnAction = TurnAction::Engage {
@@ -16,6 +17,7 @@ fn enemy_at(id: u32, name: &str, location: LocationId) -> Enemy {
 /// `investigator`'s open turn at the Study.
 fn engage_board(investigator: Seat) -> GameStateBuilder {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(investigator)
         .open_turn(INV)
@@ -23,7 +25,7 @@ fn engage_board(investigator: Seat) -> GameStateBuilder {
 
 /// Whether `state`'s menu offers `INV` an Engage against `enemy`.
 fn offers_engage(state: &GameState, enemy: EnemyId) -> bool {
-    legal_actions(state).iter().any(
+    legal_actions(state, &TEST_REGISTRY).iter().any(
         |a| matches!(a, TurnAction::Engage { investigator, enemy: e } if *investigator == INV && *e == enemy),
     )
 }

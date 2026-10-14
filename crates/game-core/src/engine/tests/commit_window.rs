@@ -1,8 +1,10 @@
 use super::*;
+use crate::test_support::TEST_REGISTRIES;
 
 /// `INV`'s open turn holding `hand`, with a `Numeric(0)` bag.
 fn commit_board(hand: &[&str]) -> GameStateBuilder {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).hand(hand.iter().copied()))
         .with_chaos_bag(bag_only_zero())
         .open_turn(INV)
@@ -95,7 +97,8 @@ fn commit_window_discards_committed_cards_into_discard_pile() {
     // in the discard pile, neither in hand, and CardDiscarded
     // events fired with `from: Hand`. Icon counting is exercised
     // separately via the cards integration test (this one
-    // doesn't install a registry, so icon contribution is 0).
+    // names game-core's test registry, which knows neither card, so icon
+    // contribution is 0).
     let session = paused_at_commit_window(commit_board(&["A", "B"])).commit(&["A", "B"]);
 
     session.assert_at_turn_menu(INV);
@@ -192,6 +195,7 @@ fn resolve_input_without_any_outstanding_prompt_rejects() {
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple { selected: vec![] },
         }),
+        TEST_REGISTRIES,
     );
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
 }

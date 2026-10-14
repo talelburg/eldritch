@@ -47,9 +47,9 @@
 //! the recipient has not got, an address that goes stale — are in
 //! `granted_ability.rs`, on a synthetic registry.
 //!
-//! Own process → installs `cards::REGISTRY`.
+//! Runs against `cards::TEST_REGISTRIES`.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
@@ -77,11 +77,6 @@ const HALLWAY_ID: LocationId = LocationId(2);
 /// builder does not mint hers; it is fixed here, and seated cards are minted
 /// past it.
 const LITA_INST: CardInstanceId = CardInstanceId(50);
-
-#[ctor::ctor(unsafe)]
-fn install() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 /// The address the Parley lands at: the Parlor's ability 1 (its grant), first
 /// granted ability. **Named by where it is printed** — on the Parlor — not by
@@ -132,6 +127,7 @@ fn board_with(investigator: Seat, lita: CardInPlay, token: ChaosToken) -> GameSt
     hallway.code = CardCode::new("01112");
 
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(investigator)
         .with_location(parlor)
         .with_location(hallway)
@@ -157,9 +153,9 @@ fn parley_on(board: GameStateBuilder) -> TestSession {
 fn an_investigator_in_the_parlor_is_offered_litas_parley() {
     let state = board(ChaosToken::Numeric(0)).build();
     assert!(
-        enumerate::legal_actions(&state).contains(&parley()),
+        enumerate::legal_actions(&state, TEST_REGISTRIES.cards).contains(&parley()),
         "the Parley is offered on Lita, got {:?}",
-        enumerate::legal_actions(&state),
+        enumerate::legal_actions(&state, TEST_REGISTRIES.cards),
     );
 }
 
@@ -174,9 +170,9 @@ fn an_investigator_elsewhere_is_not_offered_the_parley() {
     )
     .build();
     assert!(
-        !enumerate::legal_actions(&state).contains(&parley()),
+        !enumerate::legal_actions(&state, TEST_REGISTRIES.cards).contains(&parley()),
         "the Parley is out of reach from the Hallway, got {:?}",
-        enumerate::legal_actions(&state),
+        enumerate::legal_actions(&state, TEST_REGISTRIES.cards),
     );
 }
 
@@ -187,9 +183,9 @@ fn an_investigator_elsewhere_is_not_offered_the_parley() {
 fn the_parley_is_no_longer_offered_once_she_is_controlled() {
     let result = parley_on(board(ChaosToken::Numeric(0)));
     assert!(
-        !enumerate::legal_actions(result.state()).contains(&parley()),
+        !enumerate::legal_actions(result.state(), TEST_REGISTRIES.cards).contains(&parley()),
         "the grant lapses the instant a player controls her, got {:?}",
-        enumerate::legal_actions(result.state()),
+        enumerate::legal_actions(result.state(), TEST_REGISTRIES.cards),
     );
 }
 
@@ -365,7 +361,7 @@ fn lita_defeated_by_soaked_damage_is_removed_from_the_game() {
 
     // The turn ends and the round runs on to the next Mythos phase, whose
     // encounter draw reveals Grasping Hands.
-    let drawing = TestSession::new(state).take(&TurnAction::EndTurn);
+    let drawing = TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::EndTurn);
     drawing.assert_at_encounter_draw();
     // Each point of the failure's damage asks where it goes: the investigator
     // or the one controlled soaker, Lita. Both go to her.

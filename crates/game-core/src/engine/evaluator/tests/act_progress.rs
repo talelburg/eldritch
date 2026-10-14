@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::TEST_REGISTRIES;
 
 #[test]
 fn advance_current_act_non_terminal_bumps_cursor() {
@@ -16,10 +17,7 @@ fn advance_current_act_non_terminal_bumps_cursor() {
         },
     ];
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let out = run(
         &mut cx,
         &Effect::AdvanceCurrentAct,
@@ -40,6 +38,7 @@ fn advance_current_act_non_terminal_bumps_cursor() {
 #[test]
 fn advance_current_act_on_a_terminal_act_lets_its_reverse_end_the_scenario() {
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .with_turn_order([InvestigatorId(1)])
         .build();
@@ -48,10 +47,7 @@ fn advance_current_act_on_a_terminal_act_lets_its_reverse_end_the_scenario() {
         clue_threshold: 0,
     }];
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let out = run(
         &mut cx,
         &Effect::AdvanceCurrentAct,
@@ -74,10 +70,7 @@ fn advance_current_act_on_a_terminal_act_lets_its_reverse_end_the_scenario() {
 fn reach_resolution_latches_the_printed_resolution_point() {
     let mut state = GameStateBuilder::new().build();
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let out = run(
         &mut cx,
         &Effect::ReachResolution(3),
@@ -97,10 +90,7 @@ fn reach_resolution_latches_the_printed_resolution_point() {
 fn reach_resolution_does_not_overwrite_an_ending_already_latched() {
     let mut state = GameStateBuilder::new().build();
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let ctx = EvalContext::for_controller(InvestigatorId(1));
     run(&mut cx, &Effect::ReachResolution(1), ctx);
     run(&mut cx, &Effect::ReachResolution(2), ctx);

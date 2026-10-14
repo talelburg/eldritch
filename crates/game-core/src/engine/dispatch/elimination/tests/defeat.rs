@@ -18,14 +18,7 @@ fn damage_and_horror_defeats_both_land_on_defeated() {
         let mut state = two_investigator_open_turn(a);
         let mut events = Vec::new();
 
-        apply_investigator_elimination(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            a,
-            cause,
-        );
+        apply_investigator_elimination(&mut Cx::for_test(&mut state, &mut events), a, cause);
 
         assert_eq!(
             state.investigators[&a].status,
@@ -46,13 +39,7 @@ fn a_card_ability_defeat_lands_on_defeated_and_carries_its_cause() {
     let mut state = two_investigator_open_turn(a);
     let mut events = Vec::new();
 
-    defeat_investigator(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
-        a,
-    );
+    defeat_investigator(&mut Cx::for_test(&mut state, &mut events), a);
 
     assert_eq!(
         state.investigators[&a].status,
@@ -81,10 +68,7 @@ fn a_card_ability_defeating_the_last_investigator_latches_no_resolution() {
     let (a, b) = (InvestigatorId(1), InvestigatorId(2));
     let mut state = two_investigator_open_turn(a);
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
 
     defeat_investigator(&mut cx, a);
     defeat_investigator(&mut cx, b);
@@ -107,13 +91,7 @@ fn a_card_ability_defeat_no_ops_on_an_already_eliminated_investigator() {
     state.investigators.get_mut(&a).expect("seated").status = Status::Resigned;
     let mut events = Vec::new();
 
-    defeat_investigator(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
-        a,
-    );
+    defeat_investigator(&mut Cx::for_test(&mut state, &mut events), a);
 
     assert_eq!(
         state.investigators[&a].status,

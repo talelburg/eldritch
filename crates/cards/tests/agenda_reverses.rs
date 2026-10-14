@@ -1,6 +1,5 @@
 //! Integration: The Gathering's agenda reverses fire on advance, through
-//! the real card registry (#281). Own process so it can install the
-//! process-global registry against the real `cards` corpus.
+//! the real card registry (#281).
 //!
 //! Drives the reverses through the real advance: the round ends one doom
 //! short of the agenda's threshold, so the next Mythos phase's step-1.2 doom
@@ -8,7 +7,7 @@
 //! phase's step-1.4 encounter draw, which is where the assertions read the
 //! reverse's effect.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::PromptNature;
 use game_core::event::Event;
 use game_core::state::{
@@ -25,17 +24,13 @@ const HERE: LocationId = LocationId(20);
 /// deck (`data/arkhamdb-snapshot/pack/core/core_encounter.json`).
 const AGENDAS: [(&str, u8); 3] = [("01105", 3), ("01106", 7), ("01107", 10)];
 
-#[ctor::ctor(unsafe)]
-fn install_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// The lead seated as `lead` at the Study, at the end of the Upkeep phase —
 /// after step 4.4's draw, so no card is drawn into hand — with agenda
 /// `AGENDAS[index]` current and one doom short of its threshold, and
 /// `encounter_deck` on the encounter deck, top first.
 fn ending_the_round_on(index: usize, lead: Seat, encounter_deck: &[&str]) -> GameState {
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Here"))
         .with_seat(lead.at(HERE))
         .with_turn_order([LEAD])
@@ -65,7 +60,7 @@ fn agenda_01105_reverse_choice_lead_takes_two_horror() {
     assert_eq!(state.investigators[&LEAD].horror(), 0);
 
     // Advancing fires the reverse, which suspends on the lead's choice.
-    let session = TestSession::new(state);
+    let session = TestSession::new(state, TEST_REGISTRIES);
     assert_eq!(
         session.prompt().nature,
         PromptNature::Decision,
@@ -91,7 +86,7 @@ fn agenda_01105_reverse_choice_random_discard_each() {
     // card.
     let state = ending_the_round_on(0, seat(1).hand(["01088"]), &[]);
 
-    let session = TestSession::new(state).pick_nth(0);
+    let session = TestSession::new(state, TEST_REGISTRIES).pick_nth(0);
     session.assert_at_encounter_draw();
     let lead_inv = &session.state().investigators[&LEAD];
     assert!(lead_inv.hand.is_empty(), "the one hand card was discarded");
@@ -113,15 +108,18 @@ fn agenda_01105_reverse_choice_random_discard_each() {
 /// Ghoul enemy)].
 #[test]
 fn agenda_01106_reverse_digs_until_a_ghoul_and_the_lead_draws_it() {
-    let session = TestSession::new(ending_the_round_on(
-        1,
-        seat(1),
-        &[
-            "01135", // treachery (non-Ghoul)
-            "01136", // treachery (non-Ghoul)
-            "01160", // Ghoul Minion
-        ],
-    ));
+    let session = TestSession::new(
+        ending_the_round_on(
+            1,
+            seat(1),
+            &[
+                "01135", // treachery (non-Ghoul)
+                "01136", // treachery (non-Ghoul)
+                "01160", // Ghoul Minion
+            ],
+        ),
+        TEST_REGISTRIES,
+    );
     session.assert_at_encounter_draw();
     let state = session.state();
     let events = session.events();
@@ -180,14 +178,17 @@ fn encounter_deck_discards(events: &[Event]) -> Vec<CardCode> {
 /// first, so the order is read off the discard pile.
 #[test]
 fn agenda_01106_reverse_discards_non_ghoul_cards() {
-    let session = TestSession::new(ending_the_round_on(
-        1,
-        seat(1),
-        &[
-            "01135", // treachery, no Ghoul
-            "01136", // treachery, no Ghoul
-        ],
-    ));
+    let session = TestSession::new(
+        ending_the_round_on(
+            1,
+            seat(1),
+            &[
+                "01135", // treachery, no Ghoul
+                "01136", // treachery, no Ghoul
+            ],
+        ),
+        TEST_REGISTRIES,
+    );
     session.assert_at_encounter_draw();
     let state = session.state();
     let events = session.events();

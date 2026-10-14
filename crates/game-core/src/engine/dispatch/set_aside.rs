@@ -23,8 +23,8 @@ use card_dsl::card_data::CardKind;
 use crate::engine::dispatch::{encounter, threat_area};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::{evaluator, Cx};
+use crate::scenario::{self, ScenarioModule};
 use crate::state::{CardCode, GameState, LocationId, Owner};
-use crate::{card_registry, scenario};
 
 /// Bring the set-aside card `code` into play, owned by `owner`, dispatching on
 /// its printed cardtype.
@@ -50,8 +50,7 @@ use crate::{card_registry, scenario};
 ///   somebody takes control of her.
 ///
 /// Validate-first: rejects, mutating nothing, if `code` isn't in the
-/// set-aside zone, no card registry is installed, the code has no
-/// metadata, the cardtype's target argument is wrong, or the named spawn
+/// set-aside zone, the code has no metadata, the cardtype's target argument is wrong, or the named spawn
 /// location isn't in play. A rejection is additionally rolled back
 /// wholesale by `apply_via`'s snapshot-restore, so validate-first here is
 /// about precise reasons, not state safety.
@@ -71,11 +70,7 @@ pub fn put_set_aside_card_into_play(
             reason: format!("put_set_aside_card_into_play: {code} is not set aside").into(),
         };
     };
-    let Some(registry) = card_registry::current() else {
-        return EngineOutcome::Rejected {
-            reason: "put_set_aside_card_into_play: no card registry installed".into(),
-        };
-    };
+    let registry = cx.cards;
     let Some(metadata) = (registry.metadata_for)(&CardCode::new(code)) else {
         return EngineOutcome::Rejected {
             reason: format!("put_set_aside_card_into_play: no metadata for {code}").into(),
@@ -95,7 +90,7 @@ pub fn put_set_aside_card_into_play(
             // All checks passed — mutate.
             cx.state.set_aside_cards.remove(pos);
             let id = cx.state.add_location(metadata);
-            wire_layout_connections(cx.state, id);
+            wire_layout_connections(cx.state, cx.scenario, id);
             EngineOutcome::Done
         }
         CardKind::Enemy { .. } => {
@@ -160,9 +155,13 @@ pub fn put_set_aside_card_into_play(
 /// Connections are bidirectional, so the pass is symmetric — whichever of
 /// a pair enters second is the one that wires it, and a pair whose other
 /// half never enters play stays unwired.
-fn wire_layout_connections(state: &mut GameState, id: LocationId) {
+fn wire_layout_connections(
+    state: &mut GameState,
+    scenario: Option<&ScenarioModule>,
+    id: LocationId,
+) {
     let code = state.locations[&id].code.as_str().to_owned();
-    let layout = scenario::scenario_layout(state);
+    let layout = scenario::scenario_layout(scenario);
     let neighbours: Vec<LocationId> = layout
         .iter()
         .filter_map(|&(a, b)| {
@@ -188,22 +187,20 @@ mod tests {
     use crate::engine::outcome::EngineOutcome;
     use crate::engine::Cx;
     use crate::state::{CardCode, GameStateBuilder, InvestigatorId, Owner};
-    use crate::test_support;
+    use crate::test_support::{self, TEST_REGISTRIES};
 
     #[test]
     fn rejects_a_code_that_is_not_set_aside() {
         // Empty set-aside zone — the call must reject before touching the
         // registry or the board, and mint nothing.
         let mut state = GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
             .with_turn_order([InvestigatorId(1)])
             .build();
         let mut events = Vec::new();
         let outcome = set_aside::put_set_aside_card_into_play(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
+            &mut Cx::for_test(&mut state, &mut events),
             "01116",
             Some("01112"),
             Owner::EncounterDeck,
@@ -218,20 +215,18 @@ mod tests {
 
     #[test]
     fn keeps_the_code_aside_on_a_failed_entry() {
-        // The card is set aside, but a bare unit test installs no card
-        // registry — the call must reject without removing the code from the
+        // The card is set aside, but the test registry doesn't know it — the
+        // call must reject without removing the code from the
         // zone (validate-first: no mutation on reject).
         let mut state = GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
             .with_turn_order([InvestigatorId(1)])
             .build();
         state.set_aside_cards.push(CardCode::new("01116"));
         let mut events = Vec::new();
         let outcome = set_aside::put_set_aside_card_into_play(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
+            &mut Cx::for_test(&mut state, &mut events),
             "01116",
             Some("01112"), // not in play
             Owner::EncounterDeck,

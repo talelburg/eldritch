@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::TEST_REGISTRIES;
 
 // The subject of this file is the rejection of a `ResolveInput` itself, so
 // each test sends one raw. The first two send it with no prompt outstanding:
@@ -18,6 +19,7 @@ fn rejected_actions_do_not_mutate_state() {
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::Confirm,
         }),
+        TEST_REGISTRIES,
     );
 
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
@@ -39,6 +41,7 @@ fn guard_ladder_reject_leaves_state_byte_identical() {
     // covered by `rejected_resolve_input_rewinds_to_pause_state_not_pre_action`
     // and the integration test in `crates/cards/tests/reject_rollback.rs`.
     let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_phase(Phase::Investigation)
         .with_seat(seat(1))
         .with_active_investigator(INV)
@@ -50,6 +53,7 @@ fn guard_ladder_reject_leaves_state_byte_identical() {
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::Skip,
         }),
+        TEST_REGISTRIES,
     );
 
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
@@ -66,6 +70,7 @@ fn rejected_resolve_input_rewinds_to_pause_state_not_pre_action() {
     // a malformed response. The reject must rewind to the *pause* state
     // (in_flight_skill_test still set), not to before the skill test.
     let paused = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .with_chaos_bag(bag_only_zero())
         .open_turn(INV)
@@ -107,7 +112,11 @@ fn engine_record_applied_while_a_prompt_is_outstanding_is_rejected() {
         investigator: CardCode::new(test_support::TEST_INV),
         deck: (0..20).map(|i| CardCode::new(format!("d-{i}"))).collect(),
     }];
-    let opened = seat_and_open(GameStateBuilder::new().with_rng_seed(7).build(), &roster);
+    let opened = seat_and_open(
+        GameStateBuilder::new().with_rng_seed(7).build(),
+        &roster,
+        TEST_REGISTRIES,
+    );
     assert!(
         matches!(opened.outcome, EngineOutcome::AwaitingInput { .. }),
         "seating should pause on the setup mulligan, got {:?}",
@@ -120,6 +129,7 @@ fn engine_record_applied_while_a_prompt_is_outstanding_is_rejected() {
         Action::Engine(EngineRecord::DeckShuffled {
             investigator: InvestigatorId(1),
         }),
+        TEST_REGISTRIES,
     );
 
     let EngineOutcome::Rejected { reason } = &result.outcome else {

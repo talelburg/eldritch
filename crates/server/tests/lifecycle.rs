@@ -18,9 +18,8 @@ use crate::common::TEST_SCENARIO_ID;
 
 #[tokio::test]
 async fn post_games_creates_game_and_returns_id() {
-    common::install_registry();
     let pool = common::memory_pool().await;
-    let app = server::app(AppState::new(pool.clone()));
+    let app = server::app(AppState::new(pool.clone(), common::REGISTRIES));
 
     let request = Request::builder()
         .method("POST")
@@ -40,7 +39,7 @@ async fn post_games_creates_game_and_returns_id() {
     let game_id = json["game_id"].as_str().expect("game_id is a string");
 
     // The created game is persisted and loadable.
-    let loaded = GameSession::load(pool, &GameId::new(game_id))
+    let loaded = GameSession::load(pool, common::REGISTRIES, &GameId::new(game_id))
         .await
         .unwrap();
     assert!(
@@ -51,9 +50,8 @@ async fn post_games_creates_game_and_returns_id() {
 
 #[tokio::test]
 async fn post_games_unknown_scenario_is_bad_request() {
-    common::install_registry();
     let pool = common::memory_pool().await;
-    let app = server::app(AppState::new(pool));
+    let app = server::app(AppState::new(pool, common::REGISTRIES));
 
     let request = Request::builder()
         .method("POST")

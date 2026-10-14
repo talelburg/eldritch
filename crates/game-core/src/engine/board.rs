@@ -435,7 +435,7 @@ fn instance_zone_mut(state: &mut GameState, placement: Placement) -> Option<&mut
 mod tests {
     use super::*;
     use crate::state::{GameStateBuilder, Owner};
-    use crate::test_support::{self, seat, SeatLookup as _};
+    use crate::test_support::{self, seat, SeatLookup as _, TEST_REGISTRIES};
 
     const STUDY: LocationId = LocationId(1);
     const HALLWAY: LocationId = LocationId(2);
@@ -483,6 +483,7 @@ mod tests {
             .push(card("02256", GHOUL_ATTACHMENT, Owner::EncounterDeck));
 
         GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
             .with_location(study)
             .with_location(test_support::test_location(HALLWAY.0, "Hallway"))
             .with_enemy(ghoul)

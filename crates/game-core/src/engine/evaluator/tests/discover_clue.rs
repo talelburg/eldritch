@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::TEST_REGISTRIES;
 
 #[test]
 fn discover_clue_moves_one_clue_from_location_to_controller() {
@@ -8,10 +9,7 @@ fn discover_clue_moves_one_clue_from_location_to_controller() {
     let mut events = Vec::new();
 
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::discover_clue(LocationTarget::YourLocation, 1),
         ctx(1),
     );
@@ -40,10 +38,7 @@ fn discover_clue_with_no_interrupt_discovers_normally() {
     let mut events = Vec::new();
 
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::discover_clue(LocationTarget::YourLocation, 1),
         ctx(1),
     );
@@ -66,10 +61,7 @@ fn discover_clue_caps_at_location_clue_count() {
     let mut events = Vec::new();
 
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::discover_clue(LocationTarget::YourLocation, 3),
         ctx(1),
     );
@@ -95,10 +87,7 @@ fn discover_clue_on_empty_location_is_a_silent_noop() {
     let mut events = Vec::new();
 
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::discover_clue(LocationTarget::YourLocation, 1),
         ctx(1),
     );
@@ -114,15 +103,13 @@ fn discover_clue_rejects_when_controller_is_between_locations() {
     // "You" has no current_location — LocationTarget::
     // YourLocation can't resolve.
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1)) // current_location = None
         .build();
     let mut events = Vec::new();
 
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::discover_clue(LocationTarget::YourLocation, 1),
         ctx(1),
     );
@@ -145,6 +132,7 @@ fn discover_clue_tested_location_resolves_to_in_flight_test_location() {
     let elsewhere_loc = test_support::test_location(elsewhere.0, "Hall");
 
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(tested_loc)
         .with_location(elsewhere_loc)
         .with_seat(seat(1).at(elsewhere))
@@ -172,10 +160,7 @@ fn discover_clue_tested_location_resolves_to_in_flight_test_location() {
     let mut events = Vec::new();
 
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::discover_clue(LocationTarget::TestedLocation, 1),
         ctx(1),
     );
@@ -193,10 +178,7 @@ fn tested_location_rejects_without_in_flight_test() {
     let mut events = Vec::new();
 
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::discover_clue(LocationTarget::TestedLocation, 1),
         ctx(1),
     );
@@ -209,7 +191,10 @@ fn tested_location_rejects_without_in_flight_test() {
 fn tested_location_rejects_when_test_has_no_location_snapshot() {
     // In-flight test exists but tested_location is None (e.g.
     // a bare plain skill test invoked while between locations).
-    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
+    let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(seat(1))
+        .build();
     state
         .continuations
         .push(Continuation::SkillTest(InFlightSkillTest {
@@ -233,10 +218,7 @@ fn tested_location_rejects_when_test_has_no_location_snapshot() {
     let mut events = Vec::new();
 
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::discover_clue(LocationTarget::TestedLocation, 1),
         ctx(1),
     );

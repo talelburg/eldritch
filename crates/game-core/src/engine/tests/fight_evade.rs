@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::{TEST_REGISTRIES, TEST_REGISTRY};
 
 const FIGHT: TurnAction = TurnAction::Fight {
     investigator: INV,
@@ -26,14 +27,14 @@ fn retaliating_ghoul() -> Enemy {
 
 /// Whether `state`'s menu offers a Fight by `investigator` against `enemy`.
 fn offers_fight(state: &GameState, investigator: InvestigatorId, enemy: EnemyId) -> bool {
-    legal_actions(state).iter().any(|a| {
+    legal_actions(state, &TEST_REGISTRY).iter().any(|a| {
         matches!(a, TurnAction::Fight { investigator: i, enemy: e } if *i == investigator && *e == enemy)
     })
 }
 
 /// Whether `state`'s menu offers `INV` an Evade against `GHOUL`.
 fn offers_evade(state: &GameState) -> bool {
-    legal_actions(state).iter().any(
+    legal_actions(state, &TEST_REGISTRY).iter().any(
         |a| matches!(a, TurnAction::Evade { investigator, enemy } if *investigator == INV && *enemy == GHOUL),
     )
 }
@@ -263,6 +264,7 @@ fn fight_against_co_located_unengaged_enemy_is_accepted() {
     let mut enemy = ghoul();
     enemy.current_location = Some(HERE);
     let board = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
         .with_location(test_support::test_location(HERE.0, "Hall"))
         .with_enemy(enemy)
@@ -284,6 +286,7 @@ fn fight_against_enemy_at_a_different_location_is_rejected() {
     let mut enemy = ghoul();
     enemy.current_location = Some(attic);
     let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
         .with_location(test_support::test_location(HERE.0, "Hall"))
         .with_location(test_support::test_location(attic.0, "Attic"))
@@ -300,6 +303,7 @@ fn evade_when_not_engaged_with_target_is_rejected() {
     let mut enemy = ghoul();
     enemy.current_location = Some(HERE);
     let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
         .with_location(test_support::test_location(HERE.0, "Test Hall"))
         .with_enemy(enemy)

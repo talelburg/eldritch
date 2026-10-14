@@ -7,7 +7,7 @@
 //! queries metadata when resolving actions — e.g. `PlayCard` reads
 //! [`CardMetadata::card_type`] to choose where the played card lands
 //! — while the `cards` crate populates the corpus (generated from the
-//! pinned `ArkhamDB` snapshot) and installs it via
+//! pinned `ArkhamDB` snapshot) and serves it through
 //! `game_core::card_registry`.
 //!
 //! Card *effect logic* (hand-implemented abilities) is separate; it's

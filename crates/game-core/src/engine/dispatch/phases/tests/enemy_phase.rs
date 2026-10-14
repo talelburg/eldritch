@@ -4,7 +4,7 @@ use crate::engine::outcome::{EngineOutcome, OptionTarget};
 use crate::state::{
     Enemy, EnemyId, FastActorScope, GameStateBuilder, InvestigatorId, LocationId, Phase, Status,
 };
-use crate::test_support::{self, Seat};
+use crate::test_support::{self, Seat, TEST_REGISTRIES};
 use crate::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -16,6 +16,7 @@ const HERE: LocationId = LocationId(10);
 fn attacked_on_end_turn(investigator: Seat, attackers: Vec<Enemy>) -> GameStateBuilder {
     attackers.into_iter().fold(
         GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
             .with_location(test_support::test_location(HERE.0, "Study"))
             // A filler deck so Upkeep 4.4's draw doesn't deal deck-out horror.
             .with_seat(investigator.at(HERE).deck(["filler0"]))
@@ -42,6 +43,7 @@ fn enemy_phase_runs_hunters_then_attack_loop_when_no_tie() {
     hunter.hunter = true;
     hunter.current_location = Some(LocationId(1));
     let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(loc_a)
         .with_location(loc_b)
         .with_seat(test_support::seat(1).at(LocationId(2)))
@@ -76,6 +78,7 @@ fn enemy_phase_suspends_on_hunter_tie_then_resumes_into_attack_loop() {
     hunter.hunter = true;
     hunter.current_location = Some(LocationId(1));
     let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(loc_a)
         .with_location(loc_b)
         .with_location(loc_c)
@@ -274,16 +277,14 @@ fn enemy_phase_emits_phase_started_and_cascades_to_mythos_in_no_eligibility_case
     // Upkeep → Mythos.
     let inv_id = InvestigatorId(1);
     let mut state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_turn_order([inv_id])
         .with_phase(Phase::Investigation)
         .build();
     let mut events = Vec::new();
 
-    step_phase(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    }); // Investigation → Enemy
+    step_phase(&mut Cx::for_test(&mut state, &mut events)); // Investigation → Enemy
 
     // Positional ordering of the major events.
     let pos = |pred: &dyn Fn(&Event) -> bool| events.iter().position(pred);
@@ -343,6 +344,7 @@ fn enemy_phase_with_two_investigators_iterates_in_turn_order() {
     e2.engaged_with = Some(id2);
     e2.attack_damage = 1;
     let mut state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_seat(test_support::seat(2))
         .with_enemy(e1)
@@ -352,10 +354,7 @@ fn enemy_phase_with_two_investigators_iterates_in_turn_order() {
         .build();
     let mut events = Vec::new();
 
-    step_phase(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    }); // Investigation → Enemy
+    step_phase(&mut Cx::for_test(&mut state, &mut events)); // Investigation → Enemy
 
     // One per-investigator attack landed for each, in turn order.
     let dmg1 = events
@@ -390,6 +389,7 @@ fn enemy_phase_skips_eliminated_investigator_in_advance() {
     e3.engaged_with = Some(id3);
     e3.attack_damage = 1;
     let mut state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_seat(test_support::seat(2))
         .with_seat(test_support::seat(3))
@@ -402,10 +402,7 @@ fn enemy_phase_skips_eliminated_investigator_in_advance() {
     state.investigators.get_mut(&id2).unwrap().status = Status::Defeated;
     let mut events = Vec::new();
 
-    step_phase(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    }); // Investigation → Enemy
+    step_phase(&mut Cx::for_test(&mut state, &mut events)); // Investigation → Enemy
 
     assert!(
         events
@@ -431,6 +428,7 @@ fn enemy_phase_skips_eliminated_investigator_in_advance() {
 fn enemy_phase_with_all_eliminated_opens_after_all_directly() {
     let id1 = InvestigatorId(1);
     let mut state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_turn_order([id1])
         .with_phase(Phase::Investigation)
@@ -438,10 +436,7 @@ fn enemy_phase_with_all_eliminated_opens_after_all_directly() {
     state.investigators.get_mut(&id1).unwrap().status = Status::Defeated;
     let mut events = Vec::new();
 
-    step_phase(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    }); // Investigation → Enemy
+    step_phase(&mut Cx::for_test(&mut state, &mut events)); // Investigation → Enemy
 
     // With all investigators eliminated, no per-investigator attack step
     // runs (nobody to attack) and the cascade keeps going:
@@ -463,6 +458,7 @@ fn enemy_phase_attack_lands_in_full_cascade() {
     enemy.engaged_with = Some(inv_id);
     enemy.attack_damage = 1;
     let mut state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_enemy(enemy)
         .with_turn_order([inv_id])
@@ -470,10 +466,7 @@ fn enemy_phase_attack_lands_in_full_cascade() {
         .build();
     let mut events = Vec::new();
 
-    step_phase(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    }); // Investigation → Enemy
+    step_phase(&mut Cx::for_test(&mut state, &mut events)); // Investigation → Enemy
 
     // The attack landed. Event-stream evidence — state.enemies's
     // `exhausted` flag is reset by Upkeep step 4.3 later in the
@@ -501,6 +494,7 @@ fn step_phase_from_enemy_does_not_emit_phase_ended_enemy() {
     // so the Enemy→Upkeep step must not emit PhaseEnded(Enemy)
     // (enemy_phase_end owns that emit).
     let mut state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_turn_order([InvestigatorId(1)])
         .with_phase(Phase::Enemy)
@@ -508,10 +502,7 @@ fn step_phase_from_enemy_does_not_emit_phase_ended_enemy() {
     // Use a state where Upkeep's cascade can complete (Active investigator exists).
     let mut events = Vec::new();
 
-    step_phase(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    }); // Enemy → Upkeep
+    step_phase(&mut Cx::for_test(&mut state, &mut events)); // Enemy → Upkeep
 
     // step_phase itself MUST NOT emit PhaseEnded(Enemy); only
     // enemy_phase_end is allowed to (which doesn't run here — we
@@ -550,7 +541,7 @@ fn enemy_phase_resumes_via_skip_input() {
     //
     // The synthetic empty window (staged via with_open_window) fakes the
     // pause point because a real Fast-eligibility setup would require either
-    // a card-registry install (heavyweight integration test) or a Fast
+    // a registry of real cards (heavyweight integration test) or a Fast
     // event card in hand with resources — neither tractable in
     // the engine layer. The Skip path itself is the load-bearing
     // resume mechanism this test exercises.
@@ -563,6 +554,7 @@ fn enemy_phase_resumes_via_skip_input() {
     // sits beneath the synthetic BeforeInvestigatorAttacked window staged
     // above it; the window's close routes to anchor_on_child_pop.
     let session = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_enemy(enemy)
         .with_phase(Phase::Enemy)

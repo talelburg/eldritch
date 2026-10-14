@@ -52,9 +52,9 @@
 //!
 //! The **real-corpus** peer — that the zero-action abilities already on cards
 //! in play are offered and resolve unchanged — is `fast_play.rs`, which
-//! installs `cards::REGISTRY` in its own process.
+//! runs against `cards::TEST_REGISTRIES`.
 //!
-//! Own integration-test binary so it can install its own `MockRegistry`.
+//! Own integration-test binary so it can build its own `MockRegistry`.
 //!
 //! # The player window these tests use
 //!
@@ -79,16 +79,20 @@
 //! Investigation-phase board would satisfy the first disjunct and mask the one
 //! under test.
 
+use card_dsl::card_data::{CardKind, CardMetadata};
 use card_dsl::dsl::{self, Ability, InvestigatorTarget};
 use game_core::engine::enumerate::TurnAction;
+use game_core::engine::Registries;
 use game_core::engine::{InputKind, OptionTarget};
 use game_core::event::Event;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     AbilityAddress, AbilitySource, Act, Agenda, CardCode, ChaosBag, ChaosToken, EnemyId, GameState,
     GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind,
 };
 use game_core::test_support::{self, seat, MockRegistry, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
+use std::sync::LazyLock;
 
 /// Synthetic **location** card, standing in for Ten-Acre Meadow 02246. Two
 /// locations on the board print it, so "offered here" and "not offered there"
@@ -149,16 +153,24 @@ fn probe_abilities() -> Vec<Ability> {
     ]
 }
 
-#[ctor::ctor(unsafe)]
-fn install_probe_registry() {
-    // `TEST_INV`'s metadata rides `install`'s composed `metadata_for_test_inv`.
-    MockRegistry::new()
-        .with_abilities(HALL, probe_abilities)
-        .with_abilities(CULTIST, probe_abilities)
-        .with_abilities(WARD, probe_abilities)
-        .with_abilities(ACT, probe_abilities)
-        .with_abilities(AGENDA, probe_abilities)
-        .install();
+/// [`WARD`]'s printed cardtype: co-location reaches a threat-area card only
+/// as an encounter card, so the registry has to know it is a treachery.
+fn ward_metadata() -> CardMetadata {
+    CardMetadata {
+        code: WARD.to_owned(),
+        name: WARD.to_owned(),
+        traits: vec![],
+        text: None,
+        back_name: None,
+        back_text: None,
+        pack_code: "_test".to_owned(),
+        weakness: false,
+        kind: CardKind::Treachery {
+            surge: false,
+            peril: false,
+            quantity: 1,
+        },
+    }
 }
 
 /// Three locations and three investigators.
@@ -197,6 +209,7 @@ fn board_seating(mine: Seat) -> GameState {
     distant.current_location = Some(THERE);
 
     let mut state = GameStateBuilder::new()
+        .with_registries(registries())
         .with_phase(Phase::Mythos)
         .with_mythos_draw_remaining([MINE])
         .with_seat(mine.actions(ACTIONS))
@@ -237,7 +250,7 @@ fn ward_of(state: &GameState, bearer: InvestigatorId) -> AbilitySource {
 /// auto-skip the window and land on the commit prompt instead, and a test that
 /// mistook one for the other would pass for the wrong reason.
 fn at_player_window(state: GameState) -> (TestSession, Vec<OptionTarget>) {
-    let session = TestSession::new(state).test_skill(MINE, SkillKind::Willpower, 4);
+    let session = TestSession::new(state, registries()).test_skill(MINE, SkillKind::Willpower, 4);
     assert_eq!(
         session.state().phase,
         Phase::Mythos,
@@ -332,6 +345,23 @@ fn assert_out_of_reach(source: impl FnOnce(&GameState) -> AbilitySource, why: &s
 }
 
 // ---- the sources the window now reaches ----------------------------------
+
+/// The binary's one mock, built once on first use.
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        // `TEST_INV`'s metadata rides `build`'s composed `metadata_for_test_inv`.
+        cards: MockRegistry::new()
+            .with_abilities(HALL, probe_abilities)
+            .with_abilities(CULTIST, probe_abilities)
+            .with_abilities(WARD, probe_abilities)
+            .with_card(ward_metadata())
+            .with_abilities(ACT, probe_abilities)
+            .with_abilities(AGENDA, probe_abilities)
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
+}
 
 /// *"This includes the location itself"* — Ten-Acre Meadow 02246 and Dunwich
 /// Village 02242 both print a zero-action ability on a location.

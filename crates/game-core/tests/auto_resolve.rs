@@ -12,7 +12,7 @@
 //! >   test is considered 0.
 //!
 //! Lives at `crates/game-core/tests/` (its own integration-test binary,
-//! hence its own process and its own `OnceLock<CardRegistry>`) so the mock
+//! hence its own process and its own `MockRegistry`) so the mock
 //! registry doesn't collide with game-core's in-crate tests. Mirrors
 //! `activate_ability.rs`.
 //!
@@ -38,13 +38,14 @@
 //! moments, so they are asserted the same way: on the presence or absence of
 //! `ChaosTokenRevealed` and of the ST.4 symbol effect, never on the RNG
 //! cursor. The `[skull]` symbol effect comes from a mock scenario module
-//! installed alongside the mock card registry, for the same
-//! process-isolation reason.
+//! named alongside the mock card registry.
+
+use std::sync::LazyLock;
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use card_dsl::dsl::{self, Cost, Determination, InvestigatorTarget, TestOutcome};
 use game_core::engine::enumerate::{self, TurnAction};
-use game_core::engine::OptionTarget;
+use game_core::engine::{OptionTarget, Registries};
 use game_core::event::{Event, FailureReason};
 use game_core::scenario::{
     ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRegistry, SymbolCtx, SymbolOutcome,
@@ -56,7 +57,7 @@ use game_core::state::{
     TokenResolution, Zone,
 };
 use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
-use game_core::{assert_event, assert_event_count, assert_no_event, scenario_registry};
+use game_core::{assert_event, assert_event_count, assert_no_event};
 
 /// Mock asset: `[fast] Spend 1 resource: this skill test automatically
 /// fails.` Rex-Murphy-shaped, minus the elder-sign trigger and the draw.
@@ -156,69 +157,71 @@ fn mock_module_for(id: &ScenarioId) -> Option<&'static ScenarioModule> {
     (id.as_str() == SYMBOL_SCENARIO).then_some(&SYMBOL_MODULE)
 }
 
-#[ctor::ctor(unsafe)]
-fn install_mock_registry() {
-    // `TEST_INV` rides `install`'s composed `metadata_for_test_inv`: the symbol
-    // token's damage reads the tester's `max_health()` through the registry,
-    // which would otherwise not know the fixture investigator's card.
-    MockRegistry::new()
-        .with_card(play_auto_succeed_metadata())
-        .with_abilities(AUTO_FAIL, || {
-            vec![dsl::activated(
-                0,
-                vec![Cost::Resources(1)],
-                dsl::auto_resolve(Determination::AutomaticFailure),
-            )]
-        })
-        .with_abilities(AUTO_SUCCEED, || {
-            vec![dsl::activated(
-                0,
-                vec![Cost::Resources(1)],
-                dsl::auto_resolve(Determination::AutomaticSuccess),
-            )]
-        })
-        .with_abilities(FAIL_THEN_SUCCEED, || {
-            vec![dsl::activated(
-                0,
-                vec![Cost::Resources(1)],
-                dsl::seq([
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        // `TEST_INV` rides `build`'s composed `metadata_for_test_inv`: the symbol
+        // token's damage reads the tester's `max_health()` through the registry,
+        // which would otherwise not know the fixture investigator's card.
+        cards: MockRegistry::new()
+            .with_card(play_auto_succeed_metadata())
+            .with_abilities(AUTO_FAIL, || {
+                vec![dsl::activated(
+                    0,
+                    vec![Cost::Resources(1)],
                     dsl::auto_resolve(Determination::AutomaticFailure),
+                )]
+            })
+            .with_abilities(AUTO_SUCCEED, || {
+                vec![dsl::activated(
+                    0,
+                    vec![Cost::Resources(1)],
                     dsl::auto_resolve(Determination::AutomaticSuccess),
-                ]),
-            )]
-        })
-        .with_abilities(SUCCEED_THEN_FAIL, || {
-            vec![dsl::activated(
-                0,
-                vec![Cost::Resources(1)],
-                dsl::seq([
-                    dsl::auto_resolve(Determination::AutomaticSuccess),
-                    dsl::auto_resolve(Determination::AutomaticFailure),
-                ]),
-            )]
-        })
-        .with_abilities(PLAY_AUTO_SUCCEED, || {
-            vec![dsl::on_play(dsl::auto_resolve(
-                Determination::AutomaticSuccess,
-            ))]
-        })
-        .with_abilities(PLAIN_GAIN, || {
-            vec![dsl::activated(
-                0,
-                vec![Cost::Resources(1)],
-                dsl::gain_resources(InvestigatorTarget::You, 1),
-            )]
-        })
-        .with_abilities(ON_RESOLUTION_GAIN, || {
-            vec![dsl::on_skill_test_resolution(
-                TestOutcome::Success,
-                dsl::gain_resources(InvestigatorTarget::You, 1),
-            )]
-        })
-        .install();
-    let _ = scenario_registry::install(ScenarioRegistry {
-        module_for: mock_module_for,
+                )]
+            })
+            .with_abilities(FAIL_THEN_SUCCEED, || {
+                vec![dsl::activated(
+                    0,
+                    vec![Cost::Resources(1)],
+                    dsl::seq([
+                        dsl::auto_resolve(Determination::AutomaticFailure),
+                        dsl::auto_resolve(Determination::AutomaticSuccess),
+                    ]),
+                )]
+            })
+            .with_abilities(SUCCEED_THEN_FAIL, || {
+                vec![dsl::activated(
+                    0,
+                    vec![Cost::Resources(1)],
+                    dsl::seq([
+                        dsl::auto_resolve(Determination::AutomaticSuccess),
+                        dsl::auto_resolve(Determination::AutomaticFailure),
+                    ]),
+                )]
+            })
+            .with_abilities(PLAY_AUTO_SUCCEED, || {
+                vec![dsl::on_play(dsl::auto_resolve(
+                    Determination::AutomaticSuccess,
+                ))]
+            })
+            .with_abilities(PLAIN_GAIN, || {
+                vec![dsl::activated(
+                    0,
+                    vec![Cost::Resources(1)],
+                    dsl::gain_resources(InvestigatorTarget::You, 1),
+                )]
+            })
+            .with_abilities(ON_RESOLUTION_GAIN, || {
+                vec![dsl::on_skill_test_resolution(
+                    TestOutcome::Success,
+                    dsl::gain_resources(InvestigatorTarget::You, 1),
+                )]
+            })
+            .build(),
+        scenarios: &ScenarioRegistry {
+            module_for: mock_module_for,
+        },
     });
+    *REGISTRIES
 }
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -230,6 +233,7 @@ const HERE: LocationId = LocationId(10);
 /// drawing from `bag`, on their open turn.
 fn board_with(in_play: &[&str], hand: &[&str], bag: ChaosBag) -> (GameState, InvestigatorId) {
     let state = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(
             seat(1)
                 .skill(SkillKind::Willpower, 5)
@@ -254,6 +258,7 @@ fn investigate_board(hand: &[&str], shroud: u8) -> (GameState, InvestigatorId, L
     location.clues = 1;
     location.shroud = shroud;
     let state = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).at(HERE).hand(hand.iter().copied()))
         .open_turn(INV)
         .with_location(location)
@@ -324,7 +329,7 @@ fn playing_through_the_test(
 /// fast ability at the test's player window and committing nothing.
 fn test_activating(state: GameState, card: CardInstanceId, difficulty: i8) -> TestSession {
     activating_through_the_test(
-        TestSession::new(state).test_skill(INV, SkillKind::Willpower, difficulty),
+        TestSession::new(state, registries()).test_skill(INV, SkillKind::Willpower, difficulty),
         card,
         &[],
     )
@@ -334,7 +339,7 @@ fn test_activating(state: GameState, card: CardInstanceId, difficulty: i8) -> Te
 /// or commit: no player window opens, and the test resolves through an empty
 /// commit back to the turn menu.
 fn test_with_nothing_to_play(state: GameState, difficulty: i8) -> TestSession {
-    let session = TestSession::new(state)
+    let session = TestSession::new(state, registries())
         .test_skill(INV, SkillKind::Willpower, difficulty)
         .commit(&[]);
     session.assert_at_turn_menu(INV);
@@ -434,7 +439,7 @@ fn a_determination_can_be_latched_from_a_play_trigger() {
 
     let play = play_from_hand(&state, PLAY_AUTO_SUCCEED);
     let session = playing_through_the_test(
-        TestSession::new(state).test_skill(id, SkillKind::Willpower, 9),
+        TestSession::new(state, registries()).test_skill(id, SkillKind::Willpower, 9),
         play,
         &[],
     );
@@ -471,13 +476,13 @@ fn latching_a_determination_outside_a_test_is_rejected() {
     };
 
     assert!(
-        !enumerate::legal_actions(&state).contains(&action),
+        !enumerate::legal_actions(&state, registries().cards).contains(&action),
         "the open-turn menu must not offer an activation that would reject",
     );
 
     // Off the menu, as a client could send it over the wire: the handler
     // itself refuses it.
-    let refused = TestSession::new(state).submit_off_menu(&action);
+    let refused = TestSession::new(state, registries()).submit_off_menu(&action);
     refused.expect_rejected();
     let result = refused.finish();
     assert!(result.events.is_empty(), "a rejection emits no events");
@@ -498,11 +503,13 @@ fn latching_a_determination_outside_a_test_is_rejected() {
 fn an_unrelated_activation_is_still_offered_outside_a_test() {
     let (state, id, instance_id) = board(PLAIN_GAIN);
     assert!(
-        enumerate::legal_actions(&state).contains(&TurnAction::ActivateAbility {
-            investigator: id,
-            source: AbilitySource::InPlay(instance_id),
-            address: AbilityAddress::Printed(0),
-        })
+        enumerate::legal_actions(&state, registries().cards).contains(
+            &TurnAction::ActivateAbility {
+                investigator: id,
+                source: AbilitySource::InPlay(instance_id),
+                address: AbilityAddress::Printed(0),
+            }
+        )
     );
 }
 
@@ -523,7 +530,7 @@ fn a_card_latched_determination_does_not_survive_into_a_later_test() {
     // The second test declines the fast window, so nothing latches: willpower
     // 5 against difficulty 9 fails by 4 on the numbers. A fresh session from
     // the first test's end, so its events are the second test's alone.
-    let second = TestSession::new(first.state().clone())
+    let second = TestSession::new(first.state().clone(), registries())
         .test_skill(INV, SkillKind::Willpower, 9)
         .skip()
         .commit(&[])
@@ -682,7 +689,7 @@ fn committed_cards_are_still_discarded_when_the_draw_is_skipped() {
     );
     let card = state.in_play(id, AUTO_SUCCEED);
     let session = activating_through_the_test(
-        TestSession::new(state).test_skill(id, SkillKind::Willpower, 9),
+        TestSession::new(state, registries()).test_skill(id, SkillKind::Willpower, 9),
         card,
         &[FILLER],
     );
@@ -711,7 +718,7 @@ fn the_follow_up_and_end_of_test_steps_still_run_on_a_skipped_draw() {
     let resources_before = state.investigators[&id].resources;
     let play = play_from_hand(&state, PLAY_AUTO_SUCCEED);
     let session = playing_through_the_test(
-        TestSession::new(state).take(&TurnAction::Investigate { investigator: id }),
+        TestSession::new(state, registries()).take(&TurnAction::Investigate { investigator: id }),
         play,
         &[ON_RESOLUTION_GAIN],
     );

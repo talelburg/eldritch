@@ -4,8 +4,8 @@
 //! [`TestSession`](game_core::test_support::TestSession); the refusal test
 //! submits it past the menu with
 //! [`submit_off_menu`](game_core::test_support::TestSession::submit_off_menu),
-//! as a client that never read the menu would. The real card corpus is
-//! installed so the play and activation rows can seat printed cards.
+//! as a client that never read the menu would. The tests run against the real
+//! card corpus so the play and activation rows can seat printed cards.
 //!
 //! `glossary/Attack_of_Opportunity.md`, verbatim:
 //!
@@ -24,7 +24,7 @@
 //! and that it attacks after the action is paid for and before the action's
 //! effect.
 //!
-//! The registry is `cards::REGISTRY` with one probe card composed in,
+//! The registry is `cards::TEST_REGISTRY` with one probe card composed in,
 //! [`TWO_ACTION_PROBE`]. No printed card in the corpus has a two-action
 //! activation, and the rule's *"An ability that costs more than one action only
 //! provokes one attack of opportunity from each engaged enemy"* needs one. The
@@ -36,10 +36,12 @@
 //! no row yet.
 
 use card_dsl::dsl::{self, Ability, InvestigatorTarget};
-use cards::REGISTRY;
+use cards::TEST_REGISTRY;
 use game_core::card_registry::CardRegistry;
 use game_core::engine::enumerate::TurnAction;
+use game_core::engine::Registries;
 use game_core::event::Event;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, EnemyId, GameState,
     GameStateBuilder, InvestigatorId, LocationId, Status, UseKind,
@@ -83,16 +85,19 @@ fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             dsl::gain_resources(InvestigatorTarget::You, 1),
         )]);
     }
-    (REGISTRY.abilities_for)(code)
+    (TEST_REGISTRY.abilities_for)(code)
 }
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    test_support::install_registry_with_test_cards(CardRegistry {
-        abilities_for,
-        ..REGISTRY
-    });
-}
+/// [`cards::TEST_REGISTRY`] with this binary's probe composed in.
+const CARDS: CardRegistry = CardRegistry {
+    abilities_for,
+    ..TEST_REGISTRY
+};
+
+const REGISTRIES: Registries = Registries {
+    cards: &CARDS,
+    scenarios: &ScenarioRegistry::EMPTY,
+};
 
 /// [`INV`] at [`HERE`] (connected to [`THERE`]) with 3 actions and First Aid
 /// in deck, seated as `seated` makes them, [`ATTACKER`] engaged with them, and
@@ -107,6 +112,7 @@ fn board(seated: fn(Seat) -> Seat) -> GameState {
     let mut bystander = test_support::test_enemy(BYSTANDER.0, "Bystander");
     bystander.current_location = Some(HERE);
     let mut state = GameStateBuilder::new()
+        .with_registries(REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Here"))
         .with_location(test_support::test_location(THERE.0, "There"))
         .with_seat(seated(seat(1).at(HERE).deck([FIRST_AID])))
@@ -395,7 +401,7 @@ fn a_ready_engaged_enemy_attacks_every_action_but_the_exempt_ones() {
         let mut state = board(row.seated);
         (row.setup)(&mut state);
         let action = row.take.on(&state);
-        let session = TestSession::new(state).take(&action);
+        let session = TestSession::new(state, REGISTRIES).take(&action);
         let events = session.events();
 
         let effect = position(events, row.name, "effect", row.effect);
@@ -478,7 +484,7 @@ fn a_basic_action_is_refused_for_an_investigator_who_is_not_active_or_out_of_act
     for (case, state) in cases {
         for row in basic_action_rows() {
             let action = row.take.on(&state);
-            let session = TestSession::new(state.clone()).submit_off_menu(&action);
+            let session = TestSession::new(state.clone(), REGISTRIES).submit_off_menu(&action);
             assert!(
                 !session.expect_rejected().is_empty(),
                 "{} for an investigator {case}: refused without a reason",

@@ -1,5 +1,6 @@
 use super::*;
 use crate::test_support::SeatLookup as _;
+use crate::test_support::TEST_REGISTRIES;
 
 #[test]
 fn place_assignment_accumulates_on_asset_and_investigator() {
@@ -11,14 +12,12 @@ fn place_assignment_accumulates_on_asset_and_investigator() {
 
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).in_play(["01021"]))
         .build();
     let inst = state.in_play(id, "01021");
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
 
     let mut asset_damage = BTreeMap::new();
     asset_damage.insert(inst, 1u8);
@@ -48,13 +47,11 @@ fn place_assignment_accumulates_on_asset_and_investigator() {
 fn damage_application_accumulates_on_the_investigator_card() {
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .build();
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let defeated = apply_damage_numeric(&mut cx, id, 3);
     assert_eq!(
         state.investigators[&id]

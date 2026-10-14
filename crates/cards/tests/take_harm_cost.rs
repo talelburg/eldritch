@@ -9,7 +9,7 @@
 //! for an attack of opportunity: *"If the enemies' attacks defeat you, the
 //! effects won't resolve."*
 //!
-//! The registry is `cards::REGISTRY` with two probes composed in. No printed
+//! The registry is `cards::TEST_REGISTRY` with two probes composed in. No printed
 //! card declares the cost yet (Forbidden Knowledge 01058 does in #777), so
 //! [`FAST_PROBE`] models the primitive — *"\[fast\] Exhaust and take 1 horror:
 //! gain 1 resource"* — and impersonates no printed card (ADR 0016).
@@ -17,11 +17,13 @@
 //! refuses.
 
 use card_dsl::dsl::{self, Ability, Cost, InvestigatorTarget};
-use cards::REGISTRY;
+use cards::TEST_REGISTRY;
 use game_core::card_registry::CardRegistry;
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::OptionTarget;
+use game_core::engine::Registries;
 use game_core::event::Event;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     AbilityAddress, AbilitySource, ActionResolutionFrame, ActionResume, CardCode, Continuation,
     GameState, GameStateBuilder, InvestigatorId, LocationId, Status,
@@ -56,17 +58,20 @@ fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             vec![take_one_horror],
             dsl::gain_resources(InvestigatorTarget::You, 1),
         )]),
-        _ => (REGISTRY.abilities_for)(code),
+        _ => (TEST_REGISTRY.abilities_for)(code),
     }
 }
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    test_support::install_registry_with_test_cards(CardRegistry {
-        abilities_for,
-        ..REGISTRY
-    });
-}
+/// [`cards::TEST_REGISTRY`] with this binary's probe composed in.
+const CARDS: CardRegistry = CardRegistry {
+    abilities_for,
+    ..TEST_REGISTRY
+};
+
+const REGISTRIES: Registries = Registries {
+    cards: &CARDS,
+    scenarios: &ScenarioRegistry::EMPTY,
+};
 
 fn activate(state: &GameState, probe: &str) -> TurnAction {
     TurnAction::ActivateAbility {
@@ -82,6 +87,7 @@ fn activate(state: &GameState, probe: &str) -> TurnAction {
 #[test]
 fn a_harm_cost_offers_the_soak_and_the_effect_waits_for_the_horror() {
     let state = GameStateBuilder::new()
+        .with_registries(REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(
             seat(1)
@@ -94,7 +100,7 @@ fn a_harm_cost_offers_the_soak_and_the_effect_waits_for_the_horror() {
         .build();
     let rosary = state.in_play(INV, HOLY_ROSARY);
     let action = activate(&state, FAST_PROBE);
-    let session = TestSession::new(state).take(&action);
+    let session = TestSession::new(state, REGISTRIES).take(&action);
 
     // Paused at the soak prompt: the other costs are paid, the ability is
     // announced, and nothing of the horror or the effect has landed yet.
@@ -159,6 +165,7 @@ fn a_harm_cost_offers_the_soak_and_the_effect_waits_for_the_horror() {
 #[test]
 fn a_lethal_harm_cost_eliminates_the_payer_and_the_effect_does_not_resolve() {
     let state = GameStateBuilder::new()
+        .with_registries(REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(
             seat(1)
@@ -174,7 +181,7 @@ fn a_lethal_harm_cost_eliminates_the_payer_and_the_effect_does_not_resolve() {
         .build();
     let probe = state.in_play(INV, FAST_PROBE);
     let action = activate(&state, FAST_PROBE);
-    let session = TestSession::new(state).take(&action);
+    let session = TestSession::new(state, REGISTRIES).take(&action);
 
     // The cost was paid — the probe exhausted and the ability activated — and
     // the horror it cost eliminated the payer before the effect could resolve.
@@ -201,6 +208,7 @@ fn a_lethal_harm_cost_eliminates_the_payer_and_the_effect_does_not_resolve() {
 #[test]
 fn a_harm_cost_soaked_by_an_asset_is_still_paid() {
     let state = GameStateBuilder::new()
+        .with_registries(REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(
             seat(1)
@@ -213,7 +221,7 @@ fn a_harm_cost_soaked_by_an_asset_is_still_paid() {
         .build();
     let rosary = state.in_play(INV, HOLY_ROSARY);
     let action = activate(&state, FAST_PROBE);
-    let session = TestSession::new(state)
+    let session = TestSession::new(state, REGISTRIES)
         .take(&action)
         .pick(OptionTarget::CardInstance(rosary));
 
@@ -242,6 +250,7 @@ fn a_harm_cost_soaked_by_an_asset_is_still_paid() {
 #[test]
 fn a_harm_cost_on_an_action_ability_is_refused_by_name() {
     let state = GameStateBuilder::new()
+        .with_registries(REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(seat(1).at(HERE).actions(3).in_play([ACTION_PROBE]))
         .open_turn(INV)
@@ -249,10 +258,10 @@ fn a_harm_cost_on_an_action_ability_is_refused_by_name() {
     let action = activate(&state, ACTION_PROBE);
 
     assert!(
-        !enumerate::legal_actions(&state).contains(&action),
+        !enumerate::legal_actions(&state, REGISTRIES.cards).contains(&action),
         "a refused activation must not be offered"
     );
-    let reason = TestSession::new(state).assert_rejects(|s| s.submit_off_menu(&action));
+    let reason = TestSession::new(state, REGISTRIES).assert_rejects(|s| s.submit_off_menu(&action));
     assert!(
         reason.contains("TakeHarm") && reason.contains("[action]"),
         "the reason should name the cost and the ability shape it refuses, got: {reason}",

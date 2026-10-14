@@ -160,6 +160,7 @@ mod tests {
         /// Board where each enemy is engaged with `engaged_with[i]`.
         fn board(engagements: &[(u32, Option<InvestigatorId>)]) -> GameState {
             let mut builder = GameStateBuilder::new()
+                .with_registries(crate::TEST_REGISTRIES)
                 .with_seat(test_support::seat(1))
                 .with_seat(test_support::seat(2));
             for (id, engaged_with) in engagements {

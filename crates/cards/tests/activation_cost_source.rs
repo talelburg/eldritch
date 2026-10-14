@@ -9,7 +9,7 @@
 //! the later cost rejects and the apply boundary rolls the whole activation
 //! back.
 //!
-//! Own integration-test binary so it can install its own `MockRegistry`
+//! Own integration-test binary so it can build its own `MockRegistry`
 //! (no corpus card pairs a depleting `SpendUses` with a later `Exhaust`)
 //! without colliding with the real-corpus binaries. Prior art:
 //! `reject_rollback.rs`.
@@ -17,12 +17,15 @@
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Uses};
 use card_dsl::dsl::{self, Ability, Cost, InvestigatorTarget};
 use game_core::engine::enumerate::TurnAction;
+use game_core::engine::Registries;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     AbilityAddress, AbilitySource, GameStateBuilder, InvestigatorId, LocationId, UseKind,
 };
 use game_core::test_support::{
     self, seat, uses, MockRegistry, SeatCard, SeatLookup as _, TestSession,
 };
+use std::sync::LazyLock;
 
 /// Synthetic asset: `Uses (1 supply)`, discards itself when they deplete, and
 /// its ability spends that last supply *and then* exhausts. Not in the corpus.
@@ -74,26 +77,10 @@ fn asset_metadata(code: &'static str, name: &'static str, uses: Option<Uses>) ->
     }
 }
 
-#[ctor::ctor(unsafe)]
-fn install_probe_registry() {
-    MockRegistry::new()
-        .with_card(asset_metadata(
-            DEPLETER,
-            "Depleter",
-            Some(Uses {
-                kind: UseKind::Supplies,
-                count: 1,
-                discard_when_empty: true,
-            }),
-        ))
-        .with_card(asset_metadata(BYSTANDER, "Bystander", None))
-        .with_abilities(DEPLETER, probe_abilities)
-        .install();
-}
-
 /// The investigator's turn at the Study with `in_play` in play, in order.
 fn board(in_play: [SeatCard; 2]) -> TestSession {
     GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).at(HERE).in_play(in_play))
         .with_location(test_support::test_location(HERE.0, "Study"))
         .open_turn(INV)
@@ -107,6 +94,27 @@ fn activate_depleter(session: &TestSession) -> TurnAction {
         source: AbilitySource::InPlay(session.state().in_play(INV, DEPLETER)),
         address: AbilityAddress::Printed(0),
     }
+}
+
+/// The binary's one mock, built once on first use.
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        cards: MockRegistry::new()
+            .with_card(asset_metadata(
+                DEPLETER,
+                "Depleter",
+                Some(Uses {
+                    kind: UseKind::Supplies,
+                    count: 1,
+                    discard_when_empty: true,
+                }),
+            ))
+            .with_card(asset_metadata(BYSTANDER, "Bystander", None))
+            .with_abilities(DEPLETER, probe_abilities)
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 #[test]

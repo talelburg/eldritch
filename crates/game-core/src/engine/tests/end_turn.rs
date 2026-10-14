@@ -1,21 +1,26 @@
 use super::*;
+use crate::test_support::{TEST_REGISTRIES, TEST_REGISTRY};
 
 /// Whether `state`'s menu offers an `EndTurn`.
 fn offers_end_turn(state: &GameState) -> bool {
-    legal_actions(state)
+    legal_actions(state, &TEST_REGISTRY)
         .iter()
         .any(|a| matches!(a, TurnAction::EndTurn))
 }
 
 /// `roster` seated through real setup, settled at its mulligan.
 fn seated_at_mulligan(roster: &[RosterEntry]) -> TestSession {
-    TestSession::new(seat_and_open(GameStateBuilder::new().build(), roster).state)
+    TestSession::new(
+        seat_and_open(GameStateBuilder::new().build(), roster, TEST_REGISTRIES).state,
+        TEST_REGISTRIES,
+    )
 }
 
 #[test]
 fn end_turn_drains_actions_and_emits_turn_ended() {
     let inv2 = InvestigatorId(2);
     let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .with_seat(seat(2))
         .with_turn_order([INV, inv2])
@@ -49,6 +54,7 @@ fn end_turn_with_no_active_investigator_is_rejected() {
 #[test]
 fn end_turn_outside_investigation_phase_is_rejected() {
     let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_phase(Phase::Mythos)
         .with_seat(seat(1))
         .with_active_investigator(INV)
@@ -60,9 +66,8 @@ fn end_turn_outside_investigation_phase_is_rejected() {
 
 // After T09, end_turn pauses at Mythos when mythos_draw_pending is
 // Some(_). The player-driven DrawEncounterCard action (T12) is what
-// completes the Mythos phase; it requires a card registry which
-// game-core unit tests cannot install (process-global OnceLock;
-// installing in one test would contaminate others). The full
+// completes the Mythos phase; it requires the real encounter cards,
+// which game-core unit tests cannot reach by crate direction. The full
 // round-cycle coverage — including DrawEncounterCard completing the
 // phase and transitioning to Investigation — lives in the T14
 // integration tests at crates/cards/tests/mythos_phase.rs.

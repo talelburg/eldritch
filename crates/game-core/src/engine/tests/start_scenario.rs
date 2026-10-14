@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::TEST_REGISTRIES;
 
 #[test]
 fn start_scenario_advances_to_investigation_with_round_one() {
@@ -16,7 +17,7 @@ fn start_scenario_advances_to_investigation_with_round_one() {
         investigator: CardCode::new(test_support::TEST_INV),
         deck: vec![],
     }];
-    let start_result = seat_and_open(state, &roster);
+    let start_result = seat_and_open(state, &roster, TEST_REGISTRIES);
     let id = InvestigatorId(1);
 
     assert!(
@@ -64,7 +65,7 @@ fn start_scenario_advances_to_investigation_with_round_one() {
 
     // After the sole investigator mulligans (keeping their hand), the phase
     // begins and the lead becomes active.
-    let mulligan_result = TestSession::new(start_result.state)
+    let mulligan_result = TestSession::new(start_result.state, TEST_REGISTRIES)
         .choose_from_hand(&[])
         .finish();
     assert_eq!(
@@ -92,7 +93,7 @@ fn start_scenario_on_already_started_state_is_rejected() {
     // seat_and_open calls start_scenario which rejects when round != 0;
     // the roster check never runs, so an empty slice is enough.
     let state = GameStateBuilder::new().with_round(7).build();
-    let result = seat_and_open(state, &[]);
+    let result = seat_and_open(state, &[], TEST_REGISTRIES);
 
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert_eq!(result.state.round, 7);
@@ -106,7 +107,7 @@ fn start_scenario_shuffles_each_deck_and_deals_initial_hand() {
         investigator: CardCode::new(test_support::TEST_INV),
         deck: make_test_deck(10),
     }];
-    let result = seat_and_open(state, &roster);
+    let result = seat_and_open(state, &roster, TEST_REGISTRIES);
     let id = InvestigatorId(1);
 
     // seat_and_open deals hands, then opens the mulligan prompt
@@ -145,7 +146,7 @@ fn start_scenario_with_empty_deck_yields_empty_hand_and_no_events() {
         investigator: CardCode::new(test_support::TEST_INV),
         deck: vec![],
     }];
-    let result = seat_and_open(state, &roster);
+    let result = seat_and_open(state, &roster, TEST_REGISTRIES);
     let id = InvestigatorId(1);
 
     assert!(matches!(
@@ -173,7 +174,7 @@ fn start_scenario_with_short_deck_draws_only_what_remains() {
         investigator: CardCode::new(test_support::TEST_INV),
         deck: make_test_deck(3),
     }];
-    let result = seat_and_open(state, &roster);
+    let result = seat_and_open(state, &roster, TEST_REGISTRIES);
     let id = InvestigatorId(1);
 
     assert!(matches!(
@@ -201,7 +202,7 @@ fn start_scenario_handles_multiple_investigators_deterministically() {
             deck: make_test_deck(8),
         })
         .collect();
-    let result = seat_and_open(state, &roster);
+    let result = seat_and_open(state, &roster, TEST_REGISTRIES);
     assert!(matches!(
         result.outcome,
         EngineOutcome::AwaitingInput { .. }
@@ -226,7 +227,7 @@ fn seat_and_open_opens_mulligan_for_a_synthetic_roster() {
         deck: vec![],
     }];
 
-    let result = seat_and_open(setup, &roster);
+    let result = seat_and_open(setup, &roster, TEST_REGISTRIES);
 
     assert!(
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
@@ -245,7 +246,7 @@ fn seat_and_open_rejects_an_unknown_investigator_code() {
         deck: vec![],
     }];
 
-    let result = seat_and_open(setup, &roster);
+    let result = seat_and_open(setup, &roster, TEST_REGISTRIES);
 
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert_eq!(

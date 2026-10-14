@@ -8,15 +8,18 @@
 //! enemy phase, the `native_effect.rs` idiom. The natives model the contract,
 //! not printed cards (ADR 0016).
 //!
-//! Its own test binary: the mock registry installs once per process, and the
-//! sibling exit tests (`spend_uses.rs`, `native_exits.rs`) install their own.
+//! Its own test binary: the mock registry is built once per process, and the
+//! sibling exit tests (`spend_uses.rs`, `native_exits.rs`) build their own.
+
+use std::sync::LazyLock;
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, EngineOutcome, Grounded, NativeCx, OptionTarget};
+use game_core::engine::{self, EngineOutcome, Grounded, NativeCx, OptionTarget, Registries};
 use game_core::event::Event;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     self, Act, Agenda, CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId,
 };
@@ -44,9 +47,14 @@ fn forced_native(tag: &'static str) -> Vec<Ability> {
 
 /// Offer the controller a pick between [`NEAR`] and [`FAR`].
 fn pick_location(cx: &NativeCx, ctx: &EvalContext) -> Grounded<LocationId> {
-    engine::resolve_grounded_choice(cx.state(), ctx, &[NEAR, FAR], "Choose a location", |&loc| {
-        OptionTarget::Location(loc)
-    })
+    engine::resolve_grounded_choice(
+        cx.state(),
+        cx.cards(),
+        ctx,
+        &[NEAR, FAR],
+        "Choose a location",
+        |&loc| OptionTarget::Location(loc),
+    )
 }
 
 /// The contract violation: place doom, *then* ask for a location.
@@ -76,16 +84,19 @@ fn suspend_then_write(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     }
 }
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    MockRegistry::new()
-        .with_abilities(WRITE_THEN_SUSPEND_ACT, || forced_native(WRITE_THEN_SUSPEND))
-        .with_native_effect(WRITE_THEN_SUSPEND, write_then_suspend)
-        .with_abilities(SUSPEND_THEN_WRITE_ACT, || {
-            forced_native("test:suspend-then-write")
-        })
-        .with_native_effect("test:suspend-then-write", suspend_then_write)
-        .install();
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        cards: MockRegistry::new()
+            .with_abilities(WRITE_THEN_SUSPEND_ACT, || forced_native(WRITE_THEN_SUSPEND))
+            .with_native_effect(WRITE_THEN_SUSPEND, write_then_suspend)
+            .with_abilities(SUSPEND_THEN_WRITE_ACT, || {
+                forced_native("test:suspend-then-write")
+            })
+            .with_native_effect("test:suspend-then-write", suspend_then_write)
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -98,6 +109,7 @@ const HERE: LocationId = LocationId(1);
 /// ended.
 fn state_with_act(act: &str) -> GameState {
     let mut state = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).at(HERE).deck(["filler-card"]))
         .with_location(test_support::test_location(HERE.0, "Start"))
         .with_location(test_support::test_location(NEAR.0, "Near"))
@@ -125,7 +137,7 @@ fn end_enemy_phase(session: TestSession) -> TestSession {
 
 #[test]
 fn a_native_that_writes_then_suspends_is_rejected_and_its_write_rolled_back() {
-    let session = TestSession::new(state_with_act(WRITE_THEN_SUSPEND_ACT));
+    let session = TestSession::new(state_with_act(WRITE_THEN_SUSPEND_ACT), registries());
     let before = session.state().clone();
 
     let session = end_enemy_phase(session);
@@ -144,7 +156,10 @@ fn a_native_that_writes_then_suspends_is_rejected_and_its_write_rolled_back() {
 
 #[test]
 fn a_native_that_suspends_before_writing_suspends_and_resumes() {
-    let session = end_enemy_phase(TestSession::new(state_with_act(SUSPEND_THEN_WRITE_ACT)));
+    let session = end_enemy_phase(TestSession::new(
+        state_with_act(SUSPEND_THEN_WRITE_ACT),
+        registries(),
+    ));
     assert_eq!(session.prompt().options.len(), 2, "both locations offered");
     assert_eq!(session.state().agenda_doom, 0, "nothing written yet");
 

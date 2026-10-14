@@ -6,9 +6,12 @@
 //! "an asset a player can play from hand", so the engine mints an instance id
 //! after build. Neither stands in for a printed card.
 
+use std::sync::LazyLock;
+
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Skills};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::OptionTarget;
+use game_core::engine::{OptionTarget, Registries};
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId, LocationId, Owner,
     SkillKind, Status, UseKind,
@@ -37,49 +40,55 @@ fn metadata(code: &str, name: &str, kind: CardKind) -> CardMetadata {
     }
 }
 
-#[ctor::ctor(unsafe)]
-fn install_mock_registry() {
-    MockRegistry::new()
-        .with_card(metadata(
-            SEAT_INV,
-            "Seat Probe",
-            CardKind::Investigator {
-                class: Class::Neutral,
-                skills: Skills {
-                    willpower: 2,
-                    intellect: 5,
-                    combat: 1,
-                    agility: 4,
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        cards: MockRegistry::new()
+            .with_card(metadata(
+                SEAT_INV,
+                "Seat Probe",
+                CardKind::Investigator {
+                    class: Class::Neutral,
+                    skills: Skills {
+                        willpower: 2,
+                        intellect: 5,
+                        combat: 1,
+                        agility: 4,
+                    },
+                    health: 7,
+                    sanity: 9,
                 },
-                health: 7,
-                sanity: 9,
-            },
-        ))
-        .with_card(metadata(
-            ASSET,
-            "Seat Asset",
-            CardKind::Asset {
-                class: Class::Neutral,
-                cost: Some(0),
-                xp: None,
-                slots: vec![],
-                health: None,
-                sanity: None,
-                skill_icons: SkillIcons::default(),
-                is_fast: false,
-                deck_limit: 2,
-                uses: None,
-                play_only_during_turn: false,
-            },
-        ))
-        // Registered, so it is playable: the engine plays only cards it knows.
-        .with_abilities(ASSET, Vec::new)
-        .install();
+            ))
+            .with_card(metadata(
+                ASSET,
+                "Seat Asset",
+                CardKind::Asset {
+                    class: Class::Neutral,
+                    cost: Some(0),
+                    xp: None,
+                    slots: vec![],
+                    health: None,
+                    sanity: None,
+                    skill_icons: SkillIcons::default(),
+                    is_fast: false,
+                    deck_limit: 2,
+                    uses: None,
+                    play_only_during_turn: false,
+                },
+            ))
+            // Registered, so it is playable: the engine plays only cards it knows.
+            .with_abilities(ASSET, Vec::new)
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 #[test]
 fn a_bare_seat_is_the_stock_test_investigator() {
-    let state = GameStateBuilder::new().with_seat(seat(1)).build();
+    let state = GameStateBuilder::new()
+        .with_registries(registries())
+        .with_seat(seat(1))
+        .build();
     assert_eq!(
         state.investigators[&INV],
         test_support::test_investigator(1)
@@ -89,6 +98,7 @@ fn a_bare_seat_is_the_stock_test_investigator() {
 #[test]
 fn as_card_seats_the_printed_investigator() {
     let state = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).as_card(SEAT_INV))
         .build();
     let inv = &state.investigators[&INV];
@@ -103,7 +113,13 @@ fn as_card_seats_the_printed_investigator() {
         },
     );
     assert_eq!(inv.name, "Seat Probe");
-    assert_eq!((inv.max_health(), inv.max_sanity()), (7, 9));
+    assert_eq!(
+        (
+            inv.max_health(registries().cards),
+            inv.max_sanity(registries().cards)
+        ),
+        (7, 9)
+    );
 }
 
 #[test]
@@ -115,6 +131,7 @@ fn skills_after_as_card_override_the_printed_ones() {
         agility: 6,
     };
     let state = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).as_card(SEAT_INV).skills(stated))
         .build();
     assert_eq!(state.investigators[&INV].skills, stated);
@@ -123,6 +140,7 @@ fn skills_after_as_card_override_the_printed_ones() {
 #[test]
 fn skill_sets_one_skill_and_keeps_the_rest() {
     let state = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).skill(SkillKind::Combat, 5))
         .build();
     assert_eq!(
@@ -139,6 +157,7 @@ fn skill_sets_one_skill_and_keeps_the_rest() {
 #[test]
 fn skill_after_as_card_overrides_that_printed_skill_alone() {
     let state = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).as_card(SEAT_INV).skill(SkillKind::Willpower, 6))
         .build();
     assert_eq!(
@@ -155,6 +174,7 @@ fn skill_after_as_card_overrides_that_printed_skill_alone() {
 #[test]
 fn harm_lands_on_the_investigator_card() {
     let state = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).harm(2, 3))
         .build();
     let inv = &state.investigators[&INV];
@@ -166,6 +186,7 @@ fn harm_lands_on_the_investigator_card() {
 #[test]
 fn the_scalar_and_zone_setters_fill_what_they_name() {
     let state = GameStateBuilder::new()
+        .with_registries(registries())
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(
             seat(1)
@@ -196,6 +217,7 @@ fn the_scalar_and_zone_setters_fill_what_they_name() {
 #[test]
 fn in_play_cards_get_distinct_ids_and_are_found_by_code() {
     let state = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).in_play(["_p1", "_p2"]))
         .with_seat(seat(2).in_play(["_p3"]))
         .build();
@@ -217,6 +239,7 @@ fn in_play_cards_get_distinct_ids_and_are_found_by_code() {
 #[test]
 fn a_card_entry_carries_its_uses_and_clues() {
     let state = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(
             seat(1)
                 .in_play([("_supplies", uses(UseKind::Supplies, 3))])
@@ -231,6 +254,7 @@ fn a_card_entry_carries_its_uses_and_clues() {
 #[test]
 fn threat_area_cards_land_there_and_the_lookup_finds_them() {
     let state = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).threat_area(["_treachery"]))
         .build();
     let inv = &state.investigators[&INV];
@@ -250,6 +274,7 @@ fn threat_area_cards_land_there_and_the_lookup_finds_them() {
 #[test]
 fn a_player_card_in_the_threat_area_is_its_bearers() {
     let state = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).threat_area([ASSET]))
         .build();
     assert_eq!(
@@ -261,6 +286,7 @@ fn a_player_card_in_the_threat_area_is_its_bearers() {
 #[test]
 fn in_play_as_keeps_its_id_and_minting_skips_past_it() {
     let state = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(
             seat(1)
                 .in_play(["_minted"])
@@ -274,6 +300,7 @@ fn in_play_as_keeps_its_id_and_minting_skips_past_it() {
 #[test]
 fn a_card_the_engine_mints_after_build_gets_a_fresh_id() {
     let session = GameStateBuilder::new()
+        .with_registries(registries())
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(
             seat(1)
@@ -305,6 +332,7 @@ fn a_hand_built_card_present_at_build_is_not_reminted() {
         Owner::Investigator(INV),
     ));
     let session = GameStateBuilder::new()
+        .with_registries(registries())
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_investigator(investigator)
         .open_turn(INV)
@@ -319,6 +347,7 @@ fn a_hand_built_card_present_at_build_is_not_reminted() {
 #[test]
 fn card_is_the_anchor_of_the_card_the_lookup_finds() {
     let state = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).in_play(["_first"]).threat_area(["_second"]))
         .build();
     assert_eq!(
@@ -332,6 +361,7 @@ fn card_is_the_anchor_of_the_card_the_lookup_finds() {
 #[should_panic(expected = "_absent")]
 fn card_panics_as_the_lookup_does() {
     let state = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).in_play(["_present"]))
         .build();
     let _ = state.card(INV, "_absent");
@@ -350,6 +380,7 @@ fn a_hand_picked_id_staged_after_a_seat_that_minted_it_panics_at_build() {
         Owner::Investigator(InvestigatorId(2)),
     ));
     let _ = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).in_play(["_minted"]))
         .with_investigator(later)
         .build();
@@ -359,6 +390,7 @@ fn a_hand_picked_id_staged_after_a_seat_that_minted_it_panics_at_build() {
 #[should_panic(expected = "_absent")]
 fn the_lookup_panics_when_no_card_matches() {
     let state = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).in_play(["_present"]))
         .build();
     let _ = state.in_play(INV, "_absent");
@@ -368,6 +400,7 @@ fn the_lookup_panics_when_no_card_matches() {
 #[should_panic(expected = "2 cards")]
 fn the_lookup_panics_when_two_cards_match() {
     let state = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(
             seat(1)
                 .in_play_as(CardInstanceId(5), "_twice")
@@ -380,13 +413,16 @@ fn the_lookup_panics_when_two_cards_match() {
 #[test]
 #[should_panic(expected = "_seat_unknown")]
 fn as_card_with_an_unknown_code_panics_naming_it() {
-    let _ = seat(1).as_card("_seat_unknown");
+    let _ = GameStateBuilder::new()
+        .with_registries(registries())
+        .with_seat(seat(1).as_card("_seat_unknown"));
 }
 
 /// `status` seats an investigator already eliminated.
 #[test]
 fn status_sets_the_investigators_status() {
     let state = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).status(Status::Defeated))
         .build();
     assert_eq!(state.investigators[&INV].status, Status::Defeated);

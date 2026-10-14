@@ -3,7 +3,7 @@ use crate::engine::outcome::InputKind;
 use crate::state::{
     CardCode, GameState, GameStateBuilder, InvestigatorId, MythosPhaseFrame, MythosResume, Phase,
 };
-use crate::test_support::{self, TestSession};
+use crate::test_support::{self, TestSession, TEST_REGISTRIES};
 
 // The former `rejects_outside_mythos_phase` / `rejects_when_no_draw_pending`
 // / `rejects_when_out_of_order` tests are gone (#348 part 2c-iii-b): the
@@ -18,6 +18,7 @@ use crate::test_support::{self, TestSession};
 /// Investigator 1's Mythos step-1.4 encounter draw, the moment it is asked.
 fn drawing() -> GameState {
     GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_phase(Phase::Mythos)
         .with_phase_anchor(MythosPhaseFrame {
@@ -32,7 +33,7 @@ fn drawing() -> GameState {
 fn rejects_non_confirm_response_and_preserves_frame() {
     // Validate-first: a non-`Confirm` response rejects and leaves the
     // encounter draw in place for retry.
-    let session = TestSession::new(drawing());
+    let session = TestSession::new(drawing(), TEST_REGISTRIES);
     let events_before = session.events().len();
     let session = session.skip();
 
@@ -62,7 +63,7 @@ fn the_draw_prompt_is_anchored_to_the_encounter_deck() {
     // cosmetic skill-test acknowledge on the wire — both are option-less
     // `Confirm`s (ADR 0011). A rewritten builder that drops the `.at(…)`
     // relocates the Draw button to the banner, and this is what catches it.
-    let session = TestSession::new(drawing());
+    let session = TestSession::new(drawing(), TEST_REGISTRIES);
     let request = session.prompt();
     assert_eq!(request.kind, InputKind::Confirm);
     assert!(request.options.is_empty(), "a Confirm carries no options");
@@ -70,7 +71,7 @@ fn the_draw_prompt_is_anchored_to_the_encounter_deck() {
 }
 
 /// Exercises the early-reject guard for the unknown-card check: the
-/// installed test registry doesn't know the synthetic code
+/// test registry doesn't know the synthetic code
 /// `"__no_such_card"`, so the draw rejects with `"unknown card code: ..."`.
 ///
 /// State is not further mutated. The deck-length assertion allows for the
@@ -90,7 +91,7 @@ fn rejects_an_unknown_encounter_code() {
     // frame; the actual draw (and its unknown-code reject) happens in the
     // `drive` loop's `PlayerDraw` arm (callsite-migration), which the step's
     // drain runs.
-    let session = TestSession::new(state).confirm();
+    let session = TestSession::new(state, TEST_REGISTRIES).confirm();
     let reason = session.expect_rejected();
     assert!(
         reason.contains("unknown card code"),

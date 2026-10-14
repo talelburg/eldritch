@@ -268,7 +268,7 @@ fn move_ghouls_toward_parlor(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOut
         // barricaded first step is a non-move, never a detour (#797).
         let mut steps: Vec<LocationId> = engine::shortest_first_steps(cx.state(), from, parlor)
             .into_iter()
-            .filter(|&loc| engine::enemy_can_enter_location(cx.state(), e, loc))
+            .filter(|&loc| engine::enemy_can_enter_location(cx.state(), cx.cards(), e, loc))
             .collect();
         steps.sort_unstable();
         if let Some(&to) = steps.first() {
@@ -315,7 +315,7 @@ mod tests {
     use game_core::state::{
         Agenda, CardCode, CardInPlay, Enemy, GameStateBuilder, InvestigatorId, Location, Owner,
     };
-    use game_core::{card_registry, test_support};
+    use game_core::test_support;
 
     use super::*;
     use crate::REGISTRY;
@@ -330,13 +330,14 @@ mod tests {
 
     // Hallway(2) hub connects to Attic(3), Cellar(4), Parlor(5).
     fn star_board() -> GameState {
-        star_board_from(GameStateBuilder::new())
+        star_board_from(GameStateBuilder::new().with_registries(crate::TEST_REGISTRIES))
     }
 
     /// The [`star_board`] with investigator 1 seated in the Hallway.
     fn star_board_with_investigator_in_hallway() -> GameState {
         star_board_from(
             GameStateBuilder::new()
+                .with_registries(crate::TEST_REGISTRIES)
                 .with_seat(test_support::seat(1).at(LocationId(2)))
                 .with_turn_order([InvestigatorId(1)]),
         )
@@ -360,8 +361,12 @@ mod tests {
 
     /// Run `f` for investigator 1, assert it finished, and return its events.
     fn run_done(state: &mut GameState, f: NativeEffectFn) -> Vec<Event> {
-        let (out, events) =
-            test_support::run_native(state, f, &EvalContext::for_controller(InvestigatorId(1)));
+        let (out, events) = test_support::run_native(
+            state,
+            &REGISTRY,
+            f,
+            &EvalContext::for_controller(InvestigatorId(1)),
+        );
         assert_eq!(out, EngineOutcome::Done);
         events
     }
@@ -380,6 +385,7 @@ mod tests {
     /// Investigators 1 and 2, seated in that turn order.
     fn two_investigators() -> GameState {
         GameStateBuilder::new()
+            .with_registries(crate::TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
             .with_seat(test_support::seat(2))
             .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
@@ -477,7 +483,6 @@ mod tests {
     /// the defeats rather than latched by the card.
     #[test]
     fn the_act_three_branch_defeats_the_table_and_reaches_no_resolution() {
-        let _ = card_registry::install(REGISTRY);
         let (a, b) = (InvestigatorId(1), InvestigatorId(2));
         let mut state = two_investigators();
 
@@ -519,7 +524,6 @@ mod tests {
     /// alone, and announces no trauma.
     #[test]
     fn an_investigator_who_has_resigned_is_left_alone() {
-        let _ = card_registry::install(REGISTRY);
         let (a, b) = (InvestigatorId(1), InvestigatorId(2));
         let mut state = two_investigators();
         state.investigators.get_mut(&a).expect("seated").status = Status::Resigned;
@@ -585,7 +589,6 @@ mod tests {
         // A Barricade (01038) on the Parlor blocks the non-Elite Ghoul's
         // compelled step, so it does not move. Needs the real registry so the
         // attachment's `EnemyMovementBlocked` restriction is read.
-        let _ = card_registry::install(REGISTRY);
         let mut state = star_board();
         state.enemies.insert(EnemyId(1), ghoul(1, LocationId(2))); // Hallway
         barricade(&mut state, LocationId(5));
@@ -605,6 +608,7 @@ mod tests {
         let loc =
             |id, code: &str, name| Location::new(LocationId(id), CardCode::new(code), name, 1, 0);
         let mut state = GameStateBuilder::new()
+            .with_registries(crate::TEST_REGISTRIES)
             .with_location(loc(2, "01112", "Hallway"))
             .with_location(loc(3, "01113", "Attic"))
             .with_location(loc(4, "01114", "Cellar"))
@@ -642,7 +646,6 @@ mod tests {
     /// not a detour (#797).
     #[test]
     fn ghoul_does_not_reroute_around_a_barricaded_shortest_step() {
-        let _ = card_registry::install(REGISTRY);
         let mut state = detour_board();
         state.enemies.insert(EnemyId(1), ghoul(1, LocationId(3))); // Attic
         barricade(&mut state, LocationId(2)); // Hallway — the only shortest step
@@ -670,7 +673,6 @@ mod tests {
 
     #[test]
     fn a_barricade_off_the_shortest_path_does_not_affect_the_move() {
-        let _ = card_registry::install(REGISTRY);
         let mut state = detour_board();
         state.enemies.insert(EnemyId(1), ghoul(1, LocationId(3))); // Attic
         barricade(&mut state, LocationId(6)); // Study — on the long route only

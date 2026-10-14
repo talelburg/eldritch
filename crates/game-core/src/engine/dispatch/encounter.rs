@@ -6,7 +6,6 @@ use card_dsl::card_data::{CardKind, CardMetadata, CardType, HealthValue, Spawn, 
 use card_dsl::dsl::{Ability, Effect, Trigger};
 
 use crate::action::InputResponse;
-use crate::card_registry;
 use crate::engine::dispatch::hunters::PreyResolution;
 use crate::engine::dispatch::{choice, cursor, hunters, reaction_windows, skill_test};
 use crate::engine::evaluator::{self, EvalContext};
@@ -42,16 +41,14 @@ pub(super) fn encounter_deck_shuffled(cx: &mut Cx) -> EngineOutcome {
 ///
 /// Drives the on-draw resolution path for one encounter card:
 ///
-/// 1. Validate that a card registry is installed (reject with
-///    `"EncounterCardRevealed: no card registry installed"` if not).
-/// 2. Draw the top of the encounter deck via [`draw_encounter_top`]
+/// 1. Draw the top of the encounter deck via [`draw_encounter_top`]
 ///    (transparently reshuffles discard back in if the deck is
 ///    empty). Reject with `"EncounterCardRevealed: encounter deck and discard both empty"`
 ///    if both piles are exhausted.
-/// 3. Look up the drawn card's metadata via the installed registry.
+/// 2. Look up the drawn card's metadata via the card registry.
 ///    Reject with `"EncounterCardRevealed: unknown card code: {code}"` if the registry
 ///    doesn't know the code.
-/// 4. Delegate to [`resolve_encounter_card`] for the post-draw
+/// 3. Delegate to [`resolve_encounter_card`] for the post-draw
 ///    resolution prefix (emit [`Event::CardRevealed`] + type-dispatch
 ///    to Revelation / spawn / reject).
 ///
@@ -69,11 +66,7 @@ pub(super) fn encounter_deck_shuffled(cx: &mut Cx) -> EngineOutcome {
 /// the whole state (deck, discard, and RNG included) on rejection,
 /// so the ordering only matters on non-rejecting paths.
 pub(super) fn encounter_card_revealed(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
-    let Some(registry) = card_registry::current() else {
-        return EngineOutcome::Rejected {
-            reason: "EncounterCardRevealed: no card registry installed".into(),
-        };
-    };
+    let registry = cx.cards;
 
     let Some(code) = draw_encounter_top(cx) else {
         return EngineOutcome::Rejected {
@@ -130,8 +123,7 @@ pub(crate) fn treachery_is_persistent(abilities: &[Ability]) -> bool {
 /// Card effects that "draw"/"discard until" cards from the encounter deck
 /// resolve the drawn card through here, as
 /// [`NativeCx::resolve_encounter_card`](crate::engine::NativeCx::resolve_encounter_card)
-/// — agenda 01106's reverse draws the dug-up `Ghoul` enemy this way. Requires
-/// an installed card registry (rejects otherwise).
+/// — agenda 01106's reverse draws the dug-up `Ghoul` enemy this way.
 pub fn resolve_encounter_card(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -168,11 +160,7 @@ pub fn resolve_encounter_card(
         }
     };
 
-    let Some(registry) = card_registry::current() else {
-        return EngineOutcome::Rejected {
-            reason: "encounter card resolution: no card registry installed".into(),
-        };
-    };
+    let registry = cx.cards;
     let abilities = (registry.abilities_for)(&code).unwrap_or_default();
 
     // Revelation effects on enemies (rare, but printed on some encounter
@@ -464,7 +452,7 @@ pub(super) fn spawn_enemy_at(
     };
     cx.state.enemies.insert(enemy_id, enemy);
 
-    match hunters::resolve_prey(cx.state, prey, &candidates) {
+    match hunters::resolve_prey(cx.state, cx.cards, prey, &candidates) {
         PreyResolution::None => {
             cx.events.push(Event::EnemySpawned {
                 enemy: enemy_id,
@@ -507,7 +495,7 @@ pub(super) fn spawn_enemy_at(
                         "Enemy {enemy_id:?} spawn engagement: lead investigator picks whom to \
                          engage among {tied:?}"
                     ),
-                    choice::candidate_options(cx.state, &tied, |i| {
+                    choice::candidate_options(cx.state, cx.cards, &tied, |i| {
                         cx.state.investigators[i].card_anchor()
                     }),
                 ),
@@ -716,11 +704,7 @@ pub(super) fn drive_player_draw(cx: &mut Cx) -> EngineOutcome {
 /// returns to `encounter_deck` — the draw-before-validate ordering only
 /// matters on non-rejecting paths.
 fn draw_encounter_card_into_frame(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
-    let Some(reg) = card_registry::current() else {
-        return EngineOutcome::Rejected {
-            reason: "DrawEncounterCard: no card registry installed".into(),
-        };
-    };
+    let reg = cx.cards;
 
     // Bump + cap-check the live chain position. The drawer's `PlayerDraw` frame
     // is on top (its card-resolution frames are pushed above it next).
@@ -884,17 +868,14 @@ pub(super) fn dispose_encounter_card_if_top(cx: &mut Cx) -> EngineOutcome {
 
         match disposition {
             EncounterDisposition::Discard => {
-                let persistent = card_registry::current()
-                    .and_then(|reg| (reg.abilities_for)(&card))
+                let persistent = (cx.cards.abilities_for)(&card)
                     .is_some_and(|abilities| treachery_is_persistent(&abilities));
                 if !persistent {
                     cx.state.encounter_discard.push(card.clone());
                 }
             }
             EncounterDisposition::Spawn { investigator } => {
-                let Some(metadata) =
-                    card_registry::current().and_then(|reg| (reg.metadata_for)(&card))
-                else {
+                let Some(metadata) = (cx.cards.metadata_for)(&card) else {
                     return EngineOutcome::Rejected {
                         reason: format!("encounter enemy disposal: no metadata for card {card:?}")
                             .into(),

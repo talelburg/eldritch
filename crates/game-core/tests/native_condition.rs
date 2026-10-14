@@ -6,10 +6,14 @@
 //! Exercised via the forced-trigger path (the real apply route) since
 //! `apply_effect` is `pub(crate)` — same shape as `native_effect.rs`.
 
+use std::sync::LazyLock;
+
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, InvestigatorTarget};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::evaluator::EvalContext;
+use game_core::engine::Registries;
 use game_core::event::Event;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{self, Agenda, CardCode, GameState, GameStateBuilder, InvestigatorId};
 use game_core::test_support::{seat, MockRegistry, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -40,13 +44,16 @@ fn has_doom(state: &GameState, ctx: &EvalContext) -> bool {
     state.agenda_doom > 0 && state.investigators.contains_key(&ctx.controller)
 }
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    MockRegistry::new()
-        .with_abilities(AGENDA, || gated("test:has-doom"))
-        .with_abilities(AGENDA_BAD, || gated("test:missing"))
-        .with_native_condition("test:has-doom", has_doom)
-        .install();
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        cards: MockRegistry::new()
+            .with_abilities(AGENDA, || gated("test:has-doom"))
+            .with_abilities(AGENDA_BAD, || gated("test:missing"))
+            .with_native_condition("test:has-doom", has_doom)
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 /// The lead's open turn under the agenda `code` carrying `doom`. A filler deck
@@ -54,6 +61,7 @@ fn install() {
 /// has ended.
 fn state_with_agenda(code: &str, doom: u8) -> GameState {
     let mut state = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).deck(["filler-card"]))
         .open_turn(INV)
         .build();
@@ -73,7 +81,7 @@ fn state_with_agenda(code: &str, doom: u8) -> GameState {
 /// phase, so a branch is read off its `ResourcesGained` event rather than the
 /// pool.
 fn end_the_enemy_phase(state: GameState) -> TestSession {
-    let session = TestSession::new(state).take(&TurnAction::EndTurn);
+    let session = TestSession::new(state, registries()).take(&TurnAction::EndTurn);
     assert_event!(
         session.events(),
         Event::PhaseEnded {
@@ -109,7 +117,7 @@ fn native_condition_failing_takes_the_else_branch() {
 fn native_condition_rejects_unknown_tag() {
     let state = state_with_agenda(AGENDA_BAD, 1);
     let before = resources(&state);
-    let session = TestSession::new(state).take(&TurnAction::EndTurn);
+    let session = TestSession::new(state, registries()).take(&TurnAction::EndTurn);
     session.expect_rejected();
     // The rejection unwinds the whole step back to the turn menu.
     session.assert_at_turn_menu(INV);

@@ -7,7 +7,6 @@
 
 use card_dsl::card_data::CardKind;
 
-use crate::card_registry;
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{CardCode, CardInPlay, CardInstanceId, InvestigatorId, LocationId, Owner};
@@ -31,12 +30,10 @@ use crate::state::{CardCode, CardInPlay, CardInstanceId, InvestigatorId, Locatio
 /// [#296]: https://github.com/talelburg/eldritch/issues/296
 pub(super) fn new_in_play_instance(cx: &mut Cx, code: CardCode, owner: Owner) -> CardInPlay {
     let instance_id = cx.state.card_instance_ids.mint();
-    let uses = card_registry::current()
-        .and_then(|reg| (reg.metadata_for)(&code))
-        .and_then(|m| match &m.kind {
-            CardKind::Asset { uses, .. } => *uses,
-            _ => None,
-        });
+    let uses = (cx.cards.metadata_for)(&code).and_then(|m| match &m.kind {
+        CardKind::Asset { uses, .. } => *uses,
+        _ => None,
+    });
     let mut card = CardInPlay::enter_play(code, instance_id, owner);
     if let Some(u) = uses {
         card.uses.insert(u.kind, u.count);
@@ -175,7 +172,7 @@ pub(super) fn put_into_play_at_location(
 mod tests {
     use super::*;
     use crate::state::GameStateBuilder;
-    use crate::test_support;
+    use crate::test_support::{self, TEST_REGISTRIES};
 
     #[test]
     fn attach_mints_id_pushes_to_location_and_emits_event() {
@@ -184,10 +181,7 @@ mod tests {
             .build();
         let mut events = Vec::new();
         let id = {
-            let mut cx = Cx {
-                state: &mut state,
-                events: &mut events,
-            };
+            let mut cx = Cx::for_test(&mut state, &mut events);
             attach_to_location(
                 &mut cx,
                 LocationId(7),
@@ -209,14 +203,12 @@ mod tests {
     #[test]
     fn place_mints_id_pushes_instance_and_emits_event() {
         let mut state = GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
             .build();
         let mut events = Vec::new();
         let id = {
-            let mut cx = Cx {
-                state: &mut state,
-                events: &mut events,
-            };
+            let mut cx = Cx::for_test(&mut state, &mut events);
             place_in_threat_area(
                 &mut cx,
                 InvestigatorId(1),

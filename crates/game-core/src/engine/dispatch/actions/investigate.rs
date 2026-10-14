@@ -76,7 +76,7 @@ pub(in crate::engine::dispatch) fn handle(
     investigator: InvestigatorId,
 ) -> EngineOutcome {
     let description = ActionDescription::basic(ActionKind::Investigate);
-    if let Err(reason) = take::check(cx.state, investigator, &description) {
+    if let Err(reason) = take::check(cx.state, cx.cards, investigator, &description) {
         return EngineOutcome::Rejected { reason };
     }
     let inv = &cx.state.investigators[&investigator];
@@ -222,7 +222,7 @@ mod tests {
     use crate::state::{
         Continuation, EffectFrame, GameStateBuilder, InFlightSkillTest, SkillTestId,
     };
-    use crate::test_support;
+    use crate::test_support::{self, TEST_REGISTRIES};
 
     /// The `Investigate` follow-up pushes **one** `DiscoverClue` of
     /// `1 + bonus_clues_discovered` at the test's `tested_location`, reading the
@@ -234,6 +234,7 @@ mod tests {
         let inv = InvestigatorId(1);
         let loc = LocationId(10);
         let mut state = GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1).at(loc))
             .with_location(test_support::test_location(loc.0, "Study"))
             .build();
@@ -252,10 +253,7 @@ mod tests {
                 )
             }));
         let mut events = Vec::new();
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
 
         after_test(&mut cx, inv);
 

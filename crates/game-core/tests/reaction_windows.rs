@@ -2,7 +2,7 @@
 //! carries `Trigger::OnEvent` abilities.
 //!
 //! Lives at `crates/game-core/tests/` so it runs in its own integration-
-//! test process (separate `OnceLock<CardRegistry>`), letting it install
+//! test process (a process holds one `MockRegistry`), letting it build
 //! a mock registry without colliding with game-core's in-crate tests or
 //! with other `tests/*.rs` files. Mirrors `on_skill_test_resolution.rs`.
 //!
@@ -12,14 +12,17 @@
 //! exercise edge cases (multi-controller defeats, two abilities on one
 //! card, `by_controller: false`) that no real Phase-3 card hits.
 
+use std::sync::LazyLock;
+
 use card_dsl::dsl::{
     self, Ability, EventPattern, EventTiming, InvestigatorTarget, LocationTarget, SkillTestKind,
     TestOutcome, TestedLocationScope,
 };
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{OptionId, OptionTarget};
+use game_core::engine::{OptionId, OptionTarget, Registries};
 use game_core::event::Event;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, Enemy, EnemyId, GameStateBuilder, InvestigatorId, Location,
     LocationId, TokenModifiers,
@@ -84,56 +87,59 @@ fn react_gaining_a_resource(pattern: EventPattern) -> Vec<Ability> {
     )]
 }
 
-#[ctor::ctor(unsafe)]
-fn install_mock_registry() {
-    MockRegistry::new()
-        .with_abilities(MODAL_REACTION, || {
-            vec![dsl::reaction_on_event(
-                enemy_defeated(true),
-                EventTiming::After,
-                dsl::choose_one([
-                    (
-                        "Gain 1 resource",
-                        dsl::gain_resources(InvestigatorTarget::You, 1),
-                    ),
-                    (
-                        "Gain 3 resources",
-                        dsl::gain_resources(InvestigatorTarget::You, 3),
-                    ),
-                ]),
-            )]
-        })
-        .with_abilities(ROLAND_REACTION, || {
-            vec![dsl::reaction_on_event(
-                enemy_defeated(true),
-                EventTiming::After,
-                dsl::discover_clue(LocationTarget::YourLocation, 1),
-            )]
-        })
-        .with_abilities(BYSTANDER_REACTION, || {
-            react_gaining_a_resource(enemy_defeated(false))
-        })
-        .with_abilities(TWO_REACTIONS, || {
-            vec![
-                dsl::reaction_on_event(
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        cards: MockRegistry::new()
+            .with_abilities(MODAL_REACTION, || {
+                vec![dsl::reaction_on_event(
+                    enemy_defeated(true),
+                    EventTiming::After,
+                    dsl::choose_one([
+                        (
+                            "Gain 1 resource",
+                            dsl::gain_resources(InvestigatorTarget::You, 1),
+                        ),
+                        (
+                            "Gain 3 resources",
+                            dsl::gain_resources(InvestigatorTarget::You, 3),
+                        ),
+                    ]),
+                )]
+            })
+            .with_abilities(ROLAND_REACTION, || {
+                vec![dsl::reaction_on_event(
                     enemy_defeated(true),
                     EventTiming::After,
                     dsl::discover_clue(LocationTarget::YourLocation, 1),
-                ),
-                dsl::reaction_on_event(
-                    enemy_defeated(true),
-                    EventTiming::After,
-                    dsl::gain_resources(InvestigatorTarget::You, 1),
-                ),
-            ]
-        })
-        .with_abilities(MILAN_REACTION, || {
-            react_gaining_a_resource(investigated(true))
-        })
-        .with_abilities(BYSTANDER_TEST_REACTION, || {
-            react_gaining_a_resource(investigated(false))
-        })
-        .install();
+                )]
+            })
+            .with_abilities(BYSTANDER_REACTION, || {
+                react_gaining_a_resource(enemy_defeated(false))
+            })
+            .with_abilities(TWO_REACTIONS, || {
+                vec![
+                    dsl::reaction_on_event(
+                        enemy_defeated(true),
+                        EventTiming::After,
+                        dsl::discover_clue(LocationTarget::YourLocation, 1),
+                    ),
+                    dsl::reaction_on_event(
+                        enemy_defeated(true),
+                        EventTiming::After,
+                        dsl::gain_resources(InvestigatorTarget::You, 1),
+                    ),
+                ]
+            })
+            .with_abilities(MILAN_REACTION, || {
+                react_gaining_a_resource(investigated(true))
+            })
+            .with_abilities(BYSTANDER_TEST_REACTION, || {
+                react_gaining_a_resource(investigated(false))
+            })
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -160,7 +166,10 @@ fn fight_board(seats: impl IntoIterator<Item = Seat>, location_clues: u8) -> Gam
     location.clues = location_clues;
     seats
         .into_iter()
-        .fold(GameStateBuilder::new(), GameStateBuilder::with_seat)
+        .fold(
+            GameStateBuilder::new().with_registries(registries()),
+            GameStateBuilder::with_seat,
+        )
         .with_enemy_engaged(ghoul(), INV)
         .with_location(location)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -493,7 +502,7 @@ fn reaction_window_closes_before_on_skill_test_resolution_fires() {
     // ability. We don't have one in the mock registry; instead just
     // exercise the "open window resumes through the
     // OnSkillTestResolution step" boundary. The OnSkillTestResolution
-    // step is a no-op without an installed registry entry for the
+    // step is a no-op without a registry entry for the
     // committed card, but the event-order pinning still applies: the
     // window closes BEFORE the discard-and-end sequence.
     let board = fight_board(
@@ -699,6 +708,7 @@ fn one_clue_study() -> Location {
 /// Investigate succeeds and discovers the clue.
 fn investigate_to_success_scenario(in_play: &[&str]) -> GameStateBuilder {
     GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).at(HERE).in_play(in_play.iter().copied()))
         .with_location(one_clue_study())
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -715,6 +725,7 @@ fn investigate_to_success_scenario(in_play: &[&str]) -> GameStateBuilder {
 /// by the walk's fallback for an unseated fixture investigator.
 fn investigate_with_a_bystander(bystander_card: &str) -> GameStateBuilder {
     GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).at(HERE))
         .with_seat(seat(2).at(ELSEWHERE).in_play([bystander_card]))
         .with_location(one_clue_study())

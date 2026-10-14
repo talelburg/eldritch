@@ -16,10 +16,12 @@
 //! resolution point — and none stands in for a printed card. They live here,
 //! the one binary that reads them.
 
+use std::sync::LazyLock;
+
 use card_dsl::dsl::{self, Effect, EventPattern, EventTiming, InvestigatorTarget};
-use game_core::engine::{EngineOutcome, InputKind, OptionTarget, TimingEvent};
+use game_core::engine::{EngineOutcome, InputKind, OptionTarget, Registries, TimingEvent};
 use game_core::event::Event;
-use game_core::scenario::{ResolutionId, ScenarioEnding};
+use game_core::scenario::{ResolutionId, ScenarioEnding, ScenarioRegistry};
 use game_core::state::{Act, CardCode, GameStateBuilder, InvestigatorId, Phase};
 use game_core::test_support::{seat, MockRegistry, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_event_sequence};
@@ -48,56 +50,59 @@ fn mark(amount: u8) -> Effect {
     dsl::gain_resources(InvestigatorTarget::You, amount)
 }
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    MockRegistry::new()
-        .with_abilities(FORCED_A, || {
-            vec![dsl::forced_on_event(
-                EventPattern::RoundEnded,
-                EventTiming::At,
-                mark(1),
-            )]
-        })
-        .with_abilities(FORCED_B, || {
-            vec![dsl::forced_on_event(
-                EventPattern::RoundEnded,
-                EventTiming::At,
-                mark(2),
-            )]
-        })
-        .with_abilities(REACTION, || {
-            vec![dsl::reaction_on_event(
-                EventPattern::RoundEnded,
-                EventTiming::At,
-                mark(3),
-            )]
-        })
-        .with_abilities(RESOLVES, || {
-            vec![dsl::forced_on_event(
-                EventPattern::RoundEnded,
-                EventTiming::At,
-                dsl::reach_resolution(1),
-            )]
-        })
-        .with_abilities(PHASE_END, || {
-            vec![dsl::forced_on_event(
-                EventPattern::PhaseEnded {
-                    phase: dsl::Phase::Enemy,
-                },
-                EventTiming::At,
-                mark(4),
-            )]
-        })
-        .with_abilities(UPKEEP_END, || {
-            vec![dsl::forced_on_event(
-                EventPattern::PhaseEnded {
-                    phase: dsl::Phase::Upkeep,
-                },
-                EventTiming::At,
-                mark(5),
-            )]
-        })
-        .install();
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        cards: MockRegistry::new()
+            .with_abilities(FORCED_A, || {
+                vec![dsl::forced_on_event(
+                    EventPattern::RoundEnded,
+                    EventTiming::At,
+                    mark(1),
+                )]
+            })
+            .with_abilities(FORCED_B, || {
+                vec![dsl::forced_on_event(
+                    EventPattern::RoundEnded,
+                    EventTiming::At,
+                    mark(2),
+                )]
+            })
+            .with_abilities(REACTION, || {
+                vec![dsl::reaction_on_event(
+                    EventPattern::RoundEnded,
+                    EventTiming::At,
+                    mark(3),
+                )]
+            })
+            .with_abilities(RESOLVES, || {
+                vec![dsl::forced_on_event(
+                    EventPattern::RoundEnded,
+                    EventTiming::At,
+                    dsl::reach_resolution(1),
+                )]
+            })
+            .with_abilities(PHASE_END, || {
+                vec![dsl::forced_on_event(
+                    EventPattern::PhaseEnded {
+                        phase: dsl::Phase::Enemy,
+                    },
+                    EventTiming::At,
+                    mark(4),
+                )]
+            })
+            .with_abilities(UPKEEP_END, || {
+                vec![dsl::forced_on_event(
+                    EventPattern::PhaseEnded {
+                        phase: dsl::Phase::Upkeep,
+                    },
+                    EventTiming::At,
+                    mark(5),
+                )]
+            })
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 /// The investigator, holding `codes` in their threat area — the round-end
@@ -109,6 +114,7 @@ fn holding(codes: &[&str]) -> Seat {
 /// One investigator holding `codes`, settled.
 fn session_holding(codes: &[&str]) -> TestSession {
     GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(holding(codes))
         .with_turn_order([INV])
         .session()
@@ -193,6 +199,7 @@ fn two_simultaneous_forced_abilities_run_in_the_order_the_lead_picks() {
 #[test]
 fn a_timing_point_fired_during_a_turn_comes_back_to_the_turn_menu() {
     let session = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(holding(&[FORCED_A]))
         .open_turn(INV)
         .session()
@@ -261,6 +268,7 @@ fn lethal_damage_eliminates_the_last_investigator_and_ends_the_scenario() {
 /// act — settled.
 fn acting(act: &str, held: &[&str], builder: GameStateBuilder) -> TestSession {
     let mut state = builder
+        .with_registries(registries())
         .with_seat(holding(held))
         .with_turn_order([INV])
         .build();
@@ -268,7 +276,7 @@ fn acting(act: &str, held: &[&str], builder: GameStateBuilder) -> TestSession {
         code: CardCode::new(act),
         clue_threshold: 0,
     }];
-    TestSession::new(state)
+    TestSession::new(state, registries())
 }
 
 /// The phase end is not a step: a session never rests with a phase anchor

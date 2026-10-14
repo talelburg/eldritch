@@ -33,7 +33,7 @@
 //! (the steps themselves) and `game-core/tests/action_designator_aoo.rs` (the
 //! designator's attack-of-opportunity exemption, #696).
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
@@ -62,11 +62,6 @@ const HALLWAY: LocationId = LocationId(2);
 /// The Parlor prints exactly one implemented ability, so index 0 is the Resign.
 const RESIGN: u8 = 0;
 
-#[ctor::ctor(unsafe)]
-fn install_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// The resigner's turn: they stand at the Parlor holding 2 clues and 3
 /// resources, with a Machete in play and a Rosary in hand; a survivor stands
 /// in the Hallway so the scenario keeps running. `solo` drops the survivor,
@@ -77,6 +72,7 @@ fn board(solo: bool) -> GameStateBuilder {
     parlor.clues = 1;
 
     let builder = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(
             seat(RESIGNER.0)
                 .at(PARLOR)
@@ -123,9 +119,9 @@ fn resign(board: GameStateBuilder) -> ApplyResult {
 fn standing_at_the_parlor_offers_the_resign_action() {
     let state = board(false).build();
     assert!(
-        enumerate::legal_actions(&state).contains(&resign_action()),
+        enumerate::legal_actions(&state, TEST_REGISTRIES.cards).contains(&resign_action()),
         "the Parlor's Resign belongs in the turn menu; menu was {:?}",
-        enumerate::legal_actions(&state),
+        enumerate::legal_actions(&state, TEST_REGISTRIES.cards),
     );
 }
 

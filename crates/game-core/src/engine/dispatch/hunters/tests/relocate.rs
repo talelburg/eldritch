@@ -3,6 +3,7 @@
 use super::*;
 use crate::engine::Cx;
 use crate::state::GameStateBuilder;
+use crate::test_support::TEST_REGISTRIES;
 use crate::{assert_event, assert_no_event, test_support};
 
 /// Two adjacent locations: investigator 1 in the Hallway (2), a ready
@@ -15,6 +16,7 @@ fn two_rooms() -> GameStateBuilder {
         e
     };
     GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(LocationId(2)))
         .with_location(test_support::test_location(1, "Attic"))
         .with_location(test_support::test_location(2, "Hallway"))
@@ -52,10 +54,7 @@ fn relocate_enemy_engages_on_arrival() {
     let mut events = Vec::new();
 
     relocate_enemy(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         EnemyId(1),
         LocationId(2),
     );
@@ -81,10 +80,7 @@ fn relocate_enemy_exhausted_arrives_unengaged() {
     let mut events = Vec::new();
 
     relocate_enemy(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         EnemyId(1),
         LocationId(2),
     );
@@ -111,10 +107,7 @@ fn relocate_enemy_to_empty_location_leaves_it_unengaged() {
     let mut events = Vec::new();
 
     relocate_enemy(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         EnemyId(1),
         LocationId(2),
     );
@@ -142,10 +135,7 @@ fn relocate_enemy_keeps_an_existing_engagement() {
     let mut events = Vec::new();
 
     relocate_enemy(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         EnemyId(1),
         LocationId(2),
     );

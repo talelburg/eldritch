@@ -21,7 +21,11 @@ async fn app_with_fixture_dist() -> Router {
         .await
         .expect("open in-memory sqlite");
     MIGRATOR.run(&pool).await.expect("migrate");
-    server::app(AppState::new_with_dist(pool, FIXTURE_DIST.into()))
+    server::app(AppState::new_with_dist(
+        pool,
+        server::REGISTRIES,
+        FIXTURE_DIST.into(),
+    ))
 }
 
 async fn body_string(response: Response) -> String {

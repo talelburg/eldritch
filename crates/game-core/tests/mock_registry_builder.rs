@@ -1,17 +1,15 @@
 //! [`MockRegistry`] — the shared builder for a test binary's mock card
-//! registry. Composition of the standard lookups, per-slot dispatch, and
-//! first-install-wins.
+//! registry. Composition of the standard lookups and per-slot dispatch.
 //!
 //! An integration binary rather than an in-crate `#[cfg(test)]` module because
-//! the assertions are *about* the process-global install, and `game-core`'s own
-//! unit-test process already has `install_test_registry()` occupying that slot
-//! (`card_registry::tests::install_is_idempotent_and_current_reflects_installed_value`).
-//! A second claimant there would starve whichever test lost the race.
+//! a process builds one mock ([`MockRegistry::build`] panics on a second), and
+//! this binary's is the one under test.
 //!
 //! The probe cards below are local to this file, per ADR 0016 — the builder
 //! ships no named ones.
 
 use std::ptr;
+use std::sync::LazyLock;
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use card_dsl::dsl::{self, Ability, ModifierScope, Stat};
@@ -21,10 +19,8 @@ use game_core::engine::{EngineOutcome, NativeCx};
 use game_core::state::{CardCode, GameState};
 use game_core::test_support::{self, MockRegistry, TEST_INV};
 
-/// A probe card the installed registry knows about.
+/// A probe card the built registry knows about.
 const PROBE: &str = "_mrb_probe";
-/// A probe card registered only by the losing second install.
-const LATE: &str = "_mrb_late";
 /// A probe location whose ability is printed on its reverse.
 const BACK: &str = "_mrb_back";
 
@@ -81,19 +77,18 @@ fn probe_condition(_state: &GameState, _ctx: &EvalContext) -> bool {
     false
 }
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    MockRegistry::new()
-        .with_card(probe_metadata(PROBE))
-        .with_abilities(PROBE, front_ability)
-        .with_back_abilities(BACK, back_ability)
-        .with_native_effect(EFFECT_TAG, probe_effect)
-        .with_native_condition(CONDITION_TAG, probe_condition)
-        .install();
-}
-
+/// The binary's one mock, built once on first use.
 fn registry() -> &'static card_registry::CardRegistry {
-    card_registry::current().expect("the ctor installed a registry")
+    static CARDS: LazyLock<&'static card_registry::CardRegistry> = LazyLock::new(|| {
+        MockRegistry::new()
+            .with_card(probe_metadata(PROBE))
+            .with_abilities(PROBE, front_ability)
+            .with_back_abilities(BACK, back_ability)
+            .with_native_effect(EFFECT_TAG, probe_effect)
+            .with_native_condition(CONDITION_TAG, probe_condition)
+            .build()
+    });
+    *CARDS
 }
 
 #[test]
@@ -115,16 +110,16 @@ fn unregistered_code_resolves_to_nothing() {
 /// `test_investigator` gets capacity lookups served without registering
 /// `TEST_INV` itself.
 #[test]
-fn install_composes_the_test_investigator_lookup() {
+fn build_composes_the_test_investigator_lookup() {
     let meta = (registry().metadata_for)(&CardCode::new(TEST_INV))
-        .expect("TEST_INV is composed in by install");
+        .expect("TEST_INV is composed in by build");
     assert_eq!(meta.code, TEST_INV);
 }
 
 /// And it composes `abilities_for_terminal`, so an act/agenda deck ending in a
 /// `terminal_code` card gets its reverse served.
 #[test]
-fn install_composes_the_terminal_card_abilities() {
+fn build_composes_the_terminal_card_abilities() {
     let abilities = (registry().abilities_for)(&test_support::terminal_code(3))
         .expect("terminal cards are composed in");
     assert_eq!(abilities.len(), 2, "act-advanced and agenda-advanced");
@@ -159,25 +154,4 @@ fn native_tags_dispatch_per_slot() {
     assert!((registry().native_condition_for)(EFFECT_TAG).is_none());
     assert!((registry().native_condition_for)(CONDITION_TAG).is_some());
     assert!((registry().native_effect_for)("_mrb:missing").is_none());
-}
-
-/// First install wins: a second `install()` is a silent no-op, and neither the
-/// registry it built nor its tables displace the first.
-#[test]
-fn install_is_idempotent_and_first_install_wins() {
-    MockRegistry::new()
-        .with_card(probe_metadata(LATE))
-        .with_abilities(LATE, front_ability)
-        .install();
-
-    let late = CardCode::new(LATE);
-    assert!(
-        (registry().metadata_for)(&late).is_none(),
-        "the second install must not register its cards"
-    );
-    assert!((registry().abilities_for)(&late).is_none());
-    assert!(
-        (registry().metadata_for)(&CardCode::new(PROBE)).is_some(),
-        "the first install's cards survive"
-    );
 }

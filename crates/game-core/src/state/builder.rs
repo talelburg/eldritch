@@ -13,6 +13,7 @@
 //! use game_core::engine::enumerate::TurnAction;
 //! use game_core::state::{GameStateBuilder, InvestigatorId};
 //! use game_core::test_support;
+//! # let registries = test_support::TEST_REGISTRIES;
 //!
 //! let state = GameStateBuilder::new()
 //!     .with_investigator(test_support::test_investigator(1))
@@ -24,12 +25,14 @@
 //!     .build();
 //!
 //! // Investigator 1 ends their turn, which opens investigator 2's.
-//! let session = test_support::TestSession::new(state).take(&TurnAction::EndTurn);
+//! let session = test_support::TestSession::new(state, registries)
+//!     .take(&TurnAction::EndTurn);
 //! session.assert_at_turn_menu(InvestigatorId(2));
 //! ```
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+use crate::engine::Registries;
 use crate::rng::RngState;
 use crate::scenario::ScenarioId;
 use crate::state::{
@@ -71,6 +74,12 @@ pub struct GameStateBuilder {
     investigator_turn: Option<InvestigatorId>,
     engagements: Vec<(EnemyId, InvestigatorId)>,
     scenario_id: Option<ScenarioId>,
+    /// The registries a test named with
+    /// [`with_registries`](Self::with_registries), which the test-only
+    /// adders ([`with_seat`](Self::with_seat), [`session`](Self::session))
+    /// resolve against. A production builder never sets it, and it is not
+    /// part of the built state.
+    registries: Option<Registries>,
 }
 
 impl GameStateBuilder {
@@ -98,6 +107,7 @@ impl GameStateBuilder {
             investigator_turn: None,
             engagements: Vec::new(),
             scenario_id: None,
+            registries: None,
         }
     }
 
@@ -401,10 +411,9 @@ impl GameStateBuilder {
     /// Set the scenario id this state belongs to. `None` (the
     /// default from [`GameStateBuilder::new`]) means the engine's post-apply
     /// resolution hook will short-circuit. Passing a `ScenarioId`
-    /// means a `ScenarioRegistry` capable of resolving it must be
-    /// installed *if you want resolutions to fire* — the resolution
-    /// lookup silently no-ops when no registry is installed or when
-    /// `module_for` returns `None`.
+    /// means the `ScenarioRegistry` each apply is handed must resolve it
+    /// *if you want resolutions to fire* — the resolution lookup silently
+    /// no-ops when `module_for` returns `None`.
     pub fn with_scenario_id(mut self, id: ScenarioId) -> Self {
         self.scenario_id = Some(id);
         self
@@ -439,6 +448,18 @@ impl GameStateBuilder {
             .map(|id| id.0.saturating_add(1))
             .max()
             .unwrap_or(0)
+    }
+
+    /// The registries named by [`with_registries`](Self::with_registries),
+    /// if any.
+    pub(crate) fn registries(&self) -> Option<Registries> {
+        self.registries
+    }
+
+    /// Record the registries a test names; the test-only
+    /// [`with_registries`](Self::with_registries) is the one caller.
+    pub(crate) fn set_registries(&mut self, registries: Registries) {
+        self.registries = Some(registries);
     }
 
     /// Materialize the configured [`GameState`].
@@ -577,11 +598,12 @@ mod set_aside_cards_tests {
 mod with_open_window_tests {
     use super::*;
     use crate::state::PhaseStep;
-    use crate::test_support::seat;
+    use crate::test_support::{seat, TEST_REGISTRIES};
 
     #[test]
     fn with_open_window_pushes_onto_the_stack() {
         let state = GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
             .with_seat(seat(1))
             .with_open_window(
                 FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
@@ -605,6 +627,7 @@ mod with_open_window_tests {
     #[test]
     fn with_open_window_stacks_in_order() {
         let state = GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
             .with_seat(seat(1))
             .with_open_window(
                 FastWindowKind::Phase(PhaseStep::MythosAfterDraws),

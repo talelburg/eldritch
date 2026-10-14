@@ -18,7 +18,7 @@ use card_dsl::dsl::{
     Ability, ActionDesignator, Cost, Effect, EnemyTarget, Trigger, TriggerKind, UsageLimit,
 };
 
-use crate::card_registry;
+use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::abilities::{self, ActivatedAbility};
 use crate::engine::dispatch::actions::take::{self, ActionDescription};
 use crate::engine::dispatch::initiation::{self, InitiationKind, Refusal};
@@ -90,13 +90,14 @@ pub(crate) struct ActivateCheckResult {
 /// Gates RR p.19 slot capacity: Assets only; the only hard slot reject — a merely-full
 /// slot is not rejected here, make-room at enter-play handles it.
 fn check_play_slot_satisfiable(
+    cards: &CardRegistry,
     card_type: CardType,
     code: &CardCode,
 ) -> Result<(), Cow<'static, str>> {
     if card_type != CardType::Asset {
         return Ok(());
     }
-    if let Some(slot) = slots::unsatisfiable_slot(code) {
+    if let Some(slot) = slots::unsatisfiable_slot(cards, code) {
         return Err(format!(
             "PlayCard: {code} needs more {slot:?} slots than the investigator has \
              (slot capacity exceeded; RR p.19)."
@@ -122,6 +123,7 @@ fn check_play_slot_satisfiable(
 /// inspects `Ok` vs `Err`).
 pub(crate) fn check_play_card(
     state: &GameState,
+    cards: &CardRegistry,
     investigator: InvestigatorId,
     hand_index: u8,
 ) -> Result<PlayCheckResult, Cow<'static, str>> {
@@ -152,13 +154,14 @@ pub(crate) fn check_play_card(
     // The destination is re-derived from the code at disposal time
     // (`dispose_play_from_hand`), not carried through validation — commencing a
     // play is destination-agnostic (#604).
-    let (_destination, abilities, is_fast, card_type) = match cards::resolve_play_target(&code) {
-        Ok(v) => v,
-        Err(EngineOutcome::Rejected { reason }) => return Err(reason),
-        Err(other) => {
-            unreachable!("resolve_play_target returned non-Rejected outcome: {other:?}")
-        }
-    };
+    let (_destination, abilities, is_fast, card_type) =
+        match cards::resolve_play_target(cards, &code) {
+            Ok(v) => v,
+            Err(EngineOutcome::Rejected { reason }) => return Err(reason),
+            Err(other) => {
+                unreachable!("resolve_play_target returned non-Rejected outcome: {other:?}")
+            }
+        };
     // Reaction-event gate (Axis C, #335 / #304): a Fast event whose play
     // instruction is a triggering condition is modeled as a `TriggerKind::Reaction`
     // `OnEvent` ability (e.g. Evidence! 01022's "Play after you defeat an enemy").
@@ -199,13 +202,13 @@ pub(crate) fn check_play_card(
     // in the `play_card` handler so every consumer of this validator — the
     // open-turn menu, `enumerate_fast_plays` and the handler — agrees, and a card
     // that can't be played is never *offered*.
-    initiation::check_play(state, investigator, &code)?;
+    initiation::check_play(state, cards, investigator, &code)?;
     // RR p.19 slots (#498): reject only when the card needs more of a slot type
     // than the investigator has capacity for — unsatisfiable even after discarding
     // every occupying asset. A merely-full slot is NOT rejected here; the play
     // proceeds and discards occupiers to make room at enter-play time. Unreachable
     // in the current corpus (max need is Hand×2 = cap 2); no silent no-op.
-    check_play_slot_satisfiable(card_type, &code)?;
+    check_play_slot_satisfiable(cards, card_type, &code)?;
     // Timing gate — see play_card doc-comment "# Timing gate" section.
     let active_during_investigation =
         state.phase == Phase::Investigation && state.active_investigator == Some(investigator);
@@ -230,9 +233,8 @@ pub(crate) fn check_play_card(
     // `EndOfTurn` forced/reaction run has resolved (`phases.rs`), so a Fast
     // play made from inside that run still sees itself as the active
     // investigator and passes this gate.
-    let only_during_turn = card_registry::current()
-        .and_then(|reg| (reg.metadata_for)(&code))
-        .is_some_and(CardMetadata::play_only_during_turn);
+    let only_during_turn =
+        (cards.metadata_for)(&code).is_some_and(CardMetadata::play_only_during_turn);
     // Non-asset/non-event card types are filtered out by
     // `resolve_play_target` above, so `card_type` here is always one of
     // `Asset` or `Event`. The non-Fast arm collapses both into the
@@ -282,8 +284,13 @@ pub(crate) fn check_play_card(
     // the step, which says whether it can be afforded (validate-first;
     // `play_card` takes it). Fast plays are not actions and never ask (#378).
     if !is_fast {
-        take::check(state, investigator, &ActionDescription::play(code.clone()))
-            .map_err(|why| Cow::from(format!("PlayCard: {why}")))?;
+        take::check(
+            state,
+            cards,
+            investigator,
+            &ActionDescription::play(code.clone()),
+        )
+        .map_err(|why| Cow::from(format!("PlayCard: {why}")))?;
     }
     Ok(PlayCheckResult {
         abilities,
@@ -500,6 +507,7 @@ fn reject_source_costs_without_an_instance(
 /// activatable, `Err(reason)` otherwise. Does not mutate state.
 pub(crate) fn check_activate_ability(
     state: &GameState,
+    cards: &CardRegistry,
     investigator: InvestigatorId,
     source: AbilitySource,
     address: &AbilityAddress,
@@ -516,7 +524,7 @@ pub(crate) fn check_activate_ability(
     // same one the turn-menu enumerator lists from (#707). Addressed by
     // identity, never by position: the position a validation computes is stale
     // the moment a cost removes the source (#706).
-    let source_card = ability_source::resolve(state, investigator, source)?;
+    let source_card = ability_source::resolve(state, cards, investigator, source)?;
     let source_code = source_card.code().clone();
     let source_exhausted = source_card.exhausted();
 
@@ -534,7 +542,7 @@ pub(crate) fn check_activate_ability(
         costs,
         effect,
         usage_limit,
-    } = match abilities::resolve_activated_ability(state, source, &source_code, address) {
+    } = match abilities::resolve_activated_ability(state, cards, source, &source_code, address) {
         Ok(v) => v,
         Err(EngineOutcome::Rejected { reason }) => return Err(reason),
         Err(other) => {
@@ -582,7 +590,7 @@ pub(crate) fn check_activate_ability(
     // abilities too, which no corpus card can reach (#759).
     if action_cost > 0 {
         let description = ActionDescription::activate(source, action_cost, designator.clone());
-        take::check(state, investigator, &description)
+        take::check(state, cards, investigator, &description)
             .map_err(|why| Cow::from(format!("ActivateAbility: {why}")))?;
     }
 
@@ -598,7 +606,7 @@ pub(crate) fn check_activate_ability(
         address.clone(),
         CandidateSource::Ability(source),
     );
-    initiation::check(state, &candidate, InitiationKind::Activated)
+    initiation::check(state, cards, &candidate, InitiationKind::Activated)
         .map_err(|refusal| activation_refusal(refusal, &candidate.code))?;
 
     Ok(ActivateCheckResult {

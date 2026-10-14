@@ -83,7 +83,7 @@ fn assignment_damaging(inst: CardInstanceId) -> Assignment {
 /// pairing (Guard Dog 01021, C5b #237). The instance-level scoping (only an
 /// asset the assignment gives damage to fires) is the source's half of the
 /// matcher, `scope_matches`, and is exercised end-to-end in
-/// `crates/cards/tests/guard_dog_soak.rs` (which installs the real registry);
+/// `crates/cards/tests/guard_dog_soak.rs` (which names the real registry);
 /// what *this* layer owns since #727 is the card's narrowing to an enemy
 /// **attack**.
 #[test]

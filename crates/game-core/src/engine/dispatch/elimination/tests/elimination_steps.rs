@@ -1,9 +1,11 @@
 use super::*;
+use crate::test_support::TEST_REGISTRIES;
 
 #[test]
 fn elimination_step1_removes_controlled_and_owned_cards() {
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(
             test_support::seat(1)
                 .hand(["h1", "h2"])
@@ -15,10 +17,7 @@ fn elimination_step1_removes_controlled_and_owned_cards() {
     let mut events = Vec::new();
 
     apply_investigator_elimination(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         id,
         EliminationCause::Damage,
     );
@@ -50,16 +49,14 @@ fn elimination_step2_places_clues_at_location_and_zeroes_resources() {
     loc.clues = 1;
 
     let mut state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(loc_id).clues(2).resources(4))
         .with_location(loc)
         .build();
     let mut events = Vec::new();
 
     apply_investigator_elimination(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         id,
         EliminationCause::Damage,
     );
@@ -93,6 +90,7 @@ fn elimination_step3_disengages_then_reengages_ready_enemy_onto_survivor() {
     };
 
     let mut state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(loc))
         .with_seat(test_support::seat(2).at(loc))
         .with_location(test_support::test_location(1, "Study"))
@@ -102,10 +100,7 @@ fn elimination_step3_disengages_then_reengages_ready_enemy_onto_survivor() {
     let mut events = Vec::new();
 
     apply_investigator_elimination(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         dead,
         EliminationCause::Damage,
     );
@@ -139,6 +134,7 @@ fn elimination_step3_solo_defeat_leaves_enemy_unengaged() {
     };
 
     let mut state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(loc))
         .with_location(test_support::test_location(1, "Study"))
         .with_enemy(enemy)
@@ -147,10 +143,7 @@ fn elimination_step3_solo_defeat_leaves_enemy_unengaged() {
     let mut events = Vec::new();
 
     apply_investigator_elimination(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         dead,
         EliminationCause::Damage,
     );
@@ -171,6 +164,7 @@ fn last_investigator_defeated_latches_lost_resolution() {
     // scenario-ending latch is set (Rules Reference p.10 step 6).
     let inv = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .open_turn(inv)
         .build();
@@ -178,10 +172,7 @@ fn last_investigator_defeated_latches_lost_resolution() {
 
     // Defeat the only investigator by horror through the standard defeat path.
     apply_investigator_elimination(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         inv,
         EliminationCause::Horror,
     );
@@ -211,6 +202,7 @@ fn elimination_runs_on_horror_defeat_too() {
     };
 
     let mut state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(loc).clues(1))
         .with_seat(test_support::seat(2).at(loc))
         .with_location(test_support::test_location(1, "Study"))
@@ -220,10 +212,7 @@ fn elimination_runs_on_horror_defeat_too() {
     let mut events = Vec::new();
 
     apply_investigator_elimination(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         dead,
         EliminationCause::Horror,
     );
@@ -253,6 +242,7 @@ fn elimination_step3_exhausted_engaged_enemy_disengages_but_does_not_reengage() 
     };
 
     let mut state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(loc))
         .with_seat(test_support::seat(2).at(loc))
         .with_location(test_support::test_location(1, "Study"))
@@ -262,10 +252,7 @@ fn elimination_step3_exhausted_engaged_enemy_disengages_but_does_not_reengage() 
     let mut events = Vec::new();
 
     apply_investigator_elimination(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         dead,
         EliminationCause::Damage,
     );
@@ -284,15 +271,13 @@ fn elimination_without_location_skips_clue_placement_and_does_not_panic() {
     let id = InvestigatorId(1);
     // Not at any location.
     let mut state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).clues(3).resources(2))
         .build();
     let mut events = Vec::new();
 
     apply_investigator_elimination(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         id,
         EliminationCause::Damage,
     );
@@ -315,6 +300,7 @@ fn elimination_discards_an_encounter_owned_threat_card_at_step_four() {
     // A code the game-core registry does not know: the seat gives it to the
     // encounter deck.
     let mut state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).threat_area(["01165"]))
         .build();
     assert_eq!(
@@ -324,10 +310,7 @@ fn elimination_discards_an_encounter_owned_threat_card_at_step_four() {
     let mut events = Vec::new();
 
     apply_investigator_elimination(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         id,
         EliminationCause::Damage,
     );

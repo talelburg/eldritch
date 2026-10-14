@@ -17,7 +17,7 @@ async fn health_returns_ok_when_database_reachable() {
         .expect("open in-memory sqlite");
     MIGRATOR.run(&pool).await.expect("run migrations");
 
-    let app = server::app(AppState::new(pool));
+    let app = server::app(AppState::new(pool, server::REGISTRIES));
 
     let response = app
         .oneshot(

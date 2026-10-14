@@ -20,12 +20,15 @@
 //! declares one marker ability per boundary instead, and the assertion is which
 //! markers fired and in what order.
 
+use std::sync::LazyLock;
+
 use card_dsl::card_data::{CardKind, CardMetadata};
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{EngineOutcome, NativeCx};
+use game_core::engine::{EngineOutcome, NativeCx, Registries};
 use game_core::event::{Event, TraumaKind};
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{self, Act, CardCode, GameStateBuilder, InvestigatorId, LocationId};
 use game_core::test_support::{self, seat, MockRegistry, TestSession};
 
@@ -120,25 +123,28 @@ fn boundary_markers() -> Vec<Ability> {
     ]
 }
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    // `TEST_INV` rides `install`'s composed `metadata_for_test_inv`.
-    MockRegistry::new()
-        .with_card(blank_treachery_metadata())
-        .with_abilities(ACT, boundary_markers)
-        .with_native_effect("mark:start-mythos", |cx, ctx| mark(cx, ctx, START_MYTHOS))
-        .with_native_effect("mark:start-investigation", |cx, ctx| {
-            mark(cx, ctx, START_INVESTIGATION)
-        })
-        .with_native_effect("mark:start-enemy", |cx, ctx| mark(cx, ctx, START_ENEMY))
-        .with_native_effect("mark:start-upkeep", |cx, ctx| mark(cx, ctx, START_UPKEEP))
-        .with_native_effect("mark:end-mythos", |cx, ctx| mark(cx, ctx, END_MYTHOS))
-        .with_native_effect("mark:end-investigation", |cx, ctx| {
-            mark(cx, ctx, END_INVESTIGATION)
-        })
-        .with_native_effect("mark:end-enemy", |cx, ctx| mark(cx, ctx, END_ENEMY))
-        .with_native_effect("mark:end-upkeep", |cx, ctx| mark(cx, ctx, END_UPKEEP))
-        .install();
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        // `TEST_INV` rides `build`'s composed `metadata_for_test_inv`.
+        cards: MockRegistry::new()
+            .with_card(blank_treachery_metadata())
+            .with_abilities(ACT, boundary_markers)
+            .with_native_effect("mark:start-mythos", |cx, ctx| mark(cx, ctx, START_MYTHOS))
+            .with_native_effect("mark:start-investigation", |cx, ctx| {
+                mark(cx, ctx, START_INVESTIGATION)
+            })
+            .with_native_effect("mark:start-enemy", |cx, ctx| mark(cx, ctx, START_ENEMY))
+            .with_native_effect("mark:start-upkeep", |cx, ctx| mark(cx, ctx, START_UPKEEP))
+            .with_native_effect("mark:end-mythos", |cx, ctx| mark(cx, ctx, END_MYTHOS))
+            .with_native_effect("mark:end-investigation", |cx, ctx| {
+                mark(cx, ctx, END_INVESTIGATION)
+            })
+            .with_native_effect("mark:end-enemy", |cx, ctx| mark(cx, ctx, END_ENEMY))
+            .with_native_effect("mark:end-upkeep", |cx, ctx| mark(cx, ctx, END_UPKEEP))
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 /// The boundary markers in the order they fired, dropping the observed-phase
@@ -173,6 +179,7 @@ const HERE: LocationId = LocationId(10);
 /// cascades Investigation → Enemy → Upkeep → Mythos through the real drive loop.
 fn mid_investigation() -> TestSession {
     let mut state = GameStateBuilder::new()
+        .with_registries(registries())
         // Non-empty deck so the upkeep 4.4 draw doesn't fire a deckout penalty.
         .with_seat(seat(1).at(HERE).actions(0).deck(["filler-card"]))
         .with_location(test_support::test_location(HERE.0, "Study"))
@@ -185,7 +192,7 @@ fn mid_investigation() -> TestSession {
     }];
     state.act_index = 0;
     state.encounter_deck.push_back(CardCode::new(TREACHERY));
-    TestSession::new(state)
+    TestSession::new(state, registries())
 }
 
 /// End the turn from [`mid_investigation`]: the cascade runs 2.3 → 3.1 → 3.4 →

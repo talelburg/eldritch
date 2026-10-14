@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::TEST_REGISTRIES;
 
 /// One investigator, `rows` recorded, and the test identified by
 /// [`IN_FLIGHT`] in flight — the shape a `ThisSkillTest` row is read
@@ -10,7 +11,10 @@ fn state_with_recorded(rows: Vec<RecordedModifier>) -> GameState {
 /// As [`state_with_recorded`], with the in-flight test's id chosen by
 /// the caller — so a row can be read against a *different* test.
 fn state_with_recorded_during(rows: Vec<RecordedModifier>, in_flight: SkillTestId) -> GameState {
-    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
+    let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(seat(1))
+        .build();
     state.recorded_modifiers = rows;
     state
         .continuations
@@ -73,7 +77,7 @@ fn a_recorded_row_is_invisible_to_an_outside_test_read() {
     assert_eq!(
         modified_value(
             &state,
-            Some(&mock_registry()),
+            &mock_registry(),
             ModifierTarget::Investigator(id),
             ModifiedQuantity::Skill(SkillKind::Willpower),
             ReadContext::OutsideTest,
@@ -88,7 +92,10 @@ fn a_recorded_row_is_invisible_to_an_outside_test_read() {
 #[test]
 fn a_recorded_row_contributes_nothing_with_no_test_in_flight() {
     let id = InvestigatorId(1);
-    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
+    let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(seat(1))
+        .build();
     state.recorded_modifiers = vec![recorded(id, Stat::Willpower, 5)];
     assert_eq!(skill(&state, id, SkillKind::Willpower), 3);
 }

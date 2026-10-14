@@ -1,4 +1,3 @@
-use card_dsl::card_data::CardMetadata;
 use card_dsl::dsl::{self, Ability, ControlStatus, GrantTarget, Quantity};
 
 use super::*;
@@ -6,7 +5,7 @@ use crate::state::{
     Continuation, EnemyId, GameStateBuilder, InFlightSkillTest, Lifetime, LocationId, Owner,
     RecordedModifier, SkillTestId,
 };
-use crate::test_support::{self, seat, SeatLookup as _};
+use crate::test_support::{self, seat, SeatLookup as _, TEST_REGISTRIES};
 
 mod determination;
 mod difficulty;
@@ -16,15 +15,11 @@ mod recorded_rows;
 mod scope;
 mod sweep;
 
-/// Mock registry over a small hardcoded set of codes. Keeps these
-/// tests isolated from the global `OnceLock` and from the cards
-/// crate — a query takes its registry by argument, so nothing is
-/// installed. Named to match `tests/modified_value.rs`'s mocks,
-/// which cover the same sweep from the integration side.
-fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
-    None
-}
-
+/// Mock registry over a small hardcoded set of codes, keeping these tests
+/// isolated from the cards crate — a query takes its registry by argument.
+/// Named to match `tests/modified_value.rs`'s mocks, which cover the same
+/// sweep from the integration side. Its metadata is the unit-test registry's,
+/// so a `TEST_INV` seat's printed capacity reads.
 fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
     match code.as_str() {
         "willpower-plus-1" => Some(vec![dsl::constant(dsl::modify(
@@ -121,9 +116,8 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
 
 fn mock_registry() -> CardRegistry {
     CardRegistry {
-        metadata_for: mock_metadata_for,
         abilities_for: mock_abilities_for,
-        ..CardRegistry::EMPTY
+        ..test_support::TEST_REGISTRY
     }
 }
 
@@ -131,6 +125,7 @@ fn mock_registry() -> CardRegistry {
 fn state_with_cards_in_play(codes: &[&str]) -> (GameState, InvestigatorId) {
     let id = InvestigatorId(1);
     let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(id.0).in_play(codes.iter().copied()))
         .build();
     (state, id)
@@ -140,7 +135,7 @@ fn state_with_cards_in_play(codes: &[&str]) -> (GameState, InvestigatorId) {
 fn skill(state: &GameState, id: InvestigatorId, skill: SkillKind) -> i32 {
     modified_value(
         state,
-        Some(&mock_registry()),
+        &mock_registry(),
         ModifierTarget::Investigator(id),
         ModifiedQuantity::Skill(skill),
         ReadContext::DuringTest(SkillTestKind::Plain),
@@ -176,6 +171,7 @@ fn recorded_for(
 /// (printed shroud 2) and one enemy (printed fight 2, evade 2).
 fn state_with_test(basis: DifficultyBasis) -> GameState {
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .with_location(test_support::test_location(3, "Study"))
         .with_enemy(test_support::test_enemy(7, "Ghoul"))
@@ -198,7 +194,7 @@ fn state_with_test(basis: DifficultyBasis) -> GameState {
 fn difficulty_of(state: &GameState) -> i32 {
     modified_value(
         state,
-        Some(&mock_registry()),
+        &mock_registry(),
         ModifierTarget::Test,
         ModifiedQuantity::Difficulty,
         ReadContext::DuringTest(SkillTestKind::Investigate),

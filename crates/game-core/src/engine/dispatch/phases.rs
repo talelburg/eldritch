@@ -6,7 +6,6 @@ use std::collections::BTreeSet;
 use card_dsl::card_data::CardKind;
 
 use crate::action::{InputResponse, RosterEntry};
-use crate::card_registry;
 #[cfg(test)] // only `drive_phase` / `push_anchor_and_drive`, the cfg(test) helpers below
 use crate::engine::dispatch;
 use crate::engine::dispatch::emit::TimingEvent;
@@ -47,15 +46,10 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
     // (#448 cp4) — the accessors read from the registry directly via
     // `investigator_card.code`. We still validate that the code resolves to a
     // `CardKind::Investigator` here so seating rejects non-investigators.
-    let registry = card_registry::current();
+    let reg = cx.cards;
     let mut resolved: Vec<(Skills, String, Vec<CardCode>, CardCode)> =
         Vec::with_capacity(roster.len());
     for entry in roster {
-        let Some(reg) = registry else {
-            return EngineOutcome::Rejected {
-                reason: "no card registry installed; cannot resolve investigator stats".into(),
-            };
-        };
         let Some(meta) = (reg.metadata_for)(&entry.investigator) else {
             return EngineOutcome::Rejected {
                 reason: format!("unknown investigator code {}", entry.investigator).into(),

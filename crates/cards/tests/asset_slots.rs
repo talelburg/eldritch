@@ -1,9 +1,9 @@
 //! Asset slot limits + discard-to-make-room (#498), against the real corpus.
 //!
-//! Mirrors the `play_card.rs` harness: a process-global registry install and a
+//! Mirrors the `play_card.rs` harness: the real registries, named, and a
 //! one-investigator mid-investigation state.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
@@ -21,15 +21,11 @@ const FLASHLIGHT: &str = "01087"; // single Hand
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(101);
 
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// A one-investigator open turn with `hand` in hand, plenty of resources and
 /// actions.
 fn play_state(hand: &[&str]) -> TestSession {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(
             seat(1)
                 .at(HERE)

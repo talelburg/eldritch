@@ -1,16 +1,15 @@
 use super::*;
+use crate::test_support::TEST_REGISTRIES;
 
 #[test]
 fn heal_reduces_horror_saturating_and_emits_event() {
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).harm(0, 1))
         .build();
     let mut events = Vec::new();
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         // heal 2 from a 1-horror investigator → saturates to 0, amount 1.
         &dsl::heal(HarmKind::Horror, InvestigatorTarget::You, 2),
         ctx(1),
@@ -30,14 +29,12 @@ fn heal_reduces_horror_saturating_and_emits_event() {
 #[test]
 fn deal_damage_adds_damage_and_emits_event() {
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .with_active_investigator(InvestigatorId(1))
         .build();
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let outcome = run(
         &mut cx,
         &dsl::deal_damage(InvestigatorTarget::You, 2u8),
@@ -54,14 +51,12 @@ fn deal_damage_adds_damage_and_emits_event() {
 #[test]
 fn deal_horror_adds_horror_and_emits_event() {
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .with_active_investigator(InvestigatorId(1))
         .build();
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let outcome = run(
         &mut cx,
         &dsl::deal_horror(InvestigatorTarget::You, 1u8),
@@ -83,14 +78,12 @@ fn deal_damage_at_max_health_defeats_investigator() {
     // 5 + 3 = 8 = defeated with a 3-damage deal.
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(id.0).harm(5, 0))
         .build();
     let mut events = Vec::new();
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::deal_damage(InvestigatorTarget::You, 3u8),
         EvalContext::for_controller(id),
     );
@@ -110,14 +103,12 @@ fn deal_amount_can_be_a_count_of_failure_margin() {
         IntExpr::Count(Quantity::SkillTestFailedBy),
     );
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .with_active_investigator(InvestigatorId(1))
         .build();
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let mut eval_ctx = EvalContext::for_controller(InvestigatorId(1));
     eval_ctx.set_failed_by(2);
     let outcome = run(&mut cx, &effect, eval_ctx);

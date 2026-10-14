@@ -14,9 +14,12 @@
 //! the `at` forced does **not** fire (no resource gained). Skipping leaves `TESTX`
 //! in play, so the `at` forced fires (one resource). The difference is the re-scan.
 
+use std::sync::LazyLock;
+
 use card_dsl::dsl::{self, EventPattern, EventTiming, InvestigatorTarget};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{EngineOutcome, NativeCx, OptionTarget};
+use game_core::engine::{EngineOutcome, NativeCx, OptionTarget, Registries};
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{Act, CardCode, CardInstanceId, GameStateBuilder, InvestigatorId};
 use game_core::test_support::{seat, MockRegistry, TestSession};
 
@@ -41,27 +44,30 @@ fn when_remove_x(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    MockRegistry::new()
-        .with_abilities(TEST_ACT, || {
-            vec![dsl::reaction_on_event(
-                EventPattern::RoundEnded,
-                EventTiming::When,
-                dsl::native("when:remove_x"),
-            )]
-        })
-        .with_abilities(TEST_X, || {
-            // Give the controller (the card's owner) one resource: the
-            // observable signal that the `at` forced fired.
-            vec![dsl::forced_on_event(
-                EventPattern::RoundEnded,
-                EventTiming::At,
-                dsl::gain_resources(InvestigatorTarget::You, 1),
-            )]
-        })
-        .with_native_effect("when:remove_x", when_remove_x)
-        .install();
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        cards: MockRegistry::new()
+            .with_abilities(TEST_ACT, || {
+                vec![dsl::reaction_on_event(
+                    EventPattern::RoundEnded,
+                    EventTiming::When,
+                    dsl::native("when:remove_x"),
+                )]
+            })
+            .with_abilities(TEST_X, || {
+                // Give the controller (the card's owner) one resource: the
+                // observable signal that the `at` forced fired.
+                vec![dsl::forced_on_event(
+                    EventPattern::RoundEnded,
+                    EventTiming::At,
+                    dsl::gain_resources(InvestigatorTarget::You, 1),
+                )]
+            })
+            .with_native_effect("when:remove_x", when_remove_x)
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 /// The lead's resources.
@@ -74,6 +80,7 @@ fn resources(session: &TestSession) -> u8 {
 /// at the round end's `when` reaction window.
 fn round_end_window() -> TestSession {
     let mut state = GameStateBuilder::new()
+        .with_registries(registries())
         .ending_upkeep_phase()
         // `TESTX` is a code the registry doesn't know, so the encounter deck
         // owns it.
@@ -85,7 +92,7 @@ fn round_end_window() -> TestSession {
         clue_threshold: 0,
     }];
     state.act_index = 0;
-    TestSession::new(state)
+    TestSession::new(state, registries())
 }
 
 #[test]

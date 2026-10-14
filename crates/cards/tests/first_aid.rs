@@ -3,10 +3,10 @@
 //! the real `cards::REGISTRY`. The damage-or-horror choice is a `ChooseOne`
 //! that suspends; resume picks the branch. The `Uses (3 supplies)` pool and
 //! the "if no supplies, discard it" depletion-discard come from corpus
-//! metadata (#302). Own process → installs `cards::REGISTRY`.
+//! metadata (#302). Runs against `cards::TEST_REGISTRIES`.
 
 use card_dsl::dsl::HarmKind;
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::assert_event;
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{OptionTarget, PromptNature};
@@ -20,11 +20,6 @@ use game_core::test_support::{self, seat, uses, Seat, SeatLookup as _, TestSessi
 const FIRST_AID: &str = "01019";
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
-
-#[ctor::ctor(unsafe)]
-fn install() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 /// Investigator 1 at the Study carrying `damage` damage and `horror` horror,
 /// with First Aid in play holding `supplies` supplies.
@@ -45,6 +40,7 @@ fn board(supplies: u8) -> GameStateBuilder {
 /// unhorrored investigator leaves First Aid's heal with nothing to do.
 fn board_with_harm(supplies: u8, damage: u8, horror: u8) -> GameStateBuilder {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(healer(supplies, damage, horror))
         .with_location(test_support::test_location(HERE.0, "Study"))
         .open_turn(INV)
@@ -229,12 +225,13 @@ fn an_undamaged_solo_investigator_cannot_activate_first_aid() {
 fn the_turn_menu_does_not_offer_first_aid_with_nothing_to_heal() {
     let harmed = board_with_harm(3, 2, 2).build();
     assert!(
-        enumerate::legal_actions(&harmed).contains(&activation(&harmed)),
+        enumerate::legal_actions(&harmed, TEST_REGISTRIES.cards).contains(&activation(&harmed)),
         "sanity: a damaged investigator is offered the activation",
     );
     let unharmed = board_with_harm(3, 0, 0).build();
     assert!(
-        !enumerate::legal_actions(&unharmed).contains(&activation(&unharmed)),
+        !enumerate::legal_actions(&unharmed, TEST_REGISTRIES.cards)
+            .contains(&activation(&unharmed)),
         "an unharmed investigator is not offered an activation that would reject",
     );
 }
@@ -244,6 +241,7 @@ fn the_turn_menu_does_not_offer_first_aid_with_nothing_to_heal() {
 /// horror. Investigator 1 is the active one.
 fn two_investigators(healer_damage: u8, patient_damage: u8) -> GameStateBuilder {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(healer(3, healer_damage, 0))
         .with_seat(seat(2).at(HERE).harm(patient_damage, 0))
         .with_location(test_support::test_location(HERE.0, "Study"))
@@ -339,7 +337,7 @@ fn a_dead_mode_is_not_offered() {
 fn only_the_damage_mode_is_offered_with_no_horror_to_heal() {
     let mut state = board_with_harm(3, 2, 0).build();
     state.interactive_acknowledge = true;
-    let s = activate(TestSession::new(state));
+    let s = activate(TestSession::new(state, TEST_REGISTRIES));
     let options = &s.prompt().options;
     assert_eq!(
         options.len(),
@@ -395,7 +393,7 @@ fn both_modes_are_offered_when_both_harms_are_present() {
 fn the_offered_index_names_the_live_mode_not_the_printed_one() {
     let mut state = board_with_harm(3, 0, 2).build();
     state.interactive_acknowledge = true;
-    let s = activate(TestSession::new(state));
+    let s = activate(TestSession::new(state, TEST_REGISTRIES));
     let options = &s.prompt().options;
     assert_eq!(
         options.len(),

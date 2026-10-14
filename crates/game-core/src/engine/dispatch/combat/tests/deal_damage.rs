@@ -1,6 +1,7 @@
 use super::*;
 use crate::state::EmitEventFrame;
 use crate::test_support::SeatLookup as _;
+use crate::test_support::{TEST_REGISTRIES, TEST_REGISTRY};
 
 #[test]
 fn advance_distribution_drains_without_soakers_and_prompts_with_one() {
@@ -31,6 +32,7 @@ fn advance_distribution_drains_without_soakers_and_prompts_with_one() {
 fn resume_damage_distribution_rejects_invalid_pick_and_keeps_frame() {
     let inv_id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .build();
     // Park a DealDamage frame mid-distribution (2 damage to assign).
@@ -44,10 +46,7 @@ fn resume_damage_distribution_rejects_invalid_pick_and_keeps_frame() {
         },
     });
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
 
     // Wrong response variant → reject, frame untouched.
     let wrong = resume_damage_distribution(&mut cx, &InputResponse::Skip);
@@ -88,13 +87,11 @@ fn resume_damage_distribution_rejects_invalid_pick_and_keeps_frame() {
 fn deal_damage_cursor_walks_distribute_announce_place_finish() {
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .build();
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
 
     // Entry parks the frame at the top of the cursor and returns `Done`:
     // dealing damage is tail position, like an emit.
@@ -214,14 +211,12 @@ fn the_two_damage_conditions_are_classified_as_the_adr_says() {
     }
     // The milestone's resolve step changes nothing; the other's places.
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .build();
     let before = state.clone();
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let ConditionResolution::Coordinator(resolve) = assigned.condition_resolution() else {
         unreachable!()
     };
@@ -233,6 +228,7 @@ fn the_two_damage_conditions_are_classified_as_the_adr_says() {
 #[test]
 fn soak_options_anchor_assets_to_card_instances() {
     let state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).in_play([test_support::TEST_ASSET]))
         .build();
     let asset = state.in_play(InvestigatorId(1), test_support::TEST_ASSET);
@@ -241,7 +237,7 @@ fn soak_options_anchor_assets_to_card_instances() {
         DistributionTarget::Asset(asset),
     ];
     let me = state.investigators[&InvestigatorId(1)].card_anchor();
-    let opts = soak_options(&state, &targets, &me);
+    let opts = soak_options(&state, &TEST_REGISTRY, &targets, &me);
     // Anchors: the investigator to their own card; a soaker asset to its card.
     assert_eq!(opts[0].target, Some(me), "the investigator's own card");
     assert_eq!(opts[1].target, Some(OptionTarget::CardInstance(asset)));
@@ -259,13 +255,11 @@ fn soak_options_anchor_assets_to_card_instances() {
 fn deal_harm_walks_distribute_announce_place_finish_from_an_effect() {
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .build();
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
 
     assert_eq!(deal_harm(&mut cx, id, 0, 1), EngineOutcome::Done);
     test_support::assert_effect_deal(cx.state.continuations.top(), id, 0, 1);
@@ -317,13 +311,11 @@ fn deal_harm_walks_distribute_announce_place_finish_from_an_effect() {
 #[test]
 fn deal_harm_of_nothing_pushes_no_frame() {
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .build();
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     assert_eq!(
         deal_harm(&mut cx, InvestigatorId(1), 0, 0),
         EngineOutcome::Done

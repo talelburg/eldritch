@@ -4,7 +4,7 @@ use card_dsl::card_data::CardKind;
 use card_dsl::dsl::{EntityScope, LocationSet};
 
 use crate::action::InputResponse;
-use crate::card_registry;
+use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{choice, elimination, emit, reaction_windows};
 use crate::engine::outcome::{
@@ -188,8 +188,7 @@ fn find_controlled_mut(
 /// reached its printed health/sanity (C5b #237).
 ///
 /// Reads printed health/sanity from the card registry; an asset whose
-/// metadata can't be resolved (no registry installed, or a non-asset
-/// kind) is never defeated here. Each defeated asset leaves play through
+/// metadata can't be resolved (an unknown code, or a non-asset kind) is never defeated here. Each defeated asset leaves play through
 /// [`board::discard_from_play`], which files it by its owner
 /// (`glossary/Defeat.md`: *"A defeated asset is placed on its owner's discard
 /// pile."*).
@@ -207,9 +206,7 @@ fn find_controlled_mut(
 /// asset-defeat discard. Folding the investigator card into this sweep
 /// would reverse that order and emit a spurious discard — do not.
 fn defeat_overflowed_assets(cx: &mut Cx, investigator: InvestigatorId) {
-    let Some(reg) = card_registry::current() else {
-        return;
-    };
+    let reg = cx.cards;
     let Some(inv) = cx.state.investigators.get(&investigator) else {
         return;
     };
@@ -354,7 +351,7 @@ pub(super) fn apply_damage_numeric(cx: &mut Cx, investigator: InvestigatorId, am
         .investigator_card
         .accumulated_damage
         .saturating_add(amount);
-    let lethal = inv.damage() >= inv.max_health();
+    let lethal = inv.damage() >= inv.max_health(cx.cards);
     cx.events.push(Event::DamageTaken {
         investigator,
         amount,
@@ -387,7 +384,7 @@ pub(super) fn apply_horror_numeric(cx: &mut Cx, investigator: InvestigatorId, am
         .investigator_card
         .accumulated_horror
         .saturating_add(amount);
-    let lethal = inv.horror() >= inv.max_sanity();
+    let lethal = inv.horror() >= inv.max_sanity(cx.cards);
     cx.events.push(Event::HorrorTaken {
         investigator,
         amount,
@@ -456,13 +453,12 @@ pub(crate) fn deal_harm(
 /// [`Soaker`] per controlled asset with any remaining soak capacity
 /// (printed stat − accumulated). An asset with `health: None` can't soak
 /// damage; `sanity: None` can't soak horror. Assets with both capacities
-/// exhausted (or non-asset cards) are skipped. Returns empty when no
-/// registry is installed, so attacks resolve as before in registry-free
-/// tests.
-fn build_soakers(state: &GameState, investigator: InvestigatorId) -> Vec<Soaker> {
-    let Some(reg) = card_registry::current() else {
-        return Vec::new();
-    };
+/// exhausted (or non-asset cards) are skipped.
+fn build_soakers(
+    state: &GameState,
+    reg: &CardRegistry,
+    investigator: InvestigatorId,
+) -> Vec<Soaker> {
     let Some(inv) = state.investigators.get(&investigator) else {
         return Vec::new();
     };
@@ -702,10 +698,11 @@ fn credit_point(assignment: &mut Assignment, target: DistributionTarget, damage_
 /// Each label is the anchored card's name (#989).
 fn soak_options(
     state: &GameState,
+    cards: &CardRegistry,
     targets: &[DistributionTarget],
     me: &OptionTarget,
 ) -> Vec<ChoiceOption> {
-    choice::candidate_options(state, targets, |t| match t {
+    choice::candidate_options(state, cards, targets, |t| match t {
         DistributionTarget::Asset(instance) => OptionTarget::CardInstance(*instance),
         DistributionTarget::Investigator => me.clone(),
     })
@@ -729,7 +726,7 @@ fn prompt_current_point(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutc
     else {
         unreachable!("prompt_current_point: the DealDamage frame is not at Distribute");
     };
-    let soakers = build_soakers(cx.state, investigator);
+    let soakers = build_soakers(cx.state, cx.cards, investigator);
     let damage_point = rd > 0;
     let targets = eligible_targets(&soakers, &assignment, damage_point);
     let kind = if damage_point { "damage" } else { "horror" };
@@ -742,6 +739,7 @@ fn prompt_current_point(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutc
             prompt,
             soak_options(
                 cx.state,
+                cx.cards,
                 &targets,
                 &cx.state.investigators[&investigator].card_anchor(),
             ),
@@ -786,7 +784,7 @@ pub(super) fn resume_damage_distribution(cx: &mut Cx, response: &InputResponse) 
         };
     };
     let damage_point = remaining_damage > 0;
-    let soakers = build_soakers(cx.state, investigator);
+    let soakers = build_soakers(cx.state, cx.cards, investigator);
     let targets = eligible_targets(&soakers, &assignment, damage_point);
     let Some(target) = targets.get(*i as usize).copied() else {
         return EngineOutcome::Rejected {
@@ -862,7 +860,7 @@ pub(crate) fn drive_deal_damage(cx: &mut Cx) -> EngineOutcome {
             mut remaining_horror,
         } => {
             let mut assignment = assignment;
-            let soakers = build_soakers(cx.state, investigator);
+            let soakers = build_soakers(cx.state, cx.cards, investigator);
             if advance_distribution(
                 &soakers,
                 &mut remaining_damage,
@@ -1035,7 +1033,8 @@ fn suspend_order_pick(
          next (RR p.25 step 3.3)",
         attackers.len()
     );
-    let options = choice::candidate_options(cx.state, &attackers, |e| OptionTarget::Enemy(*e));
+    let options =
+        choice::candidate_options(cx.state, cx.cards, &attackers, |e| OptionTarget::Enemy(*e));
     cx.state.continuations.push(AttackLoopFrame {
         investigator,
         remaining_attackers: attackers,

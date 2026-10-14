@@ -10,10 +10,9 @@ use crate::action::{Action, InputResponse, PlayerAction};
 use crate::engine::enumerate::TurnAction;
 use crate::engine::{
     self, ApplyResult, Cx, EngineOutcome, InputKind, InputRequest, OptionId, OptionTarget,
-    PromptNature, TimingEvent,
+    PromptNature, Registries, TimingEvent,
 };
 use crate::event::Event;
-use crate::scenario_registry;
 use crate::state::{
     Continuation, EmitEventFrame, EmitStep, GameState, GameStateBuilder, HandSizeDiscard,
     InvestigatorId, MulliganFrame, SkillKind,
@@ -78,9 +77,10 @@ use crate::state::{
 /// # use game_core::engine::{enumerate::TurnAction, OptionTarget};
 /// # use game_core::state::{GameStateBuilder, InvestigatorId};
 /// # use game_core::test_support;
-/// # test_support::install_test_registry();
+/// # let registries = test_support::TEST_REGISTRIES;
 /// let me = InvestigatorId(1);
 /// let session = GameStateBuilder::new()
+///     .with_registries(registries)
 ///     .with_investigator(test_support::test_investigator(1))
 ///     .open_turn(me)
 ///     .session()
@@ -89,8 +89,8 @@ use crate::state::{
 /// assert_eq!(session.prompt().target, Some(OptionTarget::TurnControl(me)));
 /// ```
 ///
-/// Construct via [`GameStateBuilder::session`](crate::state::GameStateBuilder::session) or
-/// [`TestSession::new`].
+/// Construct via [`GameStateBuilder::session`](crate::state::GameStateBuilder::session),
+/// or [`TestSession::new`].
 #[derive(Debug)]
 #[must_use = "a TestSession step returns the advanced session"]
 pub struct TestSession {
@@ -106,6 +106,9 @@ pub struct TestSession {
     /// Every event since construction, settling included.
     events: Vec<Event>,
     policy: Policy,
+    /// The registries every step's `apply` runs against, fixed at
+    /// construction.
+    registries: Registries,
 }
 
 /// How the drain answers the prompts a step opens.
@@ -139,26 +142,42 @@ impl std::fmt::Debug for Policy {
 }
 
 impl GameStateBuilder {
-    /// Build and settle into a [`TestSession`]. Equivalent to
-    /// `TestSession::new(self.build())`. Lives here (test-only) rather than on
-    /// the builder itself so the production builder in [`crate::state`] carries
-    /// no test dependency.
+    /// Build and settle into a [`TestSession`] driven with the registries named
+    /// by [`with_registries`](GameStateBuilder::with_registries): equivalent to
+    /// `TestSession::new(self.build(), regs)`. Lives here (test-only) rather
+    /// than on the builder itself because [`TestSession`] is a test type: the
+    /// production builder in [`crate::state`] holds only the optional
+    /// registries slot this reads.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the test never named its registries, and as
+    /// [`TestSession::new`] does.
     pub fn session(self) -> TestSession {
-        TestSession::new(self.build())
+        let registries = self.registries().unwrap_or_else(|| {
+            panic!(
+                "GameStateBuilder::session: name the registries first, with \
+                 `.with_registries(..)` on the builder"
+            )
+        });
+        TestSession::new(self.build(), registries)
     }
 }
 
 impl TestSession {
     /// Settle `state` to where the engine would rest, through the production
-    /// `apply` scaffolding.
+    /// `apply` scaffolding, driving it — and every later step — with
+    /// `registries`. The way in for a hand-built state; a board names its
+    /// registries on the builder instead
+    /// ([`with_registries`](GameStateBuilder::with_registries)).
     ///
     /// # Panics
     ///
     /// Panics if the top frame cannot re-surface its prompt — a stack the
     /// engine never rests at. Build the state before the prompt and drive into
     /// it instead.
-    pub fn new(state: GameState) -> Self {
-        let settled = engine::apply_via(state, scenario_registry::current(), |cx| {
+    pub fn new(state: GameState, registries: Registries) -> Self {
+        let settled = engine::apply_via(state, registries, |cx| {
             let outcome = engine::drive(cx, EngineOutcome::Done);
             if matches!(outcome, EngineOutcome::Done) {
                 if let Some(top) = cx.state.continuations.top() {
@@ -186,6 +205,7 @@ impl TestSession {
             last_events: events.clone(),
             events,
             policy: Policy::Script(ScriptedResolver::new()),
+            registries,
         }
     }
 
@@ -197,7 +217,9 @@ impl TestSession {
     ///
     /// ```
     /// # use game_core::state::GameStateBuilder;
+    /// # use game_core::test_support::TEST_REGISTRIES;
     /// let _session = GameStateBuilder::new()
+    ///     .with_registries(TEST_REGISTRIES)
     ///     .session()
     ///     .resolve_choices(|c| {
     ///         c.commit_cards(&[]);
@@ -231,7 +253,8 @@ impl TestSession {
     /// Step: apply a raw `action`, then drain. The escape hatch for engine
     /// records and hand-built responses; prefer the named steps.
     pub fn apply(self, action: Action) -> Self {
-        self.advance(|state| engine::apply(state, action))
+        let registries = self.registries;
+        self.advance(|state| engine::apply(state, action, registries))
     }
 
     /// Step: fire the timing point `event` from where the session rests, the
@@ -403,7 +426,8 @@ impl TestSession {
     /// Apply one framework entry point `dispatch` through the production
     /// `apply` scaffolding, then drive on and drain.
     fn framework_step(self, dispatch: impl FnOnce(&mut Cx) -> EngineOutcome) -> Self {
-        self.advance(|state| engine::apply_via(state, scenario_registry::current(), dispatch))
+        let registries = self.registries;
+        self.advance(|state| engine::apply_via(state, registries, dispatch))
     }
 
     /// The one step body: apply `first` to the resting state, then drain its
@@ -416,6 +440,7 @@ impl TestSession {
             last_events: _,
             mut events,
             mut policy,
+            registries,
         } = self;
         // The last prompt the step reached. A reply the engine rejects restores
         // the state to that prompt, so the session rests there rather than where
@@ -431,7 +456,7 @@ impl TestSession {
         let result = drain_with_applier(
             first,
             |request, state| policy.answer(request, state),
-            |state, action| note(engine::apply(state, action)),
+            |state, action| note(engine::apply(state, action, registries)),
         );
         let ApplyResult {
             state,
@@ -449,6 +474,7 @@ impl TestSession {
             last_events: step_events,
             events,
             policy,
+            registries,
         }
     }
 
@@ -463,7 +489,12 @@ impl TestSession {
             "TestSession::take: the session is not at the turn menu; it rests at {:?}",
             self.rest,
         );
-        let id = turn_action_option(&self.state, action, "TestSession::take");
+        let id = turn_action_option(
+            &self.state,
+            self.registries.cards,
+            action,
+            "TestSession::take",
+        );
         self.respond(InputResponse::PickSingle(id))
     }
 
@@ -796,7 +827,7 @@ impl TestSession {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support;
+    use crate::test_support::{self, TEST_REGISTRIES};
 
     #[test]
     fn test_session_fluent_round_trip() {
@@ -805,6 +836,7 @@ mod tests {
         // (back to the next investigator's turn menu) rather than a
         // round-ending cascade.
         let result = GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
             .with_investigator(test_support::test_investigator(1))
             .with_investigator(test_support::test_investigator(2))
             .with_location(test_support::test_location(10, "Study"))

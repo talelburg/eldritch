@@ -1,8 +1,8 @@
 //! End-to-end Dodge 01023: cancel an enemy-phase attack, driven through the
-//! public [`apply`] API with the real card corpus installed (#305 / Axis D
+//! public [`apply`] API against the real card corpus (#305 / Axis D
 //! #336).
 //!
-//! `game-core`'s unit tests can't install `cards::REGISTRY` (the engine crate
+//! `game-core`'s unit tests can't reach `cards::REGISTRY` (the engine crate
 //! can't depend on `cards`), so the before-attack cancel window's end-to-end
 //! behaviour — Dodge offered from hand, played, the attack cancelled — is
 //! covered here.
@@ -12,7 +12,7 @@
 //!
 //! [`apply`]: game_core::engine::apply
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::event::{Event, LapseReason};
@@ -30,11 +30,6 @@ const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(101);
 const HALLWAY: LocationId = LocationId(102);
 const ATTACKER: EnemyId = EnemyId(7);
-
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 /// A ready enemy dealing 2 damage / 1 horror.
 fn ready_attacker() -> Enemy {
@@ -62,6 +57,7 @@ fn holding_dodge() -> Seat {
 /// opens the `BeforeEnemyAttack` cancel window and offers Dodge.
 fn dodge_board(investigator: Seat, attacker: Enemy) -> GameStateBuilder {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(investigator)
         .with_enemy_engaged(attacker, INV)
@@ -96,7 +92,7 @@ fn acolyte_session() -> TestSession {
         doom_threshold: 3,
     }];
     state.agenda_index = 0;
-    TestSession::new(state)
+    TestSession::new(state, TEST_REGISTRIES)
 }
 
 /// The anchor of `holder`'s Dodge in a reaction window's prompt.
@@ -116,7 +112,7 @@ fn dodge_in_hand_of(holder: InvestigatorId) -> OptionTarget {
 /// The suppression is #714's, in the coordinator; what #704 adds is that the
 /// attack now walks its cells at all, so the Acolyte's forced ability sits in a
 /// cell the cancel can suppress. Verified against the real corpus: 01102's
-/// abilities come from the installed `cards::REGISTRY`.
+/// abilities come from the real `cards::REGISTRY`.
 #[test]
 fn dodging_a_silver_twilight_acolyte_stops_its_forced_doom() {
     // The `when` cell offers Dodge; play it → the attack is prevented, so its
@@ -309,7 +305,7 @@ fn dodge_lapses_when_dissonant_voices_arrives_before_the_pick() {
         "the refused pick left Dodge in hand",
     );
 
-    let resurfaced = TestSession::new(refused.state().clone());
+    let resurfaced = TestSession::new(refused.state().clone(), TEST_REGISTRIES);
     let events = resurfaced.events();
     assert_event!(
         events,
@@ -336,6 +332,7 @@ fn dodge_lapses_as_out_of_scope_once_its_holder_leaves_the_attacked_location() {
     // Both turns end, and the Enemy phase's attack on seat 1 opens the
     // before-attack window that offers seat 2 their Dodge.
     let opened = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_location(test_support::test_location(HALLWAY.0, "Hallway"))
         .with_seat(seat(1).at(HERE))
@@ -363,7 +360,7 @@ fn dodge_lapses_as_out_of_scope_once_its_holder_leaves_the_attacked_location() {
         .get_mut(&dodger)
         .expect("seated")
         .current_location = Some(HALLWAY);
-    let resurfaced = TestSession::new(state);
+    let resurfaced = TestSession::new(state, TEST_REGISTRIES);
 
     assert_event!(
         resurfaced.events(),

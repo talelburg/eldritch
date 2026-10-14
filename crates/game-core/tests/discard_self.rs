@@ -1,12 +1,16 @@
 //! `Cost::DiscardSelf` + the Beat-Cop-shaped `DiscardSelf → DealDamageToEnemy`
-//! ability. Mock registry in its own integration binary (own process +
-//! `OnceLock<CardRegistry>`), mirroring `weapon_fight.rs`.
+//! ability. Mock registry in its own integration binary (a process holds one
+//! `MockRegistry`), mirroring `weapon_fight.rs`.
+
+use std::sync::LazyLock;
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Slot, UseKind, Uses};
 use card_dsl::dsl::{self, Ability, Cost, EnemyTarget, InvestigatorTarget};
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
+use game_core::engine::Registries;
 use game_core::event::Event;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, DiscardPile, EnemyId, GameState, GameStateBuilder,
     InvestigatorId, LocationId, Zone,
@@ -72,53 +76,56 @@ fn spend_a_supply() -> Vec<Ability> {
     )]
 }
 
-#[ctor::ctor(unsafe)]
-fn install_mock_registry() {
-    MockRegistry::new()
-        .with_card(asset_metadata(
-            TRINKET,
-            "Mock Trinket",
-            "[fast] Discard: gain 1 resource.",
-        ))
-        .with_card(asset_metadata(
-            COP,
-            "Mock Cop",
-            "[fast] Discard: deal 1 damage to an enemy at your location.",
-        ))
-        .with_card(asset_metadata(
-            COMBO,
-            "Mock Combo",
-            "[fast] Exhaust, Discard: gain 1.",
-        ))
-        .with_card(kit_metadata(KIT, "Mock Kit", true))
-        .with_card(kit_metadata(KIT_NODISC, "Mock Kit (stays)", false))
-        // [fast] Discard Mock Trinket: gain 1 resource.
-        .with_abilities(TRINKET, || {
-            vec![dsl::activated(
-                0,
-                vec![Cost::DiscardSelf],
-                dsl::gain_resources(InvestigatorTarget::You, 1),
-            )]
-        })
-        // [fast] Discard Mock Cop: deal 1 damage to an enemy at your location.
-        .with_abilities(COP, || {
-            vec![dsl::activated(
-                0,
-                vec![Cost::DiscardSelf],
-                dsl::deal_damage_to_enemy(EnemyTarget::chosen_at_your_location(), 1),
-            )]
-        })
-        // Illegal: DiscardSelf cannot combine with another source cost (Exhaust).
-        .with_abilities(COMBO, || {
-            vec![dsl::activated(
-                0,
-                vec![Cost::DiscardSelf, Cost::Exhaust],
-                dsl::gain_resources(InvestigatorTarget::You, 1),
-            )]
-        })
-        .with_abilities(KIT, spend_a_supply)
-        .with_abilities(KIT_NODISC, spend_a_supply)
-        .install();
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        cards: MockRegistry::new()
+            .with_card(asset_metadata(
+                TRINKET,
+                "Mock Trinket",
+                "[fast] Discard: gain 1 resource.",
+            ))
+            .with_card(asset_metadata(
+                COP,
+                "Mock Cop",
+                "[fast] Discard: deal 1 damage to an enemy at your location.",
+            ))
+            .with_card(asset_metadata(
+                COMBO,
+                "Mock Combo",
+                "[fast] Exhaust, Discard: gain 1.",
+            ))
+            .with_card(kit_metadata(KIT, "Mock Kit", true))
+            .with_card(kit_metadata(KIT_NODISC, "Mock Kit (stays)", false))
+            // [fast] Discard Mock Trinket: gain 1 resource.
+            .with_abilities(TRINKET, || {
+                vec![dsl::activated(
+                    0,
+                    vec![Cost::DiscardSelf],
+                    dsl::gain_resources(InvestigatorTarget::You, 1),
+                )]
+            })
+            // [fast] Discard Mock Cop: deal 1 damage to an enemy at your location.
+            .with_abilities(COP, || {
+                vec![dsl::activated(
+                    0,
+                    vec![Cost::DiscardSelf],
+                    dsl::deal_damage_to_enemy(EnemyTarget::chosen_at_your_location(), 1),
+                )]
+            })
+            // Illegal: DiscardSelf cannot combine with another source cost (Exhaust).
+            .with_abilities(COMBO, || {
+                vec![dsl::activated(
+                    0,
+                    vec![Cost::DiscardSelf, Cost::Exhaust],
+                    dsl::gain_resources(InvestigatorTarget::You, 1),
+                )]
+            })
+            .with_abilities(KIT, spend_a_supply)
+            .with_abilities(KIT_NODISC, spend_a_supply)
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -127,7 +134,10 @@ const GHOUL: EnemyId = EnemyId(100);
 
 /// `seated`'s open turn.
 fn board(seated: Seat) -> GameStateBuilder {
-    GameStateBuilder::new().with_seat(seated).open_turn(INV)
+    GameStateBuilder::new()
+        .with_registries(registries())
+        .with_seat(seated)
+        .open_turn(INV)
 }
 
 /// The activation of the one ability on the in-play card `code`.
@@ -143,7 +153,7 @@ fn activation(state: &GameState, code: &str) -> TurnAction {
 /// to the turn menu.
 fn activate(state: GameState, code: &str) -> TestSession {
     let action = activation(&state, code);
-    let session = TestSession::new(state).take(&action);
+    let session = TestSession::new(state, registries()).take(&action);
     session.assert_at_turn_menu(INV);
     session
 }
@@ -153,7 +163,7 @@ fn activate(state: GameState, code: &str) -> TestSession {
 /// the refusal.
 fn refused(state: GameState, code: &str) -> GameState {
     let action = activation(&state, code);
-    let session = TestSession::new(state).submit_off_menu(&action);
+    let session = TestSession::new(state, registries()).submit_off_menu(&action);
     session.expect_rejected();
     session.finish().state
 }

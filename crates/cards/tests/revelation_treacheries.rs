@@ -1,13 +1,13 @@
 //! Integration: The Gathering's four one-shot Revelation treacheries
 //! (C4b, #234) resolved through the real `cards` registry and the full
-//! `apply` → commit-window → resolve → discard pipeline. Own process so
-//! it can install the process-global registry against the real corpus.
+//! `apply` → commit-window → resolve → discard pipeline, against the real
+//! corpus.
 //!
 //! The skill-test margin math and the suspended-revelation discard
 //! mechanism are unit-tested in game-core (#286); here we prove the
 //! *card effects* resolve end-to-end against real corpus metadata.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
@@ -25,11 +25,6 @@ const MAGNIFYING_GLASS: &str = "01030";
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(20);
 
-#[ctor::ctor(unsafe)]
-fn install_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// Common board: Mythos step 1.4, with `investigator` at a location about to
 /// draw, the named treachery on top of the encounter deck, a single rigged
 /// chaos token, and `agenda` as the agenda deck.
@@ -40,6 +35,7 @@ fn board_seating(
     agenda: Vec<Agenda>,
 ) -> TestSession {
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(investigator)
         .with_location(test_support::test_location(HERE.0, "Here"))
         .with_turn_order([INV])
@@ -53,7 +49,7 @@ fn board_seating(
     state.encounter_deck.push_back(CardCode::new(treachery));
     // The builder stages no agenda deck.
     state.agenda_deck = agenda;
-    TestSession::new(state)
+    TestSession::new(state, TEST_REGISTRIES)
 }
 
 /// [`board_seating`] with a plain investigator at `HERE` and no agenda.

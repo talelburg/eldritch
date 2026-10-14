@@ -9,12 +9,15 @@
 //! event that names the attacking enemy — and none stands in for a printed
 //! card.
 
+use std::sync::LazyLock;
+
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use card_dsl::dsl::{self, EventPattern, EventTiming, InvestigatorTarget, UsageLimit, UsagePeriod};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{EngineOutcome, NativeCx, OptionTarget, TimingEvent};
+use game_core::engine::{EngineOutcome, NativeCx, OptionTarget, Registries, TimingEvent};
 use game_core::event::{Event, TraumaKind};
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     Assignment, CardCode, CardInstanceId, DamageSource, EnemyId, GameState, GameStateBuilder,
     InvestigatorId, LocationId,
@@ -81,54 +84,57 @@ fn fast_event_metadata() -> CardMetadata {
     }
 }
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    MockRegistry::new()
-        .with_abilities(NAMES_WHAT_IT_HEARS, || {
-            let once_per_round = UsageLimit {
-                count: 1,
-                period: UsagePeriod::Round,
-            };
-            vec![
-                dsl::forced_on_event(
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        cards: MockRegistry::new()
+            .with_abilities(NAMES_WHAT_IT_HEARS, || {
+                let once_per_round = UsageLimit {
+                    count: 1,
+                    period: UsagePeriod::Round,
+                };
+                vec![
+                    dsl::forced_on_event(
+                        EventPattern::EnemyAttackDamagedSelf,
+                        EventTiming::When,
+                        dsl::native("_ti:mark_attacker"),
+                    )
+                    .with_usage_limit(once_per_round),
+                    dsl::forced_on_event(
+                        EventPattern::DiscoverClues,
+                        EventTiming::When,
+                        dsl::native("_ti:mark_count"),
+                    )
+                    .with_usage_limit(once_per_round),
+                ]
+            })
+            .with_abilities(HEARS_THE_SAME, || {
+                vec![
+                    dsl::forced_on_event(
+                        EventPattern::EnemyAttackDamagedSelf,
+                        EventTiming::When,
+                        dsl::gain_resources(InvestigatorTarget::You, 2),
+                    ),
+                    dsl::forced_on_event(
+                        EventPattern::DiscoverClues,
+                        EventTiming::When,
+                        dsl::gain_resources(InvestigatorTarget::You, 2),
+                    ),
+                ]
+            })
+            .with_card(fast_event_metadata())
+            .with_abilities(NAMES_ATTACKER, || {
+                vec![dsl::reaction_on_event(
                     EventPattern::EnemyAttackDamagedSelf,
                     EventTiming::When,
                     dsl::native("_ti:mark_attacker"),
-                )
-                .with_usage_limit(once_per_round),
-                dsl::forced_on_event(
-                    EventPattern::DiscoverClues,
-                    EventTiming::When,
-                    dsl::native("_ti:mark_count"),
-                )
-                .with_usage_limit(once_per_round),
-            ]
-        })
-        .with_abilities(HEARS_THE_SAME, || {
-            vec![
-                dsl::forced_on_event(
-                    EventPattern::EnemyAttackDamagedSelf,
-                    EventTiming::When,
-                    dsl::gain_resources(InvestigatorTarget::You, 2),
-                ),
-                dsl::forced_on_event(
-                    EventPattern::DiscoverClues,
-                    EventTiming::When,
-                    dsl::gain_resources(InvestigatorTarget::You, 2),
-                ),
-            ]
-        })
-        .with_card(fast_event_metadata())
-        .with_abilities(NAMES_ATTACKER, || {
-            vec![dsl::reaction_on_event(
-                EventPattern::EnemyAttackDamagedSelf,
-                EventTiming::When,
-                dsl::native("_ti:mark_attacker"),
-            )]
-        })
-        .with_native_effect("_ti:mark_attacker", mark_attacker)
-        .with_native_effect("_ti:mark_count", mark_count)
-        .install();
+                )]
+            })
+            .with_native_effect("_ti:mark_attacker", mark_attacker)
+            .with_native_effect("_ti:mark_count", mark_count)
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 const HERE: LocationId = LocationId(1);
@@ -142,6 +148,7 @@ fn session_holding(codes: &[&str], location_clues: u8) -> TestSession {
     let mut location = test_support::test_location(HERE.0, "Mock location");
     location.clues = location_clues;
     GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(INV.0).at(HERE).threat_area(codes.iter().copied()))
         .with_location(location)
         .open_turn(INV)
@@ -336,6 +343,7 @@ fn a_fast_event_played_in_an_enemy_attack_damage_window_names_the_attacking_enem
     attacker.attack_damage = 1;
     attacker.attack_horror = 0;
     let session = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(
             seat(INV.0)
                 .at(HERE)

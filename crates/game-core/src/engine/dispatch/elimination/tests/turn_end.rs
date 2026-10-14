@@ -5,6 +5,7 @@
 
 use super::*;
 use crate::state::InvestigatorTurnFrame;
+use crate::test_support::TEST_REGISTRIES;
 
 fn turn_frame(state: &GameState) -> Option<(InvestigatorId, bool)> {
     state.continuations.iter().rev().find_map(|c| match c {
@@ -23,10 +24,7 @@ fn defeat_during_your_own_turn_arms_the_turn_frame_and_announces_the_end() {
     let mut events = Vec::new();
 
     apply_investigator_elimination(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         dead,
         EliminationCause::Damage,
     );
@@ -53,10 +51,7 @@ fn defeat_outside_your_turn_leaves_the_active_investigators_frame_alone() {
     let mut events = Vec::new();
 
     apply_investigator_elimination(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         dead,
         EliminationCause::Damage,
     );
@@ -75,6 +70,7 @@ fn defeat_with_no_turn_frame_at_all_is_a_no_op() {
     // `InvestigatorTurn` frame exists, so there is nothing to end.
     let dead = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_phase(Phase::Mythos)
         .with_seat(test_support::seat(1))
         .with_turn_order([dead])
@@ -82,10 +78,7 @@ fn defeat_with_no_turn_frame_at_all_is_a_no_op() {
     let mut events = Vec::new();
 
     apply_investigator_elimination(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         dead,
         EliminationCause::Horror,
     );
@@ -110,10 +103,7 @@ fn defeat_while_the_turn_is_already_ending_does_not_re_announce_it() {
     let mut events = Vec::new();
 
     apply_investigator_elimination(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         dead,
         EliminationCause::Damage,
     );
@@ -136,13 +126,7 @@ fn resigning_during_your_own_turn_ends_it_too() {
     let mut state = two_investigator_open_turn(resigner);
     let mut events = Vec::new();
 
-    resign_investigator(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
-        resigner,
-    );
+    resign_investigator(&mut Cx::for_test(&mut state, &mut events), resigner);
 
     assert_eq!(state.investigators[&resigner].status, Status::Resigned);
     assert_eq!(turn_frame(&state), Some((resigner, true)));

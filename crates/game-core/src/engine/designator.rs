@@ -97,7 +97,7 @@ mod tests {
 
     use super::*;
     use crate::state::{GameStateBuilder, LocationId};
-    use crate::test_support::{self, seat};
+    use crate::test_support::{self, seat, TEST_REGISTRIES};
 
     const ME: InvestigatorId = InvestigatorId(1);
     const HERE: LocationId = LocationId(1);
@@ -121,6 +121,7 @@ mod tests {
         let mut loc = test_support::test_location(HERE.0, "Study");
         loc.revealed = revealed;
         let mut builder = GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
             .with_location(loc)
             .with_seat(seat(ME.0).at(HERE));
         for n in 0..enemies {

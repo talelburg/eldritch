@@ -2,6 +2,7 @@ use super::*;
 use crate::engine::enumerate::TurnAction;
 use crate::state::{EnemyId, LocationId};
 use crate::test_support::TestSession;
+use crate::test_support::{TEST_REGISTRIES, TEST_REGISTRY};
 
 const HERE: LocationId = LocationId(10);
 const GHOUL: EnemyId = EnemyId(7);
@@ -11,6 +12,7 @@ const GHOUL: EnemyId = EnemyId(7);
 /// shape). Taking Fight or Evade starts a test the substitution applies to.
 fn substitution_turn(inv: InvestigatorId) -> TestSession {
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(test_support::seat(1).at(HERE))
         .with_enemy_engaged(test_support::test_enemy(GHOUL.0, "Ghoul"), inv)
@@ -22,11 +24,12 @@ fn substitution_turn(inv: InvestigatorId) -> TestSession {
         use_skill: SkillKind::Intellect,
         for_skills: vec![SkillKind::Combat, SkillKind::Agility],
     });
-    TestSession::new(state)
+    TestSession::new(state, TEST_REGISTRIES)
 }
 
 fn substitution_state(inv: InvestigatorId) -> GameState {
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_active_investigator(inv)
         .build();
@@ -45,10 +48,7 @@ fn combat_test_with_substitution_prompts_then_becomes_intellect_on_yes() {
     let mut state = substitution_state(inv);
     let mut events = Vec::new();
     let out = {
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
         // A weapon's "+2 [combat] for this attack".
         start_skill_test(
             &mut cx,
@@ -73,20 +73,14 @@ fn combat_test_with_substitution_prompts_then_becomes_intellect_on_yes() {
     );
 
     let out = {
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
         // The Decision's first option, "yes". The weapon's initiator modifier
         // below is one no session step can supply, so this test drives the
         // entry point and the resume handler directly.
         resume_substitution_choice(&mut cx, &InputResponse::PickSingle(OptionId(0)))
     };
     let out = {
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
         dispatch::drive(&mut cx, out)
     };
     assert!(
@@ -102,7 +96,7 @@ fn combat_test_with_substitution_prompts_then_becomes_intellect_on_yes() {
     let read = |skill| {
         modified_value::modified_value(
             &state,
-            card_registry::current(),
+            &TEST_REGISTRY,
             ModifierTarget::Investigator(inv),
             ModifiedQuantity::Skill(skill),
             ReadContext::DuringTest(SkillTestKind::Fight),
@@ -134,10 +128,7 @@ fn substitution_prompt_keeps_the_test_on_its_frame() {
     let mut state = substitution_state(inv);
     let mut events = Vec::new();
     let out = {
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
         start_skill_test(
             &mut cx,
             inv,
@@ -204,10 +195,7 @@ fn resume_substitution_choice_parks_for_the_loop() {
     let mut state = substitution_state(inv);
     let mut events = Vec::new();
     let out = {
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
         start_skill_test(
             &mut cx,
             inv,
@@ -230,10 +218,7 @@ fn resume_substitution_choice_parks_for_the_loop() {
     // PARKS — it does not itself open the commit window. The resume handler's
     // own return is the subject, so it is called directly.
     let out = {
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
         resume_substitution_choice(&mut cx, &InputResponse::PickSingle(OptionId(0)))
     };
     assert_eq!(
@@ -260,10 +245,7 @@ fn resume_substitution_choice_parks_for_the_loop() {
 
     // The loop drives the parked test to its commit window.
     let out = {
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
         dispatch::drive(&mut cx, out)
     };
     assert!(
@@ -277,7 +259,7 @@ fn no_active_substitution_opens_commit_window_directly() {
     let inv = InvestigatorId(1);
     let mut state = substitution_turn(inv).state().clone();
     state.skill_substitutions.clear();
-    let session = TestSession::new(state).take(&TurnAction::Fight {
+    let session = TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::Fight {
         investigator: inv,
         enemy: GHOUL,
     });

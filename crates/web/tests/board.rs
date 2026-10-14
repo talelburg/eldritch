@@ -2,8 +2,9 @@
 //! `GameState` through the store and assert on the rendered DOM.
 //! wasm32-only (browser DOM); native jobs skip this file.
 //!
-//! **This binary runs against the real `cards::REGISTRY` (#868).** It used to
-//! install `test_support::install_test_registry()`, which knows only
+//! **This binary runs against the real corpus, `cards::TEST_REGISTRY` (#868).**
+//! It used to run against game-core's `test_support::TEST_REGISTRY`, which knows
+//! only
 //! `TEST_INV` and the synthetic terminal act/agenda cards — so every card code
 //! the file seeded failed to resolve and the assertions passed on the
 //! renderer's unresolved-code fallback (`card--unknown`) rather than on card
@@ -23,7 +24,6 @@
 //! carry their name and stats in `GameState` rather than reading the registry.
 #![cfg(target_arch = "wasm32")]
 
-use cards::REGISTRY;
 use game_core::engine::EngineOutcome;
 use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::state::{
@@ -37,6 +37,7 @@ use protocol::ServerMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::board::BoardView;
+use web::registry::provide_cards;
 use web::store::{self, ClientState};
 use web_sys::Element;
 
@@ -118,11 +119,10 @@ fn count_in(el: &Element, sel: &str) -> u32 {
 /// rendered body HTML.
 async fn render_state(state: GameState) -> String {
     // The real corpus registry: the code→name/kind source, and the source of
-    // the investigator capacity the panel reads (#448). Idempotent (OnceLock,
-    // first-wins); `web` has no `ctor` dev-dep, so install in-test.
-    test_support::install_registry_with_test_cards(REGISTRY);
+    // the investigator capacity the panel reads (#448).
     let store = RwSignal::new(ClientState::default());
     mount::mount_to_body(move || {
+        provide_cards(&cards::TEST_REGISTRY);
         provide_context(store);
         leptos::view! { <BoardView/> }
     });
@@ -146,7 +146,7 @@ async fn render_state(state: GameState) -> String {
     // Every code it seeds is a real one, so the class must never appear.
     assert!(
         !html.contains("card--unknown"),
-        "a seeded code failed to resolve against REGISTRY: {html}"
+        "a seeded code failed to resolve against TEST_REGISTRY: {html}"
     );
     html
 }
@@ -317,6 +317,7 @@ async fn investigators_panel_renders_stats_and_hand() {
 async fn empty_board_renders_placeholder_without_panels() {
     let store = RwSignal::new(ClientState::default());
     mount::mount_to_body(move || {
+        provide_cards(&cards::TEST_REGISTRY);
         provide_context(store);
         leptos::view! { <BoardView/> }
     });

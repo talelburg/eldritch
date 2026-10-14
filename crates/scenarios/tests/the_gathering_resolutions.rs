@@ -11,7 +11,7 @@
 use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{
-    self, ApplyResult, EngineOutcome, InputKind, OptionId, OptionTarget, PromptNature,
+    ApplyResult, EngineOutcome, InputKind, OptionId, OptionTarget, PromptNature,
 };
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::{ResolutionId, ScenarioEnding};
@@ -20,19 +20,13 @@ use game_core::state::{
     Status,
 };
 use game_core::test_support::{self, TestSession};
-use game_core::{assert_event, assert_no_event, scenario_registry};
+use game_core::{assert_event, assert_no_event};
 use scenarios::the_gathering;
 
 const ROLAND: &str = "01001";
 /// The Parlor, which enters play only via act 2 (01109)'s reverse.
 const PARLOR: &str = "01115";
 const INV: InvestigatorId = InvestigatorId(1);
-
-#[ctor::ctor(unsafe)]
-fn install() {
-    let _ = scenario_registry::install(scenarios::REGISTRY);
-    test_support::install_registry_with_test_cards(cards::REGISTRY);
-}
 
 /// The Gathering set up + solo Roland seated and past the mulligan, ready
 /// to act in the Investigation phase. Determinism stand-in: the random
@@ -52,8 +46,8 @@ fn seated_roland() -> GameState {
     }];
     // seat_and_open opens the mulligan prompt; the session settles at it, and
     // Roland keeps his opening hand before the turn's actions begin.
-    let started = engine::seat_and_open(state, &roster);
-    let session = TestSession::new(started.state);
+    let started = game_core::engine::seat_and_open(state, &roster, scenarios::TEST_REGISTRIES);
+    let session = TestSession::new(started.state, scenarios::TEST_REGISTRIES);
     assert_eq!(
         session.prompt().kind,
         InputKind::PickMultiple,
@@ -90,7 +84,8 @@ fn enemy_attack_defeats_roland_and_latches_no_resolution() {
     // source of truth; max_health() reads from cards::REGISTRY (9 for Roland).
     {
         let roland = state.investigators.get_mut(&INV).expect("Roland seated");
-        roland.investigator_card.accumulated_damage = roland.max_health() - 1;
+        roland.investigator_card.accumulated_damage =
+            roland.max_health(scenarios::TEST_REGISTRIES.cards) - 1;
     }
     let loc = state.investigators[&INV]
         .current_location
@@ -107,7 +102,7 @@ fn enemy_attack_defeats_roland_and_latches_no_resolution() {
 
     // Drive: end Roland's turn → tick into the Enemy phase → the engaged
     // enemy attacks → Roland defeated → no remaining players → NoResolution.
-    let session = TestSession::new(state).take(&TurnAction::EndTurn);
+    let session = TestSession::new(state, scenarios::TEST_REGISTRIES).take(&TurnAction::EndTurn);
 
     assert_event!(session.events(), Event::AllInvestigatorsEliminated);
     assert_event!(session.events(), Event::ScenarioResolved { .. });
@@ -124,7 +119,8 @@ fn enemy_attack_defeats_roland_and_latches_no_resolution() {
 fn advance_to_the_terminal_act(state: GameState) -> GameState {
     // --- Act 1 (real): spend clues to advance → the reverse builds the board
     // and relocates Roland to the Hallway (the act-2 contributor location).
-    let advanced = TestSession::new(state).take(&TurnAction::AdvanceAct { investigator: INV });
+    let advanced = TestSession::new(state, scenarios::TEST_REGISTRIES)
+        .take(&TurnAction::AdvanceAct { investigator: INV });
     assert_eq!(advanced.state().act_index, 1, "act 1 advanced to act 2");
 
     // --- Act 2 (real): end the round → the C3d round-end clue-spend window
@@ -232,7 +228,7 @@ fn drive_the_ghoul_priest_defeat_and_pick(pick: usize, expected: u8) {
 
     // --- Drive the defeating Fight: combat 4 + Numeric(0) ≥ fight 4 → success
     // → deal 1 → defeated → act 3 advances → its reverse reaches R1.
-    let session = TestSession::new(state)
+    let session = TestSession::new(state, scenarios::TEST_REGISTRIES)
         .take(&TurnAction::Fight {
             investigator: INV,
             enemy: priest_id,
@@ -341,7 +337,7 @@ fn interactive_ghoul_priest_defeat() -> TestSession {
         .expect("Roland seated")
         .actions_remaining = 3;
 
-    let s = TestSession::new(state)
+    let s = TestSession::new(state, scenarios::TEST_REGISTRIES)
         .take(&TurnAction::Fight {
             investigator: INV,
             enemy: priest_id,
@@ -451,7 +447,7 @@ fn the_terminal_agendas_ghoul_move_is_a_no_op_when_the_parlor_is_not_in_play() {
     );
     state.encounter_deck.clear();
 
-    let session = TestSession::new(state).take(&TurnAction::EndTurn);
+    let session = TestSession::new(state, scenarios::TEST_REGISTRIES).take(&TurnAction::EndTurn);
 
     // A rejected EndTurn would leave Roland at his turn menu; play instead runs
     // on through the enemy phase and the round end to round 2's encounter draw.
@@ -478,7 +474,8 @@ fn the_terminal_agendas_ghoul_move_is_a_no_op_when_the_parlor_is_not_in_play() {
 /// Here rather than in `crates/cards/tests/` — which is where the rest of 01107's
 /// integration coverage lives — because reaching agenda 3 needs
 /// `the_gathering::setup()`, and `scenarios` depends on `cards`, not the
-/// other way round. This target installs `cards::REGISTRY` too, so it is the same
+/// other way round. This target names `cards::REGISTRY` too (in
+/// `scenarios::TEST_REGISTRIES`), so it is the same
 /// real-corpus seam.
 #[test]
 fn dooming_out_the_terminal_agenda_advances_it_and_its_reverse_reaches_r3() {
@@ -495,7 +492,9 @@ fn dooming_out_the_terminal_agenda_advances_it_and_its_reverse_reaches_r3() {
     // No encounter draws to interfere; the ending cancels 1.4 anyway.
     state.encounter_deck.clear();
 
-    let result = TestSession::new(state).take(&TurnAction::EndTurn).finish();
+    let result = TestSession::new(state, scenarios::TEST_REGISTRIES)
+        .take(&TurnAction::EndTurn)
+        .finish();
 
     assert_event!(result.events, Event::AgendaAdvanced { from } if *from == 2);
     assert_event!(result.events, Event::ScenarioResolved { .. });
@@ -528,7 +527,9 @@ fn dooming_out_the_terminal_agenda_at_act_2_also_reaches_r3() {
     state.agenda_doom = state.agenda_deck[2].doom_threshold - 1;
     state.encounter_deck.clear();
 
-    let result = TestSession::new(state).take(&TurnAction::EndTurn).finish();
+    let result = TestSession::new(state, scenarios::TEST_REGISTRIES)
+        .take(&TurnAction::EndTurn)
+        .finish();
 
     assert_eq!(
         result.state.ending,
@@ -565,7 +566,9 @@ fn dooming_out_the_terminal_agenda_at_act_3_defeats_the_table_and_reaches_no_res
     state.agenda_doom = state.agenda_deck[2].doom_threshold - 1;
     state.encounter_deck.clear();
 
-    let result = TestSession::new(state).take(&TurnAction::EndTurn).finish();
+    let result = TestSession::new(state, scenarios::TEST_REGISTRIES)
+        .take(&TurnAction::EndTurn)
+        .finish();
 
     assert_event!(result.events, Event::AgendaAdvanced { from } if *from == 2);
     assert_event!(
@@ -618,7 +621,7 @@ fn the_terminal_agendas_advance_flip_acknowledge_precedes_the_ending() {
     // Ending the round fires 01107's two Forced *fronts* first — the
     // enemy-phase-end Ghoul move and the round-end doom — each raising its own
     // #466 acknowledge before the Mythos doom tips the threshold.
-    let mut s = TestSession::new(state).take(&TurnAction::EndTurn);
+    let mut s = TestSession::new(state, scenarios::TEST_REGISTRIES).take(&TurnAction::EndTurn);
     for _ in 0..2 {
         assert_eq!(
             s.prompt().prompt,
@@ -698,7 +701,7 @@ fn walk_start() -> GameState {
 /// confusing state mismatch.
 fn apply_logged(state: GameState, action: Action, log: &mut Vec<Action>) -> ApplyResult {
     log.push(action.clone());
-    let r = engine::apply(state, action);
+    let r = game_core::engine::apply(state, action, scenarios::TEST_REGISTRIES);
     assert!(
         !matches!(r.outcome, EngineOutcome::Rejected { .. }),
         "logged action {:?} was rejected: {:?}",
@@ -714,7 +717,7 @@ fn apply_logged(state: GameState, action: Action, log: &mut Vec<Action>) -> Appl
 /// re-does the enumeration rather than taking the action through a session,
 /// which does not hand back the wire actions it sends.
 fn logged_turn(state: GameState, action: &TurnAction, log: &mut Vec<Action>) -> ApplyResult {
-    let legal = enumerate::legal_actions(&state);
+    let legal = enumerate::legal_actions(&state, scenarios::TEST_REGISTRIES.cards);
     let idx = legal
         .iter()
         .position(|a| a == action)
@@ -844,7 +847,7 @@ fn a_real_gathering_walk_replays_identically_across_a_serialize_round_trip() {
 
     let mut state = walk_start();
     for action in &log[..split] {
-        state = engine::apply(state, action.clone()).state;
+        state = game_core::engine::apply(state, action.clone(), scenarios::TEST_REGISTRIES).state;
     }
 
     // The split is genuinely in-flight, not a settled resting point: a skill test
@@ -860,7 +863,7 @@ fn a_real_gathering_walk_replays_identically_across_a_serialize_round_trip() {
     let mut state: GameState = serde_json::from_str(&json).expect("deserialize mid-walk state");
 
     for action in &log[split..] {
-        state = engine::apply(state, action.clone()).state;
+        state = game_core::engine::apply(state, action.clone(), scenarios::TEST_REGISTRIES).state;
     }
 
     assert_eq!(
@@ -879,7 +882,7 @@ fn every_done_in_a_real_gathering_walk_comes_with_an_empty_stack() {
     let mut state = walk_start();
     let mut dones = 0;
     for action in &log {
-        let r = engine::apply(state, action.clone());
+        let r = game_core::engine::apply(state, action.clone(), scenarios::TEST_REGISTRIES);
         if r.outcome == EngineOutcome::Done {
             dones += 1;
             assert!(

@@ -28,6 +28,7 @@
 //! use game_core::state::{GameStateBuilder, InvestigatorId};
 //! use game_core::test_support::{self, TestSession};
 //! use game_core::{assert_event, assert_no_event};
+//! # let registries = test_support::TEST_REGISTRIES;
 //!
 //! let state = GameStateBuilder::new()
 //!     .with_investigator(test_support::test_investigator(1))
@@ -35,7 +36,7 @@
 //!     .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
 //!     .open_turn(InvestigatorId(1))
 //!     .build();
-//! let session = TestSession::new(state).take(&TurnAction::EndTurn);
+//! let session = TestSession::new(state, registries).take(&TurnAction::EndTurn);
 //!
 //! assert_event!(session.events(), Event::TurnEnded { .. });
 //! assert_no_event!(session.events(), Event::ScenarioStarted);

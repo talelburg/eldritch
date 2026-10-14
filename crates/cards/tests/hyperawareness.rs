@@ -22,7 +22,7 @@
 //! use \[fast\] fast actions as many times as you want, as long as you can
 //! pay the cost; there is no limit."*).
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
@@ -30,7 +30,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, ChaosBag, ChaosToken, GameState, GameStateBuilder,
     InvestigatorId, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::test_support::{seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 const HYPERAWARENESS: &str = "01034";
@@ -41,11 +41,6 @@ const INV: InvestigatorId = InvestigatorId(1);
 const INTELLECT_ABILITY: usize = 0;
 const AGILITY_ABILITY: usize = 1;
 
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// A session with one Hyperawareness already in play, the controller at
 /// their open turn with `resources` resources, and a single `Numeric(0)`
 /// chaos bag for predictable arithmetic. We seed in play (rather than playing
@@ -53,6 +48,7 @@ fn install_real_registry() {
 /// is exercised elsewhere.
 fn with_hyperawareness(resources: u8) -> TestSession {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).resources(resources).in_play([HYPERAWARENESS]))
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -200,7 +196,7 @@ fn activation_with_no_test_in_flight_is_rejected_and_buffs_nothing_later() {
     };
 
     assert!(
-        !enumerate::legal_actions(session.state()).contains(&action),
+        !enumerate::legal_actions(session.state(), TEST_REGISTRIES.cards).contains(&action),
         "the open-turn menu must not offer a buff that cannot be bought",
     );
 

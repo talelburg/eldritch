@@ -97,7 +97,7 @@ pub(in crate::engine::dispatch) fn handle(
     enemy_id: EnemyId,
 ) -> EngineOutcome {
     let description = ActionDescription::basic(ActionKind::Fight);
-    if let Err(reason) = take::check(cx.state, investigator, &description) {
+    if let Err(reason) = take::check(cx.state, cx.cards, investigator, &description) {
         return EngineOutcome::Rejected { reason };
     }
     let inv = &cx.state.investigators[&investigator];
@@ -260,7 +260,7 @@ pub(in crate::engine::dispatch) fn fire_retaliate_if_any(
 mod tests {
     use super::*;
     use crate::state::{Continuation, GameStateBuilder, InFlightSkillTest, SkillTestId};
-    use crate::test_support;
+    use crate::test_support::{self, TEST_REGISTRIES};
 
     /// The `Fight` follow-up deals `1 + extra_damage + bonus_attack_damage`,
     /// reading the commit-time accumulator off the in-flight record
@@ -272,6 +272,7 @@ mod tests {
         let mut enemy = test_support::test_enemy(7, "Goon");
         enemy.max_health = 10; // avoid clamping so the dealt damage is observable
         let mut state = GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
             .with_enemy(enemy)
             .build();
@@ -292,10 +293,7 @@ mod tests {
                 )
             }));
         let mut events = Vec::new();
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
 
         after_test(&mut cx, inv, EnemyId(7), 1);
 

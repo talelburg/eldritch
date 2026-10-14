@@ -11,7 +11,7 @@ fn a_locations_shroud_folds_in_its_attachments() {
     let state = GameStateBuilder::new().with_location(loc).build();
     let shroud = modified_value(
         &state,
-        Some(&mock_registry()),
+        &mock_registry(),
         ModifierTarget::Location(LocationId(3)),
         ModifiedQuantity::Shroud,
         ReadContext::OutsideTest,
@@ -28,7 +28,7 @@ fn a_locations_shroud_with_no_attachments_is_the_printed_value() {
     assert_eq!(
         modified_value(
             &state,
-            Some(&mock_registry()),
+            &mock_registry(),
             ModifierTarget::Location(LocationId(3)),
             ModifiedQuantity::Shroud,
             ReadContext::OutsideTest,
@@ -55,7 +55,7 @@ fn an_attached_card_reaches_only_what_it_is_attached_to() {
     let shroud = |id| {
         modified_value(
             &state,
-            Some(&mock_registry()),
+            &mock_registry(),
             ModifierTarget::Location(id),
             ModifiedQuantity::Shroud,
             ReadContext::OutsideTest,
@@ -74,7 +74,7 @@ fn an_enemys_fight_and_evade_answer_from_their_printed_values() {
     let read = |quantity| {
         modified_value(
             &state,
-            Some(&mock_registry()),
+            &mock_registry(),
             ModifierTarget::Enemy(EnemyId(7)),
             quantity,
             ReadContext::OutsideTest,

@@ -111,7 +111,7 @@ fn lift_in_play_card(cx: &mut Cx, code: &str) -> Option<CardInPlay> {
 mod tests {
     use super::*;
     use crate::state::{CardCode, CardInstanceId, GameState, GameStateBuilder, LocationId, Owner};
-    use crate::test_support;
+    use crate::test_support::{self, TEST_REGISTRIES};
 
     const INV: InvestigatorId = InvestigatorId(1);
     const HERE: LocationId = LocationId(1);
@@ -121,6 +121,7 @@ mod tests {
     /// A board with one card in play *at* a location under nobody's control.
     fn board_with_uncontrolled_card() -> GameState {
         let mut state = GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1).at(HERE))
             .with_location(test_support::test_location(HERE.0, "Study"))
             .build();
@@ -139,14 +140,7 @@ mod tests {
 
     fn run(state: &mut GameState, code: &str) -> (EngineOutcome, Vec<Event>) {
         let mut events = Vec::new();
-        let outcome = take_control(
-            &mut Cx {
-                state,
-                events: &mut events,
-            },
-            INV,
-            code,
-        );
+        let outcome = take_control(&mut Cx::for_test(state, &mut events), INV, code);
         (outcome, events)
     }
 

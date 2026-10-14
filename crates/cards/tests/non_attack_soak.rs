@@ -7,7 +7,7 @@
 //! After #426 the damage is one `Deal { amount: N }` not N×`Deal { amount: 1 }`;
 //! the per-point prompt loop still fires via the `DealDamage` frame.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::state::{
     CardCode, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame,
     MythosResume, Phase,
@@ -16,11 +16,6 @@ use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
 
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(20);
-
-#[ctor::ctor(unsafe)]
-fn install_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 /// Where a distributed point goes.
 #[derive(Clone, Copy)]
@@ -36,6 +31,7 @@ enum Onto {
 /// chaos token.
 fn board_with_soaker(treachery: &str, soaker: &str, token: ChaosToken) -> TestSession {
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Here"))
         .with_seat(seat(1).at(HERE).in_play([soaker]))
         .with_turn_order([INV])
@@ -47,7 +43,7 @@ fn board_with_soaker(treachery: &str, soaker: &str, token: ChaosToken) -> TestSe
         .build();
     state.chaos_bag.tokens = vec![token];
     state.encounter_deck.push_back(CardCode::new(treachery));
-    TestSession::new(state)
+    TestSession::new(state, TEST_REGISTRIES)
 }
 
 /// Draw the top encounter card for investigator 1, committing no cards at the

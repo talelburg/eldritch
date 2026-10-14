@@ -10,7 +10,7 @@ use crate::state::{
     EliminationCause, Enemy, EnemyId, GameStateBuilder, InvestigatorId, Lifetime, LocationId,
     Phase, RecordedModifier, SkillKind, SkillTestId, Status, TokenModifiers, TokenResolution, Zone,
 };
-use crate::test_support::{self, seat, Seat, TestSession};
+use crate::test_support::{self, seat, Seat, TestSession, TEST_REGISTRIES};
 use crate::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
 
 mod activate_ability;
@@ -66,6 +66,7 @@ fn investigate_board(investigator: Seat, clues: u8, shroud: u8) -> GameStateBuil
     study.clues = clues;
     study.shroud = shroud;
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(investigator)
         .with_location(study)
         .with_chaos_bag(bag_only_zero())
@@ -84,6 +85,7 @@ fn move_board(mover: Seat) -> GameStateBuilder {
     let mut here = test_support::test_location(HERE.0, "A");
     here.connections = vec![CONNECTED];
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(mover)
         .with_location(here)
         .with_location(test_support::test_location(CONNECTED.0, "B"))
@@ -113,6 +115,7 @@ fn ghoul() -> Enemy {
 /// purely by (skill vs fight/evade).
 fn fight_evade_board(fighter: Seat, enemy: Enemy) -> GameStateBuilder {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(fighter)
         .with_location(test_support::test_location(HERE.0, "Test Hall"))
         .with_enemy_engaged(enemy, INV)

@@ -24,8 +24,8 @@ use std::collections::BTreeMap;
 
 use card_dsl::card_data::{CardKind, CardType};
 
-use crate::card_registry;
-use crate::engine::OptionTarget;
+use crate::card_registry::CardRegistry;
+use crate::engine::{OptionTarget, Registries};
 use crate::state::{
     CardCode, CardInPlay, CardInstanceId, GameState, GameStateBuilder, Investigator,
     InvestigatorId, LocationId, Owner, SkillKind, Skills, Status, UseKind,
@@ -37,9 +37,45 @@ use crate::test_support::test_investigator;
 #[must_use = "a Seat does nothing until it is passed to GameStateBuilder::with_seat"]
 pub struct Seat {
     investigator: Investigator,
+    /// The printed investigator [`as_card`](Seat::as_card) named, with the
+    /// skill overrides set after it in order. Resolved by
+    /// [`with_seat`](GameStateBuilder::with_seat), the first point that
+    /// knows the board's registries.
+    printed: Option<Printed>,
     /// Cards for the play area and threat area, in the order the setters
     /// named them. Instance ids are minted by [`with_seat`](GameStateBuilder::with_seat).
     cards: Vec<Placed>,
+}
+
+#[derive(Debug, Clone)]
+struct Printed {
+    code: CardCode,
+    /// [`skills`](Seat::skills) / [`skill`](Seat::skill) calls made after
+    /// `as_card`, replayed over the printed skills so the later call wins.
+    overrides: Vec<SkillOverride>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum SkillOverride {
+    All(Skills),
+    One(SkillKind, i8),
+}
+
+impl SkillOverride {
+    fn apply(self, skills: &mut Skills) {
+        match self {
+            Self::All(all) => *skills = all,
+            Self::One(kind, value) => {
+                let slot = match kind {
+                    SkillKind::Willpower => &mut skills.willpower,
+                    SkillKind::Intellect => &mut skills.intellect,
+                    SkillKind::Combat => &mut skills.combat,
+                    SkillKind::Agility => &mut skills.agility,
+                };
+                *slot = value;
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -111,52 +147,53 @@ seat_card_from!(&str, String, CardCode);
 pub fn seat(id: u32) -> Seat {
     Seat {
         investigator: test_investigator(id),
+        printed: None,
         cards: Vec::new(),
     }
 }
 
 impl Seat {
     /// Seat the printed investigator `code`: its investigator card, and the
-    /// name and skills printed on it, read from the installed registry's
+    /// name and skills printed on it, read from the card registry's
     /// `metadata_for` — the source real seating reads. A later
-    /// [`skills`](Self::skills) wins.
+    /// [`skills`](Self::skills) or [`skill`](Self::skill) wins.
+    ///
+    /// The lookup happens in [`with_seat`](GameStateBuilder::with_seat),
+    /// against the registries named by
+    /// [`with_registries`](GameStateBuilder::with_registries).
     ///
     /// # Panics
     ///
-    /// Panics, naming `code`, if no registry is installed, the registry does
-    /// not know `code`, or `code` is not an investigator card.
+    /// `with_seat` panics if the test never named its registries, and, naming
+    /// `code`, if the registry does not know `code` or `code` is not an
+    /// investigator card.
     pub fn as_card(mut self, code: impl Into<CardCode>) -> Self {
-        let code = code.into();
-        let meta = card_registry::current()
-            .and_then(|reg| (reg.metadata_for)(&code))
-            .unwrap_or_else(|| panic!("seat.as_card: the registry has no card {code}"));
-        let CardKind::Investigator { skills, .. } = meta.kind else {
-            panic!("seat.as_card: {code} is not an investigator card");
-        };
-        self.investigator.name.clone_from(&meta.name);
-        self.investigator.skills = skills;
-        self.investigator.investigator_card.code = code;
+        self.printed = Some(Printed {
+            code: code.into(),
+            overrides: Vec::new(),
+        });
         self
     }
 
     /// Set the investigator's skills, overriding any printed ones.
-    pub fn skills(mut self, skills: Skills) -> Self {
-        self.investigator.skills = skills;
-        self
+    pub fn skills(self, skills: Skills) -> Self {
+        self.override_skills(SkillOverride::All(skills))
     }
 
     /// Set one skill to `value`, keeping the other three: `seat(1).skill(SkillKind::Combat, 5)`
     /// is the stock 3/3/3/3 with combat 5. Like [`skills`](Self::skills), a
     /// later call wins over [`as_card`](Self::as_card)'s printed value.
-    pub fn skill(mut self, kind: SkillKind, value: i8) -> Self {
-        let skills = &mut self.investigator.skills;
-        let slot = match kind {
-            SkillKind::Willpower => &mut skills.willpower,
-            SkillKind::Intellect => &mut skills.intellect,
-            SkillKind::Combat => &mut skills.combat,
-            SkillKind::Agility => &mut skills.agility,
-        };
-        *slot = value;
+    pub fn skill(self, kind: SkillKind, value: i8) -> Self {
+        self.override_skills(SkillOverride::One(kind, value))
+    }
+
+    /// Apply `skill` now, or — after [`as_card`](Self::as_card), whose printed
+    /// skills are not known until `with_seat` — record it to replay over them.
+    fn override_skills(mut self, skill: SkillOverride) -> Self {
+        match &mut self.printed {
+            Some(printed) => printed.overrides.push(skill),
+            None => skill.apply(&mut self.investigator.skills),
+        }
         self
     }
 
@@ -257,21 +294,22 @@ impl Seat {
 }
 
 /// The owner of a card a seat puts in `zone`: the investigator for the play
-/// area, and for the threat area whoever the printed card says.
-fn owner(zone: SeatZone, code: &CardCode, investigator: InvestigatorId) -> Owner {
+/// area, and for the threat area whoever the printed card says, read from the
+/// named `cards`.
+fn owner(
+    cards: Option<&CardRegistry>,
+    zone: SeatZone,
+    code: &CardCode,
+    investigator: InvestigatorId,
+) -> Owner {
     let player_card = || {
-        card_registry::current()
-            .and_then(|reg| (reg.metadata_for)(code))
-            .is_some_and(|meta| {
-                meta.weakness
-                    || matches!(
-                        meta.card_type(),
-                        CardType::Investigator
-                            | CardType::Asset
-                            | CardType::Event
-                            | CardType::Skill
-                    )
-            })
+        (named(cards).metadata_for)(code).is_some_and(|meta| {
+            meta.weakness
+                || matches!(
+                    meta.card_type(),
+                    CardType::Investigator | CardType::Asset | CardType::Event | CardType::Skill
+                )
+        })
     };
     if zone == SeatZone::InPlay || player_card() {
         Owner::Investigator(investigator)
@@ -280,7 +318,48 @@ fn owner(zone: SeatZone, code: &CardCode, investigator: InvestigatorId) -> Owner
     }
 }
 
+/// The card registry a seat's lookup reads: the one the test named.
+///
+/// # Panics
+///
+/// Panics if the test never named its registries. A seat that looks nothing
+/// up (no printed investigator, no threat-area card) never asks.
+fn named(cards: Option<&CardRegistry>) -> &CardRegistry {
+    cards.unwrap_or_else(|| {
+        panic!(
+            "with_seat: name the registries first, with `.with_registries(..)` on the \
+             builder before the first `.with_seat(..)`"
+        )
+    })
+}
+
+/// Seat the printed investigator `code` on `investigator`, from `cards`.
+fn print(cards: &CardRegistry, investigator: &mut Investigator, code: CardCode) {
+    let meta = (cards.metadata_for)(&code)
+        .unwrap_or_else(|| panic!("seat.as_card: the registry has no card {code}"));
+    let CardKind::Investigator { skills, .. } = meta.kind else {
+        panic!("seat.as_card: {code} is not an investigator card");
+    };
+    investigator.name.clone_from(&meta.name);
+    investigator.skills = skills;
+    investigator.investigator_card.code = code;
+}
+
 impl GameStateBuilder {
+    /// Name the registries this board's test fixtures resolve against:
+    /// [`with_seat`](Self::with_seat) reads a seat's printed investigator
+    /// ([`Seat::as_card`]) and its threat-area owners from them, and
+    /// [`session`](Self::session) drives the engine with them. Name them once,
+    /// before the first `with_seat`.
+    ///
+    /// Test-only, like `with_seat`: a production builder never names
+    /// registries, since the host hands them to `apply` directly. There is no
+    /// default: a fixture that needs them before they are named panics.
+    pub fn with_registries(mut self, registries: Registries) -> Self {
+        self.set_registries(registries);
+        self
+    }
+
     /// Add the investigator `seat` describes, minting instance ids for the
     /// cards it places. Minting continues past every id already staged on the
     /// builder and every [`in_play_as`](Seat::in_play_as) id, and
@@ -289,17 +368,33 @@ impl GameStateBuilder {
     /// already minted, is caught at `build`, which panics on any two cards
     /// sharing an id.
     ///
-    /// Lives here (test-only), like [`session`](GameStateBuilder::session), so
-    /// the production builder carries no test dependency.
+    /// The seat's printed investigator ([`as_card`](Seat::as_card)) and its
+    /// threat-area cards' owners are read from the registries named by
+    /// [`with_registries`](Self::with_registries).
+    ///
+    /// Lives here (test-only), like [`session`](GameStateBuilder::session),
+    /// because [`Seat`] is a test fixture: the production builder holds only
+    /// the optional registries slot this reads, never a fixture type.
     ///
     /// # Panics
     ///
-    /// Panics if an [`in_play_as`](Seat::in_play_as) id is already in use.
+    /// Panics if an [`in_play_as`](Seat::in_play_as) id is already in use, if
+    /// the seat needs a lookup (a printed investigator or a threat-area card)
+    /// before the test named its registries, or as [`as_card`](Seat::as_card)
+    /// describes.
     pub fn with_seat(self, seat: Seat) -> Self {
         let Seat {
             mut investigator,
+            printed,
             cards,
         } = seat;
+        let registry = self.registries().map(|registries| registries.cards);
+        if let Some(Printed { code, overrides }) = printed {
+            print(named(registry), &mut investigator, code);
+            for skill in overrides {
+                skill.apply(&mut investigator.skills);
+            }
+        }
         let chosen: Vec<CardInstanceId> = cards.iter().filter_map(|placed| placed.id).collect();
         let mut taken: Vec<CardInstanceId> = self.card_instance_ids_in_use().collect();
         for &id in &chosen {
@@ -319,7 +414,7 @@ impl GameStateBuilder {
                 next = next.saturating_add(1);
                 minted
             });
-            let owner = owner(zone, &card.code, investigator.id);
+            let owner = owner(registry, zone, &card.code, investigator.id);
             let mut in_play = CardInPlay::enter_play(card.code, instance_id, owner);
             in_play.uses = card.setup.uses;
             in_play.clues = card.setup.clues;

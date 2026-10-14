@@ -3,6 +3,7 @@
 
 use card_dsl::card_data::CardMetadata;
 
+use crate::card_registry::CardRegistry;
 use crate::engine::board::{self, LeavingCard, Placement};
 use crate::engine::dispatch::{
     act_agenda, cards, combat, elimination, encounter, hunters, placement, reveal, set_aside,
@@ -74,6 +75,13 @@ impl<'a> NativeCx<'a> {
     #[must_use]
     pub fn state(&self) -> &GameState {
         self.cx.state
+    }
+
+    /// The card registry this apply runs against, for a read helper that
+    /// looks a card up.
+    #[must_use]
+    pub fn cards(&self) -> &CardRegistry {
+        self.cx.cards
     }
 
     /// Mark the context written and hand out the inner `Cx` for one exit.

@@ -5,20 +5,18 @@ use crate::event::Event;
 use crate::state::{
     EnemyId, FastActorScope, GameStateBuilder, InvestigatorId, LocationId, Phase, Status,
 };
-use crate::test_support::{self, SeatLookup as _, TestSession};
+use crate::test_support::{self, SeatLookup as _, TestSession, TEST_REGISTRIES};
 use crate::{assert_event, assert_event_sequence, assert_no_event};
 
 #[test]
 fn hand_size_discard_prompt_is_player_facing() {
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .build();
     let mut events = Vec::new();
     let outcome = park_hand_size_discard(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         vec![InvestigatorId(1)],
     );
     let EngineOutcome::AwaitingInput { request, .. } = outcome else {
@@ -41,6 +39,7 @@ fn upkeep_phase_emits_phase_started_and_auto_skips_to_mythos() {
     // cascade lands in Mythos.
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         // Give the investigator a card so the step-4.4 draw pulls it normally
         // rather than decking out: since #509 routed 4.4 through
         // `draw_one_with_deckout`, an empty deck applies the deckout horror
@@ -51,10 +50,7 @@ fn upkeep_phase_emits_phase_started_and_auto_skips_to_mythos() {
         .build();
 
     let mut events = Vec::new();
-    step_phase(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    }); // Enemy → Upkeep, cascades to Mythos
+    step_phase(&mut Cx::for_test(&mut state, &mut events)); // Enemy → Upkeep, cascades to Mythos
 
     let pos = |pred: &dyn Fn(&Event) -> bool| events.iter().position(pred);
     let started = pos(&|e| {
@@ -103,6 +99,7 @@ fn ready_exhausted_cards_readies_investigator_cards_and_enemies() {
     let mut enemy = test_support::test_enemy(1, "Test Enemy");
     enemy.exhausted = true;
     let mut state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).in_play(["filler0"]))
         .with_enemy(enemy)
         .build();
@@ -111,10 +108,7 @@ fn ready_exhausted_cards_readies_investigator_cards_and_enemies() {
     state.investigators.get_mut(&inv_id).unwrap().cards_in_play[0].exhausted = true;
     let mut events = Vec::new();
 
-    ready_exhausted_cards(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    ready_exhausted_cards(&mut Cx::for_test(&mut state, &mut events));
 
     assert!(
         !state.investigators[&inv_id].cards_in_play[0].exhausted,
@@ -137,6 +131,7 @@ fn ready_exhausted_cards_reengages_co_located_unengaged_enemy() {
     enemy.exhausted = true; // exhausted + disengaged, e.g. survived a successful Evade
     enemy.current_location = Some(LocationId(10));
     let mut state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(LocationId(10)))
         .with_location(loc)
         .with_enemy(enemy)
@@ -144,10 +139,7 @@ fn ready_exhausted_cards_reengages_co_located_unengaged_enemy() {
         .build();
     let mut events = Vec::new();
 
-    ready_exhausted_cards(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    ready_exhausted_cards(&mut Cx::for_test(&mut state, &mut events));
 
     assert!(!state.enemies[&enemy_id].exhausted, "enemy readied");
     assert_eq!(
@@ -169,15 +161,13 @@ fn ready_exhausted_cards_leaves_ready_cards_untouched() {
     let mut enemy = test_support::test_enemy(1, "Test Enemy");
     enemy.exhausted = false; // already ready
     let mut state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_enemy(enemy)
         .build();
     let mut events = Vec::new();
 
-    ready_exhausted_cards(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    ready_exhausted_cards(&mut Cx::for_test(&mut state, &mut events));
 
     assert!(
         events.is_empty(),
@@ -194,6 +184,7 @@ fn ready_exhausted_cards_no_engage_when_no_co_located_investigator() {
     enemy.exhausted = true;
     enemy.current_location = Some(LocationId(10));
     let mut state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1)) // current_location stays None — NOT co-located
         .with_location(loc)
         .with_enemy(enemy)
@@ -201,10 +192,7 @@ fn ready_exhausted_cards_no_engage_when_no_co_located_investigator() {
         .build();
     let mut events = Vec::new();
 
-    ready_exhausted_cards(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    ready_exhausted_cards(&mut Cx::for_test(&mut state, &mut events));
 
     assert!(!state.enemies[&enemy_id].exhausted, "enemy readied");
     assert_eq!(
@@ -222,15 +210,13 @@ fn ready_exhausted_cards_keeps_existing_engagement_no_duplicate() {
     enemy.exhausted = true; // exhausted but still engaged (e.g. attacked last Enemy phase)
     enemy.engaged_with = Some(inv_id);
     let mut state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_enemy(enemy)
         .build();
     let mut events = Vec::new();
 
-    ready_exhausted_cards(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    ready_exhausted_cards(&mut Cx::for_test(&mut state, &mut events));
 
     assert!(!state.enemies[&enemy_id].exhausted, "enemy readied");
     assert_eq!(
@@ -261,6 +247,7 @@ fn run_upkeep(builder: GameStateBuilder) -> TestSession {
 fn upkeep_draws_and_grants_a_resource_to_each_active_investigator_only() {
     let (a, b, c) = (InvestigatorId(1), InvestigatorId(2), InvestigatorId(3));
     let builder = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).deck(["filler0"]))
         .with_seat(test_support::seat(2).deck(["filler1"]))
         // Resigned, so skipped.
@@ -300,6 +287,7 @@ fn upkeep_draws_in_player_order_then_grants_resources() {
     let (a, b) = (InvestigatorId(1), InvestigatorId(2));
     let session = run_upkeep(
         GameStateBuilder::default()
+            .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1).deck(["filler0"]))
             .with_seat(test_support::seat(2).deck(["filler1"]))
             // Investigator 2 leads, so draws first.
@@ -319,16 +307,14 @@ fn upkeep_draws_in_player_order_then_grants_resources() {
 fn reset_actions_sets_active_to_per_turn_and_skips_eliminated() {
     let (a, b) = (InvestigatorId(1), InvestigatorId(2));
     let mut state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).actions(0))
         .with_seat(test_support::seat(2).actions(0).status(Status::Defeated))
         .with_turn_order([a, b])
         .build();
     let mut events = Vec::new();
 
-    reset_actions(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    reset_actions(&mut Cx::for_test(&mut state, &mut events));
 
     assert_eq!(state.investigators[&a].actions_remaining, ACTIONS_PER_TURN);
     assert_eq!(
@@ -349,15 +335,13 @@ fn reset_actions_emits_nothing_for_already_full() {
     // no ActionsRemainingChanged event.
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).actions(ACTIONS_PER_TURN))
         .with_turn_order([id])
         .build();
     let mut events = Vec::new();
 
-    reset_actions(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    reset_actions(&mut Cx::for_test(&mut state, &mut events));
 
     assert_eq!(state.investigators[&id].actions_remaining, ACTIONS_PER_TURN);
     assert!(events.is_empty(), "no event when value is unchanged");
@@ -367,17 +351,12 @@ fn reset_actions_emits_nothing_for_already_full() {
 fn rotate_to_active_does_not_refresh_actions() {
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).actions(1))
         .build();
     let mut events = Vec::new();
 
-    rotate_to_active(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
-        id,
-    );
+    rotate_to_active(&mut Cx::for_test(&mut state, &mut events), id);
 
     assert_eq!(state.active_investigator, Some(id));
     assert_eq!(
@@ -397,6 +376,7 @@ fn round_increments_on_mythos_entry_via_driver() {
     // the test asserts observable behavior, which is unchanged.
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_turn_order([id])
         .with_phase(Phase::Upkeep)
@@ -404,10 +384,7 @@ fn round_increments_on_mythos_entry_via_driver() {
         .build();
 
     let mut events = Vec::new();
-    step_phase(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    }); // Upkeep → ... → Mythos via the cascade
+    step_phase(&mut Cx::for_test(&mut state, &mut events)); // Upkeep → ... → Mythos via the cascade
 
     assert_eq!(state.round, 5, "round bumps on Mythos entry");
     assert_eq!(state.phase, Phase::Mythos);
@@ -420,6 +397,7 @@ fn end_turn_cascades_through_upkeep_to_mythos_draw_prompt() {
     // Mythos paused at the encounter-draw prompt and round bumped.
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(
             test_support::seat(1)
                 .actions(0)
@@ -434,7 +412,7 @@ fn end_turn_cascades_through_upkeep_to_mythos_draw_prompt() {
     let res_before = state.investigators[&id].resources;
     let hand_before = state.investigators[&id].hand.len();
 
-    let session = TestSession::new(state).take(&TurnAction::EndTurn);
+    let session = TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::EndTurn);
 
     // The round-ending EndTurn cascades into Mythos and pauses at the
     // step-1.4 encounter-draw prompt.

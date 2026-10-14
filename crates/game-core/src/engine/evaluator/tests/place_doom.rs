@@ -22,10 +22,7 @@ fn state_with_agenda(threshold: u8) -> GameState {
 fn place_doom_on_current_agenda_below_threshold_only_places() {
     let mut state = state_with_agenda(3);
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let out = run(
         &mut cx,
         &Effect::PlaceDoomOnCurrentAgenda {
@@ -43,10 +40,7 @@ fn place_doom_on_current_agenda_below_threshold_only_places() {
 fn place_doom_on_current_agenda_advances_at_threshold() {
     let mut state = state_with_agenda(1);
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let out = run(
         &mut cx,
         &Effect::PlaceDoomOnCurrentAgenda {
@@ -78,10 +72,7 @@ fn place_doom_on_current_agenda_advances_at_threshold() {
 fn place_doom_without_the_advance_clause_does_not_advance_at_threshold() {
     let mut state = state_with_agenda(1);
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let out = run(
         &mut cx,
         &Effect::PlaceDoomOnCurrentAgenda {
@@ -106,10 +97,7 @@ fn place_doom_without_the_advance_clause_does_not_advance_at_threshold() {
 fn place_doom_places_the_whole_count_before_checking_the_threshold() {
     let mut state = state_with_agenda(2);
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let out = run(
         &mut cx,
         &Effect::PlaceDoomOnCurrentAgenda {
@@ -130,10 +118,7 @@ fn place_doom_places_the_whole_count_before_checking_the_threshold() {
 fn place_doom_evaluates_a_computed_count() {
     let mut state = state_with_agenda(9);
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let mut eval_ctx = EvalContext::for_controller(InvestigatorId(1));
     eval_ctx.set_failed_by(3);
     let out = run(
@@ -156,10 +141,7 @@ fn place_doom_evaluates_a_computed_count() {
 fn place_doom_composes_as_a_sub_effect() {
     let mut state = state_with_agenda(9);
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let out = run(
         &mut cx,
         &Effect::Seq(vec![
@@ -185,10 +167,7 @@ fn place_doom_composes_as_a_sub_effect() {
 fn place_doom_nests_in_choose_one_and_if() {
     let mut state = state_with_agenda(9);
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let ctx = EvalContext::for_controller(InvestigatorId(1));
     let place = |n| Effect::PlaceDoomOnCurrentAgenda {
         count: IntExpr::Lit(n),
@@ -227,10 +206,7 @@ fn place_doom_of_zero_does_not_run_the_threshold_check() {
     let mut state = state_with_agenda(1);
     state.agenda_doom = 1;
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let out = run(
         &mut cx,
         &Effect::PlaceDoomOnCurrentAgenda {
@@ -255,10 +231,7 @@ fn place_doom_without_an_agenda_deck_is_a_no_op() {
         .build();
     assert!(state.agenda_deck.is_empty());
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let out = run(
         &mut cx,
         &Effect::PlaceDoomOnCurrentAgenda {

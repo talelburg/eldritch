@@ -3,7 +3,7 @@
 //! (2b) — this module shares the handlers' legality predicates so the
 //! enumeration matches handler-acceptance by construction.
 
-use crate::card_registry;
+use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
 use crate::engine::dispatch::actions::{engage, evade, fight, investigate, r#move};
 use crate::engine::dispatch::{act_agenda, legality};
@@ -208,36 +208,42 @@ fn active_investigator(state: &GameState) -> Option<InvestigatorId> {
 /// predicate the handler uses accepts it, so the enumeration matches
 /// handler-acceptance by construction (routing via `OptionId` is 2b).
 #[must_use]
-pub fn legal_actions(state: &GameState) -> Vec<TurnAction> {
+pub fn legal_actions(state: &GameState, cards: &CardRegistry) -> Vec<TurnAction> {
     let Some(investigator) = active_investigator(state) else {
         return Vec::new();
     };
     let mut actions = Vec::new();
-    push_basic_actions(state, investigator, &mut actions);
-    push_combat_engage_actions(state, investigator, &mut actions);
-    push_card_actions(state, investigator, &mut actions);
-    push_act_actions(state, investigator, &mut actions);
+    push_basic_actions(state, cards, investigator, &mut actions);
+    push_combat_engage_actions(state, cards, investigator, &mut actions);
+    push_card_actions(state, cards, investigator, &mut actions);
+    push_act_actions(state, cards, investigator, &mut actions);
     actions
 }
 
 /// Append the `AdvanceAct` action if legal (slice 2a-ii-4, #393) — delegated to
 /// `check_advance_act`, registry-free (act decks are scenario state, not card
 /// data).
-fn push_act_actions(state: &GameState, investigator: InvestigatorId, out: &mut Vec<TurnAction>) {
-    if act_agenda::check_advance_act(state, investigator).is_ok() {
+fn push_act_actions(
+    state: &GameState,
+    cards: &CardRegistry,
+    investigator: InvestigatorId,
+    out: &mut Vec<TurnAction>,
+) {
+    if act_agenda::check_advance_act(state, cards, investigator).is_ok() {
         out.push(TurnAction::AdvanceAct { investigator });
     }
 }
 
 /// Append the card actions legal for `investigator` — `PlayCard` and (Task 2)
-/// `ActivateAbility` (slice 2a-ii-3, #393). Both need card data, so they yield
-/// nothing without a registry (matching the handlers, which reject on `None`).
+/// `ActivateAbility` (slice 2a-ii-3, #393).
 /// Fidelity is by delegation: the enumerator calls the same `check_play_card` /
 /// `check_activate_ability` the handlers call.
-fn push_card_actions(state: &GameState, investigator: InvestigatorId, out: &mut Vec<TurnAction>) {
-    if card_registry::current().is_none() {
-        return;
-    }
+fn push_card_actions(
+    state: &GameState,
+    cards: &CardRegistry,
+    investigator: InvestigatorId,
+    out: &mut Vec<TurnAction>,
+) {
     let Some(inv) = state.investigators.get(&investigator) else {
         return;
     };
@@ -248,7 +254,7 @@ fn push_card_actions(state: &GameState, investigator: InvestigatorId, out: &mut 
     let hand_len = inv.hand.len();
     for idx in 0..hand_len {
         let hand_index = u8::try_from(idx).unwrap_or(u8::MAX);
-        if legality::check_play_card(state, investigator, hand_index).is_ok() {
+        if legality::check_play_card(state, cards, investigator, hand_index).is_ok() {
             out.push(TurnAction::PlayCard {
                 investigator,
                 hand_index,
@@ -263,10 +269,13 @@ fn push_card_actions(state: &GameState, investigator: InvestigatorId, out: &mut 
     // granted (#772), each carrying the address that names it;
     // `check_activate_ability` filters to the activated, payable,
     // window-eligible ones (so a non-`Activated` ability is simply not offered).
-    for (source, code) in ability_source::reachable_source_codes(state, investigator) {
-        let abilities = abilities_in_effect::for_source(state, source, &code).unwrap_or_default();
+    for (source, code) in ability_source::reachable_source_codes(state, cards, investigator) {
+        let abilities =
+            abilities_in_effect::for_source(state, cards, source, &code).unwrap_or_default();
         for (address, _) in abilities {
-            if legality::check_activate_ability(state, investigator, source, &address).is_ok() {
+            if legality::check_activate_ability(state, cards, investigator, source, &address)
+                .is_ok()
+            {
                 out.push(TurnAction::ActivateAbility {
                     investigator,
                     source,
@@ -283,6 +292,7 @@ fn push_card_actions(state: &GameState, investigator: InvestigatorId, out: &mut 
 /// fight or evade value is malformed.
 fn push_combat_engage_actions(
     state: &GameState,
+    cards: &CardRegistry,
     investigator: InvestigatorId,
     out: &mut Vec<TurnAction>,
 ) {
@@ -291,7 +301,7 @@ fn push_combat_engage_actions(
     // Frozen in Fear prices Fight and Evade but not Engage. An action that
     // can't be taken has no targets.
     let targets = |kind: ActionKind, candidates: fn(&GameState, InvestigatorId) -> Vec<EnemyId>| {
-        if may_take(state, investigator, kind) {
+        if may_take(state, cards, investigator, kind) {
             candidates(state, investigator)
         } else {
             Vec::new()
@@ -332,28 +342,33 @@ fn push_combat_engage_actions(
 /// at the open turn (the handler only needs an active investigator, guaranteed
 /// here). Resource, Draw, Investigate and Move follow, each offered only if the
 /// investigator may take it.
-fn push_basic_actions(state: &GameState, investigator: InvestigatorId, out: &mut Vec<TurnAction>) {
+fn push_basic_actions(
+    state: &GameState,
+    cards: &CardRegistry,
+    investigator: InvestigatorId,
+    out: &mut Vec<TurnAction>,
+) {
     // EndTurn: always legal at the open turn (no action point required).
     out.push(TurnAction::EndTurn);
 
     // Whether each may be taken at all — phase, turn, Status, and its cost,
     // surcharge included — is the step's question. Frozen in Fear prices Move
     // but none of the other three.
-    if may_take(state, investigator, ActionKind::Resource) {
+    if may_take(state, cards, investigator, ActionKind::Resource) {
         out.push(TurnAction::Resource { investigator });
     }
-    if may_take(state, investigator, ActionKind::Draw) {
+    if may_take(state, cards, investigator, ActionKind::Draw) {
         out.push(TurnAction::Draw { investigator });
     }
-    if may_take(state, investigator, ActionKind::Investigate)
+    if may_take(state, cards, investigator, ActionKind::Investigate)
         && investigate::candidates(state, investigator).is_some()
     {
         out.push(TurnAction::Investigate { investigator });
     }
 
     // Move: one option per destination, in connection order.
-    if may_take(state, investigator, ActionKind::Move) {
-        for destination in r#move::candidates(state, investigator) {
+    if may_take(state, cards, investigator, ActionKind::Move) {
+        for destination in r#move::candidates(state, cards, investigator) {
             out.push(TurnAction::Move {
                 investigator,
                 destination,
@@ -365,8 +380,13 @@ fn push_basic_actions(state: &GameState, investigator: InvestigatorId, out: &mut
 /// Whether `investigator` may take the basic action `kind` now, cost included —
 /// the step's own [`take::check`], so the menu offers exactly
 /// what taking the action accepts.
-fn may_take(state: &GameState, investigator: InvestigatorId, kind: ActionKind) -> bool {
-    take::check(state, investigator, &ActionDescription::basic(kind)).is_ok()
+fn may_take(
+    state: &GameState,
+    cards: &CardRegistry,
+    investigator: InvestigatorId,
+    kind: ActionKind,
+) -> bool {
+    take::check(state, cards, investigator, &ActionDescription::basic(kind)).is_ok()
 }
 
 #[cfg(test)]

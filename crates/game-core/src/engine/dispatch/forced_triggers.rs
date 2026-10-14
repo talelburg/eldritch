@@ -55,7 +55,7 @@ pub(crate) fn queue_forced_triggers(
     // At most one hit reaches here: the coordinator / emit `<2` guard routes 2+
     // simultaneous forced abilities to the ordered forced-run frame
     // (`open_forced_resolution`, #213), so there is no ordering to preserve.
-    let hits = trigger_scan::collect_forced(cx.state, event, bucket);
+    let hits = trigger_scan::collect_forced(cx.state, cx.cards, event, bucket);
     debug_assert!(
         hits.len() <= 1,
         "queue_forced_triggers: expected 0/1 forced hit (2+ routes through \
@@ -139,7 +139,7 @@ pub(crate) fn drive_acknowledge_forced(cx: &mut Cx) -> EngineOutcome {
         .continuations
         .top_expect::<AcknowledgeForcedFrame>()
         .candidate;
-    let name = choice::card_name(&candidate.code);
+    let name = choice::card_name(cx.cards, &candidate.code);
     let anchor = reaction_windows::candidate_anchor(candidate);
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_single(
@@ -187,10 +187,7 @@ mod tests {
             ),
         });
         let mut events = Vec::new();
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
 
         // Drive: one-option suspend.
         let out = drive_acknowledge_forced(&mut cx);
@@ -226,10 +223,7 @@ mod tests {
             ),
         });
         let mut events = Vec::new();
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
         let out = resume_acknowledge_forced(&mut cx, &InputResponse::Confirm);
         assert!(matches!(out, EngineOutcome::Rejected { .. }));
         assert!(
@@ -255,10 +249,7 @@ mod tests {
             ),
         });
         let mut events = Vec::new();
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
         match drive_acknowledge_forced(&mut cx) {
             EngineOutcome::AwaitingInput { request, .. } => {
                 assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
@@ -285,10 +276,7 @@ mod tests {
             ),
         });
         let mut events = Vec::new();
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
         match drive_acknowledge_forced(&mut cx) {
             EngineOutcome::AwaitingInput { request, .. } => {
                 assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
@@ -320,10 +308,7 @@ mod tests {
             ),
         });
         let mut events = Vec::new();
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
         match drive_acknowledge_forced(&mut cx) {
             EngineOutcome::AwaitingInput { request, .. } => {
                 assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
