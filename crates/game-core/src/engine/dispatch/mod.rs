@@ -72,8 +72,9 @@ pub(super) mod skill_test;
 // pub(super): slot-capacity table + deficit math for asset slot enforcement (#498).
 pub(super) mod slots;
 pub(crate) mod threat_area;
-// pub(super): `NativeCx::spend_uses` forwards to it (Forbidden Knowledge
-// 01058's effect, #353), and engine/mod.rs re-exports `SpendUsesError`.
+// pub(super): `NativeCx::spend_uses` and `NativeCx::move_uses_to_resource_pool`
+// (Forbidden Knowledge 01058's effect, #1050) forward to it, and engine/mod.rs
+// re-exports `SpendUsesError` and `MoveUsesError`.
 pub(super) mod uses;
 
 /// Dispatch one enumerated open-turn action (the internal id→action map target).

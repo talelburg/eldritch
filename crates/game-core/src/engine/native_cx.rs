@@ -8,7 +8,7 @@ use crate::engine::board::{self, LeavingCard, Placement};
 use crate::engine::dispatch::{
     act_agenda, cards, combat, elimination, encounter, hunters, placement, reveal, set_aside,
     skill_test, threat_area,
-    uses::{self, SpendUsesError},
+    uses::{self, MoveUsesError, SpendUsesError},
 };
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
@@ -228,6 +228,33 @@ impl<'a> NativeCx<'a> {
         amount: u8,
     ) -> Result<(), SpendUsesError> {
         uses::spend_uses(self.write_access(), investigator, instance, kind, amount)
+    }
+
+    /// Move up to `amount` uses of `kind` off `instance` into
+    /// `investigator`'s resource pool, each becoming a resource (Forbidden
+    /// Knowledge 01058), emitting
+    /// [`Event::UsesMovedToResourcePool`](crate::event::Event::UsesMovedToResourcePool)
+    /// with the number moved. The move is neither a spend nor a gain, so
+    /// [`Event::UsesSpent`](crate::event::Event::UsesSpent) and
+    /// [`Event::ResourcesGained`](crate::event::Event::ResourcesGained) stay
+    /// silent. If it empties a pool the card prints as discard-when-empty, the
+    /// card is discarded to its owner's pile at once, as for
+    /// [`spend_uses`](Self::spend_uses).
+    ///
+    /// # Errors
+    ///
+    /// [`MoveUsesError::NotInPlay`] when `instance` is not on the board;
+    /// [`MoveUsesError::NoSuchInvestigator`] when `investigator` is not in the
+    /// game; [`MoveUsesError::Undiscardable`] when the depletion discard has
+    /// nowhere to take the card from.
+    pub fn move_uses_to_resource_pool(
+        &mut self,
+        investigator: InvestigatorId,
+        instance: CardInstanceId,
+        kind: UseKind,
+        amount: u8,
+    ) -> Result<(), MoveUsesError> {
+        uses::move_uses_to_resource_pool(self.write_access(), investigator, instance, kind, amount)
     }
 
     // --- Leaving play ---

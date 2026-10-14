@@ -45,6 +45,7 @@ pub const ROLAND_DEFAULT_DECK: &[&str] = &[
 /// [`ROLAND_DEFAULT_DECK`].
 pub const AGNES_DEFAULT_DECK: &[&str] = &[
     "01012", // Heirloom of Hyperborea (signature)
+    "01058", "01058", // Forbidden Knowledge
     "01059", "01059", // Holy Rosary
     "01060", "01060", // Shrivelling
     "01061", "01061", // Scrying

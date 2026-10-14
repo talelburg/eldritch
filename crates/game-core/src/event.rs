@@ -141,9 +141,10 @@ pub enum Event {
     },
     /// Tokens were spent from a card's runtime uses-pool, to pay a
     /// `Cost::SpendUses` (".38 Special": "Spend 1 ammo") or by an effect that
-    /// moves them off (Forbidden Knowledge 01058). Every spend emits it, through
-    /// the engine's one uses-spending path (for a native,
-    /// [`NativeCx::spend_uses`](crate::engine::NativeCx::spend_uses)).
+    /// spends them. Every spend emits it, through the engine's one
+    /// uses-spending path (for a native,
+    /// [`NativeCx::spend_uses`](crate::engine::NativeCx::spend_uses)). A use
+    /// *moved* off a card is not spent: see [`Event::UsesMovedToResourcePool`].
     UsesSpent {
         /// Investigator who spent them: the activator, for a cost.
         investigator: InvestigatorId,
@@ -152,6 +153,28 @@ pub enum Event {
         /// Which uses-kind was spent.
         kind: UseKind,
         /// How many were spent.
+        amount: u8,
+    },
+    /// Uses moved off a card into an investigator's resource pool, each
+    /// becoming a resource (Forbidden Knowledge 01058: *"Move 1 secret from
+    /// Forbidden Knowledge to your resource pool, as a resource."*), through
+    /// [`NativeCx::move_uses_to_resource_pool`](crate::engine::NativeCx::move_uses_to_resource_pool).
+    ///
+    /// Deliberately neither [`Event::ResourcesGained`] nor
+    /// [`Event::UsesSpent`]. The card's ruling
+    /// (<https://arkhamdb.com/card/01058>): *"Moving secrets from Forbidden
+    /// Knowledge to your resource pool **does not** count as 'gaining'
+    /// resources"*; and spending uses is a cost (`glossary/Uses.md`), which a
+    /// move by an effect is not. Anything keyed on gaining or on spending must
+    /// not see it.
+    UsesMovedToResourcePool {
+        /// Whose resource pool received them.
+        investigator: InvestigatorId,
+        /// The asset instance the uses left.
+        instance_id: CardInstanceId,
+        /// Which uses-kind moved.
+        kind: UseKind,
+        /// How many moved: no more than the card had.
         amount: u8,
     },
     /// A skill test was declared and resolution has begun.
