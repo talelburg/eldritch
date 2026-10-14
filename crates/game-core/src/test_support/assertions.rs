@@ -41,7 +41,7 @@
 //!     .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
 //!     .open_turn(InvestigatorId(1))
 //!     .build();
-//! let session = TestSession::new_with_registries(state, registries).take(&TurnAction::EndTurn);
+//! let session = TestSession::new(state, registries).take(&TurnAction::EndTurn);
 //!
 //! assert_event!(session.events(), Event::TurnEnded { .. });
 //! assert_no_event!(session.events(), Event::ScenarioStarted);

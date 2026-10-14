@@ -28,13 +28,8 @@ fn setup_and_seat() -> GameState {
         deck: vec![],
     }];
     // seat_and_open rests at the mulligan; the session settles there.
-    let session = TestSession::new_with_registries(
-        engine::seat_and_open_with_registries(
-            the_gathering::setup(),
-            &roster,
-            scenarios::TEST_REGISTRIES,
-        )
-        .state,
+    let session = TestSession::new(
+        engine::seat_and_open(the_gathering::setup(), &roster, scenarios::TEST_REGISTRIES).state,
         scenarios::TEST_REGISTRIES,
     )
     .choose_from_hand(&[]);
@@ -104,7 +99,7 @@ fn drives_act_1_then_act_2_via_round_end_window() {
 
     // Act 1: the normal Investigation-phase clue spend. Board builds and the
     // investigator relocates to the Hallway (01112) — the act-2 contributors.
-    let session = TestSession::new_with_registries(state, scenarios::TEST_REGISTRIES)
+    let session = TestSession::new(state, scenarios::TEST_REGISTRIES)
         .take(&TurnAction::AdvanceAct { investigator: inv });
     session.assert_at_turn_menu(inv);
     let state = session.state();
@@ -309,7 +304,7 @@ fn advancing_act_1_rebuilds_the_board() {
     let inv = INV;
     let state = act_1_ready_to_advance();
 
-    let session = TestSession::new_with_registries(state, scenarios::TEST_REGISTRIES)
+    let session = TestSession::new(state, scenarios::TEST_REGISTRIES)
         .take(&TurnAction::AdvanceAct { investigator: inv });
     session.assert_at_turn_menu(inv);
     let result = session.finish();
@@ -411,7 +406,7 @@ fn removing_the_study_discards_its_attachments_by_owner() {
         Owner::Investigator(inv),
     ));
 
-    let session = TestSession::new_with_registries(state, scenarios::TEST_REGISTRIES)
+    let session = TestSession::new(state, scenarios::TEST_REGISTRIES)
         .take(&TurnAction::AdvanceAct { investigator: inv });
     session.assert_at_turn_menu(inv);
     let result = session.finish();

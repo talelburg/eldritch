@@ -22,7 +22,7 @@ fn plain_skill_test_disposes_of_no_encounter_card() {
         .open_turn(inv)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
-    let session = TestSession::new_with_registries(state, crate::engine::TEST_REGISTRIES)
+    let session = TestSession::new(state, crate::engine::TEST_REGISTRIES)
         .test_skill(inv, SkillKind::Intellect, 1)
         .commit(&[]);
     session.assert_at_turn_menu(inv);
@@ -79,8 +79,11 @@ fn skill_test_opens_and_auto_skips_both_player_windows() {
         .build();
 
     // start -> PreCommitWindow auto-skips window 1 -> parks at AwaitingCommit.
-    let session = TestSession::new_with_registries(state, crate::engine::TEST_REGISTRIES)
-        .test_skill(inv, SkillKind::Willpower, 2);
+    let session = TestSession::new(state, crate::engine::TEST_REGISTRIES).test_skill(
+        inv,
+        SkillKind::Willpower,
+        2,
+    );
     assert!(
         session.state().current_skill_test().is_some()
             && session.prompt().kind == InputKind::PickMultiple,
@@ -146,8 +149,11 @@ fn commit_emits_then_resolves_through_advance() {
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
 
-    let session = TestSession::new_with_registries(state, crate::engine::TEST_REGISTRIES)
-        .test_skill(inv, SkillKind::Willpower, 2);
+    let session = TestSession::new(state, crate::engine::TEST_REGISTRIES).test_skill(
+        inv,
+        SkillKind::Willpower,
+        2,
+    );
     // advance parked at AwaitingCommit and emitted the commit prompt.
     assert!(
         session.prompt().prompt.contains("Commit cards"),
@@ -181,8 +187,11 @@ fn interactive_acknowledge_pauses_for_confirm_then_resolves() {
         .build();
     state.interactive_acknowledge = true;
 
-    let session = TestSession::new_with_registries(state, crate::engine::TEST_REGISTRIES)
-        .test_skill(inv, SkillKind::Willpower, 2);
+    let session = TestSession::new(state, crate::engine::TEST_REGISTRIES).test_skill(
+        inv,
+        SkillKind::Willpower,
+        2,
+    );
     assert_eq!(
         session.prompt().kind,
         InputKind::PickMultiple,
@@ -229,8 +238,11 @@ fn no_acknowledge_pause_when_flag_off() {
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
 
-    let session = TestSession::new_with_registries(state, crate::engine::TEST_REGISTRIES)
-        .test_skill(inv, SkillKind::Willpower, 2);
+    let session = TestSession::new(state, crate::engine::TEST_REGISTRIES).test_skill(
+        inv,
+        SkillKind::Willpower,
+        2,
+    );
     assert_eq!(
         session.prompt().kind,
         InputKind::PickMultiple,

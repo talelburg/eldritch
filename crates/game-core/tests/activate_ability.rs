@@ -2,7 +2,7 @@
 //! `CardRegistry` covering one made-up activated ability.
 //!
 //! Lives at `crates/game-core/tests/` (a separate integration-test
-//! binary, hence its own process and its own `OnceLock<CardRegistry>`)
+//! binary, hence its own process and its own `MockRegistry`)
 //! so building a mock registry here doesn't collide with game-core's
 //! in-crate tests (which name game-core's test registry instead).
 //!
@@ -211,7 +211,7 @@ fn fast_resource_loop_activates_and_resolves_effect() {
     let (state, id, instance_id) = state_with_in_play(FAST_RESOURCE_LOOP);
     let actions_before = state.investigators[&id].actions_remaining;
 
-    let result = TestSession::new_with_registries(state, registries())
+    let result = TestSession::new(state, registries())
         .take(&activate(id, instance_id, 0))
         .finish();
     let inv = &result.state.investigators[&id];
@@ -252,7 +252,7 @@ fn action_exhaust_gain_exhausts_source_and_blocks_reactivation() {
     let actions_before = state.investigators[&id].actions_remaining;
     let action = activate(id, instance_id, 0);
 
-    let after_first = TestSession::new_with_registries(state, registries()).take(&action);
+    let after_first = TestSession::new(state, registries()).take(&action);
     let inv = &after_first.state().investigators[&id];
     assert_eq!(inv.actions_remaining, actions_before - 1);
     assert_eq!(inv.resources, 5 + 1);
@@ -276,7 +276,7 @@ fn insufficient_resources_reject_without_payment() {
     let (state, id, instance_id) = state_seated(seat(1).resources(0), FAST_RESOURCE_LOOP);
 
     let after = refused_off_menu(
-        TestSession::new_with_registries(state, registries()),
+        TestSession::new(state, registries()),
         &activate(id, instance_id, 0),
     );
     // Wallet untouched.
@@ -288,7 +288,7 @@ fn insufficient_actions_reject_action_cost_ability() {
     let (state, id, instance_id) = state_seated(seat(1).actions(0), ACTION_EXHAUST_GAIN);
 
     let after = refused_off_menu(
-        TestSession::new_with_registries(state, registries()),
+        TestSession::new(state, registries()),
         &activate(id, instance_id, 0),
     );
     // Source still ready (not exhausted), resources untouched.
@@ -302,7 +302,7 @@ fn ability_index_pointing_at_non_activated_trigger_rejects() {
     let (state, id, instance_id) = state_with_in_play(CONSTANT_ONLY);
 
     refused_off_menu(
-        TestSession::new_with_registries(state, registries()),
+        TestSession::new(state, registries()),
         &activate(id, instance_id, 0),
     );
 }
@@ -312,7 +312,7 @@ fn ability_index_out_of_bounds_rejects() {
     let (state, id, instance_id) = state_with_in_play(FAST_RESOURCE_LOOP);
 
     refused_off_menu(
-        TestSession::new_with_registries(state, registries()),
+        TestSession::new(state, registries()),
         &activate(id, instance_id, 9),
     );
 }
@@ -323,7 +323,7 @@ fn discard_card_from_hand_cost_rejects_with_todo() {
 
     // No partial mutation: source still ready, no events fired.
     let after = refused_off_menu(
-        TestSession::new_with_registries(state, registries()),
+        TestSession::new(state, registries()),
         &activate(id, instance_id, 0),
     );
     assert!(!after.investigators[&id].cards_in_play[0].exhausted);
@@ -331,17 +331,14 @@ fn discard_card_from_hand_cost_rejects_with_todo() {
 
 #[test]
 fn activating_with_defeated_status_doesnt_need_registry() {
-    // Belt-and-suspenders: even with registry installed, the status
+    // Belt-and-suspenders: even with the registry knowing the card, the status
     // check rejects before the registry lookup runs.
     let (mut state, id, instance_id) = state_with_in_play(FAST_RESOURCE_LOOP);
     // No seat setter stages a status.
     state.investigators.get_mut(&id).unwrap().status = Status::Defeated;
 
-    let refused = TestSession::new_with_registries(state, registries()).submit_off_menu(&activate(
-        id,
-        instance_id,
-        0,
-    ));
+    let refused =
+        TestSession::new(state, registries()).submit_off_menu(&activate(id, instance_id, 0));
     refused.expect_rejected();
     assert_no_event!(refused.finish().events, Event::AbilityActivated { .. });
 }
@@ -369,10 +366,7 @@ fn a_test_scoped_modifier_buffs_the_test_it_was_bought_during() {
     let (state, id, instance_id) = state_with_in_play(SKILL_BOOST);
     let resources_before = state.investigators[&id].resources;
 
-    let session = boosted_intellect_test(
-        TestSession::new_with_registries(state, registries()),
-        instance_id,
-    );
+    let session = boosted_intellect_test(TestSession::new(state, registries()), instance_id);
     session.assert_at_turn_menu(id);
     assert_event!(
         session.events(),
@@ -396,16 +390,13 @@ fn a_test_scoped_modifier_does_not_leak_into_a_second_test() {
     // without buying it: 3 intellect vs difficulty 4 fails by 1.
     let (state, id, instance_id) = state_with_in_play(SKILL_BOOST);
 
-    let second = boosted_intellect_test(
-        TestSession::new_with_registries(state, registries()),
-        instance_id,
-    )
-    .test_skill(id, SkillKind::Intellect, 4)
-    // Decline both player windows, commit nothing.
-    .skip()
-    .commit(&[])
-    .skip()
-    .finish();
+    let second = boosted_intellect_test(TestSession::new(state, registries()), instance_id)
+        .test_skill(id, SkillKind::Intellect, 4)
+        // Decline both player windows, commit nothing.
+        .skip()
+        .commit(&[])
+        .skip()
+        .finish();
     assert_event!(
         second.events,
         Event::SkillTestFailed { investigator, skill: SkillKind::Intellect, by: 1, .. }
@@ -421,7 +412,7 @@ fn a_test_scoped_row_is_stamped_with_the_running_test_and_carries_its_source() {
     let (state, id, instance_id) = state_with_in_play(SKILL_BOOST);
 
     // Start the test, then take the offered fast play at its player window.
-    let after_activate = TestSession::new_with_registries(state, registries())
+    let after_activate = TestSession::new(state, registries())
         .test_skill(id, SkillKind::Intellect, 4)
         .pick(OptionTarget::CardInstance(instance_id));
 
@@ -459,10 +450,7 @@ fn activating_a_test_scoped_modifier_outside_a_test_is_rejected() {
         "the open-turn menu must not offer an activation that would reject",
     );
 
-    let after = refused_off_menu(
-        TestSession::new_with_registries(state, registries()),
-        &action,
-    );
+    let after = refused_off_menu(TestSession::new(state, registries()), &action);
     // State unchanged by the rejection: no resource spent, nothing recorded.
     assert_eq!(after.investigators[&id].resources, resources_before);
     assert!(after.recorded_modifiers.is_empty());
@@ -481,7 +469,7 @@ fn a_once_per_round_activated_ability_is_offered_once_per_round() {
         "an unused limited ability is offered",
     );
 
-    let after_first = TestSession::new_with_registries(state, registries()).take(&action);
+    let after_first = TestSession::new(state, registries()).take(&action);
     assert_eq!(after_first.state().investigators[&id].resources, 5 + 1);
     assert!(
         !enumerate::legal_actions(after_first.state(), registries().cards).contains(&action),
@@ -517,7 +505,7 @@ fn a_limited_ability_on_a_card_the_activator_does_not_control_counts_its_use() {
         .build();
     let action = activate(INV, ATTACHMENT, 0);
 
-    let after_first = TestSession::new_with_registries(state, registries()).take(&action);
+    let after_first = TestSession::new(state, registries()).take(&action);
     assert_eq!(after_first.state().investigators[&INV].resources, 5 + 1);
     assert!(
         !enumerate::legal_actions(after_first.state(), registries().cards).contains(&action),
@@ -538,10 +526,7 @@ fn a_tagged_activated_ability_is_not_offered_while_its_condition_is_false() {
         !enumerate::legal_actions(&state, registries().cards).contains(&action),
         "a false eligibility condition keeps the ability off the menu",
     );
-    refused_off_menu(
-        TestSession::new_with_registries(state.clone(), registries()),
-        &action,
-    );
+    refused_off_menu(TestSession::new(state.clone(), registries()), &action);
 
     let mut with_a_clue = state;
     with_a_clue.investigators.get_mut(&id).unwrap().clues = 1;
@@ -575,7 +560,7 @@ fn a_cancelled_use_of_a_limited_activated_ability_still_counts() {
     let action = activate(INV, state.in_play(INV, ONCE_PER_ROUND_DISCOVERY), 0);
     let interrupt_card = state.card(INV, CANCEL_DISCOVERY);
 
-    let cancelled = TestSession::new_with_registries(state, registries())
+    let cancelled = TestSession::new(state, registries())
         .take(&action)
         .pick(interrupt_card);
 

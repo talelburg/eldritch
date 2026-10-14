@@ -102,7 +102,7 @@ fn parley(state: GameState, lita: CardInstanceId) -> TestSession {
             sub: 0,
         },
     };
-    let session = TestSession::new_with_registries(state, TEST_REGISTRIES)
+    let session = TestSession::new(state, TEST_REGISTRIES)
         .take(&parley)
         .commit(&[]);
     session.assert_at_turn_menu(INV);
@@ -116,8 +116,7 @@ fn reveal_crypt_chill(controlled: &TestSession) -> TestSession {
     let mut state = controlled.state().clone();
     state.chaos_bag.tokens = vec![ChaosToken::AutoFail];
     state.encounter_deck.push_back(CardCode::new(CRYPT_CHILL));
-    let drawing =
-        TestSession::new_with_registries(state, TEST_REGISTRIES).take(&TurnAction::EndTurn);
+    let drawing = TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::EndTurn);
     drawing.assert_at_encounter_draw();
     drawing.confirm().commit(&[])
 }

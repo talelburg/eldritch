@@ -69,7 +69,7 @@ fn state_with_agenda(code: &str) -> GameState {
 /// the Enemy phase and its end, where the agenda's forced ability fires. Play
 /// then goes on through Upkeep into the next round's Mythos phase.
 fn end_the_enemy_phase(state: GameState) -> TestSession {
-    TestSession::new_with_registries(state, registries()).take(&TurnAction::EndTurn)
+    TestSession::new(state, registries()).take(&TurnAction::EndTurn)
 }
 
 #[test]

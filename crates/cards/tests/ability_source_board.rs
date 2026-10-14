@@ -150,7 +150,7 @@ fn assert_offered_and_activatable(state: GameState, source: AbilitySource, why: 
     );
 
     let before = state.investigators[&MINE].resources;
-    let session = TestSession::new_with_registries(state, registries()).take(&action);
+    let session = TestSession::new(state, registries()).take(&action);
     session.assert_at_turn_menu(MINE);
     assert_eq!(
         session.state().investigators[&MINE].resources,
@@ -224,7 +224,7 @@ fn both_are_reachable_from_anywhere_on_the_board() {
 /// has none, so the event has to say what actually carried the ability.
 #[test]
 fn the_activation_event_names_the_board_card_it_came_from() {
-    let result = TestSession::new_with_registries(board(), registries())
+    let result = TestSession::new(board(), registries())
         .take(&activation(AbilitySource::Act, LIVE))
         .finish();
     assert_event!(
@@ -246,7 +246,7 @@ fn an_act_that_is_no_longer_current_is_not_reachable() {
     let mut state = board();
     state.act_index = 1;
 
-    let result = TestSession::new_with_registries(state, registries())
+    let result = TestSession::new(state, registries())
         .take(&activation(AbilitySource::Act, LIVE))
         .finish();
     assert_event!(
@@ -275,7 +275,7 @@ fn an_absent_act_or_agenda_is_out_of_reach() {
             "{source:?} must stay out of the turn menu with no deck loaded; menu was {menu:?}",
         );
         // Activating it with no deck loaded must reject.
-        let reason = TestSession::new_with_registries(state.clone(), registries())
+        let reason = TestSession::new(state.clone(), registries())
             .assert_rejects(|s| s.submit_off_menu(&activation(source, LIVE)));
         assert!(
             reason.contains("cannot reach"),
@@ -318,7 +318,7 @@ fn a_usage_limited_board_ability_rejects_naming_699_rather_than_panicking() {
         );
 
         // A usage-limited ability on a board card must reject.
-        let reason = TestSession::new_with_registries(state.clone(), registries())
+        let reason = TestSession::new(state.clone(), registries())
             .assert_rejects(|s| s.submit_off_menu(&action));
         assert!(
             reason.contains("usage limit") && reason.contains("#699"),

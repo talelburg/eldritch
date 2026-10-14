@@ -9,7 +9,7 @@
 //!
 //! Moved down from `crates/scenarios/tests/upkeep_hand_size.rs` (#873): no card
 //! is involved, only a scenario module, which under ADR 0016 is a locally-built
-//! shell. No scenario registry is installed, so the resolution hook is skipped
+//! shell. The registries name no scenario module, so the resolution hook is skipped
 //! and the round cannot end mid-cascade.
 
 use std::sync::LazyLock;
@@ -110,8 +110,8 @@ const INV: InvestigatorId = InvestigatorId(1);
 /// Investigation, round 1, at the turn menu. The padding has no step that
 /// makes it, so the opened state is edited and settled again.
 fn opened_with_a_padded_hand() -> TestSession {
-    let opened = game_core::engine::seat_and_open_with_registries(setup(), &roster(), registries());
-    let mut state = TestSession::new_with_registries(opened.state, registries())
+    let opened = game_core::engine::seat_and_open(setup(), &roster(), registries());
+    let mut state = TestSession::new(opened.state, registries())
         .choose_from_hand(&[])
         .state()
         .clone();
@@ -119,7 +119,7 @@ fn opened_with_a_padded_hand() -> TestSession {
     while inv.hand.len() < PADDED_HAND {
         inv.hand.push(CardCode::new(format!("{PREFIX}filler")));
     }
-    let session = TestSession::new_with_registries(state, registries());
+    let session = TestSession::new(state, registries());
     // No discard is pending before the round-ending EndTurn: the session rests
     // at the turn menu.
     session.assert_at_turn_menu(INV);

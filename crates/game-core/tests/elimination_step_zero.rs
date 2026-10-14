@@ -12,7 +12,7 @@
 //! `GameEnd` forced ability, so proving the weakness filter does real work needs
 //! a synthetic card that is identical to the weakness in every respect except
 //! `CardMetadata::weakness`. Hence a mock registry, and hence its own
-//! integration-test binary (`OnceLock<CardRegistry>` is process-global).
+//! integration-test binary (a process holds one `MockRegistry`).
 //!
 //! Lives at `crates/game-core/tests/` alongside `forced_triggers.rs` /
 //! `native_effect.rs`, whose idiom it follows.
@@ -164,7 +164,7 @@ fn elimination_fires_an_owned_weaknesss_game_end_ability_before_removing_it() {
         events,
         outcome,
         ..
-    } = TestSession::new_with_registries(state, registries())
+    } = TestSession::new(state, registries())
         .take_damage(INV, 8)
         .finish();
 
@@ -200,7 +200,7 @@ fn elimination_does_not_fire_a_non_weaknesss_game_end_ability() {
         events,
         outcome,
         ..
-    } = TestSession::new_with_registries(state, registries())
+    } = TestSession::new(state, registries())
         .take_damage(INV, 8)
         .finish();
 
@@ -215,7 +215,7 @@ fn elimination_fires_an_owned_weakness_held_outside_the_threat_area() {
     // play", not "in the threat area" — a weakness among `cards_in_play` (a
     // weakness asset) fires too. Same scan, different zone.
     let state = board(WEAKNESS, 1, false);
-    let ApplyResult { events, .. } = TestSession::new_with_registries(state, registries())
+    let ApplyResult { events, .. } = TestSession::new(state, registries())
         .take_damage(INV, 8)
         .finish();
 
@@ -228,7 +228,7 @@ fn a_weakness_whose_condition_fails_suffers_nothing() {
     // The ability fires either way; its own "if there are any clues" condition
     // is what decides. Keeps the positive tests honest about *why* they pass.
     let state = board(WEAKNESS, 0, true);
-    let ApplyResult { state, events, .. } = TestSession::new_with_registries(state, registries())
+    let ApplyResult { state, events, .. } = TestSession::new(state, registries())
         .take_damage(INV, 8)
         .finish();
 
@@ -248,7 +248,7 @@ fn elimination_without_a_step_zero_ability_still_runs_its_steps() {
         events,
         outcome,
         ..
-    } = TestSession::new_with_registries(state, registries())
+    } = TestSession::new(state, registries())
         .take_damage(INV, 8)
         .finish();
 
@@ -283,7 +283,7 @@ fn interactive_elimination_acknowledges_step_zero_before_running_the_steps() {
     // No builder setter stages `interactive_acknowledge`.
     state.interactive_acknowledge = true;
     let weakness = state.card(INV, WEAKNESS);
-    let paused = TestSession::new_with_registries(state, registries()).take_damage(INV, 8);
+    let paused = TestSession::new(state, registries()).take_damage(INV, 8);
 
     // Step 0's forced acknowledge surfaces, anchored to the weakness.
     assert_eq!(
@@ -342,7 +342,7 @@ fn elimination_fires_a_when_cell_weakness_ability() {
         events,
         outcome,
         ..
-    } = TestSession::new_with_registries(state, registries())
+    } = TestSession::new(state, registries())
         .take_damage(INV, 8)
         .finish();
 

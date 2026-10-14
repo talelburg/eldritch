@@ -14,6 +14,7 @@ use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::board::BoardView;
 use web::interaction::PendingOptions;
+use web::registry::provide_cards;
 use web::store::{self, ClientState};
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlElement};
@@ -23,9 +24,9 @@ wasm_bindgen_test_configure!(run_in_browser);
 /// Mount `BoardView`, feed one `Hello` carrying `state`, tick, return nothing —
 /// assertions query the live DOM via `document()`.
 async fn mount_state(state: GameState) {
-    test_support::install_test_registry();
     let store = RwSignal::new(ClientState::default());
     mount::mount_to_body(move || {
+        provide_cards(&test_support::TEST_REGISTRY);
         provide_context(store);
         leptos::view! { <BoardView/> }
     });
@@ -306,11 +307,11 @@ async fn mount_interactive(
     state: GameState,
     outcome: EngineOutcome,
 ) -> UnboundedReceiver<ClientMessage> {
-    test_support::install_test_registry();
     let store = RwSignal::new(ClientState::default());
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let tx_for_mount: OutboundTx = tx;
     mount::mount_to_body(move || {
+        provide_cards(&test_support::TEST_REGISTRY);
         provide_context(store);
         provide_context::<OutboundTx>(tx_for_mount.clone());
         let pending = Signal::derive(move || store.with(web::interaction::pending_options));

@@ -31,7 +31,7 @@ const ENEMY_A: EnemyId = EnemyId(100);
 const ENEMY_B: EnemyId = EnemyId(101);
 
 fn play(state: GameState) -> TestSession {
-    TestSession::new_with_registries(state, TEST_REGISTRIES).take(&TurnAction::PlayCard {
+    TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::PlayCard {
         investigator: INV,
         hand_index: 0,
     })

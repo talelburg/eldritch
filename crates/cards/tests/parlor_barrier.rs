@@ -178,8 +178,7 @@ fn move_does_not_offer_the_unrevealed_parlor_but_still_offers_its_neighbours() {
 fn submitting_a_move_into_the_unrevealed_parlor_is_rejected() {
     // Submitted straight at the `apply` seam, bypassing the menu — which is
     // exactly the case the handler's own check exists for.
-    let r = TestSession::new_with_registries(board(false), TEST_REGISTRIES)
-        .submit_off_menu(&move_to(PARLOR));
+    let r = TestSession::new(board(false), TEST_REGISTRIES).submit_off_menu(&move_to(PARLOR));
     let reason = r.expect_rejected();
     assert!(
         !reason.is_empty(),
@@ -208,7 +207,7 @@ fn revealing_the_parlor_makes_the_move_legal() {
     );
 
     // The move resolves, back to the turn menu.
-    let r = TestSession::new_with_registries(state, TEST_REGISTRIES).take(&move_to(PARLOR));
+    let r = TestSession::new(state, TEST_REGISTRIES).take(&move_to(PARLOR));
     r.assert_at_turn_menu(INV);
     assert_eq!(
         r.state().investigators[&INV].current_location,
@@ -222,8 +221,7 @@ fn revealing_the_parlor_makes_the_move_legal() {
 /// act 01109b's `reveal_location` does to it — makes the same move legal.
 #[test]
 fn the_reveal_alone_flips_the_answer() {
-    let r = TestSession::new_with_registries(board(false), TEST_REGISTRIES)
-        .submit_off_menu(&move_to(PARLOR));
+    let r = TestSession::new(board(false), TEST_REGISTRIES).submit_off_menu(&move_to(PARLOR));
     r.expect_rejected();
 
     let mut state = r.state().clone();

@@ -9,13 +9,12 @@
 //! emits — including the two option-less `Confirm`s that are byte-identical but
 //! for their anchor, which is the collision the retired bar hid (ADR 0011).
 //!
-//! Registry-dependent (panels read investigator-card capacity), so it lives in its
-//! own binary per the `tests/location_card.rs` first-wins-registry precedent.
+//! Registry-dependent (panels read investigator-card capacity): it provides the
+//! real corpus, `cards::TEST_REGISTRY`.
 #![cfg(target_arch = "wasm32")]
 
 use std::collections::BTreeSet;
 
-use cards::REGISTRY;
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::Action;
 use game_core::engine::enumerate::TurnAction;
@@ -34,6 +33,7 @@ use web::app::Overlays;
 use web::board::BoardView;
 use web::decision::DecisionLive;
 use web::interaction::{ConfirmAnchor, MultiSelect, PendingOptions};
+use web::registry::provide_cards;
 use web::store::{self, ClientState};
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlButtonElement, HtmlElement};
@@ -57,14 +57,13 @@ impl Harness {
     /// `state` and the engine's opening outcome for it.
     async fn mount(state: GameState, outcome: EngineOutcome) -> Self {
         // The real corpus, not the synthetic registry: this flow draws a real
-        // encounter card and renders a real investigator card. Its own
-        // binary, per the `tests/location_card.rs` first-wins-registry precedent.
-        test_support::install_registry_with_test_cards(REGISTRY);
+        // encounter card and renders a real investigator card.
         let store = RwSignal::new(ClientState::default());
         let (tx, rx) = mpsc::unbounded::<ClientMessage>();
         let tx_for_mount: OutboundTx = tx;
         let seed = state.clone();
         mount_to_body(move || {
+            provide_cards(&cards::TEST_REGISTRY);
             provide_context(store);
             provide_context::<OutboundTx>(tx_for_mount.clone());
             let pending = Signal::derive(move || store.with(web::interaction::pending_options));
@@ -107,6 +106,7 @@ impl Harness {
         let result = engine::apply(
             self.state.take().expect("a state to apply against"),
             Action::Player(action),
+            cards::TEST_REGISTRIES,
         );
         assert!(
             !matches!(result.outcome, EngineOutcome::Rejected { .. }),
@@ -196,7 +196,7 @@ async fn a_whole_turn_is_driven_from_the_board_alone() {
     // Seed by spending the one action through the engine: what comes back is the
     // engine's own open-turn menu, so nothing about the anchors is reconstructed
     // in the test.
-    let seeded = test_support::TestSession::new(state)
+    let seeded = test_support::TestSession::new(state, cards::TEST_REGISTRIES)
         .take(&TurnAction::Resource { investigator: INV })
         .finish();
     let mut h = Harness::mount(seeded.state, seeded.outcome).await;
@@ -295,7 +295,7 @@ async fn a_choice_printed_on_one_card_presents_itself_without_a_second_click() {
 
     // Spend an action through the engine to reach its own open-turn menu, so
     // nothing about the anchors is reconstructed by the test.
-    let seeded = test_support::TestSession::new(state)
+    let seeded = test_support::TestSession::new(state, cards::TEST_REGISTRIES)
         .take(&TurnAction::Resource { investigator: INV })
         .finish();
     let mut h = Harness::mount(seeded.state, seeded.outcome).await;

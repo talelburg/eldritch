@@ -337,7 +337,7 @@ fn a_dead_mode_is_not_offered() {
 fn only_the_damage_mode_is_offered_with_no_horror_to_heal() {
     let mut state = board_with_harm(3, 2, 0).build();
     state.interactive_acknowledge = true;
-    let s = activate(TestSession::new_with_registries(state, TEST_REGISTRIES));
+    let s = activate(TestSession::new(state, TEST_REGISTRIES));
     let options = &s.prompt().options;
     assert_eq!(
         options.len(),
@@ -393,7 +393,7 @@ fn both_modes_are_offered_when_both_harms_are_present() {
 fn the_offered_index_names_the_live_mode_not_the_printed_one() {
     let mut state = board_with_harm(3, 0, 2).build();
     state.interactive_acknowledge = true;
-    let s = activate(TestSession::new_with_registries(state, TEST_REGISTRIES));
+    let s = activate(TestSession::new(state, TEST_REGISTRIES));
     let options = &s.prompt().options;
     assert_eq!(
         options.len(),

@@ -1,6 +1,6 @@
 //! `Cost::DiscardSelf` + the Beat-Cop-shaped `DiscardSelf → DealDamageToEnemy`
-//! ability. Mock registry in its own integration binary (own process +
-//! `OnceLock<CardRegistry>`), mirroring `weapon_fight.rs`.
+//! ability. Mock registry in its own integration binary (a process holds one
+//! `MockRegistry`), mirroring `weapon_fight.rs`.
 
 use std::sync::LazyLock;
 
@@ -153,7 +153,7 @@ fn activation(state: &GameState, code: &str) -> TurnAction {
 /// to the turn menu.
 fn activate(state: GameState, code: &str) -> TestSession {
     let action = activation(&state, code);
-    let session = TestSession::new_with_registries(state, registries()).take(&action);
+    let session = TestSession::new(state, registries()).take(&action);
     session.assert_at_turn_menu(INV);
     session
 }
@@ -163,7 +163,7 @@ fn activate(state: GameState, code: &str) -> TestSession {
 /// the refusal.
 fn refused(state: GameState, code: &str) -> GameState {
     let action = activation(&state, code);
-    let session = TestSession::new_with_registries(state, registries()).submit_off_menu(&action);
+    let session = TestSession::new(state, registries()).submit_off_menu(&action);
     session.expect_rejected();
     session.finish().state
 }

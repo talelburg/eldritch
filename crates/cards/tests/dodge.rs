@@ -92,7 +92,7 @@ fn acolyte_session() -> TestSession {
         doom_threshold: 3,
     }];
     state.agenda_index = 0;
-    TestSession::new_with_registries(state, TEST_REGISTRIES)
+    TestSession::new(state, TEST_REGISTRIES)
 }
 
 /// The anchor of `holder`'s Dodge in a reaction window's prompt.
@@ -305,7 +305,7 @@ fn dodge_lapses_when_dissonant_voices_arrives_before_the_pick() {
         "the refused pick left Dodge in hand",
     );
 
-    let resurfaced = TestSession::new_with_registries(refused.state().clone(), TEST_REGISTRIES);
+    let resurfaced = TestSession::new(refused.state().clone(), TEST_REGISTRIES);
     let events = resurfaced.events();
     assert_event!(
         events,
@@ -360,7 +360,7 @@ fn dodge_lapses_as_out_of_scope_once_its_holder_leaves_the_attacked_location() {
         .get_mut(&dodger)
         .expect("seated")
         .current_location = Some(HALLWAY);
-    let resurfaced = TestSession::new_with_registries(state, TEST_REGISTRIES);
+    let resurfaced = TestSession::new(state, TEST_REGISTRIES);
 
     assert_event!(
         resurfaced.events(),

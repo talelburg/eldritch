@@ -98,7 +98,7 @@ fn barrier_table_with_seat_1_eliminated() -> TestSession {
         clue_threshold: 3,
     }];
     state.act_index = 0;
-    TestSession::new_with_registries(state, TEST_REGISTRIES)
+    TestSession::new(state, TEST_REGISTRIES)
 }
 
 #[test]

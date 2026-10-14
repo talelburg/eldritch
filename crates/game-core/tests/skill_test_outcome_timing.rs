@@ -3,7 +3,7 @@
 //! resolved test, not just a successful Investigate, and opens no window when
 //! nothing listens.
 //!
-//! Own integration-test process (separate `OnceLock<CardRegistry>`) so it can
+//! Own integration-test process (a process holds one `MockRegistry`) so it can
 //! build a mock registry without colliding with other `tests/*.rs`. Mirrors
 //! `on_skill_test_resolution.rs`.
 

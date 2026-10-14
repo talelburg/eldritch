@@ -274,7 +274,7 @@ fn lita(state: &GameState) -> OptionTarget {
 /// `actor` fights `enemy` committing nothing: the session rests at Lita's
 /// reaction window, or back at the turn menu if none opened.
 fn fight(state: GameState, actor: InvestigatorId, enemy: EnemyId) -> TestSession {
-    TestSession::new_with_registries(state, TEST_REGISTRIES)
+    TestSession::new(state, TEST_REGISTRIES)
         .take(&TurnAction::Fight {
             investigator: actor,
             enemy,
@@ -399,7 +399,7 @@ fn a_designated_fight_ability_gets_the_bonus() {
     .build();
     let machete = state.in_play(KEEPER, MACHETE);
     let lita = lita(&state);
-    let result = TestSession::new_with_registries(state, TEST_REGISTRIES)
+    let result = TestSession::new(state, TEST_REGISTRIES)
         .take(&TurnAction::ActivateAbility {
             investigator: KEEPER,
             source: AbilitySource::InPlay(machete),
@@ -438,7 +438,7 @@ fn a_non_attack_damage_effect_gets_nothing() {
     // whose 1 damage asks where it goes — Lita, an ally in play, can soak it —
     // and then so does each of the 3 points the blast deals the keeper. He
     // takes all four himself. Nothing else is asked: no reaction window opens.
-    let result = TestSession::new_with_registries(state, TEST_REGISTRIES)
+    let result = TestSession::new(state, TEST_REGISTRIES)
         .take(&TurnAction::PlayCard {
             investigator: KEEPER,
             hand_index: 0,

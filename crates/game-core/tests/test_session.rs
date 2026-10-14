@@ -211,7 +211,7 @@ fn settling_a_fixture_that_cannot_resurface_its_prompt_panics() {
             .cloned()
             .chain([SubstitutionPromptFrame { investigator: INV }.into()]),
     );
-    let _ = TestSession::new_with_registries(state, registries());
+    let _ = TestSession::new(state, registries());
 }
 
 /// A staged setup mulligan settles at its prompt, and answering it runs the
@@ -414,7 +414,7 @@ fn submit_off_menu_reaches_the_handler_and_its_rejection_reads_back() {
         .actions_remaining = 0;
 
     let action = activate(&state, DECIDE);
-    let session = TestSession::new_with_registries(state, registries()).submit_off_menu(&action);
+    let session = TestSession::new(state, registries()).submit_off_menu(&action);
 
     assert!(
         session.expect_rejected().contains("action"),
@@ -698,7 +698,7 @@ fn assert_at_encounter_draw_at_the_turn_menu_panics() {
 fn confirm_acknowledges_a_pause() {
     let mut state = board().open_turn(INV).build();
     state.interactive_acknowledge = true;
-    let session = TestSession::new_with_registries(state, registries())
+    let session = TestSession::new(state, registries())
         .resolve_choices(|c| {
             c.commit_cards(&[]);
         })
@@ -889,8 +889,8 @@ fn assert_rejects_returns_the_reason_of_a_step_that_moved_nothing() {
         .expect("seated")
         .actions_remaining = 0;
 
-    let reason = TestSession::new_with_registries(state, registries())
-        .assert_rejects(|s| s.submit_off_menu(&action));
+    let reason =
+        TestSession::new(state, registries()).assert_rejects(|s| s.submit_off_menu(&action));
 
     assert!(
         reason.contains("action"),

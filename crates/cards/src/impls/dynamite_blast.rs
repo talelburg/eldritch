@@ -168,6 +168,7 @@ mod tests {
         // one-option pick rather than auto-targeting silently (#466).
         let loc = test_support::test_location(HERE.0, "Lonely Spot"); // no connections by default
         let mut state = GameStateBuilder::new()
+            .with_registries(crate::TEST_REGISTRIES)
             .with_seat(test_support::seat(1).at(HERE))
             .with_location(loc)
             .build();
@@ -193,6 +194,7 @@ mod tests {
         // frame on top so the deals resolve in ascending id order. Nothing is
         // placed until the frames run.
         let mut state = GameStateBuilder::new()
+            .with_registries(crate::TEST_REGISTRIES)
             .with_seat(test_support::seat(1).at(HERE))
             .with_seat(test_support::seat(2).at(HERE))
             .with_location(test_support::test_location(HERE.0, "Lonely Spot"))

@@ -45,8 +45,8 @@ fn state_on_agenda_01105() -> GameState {
 /// Advance 01105 for real and acknowledge its flip (#558), so the session
 /// rests at 01105's `AgendaAdvanced` forced, paused on the acknowledge.
 fn advance_01105() -> TestSession {
-    let flipped = TestSession::new_with_registries(state_on_agenda_01105(), TEST_REGISTRIES)
-        .take(&TurnAction::EndTurn);
+    let flipped =
+        TestSession::new(state_on_agenda_01105(), TEST_REGISTRIES).take(&TurnAction::EndTurn);
     assert_eq!(
         flipped.prompt().prompt,
         "Agenda 1 advanced — acknowledge.",

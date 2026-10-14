@@ -92,7 +92,7 @@ fn round_end_window() -> TestSession {
         clue_threshold: 0,
     }];
     state.act_index = 0;
-    TestSession::new_with_registries(state, registries())
+    TestSession::new(state, registries())
 }
 
 #[test]

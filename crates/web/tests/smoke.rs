@@ -4,21 +4,23 @@
 //! five pre-existing CI jobs are unaffected.
 #![cfg(target_arch = "wasm32")]
 
-use leptos::{mount, prelude};
+use leptos::prelude::*;
 use wasm_bindgen_test::*;
 use web::app::App;
+use web::registry::provide_cards;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
 #[wasm_bindgen_test]
 fn app_renders_greeting() {
-    // Mount the app into the document body; it stays mounted (attached to
-    // the DOM) for the assertion.
-    mount::mount_to_body(App);
+    // Mount the app into the document body the way `main` does, registry
+    // first; it stays mounted (attached to the DOM) for the assertion.
+    mount_to_body(|| {
+        provide_cards(&cards::TEST_REGISTRY);
+        view! { <App/> }
+    });
 
-    let body = prelude::document()
-        .body()
-        .expect("document should have a <body>");
+    let body = document().body().expect("document should have a <body>");
 
     assert!(
         body.inner_html().contains("Eldritch"),

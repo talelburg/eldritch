@@ -174,7 +174,7 @@ fn assert_offered_and_activatable(state: GameState, source: AbilitySource, why: 
     );
 
     let before = state.investigators[&MINE].resources;
-    let session = TestSession::new_with_registries(state, registries()).take(&action);
+    let session = TestSession::new(state, registries()).take(&action);
     session.assert_at_turn_menu(MINE);
     assert_eq!(
         session.state().investigators[&MINE].resources,
@@ -195,8 +195,8 @@ fn assert_out_of_reach(state: GameState, source: AbilitySource, why: &str) {
     );
 
     // Activating it must reject.
-    let reason = TestSession::new_with_registries(state, registries())
-        .assert_rejects(|s| s.submit_off_menu(&action));
+    let reason =
+        TestSession::new(state, registries()).assert_rejects(|s| s.submit_off_menu(&action));
     assert!(
         reason.contains("cannot reach"),
         "{why}, so the reason should name reachability, got: {reason}",
@@ -243,7 +243,7 @@ fn the_location_you_stand_at_offers_its_ability() {
 /// ability.
 #[test]
 fn the_activation_event_names_a_source_with_no_card_instance() {
-    let result = TestSession::new_with_registries(board(), registries())
+    let result = TestSession::new(board(), registries())
         .take(&activation(AbilitySource::Location(HERE), LIVE))
         .finish();
     assert_event!(
@@ -349,8 +349,8 @@ fn a_usage_limited_ability_on_a_location_rejects_naming_699_rather_than_panickin
     );
 
     // A usage-limited location ability must reject.
-    let reason = TestSession::new_with_registries(state, registries())
-        .assert_rejects(|s| s.submit_off_menu(&action));
+    let reason =
+        TestSession::new(state, registries()).assert_rejects(|s| s.submit_off_menu(&action));
     assert!(
         reason.contains("usage limit") && reason.contains("#699"),
         "the reason should name the limit and the issue that builds it, got: {reason}",

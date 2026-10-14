@@ -109,7 +109,7 @@ fn drawing_grasping_hands(investigator: Seat, survivor: bool) -> GameState {
 /// Draw the top encounter card for investigator 1, committing `commit` at the
 /// revelation's skill-test window, and play on to the next rest.
 fn reveal_committing(state: GameState, commit: &[&str]) -> TestSession {
-    TestSession::new_with_registries(state, TEST_REGISTRIES)
+    TestSession::new(state, TEST_REGISTRIES)
         .confirm()
         .commit(commit)
 }

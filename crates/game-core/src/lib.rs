@@ -24,7 +24,6 @@ pub mod engine;
 pub mod event;
 pub mod rng;
 pub mod scenario;
-pub mod scenario_registry;
 pub mod state;
 
 pub mod test_support;

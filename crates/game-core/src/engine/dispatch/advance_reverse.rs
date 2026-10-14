@@ -312,7 +312,7 @@ mod tests {
         // One act, and it is the one advancing — so it is the terminal one. The
         // frame is pushed as 01110's forced advance would push it: the real
         // trigger (the Ghoul Priest's defeat) is scenario content this crate
-        // cannot install.
+        // cannot reach.
         state.act_deck = vec![Act {
             code: test_support::terminal_code(1),
             clue_threshold: 0,
@@ -326,7 +326,7 @@ mod tests {
             trigger: AdvanceTrigger::Forced,
         });
 
-        let session = TestSession::new_with_registries(state, crate::engine::TEST_REGISTRIES);
+        let session = TestSession::new(state, crate::engine::TEST_REGISTRIES);
         assert_eq!(
             session.prompt().options.len(),
             1,

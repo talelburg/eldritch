@@ -291,7 +291,7 @@ fn a_granted_address_resolves_to_nothing_once_the_granter_is_gone() {
 
     // The menu no longer offers it, so the stale candidate is submitted
     // straight to the handler, as a client still holding it would.
-    let session = TestSession::new_with_registries(state, registries()).submit_off_menu(&minted);
+    let session = TestSession::new(state, registries()).submit_off_menu(&minted);
     // A stale granted address must reject.
     let _ = session.expect_rejected();
 }
@@ -325,7 +325,7 @@ fn a_granted_address_lapses_when_the_condition_flips_mid_window() {
 
     // The menu no longer offers it, so the stale candidate is submitted
     // straight to the handler, as a client still holding it would.
-    let session = TestSession::new_with_registries(state, registries()).submit_off_menu(&minted);
+    let session = TestSession::new(state, registries()).submit_off_menu(&minted);
     // An address whose grant no longer applies must reject.
     let _ = session.expect_rejected();
 }
@@ -356,13 +356,12 @@ fn a_grant_is_not_offered_to_an_investigator_elsewhere() {
 /// triggered trigger fails at resolution rather than silently doing nothing.
 #[test]
 fn resolving_a_grant_as_an_effect_rejects() {
-    let session = TestSession::new_with_registries(board(GRANTER), registries()).take(
-        &TurnAction::ActivateAbility {
+    let session =
+        TestSession::new(board(GRANTER), registries()).take(&TurnAction::ActivateAbility {
             investigator: MINE,
             source: AbilitySource::Location(HERE),
             address: AbilityAddress::Printed(1),
-        },
-    );
+        });
     // A Grant is a constant marker; running it is a misuse.
     let _ = session.expect_rejected();
 }

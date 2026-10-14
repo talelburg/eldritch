@@ -43,7 +43,7 @@ fn board_with_soaker(treachery: &str, soaker: &str, token: ChaosToken) -> TestSe
         .build();
     state.chaos_bag.tokens = vec![token];
     state.encounter_deck.push_back(CardCode::new(treachery));
-    TestSession::new_with_registries(state, TEST_REGISTRIES)
+    TestSession::new(state, TEST_REGISTRIES)
 }
 
 /// Draw the top encounter card for investigator 1, committing no cards at the

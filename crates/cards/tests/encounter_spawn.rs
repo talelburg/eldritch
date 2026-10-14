@@ -82,10 +82,7 @@ fn drawing_flesh_eater(seated: &[InvestigatorId]) -> (TestSession, LocationId) {
         inv.current_location = Some(attic);
     }
     state.encounter_deck.push_back(CardCode::new(FLESH_EATER));
-    (
-        TestSession::new_with_registries(state, TEST_REGISTRIES),
-        attic,
-    )
+    (TestSession::new(state, TEST_REGISTRIES), attic)
 }
 
 /// **An enemy drawn from the encounter deck is the encounter deck's**

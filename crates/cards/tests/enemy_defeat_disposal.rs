@@ -101,7 +101,7 @@ fn solo_investigator_facing(
 /// Fight the enemy to death: the Fight suspends on the commit window, and
 /// committing nothing resolves the test, the damage, and the defeat.
 fn fight_to_defeat(state: GameState) -> TestSession {
-    let session = TestSession::new_with_registries(state, TEST_REGISTRIES)
+    let session = TestSession::new(state, TEST_REGISTRIES)
         .take(&TurnAction::Fight {
             investigator: INV,
             enemy: ENEMY,

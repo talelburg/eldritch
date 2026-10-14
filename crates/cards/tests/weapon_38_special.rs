@@ -60,7 +60,7 @@ fn ammo(state: &GameState) -> u8 {
 /// Fire the .38 Special's Fight ability, committing nothing.
 fn fire(state: GameState) -> TestSession {
     let weapon = state.in_play(INV, SPECIAL);
-    let session = TestSession::new_with_registries(state, TEST_REGISTRIES)
+    let session = TestSession::new(state, TEST_REGISTRIES)
         .take(&TurnAction::ActivateAbility {
             investigator: INV,
             source: AbilitySource::InPlay(weapon),

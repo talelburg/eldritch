@@ -80,7 +80,7 @@ fn round_ended_fires_agenda_forced_ability() {
             .ending_upkeep_phase()
             .build(),
     );
-    let session = TestSession::new_with_registries(state, registries());
+    let session = TestSession::new(state, registries());
 
     // The round really ended: play is in the next round's Mythos phase.
     assert_eq!(session.state().phase, Phase::Mythos);
@@ -123,7 +123,7 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
     // where the two round-end forced abilities fire simultaneously. The
     // forced run suspends for the lead's ordering choice rather than
     // transitioning to Mythos.
-    let paused = TestSession::new_with_registries(state, registries()).take(&TurnAction::EndTurn);
+    let paused = TestSession::new(state, registries()).take(&TurnAction::EndTurn);
     assert_eq!(
         (
             paused.offered_at(&OptionTarget::Agenda),

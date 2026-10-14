@@ -30,7 +30,7 @@
 //!     .build();
 //!
 //! // Investigator 1 ends their turn, which opens investigator 2's.
-//! let session = test_support::TestSession::new_with_registries(state, registries)
+//! let session = test_support::TestSession::new(state, registries)
 //!     .take(&TurnAction::EndTurn);
 //! session.assert_at_turn_menu(InvestigatorId(2));
 //! ```

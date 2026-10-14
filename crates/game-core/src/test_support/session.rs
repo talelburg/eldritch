@@ -95,7 +95,7 @@ use crate::state::{
 /// ```
 ///
 /// Construct via [`GameStateBuilder::session`](crate::state::GameStateBuilder::session),
-/// [`TestSession::new_with_registries`] or [`TestSession::new`].
+/// or [`TestSession::new`].
 #[derive(Debug)]
 #[must_use = "a TestSession step returns the advanced session"]
 pub struct TestSession {
@@ -149,43 +149,38 @@ impl std::fmt::Debug for Policy {
 impl GameStateBuilder {
     /// Build and settle into a [`TestSession`] driven with the registries named
     /// by [`with_registries`](GameStateBuilder::with_registries): equivalent to
-    /// `TestSession::new_with_registries(self.build(), regs)`, or, until the
-    /// test names them, `TestSession::new(self.build())`. Lives here
-    /// (test-only) rather than on the builder itself so the production builder
-    /// in [`crate::state`] carries no test dependency.
+    /// `TestSession::new(self.build(), regs)`. Lives here (test-only) rather
+    /// than on the builder itself so the production builder in
+    /// [`crate::state`] carries no test dependency.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the test never named its registries, and as
+    /// [`TestSession::new`] does.
     pub fn session(self) -> TestSession {
-        let registries = self.registries();
-        let state = self.build();
-        match registries {
-            Some(registries) => TestSession::new_with_registries(state, registries),
-            None => TestSession::new(state),
-        }
+        let registries = self.registries().unwrap_or_else(|| {
+            panic!(
+                "GameStateBuilder::session: name the registries first, with \
+                 `.with_registries(..)` on the builder"
+            )
+        });
+        TestSession::new(self.build(), registries)
     }
 }
 
 impl TestSession {
     /// Settle `state` to where the engine would rest, through the production
-    /// `apply` scaffolding, driving it with the installed registries. Prefer
-    /// [`new_with_registries`](Self::new_with_registries), which names them.
+    /// `apply` scaffolding, driving it — and every later step — with
+    /// `registries`. The way in for a hand-built state; a board names its
+    /// registries on the builder instead
+    /// ([`with_registries`](GameStateBuilder::with_registries)).
     ///
     /// # Panics
     ///
     /// Panics if the top frame cannot re-surface its prompt — a stack the
     /// engine never rests at. Build the state before the prompt and drive into
     /// it instead.
-    pub fn new(state: GameState) -> Self {
-        Self::new_with_registries(state, Registries::from_globals())
-    }
-
-    /// Settle `state` to where the engine would rest, as [`new`](Self::new)
-    /// does, driving it — and every later step — with `registries`. The way in
-    /// for a hand-built state; a board names its registries on the builder
-    /// instead ([`with_registries`](GameStateBuilder::with_registries)).
-    ///
-    /// # Panics
-    ///
-    /// As [`new`](Self::new).
-    pub fn new_with_registries(state: GameState, registries: Registries) -> Self {
+    pub fn new(state: GameState, registries: Registries) -> Self {
         let settled = engine::apply_via(state, registries, |cx| {
             let outcome = engine::drive(cx, EngineOutcome::Done);
             if matches!(outcome, EngineOutcome::Done) {
@@ -268,7 +263,7 @@ impl TestSession {
     /// records and hand-built responses; prefer the named steps.
     pub fn apply(self, action: Action) -> Self {
         let registries = self.registries;
-        self.advance(|state| engine::apply_with_registries(state, action, registries))
+        self.advance(|state| engine::apply(state, action, registries))
     }
 
     /// Step: fire the timing point `event` from where the session rests, the
@@ -470,7 +465,7 @@ impl TestSession {
         let result = drain_with_applier(
             first,
             |request, state| policy.answer(request, state),
-            |state, action| note(engine::apply_with_registries(state, action, registries)),
+            |state, action| note(engine::apply(state, action, registries)),
         );
         let ApplyResult {
             state,

@@ -1,4 +1,4 @@
-//! Global card-registry binding for engine ↔ cards crate lookups.
+//! The card registry: the engine ↔ cards crate lookup bridge.
 //!
 //! The engine (in `game-core`) needs to look up a card's metadata
 //! (type, class, traits, …) and abilities ([`Vec<Ability>`]) by
@@ -8,13 +8,14 @@
 //! depends on `game-core` — so a direct call from `game-core` into
 //! `cards` is impossible.
 //!
-//! This module bridges the gap with a `OnceLock`-backed global. The
-//! `cards` crate exposes a [`CardRegistry`] value (function pointers
-//! into its own `by_code` / `abilities_for`) and the host (server,
-//! `main` in tests that need real cards) installs it once at startup
-//! via [`install`]. Engine code calls [`current`] when it needs a
-//! lookup and gracefully rejects when no registry is installed —
-//! tests that don't touch card data work fine without an install.
+//! This module bridges the gap with a value. The `cards` crate exposes a
+//! [`CardRegistry`] (function pointers into its own `by_code` /
+//! `abilities_for`), and the host hands it to every
+//! [`apply`](crate::engine::apply) inside a
+//! [`Registries`](crate::engine::Registries); the engine carries it on its
+//! context for the length of the apply. There is no process global, so "no
+//! registry" cannot happen and each test chooses the registry it runs
+//! against.
 //!
 //! # Why function pointers, not `dyn Trait`?
 //!
@@ -23,16 +24,6 @@
 //! keeps `dyn` out of the engine's hot path. Tests construct registry
 //! values with custom function pointers to mock the corpus when
 //! needed.
-//!
-//! # Test isolation
-//!
-//! `OnceLock` is process-global, so all tests in a process share the
-//! same registry. Today no test mocks card data — tests use the real
-//! corpus or skip card lookups entirely via the `GameStateBuilder` builder —
-//! so this is fine. If/when per-test mocking is needed, we'll move to
-//! a registry threaded through `apply()` or stored on `GameState`.
-
-use std::sync::OnceLock;
 
 use card_dsl::card_data::CardMetadata;
 use card_dsl::dsl::{Ability, CardFilter};
@@ -138,8 +129,8 @@ impl CardRegistry {
     /// **Spread `EMPTY` only over a registry you are building from nothing.**
     /// A helper wrapping a *real* registry must spread that registry instead —
     /// naming a slot it doesn't override silently switches the real lookup off,
-    /// which is exactly the bug #774's review caught in what is now
-    /// [`install_registry_with_test_cards`](crate::test_support::install_registry_with_test_cards).
+    /// which is exactly the bug #774's review caught in the helper that
+    /// composed the synthetic test cards into a real registry.
     pub const EMPTY: Self = Self {
         metadata_for: |_| None,
         abilities_for: |_| None,
@@ -154,33 +145,6 @@ impl Default for CardRegistry {
     fn default() -> Self {
         Self::EMPTY
     }
-}
-
-static REGISTRY: OnceLock<CardRegistry> = OnceLock::new();
-
-/// Install the global card registry. Idempotent at the
-/// `OnceLock` level: the first call wins; subsequent calls return
-/// `Err` with the value they tried to set.
-///
-/// Hosts (server, test setup) call this exactly once at startup. Tests
-/// that need real cards may call it from a `#[ctor]`-style helper or
-/// from a `LazyLock` initializer; double-install is harmless.
-///
-/// # Errors
-///
-/// Returns `Err(registry)` if a registry was already installed,
-/// returning the value the caller passed in unchanged.
-pub fn install(registry: CardRegistry) -> Result<(), CardRegistry> {
-    REGISTRY.set(registry)
-}
-
-/// Get the installed registry, or `None` if no registry has been
-/// installed yet. Engine handlers that need a lookup should call this
-/// and reject cleanly on `None` rather than panic — the engine must
-/// never panic on missing context.
-#[must_use]
-pub fn current() -> Option<&'static CardRegistry> {
-    REGISTRY.get()
 }
 
 /// Whether the printed card with `code` matches `filter`
@@ -205,7 +169,6 @@ mod tests {
     use card_dsl::dsl::{self, ModifierScope, Stat};
 
     use super::*;
-    use crate::test_support;
 
     /// Build a hand-rolled `CardMetadata` for a fake test card.
     fn fake_metadata() -> CardMetadata {
@@ -259,9 +222,8 @@ mod tests {
         }
     }
 
-    /// A locally-constructed registry exercises both function-pointer
-    /// fields without touching the global `OnceLock` — so multiple
-    /// tests can run in parallel.
+    /// A locally-constructed registry exercising both function-pointer
+    /// fields.
     fn fake_registry() -> CardRegistry {
         CardRegistry {
             metadata_for: fake_metadata_for,
@@ -299,22 +261,5 @@ mod tests {
         let reg = fake_registry();
         let code = CardCode::new("99999");
         assert!((reg.abilities_for)(&code).is_none());
-    }
-
-    /// Process-global install. The test installs the standard test registry
-    /// (which knows `TEST_INV`) — no other unit test reads the global, since
-    /// each names its registries — so the slot is occupied and a further
-    /// `install` must fail (idempotent-by-error semantics of `OnceLock::set`).
-    #[test]
-    fn install_is_idempotent_and_current_reflects_installed_value() {
-        let _ = install(test_support::TEST_REGISTRY);
-        let installed = current().expect("registry should be present after install");
-        // A second install attempt must return Err (already set).
-        assert!(install(fake_registry()).is_err());
-        // Sanity: `current()` keeps returning Some.
-        assert!(REGISTRY.get().is_some());
-        // Verify `installed` resolves the TEST_INV code that the test
-        // registry knows about.
-        let _ = (installed.metadata_for)(&CardCode::new(test_support::TEST_INV));
     }
 }

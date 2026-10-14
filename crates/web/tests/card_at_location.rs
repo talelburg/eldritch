@@ -12,11 +12,10 @@
 //! Location `attachments` are the same zone shape and were rendered by nobody
 //! at all, so they are covered here too.
 //!
-//! Real corpus registry, so the tokens carry the printed names; own test binary,
-//! since the registry install is first-wins per process.
+//! Real corpus registry (`cards::TEST_REGISTRY`), so the tokens carry the
+//! printed names.
 #![cfg(target_arch = "wasm32")]
 
-use cards::REGISTRY;
 use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, GameState, GameStateBuilder, LocationId,
@@ -30,6 +29,7 @@ use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::board::BoardView;
 use web::interaction::PendingOptions;
+use web::registry::provide_cards;
 use web::store::{self, ClientState};
 use web_sys::{Element, HtmlElement};
 
@@ -74,9 +74,9 @@ fn option_anchored_to(instance: CardInstanceId) -> EngineOutcome {
 }
 
 async fn mount(state: GameState, outcome: EngineOutcome) -> Element {
-    test_support::install_registry_with_test_cards(REGISTRY);
     let store = RwSignal::new(ClientState::default());
     mount_to_body(move || {
+        provide_cards(&cards::TEST_REGISTRY);
         provide_context(store);
         let pending = Signal::derive(move || store.with(web::interaction::pending_options));
         provide_context(PendingOptions(pending));

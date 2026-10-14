@@ -162,7 +162,7 @@ fn enemy_attack_soaks_onto_guard_dog_then_retaliate_damages_attacker() {
 
     // Distribute the attack: assign both points onto Guard Dog (#44/K5b).
     let session = distribute_onto(
-        TestSession::new_with_registries(state, TEST_REGISTRIES).take(&TurnAction::EndTurn),
+        TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::EndTurn),
         dog,
     );
     let state = session.state();
@@ -240,7 +240,7 @@ fn guard_dog_retaliates_on_a_lethal_assignment_then_is_defeated() {
     let dog = state.in_play(INV, GUARD_DOG);
 
     let session = distribute_onto(
-        TestSession::new_with_registries(state, TEST_REGISTRIES).take(&TurnAction::EndTurn),
+        TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::EndTurn),
         dog,
     );
     let state = session.state();
@@ -327,7 +327,7 @@ fn an_attacker_defeated_by_the_retaliate_mid_attack_has_nothing_to_exhaust() {
 
     let session = fire_retaliate(
         distribute_onto(
-            TestSession::new_with_registries(state, TEST_REGISTRIES).take(&TurnAction::EndTurn),
+            TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::EndTurn),
             dog,
         ),
         dog,
@@ -379,7 +379,7 @@ fn guard_dog_defeated_on_overflow_is_discarded_from_play() {
     // retaliate lets the deal proceed to the placement that defeats it.
     let session = fire_retaliate(
         distribute_onto(
-            TestSession::new_with_registries(state, TEST_REGISTRIES).take(&TurnAction::EndTurn),
+            TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::EndTurn),
             dog,
         ),
         dog,
@@ -443,7 +443,7 @@ fn only_guard_dogs_reaction_is_offered_not_another_controlled_soaker() {
     let vest = state.in_play(INV, BULLETPROOF_VEST);
 
     let session = distribute_onto(
-        TestSession::new_with_registries(state, TEST_REGISTRIES).take(&TurnAction::EndTurn),
+        TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::EndTurn),
         dog,
     );
     let state = session.state();
@@ -531,8 +531,7 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
 
     // Two engaged attackers → the enemy phase first asks the player which
     // attacks next (#143). Pick the first attacker (EnemyId 7).
-    let session =
-        TestSession::new_with_registries(state, TEST_REGISTRIES).take(&TurnAction::EndTurn);
+    let session = TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::EndTurn);
 
     // The chosen first attacker attacks: its 1 damage prompts the soak
     // distribution (#44/K5b) — assign it to Guard Dog → suspend on the soak window.
@@ -686,11 +685,10 @@ fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
     // Step 1: take the Move — AoO runs; Guard Dog has no cancel reaction
     // so the before-attack window is skipped; damage soaks onto Guard Dog;
     // the soak window opens and suspends.
-    let session =
-        TestSession::new_with_registries(state, TEST_REGISTRIES).take(&TurnAction::Move {
-            investigator: inv_id,
-            destination: dest,
-        });
+    let session = TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::Move {
+        investigator: inv_id,
+        destination: dest,
+    });
     // The AoO prompts for the soak distribution (#44/K5b): assign both points
     // onto Guard Dog to reproduce the soak.
     let session = distribute_onto(session, dog);
@@ -803,7 +801,7 @@ fn an_asset_soaks_first_then_the_investigator_card_takes_the_remainder() {
     // Distribute soak-first: fill Guard Dog to capacity (3), then the rest
     // onto the investigator.
     let session = distribute_onto(
-        TestSession::new_with_registries(state, TEST_REGISTRIES).take(&TurnAction::EndTurn),
+        TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::EndTurn),
         dog,
     );
     // The assignment gives Guard Dog damage, so its `when` cell opens before
@@ -872,7 +870,7 @@ fn investigator_card_overflow_eliminates_the_investigator() {
     let dog = state.in_play(INV, GUARD_DOG);
 
     let session = distribute_onto(
-        TestSession::new_with_registries(state, TEST_REGISTRIES).take(&TurnAction::EndTurn),
+        TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::EndTurn),
         dog,
     );
     // Guard Dog is in the assignment, so its `when` cell opens first.
@@ -937,7 +935,7 @@ fn co_overflowing_asset_is_removed_from_game_not_discarded_when_investigator_eli
     preload_guard_dog(&mut state, 2);
 
     let session = distribute_onto(
-        TestSession::new_with_registries(state, TEST_REGISTRIES).take(&TurnAction::EndTurn),
+        TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::EndTurn),
         dog,
     );
     // Guard Dog is in the assignment, so its `when` cell opens first.

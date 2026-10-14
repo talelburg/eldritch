@@ -285,7 +285,7 @@ fn advance_encounter_draw_skips_eliminated_middle_investigator() {
 
     // inv1 draws: the queue drops inv1 and must skip the Defeated inv2,
     // landing on inv3.
-    let session = TestSession::new_with_registries(state, crate::engine::TEST_REGISTRIES);
+    let session = TestSession::new(state, crate::engine::TEST_REGISTRIES);
     assert_eq!(
         session.state().current_encounter_drawer(),
         Some(InvestigatorId(1))

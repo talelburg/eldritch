@@ -2,7 +2,7 @@
 //! covering a single `EventPattern::EnteredLocation` forced ability.
 //!
 //! Lives at `crates/game-core/tests/` (a separate integration-test
-//! binary, hence its own process and its own `OnceLock<CardRegistry>`)
+//! binary, hence its own process and its own `MockRegistry`)
 //! so building a mock registry here doesn't collide with game-core's
 //! in-crate tests.
 //! Mirrors `activate_ability.rs` / `on_skill_test_resolution.rs`.
@@ -98,7 +98,7 @@ const GATED_ELIGIBLE: &str = "test-gated-eligible";
 const GATED_INELIGIBLE: &str = "test-gated-ineligible";
 const GATED_UNKNOWN_TAG: &str = "test-gated-unknown-tag";
 
-/// Tags the installed registry resolves as native conditions. `UNKNOWN_TAG` is
+/// Tags the mock registry resolves as native conditions. `UNKNOWN_TAG` is
 /// deliberately absent from it.
 const ALWAYS_TAG: &str = "test:always";
 const NEVER_TAG: &str = "test:never";
@@ -376,7 +376,7 @@ fn lead_alone() -> GameStateBuilder {
 /// and `agenda` current. Settling runs the phase end, its `PhaseEnded { Enemy }`
 /// forced abilities, and play on through Upkeep into the next round's Mythos.
 fn end_the_enemy_phase(act: Option<&str>, agenda: Option<&str>) -> TestSession {
-    let session = TestSession::new_with_registries(
+    let session = TestSession::new(
         with_act_and_agenda(lead_alone().ending_enemy_phase().build(), act, agenda),
         registries(),
     );
@@ -395,7 +395,7 @@ fn assert_phase_ended(session: &TestSession, phase: state::Phase) {
 /// anchor staged after step 1.4's draws, so settling runs step 1.5's
 /// `PhaseEnded { Mythos }` and play goes on into the Investigation phase.
 fn end_the_mythos_phase() -> TestSession {
-    let session = TestSession::new_with_registries(
+    let session = TestSession::new(
         with_act_and_agenda(
             lead_alone()
                 .with_phase(state::Phase::Mythos)
@@ -415,7 +415,7 @@ fn end_the_mythos_phase() -> TestSession {
 /// End the Upkeep phase for real, under the Enemy-keyed doom agenda, staged
 /// with [`ending_upkeep_phase`](GameStateBuilder::ending_upkeep_phase).
 fn end_the_upkeep_phase() -> TestSession {
-    let session = TestSession::new_with_registries(
+    let session = TestSession::new(
         with_act_and_agenda(
             lead_alone().ending_upkeep_phase().build(),
             None,
@@ -433,7 +433,7 @@ fn end_the_upkeep_phase() -> TestSession {
 /// where the agenda's ability *does* fire, so the Investigation phase end
 /// cannot be told apart from it in one drive.
 fn fire_the_investigation_phase_end() -> TestSession {
-    TestSession::new_with_registries(
+    TestSession::new(
         with_act_and_agenda(lead_alone().open_turn(INV).build(), None, Some(DOOM_AGENDA)),
         registries(),
     )
@@ -516,10 +516,9 @@ fn forced_on_phase_end_no_op_when_no_lead_investigator() {
         with_act_and_agenda(lead_alone().open_turn(INV).build(), None, Some(DOOM_AGENDA));
     state.turn_order.clear();
 
-    let session =
-        TestSession::new_with_registries(state, registries()).fire_at(TimingEvent::PhaseEnded {
-            phase: state::Phase::Enemy,
-        });
+    let session = TestSession::new(state, registries()).fire_at(TimingEvent::PhaseEnded {
+        phase: state::Phase::Enemy,
+    });
 
     session.assert_at_turn_menu(INV);
     assert!(
@@ -710,7 +709,7 @@ fn two_forced_at_enemy_phase_end_resolve_and_the_phase_still_transitions() {
 
     // EndTurn cascades Investigation → Enemy → step 3.4 (no enemies, so the
     // attack loop drains and the final window auto-skips into `enemy_phase_end`).
-    let paused = TestSession::new_with_registries(state, registries()).take(&TurnAction::EndTurn);
+    let paused = TestSession::new(state, registries()).take(&TurnAction::EndTurn);
 
     assert_eq!(
         (
@@ -1005,7 +1004,7 @@ fn upkeep_phase_end_forced_resolves_before_the_round_end() {
         Some(ROUND_END_AGENDA),
     );
 
-    let session = TestSession::new_with_registries(state, registries());
+    let session = TestSession::new(state, registries());
     let events = session.events();
 
     let phase_end = events

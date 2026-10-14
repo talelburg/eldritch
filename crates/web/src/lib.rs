@@ -16,6 +16,7 @@ pub mod event_log;
 pub mod interaction;
 pub mod map;
 pub mod names;
+pub mod registry;
 pub mod skill_test_result;
 pub mod status_bar;
 pub mod store;

@@ -6,8 +6,8 @@
 //! ADR 0016 that is a locally-built shell rather than a shared fixture. The
 //! `setup()` below is that shell's state, composed with `GameStateBuilder`.
 //!
-//! No scenario registry is installed — the resolution hook treats `None` as "no
-//! scenario behavior wired up; skip", which is what these tests want: the round
+//! The registries name no scenario module — the resolution hook treats `None`
+//! as "no scenario behavior wired up; skip", which is what these tests want: the round
 //! must not resolve out from under the cascade.
 
 use std::sync::LazyLock;
@@ -108,7 +108,7 @@ const INV: InvestigatorId = InvestigatorId(1);
 /// to ready — and close the mulligan keeping the hand: Investigation, round 1,
 /// at the turn menu.
 fn opened_with_an_exhausted_asset() -> TestSession {
-    let opened = game_core::engine::seat_and_open_with_registries(setup(), &roster(), registries());
+    let opened = game_core::engine::seat_and_open(setup(), &roster(), registries());
     // The roster seats the investigator, so the asset goes onto the seated
     // board, with an id minted from the state's counter.
     let mut state = opened.state;
@@ -125,7 +125,7 @@ fn opened_with_an_exhausted_asset() -> TestSession {
         .unwrap()
         .cards_in_play
         .push(card);
-    let session = TestSession::new_with_registries(state, registries()).choose_from_hand(&[]);
+    let session = TestSession::new(state, registries()).choose_from_hand(&[]);
     session.assert_at_turn_menu(INV);
     session
 }

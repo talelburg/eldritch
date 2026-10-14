@@ -57,7 +57,7 @@ fn state_with_top_encounter(top: &str) -> GameState {
 
 /// Draw the top encounter card for investigator 1.
 fn reveal_top(state: GameState) -> TestSession {
-    TestSession::new_with_registries(state, TEST_REGISTRIES).confirm()
+    TestSession::new(state, TEST_REGISTRIES).confirm()
 }
 
 #[test]

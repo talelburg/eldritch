@@ -89,7 +89,7 @@ fn row_for(test: SkillTestId) -> RecordedModifier {
 /// Draw and reveal the top encounter card for investigator 1, committing
 /// nothing to its test.
 fn reveal(state: GameState) -> TestSession {
-    TestSession::new_with_registries(state, TEST_REGISTRIES)
+    TestSession::new(state, TEST_REGISTRIES)
         .confirm()
         .commit(&[])
 }

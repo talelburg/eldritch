@@ -100,7 +100,7 @@ fn a_harm_cost_offers_the_soak_and_the_effect_waits_for_the_horror() {
         .build();
     let rosary = state.in_play(INV, HOLY_ROSARY);
     let action = activate(&state, FAST_PROBE);
-    let session = TestSession::new_with_registries(state, REGISTRIES).take(&action);
+    let session = TestSession::new(state, REGISTRIES).take(&action);
 
     // Paused at the soak prompt: the other costs are paid, the ability is
     // announced, and nothing of the horror or the effect has landed yet.
@@ -181,7 +181,7 @@ fn a_lethal_harm_cost_eliminates_the_payer_and_the_effect_does_not_resolve() {
         .build();
     let probe = state.in_play(INV, FAST_PROBE);
     let action = activate(&state, FAST_PROBE);
-    let session = TestSession::new_with_registries(state, REGISTRIES).take(&action);
+    let session = TestSession::new(state, REGISTRIES).take(&action);
 
     // The cost was paid — the probe exhausted and the ability activated — and
     // the horror it cost eliminated the payer before the effect could resolve.
@@ -221,7 +221,7 @@ fn a_harm_cost_soaked_by_an_asset_is_still_paid() {
         .build();
     let rosary = state.in_play(INV, HOLY_ROSARY);
     let action = activate(&state, FAST_PROBE);
-    let session = TestSession::new_with_registries(state, REGISTRIES)
+    let session = TestSession::new(state, REGISTRIES)
         .take(&action)
         .pick(OptionTarget::CardInstance(rosary));
 
@@ -261,8 +261,7 @@ fn a_harm_cost_on_an_action_ability_is_refused_by_name() {
         !enumerate::legal_actions(&state, REGISTRIES.cards).contains(&action),
         "a refused activation must not be offered"
     );
-    let reason = TestSession::new_with_registries(state, REGISTRIES)
-        .assert_rejects(|s| s.submit_off_menu(&action));
+    let reason = TestSession::new(state, REGISTRIES).assert_rejects(|s| s.submit_off_menu(&action));
     assert!(
         reason.contains("TakeHarm") && reason.contains("[action]"),
         "the reason should name the cost and the ability shape it refuses, got: {reason}",

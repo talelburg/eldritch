@@ -55,7 +55,7 @@ fn seated_roland_with_enemy() -> GameState {
 
 /// Fight the enemy from `state`, committing nothing.
 fn fight(state: GameState) -> TestSession {
-    TestSession::new_with_registries(state, TEST_REGISTRIES)
+    TestSession::new(state, TEST_REGISTRIES)
         .take(&TurnAction::Fight {
             investigator: INV,
             enemy: ENEMY,

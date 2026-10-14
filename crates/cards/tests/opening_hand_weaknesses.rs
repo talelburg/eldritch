@@ -115,7 +115,7 @@ fn opening_hand_weakness_set_aside_and_returned_to_deck() {
     ];
 
     // seat_and_open → initial draw + weakness set-aside, then mulligan prompt.
-    let r1 = engine::seat_and_open_with_registries(board(), &roland_with(deck), TEST_REGISTRIES);
+    let r1 = engine::seat_and_open(board(), &roland_with(deck), TEST_REGISTRIES);
     assert!(
         matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }),
         "seat_and_open opens the mulligan prompt, got {:?}",
@@ -145,7 +145,7 @@ fn opening_hand_weakness_set_aside_and_returned_to_deck() {
     // Keep-hand mulligan: investigator keeps the remaining 4 non-weakness cards.
     // At drain, setaside weaknesses are shuffled back into the deck, and the
     // mulligan, not rejected, closes onto the first turn.
-    let session = TestSession::new_with_registries(r1.state, TEST_REGISTRIES).choose_from_hand(&[]);
+    let session = TestSession::new(r1.state, TEST_REGISTRIES).choose_from_hand(&[]);
     session.assert_at_turn_menu(INV);
 
     let inv2 = &session.state().investigators[&INV];
@@ -264,7 +264,7 @@ fn mulligan_redraw_weakness_is_set_aside() {
 fn non_weakness_deck_produces_no_weakness_events() {
     let deck: Vec<CardCode> = (1u8..=5).map(filler).collect();
 
-    let r1 = engine::seat_and_open_with_registries(board(), &roland_with(deck), TEST_REGISTRIES);
+    let r1 = engine::seat_and_open(board(), &roland_with(deck), TEST_REGISTRIES);
     assert!(
         matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }),
         "seat_and_open opens the mulligan prompt",
@@ -283,7 +283,7 @@ fn non_weakness_deck_produces_no_weakness_events() {
     );
 
     // Keep mulligan — no WeaknessSetAside during drain either.
-    let session = TestSession::new_with_registries(r1.state, TEST_REGISTRIES).choose_from_hand(&[]);
+    let session = TestSession::new(r1.state, TEST_REGISTRIES).choose_from_hand(&[]);
     session.assert_at_turn_menu(INV);
     assert_no_event!(session.events(), Event::WeaknessSetAside { .. });
 

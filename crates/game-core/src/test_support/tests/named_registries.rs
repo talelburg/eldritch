@@ -1,8 +1,7 @@
 //! A test names its registries once, on the builder or the session, and the
-//! fixtures resolve against those values — not against whatever registry the
-//! process has installed. Each probe here is known only to the named registry:
-//! this binary installs [`TEST_REGISTRY`](crate::test_support::TEST_REGISTRY)
-//! globally, which knows none of them.
+//! fixtures resolve against those values. Each probe here is known only to the
+//! named registry, not to [`TEST_REGISTRY`](crate::test_support::TEST_REGISTRY),
+//! the one most of this binary's tests name.
 
 use std::sync::OnceLock;
 
@@ -162,8 +161,8 @@ fn a_session_on_a_hand_built_state_ends_the_scenario_through_the_named_module() 
         code: terminal_code(1),
         clue_threshold: 1,
     }];
-    let session = TestSession::new_with_registries(state, STAMPING)
-        .take(&TurnAction::AdvanceAct { investigator: INV });
+    let session =
+        TestSession::new(state, STAMPING).take(&TurnAction::AdvanceAct { investigator: INV });
     assert!(session.state().ending.is_some(), "the scenario ended");
     assert_eq!(session.state().investigators[&INV].resources, STAMPED);
 }

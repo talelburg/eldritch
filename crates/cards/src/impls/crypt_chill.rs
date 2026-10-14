@@ -127,6 +127,7 @@ mod tests {
         // interactive_acknowledge on, the fail branch must surface the discard as
         // a one-option pick rather than auto-discarding silently (#466).
         let mut state = GameStateBuilder::new()
+            .with_registries(crate::TEST_REGISTRIES)
             .with_seat(seat(1).in_play(["01020"]))
             .build();
         state.interactive_acknowledge = true;
@@ -150,6 +151,7 @@ mod tests {
         // Flag off (default): the lone asset auto-discards silently, as today —
         // the n=1 regression guard local to this card (#466).
         let mut state = GameStateBuilder::new()
+            .with_registries(crate::TEST_REGISTRIES)
             .with_seat(seat(1).in_play(["01020"]))
             .build();
         let ctx = EvalContext::for_controller(InvestigatorId(1));
@@ -173,7 +175,10 @@ mod tests {
         // No asset to discard → "take 2 damage instead", dealt through the one
         // harm adapter: a `DealDamage { Effect }` frame for 2 damage is the
         // native's tail, and nothing is placed until that frame runs (#1027).
-        let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
+        let mut state = GameStateBuilder::new()
+            .with_registries(crate::TEST_REGISTRIES)
+            .with_seat(seat(1))
+            .build();
         let ctx = EvalContext::for_controller(InvestigatorId(1));
         let (out, _) =
             test_support::run_native(&mut state, &crate::REGISTRY, crypt_chill_fail, &ctx);

@@ -66,8 +66,8 @@ fn interactive_act_reverse_resolves_cleanly() {
     ];
     state.act_index = 0;
 
-    let session = TestSession::new_with_registries(state, registries())
-        .take(&TurnAction::AdvanceAct { investigator: inv });
+    let session =
+        TestSession::new(state, registries()).take(&TurnAction::AdvanceAct { investigator: inv });
 
     // The act's interactive reverse is the live prompt (it did not strand); the
     // act cursor has NOT bumped yet (Finalize runs after the choice).

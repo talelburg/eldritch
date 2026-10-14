@@ -412,8 +412,8 @@ fn end_turn_cascades_through_upkeep_to_mythos_draw_prompt() {
     let res_before = state.investigators[&id].resources;
     let hand_before = state.investigators[&id].hand.len();
 
-    let session = TestSession::new_with_registries(state, crate::engine::TEST_REGISTRIES)
-        .take(&TurnAction::EndTurn);
+    let session =
+        TestSession::new(state, crate::engine::TEST_REGISTRIES).take(&TurnAction::EndTurn);
 
     // The round-ending EndTurn cascades into Mythos and pauses at the
     // step-1.4 encounter-draw prompt.

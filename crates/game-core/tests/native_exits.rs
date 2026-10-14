@@ -147,7 +147,7 @@ fn state_with_act(act: &str) -> GameState {
 /// goes on through Upkeep into the next round's Mythos phase, and rests at its
 /// step-1.4 encounter draw.
 fn run(state: GameState) -> TestSession {
-    let session = TestSession::new_with_registries(state, registries()).take(&TurnAction::EndTurn);
+    let session = TestSession::new(state, registries()).take(&TurnAction::EndTurn);
     assert_event!(
         session.events(),
         Event::PhaseEnded {
@@ -355,7 +355,7 @@ fn add_skill_substitution_is_offered_at_the_next_skill_test() {
     let board = || {
         let builder = lead(seat(1).skill(SkillKind::Intellect, 5))
             .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]));
-        TestSession::new_with_registries(with_act(builder, SUBSTITUTE_ACT), registries())
+        TestSession::new(with_act(builder, SUBSTITUTE_ACT), registries())
     };
 
     // Control: before the native runs, the test goes straight to its commit

@@ -52,7 +52,7 @@ fn defeat(code: &str) -> TestSession {
     let mut enemy = test_support::test_enemy(FOE.0, "Foe");
     enemy.code = CardCode(code.into());
     enemy.max_health = 1;
-    let session = TestSession::new_with_registries(
+    let session = TestSession::new(
         act3_state(seat(1).at(HERE), |b| b.with_enemy_engaged(enemy, INV)),
         TEST_REGISTRIES,
     )
@@ -145,7 +145,7 @@ fn advance_act_action_rejected_for_act_3_objective() {
 
     // The menu does not offer it; submitted off the menu, the handler itself
     // must reject it.
-    let session = TestSession::new_with_registries(state, TEST_REGISTRIES)
+    let session = TestSession::new(state, TEST_REGISTRIES)
         .submit_off_menu(&TurnAction::AdvanceAct { investigator: INV });
     // AdvanceAct must be rejected for Act 3's non-clue objective.
     session.expect_rejected();
@@ -173,7 +173,7 @@ fn advance_act_rejected_for_round_end_advance_act() {
 
     // The menu does not offer it; submitted off the menu, the handler itself
     // must reject it.
-    let session = TestSession::new_with_registries(state, TEST_REGISTRIES)
+    let session = TestSession::new(state, TEST_REGISTRIES)
         .submit_off_menu(&TurnAction::AdvanceAct { investigator: INV });
     session.expect_rejected();
     assert_eq!(session.state().act_index, 0, "act did not advance");

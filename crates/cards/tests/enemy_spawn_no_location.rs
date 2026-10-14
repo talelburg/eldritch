@@ -49,7 +49,7 @@ fn drawing(top: &str) -> GameState {
 fn enemy_with_offboard_spawn_location_is_discarded_not_rejected() {
     // Investigator at the Study; the Attic (Flesh-Eater's spawn location) is
     // NOT in play. Flesh-Eater on top of the encounter deck.
-    let session = TestSession::new_with_registries(drawing(FLESH_EATER), TEST_REGISTRIES).confirm();
+    let session = TestSession::new(drawing(FLESH_EATER), TEST_REGISTRIES).confirm();
 
     // An off-board spawn location must not reject the draw: play runs on out
     // of the Mythos phase to the turn.

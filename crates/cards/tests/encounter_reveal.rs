@@ -89,7 +89,7 @@ fn drawing(encounter_deck: &[&str]) -> TestSession {
     state
         .encounter_deck
         .extend(encounter_deck.iter().map(|c| CardCode::new(*c)));
-    TestSession::new_with_registries(state, TEST_REGISTRIES)
+    TestSession::new(state, TEST_REGISTRIES)
 }
 
 #[test]

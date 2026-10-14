@@ -1,6 +1,6 @@
 //! Resolution with no scenario module registered. The tests that need a
 //! module's `apply_resolution` hook live in `tests/resolution_module.rs`,
-//! which installs one process-wide.
+//! which names one.
 
 use super::*;
 
@@ -10,7 +10,7 @@ const ADVANCE_ACT: TurnAction = TurnAction::AdvanceAct { investigator: INV };
 /// act is terminal — it is the only card in the deck (ADR 0013) — and whose
 /// investigator holds the one clue it takes to advance it. A single
 /// `AdvanceAct` flips it and its reverse latches `Resolution(1)`, which is why
-/// the test registry has to be installed: the reverse is an ability the
+/// the test registry has to be named: the reverse is an ability the
 /// registry serves, not a field on the deck entry.
 fn terminal_act_state() -> GameState {
     // Open the turn so `legal_actions` enumerates `AdvanceAct`.
@@ -32,7 +32,7 @@ fn terminal_act_state() -> GameState {
 fn resolution_event_fires_without_a_registered_module() {
     // No module registered for the scenario: the event still fires
     // (resolution is engine state), but apply_resolution can't run.
-    let result = TestSession::new_with_registries(terminal_act_state(), TEST_REGISTRIES)
+    let result = TestSession::new(terminal_act_state(), TEST_REGISTRIES)
         .take(&ADVANCE_ACT)
         .finish();
     assert_eq!(
@@ -48,7 +48,7 @@ fn game_end_is_a_noop_without_a_game_end_ability_in_play() {
     // The GameEnd condition (C5a #236) is emitted at resolution but is a
     // no-op with no card in play carrying a GameEnd ability: the resolution
     // still fires, and no TraumaSuffered is emitted.
-    let result = TestSession::new_with_registries(terminal_act_state(), TEST_REGISTRIES)
+    let result = TestSession::new(terminal_act_state(), TEST_REGISTRIES)
         .take(&ADVANCE_ACT)
         .finish();
     assert_event!(result.events, Event::ScenarioResolved { .. });

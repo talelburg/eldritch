@@ -401,7 +401,7 @@ fn a_ready_engaged_enemy_attacks_every_action_but_the_exempt_ones() {
         let mut state = board(row.seated);
         (row.setup)(&mut state);
         let action = row.take.on(&state);
-        let session = TestSession::new_with_registries(state, REGISTRIES).take(&action);
+        let session = TestSession::new(state, REGISTRIES).take(&action);
         let events = session.events();
 
         let effect = position(events, row.name, "effect", row.effect);
@@ -484,8 +484,7 @@ fn a_basic_action_is_refused_for_an_investigator_who_is_not_active_or_out_of_act
     for (case, state) in cases {
         for row in basic_action_rows() {
             let action = row.take.on(&state);
-            let session = TestSession::new_with_registries(state.clone(), REGISTRIES)
-                .submit_off_menu(&action);
+            let session = TestSession::new(state.clone(), REGISTRIES).submit_off_menu(&action);
             assert!(
                 !session.expect_rejected().is_empty(),
                 "{} for an investigator {case}: refused without a reason",

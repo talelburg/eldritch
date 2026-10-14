@@ -110,16 +110,16 @@ fn unregistered_code_resolves_to_nothing() {
 /// `test_investigator` gets capacity lookups served without registering
 /// `TEST_INV` itself.
 #[test]
-fn install_composes_the_test_investigator_lookup() {
+fn build_composes_the_test_investigator_lookup() {
     let meta = (registry().metadata_for)(&CardCode::new(TEST_INV))
-        .expect("TEST_INV is composed in by install");
+        .expect("TEST_INV is composed in by build");
     assert_eq!(meta.code, TEST_INV);
 }
 
 /// And it composes `abilities_for_terminal`, so an act/agenda deck ending in a
 /// `terminal_code` card gets its reverse served.
 #[test]
-fn install_composes_the_terminal_card_abilities() {
+fn build_composes_the_terminal_card_abilities() {
     let abilities = (registry().abilities_for)(&test_support::terminal_code(3))
         .expect("terminal cards are composed in");
     assert_eq!(abilities.len(), 2, "act-advanced and agenda-advanced");

@@ -632,7 +632,7 @@ mod advance_act_tests {
         );
         // Bypass the legality menu (the assert above already proves it's not
         // offered) to confirm the handler itself rejects, leaving state unchanged.
-        let session = TestSession::new_with_registries(state, crate::engine::TEST_REGISTRIES)
+        let session = TestSession::new(state, crate::engine::TEST_REGISTRIES)
             .submit_off_menu(&TurnAction::AdvanceAct { investigator: inv });
         session.expect_rejected();
         assert!(
@@ -649,8 +649,8 @@ mod advance_act_tests {
     // `advance_act_rejected_for_round_end_advance_act` moved to
     // `crates/cards/tests/act_advancement.rs`: the round-end-only detection is
     // now registry-based (`act_advances_at_round_end` reads act 01109's
-    // `When`-RoundEnded reaction, #434), which a lib unit test can't install
-    // without polluting its siblings' process-global registry.
+    // `When`-RoundEnded reaction, #434), and the real act is corpus content a
+    // game-core unit test can't reach.
 
     #[test]
     fn advance_act_spends_clues_and_advances_non_terminal() {
@@ -671,7 +671,7 @@ mod advance_act_tests {
             },
         ];
 
-        let session = TestSession::new_with_registries(state, crate::engine::TEST_REGISTRIES)
+        let session = TestSession::new(state, crate::engine::TEST_REGISTRIES)
             .take(&TurnAction::AdvanceAct { investigator: inv });
         session.assert_at_turn_menu(inv);
         assert_eq!(session.state().act_index, 1);
@@ -703,7 +703,7 @@ mod advance_act_tests {
         }];
 
         // The ending is latched, so the game is over: `Done`.
-        let result = TestSession::new_with_registries(state, crate::engine::TEST_REGISTRIES)
+        let result = TestSession::new(state, crate::engine::TEST_REGISTRIES)
             .take(&TurnAction::AdvanceAct { investigator: inv })
             .finish();
         assert_eq!(result.outcome, EngineOutcome::Done);
@@ -737,7 +737,7 @@ mod advance_act_tests {
                 clue_threshold: 3,
             },
         ];
-        let session = TestSession::new_with_registries(state, crate::engine::TEST_REGISTRIES)
+        let session = TestSession::new(state, crate::engine::TEST_REGISTRIES)
             .take(&TurnAction::AdvanceAct { investigator: inv });
         session.assert_at_turn_menu(inv);
         assert_eq!(
@@ -774,11 +774,10 @@ mod advance_act_tests {
         ];
 
         // Threshold 2: acting (1 clue) drained fully first, then 1 from `other`.
-        let session = TestSession::new_with_registries(state, crate::engine::TEST_REGISTRIES).take(
-            &TurnAction::AdvanceAct {
+        let session =
+            TestSession::new(state, crate::engine::TEST_REGISTRIES).take(&TurnAction::AdvanceAct {
                 investigator: acting,
-            },
-        );
+            });
         session.assert_at_turn_menu(acting);
         let state = session.state();
         assert_eq!(

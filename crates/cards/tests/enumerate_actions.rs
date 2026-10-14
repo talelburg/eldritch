@@ -78,7 +78,7 @@ fn rosary_and_flashlight_board() -> GameState {
 /// place on it (#447), so this is the menu's id round-trip.
 fn assert_each_applies(state: &GameState, actions: &[TurnAction]) {
     for action in actions {
-        let taken = TestSession::new_with_registries(state.clone(), TEST_REGISTRIES).take(action);
+        let taken = TestSession::new(state.clone(), TEST_REGISTRIES).take(action);
         assert_eq!(
             taken.rejection(),
             None,
@@ -214,12 +214,13 @@ fn the_corpus_act_and_agenda_are_reachable_but_offer_no_activation() {
 
         // The menu filters it out, so it goes straight to the handler to prove
         // the handler refuses it too.
-        let session = TestSession::new_with_registries(state.clone(), TEST_REGISTRIES)
-            .submit_off_menu(&TurnAction::ActivateAbility {
+        let session = TestSession::new(state.clone(), TEST_REGISTRIES).submit_off_menu(
+            &TurnAction::ActivateAbility {
                 investigator: INV,
                 source,
                 address: AbilityAddress::Printed(0),
-            });
+            },
+        );
         let reason = session.expect_rejected();
         assert!(
             reason.contains("not an Activated trigger"),
@@ -275,8 +276,7 @@ fn assert_menu_offers_every_accepted_basic_action(
     let menu = enumerate::legal_actions(state, TEST_REGISTRIES.cards);
     let mut accepted = Vec::new();
     for action in every_basic_action(state, me) {
-        let submitted = TestSession::new_with_registries(state.clone(), TEST_REGISTRIES)
-            .submit_off_menu(&action);
+        let submitted = TestSession::new(state.clone(), TEST_REGISTRIES).submit_off_menu(&action);
         if submitted.rejection().is_some() {
             continue;
         }

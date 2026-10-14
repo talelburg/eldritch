@@ -1,7 +1,6 @@
 //! Headless render tests for the `EnemyCard` component. wasm32-only (browser DOM).
 #![cfg(target_arch = "wasm32")]
 
-use cards::REGISTRY;
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
@@ -14,6 +13,7 @@ use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::enemy_card::EnemyCard;
 use web::interaction::{self, PendingOptions};
+use web::registry::provide_cards;
 use web::store::ClientState;
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlElement};
@@ -41,7 +41,10 @@ async fn engaged_enemy_renders_stats_keywords_exhausted() {
     e.hunter = true;
     e.retaliate = true;
     e.exhausted = true;
-    mount_to_body(move || view! { <EnemyCard enemy=e.clone()/> });
+    mount_to_body(move || {
+        provide_cards(&cards::TEST_REGISTRY);
+        view! { <EnemyCard enemy=e.clone()/> }
+    });
     task::tick().await;
 
     let card = last_card();
@@ -73,11 +76,13 @@ async fn engaged_enemy_renders_stats_keywords_exhausted() {
 
 #[wasm_bindgen_test]
 async fn enemy_shows_its_printed_traits() {
-    test_support::install_registry_with_test_cards(REGISTRY);
     // Ghoul Minion 01160: traits "Humanoid. Monster. Ghoul."
     let mut e = test_support::test_enemy(3, "Ghoul Minion");
     e.code = CardCode::new("01160");
-    mount_to_body(move || view! { <EnemyCard enemy=e.clone()/> });
+    mount_to_body(move || {
+        provide_cards(&cards::TEST_REGISTRY);
+        view! { <EnemyCard enemy=e.clone()/> }
+    });
     task::tick().await;
 
     let traits = last_card()
@@ -91,7 +96,10 @@ async fn enemy_shows_its_printed_traits() {
 #[wasm_bindgen_test]
 async fn ready_enemy_is_not_dimmed() {
     let e = test_support::test_enemy(2, "Swarm of Rats");
-    mount_to_body(move || view! { <EnemyCard enemy=e.clone()/> });
+    mount_to_body(move || {
+        provide_cards(&cards::TEST_REGISTRY);
+        view! { <EnemyCard enemy=e.clone()/> }
+    });
     task::tick().await;
     assert!(
         !last_card().class_name().contains("card--exhausted"),
@@ -112,6 +120,7 @@ async fn mount_enemy(enemy: Enemy, outcome: EngineOutcome) -> UnboundedReceiver<
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let tx_for_mount: OutboundTx = tx;
     mount_to_body(move || {
+        provide_cards(&cards::TEST_REGISTRY);
         provide_context(store);
         provide_context::<OutboundTx>(tx_for_mount.clone());
         let pending = Signal::derive(move || store.with(interaction::pending_options));

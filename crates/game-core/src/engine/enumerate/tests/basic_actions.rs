@@ -163,7 +163,7 @@ fn every_enumerated_action_is_accepted_by_its_handler() {
     ];
     let actions = legal_actions(&state, &TEST_REGISTRY);
     for (i, action) in actions.iter().enumerate() {
-        let result = engine::apply_with_registries(
+        let result = engine::apply(
             state.clone(),
             Action::Player(PlayerAction::ResolveInput {
                 response: InputResponse::PickSingle(OptionId(
@@ -198,7 +198,7 @@ fn resolve_input_optionid_dispatches_enumerated_turn_action() {
         .iter()
         .position(|a| *a == TurnAction::EndTurn)
         .expect("EndTurn offered");
-    let result = engine::apply_with_registries(
+    let result = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(

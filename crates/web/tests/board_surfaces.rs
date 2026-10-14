@@ -17,6 +17,7 @@ use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::board::BoardView;
 use web::interaction::PendingOptions;
+use web::registry::provide_cards;
 use web::store::{self, ClientState};
 use web_sys::{Element, HtmlButtonElement};
 
@@ -26,9 +27,9 @@ wasm_bindgen_test_configure!(run_in_browser);
 /// last-mounted wrapper so absence assertions are scoped to this test.
 async fn mount(state: GameState) -> Element {
     // Panels read investigator-card capacity from the registry (#448).
-    test_support::install_test_registry();
     let store = RwSignal::new(ClientState::default());
     mount_to_body(move || {
+        provide_cards(&test_support::TEST_REGISTRY);
         provide_context(store);
         let pending = Signal::derive(move || store.with(web::interaction::pending_options));
         provide_context(PendingOptions(pending));

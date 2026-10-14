@@ -4,9 +4,9 @@
 //!
 //! Mirrors [`card_registry`](crate::card_registry)'s shape: the
 //! `scenarios` crate (which depends on `game-core`) provides a static
-//! [`ScenarioRegistry`] of function pointers, and the host installs it
-//! once at startup via
-//! [`scenario_registry::install`](crate::scenario_registry::install).
+//! [`ScenarioRegistry`] of function pointers, and the host hands it to
+//! every [`apply`](crate::engine::apply) inside a
+//! [`Registries`](crate::engine::Registries).
 //! The engine watches `GameState.ending` for a `None`->`Some`
 //! transition during an apply (a push-model latch set at discrete
 //! trigger sites); on that transition it looks up the active
@@ -23,7 +23,7 @@
 //!
 //! The active scenario id on `GameState` is
 //! a serializable [`ScenarioId`]; function pointers are not
-//! serializable. On reload, the host re-installs `REGISTRY` and the
+//! serializable. On reload, the host passes `REGISTRY` again and the
 //! engine looks the module up by id — the action log replays
 //! deterministically.
 
@@ -214,7 +214,7 @@ pub enum TokenEffect {
 /// is the smallest thing that knows the whole board.
 pub type LocationLayout = &'static [(&'static str, &'static str)];
 
-/// Static, host-installed bundle of function pointers for one
+/// Static bundle of function pointers for one
 /// scenario module.
 ///
 /// Mirrors [`CardRegistry`](crate::card_registry::CardRegistry)'s
@@ -251,9 +251,9 @@ pub struct ScenarioModule {
 /// Lookup table of [`ScenarioModule`]s, keyed by [`ScenarioId`].
 ///
 /// The `scenarios` crate exposes a `pub const REGISTRY: ScenarioRegistry`
-/// wrapping its own `by_id` lookup; hosts install it once at startup
-/// via
-/// [`scenario_registry::install`](crate::scenario_registry::install).
+/// wrapping its own `by_id` lookup; hosts pass it to every
+/// [`apply`](crate::engine::apply) inside a
+/// [`Registries`](crate::engine::Registries).
 #[derive(Debug, Clone, Copy)]
 pub struct ScenarioRegistry {
     /// Look up a scenario module by its id. Returns `None` for ids
@@ -302,8 +302,52 @@ pub fn resolve_symbol_token(
 
 #[cfg(test)]
 mod tests {
+    use std::ptr;
+
     use super::*;
     use crate::state::GameStateBuilder;
+
+    fn empty_state() -> GameState {
+        GameStateBuilder::new().build()
+    }
+
+    fn no_op_apply(_ending: ScenarioEnding, _state: &mut GameState, _events: &mut Vec<Event>) {}
+
+    static FAKE_MODULE: ScenarioModule = ScenarioModule {
+        resolve_symbol: None,
+        setup: empty_state,
+        apply_resolution: no_op_apply,
+        layout: &[],
+    };
+
+    fn fake_module_for(id: &ScenarioId) -> Option<&'static ScenarioModule> {
+        if id.as_str() == "fake" {
+            Some(&FAKE_MODULE)
+        } else {
+            None
+        }
+    }
+
+    fn fake_registry() -> ScenarioRegistry {
+        ScenarioRegistry {
+            module_for: fake_module_for,
+        }
+    }
+
+    #[test]
+    fn module_for_returns_known_id() {
+        let reg = fake_registry();
+        let id = ScenarioId::new("fake");
+        let module = (reg.module_for)(&id).expect("known id should resolve");
+        assert!(ptr::eq(module, ptr::addr_of!(FAKE_MODULE)));
+    }
+
+    #[test]
+    fn module_for_returns_none_for_unknown_id() {
+        let reg = fake_registry();
+        let id = ScenarioId::new("nonexistent");
+        assert!((reg.module_for)(&id).is_none());
+    }
 
     #[test]
     fn symbol_outcome_default_is_inert() {

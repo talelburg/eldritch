@@ -276,7 +276,7 @@ fn acting(act: &str, held: &[&str], builder: GameStateBuilder) -> TestSession {
         code: CardCode::new(act),
         clue_threshold: 0,
     }];
-    TestSession::new_with_registries(state, registries())
+    TestSession::new(state, registries())
 }
 
 /// The phase end is not a step: a session never rests with a phase anchor

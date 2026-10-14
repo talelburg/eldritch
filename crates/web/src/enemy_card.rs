@@ -5,13 +5,12 @@
 //! registry lookup + a `CardInPlay`). Shares the card CSS / chip vocabulary and
 //! the text renderer. Display-only.
 
-use game_core::card_registry;
 use game_core::engine::OptionTarget;
 use game_core::state::Enemy;
 use leptos::prelude::*;
 
-use crate::card;
 use crate::interaction::{self, PendingOptions};
+use crate::{card, registry};
 
 /// Combat stat chips for an enemy: fight, evade, health (damage/max), attack
 /// (damage + horror), in that order.
@@ -57,7 +56,7 @@ pub fn enemy_keyword_chips(enemy: &Enemy) -> Vec<String> {
 #[component]
 pub fn EnemyCard(enemy: Enemy) -> impl IntoView {
     let name = enemy.name.clone();
-    let meta = card_registry::current().and_then(|r| (r.metadata_for)(&enemy.code));
+    let meta = (registry::use_cards().metadata_for)(&enemy.code);
     let traits = match meta {
         Some(m) if !m.traits.is_empty() => format!("{}.", m.traits.join(". ")),
         _ => String::new(),

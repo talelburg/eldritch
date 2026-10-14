@@ -82,7 +82,7 @@ fn enemy_encounter_card_spawns_via_the_disposition_frame() {
         .build();
     // No builder setter stages the encounter deck.
     state.encounter_deck.push_back(CardCode::new(ENEMY));
-    let drawing = TestSession::new_with_registries(state, registries());
+    let drawing = TestSession::new(state, registries());
     drawing.assert_at_encounter_draw();
 
     // Drawing reveals the enemy; it spawns cleanly without a prompt of its own,

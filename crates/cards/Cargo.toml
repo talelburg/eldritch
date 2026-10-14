@@ -21,9 +21,6 @@ serde = { version = "1", features = ["derive"] }
 test-support = []
 
 [dev-dependencies]
-# Installs the card registry before the test harness `main`, so every test in a
-# binary sees it installed — no per-test call to forget, no OnceLock race (#473).
-ctor = "1.0"
 # This crate's own integration tests reach `TEST_REGISTRY` through the feature;
 # they don't get the lib's `cfg(test)`, and `required-features` would silently
 # skip them under a plain `cargo test -p cards`.

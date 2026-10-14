@@ -62,7 +62,7 @@ fn revelation_puts_cover_up_in_threat_area_with_three_clues() {
         .with_mythos_draw_remaining([INV])
         .build();
     state.encounter_deck.push_back(CardCode::new(COVER_UP));
-    let drawing = TestSession::new_with_registries(state, TEST_REGISTRIES);
+    let drawing = TestSession::new(state, TEST_REGISTRIES);
     drawing.assert_at_encounter_draw();
 
     // Drawing the card reveals it: it resolves without a prompt of its own, and
@@ -328,7 +328,7 @@ fn interactive(mut state: GameState) -> GameState {
 /// a #466 acknowledge before it runs. That acknowledge is not what these tests
 /// are about — the `GameEnd` forced that follows it is — so it is answered here.
 fn advance_terminal_act_interactively(state: GameState) -> TestSession {
-    let paused = TestSession::new_with_registries(state, TEST_REGISTRIES)
+    let paused = TestSession::new(state, TEST_REGISTRIES)
         .take(&TurnAction::AdvanceAct { investigator: INV });
     assert_eq!(
         paused.offered_at(&OptionTarget::Act),
@@ -353,7 +353,7 @@ fn advance_terminal_act_interactively(state: GameState) -> TestSession {
 /// this is asserted as a sequence rather than as two independent presences.
 #[test]
 fn game_end_trauma_resolves_before_the_ending_finalizes() {
-    let session = TestSession::new_with_registries(resolving_state(3), TEST_REGISTRIES)
+    let session = TestSession::new(resolving_state(3), TEST_REGISTRIES)
         .take(&TurnAction::AdvanceAct { investigator: INV });
     assert_event_sequence!(
         session.events(),
@@ -368,7 +368,7 @@ fn game_end_trauma_resolves_before_the_ending_finalizes() {
 
 #[test]
 fn game_end_emits_no_trauma_when_cover_up_empty() {
-    let session = TestSession::new_with_registries(resolving_state(0), TEST_REGISTRIES)
+    let session = TestSession::new(resolving_state(0), TEST_REGISTRIES)
         .take(&TurnAction::AdvanceAct { investigator: INV });
     assert_event!(session.events(), Event::ScenarioResolved { .. });
     assert_no_event!(session.events(), Event::TraumaSuffered { .. });
@@ -528,7 +528,7 @@ fn colocated_investigate_board(other: Seat) -> GameStateBuilder {
 /// `OTHER` investigates committing nothing and plays Roland's Cover Up at the
 /// before-discover window.
 fn colocated_investigate_and_play_cover_up(state: GameState) -> TestSession {
-    let offered = TestSession::new_with_registries(state, TEST_REGISTRIES)
+    let offered = TestSession::new(state, TEST_REGISTRIES)
         .take(&TurnAction::Investigate {
             investigator: OTHER,
         })
@@ -575,10 +575,9 @@ fn game_end_trauma_goes_to_the_investigator_holding_cover_up() {
             .build(),
     );
 
-    let session =
-        TestSession::new_with_registries(state, TEST_REGISTRIES).take(&TurnAction::AdvanceAct {
-            investigator: OTHER,
-        });
+    let session = TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::AdvanceAct {
+        investigator: OTHER,
+    });
 
     assert_eq!(
         traumas(&session),

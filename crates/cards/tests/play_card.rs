@@ -366,7 +366,7 @@ fn play_card_after_defeat_is_rejected() {
         .open_turn(INV)
         .build();
 
-    let result = play_off_menu(TestSession::new_with_registries(state, TEST_REGISTRIES)).finish();
+    let result = play_off_menu(TestSession::new(state, TEST_REGISTRIES)).finish();
     assert!(result.events.is_empty());
 }
 

@@ -7,7 +7,7 @@
 //! co-located enemy" check, and the attack itself all read.
 //!
 //! Lives at `crates/game-core/tests/` (its own integration-test binary,
-//! hence its own process + `OnceLock<CardRegistry>`) so the mock
+//! hence its own process and its own `MockRegistry`) so the mock
 //! registry doesn't collide with the in-crate tests. No real card has a
 //! weapon ability yet — Roland's .38 Special (C5c) is the first; until
 //! then a mock card exercises the full path.

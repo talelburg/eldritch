@@ -3,7 +3,6 @@
 
 use std::collections::BTreeSet;
 
-use cards::REGISTRY;
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
@@ -16,6 +15,7 @@ use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::card::{Card, HandCardView};
 use web::interaction::{MultiSelect, PendingOptions};
+use web::registry::provide_cards;
 use web::store::ClientState;
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlElement};
@@ -37,9 +37,11 @@ fn last_card_html() -> String {
 }
 
 async fn mount_card(code: &str) -> String {
-    test_support::install_registry_with_test_cards(REGISTRY);
     let code = CardCode::new(code);
-    mount_to_body(move || view! { <Card code=code.clone()/> });
+    mount_to_body(move || {
+        provide_cards(&cards::TEST_REGISTRY);
+        view! { <Card code=code.clone()/> }
+    });
     task::tick().await;
     last_card_html()
 }
@@ -83,8 +85,8 @@ async fn guardian_card_carries_class_modifier() {
 }
 
 /// The unresolved-code fallback is **intended** behaviour, not an accident: a
-/// code the registry cannot resolve (an unimplemented stub, or a render path
-/// with no registry installed) renders as a bare `card--unknown` rectangle
+/// code the registry cannot resolve (an unimplemented stub) renders as a bare
+/// `card--unknown` rectangle
 /// showing the raw code, rather than as nothing.
 ///
 /// The class is asserted, not just the code, because it is the contract
@@ -118,7 +120,6 @@ fn last_card_classes() -> String {
 
 #[wasm_bindgen_test]
 async fn in_play_exhausted_asset_dims_badges_and_shows_soak() {
-    test_support::install_registry_with_test_cards(REGISTRY);
     // Beat Cop 01018: ally asset, health 2 / sanity 2.
     let mut inst = CardInPlay::enter_play(
         CardCode::new("01018"),
@@ -127,7 +128,10 @@ async fn in_play_exhausted_asset_dims_badges_and_shows_soak() {
     );
     inst.exhausted = true;
     inst.accumulated_damage = 1;
-    mount_to_body(move || view! { <Card code=CardCode::new("01018") in_play=inst.clone()/> });
+    mount_to_body(move || {
+        provide_cards(&cards::TEST_REGISTRY);
+        view! { <Card code=CardCode::new("01018") in_play=inst.clone()/> }
+    });
     task::tick().await;
 
     assert!(
@@ -148,7 +152,6 @@ async fn in_play_exhausted_asset_dims_badges_and_shows_soak() {
 
 #[wasm_bindgen_test]
 async fn treachery_renders_generic_face_with_clues() {
-    test_support::install_registry_with_test_cards(REGISTRY);
     // Cover Up 01007: treachery/weakness, traits "Task.", Revelation text;
     // enters the threat area with clues on the card.
     let mut inst = CardInPlay::enter_play(
@@ -157,7 +160,10 @@ async fn treachery_renders_generic_face_with_clues() {
         CardOwner::Investigator(InvestigatorId(1)),
     );
     inst.clues = 3;
-    mount_to_body(move || view! { <Card code=CardCode::new("01007") in_play=inst.clone()/> });
+    mount_to_body(move || {
+        provide_cards(&cards::TEST_REGISTRY);
+        view! { <Card code=CardCode::new("01007") in_play=inst.clone()/> }
+    });
     task::tick().await;
 
     assert!(
@@ -175,13 +181,15 @@ async fn treachery_renders_generic_face_with_clues() {
 
 #[wasm_bindgen_test]
 async fn in_play_ready_asset_is_not_dimmed() {
-    test_support::install_registry_with_test_cards(REGISTRY);
     let inst = CardInPlay::enter_play(
         CardCode::new("01018"),
         CardInstanceId(0),
         CardOwner::Investigator(InvestigatorId(1)),
     );
-    mount_to_body(move || view! { <Card code=CardCode::new("01018") in_play=inst.clone()/> });
+    mount_to_body(move || {
+        provide_cards(&cards::TEST_REGISTRY);
+        view! { <Card code=CardCode::new("01018") in_play=inst.clone()/> }
+    });
     task::tick().await;
     assert!(
         !last_card_classes().contains("card--exhausted"),
@@ -208,13 +216,13 @@ fn last_slot() -> Element {
 async fn mount_hand(
     outcome: EngineOutcome,
 ) -> (RwSignal<BTreeSet<u32>>, UnboundedReceiver<ClientMessage>) {
-    test_support::install_registry_with_test_cards(REGISTRY);
     let store = RwSignal::new(ClientState::default());
     store.update(|s| s.outcome = Some(outcome));
     let selected = RwSignal::new(BTreeSet::<u32>::new());
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let tx_for_mount: OutboundTx = tx;
     mount_to_body(move || {
+        provide_cards(&cards::TEST_REGISTRY);
         provide_context(store);
         provide_context::<OutboundTx>(tx_for_mount.clone());
         let pending = Signal::derive(move || store.with(web::interaction::pending_options));

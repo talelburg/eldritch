@@ -8,7 +8,7 @@ use super::*;
 #[test]
 fn deck_shuffled_engine_record_with_unknown_investigator_is_rejected() {
     let state = GameStateBuilder::new().build();
-    let result = apply_with_registries(
+    let result = apply(
         state,
         Action::Engine(EngineRecord::DeckShuffled {
             investigator: InvestigatorId(999),
@@ -31,8 +31,8 @@ fn deck_shuffle_is_deterministic_across_replay() {
         }]
     };
 
-    let result_a = seat_and_open_with_registries(state_a, &make_roster(), TEST_REGISTRIES);
-    let result_b = seat_and_open_with_registries(state_b, &make_roster(), TEST_REGISTRIES);
+    let result_a = seat_and_open(state_a, &make_roster(), TEST_REGISTRIES);
+    let result_b = seat_and_open(state_b, &make_roster(), TEST_REGISTRIES);
     let id = InvestigatorId(1);
 
     assert_eq!(
@@ -55,7 +55,7 @@ fn deck_shuffled_engine_record_shuffles_named_investigator() {
         .with_seat(seat(1).deck(original_deck.clone()))
         .with_rng_seed(99)
         .build();
-    let result = apply_with_registries(
+    let result = apply(
         state,
         Action::Engine(EngineRecord::DeckShuffled { investigator: id }),
         TEST_REGISTRIES,

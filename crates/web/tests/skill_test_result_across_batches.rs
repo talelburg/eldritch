@@ -30,11 +30,11 @@
 //! trigger that prompts for nothing, like Obscuring Fog 01168's, leaves the
 //! result and the acknowledge in one batch and never showed the bug.
 //!
-//! Own test binary: it installs the real `cards::REGISTRY`, which is first-wins
-//! per process.
+//! It runs against `cards::TEST_REGISTRIES`: the real corpus with the
+//! synthetic test investigator composed in.
 #![cfg(not(target_arch = "wasm32"))]
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{self, EngineOutcome, InputKind, OptionId};
@@ -115,20 +115,16 @@ struct Pause {
 /// any offered reaction (the only `PickSingle` in flight is Lita's window) and
 /// commits no cards. Returns one entry per pause the client rendered.
 fn fight_ghoul(lita_in_play: bool) -> Vec<Pause> {
-    test_support::install_registry_with_test_cards(REGISTRY);
     let state = board(lita_in_play);
 
     let fight = TurnAction::Fight {
         investigator: OTHER,
         enemy: GHOUL,
     };
-    let idx = enumerate::legal_actions(
-        &state,
-        game_core::card_registry::current().expect("card registry installed"),
-    )
-    .iter()
-    .position(|a| *a == fight)
-    .expect("the Fight is a legal action on this board");
+    let idx = enumerate::legal_actions(&state, TEST_REGISTRIES.cards)
+        .iter()
+        .position(|a| *a == fight)
+        .expect("the Fight is a legal action on this board");
     let mut result = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
@@ -136,6 +132,7 @@ fn fight_ghoul(lita_in_play: bool) -> Vec<Pause> {
                 u32::try_from(idx).expect("action index fits u32"),
             )),
         }),
+        TEST_REGISTRIES,
     );
 
     let mut client = ClientState::default();
@@ -178,6 +175,7 @@ fn fight_ghoul(lita_in_play: bool) -> Vec<Pause> {
         result = engine::apply(
             result.state.clone(),
             Action::Player(PlayerAction::ResolveInput { response }),
+            TEST_REGISTRIES,
         );
     }
     pauses
