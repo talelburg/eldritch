@@ -71,7 +71,7 @@ fn the_draw_prompt_is_anchored_to_the_encounter_deck() {
 }
 
 /// Exercises the early-reject guard for the unknown-card check: the
-/// installed test registry doesn't know the synthetic code
+/// test registry doesn't know the synthetic code
 /// `"__no_such_card"`, so the draw rejects with `"unknown card code: ..."`.
 ///
 /// State is not further mutated. The deck-length assertion allows for the

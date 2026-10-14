@@ -11,7 +11,7 @@
 //! the same reason (#639).
 //!
 //! Lives at `crates/game-core/tests/` for its own process and its own
-//! `OnceLock<CardRegistry>`, like the sibling mock-registry integration tests.
+//! `MockRegistry`, like the sibling mock-registry integration tests.
 //! No corpus card carries a modal `on_success` yet, so a mock is the only way to
 //! reach the shape.
 

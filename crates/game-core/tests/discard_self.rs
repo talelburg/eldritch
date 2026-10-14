@@ -1,6 +1,6 @@
 //! `Cost::DiscardSelf` + the Beat-Cop-shaped `DiscardSelf → DealDamageToEnemy`
-//! ability. Mock registry in its own integration binary (own process +
-//! `OnceLock<CardRegistry>`), mirroring `weapon_fight.rs`.
+//! ability. Mock registry in its own integration binary (a process holds one
+//! `MockRegistry`), mirroring `weapon_fight.rs`.
 
 use std::sync::LazyLock;
 

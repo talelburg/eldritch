@@ -9,7 +9,7 @@
 //!
 //! Moved down from `crates/scenarios/tests/upkeep_hand_size.rs` (#873): no card
 //! is involved, only a scenario module, which under ADR 0016 is a locally-built
-//! shell. No scenario registry is installed, so the resolution hook is skipped
+//! shell. The registries name no scenario module, so the resolution hook is skipped
 //! and the round cannot end mid-cascade.
 
 use std::sync::LazyLock;

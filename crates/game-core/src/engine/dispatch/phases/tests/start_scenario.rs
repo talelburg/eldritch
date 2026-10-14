@@ -64,8 +64,8 @@ fn seat_and_open_rejects_an_empty_roster() {
 // stats rejects with state unchanged. game-core unit tests run against
 // the synthetic test registry, which knows no "01001", so resolution
 // fails on the unknown-code path. The registry-backed happy path is
-// pinned by the `crates/cards` integration test, which installs
-// `cards::REGISTRY`.
+// pinned by the `crates/cards` integration test, which names
+// `cards::TEST_REGISTRIES`.
 /// `seat_and_open` shuffles the shared encounter deck (like the player
 /// decks) with the scenario-start RNG: the deck's multiset is preserved
 /// and `EncounterDeckShuffled` fires.

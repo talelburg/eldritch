@@ -66,9 +66,8 @@ fn end_turn_outside_investigation_phase_is_rejected() {
 
 // After T09, end_turn pauses at Mythos when mythos_draw_pending is
 // Some(_). The player-driven DrawEncounterCard action (T12) is what
-// completes the Mythos phase; it requires a card registry which
-// game-core unit tests cannot install (process-global OnceLock;
-// installing in one test would contaminate others). The full
+// completes the Mythos phase; it requires the real encounter cards,
+// which game-core unit tests cannot reach by crate direction. The full
 // round-cycle coverage — including DrawEncounterCard completing the
 // phase and transitioning to Investigation — lives in the T14
 // integration tests at crates/cards/tests/mythos_phase.rs.

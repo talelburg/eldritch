@@ -215,8 +215,8 @@ mod tests {
 
     #[test]
     fn keeps_the_code_aside_on_a_failed_entry() {
-        // The card is set aside, but a bare unit test installs no card
-        // registry — the call must reject without removing the code from the
+        // The card is set aside, but the test registry doesn't know it — the
+        // call must reject without removing the code from the
         // zone (validate-first: no mutation on reject).
         let mut state = GameStateBuilder::new()
             .with_registries(crate::engine::TEST_REGISTRIES)

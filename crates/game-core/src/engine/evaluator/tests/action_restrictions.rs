@@ -2,7 +2,7 @@ use super::*;
 
 /// Mock registry that maps a small hardcoded set of codes to
 /// abilities. Keeps the constant-modifier query tests isolated
-/// from the global `OnceLock` and from the cards crate.
+/// from the cards crate.
 fn mock_registry(_: &CardCode) -> Option<&'static CardMetadata> {
     None
 }

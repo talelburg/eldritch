@@ -6,8 +6,8 @@
 //! ADR 0016 that is a locally-built shell rather than a shared fixture. The
 //! `setup()` below is that shell's state, composed with `GameStateBuilder`.
 //!
-//! No scenario registry is installed — the resolution hook treats `None` as "no
-//! scenario behavior wired up; skip", which is what these tests want: the round
+//! The registries name no scenario module — the resolution hook treats `None`
+//! as "no scenario behavior wired up; skip", which is what these tests want: the round
 //! must not resolve out from under the cascade.
 
 use std::sync::LazyLock;

@@ -2,16 +2,16 @@
 //! that names it can seat a plain [`test_support::test_investigator`], while
 //! every real card and the synthetic terminal acts/agendas still resolve.
 
-use cards::TEST_REGISTRIES;
+use cards::{TEST_REGISTRIES, TEST_REGISTRY};
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::scenario::ScenarioId;
 use game_core::state::{
     Act, CardCode, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame,
-    MythosResume, Phase, Status,
+    MythosResume, Phase, Skills, Status,
 };
-use game_core::test_support::{self, seat, TestSession};
+use game_core::test_support::{self, seat, terminal_code, TestSession, TEST_INV};
 
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(20);
@@ -95,4 +95,41 @@ fn a_terminal_act_still_ends_the_scenario() {
         .finish();
 
     assert_event!(result.events, Event::ScenarioResolved { .. });
+}
+
+#[test]
+fn a_real_investigator_is_seated_from_the_corpus() {
+    let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(seat(1).as_card("01001"))
+        .build();
+    let roland = &state.investigators[&INV];
+    // Roland Banks 01001 prints willpower 3, intellect 3, combat 4, agility 2
+    // (`data/arkhamdb-snapshot/pack/core/core.json`).
+    assert_eq!(roland.name, "Roland Banks");
+    assert_eq!(
+        roland.skills,
+        Skills {
+            willpower: 3,
+            intellect: 3,
+            combat: 4,
+            agility: 2,
+        },
+    );
+}
+
+#[test]
+fn the_synthetic_test_investigator_resolves_next_to_the_corpus() {
+    let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(seat(1).as_card(TEST_INV))
+        .build();
+    assert_eq!(state.investigators[&INV].name, "Test Investigator");
+}
+
+#[test]
+fn the_synthetic_terminal_cards_and_real_abilities_are_both_served() {
+    assert!((TEST_REGISTRY.abilities_for)(&terminal_code(1)).is_some());
+    // Roland Banks 01001's ability is implemented in `impls/roland_banks.rs`.
+    assert!((TEST_REGISTRY.abilities_for)(&CardCode::new("01001")).is_some());
 }

@@ -11,7 +11,7 @@ use crate::test_support::TestSession;
 ///
 /// One attacker, not two: with 2+ remaining the drain would re-prompt for
 /// the player attack order (#143), which the order-pick tests cover. The
-/// test registry (`TEST_INV`) is installed so `max_health()`/`max_sanity()`
+/// test registry (`TEST_INV`) is named so `max_health()`/`max_sanity()`
 /// resolve (#448 cp2a).
 #[test]
 fn drive_parked_attack_loop_exhausts_the_head_then_advances_the_cursor() {

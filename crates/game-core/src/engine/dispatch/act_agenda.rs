@@ -649,8 +649,8 @@ mod advance_act_tests {
     // `advance_act_rejected_for_round_end_advance_act` moved to
     // `crates/cards/tests/act_advancement.rs`: the round-end-only detection is
     // now registry-based (`act_advances_at_round_end` reads act 01109's
-    // `When`-RoundEnded reaction, #434), which a lib unit test can't install
-    // without polluting its siblings' process-global registry.
+    // `When`-RoundEnded reaction, #434), and the real act is corpus content a
+    // game-core unit test can't reach.
 
     #[test]
     fn advance_act_spends_clues_and_advances_non_terminal() {

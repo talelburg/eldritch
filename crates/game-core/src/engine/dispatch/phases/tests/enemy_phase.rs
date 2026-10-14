@@ -541,7 +541,7 @@ fn enemy_phase_resumes_via_skip_input() {
     //
     // The synthetic empty window (staged via with_open_window) fakes the
     // pause point because a real Fast-eligibility setup would require either
-    // a card-registry install (heavyweight integration test) or a Fast
+    // a registry of real cards (heavyweight integration test) or a Fast
     // event card in hand with resources — neither tractable in
     // the engine layer. The Skip path itself is the load-bearing
     // resume mechanism this test exercises.

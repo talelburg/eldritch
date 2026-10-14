@@ -2,7 +2,7 @@
 //! covering a single `EventPattern::EnteredLocation` forced ability.
 //!
 //! Lives at `crates/game-core/tests/` (a separate integration-test
-//! binary, hence its own process and its own `OnceLock<CardRegistry>`)
+//! binary, hence its own process and its own `MockRegistry`)
 //! so building a mock registry here doesn't collide with game-core's
 //! in-crate tests.
 //! Mirrors `activate_ability.rs` / `on_skill_test_resolution.rs`.
@@ -98,7 +98,7 @@ const GATED_ELIGIBLE: &str = "test-gated-eligible";
 const GATED_INELIGIBLE: &str = "test-gated-ineligible";
 const GATED_UNKNOWN_TAG: &str = "test-gated-unknown-tag";
 
-/// Tags the installed registry resolves as native conditions. `UNKNOWN_TAG` is
+/// Tags the mock registry resolves as native conditions. `UNKNOWN_TAG` is
 /// deliberately absent from it.
 const ALWAYS_TAG: &str = "test:always";
 const NEVER_TAG: &str = "test:never";

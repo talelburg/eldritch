@@ -2,7 +2,7 @@
 //! `CardRegistry` covering one made-up activated ability.
 //!
 //! Lives at `crates/game-core/tests/` (a separate integration-test
-//! binary, hence its own process and its own `OnceLock<CardRegistry>`)
+//! binary, hence its own process and its own `MockRegistry`)
 //! so building a mock registry here doesn't collide with game-core's
 //! in-crate tests (which name game-core's test registry instead).
 //!
@@ -331,7 +331,7 @@ fn discard_card_from_hand_cost_rejects_with_todo() {
 
 #[test]
 fn activating_with_defeated_status_doesnt_need_registry() {
-    // Belt-and-suspenders: even with registry installed, the status
+    // Belt-and-suspenders: even with the registry knowing the card, the status
     // check rejects before the registry lookup runs.
     let (mut state, id, instance_id) = state_with_in_play(FAST_RESOURCE_LOOP);
     // No seat setter stages a status.

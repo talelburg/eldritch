@@ -1,6 +1,6 @@
 //! Resolution with no scenario module registered. The tests that need a
 //! module's `apply_resolution` hook live in `tests/resolution_module.rs`,
-//! which installs one process-wide.
+//! which names one.
 
 use super::*;
 
@@ -10,7 +10,7 @@ const ADVANCE_ACT: TurnAction = TurnAction::AdvanceAct { investigator: INV };
 /// act is terminal — it is the only card in the deck (ADR 0013) — and whose
 /// investigator holds the one clue it takes to advance it. A single
 /// `AdvanceAct` flips it and its reverse latches `Resolution(1)`, which is why
-/// the test registry has to be installed: the reverse is an ability the
+/// the test registry has to be named: the reverse is an ability the
 /// registry serves, not a field on the deck entry.
 fn terminal_act_state() -> GameState {
     // Open the turn so `legal_actions` enumerates `AdvanceAct`.

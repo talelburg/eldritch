@@ -2,7 +2,7 @@
 //! carries `Trigger::OnEvent` abilities.
 //!
 //! Lives at `crates/game-core/tests/` so it runs in its own integration-
-//! test process (separate `OnceLock<CardRegistry>`), letting it build
+//! test process (a process holds one `MockRegistry`), letting it build
 //! a mock registry without colliding with game-core's in-crate tests or
 //! with other `tests/*.rs` files. Mirrors `on_skill_test_resolution.rs`.
 //!
@@ -502,7 +502,7 @@ fn reaction_window_closes_before_on_skill_test_resolution_fires() {
     // ability. We don't have one in the mock registry; instead just
     // exercise the "open window resumes through the
     // OnSkillTestResolution step" boundary. The OnSkillTestResolution
-    // step is a no-op without an installed registry entry for the
+    // step is a no-op without a registry entry for the
     // committed card, but the event-order pinning still applies: the
     // window closes BEFORE the discard-and-end sequence.
     let board = fight_board(

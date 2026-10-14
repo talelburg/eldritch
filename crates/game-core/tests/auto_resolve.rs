@@ -12,7 +12,7 @@
 //! >   test is considered 0.
 //!
 //! Lives at `crates/game-core/tests/` (its own integration-test binary,
-//! hence its own process and its own `OnceLock<CardRegistry>`) so the mock
+//! hence its own process and its own `MockRegistry`) so the mock
 //! registry doesn't collide with game-core's in-crate tests. Mirrors
 //! `activate_ability.rs`.
 //!
@@ -38,8 +38,7 @@
 //! moments, so they are asserted the same way: on the presence or absence of
 //! `ChaosTokenRevealed` and of the ST.4 symbol effect, never on the RNG
 //! cursor. The `[skull]` symbol effect comes from a mock scenario module
-//! installed alongside the mock card registry, for the same
-//! process-isolation reason.
+//! named alongside the mock card registry.
 
 use std::sync::LazyLock;
 

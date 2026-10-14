@@ -2,7 +2,7 @@
 //! modifying card can sit in.
 //!
 //! Lives at `crates/game-core/tests/` so it runs in its own
-//! integration-test process (separate `OnceLock<CardRegistry>`), letting
+//! integration-test process (a process holds one `MockRegistry`), letting
 //! it build a mock registry without colliding with game-core's
 //! in-crate tests or with other `tests/*.rs` files. Mirrors
 //! `activate_ability.rs`.

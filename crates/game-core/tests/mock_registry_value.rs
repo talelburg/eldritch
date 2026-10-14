@@ -1,6 +1,5 @@
 //! [`MockRegistry::build`]: a mock card registry as a value a test names,
-//! rather than one installed process-wide. This binary installs nothing, so
-//! everything the fixtures resolve comes from the built value.
+//! Everything the fixtures resolve comes from the built value.
 //!
 //! The probe card below is local to this file, per ADR 0016.
 

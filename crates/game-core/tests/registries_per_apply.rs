@@ -2,8 +2,7 @@
 //! the same state and action under two different [`Registries`] give two
 //! different outcomes, in one test binary (#1032).
 //!
-//! This binary installs no registry, so whatever the engine reads, it reads
-//! from the value it was handed.
+//! Whatever the engine reads, it reads from the value it was handed.
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::action::{Action, InputResponse, PlayerAction};

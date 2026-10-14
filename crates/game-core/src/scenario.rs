@@ -23,7 +23,7 @@
 //!
 //! The active scenario id on `GameState` is
 //! a serializable [`ScenarioId`]; function pointers are not
-//! serializable. On reload, the host re-installs `REGISTRY` and the
+//! serializable. On reload, the host passes `REGISTRY` again and the
 //! engine looks the module up by id — the action log replays
 //! deterministically.
 
@@ -214,7 +214,7 @@ pub enum TokenEffect {
 /// is the smallest thing that knows the whole board.
 pub type LocationLayout = &'static [(&'static str, &'static str)];
 
-/// Static, host-installed bundle of function pointers for one
+/// Static bundle of function pointers for one
 /// scenario module.
 ///
 /// Mirrors [`CardRegistry`](crate::card_registry::CardRegistry)'s

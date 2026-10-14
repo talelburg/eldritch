@@ -6,7 +6,7 @@
 //! step (no such firing existed before #307).
 //!
 //! Lives at `crates/game-core/tests/` (its own integration-test binary,
-//! hence its own process + `OnceLock<CardRegistry>`). No real card has an
+//! hence its own process and its own `MockRegistry`). No real card has an
 //! `OnCommit` ability yet — Vicious Blow 01025 (the consumer, #240) is the
 //! first; until then this mock skill exercises the full commit path.
 

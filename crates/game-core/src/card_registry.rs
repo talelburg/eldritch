@@ -222,9 +222,8 @@ mod tests {
         }
     }
 
-    /// A locally-constructed registry exercises both function-pointer
-    /// fields without touching the global `OnceLock` — so multiple
-    /// tests can run in parallel.
+    /// A locally-constructed registry exercising both function-pointer
+    /// fields.
     fn fake_registry() -> CardRegistry {
         CardRegistry {
             metadata_for: fake_metadata_for,

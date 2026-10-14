@@ -10,7 +10,7 @@
 //! What these tests need is a two-card act deck that ends in a couple of clicks
 //! and a scenario module to hang `apply_resolution` off — no scenario *content*
 //! at all — so under ADR 0016 the module shell and its `setup()` state are built
-//! here rather than pulled from a shared fixture, and the registry installed is
+//! here rather than pulled from a shared fixture, and the registry named is
 //! this file's rather than the `scenarios` crate's. Building it locally also
 //! makes it structural that nothing under `src/` can start a toy scenario.
 

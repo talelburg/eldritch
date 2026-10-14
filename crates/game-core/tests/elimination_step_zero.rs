@@ -12,7 +12,7 @@
 //! `GameEnd` forced ability, so proving the weakness filter does real work needs
 //! a synthetic card that is identical to the weakness in every respect except
 //! `CardMetadata::weakness`. Hence a mock registry, and hence its own
-//! integration-test binary (`OnceLock<CardRegistry>` is process-global).
+//! integration-test binary (a process holds one `MockRegistry`).
 //!
 //! Lives at `crates/game-core/tests/` alongside `forced_triggers.rs` /
 //! `native_effect.rs`, whose idiom it follows.
