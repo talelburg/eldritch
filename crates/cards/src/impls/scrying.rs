@@ -155,13 +155,8 @@ mod tests {
     fn one_action_exhausting_and_spending_a_charge_to_choose_a_deck() {
         let abilities = abilities();
         assert_eq!(abilities.len(), 1);
-        assert_eq!(
-            abilities[0].trigger,
-            Trigger::Activated {
-                action_cost: 1,
-                designator: None,
-            }
-        );
+        assert_eq!(abilities[0].trigger, Trigger::Activated { action_cost: 1 });
+        assert_eq!(abilities[0].designator, None);
         assert_eq!(
             abilities[0].costs,
             vec![
