@@ -88,6 +88,7 @@ use game_core::card_registry::{NativeConditionFn, NativeEffectFn};
 
 pub mod agnes_baker;
 pub mod ancient_evils;
+pub mod arcane_initiate;
 pub mod arcane_studies;
 pub mod attic;
 pub mod automatic_45;
@@ -218,6 +219,7 @@ impl CardRecord {
 pub const ALL: &[CardRecord] = &[
     agnes_baker::CARD,
     ancient_evils::CARD,
+    arcane_initiate::CARD,
     arcane_studies::CARD,
     attic::CARD,
     automatic_45::CARD,
