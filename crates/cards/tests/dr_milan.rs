@@ -4,7 +4,7 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::state::{
@@ -23,11 +23,6 @@ const HERE: LocationId = LocationId(10);
 /// it.
 const FOG_ID: CardInstanceId = CardInstanceId(2);
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// The investigator's turn at a 1-clue Study of shroud 2 (`study` adds to
 /// it), with base intellect `intellect`, Dr. Milan in play, and a
 /// `Numeric(0)` bag.
@@ -36,6 +31,7 @@ fn board(intellect: i8, study: impl FnOnce(&mut Location)) -> TestSession {
     loc.clues = 1;
     study(&mut loc);
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(
             seat(1)
                 .at(HERE)

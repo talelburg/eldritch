@@ -43,13 +43,13 @@
 //!   location"* (<https://arkhamdb.com/card/01113>) — scopes that same entry.
 
 use card_dsl::card_data::CardType;
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame, MythosResume, Owner,
     Phase,
 };
-use game_core::test_support::{self, seat, TestSession};
+use game_core::test_support::{seat, TestSession};
 use game_core::{assert_event_sequence, assert_no_event};
 
 /// Flesh-Eater — *"**Spawn** - Attic."*
@@ -59,11 +59,6 @@ const ATTIC: &str = "01113";
 
 const INV: InvestigatorId = InvestigatorId(1);
 
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// The board every test starts from: Mythos step 1.4 with investigator 1 to
 /// draw, one Flesh-Eater on the encounter deck, and the Attic in play with
 /// the `seated` investigators (in turn order) standing in it. Returns the
@@ -72,9 +67,10 @@ fn install_real_registry() {
 fn drawing_flesh_eater(seated: &[InvestigatorId]) -> (TestSession, LocationId) {
     let mut state = seated
         .iter()
-        .fold(GameStateBuilder::new(), |builder, id| {
-            builder.with_seat(seat(id.0))
-        })
+        .fold(
+            GameStateBuilder::new().with_registries(TEST_REGISTRIES),
+            |builder, id| builder.with_seat(seat(id.0)),
+        )
         .with_turn_order(seated.iter().copied())
         .with_phase(Phase::Mythos)
         .with_phase_anchor(MythosPhaseFrame {
@@ -87,7 +83,10 @@ fn drawing_flesh_eater(seated: &[InvestigatorId]) -> (TestSession, LocationId) {
         inv.current_location = Some(attic);
     }
     state.encounter_deck.push_back(CardCode::new(FLESH_EATER));
-    (TestSession::new(state), attic)
+    (
+        TestSession::new_with_registries(state, TEST_REGISTRIES),
+        attic,
+    )
 }
 
 /// **An enemy drawn from the encounter deck is the encounter deck's**

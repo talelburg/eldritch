@@ -13,7 +13,7 @@
 //! Own process → installs `cards::REGISTRY`.
 
 use card_dsl::dsl::HarmKind;
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::EngineOutcome;
@@ -28,17 +28,13 @@ const MEDICAL_TEXTS: &str = "01035";
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// Board: Medical Texts in play; the active investigator with `intellect`
 /// intellect and `damage` damage, alone at `HERE`. A `Numeric(0)` chaos bag
 /// makes the intellect(2) test deterministic — intellect 3 succeeds, 1 fails,
 /// both off the difficulty boundary.
 fn board(intellect: i8, damage: u8) -> TestSession {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(
             seat(1)

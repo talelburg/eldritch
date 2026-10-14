@@ -2,7 +2,7 @@
 //! player deck during play reveals it and resolves its Revelation — Cover Up
 //! enters the controller's threat area with 3 clues instead of staying in hand.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::state::{GameStateBuilder, InvestigatorId, LocationId, Owner};
@@ -15,17 +15,13 @@ const HOLY_ROSARY: &str = "01059"; // a non-weakness asset, for the negative cas
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(101);
 
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// Solo investigator at a revealed location, at their turn menu with 3
 /// actions, no enemies (so the Draw action's `AoO` loop is empty and resolves
 /// synchronously), with `deck_top` as the top card of an otherwise-filler
 /// deck. Takes the Draw action.
 fn draw(deck_top: &str) -> TestSession {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         // Top of deck is drawn first (draw_cards drains from the front).
         .with_seat(

@@ -12,7 +12,7 @@
 //!
 //! [`apply`]: game_core::engine::apply
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::event::{Event, LapseReason};
@@ -30,11 +30,6 @@ const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(101);
 const HALLWAY: LocationId = LocationId(102);
 const ATTACKER: EnemyId = EnemyId(7);
-
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 /// A ready enemy dealing 2 damage / 1 horror.
 fn ready_attacker() -> Enemy {
@@ -62,6 +57,7 @@ fn holding_dodge() -> Seat {
 /// opens the `BeforeEnemyAttack` cancel window and offers Dodge.
 fn dodge_board(investigator: Seat, attacker: Enemy) -> GameStateBuilder {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(investigator)
         .with_enemy_engaged(attacker, INV)
@@ -96,7 +92,7 @@ fn acolyte_session() -> TestSession {
         doom_threshold: 3,
     }];
     state.agenda_index = 0;
-    TestSession::new(state)
+    TestSession::new_with_registries(state, TEST_REGISTRIES)
 }
 
 /// The anchor of `holder`'s Dodge in a reaction window's prompt.
@@ -309,7 +305,7 @@ fn dodge_lapses_when_dissonant_voices_arrives_before_the_pick() {
         "the refused pick left Dodge in hand",
     );
 
-    let resurfaced = TestSession::new(refused.state().clone());
+    let resurfaced = TestSession::new_with_registries(refused.state().clone(), TEST_REGISTRIES);
     let events = resurfaced.events();
     assert_event!(
         events,
@@ -336,6 +332,7 @@ fn dodge_lapses_as_out_of_scope_once_its_holder_leaves_the_attacked_location() {
     // Both turns end, and the Enemy phase's attack on seat 1 opens the
     // before-attack window that offers seat 2 their Dodge.
     let opened = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_location(test_support::test_location(HALLWAY.0, "Hallway"))
         .with_seat(seat(1).at(HERE))
@@ -363,7 +360,7 @@ fn dodge_lapses_as_out_of_scope_once_its_holder_leaves_the_attacked_location() {
         .get_mut(&dodger)
         .expect("seated")
         .current_location = Some(HALLWAY);
-    let resurfaced = TestSession::new(state);
+    let resurfaced = TestSession::new_with_registries(state, TEST_REGISTRIES);
 
     assert_event!(
         resurfaced.events(),

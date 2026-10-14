@@ -47,9 +47,8 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::assert_event;
-use game_core::card_registry;
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::modified_value::{self, ModifiedQuantity, ReadContext};
 use game_core::engine::{EngineOutcome, NativeCx};
@@ -73,11 +72,6 @@ const HALLWAY_ID: LocationId = LocationId(1);
 const PARLOR_ID: LocationId = LocationId(2);
 const INV: InvestigatorId = InvestigatorId(1);
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// The act-2 board: an investigator in the Hallway, the Parlor in play but
 /// unrevealed (the barrier is still up), and both set-aside cards in the zone.
 /// Act 01109 is current, with a successor so its advance is non-terminal. The
@@ -85,6 +79,7 @@ fn install() {
 fn board() -> GameState {
     act_two_board(
         GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
             .with_phase(Phase::Investigation)
             .with_active_investigator(INV),
     )
@@ -125,13 +120,13 @@ fn with_cx(
     state: &mut GameState,
     f: impl FnOnce(&mut NativeCx) -> EngineOutcome,
 ) -> (EngineOutcome, Vec<Event>) {
-    let reg = card_registry::current().expect("registry installed");
+    let reg = TEST_REGISTRIES.cards;
     test_support::run_native(state, reg, |cx, _| f(cx), &EvalContext::for_controller(INV))
 }
 
 /// 01109's reverse, as the registry resolves it for the forced dispatch.
 fn reverse(state: &mut GameState) -> (EngineOutcome, Vec<Event>) {
-    let reg = card_registry::current().expect("registry installed");
+    let reg = TEST_REGISTRIES.cards;
     let native =
         (reg.native_effect_for)("01109:reverse").expect("01109:reverse is registered by 01109");
     test_support::run_native(state, reg, native, &EvalContext::for_controller(INV))
@@ -252,6 +247,7 @@ fn an_uncontrolled_asset_cannot_soak_damage_for_a_colocated_investigator() {
     // Mythos step 1.4: `INV` is to draw the top encounter card, Grasping Hands.
     let mut state = act_two_board(
         GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
             .with_phase(Phase::Mythos)
             .with_phase_anchor(MythosPhaseFrame {
                 resume: MythosResume::AfterDraws,
@@ -270,7 +266,9 @@ fn an_uncontrolled_asset_cannot_soak_damage_for_a_colocated_investigator() {
     // Grasping Hands.
     state.encounter_deck.push_back(CardCode::new("01162"));
     // Draw it, and commit nothing to its Agility test.
-    let session = TestSession::new(state).confirm().commit(&[]);
+    let session = TestSession::new_with_registries(state, TEST_REGISTRIES)
+        .confirm()
+        .commit(&[]);
 
     // A contested point would prompt; instead play runs on out of the Mythos
     // phase to `INV`'s turn.
@@ -302,7 +300,7 @@ fn a_card_at_a_location_is_swept_by_the_modifier_query() {
 
     let combat = modified_value::modified_value(
         &state,
-        card_registry::current().expect("card registry installed"),
+        TEST_REGISTRIES.cards,
         ModifierTarget::Investigator(INV),
         ModifiedQuantity::Skill(SkillKind::Combat),
         ReadContext::OutsideTest,

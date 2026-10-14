@@ -10,7 +10,7 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
@@ -24,11 +24,6 @@ use game_core::test_support::{self, seat, uses, SeatLookup as _, TestSession};
 const FLASHLIGHT: &str = "01087";
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
-
-#[ctor::ctor(unsafe)]
-fn install() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 /// Board: Flashlight in play with 3 supplies; the active investigator at a
 /// revealed `shroud`-shroud location holding 1 clue, with `intellect`
@@ -49,6 +44,7 @@ fn study(shroud: u8, revealed: bool) -> Location {
 /// [`board`] at `location`.
 fn board_at(location: Location, intellect: i8) -> GameStateBuilder {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(
             seat(1)
                 .at(HERE)

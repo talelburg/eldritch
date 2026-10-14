@@ -13,14 +13,14 @@
 //! tests (which deliberately don't install one and would see
 //! `metadata_for == None`, contributing zero icons).
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::InputKind;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, DiscardPile, GameStateBuilder, InvestigatorId, SkillKind,
     TokenModifiers, Zone,
 };
-use game_core::test_support::{self, seat, TestSession};
+use game_core::test_support::{seat, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
 
 const PERCEPTION: &str = "01090";
@@ -32,11 +32,6 @@ const OVERPOWER: &str = "01091";
 
 const INV: InvestigatorId = InvestigatorId(1);
 
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// `INV`'s open turn with the named cards in hand, base intellect 3, and a
 /// single-`Numeric(0)` chaos bag (so the token-modifier contribution is
 /// always 0), started into an Intellect-vs-5 plain skill test. The session
@@ -46,6 +41,7 @@ fn test_with_hand(hand: &[&str]) -> TestSession {
     // draw hits an empty deck, which now applies the deck-out horror (#636) —
     // irrelevant noise for tests about icon contributions.
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(
             seat(1)
                 .hand(hand.iter().copied())

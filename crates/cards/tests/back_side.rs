@@ -3,21 +3,15 @@
 //! slice 1). Own process so it can install the process-global registry
 //! against the real `cards` corpus.
 
-use cards::REGISTRY;
-use game_core::card_registry;
+use cards::TEST_REGISTRIES;
 use game_core::state::CardCode;
-
-#[ctor::ctor(unsafe)]
-fn install_registry() {
-    game_core::test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 /// Agenda 01105 ("What's Going On?!") flips to "A Lapse in Time", whose
 /// reverse text starts the discard/horror choice. Confirms both back fields
 /// survive ingestion.
 #[test]
 fn agenda_01105_carries_its_reverse() {
-    let reg = card_registry::current().expect("registry installed");
+    let reg = TEST_REGISTRIES.cards;
     let m = (reg.metadata_for)(&CardCode::new("01105")).expect("01105 metadata");
     assert_eq!(m.back_name.as_deref(), Some("A Lapse in Time"));
     assert!(
@@ -35,7 +29,7 @@ fn agenda_01105_carries_its_reverse() {
 /// deckbuilding block — so they aren't the right negative case here.)
 #[test]
 fn single_sided_card_has_no_reverse() {
-    let reg = card_registry::current().expect("registry installed");
+    let reg = TEST_REGISTRIES.cards;
     let m = (reg.metadata_for)(&CardCode::new("01020")).expect("01020 metadata");
     assert_eq!(m.back_name, None);
     assert_eq!(m.back_text, None);
@@ -47,7 +41,7 @@ fn single_sided_card_has_no_reverse() {
 /// the printed sentence the barrier is derived from.
 #[test]
 fn location_01115_carries_its_barrier_reverse() {
-    let reg = card_registry::current().expect("registry installed");
+    let reg = TEST_REGISTRIES.cards;
     let m = (reg.metadata_for)(&CardCode::new("01115")).expect("01115 metadata");
     assert_eq!(
         m.back_text.as_deref(),

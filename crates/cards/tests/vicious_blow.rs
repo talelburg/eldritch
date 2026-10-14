@@ -5,7 +5,7 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
@@ -19,11 +19,6 @@ const INV: InvestigatorId = InvestigatorId(1);
 const ENEMY: EnemyId = EnemyId(100);
 const HERE: LocationId = LocationId(10);
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// The controller (combat 3) engaged with one enemy (fight 2, health 10 so the
 /// dealt damage is observable, not clamped), Vicious Blow in hand, a
 /// `Numeric(0)` chaos bag for a deterministic success, fighting it and
@@ -34,6 +29,7 @@ fn fight_committing(commit: &[&str]) -> TestSession {
     enemy.max_health = 10;
 
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE).hand([VICIOUS_BLOW]))
         .with_location(test_support::test_location(HERE.0, "Study"))
         // Co-located: Fight is location-gated (#401).

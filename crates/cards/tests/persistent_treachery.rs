@@ -5,6 +5,7 @@
 //! corpus.
 
 use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::assert_event;
 use game_core::assert_no_event;
 use game_core::engine::enumerate::{self, TurnAction};
@@ -43,11 +44,6 @@ const ELSEWHERE: LocationId = LocationId(21);
 /// are minted past it.
 const FOG_ATTACHMENT: CardInstanceId = CardInstanceId(1);
 
-#[ctor::ctor(unsafe)]
-fn install_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// The investigators `seats` at `HERE` at Mythos step 1.4, each about to draw
 /// in seat order, with `treacheries` on top of the encounter deck in draw
 /// order.
@@ -57,7 +53,10 @@ fn mythos_draw(seats: Vec<Seat>, treacheries: &[&str]) -> TestSession {
         .collect();
     let mut state = seats
         .into_iter()
-        .fold(GameStateBuilder::new(), GameStateBuilder::with_seat)
+        .fold(
+            GameStateBuilder::new().with_registries(TEST_REGISTRIES),
+            GameStateBuilder::with_seat,
+        )
         .with_location(test_support::test_location(HERE.0, "Here"))
         .with_turn_order(ids.clone())
         .with_phase(Phase::Mythos)
@@ -69,7 +68,7 @@ fn mythos_draw(seats: Vec<Seat>, treacheries: &[&str]) -> TestSession {
     for code in treacheries {
         state.encounter_deck.push_back(CardCode::new(*code));
     }
-    TestSession::new(state)
+    TestSession::new_with_registries(state, TEST_REGISTRIES)
 }
 
 /// Investigator 1 at `HERE`, with a filler deck for Upkeep 4.4's draw.
@@ -149,6 +148,7 @@ fn obscuring_fog_attaches_raises_shroud_and_discards_on_investigate() {
         Owner::EncounterDeck,
     ));
     let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(loc)
         .with_seat(seat(1).at(HERE))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -219,6 +219,7 @@ fn dissonant_voices_forbids_playing_an_asset() {
         hand_index: 0,
     };
     let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -229,11 +230,7 @@ fn dissonant_voices_forbids_playing_an_asset() {
         .open_turn(INV)
         .session();
     assert!(
-        !enumerate::legal_actions(
-            session.state(),
-            game_core::card_registry::current().expect("card registry installed")
-        )
-        .contains(&play),
+        !enumerate::legal_actions(session.state(), TEST_REGISTRIES.cards).contains(&play),
         "the menu does not offer a play Dissonant Voices forbids",
     );
     let result = session.submit_off_menu(&play);
@@ -263,6 +260,7 @@ fn dissonant_voices_round_end_coexists_with_agenda_01107_doom() {
     ghoul.code = CardCode::new("01160");
     ghoul.current_location = Some(LocationId(2)); // Hallway
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .ending_upkeep_phase()
         .with_seat(seat(1).threat_area([DISSONANT_VOICES]))
         .with_turn_order([INV])
@@ -279,7 +277,7 @@ fn dissonant_voices_round_end_coexists_with_agenda_01107_doom() {
 
     // Settling ends the phase into the round end: 2+ At-forced → the lead
     // orders them.
-    let opened = TestSession::new(state);
+    let opened = TestSession::new_with_registries(state, TEST_REGISTRIES);
     let dissonant_voices = opened.state().card(INV, DISSONANT_VOICES);
     let offered: Vec<_> = opened
         .prompt()
@@ -335,7 +333,7 @@ fn move_to(destination: LocationId) -> TurnAction {
 
 #[test]
 fn frozen_in_fear_surcharges_first_move_each_round_only() {
-    let session = two_locations(GameStateBuilder::new())
+    let session = two_locations(GameStateBuilder::new().with_registries(TEST_REGISTRIES))
         .with_seat(seat(1).at(HERE).threat_area([FROZEN_IN_FEAR]))
         .open_turn(INV)
         .session();
@@ -373,7 +371,7 @@ fn the_action_menu_offers_only_what_the_frozen_in_fear_surcharge_leaves_affordab
     let board = |actions: u8| {
         let mut bystander = test_support::test_enemy(8, "Bystander");
         bystander.current_location = Some(HERE);
-        two_locations(GameStateBuilder::new())
+        two_locations(GameStateBuilder::new().with_registries(TEST_REGISTRIES))
             .with_seat(
                 seat(1)
                     .at(HERE)
@@ -403,10 +401,7 @@ fn the_action_menu_offers_only_what_the_frozen_in_fear_surcharge_leaves_affordab
         },
     ];
 
-    let menu = enumerate::legal_actions(
-        &board(1).build(),
-        game_core::card_registry::current().expect("card registry installed"),
-    );
+    let menu = enumerate::legal_actions(&board(1).build(), TEST_REGISTRIES.cards);
     for surcharged in [&move_to(ELSEWHERE), &fight, &evade] {
         assert!(
             !menu.contains(surcharged),
@@ -418,11 +413,8 @@ fn the_action_menu_offers_only_what_the_frozen_in_fear_surcharge_leaves_affordab
     }
 
     assert!(
-        enumerate::legal_actions(
-            &board(2).build(),
-            game_core::card_registry::current().expect("card registry installed")
-        )
-        .contains(&move_to(ELSEWHERE)),
+        enumerate::legal_actions(&board(2).build(), TEST_REGISTRIES.cards)
+            .contains(&move_to(ELSEWHERE)),
         "2 actions pay for the surcharged move",
     );
 
@@ -430,11 +422,7 @@ fn the_action_menu_offers_only_what_the_frozen_in_fear_surcharge_leaves_affordab
     let session = board(3).session().take(&move_to(ELSEWHERE));
     assert_eq!(session.state().investigators[&me].actions_remaining, 1);
     assert!(
-        enumerate::legal_actions(
-            session.state(),
-            game_core::card_registry::current().expect("card registry installed")
-        )
-        .contains(&move_to(HERE)),
+        enumerate::legal_actions(session.state(), TEST_REGISTRIES.cards).contains(&move_to(HERE)),
         "with the surcharge spent this round, a move costs 1",
     );
 }
@@ -444,6 +432,7 @@ fn the_action_menu_offers_only_what_the_frozen_in_fear_surcharge_leaves_affordab
 /// rigged to `tokens`.
 fn frozen_in_fear_board(copies: usize, tokens: Vec<ChaosToken>) -> TestSession {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).threat_area(vec![FROZEN_IN_FEAR; copies]))
         .with_seat(seat(2))
         .with_turn_order([INV, INV2])
@@ -620,6 +609,7 @@ fn frozen_in_fear_with_weapon_board(actions: u8) -> TestSession {
     enemy.max_health = 9;
 
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -717,21 +707,14 @@ fn a_designated_fight_consumes_the_once_each_round_surcharge() {
 fn the_action_menu_hides_a_designated_fight_the_surcharge_makes_unaffordable() {
     let three = frozen_in_fear_with_weapon_board(3);
     assert!(
-        enumerate::legal_actions(
-            three.state(),
-            game_core::card_registry::current().expect("card registry installed")
-        )
-        .contains(&weapon_fight(&three)),
+        enumerate::legal_actions(three.state(), TEST_REGISTRIES.cards)
+            .contains(&weapon_fight(&three)),
         "with 3 actions the surcharged Fight (cost 2) is affordable",
     );
 
     let one = frozen_in_fear_with_weapon_board(1);
     assert!(
-        !enumerate::legal_actions(
-            one.state(),
-            game_core::card_registry::current().expect("card registry installed")
-        )
-        .contains(&weapon_fight(&one)),
+        !enumerate::legal_actions(one.state(), TEST_REGISTRIES.cards).contains(&weapon_fight(&one)),
         "1 action left cannot pay the surcharged cost of 2, so the menu omits it",
     );
 }
@@ -746,6 +729,7 @@ fn dissonant_voices_keeps_a_fast_event_out_of_a_player_window() {
     let mut loc = test_support::test_location(HERE.0, "Study");
     loc.clues = 2;
     let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(
             seat(1)
                 .at(HERE)

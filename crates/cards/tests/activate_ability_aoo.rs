@@ -38,7 +38,7 @@
 //! `crates/game-core/tests/action_designator_aoo.rs`.
 #![allow(clippy::too_many_lines)]
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{OptionTarget, PromptNature};
 use game_core::event::Event;
@@ -70,11 +70,6 @@ const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(101);
 const ATTACKER: EnemyId = EnemyId(7);
 
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// A ready enemy dealing `damage` / 0 horror, with 5 health. Engage it with
 /// `with_enemy_engaged`, which places it at the investigator's location.
 fn ready_attacker(damage: u8) -> Enemy {
@@ -89,6 +84,7 @@ fn ready_attacker(damage: u8) -> Enemy {
 /// single-`0` chaos bag (for a skill test the activation starts).
 fn engaged_session(investigator: Seat, attacker: Enemy) -> TestSession {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(investigator)
         .open_turn(INV)

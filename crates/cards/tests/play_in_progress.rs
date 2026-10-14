@@ -36,7 +36,7 @@
 //! stale-index cases; neither has an `OnPlay` ability, so the play's only
 //! observable is where the card lands.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId, Status};
@@ -49,11 +49,6 @@ const KNIFE: &str = "01086";
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
 const HALLWAY: LocationId = LocationId(11);
-
-#[ctor::ctor(unsafe)]
-fn install() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 fn play(session: TestSession, hand_index: u8) -> TestSession {
     session.take(&TurnAction::PlayCard {
@@ -92,6 +87,7 @@ fn board_attacked_for(hand: &[&str], resources: u8, attack_damage: u8) -> TestSe
     attacker.attack_horror = 0;
 
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(
             seat(1)
                 .at(HERE)

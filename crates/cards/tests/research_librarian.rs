@@ -10,7 +10,7 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
@@ -26,15 +26,11 @@ const GUTS: &str = "01089"; // a skill — not a Tome asset (filler)
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// Board: the active investigator's turn at `HERE`, with Research Librarian
 /// in hand (index 0) and `deck` as their deck.
 fn board(deck: &[&str]) -> TestSession {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(
             seat(1)
                 .at(HERE)

@@ -14,7 +14,7 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
@@ -28,11 +28,6 @@ use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
 const MACHETE: &str = "01020";
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
-
-#[ctor::ctor(unsafe)]
-fn install() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 /// Board with Machete in play, `enemy_count` enemies engaged with the actor.
 ///
@@ -54,6 +49,7 @@ fn ghoul(id: u32, name: &str) -> Enemy {
 /// a Fight to). Engaged enemies take ids `100+n`, unengaged `200+n`.
 fn board_with(engaged: u32, unengaged: u32) -> GameStateBuilder {
     let mut builder = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(
             seat(1)
                 .at(HERE)
@@ -91,7 +87,9 @@ fn machete_fight(state: &GameState) -> TurnAction {
 /// the open-turn menu.
 fn activate_machete(state: GameState) -> TestSession {
     let fight = machete_fight(&state);
-    let session = TestSession::new(state).take(&fight).commit(&[]);
+    let session = TestSession::new_with_registries(state, TEST_REGISTRIES)
+        .take(&fight)
+        .commit(&[]);
     session.assert_at_turn_menu(INV);
     session
 }
@@ -109,7 +107,7 @@ fn sole_engaged_enemy_gets_bonus_damage() {
 /// target pick.
 fn to_target_pick(state: GameState) -> TestSession {
     let fight = machete_fight(&state);
-    TestSession::new(state).take(&fight)
+    TestSession::new_with_registries(state, TEST_REGISTRIES).take(&fight)
 }
 
 /// [`to_target_pick`], attack `enemy`, then commit nothing back to the
@@ -273,7 +271,7 @@ fn no_co_located_enemy_activation_is_rejected_precost() {
     let state = board(0);
     let actions_before = state.investigators[&INV].actions_remaining;
     let fight = machete_fight(&state);
-    let session = TestSession::new(state).submit_off_menu(&fight);
+    let session = TestSession::new_with_registries(state, TEST_REGISTRIES).submit_off_menu(&fight);
     session.expect_rejected();
     // No cost paid: actions unchanged.
     assert_eq!(

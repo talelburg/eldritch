@@ -5,24 +5,20 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{self, seat, TestSession};
+use game_core::test_support::{seat, TestSession};
 
 const GUTS: &str = "01089";
 const INV: InvestigatorId = InvestigatorId(1);
-
-#[ctor::ctor(unsafe)]
-fn install() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 /// Investigator's turn, holding `copies` copies of Guts, with a deterministic
 /// chaos bag, paused at the commit window of a difficulty-1 Willpower test.
 fn at_commit_window(copies: usize) -> TestSession {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         // A card for Guts' success draw to land on. Without it the draw hits
         // an empty deck, which now applies the deck-out horror (#636) —
         // irrelevant noise for a test about the commit cap.

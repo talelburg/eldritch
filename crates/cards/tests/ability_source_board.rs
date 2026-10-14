@@ -37,13 +37,16 @@
 
 use card_dsl::dsl::{self, Ability, InvestigatorTarget, UsageLimit, UsagePeriod};
 use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::Registries;
 use game_core::event::Event;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     AbilityAddress, AbilitySource, Act, Agenda, CardCode, GameState, GameStateBuilder,
     InvestigatorId, LocationId,
 };
 use game_core::test_support::{self, seat, MockRegistry, Seat, TestSession};
 use game_core::{assert_event, assert_no_event};
+use std::sync::LazyLock;
 
 /// Synthetic **act**, standing in for Uncovering the Conspiracy 01123.
 const ACT_ONE: &str = "SRCACT01";
@@ -92,16 +95,6 @@ fn probe_abilities() -> Vec<Ability> {
     ]
 }
 
-#[ctor::ctor(unsafe)]
-fn install_probe_registry() {
-    // `TEST_INV`'s metadata rides `install`'s composed `metadata_for_test_inv`.
-    MockRegistry::new()
-        .with_abilities(ACT_ONE, probe_abilities)
-        .with_abilities(ACT_TWO, probe_abilities)
-        .with_abilities(AGENDA, probe_abilities)
-        .install();
-}
-
 /// Two locations, two investigators — mine `HERE`, a neighbour `THERE` — and a
 /// two-act deck plus a one-agenda deck, both cursors at the front.
 fn board() -> GameState {
@@ -111,6 +104,7 @@ fn board() -> GameState {
 /// [`board`] with my investigator seated as `mine`.
 fn board_with(mine: Seat) -> GameState {
     let mut state = GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(mine)
         .with_seat(seat(2).at(THERE))
         .with_location(test_support::test_location(HERE.0, "Study"))
@@ -150,20 +144,13 @@ fn activation(source: AbilitySource, ability_index: u8) -> TurnAction {
 fn assert_offered_and_activatable(state: GameState, source: AbilitySource, why: &str) {
     let action = activation(source, LIVE);
     assert!(
-        enumerate::legal_actions(
-            &state,
-            game_core::card_registry::current().expect("card registry installed")
-        )
-        .contains(&action),
+        enumerate::legal_actions(&state, registries().cards).contains(&action),
         "{why}, so its ability belongs in the turn menu; menu was {:?}",
-        enumerate::legal_actions(
-            &state,
-            game_core::card_registry::current().expect("card registry installed")
-        ),
+        enumerate::legal_actions(&state, registries().cards),
     );
 
     let before = state.investigators[&MINE].resources;
-    let session = TestSession::new(state).take(&action);
+    let session = TestSession::new_with_registries(state, registries()).take(&action);
     session.assert_at_turn_menu(MINE);
     assert_eq!(
         session.state().investigators[&MINE].resources,
@@ -171,6 +158,20 @@ fn assert_offered_and_activatable(state: GameState, source: AbilitySource, why: 
         "{why}, so the activation should resolve: the ability's effect (gain 1 \
          resource) should have run",
     );
+}
+
+/// The binary's one mock, built once on first use.
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        // `TEST_INV`'s metadata rides `build`'s composed `metadata_for_test_inv`.
+        cards: MockRegistry::new()
+            .with_abilities(ACT_ONE, probe_abilities)
+            .with_abilities(ACT_TWO, probe_abilities)
+            .with_abilities(AGENDA, probe_abilities)
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 /// *"The current act …"* — Uncovering the Conspiracy 01123's group clue-spend,
@@ -223,7 +224,7 @@ fn both_are_reachable_from_anywhere_on_the_board() {
 /// has none, so the event has to say what actually carried the ability.
 #[test]
 fn the_activation_event_names_the_board_card_it_came_from() {
-    let result = TestSession::new(board())
+    let result = TestSession::new_with_registries(board(), registries())
         .take(&activation(AbilitySource::Act, LIVE))
         .finish();
     assert_event!(
@@ -245,7 +246,7 @@ fn an_act_that_is_no_longer_current_is_not_reachable() {
     let mut state = board();
     state.act_index = 1;
 
-    let result = TestSession::new(state)
+    let result = TestSession::new_with_registries(state, registries())
         .take(&activation(AbilitySource::Act, LIVE))
         .finish();
     assert_event!(
@@ -266,10 +267,7 @@ fn an_absent_act_or_agenda_is_out_of_reach() {
     let mut state = board();
     state.act_deck.clear();
     state.agenda_deck.clear();
-    let menu = enumerate::legal_actions(
-        &state,
-        game_core::card_registry::current().expect("card registry installed"),
-    );
+    let menu = enumerate::legal_actions(&state, registries().cards);
 
     for source in [AbilitySource::Act, AbilitySource::Agenda] {
         assert!(
@@ -277,7 +275,7 @@ fn an_absent_act_or_agenda_is_out_of_reach() {
             "{source:?} must stay out of the turn menu with no deck loaded; menu was {menu:?}",
         );
         // Activating it with no deck loaded must reject.
-        let reason = TestSession::new(state.clone())
+        let reason = TestSession::new_with_registries(state.clone(), registries())
             .assert_rejects(|s| s.submit_off_menu(&activation(source, LIVE)));
         assert!(
             reason.contains("cannot reach"),
@@ -293,10 +291,7 @@ fn an_absent_act_or_agenda_is_out_of_reach() {
 #[test]
 fn an_inert_ability_stays_unoffered_from_the_board_cards() {
     let state = board();
-    let menu = enumerate::legal_actions(
-        &state,
-        game_core::card_registry::current().expect("card registry installed"),
-    );
+    let menu = enumerate::legal_actions(&state, registries().cards);
     for source in [AbilitySource::Act, AbilitySource::Agenda] {
         assert!(
             !menu.contains(&activation(source, INERT)),
@@ -317,20 +312,14 @@ fn a_usage_limited_board_ability_rejects_naming_699_rather_than_panicking() {
         let action = activation(source, LIMITED);
 
         assert!(
-            !enumerate::legal_actions(
-                &state,
-                game_core::card_registry::current().expect("card registry installed")
-            )
-            .contains(&action),
+            !enumerate::legal_actions(&state, registries().cards).contains(&action),
             "an ability the engine cannot cap must not be offered; menu was {:?}",
-            enumerate::legal_actions(
-                &state,
-                game_core::card_registry::current().expect("card registry installed")
-            ),
+            enumerate::legal_actions(&state, registries().cards),
         );
 
         // A usage-limited ability on a board card must reject.
-        let reason = TestSession::new(state.clone()).assert_rejects(|s| s.submit_off_menu(&action));
+        let reason = TestSession::new_with_registries(state.clone(), registries())
+            .assert_rejects(|s| s.submit_off_menu(&action));
         assert!(
             reason.contains("usage limit") && reason.contains("#699"),
             "the reason should name the limit and the issue that builds it, got: {reason}",

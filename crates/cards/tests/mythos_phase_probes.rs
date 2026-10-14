@@ -38,13 +38,16 @@ use card_dsl::card_data::{CardKind, CardMetadata, CardType};
 use card_dsl::dsl::{self, Ability, InvestigatorTarget};
 use game_core::action::RosterEntry;
 use game_core::engine::enumerate::TurnAction;
+use game_core::engine::Registries;
 use game_core::engine::{self, PromptNature};
 use game_core::event::Event;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
 use game_core::test_support::{self, MockRegistry, TestSession, TEST_INV};
 use game_core::{assert_event, assert_event_sequence};
+use std::sync::LazyLock;
 
 const INV1: InvestigatorId = InvestigatorId(1);
 const INV2: InvestigatorId = InvestigatorId(2);
@@ -107,34 +110,6 @@ fn choice_revelation() -> Vec<Ability> {
     ]))]
 }
 
-#[ctor::ctor(unsafe)]
-fn install_probe_registry() {
-    MockRegistry::new()
-        .with_card(treachery_metadata(
-            PROBE_TREACHERY,
-            "Probe Treachery",
-            "Revelation - You gain 1 resource. (Probe; not a printed card.)",
-            false,
-        ))
-        .with_abilities(PROBE_TREACHERY, gain_one_revelation)
-        .with_card(treachery_metadata(
-            PROBE_SURGE_TREACHERY,
-            "Probe Surge Treachery",
-            "Revelation - You gain 1 resource. Surge. (Probe; not a printed card.)",
-            true,
-        ))
-        .with_abilities(PROBE_SURGE_TREACHERY, gain_one_revelation)
-        .with_card(treachery_metadata(
-            PROBE_CHOICE_TREACHERY,
-            "Probe Choice Treachery",
-            "Revelation - Choose one: gain 2 resources; or gain 5 resources. \
-             (Probe; not a printed card.)",
-            false,
-        ))
-        .with_abilities(PROBE_CHOICE_TREACHERY, choice_revelation)
-        .install();
-}
-
 /// The board every test starts from: one probe location, set as the starting
 /// location, and a +0 chaos bag. No investigators — callers supply the roster
 /// to [`seat_and_open`](engine::seat_and_open). No act or agenda deck: nothing
@@ -144,6 +119,7 @@ fn board() -> GameState {
     location.code = CardCode::new(PROBE_LOCATION);
 
     let mut state = GameStateBuilder::new()
+        .with_registries(registries())
         .with_location(location)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
@@ -169,7 +145,10 @@ fn at_mythos_draw(seats: usize) -> TestSession {
             deck: vec![],
         })
         .collect();
-    let session = TestSession::new(engine::seat_and_open(board(), &roster).state);
+    let session = TestSession::new_with_registries(
+        engine::seat_and_open_with_registries(board(), &roster, registries()).state,
+        registries(),
+    );
     let session = (0..seats).fold(session, |s, _| s.choose_from_hand(&[]));
     (0..seats).fold(session, |s, _| s.take(&TurnAction::EndTurn))
 }
@@ -184,6 +163,38 @@ fn at_mythos_draw_of(seats: usize, codes: &[&str]) -> TestSession {
 // ------------------------------------------------------------------
 // Surge chain
 // ------------------------------------------------------------------
+
+/// The binary's one mock, built once on first use.
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        cards: MockRegistry::new()
+            .with_card(treachery_metadata(
+                PROBE_TREACHERY,
+                "Probe Treachery",
+                "Revelation - You gain 1 resource. (Probe; not a printed card.)",
+                false,
+            ))
+            .with_abilities(PROBE_TREACHERY, gain_one_revelation)
+            .with_card(treachery_metadata(
+                PROBE_SURGE_TREACHERY,
+                "Probe Surge Treachery",
+                "Revelation - You gain 1 resource. Surge. (Probe; not a printed card.)",
+                true,
+            ))
+            .with_abilities(PROBE_SURGE_TREACHERY, gain_one_revelation)
+            .with_card(treachery_metadata(
+                PROBE_CHOICE_TREACHERY,
+                "Probe Choice Treachery",
+                "Revelation - Choose one: gain 2 resources; or gain 5 resources. \
+                 (Probe; not a printed card.)",
+                false,
+            ))
+            .with_abilities(PROBE_CHOICE_TREACHERY, choice_revelation)
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
+}
 
 #[test]
 fn mythos_phase_surge_chains_into_next_card() {

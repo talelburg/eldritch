@@ -9,7 +9,7 @@
 //! Lives at `crates/cards/tests/` so it can install [`cards::REGISTRY`] in its
 //! own integration-test process.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{InputKind, OptionTarget};
 use game_core::event::Event;
@@ -31,11 +31,6 @@ const FIGHT: TurnAction = TurnAction::Fight {
     investigator: INV,
     enemy: ENEMY,
 };
-
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 /// Solo investigator (NOT Roland — no in-play reaction) at the Study with
 /// combat 4, holding Evidence! in hand.
@@ -59,6 +54,7 @@ fn fight_board(investigator: Seat, location_clues: u8) -> GameStateBuilder {
     loc.clues = location_clues;
 
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_round(0)
         .with_seat(investigator)
         // Co-located by engagement: Fight is location-gated (#401).

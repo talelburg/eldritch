@@ -42,7 +42,7 @@
 //! can be used is exactly the question of whether a player window stands open
 //! there. Step 3.3's does.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{InputKind, OptionTarget};
 use game_core::event::Event;
@@ -59,11 +59,6 @@ const BEAT_COP: &str = "01018";
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(101);
 const ATTACKER: EnemyId = EnemyId(7);
-
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 /// A ready enemy dealing 1 damage. `max_health` is the caller's to choose: 2
 /// leaves it alive through a single point of Beat Cop damage, 1 lets the Fast
@@ -85,6 +80,7 @@ fn board(beat_cop: bool, enemy_health: u8) -> GameStateBuilder {
         .deck(["01088"]);
     let me = if beat_cop { me.in_play([BEAT_COP]) } else { me };
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(me)
         .with_enemy_engaged(ready_attacker(enemy_health), INV)

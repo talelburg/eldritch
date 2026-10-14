@@ -10,7 +10,7 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
@@ -26,11 +26,6 @@ const OLD_BOOK: &str = "01031";
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// Investigator 1 at `HERE` with Old Book of Lore in play and a known 4-card
 /// deck (top 3 distinct, plus a 4th below the searched region).
 fn reader() -> Seat {
@@ -43,6 +38,7 @@ fn reader() -> Seat {
 /// `investigator`'s turn, alone at `HERE`.
 fn board(investigator: Seat) -> TestSession {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(investigator)
         .open_turn(INV)

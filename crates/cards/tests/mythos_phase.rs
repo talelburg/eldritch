@@ -63,7 +63,7 @@
 //! `mythos_phase_probes.rs` with their probes inline.
 
 use card_dsl::card_data::{CardKind, CardType};
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::action::RosterEntry;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, InputKind};
@@ -93,11 +93,6 @@ const ROLAND: &str = "01001";
 const INV1: InvestigatorId = InvestigatorId(1);
 const INV2: InvestigatorId = InvestigatorId(2);
 
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// Rise of the Ghouls' printed doom threshold, read from the corpus rather
 /// than transcribed, so a snapshot refresh cannot silently invalidate the
 /// "no agenda ever advances" premise in the module docs.
@@ -123,6 +118,7 @@ fn agenda_doom_threshold(code: &str) -> u8 {
 /// *places* the roster rather than moving it.
 fn board() -> (GameState, LocationId) {
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
     let attic = state.add_location(cards::by_code(ATTIC).expect("Attic 01113 in corpus"));
@@ -151,7 +147,10 @@ fn seat_keeping_hands(state: GameState, investigators: &[&str]) -> TestSession {
             deck: vec![],
         })
         .collect();
-    let session = TestSession::new(engine::seat_and_open(state, &roster).state);
+    let session = TestSession::new_with_registries(
+        engine::seat_and_open_with_registries(state, &roster, TEST_REGISTRIES).state,
+        TEST_REGISTRIES,
+    );
     investigators
         .iter()
         .fold(session, |session, _| session.choose_from_hand(&[]))

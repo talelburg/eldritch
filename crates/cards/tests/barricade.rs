@@ -13,7 +13,7 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
@@ -41,11 +41,6 @@ const MOVE_TO_B: TurnAction = TurnAction::Move {
     investigator: INV,
     destination: B,
 };
-
-#[ctor::ctor(unsafe)]
-fn install() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 /// A ready, unengaged ghoul (code `code`) at location `at`. Elite-ness drives
 /// the movement block, and it comes from the real card's printed traits
@@ -82,6 +77,7 @@ fn linked(id: LocationId, name: &str, connections: &[LocationId]) -> Location {
 /// `INV`'s turn at the Study (`A`) with Barricade in hand, having played it.
 fn play_barricade() -> TestSession {
     let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(A).hand([BARRICADE]))
         .with_location(test_support::test_location(A.0, "Study"))
         .open_turn(INV)
@@ -139,6 +135,7 @@ fn a_played_barricade_is_owned_by_its_player() {
 /// `enemy` optionally on the board, on the investigator's turn.
 fn linear_map(inv_at: LocationId, a: Location, b: Location, enemy: Option<Enemy>) -> TestSession {
     let mut builder = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(inv_at))
         .with_location(a)
         .with_location(b)
@@ -428,7 +425,9 @@ fn board(
     hunter: Enemy,
     barricaded: &[LocationId],
 ) -> TestSession {
-    let mut builder = GameStateBuilder::new().with_enemy(hunter);
+    let mut builder = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_enemy(hunter);
     let mut next_barricade = ATT_INST.0;
     for loc in locations {
         if barricaded.contains(&loc.id) {
@@ -621,6 +620,7 @@ fn one_blocked_shortest_step_of_two_leaves_the_other_open() {
 #[test]
 fn another_investigator_leaving_discards_barricade_to_the_player_who_played_it() {
     let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(A))
         .with_seat(seat(2).at(A))
         .with_location(barricaded(linked(A, "A", &[B]), ATT_INST))

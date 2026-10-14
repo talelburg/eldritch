@@ -31,7 +31,7 @@
 //! no `AoO` carve-out — Guard Dog retaliates against `AoO` attacks.
 #![allow(clippy::too_many_lines)]
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
@@ -55,11 +55,6 @@ const MOVE_TO_HALLWAY: TurnAction = TurnAction::Move {
     investigator: INV,
     destination: HALLWAY,
 };
-
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 /// Dodge as the cancel window offers it: a card in hand, by code.
 fn dodge_in_hand(investigator: InvestigatorId) -> OptionTarget {
@@ -88,6 +83,7 @@ fn move_board(investigator: Seat, attacker_health: u8) -> TestSession {
     hallway.connections = vec![HERE];
 
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(study)
         .with_location(hallway)
         .with_seat(investigator.at(HERE))

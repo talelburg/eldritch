@@ -49,11 +49,14 @@ use card_dsl::dsl::{
     self, Ability, Effect, EventPattern, EventTiming, InvestigatorTarget, TestOutcome,
     TestedLocationScope,
 };
+use game_core::engine::Registries;
 use game_core::event::Event;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{seat, MockRegistry, SeatLookup as _, TestSession};
+use std::sync::LazyLock;
 
 /// `at`-tagged forced: +1 resource.
 const AT: &str = "_tc_at";
@@ -89,35 +92,6 @@ fn on_success(timing: EventTiming, amount: u8) -> Ability {
     )
 }
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    MockRegistry::new()
-        .with_abilities(AT, || vec![on_success(EventTiming::At, 1)])
-        .with_abilities(AFTER, || vec![on_success(EventTiming::After, 2)])
-        .with_abilities(WHEN, || vec![on_success(EventTiming::When, 4)])
-        .with_abilities(REACT, || {
-            vec![dsl::reaction_on_event(
-                succeeded(),
-                EventTiming::At,
-                dsl::gain_resources(InvestigatorTarget::You, 7),
-            )]
-        })
-        .with_abilities(RESCAN, || {
-            vec![
-                dsl::forced_on_event(
-                    succeeded(),
-                    EventTiming::At,
-                    Effect::Seq(vec![
-                        dsl::gain_resources(InvestigatorTarget::You, 1),
-                        Effect::DiscardSelf,
-                    ]),
-                ),
-                on_success(EventTiming::After, 2),
-            ]
-        })
-        .install();
-}
-
 const INV: InvestigatorId = InvestigatorId(1);
 
 /// `INV`'s open turn, with `codes` in their threat area (the zone
@@ -125,6 +99,7 @@ const INV: InvestigatorId = InvestigatorId(1);
 /// `Numeric(0)` chaos bag so a difficulty-0 test succeeds deterministically.
 fn board_with(codes: &[&str]) -> TestSession {
     GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).resources(0).threat_area(codes.iter().copied()))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
@@ -177,6 +152,39 @@ fn resolved_before_first_gain(events: &[Event]) -> bool {
         (Some(r), Some(g)) => r < g,
         _ => false,
     }
+}
+
+/// The binary's one mock, built once on first use.
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        cards: MockRegistry::new()
+            .with_abilities(AT, || vec![on_success(EventTiming::At, 1)])
+            .with_abilities(AFTER, || vec![on_success(EventTiming::After, 2)])
+            .with_abilities(WHEN, || vec![on_success(EventTiming::When, 4)])
+            .with_abilities(REACT, || {
+                vec![dsl::reaction_on_event(
+                    succeeded(),
+                    EventTiming::At,
+                    dsl::gain_resources(InvestigatorTarget::You, 7),
+                )]
+            })
+            .with_abilities(RESCAN, || {
+                vec![
+                    dsl::forced_on_event(
+                        succeeded(),
+                        EventTiming::At,
+                        Effect::Seq(vec![
+                            dsl::gain_resources(InvestigatorTarget::You, 1),
+                            Effect::DiscardSelf,
+                        ]),
+                    ),
+                    on_success(EventTiming::After, 2),
+                ]
+            })
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 /// The headline claim: on a condition that is *not* the round end, an

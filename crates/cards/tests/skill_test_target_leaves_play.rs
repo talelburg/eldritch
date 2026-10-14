@@ -43,7 +43,7 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
@@ -62,11 +62,6 @@ const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
 const ENEMY: EnemyId = EnemyId(100);
 
-#[ctor::ctor(unsafe)]
-fn install_cards_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// Board: Beat Cop in play under the active investigator at `HERE`, `hand` in
 /// hand, and a 1-health enemy there, engaged — so both Fight and Evade are
 /// legal against it, and one point of damage defeats it.
@@ -75,6 +70,7 @@ fn board_with_hand(hand: &[&str]) -> TestSession {
     enemy.max_health = 1;
 
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(
             seat(1)
                 .at(HERE)

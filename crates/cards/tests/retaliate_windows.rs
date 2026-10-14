@@ -36,7 +36,7 @@
 //!   - Guard Dog's ability triggers only on damage, not horror.
 #![allow(clippy::too_many_lines)]
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
@@ -56,11 +56,6 @@ const GUARD_DOG: &str = "01021";
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(101);
 const RETALIATOR: EnemyId = EnemyId(7);
-
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 /// Build a ready retaliate enemy, to be engaged with the investigator.
 /// `fight` is set high enough that the investigator (combat 1) will fail
@@ -88,6 +83,7 @@ fn fighter() -> Seat {
 /// investigator combat = 1; enemy fight = 5 → 1 < 5 → fail).
 fn fight_board(investigator: Seat, enemy: Enemy) -> TestSession {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(investigator)
         .open_turn(INV)

@@ -5,7 +5,7 @@
 //! real Fight against the real registry. End-to-end defeat->ending in the
 //! scenario is C7b (#245).
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
@@ -21,11 +21,6 @@ const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
 const FOE: EnemyId = EnemyId(1);
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// `investigator`'s open turn at the Study, under Act 3 (01110), with
 /// `board` adding what the test needs.
 fn act3_state(
@@ -34,6 +29,7 @@ fn act3_state(
 ) -> GameState {
     let mut state = board(
         GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
             .with_location(test_support::test_location(HERE.0, "Study"))
             .with_seat(investigator)
             .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -56,9 +52,10 @@ fn defeat(code: &str) -> TestSession {
     let mut enemy = test_support::test_enemy(FOE.0, "Foe");
     enemy.code = CardCode(code.into());
     enemy.max_health = 1;
-    let session = TestSession::new(act3_state(seat(1).at(HERE), |b| {
-        b.with_enemy_engaged(enemy, INV)
-    }))
+    let session = TestSession::new_with_registries(
+        act3_state(seat(1).at(HERE), |b| b.with_enemy_engaged(enemy, INV)),
+        TEST_REGISTRIES,
+    )
     .take(&TurnAction::Fight {
         investigator: INV,
         enemy: FOE,
@@ -148,8 +145,8 @@ fn advance_act_action_rejected_for_act_3_objective() {
 
     // The menu does not offer it; submitted off the menu, the handler itself
     // must reject it.
-    let session =
-        TestSession::new(state).submit_off_menu(&TurnAction::AdvanceAct { investigator: INV });
+    let session = TestSession::new_with_registries(state, TEST_REGISTRIES)
+        .submit_off_menu(&TurnAction::AdvanceAct { investigator: INV });
     // AdvanceAct must be rejected for Act 3's non-clue objective.
     session.expect_rejected();
     let state = session.state();
@@ -176,8 +173,8 @@ fn advance_act_rejected_for_round_end_advance_act() {
 
     // The menu does not offer it; submitted off the menu, the handler itself
     // must reject it.
-    let session =
-        TestSession::new(state).submit_off_menu(&TurnAction::AdvanceAct { investigator: INV });
+    let session = TestSession::new_with_registries(state, TEST_REGISTRIES)
+        .submit_off_menu(&TurnAction::AdvanceAct { investigator: INV });
     session.expect_rejected();
     assert_eq!(session.state().act_index, 0, "act did not advance");
     assert_eq!(

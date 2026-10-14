@@ -9,7 +9,7 @@
 //!
 //! Integration test so it can install `cards::REGISTRY` in its own process.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
@@ -26,11 +26,6 @@ const INV: InvestigatorId = InvestigatorId(1);
 const ENEMY: EnemyId = EnemyId(100);
 const HERE: LocationId = LocationId(10);
 
-#[ctor::ctor(unsafe)]
-fn install_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// Roland, seated from his printed card (Combat 4), engaged with a 1-HP enemy.
 /// His investigator card is the seat's own — `cards_in_play` is empty, proving
 /// the reaction is found by the investigator-card scan, not the in-play scan.
@@ -43,6 +38,7 @@ fn seated_roland_with_enemy() -> GameState {
     loc.clues = 2;
 
     let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).as_card(ROLAND).at(HERE))
         .with_enemy_engaged(enemy, INV)
         .with_location(loc)
@@ -59,7 +55,7 @@ fn seated_roland_with_enemy() -> GameState {
 
 /// Fight the enemy from `state`, committing nothing.
 fn fight(state: GameState) -> TestSession {
-    TestSession::new(state)
+    TestSession::new_with_registries(state, TEST_REGISTRIES)
         .take(&TurnAction::Fight {
             investigator: INV,
             enemy: ENEMY,

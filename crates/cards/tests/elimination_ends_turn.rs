@@ -25,7 +25,7 @@
 //! it is an action and provokes an attack of opportunity (RR p.5). No rulings —
 //! it is listed in `data/arkhamdb-faq/no-rulings.txt`.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{EngineOutcome, OptionTarget};
@@ -44,11 +44,6 @@ const SURVIVOR: InvestigatorId = InvestigatorId(2);
 const HERE: LocationId = LocationId(101);
 const ELSEWHERE: LocationId = LocationId(102);
 
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// A ready enemy hitting for 3 damage.
 fn ready_attacker() -> Enemy {
     let mut e = test_support::test_enemy(7, "Attacker");
@@ -64,6 +59,7 @@ fn ready_attacker() -> Enemy {
 /// when it names them.
 fn board(turn_order: &[InvestigatorId]) -> GameStateBuilder {
     let builder = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_location(test_support::test_location(ELSEWHERE.0, "Hallway"))
         // 7 + 3 ≥ 8 = max_health

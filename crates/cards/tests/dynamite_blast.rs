@@ -13,7 +13,7 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
@@ -30,13 +30,8 @@ const HALLWAY: LocationId = LocationId(11);
 const ENEMY_A: EnemyId = EnemyId(100);
 const ENEMY_B: EnemyId = EnemyId(101);
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 fn play(state: GameState) -> TestSession {
-    TestSession::new(state).take(&TurnAction::PlayCard {
+    TestSession::new_with_registries(state, TEST_REGISTRIES).take(&TurnAction::PlayCard {
         investigator: INV,
         hand_index: 0,
     })
@@ -59,6 +54,7 @@ fn board() -> GameState {
     enemy_b.max_health = 5; // survives, to assert it's untouched
 
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE).hand([DYNAMITE]))
         .with_seat(seat(2).at(HALLWAY))
         .with_location(loc_a)
@@ -152,6 +148,7 @@ fn auto_targets_and_discards_when_your_location_is_the_only_candidate() {
     enemy_a.max_health = 5; // survives, to assert the 3-damage amount
 
     let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE).hand([DYNAMITE]))
         .with_location(loc_a)
         .with_enemy(enemy_a)
@@ -181,6 +178,7 @@ fn blast_is_rejected_when_the_controller_has_no_location() {
     // Between locations, there is neither "your location" nor a connecting
     // one to choose, so the empty candidate list rejects the blast.
     let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).hand([DYNAMITE]))
         .with_location(test_support::test_location(HERE.0, "Cellar"))
         .open_turn(INV)
@@ -212,6 +210,7 @@ const GUARD_DOG: &str = "01021";
 #[test]
 fn blasted_investigator_is_offered_the_soak() {
     let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE).hand([DYNAMITE]).in_play([GUARD_DOG]))
         .with_location(test_support::test_location(HERE.0, "Cellar"))
         .open_turn(INV)
@@ -248,6 +247,7 @@ fn blasted_investigator_is_offered_the_soak() {
 #[test]
 fn two_blasted_investigators_are_dealt_one_at_a_time_in_ascending_order() {
     let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE).hand([DYNAMITE]))
         .with_seat(seat(2).at(HERE).in_play([GUARD_DOG]))
         .with_location(test_support::test_location(HERE.0, "Cellar"))

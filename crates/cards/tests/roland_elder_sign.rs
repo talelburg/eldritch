@@ -8,7 +8,7 @@
 //! Integration test so it installs the real `cards::REGISTRY` (which carries
 //! Roland's `Trigger::ElderSign` ability) in its own process.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::assert_event;
 use game_core::event::Event;
 use game_core::state::{
@@ -20,11 +20,6 @@ const ROLAND: &str = "01001";
 const COVER_UP: &str = "01007";
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
-
-#[ctor::ctor(unsafe)]
-fn install_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 /// Roland, seated from his printed card (Willpower 3) at the Study and in
 /// play only as his investigator card, so the bonus can come from nothing but
@@ -49,6 +44,7 @@ fn run_elder_sign_test_seated(roland: Seat, clues_here: u8) -> Vec<Event> {
     // Willpower 3 vs difficulty 3. ElderSign bonus = clues at the location,
     // so total = 3 + clues: always a success, by margin = clues.
     let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(roland)
         .with_location(study)
         .with_chaos_bag(ChaosBag::new([ChaosToken::ElderSign]))

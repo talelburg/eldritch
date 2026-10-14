@@ -8,18 +8,13 @@
 //!
 //! Integration test so it can install `cards::REGISTRY` in its own process.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{OptionTarget, TimingEvent};
 use game_core::state::{
     Act, CardCode, EnemyId, GameStateBuilder, InvestigatorId, Location, LocationId, Status,
 };
 use game_core::test_support::{self, seat, TestSession};
-
-#[ctor::ctor(unsafe)]
-fn install() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 const SEAT_1: InvestigatorId = InvestigatorId(1);
 const SEAT_2: InvestigatorId = InvestigatorId(2);
@@ -37,6 +32,7 @@ fn roland_defeats_an_enemy(status: Status) -> TestSession {
     let mut study = test_support::test_location(HERE.0, "Study");
     study.clues = 1;
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).as_card("01001").at(HERE).status(status))
         .with_seat(seat(2).at(HERE))
         .with_location(study)
@@ -82,6 +78,7 @@ fn an_eliminated_investigator_is_offered_no_reaction() {
 /// hallway may, as a group, spend the requisite number of clues to advance."*
 fn barrier_table_with_seat_1_eliminated() -> TestSession {
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).status(Status::Defeated))
         // A spare deck card so Upkeep step 4.4's draw has something to take.
         .with_seat(seat(2).at(HALLWAY).clues(3).deck(["01088"]))
@@ -101,7 +98,7 @@ fn barrier_table_with_seat_1_eliminated() -> TestSession {
         clue_threshold: 3,
     }];
     state.act_index = 0;
-    TestSession::new(state)
+    TestSession::new_with_registries(state, TEST_REGISTRIES)
 }
 
 #[test]

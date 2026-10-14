@@ -26,7 +26,7 @@
 //! Lives at `crates/cards/tests/` so it can install [`cards::REGISTRY`] in its
 //! own integration-test process.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::event::{Event, LapseReason};
@@ -46,11 +46,6 @@ const INV: InvestigatorId = InvestigatorId(1);
 const ENEMY: EnemyId = EnemyId(100);
 const HERE: LocationId = LocationId(10);
 
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// A solo investigator (combat 4) engaged with a 1-HP enemy at a
 /// `location_clues`-clue location, with a stacked bag so a Fight auto-succeeds
 /// and the defeat opens the after-defeat reaction window. `shape` fills in what
@@ -67,6 +62,7 @@ fn after_defeat_board(location_clues: u8, shape: impl FnOnce(Seat) -> Seat) -> G
     let investigator = seat(1).at(HERE).skill(SkillKind::Combat, 4);
 
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_round(0)
         .open_turn(INV)
         .with_seat(shape(investigator))
@@ -81,7 +77,7 @@ fn after_defeat_board(location_clues: u8, shape: impl FnOnce(Seat) -> Seat) -> G
 /// Fight the enemy on `state`, committing nothing: the defeat opens the
 /// after-defeat window, where the session rests.
 fn defeat_the_enemy(state: GameState) -> TestSession {
-    TestSession::new(state)
+    TestSession::new_with_registries(state, TEST_REGISTRIES)
         .take(&TurnAction::Fight {
             investigator: INV,
             enemy: ENEMY,
@@ -359,7 +355,7 @@ fn rolands_reaction_lapses_as_usage_limit_reached_once_its_limit_is_used() {
         .investigator_card
         .bump_ability_usage(0, round);
 
-    let resurfaced = TestSession::new(state);
+    let resurfaced = TestSession::new_with_registries(state, TEST_REGISTRIES);
 
     assert_event!(
         resurfaced.events(),
@@ -376,7 +372,7 @@ fn rolands_reaction_lapses_as_not_active_once_he_is_eliminated() {
     let mut state = rolands_window_open();
     state.investigators.get_mut(&INV).expect("seated").status = Status::Defeated;
 
-    let resurfaced = TestSession::new(state);
+    let resurfaced = TestSession::new_with_registries(state, TEST_REGISTRIES);
 
     assert_event!(
         resurfaced.events(),

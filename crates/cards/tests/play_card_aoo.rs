@@ -26,7 +26,7 @@
 //! clue …" A fast event → `AoO`-exempt.
 #![allow(clippy::too_many_lines)]
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::assert_no_event;
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::OptionTarget;
@@ -52,11 +52,6 @@ const PLAY_FIRST: TurnAction = TurnAction::PlayCard {
     hand_index: 0,
 };
 
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// A ready enemy dealing `damage` / 0 horror, with `max_health`. Engage it
 /// with `with_enemy_engaged`, which places it at the investigator's location.
 fn ready_attacker(id: u32, damage: u8, max_health: u8) -> Enemy {
@@ -78,6 +73,7 @@ fn board(investigator: Seat, clues: u8, attacker: Option<Enemy>) -> TestSession 
     let mut location = test_support::test_location(HERE.0, "Study");
     location.clues = clues;
     let builder = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(location)
         .with_seat(investigator)
         .open_turn(INV);
@@ -186,11 +182,7 @@ fn playing_a_non_fast_card_with_no_actions_is_rejected() {
     // 0 actions remaining → PlayCard not offered; send it off the menu to prove
     // the handler itself refuses it.
     assert!(
-        !enumerate::legal_actions(
-            session.state(),
-            game_core::card_registry::current().expect("card registry installed")
-        )
-        .contains(&PLAY_FIRST),
+        !enumerate::legal_actions(session.state(), TEST_REGISTRIES.cards).contains(&PLAY_FIRST),
         "the menu does not offer a non-fast play with 0 actions",
     );
     let result = session.submit_off_menu(&PLAY_FIRST);
