@@ -380,7 +380,7 @@ fn the_lookup_panics_when_two_cards_match() {
 #[test]
 #[should_panic(expected = "_seat_unknown")]
 fn as_card_with_an_unknown_code_panics_naming_it() {
-    let _ = seat(1).as_card("_seat_unknown");
+    let _ = GameStateBuilder::new().with_seat(seat(1).as_card("_seat_unknown"));
 }
 
 /// `status` seats an investigator already eliminated.

@@ -29,6 +29,8 @@ mod native;
 mod resolver;
 mod seat;
 mod session;
+#[cfg(test)]
+mod tests;
 
 /// Synthetic investigator-card code for unit tests. Registered by
 /// [`install_test_registry`] with 8 health / 8 sanity (mirroring the legacy

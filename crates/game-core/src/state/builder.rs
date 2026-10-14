@@ -30,6 +30,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+use crate::engine::Registries;
 use crate::rng::RngState;
 use crate::scenario::ScenarioId;
 use crate::state::{
@@ -71,6 +72,12 @@ pub struct GameStateBuilder {
     investigator_turn: Option<InvestigatorId>,
     engagements: Vec<(EnemyId, InvestigatorId)>,
     scenario_id: Option<ScenarioId>,
+    /// The registries a test named with
+    /// [`with_registries`](Self::with_registries), which the test-only
+    /// adders ([`with_seat`](Self::with_seat), [`session`](Self::session))
+    /// resolve against. A production builder never sets it, and it is not
+    /// part of the built state.
+    registries: Option<Registries>,
 }
 
 impl GameStateBuilder {
@@ -98,6 +105,7 @@ impl GameStateBuilder {
             investigator_turn: None,
             engagements: Vec::new(),
             scenario_id: None,
+            registries: None,
         }
     }
 
@@ -439,6 +447,18 @@ impl GameStateBuilder {
             .map(|id| id.0.saturating_add(1))
             .max()
             .unwrap_or(0)
+    }
+
+    /// The registries named by [`with_registries`](Self::with_registries),
+    /// if any.
+    pub(crate) fn registries(&self) -> Option<Registries> {
+        self.registries
+    }
+
+    /// Record the registries a test names; the test-only
+    /// [`with_registries`](Self::with_registries) is the one caller.
+    pub(crate) fn set_registries(&mut self, registries: Registries) {
+        self.registries = Some(registries);
     }
 
     /// Materialize the configured [`GameState`].
