@@ -471,12 +471,14 @@ pub(super) fn trigger_matches(
         }
         // "At the end of **your** turn" (Frozen in Fear 01164), "…**you**
         // discover clues" (Cover Up 01007; its "at your location" half reads
-        // the board, in [`scope_matches`]) and "After **you** play a [[Spell]]
-        // card" (Heirloom of Hyperborea 01012; its card filter reads metadata,
-        // in [`scope_matches`]).
+        // the board, in [`scope_matches`]), "After **you** play a [[Spell]]
+        // card" (Heirloom of Hyperborea 01012) and "Play when **you** draw a
+        // non-weakness treachery card" (Ward of Protection 01065). The last
+        // two's card filters read metadata, in [`scope_matches`].
         TimingEvent::EndOfTurn { investigator }
         | TimingEvent::DiscoverClues { investigator, .. }
-        | TimingEvent::CardPlayed { investigator, .. } => *investigator == controller,
+        | TimingEvent::CardPlayed { investigator, .. }
+        | TimingEvent::EncounterCardDrawn { investigator, .. } => *investigator == controller,
         // "**When an enemy attack** deals damage to Guard Dog" (01021). The
         // self-binding half is the source's, in [`scope_matches`]; this half is
         // the card's narrowing to an enemy attack, which `Effect::Deal` harm
@@ -673,6 +675,18 @@ fn scope_matches(
                 )
             };
             (cards.metadata_for)(played).is_some_and(|meta| filter.matches(meta))
+        }
+        // "When you draw a **non-weakness treachery** card" (Ward of Protection
+        // 01065): the drawn card's printed metadata passes the pattern's filter,
+        // read here for the same reason as `CardPlayed`'s.
+        TimingEvent::EncounterCardDrawn { code: drawn, .. } => {
+            let EventPattern::EncounterCardDrawn { filter } = pattern else {
+                unreachable!(
+                    "scope_matches: trigger_matches paired {pattern:?} with EncounterCardDrawn, \
+                     but only EventPattern::EncounterCardDrawn has that condition"
+                )
+            };
+            (cards.metadata_for)(drawn).is_some_and(|meta| filter.matches(meta))
         }
         // Board-wide conditions, and conditions whose only scope is the
         // controller (read in `trigger_matches`): no card's position narrows

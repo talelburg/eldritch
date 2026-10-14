@@ -896,6 +896,18 @@ pub enum EventPattern {
         /// Which played cards the ability listens to.
         filter: CardFilter,
     },
+    /// **You** drew an encounter card the `filter` passes — Ward of Protection
+    /// 01065's *"Fast. Play when you draw a non-weakness treachery card."*
+    /// Scoped to draws by the ability's controller; the filter reads the drawn
+    /// card's printed metadata ([`CardFilter::matches`]).
+    ///
+    /// The condition's own resolution is the card's revelation, so a `when`
+    /// ability that cancels it (Ward's *"Cancel that card's revelation
+    /// effect"*) prevents the revelation, and the card is still disposed of.
+    EncounterCardDrawn {
+        /// Which drawn cards the ability listens to.
+        filter: CardFilter,
+    },
 }
 
 impl EventPattern {
@@ -931,6 +943,7 @@ impl EventPattern {
             EventPattern::EnteredPlay => TriggeringCondition::EnteredPlay,
             EventPattern::LeftLocation => TriggeringCondition::LeftLocation,
             EventPattern::CardPlayed { .. } => TriggeringCondition::CardPlayed,
+            EventPattern::EncounterCardDrawn { .. } => TriggeringCondition::EncounterCardDrawn,
         }
     }
 }
@@ -1035,6 +1048,9 @@ pub enum TriggeringCondition {
     LeftLocation,
     /// An investigator's play of a card completed (after Appendix I step 4).
     CardPlayed,
+    /// An investigator drew an encounter card (framework step 1.4, or a card
+    /// effect's draw); its revelation is the condition's resolution.
+    EncounterCardDrawn,
 }
 
 /// The four game phases, mirrored in `card-dsl` so [`EventPattern`] can
@@ -2042,9 +2058,10 @@ pub enum SearchScope {
     EntireDeck,
 }
 
-/// A predicate on a printed card: an optional trait and an optional card type.
-/// Both fields, when `Some`, must hold (trait AND type); an empty filter
-/// matches every card. Used by [`Effect::SearchDeck`]. `trait_` is owned (the
+/// A predicate on a printed card: an optional trait, an optional card type, and
+/// whether weaknesses are excluded. Every narrowing set must hold; an empty
+/// filter matches every card. Used by [`Effect::SearchDeck`] and by the
+/// card-reading [`EventPattern`]s. `trait_` is owned (the
 /// [`Effect`] enum is serde-serializable, so no borrowed `&'static str`).
 ///
 /// Build one from a generated trait constant with the constructors, e.g.
@@ -2056,6 +2073,9 @@ pub struct CardFilter {
     /// Required card type (e.g. [`CardType::Asset`]).
     /// `None` = any type.
     pub kind: Option<CardType>,
+    /// Whether weaknesses are excluded — Ward of Protection 01065's *"a
+    /// non-weakness treachery card"*. `false` = weaknesses pass too.
+    pub non_weakness: bool,
 }
 
 impl CardFilter {
@@ -2065,6 +2085,7 @@ impl CardFilter {
         Self {
             trait_: Some(trait_name.to_owned()),
             kind: None,
+            non_weakness: false,
         }
     }
 
@@ -2074,6 +2095,17 @@ impl CardFilter {
         Self {
             trait_: None,
             kind: Some(kind),
+            non_weakness: false,
+        }
+    }
+
+    /// This filter, additionally excluding weaknesses
+    /// ([`CardMetadata::is_weakness`]).
+    #[must_use]
+    pub fn and_non_weakness(self) -> Self {
+        Self {
+            non_weakness: true,
+            ..self
         }
     }
 
@@ -2096,12 +2128,13 @@ impl CardFilter {
     }
 
     /// Whether the printed card `meta` passes the filter: it has the trait
-    /// (via [`CardMetadata::has_trait`], so printed traits only) and is of the
-    /// type, for whichever of the two are set.
+    /// (via [`CardMetadata::has_trait`], so printed traits only), is of the
+    /// type, and is not a weakness, for whichever of the three are set.
     #[must_use]
     pub fn matches(&self, meta: &CardMetadata) -> bool {
         self.trait_.as_deref().is_none_or(|t| meta.has_trait(t))
             && self.kind.is_none_or(|k| meta.card_type() == k)
+            && !(self.non_weakness && meta.is_weakness())
     }
 }
 

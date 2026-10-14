@@ -288,7 +288,8 @@
         "Spawn": {
           "investigator": 1
         }
-      }
+      },
+      "revelation_resolved": false
     }
   },
   {

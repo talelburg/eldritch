@@ -288,6 +288,7 @@ fn search_deck_builder_and_serde_round_trip() {
         Some(CardFilter {
             trait_: Some("Tome".into()),
             kind: Some(CardType::Asset),
+            non_weakness: false,
         }),
     );
     let json = serde_json::to_string(&filtered).expect("serialize");

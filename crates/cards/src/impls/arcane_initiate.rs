@@ -107,6 +107,7 @@ mod tests {
                 filter: Some(CardFilter {
                     trait_: Some(SPELL.into()),
                     kind: None,
+                    non_weakness: false,
                 }),
             },
         );
