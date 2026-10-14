@@ -775,7 +775,8 @@ fn audience_reaches(
 /// [`RecordedModifier`](crate::state::RecordedModifier) scoped to that
 /// test, and [`collect_recorded`] evaluates it at ST.5 like every other
 /// row (#684). The same driver step pushes the outcome's `immediate` part at
-/// ST.4 and parks its `on_success` / `on_fail` for ST.7.
+/// ST.4, and the ST.7 step calls this again to read its `on_success` /
+/// `on_fail` once the test's result is known.
 ///
 /// The modifier must **not** be resolved to a literal at reveal time.
 /// Roland Banks 01001 (*"`[elder_sign]` effect: +1 for each clue on your

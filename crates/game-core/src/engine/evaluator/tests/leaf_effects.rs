@@ -60,7 +60,6 @@ fn boost_attack_damage_accumulates_on_in_flight_test() {
             bonus_attack_damage: 0,
             bonus_clues_discovered: 0,
             resolved: None,
-            token_results: Box::default(),
             revealed: None,
         }));
 
@@ -116,7 +115,6 @@ fn discover_additional_clues_accumulates_on_in_flight_test() {
             bonus_attack_damage: 0,
             bonus_clues_discovered: 0,
             resolved: None,
-            token_results: Box::default(),
             revealed: None,
         }));
 

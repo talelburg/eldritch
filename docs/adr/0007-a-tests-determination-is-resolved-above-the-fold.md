@@ -35,7 +35,7 @@ Finally, the revealed token's own contribution becomes a recorded row, which ADR
 
 ## Consequences
 
-`InFlightSkillTest::token_resolution` goes away. Its sole reader was the total computation, which moves into the fold; a revealed token's result-conditional effects already ride a separate field, `token_results`, the `ChaosTokenRevealed` event already carries the token for display, and "was this test auto-resolved" is the determination query's answer rather than a field's absence.
+`InFlightSkillTest::token_resolution` goes away. Its sole reader was the total computation, which moves into the fold; a revealed token's result-conditional effects are looked up again at ST.7 from the token the frame records, the `ChaosTokenRevealed` event already carries the token for display, and "was this test auto-resolved" is the determination query's answer rather than a field's absence.
 
 `FailureReason` keeps its two variants and gains no rules meaning. `AutoFail`'s doc-comment stops saying a *chaos token* forced the total to 0, since a card can now produce the same reason with no token drawn, but the distinction stays display attribution: no Core + Dunwich card keys off a failure being automatic rather than ordinary, and the web client's `" (auto-fail)"` note reads correctly for either cause. The *cause* reaches the client through the event emitted when a determination is latched — without it an automatic success renders as an unexplained win with a `"—"` where the token would be.
 
@@ -43,4 +43,4 @@ Finally, the revealed token's own contribution becomes a recorded row, which ADR
 
 An elder sign can carry a determination as well as a number. Its `TokenOutcome` has an `immediate` arm that runs at ST.4, and an `Effect::AutoResolve` there latches a determination exactly as a card's does, sourced to the investigator card. Wendy Adams 01005 is the first consumer (#780); Rex Murphy 02002 is the corpus consumer this ADR is written for. Father Mateo 04004 (*"[elder_sign] effect: You automatically succeed. …"*) is out of corpus but shows the plainest case: an elder sign whose modifier never decides the test, because the determination is resolved above the fold.
 
-*Folded #776: the frame's `symbol_on_fail` became `token_results`, and the elder sign gained the `immediate` arm a determination rides.*
+*Folded #776: the frame's stored `symbol_on_fail` became a lookup at ST.7 from the revealed token, and the elder sign gained the `immediate` arm a determination rides.*

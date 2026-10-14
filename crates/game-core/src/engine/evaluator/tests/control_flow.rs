@@ -22,7 +22,6 @@ fn state_with_in_flight_kind(kind: SkillTestKind) -> GameState {
             bonus_attack_damage: 0,
             bonus_clues_discovered: 0,
             resolved: None,
-            token_results: Box::default(),
             revealed: None,
         }));
     state
