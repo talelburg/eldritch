@@ -1124,10 +1124,9 @@ fn upkeep_draws_after(cx: &mut Cx, drew: Option<InvestigatorId>) -> EngineOutcom
         // Park the cursor before the draw (ADR 0003): the frames it may push
         // resolve above the anchor, which then resumes after `id`.
         set_upkeep_resume(cx, UpkeepResume::Drawing { drew: id });
-        // Compares the top frame rather than the stack depth: the draw can
-        // eliminate the last investigator, whose latched resolution inserts a
-        // `ScenarioEnd` frame at the *bottom* of the stack (#566), growing the
-        // depth without pushing anything above this anchor.
+        // Compares the top frame rather than the stack depth, so a frame
+        // inserted lower down (a latched `ScenarioEnd` sits at the *bottom* of
+        // the stack, #566) never reads as a push above this anchor.
         let top_before = cx.state.continuations.top().cloned();
         // Tail position for this investigator's draw: when it pushed, the
         // outcome (`Done`) is returned as the cede below.
