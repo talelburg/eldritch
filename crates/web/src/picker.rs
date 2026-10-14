@@ -44,6 +44,7 @@ pub const ROLAND_DEFAULT_DECK: &[&str] = &[
 /// each lands (#777). NOT a legal deck — a scaffold for UI testing, like
 /// [`ROLAND_DEFAULT_DECK`].
 pub const AGNES_DEFAULT_DECK: &[&str] = &[
+    "01058", "01058", // Forbidden Knowledge
     "01059", "01059", // Holy Rosary
     "01061", "01061", // Scrying
     "01062", "01062", // Arcane Studies

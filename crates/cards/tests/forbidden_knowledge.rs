@@ -160,13 +160,7 @@ fn its_cost_horror_on_agnes_offers_her_reaction() {
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
-        .with_seat(
-            holding(4)
-                .as_card(AGNES)
-                .at(HERE)
-                .actions(3)
-                .resources(0),
-        )
+        .with_seat(holding(4).as_card(AGNES).at(HERE).actions(3).resources(0))
         .with_enemy_engaged(enemy, INV)
         .open_turn(INV)
         .session();

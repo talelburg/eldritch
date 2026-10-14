@@ -108,6 +108,7 @@ pub mod evidence;
 pub mod fearless;
 pub mod first_aid;
 pub mod flashlight;
+pub mod forbidden_knowledge;
 pub mod frozen_in_fear;
 pub mod grasping_hands;
 pub mod guard_dog;
@@ -238,6 +239,7 @@ pub const ALL: &[CardRecord] = &[
     fearless::CARD,
     first_aid::CARD,
     flashlight::CARD,
+    forbidden_knowledge::CARD,
     frozen_in_fear::CARD,
     grasping_hands::CARD,
     guard_dog::CARD,
