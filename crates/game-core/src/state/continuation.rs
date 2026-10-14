@@ -1199,7 +1199,7 @@ pub struct InFlightSkillTest {
     /// snapshot future-proofs against cards that will). `None` when
     /// the investigator was between locations at test start —
     /// only reachable via a bare plain skill test (the
-    /// [`test_support::perform_skill_test`](crate::test_support::perform_skill_test)
+    /// [`TestSession::test_skill`](crate::test_support::TestSession::test_skill)
     /// synthetic entry point) from outside an Investigate path.
     pub tested_location: Option<LocationId>,
     /// Action-specific resolution to apply on success.
@@ -1522,7 +1522,7 @@ pub enum SkillTestStep {
 #[non_exhaustive]
 pub enum SkillTestFollowUp {
     /// No action-specific follow-up. Used by a bare plain skill test (the
-    /// [`test_support::perform_skill_test`](crate::test_support::perform_skill_test)
+    /// [`TestSession::test_skill`](crate::test_support::TestSession::test_skill)
     /// synthetic entry point).
     None,
     /// On success, make **one** discovery of

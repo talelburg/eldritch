@@ -41,13 +41,14 @@
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use card_dsl::dsl::{self, Ability, ActionDesignator, Effect, InvestigatorTarget};
+use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::EngineOutcome;
+use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Owner,
+    AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, EnemyId, GameState,
+    GameStateBuilder, InvestigatorId, LocationId,
 };
-use game_core::test_support::{self, MockRegistry};
+use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
 
 /// Synthetic **asset** printing the same residual effect twice — once under a
 /// **Fight** designator, once under none. The pair is the control: only the
@@ -64,7 +65,6 @@ const ENFORCER: &str = "DESIGN_ENEMY";
 const MINE: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(1);
 const ATTACKER: EnemyId = EnemyId(1);
-const BAG: CardInstanceId = CardInstanceId(10);
 
 /// A designated **Fight** carrying a residual effect beside the bold word.
 const DESIGNATED_FIGHT: u8 = 0;
@@ -157,30 +157,26 @@ fn install_probe_registry() {
 /// to draw from once it performs — the assertion is taken before the test
 /// resolves either way.
 fn board() -> GameState {
-    let mut mine = test_support::test_investigator(1);
-    mine.cards_in_play.push(CardInPlay::enter_play(
-        CardCode::new(SATCHEL),
-        BAG,
-        Owner::Investigator(InvestigatorId(1)),
-    ));
-
-    let mut parlor = test_support::test_location(1, "Parlor");
+    let mut parlor = test_support::test_location(HERE.0, "Parlor");
     parlor.code = CardCode::new(PARLOR);
 
-    let mut attacker = test_support::test_enemy(1, "Mob Enforcer");
+    let mut attacker = test_support::test_enemy(ATTACKER.0, "Mob Enforcer");
     attacker.code = CardCode::new(ENFORCER);
-    attacker.current_location = Some(HERE);
-    attacker.engaged_with = Some(MINE);
     attacker.attack_damage = 1;
     attacker.attack_horror = 0;
 
     GameStateBuilder::new()
-        .with_investigator_at(mine, HERE)
+        .with_seat(seat(1).at(HERE).in_play([SATCHEL]))
         .with_location(parlor)
-        .with_enemy(attacker)
+        .with_enemy_engaged(attacker, MINE)
         .open_turn(MINE)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build()
+}
+
+/// The satchel in play: the source of both its abilities.
+fn satchel(state: &GameState) -> AbilitySource {
+    AbilitySource::InPlay(state.in_play(MINE, SATCHEL))
 }
 
 fn activation(source: AbilitySource, ability_index: u8) -> TurnAction {
@@ -191,20 +187,22 @@ fn activation(source: AbilitySource, ability_index: u8) -> TurnAction {
     }
 }
 
-/// Activate and assert the activation was not rejected, returning the damage
-/// the acting investigator is carrying afterwards. An attack of opportunity is
+/// Activate the ability at `ability_index` on the source `source` names on the
+/// board, and assert the activation was not rejected, returning the damage the
+/// acting investigator is carrying afterwards. An attack of opportunity is
 /// dealt after the costs and before the effect, so a non-zero reading is the
 /// attack and nothing else: this board deals the investigator no other damage.
-fn damage_after_activating(source: AbilitySource, ability_index: u8) -> u8 {
-    let result =
-        test_support::dispatch_turn_action_unchecked(board(), &activation(source, ability_index));
-    assert!(
-        !matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "the activation itself must be legal for the attack-of-opportunity question \
-         to arise; got {:?}",
-        result.outcome,
-    );
-    result.state.investigators[&MINE].damage()
+fn damage_after_activating(
+    source: impl FnOnce(&GameState) -> AbilitySource,
+    ability_index: u8,
+) -> u8 {
+    let state = board();
+    let action = activation(source(&state), ability_index);
+    // `take` panics unless the menu offers the activation; the
+    // `AbilityActivated` event proves the handler did not reject it.
+    let session = TestSession::new(state).take(&action);
+    assert_event!(session.events(), Event::AbilityActivated { investigator, .. } if *investigator == MINE);
+    session.state().investigators[&MINE].damage()
 }
 
 /// An ability printing **Fight** is exempt, whatever residual effect it prints
@@ -212,7 +210,7 @@ fn damage_after_activating(source: AbilitySource, ability_index: u8) -> u8 {
 #[test]
 fn a_designated_fight_is_exempt_whatever_it_prints_beside_the_bold_word() {
     assert_eq!(
-        damage_after_activating(AbilitySource::InPlay(BAG), DESIGNATED_FIGHT),
+        damage_after_activating(satchel, DESIGNATED_FIGHT),
         0,
         "a **Fight** ability provokes no attack of opportunity, whatever its \
          residual effect is",
@@ -225,7 +223,7 @@ fn a_designated_fight_is_exempt_whatever_it_prints_beside_the_bold_word() {
 #[test]
 fn the_same_residual_effect_without_the_designator_provokes() {
     assert_eq!(
-        damage_after_activating(AbilitySource::InPlay(BAG), UNDESIGNATED),
+        damage_after_activating(satchel, UNDESIGNATED),
         1,
         "an undesignated action-cost ability provokes",
     );
@@ -238,7 +236,7 @@ fn the_same_residual_effect_without_the_designator_provokes() {
 #[test]
 fn a_resign_ability_on_a_location_provokes_nothing() {
     assert_eq!(
-        damage_after_activating(AbilitySource::Location(HERE), ONLY),
+        damage_after_activating(|_| AbilitySource::Location(HERE), ONLY),
         0,
         "**Resign** is on the exempt list",
     );
@@ -250,7 +248,7 @@ fn a_resign_ability_on_a_location_provokes_nothing() {
 #[test]
 fn a_parley_ability_on_an_enemy_provokes_nothing() {
     assert_eq!(
-        damage_after_activating(AbilitySource::Enemy(ATTACKER), ONLY),
+        damage_after_activating(|_| AbilitySource::Enemy(ATTACKER), ONLY),
         0,
         "**Parley** is on the exempt list",
     );

@@ -6,12 +6,14 @@ use cards::REGISTRY;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, Enemy, GameState, GameStateBuilder, InvestigatorId,
-    LocationId, Owner,
+    CardInstanceId, Enemy, GameState, GameStateBuilder, InvestigatorId, LocationId,
 };
-use game_core::test_support::{self, TestSession};
+use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
 
 const GUARD_DOG: &str = "01021"; // Ally, 3 health / 1 sanity, retaliate reaction
+
+const INV: InvestigatorId = InvestigatorId(1);
+const HERE: LocationId = LocationId(101);
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
@@ -27,34 +29,23 @@ fn ready_attacker(id: u32, damage: u8) -> Enemy {
     e
 }
 
-/// Investigation-phase state: one active investigator controlling `assets`, with
+/// Investigation-phase state: `INV`'s open turn controlling a Guard Dog, with
 /// `enemy` engaged. `EndTurn` advances into the Enemy phase and runs the attack.
-fn attack_state(assets: Vec<(&str, CardInstanceId)>, enemy: Enemy) -> (GameState, InvestigatorId) {
-    let inv_id = InvestigatorId(1);
-    let loc_id = LocationId(101);
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(loc_id);
-    inv.cards_in_play = assets
-        .into_iter()
-        .map(|(code, inst)| {
-            CardInPlay::enter_play(
-                CardCode::new(code),
-                inst,
-                Owner::Investigator(InvestigatorId(1)),
-            )
-        })
-        .collect();
+fn attack_state(enemy: Enemy) -> GameState {
     // Non-empty deck so the post-attack Upkeep draw doesn't trigger the
     // draw-from-empty horror penalty (which, per K5a, soaks onto a sanity asset
     // and would muddy these damage-only tests).
-    inv.deck = vec![CardCode::new(GUARD_DOG); 5];
-    let state = GameStateBuilder::new()
-        .with_location(test_support::test_location(101, "Study"))
-        .with_investigator(inv)
-        .with_enemy_engaged(enemy, inv_id)
-        .open_turn(inv_id)
-        .build();
-    (state, inv_id)
+    GameStateBuilder::new()
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_seat(seat(1).at(HERE).in_play([GUARD_DOG]).deck([GUARD_DOG; 5]))
+        .with_enemy_engaged(enemy, INV)
+        .open_turn(INV)
+        .build()
+}
+
+/// The Guard Dog's instance id on `state`.
+fn dog(state: &GameState) -> CardInstanceId {
+    state.in_play(INV, GUARD_DOG)
 }
 
 /// True iff the session rests at the interactive soak-distribution per-point
@@ -64,8 +55,8 @@ fn at_distribution_prompt(session: &TestSession) -> bool {
     !session.prompt().skippable
 }
 
-fn guard_dog_damage(state: &GameState, inv: InvestigatorId, inst: CardInstanceId) -> Option<u8> {
-    state.investigators[&inv]
+fn guard_dog_damage(state: &GameState, inst: CardInstanceId) -> Option<u8> {
+    state.investigators[&INV]
         .cards_in_play
         .iter()
         .find(|c| c.instance_id == inst)
@@ -74,9 +65,9 @@ fn guard_dog_damage(state: &GameState, inv: InvestigatorId, inst: CardInstanceId
 
 #[test]
 fn two_damage_attack_splits_one_to_guard_dog_one_to_self() {
-    let dog = CardInstanceId(1);
-    let (state, inv) = attack_state(vec![(GUARD_DOG, dog)], ready_attacker(7, 2));
-    let me = state.investigators[&inv].card_anchor();
+    let state = attack_state(ready_attacker(7, 2));
+    let dog = dog(&state);
+    let me = state.investigators[&INV].card_anchor();
 
     // EndTurn → enemy phase → distribution prompt (Guard Dog has capacity).
     // First point → Guard Dog; still contested → second prompt → self.
@@ -94,12 +85,12 @@ fn two_damage_attack_splits_one_to_guard_dog_one_to_self() {
         session.prompt()
     );
     assert_eq!(
-        guard_dog_damage(session.state(), inv, dog),
+        guard_dog_damage(session.state(), dog),
         Some(0),
         "assigned to Guard Dog, not yet placed"
     );
     assert_eq!(
-        session.state().investigators[&inv].damage(),
+        session.state().investigators[&INV].damage(),
         0,
         "and none of it placed on the investigator yet either"
     );
@@ -108,12 +99,12 @@ fn two_damage_attack_splits_one_to_guard_dog_one_to_self() {
     // assignment lands at once (RR p.7 "simultaneously").
     let session = session.pick(OptionTarget::CardInstance(dog));
     assert_eq!(
-        guard_dog_damage(session.state(), inv, dog),
+        guard_dog_damage(session.state(), dog),
         Some(1),
         "1 damage placed on Guard Dog"
     );
     assert_eq!(
-        session.state().investigators[&inv].damage(),
+        session.state().investigators[&INV].damage(),
         1,
         "1 damage placed on the investigator, in the same moment"
     );
@@ -121,9 +112,9 @@ fn two_damage_attack_splits_one_to_guard_dog_one_to_self() {
 
 #[test]
 fn player_may_decline_to_soak_taking_all_damage() {
-    let dog = CardInstanceId(1);
-    let (state, inv) = attack_state(vec![(GUARD_DOG, dog)], ready_attacker(7, 2));
-    let me = state.investigators[&inv].card_anchor();
+    let state = attack_state(ready_attacker(7, 2));
+    let dog = dog(&state);
+    let me = state.investigators[&INV].card_anchor();
 
     // Both points to the investigator — decline to soak.
     let session = TestSession::new(state)
@@ -132,12 +123,12 @@ fn player_may_decline_to_soak_taking_all_damage() {
         .pick(me);
 
     assert_eq!(
-        session.state().investigators[&inv].damage(),
+        session.state().investigators[&INV].damage(),
         2,
         "investigator took all 2 damage"
     );
     assert_eq!(
-        guard_dog_damage(session.state(), inv, dog),
+        guard_dog_damage(session.state(), dog),
         Some(0),
         "Guard Dog untouched (declined to soak)"
     );
@@ -145,10 +136,10 @@ fn player_may_decline_to_soak_taking_all_damage() {
 
 #[test]
 fn a_full_soaker_drops_out_of_the_next_prompt() {
-    let dog = CardInstanceId(1);
-    let (mut state, inv) = attack_state(vec![(GUARD_DOG, dog)], ready_attacker(7, 2));
+    let mut state = attack_state(ready_attacker(7, 2));
+    let dog = dog(&state);
     // Pre-damage Guard Dog to 2 (health 3) → 1 remaining capacity.
-    state.investigators.get_mut(&inv).unwrap().cards_in_play[0].accumulated_damage = 2;
+    state.investigators.get_mut(&INV).unwrap().cards_in_play[0].accumulated_damage = 2;
 
     // First point → Guard Dog (its last point of capacity).
     let session = TestSession::new(state)
@@ -166,12 +157,12 @@ fn a_full_soaker_drops_out_of_the_next_prompt() {
     );
     let session = session.pick(OptionTarget::CardInstance(dog));
     assert_eq!(
-        session.state().investigators[&inv].damage(),
+        session.state().investigators[&INV].damage(),
         1,
         "the overflow point went to the investigator"
     );
     assert!(
-        guard_dog_damage(session.state(), inv, dog).is_none(),
+        guard_dog_damage(session.state(), dog).is_none(),
         "Guard Dog filled to capacity is defeated and discarded",
     );
 }

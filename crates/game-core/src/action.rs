@@ -157,6 +157,8 @@ mod encounter_card_revealed_action_tests {
     }
 }
 
+// The wire response type is these tests' subject, so they build
+// `InputResponse` and `OptionId` values by hand rather than through a session.
 #[cfg(test)]
 mod input_response_tests {
     use super::*;

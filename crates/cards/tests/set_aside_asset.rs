@@ -48,7 +48,7 @@
 //! Own process → installs `cards::REGISTRY`.
 
 use cards::REGISTRY;
-use game_core::action::{Action, EngineRecord};
+use game_core::assert_event;
 use game_core::card_registry;
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::modified_value::{self, ModifiedQuantity, ReadContext};
@@ -56,9 +56,9 @@ use game_core::engine::{EngineOutcome, NativeCx};
 use game_core::event::Event;
 use game_core::state::{
     Act, CardCode, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId,
-    ModifierTarget, Owner, Phase, SkillKind,
+    ModifierTarget, MythosPhaseFrame, MythosResume, Owner, Phase, SkillKind,
 };
-use game_core::test_support::{self, ScriptedResolver};
+use game_core::test_support::{self, seat, TestSession};
 
 /// Lita Chantler — the set-aside `Ally` asset act 01109b puts into play.
 const LITA: &str = "01117";
@@ -80,22 +80,27 @@ fn install() {
 
 /// The act-2 board: an investigator in the Hallway, the Parlor in play but
 /// unrevealed (the barrier is still up), and both set-aside cards in the zone.
-/// Act 01109 is current, with a successor so its advance is non-terminal.
+/// Act 01109 is current, with a successor so its advance is non-terminal. The
+/// Investigation phase, with `INV` active.
 fn board() -> GameState {
-    let mut hallway = test_support::test_location(1, "Hallway");
+    act_two_board(
+        GameStateBuilder::new()
+            .with_phase(Phase::Investigation)
+            .with_active_investigator(INV),
+    )
+}
+
+/// The [`board`]'s act-2 contents, on `staged`'s phase and moment.
+fn act_two_board(staged: GameStateBuilder) -> GameState {
+    let mut hallway = test_support::test_location(HALLWAY_ID.0, "Hallway");
     hallway.code = CardCode::new(HALLWAY);
-    let mut parlor = test_support::test_location(2, "Parlor");
+    let mut parlor = test_support::test_location(PARLOR_ID.0, "Parlor");
     parlor.code = CardCode::new(PARLOR);
     parlor.revealed = false;
 
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(HALLWAY_ID);
-
-    let mut state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(INV)
+    let mut state = staged
         .with_turn_order([INV])
-        .with_investigator(inv)
+        .with_seat(seat(1).at(HALLWAY_ID))
         .with_location(hallway)
         .with_location(parlor)
         .build();
@@ -157,13 +162,11 @@ fn a_set_aside_asset_enters_play_at_the_named_location() {
         "she enters play undamaged",
     );
     let instance_id = at_parlor[0].instance_id;
-    assert!(
-        events.iter().any(|e| matches!(
-            e,
-            Event::CardPutIntoPlayAtLocation { location, code, instance_id: i }
-                if *location == PARLOR_ID && code.as_str() == LITA && *i == instance_id
-        )),
-        "the entry is announced, got {events:?}",
+    // The entry is announced.
+    assert_event!(
+        events,
+        Event::CardPutIntoPlayAtLocation { location, code, instance_id: i }
+            if *location == PARLOR_ID && code.as_str() == LITA && *i == instance_id
     );
 }
 
@@ -245,7 +248,15 @@ fn a_set_aside_asset_named_at_a_location_not_in_play_is_rejected() {
 /// investigator.
 #[test]
 fn an_uncontrolled_asset_cannot_soak_damage_for_a_colocated_investigator() {
-    let mut state = board();
+    // Mythos step 1.4: `INV` is to draw the top encounter card, Grasping Hands.
+    let mut state = act_two_board(
+        GameStateBuilder::new()
+            .with_phase(Phase::Mythos)
+            .with_phase_anchor(MythosPhaseFrame {
+                resume: MythosResume::AfterDraws,
+            })
+            .with_mythos_draw_remaining([INV]),
+    );
     // Put her into play where the investigator is standing — the strongest
     // form of the claim: co-location is not control.
     let (outcome, _) = with_cx(&mut state, |cx| {
@@ -255,29 +266,22 @@ fn an_uncontrolled_asset_cannot_soak_damage_for_a_colocated_investigator() {
 
     // Agility 3 + Numeric(-2) = 1 vs difficulty 3 → fail by 2 → 2 damage.
     state.chaos_bag.tokens = vec![ChaosToken::Numeric(-2)];
-    state.encounter_deck.push_back(CardCode::new("01162")); // Grasping Hands
-    let mut resolver = ScriptedResolver::new();
-    resolver.commit_cards(&[]);
-    // No pick_single is scripted: a contested point would prompt, and the drive
-    // would fail for want of a response.
-    let result = test_support::drive(
-        state,
-        Action::Engine(EngineRecord::EncounterCardRevealed { investigator: INV }),
-        resolver,
-    );
+    // Grasping Hands.
+    state.encounter_deck.push_back(CardCode::new("01162"));
+    // Draw it, and commit nothing to its Agility test.
+    let session = TestSession::new(state).confirm().commit(&[]);
 
+    // A contested point would prompt; instead play runs on out of the Mythos
+    // phase to `INV`'s turn.
+    session.assert_at_turn_menu(INV);
     assert_eq!(
-        result.outcome,
-        EngineOutcome::Done,
-        "no distribution prompt opened — nothing was eligible to soak",
-    );
-    assert_eq!(
-        result.state.investigators[&INV].damage(),
+        session.state().investigators[&INV].damage(),
         2,
         "both points landed on the investigator",
     );
     assert_eq!(
-        result.state.locations[&HALLWAY_ID].cards_at_location[0].accumulated_damage, 0,
+        session.state().locations[&HALLWAY_ID].cards_at_location[0].accumulated_damage,
+        0,
         "an uncontrolled asset takes none of it",
     );
 }

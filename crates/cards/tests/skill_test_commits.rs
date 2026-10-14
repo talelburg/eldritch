@@ -14,13 +14,13 @@
 //! `metadata_for == None`, contributing zero icons).
 
 use cards::REGISTRY;
-use game_core::engine::{ApplyResult, EngineOutcome};
+use game_core::engine::InputKind;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, DiscardPile, GameState, GameStateBuilder, InvestigatorId,
-    SkillKind, TokenModifiers, Zone,
+    CardCode, ChaosBag, ChaosToken, DiscardPile, GameStateBuilder, InvestigatorId, SkillKind,
+    TokenModifiers, Zone,
 };
-use game_core::test_support::{self, ScriptedResolver};
+use game_core::test_support::{self, seat, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
 
 const PERCEPTION: &str = "01090";
@@ -30,84 +30,76 @@ const UNEXPECTED_COURAGE: &str = "01093";
 /// on an intellect test (#763).
 const OVERPOWER: &str = "01091";
 
+const INV: InvestigatorId = InvestigatorId(1);
+
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// Hand contents for the test. Builds a state with the named cards in
-/// the active investigator's hand, base intellect 3, and a single-
-/// `Numeric(0)` chaos bag (so the token-modifier contribution is
-/// always 0).
-fn state_with_hand(hand: &[&str]) -> (GameState, InvestigatorId) {
-    let id = InvestigatorId(1);
-    let mut inv = test_support::test_investigator(1);
-    inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
+/// `INV`'s open turn with the named cards in hand, base intellect 3, and a
+/// single-`Numeric(0)` chaos bag (so the token-modifier contribution is
+/// always 0), started into an Intellect-vs-5 plain skill test. The session
+/// rests at its commit window.
+fn test_with_hand(hand: &[&str]) -> TestSession {
     // Cards for the draw-skills' success draws to land on. Without them the
     // draw hits an empty deck, which now applies the deck-out horror (#636) —
     // irrelevant noise for tests about icon contributions.
-    inv.deck = vec![
-        CardCode::new("spare-1"),
-        CardCode::new("spare-2"),
-        CardCode::new("spare-3"),
-    ];
-    let state = GameStateBuilder::new()
-        .with_investigator(inv)
+    GameStateBuilder::new()
+        .with_seat(
+            seat(1)
+                .hand(hand.iter().copied())
+                .deck(["spare-1", "spare-2", "spare-3"]),
+        )
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
-        .build();
-    (state, id)
+        .open_turn(INV)
+        .session()
+        .test_skill(INV, SkillKind::Intellect, 5)
 }
 
-/// Start an Intellect-vs-5 plain skill test and drive it through with the
-/// supplied commit codes. Uses `drive_skill_test` so the resolver can translate
-/// codes → indices using the in-flight state at resolve time.
-fn drive_with_commits(state: GameState, id: InvestigatorId, commit: &[&str]) -> ApplyResult {
-    let mut resolver = ScriptedResolver::new();
-    let codes: Vec<CardCode> = commit.iter().map(|c| CardCode::new(*c)).collect();
-    resolver.commit_cards(&codes);
-    test_support::drive_skill_test(state, id, SkillKind::Intellect, 5, resolver)
+/// [`test_with_hand`], committing `commit`.
+fn commit_from(hand: &[&str], commit: &[&str]) -> TestSession {
+    test_with_hand(hand).commit(commit)
 }
 
 #[test]
 fn empty_commit_against_difficulty_5_intellect_fails() {
     // Base 3 + 0 (token) + 0 (no commits) < 5 — fails by 2.
-    let (state, id) = state_with_hand(&[PERCEPTION, UNEXPECTED_COURAGE]);
-    let result = drive_with_commits(state, id, &[]);
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    let session = commit_from(&[PERCEPTION, UNEXPECTED_COURAGE], &[]);
+    session.assert_at_turn_menu(INV);
     assert_event!(
-        result.events,
+        session.events(),
         Event::SkillTestFailed { investigator, skill: SkillKind::Intellect, by: 2, .. }
-            if *investigator == id
+            if *investigator == INV
     );
     // No commit → no discards.
-    assert_no_event!(result.events, Event::CardDiscarded { .. });
+    assert_no_event!(session.events(), Event::CardDiscarded { .. });
 }
 
 #[test]
 fn committing_perception_contributes_two_intellect_icons() {
     // Base 3 + 0 (token) + 2 (Perception's intellect icons) = 5,
     // meets difficulty 5 → success with margin 0.
-    let (state, id) = state_with_hand(&[PERCEPTION, UNEXPECTED_COURAGE]);
-    let result = drive_with_commits(state, id, &[PERCEPTION]);
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    let session = commit_from(&[PERCEPTION, UNEXPECTED_COURAGE], &[PERCEPTION]);
+    session.assert_at_turn_menu(INV);
     assert_event!(
-        result.events,
+        session.events(),
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, margin: 0 }
-            if *investigator == id
+            if *investigator == INV
     );
     // Perception lands in discard; Unexpected Courage stays in hand, joined by
     // the card Perception's "If this test is successful, draw 1 card" drew.
-    let inv = &result.state.investigators[&id];
+    let inv = &session.state().investigators[&INV];
     assert_eq!(
         inv.hand,
         vec![CardCode::new(UNEXPECTED_COURAGE), CardCode::new("spare-1")],
     );
     assert_eq!(inv.discard, vec![CardCode::new(PERCEPTION)]);
     assert_event!(
-        result.events,
+        session.events(),
         Event::CardDiscarded { code, from: Zone::Hand, to: DiscardPile::Investigator(investigator) }
-            if *investigator == id && *code == CardCode::new(PERCEPTION)
+            if *investigator == INV && *code == CardCode::new(PERCEPTION)
     );
 }
 
@@ -115,15 +107,14 @@ fn committing_perception_contributes_two_intellect_icons() {
 fn committing_unexpected_courage_contributes_two_wild_icons() {
     // Wild icons count toward whichever skill the test is against.
     // Base 3 + 0 + 2 (UC's two wild) = 5 → success.
-    let (state, id) = state_with_hand(&[PERCEPTION, UNEXPECTED_COURAGE]);
-    let result = drive_with_commits(state, id, &[UNEXPECTED_COURAGE]);
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    let session = commit_from(&[PERCEPTION, UNEXPECTED_COURAGE], &[UNEXPECTED_COURAGE]);
+    session.assert_at_turn_menu(INV);
     assert_event!(
-        result.events,
+        session.events(),
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, margin: 0 }
-            if *investigator == id
+            if *investigator == INV
     );
-    let inv = &result.state.investigators[&id];
+    let inv = &session.state().investigators[&INV];
     assert_eq!(inv.discard, vec![CardCode::new(UNEXPECTED_COURAGE)]);
 }
 
@@ -134,15 +125,17 @@ fn committing_two_cards_sums_both_contributions_and_discards_both() {
     //
     // Base 3 + 0 + 2 (Perception intellect) + 2 (UC wild) = 7 vs
     // difficulty 5 → success with margin 2.
-    let (state, id) = state_with_hand(&[PERCEPTION, UNEXPECTED_COURAGE]);
-    let result = drive_with_commits(state, id, &[PERCEPTION, UNEXPECTED_COURAGE]);
-    assert_eq!(result.outcome, EngineOutcome::Done);
-    assert_event!(
-        result.events,
-        Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, margin: 2 }
-            if *investigator == id
+    let session = commit_from(
+        &[PERCEPTION, UNEXPECTED_COURAGE],
+        &[PERCEPTION, UNEXPECTED_COURAGE],
     );
-    let inv = &result.state.investigators[&id];
+    session.assert_at_turn_menu(INV);
+    assert_event!(
+        session.events(),
+        Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, margin: 2 }
+            if *investigator == INV
+    );
+    let inv = &session.state().investigators[&INV];
     assert_eq!(
         inv.hand,
         vec![CardCode::new("spare-1")],
@@ -155,7 +148,7 @@ fn committing_two_cards_sums_both_contributions_and_discards_both() {
         inv.discard,
         vec![CardCode::new(PERCEPTION), CardCode::new(UNEXPECTED_COURAGE),],
     );
-    assert_event_count!(result.events, 2, Event::CardDiscarded { .. });
+    assert_event_count!(session.events(), 2, Event::CardDiscarded { .. });
 }
 
 #[test]
@@ -166,14 +159,9 @@ fn mixing_matching_and_non_matching_commits_is_rejected() {
     // matching card does not carry the non-matching one in with it (#763).
     // The icon *arithmetic* that used to live here is covered by
     // `committing_perception_contributes_two_intellect_icons`.
-    let (state, id) = state_with_hand(&[PERCEPTION, OVERPOWER]);
-    let result = drive_with_commits(state, id, &[PERCEPTION, OVERPOWER]);
-    assert!(
-        matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "expected Rejected, got {:?}",
-        result.outcome,
-    );
-    let inv = &result.state.investigators[&id];
+    let session = commit_from(&[PERCEPTION, OVERPOWER], &[PERCEPTION, OVERPOWER]);
+    session.expect_rejected();
+    let inv = &session.state().investigators[&INV];
     assert_eq!(
         inv.hand,
         vec![CardCode::new(PERCEPTION), CardCode::new(OVERPOWER)],
@@ -189,15 +177,10 @@ fn committing_overpower_to_an_intellect_test_is_rejected() {
     // not appropriate for an intellect test and it prints no wild, so the
     // commit never happens — previously it was accepted as a zero-icon
     // commit, which made the commit window a free discard outlet (#763).
-    let (state, id) = state_with_hand(&[OVERPOWER]);
-    let result = drive_with_commits(state, id, &[OVERPOWER]);
-    assert!(
-        matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "expected Rejected, got {:?}",
-        result.outcome,
-    );
+    let session = commit_from(&[OVERPOWER], &[OVERPOWER]);
+    session.expect_rejected();
     // Nothing moved: the card is still in hand rather than in the discard.
-    let inv = &result.state.investigators[&id];
+    let inv = &session.state().investigators[&INV];
     assert_eq!(inv.hand, vec![CardCode::new(OVERPOWER)]);
     assert!(inv.discard.is_empty());
 }
@@ -205,18 +188,13 @@ fn committing_overpower_to_an_intellect_test_is_rejected() {
 #[test]
 fn awaiting_input_emits_between_started_and_revealed_for_real_card_state() {
     // Sanity check that the pause point lands in the right spot when
-    // the registry is installed and the hand has real cards. First
-    // `apply` returns AwaitingInput; the chaos token hasn't been
-    // drawn yet.
-    let (state, id) = state_with_hand(&[PERCEPTION]);
-    let paused = test_support::perform_skill_test(state, id, SkillKind::Intellect, 5);
-    assert!(matches!(
-        paused.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
+    // the registry is installed and the hand has real cards. Starting the
+    // test rests at the commit window; the chaos token hasn't been drawn yet.
+    let paused = test_with_hand(&[PERCEPTION]);
+    assert_eq!(paused.prompt().kind, InputKind::PickMultiple);
     assert_event!(
-        paused.events,
-        Event::SkillTestStarted { investigator, .. } if *investigator == id
+        paused.events(),
+        Event::SkillTestStarted { investigator, .. } if *investigator == INV
     );
-    assert_no_event!(paused.events, Event::ChaosTokenRevealed { .. });
+    assert_no_event!(paused.events(), Event::ChaosTokenRevealed { .. });
 }

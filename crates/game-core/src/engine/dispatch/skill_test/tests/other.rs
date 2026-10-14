@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::TestSession;
 
 #[test]
 fn symbol_effects_to_effect_builds_deal_seq() {
@@ -29,37 +30,17 @@ fn symbol_effects_to_effect_builds_deal_seq() {
 fn elder_sign_token_adds_zero_without_an_elder_sign_ability() {
     let inv = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1)) // card_code = "" sentinel
-        .with_active_investigator(inv)
+        .with_seat(test_support::seat(1)) // card_code = "" sentinel
+        .open_turn(inv)
         .build();
     // Willpower 3, difficulty 2, ElderSign token. Bonus 0 → total 3 → succeed by 1.
     state.chaos_bag.tokens = vec![ChaosToken::ElderSign];
-    let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
-    let out = start_skill_test(
-        &mut cx,
-        inv,
-        SkillKind::Willpower,
-        SkillTestKind::Plain,
-        DifficultyBasis::Fixed(2),
-        SkillTestFollowUp::None,
-        None,
-        None,
-        None,
-        None,
-    );
-    assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
-    let out = finish_skill_test(&mut cx, &[]);
-    let out = dispatch::drive(&mut cx, out);
-    assert_eq!(out, EngineOutcome::Done);
-    assert!(
-        events.iter().any(|e| matches!(
-            e,
-            Event::SkillTestSucceeded { margin, .. } if *margin == 1
-        )),
-        "ElderSign with no elder-sign ability → bonus 0 → succeed by 1: {events:?}",
+    let session = TestSession::new(state)
+        .test_skill(inv, SkillKind::Willpower, 2)
+        .commit(&[]);
+    session.assert_at_turn_menu(inv);
+    crate::assert_event!(
+        session.events(),
+        Event::SkillTestSucceeded { margin, .. } if *margin == 1
     );
 }

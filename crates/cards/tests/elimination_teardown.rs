@@ -10,7 +10,8 @@
 //! card's owner, not by its metadata (#982).
 //!
 //! Elimination is reached through the **real** path (a lethal Grasping Hands
-//! revelation driven via `apply`); `apply_investigator_elimination` stays `pub(super)`.
+//! revelation, drawn at the Mythos phase's encounter draw);
+//! `apply_investigator_elimination` stays `pub(super)`.
 //!
 //! ## Verified card text (`data/arkhamdb-snapshot`, 2026-07-17)
 //!
@@ -29,20 +30,15 @@
 //! play in your threat area. You cannot play assets or events. <b>Forced</b> -
 //! At the end of the round: Discard Dissonant Voices."
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use cards::REGISTRY;
-use game_core::action::{Action, EngineRecord, InputResponse};
-use game_core::engine::{
-    ApplyResult, EngineOutcome, InputKind, InputRequest, OptionId, TimingEvent,
-};
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{ApplyResult, EngineOutcome, InputKind};
 use game_core::event::{Event, TraumaKind};
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosToken, DiscardPile, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, Owner, Status, Zone,
+    CardCode, CardInPlay, ChaosBag, ChaosToken, DiscardPile, GameState, GameStateBuilder,
+    InvestigatorId, LocationId, MythosPhaseFrame, MythosResume, Owner, Phase, Status, Zone,
 };
-use game_core::test_support::{self, ChoiceResolver, ScriptedResolver, TestSession};
+use game_core::test_support::{self, clues, seat, Seat, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
 
 const GRASPING_HANDS: &str = "01162";
@@ -57,80 +53,72 @@ const OTHERS_THREAT: &str = "_others_threat_card";
 /// A card in the eliminated investigator's play area, which they own.
 const OWNED_ASSET: &str = "_owned_asset";
 
+const INV: InvestigatorId = InvestigatorId(1);
+const SURVIVOR: InvestigatorId = InvestigatorId(2);
+const HERE: LocationId = LocationId(20);
+const ELSEWHERE: LocationId = LocationId(21);
+
 #[ctor::ctor(unsafe)]
 fn install_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// The test investigator (8 health) at a location with `damage` already on it,
-/// `hand` in hand, and `threat` (code, clues) in its threat area (instance ids
-/// 1, 2, …). Grasping Hands sits on top of the encounter deck with a rigged
-/// `Numeric(-2)` token, so `reveal_committing` puts it through an Agility(3)
-/// test it fails by 2 — or by 1 when Survival Instinct's single [agility] icon
-/// is committed.
-fn board_at_lethal_range(damage: u8, hand: &[&str], threat: &[(&str, u8)]) -> GameState {
-    let mut inv = test_support::test_investigator(1);
-    inv.investigator_card.accumulated_damage = damage;
-    inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
-    inv.threat_area = threat
-        .iter()
-        .enumerate()
-        .map(|(i, (code, clues))| {
-            // Cover Up is a weakness, so its bearer owns it; everything else
-            // here is an encounter card.
-            let owner = if *code == COVER_UP {
-                Owner::Investigator(InvestigatorId(1))
-            } else {
-                Owner::EncounterDeck
-            };
-            let mut card = CardInPlay::enter_play(
-                CardCode::new(*code),
-                CardInstanceId(u32::try_from(i).expect("fits") + 1),
-                owner,
-            );
-            card.clues = *clues;
-            card
+/// The test investigator (8 health) at the location with `damage` already on
+/// it, holding `hand`.
+fn hurt(damage: u8, hand: &[&str]) -> Seat {
+    seat(1).at(HERE).harm(damage, 0).hand(hand.iter().copied())
+}
+
+/// [`hurt`] with `threat` (code, clues) in the threat area. Cover Up is a
+/// weakness, so its bearer owns it; Dissonant Voices is an encounter card, the
+/// encounter deck's.
+fn hurt_with_threat(damage: u8, threat: &[(&str, u8)]) -> Seat {
+    hurt(damage, &[]).threat_area(threat.iter().map(|&(code, n)| (code, clues(n))))
+}
+
+/// Mythos step 1.4 with investigator 1 to draw, and Grasping Hands on top of
+/// the encounter deck with a rigged `Numeric(-2)` token, so `reveal_committing`
+/// puts `investigator` through an Agility(3) test they fail by 2 — or by 1 when
+/// Survival Instinct's single [agility] icon is committed. With `survivor`, a
+/// second, healthy investigator stands at another location, so investigator
+/// 1's death eliminates *him* without ending the scenario; the survivor (who
+/// has drawn already) keeps the game running and holds a spare deck card for
+/// Upkeep step 4.4's draw.
+fn drawing_grasping_hands(investigator: Seat, survivor: bool) -> GameState {
+    let builder = GameStateBuilder::new()
+        .with_location(test_support::test_location(HERE.0, "Here"))
+        .with_seat(investigator);
+    let builder = if survivor {
+        builder
+            .with_location(test_support::test_location(ELSEWHERE.0, "Elsewhere"))
+            .with_seat(seat(2).at(ELSEWHERE).deck(["01088"]))
+            .with_turn_order([INV, SURVIVOR])
+    } else {
+        builder.with_turn_order([INV])
+    };
+    let mut state = builder
+        .with_phase(Phase::Mythos)
+        .with_phase_anchor(MythosPhaseFrame {
+            resume: MythosResume::AfterDraws,
         })
-        .collect();
-    let mut state = GameStateBuilder::new()
-        .with_investigator_at(inv, LocationId(20))
-        .with_location(test_support::test_location(20, "Here"))
-        .with_turn_order([InvestigatorId(1)])
+        .with_mythos_draw_remaining([INV])
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(-2)]))
         .build();
-    state.chaos_bag.tokens = vec![ChaosToken::Numeric(-2)];
     state
         .encounter_deck
         .push_back(CardCode::new(GRASPING_HANDS));
     state
 }
 
-/// [`board_at_lethal_range`] plus a second, healthy investigator at another
-/// location — so investigator 1's death eliminates *him* without ending the
-/// scenario. The survivor's only job is to keep the game running.
-fn board_with_survivor(damage: u8, threat: &[(&str, u8)]) -> GameState {
-    let mut state = board_at_lethal_range(damage, &[], threat);
-    let mut survivor = test_support::test_investigator(2);
-    survivor.current_location = Some(LocationId(21));
-    state
-        .locations
-        .insert(LocationId(21), test_support::test_location(21, "Elsewhere"));
-    state.investigators.insert(InvestigatorId(2), survivor);
-    state.turn_order = vec![InvestigatorId(1), InvestigatorId(2)];
-    state
+/// Draw the top encounter card for investigator 1, committing `commit` at the
+/// revelation's skill-test window, and play on to the next rest.
+fn reveal_committing(state: GameState, commit: &[&str]) -> TestSession {
+    TestSession::new(state).confirm().commit(commit)
 }
 
-/// Reveal the top encounter card for investigator 1, committing `commit` at the
-/// revelation skill-test window.
-fn reveal_committing(state: GameState, commit: &[&str]) -> ApplyResult {
-    let mut resolver = ScriptedResolver::new();
-    resolver.commit_cards(&commit.iter().map(|c| CardCode::new(*c)).collect::<Vec<_>>());
-    test_support::drive(
-        state,
-        Action::Engine(EngineRecord::EncounterCardRevealed {
-            investigator: InvestigatorId(1),
-        }),
-        resolver,
-    )
+/// [`reveal_committing`], ended: the commit step's state, events and outcome.
+fn revealed(state: GameState, commit: &[&str]) -> ApplyResult {
+    reveal_committing(state, commit).finish()
 }
 
 #[test]
@@ -138,14 +126,14 @@ fn tester_eliminated_mid_test_abandons_the_test_without_panicking() {
     // Agility 3 + Numeric(-2) + 1 committed [agility] icon = 2 vs difficulty 3 →
     // fail by 1 → 1 damage. 7/8 damage → lethal → elimination drains the hand while the
     // SkillTest frame is still live at FireOnResolution / the teardown discard.
-    let r = reveal_committing(
-        board_at_lethal_range(7, &[SURVIVAL_INSTINCT], &[]),
+    let r = revealed(
+        drawing_grasping_hands(hurt(7, &[SURVIVAL_INSTINCT]), false),
         &[SURVIVAL_INSTINCT],
     );
 
     assert_eq!(r.outcome, EngineOutcome::Done, "test abandoned cleanly");
 
-    let inv = &r.state.investigators[&InvestigatorId(1)];
+    let inv = &r.state.investigators[&INV];
     assert_eq!(
         inv.status,
         Status::Defeated,
@@ -182,12 +170,12 @@ fn tester_eliminated_mid_test_abandons_the_test_without_panicking() {
 fn surviving_tester_still_discards_committed_cards() {
     // Control: same board, no preloaded damage → 1 damage is survivable → the
     // normal teardown runs and the committed card goes to the discard.
-    let r = reveal_committing(
-        board_at_lethal_range(0, &[SURVIVAL_INSTINCT], &[]),
+    let r = revealed(
+        drawing_grasping_hands(hurt(0, &[SURVIVAL_INSTINCT]), false),
         &[SURVIVAL_INSTINCT],
     );
 
-    let inv = &r.state.investigators[&InvestigatorId(1)];
+    let inv = &r.state.investigators[&INV];
     assert_eq!(inv.status, Status::Active, "1 damage is not lethal at 0/8");
     assert!(
         inv.discard.iter().any(|c| c.as_str() == SURVIVAL_INSTINCT),
@@ -202,9 +190,12 @@ fn elimination_removes_a_player_owned_weakness_from_the_game() {
     // RR p.10 step 1 + the design's reading: Cover Up is owned by the eliminated investigator, whose
     // discard pile step 1 just removed from the game — so "the appropriate
     // discard pile" no longer exists and the card is removed.
-    let r = reveal_committing(board_at_lethal_range(7, &[], &[(COVER_UP, 3)]), &[]);
+    let r = revealed(
+        drawing_grasping_hands(hurt_with_threat(7, &[(COVER_UP, 3)]), false),
+        &[],
+    );
 
-    let inv = &r.state.investigators[&InvestigatorId(1)];
+    let inv = &r.state.investigators[&INV];
     assert_eq!(inv.status, Status::Defeated);
     assert!(inv.threat_area.is_empty(), "threat area drained");
     assert!(
@@ -225,9 +216,12 @@ fn elimination_removes_a_player_owned_weakness_from_the_game() {
 fn elimination_discards_an_encounter_treachery_to_the_encounter_discard() {
     // RR p.10 step 4: Dissonant Voices is owned by the encounter deck, so the
     // investigator's elimination must not remove it from the game.
-    let r = reveal_committing(board_at_lethal_range(7, &[], &[(DISSONANT_VOICES, 0)]), &[]);
+    let r = revealed(
+        drawing_grasping_hands(hurt_with_threat(7, &[(DISSONANT_VOICES, 0)]), false),
+        &[],
+    );
 
-    let inv = &r.state.investigators[&InvestigatorId(1)];
+    let inv = &r.state.investigators[&INV];
     assert_eq!(inv.status, Status::Defeated);
     assert!(inv.threat_area.is_empty(), "threat area drained");
     assert!(
@@ -251,12 +245,15 @@ fn elimination_discards_an_encounter_treachery_to_the_encounter_discard() {
 
 #[test]
 fn elimination_routes_a_mixed_threat_area_both_ways() {
-    let r = reveal_committing(
-        board_at_lethal_range(7, &[], &[(COVER_UP, 3), (DISSONANT_VOICES, 0)]),
+    let r = revealed(
+        drawing_grasping_hands(
+            hurt_with_threat(7, &[(COVER_UP, 3), (DISSONANT_VOICES, 0)]),
+            false,
+        ),
         &[],
     );
 
-    let inv = &r.state.investigators[&InvestigatorId(1)];
+    let inv = &r.state.investigators[&INV];
     assert!(inv.threat_area.is_empty(), "threat area fully drained");
     assert!(inv.removed_from_game.iter().any(|c| c.as_str() == COVER_UP));
     assert!(r
@@ -291,27 +288,25 @@ fn eliminated_investigator_fires_cover_ups_game_end_trauma() {
     // nothing, routes elimination down its inline path, and lets steps 1–6
     // remove Cover Up without ever firing it — a silent drop with no reject to
     // show for it. This test and the multiplayer one below are what caught it.
-    let r = reveal_committing(board_at_lethal_range(7, &[], &[(COVER_UP, 3)]), &[]);
+    let r = revealed(
+        drawing_grasping_hands(hurt_with_threat(7, &[(COVER_UP, 3)]), false),
+        &[],
+    );
 
     assert_event!(r.events, Event::TraumaSuffered {
         investigator, kind: TraumaKind::Mental, amount: 1
-    } if *investigator == InvestigatorId(1));
+    } if *investigator == INV);
     // Exactly once. Solo, so the death also latches NoResolution and the
     // ordinary scenario-end `GameEnd` scan runs — it must not fire this a second
     // time (Cover Up has left play by then, and that scan skips non-Active
     // investigators anyway, #567).
     assert_event_count!(r.events, 1, Event::TraumaSuffered { .. });
-    assert!(
-        r.events
-            .iter()
-            .any(|e| matches!(e, Event::ScenarioResolved { .. })),
-        "the scenario-end GameEnd path must still have run, so the exactly-once \
-         assertion above is not vacuous; events = {:?}",
-        r.events
-    );
+    // The scenario-end GameEnd path must still have run, so the exactly-once
+    // assertion above is not vacuous.
+    assert_event!(r.events, Event::ScenarioResolved { .. });
 
     // Step 0's tail — "Then, remove those weaknesses from the game" — still runs.
-    let inv = &r.state.investigators[&InvestigatorId(1)];
+    let inv = &r.state.investigators[&INV];
     assert!(inv.threat_area.is_empty(), "threat area drained");
     assert!(inv.removed_from_game.iter().any(|c| c.as_str() == COVER_UP));
 }
@@ -322,14 +317,14 @@ fn cover_ups_trauma_fires_on_elimination_while_the_scenario_continues() {
     // the ordinary `GameEnd` path never runs at all — the trauma can only come
     // from Elimination step 0. RR p.10: "For the purpose of resolving weakness
     // cards, the game has ended for the eliminated investigator."
-    let r = reveal_committing(board_with_survivor(7, &[(COVER_UP, 3)]), &[]);
-
-    assert_eq!(
-        r.state.investigators[&InvestigatorId(1)].status,
-        Status::Defeated
+    let r = revealed(
+        drawing_grasping_hands(hurt_with_threat(7, &[(COVER_UP, 3)]), true),
+        &[],
     );
+
+    assert_eq!(r.state.investigators[&INV].status, Status::Defeated);
     assert_eq!(
-        r.state.investigators[&InvestigatorId(2)].status,
+        r.state.investigators[&SURVIVOR].status,
         Status::Active,
         "the survivor keeps the scenario running",
     );
@@ -338,7 +333,7 @@ fn cover_ups_trauma_fires_on_elimination_while_the_scenario_continues() {
 
     assert_event!(r.events, Event::TraumaSuffered {
         investigator, kind: TraumaKind::Mental, amount: 1
-    } if *investigator == InvestigatorId(1));
+    } if *investigator == INV);
 }
 
 #[test]
@@ -349,43 +344,17 @@ fn eliminated_investigator_with_a_clueless_cover_up_suffers_no_trauma() {
     // the game state, the ability does not initiate."* Step 0 scans it and
     // collects nothing. The control that keeps the test above honest about
     // *why* the trauma landed.
-    let r = reveal_committing(board_at_lethal_range(7, &[], &[(COVER_UP, 0)]), &[]);
+    let r = revealed(
+        drawing_grasping_hands(hurt_with_threat(7, &[(COVER_UP, 0)]), false),
+        &[],
+    );
 
     assert_eq!(
-        r.state.investigators[&InvestigatorId(1)].status,
+        r.state.investigators[&INV].status,
         Status::Defeated,
         "the elimination still happened",
     );
     assert_no_event!(r.events, Event::TraumaSuffered { .. });
-}
-
-/// A [`ChoiceResolver`] that records every prompt and answers it generically, so
-/// a test can assert a prompt was *never* raised without scripting the unrelated
-/// windows a lethal revelation opens on the way there.
-///
-/// A skippable window is **skipped**, not taken: this resolver exists to observe
-/// prompts, and buying the first option of an optional window would have it
-/// change the board it is meant to watch. (`TakeOneFastPlay` branches on
-/// `skippable` for the same reason.)
-#[derive(Default)]
-struct RecordingResolver {
-    prompts: Rc<RefCell<Vec<String>>>,
-}
-
-impl ChoiceResolver for RecordingResolver {
-    fn next(&mut self, request: &InputRequest, _state: &GameState) -> InputResponse {
-        self.prompts.borrow_mut().push(request.prompt.clone());
-        if request.skippable {
-            return InputResponse::Skip;
-        }
-        match request.kind {
-            InputKind::PickSingle => InputResponse::PickSingle(OptionId(0)),
-            InputKind::PickMultiple => InputResponse::PickMultiple {
-                selected: Vec::new(),
-            },
-            _ => InputResponse::Confirm,
-        }
-    }
 }
 
 #[test]
@@ -394,31 +363,34 @@ fn interactive_elimination_with_a_clueless_cover_up_raises_no_acknowledge() {
     // `EventPattern::GameEnd` declaration, so the initiation gate must hold
     // there too: with no clues the Forced does not initiate, and the #466
     // acknowledge `interactive_acknowledge` would otherwise raise never appears.
-    let mut state = board_at_lethal_range(7, &[], &[(COVER_UP, 0)]);
+    let mut state = drawing_grasping_hands(hurt_with_threat(7, &[(COVER_UP, 0)]), false);
     state.interactive_acknowledge = true;
 
-    let prompts = Rc::new(RefCell::new(Vec::new()));
-    let resolver = RecordingResolver {
-        prompts: Rc::clone(&prompts),
-    };
-    let r = test_support::drive(
-        state,
-        Action::Engine(EngineRecord::EncounterCardRevealed {
-            investigator: InvestigatorId(1),
-        }),
-        resolver,
+    // The one unrelated prompt on the way: `interactive_acknowledge` also
+    // pauses on the skill-test result, before the damage lands.
+    let acknowledging = reveal_committing(state, &[]);
+    assert_eq!(
+        acknowledging.prompt().kind,
+        InputKind::Confirm,
+        "the skill-test result acknowledge: {:?}",
+        acknowledging.prompt(),
     );
+    let session = acknowledging.confirm();
 
     assert_eq!(
-        r.state.investigators[&InvestigatorId(1)].status,
+        session.state().investigators[&INV].status,
         Status::Defeated,
         "the elimination still happened",
     );
-    assert_no_event!(r.events, Event::TraumaSuffered { .. });
-    let seen = prompts.borrow();
-    assert!(
-        !seen.iter().any(|p| p.contains("Cover Up")),
-        "no forced acknowledge for a clueless Cover Up; prompts = {seen:?}",
+    assert_no_event!(session.events(), Event::TraumaSuffered { .. });
+    // The session stops at the first prompt nothing answers, so a raised
+    // acknowledge would be where it rests. It rests at the game's end instead:
+    // no prompt at all followed the elimination.
+    let r = session.finish();
+    assert_eq!(
+        r.outcome,
+        EngineOutcome::Done,
+        "no forced acknowledge for a clueless Cover Up",
     );
 }
 
@@ -426,24 +398,37 @@ fn interactive_elimination_with_a_clueless_cover_up_raises_no_acknowledge() {
 fn eliminated_investigator_fires_no_further_round_end_forced() {
     // #567's acceptance: Dissonant Voices' Forced ("At the end of the round:
     // Discard Dissonant Voices") must not fire again for a dead investigator —
-    // step 4 already discarded it.
-    let r = reveal_committing(board_at_lethal_range(7, &[], &[(DISSONANT_VOICES, 0)]), &[]);
+    // step 4 already discarded it. The survivor keeps the game running, so the
+    // round really ends: their turn is the round's last.
+    let eliminated = reveal_committing(
+        drawing_grasping_hands(hurt_with_threat(7, &[(DISSONANT_VOICES, 0)]), true),
+        &[],
+    );
     assert_eq!(
-        r.state.investigators[&InvestigatorId(1)].status,
+        eliminated.state().investigators[&INV].status,
         Status::Defeated
     );
-    let before = r.state.encounter_discard.len();
+    let before = eliminated.state().encounter_discard.clone();
+    let seen = eliminated.events().len();
 
-    let ApplyResult { state, events, .. } = TestSession::new(r.state)
-        .fire_at(TimingEvent::RoundEnded)
-        .finish();
+    let session = eliminated.take(&TurnAction::EndTurn);
+    let round_end = &session.events()[seen..];
 
+    // The round really ended, so the no-op below cannot pass on a drive that
+    // never got there: play is at the next round's encounter draw.
+    assert_event!(
+        round_end,
+        Event::PhaseEnded {
+            phase: Phase::Upkeep
+        }
+    );
+    session.assert_at_encounter_draw();
     assert_eq!(
-        state.encounter_discard.len(),
+        session.state().encounter_discard,
         before,
         "no further round-end forced for a dead investigator"
     );
-    assert_no_event!(events, Event::CardDiscarded { .. });
+    assert_no_event!(round_end, Event::CardDiscarded { .. });
 }
 
 #[test]
@@ -455,9 +440,9 @@ fn elimination_does_not_drain_the_investigator_card() {
     // investigator. No in-scope investigator card carries such a forced
     // (Roland's is a reaction), so the filter has no observable test today —
     // this pins the premise that makes it necessary.
-    let r = reveal_committing(board_at_lethal_range(7, &[], &[]), &[]);
+    let r = revealed(drawing_grasping_hands(hurt(7, &[]), false), &[]);
 
-    let inv = &r.state.investigators[&InvestigatorId(1)];
+    let inv = &r.state.investigators[&INV];
     assert_eq!(inv.status, Status::Defeated);
     assert_eq!(
         inv.investigator_card.code.as_str(),
@@ -476,33 +461,45 @@ fn the_elimination_interleaving_replays_bit_for_bit() {
     // repo's `deck_shuffle_is_deterministic_across_replay` idiom — two seeded
     // runs compared — rather than re-applying a recorded `Vec<Action>`; with the
     // single rigged chaos token no RNG divergence is possible either way.)
-    let first = reveal_committing(
-        board_at_lethal_range(7, &[SURVIVAL_INSTINCT], &[(COVER_UP, 3)]),
-        &[SURVIVAL_INSTINCT],
-    );
-    let second = reveal_committing(
-        board_at_lethal_range(7, &[SURVIVAL_INSTINCT], &[(COVER_UP, 3)]),
-        &[SURVIVAL_INSTINCT],
-    );
+    let run = || {
+        reveal_committing(
+            drawing_grasping_hands(
+                hurt(7, &[SURVIVAL_INSTINCT]).threat_area([(COVER_UP, clues(3))]),
+                false,
+            ),
+            &[SURVIVAL_INSTINCT],
+        )
+    };
+    let first = run();
+    let second = run();
 
-    assert_eq!(first.outcome, EngineOutcome::Done);
     assert_eq!(
-        first.state, second.state,
+        first.state(),
+        second.state(),
         "the elimination interleaving must replay bit-for-bit"
     );
-    assert_eq!(first.events, second.events, "events replay identically too");
+    assert_eq!(
+        first.events(),
+        second.events(),
+        "events replay identically too"
+    );
+    assert_eq!(first.finish().outcome, EngineOutcome::Done);
 }
 
-/// Put `code`, owned by `owner`, into investigator 1's threat area.
-fn into_threat_area(state: &mut GameState, code: &str, id: u32, owner: InvestigatorId) {
+/// Put `code`, owned by `owner`, into investigator 1's threat area. A seat
+/// gives a threat-area card the owner its printed card names; these probes
+/// print nothing and need a chosen owner, so they are placed on the built
+/// state, with an id minted from its counter.
+fn into_threat_area(state: &mut GameState, code: &str, owner: InvestigatorId) {
+    let id = state.card_instance_ids.mint();
     state
         .investigators
-        .get_mut(&InvestigatorId(1))
+        .get_mut(&INV)
         .expect("investigator 1")
         .threat_area
         .push(CardInPlay::enter_play(
             CardCode::new(code),
-            CardInstanceId(id),
+            id,
             Owner::Investigator(owner),
         ));
 }
@@ -520,12 +517,12 @@ fn elimination_partitions_the_threat_area_by_owner() {
     // So a threat-area card the eliminated investigator owns leaves at step 1,
     // weakness or not, and one another investigator owns is discarded at step 4
     // to that investigator's pile — not the encounter discard.
-    let mut state = board_with_survivor(7, &[]);
-    into_threat_area(&mut state, OWNED_THREAT, 50, InvestigatorId(1));
-    into_threat_area(&mut state, OTHERS_THREAT, 51, InvestigatorId(2));
-    let r = reveal_committing(state, &[]);
+    let mut state = drawing_grasping_hands(hurt(7, &[]), true);
+    into_threat_area(&mut state, OWNED_THREAT, INV);
+    into_threat_area(&mut state, OTHERS_THREAT, SURVIVOR);
+    let r = revealed(state, &[]);
 
-    let eliminated = &r.state.investigators[&InvestigatorId(1)];
+    let eliminated = &r.state.investigators[&INV];
     assert_eq!(eliminated.status, Status::Defeated);
     assert!(eliminated.threat_area.is_empty(), "threat area drained");
     assert!(
@@ -537,7 +534,7 @@ fn elimination_partitions_the_threat_area_by_owner() {
         eliminated.removed_from_game
     );
     assert_eq!(
-        r.state.investigators[&InvestigatorId(2)].discard,
+        r.state.investigators[&SURVIVOR].discard,
         vec![CardCode::new(OTHERS_THREAT)],
         "another investigator's card goes to its owner's discard at step 4"
     );
@@ -555,7 +552,7 @@ fn elimination_partitions_the_threat_area_by_owner() {
         code,
         from: Zone::ThreatArea,
         to: DiscardPile::Investigator(to),
-    } if code.as_str() == OTHERS_THREAT && *to == InvestigatorId(2));
+    } if code.as_str() == OTHERS_THREAT && *to == SURVIVOR);
 }
 
 #[test]
@@ -563,22 +560,17 @@ fn elimination_step_one_emits_one_removal_event_per_card_in_play() {
     // RR p.10 step 1 removes the cards in play *and* the out-of-play areas, but
     // only a card leaving play is an event: one `CardRemovedFromGame` per card
     // in play, naming the zone it left, and none for the hand, deck or discard.
-    let mut state = board_at_lethal_range(7, &["filler1"], &[]);
-    into_threat_area(&mut state, OWNED_THREAT, 50, InvestigatorId(1));
-    let inv = state
-        .investigators
-        .get_mut(&InvestigatorId(1))
-        .expect("investigator 1");
-    inv.cards_in_play.push(CardInPlay::enter_play(
-        CardCode::new(OWNED_ASSET),
-        CardInstanceId(60),
-        Owner::Investigator(InvestigatorId(1)),
-    ));
-    inv.deck = vec![CardCode::new("filler2"), CardCode::new("filler3")];
-    inv.discard = vec![CardCode::new("filler4")];
-    let r = reveal_committing(state, &[]);
+    let mut state = drawing_grasping_hands(
+        hurt(7, &["filler1"])
+            .in_play([OWNED_ASSET])
+            .deck(["filler2", "filler3"])
+            .discard(["filler4"]),
+        false,
+    );
+    into_threat_area(&mut state, OWNED_THREAT, INV);
+    let r = revealed(state, &[]);
 
-    let inv = &r.state.investigators[&InvestigatorId(1)];
+    let inv = &r.state.investigators[&INV];
     assert_eq!(inv.status, Status::Defeated);
     for code in [
         OWNED_ASSET,

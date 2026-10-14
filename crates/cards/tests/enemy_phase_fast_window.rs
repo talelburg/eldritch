@@ -43,21 +43,22 @@
 //! there. Step 3.3's does.
 
 use cards::REGISTRY;
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, ApplyResult, EngineOutcome, InputKind, OptionTarget};
+use game_core::engine::{InputKind, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, Continuation, Enemy, EnemyId, FastActorScope,
-    FastWindowFrame, FastWindowKind, GameState, GameStateBuilder, InvestigatorId, LocationId,
-    Owner, Phase, PhaseStep,
+    CardCode, Enemy, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, TestSession};
+use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
+use game_core::{assert_event, assert_no_event};
 
 /// Beat Cop (01018): Guardian Ally, `[fast]` *"Discard Beat Cop: Deal 1 damage
 /// to an enemy at your location."*
 const BEAT_COP: &str = "01018";
-const BEAT_COP_INSTANCE: CardInstanceId = CardInstanceId(1);
+
+const INV: InvestigatorId = InvestigatorId(1);
+const HERE: LocationId = LocationId(101);
+const ATTACKER: EnemyId = EnemyId(7);
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
@@ -68,7 +69,7 @@ fn install_real_registry() {
 /// leaves it alive through a single point of Beat Cop damage, 1 lets the Fast
 /// play defeat it before it ever attacks.
 fn ready_attacker(max_health: u8) -> Enemy {
-    let mut e = test_support::test_enemy(7, "Attacker");
+    let mut e = test_support::test_enemy(ATTACKER.0, "Attacker");
     e.max_health = max_health;
     e.attack_damage = 1;
     e
@@ -77,120 +78,87 @@ fn ready_attacker(max_health: u8) -> Enemy {
 /// Mid-Investigation state for one investigator engaged by one ready attacker,
 /// poised so that `EndTurn` cascades Investigation → Enemy and runs into the
 /// step-3.3 window. `beat_cop` decides whether anything is Fast-eligible there.
-fn board(beat_cop: bool, enemy_health: u8) -> (GameState, InvestigatorId, EnemyId) {
-    let inv_id = InvestigatorId(1);
-    let loc_id = LocationId(101);
-
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(loc_id);
-    if beat_cop {
-        inv.cards_in_play.push(CardInPlay::enter_play(
-            CardCode::new(BEAT_COP),
-            BEAT_COP_INSTANCE,
-            Owner::Investigator(InvestigatorId(1)),
-        ));
-    }
-    // Something for the round-ending cascade's Upkeep step-4.4 draw to take.
-    inv.deck = vec![CardCode::new("01088")];
-
-    let state = GameStateBuilder::new()
-        .with_location(test_support::test_location(101, "Study"))
-        .with_investigator(inv)
-        .with_enemy_engaged(ready_attacker(enemy_health), inv_id)
-        .open_turn(inv_id)
-        .build();
-    (state, inv_id, EnemyId(7))
+fn board(beat_cop: bool, enemy_health: u8) -> GameStateBuilder {
+    let me = seat(1)
+        .at(HERE)
+        // Something for the round-ending cascade's Upkeep step-4.4 draw to take.
+        .deck(["01088"]);
+    let me = if beat_cop { me.in_play([BEAT_COP]) } else { me };
+    GameStateBuilder::new()
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_seat(me)
+        .with_enemy_engaged(ready_attacker(enemy_health), INV)
+        .open_turn(INV)
 }
 
 /// `EndTurn`, which cascades out of the Investigation phase and into the Enemy
 /// phase's step-3.3 loop.
-fn end_turn(state: GameState) -> ApplyResult {
-    test_support::take_turn_action(state, &TurnAction::EndTurn)
+fn end_turn(board: GameStateBuilder) -> TestSession {
+    board.session().take(&TurnAction::EndTurn)
+}
+
+/// The anchor of the seated Beat Cop: its `[fast]` ability is offered on it.
+fn beat_cop(session: &TestSession) -> OptionTarget {
+    session.state().card(INV, BEAT_COP)
 }
 
 #[test]
 fn before_investigator_attacked_pauses_when_a_fast_play_is_eligible() {
-    let (state, _, enemy_id) = board(true, 2);
-    let result = end_turn(state);
+    let session = end_turn(board(true, 2));
 
     assert_eq!(
-        result.state.phase,
+        session.state().phase,
         Phase::Enemy,
         "the EndTurn cascade should stop inside the Enemy phase, not run through it; \
          events = {:?}",
-        result.events
-    );
-    assert_eq!(
-        result.state.open_windows(),
-        vec![&Continuation::FastWindow(FastWindowFrame {
-            candidates: Vec::new(),
-            fast_actors: FastActorScope::Any,
-            kind: FastWindowKind::Phase(PhaseStep::BeforeInvestigatorAttacked),
-        })],
-        "the step-3.3 window is the one left standing open",
+        session.events()
     );
 
-    let EngineOutcome::AwaitingInput { ref request, .. } = result.outcome else {
-        panic!(
-            "the window should pause for input rather than auto-skipping, got {:?}",
-            result.outcome
-        );
-    };
+    // The window pauses for input rather than auto-skipping: the one player
+    // window the Enemy phase opens before an attack, step 3.3's.
+    let request = session.prompt();
     assert_eq!(request.kind, InputKind::PickSingle, "{request:?}");
     assert!(
         request.skippable,
         "a player window is passable: {request:?}"
     );
     assert_eq!(
-        request
-            .options
-            .iter()
-            .map(|o| o.target.clone())
-            .collect::<Vec<_>>(),
-        vec![Some(OptionTarget::CardInstance(BEAT_COP_INSTANCE))],
+        (
+            session.offered_at(&beat_cop(&session)),
+            request.options.len()
+        ),
+        (1, 1),
         "Beat Cop's [fast] ability is the one eligible play on this board: {request:?}",
     );
 
+    // The pause is *before* the attack — nothing has been dealt yet.
+    assert_no_event!(session.events(), Event::DamageTaken { .. });
     assert!(
-        !result
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::DamageTaken { .. })),
-        "the pause is *before* the attack — nothing has been dealt yet; events = {:?}",
-        result.events
-    );
-    assert!(
-        !result.state.enemies[&enemy_id].exhausted,
+        !session.state().enemies[&ATTACKER].exhausted,
         "the attacker has not attacked, so it has not exhausted",
     );
 }
 
 #[test]
 fn skipping_the_pause_resumes_into_the_attack() {
-    let (state, inv_id, enemy_id) = board(true, 2);
-    let me = state.investigators[&inv_id].card_anchor();
+    let paused = end_turn(board(true, 2));
+    let me = paused.state().investigators[&INV].card_anchor();
 
     // Passing the window drops straight into step 3.3's attack, which stops to
     // ask where its damage goes — Beat Cop is a 2-health Ally in play and so a
     // legal soak target beside the investigator himself. Assign it to the
     // investigator, by their investigator card.
-    let assigned = TestSession::new(state)
-        .take(&TurnAction::EndTurn)
-        .skip()
-        .pick(me);
+    let assigned = paused.skip().pick(me);
     let events = assigned.events();
-    assert!(
-        events.iter().any(|e| matches!(
-            e,
-            Event::DamageTaken { investigator, amount: 1 } if *investigator == inv_id
-        )),
-        "passing the window resolves step 3.3's attack; events = {events:?}",
+    // Passing the window resolves step 3.3's attack…
+    assert_event!(
+        events,
+        Event::DamageTaken { investigator, amount: 1 } if *investigator == INV
     );
-    assert!(
-        events
-            .iter()
-            .any(|e| matches!(e, Event::EnemyExhausted { enemy } if *enemy == enemy_id)),
-        "the attacker exhausts on completing its attack; events = {events:?}",
+    // …and the attacker exhausts on completing its attack.
+    assert_event!(
+        events,
+        Event::EnemyExhausted { enemy } if *enemy == ATTACKER
     );
 }
 
@@ -199,38 +167,22 @@ fn taking_the_fast_play_resolves_before_the_attack() {
     // The attacker dies to Beat Cop's single point of damage, so "the window
     // opens before the attack" is provable by consequence and not only by
     // event order: a defeated enemy never attacks.
-    let (state, inv_id, enemy_id) = board(true, 1);
-    let paused = end_turn(state);
-    let EngineOutcome::AwaitingInput { ref request, .. } = paused.outcome else {
-        panic!("expected the step-3.3 pause, got {:?}", paused.outcome);
-    };
-    let option = request
-        .options
-        .iter()
-        .find(|o| o.target == Some(OptionTarget::CardInstance(BEAT_COP_INSTANCE)))
-        .expect("Beat Cop's zero-action ability is the offered play")
-        .id;
-
-    let played = engine::apply(
-        paused.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(option),
-        }),
-    );
+    let paused = end_turn(board(true, 1));
+    // Beat Cop's zero-action ability is the offered play.
+    let beat_cop = beat_cop(&paused);
+    let played = paused.pick(beat_cop);
 
     assert!(
-        !played.state.enemies.contains_key(&enemy_id),
+        !played.state().enemies.contains_key(&ATTACKER),
         "Beat Cop's 1 damage defeats the 1-health attacker; enemies = {:?}",
-        played.state.enemies
+        played.state().enemies
     );
-    assert!(
-        !played.events.iter().any(
-            |e| matches!(e, Event::DamageTaken { investigator, .. } if *investigator == inv_id)
-        ),
-        "with its attacker gone, the investigator takes no attack damage; events = {:?}",
-        played.events
+    // With its attacker gone, the investigator takes no attack damage.
+    assert_no_event!(
+        played.events(),
+        Event::DamageTaken { investigator, .. } if *investigator == INV
     );
-    let inv = &played.state.investigators[&inv_id];
+    let inv = &played.state().investigators[&INV];
     assert!(
         inv.cards_in_play.is_empty(),
         "Beat Cop left play as its own cost; cards_in_play = {:?}",
@@ -248,32 +200,19 @@ fn the_window_auto_skips_when_nothing_is_fast_eligible() {
     // The control for the three above: the same board without Beat Cop makes
     // the same window auto-skip, so the pause is attributable to Fast
     // eligibility and not to the phase step itself.
-    let (state, inv_id, enemy_id) = board(false, 2);
-    let result = end_turn(state);
+    let session = end_turn(board(false, 2));
 
-    assert!(
-        !result
-            .state
-            .open_windows()
-            .iter()
-            .any(|w| matches!(w, Continuation::FastWindow(_))),
-        "no window is left open on the auto-skip path; windows = {:?}",
-        result.state.open_windows()
+    // No window is left open on the auto-skip path: play runs on through the
+    // round to the next Mythos phase's encounter draw.
+    session.assert_at_encounter_draw();
+    // The attack resolves in the same cascade…
+    assert_event!(
+        session.events(),
+        Event::DamageTaken { investigator, amount: 1 } if *investigator == INV
     );
-    assert!(
-        result.events.iter().any(|e| matches!(
-            e,
-            Event::DamageTaken { investigator, amount: 1 } if *investigator == inv_id
-        )),
-        "the attack resolves in the same cascade; events = {:?}",
-        result.events
-    );
-    assert!(
-        result
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::EnemyExhausted { enemy } if *enemy == enemy_id)),
-        "…and the attacker exhausts; events = {:?}",
-        result.events
+    // …and the attacker exhausts.
+    assert_event!(
+        session.events(),
+        Event::EnemyExhausted { enemy } if *enemy == ATTACKER
     );
 }

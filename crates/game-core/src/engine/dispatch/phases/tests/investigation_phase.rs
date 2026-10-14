@@ -1,6 +1,7 @@
 use super::*;
-use crate::action::PlayerAction;
+use crate::assert_event;
 use crate::engine::dispatch;
+use crate::engine::enumerate::TurnAction;
 use crate::engine::outcome::EngineOutcome;
 use crate::state::{GameStateBuilder, InvestigatorId, Phase, Status};
 use crate::test_support;
@@ -9,7 +10,7 @@ use crate::test_support;
 fn investigator_turn_defaults_to_not_ending() {
     // The builder-staged open-turn frame is not mid-end-turn.
     let state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
         .open_turn(InvestigatorId(1))
         .build();
     assert_eq!(
@@ -26,10 +27,10 @@ fn open_turn_leaves_investigator_turn_frame_on_top() {
     // Reach the open turn the way production does: enter the Investigation
     // phase for a single investigator (no Fast cards → windows auto-skip).
     let mut state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
+        .with_turn_order([InvestigatorId(1)])
         .with_phase(Phase::Investigation)
         .build();
-    state.turn_order = vec![InvestigatorId(1)];
 
     let mut events = Vec::new();
     let outcome = {
@@ -68,25 +69,17 @@ fn mulligan_completion_kicks_off_investigation_phase() {
     // Investigation phase begins (Rules Reference p.27: no action
     // windows during setup; the game begins after mulligans).
     // active_investigator defaults to None (set when the phase rotates).
-    let mut state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
+    let session = GameStateBuilder::default()
+        .with_seat(test_support::seat(1))
         .with_phase(Phase::Investigation)
         .with_turn_order([InvestigatorId(1)])
         .with_mulligan_remaining([InvestigatorId(1)])
-        .build();
+        .session()
+        // Keep the hand.
+        .choose_from_hand(&[]);
 
-    let mut events = Vec::new();
-    let outcome = dispatch::apply_player_action(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
-        &PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        },
-    );
-
-    assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
+    session.assert_at_turn_menu(InvestigatorId(1));
+    let state = session.state();
     assert_eq!(
         state.current_mulligan(),
         None,
@@ -99,14 +92,11 @@ fn mulligan_completion_kicks_off_investigation_phase() {
     );
     // PhaseStarted(Investigation) fires at mulligan completion (not
     // during scenario setup).
-    assert!(
-        events.iter().any(|e| matches!(
-            e,
-            Event::PhaseStarted {
-                phase: Phase::Investigation
-            }
-        )),
-        "PhaseStarted(Investigation) must fire"
+    assert_event!(
+        session.events(),
+        Event::PhaseStarted {
+            phase: Phase::Investigation
+        }
     );
 }
 
@@ -117,10 +107,10 @@ fn investigation_anchor_pushed_and_persists_through_turn() {
     // auto-skip closed.
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
+        .with_turn_order([id])
         .with_phase(Phase::Investigation)
         .build();
-    state.turn_order = vec![id];
     let mut events = Vec::new();
     investigation_phase(&mut Cx {
         state: &mut state,
@@ -144,12 +134,11 @@ fn investigation_phase_emits_phase_started_and_rotates_to_lead() {
     // and then rotate to the first investigator in turn_order
     // (Rules Reference p.24 step 2.1 → window → step 2.2 lead-first).
     let mut state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
-        .with_investigator(test_support::test_investigator(2))
+        .with_seat(test_support::seat(1))
+        .with_seat(test_support::seat(2))
+        .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
         .with_phase(Phase::Mythos)
         .build();
-    state.turn_order = vec![InvestigatorId(1), InvestigatorId(2)];
-    state.active_investigator = None;
 
     let mut events = Vec::new();
     let mut cx = Cx {
@@ -195,8 +184,6 @@ fn investigation_phase_with_empty_turn_order_parks() {
     let mut state = GameStateBuilder::default()
         .with_phase(Phase::Investigation)
         .build();
-    state.turn_order.clear();
-    state.active_investigator = None;
 
     let mut events = Vec::new();
     investigation_phase(&mut Cx {
@@ -225,17 +212,16 @@ fn investigation_phase_skips_defeated_lead_and_picks_first_active() {
     // Investigator 1 (lead) is Defeated; investigator 2 is Active.
     // investigation_phase must skip Id(1) and rotate to Id(2).
     let mut state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
-        .with_investigator(test_support::test_investigator(2))
+        .with_seat(test_support::seat(1))
+        .with_seat(test_support::seat(2))
+        .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
         .with_phase(Phase::Mythos)
         .build();
-    state.turn_order = vec![InvestigatorId(1), InvestigatorId(2)];
     state
         .investigators
         .get_mut(&InvestigatorId(1))
         .unwrap()
         .status = Status::Defeated;
-    state.active_investigator = None;
 
     let mut events = Vec::new();
     let mut cx = Cx {
@@ -257,27 +243,17 @@ fn end_turn_for_last_investigator_ends_phase_and_steps_to_enemy() {
     // Single investigator ends their turn: TurnEnded (2.2.2), then
     // PhaseEnded(Investigation) (2.3) from investigation_phase_end,
     // then the cascade enters the Enemy phase.
-    let mut state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
+    let session = GameStateBuilder::default()
+        .with_seat(test_support::seat(1))
         .open_turn(InvestigatorId(1))
-        .build();
-
-    let mut events = Vec::new();
-    let outcome = {
-        // end_turn may push the next phase's Entry anchor (slice 1b); drive
-        // completes the transition, as the apply boundary does in production.
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
-        let o = end_turn(&mut cx);
-        dispatch::drive(&mut cx, o)
-    };
+        .session()
+        .take(&TurnAction::EndTurn);
+    let (state, events) = (session.state(), session.events());
 
     // Single investigator with no enemies: the round-ending EndTurn
     // cascades Investigation → Enemy → Upkeep → Mythos and pauses at the
-    // step-1.4 encounter-draw prompt (AwaitingInput).
-    assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
+    // step-1.4 encounter-draw prompt.
+    session.assert_at_encounter_draw();
     assert!(
         events.iter().any(
             |e| matches!(e, Event::TurnEnded { investigator } if *investigator == InvestigatorId(1))
@@ -317,26 +293,16 @@ fn end_turn_for_last_investigator_ends_phase_and_steps_to_enemy() {
 fn end_turn_rotates_to_next_active_and_opens_turn_window() {
     // Two investigators: ending #1's turn returns to 2.2 for #2 and
     // opens the InvestigatorTurnBegins window for them.
-    let mut state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
-        .with_investigator(test_support::test_investigator(2))
+    let session = GameStateBuilder::default()
+        .with_seat(test_support::seat(1))
+        .with_seat(test_support::seat(2))
         .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
         .open_turn(InvestigatorId(1))
-        .build();
+        .session()
+        .take(&TurnAction::EndTurn);
+    let (state, events) = (session.state(), session.events());
 
-    let mut events = Vec::new();
-    let outcome = {
-        // end_turn may push the next phase's Entry anchor (slice 1b); drive
-        // completes the transition, as the apply boundary does in production.
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
-        let o = end_turn(&mut cx);
-        dispatch::drive(&mut cx, o)
-    };
-
-    assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
+    session.assert_at_turn_menu(InvestigatorId(2));
     assert_eq!(
         state.active_investigator,
         Some(InvestigatorId(2)),
@@ -366,10 +332,10 @@ fn step_phase_emits_no_phase_ended() {
     // downstream cascade may emit PhaseEnded for Enemy/Upkeep via
     // their own *_end helpers, but that's correct and expected.
     let mut state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
+        .with_turn_order([InvestigatorId(1)])
         .with_phase(Phase::Investigation)
         .build();
-    state.turn_order = vec![InvestigatorId(1)];
 
     let mut events = Vec::new();
     step_phase(&mut Cx {
@@ -393,11 +359,10 @@ fn investigation_entry_emits_phase_started_then_windows_then_lead_active() {
     // both windows (test registry → nothing Fast-eligible) and lands
     // the lead active, with no PhaseEnded yet.
     let mut state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
+        .with_turn_order([InvestigatorId(1)])
         .with_phase(Phase::Mythos)
         .build();
-    state.turn_order = vec![InvestigatorId(1)];
-    state.active_investigator = None;
 
     let mut events = Vec::new();
     step_phase(&mut Cx {

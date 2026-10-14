@@ -26,6 +26,7 @@ mod fixtures;
 mod mock_registry;
 mod native;
 mod resolver;
+mod seat;
 mod session;
 
 /// Synthetic investigator-card code for unit tests. Registered by
@@ -319,9 +320,6 @@ pub use fixtures::{
 };
 pub use mock_registry::MockRegistry;
 pub use native::run_native;
-pub use resolver::{
-    apply_no_commits, dispatch_turn_action_unchecked, drive, drive_skill_test, perform_skill_test,
-    perform_skill_test_no_commits, take_turn_action, ChoiceResolver, ScriptedResolver,
-    TakeOneFastPlay,
-};
+pub use resolver::{ChoiceResolver, ScriptedResolver};
+pub use seat::{clues, seat, uses, CardSetup, Seat, SeatCard, SeatLookup};
 pub use session::TestSession;

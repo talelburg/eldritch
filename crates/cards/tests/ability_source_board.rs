@@ -36,15 +36,14 @@
 //! `ability_source_colocation.rs`.
 
 use card_dsl::dsl::{self, Ability, InvestigatorTarget, UsageLimit, UsagePeriod};
-use game_core::assert_event;
 use game_core::engine::enumerate::{self, TurnAction};
-use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, Act, Agenda, CardCode, GameState, GameStateBuilder,
     InvestigatorId, LocationId,
 };
-use game_core::test_support::{self, MockRegistry};
+use game_core::test_support::{self, seat, MockRegistry, Seat, TestSession};
+use game_core::{assert_event, assert_no_event};
 
 /// Synthetic **act**, standing in for Uncovering the Conspiracy 01123.
 const ACT_ONE: &str = "SRCACT01";
@@ -106,11 +105,16 @@ fn install_probe_registry() {
 /// Two locations, two investigators — mine `HERE`, a neighbour `THERE` — and a
 /// two-act deck plus a one-agenda deck, both cursors at the front.
 fn board() -> GameState {
+    board_with(seat(1).at(HERE))
+}
+
+/// [`board`] with my investigator seated as `mine`.
+fn board_with(mine: Seat) -> GameState {
     let mut state = GameStateBuilder::new()
-        .with_investigator_at(test_support::test_investigator(1), HERE)
-        .with_investigator_at(test_support::test_investigator(2), THERE)
-        .with_location(test_support::test_location(1, "Study"))
-        .with_location(test_support::test_location(2, "Hallway"))
+        .with_seat(mine)
+        .with_seat(seat(2).at(THERE))
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::test_location(THERE.0, "Hallway"))
         .with_turn_order([MINE, NEIGHBOUR])
         .open_turn(MINE)
         .build();
@@ -152,16 +156,13 @@ fn assert_offered_and_activatable(state: GameState, source: AbilitySource, why: 
     );
 
     let before = state.investigators[&MINE].resources;
-    let result = test_support::dispatch_turn_action_unchecked(state, &action);
-    assert!(
-        !matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "{why}, so the activation should resolve; got {:?}",
-        result.outcome,
-    );
+    let session = TestSession::new(state).take(&action);
+    session.assert_at_turn_menu(MINE);
     assert_eq!(
-        result.state.investigators[&MINE].resources,
+        session.state().investigators[&MINE].resources,
         before + 1,
-        "the ability's effect (gain 1 resource) should have run",
+        "{why}, so the activation should resolve: the ability's effect (gain 1 \
+         resource) should have run",
     );
 }
 
@@ -202,13 +203,11 @@ fn both_are_reachable_from_anywhere_on_the_board() {
         ),
     ] {
         for source in [AbilitySource::Act, AbilitySource::Agenda] {
-            let mut state = board();
-            state
-                .investigators
-                .get_mut(&MINE)
-                .expect("on the board")
-                .current_location = mover;
-            assert_offered_and_activatable(state, source, why);
+            let mine = match mover {
+                Some(location) => seat(1).at(location),
+                None => seat(1),
+            };
+            assert_offered_and_activatable(board_with(mine), source, why);
         }
     }
 }
@@ -217,10 +216,9 @@ fn both_are_reachable_from_anywhere_on_the_board() {
 /// has none, so the event has to say what actually carried the ability.
 #[test]
 fn the_activation_event_names_the_board_card_it_came_from() {
-    let result = test_support::dispatch_turn_action_unchecked(
-        board(),
-        &activation(AbilitySource::Act, LIVE),
-    );
+    let result = TestSession::new(board())
+        .take(&activation(AbilitySource::Act, LIVE))
+        .finish();
     assert_event!(
         result.events,
         Event::AbilityActivated {
@@ -240,19 +238,17 @@ fn an_act_that_is_no_longer_current_is_not_reachable() {
     let mut state = board();
     state.act_index = 1;
 
-    let result =
-        test_support::dispatch_turn_action_unchecked(state, &activation(AbilitySource::Act, LIVE));
+    let result = TestSession::new(state)
+        .take(&activation(AbilitySource::Act, LIVE))
+        .finish();
     assert_event!(
         result.events,
         Event::AbilityActivated { code, .. } if code.as_str() == ACT_TWO
     );
-    assert!(
-        !result.events.iter().any(|e| matches!(
-            e,
-            Event::AbilityActivated { code, .. } if code.as_str() == ACT_ONE
-        )),
-        "the superseded act must not be what the activation reached; events were {:?}",
+    // The superseded act must not be what the activation reached.
+    assert_no_event!(
         result.events,
+        Event::AbilityActivated { code, .. } if code.as_str() == ACT_ONE
     );
 }
 
@@ -270,19 +266,12 @@ fn an_absent_act_or_agenda_is_out_of_reach() {
             !menu.contains(&activation(source, LIVE)),
             "{source:?} must stay out of the turn menu with no deck loaded; menu was {menu:?}",
         );
-        let before = state.clone();
-        let result =
-            test_support::dispatch_turn_action_unchecked(state.clone(), &activation(source, LIVE));
-        let EngineOutcome::Rejected { reason } = &result.outcome else {
-            panic!("activating {source:?} with no deck loaded must reject; got {result:?}");
-        };
+        // Activating it with no deck loaded must reject.
+        let reason = TestSession::new(state.clone())
+            .assert_rejects(|s| s.submit_off_menu(&activation(source, LIVE)));
         assert!(
             reason.contains("cannot reach"),
             "the reason should name reachability, got: {reason}",
-        );
-        assert_eq!(
-            result.state, before,
-            "a rejected activation must leave state byte-identical",
         );
     }
 }
@@ -313,7 +302,6 @@ fn a_usage_limited_board_ability_rejects_naming_699_rather_than_panicking() {
     let state = board();
     for source in [AbilitySource::Act, AbilitySource::Agenda] {
         let action = activation(source, LIMITED);
-        let before = state.clone();
 
         assert!(
             !enumerate::legal_actions(&state).contains(&action),
@@ -321,17 +309,11 @@ fn a_usage_limited_board_ability_rejects_naming_699_rather_than_panicking() {
             enumerate::legal_actions(&state),
         );
 
-        let result = test_support::dispatch_turn_action_unchecked(state.clone(), &action);
-        let EngineOutcome::Rejected { reason } = &result.outcome else {
-            panic!("a usage-limited ability on {source:?} must reject, got {result:?}");
-        };
+        // A usage-limited ability on a board card must reject.
+        let reason = TestSession::new(state.clone()).assert_rejects(|s| s.submit_off_menu(&action));
         assert!(
             reason.contains("usage limit") && reason.contains("#699"),
             "the reason should name the limit and the issue that builds it, got: {reason}",
-        );
-        assert_eq!(
-            result.state, before,
-            "a rejected activation must leave state byte-identical",
         );
     }
 }

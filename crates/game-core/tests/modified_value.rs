@@ -14,7 +14,6 @@
 //! Each mock below names the printed card it is shaped after.
 
 use card_dsl::dsl::{self, ModifierAudience, ModifierScope, Stat};
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::modified_value::{
     self, ContributionSource, ModifiedQuantity, ModifierTarget, ReadContext,
@@ -24,7 +23,7 @@ use game_core::state::{
     Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
     GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{self, MockRegistry, TestSession};
+use game_core::test_support::{self, seat, MockRegistry, Seat, TestSession};
 use game_core::{assert_event, card_registry};
 
 /// Shaped after Lita Chantler 01117: *"Each investigator at your
@@ -122,27 +121,51 @@ const TEAMMATE: InvestigatorId = InvestigatorId(2);
 const HERE: LocationId = LocationId(10);
 const THERE: LocationId = LocationId(11);
 
-/// A two-investigator board: me at `HERE`, my teammate wherever
-/// `teammate_at` says, a chaos bag of a single `Numeric(0)` so the token
-/// never moves a total.
-fn board(teammate_at: LocationId) -> GameStateBuilder {
-    let mut me = test_support::test_investigator(1);
-    me.current_location = Some(HERE);
-    let mut teammate = test_support::test_investigator(2);
-    teammate.current_location = Some(teammate_at);
+/// The instance id of the one card a test places on a location or an enemy:
+/// a seat cannot place one there, so its id is named here, and seated cards
+/// are minted past it.
+const PLACED: CardInstanceId = CardInstanceId(1);
+
+/// Me, at `HERE`.
+fn me() -> Seat {
+    seat(1).at(HERE)
+}
+
+/// A two-investigator board on my open turn: `me` and `teammate`, the Study
+/// (`HERE`) and the Hallway (`THERE`), a chaos bag of a single `Numeric(0)`
+/// so the token never moves a total.
+fn board_of(me: Seat, teammate: Seat) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_turn_order([ME, TEAMMATE])
         .open_turn(ME)
-        .with_investigator(me)
-        .with_investigator(teammate)
-        .with_location(test_support::test_location(10, "Study"))
-        .with_location(test_support::test_location(11, "Hallway"))
+        .with_seat(me)
+        .with_seat(teammate)
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::test_location(THERE.0, "Hallway"))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
 }
 
-fn in_play(code: &str, instance: u32, owner: Owner) -> CardInPlay {
-    CardInPlay::enter_play(CardCode::new(code), CardInstanceId(instance), owner)
+/// [`board_of`] with [`me`], and my teammate wherever `teammate_at` says.
+fn board(teammate_at: LocationId) -> GameStateBuilder {
+    board_of(me(), seat(2).at(teammate_at))
+}
+
+/// `code` entering play as [`PLACED`], owned by `owner`, for a location's
+/// or an enemy's own zones.
+fn placed(code: &str, owner: Owner) -> CardInPlay {
+    CardInPlay::enter_play(CardCode::new(code), PLACED, owner)
+}
+
+/// I test `skill` against `difficulty` on `board`, committing nothing; the
+/// test resolves back to my turn menu.
+fn my_test(board: GameStateBuilder, skill: SkillKind, difficulty: i8) -> TestSession {
+    let session = board
+        .session()
+        .test_skill(ME, skill, difficulty)
+        .commit(&[]);
+    session.assert_at_turn_menu(ME);
+    session
 }
 
 // ---- 1. another investigator's cards in play --------------------
@@ -153,17 +176,11 @@ fn in_play(code: &str, instance: u32, owner: Owner) -> CardInPlay {
 /// me.
 #[test]
 fn a_card_another_investigator_controls_reaches_me() {
-    let mut state = board(HERE).build();
-    state
-        .investigators
-        .get_mut(&TEAMMATE)
-        .unwrap()
-        .cards_in_play
-        .push(in_play(LITA, 1, Owner::Scenario));
+    let board = board_of(me(), seat(2).at(HERE).in_play([LITA]));
 
-    let result = test_support::perform_skill_test_no_commits(state, ME, SkillKind::Combat, 4);
+    let result = my_test(board, SkillKind::Combat, 4);
     assert_event!(
-        result.events,
+        result.events(),
         Event::SkillTestSucceeded { investigator, margin: 0, .. } if *investigator == ME
     );
 }
@@ -172,17 +189,11 @@ fn a_card_another_investigator_controls_reaches_me() {
 /// nobody — the audience is *at your location*, not *everywhere*.
 #[test]
 fn a_card_another_investigator_controls_elsewhere_does_not_reach_me() {
-    let mut state = board(THERE).build();
-    state
-        .investigators
-        .get_mut(&TEAMMATE)
-        .unwrap()
-        .cards_in_play
-        .push(in_play(LITA, 1, Owner::Scenario));
+    let board = board_of(me(), seat(2).at(THERE).in_play([LITA]));
 
-    let result = test_support::perform_skill_test_no_commits(state, ME, SkillKind::Combat, 4);
+    let result = my_test(board, SkillKind::Combat, 4);
     assert_event!(
-        result.events,
+        result.events(),
         Event::SkillTestFailed { investigator, by: 1, .. } if *investigator == ME
     );
 }
@@ -194,13 +205,11 @@ fn a_card_another_investigator_controls_elsewhere_does_not_reach_me() {
 /// against difficulty 3 fails by 1.
 #[test]
 fn a_modifier_on_a_location_reaches_investigators_in_it() {
-    let mut ruins = test_support::test_location(10, "Whateley Ruins");
+    let mut ruins = test_support::test_location(HERE.0, "Whateley Ruins");
     ruins.code = CardCode::new(WHATELEY);
-    let state = board(THERE).with_location(ruins).build();
-
-    let result = test_support::perform_skill_test_no_commits(state, ME, SkillKind::Willpower, 3);
+    let result = my_test(board(THERE).with_location(ruins), SkillKind::Willpower, 3);
     assert_event!(
-        result.events,
+        result.events(),
         Event::SkillTestFailed { investigator, by: 1, .. } if *investigator == ME
     );
 }
@@ -208,13 +217,11 @@ fn a_modifier_on_a_location_reaches_investigators_in_it() {
 /// An investigator at a *different* location is untouched by it.
 #[test]
 fn a_modifier_on_a_location_does_not_reach_investigators_elsewhere() {
-    let mut ruins = test_support::test_location(11, "Whateley Ruins");
+    let mut ruins = test_support::test_location(THERE.0, "Whateley Ruins");
     ruins.code = CardCode::new(WHATELEY);
-    let state = board(THERE).with_location(ruins).build();
-
-    let result = test_support::perform_skill_test_no_commits(state, ME, SkillKind::Willpower, 3);
+    let result = my_test(board(THERE).with_location(ruins), SkillKind::Willpower, 3);
     assert_event!(
-        result.events,
+        result.events(),
         Event::SkillTestSucceeded { investigator, margin: 0, .. } if *investigator == ME
     );
 }
@@ -225,10 +232,8 @@ fn a_modifier_on_a_location_does_not_reach_investigators_elsewhere() {
 /// location it is attached to, and no other.
 #[test]
 fn a_modifier_on_a_location_attachment_reaches_that_location() {
-    let mut fogged = test_support::test_location(10, "Study");
-    fogged
-        .attachments
-        .push(in_play(FOG, 1, Owner::EncounterDeck));
+    let mut fogged = test_support::test_location(HERE.0, "Study");
+    fogged.attachments.push(placed(FOG, Owner::EncounterDeck));
     let state = board(THERE).with_location(fogged).build();
 
     assert_eq!(shroud(&state, HERE), 4, "printed 2 + 2 from the attachment");
@@ -247,15 +252,11 @@ fn a_modifier_on_a_location_attachment_reaches_that_location() {
 /// Combat 3 + 1 against difficulty 4 passes by 0.
 #[test]
 fn a_card_put_into_play_at_my_location_reaches_me() {
-    let mut parlor = test_support::test_location(10, "Parlor");
-    parlor
-        .cards_at_location
-        .push(in_play(LITA, 1, Owner::Scenario));
-    let state = board(THERE).with_location(parlor).build();
-
-    let result = test_support::perform_skill_test_no_commits(state, ME, SkillKind::Combat, 4);
+    let mut parlor = test_support::test_location(HERE.0, "Parlor");
+    parlor.cards_at_location.push(placed(LITA, Owner::Scenario));
+    let result = my_test(board(THERE).with_location(parlor), SkillKind::Combat, 4);
     assert_event!(
-        result.events,
+        result.events(),
         Event::SkillTestSucceeded { investigator, margin: 0, .. } if *investigator == ME
     );
 }
@@ -264,15 +265,11 @@ fn a_card_put_into_play_at_my_location_reaches_me() {
 /// location *is* the source's location, so the audience is bounded by it.
 #[test]
 fn a_card_put_into_play_at_another_location_does_not_reach_me() {
-    let mut parlor = test_support::test_location(11, "Parlor");
-    parlor
-        .cards_at_location
-        .push(in_play(LITA, 1, Owner::Scenario));
-    let state = board(THERE).with_location(parlor).build();
-
-    let result = test_support::perform_skill_test_no_commits(state, ME, SkillKind::Combat, 4);
+    let mut parlor = test_support::test_location(THERE.0, "Parlor");
+    parlor.cards_at_location.push(placed(LITA, Owner::Scenario));
+    let result = my_test(board(THERE).with_location(parlor), SkillKind::Combat, 4);
     assert_event!(
-        result.events,
+        result.events(),
         Event::SkillTestFailed { investigator, by: 1, .. } if *investigator == ME
     );
 }
@@ -285,10 +282,10 @@ fn a_card_put_into_play_at_another_location_does_not_reach_me() {
 /// neither.
 #[test]
 fn a_card_put_into_play_at_a_location_is_not_attached_to_it() {
-    let mut fogged = test_support::test_location(10, "Study");
+    let mut fogged = test_support::test_location(HERE.0, "Study");
     fogged
         .cards_at_location
-        .push(in_play(FOG, 1, Owner::EncounterDeck));
+        .push(placed(FOG, Owner::EncounterDeck));
     let state = board(THERE).with_location(fogged).build();
 
     assert_eq!(
@@ -307,11 +304,9 @@ fn a_modifier_on_an_enemy_reaches_investigators_at_its_location() {
     let mut bird = test_support::test_enemy(7, "Whippoorwill");
     bird.code = CardCode::new(WHIPPOORWILL);
     bird.current_location = Some(HERE);
-    let state = board(THERE).with_enemy(bird).build();
-
-    let result = test_support::perform_skill_test_no_commits(state, ME, SkillKind::Intellect, 3);
+    let result = my_test(board(THERE).with_enemy(bird), SkillKind::Intellect, 3);
     assert_event!(
-        result.events,
+        result.events(),
         Event::SkillTestFailed { investigator, by: 1, .. } if *investigator == ME
     );
 }
@@ -322,11 +317,9 @@ fn a_modifier_on_an_enemy_elsewhere_does_not_reach_me() {
     let mut bird = test_support::test_enemy(7, "Whippoorwill");
     bird.code = CardCode::new(WHIPPOORWILL);
     bird.current_location = Some(THERE);
-    let state = board(THERE).with_enemy(bird).build();
-
-    let result = test_support::perform_skill_test_no_commits(state, ME, SkillKind::Intellect, 3);
+    let result = my_test(board(THERE).with_enemy(bird), SkillKind::Intellect, 3);
     assert_event!(
-        result.events,
+        result.events(),
         Event::SkillTestSucceeded { investigator, margin: 0, .. } if *investigator == ME
     );
 }
@@ -343,7 +336,7 @@ fn a_modifier_on_an_enemy_attachment_reaches_that_enemy() {
     brood.current_location = Some(HERE);
     brood
         .attachments
-        .push(in_play(TOWERING_BEASTS, 1, Owner::EncounterDeck));
+        .push(placed(TOWERING_BEASTS, Owner::EncounterDeck));
     let mut other = test_support::test_enemy(8, "Ghoul");
     other.current_location = Some(HERE);
     let state = board(THERE).with_enemy(brood).with_enemy(other).build();
@@ -446,34 +439,41 @@ fn a_modifier_on_an_enemys_fight_raises_a_fight_actions_difficulty() {
     let attack = |ritual: bool| {
         let mut ghoul = test_support::test_enemy(7, "Ghoul");
         ghoul.current_location = Some(HERE);
-        let mut state = board(THERE).with_enemy(ghoul).build();
-        state.investigators.get_mut(&ME).unwrap().skills.combat = 2;
+        let mut state = board_of(me().skill(SkillKind::Combat, 2), seat(2).at(THERE))
+            .with_enemy(ghoul)
+            .build();
         if ritual {
+            // No builder setter stages the agenda deck.
             state.agenda_deck = vec![agenda(RITUAL_BEGINS)];
             state.agenda_index = 0;
         }
-        TestSession::new(state)
-            .resolve_choices(|c| {
-                c.commit_cards(&[]);
-            })
+        let session = TestSession::new(state)
             .take(&TurnAction::Fight {
                 investigator: ME,
                 enemy: EnemyId(7),
             })
-            .finish()
+            .commit(&[]);
+        session.assert_at_turn_menu(ME);
+        session
     };
 
     let plain = attack(false);
-    assert_event!(plain.events, Event::SkillTestStarted { difficulty: 2, .. });
     assert_event!(
-        plain.events,
+        plain.events(),
+        Event::SkillTestStarted { difficulty: 2, .. }
+    );
+    assert_event!(
+        plain.events(),
         Event::SkillTestSucceeded { investigator, margin: 0, .. } if *investigator == ME
     );
 
     let harder = attack(true);
-    assert_event!(harder.events, Event::SkillTestStarted { difficulty: 3, .. });
     assert_event!(
-        harder.events,
+        harder.events(),
+        Event::SkillTestStarted { difficulty: 3, .. }
+    );
+    assert_event!(
+        harder.events(),
         Event::SkillTestFailed { investigator, by: 1, .. } if *investigator == ME
     );
 }
@@ -484,37 +484,42 @@ fn a_modifier_on_an_enemys_fight_raises_a_fight_actions_difficulty() {
 #[test]
 fn a_modifier_on_an_enemys_evade_raises_an_evade_actions_difficulty() {
     let dodge = |ritual: bool| {
-        let mut ghoul = test_support::test_enemy(7, "Ghoul");
-        ghoul.current_location = Some(HERE);
-        ghoul.engaged_with = Some(ME);
-        let mut state = board(THERE).with_enemy(ghoul).build();
-        state.investigators.get_mut(&ME).unwrap().skills.agility = 2;
+        let ghoul = test_support::test_enemy(7, "Ghoul");
+        let mut state = board_of(me().skill(SkillKind::Agility, 2), seat(2).at(THERE))
+            .with_enemy_engaged(ghoul, ME)
+            .build();
         if ritual {
+            // No builder setter stages the agenda deck.
             state.agenda_deck = vec![agenda(RITUAL_BEGINS)];
             state.agenda_index = 0;
         }
-        TestSession::new(state)
-            .resolve_choices(|c| {
-                c.commit_cards(&[]);
-            })
+        let session = TestSession::new(state)
             .take(&TurnAction::Evade {
                 investigator: ME,
                 enemy: EnemyId(7),
             })
-            .finish()
+            .commit(&[]);
+        session.assert_at_turn_menu(ME);
+        session
     };
 
     let plain = dodge(false);
-    assert_event!(plain.events, Event::SkillTestStarted { difficulty: 2, .. });
     assert_event!(
-        plain.events,
+        plain.events(),
+        Event::SkillTestStarted { difficulty: 2, .. }
+    );
+    assert_event!(
+        plain.events(),
         Event::SkillTestSucceeded { investigator, margin: 0, .. } if *investigator == ME
     );
 
     let harder = dodge(true);
-    assert_event!(harder.events, Event::SkillTestStarted { difficulty: 3, .. });
     assert_event!(
-        harder.events,
+        harder.events(),
+        Event::SkillTestStarted { difficulty: 3, .. }
+    );
+    assert_event!(
+        harder.events(),
         Event::SkillTestFailed { investigator, by: 1, .. } if *investigator == ME
     );
 }
@@ -528,36 +533,29 @@ fn a_modifier_on_an_enemys_evade_raises_an_evade_actions_difficulty() {
 fn a_fights_difficulty_is_re_read_after_the_test_started() {
     let mut ghoul = test_support::test_enemy(7, "Ghoul");
     ghoul.current_location = Some(HERE);
-    let mut state = board(THERE).with_enemy(ghoul).build();
-    state.investigators.get_mut(&ME).unwrap().skills.combat = 2;
+    let mut state = board_of(me().skill(SkillKind::Combat, 2), seat(2).at(THERE))
+        .with_enemy(ghoul)
+        .build();
+    // No builder setter stages the agenda deck.
     state.agenda_deck = vec![agenda("MOCK-QUIET"), agenda(RITUAL_BEGINS)];
     state.agenda_index = 0;
 
     // ST.1: announced against the unmodified fight of 2.
-    let started = test_support::take_turn_action(
-        state,
-        &TurnAction::Fight {
-            investigator: ME,
-            enemy: EnemyId(7),
-        },
-    );
+    let started = TestSession::new(state).take(&TurnAction::Fight {
+        investigator: ME,
+        enemy: EnemyId(7),
+    });
     assert_event!(
-        started.events,
+        started.events(),
         Event::SkillTestStarted { difficulty: 2, .. }
     );
 
-    // The ritual begins while the test is paused at its commit window.
-    let mut state = started.state;
-    state.agenda_index = 1;
-
-    let resolved = test_support::apply_no_commits(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple {
-                selected: Vec::new(),
-            },
-        }),
-    );
+    // The ritual begins while the test is paused at its commit window: no
+    // step changes the agenda while a prompt is open.
+    let resolved = started
+        .edit_state(|state| state.agenda_index = 1)
+        .commit(&[])
+        .finish();
     assert_event!(
         resolved.events,
         Event::SkillTestFailed { investigator, by: 1, .. } if *investigator == ME
@@ -570,15 +568,14 @@ fn a_fights_difficulty_is_re_read_after_the_test_started() {
 /// attributed to the card that produced it.
 #[test]
 fn a_breakdown_reads_back_its_base_and_every_contribution() {
-    let mut whateley = test_support::test_location(10, "Whateley Ruins");
+    let mut whateley = test_support::test_location(HERE.0, "Whateley Ruins");
     whateley.code = CardCode::new(WHATELEY);
-    let mut state = board(HERE).with_location(whateley).build();
     // A second copy of the same audience from a wholly different place
     // on the board: a Whippoorwill standing in the ruins.
     let mut bird = test_support::test_enemy(7, "Whippoorwill");
     bird.code = CardCode::new(WHIPPOORWILL);
     bird.current_location = Some(HERE);
-    state.enemies.insert(EnemyId(7), bird);
+    let state = board(HERE).with_location(whateley).with_enemy(bird).build();
 
     let willpower = modified_value::modified_value(
         &state,

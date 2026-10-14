@@ -313,8 +313,7 @@ mod tests {
     use game_core::event::Event;
     use game_core::scenario::ScenarioEnding;
     use game_core::state::{
-        Agenda, CardCode, CardInPlay, CardInstanceId, Enemy, GameStateBuilder, InvestigatorId,
-        Location, Owner,
+        Agenda, CardCode, CardInPlay, Enemy, GameStateBuilder, InvestigatorId, Location, Owner,
     };
     use game_core::{card_registry, test_support};
 
@@ -331,9 +330,23 @@ mod tests {
 
     // Hallway(2) hub connects to Attic(3), Cellar(4), Parlor(5).
     fn star_board() -> GameState {
+        star_board_from(GameStateBuilder::new())
+    }
+
+    /// The [`star_board`] with investigator 1 seated in the Hallway.
+    fn star_board_with_investigator_in_hallway() -> GameState {
+        star_board_from(
+            GameStateBuilder::new()
+                .with_seat(test_support::seat(1).at(LocationId(2)))
+                .with_turn_order([InvestigatorId(1)]),
+        )
+    }
+
+    /// The [`star_board`]'s map on top of `builder`.
+    fn star_board_from(builder: GameStateBuilder) -> GameState {
         let loc =
             |id, code: &str, name| Location::new(LocationId(id), CardCode::new(code), name, 1, 0);
-        let mut state = GameStateBuilder::new()
+        let mut state = builder
             .with_location(loc(2, "01112", "Hallway"))
             .with_location(loc(3, "01113", "Attic"))
             .with_location(loc(4, "01114", "Cellar"))
@@ -362,6 +375,15 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    /// Investigators 1 and 2, seated in that turn order.
+    fn two_investigators() -> GameState {
+        GameStateBuilder::new()
+            .with_seat(test_support::seat(1))
+            .with_seat(test_support::seat(2))
+            .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+            .build()
     }
 
     fn with_agenda(state: &mut GameState) {
@@ -457,11 +479,7 @@ mod tests {
     fn the_act_three_branch_defeats_the_table_and_reaches_no_resolution() {
         let _ = card_registry::install(REGISTRY);
         let (a, b) = (InvestigatorId(1), InvestigatorId(2));
-        let mut state = GameStateBuilder::new()
-            .with_investigator(test_support::test_investigator(1))
-            .with_investigator(test_support::test_investigator(2))
-            .with_turn_order([a, b])
-            .build();
+        let mut state = two_investigators();
 
         let events = run_done(&mut state, the_ghouls_run_rampant);
 
@@ -503,11 +521,7 @@ mod tests {
     fn an_investigator_who_has_resigned_is_left_alone() {
         let _ = card_registry::install(REGISTRY);
         let (a, b) = (InvestigatorId(1), InvestigatorId(2));
-        let mut state = GameStateBuilder::new()
-            .with_investigator(test_support::test_investigator(1))
-            .with_investigator(test_support::test_investigator(2))
-            .with_turn_order([a, b])
-            .build();
+        let mut state = two_investigators();
         state.investigators.get_mut(&a).expect("seated").status = Status::Resigned;
 
         let events = run_done(&mut state, the_ghouls_run_rampant);
@@ -606,6 +620,9 @@ mod tests {
     }
 
     fn barricade(state: &mut GameState, at: LocationId) {
+        // A seat cannot place a location attachment; mint its id from the
+        // state's counter rather than hand-pick one.
+        let id = state.card_instance_ids.mint();
         state
             .locations
             .get_mut(&at)
@@ -613,7 +630,7 @@ mod tests {
             .attachments
             .push(CardInPlay::enter_play(
                 CardCode::new("01038"),
-                CardInstanceId(900),
+                id,
                 Owner::Investigator(InvestigatorId(1)),
             ));
     }
@@ -671,11 +688,7 @@ mod tests {
     /// an investigator"*.
     #[test]
     fn ghoul_moving_into_the_investigators_location_engages_on_arrival() {
-        let mut state = star_board();
-        let mut inv = test_support::test_investigator(1);
-        inv.current_location = Some(LocationId(2)); // Hallway
-        state.investigators.insert(InvestigatorId(1), inv);
-        state.turn_order = vec![InvestigatorId(1)];
+        let mut state = star_board_with_investigator_in_hallway();
         state.enemies.insert(EnemyId(1), ghoul(1, LocationId(3))); // Attic
 
         let events = run_done(&mut state, move_ghouls_toward_parlor);
@@ -701,11 +714,7 @@ mod tests {
     /// unengaged and engages only when it readies (#633).
     #[test]
     fn exhausted_ghoul_moved_into_the_investigators_location_arrives_unengaged() {
-        let mut state = star_board();
-        let mut inv = test_support::test_investigator(1);
-        inv.current_location = Some(LocationId(2)); // Hallway
-        state.investigators.insert(InvestigatorId(1), inv);
-        state.turn_order = vec![InvestigatorId(1)];
+        let mut state = star_board_with_investigator_in_hallway();
         let mut evaded = ghoul(1, LocationId(3)); // Attic
         evaded.exhausted = true;
         state.enemies.insert(EnemyId(1), evaded);

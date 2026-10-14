@@ -37,7 +37,8 @@ use crate::test_support;
 /// - 3 actions remaining.
 /// - Not placed at any location (`current_location: None`).
 ///
-/// Mutate fields directly after construction to customize.
+/// To seat one with a printed card, zones, or cards in play, use
+/// [`seat`](crate::test_support::seat), which starts from this.
 #[must_use]
 pub fn test_investigator(id: u32) -> Investigator {
     let investigator_card = CardInPlay::enter_play(

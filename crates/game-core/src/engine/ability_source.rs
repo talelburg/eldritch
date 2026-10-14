@@ -317,13 +317,38 @@ mod tests {
     use crate::state::{
         AbilityAddress, Act, Agenda, CardInstanceId, EnemyId, GameStateBuilder, Owner,
     };
-    use crate::test_support;
+    use crate::test_support::{self, seat, SeatLookup as _};
 
     const STUDY: LocationId = LocationId(1);
     const HALLWAY: LocationId = LocationId(2);
 
-    fn card(code: &str, instance: u32, owner: Owner) -> CardInPlay {
-        CardInPlay::enter_play(CardCode::new(code), CardInstanceId(instance), owner)
+    /// An asset; investigator 1 has one in play.
+    const ASSET: &str = "01020";
+    /// The card in investigator 1's own threat area.
+    const MY_THREAT: &str = "01098";
+    /// The card in the threat area of investigator 2, co-located in the Study.
+    const NEIGHBOUR_THREAT: &str = "01099";
+    /// The card in the threat area of investigator 3, in the Hallway.
+    const ELSEWHERE_THREAT: &str = "01100";
+
+    // A seat cannot place location or enemy attachments, nor a card at a
+    // location, so those are staged by hand under named ids; seated cards are
+    // minted past them.
+    const STUDY_ATTACHMENT: CardInstanceId = CardInstanceId(40);
+    const HALLWAY_ATTACHMENT: CardInstanceId = CardInstanceId(41);
+    const GHOUL_ATTACHMENT: CardInstanceId = CardInstanceId(50);
+    const AT_STUDY: CardInstanceId = CardInstanceId(60);
+    const AT_HALLWAY: CardInstanceId = CardInstanceId(61);
+
+    fn card(code: &str, instance: CardInstanceId, owner: Owner) -> CardInPlay {
+        CardInPlay::enter_play(CardCode::new(code), instance, owner)
+    }
+
+    /// The instance id of `investigator`'s investigator card.
+    fn investigator_card(state: &GameState, investigator: InvestigatorId) -> CardInstanceId {
+        state.investigators[&investigator]
+            .investigator_card
+            .instance_id
     }
 
     /// Two investigators in the Study and one in the Hallway, each with a
@@ -332,55 +357,36 @@ mod tests {
     ///
     /// Investigator 1 is the one doing the reaching.
     fn board() -> GameState {
-        let mut mine = test_support::test_investigator(1);
-        mine.investigator_card.instance_id = CardInstanceId(10);
-        mine.cards_in_play
-            .push(card("01020", 11, Owner::Investigator(InvestigatorId(1))));
-        mine.threat_area
-            .push(card("01098", 12, Owner::Investigator(InvestigatorId(1))));
-
-        let mut neighbour = test_support::test_investigator(2);
-        neighbour.investigator_card.instance_id = CardInstanceId(20);
-        neighbour
-            .threat_area
-            .push(card("01099", 21, Owner::Investigator(InvestigatorId(2))));
-
-        let mut elsewhere = test_support::test_investigator(3);
-        elsewhere.investigator_card.instance_id = CardInstanceId(30);
-        elsewhere
-            .threat_area
-            .push(card("01100", 31, Owner::Investigator(InvestigatorId(3))));
-
-        let mut study = test_support::test_location(1, "Study");
+        let mut study = test_support::test_location(STUDY.0, "Study");
         study
             .attachments
-            .push(card("01168", 40, Owner::EncounterDeck));
+            .push(card("01168", STUDY_ATTACHMENT, Owner::EncounterDeck));
         study
             .cards_at_location
-            .push(card("01117", 60, Owner::Scenario));
-        let mut hallway = test_support::test_location(2, "Hallway");
+            .push(card("01117", AT_STUDY, Owner::Scenario));
+        let mut hallway = test_support::test_location(HALLWAY.0, "Hallway");
         hallway
             .attachments
-            .push(card("01168", 41, Owner::EncounterDeck));
+            .push(card("01168", HALLWAY_ATTACHMENT, Owner::EncounterDeck));
         hallway
             .cards_at_location
-            .push(card("01117", 61, Owner::Scenario));
+            .push(card("01117", AT_HALLWAY, Owner::Scenario));
 
         let mut here = test_support::test_enemy(1, "Ghoul");
         here.current_location = Some(STUDY);
         here.attachments
-            .push(card("02256", 50, Owner::EncounterDeck));
+            .push(card("02256", GHOUL_ATTACHMENT, Owner::EncounterDeck));
         let mut there = test_support::test_enemy(2, "Acolyte");
         there.current_location = Some(HALLWAY);
 
         GameStateBuilder::new()
-            .with_investigator_at(mine, STUDY)
-            .with_investigator_at(neighbour, STUDY)
-            .with_investigator_at(elsewhere, HALLWAY)
             .with_location(study)
             .with_location(hallway)
             .with_enemy(here)
             .with_enemy(there)
+            .with_seat(seat(1).at(STUDY).in_play([ASSET]).threat_area([MY_THREAT]))
+            .with_seat(seat(2).at(STUDY).threat_area([NEIGHBOUR_THREAT]))
+            .with_seat(seat(3).at(HALLWAY).threat_area([ELSEWHERE_THREAT]))
             .build()
     }
 
@@ -398,9 +404,9 @@ mod tests {
         assert_eq!(
             &sources[..3],
             &[
-                AbilitySource::InPlay(CardInstanceId(10)),
-                AbilitySource::InPlay(CardInstanceId(11)),
-                AbilitySource::InPlay(CardInstanceId(12)),
+                AbilitySource::InPlay(investigator_card(&state, InvestigatorId(1))),
+                AbilitySource::InPlay(state.in_play(InvestigatorId(1), ASSET)),
+                AbilitySource::InPlay(state.in_play(InvestigatorId(1), MY_THREAT)),
             ],
             "the control bullet comes first, and covers the investigator card, cards in play \
              and the investigator's own threat area, in that order",
@@ -417,7 +423,7 @@ mod tests {
         for (expected, why) in [
             (AbilitySource::Location(STUDY), "the location itself"),
             (
-                AbilitySource::InPlay(CardInstanceId(40)),
+                AbilitySource::InPlay(STUDY_ATTACHMENT),
                 "an encounter card attached to the location",
             ),
             (
@@ -425,11 +431,11 @@ mod tests {
                 "an enemy placed at the location",
             ),
             (
-                AbilitySource::InPlay(CardInstanceId(50)),
+                AbilitySource::InPlay(GHOUL_ATTACHMENT),
                 "an encounter card attached to that enemy",
             ),
             (
-                AbilitySource::InPlay(CardInstanceId(21)),
+                AbilitySource::InPlay(state.in_play(InvestigatorId(2), NEIGHBOUR_THREAT)),
                 "a co-located investigator's threat area (Haunted 01098's ruling)",
             ),
         ] {
@@ -447,16 +453,16 @@ mod tests {
         for (unexpected, why) in [
             (AbilitySource::Location(HALLWAY), "another location"),
             (
-                AbilitySource::InPlay(CardInstanceId(41)),
+                AbilitySource::InPlay(HALLWAY_ATTACHMENT),
                 "an encounter card attached to another location",
             ),
             (AbilitySource::Enemy(EnemyId(2)), "an enemy elsewhere"),
             (
-                AbilitySource::InPlay(CardInstanceId(31)),
+                AbilitySource::InPlay(state.in_play(InvestigatorId(3), ELSEWHERE_THREAT)),
                 "the threat area of an investigator at another location",
             ),
             (
-                AbilitySource::InPlay(CardInstanceId(61)),
+                AbilitySource::InPlay(AT_HALLWAY),
                 "a card put into play at another location",
             ),
         ] {
@@ -475,14 +481,14 @@ mod tests {
         let state = board();
         let sources = sources_for(&state, InvestigatorId(1));
         assert!(
-            sources.contains(&AbilitySource::InPlay(CardInstanceId(60))),
+            sources.contains(&AbilitySource::InPlay(AT_STUDY)),
             "a card at the acting investigator's location should be reachable; sources were \
              {sources:?}",
         );
         for inv in state.investigators.values() {
             assert!(
                 !inv.controlled_card_instances()
-                    .any(|c| c.instance_id == CardInstanceId(60)),
+                    .any(|c| c.instance_id == AT_STUDY),
                 "an uncontrolled card at a location is in nobody's controlled collections",
             );
         }
@@ -494,7 +500,7 @@ mod tests {
     #[test]
     fn source_card_finds_a_card_put_into_play_at_a_location() {
         let state = board();
-        let found = source_card(&state, AbilitySource::InPlay(CardInstanceId(60)))
+        let found = source_card(&state, AbilitySource::InPlay(AT_STUDY))
             .expect("a card at a location is on the board");
         assert_eq!(found.code().as_str(), "01117");
     }
@@ -505,43 +511,46 @@ mod tests {
     #[test]
     fn a_colocated_investigators_own_cards_in_play_are_still_not_reachable() {
         let mut state = board();
+        let theirs = state.card_instance_ids.mint();
         state
             .investigators
             .get_mut(&InvestigatorId(2))
             .expect("neighbour is on the board")
             .cards_in_play
-            .push(card("01020", 22, Owner::Investigator(InvestigatorId(2))));
+            .push(card(ASSET, theirs, Owner::Investigator(InvestigatorId(2))));
         let sources = sources_for(&state, InvestigatorId(1));
         assert!(
-            !sources.contains(&AbilitySource::InPlay(CardInstanceId(22))),
+            !sources.contains(&AbilitySource::InPlay(theirs)),
             "sources were {sources:?}",
         );
     }
 
     /// Investigator 1 and investigator 2 in the Study, investigator 1 with a
-    /// player card (11, [`test_support::TEST_ASSET`]) and an encounter card
-    /// (12, [`test_support::TEST_TREACHERY`]) in their threat area, each
+    /// player card ([`test_support::TEST_ASSET`]) and an encounter card
+    /// ([`test_support::TEST_TREACHERY`]) in their threat area, each
     /// carrying one `[action]` ability. `turn` is the investigator whose turn
     /// is open.
     fn threat_area_with_a_player_card_and_a_treachery(turn: InvestigatorId) -> GameState {
-        let mut a = test_support::test_investigator(1);
-        a.investigator_card.instance_id = CardInstanceId(10);
-        a.threat_area.push(card(
-            test_support::TEST_ASSET,
-            11,
-            Owner::Investigator(InvestigatorId(1)),
-        ));
-        a.threat_area
-            .push(card(test_support::TEST_TREACHERY, 12, Owner::EncounterDeck));
-        let mut b = test_support::test_investigator(2);
-        b.investigator_card.instance_id = CardInstanceId(20);
         GameStateBuilder::new()
-            .with_investigator_at(a, STUDY)
-            .with_investigator_at(b, STUDY)
-            .with_location(test_support::test_location(1, "Study"))
+            .with_location(test_support::test_location(STUDY.0, "Study"))
+            .with_seat(
+                seat(1)
+                    .at(STUDY)
+                    .threat_area([test_support::TEST_ASSET, test_support::TEST_TREACHERY]),
+            )
+            .with_seat(seat(2).at(STUDY))
             .with_turn_order(vec![InvestigatorId(1), InvestigatorId(2)])
             .open_turn(turn)
             .build()
+    }
+
+    /// The threat-area player card and treachery of
+    /// [`threat_area_with_a_player_card_and_a_treachery`], as sources.
+    fn player_card_and_treachery(state: &GameState) -> (AbilitySource, AbilitySource) {
+        (
+            AbilitySource::InPlay(state.in_play(InvestigatorId(1), test_support::TEST_ASSET)),
+            AbilitySource::InPlay(state.in_play(InvestigatorId(1), test_support::TEST_TREACHERY)),
+        )
     }
 
     /// *"all **encounter** cards in the threat area of any investigator at
@@ -551,8 +560,7 @@ mod tests {
     #[test]
     fn colocation_reaches_only_encounter_cards_in_another_investigators_threat_area() {
         let state = threat_area_with_a_player_card_and_a_treachery(InvestigatorId(1));
-        let player_card = AbilitySource::InPlay(CardInstanceId(11));
-        let treachery = AbilitySource::InPlay(CardInstanceId(12));
+        let (player_card, treachery) = player_card_and_treachery(&state);
         let a_reaches = sources_for(&state, InvestigatorId(1));
         assert!(
             a_reaches.contains(&player_card) && a_reaches.contains(&treachery),
@@ -575,27 +583,31 @@ mod tests {
     /// card's is not; on the bearer's turn both are.
     #[test]
     fn a_colocated_investigators_turn_offers_only_the_encounter_cards_action() {
-        let activation = |investigator, instance| TurnAction::ActivateAbility {
+        let activation = |investigator, source| TurnAction::ActivateAbility {
             investigator,
-            source: AbilitySource::InPlay(CardInstanceId(instance)),
+            source,
             address: AbilityAddress::Printed(0),
         };
         let (a, b) = (InvestigatorId(1), InvestigatorId(2));
 
-        let menu = enumerate::legal_actions(&threat_area_with_a_player_card_and_a_treachery(b));
+        let state = threat_area_with_a_player_card_and_a_treachery(b);
+        let (player_card, treachery) = player_card_and_treachery(&state);
+        let menu = enumerate::legal_actions(&state);
         assert!(
-            menu.contains(&activation(b, 12)),
+            menu.contains(&activation(b, treachery)),
             "the co-located investigator is offered the treachery's action; menu was {menu:?}",
         );
         assert!(
-            !menu.contains(&activation(b, 11)),
+            !menu.contains(&activation(b, player_card)),
             "the co-located investigator must not be offered the player card's action; \
              menu was {menu:?}",
         );
 
-        let menu = enumerate::legal_actions(&threat_area_with_a_player_card_and_a_treachery(a));
+        let state = threat_area_with_a_player_card_and_a_treachery(a);
+        let (player_card, treachery) = player_card_and_treachery(&state);
+        let menu = enumerate::legal_actions(&state);
         assert!(
-            menu.contains(&activation(a, 11)) && menu.contains(&activation(a, 12)),
+            menu.contains(&activation(a, player_card)) && menu.contains(&activation(a, treachery)),
             "the bearer is offered both actions; menu was {menu:?}",
         );
     }
@@ -607,7 +619,9 @@ mod tests {
         assert_eq!(
             sources
                 .iter()
-                .filter(|s| **s == AbilitySource::InPlay(CardInstanceId(12)))
+                .filter(
+                    |s| **s == AbilitySource::InPlay(state.in_play(InvestigatorId(1), MY_THREAT))
+                )
                 .count(),
             1,
             "the control bullet already yielded it; the co-location pass must skip the acting \
@@ -621,7 +635,7 @@ mod tests {
         let err = resolve(
             &state,
             InvestigatorId(1),
-            AbilitySource::InPlay(CardInstanceId(31)),
+            AbilitySource::InPlay(state.in_play(InvestigatorId(3), ELSEWHERE_THREAT)),
         )
         .expect_err("a threat-area card at another location is out of reach");
         assert!(
@@ -636,13 +650,13 @@ mod tests {
         let ward = resolve(
             &state,
             InvestigatorId(1),
-            AbilitySource::InPlay(CardInstanceId(12)),
+            AbilitySource::InPlay(state.in_play(InvestigatorId(1), MY_THREAT)),
         )
         .expect("own threat-area card is reachable");
-        assert_eq!(ward.code().as_str(), "01098");
+        assert_eq!(ward.code().as_str(), MY_THREAT);
         assert_eq!(
             ward.instance().map(|c| c.instance_id),
-            Some(CardInstanceId(12)),
+            Some(state.in_play(InvestigatorId(1), MY_THREAT)),
         );
 
         let study = resolve(&state, InvestigatorId(1), AbilitySource::Location(STUDY))
@@ -682,9 +696,9 @@ mod tests {
         assert_eq!(
             sources_for(&state, InvestigatorId(1)),
             vec![
-                AbilitySource::InPlay(CardInstanceId(10)),
-                AbilitySource::InPlay(CardInstanceId(11)),
-                AbilitySource::InPlay(CardInstanceId(12)),
+                AbilitySource::InPlay(investigator_card(&state, InvestigatorId(1))),
+                AbilitySource::InPlay(state.in_play(InvestigatorId(1), ASSET)),
+                AbilitySource::InPlay(state.in_play(InvestigatorId(1), MY_THREAT)),
             ],
         );
     }
@@ -695,10 +709,10 @@ mod tests {
     fn resolve_mut_addresses_instances_anywhere_the_predicate_reached() {
         let mut state = board();
         for instance in [
-            CardInstanceId(12), // own threat area
-            CardInstanceId(21), // a co-located investigator's threat area
-            CardInstanceId(40), // a location attachment
-            CardInstanceId(50), // an enemy attachment
+            state.in_play(InvestigatorId(1), MY_THREAT), // own threat area
+            state.in_play(InvestigatorId(2), NEIGHBOUR_THREAT), // a co-located investigator's threat area
+            STUDY_ATTACHMENT,                                   // a location attachment
+            GHOUL_ATTACHMENT,                                   // an enemy attachment
         ] {
             let card = resolve_mut(
                 &mut state,
@@ -718,10 +732,11 @@ mod tests {
     #[test]
     fn resolve_mut_is_none_for_an_unreachable_source_and_for_one_without_an_instance() {
         let mut state = board();
+        let elsewhere = state.in_play(InvestigatorId(3), ELSEWHERE_THREAT);
         assert!(resolve_mut(
             &mut state,
             InvestigatorId(1),
-            AbilitySource::InPlay(CardInstanceId(31)),
+            AbilitySource::InPlay(elsewhere),
         )
         .is_none());
         assert!(resolve_mut(

@@ -4,13 +4,13 @@ use card_dsl::dsl::{IntExpr, Stat};
 use super::*;
 use crate::action::{EngineRecord, InputResponse, PlayerAction};
 use crate::event::FailureReason;
-use crate::scenario::{ResolutionId, ScenarioEnding, ScenarioId, ScenarioModule};
+use crate::scenario::ScenarioId;
 use crate::state::{
-    AbilityAddress, AbilitySource, Act, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    DiscardPile, EliminationCause, EnemyId, GameStateBuilder, InvestigatorId, Lifetime, LocationId,
+    AbilityAddress, AbilitySource, Act, CardInstanceId, ChaosBag, ChaosToken, DiscardPile,
+    EliminationCause, Enemy, EnemyId, GameStateBuilder, InvestigatorId, Lifetime, LocationId,
     Phase, RecordedModifier, SkillKind, SkillTestId, Status, TokenModifiers, TokenResolution, Zone,
 };
-use crate::test_support::{self, ScriptedResolver, TestSession};
+use crate::test_support::{self, seat, Seat, TestSession};
 use crate::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
 
 mod activate_ability;
@@ -32,28 +32,19 @@ mod resolution;
 mod resource_action;
 mod start_scenario;
 
-/// Drive one open-turn action through the `ResolveInput(PickSingle)` routing
-/// path, draining the skill-test commit window automatically (like
-/// `apply_no_commits` does). Works for Investigate, Fight, Evade, and any
-/// other action that initiates a skill test.
-///
-/// Internally this finds the `OptionId` for `action` in `legal_actions`,
-/// then calls `apply_no_commits` with a `ResolveInput(PickSingle(idx))`
-/// so the commit-window drain loop fires automatically.
-fn take_action_no_commits(state: GameState, action: &TurnAction) -> ApplyResult {
-    let actions = legal_actions(&state);
-    let idx = actions.iter().position(|a| a == action).unwrap_or_else(|| {
-        panic!("take_action_no_commits: {action:?} is not legal; offered: {actions:?}")
-    });
-    test_support::apply_no_commits(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(
-                u32::try_from(idx).expect("action index fits u32"),
-            )),
-        }),
-    )
-}
+/// The investigator every board seats first, and whose turn it opens.
+const INV: InvestigatorId = InvestigatorId(1);
+/// Where `INV` stands.
+const HERE: LocationId = LocationId(10);
+/// The Move board's destination, connected one-way from `HERE`.
+const CONNECTED: LocationId = LocationId(11);
+/// The Fight / Evade board's target.
+const GHOUL: EnemyId = EnemyId(100);
+/// `INV` moves from `HERE` to `CONNECTED`.
+const MOVE_TO_CONNECTED: TurnAction = TurnAction::Move {
+    investigator: INV,
+    destination: CONNECTED,
+};
 
 /// Bag of a single `Numeric(0)` token — the next draw is always a
 /// no-op modifier, so test totals = skill exactly.
@@ -61,27 +52,24 @@ fn bag_only_zero() -> ChaosBag {
     ChaosBag::new([ChaosToken::Numeric(0)])
 }
 
-/// Build a scenario suitable for Investigate tests: one investigator
-/// at a location with `clues` clues and `shroud` shroud, in
-/// Investigation phase, with the investigator active and 3 actions.
-/// Bag is `Numeric(0)` so the test outcome depends purely on
+/// Take `action` from the turn menu and commit nothing to the skill test it
+/// starts: the session rests wherever play goes after the test.
+fn take_committing_nothing(board: GameStateBuilder, action: &TurnAction) -> TestSession {
+    board.session().take(action).commit(&[])
+}
+
+/// `investigator`'s open turn at the Study, which holds `clues` clues behind
+/// `shroud`. Bag is `Numeric(0)` so the test outcome depends purely on
 /// (intellect vs shroud).
-fn investigate_scenario(clues: u8, shroud: u8) -> (InvestigatorId, LocationId, GameState) {
-    let inv_id = InvestigatorId(1);
-    let loc_id = LocationId(10);
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(loc_id);
-    inv.actions_remaining = 3;
-    let mut loc = test_support::test_location(10, "Study");
-    loc.clues = clues;
-    loc.shroud = shroud;
-    let state = GameStateBuilder::new()
-        .with_investigator(inv)
-        .with_location(loc)
+fn investigate_board(investigator: Seat, clues: u8, shroud: u8) -> GameStateBuilder {
+    let mut study = test_support::test_location(HERE.0, "Study");
+    study.clues = clues;
+    study.shroud = shroud;
+    GameStateBuilder::new()
+        .with_seat(investigator)
+        .with_location(study)
         .with_chaos_bag(bag_only_zero())
-        .open_turn(inv_id)
-        .build();
-    (inv_id, loc_id, state)
+        .open_turn(INV)
 }
 
 /// Build a deck of `n` cards with codes "test-001", "test-002",
@@ -90,71 +78,44 @@ fn make_test_deck(n: usize) -> Vec<CardCode> {
     (1..=n).map(|i| CardCode(format!("test-{i:03}"))).collect()
 }
 
-/// Build a scenario suitable for Move tests: one investigator at
-/// location A, with A connected to B (and only A→B; B has no
-/// connections back). Investigation phase, active investigator,
-/// 3 actions. Returns (investigator id, A id, B id, state).
-fn move_scenario() -> (InvestigatorId, LocationId, LocationId, GameState) {
-    let inv_id = InvestigatorId(1);
-    let a = LocationId(10);
-    let b = LocationId(11);
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(a);
-    inv.actions_remaining = 3;
-    let mut loc_a = test_support::test_location(10, "A");
-    loc_a.connections = vec![b];
-    let loc_b = test_support::test_location(11, "B");
-    let state = GameStateBuilder::new()
-        .with_investigator(inv)
-        .with_location(loc_a)
-        .with_location(loc_b)
-        .open_turn(inv_id)
-        .build();
-    (inv_id, a, b, state)
+/// `mover`'s open turn, with `HERE` connected to `CONNECTED` (one way:
+/// `CONNECTED` has no connection back).
+fn move_board(mover: Seat) -> GameStateBuilder {
+    let mut here = test_support::test_location(HERE.0, "A");
+    here.connections = vec![CONNECTED];
+    GameStateBuilder::new()
+        .with_seat(mover)
+        .with_location(here)
+        .with_location(test_support::test_location(CONNECTED.0, "B"))
+        .open_turn(INV)
 }
 
-/// Build a scenario suitable for Fight/Evade tests: one
-/// investigator engaged with one enemy. Bag is `Numeric(0)` so
-/// the test outcome is determined purely by (skill vs
-/// fight/evade). Investigation phase, investigator is active,
-/// 3 actions. Returns (investigator id, enemy id, state).
-fn fight_evade_scenario() -> (InvestigatorId, EnemyId, GameState) {
-    let inv_id = InvestigatorId(1);
-    let enemy_id = EnemyId(100);
-    let loc_id = LocationId(40);
-    let mut inv = test_support::test_investigator(1);
-    inv.actions_remaining = 3;
-    // Investigator and enemy share a location: Fight is co-location-gated
-    // (RR p.12, #401), Evade engagement-gated (RR p.11) — this satisfies both.
-    inv.current_location = Some(loc_id);
-    let mut enemy = test_support::test_enemy(100, "Test Ghoul");
+/// An enemy that deals `damage` damage and `horror` horror when it attacks.
+fn attacker(id: u32, damage: u8, horror: u8) -> Enemy {
+    let mut enemy = test_support::test_enemy(id, "Engaged Ghoul");
+    enemy.attack_damage = damage;
+    enemy.attack_horror = horror;
+    enemy
+}
+
+/// The Fight / Evade target: fight 3, evade 3, 2 health.
+fn ghoul() -> Enemy {
+    let mut enemy = test_support::test_enemy(GHOUL.0, "Test Ghoul");
     enemy.fight = 3;
     enemy.evade = 3;
     enemy.max_health = 2;
-    enemy.engaged_with = Some(inv_id);
-    enemy.current_location = Some(loc_id);
-    let state = GameStateBuilder::new()
-        .with_investigator(inv)
-        .with_enemy(enemy)
-        .with_location(test_support::test_location(40, "Test Hall"))
-        .with_chaos_bag(bag_only_zero())
-        .open_turn(inv_id)
-        .build();
-    (inv_id, enemy_id, state)
+    enemy
 }
 
-/// Move scenario with a ready enemy engaged with the active
-/// investigator at the origin. A connects to B (one-way).
-/// Returns (inv id, A, B, enemy id, state).
-fn move_scenario_with_engaged_enemy() -> (InvestigatorId, LocationId, LocationId, EnemyId, GameState)
-{
-    let (inv_id, a, b, mut state) = move_scenario();
-    let enemy_id = EnemyId(200);
-    let mut enemy = test_support::test_enemy(200, "Engaged Ghoul");
-    enemy.current_location = Some(a);
-    enemy.engaged_with = Some(inv_id);
-    enemy.attack_damage = 1;
-    enemy.attack_horror = 0;
-    state.enemies.insert(enemy_id, enemy);
-    (inv_id, a, b, enemy_id, state)
+/// `fighter`'s open turn at `HERE`, engaged with `enemy` there: Fight is
+/// co-location-gated (RR p.12, #401), Evade engagement-gated (RR p.11) — this
+/// satisfies both. Bag is `Numeric(0)` so the test outcome is determined
+/// purely by (skill vs fight/evade).
+fn fight_evade_board(fighter: Seat, enemy: Enemy) -> GameStateBuilder {
+    GameStateBuilder::new()
+        .with_seat(fighter)
+        .with_location(test_support::test_location(HERE.0, "Test Hall"))
+        .with_enemy_engaged(enemy, INV)
+        .with_chaos_bag(bag_only_zero())
+        .open_turn(INV)
 }

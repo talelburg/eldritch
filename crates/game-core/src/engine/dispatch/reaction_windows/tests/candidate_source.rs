@@ -2,7 +2,7 @@ use super::*;
 use crate::state::{
     Act, Agenda, CardInPlay, CardInstanceId, EnemyId, GameStateBuilder, LocationId, Owner,
 };
-use crate::test_support;
+use crate::test_support::{self, SeatLookup as _};
 
 const INV: InvestigatorId = InvestigatorId(1);
 /// Deliberately resolved by no registry — the test registry knows none.
@@ -22,9 +22,9 @@ fn candidate(source: CandidateSource) -> ResolutionCandidate {
 
 #[test]
 fn a_hand_candidate_is_present_only_while_the_code_is_in_hand() {
-    let mut inv = test_support::test_investigator(1);
-    inv.hand.push(CardCode::new(SOME_CODE));
-    let state = GameStateBuilder::default().with_investigator(inv).build();
+    let state = GameStateBuilder::default()
+        .with_seat(test_support::seat(1).hand([SOME_CODE]))
+        .build();
     assert!(candidate_source_present(
         &state,
         &candidate(CandidateSource::Hand)
@@ -40,14 +40,10 @@ fn a_hand_candidate_is_present_only_while_the_code_is_in_hand() {
 
 #[test]
 fn an_in_play_candidate_is_present_only_while_its_instance_is() {
-    let instance = CardInstanceId(7);
-    let mut inv = test_support::test_investigator(1);
-    inv.cards_in_play.push(CardInPlay::enter_play(
-        CardCode::new(SOME_CODE),
-        instance,
-        Owner::Investigator(InvestigatorId(1)),
-    ));
-    let state = GameStateBuilder::default().with_investigator(inv).build();
+    let state = GameStateBuilder::default()
+        .with_seat(test_support::seat(1).in_play([SOME_CODE]))
+        .build();
+    let instance = state.in_play(INV, SOME_CODE);
     assert!(candidate_source_present(
         &state,
         &candidate(CandidateSource::Ability(AbilitySource::InPlay(instance)))
@@ -56,7 +52,7 @@ fn an_in_play_candidate_is_present_only_while_its_instance_is() {
     assert!(!candidate_source_present(
         &state,
         &candidate(CandidateSource::Ability(AbilitySource::InPlay(
-            CardInstanceId(8)
+            CardInstanceId(instance.0 + 1)
         )))
     ));
 }
@@ -78,7 +74,7 @@ fn an_attachment_candidate_is_present_though_no_investigator_controls_it() {
         Owner::EncounterDeck,
     ));
     let state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
         .with_location(location)
         .build();
     assert!(candidate_source_present(
@@ -94,7 +90,7 @@ fn an_act_candidate_is_present_only_while_that_act_is_the_current_one() {
         clue_threshold: 0,
     };
     let mut state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
         .build();
     state.act_deck = vec![act(SOME_CODE), act("_next_act")];
     state.act_index = 0;
@@ -115,7 +111,7 @@ fn an_act_candidate_is_present_only_while_that_act_is_the_current_one() {
 
     // No act deck at all: nothing for `AbilitySource::Act` to name.
     let empty = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
         .build();
     assert!(!candidate_source_present(&empty, &cand));
 }
@@ -123,7 +119,7 @@ fn an_act_candidate_is_present_only_while_that_act_is_the_current_one() {
 #[test]
 fn an_agenda_candidate_is_present_only_while_that_agenda_is_the_current_one() {
     let mut state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
         .build();
     state.agenda_deck = vec![Agenda {
         code: CardCode::new(SOME_CODE),
@@ -152,7 +148,7 @@ fn an_enemy_candidate_tracks_its_enemy() {
     let mut enemy = test_support::test_enemy(4, "Silver Twilight Acolyte");
     enemy.code = CardCode::new(SOME_CODE);
     let state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
         .with_enemy(enemy)
         .build();
     let cand = |id| {
@@ -180,7 +176,7 @@ fn a_location_candidate_tracks_its_location() {
     let mut location = test_support::test_location(10, "Study");
     location.code = CardCode::new(SOME_CODE);
     let state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
         .with_location(location)
         .build();
     assert!(candidate_source_present(

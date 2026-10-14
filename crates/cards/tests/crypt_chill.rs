@@ -34,15 +34,14 @@
 //! Own process → installs `cards::REGISTRY`.
 
 use cards::REGISTRY;
-use game_core::action::{Action, EngineRecord};
 use game_core::assert_event;
-use game_core::engine::{ApplyResult, EngineOutcome, TurnAction};
+use game_core::engine::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    ContinuationStack, GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, Phase, Zone,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, Zone,
 };
-use game_core::test_support::{self, ScriptedResolver, TestSession};
+use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
 
 /// Crypt Chill.
 const CRYPT_CHILL: &str = "01167";
@@ -53,28 +52,36 @@ const PARLOR: &str = "01115";
 
 const INV: InvestigatorId = InvestigatorId(1);
 const PARLOR_ID: LocationId = LocationId(1);
-const LITA_INST: CardInstanceId = CardInstanceId(50);
 
 #[ctor::ctor(unsafe)]
 fn install() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// The investigator in the revealed Parlor with Lita put into play there,
-/// scenario-owned — act 01109b's *"Put the set-aside Lita Chantler into play
-/// in the Parlor"*. A `0` token makes the Parley's intellect 5 vs 4 succeed.
-fn parlor_with_lita() -> GameState {
-    let mut parlor = test_support::test_location(1, "Parlor");
+/// The investigator's turn in the revealed Parlor with Lita put into play
+/// there, scenario-owned — act 01109b's *"Put the set-aside Lita Chantler into
+/// play in the Parlor"*. A `0` token makes the Parley's intellect 5 vs 4
+/// succeed. Returns Lita's instance id with the state.
+fn parlor_with_lita() -> (GameState, CardInstanceId) {
+    let mut parlor = test_support::test_location(PARLOR_ID.0, "Parlor");
     parlor.code = CardCode::new(PARLOR);
     parlor.revealed = true;
-    let mut inv = test_support::test_investigator(1);
-    inv.skills.intellect = 5;
     let mut state = GameStateBuilder::new()
-        .with_investigator_at(inv, PARLOR_ID)
+        // A filler deck card so the round's Upkeep step-4.4 draw doesn't deal
+        // empty-deck horror.
+        .with_seat(
+            seat(1)
+                .at(PARLOR_ID)
+                .skill(SkillKind::Intellect, 5)
+                .deck(["01088"]),
+        )
         .with_location(parlor)
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
+    // A seat cannot place a card at a location, so Lita is put there by a
+    // state edit, with an id minted from the state's counter.
+    let lita = state.card_instance_ids.mint();
     state
         .locations
         .get_mut(&PARLOR_ID)
@@ -82,46 +89,38 @@ fn parlor_with_lita() -> GameState {
         .cards_at_location
         .push(CardInPlay::enter_play(
             CardCode::new(LITA),
-            LITA_INST,
+            lita,
             Owner::Scenario,
         ));
-    state
+    (state, lita)
 }
 
 /// Win the Parley, so the investigator controls Lita.
-fn parley(state: GameState) -> GameState {
+fn parley(state: GameState, lita: CardInstanceId) -> TestSession {
     let parley = TurnAction::ActivateAbility {
         investigator: INV,
-        source: AbilitySource::InPlay(LITA_INST),
+        source: AbilitySource::InPlay(lita),
         address: AbilityAddress::Granted {
             granter: CardCode::new(PARLOR),
             ability: 1,
             sub: 0,
         },
     };
-    TestSession::new(state)
-        .resolve_choices(|c: &mut ScriptedResolver| {
-            c.commit_cards(&[]);
-        })
-        .take(&parley)
-        .finish()
-        .state
+    let session = TestSession::new(state).take(&parley).commit(&[]);
+    session.assert_at_turn_menu(INV);
+    session
 }
 
-/// Reveal Crypt Chill against the investigator, failing its test.
-fn reveal_crypt_chill(mut state: GameState) -> ApplyResult {
-    // An encounter card is revealed at rest, never beneath an open-turn prompt.
-    state.continuations = ContinuationStack::new();
-    state.phase = Phase::Mythos;
+/// Reveal Crypt Chill against the investigator, failing its test: with Crypt
+/// Chill on top of the encounter deck and only auto-fail in the bag, end the
+/// turn so the next round's Mythos step 1.4 draws it, and commit nothing.
+fn reveal_crypt_chill(controlled: &TestSession) -> TestSession {
+    let mut state = controlled.state().clone();
     state.chaos_bag.tokens = vec![ChaosToken::AutoFail];
     state.encounter_deck.push_back(CardCode::new(CRYPT_CHILL));
-    let mut resolver = ScriptedResolver::new();
-    resolver.commit_cards(&[]);
-    test_support::drive(
-        state,
-        Action::Engine(EngineRecord::EncounterCardRevealed { investigator: INV }),
-        resolver,
-    )
+    let drawing = TestSession::new(state).take(&TurnAction::EndTurn);
+    drawing.assert_at_encounter_draw();
+    drawing.confirm().commit(&[])
 }
 
 /// **Crypt Chill removes a Parleyed Lita from the game** (#918). She is the
@@ -129,18 +128,20 @@ fn reveal_crypt_chill(mut state: GameState) -> ApplyResult {
 /// leaves play, and because the scenario owns her she goes to no discard pile.
 #[test]
 fn crypt_chill_removes_a_parleyed_lita_from_the_game() {
-    let controlled = parley(parlor_with_lita());
-    assert!(
-        controlled.investigators[&INV]
-            .cards_in_play
-            .iter()
-            .any(|c| c.instance_id == LITA_INST),
+    let (state, lita) = parlor_with_lita();
+    let controlled = parley(state, lita);
+    assert_eq!(
+        controlled.state().in_play(INV, LITA),
+        lita,
         "the Parley put Lita under the investigator's control",
     );
 
-    let result = reveal_crypt_chill(controlled);
-    assert_eq!(result.outcome, EngineOutcome::Done);
-    let inv = &result.state.investigators[&INV];
+    let session = reveal_crypt_chill(&controlled);
+    // The revelation resolves and play runs on out of the Mythos phase to the
+    // investigator's next turn.
+    session.assert_at_turn_menu(INV);
+    let state = session.state();
+    let inv = &state.investigators[&INV];
     assert!(
         inv.cards_in_play.is_empty(),
         "she left play, got {:?}",
@@ -153,23 +154,17 @@ fn crypt_chill_removes_a_parleyed_lita_from_the_game() {
         inv.discard,
     );
     assert!(
-        !result
-            .state
-            .encounter_discard
-            .contains(&CardCode::new(LITA)),
+        !state.encounter_discard.contains(&CardCode::new(LITA)),
         "nor into the encounter discard, got {:?}",
-        result.state.encounter_discard,
+        state.encounter_discard,
     );
     assert!(
-        result
-            .state
-            .removed_from_game
-            .contains(&CardCode::new(LITA)),
+        state.removed_from_game.contains(&CardCode::new(LITA)),
         "she is removed from the game, got {:?}",
-        result.state.removed_from_game,
+        state.removed_from_game,
     );
     assert_event!(
-        result.events,
+        session.events(),
         Event::CardRemovedFromGame {
             code,
             from: Zone::InPlay,

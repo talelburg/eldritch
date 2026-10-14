@@ -1,9 +1,9 @@
 //! End-to-end test of the on-draw resolution path, against a real Core Set
 //! treachery.
 //!
-//! Drives [`EngineRecord::EncounterCardRevealed`] **directly** — not through a
-//! player action — so what is under test is the reveal → Revelation → discard
-//! path itself rather than the Mythos phase that normally calls it
+//! Staged **at** the Mythos phase's step-1.4 encounter draw, and driven by
+//! confirming that draw, so what is under test is the reveal → Revelation →
+//! discard path itself rather than the Mythos phase walk that leads to it
 //! (`mythos_phase.rs` owns the phase walk). The test exercises:
 //!
 //! - Happy path: revealing the treachery emits `Event::CardRevealed`, resolves
@@ -35,11 +35,12 @@
 
 use card_dsl::card_data::{CardKind, CardType};
 use cards::REGISTRY;
-use game_core::action::{Action, EngineRecord};
-use game_core::engine::{self, EngineOutcome};
+use game_core::assert_event;
 use game_core::event::Event;
-use game_core::state::{Agenda, CardCode, GameState, GameStateBuilder, InvestigatorId, Phase};
-use game_core::{assert_event, test_support};
+use game_core::state::{
+    Agenda, CardCode, GameStateBuilder, InvestigatorId, MythosPhaseFrame, MythosResume, Phase,
+};
+use game_core::test_support::{self, seat, TestSession};
 
 /// Ancient Evils — *"**Revelation** - Place 1 doom on the current agenda."*
 const ANCIENT_EVILS: &str = "01166";
@@ -47,6 +48,8 @@ const ANCIENT_EVILS: &str = "01166";
 const RISE_OF_THE_GHOULS: &str = "01106";
 /// The Study — the board's sole location.
 const STUDY: &str = "01111";
+
+const INV: InvestigatorId = InvestigatorId(1);
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
@@ -63,71 +66,77 @@ fn agenda_doom_threshold(code: &str) -> u8 {
     }
 }
 
-/// The board both tests start from: the investigator at the Study, one agenda, and one
-/// Ancient Evils on the encounter deck. The investigator is seated by hand
-/// rather than via `seat_and_open` because these tests drive
-/// [`EngineRecord::EncounterCardRevealed`] directly.
-fn board() -> GameState {
-    let mut state = GameStateBuilder::new().build();
+/// The board both tests start from: Mythos step 1.4 with the investigator at
+/// the Study to draw, one agenda, and `encounter_deck` as the encounter deck.
+/// The Study's id is minted by `add_location` on the built state, so the
+/// investigator is placed there afterwards.
+fn drawing(encounter_deck: &[&str]) -> TestSession {
+    let mut state = GameStateBuilder::new()
+        .with_seat(seat(1))
+        .with_turn_order([INV])
+        .with_phase(Phase::Mythos)
+        .with_phase_anchor(MythosPhaseFrame {
+            resume: MythosResume::AfterDraws,
+        })
+        .with_mythos_draw_remaining([INV])
+        .build();
     let study = state.add_location(cards::by_code(STUDY).expect("Study 01111 in corpus"));
     state.starting_location = Some(study);
+    state
+        .investigators
+        .get_mut(&INV)
+        .expect("seated")
+        .current_location = Some(study);
     state.agenda_deck = vec![Agenda {
         code: CardCode::new(RISE_OF_THE_GHOULS),
         doom_threshold: agenda_doom_threshold(RISE_OF_THE_GHOULS),
     }];
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(study);
-    state.investigators.insert(InvestigatorId(1), inv);
-    state.turn_order = vec![InvestigatorId(1)];
-    state.active_investigator = Some(InvestigatorId(1));
-    state.phase = Phase::Mythos;
-    state.encounter_deck.push_back(CardCode::new(ANCIENT_EVILS));
     state
+        .encounter_deck
+        .extend(encounter_deck.iter().map(|c| CardCode::new(*c)));
+    TestSession::new(state)
 }
 
 #[test]
 fn revealing_ancient_evils_runs_revelation_and_discards() {
-    let inv1 = InvestigatorId(1);
-    let state = board();
-    let pre_doom = state.agenda_doom;
-    let pre_deck_len = state.encounter_deck.len();
+    let draw = drawing(&[ANCIENT_EVILS]);
+    let pre_doom = draw.state().agenda_doom;
+    let pre_deck_len = draw.state().encounter_deck.len();
     assert!(pre_deck_len >= 1, "fixture must seed at least one card");
 
-    let result = engine::apply(
-        state,
-        Action::Engine(EngineRecord::EncounterCardRevealed { investigator: inv1 }),
-    );
-
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    // The draw reveals the card, its Revelation resolves without a prompt of
+    // its own, and play runs on out of the Mythos phase to the turn.
+    let session = draw.confirm();
+    session.assert_at_turn_menu(INV);
 
     // CardRevealed fires for Ancient Evils.
     assert_event!(
-        result.events,
+        session.events(),
         Event::CardRevealed { investigator, code, card_type }
-            if *investigator == inv1
+            if *investigator == INV
                 && *code == CardCode::new(ANCIENT_EVILS)
                 && *card_type == CardType::Treachery
     );
 
+    let state = session.state();
     // Revelation effect ran: 1 doom on the current agenda. (The synthetic
     // predecessor gained the controller a resource here; the printed clause is
     // doom, so this is the one assertion the flip could not carry over
     // verbatim.)
     assert_eq!(
-        result.state.agenda_doom,
+        state.agenda_doom,
         pre_doom + 1,
         "Revelation should place 1 doom on the current agenda",
     );
 
     // Card moved deck → discard.
     assert_eq!(
-        result.state.encounter_deck.len(),
+        state.encounter_deck.len(),
         pre_deck_len - 1,
         "deck length should decrement by 1",
     );
     assert!(
-        result
-            .state
+        state
             .encounter_discard
             .contains(&CardCode::new(ANCIENT_EVILS)),
         "Ancient Evils should be in discard after Revelation resolves",
@@ -136,29 +145,22 @@ fn revealing_ancient_evils_runs_revelation_and_discards() {
 
 #[test]
 fn rejects_when_encounter_deck_and_discard_both_empty() {
-    let inv1 = InvestigatorId(1);
-    let mut state = board();
-    // Drain the deck (and ensure discard stays empty).
-    state.encounter_deck.clear();
-    assert!(state.encounter_discard.is_empty());
+    let draw = drawing(&[]);
+    assert!(draw.state().encounter_deck.is_empty());
+    assert!(draw.state().encounter_discard.is_empty());
+    let seen = draw.events().len();
 
-    let result = engine::apply(
-        state,
-        Action::Engine(EngineRecord::EncounterCardRevealed { investigator: inv1 }),
-    );
+    let session = draw.confirm();
 
-    match result.outcome {
-        EngineOutcome::Rejected { reason } => {
-            assert!(
-                reason.contains("encounter deck and discard both empty"),
-                "unexpected reject reason: {reason:?}",
-            );
-        }
-        other => panic!("expected Rejected, got {other:?}"),
-    }
+    let reason = session.expect_rejected();
     assert!(
-        result.events.is_empty(),
+        reason.contains("encounter deck and discard both empty"),
+        "unexpected reject reason: {reason:?}",
+    );
+    assert_eq!(
+        session.events().len(),
+        seen,
         "no events should fire on empty-deck reject; got {:?}",
-        result.events,
+        &session.events()[seen..],
     );
 }

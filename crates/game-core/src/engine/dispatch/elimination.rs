@@ -13,7 +13,7 @@ use crate::state::{
     EnemyId, GameState, InvestigatorId, Owner, Status,
 };
 #[cfg(test)]
-use crate::state::{CardInPlay, LocationId, Phase};
+use crate::state::{LocationId, Phase};
 
 /// Flip an Active investigator's status to the variant `cause` implies —
 /// [`Status::Resigned`] for a resignation, [`Status::Defeated`] for every

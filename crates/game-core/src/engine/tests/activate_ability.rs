@@ -1,124 +1,72 @@
 use super::*;
-use crate::state::Owner;
+use crate::state::{MythosPhaseFrame, MythosResume};
+use crate::test_support::SeatLookup as _;
 
 // As with PlayCard (`play_card.rs`), the non-enumeration form is vacuous
-// here (no `InvestigatorTurn` frame; `TEST_INV`-only registry yields no
-// abilities for "01059"). Reach the handler directly via
-// `dispatch_turn_action_unchecked` and assert it rejects — the handler's
-// defensive validation, exactly as the pre-#447 typed-action tests did.
-// The registry-backed activation flow lives in
+// here (`TEST_INV`-only registry yields no abilities for "01059", so the
+// menu never offers the activation). Reach the handler with
+// `submit_off_menu` and assert it rejects — the handler's defensive
+// validation, exactly as the pre-#447 typed-action tests did. The
+// registry-backed activation flow lives in
 // crates/game-core/tests/activate_ability.rs.
-fn activate_ability_state(active: bool) -> (GameState, InvestigatorId, CardInstanceId) {
-    let id = InvestigatorId(1);
-    let instance_id = CardInstanceId(7);
-    let mut inv = test_support::test_investigator(1);
-    inv.cards_in_play.push(CardInPlay::enter_play(
-        CardCode::new("01059"),
-        instance_id,
-        Owner::Investigator(InvestigatorId(1)),
-    ));
-    let mut builder = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_investigator(inv);
-    if active {
-        builder = builder.with_active_investigator(id);
+const ASSET: &str = "01059";
+
+fn activate(source: CardInstanceId) -> TurnAction {
+    TurnAction::ActivateAbility {
+        investigator: INV,
+        source: AbilitySource::InPlay(source),
+        address: AbilityAddress::Printed(0),
     }
-    (builder.build(), id, instance_id)
 }
 
 #[test]
 fn activate_ability_outside_investigation_phase_is_rejected() {
-    let id = InvestigatorId(1);
-    let instance_id = CardInstanceId(0);
-    let mut inv = test_support::test_investigator(1);
-    inv.cards_in_play.push(CardInPlay::enter_play(
-        CardCode::new("01059"),
-        instance_id,
-        Owner::Investigator(InvestigatorId(1)),
-    ));
-    let state = GameStateBuilder::new()
+    // Mythos step 1.4: `INV` is to draw an encounter card.
+    let session = GameStateBuilder::new()
+        .with_seat(seat(1).in_play([ASSET]))
+        .with_turn_order([INV])
         .with_phase(Phase::Mythos)
-        .with_investigator(inv)
-        .with_active_investigator(id)
-        .build();
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::ActivateAbility {
-            investigator: id,
-            source: AbilitySource::InPlay(instance_id),
-            address: AbilityAddress::Printed(0),
-        },
-    );
-    assert!(
-        matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "{:?}",
-        result.outcome
-    );
+        .with_phase_anchor(MythosPhaseFrame {
+            resume: MythosResume::AfterDraws,
+        })
+        .with_mythos_draw_remaining([INV])
+        .session();
+    let asset = session.state().in_play(INV, ASSET);
+    session.assert_rejects(|s| s.submit_off_menu(&activate(asset)));
 }
 
 #[test]
 fn activate_ability_by_non_active_investigator_is_rejected() {
-    let (state, id, instance_id) = activate_ability_state(false);
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::ActivateAbility {
-            investigator: id,
-            source: AbilitySource::InPlay(instance_id),
-            address: AbilityAddress::Printed(0),
-        },
-    );
-    assert!(
-        matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "{:?}",
-        result.outcome
-    );
+    // Investigator 2's turn is open; investigator 1 tries to activate.
+    let session = GameStateBuilder::new()
+        .with_seat(seat(1).in_play([ASSET]))
+        .with_seat(seat(2))
+        .with_turn_order([INV, InvestigatorId(2)])
+        .open_turn(InvestigatorId(2))
+        .session();
+    let asset = session.state().in_play(INV, ASSET);
+    session.assert_rejects(|s| s.submit_off_menu(&activate(asset)));
 }
 
 #[test]
 fn activate_ability_with_unknown_instance_id_is_rejected() {
-    let (state, id, _real_instance) = activate_ability_state(true);
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::ActivateAbility {
-            investigator: id,
-            source: AbilitySource::InPlay(CardInstanceId(9999)),
-            address: AbilityAddress::Printed(0),
-        },
-    );
-    assert!(
-        matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "{:?}",
-        result.outcome
-    );
+    let session = GameStateBuilder::new()
+        .with_seat(seat(1).in_play([ASSET]))
+        .open_turn(INV)
+        .session();
+    // An id nothing on the board carries.
+    session.assert_rejects(|s| s.submit_off_menu(&activate(CardInstanceId(9999))));
 }
 
 #[test]
 fn activate_ability_when_defeated_is_rejected() {
-    let id = InvestigatorId(1);
-    let instance_id = CardInstanceId(0);
-    let mut inv = test_support::test_investigator(1);
-    inv.status = Status::Defeated;
-    inv.cards_in_play.push(CardInPlay::enter_play(
-        CardCode::new("01059"),
-        instance_id,
-        Owner::Investigator(InvestigatorId(1)),
-    ));
-    let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_investigator(inv)
-        .with_active_investigator(id)
+    let mut state = GameStateBuilder::new()
+        .with_seat(seat(1).in_play([ASSET]))
+        .open_turn(INV)
         .build();
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::ActivateAbility {
-            investigator: id,
-            source: AbilitySource::InPlay(instance_id),
-            address: AbilityAddress::Printed(0),
-        },
-    );
-    assert!(
-        matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "{:?}",
-        result.outcome
-    );
+    // No seat setter for status: a defeated investigator whose turn is
+    // still open is what the handler defends against.
+    state.investigators.get_mut(&INV).expect("seated").status = Status::Defeated;
+    let asset = state.in_play(INV, ASSET);
+    TestSession::new(state).assert_rejects(|s| s.submit_off_menu(&activate(asset)));
 }

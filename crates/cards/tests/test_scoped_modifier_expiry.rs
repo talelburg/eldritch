@@ -24,18 +24,20 @@
 
 use card_dsl::dsl::{IntExpr, Stat};
 use cards::REGISTRY;
-use game_core::action::{Action, EngineRecord};
 use game_core::assert_event_count;
-use game_core::engine::{ApplyResult, EngineOutcome, OptionId};
+use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosToken, GameState, GameStateBuilder, InvestigatorId,
-    Lifetime, LocationId, Owner, RecordedModifier, SkillTestId, Status,
+    CardCode, ChaosToken, GameState, GameStateBuilder, InvestigatorId, Lifetime, LocationId,
+    MythosPhaseFrame, MythosResume, Phase, RecordedModifier, SkillTestId, Status,
 };
-use game_core::test_support::{self, ScriptedResolver};
+use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
 
 const GRASPING_HANDS: &str = "01162";
 const GUARD_DOG: &str = "01021";
+
+const INV: InvestigatorId = InvestigatorId(1);
+const HERE: LocationId = LocationId(20);
 
 /// The id the single skill test on either board is minted.
 const THE_TEST: SkillTestId = SkillTestId(0);
@@ -47,28 +49,26 @@ fn install_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// The test investigator (8 health) at a location with `damage` already on it
-/// and `soakers` in play,
-/// Grasping Hands on top of the encounter deck and a rigged `Numeric(-2)`
-/// token: agility 3 − 2 = 1 vs difficulty 3 → fail by 2 → 2 damage.
+/// Mythos step 1.4, the test investigator (8 health) to draw: at a location
+/// with `damage` already on them and `soakers` in play, Grasping Hands on top
+/// of the encounter deck and a rigged `Numeric(-2)` token. The seeded row for
+/// [`THE_TEST`] is in force while it runs: agility 3 + 1 − 2 = 2 vs difficulty
+/// 3 → fail by 1 → 1 damage.
 fn board(damage: u8, soakers: &[&str]) -> GameState {
-    let mut inv = test_support::test_investigator(1);
-    inv.investigator_card.accumulated_damage = damage;
-    inv.cards_in_play = soakers
-        .iter()
-        .enumerate()
-        .map(|(i, code)| {
-            CardInPlay::enter_play(
-                CardCode::new(*code),
-                CardInstanceId(u32::try_from(i).expect("fits") + 1),
-                Owner::Investigator(InvestigatorId(1)),
-            )
-        })
-        .collect();
     let mut state = GameStateBuilder::new()
-        .with_investigator_at(inv, LocationId(20))
-        .with_location(test_support::test_location(20, "Here"))
-        .with_turn_order([InvestigatorId(1)])
+        .with_seat(
+            seat(1)
+                .at(HERE)
+                .harm(damage, 0)
+                .in_play(soakers.iter().copied()),
+        )
+        .with_location(test_support::test_location(HERE.0, "Here"))
+        .with_turn_order([INV])
+        .with_phase(Phase::Mythos)
+        .with_phase_anchor(MythosPhaseFrame {
+            resume: MythosResume::AfterDraws,
+        })
+        .with_mythos_draw_remaining([INV])
         .build();
     state.chaos_bag.tokens = vec![ChaosToken::Numeric(-2)];
     state
@@ -82,7 +82,7 @@ fn board(damage: u8, soakers: &[&str]) -> GameState {
 
 fn row_for(test: SkillTestId) -> RecordedModifier {
     RecordedModifier::new(
-        InvestigatorId(1),
+        INV,
         Stat::Agility,
         IntExpr::Lit(1),
         Lifetime::SkillTest(test),
@@ -90,27 +90,15 @@ fn row_for(test: SkillTestId) -> RecordedModifier {
     )
 }
 
-/// Reveal the top encounter card for investigator 1, committing nothing and
-/// answering each per-point damage-distribution prompt with `picks`.
-fn reveal(state: GameState, picks: &[u32]) -> ApplyResult {
-    let mut resolver = ScriptedResolver::new();
-    resolver.commit_cards(&[]);
-    for &p in picks {
-        resolver.pick_single(OptionId(p));
-    }
-    test_support::drive(
-        state,
-        Action::Engine(EngineRecord::EncounterCardRevealed {
-            investigator: InvestigatorId(1),
-        }),
-        resolver,
-    )
+/// Draw and reveal the top encounter card for investigator 1, committing
+/// nothing to its test.
+fn reveal(state: GameState) -> TestSession {
+    TestSession::new(state).confirm().commit(&[])
 }
 
 /// The rows left after a run, as the tests want to read them.
-fn surviving_lifetimes(result: &ApplyResult) -> Vec<Lifetime> {
-    result
-        .state
+fn surviving_lifetimes(state: &GameState) -> Vec<Lifetime> {
+    state
         .recorded_modifiers
         .iter()
         .map(|m| m.lifetime)
@@ -119,49 +107,52 @@ fn surviving_lifetimes(result: &ApplyResult) -> Vec<Lifetime> {
 
 #[test]
 fn a_row_expires_when_its_test_is_abandoned_on_the_testers_elimination() {
-    // The investigator at 7/8 damage takes 2 more → killed. The test is abandoned
+    // The investigator at 7/8 damage takes 1 more → killed. The test is abandoned
     // rather than resolved (#564), and its teardown must still expire the
     // rows bought for it. No soaker, so no distribution prompt.
-    let result = reveal(board(7, &[]), &[]);
+    let session = reveal(board(7, &[]));
+    let state = session.state();
 
-    assert_eq!(result.outcome, EngineOutcome::Done, "abandoned cleanly");
+    assert_eq!(state.investigators[&INV].status, Status::Defeated);
+    assert_event_count!(session.events(), 1, Event::SkillTestEnded { .. });
     assert_eq!(
-        result.state.investigators[&InvestigatorId(1)].status,
-        Status::Defeated,
-    );
-    assert_event_count!(result.events, 1, Event::SkillTestEnded { .. });
-    assert_eq!(
-        result.state.skill_test_ids.peek(),
+        state.skill_test_ids.peek(),
         1,
         "exactly one test ran, so it is SkillTestId(0)",
     );
     assert_eq!(
-        surviving_lifetimes(&result),
+        surviving_lifetimes(state),
         vec![Lifetime::SkillTest(ANOTHER_TEST)],
         "the abandoned test's row is gone; another test's is untouched",
     );
+    // The lone investigator's elimination ends the game: abandoned cleanly.
+    assert_eq!(session.finish().outcome, EngineOutcome::Done);
 }
 
 #[test]
 fn a_row_expires_when_its_test_resolves_across_a_suspension() {
-    // Same failed test, but the investigator survives and soaks both points onto Guard
-    // Dog — two per-point prompts, so the test's resolution suspends twice
-    // before its teardown runs.
-    let result = reveal(board(0, &[GUARD_DOG]), &[1, 1]);
+    // Same failed test, but the investigator survives and soaks the point onto
+    // Guard Dog — a per-point prompt, so the test's resolution suspends before
+    // its teardown runs.
+    let state = board(0, &[GUARD_DOG]);
+    let dog = state.card(INV, GUARD_DOG);
+    let session = reveal(state).pick(dog);
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    // Play runs on out of the Mythos phase to the investigator's turn.
+    session.assert_at_turn_menu(INV);
+    let state = session.state();
     assert_eq!(
-        result.state.investigators[&InvestigatorId(1)].status,
+        state.investigators[&INV].status,
         Status::Active,
-        "2 damage is not lethal at 0/8",
+        "1 damage is not lethal at 0/8",
     );
     assert_eq!(
-        result.state.skill_test_ids.peek(),
+        state.skill_test_ids.peek(),
         1,
         "exactly one test ran, so it is SkillTestId(0)",
     );
     assert_eq!(
-        surviving_lifetimes(&result),
+        surviving_lifetimes(state),
         vec![Lifetime::SkillTest(ANOTHER_TEST)],
         "the resolved test's row is gone; another test's is untouched",
     );

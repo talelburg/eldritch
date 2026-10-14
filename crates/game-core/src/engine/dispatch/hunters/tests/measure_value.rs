@@ -3,7 +3,7 @@ use card_dsl::dsl::{self, Ability, ModifierScope, Stat};
 
 use super::*;
 use crate::card_registry::CardRegistry;
-use crate::state::{CardCode, CardInPlay, CardInstanceId, GameStateBuilder, Owner};
+use crate::state::{CardCode, GameStateBuilder};
 use crate::test_support;
 
 fn no_metadata(_: &CardCode) -> Option<&'static CardMetadata> {
@@ -45,21 +45,13 @@ fn fake_registry() -> CardRegistry {
 fn state_with(cards: &[&str], damage: u8) -> GameState {
     // combat 3, max_health() = 8 from the TEST_INV registry. After #448 cp2a
     // harm accumulates on the investigator card.
-    let mut inv = test_support::test_investigator(1);
-    inv.investigator_card.accumulated_damage = damage;
-    inv.cards_in_play = cards
-        .iter()
-        .enumerate()
-        .map(|(i, c)| {
-            CardInPlay::enter_play(
-                CardCode::new(*c),
-                #[allow(clippy::cast_possible_truncation)]
-                CardInstanceId(i as u32),
-                Owner::Investigator(InvestigatorId(1)),
-            )
-        })
-        .collect();
-    GameStateBuilder::new().with_investigator(inv).build()
+    GameStateBuilder::new()
+        .with_seat(
+            test_support::seat(1)
+                .harm(damage, 0)
+                .in_play(cards.iter().copied()),
+        )
+        .build()
 }
 
 #[test]

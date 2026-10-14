@@ -11,14 +11,15 @@
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use card_dsl::dsl::{self, EventPattern, EventTiming, InvestigatorTarget, UsageLimit, UsagePeriod};
+use game_core::engine::enumerate::TurnAction;
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{EngineOutcome, NativeCx, OptionTarget, TimingEvent};
 use game_core::event::{Event, TraumaKind};
 use game_core::state::{
-    Assignment, CardCode, CardInPlay, CardInstanceId, DamageSource, EnemyId, GameState,
-    GameStateBuilder, Investigator, InvestigatorId, LocationId, Owner,
+    Assignment, CardCode, CardInstanceId, DamageSource, EnemyId, GameState, GameStateBuilder,
+    InvestigatorId, LocationId,
 };
-use game_core::test_support::{self, MockRegistry, TestSession};
+use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
 
 /// `Forced - When an enemy attack deals damage to this card: mark the
 /// attacking enemy. (Limit once per round.)` / `Forced - When you discover
@@ -130,28 +131,20 @@ fn install() {
         .install();
 }
 
-fn instance(i: usize) -> CardInstanceId {
-    CardInstanceId(u32::try_from(i + 1).expect("small index"))
-}
+const HERE: LocationId = LocationId(1);
+const ATTACKER: EnemyId = EnemyId(7);
 
-/// The investigator, holding `codes` in their threat area, instance ids from 1
-/// in order.
-fn holding(codes: &[&str]) -> Investigator {
-    let mut investigator = test_support::test_investigator(1);
-    for (i, code) in codes.iter().enumerate() {
-        investigator.threat_area.push(CardInPlay::enter_play(
-            CardCode::new(*code),
-            instance(i),
-            Owner::EncounterDeck,
-        ));
-    }
-    investigator
-}
-
-fn session_holding(codes: &[&str]) -> TestSession {
+/// `INV`'s open turn at `HERE`, holding `codes` in their threat area, with
+/// `HERE` holding `location_clues`. The probes' timing points are fired over
+/// this turn rather than reached by a real attack or discovery (see each
+/// test), so the session comes back to the turn menu afterwards.
+fn session_holding(codes: &[&str], location_clues: u8) -> TestSession {
+    let mut location = test_support::test_location(HERE.0, "Mock location");
+    location.clues = location_clues;
     GameStateBuilder::new()
-        .with_investigator(holding(codes))
-        .with_turn_order([INV])
+        .with_seat(seat(INV.0).at(HERE).threat_area(codes.iter().copied()))
+        .with_location(location)
+        .open_turn(INV)
         .session()
 }
 
@@ -191,29 +184,52 @@ fn recorded_uses(state: &GameState, instance: CardInstanceId, ability: u8) -> u8
         .map_or(0, |record| record.count)
 }
 
-/// An enemy attack by enemy 7 dealing 1 damage to each of the first `cards`
-/// instances.
-fn enemy_7_damages(cards: usize) -> TimingEvent {
+/// An enemy attack by [`ATTACKER`] dealing 1 damage to each of `cards`.
+fn enemy_7_damages(cards: &[CardInstanceId]) -> TimingEvent {
     TimingEvent::DamageAssigned {
-        source: DamageSource::EnemyAttack { enemy: EnemyId(7) },
+        source: DamageSource::EnemyAttack { enemy: ATTACKER },
         investigator: INV,
         assignment: Assignment {
-            asset_damage: (0..cards).map(|i| (instance(i), 1)).collect(),
+            asset_damage: cards.iter().map(|id| (*id, 1)).collect(),
             ..Assignment::default()
         },
     }
+}
+
+/// Fire an enemy attack's damage to the threat-area cards `codes` over the
+/// open turn. Not a real attack: an attack assigns damage only to assets with
+/// health, and these probes are healthless threat-area cards, so the timing
+/// point is fired on its own.
+fn attack_damages(session: TestSession, codes: &[&str]) -> TestSession {
+    let ids: Vec<CardInstanceId> = codes
+        .iter()
+        .map(|code| session.state().in_play(INV, *code))
+        .collect();
+    session.fire_at(enemy_7_damages(&ids))
 }
 
 #[test]
 fn a_forced_ability_fired_alone_names_the_attacking_enemy_and_records_its_use_like_one_in_an_ordered_run(
 ) {
     // Alone: the only forced ability the damage reaches.
-    let alone = session_holding(&[NAMES_WHAT_IT_HEARS]).fire_at(enemy_7_damages(1));
+    let alone = attack_damages(
+        session_holding(&[NAMES_WHAT_IT_HEARS], 0),
+        &[NAMES_WHAT_IT_HEARS],
+    );
+    alone.assert_at_turn_menu(INV);
     // In a run: the lead orders it alongside a sibling, and picks it first.
-    let in_run = session_holding(&[NAMES_WHAT_IT_HEARS, HEARS_THE_SAME])
-        .fire_at(enemy_7_damages(2))
-        .pick(OptionTarget::CardInstance(instance(0)))
-        .pick(OptionTarget::CardInstance(instance(1)));
+    let paused = attack_damages(
+        session_holding(&[NAMES_WHAT_IT_HEARS, HEARS_THE_SAME], 0),
+        &[NAMES_WHAT_IT_HEARS, HEARS_THE_SAME],
+    );
+    let (names, same) = (
+        paused.state().in_play(INV, NAMES_WHAT_IT_HEARS),
+        paused.state().in_play(INV, HEARS_THE_SAME),
+    );
+    let in_run = paused
+        .pick(OptionTarget::CardInstance(names))
+        .pick(OptionTarget::CardInstance(same));
+    in_run.assert_at_turn_menu(INV);
 
     assert_eq!(
         marks(&alone),
@@ -226,12 +242,16 @@ fn a_forced_ability_fired_alone_names_the_attacking_enemy_and_records_its_use_li
         "the same ability in a run was bound to the same attacking enemy"
     );
     assert_eq!(
-        recorded_uses(in_run.state(), instance(0), 0),
+        recorded_uses(in_run.state(), names, 0),
         1,
         "the ability fired in a run counts one use"
     );
     assert_eq!(
-        recorded_uses(alone.state(), instance(0), 0),
+        recorded_uses(
+            alone.state(),
+            alone.state().in_play(INV, NAMES_WHAT_IT_HEARS),
+            0
+        ),
         1,
         "the same ability fired alone counts the same one use"
     );
@@ -241,10 +261,15 @@ fn a_forced_ability_fired_alone_names_the_attacking_enemy_and_records_its_use_li
 fn a_forced_ability_at_its_usage_limit_does_not_initiate() {
     // The round has not ended between the two timing points, so the second is
     // in the same period as the first.
-    let session = session_holding(&[NAMES_WHAT_IT_HEARS])
-        .fire_at(enemy_7_damages(1))
-        .fire_at(enemy_7_damages(1));
+    let session = attack_damages(
+        attack_damages(
+            session_holding(&[NAMES_WHAT_IT_HEARS], 0),
+            &[NAMES_WHAT_IT_HEARS],
+        ),
+        &[NAMES_WHAT_IT_HEARS],
+    );
 
+    session.assert_at_turn_menu(INV);
     assert_eq!(
         marks(&session),
         vec![(INV, 7)],
@@ -252,29 +277,31 @@ fn a_forced_ability_at_its_usage_limit_does_not_initiate() {
     );
 }
 
-/// The investigator holding `codes`, at a location with 5 clues, about to
-/// discover 3 of them.
+/// The investigator holding `codes`, at a location with 5 clues, discovering 3
+/// of them. Fired over the open turn rather than reached by an Investigate: a
+/// basic investigate discovers 1 clue, and a count other than 1 is what tells
+/// a bound count from a constant.
 fn discovering_3(codes: &[&str]) -> TestSession {
-    let mut location = test_support::test_location(1, "Mock location");
-    location.clues = 5;
-    GameStateBuilder::new()
-        .with_location(location)
-        .with_investigator_at(holding(codes), LocationId(1))
-        .with_turn_order([INV])
-        .session()
-        .fire_at(TimingEvent::DiscoverClues {
-            investigator: INV,
-            location: LocationId(1),
-            count: 3,
-        })
+    session_holding(codes, 5).fire_at(TimingEvent::DiscoverClues {
+        investigator: INV,
+        location: HERE,
+        count: 3,
+    })
 }
 
 #[test]
 fn a_forced_ability_fired_alone_names_the_discovered_count_like_one_in_an_ordered_run() {
     let alone = discovering_3(&[NAMES_WHAT_IT_HEARS]);
-    let in_run = discovering_3(&[NAMES_WHAT_IT_HEARS, HEARS_THE_SAME])
-        .pick(OptionTarget::CardInstance(instance(0)))
-        .pick(OptionTarget::CardInstance(instance(1)));
+    alone.assert_at_turn_menu(INV);
+    let paused = discovering_3(&[NAMES_WHAT_IT_HEARS, HEARS_THE_SAME]);
+    let (names, same) = (
+        paused.state().in_play(INV, NAMES_WHAT_IT_HEARS),
+        paused.state().in_play(INV, HEARS_THE_SAME),
+    );
+    let in_run = paused
+        .pick(OptionTarget::CardInstance(names))
+        .pick(OptionTarget::CardInstance(same));
+    in_run.assert_at_turn_menu(INV);
 
     assert_eq!(
         marks(&alone),
@@ -288,8 +315,12 @@ fn a_forced_ability_fired_alone_names_the_discovered_count_like_one_in_an_ordere
     );
     assert_eq!(
         (
-            recorded_uses(alone.state(), instance(0), 1),
-            recorded_uses(in_run.state(), instance(0), 1),
+            recorded_uses(
+                alone.state(),
+                alone.state().in_play(INV, NAMES_WHAT_IT_HEARS),
+                1
+            ),
+            recorded_uses(in_run.state(), names, 1),
         ),
         (1, 1),
         "alone and in a run, the ability counts the same one use"
@@ -298,25 +329,30 @@ fn a_forced_ability_fired_alone_names_the_discovered_count_like_one_in_an_ordere
 
 #[test]
 fn a_fast_event_played_in_an_enemy_attack_damage_window_names_the_attacking_enemy() {
-    let mut investigator = test_support::test_investigator(1);
-    investigator.hand.push(CardCode::new(NAMES_ATTACKER));
+    // A real attack: drawing a card while engaged provokes the enemy's attack
+    // of opportunity, whose damage opens the window the Fast event is played
+    // in. (Draw rather than Resource, whose resource gain `marks` would count.)
+    let mut attacker = test_support::test_enemy(ATTACKER.0, "Attacker");
+    attacker.attack_damage = 1;
+    attacker.attack_horror = 0;
     let session = GameStateBuilder::new()
-        .with_investigator(investigator)
-        .with_turn_order([INV])
+        .with_seat(
+            seat(INV.0)
+                .at(HERE)
+                .hand([NAMES_ATTACKER])
+                .deck(["filler-card"]),
+        )
+        .with_location(test_support::test_location(HERE.0, "Mock location"))
+        .with_enemy_engaged(attacker, INV)
+        .open_turn(INV)
         .session()
-        .fire_at(TimingEvent::DamageAssigned {
-            source: DamageSource::EnemyAttack { enemy: EnemyId(7) },
-            investigator: INV,
-            assignment: Assignment {
-                investigator_damage: 1,
-                ..Assignment::default()
-            },
-        });
+        .take(&TurnAction::Draw { investigator: INV });
 
     let session = session.pick(OptionTarget::HandCardByCode {
         investigator: INV,
         code: CardCode::new(NAMES_ATTACKER),
     });
+    session.assert_at_turn_menu(INV);
     assert_eq!(
         marks(&session),
         vec![(INV, 7)],

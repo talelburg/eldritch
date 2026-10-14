@@ -1,17 +1,18 @@
 use super::*;
+use crate::assert_event;
 use crate::engine::dispatch;
 use crate::engine::outcome::InputKind;
 use crate::state::{GameStateBuilder, InvestigatorId, Phase, Status};
-use crate::test_support;
+use crate::test_support::{self, TestSession};
 
 #[test]
 fn mythos_phase_emits_phase_started_and_prompts_first_drawer() {
     let mut state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
-        .with_investigator(test_support::test_investigator(2))
+        .with_seat(test_support::seat(1))
+        .with_seat(test_support::seat(2))
         .with_phase(Phase::Mythos)
+        .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
         .build();
-    state.turn_order = vec![InvestigatorId(1), InvestigatorId(2)];
     let mut events = Vec::new();
 
     // mythos_phase parks the anchor at Draws (#482); the 1.4 draws run when
@@ -53,36 +54,26 @@ fn mythos_drives_from_entry_via_the_loop() {
     // phase opening (PhaseStarted + round bump + push the EncounterDraw
     // loop) and suspends at the first drawer prompt — same as the old
     // synchronous mythos_phase entry.
-    let mut state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
+    let session = GameStateBuilder::default()
+        .with_seat(test_support::seat(1))
         .with_phase(Phase::Mythos)
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::Entry,
         })
-        .build();
-    state.turn_order = vec![InvestigatorId(1)];
-    let mut events = Vec::new();
-    let outcome = dispatch::drive(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
-        EngineOutcome::Done,
+        .with_turn_order([InvestigatorId(1)])
+        .session();
+    // The loop advances the Entry anchor and suspends at the draw prompt.
+    session.assert_at_encounter_draw();
+    assert_eq!(
+        session.state().current_encounter_drawer(),
+        Some(InvestigatorId(1))
     );
-    assert!(
-        matches!(outcome, EngineOutcome::AwaitingInput { .. }),
-        "drive advances the Entry anchor and suspends at the draw prompt; got {outcome:?}",
-    );
-    assert!(events.iter().any(|e| matches!(
-        e,
+    assert_event!(
+        session.events(),
         Event::PhaseStarted {
             phase: Phase::Mythos
         }
-    )));
-    assert!(state
-        .continuations
-        .iter()
-        .any(|c| matches!(c, Continuation::EncounterDraw(_))));
+    );
 }
 
 #[test]
@@ -90,10 +81,10 @@ fn mythos_anchor_pushed_during_phase() {
     // The Mythos driver pushes its anchor at entry; it sits beneath the
     // encounter-draw loop while the phase is suspended (slice 1a).
     let mut state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
         .with_phase(Phase::Mythos)
+        .with_turn_order([InvestigatorId(1)])
         .build();
-    state.turn_order = vec![InvestigatorId(1)];
     let mut events = Vec::new();
     mythos_phase(&mut Cx {
         state: &mut state,
@@ -123,7 +114,6 @@ fn mythos_phase_with_empty_turn_order_opens_after_draws_window_inline() {
     let mut state = GameStateBuilder::default()
         .with_phase(Phase::Mythos)
         .build();
-    state.turn_order.clear();
     let mut events = Vec::new();
 
     // No drawers → MythosAfterDraws auto-skips, mythos_phase_end pushes the
@@ -164,7 +154,7 @@ fn mythos_phase_end_emits_phase_ended_and_steps_to_investigation() {
     // mythos_phase_end now runs only with the MythosPhase anchor on top
     // (slice 1a) — it pops the anchor as its first act.
     let mut state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
         .with_phase(Phase::Mythos)
         .with_turn_order([InvestigatorId(1)])
         .with_phase_anchor(MythosPhaseFrame {
@@ -219,11 +209,11 @@ fn mythos_phase_end_emits_phase_ended_and_steps_to_investigation() {
 #[test]
 fn mythos_phase_skips_eliminated_lead_when_seeding_queue() {
     let mut state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
-        .with_investigator(test_support::test_investigator(2))
+        .with_seat(test_support::seat(1))
+        .with_seat(test_support::seat(2))
         .with_phase(Phase::Mythos)
+        .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
         .build();
-    state.turn_order = vec![InvestigatorId(1), InvestigatorId(2)];
     state
         .investigators
         .get_mut(&InvestigatorId(1))
@@ -261,10 +251,10 @@ fn mythos_phase_skips_eliminated_lead_when_seeding_queue() {
 #[test]
 fn mythos_phase_with_all_investigators_eliminated_opens_after_draws_window() {
     let mut state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
         .with_phase(Phase::Mythos)
+        .with_turn_order([InvestigatorId(1)])
         .build();
-    state.turn_order = vec![InvestigatorId(1)];
     state
         .investigators
         .get_mut(&InvestigatorId(1))
@@ -301,31 +291,33 @@ fn mythos_phase_with_all_investigators_eliminated_opens_after_draws_window() {
 #[test]
 fn advance_encounter_draw_skips_eliminated_middle_investigator() {
     let mut state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
-        .with_investigator(test_support::test_investigator(2))
-        .with_investigator(test_support::test_investigator(3))
+        .with_seat(test_support::seat(1))
+        .with_seat(test_support::seat(2).status(Status::Defeated))
+        .with_seat(test_support::seat(3))
         .with_phase(Phase::Mythos)
+        .with_phase_anchor(MythosPhaseFrame {
+            resume: MythosResume::AfterDraws,
+        })
         .with_turn_order([InvestigatorId(1), InvestigatorId(2), InvestigatorId(3)])
         .with_mythos_draw_remaining([InvestigatorId(1), InvestigatorId(2), InvestigatorId(3)])
         .build();
+    // The card inv1 draws.
     state
-        .investigators
-        .get_mut(&InvestigatorId(2))
-        .unwrap()
-        .status = Status::Defeated;
-    let mut events = Vec::new();
+        .encounter_deck
+        .push_back(CardCode::new(test_support::TEST_TREACHERY));
 
-    // inv1 has just completed their draw chain: advance drops inv1 and must
-    // skip the Defeated inv2, landing on inv3.
-    let outcome = encounter::advance_encounter_draw(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
-
-    assert!(
-        matches!(outcome, EngineOutcome::AwaitingInput { .. }),
-        "a remaining drawer re-prompts, got {outcome:?}"
+    // inv1 draws: the queue drops inv1 and must skip the Defeated inv2,
+    // landing on inv3.
+    let session = TestSession::new(state);
+    assert_eq!(
+        session.state().current_encounter_drawer(),
+        Some(InvestigatorId(1))
     );
+    let session = session.confirm();
+
+    // A remaining drawer re-prompts.
+    session.assert_at_encounter_draw();
+    let state = session.state();
     assert_eq!(
         state.current_encounter_drawer(),
         Some(InvestigatorId(3)),
@@ -336,11 +328,11 @@ fn advance_encounter_draw_skips_eliminated_middle_investigator() {
 #[test]
 fn first_active_investigator_finds_first_active_skipping_eliminated() {
     let mut state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
-        .with_investigator(test_support::test_investigator(2))
-        .with_investigator(test_support::test_investigator(3))
+        .with_seat(test_support::seat(1))
+        .with_seat(test_support::seat(2))
+        .with_seat(test_support::seat(3))
+        .with_turn_order([InvestigatorId(1), InvestigatorId(2), InvestigatorId(3)])
         .build();
-    state.turn_order = vec![InvestigatorId(1), InvestigatorId(2), InvestigatorId(3)];
     state
         .investigators
         .get_mut(&InvestigatorId(1))
@@ -362,9 +354,9 @@ fn first_active_investigator_finds_first_active_skipping_eliminated() {
 #[test]
 fn first_active_investigator_returns_none_when_all_eliminated() {
     let mut state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
+        .with_turn_order([InvestigatorId(1)])
         .build();
-    state.turn_order = vec![InvestigatorId(1)];
     state
         .investigators
         .get_mut(&InvestigatorId(1))
@@ -383,17 +375,17 @@ fn first_active_investigator_returns_none_when_turn_order_empty() {
 #[test]
 fn next_active_investigator_after_skips_eliminated_middle() {
     let mut state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
-        .with_investigator(test_support::test_investigator(2))
-        .with_investigator(test_support::test_investigator(3))
-        .with_investigator(test_support::test_investigator(4))
+        .with_seat(test_support::seat(1))
+        .with_seat(test_support::seat(2))
+        .with_seat(test_support::seat(3))
+        .with_seat(test_support::seat(4))
+        .with_turn_order([
+            InvestigatorId(1),
+            InvestigatorId(2),
+            InvestigatorId(3),
+            InvestigatorId(4),
+        ])
         .build();
-    state.turn_order = vec![
-        InvestigatorId(1),
-        InvestigatorId(2),
-        InvestigatorId(3),
-        InvestigatorId(4),
-    ];
     state
         .investigators
         .get_mut(&InvestigatorId(2))
@@ -419,10 +411,10 @@ fn next_active_investigator_after_skips_eliminated_middle() {
 
 #[test]
 fn next_active_investigator_after_returns_none_when_current_not_in_turn_order() {
-    let mut state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
+    let state = GameStateBuilder::default()
+        .with_seat(test_support::seat(1))
+        .with_turn_order([InvestigatorId(1)])
         .build();
-    state.turn_order = vec![InvestigatorId(1)];
 
     assert_eq!(
         cursor::next_active_investigator_after(&state, InvestigatorId(99)),
@@ -436,10 +428,10 @@ fn next_active_investigator_after_works_when_current_is_non_active() {
     // time we advance from them. The cursor still finds the right
     // successor.
     let mut state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
-        .with_investigator(test_support::test_investigator(2))
+        .with_seat(test_support::seat(1))
+        .with_seat(test_support::seat(2))
+        .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
         .build();
-    state.turn_order = vec![InvestigatorId(1), InvestigatorId(2)];
     state
         .investigators
         .get_mut(&InvestigatorId(1))

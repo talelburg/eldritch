@@ -171,7 +171,7 @@ mod tests {
         Act, AdvanceDeck, AdvanceStep, AdvanceTrigger, Agenda, CardCode, Continuation, GameState,
         GameStateBuilder, InvestigatorId,
     };
-    use crate::test_support;
+    use crate::test_support::{self, TestSession};
 
     fn state_advancing_agenda(interactive: bool) -> GameState {
         let mut state = GameStateBuilder::new().build();
@@ -313,66 +313,62 @@ mod tests {
     /// `scenarios/tests/the_gathering_resolutions.rs`.
     #[test]
     fn a_terminal_act_pauses_on_the_flip_acknowledge_before_its_reverse_ends_the_scenario() {
-        let mut state = state_advancing_act(true, AdvanceTrigger::Forced);
-        // One act, and it is the one advancing — so it is the terminal one.
+        let mut state = GameStateBuilder::new()
+            .with_seat(test_support::seat(1))
+            .with_turn_order([InvestigatorId(1)])
+            .build();
+        // One act, and it is the one advancing — so it is the terminal one. The
+        // frame is pushed as 01110's forced advance would push it: the real
+        // trigger (the Ghoul Priest's defeat) is scenario content this crate
+        // cannot install.
         state.act_deck = vec![Act {
             code: test_support::terminal_code(1),
             clue_threshold: 0,
         }];
-        state
-            .investigators
-            .insert(InvestigatorId(1), test_support::test_investigator(1));
-        state.turn_order = vec![InvestigatorId(1)];
-        state
-            .continuations
-            .top_mut::<AdvanceReverseFrame>()
-            .leaving_code = test_support::terminal_code(1);
-
-        let mut events = Vec::new();
-        let out = drive(&mut Cx {
-            state: &mut state,
-            events: &mut events,
+        state.interactive_acknowledge = true;
+        state.continuations.push(AdvanceReverseFrame {
+            deck: AdvanceDeck::Act,
+            from: 0,
+            leaving_code: test_support::terminal_code(1),
+            step: AdvanceStep::AwaitAck,
+            trigger: AdvanceTrigger::Forced,
         });
-        let EngineOutcome::AwaitingInput { request, .. } = &out else {
-            panic!("expected the on-card advance pick, got {out:?}");
-        };
-        assert_eq!(request.options.len(), 1, "a single 'Advance' option");
+
+        let session = TestSession::new(state);
         assert_eq!(
-            request.options[0].target,
-            Some(OptionTarget::Act),
+            session.prompt().options.len(),
+            1,
+            "a single 'Advance' option"
+        );
+        assert_eq!(
+            session.offered_at(&OptionTarget::Act),
+            1,
             "the flip pick anchors to the act card"
         );
         assert!(
-            state.ending.is_none(),
+            session.state().ending.is_none(),
             "the ending waits for the reverse the player is being asked to read"
         );
 
-        let resumed = resume(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            &InputResponse::PickSingle(OptionId(0)),
-        );
-        assert_eq!(resumed, EngineOutcome::Done);
-        // The flip is answered; drop the flag so the reverse's own #466 forced
-        // acknowledge doesn't suspend this unit test. That second acknowledge is
-        // asserted end-to-end in `scenarios/tests/the_gathering_resolutions.rs`;
+        // Answering the flip fires the reverse. Its own #466 forced
+        // acknowledge (asserted end-to-end in
+        // `scenarios/tests/the_gathering_resolutions.rs`) is the next prompt;
         // what is under test here is that the ending lands *after* the flip.
-        state.interactive_acknowledge = false;
-        dispatch::drive(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            EngineOutcome::Done,
+        let session = session.pick(OptionTarget::Act);
+        assert!(
+            session.state().ending.is_none(),
+            "the flip alone latches nothing"
         );
+        let result = session.pick(OptionTarget::Act).finish();
         assert_eq!(
-            state.ending,
+            result.state.ending,
             Some(ScenarioEnding::Resolution(ResolutionId::new(1))),
             "the reverse is what ended the scenario"
         );
-        assert_eq!(state.act_index, 0, "terminal: the cursor never bumped");
+        assert_eq!(
+            result.state.act_index, 0,
+            "terminal: the cursor never bumped"
+        );
     }
 
     /// A terminal card whose reverse reaches no ending fails **loudly**, at the

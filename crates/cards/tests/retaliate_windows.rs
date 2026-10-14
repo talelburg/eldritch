@@ -37,15 +37,15 @@
 #![allow(clippy::too_many_lines)]
 
 use cards::REGISTRY;
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId, OptionTarget};
+use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, Enemy, EnemyId,
-    GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, TokenModifiers,
+    CardCode, ChaosBag, ChaosToken, Continuation, Enemy, EnemyId, GameState, GameStateBuilder,
+    InvestigatorId, LocationId, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{self, TestSession};
+use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
+use game_core::{assert_event, assert_no_event};
 
 /// Dodge (01023): Neutral Tactic, Fast, before-attack cancel reaction.
 const DODGE: &str = "01023";
@@ -53,96 +53,82 @@ const DODGE: &str = "01023";
 /// Guard Dog (01021): Guardian Ally, health 3 / sanity 1, damage-retaliate.
 const GUARD_DOG: &str = "01021";
 
+const INV: InvestigatorId = InvestigatorId(1);
+const HERE: LocationId = LocationId(101);
+const RETALIATOR: EnemyId = EnemyId(7);
+
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// Build a ready retaliate enemy at `loc`, engaged with `inv`.
+/// Build a ready retaliate enemy, to be engaged with the investigator.
 /// `fight` is set high enough that the investigator (combat 1) will fail
 /// the test with a `Numeric(0)` token (1 + 0 = 1 < fight).
 /// `attack_damage` is the retaliate attack's damage payload;
 /// `max_health` ensures the enemy can survive Guard Dog's 1-point retaliation.
-fn retaliate_enemy(
-    id: u32,
-    inv: InvestigatorId,
-    loc: LocationId,
-    fight: i8,
-    attack_damage: u8,
-    max_health: u8,
-) -> Enemy {
-    let mut e = test_support::test_enemy(id, format!("Retaliate Enemy {id}"));
+fn retaliate_enemy(fight: i8, attack_damage: u8, max_health: u8) -> Enemy {
+    let mut e = test_support::test_enemy(RETALIATOR.0, format!("Retaliate Enemy {}", RETALIATOR.0));
     e.fight = fight;
     e.max_health = max_health;
     e.attack_damage = attack_damage;
     e.attack_horror = 0;
     e.retaliate = true;
-    e.current_location = Some(loc);
-    e.engaged_with = Some(inv);
     e
 }
 
-/// Build a minimal Investigation-phase state with one active investigator
-/// at a location, `enemy` engaged, and a deterministically-failing chaos bag
-/// (`Numeric(0)`; investigator combat = 1; enemy fight = 5 → 1 < 5 → fail).
-fn fight_state(
-    enemy: Enemy,
-    hand: Vec<CardCode>,
-    cards_in_play: Vec<CardInPlay>,
-) -> (GameState, InvestigatorId, LocationId) {
-    let inv_id = InvestigatorId(1);
-    let loc_id = LocationId(101);
+/// Investigator 1 at the Study with combat 1, so the Fight always fails:
+/// 1 + Numeric(0) = 1 < 5 (enemy fight).
+fn fighter() -> Seat {
+    seat(1).at(HERE).skill(SkillKind::Combat, 1)
+}
 
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(loc_id);
-    // Low combat so the test always fails: 1 + Numeric(0) = 1 < 5 (enemy fight).
-    inv.skills.combat = 1;
-    inv.hand = hand;
-    inv.cards_in_play = cards_in_play;
-
-    let state = GameStateBuilder::new()
-        .with_location(test_support::test_location(101, "Study"))
-        .with_investigator(inv)
-        .open_turn(inv_id)
-        .with_enemy(enemy)
+/// An Investigation-phase turn with `investigator` at the Study, `enemy`
+/// engaged, and a deterministically-failing chaos bag (`Numeric(0)`;
+/// investigator combat = 1; enemy fight = 5 → 1 < 5 → fail).
+fn fight_board(investigator: Seat, enemy: Enemy) -> TestSession {
+    GameStateBuilder::new()
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_seat(investigator)
+        .open_turn(INV)
+        .with_enemy_engaged(enemy, INV)
         // Single `Numeric(0)` token → total = combat(1) + 0 = 1 < fight(5) → fail.
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
-        .build();
-
-    (state, inv_id, loc_id)
+        .session()
 }
 
 /// Drive the Fight through its commit window with no commits, so that the
 /// chaos token is drawn and the skill test is resolved (failed → retaliate).
-/// Returns the `ApplyResult` from submitting the empty commit.
-fn submit_empty_commit(
-    state: GameState,
-    investigator: InvestigatorId,
-    enemy: EnemyId,
-) -> ApplyResult {
+fn fight_committing_nothing(session: TestSession) -> TestSession {
     // Step 1: initiate the Fight — suspends at the commit window.
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::Fight {
-            investigator,
-            enemy,
-        },
-    );
-    assert!(
-        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
-        "Fight must suspend at the commit window: {:?}",
-        result.outcome
-    );
-
     // Step 2: submit an empty commit — the chaos token is drawn, the test
     // resolves (failed), and fire_retaliate_if_any is called.
-    engine::apply(
-        result.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        }),
-    )
+    session
+        .take(&TurnAction::Fight {
+            investigator: INV,
+            enemy: RETALIATOR,
+        })
+        .commit(&[])
+}
+
+/// The skill test tore down cleanly: no `SkillTest` frame and no window left
+/// stranded on the stack. A stack invariant — no stranded frames — so it reads
+/// the stack.
+fn assert_nothing_stranded(state: &GameState) {
+    assert!(
+        !state
+            .continuations
+            .iter()
+            .any(|c| matches!(c, Continuation::SkillTest(_))),
+        "no SkillTest frame on the stack after the skill test tore down: {:?}",
+        state.continuations
+    );
+    assert!(
+        state.open_windows().is_empty(),
+        "no windows stranded after the skill-test teardown: {:?}",
+        state.open_windows()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -157,18 +143,11 @@ fn submit_empty_commit(
 /// cleanly (`SkillTestEnded` emitted, no `SkillTest` frame on the stack).
 #[test]
 fn guard_dog_retaliates_against_retaliate_and_skill_test_ends() {
-    let dog = CardInstanceId(1);
-    let inv_id = InvestigatorId(1);
-    let loc_id = LocationId(101);
-    let enemy_id = EnemyId(7);
-
     // Enemy fight 5, damage 1 (soaks onto Guard Dog health 3), max_health 5
     // (survives Guard Dog's 1-point retaliation after absorbing 0 prior damage).
-    let enemy = retaliate_enemy(7, inv_id, loc_id, 5, 1, 5);
-    let guard_dog_in_play =
-        CardInPlay::enter_play(CardCode::new(GUARD_DOG), dog, Owner::Investigator(inv_id));
-
-    let (state, _, _) = fight_state(enemy, vec![], vec![guard_dog_in_play]);
+    let session = fight_board(fighter().in_play([GUARD_DOG]), retaliate_enemy(5, 1, 5));
+    let dog_id = session.state().in_play(INV, GUARD_DOG);
+    let dog = OptionTarget::CardInstance(dog_id);
 
     // Initiate Fight → empty commit → fails → fire_retaliate_if_any → drive_retaliate
     // → Guard Dog has no cancel reaction so the attack's `when` cell auto-skips →
@@ -176,113 +155,79 @@ fn guard_dog_retaliates_against_retaliate_and_skill_test_ends() {
     // suspend, before anything is placed.
     // The retaliate's damage prompts the soak distribution (#44/K5b): assign it
     // onto Guard Dog → soak window opens.
-    let session = TestSession::new(state)
-        .resolve_choices(|c| {
-            c.commit_cards(&[]);
-            c.pick(OptionTarget::CardInstance(dog));
-        })
-        .take(&TurnAction::Fight {
-            investigator: inv_id,
-            enemy: enemy_id,
-        });
+    let session = fight_committing_nothing(session).pick(dog.clone());
     let state = session.state();
 
     assert_ne!(
         session.prompt().target,
-        Some(OptionTarget::TurnControl(inv_id)),
+        Some(OptionTarget::TurnControl(INV)),
         "Guard Dog soak window must suspend after the failed Fight"
     );
 
     // The retaliate's 1 damage is assigned to Guard Dog and not yet placed: the
     // open window is Guard Dog's own `when` cell, between the two rules steps
     // (#727).
-    let dog_in_play = state.investigators[&inv_id]
+    let dog_in_play = state.investigators[&INV]
         .cards_in_play
         .iter()
-        .find(|c| c.instance_id == dog)
+        .find(|c| c.instance_id == dog_id)
         .expect("Guard Dog still in play before reaction fires");
     assert_eq!(
         dog_in_play.accumulated_damage, 0,
         "retaliate's 1 damage assigned to Guard Dog, not yet placed"
     );
     assert_eq!(
-        state.investigators[&inv_id].damage(),
+        state.investigators[&INV].damage(),
         0,
         "investigator took no damage from the retaliate (Guard Dog soaked it)"
     );
     // Guard Dog has not yet dealt its retaliate damage to the enemy.
-    assert_eq!(state.enemies[&enemy_id].damage, 0);
+    assert_eq!(state.enemies[&RETALIATOR].damage, 0);
 
-    // The SkillTest frame must still be present while the soak window is open
+    // The skill test is still in flight while the soak window is open
     // (teardown only happens after the window closes via the resume seam).
-    assert!(
-        state
-            .continuations
-            .iter()
-            .any(|c| matches!(c, Continuation::SkillTest(_))),
-        "SkillTest frame must still be on the stack while the Guard Dog window is open"
-    );
+    assert_no_event!(session.events(), Event::SkillTestEnded { .. });
 
     // Fire Guard Dog's reaction, offered on the dog.
-    let result = session.pick(OptionTarget::CardInstance(dog)).finish();
+    let session = session.pick(dog);
+    session.assert_at_turn_menu(INV);
+    let result = session.finish();
     let state = result.state;
 
     // Guard Dog dealt 1 damage to the retaliating enemy.
     assert_eq!(
-        state.enemies[&enemy_id].damage, 1,
+        state.enemies[&RETALIATOR].damage, 1,
         "Guard Dog's reaction dealt 1 damage to the retaliating enemy"
     );
     // …and only then did the retaliate's own damage land on Guard Dog.
     assert_eq!(
-        state.investigators[&inv_id]
+        state.investigators[&INV]
             .cards_in_play
             .iter()
-            .find(|c| c.instance_id == dog)
+            .find(|c| c.instance_id == dog_id)
             .map(|c| c.accumulated_damage),
         Some(1),
         "the retaliate's damage is placed once Guard Dog's when cell has run"
     );
-    assert!(
-        result.events.iter().any(|e| matches!(
-            e,
-            Event::EnemyDamaged { enemy, amount: 1, .. } if *enemy == enemy_id
-        )),
-        "EnemyDamaged {{ amount: 1 }} emitted: {:?}",
-        result.events
+    assert_event!(
+        result.events,
+        Event::EnemyDamaged { enemy, amount: 1, .. } if *enemy == RETALIATOR
     );
 
     // The retaliating enemy did NOT exhaust (RR p.18: retaliate attacks do
     // not exhaust the attacker; Dodge FAQ confirms this is not Enemy-phase).
     assert!(
-        !state.enemies[&enemy_id].exhausted,
+        !state.enemies[&RETALIATOR].exhausted,
         "a retaliate attack does not exhaust the attacker (RR p.18)"
     );
 
     // The Fight's skill test tore down cleanly after the window closed:
     // SkillTestEnded was emitted and the SkillTest frame was popped.
-    assert!(
-        result.events.iter().any(|e| matches!(
-            e,
-            Event::SkillTestEnded { investigator } if *investigator == inv_id
-        )),
-        "SkillTestEnded emitted after Guard Dog window closed (K2 resume seam): {:?}",
-        result.events
+    assert_event!(
+        result.events,
+        Event::SkillTestEnded { investigator } if *investigator == INV
     );
-    assert!(
-        !state
-            .continuations
-            .iter()
-            .any(|c| matches!(c, Continuation::SkillTest(_))),
-        "no SkillTest frame on the stack after the skill test tore down: {:?}",
-        state.continuations
-    );
-
-    // No windows remain stranded.
-    assert!(
-        state.open_windows().is_empty(),
-        "no windows stranded after Guard Dog reaction + skill-test teardown: {:?}",
-        state.open_windows()
-    );
+    assert_nothing_stranded(&state);
 }
 
 // ---------------------------------------------------------------------------
@@ -296,99 +241,83 @@ fn guard_dog_retaliates_against_retaliate_and_skill_test_ends() {
 /// cleanly (`SkillTestEnded` emitted, no `SkillTest` frame left).
 #[test]
 fn dodge_cancels_retaliate_and_skill_test_ends() {
-    let inv_id = InvestigatorId(1);
-    let loc_id = LocationId(101);
-    let enemy_id = EnemyId(7);
-
     // Enemy fight 5, damage 2, max_health 5.  No Guard Dog — Dodge is the
     // only reaction card.
-    let enemy = retaliate_enemy(7, inv_id, loc_id, 5, 2, 5);
-
-    let (state, _, _) = fight_state(enemy, vec![CardCode::new(DODGE)], vec![]);
+    let session = fight_board(fighter().hand([DODGE]), retaliate_enemy(5, 2, 5));
 
     // Initiate Fight → empty commit → fails → fire_retaliate_if_any → drive_retaliate
     // → BeforeEnemyAttack window opens (Dodge in hand) → suspend.
-    let result = submit_empty_commit(state, inv_id, enemy_id);
-    let mut state = result.state;
-
-    assert!(
-        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
-        "BeforeEnemyAttack window must suspend after the failed Fight: {:?}",
-        result.outcome
+    let session = fight_committing_nothing(session);
+    let dodge = OptionTarget::HandCardByCode {
+        investigator: INV,
+        code: CardCode::new(DODGE),
+    };
+    assert_eq!(
+        session.offered_at(&dodge),
+        1,
+        "BeforeEnemyAttack window must suspend after the failed Fight, offering \
+         Dodge: {:?}",
+        session.prompt(),
     );
+    let state = session.state();
 
     // No damage yet; Dodge still in hand.
     assert_eq!(
-        state.investigators[&inv_id].damage(),
+        state.investigators[&INV].damage(),
         0,
         "no damage before Dodge resolves"
     );
     assert_eq!(
-        state.investigators[&inv_id].horror(),
+        state.investigators[&INV].horror(),
         0,
         "no horror before Dodge resolves"
     );
     assert!(
-        state.investigators[&inv_id]
+        state.investigators[&INV]
             .hand
             .contains(&CardCode::new(DODGE)),
         "Dodge is still in hand while the cancel window is open"
     );
 
-    // The SkillTest frame must still be present while the window is open.
-    assert!(
-        state
-            .continuations
-            .iter()
-            .any(|c| matches!(c, Continuation::SkillTest(_))),
-        "SkillTest frame present while BeforeEnemyAttack window is open"
-    );
+    // The skill test is still in flight while the window is open.
+    assert_no_event!(session.events(), Event::SkillTestEnded { .. });
 
-    // Play Dodge (PickSingle(0) = the single cancel candidate).
-    let result = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(0)),
-        }),
-    );
-    state = result.state;
+    // Play Dodge, the single cancel candidate.
+    let session = session.pick(dodge);
+    session.assert_at_turn_menu(INV);
+    let result = session.finish();
+    let state = result.state;
 
     // The retaliate was cancelled: no damage or horror dealt to the investigator.
     assert_eq!(
-        state.investigators[&inv_id].damage(),
+        state.investigators[&INV].damage(),
         0,
         "Dodge cancelled the retaliate: no damage to the investigator"
     );
     assert_eq!(
-        state.investigators[&inv_id].horror(),
+        state.investigators[&INV].horror(),
         0,
         "Dodge cancelled the retaliate: no horror to the investigator"
     );
-    assert!(
-        !result
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::DamageTaken { .. })),
-        "a Dodge-cancelled retaliate deals no damage: {:?}",
-        result.events
-    );
+    // A Dodge-cancelled retaliate deals no damage.
+    assert_no_event!(result.events, Event::DamageTaken { .. });
 
     // The retaliating enemy did NOT exhaust: a retaliate attacker never
     // exhausts, regardless of a cancel (RR p.18).
     assert!(
-        !state.enemies[&enemy_id].exhausted,
+        !state.enemies[&RETALIATOR].exhausted,
         "a retaliate attacker does not exhaust, even after a Dodge cancel (RR p.18)"
     );
 
     // Dodge left the investigator's hand and went to discard.
     assert!(
-        !state.investigators[&inv_id]
+        !state.investigators[&INV]
             .hand
             .contains(&CardCode::new(DODGE)),
         "Dodge left hand after being played"
     );
     assert!(
-        state.investigators[&inv_id]
+        state.investigators[&INV]
             .discard
             .contains(&CardCode::new(DODGE)),
         "Dodge is in the discard pile after being played"
@@ -396,27 +325,9 @@ fn dodge_cancels_retaliate_and_skill_test_ends() {
 
     // The Fight's skill test tore down cleanly after the cancel window closed:
     // SkillTestEnded was emitted and the SkillTest frame was popped.
-    assert!(
-        result.events.iter().any(|e| matches!(
-            e,
-            Event::SkillTestEnded { investigator } if *investigator == inv_id
-        )),
-        "SkillTestEnded emitted after Dodge cancel (K2 resume seam): {:?}",
-        result.events
+    assert_event!(
+        result.events,
+        Event::SkillTestEnded { investigator } if *investigator == INV
     );
-    assert!(
-        !state
-            .continuations
-            .iter()
-            .any(|c| matches!(c, Continuation::SkillTest(_))),
-        "no SkillTest frame on the stack after the skill test tore down: {:?}",
-        state.continuations
-    );
-
-    // No windows remain stranded.
-    assert!(
-        state.open_windows().is_empty(),
-        "no windows stranded after Dodge cancel + skill-test teardown: {:?}",
-        state.open_windows()
-    );
+    assert_nothing_stranded(&state);
 }

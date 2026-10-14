@@ -43,11 +43,11 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{OptionTarget, PromptNature};
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    Enemy, EnemyId, GameStateBuilder, Investigator, InvestigatorId, LocationId, Owner, Status,
-    UseKind,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, ChaosBag, ChaosToken, Enemy, EnemyId,
+    GameStateBuilder, InvestigatorId, LocationId, Status, UseKind,
 };
-use game_core::test_support::{self, TestSession};
+use game_core::test_support::{self, seat, uses, Seat, SeatLookup as _, TestSession};
+use game_core::{assert_event, assert_no_event};
 
 /// First Aid (01019): Guardian Item, `[action] Spend 1 supply: Heal …`. A
 /// non-fight action ability → provokes an `AoO`.
@@ -66,33 +66,56 @@ const BEAT_COP: &str = "01018";
 /// Dodge (01023): Neutral Tactic, Fast, before-attack cancel reaction.
 const DODGE: &str = "01023";
 
+const INV: InvestigatorId = InvestigatorId(1);
+const HERE: LocationId = LocationId(101);
+const ATTACKER: EnemyId = EnemyId(7);
+
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// A ready enemy dealing `damage` / 0 horror, with `max_health`. Engage it
-/// with `with_enemy_engaged`, which places it at the investigator's location.
-fn ready_attacker(id: u32, damage: u8, max_health: u8) -> Enemy {
-    let mut e = test_support::test_enemy(id, format!("Attacker {id}"));
+/// A ready enemy dealing `damage` / 0 horror, with 5 health. Engage it with
+/// `with_enemy_engaged`, which places it at the investigator's location.
+fn ready_attacker(damage: u8) -> Enemy {
+    let mut e = test_support::test_enemy(ATTACKER.0, "Attacker");
     e.attack_damage = damage;
     e.attack_horror = 0;
-    e.max_health = max_health;
+    e.max_health = 5;
     e
 }
 
-/// First Aid in play (with `supplies`) + Guard Dog in play (the soaker). The
-/// investigator carries damage so First Aid's heal has something to remove —
-/// without it the #639 initiation gate refuses the activation outright and the
-/// `AoO` under test never fires.
-fn first_aid_and_guard_dog(inv: &mut Investigator, dog: CardInstanceId, kit: CardInstanceId) {
-    let guard_dog =
-        CardInPlay::enter_play(CardCode::new(GUARD_DOG), dog, Owner::Investigator(inv.id));
-    let mut first_aid =
-        CardInPlay::enter_play(CardCode::new(FIRST_AID), kit, Owner::Investigator(inv.id));
-    first_aid.uses.insert(UseKind::Supplies, 3);
-    inv.cards_in_play = vec![guard_dog, first_aid];
-    inv.investigator_card.accumulated_damage = 1;
+/// `investigator`'s turn at the Study, engaged by `attacker`, against a
+/// single-`0` chaos bag (for a skill test the activation starts).
+fn engaged_session(investigator: Seat, attacker: Enemy) -> TestSession {
+    GameStateBuilder::new()
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_seat(investigator)
+        .open_turn(INV)
+        .with_enemy_engaged(attacker, INV)
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .session()
+}
+
+/// Activate printed ability `index` of the card `code` the investigator has in
+/// play.
+fn activate(session: TestSession, code: &str, index: u8) -> TestSession {
+    let source = AbilitySource::InPlay(session.state().in_play(INV, code));
+    session.take(&TurnAction::ActivateAbility {
+        investigator: INV,
+        source,
+        address: AbilityAddress::Printed(index),
+    })
+}
+
+/// The card `code` the investigator has in play.
+fn card_in_play<'s>(session: &'s TestSession, code: &str) -> &'s CardInPlay {
+    let id = session.state().in_play(INV, code);
+    session.state().investigators[&INV]
+        .cards_in_play
+        .iter()
+        .find(|c| c.instance_id == id)
+        .unwrap_or_else(|| panic!("{code} still in play"))
 }
 
 // -----------------------------------------------------------------------
@@ -106,36 +129,25 @@ fn first_aid_and_guard_dog(inv: &mut Investigator, dog: CardInstanceId, kit: Car
 /// through `drive_aoo`.
 #[test]
 fn activating_a_non_fight_ability_while_engaged_provokes_an_aoo() {
-    let dog = CardInstanceId(1);
-    let kit = CardInstanceId(2);
-    let inv_id = InvestigatorId(1);
-    let loc = LocationId(101);
-
-    let mut investigator = test_support::test_investigator(1);
-    investigator.current_location = Some(loc);
-    first_aid_and_guard_dog(&mut investigator, dog, kit);
-
-    let attacker = ready_attacker(7, 2, 5);
-
-    let state = GameStateBuilder::new()
-        .with_location(test_support::test_location(101, "Study"))
-        .with_investigator(investigator)
-        .open_turn(inv_id)
-        .with_enemy_engaged(attacker, inv_id)
-        .build();
+    // First Aid in play (3 supplies) + Guard Dog in play (the soaker). The
+    // investigator carries damage so First Aid's heal has something to remove
+    // — without it the #639 initiation gate refuses the activation outright and
+    // the `AoO` under test never fires.
+    let session = engaged_session(
+        seat(1)
+            .at(HERE)
+            .in_play([GUARD_DOG])
+            .in_play([(FIRST_AID, uses(UseKind::Supplies, 3))])
+            .harm(1, 0),
+        ready_attacker(2),
+    );
+    let dog = session.state().card(INV, GUARD_DOG);
 
     // Activate First Aid (ability 0). Action-cost, non-fight → provokes an AoO
     // after the supply cost is paid and before the heal effect resolves.
     // The AoO provokes a soak distribution prompt (Guard Dog has capacity, #44/
     // K5b): assign both AoO damage points onto Guard Dog to reproduce the soak.
-    let session = TestSession::new(state)
-        .take(&TurnAction::ActivateAbility {
-            investigator: inv_id,
-            source: AbilitySource::InPlay(kit),
-            address: AbilityAddress::Printed(0),
-        })
-        .pick(OptionTarget::CardInstance(dog))
-        .pick(OptionTarget::CardInstance(dog));
+    let session = activate(session, FIRST_AID, 0).pick(dog.clone()).pick(dog);
     let state = session.state();
 
     assert!(
@@ -143,11 +155,7 @@ fn activating_a_non_fight_ability_while_engaged_provokes_an_aoo() {
         "the AoO's damage window must suspend the activation: {:?}",
         session.prompt()
     );
-    let dog_in_play = state.investigators[&inv_id]
-        .cards_in_play
-        .iter()
-        .find(|c| c.instance_id == dog)
-        .expect("Guard Dog still in play");
+    let dog_in_play = card_in_play(&session, GUARD_DOG);
     // The AoO's damage is *assigned* to Guard Dog and not yet placed: the open
     // window is Guard Dog's own `when` cell, which the Rules Reference puts
     // between assigning and placing (#727). What this test is about is that the
@@ -157,17 +165,13 @@ fn activating_a_non_fight_ability_while_engaged_provokes_an_aoo() {
         "AoO damage from the activation is assigned to Guard Dog, not yet placed"
     );
     assert_eq!(
-        state.investigators[&inv_id].damage(),
+        state.investigators[&INV].damage(),
         1,
         "investigator took no AoO damage (soaked onto Guard Dog) — the 1 damage \
          is the seeded harm that makes First Aid activatable at all"
     );
     // First Aid spent its supply (the cost paid before the AoO).
-    let kit_in_play = state.investigators[&inv_id]
-        .cards_in_play
-        .iter()
-        .find(|c| c.instance_id == kit)
-        .expect("First Aid still in play");
+    let kit_in_play = card_in_play(&session, FIRST_AID);
     assert_eq!(
         kit_in_play.uses.get(&UseKind::Supplies).copied(),
         Some(2),
@@ -186,71 +190,30 @@ fn activating_a_non_fight_ability_while_engaged_provokes_an_aoo() {
 /// soaks nothing.
 #[test]
 fn activating_a_fight_ability_while_engaged_provokes_no_aoo() {
-    let dog = CardInstanceId(1);
-    let blade = CardInstanceId(2);
-    let inv_id = InvestigatorId(1);
-    let loc = LocationId(101);
-
-    let mut investigator = test_support::test_investigator(1);
-    investigator.current_location = Some(loc);
-    investigator.cards_in_play = vec![
-        CardInPlay::enter_play(
-            CardCode::new(GUARD_DOG),
-            dog,
-            Owner::Investigator(InvestigatorId(1)),
+    // The Fight starts a Combat skill test, which draws from the bag.
+    let session = activate(
+        engaged_session(
+            seat(1).at(HERE).in_play([GUARD_DOG, MACHETE]),
+            ready_attacker(2),
         ),
-        CardInPlay::enter_play(
-            CardCode::new(MACHETE),
-            blade,
-            Owner::Investigator(InvestigatorId(1)),
-        ),
-    ];
-
-    let attacker = ready_attacker(7, 2, 5);
-
-    let state = GameStateBuilder::new()
-        .with_location(test_support::test_location(101, "Study"))
-        .with_investigator(investigator)
-        .open_turn(inv_id)
-        .with_enemy_engaged(attacker, inv_id)
-        // The Fight starts a Combat skill test, which needs a non-empty bag.
-        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .build();
-
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::ActivateAbility {
-            investigator: inv_id,
-            source: AbilitySource::InPlay(blade),
-            address: AbilityAddress::Printed(0),
-        },
+        MACHETE,
+        0,
     );
-    let state = result.state;
+    let state = session.state();
 
     // Guard Dog soaked nothing; the investigator took no AoO damage.
-    let dog_in_play = state.investigators[&inv_id]
-        .cards_in_play
-        .iter()
-        .find(|c| c.instance_id == dog)
-        .expect("Guard Dog still in play");
     assert_eq!(
-        dog_in_play.accumulated_damage, 0,
+        card_in_play(&session, GUARD_DOG).accumulated_damage,
+        0,
         "no AoO soaked onto Guard Dog"
     );
     assert_eq!(
-        state.investigators[&inv_id].damage(),
+        state.investigators[&INV].damage(),
         0,
         "no AoO damage to the investigator"
     );
-    // The activation went straight to the Fight skill test.
-    assert!(
-        result
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::SkillTestStarted { .. })),
-        "the Fight ability began its skill test directly (no AoO first): {:?}",
-        result.events
-    );
+    // The activation went straight to the Fight skill test (no AoO first).
+    assert_event!(session.events(), Event::SkillTestStarted { .. });
 }
 
 // -----------------------------------------------------------------------
@@ -263,66 +226,34 @@ fn activating_a_fight_ability_while_engaged_provokes_no_aoo() {
 /// `AoO` damage.
 #[test]
 fn activating_a_fast_ability_while_engaged_provokes_no_aoo() {
-    let cop = CardInstanceId(1);
-    let inv_id = InvestigatorId(1);
-    let loc = LocationId(101);
-    let enemy_id = EnemyId(7);
-
-    let mut investigator = test_support::test_investigator(1);
-    investigator.current_location = Some(loc);
-    investigator.cards_in_play = vec![CardInPlay::enter_play(
-        CardCode::new(BEAT_COP),
-        cop,
-        Owner::Investigator(InvestigatorId(1)),
-    )];
-
-    let attacker = ready_attacker(7, 2, 5);
-
-    let state = GameStateBuilder::new()
-        .with_location(test_support::test_location(101, "Study"))
-        .with_investigator(investigator)
-        .open_turn(inv_id)
-        .with_enemy_engaged(attacker, inv_id)
-        .build();
-
     // Beat Cop ability 1 is the `[fast]` deal-1-damage (ability 0 is its
     // constant +1 combat).
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::ActivateAbility {
-            investigator: inv_id,
-            source: AbilitySource::InPlay(cop),
-            address: AbilityAddress::Printed(1),
-        },
+    let session = activate(
+        engaged_session(seat(1).at(HERE).in_play([BEAT_COP]), ready_attacker(2)),
+        BEAT_COP,
+        1,
     );
+    session.assert_at_turn_menu(INV);
 
     // No AoO fired: outcome-independent proof. An AoO would deal the attacker's
     // 2 damage to the investigator, surfacing as a `DamageTaken`/`HorrorTaken`
-    // event for `inv_id` (Beat Cop's own effect damages the *enemy*, not the
+    // event for `INV` (Beat Cop's own effect damages the *enemy*, not the
     // investigator). None firing ⇒ no attack of opportunity.
-    assert!(
-        !result.events.iter().any(|e| matches!(
-            e,
-            Event::DamageTaken { investigator, .. } | Event::HorrorTaken { investigator, .. }
-                if *investigator == inv_id
-        )),
-        "no AoO attack landed on the investigator: {:?}",
-        result.events
+    assert_no_event!(
+        session.events(),
+        Event::DamageTaken { investigator, .. } | Event::HorrorTaken { investigator, .. }
+            if *investigator == INV
     );
-    let state = result.state;
     assert_eq!(
-        state.investigators[&inv_id].damage(),
+        session.state().investigators[&INV].damage(),
         0,
         "no AoO damage to the investigator"
     );
-    // The fast ability's own effect resolved: the enemy took 1 damage.
-    assert!(
-        result.events.iter().any(|e| matches!(
-            e,
-            Event::EnemyDamaged { enemy, amount: 1, .. } if *enemy == enemy_id
-        )),
-        "Beat Cop's fast ability dealt its 1 damage to the engaged enemy: {:?}",
-        result.events
+    // The fast ability's own effect resolved: Beat Cop dealt its 1 damage to
+    // the engaged enemy.
+    assert_event!(
+        session.events(),
+        Event::EnemyDamaged { enemy, amount: 1, .. } if *enemy == ATTACKER
     );
 }
 
@@ -339,58 +270,34 @@ fn activating_a_fast_ability_while_engaged_provokes_no_aoo() {
 /// is not by itself an exemption.
 #[test]
 fn activating_an_investigate_designated_ability_while_engaged_provokes_an_aoo() {
-    let torch = CardInstanceId(1);
-    let inv_id = InvestigatorId(1);
-    let loc = LocationId(101);
-
-    let mut investigator = test_support::test_investigator(1);
-    investigator.current_location = Some(loc);
-    let mut flashlight = CardInPlay::enter_play(
-        CardCode::new(FLASHLIGHT),
-        torch,
-        Owner::Investigator(InvestigatorId(1)),
-    );
-    flashlight.uses.insert(UseKind::Supplies, 3);
-    investigator.cards_in_play = vec![flashlight];
-
-    let attacker = ready_attacker(7, 2, 5);
-
-    let state = GameStateBuilder::new()
-        .with_location(test_support::test_location(101, "Study"))
-        .with_investigator(investigator)
-        .open_turn(inv_id)
-        .with_enemy_engaged(attacker, inv_id)
-        // Only so the investigation has a bag to draw from once the AoO has
-        // resolved and the parked effect runs.
-        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .build();
-
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::ActivateAbility {
-            investigator: inv_id,
-            source: AbilitySource::InPlay(torch),
-            address: AbilityAddress::Printed(0),
-        },
+    // The bag is only so the investigation has something to draw from once
+    // the AoO has resolved and the parked effect runs.
+    let session = activate(
+        engaged_session(
+            seat(1)
+                .at(HERE)
+                .in_play([(FLASHLIGHT, uses(UseKind::Supplies, 3))]),
+            ready_attacker(2),
+        ),
+        FLASHLIGHT,
+        0,
     );
 
     // No soaker is in play, so the AoO's 2 damage lands on the investigator
     // directly — before the investigation the ability parked behind it.
     assert_eq!(
-        result.state.investigators[&inv_id].damage(),
+        session.state().investigators[&INV].damage(),
         2,
         "the **Investigate** ability provoked an AoO: {:?}",
-        result.events
+        session.events()
     );
     // The supply was spent first: an AoO is made "immediately after all costs of
     // initiating the action that provoked the attack have been paid".
-    let torch_in_play = result.state.investigators[&inv_id]
-        .cards_in_play
-        .iter()
-        .find(|c| c.instance_id == torch)
-        .expect("Flashlight still in play");
     assert_eq!(
-        torch_in_play.uses.get(&UseKind::Supplies).copied(),
+        card_in_play(&session, FLASHLIGHT)
+            .uses
+            .get(&UseKind::Supplies)
+            .copied(),
         Some(2),
         "Flashlight spent 1 supply as the activation cost, before the AoO"
     );
@@ -406,55 +313,31 @@ fn activating_an_investigate_designated_ability_while_engaged_provokes_an_aoo() 
 /// effect after the `AoO` window closes.
 #[test]
 fn dodge_cancels_the_activations_aoo_then_the_ability_effect_resumes() {
-    let kit = CardInstanceId(2);
-    let inv_id = InvestigatorId(1);
-    let loc = LocationId(101);
-
-    let mut investigator = test_support::test_investigator(1);
-    investigator.current_location = Some(loc);
-
     // Something for First Aid to heal — *both* harms, so both of its modes stay
     // live and the damage-or-horror choice still prompts: #664 filters a mode
     // with nothing to heal out of the offer, and a lone live mode would
     // auto-resolve before this test could see it.
-    investigator.investigator_card.accumulated_damage = 2;
-    investigator.investigator_card.accumulated_horror = 2;
-    investigator.hand = vec![CardCode::new(DODGE)];
-    let mut first_aid = CardInPlay::enter_play(
-        CardCode::new(FIRST_AID),
-        kit,
-        Owner::Investigator(InvestigatorId(1)),
+    let session = engaged_session(
+        seat(1)
+            .at(HERE)
+            .harm(2, 2)
+            .hand([DODGE])
+            .in_play([(FIRST_AID, uses(UseKind::Supplies, 3))]),
+        ready_attacker(2),
     );
-    first_aid.uses.insert(UseKind::Supplies, 3);
-    investigator.cards_in_play = vec![first_aid];
-
-    let attacker = ready_attacker(7, 2, 5);
-
-    let state = GameStateBuilder::new()
-        .with_location(test_support::test_location(101, "Study"))
-        .with_investigator(investigator)
-        .open_turn(inv_id)
-        .with_enemy_engaged(attacker, inv_id)
-        .build();
 
     // Activate First Aid → AoO → Dodge is in hand, so the BeforeEnemyAttack
     // cancel window opens.
     // Play Dodge (the single candidate) → cancel the AoO.
-    let session = TestSession::new(state)
-        .take(&TurnAction::ActivateAbility {
-            investigator: inv_id,
-            source: AbilitySource::InPlay(kit),
-            address: AbilityAddress::Printed(0),
-        })
-        .pick(OptionTarget::HandCardByCode {
-            investigator: inv_id,
-            code: CardCode::new(DODGE),
-        });
+    let session = activate(session, FIRST_AID, 0).pick(OptionTarget::HandCardByCode {
+        investigator: INV,
+        code: CardCode::new(DODGE),
+    });
 
     // The AoO was cancelled — no damage — and the activation resumed into First
     // Aid's heal choice (the effect ran after the window closed).
     assert_eq!(
-        session.state().investigators[&inv_id].damage(),
+        session.state().investigators[&INV].damage(),
         2,
         "the cancelled AoO dealt no damage"
     );
@@ -470,7 +353,7 @@ fn dodge_cancels_the_activations_aoo_then_the_ability_effect_resumes() {
     let session = session.pick_nth(0);
     let state = session.state();
     assert_eq!(
-        state.investigators[&inv_id].damage(),
+        state.investigators[&INV].damage(),
         1,
         "First Aid healed 1 damage after the AoO was dodged and the effect resumed"
     );
@@ -490,65 +373,37 @@ fn dodge_cancels_the_activations_aoo_then_the_ability_effect_resumes() {
 /// choice opens), though the supply spent as the activation cost stays spent.
 #[test]
 fn aoo_that_defeats_the_actor_suppresses_the_ability_effect() {
-    let kit = CardInstanceId(2);
-    let inv_id = InvestigatorId(1);
-    let loc = LocationId(101);
-
-    let mut investigator = test_support::test_investigator(1);
-    investigator.current_location = Some(loc);
-    investigator.investigator_card.accumulated_damage = 2;
-    let mut first_aid = CardInPlay::enter_play(
-        CardCode::new(FIRST_AID),
-        kit,
-        Owner::Investigator(InvestigatorId(1)),
-    );
-    first_aid.uses.insert(UseKind::Supplies, 3);
-    investigator.cards_in_play = vec![first_aid];
-
     // A lethal AoO and no soaker / no Dodge → the actor is defeated before the
     // heal effect can resume.
-    let attacker = ready_attacker(7, 50, 5);
-
-    let state = GameStateBuilder::new()
-        .with_location(test_support::test_location(101, "Study"))
-        .with_investigator(investigator)
-        .open_turn(inv_id)
-        .with_enemy_engaged(attacker, inv_id)
-        .build();
-
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::ActivateAbility {
-            investigator: inv_id,
-            source: AbilitySource::InPlay(kit),
-            address: AbilityAddress::Printed(0),
-        },
+    let session = activate(
+        engaged_session(
+            seat(1)
+                .at(HERE)
+                .harm(2, 0)
+                .in_play([(FIRST_AID, uses(UseKind::Supplies, 3))]),
+            ready_attacker(50),
+        ),
+        FIRST_AID,
+        0,
     );
 
     // The heal effect was suppressed by the §D re-validation gate: outcome-
     // independent proof. Had First Aid's heal run, a `Healed` event would have
     // fired and the actor's damage would be 1 lower. Neither happens ⇒ the
     // parked effect was aborted.
-    assert!(
-        !result
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::Healed { .. })),
-        "the suppressed activation healed nothing: {:?}",
-        result.events
-    );
-    let state = result.state;
+    assert_no_event!(session.events(), Event::Healed { .. });
+    let state = session.state();
     // Damage is the full lethal AoO (2 initial + 50 from the attacker), NOT
     // reduced by 1 — the heal never subtracted from it.
     assert_eq!(
-        state.investigators[&inv_id].damage(),
+        state.investigators[&INV].damage(),
         52,
         "First Aid's heal was suppressed: the AoO's full 50 damage stands, \
          un-reduced by the would-be 1-point heal"
     );
     // The actor was defeated by the AoO.
     assert_ne!(
-        state.investigators[&inv_id].status,
+        state.investigators[&INV].status,
         Status::Active,
         "the lethal AoO defeated the actor"
     );

@@ -1,5 +1,5 @@
 use super::*;
-use crate::state::Owner;
+use crate::test_support::SeatLookup as _;
 
 #[test]
 fn assign_attack_fills_soaker_before_investigator() {
@@ -46,15 +46,10 @@ fn place_assignment_accumulates_on_asset_and_investigator() {
     // covered by the EU5 integration test.
 
     let id = InvestigatorId(1);
-    let inst = CardInstanceId(7);
-    let mut inv = test_support::test_investigator(1);
-    inv.cards_in_play = vec![CardInPlay::enter_play(
-        CardCode::new("01021"),
-        inst,
-        Owner::Investigator(InvestigatorId(1)),
-    )];
-
-    let mut state = GameStateBuilder::new().with_investigator(inv).build();
+    let mut state = GameStateBuilder::new()
+        .with_seat(test_support::seat(1).in_play(["01021"]))
+        .build();
+    let inst = state.in_play(id, "01021");
     let mut events = Vec::new();
     let mut cx = Cx {
         state: &mut state,
@@ -116,7 +111,7 @@ fn assign_attack_soaks_damage_and_horror_independently() {
 fn damage_application_accumulates_on_the_investigator_card() {
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
+        .with_seat(test_support::seat(1))
         .build();
     let mut events = Vec::new();
     let mut cx = Cx {

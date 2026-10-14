@@ -20,13 +20,14 @@
 use card_dsl::card_data::{CardKind, CardMetadata};
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{ApplyResult, EngineOutcome, NativeCx, OptionTarget};
+use game_core::engine::{ApplyResult, EngineOutcome, NativeCx};
 use game_core::event::{Event, TraumaKind};
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, Continuation, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, Owner, Status,
+    Continuation, GameState, GameStateBuilder, InvestigatorId, LocationId, Status,
 };
-use game_core::test_support::{self, MockRegistry, TestSession};
+use game_core::test_support::{
+    self, clues, seat, MockRegistry, Seat, SeatLookup as _, TestSession,
+};
 use game_core::{assert_event, assert_no_event};
 
 /// A player-owned **weakness** in the threat area carrying a `GameEnd` forced
@@ -115,31 +116,34 @@ fn install() {
         .install();
 }
 
-/// One investigator at a location, holding `code` (with `clues` clues on it) in
-/// the given zone. `TEST_INV` capacity is 8/8, so 8 damage is lethal.
-fn board(code: &str, clues: u8, in_threat_area: bool) -> GameState {
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(LocationId(10));
-    // A weakness is its bearer's (`glossary/Weakness.md`: *"The bearer of a
-    // weakness is the investigator who started the game with the weakness in
-    // his or her deck or play area."*); every other card here is the encounter
-    // deck's.
-    let owner = if [WEAKNESS, WEAKNESS_WHEN_CELL].contains(&code) {
-        Owner::Investigator(InvestigatorId(1))
+const INV: InvestigatorId = InvestigatorId(1);
+const HERE: LocationId = LocationId(10);
+
+/// One investigator at a location on their open turn, holding `code` (with
+/// `clues` clues on it) in the given zone. `TEST_INV` capacity is 8/8, so 8
+/// damage is lethal.
+///
+/// A weakness is its bearer's (`glossary/Weakness.md`: *"The bearer of a
+/// weakness is the investigator who started the game with the weakness in his
+/// or her deck or play area."*); every other threat-area card here is the
+/// encounter deck's — the owner the seat gives each by its printed card.
+fn board(code: &str, clues_on_card: u8, in_threat_area: bool) -> GameState {
+    board_seated(seat(1), code, clues_on_card, in_threat_area)
+}
+
+/// [`board`] with the investigator seated as `seated`.
+fn board_seated(seated: Seat, code: &str, clues_on_card: u8, in_threat_area: bool) -> GameState {
+    let card = (code, clues(clues_on_card));
+    let seated = seated.at(HERE);
+    let seated = if in_threat_area {
+        seated.threat_area([card])
     } else {
-        Owner::EncounterDeck
+        seated.in_play([card])
     };
-    let mut card = CardInPlay::enter_play(CardCode::new(code), CardInstanceId(1), owner);
-    card.clues = clues;
-    if in_threat_area {
-        inv.threat_area.push(card);
-    } else {
-        inv.cards_in_play.push(card);
-    }
     GameStateBuilder::new()
-        .with_investigator(inv)
-        .with_location(test_support::test_location(10, "Study"))
-        .with_turn_order([InvestigatorId(1)])
+        .with_seat(seated)
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .open_turn(INV)
         .build()
 }
 
@@ -153,21 +157,16 @@ fn elimination_fires_an_owned_weaknesss_game_end_ability_before_removing_it() {
         events,
         outcome,
         ..
-    } = TestSession::new(state)
-        .take_damage(InvestigatorId(1), 8)
-        .finish();
+    } = TestSession::new(state).take_damage(INV, 8).finish();
 
     assert_eq!(outcome, EngineOutcome::Done);
-    assert_eq!(
-        state.investigators[&InvestigatorId(1)].status,
-        Status::Defeated
-    );
+    assert_eq!(state.investigators[&INV].status, Status::Defeated);
     assert_event!(events, Event::TraumaSuffered {
         investigator, kind: TraumaKind::Mental, amount: 1
-    } if *investigator == InvestigatorId(1));
+    } if *investigator == INV);
 
     // "Then, remove those weaknesses from the game."
-    let inv = &state.investigators[&InvestigatorId(1)];
+    let inv = &state.investigators[&INV];
     assert!(
         inv.threat_area.is_empty(),
         "the weakness left the threat area"
@@ -192,15 +191,10 @@ fn elimination_does_not_fire_a_non_weaknesss_game_end_ability() {
         events,
         outcome,
         ..
-    } = TestSession::new(state)
-        .take_damage(InvestigatorId(1), 8)
-        .finish();
+    } = TestSession::new(state).take_damage(INV, 8).finish();
 
     assert_eq!(outcome, EngineOutcome::Done);
-    assert_eq!(
-        state.investigators[&InvestigatorId(1)].status,
-        Status::Defeated
-    );
+    assert_eq!(state.investigators[&INV].status, Status::Defeated);
     assert_no_event!(events, Event::TraumaSuffered { .. });
 }
 
@@ -210,12 +204,10 @@ fn elimination_fires_an_owned_weakness_held_outside_the_threat_area() {
     // play", not "in the threat area" — a weakness among `cards_in_play` (a
     // weakness asset) fires too. Same scan, different zone.
     let state = board(WEAKNESS, 1, false);
-    let ApplyResult { events, .. } = TestSession::new(state)
-        .take_damage(InvestigatorId(1), 8)
-        .finish();
+    let ApplyResult { events, .. } = TestSession::new(state).take_damage(INV, 8).finish();
 
     assert_event!(events, Event::TraumaSuffered { investigator, .. }
-        if *investigator == InvestigatorId(1));
+        if *investigator == INV);
 }
 
 #[test]
@@ -223,14 +215,9 @@ fn a_weakness_whose_condition_fails_suffers_nothing() {
     // The ability fires either way; its own "if there are any clues" condition
     // is what decides. Keeps the positive tests honest about *why* they pass.
     let state = board(WEAKNESS, 0, true);
-    let ApplyResult { state, events, .. } = TestSession::new(state)
-        .take_damage(InvestigatorId(1), 8)
-        .finish();
+    let ApplyResult { state, events, .. } = TestSession::new(state).take_damage(INV, 8).finish();
 
-    assert_eq!(
-        state.investigators[&InvestigatorId(1)].status,
-        Status::Defeated
-    );
+    assert_eq!(state.investigators[&INV].status, Status::Defeated);
     assert_no_event!(events, Event::TraumaSuffered { .. });
 }
 
@@ -239,35 +226,20 @@ fn elimination_without_a_step_zero_ability_still_runs_its_steps() {
     // The other side of the fork in `apply_investigator_elimination`: with nothing
     // for step 0 to fire, elimination stays synchronous. Steps 1–6 must land
     // identically either way.
-    let mut state = board("plain-card", 0, true);
-    state
-        .locations
-        .get_mut(&LocationId(10))
-        .expect("location")
-        .clues = 0;
-    state
-        .investigators
-        .get_mut(&InvestigatorId(1))
-        .expect("investigator")
-        .clues = 2;
+    let state = board_seated(seat(1).clues(2), "plain-card", 0, true);
 
     let ApplyResult {
         state,
         events,
         outcome,
         ..
-    } = TestSession::new(state)
-        .take_damage(InvestigatorId(1), 8)
-        .finish();
+    } = TestSession::new(state).take_damage(INV, 8).finish();
 
     assert_eq!(outcome, EngineOutcome::Done);
-    assert_eq!(
-        state.investigators[&InvestigatorId(1)].status,
-        Status::Defeated
-    );
+    assert_eq!(state.investigators[&INV].status, Status::Defeated);
     assert_no_event!(events, Event::TraumaSuffered { .. });
     // Step 2 still deposited the possessed clues at the location.
-    assert_eq!(state.locations[&LocationId(10)].clues, 2);
+    assert_eq!(state.locations[&HERE].clues, 2);
     // No `Elimination` frame is pushed at all on this path. (The stack is not
     // empty: the solo death latches `ScenarioEnding::NoResolution`, which parks the
     // `ScenarioEnd` frame at the bottom for the apply boundary to finalize.)
@@ -291,34 +263,34 @@ fn interactive_elimination_acknowledges_step_zero_before_running_the_steps() {
     // run only once the player has acknowledged. The resumability the
     // `Elimination` frame exists for (#638).
     let mut state = board(WEAKNESS, 3, true);
+    // No builder setter stages `interactive_acknowledge`.
     state.interactive_acknowledge = true;
-    let paused = TestSession::new(state).take_damage(InvestigatorId(1), 8);
+    let weakness = state.card(INV, WEAKNESS);
+    let paused = TestSession::new(state).take_damage(INV, 8);
 
     // Step 0's forced acknowledge surfaces, anchored to the weakness.
     assert_eq!(
-        paused.prompt().options[0].target,
-        Some(OptionTarget::CardInstance(CardInstanceId(1))),
+        paused.offered_at(&weakness),
+        1,
         "step 0's forced acknowledge must surface; got {:?}",
         paused.prompt(),
     );
     assert_no_event!(paused.events(), Event::TraumaSuffered { .. });
     // Mid-sequence: already eliminated, but step 1 has not run — the weakness is
     // still in play for its own ability to read.
-    let inv = &paused.state().investigators[&InvestigatorId(1)];
+    let inv = &paused.state().investigators[&INV];
     assert_eq!(inv.status, Status::Defeated, "status flips before step 0");
     assert!(
         inv.threat_area.iter().any(|c| c.code.as_str() == WEAKNESS),
         "the weakness is still in play while its ability is pending",
     );
 
-    let done = paused
-        .pick(OptionTarget::CardInstance(CardInstanceId(1)))
-        .finish();
+    let done = paused.pick(weakness).finish();
 
     assert_event!(done.events, Event::TraumaSuffered {
         investigator, kind: TraumaKind::Mental, amount: 1
-    } if *investigator == InvestigatorId(1));
-    let inv = &done.state.investigators[&InvestigatorId(1)];
+    } if *investigator == INV);
+    let inv = &done.state.investigators[&INV];
     assert!(inv.threat_area.is_empty(), "steps 1–6 ran on resume");
     assert!(inv.removed_from_game.iter().any(|c| c.as_str() == WEAKNESS));
     assert!(
@@ -353,9 +325,7 @@ fn elimination_fires_a_when_cell_weakness_ability() {
         events,
         outcome,
         ..
-    } = TestSession::new(state)
-        .take_damage(InvestigatorId(1), 8)
-        .finish();
+    } = TestSession::new(state).take_damage(INV, 8).finish();
 
     assert_eq!(
         outcome,
@@ -364,10 +334,10 @@ fn elimination_fires_a_when_cell_weakness_ability() {
     );
     assert_event!(events, Event::TraumaSuffered {
         investigator, kind: TraumaKind::Mental, amount: 1
-    } if *investigator == InvestigatorId(1));
+    } if *investigator == INV);
 
     // Step 0's tail still runs: firing in an earlier cell does not skip it.
-    let inv = &state.investigators[&InvestigatorId(1)];
+    let inv = &state.investigators[&INV];
     assert!(
         inv.threat_area.is_empty(),
         "the weakness left the threat area"

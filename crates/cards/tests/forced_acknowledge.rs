@@ -3,44 +3,44 @@
 //! `interactive_acknowledge` is on, and resolves synchronously when it is off.
 //!
 //! Own process → installs `cards::REGISTRY`. The forced effect is driven through
-//! the real `EnteredLocation` timing point via `TestSession::fire_at`; the
-//! interactive pause is then resumed by picking the acknowledge (the same way a
-//! host resumes an `AwaitingInput`).
+//! the real `EnteredLocation` timing point by taking the Move into the location;
+//! the interactive pause is then resumed by picking the acknowledge (the same
+//! way a host resumes an `AwaitingInput`).
 
 use cards::REGISTRY;
-use game_core::engine::{ApplyResult, EngineOutcome, OptionTarget, TimingEvent};
-use game_core::state::{CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support::{self, TestSession};
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::OptionTarget;
+use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId};
+use game_core::test_support::{self, seat, TestSession};
 
 const INV: InvestigatorId = InvestigatorId(1);
-const LOC: LocationId = LocationId(1);
+const HERE: LocationId = LocationId(2);
+/// The location printing the forced on-enter ability under test.
+const FORCED: LocationId = LocationId(1);
 
 #[ctor::ctor(unsafe)]
 fn install() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// One investigator standing on a location whose card `code` carries a forced
-/// on-enter ability, with `interactive_acknowledge` set as given.
-fn state_on_location(code: &str, interactive: bool) -> GameState {
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(LOC);
-    let mut loc = test_support::test_location(1, "Forced Location");
-    loc.code = CardCode::new(code);
+/// `INV`'s open turn at a plain location connected to one whose card `code`
+/// carries a forced on-enter ability, with `interactive_acknowledge` set as
+/// given; the session takes the Move into it.
+fn enter(code: &str, interactive: bool) -> TestSession {
+    let mut here = test_support::test_location(HERE.0, "Hallway");
+    here.connections = vec![FORCED];
+    let mut forced = test_support::test_location(FORCED.0, "Forced Location");
+    forced.code = CardCode::new(code);
     let mut state = GameStateBuilder::new()
-        .with_investigator(inv)
-        .with_location(loc)
-        .with_turn_order([INV])
+        .with_seat(seat(1).at(HERE))
+        .with_location(here)
+        .with_location(forced)
+        .open_turn(INV)
         .build();
     state.interactive_acknowledge = interactive;
-    state
-}
-
-/// Fire `INV` entering `LOC` on the location `code`.
-fn enter(code: &str, interactive: bool) -> TestSession {
-    TestSession::new(state_on_location(code, interactive)).fire_at(TimingEvent::EnteredLocation {
+    TestSession::new(state).take(&TurnAction::Move {
         investigator: INV,
-        location: LOC,
+        destination: FORCED,
     })
 }
 
@@ -50,8 +50,8 @@ fn assert_acknowledge_at_the_location(session: &TestSession) {
     let request = session.prompt();
     assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
     assert_eq!(
-        request.options[0].target,
-        Some(OptionTarget::Location(LOC)),
+        session.offered_at(&OptionTarget::Location(FORCED)),
+        1,
         "the forced-on-enter option anchors to the location on the map (#553), not the flat bar"
     );
 }
@@ -66,14 +66,11 @@ fn attic_forced_acknowledges_before_horror_when_interactive() {
         "horror must not be applied before the player acknowledges"
     );
 
-    let ApplyResult { state, outcome, .. } = paused.pick(OptionTarget::Location(LOC)).finish();
+    let session = paused.pick(OptionTarget::Location(FORCED));
+    // Nothing is left pending after the acknowledge: the turn goes on.
+    session.assert_at_turn_menu(INV);
     assert_eq!(
-        outcome,
-        EngineOutcome::Done,
-        "nothing is left pending after the acknowledge"
-    );
-    assert_eq!(
-        state.investigators[&INV].horror(),
+        session.state().investigators[&INV].horror(),
         1,
         "horror applied after the acknowledge"
     );
@@ -81,13 +78,11 @@ fn attic_forced_acknowledges_before_horror_when_interactive() {
 
 #[test]
 fn attic_forced_resolves_synchronously_when_not_interactive() {
-    let ApplyResult { state, outcome, .. } = enter("01113", false).finish();
-    assert!(
-        matches!(outcome, EngineOutcome::Done),
-        "flag off: no suspend, got {outcome:?}"
-    );
+    let session = enter("01113", false);
+    // Flag off: no suspend, the Move comes straight back to the turn menu.
+    session.assert_at_turn_menu(INV);
     assert_eq!(
-        state.investigators[&INV].horror(),
+        session.state().investigators[&INV].horror(),
         1,
         "flag off: horror applied synchronously (today's behavior)"
     );
@@ -103,10 +98,10 @@ fn cellar_forced_acknowledges_before_damage_when_interactive() {
         "damage must not be applied before the player acknowledges"
     );
 
-    let ApplyResult { state, outcome, .. } = paused.pick(OptionTarget::Location(LOC)).finish();
-    assert_eq!(outcome, EngineOutcome::Done);
+    let session = paused.pick(OptionTarget::Location(FORCED));
+    session.assert_at_turn_menu(INV);
     assert_eq!(
-        state.investigators[&INV].damage(),
+        session.state().investigators[&INV].damage(),
         1,
         "damage applied after the acknowledge"
     );
@@ -114,13 +109,11 @@ fn cellar_forced_acknowledges_before_damage_when_interactive() {
 
 #[test]
 fn cellar_forced_resolves_synchronously_when_not_interactive() {
-    let ApplyResult { state, outcome, .. } = enter("01114", false).finish();
-    assert!(
-        matches!(outcome, EngineOutcome::Done),
-        "flag off: no suspend, got {outcome:?}"
-    );
+    let session = enter("01114", false);
+    // Flag off: no suspend, the Move comes straight back to the turn menu.
+    session.assert_at_turn_menu(INV);
     assert_eq!(
-        state.investigators[&INV].damage(),
+        session.state().investigators[&INV].damage(),
         1,
         "flag off: damage applied synchronously (today's behavior)"
     );

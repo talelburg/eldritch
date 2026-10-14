@@ -3,18 +3,21 @@
 //! loop in [`resolver`](super::resolver).
 
 use super::resolver::{
-    drain_with_applier, is_turn_menu, sole_option_at, turn_action_option, ChoiceResolver,
-    ScriptedResolver,
+    card_codes, drain_with_applier, hand_indices_of, is_turn_menu, options_at,
+    resolve_commit_codes, sole_option_at, turn_action_option, ChoiceResolver, ScriptedResolver,
 };
 use crate::action::{Action, InputResponse, PlayerAction};
 use crate::engine::enumerate::TurnAction;
 use crate::engine::{
-    self, ApplyResult, Cx, EngineOutcome, InputRequest, OptionId, OptionTarget, PromptNature,
-    TimingEvent,
+    self, ApplyResult, Cx, EngineOutcome, InputKind, InputRequest, OptionId, OptionTarget,
+    PromptNature, TimingEvent,
 };
 use crate::event::Event;
 use crate::scenario_registry;
-use crate::state::{EmitEventFrame, EmitStep, GameState, GameStateBuilder, InvestigatorId};
+use crate::state::{
+    Continuation, EmitEventFrame, EmitStep, GameState, GameStateBuilder, HandSizeDiscard,
+    InvestigatorId, MulliganFrame, SkillKind,
+};
 
 /// Step-wise test driver: drive the real engine one step at a time, reading the
 /// prompt, state and events between steps.
@@ -27,24 +30,41 @@ use crate::state::{EmitEventFrame, EmitStep, GameState, GameStateBuilder, Invest
 ///   phase anchor staged at its phase end
 ///   ([`ending_enemy_phase`](crate::state::GameStateBuilder::ending_enemy_phase),
 ///   [`ending_upkeep_phase`](crate::state::GameStateBuilder::ending_upkeep_phase))
-///   runs that phase end, and play goes on from it. A
+///   runs that phase end, and play goes on from it. A staged mulligan,
+///   encounter draw or hand-size discard shows its prompt. A
 ///   fixture whose top frame cannot re-surface its prompt is a stack the engine
 ///   never rests at, and construction panics.
-/// - **Every step applies once, then drains to the next rest.** The steps are
-///   [`take`](Self::take), [`pick`](Self::pick), [`pick_nth`](Self::pick_nth),
-///   [`confirm`](Self::confirm), [`skip`](Self::skip), the framework entry
-///   points [`fire_at`](Self::fire_at) and [`take_damage`](Self::take_damage),
-///   and the raw [`apply`](Self::apply). The drain answers prompts through the session's
+/// - **Every step applies once, then drains to the next rest.** The steps are:
+///   - from the turn menu, [`take`](Self::take);
+///   - at a prompt, [`pick`](Self::pick), [`pick_nth`](Self::pick_nth),
+///     [`pick_nth_at`](Self::pick_nth_at), [`confirm`](Self::confirm),
+///     [`skip`](Self::skip), [`commit`](Self::commit) at a skill test's
+///     commit window, and [`choose_from_hand`](Self::choose_from_hand) at a
+///     mulligan or hand-size discard;
+///   - the framework entry points [`fire_at`](Self::fire_at),
+///     [`take_damage`](Self::take_damage) and [`test_skill`](Self::test_skill);
+///   - [`submit_off_menu`](Self::submit_off_menu), for a turn action the menu
+///     does not offer, and the raw [`apply`](Self::apply).
+///
+///   The drain answers prompts through the session's
 ///   reply policy and stops at the turn menu, at `Done` (the game is over), at
 ///   `Rejected`, or at the first prompt the policy has no answer for — which is
 ///   where the next step picks up.
-/// - **The reply policy is a script set before the step it answers**, through
-///   [`resolve_choices`](Self::resolve_choices). Its answers are consumed in
-///   order across steps; once it runs out, the session stops at every prompt.
-/// - **Readers** — [`prompt`](Self::prompt), [`expect_rejected`](Self::expect_rejected),
-///   [`state`](Self::state), [`events`](Self::events) — look at the session
-///   without moving it, and [`finish`](Self::finish) hands back the last step's
-///   [`ApplyResult`].
+/// - **The reply policy is a script by default**, set before the step it
+///   answers through [`resolve_choices`](Self::resolve_choices). Its answers
+///   are consumed in order across steps; once it runs out, the session stops
+///   at every prompt. [`answer_with`](Self::answer_with) installs a
+///   [`ChoiceResolver`] instead, which answers every prompt until the policy
+///   is changed again.
+/// - **Readers** — [`prompt`](Self::prompt),
+///   [`expect_rejected`](Self::expect_rejected), [`rejection`](Self::rejection),
+///   [`state`](Self::state), [`events`](Self::events),
+///   [`offered_at`](Self::offered_at),
+///   [`assert_at_turn_menu`](Self::assert_at_turn_menu) and
+///   [`assert_at_encounter_draw`](Self::assert_at_encounter_draw) — look at the
+///   session without moving it. [`assert_rejects`](Self::assert_rejects) runs
+///   one step and asserts the engine refused it with nothing moved, and
+///   [`finish`](Self::finish) hands back the last step's [`ApplyResult`].
 ///
 /// Where the session stopped is read off the engine's outcome alone, never off
 /// the continuation stack: the turn menu is the prompt anchored to
@@ -85,7 +105,37 @@ pub struct TestSession {
     last_events: Vec<Event>,
     /// Every event since construction, settling included.
     events: Vec<Event>,
-    script: ScriptedResolver,
+    policy: Policy,
+}
+
+/// How the drain answers the prompts a step opens.
+enum Policy {
+    /// The default: answers consumed in order, stopping at the first prompt
+    /// once they run out.
+    Script(ScriptedResolver),
+    /// A resolver installed by [`TestSession::answer_with`], which answers
+    /// every prompt.
+    Resolver(Box<dyn ChoiceResolver>),
+}
+
+impl Policy {
+    /// The answer to `request`, or `None` to stop the drain there.
+    fn answer(&mut self, request: &InputRequest, state: &GameState) -> Option<InputResponse> {
+        match self {
+            Self::Script(script) => (script.remaining() > 0).then(|| script.next(request, state)),
+            Self::Resolver(resolver) => Some(resolver.next(request, state)),
+        }
+    }
+}
+
+// By hand: a boxed resolver has no `Debug`.
+impl std::fmt::Debug for Policy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Script(script) => f.debug_tuple("Script").field(script).finish(),
+            Self::Resolver(_) => f.write_str("Resolver(..)"),
+        }
+    }
 }
 
 impl GameStateBuilder {
@@ -135,13 +185,15 @@ impl TestSession {
             last_outcome: outcome,
             last_events: events.clone(),
             events,
-            script: ScriptedResolver::new(),
+            policy: Policy::Script(ScriptedResolver::new()),
         }
     }
 
     /// Extend the reply policy: the closure appends answers to the session's
     /// script, which the drain consumes in order across this and later steps.
-    /// Call it **before** the step whose prompts it answers.
+    /// Call it **before** the step whose prompts it answers. After
+    /// [`answer_with`](Self::answer_with), it puts a script back in the
+    /// resolver's place, starting from the closure's answers.
     ///
     /// ```
     /// # use game_core::state::GameStateBuilder;
@@ -153,7 +205,26 @@ impl TestSession {
     ///     });
     /// ```
     pub fn resolve_choices(mut self, f: impl FnOnce(&mut ScriptedResolver)) -> Self {
-        f(&mut self.script);
+        if let Policy::Resolver(_) = self.policy {
+            self.policy = Policy::Script(ScriptedResolver::new());
+        }
+        let Policy::Script(script) = &mut self.policy else {
+            unreachable!("a script was just installed");
+        };
+        f(script);
+        self
+    }
+
+    /// Replace the reply policy with `resolver`, which answers every prompt
+    /// the following steps open, until the policy is changed again — by
+    /// another `answer_with`, or by [`resolve_choices`](Self::resolve_choices),
+    /// which puts a script back. With a resolver installed the drain stops only
+    /// at the turn menu, at `Done` or at `Rejected`.
+    ///
+    /// For a flow that needs a stateful reply rule; where the answers are
+    /// known in advance, prefer the explicit steps or a script.
+    pub fn answer_with(mut self, resolver: impl ChoiceResolver + 'static) -> Self {
+        self.policy = Policy::Resolver(Box::new(resolver));
         self
     }
 
@@ -223,6 +294,111 @@ impl TestSession {
         self
     }
 
+    /// Step: `investigator` starts a plain skill test of `skill` against
+    /// `difficulty` on top of wherever the session rests, through the
+    /// production `apply` scaffolding, then drain. Like every step it stops at
+    /// the first prompt the reply policy has no answer for — here the test's
+    /// commit window, which [`commit`](Self::commit) answers.
+    ///
+    /// When the test completes, the frame it was started above is exposed
+    /// again: from the turn menu the session comes back to the menu.
+    pub fn test_skill(
+        self,
+        investigator: InvestigatorId,
+        skill: SkillKind,
+        difficulty: i8,
+    ) -> Self {
+        self.framework_step(|cx| {
+            let outcome = engine::start_plain_skill_test(cx, investigator, skill, difficulty);
+            engine::drive(cx, outcome)
+        })
+    }
+
+    /// Step: answer a skill test's commit window by committing the cards
+    /// `codes` from the tested investigator's hand, then drain. Each code is
+    /// matched to the first hand card with that code not already claimed, left
+    /// to right — the translation
+    /// [`ScriptedResolver::commit_cards`] makes. `commit(&[])` commits nothing.
+    ///
+    /// # Panics
+    ///
+    /// Panics at the turn menu, away from a skill test's commit window (a
+    /// mulligan or hand-size discard is a `PickMultiple` too — answer it with
+    /// [`choose_from_hand`](Self::choose_from_hand)), or if a code is not in
+    /// the hand.
+    pub fn commit(self, codes: &[&str]) -> Self {
+        self.assert_off_turn_menu("commit");
+        let request = self.prompt();
+        assert!(
+            request.kind == InputKind::PickMultiple && self.state.current_skill_test().is_some(),
+            "TestSession::commit: the session is not at a skill test's commit window; it \
+             rests at {:?}",
+            request.prompt,
+        );
+        let selected = resolve_commit_codes(
+            &card_codes(codes),
+            &self.state,
+            &request.prompt,
+            "TestSession::commit",
+        )
+        .into_iter()
+        .map(OptionId)
+        .collect();
+        self.respond(InputResponse::PickMultiple { selected })
+    }
+
+    /// Step: answer a mulligan or a hand-size discard — the hand prompts that
+    /// are not a skill test's commit window — by choosing the cards `codes`
+    /// from the prompted investigator's hand, then drain. A mulligan redraws
+    /// the chosen cards, a hand-size discard discards them, and
+    /// `choose_from_hand(&[])` chooses none (keep the hand). Codes translate to
+    /// hand cards as [`commit`](Self::commit)'s do: each matches the first hand
+    /// card with that code not already claimed, left to right, so two copies
+    /// are named by repeating the code.
+    ///
+    /// # Panics
+    ///
+    /// Panics at the turn menu, at a skill test's commit window (commit cards
+    /// with [`commit`](Self::commit)), at any other prompt, or if a code is not
+    /// in the hand.
+    pub fn choose_from_hand(self, codes: &[&str]) -> Self {
+        self.assert_off_turn_menu("choose_from_hand");
+        assert!(
+            self.state.current_skill_test().is_none(),
+            "TestSession::choose_from_hand: the session is at a skill test's commit window; \
+             commit cards with `commit(&[code])`",
+        );
+        let request = self.prompt();
+        // The prompt names no investigator; the frame that asks it does. This
+        // reads the stack to translate codes, never to decide where the
+        // session rests.
+        let prompted = match self.state.continuations.top() {
+            Some(
+                Continuation::Mulligan(MulliganFrame { remaining })
+                | Continuation::HandSizeDiscard(HandSizeDiscard { remaining }),
+            ) => remaining.first().copied(),
+            _ => None,
+        }
+        .unwrap_or_else(|| {
+            panic!(
+                "TestSession::choose_from_hand: the session is not at a mulligan or a \
+                 hand-size discard; it rests at {:?}",
+                request.prompt,
+            )
+        });
+        let selected = hand_indices_of(
+            &card_codes(codes),
+            &self.state,
+            prompted,
+            &request.prompt,
+            "TestSession::choose_from_hand",
+        )
+        .into_iter()
+        .map(OptionId)
+        .collect();
+        self.respond(InputResponse::PickMultiple { selected })
+    }
+
     /// Apply one framework entry point `dispatch` through the production
     /// `apply` scaffolding, then drive on and drain.
     fn framework_step(self, dispatch: impl FnOnce(&mut Cx) -> EngineOutcome) -> Self {
@@ -230,7 +406,7 @@ impl TestSession {
     }
 
     /// The one step body: apply `first` to the resting state, then drain its
-    /// prompts through the script to the next rest.
+    /// prompts through the reply policy to the next rest.
     fn advance(self, first: impl FnOnce(GameState) -> ApplyResult) -> Self {
         let Self {
             state,
@@ -238,7 +414,7 @@ impl TestSession {
             last_outcome: _,
             last_events: _,
             mut events,
-            mut script,
+            mut policy,
         } = self;
         // The last prompt the step reached. A reply the engine rejects restores
         // the state to that prompt, so the session rests there rather than where
@@ -253,7 +429,7 @@ impl TestSession {
         let first = note(first(state));
         let result = drain_with_applier(
             first,
-            |request, state| (script.remaining() > 0).then(|| script.next(request, state)),
+            |request, state| policy.answer(request, state),
             |state, action| note(engine::apply(state, action)),
         );
         let ApplyResult {
@@ -271,7 +447,7 @@ impl TestSession {
             last_outcome: outcome,
             last_events: step_events,
             events,
-            script,
+            policy,
         }
     }
 
@@ -288,6 +464,30 @@ impl TestSession {
         );
         let id = turn_action_option(&self.state, action, "TestSession::take");
         self.respond(InputResponse::PickSingle(id))
+    }
+
+    /// Step: dispatch `action` straight to its handler, **bypassing the turn
+    /// menu**, through the production `apply` scaffolding, then drain.
+    ///
+    /// [`take`](Self::take) picks the action off the menu and panics if the
+    /// menu does not offer it, so it cannot reach a handler with an action the
+    /// enumerator filters out. This step can, for two uses only:
+    ///
+    /// 1. A `#[should_panic(expected = "state-corruption invariant
+    ///    violation")]` handler test that injects corrupt state (a dangling
+    ///    `current_location`, an investigator missing from the map) and expects
+    ///    the handler — not the enumerator — to panic.
+    /// 2. Proving a handler *itself* rejects an action the enumerator already
+    ///    filters out, which a client can send over the wire without consulting
+    ///    the menu (#639's activation initiation gate).
+    ///
+    /// Everything else takes the action from the menu with
+    /// [`take`](Self::take).
+    pub fn submit_off_menu(self, action: &TurnAction) -> Self {
+        self.framework_step(|cx| {
+            let outcome = engine::dispatch_turn_action(cx, action);
+            engine::drive(cx, outcome)
+        })
     }
 
     /// Step: choose the option of the current prompt anchored to `target`,
@@ -353,6 +553,51 @@ impl TestSession {
         self.respond(InputResponse::PickSingle(id))
     }
 
+    /// Step: choose the `n`th (0-based) of the current prompt's options
+    /// anchored to `target`, in the order the prompt offers them, then drain.
+    ///
+    /// For several options sharing one anchor, which [`pick`](Self::pick)
+    /// cannot tell apart:
+    ///
+    /// - several abilities printed on one card (two reactions, or two forced
+    ///   abilities), where `n` names the ability in the order the card prints
+    ///   them;
+    /// - one ability offered to several investigators, where `n` follows the
+    ///   prompt's order (assert first that each option's label names the
+    ///   investigator it is offered to);
+    /// - identical copies of one card in hand, which anchor to the same
+    ///   `HandCardByCode`.
+    ///
+    /// # Panics
+    ///
+    /// Panics at the turn menu, unless at least two options are anchored to
+    /// `target` (pick a lone one with [`pick`](Self::pick)), or if there is no
+    /// `n`th.
+    // By value, like `pick`.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn pick_nth_at(self, target: OptionTarget, n: usize) -> Self {
+        self.assert_off_turn_menu("pick_nth_at");
+        let request = self.prompt();
+        let anchored: Vec<OptionId> = options_at(request, &target)
+            .map(|option| option.id)
+            .collect();
+        assert!(
+            anchored.len() >= 2,
+            "TestSession::pick_nth_at: {} option(s) anchored to {target:?}, not several; pick \
+             a lone one with `pick(OptionTarget)`. Prompt {:?} offers {:?}",
+            anchored.len(),
+            request.prompt,
+            request.options,
+        );
+        let id = *anchored.get(n).unwrap_or_else(|| {
+            panic!(
+                "TestSession::pick_nth_at: no option {n} among the {} anchored to {target:?}",
+                anchored.len(),
+            )
+        });
+        self.respond(InputResponse::PickSingle(id))
+    }
+
     /// Step: answer the current prompt with [`InputResponse::Confirm`], then
     /// drain.
     ///
@@ -406,6 +651,17 @@ impl TestSession {
         }
     }
 
+    /// The reason the last step was rejected, or `None` if it was accepted —
+    /// the non-panicking [`expect_rejected`](Self::expect_rejected), for a
+    /// sweep that submits many actions and sorts them by whether the engine
+    /// accepts each.
+    pub fn rejection(&self) -> Option<&str> {
+        match &self.last_outcome {
+            EngineOutcome::Rejected { reason } => Some(reason),
+            _ => None,
+        }
+    }
+
     /// The current state.
     pub fn state(&self) -> &GameState {
         &self.state
@@ -415,6 +671,89 @@ impl TestSession {
     /// included).
     pub fn events(&self) -> &[Event] {
         &self.events
+    }
+
+    /// How many of the current prompt's options are anchored to `target`:
+    /// `0` when it is not offered, `1` for a lone option [`pick`](Self::pick)
+    /// can name, and more for several options sharing the anchor — several
+    /// abilities printed on one card, one ability offered to several
+    /// investigators, or identical copies in hand — which
+    /// [`pick_nth_at`](Self::pick_nth_at) tells apart.
+    ///
+    /// # Panics
+    ///
+    /// Panics if no prompt is outstanding, as [`prompt`](Self::prompt) does.
+    pub fn offered_at(&self, target: &OptionTarget) -> usize {
+        options_at(self.prompt(), target).count()
+    }
+
+    /// Assert the session rests at `investigator`'s turn menu: the prompt
+    /// anchored to their [`TurnControl`](OptionTarget::TurnControl). The state
+    /// assertion for a step that returns to an open turn.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the session rests anywhere else — another prompt, another
+    /// investigator's menu, or `Done`.
+    #[track_caller]
+    pub fn assert_at_turn_menu(&self, investigator: InvestigatorId) {
+        match &self.rest {
+            EngineOutcome::AwaitingInput { request, .. }
+                if request.target == Some(OptionTarget::TurnControl(investigator)) => {}
+            other => panic!(
+                "TestSession::assert_at_turn_menu: expected {investigator:?}'s turn menu; the \
+                 session rests at {other:?}"
+            ),
+        }
+    }
+
+    /// Assert the session rests at a Mythos step-1.4 encounter-draw prompt:
+    /// the prompt anchored to the [`EncounterDeck`](OptionTarget::EncounterDeck).
+    /// Where a step that runs through a round end usually stops.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the session rests anywhere else, or at `Done`.
+    #[track_caller]
+    pub fn assert_at_encounter_draw(&self) {
+        match &self.rest {
+            EngineOutcome::AwaitingInput { request, .. }
+                if request.target == Some(OptionTarget::EncounterDeck) => {}
+            other => panic!(
+                "TestSession::assert_at_encounter_draw: expected the encounter-draw prompt; the \
+                 session rests at {other:?}"
+            ),
+        }
+    }
+
+    /// Run `step` and assert the engine rejects it on its first apply with
+    /// nothing moved: the state is byte-identical to before and the session
+    /// still rests at the prompt it rested at. Returns the reason.
+    ///
+    /// The reader for a handler's own rejection — usually
+    /// `assert_rejects(|s| s.submit_off_menu(&action))`, for an action the
+    /// menu does not offer, or a `take` the handler refuses after the menu
+    /// offered it.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `step` is not rejected, or if the rejection left the state or
+    /// the resting prompt changed.
+    #[track_caller]
+    pub fn assert_rejects(self, step: impl FnOnce(Self) -> Self) -> String {
+        let state_before = self.state.clone();
+        let rest_before = self.rest.clone();
+        let session = step(self);
+        let reason = session.expect_rejected().to_owned();
+        assert_eq!(
+            session.state, state_before,
+            "TestSession::assert_rejects: a rejected step must leave state byte-identical",
+        );
+        assert_eq!(
+            session.rest, rest_before,
+            "TestSession::assert_rejects: a rejected step must rest where it started",
+        );
+        reason
     }
 
     /// End the session, returning the last step's [`ApplyResult`]: the current

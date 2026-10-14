@@ -5,9 +5,9 @@
 
 use card_dsl::dsl::{self, EventPattern, EventTiming, InvestigatorTarget};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{EngineOutcome, InputKind};
-use game_core::state::{Act, CardCode, GameStateBuilder, InvestigatorId, Phase};
-use game_core::test_support::{self, MockRegistry};
+use game_core::engine::InputKind;
+use game_core::state::{Act, CardCode, GameStateBuilder, InvestigatorId};
+use game_core::test_support::{seat, MockRegistry, TestSession};
 
 const IACT: &str = "_iact";
 
@@ -37,13 +37,10 @@ fn install() {
 #[test]
 fn interactive_act_reverse_resolves_cleanly() {
     let inv = InvestigatorId(1);
-    let mut investigator = test_support::test_investigator(1);
-    investigator.clues = 1; // funds the AdvanceAct clue-spend (threshold 1 below)
     let mut state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(inv)
-        .with_turn_order([inv])
-        .with_investigator(investigator)
+        // 1 clue funds the AdvanceAct clue-spend (threshold 1 below).
+        .with_seat(seat(1).clues(1))
+        .open_turn(inv)
         .build();
     // Two acts: the leaving one (_iact) carries the interactive reverse; a
     // successor so the advance is non-terminal. _iact has a positive clue
@@ -61,21 +58,15 @@ fn interactive_act_reverse_resolves_cleanly() {
     ];
     state.act_index = 0;
 
-    // dispatch_turn_action_unchecked bypasses the open-turn enumeration gate (the
-    // synthetic state has no InvestigatorTurn frame); the handler still validates.
-    let r = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::AdvanceAct { investigator: inv },
-    );
+    let session = TestSession::new(state).take(&TurnAction::AdvanceAct { investigator: inv });
 
     // The act's interactive reverse is the live prompt (it did not strand); the
     // act cursor has NOT bumped yet (Finalize runs after the choice).
-    let EngineOutcome::AwaitingInput { request, .. } = &r.outcome else {
-        panic!("expected the act reverse ChooseOne, got {:?}", r.outcome);
-    };
+    let request = session.prompt();
     assert_eq!(request.kind, InputKind::PickSingle, "{request:?}");
     assert_eq!(
-        r.state.act_index, 0,
+        session.state().act_index,
+        0,
         "cursor bumps only after the reverse resolves"
     );
 }

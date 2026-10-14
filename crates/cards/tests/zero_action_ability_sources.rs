@@ -72,23 +72,22 @@
 //! - **The apply entry point** — whether an activation submitted by a named
 //!   investigator is accepted or rejected, with which reason.
 //!
-//! The board sits in the **Mythos** phase so the window is the only thing that
+//! The board sits in the **Mythos** phase, at the step-1.4 encounter draw the
+//! phase rests at, so the window is the only thing that
 //! can permit a zero-action activation: `check_activate_ability`'s gate is
 //! *"active during Investigation **or** an open permissive window"*, and an
 //! Investigation-phase board would satisfy the first disjunct and mask the one
 //! under test.
 
 use card_dsl::dsl::{self, Ability, InvestigatorTarget};
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, ApplyResult, EngineOutcome, InputKind, OptionTarget};
+use game_core::engine::{InputKind, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag,
-    ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame,
-    MythosResume, Owner, Phase, SkillKind,
+    AbilityAddress, AbilitySource, Act, Agenda, CardCode, ChaosBag, ChaosToken, EnemyId, GameState,
+    GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind,
 };
-use game_core::test_support::{self, MockRegistry};
+use game_core::test_support::{self, seat, MockRegistry, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 /// Synthetic **location** card, standing in for Ten-Acre Meadow 02246. Two
@@ -119,9 +118,6 @@ const FAR: LocationId = LocationId(3);
 
 const CULTIST_HERE: EnemyId = EnemyId(1);
 const CULTIST_THERE: EnemyId = EnemyId(2);
-
-const NEIGHBOURS_WARD: CardInstanceId = CardInstanceId(21);
-const STRANGERS_WARD: CardInstanceId = CardInstanceId(31);
 
 /// Ability index of the zero-action ability — `Trigger::Activated
 /// { action_cost: 0 }`, the `[free]` icon.
@@ -178,52 +174,38 @@ fn install_probe_registry() {
 /// with mine and ready, which is what makes the attack-of-opportunity case
 /// meaningful.
 fn board() -> GameState {
-    let mut mine = test_support::test_investigator(1);
-    mine.actions_remaining = ACTIONS;
+    board_seating(seat(1).at(HERE))
+}
 
-    let mut neighbour = test_support::test_investigator(2);
-    neighbour.threat_area.push(CardInPlay::enter_play(
-        CardCode::new(WARD),
-        NEIGHBOURS_WARD,
-        Owner::EncounterDeck,
-    ));
-
-    let mut stranger = test_support::test_investigator(3);
-    stranger.threat_area.push(CardInPlay::enter_play(
-        CardCode::new(WARD),
-        STRANGERS_WARD,
-        Owner::EncounterDeck,
-    ));
-
-    let mut here = test_support::test_location(1, "Ten-Acre Meadow");
+/// The [`board`], with mine seated as `mine` (always [`ACTIONS`] actions).
+///
+/// The Mythos phase, resting at `MINE`'s step-1.4 encounter draw: not
+/// Investigation, so the window must be the only thing that permits the
+/// activation (see the module header).
+fn board_seating(mine: Seat) -> GameState {
+    let mut here = test_support::test_location(HERE.0, "Ten-Acre Meadow");
     here.code = CardCode::new(HALL);
-    let mut there = test_support::test_location(2, "Far Meadow");
+    let mut there = test_support::test_location(THERE.0, "Far Meadow");
     there.code = CardCode::new(HALL);
-    let mut far = test_support::test_location(3, "Empty Field");
+    let mut far = test_support::test_location(FAR.0, "Empty Field");
     far.code = CardCode::new(EMPTY_HALL);
 
-    let mut nearby = test_support::test_enemy(1, "Cultist");
+    let mut nearby = test_support::test_enemy(CULTIST_HERE.0, "Cultist");
     nearby.code = CardCode::new(CULTIST);
-    nearby.current_location = Some(HERE);
-    nearby.engaged_with = Some(MINE);
-    let mut distant = test_support::test_enemy(2, "Far Cultist");
+    let mut distant = test_support::test_enemy(CULTIST_THERE.0, "Far Cultist");
     distant.code = CardCode::new(CULTIST);
     distant.current_location = Some(THERE);
 
     let mut state = GameStateBuilder::new()
-        // Mythos, not Investigation: the window must be the only thing that
-        // permits the activation (see the module header).
         .with_phase(Phase::Mythos)
-        .with_phase_anchor(MythosPhaseFrame {
-            resume: MythosResume::AfterDraws,
-        })
-        .with_investigator_at(mine, HERE)
-        .with_investigator_at(neighbour, HERE)
-        .with_investigator_at(stranger, FAR)
+        .with_mythos_draw_remaining([MINE])
+        .with_seat(mine.actions(ACTIONS))
+        .with_seat(seat(2).at(HERE).threat_area([WARD]))
+        .with_seat(seat(3).at(FAR).threat_area([WARD]))
         .with_location(here)
         .with_location(there)
         .with_location(far)
-        .with_enemy(nearby)
+        .with_enemy_engaged(nearby, MINE)
         .with_enemy(distant)
         .with_active_investigator(MINE)
         .with_turn_order([MINE, NEIGHBOUR, STRANGER])
@@ -242,20 +224,26 @@ fn board() -> GameState {
     state
 }
 
+/// The [`WARD`] in `bearer`'s threat area.
+fn ward_of(state: &GameState, bearer: InvestigatorId) -> AbilitySource {
+    AbilitySource::InPlay(state.in_play(bearer, WARD))
+}
+
 /// Drive `state` to a real, engine-opened player window: the ST.1 window of a
-/// plain skill test. Returns the state parked at the window.
+/// plain skill test, started where the Mythos phase rests. Returns the session
+/// parked at the window and the window's option anchors.
 ///
 /// The prompt is asserted, not assumed — a board with nothing eligible would
 /// auto-skip the window and land on the commit prompt instead, and a test that
 /// mistook one for the other would pass for the wrong reason.
-fn at_player_window(state: GameState) -> (GameState, Vec<OptionTarget>) {
-    let result = test_support::perform_skill_test(state, MINE, SkillKind::Willpower, 4);
-    let EngineOutcome::AwaitingInput { ref request, .. } = result.outcome else {
-        panic!(
-            "the skill test should park at its ST.1 player window, got {:?}",
-            result.outcome,
-        );
-    };
+fn at_player_window(state: GameState) -> (TestSession, Vec<OptionTarget>) {
+    let session = TestSession::new(state).test_skill(MINE, SkillKind::Willpower, 4);
+    assert_eq!(
+        session.state().phase,
+        Phase::Mythos,
+        "the window opens off-turn"
+    );
+    let request = session.prompt();
     assert_eq!(request.kind, InputKind::PickSingle, "{request:?}");
     assert!(
         request.skippable,
@@ -267,7 +255,7 @@ fn at_player_window(state: GameState) -> (GameState, Vec<OptionTarget>) {
         .iter()
         .map(|o| o.target.clone().expect("every option here is anchored"))
         .collect();
-    (result.state, targets)
+    (session, targets)
 }
 
 fn activation(source: AbilitySource, ability_index: u8) -> TurnAction {
@@ -279,38 +267,49 @@ fn activation(source: AbilitySource, ability_index: u8) -> TurnAction {
 }
 
 /// Submit `source`'s zero-action ability as `MINE` at the open player window.
-fn activate_at_window(state: GameState, source: AbilitySource) -> ApplyResult {
-    test_support::dispatch_turn_action_unchecked(state, &activation(source, ZERO_ACTION_ABILITY))
+///
+/// The apply seam, not a pick off the window: an option names its source but
+/// not the investigator it was enumerated for (see the module header), so the
+/// activation is submitted naming `MINE`, as a client would.
+fn activate_at_window(window: TestSession, source: AbilitySource) -> TestSession {
+    window.submit_off_menu(&activation(source, ZERO_ACTION_ABILITY))
 }
 
 /// The window offers this source's zero-action ability, and `MINE` can take it:
 /// the effect runs and no action is spent.
-fn assert_offered_and_usable(source: AbilitySource, target: &OptionTarget, why: &str) {
-    let (state, targets) = at_player_window(board());
+fn assert_offered_and_usable(
+    source: impl FnOnce(&GameState) -> AbilitySource,
+    target: impl FnOnce(&GameState) -> OptionTarget,
+    why: &str,
+) {
+    let (window, targets) = at_player_window(board());
+    let (source, target) = (source(window.state()), target(window.state()));
     assert!(
-        targets.contains(target),
+        targets.contains(&target),
         "{why}, so its zero-action ability belongs in the player window; window offered {targets:?}",
     );
 
-    let before = state.investigators[&MINE].resources;
-    let result = activate_at_window(state, source);
+    let before = window.state().investigators[&MINE].resources;
+    let session = activate_at_window(window, source);
+    // Not rejected: the activation resolved and the window is offered again.
     assert!(
-        !matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "{why}, so the activation should resolve; got {:?}",
-        result.outcome,
+        session.prompt().skippable,
+        "{why}, so the activation should resolve back to the window; got {:?}",
+        session.prompt(),
     );
     assert_event!(
-        result.events,
+        session.events(),
         Event::AbilityActivated { investigator, source: s, address: AbilityAddress::Printed(ZERO_ACTION_ABILITY), .. }
             if *investigator == MINE && *s == source
     );
     assert_eq!(
-        result.state.investigators[&MINE].resources,
+        session.state().investigators[&MINE].resources,
         before + 1,
         "the ability's effect (gain 1 resource) should have run",
     );
     assert_eq!(
-        result.state.investigators[&MINE].actions_remaining, ACTIONS,
+        session.state().investigators[&MINE].actions_remaining,
+        ACTIONS,
         "*\"a free triggered ability that does not cost an action\"* — the allowance is untouched",
     );
 }
@@ -321,21 +320,14 @@ fn assert_offered_and_usable(source: AbilitySource, target: &OptionTarget, why: 
 /// Asserted at the apply seam rather than against the window's option list,
 /// because an option names its source and not the investigator it was
 /// enumerated for; see the module header.
-fn assert_out_of_reach(source: AbilitySource, why: &str) {
-    let (state, _) = at_player_window(board());
-    let before = state.clone();
+fn assert_out_of_reach(source: impl FnOnce(&GameState) -> AbilitySource, why: &str) {
+    let (window, _) = at_player_window(board());
+    let source = source(window.state());
 
-    let result = activate_at_window(state, source);
-    let EngineOutcome::Rejected { reason } = &result.outcome else {
-        panic!("{why}, so activating it must reject; got {result:?}");
-    };
+    let reason = window.assert_rejects(|window| activate_at_window(window, source));
     assert!(
         reason.contains("cannot reach"),
-        "the reason should name reachability, got: {reason}",
-    );
-    assert_eq!(
-        result.state, before,
-        "a rejected activation must leave state byte-identical",
+        "{why}, so activating it must reject naming reachability, got: {reason}",
     );
 }
 
@@ -346,8 +338,8 @@ fn assert_out_of_reach(source: AbilitySource, why: &str) {
 #[test]
 fn a_location_you_stand_at_offers_its_zero_action_ability_in_a_window() {
     assert_offered_and_usable(
-        AbilitySource::Location(HERE),
-        &OptionTarget::Location(HERE),
+        |_| AbilitySource::Location(HERE),
+        |_| OptionTarget::Location(HERE),
         "you are standing at this location",
     );
 }
@@ -369,7 +361,7 @@ fn a_location_nobody_stands_at_offers_nothing_to_the_window() {
 #[test]
 fn a_location_you_are_not_at_is_out_of_reach_even_in_a_window() {
     assert_out_of_reach(
-        AbilitySource::Location(THERE),
+        |_| AbilitySource::Location(THERE),
         "you are not at this location",
     );
 }
@@ -379,8 +371,8 @@ fn a_location_you_are_not_at_is_out_of_reach_even_in_a_window() {
 #[test]
 fn an_enemy_at_your_location_offers_its_zero_action_ability_in_a_window() {
     assert_offered_and_usable(
-        AbilitySource::Enemy(CULTIST_HERE),
-        &OptionTarget::Enemy(CULTIST_HERE),
+        |_| AbilitySource::Enemy(CULTIST_HERE),
+        |_| OptionTarget::Enemy(CULTIST_HERE),
         "this enemy is placed at your location",
     );
 }
@@ -399,7 +391,7 @@ fn an_enemy_nobody_stands_with_offers_nothing_to_the_window() {
 #[test]
 fn an_enemy_at_another_location_is_out_of_reach_even_in_a_window() {
     assert_out_of_reach(
-        AbilitySource::Enemy(CULTIST_THERE),
+        |_| AbilitySource::Enemy(CULTIST_THERE),
         "this enemy is at another location",
     );
 }
@@ -410,8 +402,8 @@ fn an_enemy_at_another_location_is_out_of_reach_even_in_a_window() {
 #[test]
 fn a_colocated_investigators_threat_area_card_offers_its_zero_action_ability_in_a_window() {
     assert_offered_and_usable(
-        AbilitySource::InPlay(NEIGHBOURS_WARD),
-        &OptionTarget::CardInstance(NEIGHBOURS_WARD),
+        |state| ward_of(state, NEIGHBOUR),
+        |state| state.card(NEIGHBOUR, WARD),
         "its bearer is standing at your location",
     );
 }
@@ -419,7 +411,7 @@ fn a_colocated_investigators_threat_area_card_offers_its_zero_action_ability_in_
 #[test]
 fn a_threat_area_card_at_another_location_is_out_of_reach_even_in_a_window() {
     assert_out_of_reach(
-        AbilitySource::InPlay(STRANGERS_WARD),
+        |state| ward_of(state, STRANGER),
         "its bearer is standing somewhere else",
     );
 }
@@ -428,8 +420,8 @@ fn a_threat_area_card_at_another_location_is_out_of_reach_even_in_a_window() {
 #[test]
 fn the_current_act_offers_its_zero_action_ability_in_a_window() {
     assert_offered_and_usable(
-        AbilitySource::Act,
-        &OptionTarget::Act,
+        |_| AbilitySource::Act,
+        |_| OptionTarget::Act,
         "this is the current act, and the bullet naming it is gated on nothing",
     );
 }
@@ -437,8 +429,8 @@ fn the_current_act_offers_its_zero_action_ability_in_a_window() {
 #[test]
 fn the_current_agenda_offers_its_zero_action_ability_in_a_window() {
     assert_offered_and_usable(
-        AbilitySource::Agenda,
-        &OptionTarget::Agenda,
+        |_| AbilitySource::Agenda,
+        |_| OptionTarget::Agenda,
         "this is the current agenda, and the bullet naming it is gated on nothing",
     );
 }
@@ -448,13 +440,8 @@ fn the_current_agenda_offers_its_zero_action_ability_in_a_window() {
 /// everything the co-location bullet gave them has gone.
 #[test]
 fn the_act_and_agenda_stay_reachable_from_nowhere_at_all() {
-    let mut state = board();
-    state
-        .investigators
-        .get_mut(&MINE)
-        .expect("mine is on the board")
-        .current_location = None;
-    let (state, targets) = at_player_window(state);
+    // Mine is seated at no location at all.
+    let (window, targets) = at_player_window(board_seating(seat(1)));
 
     for target in [OptionTarget::Act, OptionTarget::Agenda] {
         assert!(
@@ -464,18 +451,18 @@ fn the_act_and_agenda_stay_reachable_from_nowhere_at_all() {
         );
     }
 
+    let mut window = window;
     for source in [AbilitySource::Act, AbilitySource::Agenda] {
-        let result = activate_at_window(state.clone(), source);
-        assert!(
-            !matches!(result.outcome, EngineOutcome::Rejected { .. }),
-            "{source:?} should still activate from nowhere; got {:?}",
-            result.outcome,
+        window = activate_at_window(window, source);
+        assert_event!(
+            window.events(),
+            Event::AbilityActivated { source: s, .. } if *s == source
         );
     }
 
-    let result = activate_at_window(state, AbilitySource::Location(HERE));
+    let rejected = activate_at_window(window, AbilitySource::Location(HERE));
     assert!(
-        matches!(result.outcome, EngineOutcome::Rejected { .. }),
+        rejected.expect_rejected().contains("cannot reach"),
         "the co-location bullet went with the location, so the Meadow is out of reach",
     );
 }
@@ -491,14 +478,12 @@ fn the_act_and_agenda_stay_reachable_from_nowhere_at_all() {
 /// the zero-action one is opened by the window.
 #[test]
 fn an_action_costed_ability_on_the_same_source_is_not_opened_by_the_window() {
-    let (state, _) = at_player_window(board());
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &activation(AbilitySource::Location(HERE), ACTION_COSTED_ABILITY),
-    );
-    let EngineOutcome::Rejected { reason } = &result.outcome else {
-        panic!("an [action] ability is not a player-window ability; got {result:?}");
-    };
+    let (window, _) = at_player_window(board());
+    let session = window.submit_off_menu(&activation(
+        AbilitySource::Location(HERE),
+        ACTION_COSTED_ABILITY,
+    ));
+    let reason = session.expect_rejected();
     assert!(
         reason.contains("action-cost ability requires Investigation phase"),
         "the reason should name the Activate action's gate, got: {reason}",
@@ -513,32 +498,37 @@ fn an_action_costed_ability_on_the_same_source_is_not_opened_by_the_window() {
 /// reachability predicate.
 #[test]
 fn a_zero_action_ability_on_a_new_source_provokes_no_attack_of_opportunity() {
-    for source in [
-        AbilitySource::Location(HERE),
-        AbilitySource::Enemy(CULTIST_HERE),
-        AbilitySource::InPlay(NEIGHBOURS_WARD),
-        AbilitySource::Act,
-        AbilitySource::Agenda,
-    ] {
-        let (state, _) = at_player_window(board());
+    let sources: [fn(&GameState) -> AbilitySource; 5] = [
+        |_| AbilitySource::Location(HERE),
+        |_| AbilitySource::Enemy(CULTIST_HERE),
+        |state| ward_of(state, NEIGHBOUR),
+        |_| AbilitySource::Act,
+        |_| AbilitySource::Agenda,
+    ];
+    for source in sources {
+        let (window, _) = at_player_window(board());
+        let state = window.state();
         assert!(
             !state.enemies[&CULTIST_HERE].exhausted
                 && state.enemies[&CULTIST_HERE].engaged_with == Some(MINE),
             "the AoO precondition — a ready enemy engaged with the activator — must hold",
         );
+        let source = source(state);
 
-        let result = activate_at_window(state, source);
+        let session = activate_at_window(window, source);
+        let events = session.events();
         assert_event!(
-            result.events,
+            events,
             Event::AbilityActivated { source: s, .. } if *s == source
         );
         // An attack of opportunity lands as damage/horror on the activator and
         // exhausts the attacker; none of the three appears.
-        assert_no_event!(result.events, Event::DamageTaken { .. });
-        assert_no_event!(result.events, Event::HorrorTaken { .. });
-        assert_no_event!(result.events, Event::EnemyExhausted { .. });
+        assert_no_event!(events, Event::DamageTaken { .. });
+        assert_no_event!(events, Event::HorrorTaken { .. });
+        assert_no_event!(events, Event::EnemyExhausted { .. });
         assert_eq!(
-            result.state.investigators[&MINE].actions_remaining, ACTIONS,
+            session.state().investigators[&MINE].actions_remaining,
+            ACTIONS,
             "no action was spent from {source:?}, so there was no action to provoke from",
         );
     }
@@ -550,16 +540,12 @@ fn a_zero_action_ability_on_a_new_source_provokes_no_attack_of_opportunity() {
 /// ability unused and the skill test carries on.
 #[test]
 fn passing_the_window_uses_nothing() {
-    let (state, _) = at_player_window(board());
-    let before = state.investigators[&MINE].resources;
-    let result = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::Skip,
-        }),
-    );
+    let (window, _) = at_player_window(board());
+    let before = window.state().investigators[&MINE].resources;
+    let session = window.skip();
     assert_eq!(
-        result.state.investigators[&MINE].resources, before,
+        session.state().investigators[&MINE].resources,
+        before,
         "skipping the window activates nothing",
     );
 }

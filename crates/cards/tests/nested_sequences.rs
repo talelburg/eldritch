@@ -64,10 +64,10 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, Owner,
+    CardCode, CardInstanceId, Enemy, EnemyId, GameState, GameStateBuilder, InvestigatorId,
+    LocationId,
 };
-use game_core::test_support::{self, TestSession};
+use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
 
 /// Roland Banks (01001) — the example's investigator, and the source of the
 /// nested sequence that hangs off the Goat Spawn's defeat.
@@ -78,22 +78,24 @@ const GUARD_DOG: &str = "01021";
 /// opportunity, and which enters play last of all.
 const AUTOMATIC_45: &str = "01016";
 
+const INV: InvestigatorId = InvestigatorId(1);
+const HERE: LocationId = LocationId(101);
+const SPAWN: EnemyId = EnemyId(7);
+
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// The Goat Spawn's stand-in: engaged, ready, **2 damage already on it** and 3
-/// health, so Guard Dog's 1 retaliate damage defeats it — the example's setup
-/// exactly. Its attack deals 1 damage and no horror.
-fn goat_spawn(id: u32, inv: InvestigatorId, loc: LocationId) -> Enemy {
-    let mut e = test_support::test_enemy(id, "Goat Spawn");
+/// The Goat Spawn's stand-in: ready, **2 damage already on it** and 3 health,
+/// so Guard Dog's 1 retaliate damage defeats it — the example's setup exactly.
+/// Its attack deals 1 damage and no horror.
+fn goat_spawn() -> Enemy {
+    let mut e = test_support::test_enemy(SPAWN.0, "Goat Spawn");
     e.max_health = 3;
     e.damage = 2;
     e.attack_damage = 1;
     e.attack_horror = 0;
-    e.current_location = Some(loc);
-    e.engaged_with = Some(inv);
     e
 }
 
@@ -107,8 +109,8 @@ fn assign_to(mut session: TestSession, inst: CardInstanceId) -> TestSession {
     session
 }
 
-fn guard_dog_damage(state: &GameState, inv: InvestigatorId, inst: CardInstanceId) -> u8 {
-    state.investigators[&inv]
+fn guard_dog_damage(state: &GameState, inst: CardInstanceId) -> u8 {
+    state.investigators[&INV]
         .cards_in_play
         .iter()
         .find(|c| c.instance_id == inst)
@@ -116,8 +118,8 @@ fn guard_dog_damage(state: &GameState, inv: InvestigatorId, inst: CardInstanceId
         .accumulated_damage
 }
 
-fn in_play(state: &GameState, inv: InvestigatorId, code: &str) -> bool {
-    state.investigators[&inv]
+fn has_in_play(state: &GameState, code: &str) -> bool {
+    state.investigators[&INV]
         .cards_in_play
         .iter()
         .any(|c| c.code == CardCode::new(code))
@@ -126,49 +128,35 @@ fn in_play(state: &GameState, inv: InvestigatorId, code: &str) -> bool {
 #[test]
 #[allow(clippy::too_many_lines)]
 fn the_damage_dealt_to_the_guard_dog_resolves_last() {
-    let dog = CardInstanceId(1);
-    let roland_card = CardInstanceId(2);
-    let inv_id = InvestigatorId(1);
-    let loc = LocationId(101);
-    let spawn = EnemyId(7);
-
-    let mut roland = test_support::test_investigator(1);
-    roland.investigator_card.code = CardCode::new(ROLAND); // 9 health / 5 sanity
-    roland.current_location = Some(loc);
-    roland.resources = 5; // the .45 costs 4
-    roland.hand = vec![CardCode::new(AUTOMATIC_45)];
-    roland.cards_in_play = vec![
-        CardInPlay::enter_play(
-            CardCode::new(GUARD_DOG),
-            dog,
-            Owner::Investigator(InvestigatorId(1)),
-        ),
-        // Roland's own card in play is how the reaction scan reaches his
-        // investigator ability (the `roland_banks.rs` fixture's convention).
-        CardInPlay::enter_play(
-            CardCode::new(ROLAND),
-            roland_card,
-            Owner::Investigator(InvestigatorId(1)),
-        ),
-    ];
-
     // A clue at the location for Roland's reaction to discover — the marker
     // that tells us the nested sequence resolved, and when.
-    let mut study = test_support::test_location(101, "Study");
+    let mut study = test_support::test_location(HERE.0, "Study");
     study.clues = 1;
 
-    let state = GameStateBuilder::new()
+    let session = GameStateBuilder::new()
         .with_location(study)
-        .with_investigator(roland)
-        .open_turn(inv_id)
-        .with_enemy(goat_spawn(7, inv_id, loc))
-        .build();
+        .with_seat(
+            seat(1)
+                .at(HERE)
+                .as_card(ROLAND) // 9 health / 5 sanity
+                .resources(5) // the .45 costs 4
+                .hand([AUTOMATIC_45])
+                // Roland's own card in play is how the reaction scan reaches
+                // his investigator ability (the `roland_banks.rs` fixture's
+                // convention).
+                .in_play([GUARD_DOG, ROLAND]),
+        )
+        .with_enemy_engaged(goat_spawn(), INV)
+        .open_turn(INV)
+        .session();
+    let dog = session.state().in_play(INV, GUARD_DOG);
+    let roland_card = session.state().in_play(INV, ROLAND);
 
     // ── "Roland wishes to play a .45 Automatic, which provokes an attack of
     //    opportunity from the Goat Spawn, dealing 1 damage to Roland. Roland
     //    assigns this damage to his Guard Dog" ────────────────────────────────
-    let session = TestSession::new(state).take(&TurnAction::PlayCard {
-        investigator: inv_id,
+    let session = session.take(&TurnAction::PlayCard {
+        investigator: INV,
         hand_index: 0,
     });
     let session = assign_to(session, dog);
@@ -183,16 +171,16 @@ fn the_damage_dealt_to_the_guard_dog_resolves_last() {
         session.prompt()
     );
     assert_eq!(
-        guard_dog_damage(state, inv_id, dog),
+        guard_dog_damage(state, dog),
         0,
         "the damage is assigned to the Guard Dog, not yet dealt to it"
     );
     assert_eq!(
-        state.enemies[&spawn].damage, 2,
+        state.enemies[&SPAWN].damage, 2,
         "the Goat Spawn is untouched"
     );
     assert!(
-        !in_play(state, inv_id, AUTOMATIC_45),
+        !has_in_play(state, AUTOMATIC_45),
         "\"Before resolving the playing of Roland's .45 Automatic\""
     );
 
@@ -202,7 +190,7 @@ fn the_damage_dealt_to_the_guard_dog_resolves_last() {
     let state = session.state();
 
     assert!(
-        !state.enemies.contains_key(&spawn),
+        !state.enemies.contains_key(&SPAWN),
         "the retaliate defeated the Goat Spawn: {:?}",
         session.events()
     );
@@ -220,17 +208,17 @@ fn the_damage_dealt_to_the_guard_dog_resolves_last() {
     );
     // This is the example's load-bearing sentence.
     assert_eq!(
-        guard_dog_damage(state, inv_id, dog),
+        guard_dog_damage(state, dog),
         0,
         "\"Before resolving the damage dealt to the Guard Dog\" — still unplaced \
          while the nested sequence runs"
     );
     assert_eq!(
-        state.locations[&loc].clues, 1,
+        state.locations[&HERE].clues, 1,
         "Roland's reaction has not resolved yet either"
     );
     assert!(
-        !in_play(state, inv_id, AUTOMATIC_45),
+        !has_in_play(state, AUTOMATIC_45),
         "and the original action is still parked beneath all of it"
     );
 
@@ -243,24 +231,24 @@ fn the_damage_dealt_to_the_guard_dog_resolves_last() {
 
     // LIFO, innermost first: the nested sequence completed…
     assert_eq!(
-        state.locations[&loc].clues, 0,
+        state.locations[&HERE].clues, 0,
         "Roland discovered the clue — the nested sequence resolved first"
     );
-    assert_eq!(state.investigators[&inv_id].clues, 1, "…onto Roland");
+    assert_eq!(state.investigators[&INV].clues, 1, "…onto Roland");
     // …then the damage that spawned it was finally placed…
     assert_eq!(
-        guard_dog_damage(state, inv_id, dog),
+        guard_dog_damage(state, dog),
         1,
         "\"Then, the players resolve the damage dealt to the Guard Dog\""
     );
     assert_eq!(
-        state.investigators[&inv_id].damage(),
+        state.investigators[&INV].damage(),
         0,
         "Roland himself took none of it (it was assigned to the dog)"
     );
     // …and only then did the action that started everything complete.
     assert!(
-        in_play(state, inv_id, AUTOMATIC_45),
+        has_in_play(state, AUTOMATIC_45),
         "\"Finally […] Roland is able to put his .45 Automatic into play\""
     );
 
@@ -271,8 +259,8 @@ fn the_damage_dealt_to_the_guard_dog_resolves_last() {
     // here.
     assert_event_sequence!(
         session.events(),
-        Event::EnemyDamaged { enemy, amount: 1, .. } if *enemy == spawn,
-        Event::EnemyDefeated { enemy, .. } if *enemy == spawn,
-        Event::CluePlaced { investigator, count: 1 } if *investigator == inv_id,
+        Event::EnemyDamaged { enemy, amount: 1, .. } if *enemy == SPAWN,
+        Event::EnemyDefeated { enemy, .. } if *enemy == SPAWN,
+        Event::CluePlaced { investigator, count: 1 } if *investigator == INV,
     );
 }

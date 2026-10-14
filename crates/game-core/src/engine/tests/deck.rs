@@ -1,5 +1,10 @@
 use super::*;
 
+// An engine record applies only with no prompt outstanding (see
+// `engine_record_applied_while_a_prompt_is_outstanding_is_rejected` in
+// `reject_rollback.rs`), and no step produces one, so the record tests
+// below apply it raw to a built state with an empty stack.
+
 #[test]
 fn deck_shuffled_engine_record_with_unknown_investigator_is_rejected() {
     let state = GameStateBuilder::new().build();
@@ -42,12 +47,10 @@ fn deck_shuffle_is_deterministic_across_replay() {
 
 #[test]
 fn deck_shuffled_engine_record_shuffles_named_investigator() {
-    let id = InvestigatorId(1);
-    let mut inv = test_support::test_investigator(1);
-    inv.deck = make_test_deck(8);
-    let original_deck = inv.deck.clone();
+    let id = INV;
+    let original_deck = make_test_deck(8);
     let state = GameStateBuilder::new()
-        .with_investigator(inv)
+        .with_seat(seat(1).deck(original_deck.clone()))
         .with_rng_seed(99)
         .build();
     let result = apply(

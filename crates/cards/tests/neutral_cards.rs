@@ -11,14 +11,12 @@
 //! Own process → installs `cards::REGISTRY`.
 
 use cards::REGISTRY;
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, Phase, SkillKind,
-    TokenModifiers,
+    CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, SkillKind, TokenModifiers,
 };
+use game_core::test_support::{seat, Seat, TestSession};
 use game_core::{assert_event, assert_no_event, test_support};
 
 const EMERGENCY_CACHE: &str = "01088";
@@ -32,69 +30,59 @@ fn install() {
 
 #[test]
 fn emergency_cache_play_gains_three_resources() {
-    let mut inv = test_support::test_investigator(1);
-    inv.hand = vec![CardCode::new(EMERGENCY_CACHE)];
-    let before = inv.resources;
-    let state = GameStateBuilder::new()
+    let session = GameStateBuilder::new()
+        .with_seat(seat(1).hand([EMERGENCY_CACHE]))
         .open_turn(INV)
-        .with_investigator(inv)
-        .build();
+        .session();
+    let before = session.state().investigators[&INV].resources;
 
-    let r = test_support::take_turn_action(
-        state,
-        &TurnAction::PlayCard {
-            investigator: INV,
-            hand_index: 0,
-        },
-    );
+    let session = session.take(&TurnAction::PlayCard {
+        investigator: INV,
+        hand_index: 0,
+    });
 
-    assert_event!(r.events, Event::ResourcesGained { amount: 3, .. });
-    assert_eq!(r.state.investigators[&INV].resources, before + 3);
+    session.assert_at_turn_menu(INV);
+    assert_event!(session.events(), Event::ResourcesGained { amount: 3, .. });
+    assert_eq!(session.state().investigators[&INV].resources, before + 3);
 }
 
-/// Guts holding `GUTS` + spare deck cards, willpower `wp`, with a chaos bag
-/// of `token` (`Numeric(0)` → success vs difficulty 1; `AutoFail` → failure).
-fn guts_board(wp: i8, token: ChaosToken) -> GameState {
-    let mut inv = test_support::test_investigator(1);
-    inv.skills.willpower = wp;
-    inv.hand = vec![CardCode::new(GUTS)];
-    inv.deck = vec![CardCode::new("spare-1"), CardCode::new("spare-2")];
+/// Investigator 1 holding `GUTS` + spare deck cards.
+fn holding_guts() -> Seat {
+    seat(1).hand([GUTS]).deck(["spare-1", "spare-2"])
+}
+
+/// `investigator`'s turn with a chaos bag of `token` (`Numeric(0)` → success
+/// vs difficulty 1; `AutoFail` → failure).
+fn guts_board(investigator: Seat, token: ChaosToken) -> TestSession {
     GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator(inv)
+        .with_seat(investigator)
         .with_chaos_bag(ChaosBag::new([token]))
         .with_token_modifiers(TokenModifiers::default())
-        .build()
+        .open_turn(INV)
+        .session()
 }
 
-fn perform_and_commit_guts(state: GameState) -> ApplyResult {
-    let paused = test_support::perform_skill_test(state, INV, SkillKind::Willpower, 1);
-    engine::apply(
-        paused.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple {
-                selected: vec![OptionId(0)],
-            },
-        }),
-    )
+/// A willpower (1) test, committing Guts to it.
+fn perform_and_commit_guts(session: TestSession) -> TestSession {
+    session
+        .test_skill(INV, SkillKind::Willpower, 1)
+        .commit(&[GUTS])
 }
 
 #[test]
 fn guts_draws_a_card_on_a_successful_test() {
     // willpower 3 + Numeric(0) vs difficulty 1 → success → draw 1.
-    let r = perform_and_commit_guts(guts_board(3, ChaosToken::Numeric(0)));
-    assert_eq!(r.outcome, EngineOutcome::Done);
-    assert_event!(r.events, Event::CardsDrawn { count: 1, .. });
+    let s = perform_and_commit_guts(guts_board(holding_guts(), ChaosToken::Numeric(0)));
+    s.assert_at_turn_menu(INV);
+    assert_event!(s.finish().events, Event::CardsDrawn { count: 1, .. });
 }
 
 #[test]
 fn guts_draws_nothing_on_a_failed_test() {
     // AutoFail → failure → no draw.
-    let r = perform_and_commit_guts(guts_board(3, ChaosToken::AutoFail));
-    assert_eq!(r.outcome, EngineOutcome::Done);
-    assert_no_event!(r.events, Event::CardsDrawn { .. });
+    let s = perform_and_commit_guts(guts_board(holding_guts(), ChaosToken::AutoFail));
+    s.assert_at_turn_menu(INV);
+    assert_no_event!(s.finish().events, Event::CardsDrawn { .. });
 }
 
 /// A card-effect draw obeys the empty-deck rule like the Draw action does
@@ -104,19 +92,12 @@ fn guts_draws_nothing_on_a_failed_test() {
 /// the card, and upon completion of the entire draw takes one horror."
 #[test]
 fn guts_on_an_empty_deck_reshuffles_the_discard_and_takes_one_horror() {
-    let mut state = guts_board(3, ChaosToken::Numeric(0));
-    {
-        let inv = state
-            .investigators
-            .get_mut(&INV)
-            .expect("test investigator");
-        inv.deck.clear();
-        inv.discard = vec![CardCode::new("spare-1"), CardCode::new("spare-2")];
-    }
+    let empty_deck = seat(1).hand([GUTS]).discard(["spare-1", "spare-2"]);
 
-    let r = perform_and_commit_guts(state);
+    let s = perform_and_commit_guts(guts_board(empty_deck, ChaosToken::Numeric(0)));
 
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    s.assert_at_turn_menu(INV);
+    let r = s.finish();
     assert_event!(r.events, Event::DeckShuffled { .. });
     assert_event!(r.events, Event::CardsDrawn { count: 1, .. });
     assert_event!(r.events, Event::HorrorTaken { amount: 1, .. });

@@ -17,22 +17,25 @@
 use card_dsl::dsl::{UsageLimit, UsagePeriod};
 use cards::REGISTRY;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    AbilityUsageRecord, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId,
-    GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, TokenModifiers,
+    AbilityUsageRecord, CardCode, CardInPlay, ChaosBag, ChaosToken, EnemyId, GameState,
+    GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{self, TestSession};
+use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 /// `ArkhamDB` code for original-Core Roland Banks.
 const ROLAND: &str = "01001";
 
-/// `instance_id` we assign to Roland's investigator card in
-/// `cards_in_play`. Arbitrary; tests just need it stable to compare
-/// against `PendingTrigger.instance_id`.
-const ROLAND_INSTANCE: u32 = 1;
+const INV: InvestigatorId = InvestigatorId(1);
+const ENEMY: EnemyId = EnemyId(100);
+const HERE: LocationId = LocationId(10);
+
+const FIGHT: TurnAction = TurnAction::Fight {
+    investigator: INV,
+    enemy: ENEMY,
+};
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
@@ -40,90 +43,96 @@ fn install_real_registry() {
 }
 
 /// Build a Fight-ready scenario with Roland engaged with an enemy at
-/// 1 HP and Combat 1 so a successful Combat test defeats. Roland's
-/// investigator card is placed in `cards_in_play` so the existing
-/// reaction-window scan finds his `[reaction]` ability via the real
-/// registry.
-fn roland_at_location_with_enemy(
-    location_clues: u8,
-    round: u32,
-) -> (InvestigatorId, EnemyId, LocationId, GameState) {
-    let inv_id = InvestigatorId(1);
-    let enemy_id = EnemyId(100);
-    let loc_id = LocationId(10);
-
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(loc_id);
-    inv.skills.combat = 4; // Roland's printed combat.
-    inv.cards_in_play.push(CardInPlay::enter_play(
-        CardCode::new(ROLAND),
-        CardInstanceId(ROLAND_INSTANCE),
-        Owner::Investigator(InvestigatorId(1)),
-    ));
-
-    let mut enemy = test_support::test_enemy(100, "Mock Ghoul");
+/// 1 HP and fight 1, so a successful Combat test defeats it. Roland's
+/// investigator card is placed in `cards_in_play` (the seat's investigator
+/// card stays the test investigator's), so his `[reaction]` is found by the
+/// in-play scan; `roland_banks_seated.rs` covers the investigator-card scan.
+fn roland_at_location_with_enemy(location_clues: u8, round: u32) -> GameState {
+    let mut enemy = test_support::test_enemy(ENEMY.0, "Mock Ghoul");
     enemy.fight = 1;
     enemy.max_health = 1;
-    enemy.damage = 0;
-    enemy.engaged_with = Some(inv_id);
-    enemy.current_location = Some(loc_id); // co-located: Fight is location-gated (#401)
 
-    let mut loc = test_support::test_location(10, "Study");
+    let mut loc = test_support::test_location(HERE.0, "Study");
     loc.clues = location_clues;
 
-    let state = GameStateBuilder::new()
+    GameStateBuilder::new()
         .with_round(round)
-        .open_turn(inv_id)
-        .with_investigator(inv)
-        .with_enemy(enemy)
+        .with_seat(
+            seat(1)
+                .at(HERE)
+                // Roland's printed combat.
+                .skill(SkillKind::Combat, 4)
+                .in_play([ROLAND]),
+        )
+        // Co-located: Fight is location-gated (#401).
+        .with_enemy_engaged(enemy, INV)
         .with_location(loc)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
-        .build();
-    (inv_id, enemy_id, loc_id, state)
+        .open_turn(INV)
+        .build()
+}
+
+/// Roland's investigator card, in play.
+fn roland_card(state: &GameState) -> &CardInPlay {
+    let id = state.in_play(INV, ROLAND);
+    state.investigators[&INV]
+        .cards_in_play
+        .iter()
+        .find(|c| c.instance_id == id)
+        .expect("Roland's investigator card stayed in cards_in_play")
+}
+
+/// `state` with Roland's reaction already fired in round 0.
+fn fired_in_round_0(mut state: GameState) -> GameState {
+    let id = state.in_play(INV, ROLAND);
+    state
+        .investigators
+        .get_mut(&INV)
+        .unwrap()
+        .cards_in_play
+        .iter_mut()
+        .find(|c| c.instance_id == id)
+        .unwrap()
+        .bump_ability_usage(0, 0);
+    state
+}
+
+/// Fight the enemy from `state`, committing nothing. The session rests at
+/// Roland's reaction window if it opened, or back at the turn menu.
+fn fight(state: GameState) -> TestSession {
+    TestSession::new(state).take(&FIGHT).commit(&[])
+}
+
+/// [`fight`], then fire Roland's reaction from its window.
+fn fight_and_react(state: GameState) -> TestSession {
+    let session = fight(state);
+    let roland = session.state().card(INV, ROLAND);
+    session.pick(roland)
 }
 
 #[test]
 fn reaction_fires_after_roland_defeats_enemy_and_discovers_clue() {
-    let (inv_id, enemy_id, loc_id, state) = roland_at_location_with_enemy(2, 0);
+    let session = fight_and_react(roland_at_location_with_enemy(2, 0));
 
-    // Empty commit, then PickSingle(OptionId(0)) for the reaction window.
-    let result = TestSession::new(state)
-        .resolve_choices(|c| {
-            c.commit_cards(&[]).pick_single(OptionId(0));
-        })
-        .take(&TurnAction::Fight {
-            investigator: inv_id,
-            enemy: enemy_id,
-        })
-        .finish();
-
-    assert!(matches!(
-        result.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
+    session.assert_at_turn_menu(INV);
     assert_event!(
-        result.events,
-        Event::EnemyDefeated { enemy: e, by: Some(by) } if *e == enemy_id && *by == inv_id
+        session.events(),
+        Event::EnemyDefeated { enemy: e, by: Some(by) } if *e == ENEMY && *by == INV
     );
     assert_event!(
-        result.events,
-        Event::CluePlaced { investigator, count: 1 } if *investigator == inv_id
+        session.events(),
+        Event::CluePlaced { investigator, count: 1 } if *investigator == INV
     );
 
     // 1 of 2 clues stayed at the location; Roland is carrying 1.
-    assert_eq!(result.state.locations[&loc_id].clues, 1);
-    assert_eq!(result.state.investigators[&inv_id].clues, 1);
+    let state = session.state();
+    assert_eq!(state.locations[&HERE].clues, 1);
+    assert_eq!(state.investigators[&INV].clues, 1);
 
     // Counter bumped on Roland's investigator card: 1 fire this round.
-    let inv = &result.state.investigators[&inv_id];
-    let roland_card = inv
-        .cards_in_play
-        .iter()
-        .find(|c| c.code.as_str() == ROLAND)
-        .expect("Roland's investigator card stayed in cards_in_play");
     assert_eq!(
-        roland_card.ability_usage.get(&0),
+        roland_card(state).ability_usage.get(&0),
         Some(&AbilityUsageRecord::new(0, 1)),
         "Roland's reaction (ability index 0) should have recorded one fire \
          in round 0",
@@ -136,44 +145,22 @@ fn once_per_round_limit_blocks_second_reaction_in_same_round() {
     // earlier this round. The scan must see the limit as exhausted and
     // NOT queue the trigger — so no reaction window opens after a
     // second defeat in the same round.
-    let (inv_id, enemy_id, loc_id, mut state) = roland_at_location_with_enemy(2, 0);
-    {
-        let inv = state.investigators.get_mut(&inv_id).unwrap();
-        let roland_card = inv
-            .cards_in_play
-            .iter_mut()
-            .find(|c| c.code.as_str() == ROLAND)
-            .unwrap();
-        roland_card.bump_ability_usage(0, 0);
-    }
+    let session = fight(fired_in_round_0(roland_at_location_with_enemy(2, 0)));
 
-    let result = TestSession::new(state)
-        .resolve_choices(|c| {
-            c.commit_cards(&[]);
-        })
-        .take(&TurnAction::Fight {
-            investigator: inv_id,
-            enemy: enemy_id,
-        })
-        .finish();
-
-    assert!(matches!(
-        result.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
+    // No reaction window opened: the commit runs straight back to the menu.
+    session.assert_at_turn_menu(INV);
     // Defeat still happened.
     assert_event!(
-        result.events,
-        Event::EnemyDefeated { enemy: e, by: Some(by) } if *e == enemy_id && *by == inv_id
+        session.events(),
+        Event::EnemyDefeated { enemy: e, by: Some(by) } if *e == ENEMY && *by == INV
     );
     // But Roland's reaction does NOT fire — no triggers were pending after the
     // limit check filtered his ability out, so the window never offered the
-    // reaction and resolution went straight through (Done above) with no clue
-    // discovered.
-    assert_no_event!(result.events, Event::CluePlaced { .. });
+    // reaction and resolution went straight through with no clue discovered.
+    assert_no_event!(session.events(), Event::CluePlaced { .. });
     // Clue counts unchanged at the location and on Roland.
-    assert_eq!(result.state.locations[&loc_id].clues, 2);
-    assert_eq!(result.state.investigators[&inv_id].clues, 0);
+    assert_eq!(session.state().locations[&HERE].clues, 2);
+    assert_eq!(session.state().investigators[&INV].clues, 0);
 }
 
 #[test]
@@ -183,47 +170,18 @@ fn lazy_round_reset_re_enables_reaction_in_a_later_round() {
     // the stored round differs from current) lets the reaction fire
     // again. No explicit round-end hook is invoked — the round counter
     // just advanced.
-    let (inv_id, enemy_id, _loc_id, mut state) = roland_at_location_with_enemy(2, 1);
-    {
-        let inv = state.investigators.get_mut(&inv_id).unwrap();
-        let roland_card = inv
-            .cards_in_play
-            .iter_mut()
-            .find(|c| c.code.as_str() == ROLAND)
-            .unwrap();
-        // Pretend Roland fired in the previous round.
-        roland_card.bump_ability_usage(0, 0);
-    }
+    let session = fight_and_react(fired_in_round_0(roland_at_location_with_enemy(2, 1)));
 
-    let result = TestSession::new(state)
-        .resolve_choices(|c| {
-            c.commit_cards(&[]).pick_single(OptionId(0));
-        })
-        .take(&TurnAction::Fight {
-            investigator: inv_id,
-            enemy: enemy_id,
-        })
-        .finish();
-
-    assert!(matches!(
-        result.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
+    session.assert_at_turn_menu(INV);
     assert_event!(
-        result.events,
-        Event::CluePlaced { investigator, count: 1 } if *investigator == inv_id
+        session.events(),
+        Event::CluePlaced { investigator, count: 1 } if *investigator == INV
     );
 
     // Counter now records "fired once in round 1" — the round-0 entry
     // was overwritten in place by the lazy reset.
-    let inv = &result.state.investigators[&inv_id];
-    let roland_card = inv
-        .cards_in_play
-        .iter()
-        .find(|c| c.code.as_str() == ROLAND)
-        .unwrap();
     assert_eq!(
-        roland_card.ability_usage.get(&0),
+        roland_card(session.state()).ability_usage.get(&0),
         Some(&AbilityUsageRecord::new(1, 1)),
     );
 }
@@ -234,39 +192,24 @@ fn skipping_the_reaction_window_does_not_bump_the_counter() {
     // the controller chooses Skip, no firing happened, so the counter
     // must stay at 0 — Roland can still react to a later defeat this
     // round.
-    let (inv_id, enemy_id, loc_id, state) = roland_at_location_with_enemy(2, 0);
+    let at_window = fight(roland_at_location_with_enemy(2, 0));
+    // The window opened, offering Roland's reaction.
+    let roland = at_window.state().card(INV, ROLAND);
+    assert_eq!(at_window.offered_at(&roland), 1);
+    let session = at_window.skip();
 
-    let result = TestSession::new(state)
-        .resolve_choices(|c| {
-            c.commit_cards(&[]).skip();
-        })
-        .take(&TurnAction::Fight {
-            investigator: inv_id,
-            enemy: enemy_id,
-        })
-        .finish();
-
-    assert!(matches!(
-        result.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
-    // The window opened (the resolver's scripted Skip was consumed by it) but
-    // closed without firing → no clue moved.
-    assert_no_event!(result.events, Event::CluePlaced { .. });
-    assert_eq!(result.state.locations[&loc_id].clues, 2);
-    assert_eq!(result.state.investigators[&inv_id].clues, 0);
+    session.assert_at_turn_menu(INV);
+    // It closed without firing → no clue moved.
+    assert_no_event!(session.events(), Event::CluePlaced { .. });
+    assert_eq!(session.state().locations[&HERE].clues, 2);
+    assert_eq!(session.state().investigators[&INV].clues, 0);
 
     // Counter is untouched.
-    let inv = &result.state.investigators[&inv_id];
-    let roland_card = inv
-        .cards_in_play
-        .iter()
-        .find(|c| c.code.as_str() == ROLAND)
-        .unwrap();
+    let card = roland_card(session.state());
     assert!(
-        roland_card.ability_usage.is_empty(),
+        card.ability_usage.is_empty(),
         "Skip must not record a use; ability_usage = {:?}",
-        roland_card.ability_usage,
+        card.ability_usage,
     );
 }
 
@@ -274,52 +217,28 @@ fn skipping_the_reaction_window_does_not_bump_the_counter() {
 fn reaction_not_offered_when_location_has_no_clues() {
     // #495 / RR p.2: "Discover 1 clue at your location" can't change the game
     // state at a 0-clue location, so the reaction must not initiate — the engine
-    // must not even open the (skippable) reaction window. Only a commit is
-    // scripted; if the window opened, the run would end on a skippable reaction
-    // prompt instead of the open-turn menu.
-    let (inv_id, enemy_id, loc_id, state) = roland_at_location_with_enemy(0, 0);
-
-    let result = TestSession::new(state)
-        .resolve_choices(|c| {
-            c.commit_cards(&[]);
-        })
-        .take(&TurnAction::Fight {
-            investigator: inv_id,
-            enemy: enemy_id,
-        })
-        .finish();
+    // must not even open the (skippable) reaction window. If the window opened,
+    // the commit would rest on a skippable reaction prompt instead of the
+    // open-turn menu.
+    let session = fight(roland_at_location_with_enemy(0, 0));
 
     // The defeat still happened.
     assert_event!(
-        result.events,
-        Event::EnemyDefeated { enemy: e, by: Some(by) } if *e == enemy_id && *by == inv_id
+        session.events(),
+        Event::EnemyDefeated { enemy: e, by: Some(by) } if *e == ENEMY && *by == INV
     );
-    // No reaction window was opened: the pending input is the open-turn menu, not
-    // a skippable reaction prompt.
-    let EngineOutcome::AwaitingInput { request, .. } = &result.outcome else {
-        panic!(
-            "expected AwaitingInput (open turn), got {:?}",
-            result.outcome
-        );
-    };
-    assert!(
-        !request.skippable,
-        "no reaction window should open at a 0-clue location; got a skippable \
-         window: {request:?}"
-    );
+    // No reaction window was opened: the session rests at the open-turn menu,
+    // not a reaction prompt.
+    session.assert_at_turn_menu(INV);
     // Nothing discovered; counter untouched (the reaction never fired).
-    assert_no_event!(result.events, Event::CluePlaced { .. });
-    assert_eq!(result.state.locations[&loc_id].clues, 0);
-    assert_eq!(result.state.investigators[&inv_id].clues, 0);
-    let roland_card = result.state.investigators[&inv_id]
-        .cards_in_play
-        .iter()
-        .find(|c| c.code.as_str() == ROLAND)
-        .expect("Roland's investigator card stayed in play");
+    assert_no_event!(session.events(), Event::CluePlaced { .. });
+    assert_eq!(session.state().locations[&HERE].clues, 0);
+    assert_eq!(session.state().investigators[&INV].clues, 0);
+    let card = roland_card(session.state());
     assert!(
-        roland_card.ability_usage.is_empty(),
+        card.ability_usage.is_empty(),
         "a suppressed reaction must not record a use; ability_usage = {:?}",
-        roland_card.ability_usage,
+        card.ability_usage,
     );
 }
 

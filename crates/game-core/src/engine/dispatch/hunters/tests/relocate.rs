@@ -5,29 +5,32 @@ use crate::engine::Cx;
 use crate::state::GameStateBuilder;
 use crate::{assert_event, assert_no_event, test_support};
 
-/// Two adjacent locations: the investigator in the Hallway (2), a
-/// ready unengaged enemy in the Attic (1).
-fn two_room_board() -> GameState {
-    let inv = {
-        let mut i = test_support::test_investigator(1);
-        i.current_location = Some(LocationId(2));
-        i
-    };
+/// Two adjacent locations: investigator 1 in the Hallway (2), a ready
+/// unengaged enemy in the Attic (1). No turn order yet.
+fn two_rooms() -> GameStateBuilder {
     let enemy = {
         let mut e = test_support::test_enemy(1, "Ghoul");
         e.current_location = Some(LocationId(1));
         e.engaged_with = None;
         e
     };
-    let mut state = GameStateBuilder::default()
-        .with_investigator(inv)
+    GameStateBuilder::default()
+        .with_seat(test_support::seat(1).at(LocationId(2)))
         .with_location(test_support::test_location(1, "Attic"))
         .with_location(test_support::test_location(2, "Hallway"))
         .with_enemy(enemy)
-        .with_turn_order([InvestigatorId(1)])
-        .build();
+}
+
+/// Build `board`, connecting its two rooms.
+fn connected(board: GameStateBuilder) -> GameState {
+    let mut state = board.build();
     state.connect(LocationId(1), LocationId(2));
     state
+}
+
+/// [`two_rooms`] with investigator 1 alone.
+fn two_room_board() -> GameState {
+    connected(two_rooms().with_turn_order([InvestigatorId(1)]))
 }
 
 /// [`two_room_board`] with the enemy exhausted (evaded).
@@ -125,14 +128,12 @@ fn relocate_enemy_to_empty_location_leaves_it_unengaged() {
 /// `engaged_with == None`).
 #[test]
 fn relocate_enemy_keeps_an_existing_engagement() {
-    let mut state = two_room_board();
     let other = InvestigatorId(2);
-    state.investigators.insert(other, {
-        let mut i = test_support::test_investigator(2);
-        i.current_location = Some(LocationId(1));
-        i
-    });
-    state.turn_order.push(other);
+    let mut state = connected(
+        two_rooms()
+            .with_seat(test_support::seat(2).at(LocationId(1)))
+            .with_turn_order([InvestigatorId(1), other]),
+    );
     state
         .enemies
         .get_mut(&EnemyId(1))

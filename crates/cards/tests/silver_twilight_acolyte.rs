@@ -20,56 +20,64 @@
 //! enemy has as much or more damage on it as it has health, that enemy is
 //! defeated and placed on the encounter discard pile (or on its owner's discard
 //! pile if it is a weakness)."* Printed health 3, fight 2.
-
 use cards::REGISTRY;
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::assert_event_sequence;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, TimingEvent};
 use game_core::event::Event;
 use game_core::state::{
-    Agenda, CardCode, ChaosBag, ChaosToken, DiscardPile, EnemyId, GameStateBuilder, InvestigatorId,
-    LocationId, Owner, TokenModifiers, Zone,
+    Agenda, CardCode, ChaosBag, ChaosToken, DiscardPile, Enemy, EnemyId, GameStateBuilder,
+    InvestigatorId, LocationId, Owner, SkillKind, TokenModifiers, Zone,
 };
-use game_core::test_support::{self, TestSession};
+use game_core::test_support::{self, seat, TestSession};
 
 const ACOLYTE: &str = "01102";
+const ACOLYTE_ID: EnemyId = EnemyId(7);
+const HERE: LocationId = LocationId(10);
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
+/// A Silver Twilight Acolyte borne by `bearer`.
+fn acolyte_of(bearer: InvestigatorId) -> Enemy {
+    let mut acolyte = test_support::test_enemy(ACOLYTE_ID.0, "Silver Twilight Acolyte");
+    acolyte.code = CardCode::new(ACOLYTE);
+    acolyte.owner = Owner::Investigator(bearer);
+    acolyte
+}
+
 #[test]
 fn the_acolyte_keeps_its_bearer_as_owner_through_its_attack() {
     let bearer = InvestigatorId(1);
-    let acolyte_id = EnemyId(7);
-    let mut acolyte = test_support::test_enemy(7, "Silver Twilight Acolyte");
-    acolyte.code = CardCode::new(ACOLYTE);
-    acolyte.owner = Owner::Investigator(bearer);
+    // The bearer's turn, engaged with the Acolyte: ending it runs into the
+    // Enemy phase, where the Acolyte attacks. A filler deck so Upkeep 4.4's
+    // draw does not deal empty-deck horror.
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
-        .with_turn_order([bearer])
-        .with_enemy(acolyte)
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_seat(seat(1).at(HERE).deck(["01088"]))
+        .with_enemy_engaged(acolyte_of(bearer), bearer)
+        .open_turn(bearer)
         .build();
+    // The builder stages no agenda.
     state.agenda_deck = vec![Agenda {
         code: CardCode::new("01105"),
         doom_threshold: 3,
     }];
     state.agenda_index = 0;
 
-    let session = TestSession::new(state).fire_at(TimingEvent::EnemyAttacks {
-        enemy: acolyte_id,
-        investigator: bearer,
-    });
+    let session = TestSession::new(state).take(&TurnAction::EndTurn);
 
+    // 2, not 1: the `EndTurn` cascade runs on through Upkeep into the next
+    // round's Mythos, whose step 1.2 places a doom of its own before parking on
+    // the encounter-draw prompt.
     assert_eq!(
         session.state().agenda_doom,
-        1,
-        "its Forced placed 1 doom on the current agenda"
+        2,
+        "its Forced placed 1 doom on the current agenda (plus Mythos step 1.2's)"
     );
     assert_eq!(
-        session.state().enemies[&acolyte_id].owner,
+        session.state().enemies[&ACOLYTE_ID].owner,
         Owner::Investigator(bearer)
     );
 }
@@ -87,57 +95,41 @@ fn the_acolyte_keeps_its_bearer_as_owner_through_its_attack() {
 fn defeated_in_a_two_investigator_game_it_goes_to_its_bearers_discard() {
     let fighter = InvestigatorId(1);
     let bearer = InvestigatorId(2);
-    let study = LocationId(10);
-    let acolyte_id = EnemyId(7);
 
-    let mut acolyte = test_support::test_enemy(7, "Silver Twilight Acolyte");
-    acolyte.code = CardCode::new(ACOLYTE);
-    acolyte.owner = Owner::Investigator(bearer);
+    let mut acolyte = acolyte_of(bearer);
     acolyte.fight = 2;
     acolyte.max_health = 3;
     acolyte.damage = 2;
-    acolyte.engaged_with = Some(bearer);
-    acolyte.current_location = Some(study);
-    let mut fighting = test_support::test_investigator(1);
-    fighting.skills.combat = 8;
 
-    let state = GameStateBuilder::new()
-        .with_round(0)
-        .with_location(test_support::test_location(10, "Study"))
-        .with_investigator_at(fighting, study)
-        .with_investigator_at(test_support::test_investigator(2), study)
+    let session = GameStateBuilder::new()
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_seat(seat(1).at(HERE).skill(SkillKind::Combat, 8))
+        .with_seat(seat(2).at(HERE))
         .with_turn_order([fighter, bearer])
         .open_turn(fighter)
-        .with_enemy(acolyte)
+        .with_enemy_engaged(acolyte, bearer)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
-        .build();
-
-    let after_fight = test_support::take_turn_action(
-        state,
-        &TurnAction::Fight {
+        .session()
+        .take(&TurnAction::Fight {
             investigator: fighter,
-            enemy: acolyte_id,
-        },
-    );
-    let result = engine::apply(
-        after_fight.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        }),
-    );
+            enemy: ACOLYTE_ID,
+        })
+        .commit(&[]);
 
-    assert!(!result.state.enemies.contains_key(&acolyte_id));
+    session.assert_at_turn_menu(fighter);
+    let state = session.state();
+    assert!(!state.enemies.contains_key(&ACOLYTE_ID));
     assert_eq!(
-        result.state.investigators[&bearer].discard,
+        state.investigators[&bearer].discard,
         vec![CardCode::new(ACOLYTE)],
         "its bearer's discard pile"
     );
-    assert!(result.state.investigators[&fighter].discard.is_empty());
-    assert!(result.state.encounter_discard.is_empty());
+    assert!(state.investigators[&fighter].discard.is_empty());
+    assert!(state.encounter_discard.is_empty());
     assert_event_sequence!(
-        result.events,
-        Event::EnemyDefeated { enemy, .. } if *enemy == acolyte_id,
+        session.events(),
+        Event::EnemyDefeated { enemy, .. } if *enemy == ACOLYTE_ID,
         Event::CardDiscarded {
             code,
             from: Zone::Enemy,

@@ -12,16 +12,13 @@
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use card_dsl::dsl;
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::assert_event;
-use game_core::engine::enumerate::{self, TurnAction};
-use game_core::engine::{self, EngineOutcome, OptionId};
+use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId,
-    LocationId, TokenModifiers,
+    ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId, LocationId, TokenModifiers,
 };
-use game_core::test_support::{self, MockRegistry};
+use game_core::test_support::{self, seat, MockRegistry, TestSession};
 
 /// Mock skill: combat icon + `[OnCommit] that attack deals +1 damage`.
 const SKILL: &str = "VBLOW-MOCK";
@@ -60,81 +57,50 @@ fn install_mock_registry() {
         .install();
 }
 
+const INV: InvestigatorId = InvestigatorId(1);
+const GHOUL: EnemyId = EnemyId(100);
+const HERE: LocationId = LocationId(10);
+
 /// Board: the controller (combat 3) engaged with one enemy (fight 2,
 /// health 10 so the dealt damage is observable, not clamped), the mock
 /// skill in hand, a `Numeric(0)` chaos bag for a deterministic success.
-fn board() -> (GameState, InvestigatorId, EnemyId) {
-    let id = InvestigatorId(1);
-    let enemy_id = EnemyId(100);
-
-    let loc_id = LocationId(10);
-    let mut inv = test_support::test_investigator(1);
-    inv.skills.combat = 3;
-    inv.hand = vec![CardCode::new(SKILL)];
-    inv.current_location = Some(loc_id);
-
-    let mut enemy = test_support::test_enemy(100, "Ghoul");
+fn board() -> GameStateBuilder {
+    let mut enemy = test_support::test_enemy(GHOUL.0, "Ghoul");
     enemy.fight = 2;
     enemy.max_health = 10;
-    enemy.engaged_with = Some(id);
-    enemy.current_location = Some(loc_id); // co-located: Fight is location-gated (#401)
 
-    let state = GameStateBuilder::new()
-        .open_turn(id)
-        .with_investigator(inv)
-        .with_location(test_support::test_location(10, "Study"))
-        .with_enemy(enemy)
+    GameStateBuilder::new()
+        .with_seat(seat(1).at(HERE).hand([SKILL]))
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        // Co-located: Fight is location-gated (#401).
+        .with_enemy_engaged(enemy, INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
-        .build();
-    (state, id, enemy_id)
+        .open_turn(INV)
 }
 
-/// Resolve the open-turn `Fight` action against `state` to its `OptionId`,
-/// returning the `ResolveInput(PickSingle)` submit the enumeration round-trip
-/// expects. Replaces the typed `PlayerAction::Fight` (removed in 2b, #447).
-fn fight_action(state: &GameState, inv: InvestigatorId, enemy: EnemyId) -> Action {
-    let target = TurnAction::Fight {
-        investigator: inv,
-        enemy,
-    };
-    let idx = enumerate::legal_actions(state)
-        .iter()
-        .position(|a| a == &target)
-        .expect("Fight must be a legal open-turn action");
-    Action::Player(PlayerAction::ResolveInput {
-        response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
-    })
+/// Fight the Ghoul, committing `commit` to the test. The attack resolves back
+/// to the turn menu.
+fn fight_committing(commit: &[&str]) -> TestSession {
+    let session = board()
+        .session()
+        .take(&TurnAction::Fight {
+            investigator: INV,
+            enemy: GHOUL,
+        })
+        .commit(commit);
+    session.assert_at_turn_menu(INV);
+    session
 }
 
 /// Committing the `OnCommit` skill to a successful Fight test deals
 /// `1 base + 1 bonus = 2` damage.
 #[test]
 fn committing_vicious_blow_adds_one_attack_damage() {
-    let (state, id, enemy_id) = board();
+    let session = fight_committing(&[SKILL]);
 
-    let fight = fight_action(&state, id, enemy_id);
-    let paused = engine::apply(state, fight);
-    assert!(matches!(
-        paused.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
-
-    let result = engine::apply(
-        paused.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple {
-                selected: vec![OptionId(0)],
-            },
-        }),
-    );
-
-    assert!(matches!(
-        result.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
-    assert_event!(result.events, Event::EnemyDamaged { amount: 2, .. });
-    assert_eq!(result.state.enemies[&enemy_id].damage, 2);
+    assert_event!(session.events(), Event::EnemyDamaged { amount: 2, .. });
+    assert_eq!(session.state().enemies[&GHOUL].damage, 2);
 }
 
 /// Without committing the skill, the same Fight deals the base `1`
@@ -142,21 +108,8 @@ fn committing_vicious_blow_adds_one_attack_damage() {
 /// guard that the accumulator defaults to 0).
 #[test]
 fn fight_without_commit_deals_base_damage() {
-    let (state, id, enemy_id) = board();
+    let session = fight_committing(&[]);
 
-    let fight = fight_action(&state, id, enemy_id);
-    let paused = engine::apply(state, fight);
-    let result = engine::apply(
-        paused.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        }),
-    );
-
-    assert!(matches!(
-        result.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
-    assert_event!(result.events, Event::EnemyDamaged { amount: 1, .. });
-    assert_eq!(result.state.enemies[&enemy_id].damage, 1);
+    assert_event!(session.events(), Event::EnemyDamaged { amount: 1, .. });
+    assert_eq!(session.state().enemies[&GHOUL].damage, 1);
 }

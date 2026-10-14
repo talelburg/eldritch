@@ -11,17 +11,16 @@
 use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{
-    self, ApplyResult, EngineOutcome, OptionId, OptionTarget, PromptNature, TimingEvent,
+    self, ApplyResult, EngineOutcome, InputKind, OptionId, OptionTarget, PromptNature,
 };
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::state::{
-    AdvanceDeck, AdvanceReverseFrame, AdvanceStep, CardCode, ChaosBag, ChaosToken, Continuation,
-    EliminationCause, EnemyId, GameState, InvestigatorId, Status, TimingMode,
-    TimingPointWindowFrame,
+    CardCode, ChaosBag, ChaosToken, EliminationCause, EnemyId, GameState, InvestigatorId, Phase,
+    Status,
 };
 use game_core::test_support::{self, TestSession};
-use game_core::{assert_event, scenario_registry};
+use game_core::{assert_event, assert_no_event, scenario_registry};
 use scenarios::the_gathering;
 
 const ROLAND: &str = "01001";
@@ -51,26 +50,18 @@ fn seated_roland() -> GameState {
         investigator: CardCode::new(ROLAND),
         deck: vec![CardCode::new("01088"); 8],
     }];
-    // seat_and_open opens the mulligan prompt (AwaitingInput); each
-    // investigator then submits a single mulligan (ResolveInput) before the
-    // turn's actions begin.
+    // seat_and_open opens the mulligan prompt; the session settles at it, and
+    // Roland keeps his opening hand before the turn's actions begin.
     let started = engine::seat_and_open(state, &roster);
-    assert!(
-        matches!(started.outcome, EngineOutcome::AwaitingInput { .. }),
-        "seat_and_open opens the mulligan prompt, got {:?}",
-        started.outcome
+    let session = TestSession::new(started.state);
+    assert_eq!(
+        session.prompt().kind,
+        InputKind::PickMultiple,
+        "seat_and_open opens the mulligan prompt",
     );
-    let after_mulligan = engine::apply(
-        started.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        }),
-    );
-    assert!(matches!(
-        after_mulligan.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
-    after_mulligan.state
+    let session = session.choose_from_hand(&[]);
+    session.assert_at_turn_menu(INV);
+    session.finish().state
 }
 
 #[test]
@@ -116,12 +107,12 @@ fn enemy_attack_defeats_roland_and_latches_no_resolution() {
 
     // Drive: end Roland's turn → tick into the Enemy phase → the engaged
     // enemy attacks → Roland defeated → no remaining players → NoResolution.
-    let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
+    let session = TestSession::new(state).take(&TurnAction::EndTurn);
 
-    assert_event!(result.events, Event::AllInvestigatorsEliminated);
-    assert_event!(result.events, Event::ScenarioResolved { .. });
+    assert_event!(session.events(), Event::AllInvestigatorsEliminated);
+    assert_event!(session.events(), Event::ScenarioResolved { .. });
     assert_eq!(
-        result.state.ending,
+        session.state().ending,
         Some(ScenarioEnding::NoResolution),
         "no investigator remains, so no resolution point was reached",
     );
@@ -133,56 +124,44 @@ fn enemy_attack_defeats_roland_and_latches_no_resolution() {
 fn advance_to_the_terminal_act(state: GameState) -> GameState {
     // --- Act 1 (real): spend clues to advance → the reverse builds the board
     // and relocates Roland to the Hallway (the act-2 contributor location).
-    let advanced =
-        test_support::take_turn_action(state, &TurnAction::AdvanceAct { investigator: INV });
-    assert_eq!(advanced.state.act_index, 1, "act 1 advanced to act 2");
+    let advanced = TestSession::new(state).take(&TurnAction::AdvanceAct { investigator: INV });
+    assert_eq!(advanced.state().act_index, 1, "act 1 advanced to act 2");
 
     // --- Act 2 (real): end the round → the C3d round-end clue-spend window
-    // opens (Roland holds 3 clues in the Hallway) → Confirm spends them →
-    // act 2 advances and its reverse spawns the real Ghoul Priest (01116).
-    let round_end = test_support::take_turn_action(advanced.state, &TurnAction::EndTurn);
-    assert!(
-        matches!(round_end.outcome, EngineOutcome::AwaitingInput { .. }),
-        "EndTurn should open the act-2 round-end window, got {:?}",
-        round_end.outcome,
-    );
-    assert!(matches!(
-        round_end.state.continuations.top(),
-        Some(Continuation::TimingPointWindow(TimingPointWindowFrame {
-            event: TimingEvent::RoundEnded,
-            mode: TimingMode::Reaction,
-            ..
-        }))
-    ));
-    let after_confirm = engine::apply(
-        round_end.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(0)),
-        }),
-    );
-    assert!(
-        !matches!(after_confirm.outcome, EngineOutcome::Rejected { .. }),
-        "round-end Confirm rejected: {:?}",
-        after_confirm.outcome,
+    // opens (Roland holds 3 clues in the Hallway) → spending them on the act
+    // advances it, and its reverse spawns the real Ghoul Priest (01116).
+    let round_end = advanced.take(&TurnAction::EndTurn);
+    // The round has not ended yet — the window is its `when` — and the act's
+    // clue spend is offered on the act card, as a reaction the player may pass.
+    assert_eq!(
+        round_end.state().round,
+        1,
+        "the window sits on round 1's end"
     );
     assert_eq!(
-        after_confirm.state.act_index, 2,
+        round_end.state().phase,
+        Phase::Upkeep,
+        "the round ends at the close of Upkeep"
+    );
+    assert_eq!(
+        round_end.offered_at(&OptionTarget::Act),
+        1,
+        "EndTurn should open the act-2 round-end window, got {:?}",
+        round_end.prompt(),
+    );
+    assert!(round_end.prompt().skippable, "a reaction window");
+    let after_spend = round_end.pick(OptionTarget::Act);
+    assert_eq!(
+        after_spend.state().act_index,
+        2,
         "act 2 advanced to the terminal act 3 (01110)"
     );
 
     // Round 2 begins in the Mythos phase; draw the seeded Ancient Evils
     // (1 doom) to advance into Investigation, where Roland can take the Fight.
-    let mythos = engine::apply(
-        after_confirm.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::Confirm,
-        }),
-    );
-    assert!(matches!(
-        mythos.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
-    mythos.state
+    let investigation = after_spend.confirm();
+    investigation.assert_at_turn_menu(INV);
+    investigation.finish().state
 }
 
 /// Won via the real progression + defeat→advance→win latch. Drives act 1
@@ -216,8 +195,9 @@ fn picking_the_second_bullet_reaches_r2_down_the_same_path() {
 }
 
 /// Drive solo Roland to the Ghoul Priest's defeat, answer act 01110's printed
-/// choice with `pick`, and assert the scenario ends at Resolution `expected`.
-fn drive_the_ghoul_priest_defeat_and_pick(pick: u32, expected: u8) {
+/// choice with its `pick`th bullet, and assert the scenario ends at Resolution
+/// `expected`.
+fn drive_the_ghoul_priest_defeat_and_pick(pick: usize, expected: u8) {
     let mut state = seated_roland();
     {
         // Seed: clues for both thresholds (act 1 = 2, act 2 = 3).
@@ -252,36 +232,26 @@ fn drive_the_ghoul_priest_defeat_and_pick(pick: u32, expected: u8) {
 
     // --- Drive the defeating Fight: combat 4 + Numeric(0) ≥ fight 4 → success
     // → deal 1 → defeated → act 3 advances → its reverse reaches R1.
-    let paused = test_support::take_turn_action(
-        state,
-        &TurnAction::Fight {
+    let session = TestSession::new(state)
+        .take(&TurnAction::Fight {
             investigator: INV,
             enemy: priest_id,
-        },
-    );
-    assert!(
-        matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
-        "Fight should pause at the commit window, got {:?}",
-        paused.outcome,
-    );
-    let result = engine::apply(
-        paused.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        }),
-    );
+        })
+        .commit(&[]);
 
-    assert_event!(result.events, Event::EnemyDefeated { .. });
+    assert_event!(session.events(), Event::EnemyDefeated { .. });
     // The terminal act flips like every other one before the ending lands, and
     // holds its cursor because there is no next act (ADR 0013).
-    assert_event!(result.events, Event::ActAdvanced { from } if *from == 2);
-    assert_eq!(result.state.act_index, 2, "terminal: cursor does not bump");
+    assert_event!(session.events(), Event::ActAdvanced { from } if *from == 2);
+    assert_eq!(
+        session.state().act_index,
+        2,
+        "terminal: cursor does not bump"
+    );
 
     // The flipped act asks the lead investigator which printed point to reach
     // (#775) — the scenario has not ended yet.
-    let EngineOutcome::AwaitingInput { request, .. } = &result.outcome else {
-        panic!("expected 01110's R1/R2 choice, got {:?}", result.outcome);
-    };
+    let request = session.prompt();
     assert_eq!(
         request
             .options
@@ -301,16 +271,12 @@ fn drive_the_ghoul_priest_defeat_and_pick(pick: u32, expected: u8) {
         "the choice renders on the act card it is printed on (#555): {request:?}",
     );
     assert!(
-        result.state.ending.is_none(),
+        session.state().ending.is_none(),
         "nothing latches before the pick"
     );
 
-    let result = engine::apply(
-        result.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(pick)),
-        }),
-    );
+    // The bullets are alternatives printed on the one act: a Decision.
+    let result = session.pick_nth(pick).finish();
     assert_event!(result.events, Event::ScenarioResolved { .. });
     assert_eq!(
         result.state.ending,
@@ -376,13 +342,11 @@ fn interactive_ghoul_priest_defeat() -> TestSession {
         .actions_remaining = 3;
 
     let s = TestSession::new(state)
-        .resolve_choices(|c| {
-            c.commit_cards(&[]);
-        })
         .take(&TurnAction::Fight {
             investigator: INV,
             enemy: priest_id,
-        });
+        })
+        .commit(&[]);
     // The Fight's own result acknowledge — the skill test's, not the advance's.
     assert_eq!(s.prompt().prompt, "Acknowledge the skill-test result.");
     s.confirm()
@@ -408,29 +372,22 @@ fn act_3_advances_in_two_clicks_and_its_choice_follows_the_second() {
 
     // Click 1 — the flip. The Objective fired and raised nothing of its own, so
     // the first thing the player meets is the advance's own on-card pick, with
-    // the act still showing its front (the client reads `AwaitAck`).
+    // the act still showing its front (the client reads `AwaitAck`). The
+    // Objective's acknowledge would read "Forced — What Have You Done?"; the
+    // flip's prompt standing here is what shows it suppressed.
     assert_event!(s.events(), Event::EnemyDefeated { .. });
     assert_event!(s.events(), Event::ActAdvanced { from } if *from == 2);
     let request = s.prompt();
-    assert_eq!(request.prompt, "Act 3 advanced — acknowledge.");
+    assert_eq!(
+        request.prompt, "Act 3 advanced — acknowledge.",
+        "the Objective's own acknowledge is suppressed, so the advance's flip is \
+         the first prompt",
+    );
     assert_eq!(request.options.len(), 1, "one option: {request:?}");
     assert_eq!(
         request.options[0].target,
         Some(OptionTarget::Act),
         "the flip pick anchors to the act card",
-    );
-    assert!(
-        matches!(
-            s.state().continuations.top(),
-            Some(Continuation::AdvanceReverse(AdvanceReverseFrame {
-                deck: AdvanceDeck::Act,
-                step: AdvanceStep::AwaitAck,
-                ..
-            }))
-        ),
-        "the Objective's own acknowledge is suppressed, so nothing sits above the \
-         advance: {:?}",
-        s.state().continuations,
     );
     assert!(
         s.state().ending.is_none(),
@@ -494,21 +451,12 @@ fn the_terminal_agendas_ghoul_move_is_a_no_op_when_the_parlor_is_not_in_play() {
     );
     state.encounter_deck.clear();
 
-    let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
+    let session = TestSession::new(state).take(&TurnAction::EndTurn);
 
-    assert!(
-        !matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "the missing Parlor is a no-op, not a rejected player action: {:?}",
-        result.outcome,
-    );
-    assert!(
-        !result
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::EnemyMoved { .. })),
-        "no Ghoul moved — there was nowhere to move: {:?}",
-        result.events,
-    );
+    // A rejected EndTurn would leave Roland at his turn menu; play instead runs
+    // on through the enemy phase and the round end to round 2's encounter draw.
+    session.assert_at_encounter_draw();
+    assert_no_event!(session.events(), Event::EnemyMoved { .. });
 }
 
 /// Doomed out on the **terminal agenda** (01107): the agenda advances like any
@@ -547,7 +495,7 @@ fn dooming_out_the_terminal_agenda_advances_it_and_its_reverse_reaches_r3() {
     // No encounter draws to interfere; the ending cancels 1.4 anyway.
     state.encounter_deck.clear();
 
-    let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
+    let result = TestSession::new(state).take(&TurnAction::EndTurn).finish();
 
     assert_event!(result.events, Event::AgendaAdvanced { from } if *from == 2);
     assert_event!(result.events, Event::ScenarioResolved { .. });
@@ -580,7 +528,7 @@ fn dooming_out_the_terminal_agenda_at_act_2_also_reaches_r3() {
     state.agenda_doom = state.agenda_deck[2].doom_threshold - 1;
     state.encounter_deck.clear();
 
-    let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
+    let result = TestSession::new(state).take(&TurnAction::EndTurn).finish();
 
     assert_eq!(
         result.state.ending,
@@ -617,7 +565,7 @@ fn dooming_out_the_terminal_agenda_at_act_3_defeats_the_table_and_reaches_no_res
     state.agenda_doom = state.agenda_deck[2].doom_threshold - 1;
     state.encounter_deck.clear();
 
-    let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
+    let result = TestSession::new(state).take(&TurnAction::EndTurn).finish();
 
     assert_event!(result.events, Event::AgendaAdvanced { from } if *from == 2);
     assert_event!(
@@ -641,14 +589,12 @@ fn dooming_out_the_terminal_agenda_at_act_3_defeats_the_table_and_reaches_no_res
         Some(ScenarioEnding::NoResolution),
         "the act-3 bullet prints no (→R#), so no resolution point is reached",
     );
-    assert!(
-        !result
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::ScenarioResolved { ending }
-                if matches!(ending, ScenarioEnding::Resolution(_)))),
-        "no numbered resolution is ever latched: {:?}",
+    // No numbered resolution is ever latched.
+    assert_no_event!(
         result.events,
+        Event::ScenarioResolved {
+            ending: ScenarioEnding::Resolution(_)
+        }
     );
     assert!(
         result.state.continuations.is_empty(),
@@ -720,6 +666,13 @@ fn the_terminal_agendas_advance_flip_acknowledge_precedes_the_ending() {
     );
 }
 
+// The replay walk below is the one place in this file that sends hand-built
+// `ResolveInput`s, positional `OptionId`s included, through `engine::apply`
+// rather than a `TestSession`. Its subject is the recorded wire-action log
+// itself — what a server persists and a replay re-sends — so it builds and
+// keeps those actions by hand; a session neither exposes nor replays the
+// actions it sends.
+
 /// The seeded start the replay-determinism walk below runs from. Both seeds are
 /// applied *before* the first logged action, so replaying the log rebuilds the
 /// identical starting point: clues to clear both act thresholds (as the R1 walk
@@ -755,11 +708,11 @@ fn apply_logged(state: GameState, action: Action, log: &mut Vec<Action>) -> Appl
     r
 }
 
-/// Drive one open-turn action the way [`take_turn_action`] does — enumerate,
+/// Drive one open-turn action the way `TestSession::take` does — enumerate,
 /// find its option id — but record the resulting `ResolveInput(PickSingle)` wire
 /// action, which is what a replay actually re-sends. That recording is why this
-/// re-does the enumeration rather than calling `take_turn_action`, which
-/// discards the wire action it builds.
+/// re-does the enumeration rather than taking the action through a session,
+/// which does not hand back the wire actions it sends.
 fn logged_turn(state: GameState, action: &TurnAction, log: &mut Vec<Action>) -> ApplyResult {
     let legal = enumerate::legal_actions(&state);
     let idx = legal

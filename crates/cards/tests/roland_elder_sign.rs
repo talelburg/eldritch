@@ -9,103 +9,83 @@
 //! Roland's `Trigger::ElderSign` ability) in its own process.
 
 use cards::REGISTRY;
-use game_core::engine::EngineOutcome;
+use game_core::assert_event;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId,
-    LocationId, Owner, Phase, SkillKind, TokenModifiers,
+    ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{self, ScriptedResolver};
+use game_core::test_support::{self, clues, seat, Seat};
 
 const ROLAND: &str = "01001";
 const COVER_UP: &str = "01007";
+const INV: InvestigatorId = InvestigatorId(1);
+const HERE: LocationId = LocationId(10);
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// Drive a Willpower-3 test at difficulty 3 with the `ElderSign` token, Roland
-/// seated (`card_code` set, NOT in `cards_in_play`) at a location holding
-/// `clues`. Returns the resolved events for outcome assertions.
-fn run_elder_sign_test(clues: u8) -> Vec<Event> {
-    run_elder_sign_test_with_threat_area(clues, Vec::new())
+/// Roland, seated from his printed card (Willpower 3) at the Study and in
+/// play only as his investigator card, so the bonus can come from nothing but
+/// the investigator-card elder-sign bridge.
+fn roland() -> Seat {
+    seat(1).as_card(ROLAND).at(HERE)
 }
 
-/// As [`run_elder_sign_test`], with `threat_area` pre-placed in Roland's threat
-/// area — the fixture for "clues on a card are not clues at the location".
-fn run_elder_sign_test_with_threat_area(clues: u8, threat_area: Vec<CardInPlay>) -> Vec<Event> {
-    let inv_id = InvestigatorId(1);
-    let loc_id = LocationId(10);
+/// Run a Willpower test at difficulty 3 with the `ElderSign` token, [`roland`]
+/// at the Study holding `clues_here`, committing nothing. Returns every event,
+/// for outcome assertions.
+fn run_elder_sign_test(clues_here: u8) -> Vec<Event> {
+    run_elder_sign_test_seated(roland(), clues_here)
+}
 
-    let mut inv = test_support::test_investigator(1);
-    // After #448 cp2a the elder-sign scanner reads investigator_card.code, not card_code.
-    inv.investigator_card.code = CardCode::new(ROLAND);
-    inv.current_location = Some(loc_id);
-    inv.skills.willpower = 3; // base 3
-    assert!(
-        inv.cards_in_play.is_empty(),
-        "the bonus must come from the investigator-card elder-sign bridge (investigator_card.code), \
-         not a played card — guard against a fixture change pre-populating cards_in_play",
-    );
-    inv.threat_area = threat_area;
+/// [`run_elder_sign_test`] with Roland seated as `roland`, for a fixture that
+/// adds to his seat.
+fn run_elder_sign_test_seated(roland: Seat, clues_here: u8) -> Vec<Event> {
+    let mut study = test_support::test_location(HERE.0, "Study");
+    study.clues = clues_here;
 
-    let mut loc = test_support::test_location(10, "Study");
-    loc.clues = clues;
-
-    let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator(inv)
-        .with_location(loc)
+    // Willpower 3 vs difficulty 3. ElderSign bonus = clues at the location,
+    // so total = 3 + clues: always a success, by margin = clues.
+    let session = GameStateBuilder::new()
+        .with_seat(roland)
+        .with_location(study)
         .with_chaos_bag(ChaosBag::new([ChaosToken::ElderSign]))
         .with_token_modifiers(TokenModifiers::default())
-        .build();
-
-    // Bare PerformSkillTest: Willpower vs difficulty 3. ElderSign bonus = clues.
-    // total = 3 + clues; succeed iff total >= 3 (always, here) by margin = clues.
-    let mut resolver = ScriptedResolver::new();
-    resolver.commit_cards(&[]);
-    let result = test_support::drive_skill_test(state, inv_id, SkillKind::Willpower, 3, resolver);
-    assert_eq!(result.outcome, EngineOutcome::Done);
-    result.events
+        .open_turn(INV)
+        .session()
+        .test_skill(INV, SkillKind::Willpower, 3)
+        .commit(&[]);
+    // The test resolves and play is back at Roland's turn menu.
+    session.assert_at_turn_menu(INV);
+    assert!(
+        session.state().investigators[&INV].cards_in_play.is_empty(),
+        "the bonus must come from the investigator-card elder-sign bridge \
+         (investigator_card.code), not a played card",
+    );
+    session.events().to_vec()
 }
 
+/// 0 clues → +0 → succeed by 0.
 #[test]
 fn elder_sign_adds_zero_clues() {
     let events = run_elder_sign_test(0);
-    assert!(
-        events.iter().any(|e| matches!(
-            e,
-            Event::SkillTestSucceeded { margin, .. } if *margin == 0
-        )),
-        "0 clues → +0 → succeed by 0: {events:?}",
-    );
+    assert_event!(events, Event::SkillTestSucceeded { margin: 0, .. });
 }
 
+/// 1 clue → +1 → succeed by 1.
 #[test]
 fn elder_sign_adds_one_clue() {
     let events = run_elder_sign_test(1);
-    assert!(
-        events.iter().any(|e| matches!(
-            e,
-            Event::SkillTestSucceeded { margin, .. } if *margin == 1
-        )),
-        "1 clue → +1 → succeed by 1: {events:?}",
-    );
+    assert_event!(events, Event::SkillTestSucceeded { margin: 1, .. });
 }
 
+/// 2 clues → +2 → succeed by 2.
 #[test]
 fn elder_sign_adds_two_clues() {
     let events = run_elder_sign_test(2);
-    assert!(
-        events.iter().any(|e| matches!(
-            e,
-            Event::SkillTestSucceeded { margin, .. } if *margin == 2
-        )),
-        "2 clues → +2 → succeed by 2: {events:?}",
-    );
+    assert_event!(events, Event::SkillTestSucceeded { margin: 2, .. });
 }
 
 /// Clues sitting on a *card* in the threat area are not clues "at" the
@@ -128,19 +108,8 @@ fn elder_sign_adds_two_clues() {
 /// > Rules Reference, page 7).
 #[test]
 fn clues_on_a_threat_area_card_are_not_clues_at_the_location() {
-    let mut cover_up = CardInPlay::enter_play(
-        CardCode::new(COVER_UP),
-        CardInstanceId(1),
-        Owner::Investigator(InvestigatorId(1)),
-    );
-    cover_up.clues = 3; // Cover Up's Revelation places 3 clues on itself.
-
-    let events = run_elder_sign_test_with_threat_area(0, vec![cover_up]);
-    assert!(
-        events.iter().any(|e| matches!(
-            e,
-            Event::SkillTestSucceeded { margin, .. } if *margin == 0
-        )),
-        "3 clues on Cover Up in the threat area, 0 on the location → +0: {events:?}",
-    );
+    // Cover Up's Revelation places 3 clues on itself; 0 are on the location,
+    // so +0.
+    let events = run_elder_sign_test_seated(roland().threat_area([(COVER_UP, clues(3))]), 0);
+    assert_event!(events, Event::SkillTestSucceeded { margin: 0, .. });
 }

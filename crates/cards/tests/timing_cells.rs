@@ -49,13 +49,11 @@ use card_dsl::dsl::{
     self, Ability, Effect, EventPattern, EventTiming, InvestigatorTarget, TestOutcome,
     TestedLocationScope,
 };
-use game_core::engine::OptionId;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, GameStateBuilder,
-    InvestigatorId, Owner, Phase, SkillKind, TokenModifiers,
+    ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{self, MockRegistry, ScriptedResolver};
+use game_core::test_support::{seat, MockRegistry, SeatLookup as _, TestSession};
 
 /// `at`-tagged forced: +1 resource.
 const AT: &str = "_tc_at";
@@ -122,27 +120,30 @@ fn install() {
 
 const INV: InvestigatorId = InvestigatorId(1);
 
-/// One investigator with `codes` in their threat area (the zone
+/// `INV`'s open turn, with `codes` in their threat area (the zone
 /// `Effect::DiscardSelf` can remove from), 0 resources, and a single
 /// `Numeric(0)` chaos bag so a difficulty-0 test succeeds deterministically.
-fn board_with(codes: &[&str]) -> GameState {
-    let mut inv = test_support::test_investigator(1);
-    inv.resources = 0;
-    for (i, code) in codes.iter().enumerate() {
-        inv.threat_area.push(CardInPlay::enter_play(
-            CardCode::new(*code),
-            CardInstanceId(u32::try_from(i).expect("fixture card count fits u32")),
-            Owner::EncounterDeck,
-        ));
-    }
+fn board_with(codes: &[&str]) -> TestSession {
     GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_investigator(inv)
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
+        .with_seat(seat(1).resources(0).threat_area(codes.iter().copied()))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
-        .build()
+        .open_turn(INV)
+        .session()
+}
+
+/// A difficulty-0 Intellect test on `board`, committing nothing. The session
+/// rests at the first prompt past the commit window, or back at the turn menu.
+fn succeed_on(board: TestSession) -> TestSession {
+    board.test_skill(INV, SkillKind::Intellect, 0).commit(&[])
+}
+
+/// [`succeed_on`] the [`board_with`] `codes`, with nothing but forced abilities
+/// to resolve, so play comes back to the turn menu.
+fn succeed_with(codes: &[&str]) -> TestSession {
+    let session = succeed_on(board_with(codes));
+    session.assert_at_turn_menu(INV);
+    session
 }
 
 /// Every `ResourcesGained` amount, in the order the engine emitted it — the
@@ -184,30 +185,24 @@ fn resolved_before_first_gain(events: &[Event]) -> bool {
 /// +1 never fired at all.
 #[test]
 fn an_at_tagged_forced_resolves_before_the_after_cell() {
-    let r = test_support::perform_skill_test_no_commits(
-        board_with(&[AT, AFTER]),
-        INV,
-        SkillKind::Intellect,
-        0,
-    );
+    let session = succeed_with(&[AT, AFTER]);
+    let events = session.events();
     assert_eq!(
-        gains(&r.events),
+        gains(events),
         vec![1, 2],
-        "the `at` cell must resolve before the `after` cell; events = {:?}",
-        r.events
+        "the `at` cell must resolve before the `after` cell; events = {events:?}",
     );
     assert!(
-        resolved_before_first_gain(&r.events),
+        resolved_before_first_gain(events),
         "both cells sit past the resolve step, so the test's own resolution must be \
-         logged first; events = {:?}",
-        r.events
+         logged first; events = {events:?}",
     );
-    assert_eq!(r.state.investigators[&INV].resources, 3);
+    assert_eq!(session.state().investigators[&INV].resources, 3);
 }
 
 /// An `after`-tagged ability keeps resolving after the condition's impact, and
-/// the two cells it does not occupy are skipped without a prompt: the drive
-/// reaches its terminal outcome with exactly one ability resolved.
+/// the two cells it does not occupy are skipped without a prompt: the test runs
+/// back to the turn menu with exactly one ability resolved.
 ///
 /// The impact of "you succeeded at a skill test" is the test's own resolution,
 /// logged as `SkillTestSucceeded` — `glossary/After.md` pins after as *"the
@@ -216,22 +211,22 @@ fn an_at_tagged_forced_resolves_before_the_after_cell() {
 /// not merely that it happened.
 #[test]
 fn an_empty_cell_is_skipped_without_prompting() {
-    let r = test_support::perform_skill_test_no_commits(
-        board_with(&[AFTER]),
-        INV,
-        SkillKind::Intellect,
-        0,
-    );
-    assert_eq!(gains(&r.events), vec![2], "events = {:?}", r.events);
+    let board = board_with(&[AFTER]);
+    let open_turn = board.state().continuations.clone();
+    let session = succeed_on(board);
+    session.assert_at_turn_menu(INV);
+    let events = session.events();
+    assert_eq!(gains(events), vec![2], "events = {events:?}");
     assert!(
-        resolved_before_first_gain(&r.events),
-        "the `after` cell resolved before the condition's impact landed; events = {:?}",
-        r.events
+        resolved_before_first_gain(events),
+        "the `after` cell resolved before the condition's impact landed; events = {events:?}",
     );
-    assert!(
-        r.state.continuations.is_empty(),
-        "the empty `when`/`at` cells left frames behind: {:?}",
-        r.state.continuations
+    // A stack invariant, so read off the stack: nothing is left above the open
+    // turn the test started from.
+    assert_eq!(
+        session.state().continuations,
+        open_turn,
+        "the empty `when`/`at` cells left frames behind",
     );
 }
 
@@ -242,20 +237,17 @@ fn an_empty_cell_is_skipped_without_prompting() {
 /// lands before the reaction is even offered.
 #[test]
 fn forced_resolves_before_reaction_within_one_cell() {
-    let mut script = ScriptedResolver::new();
-    script.commit_cards(&[]).pick_single(OptionId(0));
-    let r = test_support::drive_skill_test(
-        board_with(&[AT, REACT]),
-        INV,
-        SkillKind::Intellect,
-        0,
-        script,
-    );
+    let offered = succeed_on(board_with(&[AT, REACT]));
+    // The reaction is offered with the forced +1 already resolved.
+    assert_eq!(gains(offered.events()), vec![1]);
+    let react = offered.state().card(INV, REACT);
+    let session = offered.pick(react);
+    session.assert_at_turn_menu(INV);
     assert_eq!(
-        gains(&r.events),
+        gains(session.events()),
         vec![1, 7],
         "the forced +1 must resolve before the reaction +7 is offered; events = {:?}",
-        r.events
+        session.events()
     );
 }
 
@@ -265,20 +257,15 @@ fn forced_resolves_before_reaction_within_one_cell() {
 /// would still fire the +2.
 #[test]
 fn each_cell_is_scanned_fresh() {
-    let r = test_support::perform_skill_test_no_commits(
-        board_with(&[RESCAN]),
-        INV,
-        SkillKind::Intellect,
-        0,
-    );
+    let session = succeed_with(&[RESCAN]);
     assert_eq!(
-        gains(&r.events),
+        gains(session.events()),
         vec![1],
         "the `after` cell re-scanned and must not have found the discarded card; events = {:?}",
-        r.events
+        session.events()
     );
     assert!(
-        r.state.investigators[&INV].threat_area.is_empty(),
+        session.state().investigators[&INV].threat_area.is_empty(),
         "the `at` cell's DiscardSelf did not take effect"
     );
 }
@@ -293,18 +280,13 @@ fn each_cell_is_scanned_fresh() {
 /// `game-core/tests/timing_resolve_step.rs`.
 #[test]
 fn every_cell_resolves_in_order_when_at_after() {
-    let r = test_support::perform_skill_test_no_commits(
-        board_with(&[AFTER, WHEN, AT]),
-        INV,
-        SkillKind::Intellect,
-        0,
-    );
+    let session = succeed_with(&[AFTER, WHEN, AT]);
     assert_eq!(
-        gains(&r.events),
+        gains(session.events()),
         vec![4, 1, 2],
         "declaration order is after/when/at and resolution order must be \
          when/at/after regardless; events = {:?}",
-        r.events
+        session.events()
     );
-    assert_eq!(r.state.investigators[&INV].resources, 7);
+    assert_eq!(session.state().investigators[&INV].resources, 7);
 }

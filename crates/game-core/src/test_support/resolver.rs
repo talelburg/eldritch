@@ -8,12 +8,10 @@
 //! [`ScriptedResolver`] is the deterministic test impl that feeds
 //! pre-recorded responses in FIFO order.
 //!
-//! [`drive`] runs an action through the engine and drains any
-//! `AwaitingInput` outcomes through the resolver until the engine
-//! returns [`Done`](crate::engine::EngineOutcome::Done) or
-//! [`Rejected`](crate::engine::EngineOutcome::Rejected). [`TestSession`](super::TestSession) is the
-//! step-wise driver new tests use: it settles a built state, then applies one
-//! step at a time and drains to the next rest through a resolver script.
+//! [`TestSession`](super::TestSession) is the one driver: it settles a built
+//! state, then applies one step at a time and drains to the next rest through
+//! its reply policy, a resolver script by default. The drain loop it runs,
+//! `drain_with_applier`, lives here.
 //!
 //! # Engine consumers
 //!
@@ -50,18 +48,18 @@ use std::collections::VecDeque;
 use crate::action::{Action, InputResponse, PlayerAction};
 use crate::engine::enumerate::TurnAction;
 use crate::engine::{
-    self, enumerate, ApplyResult, EngineOutcome, InputKind, InputRequest, OptionId, OptionTarget,
+    enumerate, ApplyResult, ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget,
 };
-use crate::scenario_registry;
-use crate::state::{CardCode, GameState, InvestigatorId, SkillKind};
+use crate::state::{CardCode, GameState, InvestigatorId};
 
-/// Provide a response for an `AwaitingInput` prompt during a
-/// [`drive`]-style session.
+/// The test harness's reply-policy seam: provide a response for an
+/// `AwaitingInput` prompt while a test drives the engine.
 ///
-/// Tests use [`ScriptedResolver`]. Future hosts (server, web client)
-/// will implement this trait against their own UI/transport layer; the
-/// trait is the boundary between the engine's pause-and-resume protocol
-/// and the consumer's input-collection mechanism.
+/// A [`TestSession`](super::TestSession) answers prompts through a
+/// [`ScriptedResolver`] by default; a flow that needs a stateful reply rule
+/// installs its own implementation with
+/// [`answer_with`](super::TestSession::answer_with). Every implementation is
+/// test-side — hosts answer prompts over the wire, not through this trait.
 pub trait ChoiceResolver {
     /// Produce the next response for the given prompt.
     ///
@@ -144,9 +142,9 @@ impl ScriptedResolver {
     /// Pass `&[]` to commit nothing — the canonical empty-commit
     /// helper for tests that aren't exercising the commit-window
     /// itself.
-    pub fn commit_cards(&mut self, codes: &[CardCode]) -> &mut Self {
+    pub fn commit_cards(&mut self, codes: &[&str]) -> &mut Self {
         self.steps
-            .push_back(ScriptedStep::CommitCards(codes.to_vec()));
+            .push_back(ScriptedStep::CommitCards(card_codes(codes)));
         self
     }
 
@@ -169,10 +167,15 @@ impl ChoiceResolver for ScriptedResolver {
         match step {
             ScriptedStep::Response(r) => r,
             ScriptedStep::CommitCards(codes) => InputResponse::PickMultiple {
-                selected: resolve_commit_codes(&codes, state, &request.prompt)
-                    .into_iter()
-                    .map(OptionId)
-                    .collect(),
+                selected: resolve_commit_codes(
+                    &codes,
+                    state,
+                    &request.prompt,
+                    "ScriptedResolver::commit_cards",
+                )
+                .into_iter()
+                .map(OptionId)
+                .collect(),
             },
             ScriptedStep::Pick(target) => InputResponse::PickSingle(sole_option_at(
                 request,
@@ -183,35 +186,57 @@ impl ChoiceResolver for ScriptedResolver {
     }
 }
 
+/// The [`CardCode`]s a by-code hand step names. The steps take `&[&str]`
+/// rather than generic `Into<CardCode>` items so `&[]` (choose nothing) needs
+/// no type annotation.
+pub(super) fn card_codes(codes: &[&str]) -> Vec<CardCode> {
+    codes.iter().copied().map(CardCode::new).collect()
+}
+
 /// Translate scripted commit-card codes to hand indices using the
-/// in-flight skill test's investigator on `state`.
-///
-/// Returns an empty vec for an empty code list (the canonical
-/// commit-nothing case). Each code is matched against the
-/// investigator's hand left-to-right; duplicate codes claim distinct
-/// indices so `&[CardCode("X"), CardCode("X")]` against a hand with
-/// two `X`s yields `[i, j]`. Panics with the prompt and remaining
-/// state if any code can't be matched — that's a test-author error.
-fn resolve_commit_codes(codes: &[CardCode], state: &GameState, prompt: &str) -> Vec<u32> {
+/// in-flight skill test's investigator on `state`, through
+/// [`hand_indices_of`].
+pub(super) fn resolve_commit_codes(
+    codes: &[CardCode],
+    state: &GameState,
+    prompt: &str,
+    caller: &str,
+) -> Vec<u32> {
     if codes.is_empty() {
         return Vec::new();
     }
     let in_flight = state.current_skill_test().unwrap_or_else(|| {
         panic!(
-            "ScriptedResolver::commit_cards: state has no in-flight skill test at \
+            "{caller}: state has no in-flight skill test at \
              resolve time; prompt was: {prompt:?}",
         )
     });
-    let inv = state
-        .investigators
-        .get(&in_flight.investigator)
-        .unwrap_or_else(|| {
-            panic!(
-                "ScriptedResolver::commit_cards: in-flight investigator {:?} not in \
-                 state.investigators; prompt was: {prompt:?}",
-                in_flight.investigator,
-            )
-        });
+    hand_indices_of(codes, state, in_flight.investigator, prompt, caller)
+}
+
+/// Translate card codes to indices into `investigator`'s hand — the one
+/// code-to-hand-index translation behind a commit by code and a mulligan or
+/// hand-size discard by code.
+///
+/// Returns an empty vec for an empty code list (the canonical
+/// choose-nothing case). Each code is matched against the
+/// investigator's hand left-to-right; duplicate codes claim distinct
+/// indices so `&[CardCode("X"), CardCode("X")]` against a hand with
+/// two `X`s yields `[i, j]`. Panics with the prompt and remaining
+/// state if any code can't be matched — that's a test-author error.
+pub(super) fn hand_indices_of(
+    codes: &[CardCode],
+    state: &GameState,
+    investigator: InvestigatorId,
+    prompt: &str,
+    caller: &str,
+) -> Vec<u32> {
+    let inv = state.investigators.get(&investigator).unwrap_or_else(|| {
+        panic!(
+            "{caller}: investigator {investigator:?} not in \
+             state.investigators; prompt was: {prompt:?}",
+        )
+    });
     let mut used = vec![false; inv.hand.len()];
     let mut indices = Vec::with_capacity(codes.len());
     for code in codes {
@@ -222,115 +247,16 @@ fn resolve_commit_codes(codes: &[CardCode], state: &GameState, prompt: &str) -> 
             .find_map(|(i, c)| (!used[i] && c == code).then_some(i))
             .unwrap_or_else(|| {
                 panic!(
-                    "ScriptedResolver::commit_cards: code {code:?} not found in \
-                     {:?}'s hand (hand = {:?}, already-used indices = {:?}); \
+                    "{caller}: code {code:?} not found in \
+                     {investigator:?}'s hand (hand = {:?}, already-used indices = {:?}); \
                      prompt was: {prompt:?}",
-                    in_flight.investigator, inv.hand, used,
+                    inv.hand, used,
                 )
             });
         used[idx] = true;
         indices.push(u32::try_from(idx).expect("hand index fits in u32"));
     }
     indices
-}
-
-/// A [`ChoiceResolver`] that takes one offered fast play at the **first**
-/// Fast window it meets, then declines every later window and commits
-/// nothing.
-///
-/// The counterpart to [`ScriptedResolver`] for the one prompt shape a script
-/// cannot easily pin down: a framework Fast window (#476) re-opens after each
-/// play it resolves, so the number of prompts depends on what stays eligible.
-/// This resolver answers "buy exactly one thing, then get out of the way".
-///
-/// `option_index` selects among the window's offered plays, which are
-/// enumerated in (investigator, hand-index / ability-index) order — so
-/// Hyperawareness 01034's intellect ability is 0 and its agility ability 1.
-///
-/// It exists because a [`ThisSkillTest`](card_dsl::dsl::ModifierScope::ThisSkillTest)
-/// modifier can only be bought from *inside* a test (#676), and a test's ST.1
-/// player window is where a `[fast]` ability is offered.
-#[derive(Debug, Clone, Copy)]
-pub struct TakeOneFastPlay {
-    option_index: usize,
-    used: bool,
-}
-
-impl TakeOneFastPlay {
-    /// Take the play at `option_index` at the first Fast window.
-    #[must_use]
-    pub fn at_index(option_index: usize) -> Self {
-        Self {
-            option_index,
-            used: false,
-        }
-    }
-}
-
-impl ChoiceResolver for TakeOneFastPlay {
-    fn next(&mut self, request: &InputRequest, state: &GameState) -> InputResponse {
-        if request.skippable && !self.used && request.kind == InputKind::PickSingle {
-            self.used = true;
-            assert!(
-                request.options.len() > self.option_index,
-                "TakeOneFastPlay: option {} not offered; the window has {:?}",
-                self.option_index,
-                request.options,
-            );
-            return InputResponse::PickSingle(request.options[self.option_index].id);
-        }
-        NoCommits.next(request, state)
-    }
-}
-
-/// The "commit nothing" reply policy: decline every skippable prompt (a #476
-/// Fast window, a reaction window), acknowledge every `Confirm` (the #478
-/// pause), and submit an empty `PickMultiple` to anything else (the skill-test
-/// commit window).
-///
-/// It is a policy over the one drain loop rather than a loop of its own, so
-/// [`apply_no_commits`] and [`perform_skill_test_no_commits`] stop exactly
-/// where [`drive`] does: at the turn menu, at `Done`, or at `Rejected`.
-#[derive(Debug, Clone, Copy, Default)]
-struct NoCommits;
-
-impl ChoiceResolver for NoCommits {
-    fn next(&mut self, request: &InputRequest, _state: &GameState) -> InputResponse {
-        if request.skippable {
-            return InputResponse::Skip;
-        }
-        match request.kind {
-            InputKind::Confirm => InputResponse::Confirm,
-            _ => InputResponse::PickMultiple {
-                selected: Vec::new(),
-            },
-        }
-    }
-}
-
-/// Drive a single skill-test-initiating action through the engine
-/// with an empty commit submitted to the commit window.
-///
-/// Tests that don't care about the commit window (they're exercising
-/// the rest of skill-test resolution) call this instead of
-/// [`apply`](crate::engine::apply) and treat the returned
-/// [`ApplyResult`] exactly as they used to — `events` accumulates
-/// across `SkillTestStarted`, the empty `ResolveInput`, and the
-/// post-commit resolution chain; `outcome` is the terminal
-/// [`Done`](EngineOutcome::Done) or [`Rejected`](EngineOutcome::Rejected),
-/// or the open-turn menu the action returns to.
-///
-/// [`drive`] with the no-commits policy: every skippable prompt (a Fast player
-/// window, a reaction window) is declined, every `Confirm` is acknowledged, and
-/// every other prompt gets an empty `PickMultiple`. A caller whose action needs
-/// a *non-skippable* `PickSingle` answered must script it via [`drive`] instead
-/// — here it would be fed an empty `PickMultiple` and rejected.
-pub fn apply_no_commits(state: GameState, action: Action) -> ApplyResult {
-    drain_with_applier(
-        engine::apply(state, action),
-        answering(&mut NoCommits),
-        engine::apply,
-    )
 }
 
 /// Whether `request` is the open-turn action menu (2b, #447): the prompt the
@@ -344,6 +270,18 @@ pub(super) fn is_turn_menu(request: &InputRequest) -> bool {
     matches!(request.target, Some(OptionTarget::TurnControl(_)))
 }
 
+/// The options of `request` anchored to `target`, in the order the prompt
+/// offers them — the one anchor filter behind every by-anchor step and reader.
+pub(super) fn options_at<'a>(
+    request: &'a InputRequest,
+    target: &'a OptionTarget,
+) -> impl Iterator<Item = &'a ChoiceOption> {
+    request
+        .options
+        .iter()
+        .filter(move |option| option.target.as_ref() == Some(target))
+}
+
 /// The id of the one option of `request` anchored to `target`, or a panic
 /// naming `caller` and why there isn't one. The anchor lookup behind
 /// [`ScriptedResolver::pick`] and the session's `pick` step.
@@ -352,10 +290,7 @@ pub(super) fn sole_option_at(
     target: &OptionTarget,
     caller: &str,
 ) -> OptionId {
-    let mut matching = request
-        .options
-        .iter()
-        .filter(|o| o.target.as_ref() == Some(target));
+    let mut matching = options_at(request, target);
     let Some(option) = matching.next() else {
         panic!(
             "{caller}: no option anchored to {target:?}; prompt {:?} offers {:?}",
@@ -373,8 +308,8 @@ pub(super) fn sole_option_at(
 }
 
 /// The turn-menu [`OptionId`] of the open-turn action `action` on `state`, or a
-/// panic naming `caller` and listing what is offered. Shared by
-/// [`take_turn_action`] and the session's `take` step.
+/// panic naming `caller` and listing what is offered. Behind the session's
+/// `take` step.
 pub(super) fn turn_action_option(state: &GameState, action: &TurnAction, caller: &str) -> OptionId {
     let actions = enumerate::legal_actions(state);
     let idx = actions
@@ -384,52 +319,20 @@ pub(super) fn turn_action_option(state: &GameState, action: &TurnAction, caller:
     OptionId(u32::try_from(idx).expect("action index fits u32"))
 }
 
-/// Start a plain skill test (the [`perform_skill_test`] synthetic entry point)
-/// and drive it to a terminal outcome committing no cards and declining every
-/// Fast window — the skill-test analogue of [`apply_no_commits`]. Replaces the
-/// `apply_no_commits(state, Action::Player(PlayerAction::PerformSkillTest{..}))`
-/// idiom (#447): a rejection at the start surfaces directly; a started test
-/// resolves through its commit window with an empty commit list.
-pub fn perform_skill_test_no_commits(
-    state: GameState,
-    investigator: InvestigatorId,
-    skill: SkillKind,
-    difficulty: i8,
-) -> ApplyResult {
-    drain_with_applier(
-        perform_skill_test(state, investigator, skill, difficulty),
-        answering(&mut NoCommits),
-        engine::apply,
-    )
-}
-
-/// Run `action` against `state`, draining
-/// [`AwaitingInput`](EngineOutcome::AwaitingInput) outcomes through
-/// `resolver` until the engine returns [`Done`](EngineOutcome::Done) or
-/// [`Rejected`](EngineOutcome::Rejected).
+/// Apply `action` against `state` through `applier`, then drain every
+/// [`AwaitingInput`](EngineOutcome::AwaitingInput) outcome through `resolver`
+/// with the one drain loop, [`drain_with_applier`].
 ///
-/// The returned [`ApplyResult`] aggregates state, events, and outcome
-/// across every sub-`apply` in the round trip:
-///
-/// - `state` is the final state after all sub-applies.
-/// - `events` concatenate every sub-apply's events in order.
-/// - `outcome` is the terminal [`Done`](EngineOutcome::Done) or
-///   [`Rejected`](EngineOutcome::Rejected) — `drive` never returns
-///   `AwaitingInput` (the resolver is consulted and the loop continues).
-///
-/// Panics if the resolver runs out of scripted responses while the
-/// engine is still emitting `AwaitingInput`, or if the loop exceeds an
-/// internal iteration cap (a sign of a broken resolver or engine cycle).
-pub fn drive<R: ChoiceResolver>(state: GameState, action: Action, mut resolver: R) -> ApplyResult {
-    drive_with_applier(state, action, &mut resolver, engine::apply)
-}
-
-/// Loop body of [`drive`] with the engine entry point parameterized.
+/// The returned [`ApplyResult`] aggregates state, events, and outcome across
+/// every sub-`apply` in the round trip. Panics if the resolver runs out of
+/// scripted responses while the engine is still prompting, or if the loop
+/// exceeds an internal iteration cap.
 ///
 /// Tests in this module use this to substitute a fake `apply` that scripts
 /// the `AwaitingInput` sequence, exercising the drain logic independently of
 /// any particular engine prompt.
-pub(crate) fn drive_with_applier<R, F>(
+#[cfg(test)]
+fn drive_with_applier<R, F>(
     state: GameState,
     action: Action,
     resolver: &mut R,
@@ -443,27 +346,9 @@ where
     drain_with_applier(first, answering(resolver), applier)
 }
 
-/// Start a plain skill test (the [`perform_skill_test`] synthetic entry point)
-/// and drain its commit window — and any further `AwaitingInput` — through
-/// `resolver`. The resolver/`commit_cards` analogue of [`drive`], replacing the
-/// `drive(state, Action::Player(PlayerAction::PerformSkillTest{..}), resolver)`
-/// idiom (#447).
-pub fn drive_skill_test<R: ChoiceResolver>(
-    state: GameState,
-    investigator: InvestigatorId,
-    skill: SkillKind,
-    difficulty: i8,
-    mut resolver: R,
-) -> ApplyResult {
-    drain_with_applier(
-        perform_skill_test(state, investigator, skill, difficulty),
-        answering(&mut resolver),
-        engine::apply,
-    )
-}
-
 /// A reply policy that answers every prompt through `resolver` — the policy
-/// [`drive`] and its siblings run the drain loop under.
+/// [`drive_with_applier`] runs the drain loop under.
+#[cfg(test)]
 fn answering<R: ChoiceResolver + ?Sized>(
     resolver: &mut R,
 ) -> impl FnMut(&InputRequest, &GameState) -> Option<InputResponse> + '_ {
@@ -476,9 +361,8 @@ fn answering<R: ChoiceResolver + ?Sized>(
 /// until the engine comes to rest: `Done`, `Rejected`, the open-turn menu, or a
 /// prompt the policy declines to answer (`None`).
 ///
-/// Every driver ([`drive`], [`drive_skill_test`], [`apply_no_commits`],
-/// [`perform_skill_test_no_commits`], and each [`TestSession`](super::TestSession) step) is this
-/// loop under a different reply policy; none re-implements it.
+/// Each [`TestSession`](super::TestSession) step, and [`drive_with_applier`],
+/// is this loop under a different reply policy; none re-implements it.
 pub(crate) fn drain_with_applier<P, F>(
     first: ApplyResult,
     mut policy: P,
@@ -514,7 +398,7 @@ where
         iterations += 1;
         assert!(
             iterations <= MAX_ITERATIONS,
-            "drive: exceeded {MAX_ITERATIONS} iterations without reaching Done/Rejected; \
+            "drain_with_applier: exceeded {MAX_ITERATIONS} iterations without reaching Done/Rejected; \
              resolver or engine appears to be cycling",
         );
         let result = applier(
@@ -527,98 +411,16 @@ where
     }
 }
 
-/// Drive one open-turn action by enumerating the legal actions, finding the
-/// `OptionId` whose `TurnAction` equals `action`, and submitting it as
-/// `ResolveInput(PickSingle(..))`. Returns the raw `ApplyResult` — assert on the
-/// resulting **state/events**, not on `outcome == Done` (post-flip the outcome
-/// is the next open-turn menu's `AwaitingInput`).
-///
-/// # Panics
-///
-/// Panics if `action` is not currently legal (a test-authoring bug) — the
-/// rejection message lists the offered actions.
-pub fn take_turn_action(state: GameState, action: &TurnAction) -> ApplyResult {
-    let id = turn_action_option(&state, action, "take_turn_action");
-    engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(id),
-        }),
-    )
-}
-
-/// Dispatch a [`TurnAction`] straight to
-/// its handler, **bypassing the enumeration gate** that
-/// [`take_turn_action`] routes through.
-///
-/// [`take_turn_action`] calls `legal_actions` first and panics if the action
-/// is not offered — so it cannot reach a handler against deliberately corrupt
-/// state (the corrupt action is excluded from the enumeration). This seam runs
-/// the action through the same `Cx` build, transactional restore, and
-/// resolution-latch firing as [`apply`](crate::engine::apply) (via the shared
-/// `apply_via` scaffolding), but dispatches via the internal
-/// `dispatch_turn_action` + `drive` instead of the enumeration round-trip. Two
-/// legitimate uses:
-///
-/// 1. The `#[should_panic(expected = "state-corruption invariant violation")]`
-///    handler tests that inject a dangling `current_location` / missing-from-map
-///    and expect the handler — not the enumerator — to panic.
-/// 2. Proving a handler *itself* rejects an action the enumerator already
-///    filters out — a real client can submit one over the wire without
-///    consulting the menu (#639's activation initiation gate).
-pub fn dispatch_turn_action_unchecked(state: GameState, action: &TurnAction) -> ApplyResult {
-    engine::apply_via(state, scenario_registry::current(), |cx| {
-        let outcome = engine::dispatch_turn_action(cx, action);
-        engine::drive(cx, outcome)
-    })
-}
-
-/// Start a plain skill test directly: `investigator` tests `skill` against
-/// `difficulty`, returning the [`ApplyResult`] (typically an `AwaitingInput`
-/// pausing at the commit window).
-///
-/// The synthetic test entry point that replaced the retired
-/// `PlayerAction::PerformSkillTest` wire variant (#447). Skill tests are
-/// normally initiated by a real action (Investigate / Fight / Evade) or a card
-/// effect; this lets a test exercise skill-test resolution in isolation with an
-/// arbitrary skill + difficulty. Runs through the same `Cx` build / `drive` loop
-/// as [`apply`](crate::engine::apply), via the shared `apply_via` scaffolding.
-pub fn perform_skill_test(
-    state: GameState,
-    investigator: InvestigatorId,
-    skill: SkillKind,
-    difficulty: i8,
-) -> ApplyResult {
-    engine::apply_via(state, scenario_registry::current(), |cx| {
-        let outcome = engine::start_plain_skill_test(cx, investigator, skill, difficulty);
-        engine::drive(cx, outcome)
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use card_dsl::dsl::SkillTestKind;
 
     use super::*;
-    use crate::engine::ResumeToken;
+    use crate::engine::{self, InputKind, ResumeToken};
     use crate::event::Event;
+    use crate::state::SkillKind;
     use crate::state::{ChaosBag, ChaosToken, Continuation, GameStateBuilder, SkillTestId};
-    use crate::test_support;
-
-    #[test]
-    fn take_turn_action_resolves_end_turn_via_optionid() {
-        let state = GameStateBuilder::default()
-            .with_investigator(test_support::test_investigator(1))
-            .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-            .open_turn(InvestigatorId(1))
-            .build();
-        let result = take_turn_action(state, &TurnAction::EndTurn);
-        assert!(
-            !matches!(result.outcome, EngineOutcome::Rejected { .. }),
-            "{:?}",
-            result.outcome
-        );
-    }
+    use crate::test_support::{self, TestSession};
 
     fn empty_state() -> GameState {
         GameStateBuilder::new().build()
@@ -689,7 +491,7 @@ mod tests {
     #[test]
     fn commit_cards_translates_codes_to_hand_indices_in_order() {
         let mut r = ScriptedResolver::new();
-        r.commit_cards(&[CardCode::new("X"), CardCode::new("Y")]);
+        r.commit_cards(&["X", "Y"]);
         let state = state_with_in_flight_hand(&["X", "Y", "Z"]);
         let response = r.next(&req("commit"), &state);
         assert_eq!(
@@ -703,7 +505,7 @@ mod tests {
     #[test]
     fn commit_cards_duplicate_code_picks_distinct_indices_left_to_right() {
         let mut r = ScriptedResolver::new();
-        r.commit_cards(&[CardCode::new("X"), CardCode::new("X")]);
+        r.commit_cards(&["X", "X"]);
         let state = state_with_in_flight_hand(&["A", "X", "B", "X"]);
         let response = r.next(&req("commit"), &state);
         assert_eq!(
@@ -718,7 +520,7 @@ mod tests {
     #[should_panic(expected = "no in-flight skill test")]
     fn commit_cards_panics_when_no_in_flight_skill_test() {
         let mut r = ScriptedResolver::new();
-        r.commit_cards(&[CardCode::new("X")]);
+        r.commit_cards(&["X"]);
         let _ = r.next(&req("commit"), &empty_state());
     }
 
@@ -726,7 +528,7 @@ mod tests {
     #[should_panic(expected = "not found")]
     fn commit_cards_panics_when_code_not_in_hand() {
         let mut r = ScriptedResolver::new();
-        r.commit_cards(&[CardCode::new("MISSING")]);
+        r.commit_cards(&["MISSING"]);
         let state = state_with_in_flight_hand(&["X", "Y"]);
         let _ = r.next(&req("commit"), &state);
     }
@@ -927,43 +729,42 @@ mod tests {
         // A `ResolveInput` against a state with no outstanding prompt rejects;
         // this exercises the real engine's pass-through of that `Rejected`
         // outcome.
-        let result = drive(
+        let result = drive_with_applier(
             empty_state(),
             Action::Player(PlayerAction::ResolveInput {
                 response: InputResponse::Confirm,
             }),
-            ScriptedResolver::new(),
+            &mut ScriptedResolver::new(),
+            engine::apply,
         );
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     }
 
-    /// Flag on: a no-commits drive auto-answers the acknowledge `Confirm` and
-    /// resolves the skill test to teardown (exercises both the helper and the
-    /// dispatch-level Confirm routing end-to-end through `apply`).
+    /// Flag on: the acknowledge `Confirm` (#478) surfaces after the commit
+    /// window, and confirming it resolves the skill test to teardown (the
+    /// dispatch-level Confirm routing, end-to-end through `apply`).
     #[test]
-    fn flag_on_no_commits_drive_auto_confirms_acknowledge() {
+    fn flag_on_confirming_the_acknowledge_resolves_the_test() {
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_support::test_investigator(1))
-            .with_active_investigator(inv)
+            .with_seat(test_support::seat(1))
+            .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+            .open_turn(inv)
             .build();
-        state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
+        // No builder setter for the acknowledge flag.
         state.interactive_acknowledge = true;
 
-        let result = perform_skill_test_no_commits(state, inv, SkillKind::Willpower, 2);
+        let session = TestSession::new(state)
+            .test_skill(inv, SkillKind::Willpower, 2)
+            .commit(&[]);
+        assert_eq!(
+            session.prompt().kind,
+            InputKind::Confirm,
+            "the acknowledge pause is up"
+        );
+        let session = session.confirm();
 
-        assert!(
-            matches!(result.outcome, EngineOutcome::Done),
-            "drive auto-confirmed the acknowledge and reached a terminal outcome: {:?}",
-            result.outcome
-        );
-        assert!(
-            result
-                .events
-                .iter()
-                .any(|e| matches!(e, Event::SkillTestEnded { .. })),
-            "the test resolved to the end: {:?}",
-            result.events
-        );
+        session.assert_at_turn_menu(inv);
+        crate::assert_event!(session.events(), Event::SkillTestEnded { .. });
     }
 }

@@ -23,22 +23,17 @@
 //! synthetic ability gains a distinct number of resources, and `DamageTaken` /
 //! `HorrorTaken` mark the condition's own resolution.
 
-use std::mem;
-
 use card_dsl::dsl::{
     self, Ability, AttackerScope, Effect, EventPattern, EventTiming, InvestigatorTarget,
     TargetScope,
 };
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, Owner, Phase,
+    CardCode, Enemy, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, MockRegistry};
+use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
 
 /// `when`-tagged reaction on a card the attacked investigator controls: +4
 /// resources. Declaring interrupt timing on this condition is *accepted* now
@@ -119,85 +114,55 @@ fn install() {
 }
 
 const INV: InvestigatorId = InvestigatorId(1);
-const LOC: LocationId = LocationId(10);
+const HERE: LocationId = LocationId(10);
 const ATTACKER: EnemyId = EnemyId(7);
 
-/// The attacker: engaged, ready, dealing 1 damage **and** 1 horror, so the
-/// condition's own impact is visible on both tracks. `code` selects whether it
-/// carries a forced ability of its own.
+/// The attacker: ready, dealing 1 damage **and** 1 horror, so the condition's
+/// own impact is visible on both tracks. `code` selects whether it carries a
+/// forced ability of its own.
 fn attacker(code: &str) -> Enemy {
-    let mut e = test_support::test_enemy(7, "Attacker");
+    let mut e = test_support::test_enemy(ATTACKER.0, "Attacker");
     e.code = CardCode::new(code);
     e.attack_damage = 1;
     e.attack_horror = 1;
-    e.current_location = Some(LOC);
-    e.engaged_with = Some(INV);
     e
 }
 
-/// Investigation-phase board: the active investigator at `LOC` with `codes` in
+/// Investigation-phase board: the active investigator at `HERE` with `codes` in
 /// their threat area and 0 resources, engaged by one ready attacker. `EndTurn`
 /// cascades into the Enemy phase, where the attack walks its cells.
 ///
 /// No soaker assets, so the attack's damage/horror never prompts the
 /// interactive distribution (#44/K5b) and the only prompts are the cells' own.
-fn board_with(codes: &[&str], enemy_code: &str) -> GameState {
-    let mut inv = test_support::test_investigator(1);
-    inv.resources = 0;
-    // A spare deck card so Upkeep step 4.4's draw does not hit an empty deck
-    // (which would add a horror the damage/horror assertions would then read).
-    inv.deck = vec![CardCode::new("_ea_filler")];
-    for (i, code) in codes.iter().enumerate() {
-        inv.threat_area.push(CardInPlay::enter_play(
-            CardCode::new(*code),
-            CardInstanceId(u32::try_from(i).expect("fixture card count fits u32")),
-            Owner::EncounterDeck,
-        ));
-    }
+fn board_with(codes: &[&str], enemy_code: &str) -> GameStateBuilder {
     GameStateBuilder::new()
-        .with_location(test_support::test_location(10, "Study"))
-        .with_investigator_at(inv, LOC)
-        .with_enemy(attacker(enemy_code))
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_seat(
+            seat(1)
+                .at(HERE)
+                .resources(0)
+                // A spare deck card so Upkeep step 4.4's draw does not hit an
+                // empty deck (which would add a horror the damage/horror
+                // assertions would then read).
+                .deck(["_ea_filler"])
+                .threat_area(codes.iter().copied()),
+        )
+        .with_enemy_engaged(attacker(enemy_code), INV)
         .open_turn(INV)
-        .build()
 }
 
-/// The board and the whole event stream after a scripted run.
-struct Run {
-    state: GameState,
-    events: Vec<Event>,
-}
-
-/// End the turn and answer `picks` prompts in order, accumulating every event.
-/// A prompt the script does not answer simply leaves the engine suspended, and
-/// a script longer than the prompts panics — so the script length is itself an
-/// assertion about how many cells opened.
-fn end_turn_answering(state: GameState, picks: &[InputResponse]) -> Run {
-    let mut result = test_support::take_turn_action(state, &TurnAction::EndTurn);
-    let mut events = mem::take(&mut result.events);
-    for pick in picks {
-        assert!(
-            matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
-            "expected a prompt for {pick:?}, got {:?}",
-            result.outcome
-        );
-        result = engine::apply(
-            result.state,
-            Action::Player(PlayerAction::ResolveInput {
-                response: pick.clone(),
-            }),
-        );
-        events.extend(mem::take(&mut result.events));
-    }
-    Run {
-        state: result.state,
-        events,
-    }
-}
-
-/// Fire the single offered candidate, `n` times.
-fn fire(n: usize) -> Vec<InputResponse> {
-    vec![InputResponse::PickSingle(OptionId(0)); n]
+/// End the turn and fire the reaction on each of `fired`, in order, as its
+/// cell offers it — picked by the threat-area card it is printed on, so a
+/// cell that never opens has nothing to pick and panics. Returns the session,
+/// whose events are every event of the run.
+fn end_turn_firing(board: GameStateBuilder, fired: &[&str]) -> TestSession {
+    fired.iter().fold(
+        board.session().take(&TurnAction::EndTurn),
+        |session, code| {
+            let card = session.state().card(INV, *code);
+            session.pick(card)
+        },
+    )
 }
 
 /// Every marker and every mark of the condition's own impact, in emission order
@@ -231,17 +196,21 @@ fn timeline(events: &[Event]) -> Vec<Option<u8>> {
 /// `after` cells did not exist for this condition at all.
 #[test]
 fn the_attack_resolves_between_the_when_and_at_cells() {
-    let r = end_turn_answering(board_with(&[WHEN, AT, AFTER], PLAIN_ENEMY), &fire(3));
+    let r = end_turn_firing(
+        board_with(&[WHEN, AT, AFTER], PLAIN_ENEMY),
+        &[WHEN, AT, AFTER],
+    );
     assert_eq!(
-        timeline(&r.events),
+        timeline(r.events()),
         vec![Some(4), None, None, Some(1), Some(2)],
         "expected when → damage+horror → at → after; events = {:?}",
-        r.events
+        r.events()
     );
-    assert_eq!(r.state.investigators[&INV].damage(), 1);
-    assert_eq!(r.state.investigators[&INV].horror(), 1);
+    assert_eq!(r.state().investigators[&INV].damage(), 1);
+    assert_eq!(r.state().investigators[&INV].horror(), 1);
     assert_eq!(
-        r.state.investigators[&INV].resources, 8,
+        r.state().investigators[&INV].resources,
+        8,
         "4 + 1 + 2 from the cells, plus Upkeep step 4.4's 1"
     );
 }
@@ -252,15 +221,15 @@ fn the_attack_resolves_between_the_when_and_at_cells() {
 /// condition has fully resolved"*.
 #[test]
 fn an_after_ability_resolves_once_the_damage_and_horror_have_landed() {
-    let r = end_turn_answering(board_with(&[AFTER], PLAIN_ENEMY), &fire(1));
+    let r = end_turn_firing(board_with(&[AFTER], PLAIN_ENEMY), &[AFTER]);
     assert_eq!(
-        timeline(&r.events),
+        timeline(r.events()),
         vec![None, None, Some(2)],
         "the attack must precede the `after` ability; events = {:?}",
-        r.events
+        r.events()
     );
-    assert_eq!(r.state.investigators[&INV].damage(), 1);
-    assert_eq!(r.state.investigators[&INV].horror(), 1);
+    assert_eq!(r.state().investigators[&INV].damage(), 1);
+    assert_eq!(r.state().investigators[&INV].horror(), 1);
 }
 
 /// The `at` cell sits between the two — `glossary/At.md`: *"These abilities
@@ -269,12 +238,12 @@ fn an_after_ability_resolves_once_the_damage_and_horror_have_landed() {
 /// the condition's impact lands.
 #[test]
 fn an_at_ability_resolves_after_the_impact_and_before_any_after_ability() {
-    let r = end_turn_answering(board_with(&[AT, AFTER], PLAIN_ENEMY), &fire(2));
+    let r = end_turn_firing(board_with(&[AT, AFTER], PLAIN_ENEMY), &[AT, AFTER]);
     assert_eq!(
-        timeline(&r.events),
+        timeline(r.events()),
         vec![None, None, Some(1), Some(2)],
         "expected attack → at → after; events = {:?}",
-        r.events
+        r.events()
     );
 }
 
@@ -285,22 +254,26 @@ fn an_at_ability_resolves_after_the_impact_and_before_any_after_ability() {
 #[test]
 fn a_cancelled_attack_suppresses_the_at_and_after_cells_but_still_exhausts() {
     // One prompt only: the `when` cell. The `at` and `after` cells never open.
-    let r = end_turn_answering(board_with(&[CANCEL, AT, AFTER], PLAIN_ENEMY), &fire(1));
+    let r = end_turn_firing(board_with(&[CANCEL, AT, AFTER], PLAIN_ENEMY), &[CANCEL]);
+    // No later cell offered its reaction: play ran on to the next round's
+    // encounter draw.
+    r.assert_at_encounter_draw();
     assert_eq!(
-        timeline(&r.events),
+        timeline(r.events()),
         Vec::<Option<u8>>::new(),
         "neither the attack nor any later cell may run; events = {:?}",
-        r.events
+        r.events()
     );
-    assert_eq!(r.state.investigators[&INV].damage(), 0);
-    assert_eq!(r.state.investigators[&INV].horror(), 0);
+    assert_eq!(r.state().investigators[&INV].damage(), 0);
+    assert_eq!(r.state().investigators[&INV].horror(), 0);
     assert_eq!(
-        r.state.investigators[&INV].resources, 1,
+        r.state().investigators[&INV].resources,
+        1,
         "no marker fired; the 1 is Upkeep step 4.4's"
     );
-    assert_event!(&r.events, Event::EnemyExhausted { enemy } if *enemy == ATTACKER);
+    assert_event!(r.events(), Event::EnemyExhausted { enemy } if *enemy == ATTACKER);
     assert!(
-        !r.state.pending_cancellation,
+        !r.state().pending_cancellation,
         "the signal must be consumed at the resolve step, not left to catch the \
          next condition"
     );
@@ -311,12 +284,12 @@ fn a_cancelled_attack_suppresses_the_at_and_after_cells_but_still_exhausts() {
 /// 01102's shape; the corpus half is in `dodge.rs`.
 #[test]
 fn an_enemys_forced_after_attacks_ability_resolves_after_its_damage() {
-    let r = end_turn_answering(board_with(&[], ENEMY_FORCED_AFTER), &[]);
+    let r = end_turn_firing(board_with(&[], ENEMY_FORCED_AFTER), &[]);
     assert_eq!(
-        timeline(&r.events),
+        timeline(r.events()),
         vec![None, None, Some(8)],
         "expected damage+horror → the enemy's forced after; events = {:?}",
-        r.events
+        r.events()
     );
 }
 
@@ -326,12 +299,12 @@ fn an_enemys_forced_after_attacks_ability_resolves_after_its_damage() {
 /// the caller has already mutated.
 #[test]
 fn an_enemys_forced_when_attacks_ability_resolves_before_its_damage() {
-    let r = end_turn_answering(board_with(&[], ENEMY_FORCED_WHEN), &[]);
+    let r = end_turn_firing(board_with(&[], ENEMY_FORCED_WHEN), &[]);
     assert_eq!(
-        timeline(&r.events),
+        timeline(r.events()),
         vec![Some(16), None, None],
         "expected the enemy's forced when → damage+horror; events = {:?}",
-        r.events
+        r.events()
     );
 }
 
@@ -340,11 +313,11 @@ fn an_enemys_forced_when_attacks_ability_resolves_before_its_damage() {
 /// `after` reaction in the same cell.
 #[test]
 fn forced_resolves_before_reaction_within_the_after_cell() {
-    let r = end_turn_answering(board_with(&[AFTER], ENEMY_FORCED_AFTER), &fire(1));
+    let r = end_turn_firing(board_with(&[AFTER], ENEMY_FORCED_AFTER), &[AFTER]);
     assert_eq!(
-        timeline(&r.events),
+        timeline(r.events()),
         vec![None, None, Some(8), Some(2)],
         "expected damage → forced (8) → reaction (2); events = {:?}",
-        r.events
+        r.events()
     );
 }

@@ -9,17 +9,25 @@
 //! alternatives, a free ability a Fast window can offer — and none stands in
 //! for a printed card. They live here, the one binary that reads them.
 
+use std::cell::Cell;
+use std::rc::Rc;
+
 use card_dsl::dsl::{self, Ability, EnemyTarget, InvestigatorTarget};
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{EngineOutcome, InputKind, OptionId, OptionTarget, PromptNature};
+use game_core::engine::{
+    EngineOutcome, InputKind, InputRequest, OptionId, OptionTarget, PromptNature,
+};
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    EnemyId, FastActorScope, FastWindowKind, GameStateBuilder, InvestigationPhaseFrame,
-    InvestigationResume, InvestigatorId, LocationId, Owner, Phase, PhaseStep,
+    AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, EnemyId, FastActorScope,
+    FastWindowKind, GameState, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume,
+    InvestigatorId, LocationId, Phase, PhaseStep, SkillKind, SubstitutionPromptFrame,
+    UpkeepPhaseFrame, UpkeepResume,
 };
-use game_core::test_support::{self, MockRegistry, TestSession};
+use game_core::test_support::{
+    self, seat, ChoiceResolver, MockRegistry, SeatLookup as _, TestSession,
+};
 use game_core::{assert_event, assert_event_count};
 
 /// `[action]: Deal 1 damage to an enemy at your location.` — a choice among
@@ -33,13 +41,12 @@ const FREE: &str = "_ts_free";
 /// `[action]: Heal 1 damage from an investigator at your location.` — a choice
 /// among investigators, whose options anchor to each investigator's card.
 const HEAL: &str = "_ts_heal";
+/// `[free]: Gain 1 resource.` and `[free]: Gain 2 resources.` — two abilities
+/// printed on one card, which a Fast window offers on the same anchor.
+const TWO_FREE: &str = "_ts_two_free";
 
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
-const SELECT_INST: CardInstanceId = CardInstanceId(1);
-const DECIDE_INST: CardInstanceId = CardInstanceId(2);
-const FREE_INST: CardInstanceId = CardInstanceId(3);
-const HEAL_INST: CardInstanceId = CardInstanceId(4);
 const FIRST: EnemyId = EnemyId(7);
 const SECOND: EnemyId = EnemyId(8);
 
@@ -83,20 +90,31 @@ fn install_mock_registry() {
                 dsl::gain_resources(InvestigatorTarget::You, 1),
             )]
         })
+        .with_abilities(TWO_FREE, || -> Vec<Ability> {
+            vec![
+                dsl::activated(0, vec![], dsl::gain_resources(InvestigatorTarget::You, 1)),
+                dsl::activated(0, vec![], dsl::gain_resources(InvestigatorTarget::You, 2)),
+            ]
+        })
         .install();
 }
 
 /// One investigator at `HERE` with the two action probes in play, two
 /// unengaged enemies at `HERE`, and a chaos bag of `Numeric(0)`.
 fn board() -> GameStateBuilder {
-    board_with(&[(SELECT, SELECT_INST), (DECIDE, DECIDE_INST)])
+    board_with(&[SELECT, DECIDE])
 }
 
 /// The turn-begins Fast window, open over the Investigation phase as the
 /// engine leaves it just before the turn's actions, with the free-ability probe
 /// in play so the window has something to offer.
 fn turn_begins_window() -> GameStateBuilder {
-    board_with(&[(FREE, FREE_INST)])
+    turn_begins_window_with(FREE)
+}
+
+/// The turn-begins Fast window with `code` in play.
+fn turn_begins_window_with(code: &str) -> GameStateBuilder {
+    board_with(&[code])
         .with_phase(Phase::Investigation)
         .with_active_investigator(INV)
         .with_turn_order([INV])
@@ -109,33 +127,32 @@ fn turn_begins_window() -> GameStateBuilder {
         )
 }
 
-fn board_with(in_play: &[(&str, CardInstanceId)]) -> GameStateBuilder {
-    let mut inv = test_support::test_investigator(1);
-    for &(code, inst) in in_play {
-        inv.cards_in_play.push(CardInPlay::enter_play(
-            CardCode::new(code),
-            inst,
-            Owner::Investigator(InvestigatorId(1)),
-        ));
-    }
+fn board_with(in_play: &[&str]) -> GameStateBuilder {
     let mut first = test_support::test_enemy(FIRST.0, "First");
     first.current_location = Some(HERE);
     let mut second = test_support::test_enemy(SECOND.0, "Second");
     second.current_location = Some(HERE);
     GameStateBuilder::new()
-        .with_investigator_at(inv, HERE)
+        .with_seat(seat(1).at(HERE).in_play(in_play.iter().copied()))
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_enemy(first)
         .with_enemy(second)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
 }
 
-fn activate(inst: CardInstanceId) -> TurnAction {
+/// Activate the first ability of the seated card `code`.
+fn activate(state: &GameState, code: &str) -> TurnAction {
     TurnAction::ActivateAbility {
         investigator: INV,
-        source: AbilitySource::InPlay(inst),
+        source: AbilitySource::InPlay(state.in_play(INV, code)),
         address: AbilityAddress::Printed(0),
     }
+}
+
+/// Step: take the activation of `code`'s first ability from the turn menu.
+fn activating(session: TestSession, code: &str) -> TestSession {
+    let action = activate(session.state(), code);
+    session.take(&action)
 }
 
 fn resources(session: &TestSession) -> u8 {
@@ -162,11 +179,12 @@ fn settling_an_open_fast_window_resurfaces_its_prompt() {
     let session = turn_begins_window().session();
     let prompt = session.prompt();
     assert!(prompt.skippable, "a Fast window is skippable: {prompt:?}");
+    let free = session.state().card(INV, FREE);
     assert!(
         prompt
             .options
             .iter()
-            .any(|o| o.target == Some(OptionTarget::CardInstance(FREE_INST))),
+            .any(|o| o.target.as_ref() == Some(&free)),
         "the free ability is offered on its card: {prompt:?}",
     );
 }
@@ -177,10 +195,288 @@ fn settling_an_open_fast_window_resurfaces_its_prompt() {
 #[test]
 #[should_panic(expected = "cannot re-surface its prompt")]
 fn settling_a_fixture_that_cannot_resurface_its_prompt_panics() {
-    let _ = board()
-        .open_turn(INV)
+    // A substitution prompt's handler surfaces it when it pushes the frame;
+    // the main loop has no way to show it again.
+    let mut state = board().open_turn(INV).build();
+    state.continuations = test_support::from_frames_unchecked(
+        state
+            .continuations
+            .iter()
+            .cloned()
+            .chain([SubstitutionPromptFrame { investigator: INV }.into()]),
+    );
+    let _ = TestSession::new(state);
+}
+
+/// A staged setup mulligan settles at its prompt, and answering it runs the
+/// mulligan: the redrawn card leaves the hand and setup's end opens the turn.
+#[test]
+fn settling_a_staged_mulligan_shows_its_prompt() {
+    let session = GameStateBuilder::new()
+        .with_seat(seat(1).at(HERE).hand(["_ts_kept_out"]).deck(["_ts_drawn"]))
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_turn_order([INV])
+        .with_mulligan_remaining([INV])
+        .session();
+    assert_eq!(session.prompt().kind, InputKind::PickMultiple);
+
+    let session = session.choose_from_hand(&["_ts_kept_out"]);
+
+    assert_event!(session.events(), Event::MulliganPerformed { .. });
+    assert_eq!(
+        session.state().investigators[&INV].hand,
+        vec![CardCode::new("_ts_drawn")],
+    );
+}
+
+/// `choose_from_hand` names two copies of one card by repeating its code, as
+/// `commit` does: both copies are redrawn and the card beside them stays.
+#[test]
+fn choose_from_hand_names_duplicate_copies_by_repeating_the_code() {
+    let (twin, kept, drawn) = ("_ts_twin", "_ts_kept", "_ts_drawn");
+    let session = GameStateBuilder::new()
+        .with_seat(
+            seat(1)
+                .at(HERE)
+                .hand([twin, kept, twin])
+                .deck([drawn, drawn]),
+        )
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_turn_order([INV])
+        .with_mulligan_remaining([INV])
+        .session()
+        .choose_from_hand(&[twin, twin]);
+
+    let mut hand = session.state().investigators[&INV].hand.clone();
+    hand.sort();
+    assert_eq!(hand, [drawn, drawn, kept].map(CardCode::new));
+}
+
+/// `choose_from_hand` answers a mulligan or a hand-size discard and nothing
+/// else: at a Fast window it panics rather than answer it.
+#[test]
+#[should_panic(expected = "not at a mulligan or a hand-size discard")]
+fn choose_from_hand_at_another_prompt_panics() {
+    let _ = turn_begins_window().session().choose_from_hand(&[]);
+}
+
+/// A staged Mythos encounter draw settles at its prompt: the `Confirm`
+/// anchored to the encounter deck.
+#[test]
+fn settling_a_staged_encounter_draw_shows_its_prompt() {
+    let session = board()
+        .with_turn_order([INV])
+        .with_mythos_draw_remaining([INV])
+        .session();
+    let prompt = session.prompt();
+    assert_eq!(prompt.kind, InputKind::Confirm);
+    assert_eq!(prompt.target, Some(OptionTarget::EncounterDeck));
+}
+
+/// A staged upkeep hand-size discard settles at its prompt, and answering it
+/// discards down to the cap.
+#[test]
+fn settling_a_staged_hand_size_discard_shows_its_prompt() {
+    let session = GameStateBuilder::new()
+        .with_seat(seat(1).at(HERE).hand(["_ts_filler"; 9]))
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_turn_order([INV])
+        .with_phase(Phase::Upkeep)
+        .with_phase_anchor(UpkeepPhaseFrame {
+            resume: UpkeepResume::Begins,
+        })
         .with_hand_size_discard_pending([INV])
         .session();
+    assert_eq!(session.prompt().kind, InputKind::PickMultiple);
+
+    let session = session.choose_from_hand(&["_ts_filler"]);
+
+    assert_eq!(session.state().investigators[&INV].hand.len(), 8);
+    assert_eq!(session.state().investigators[&INV].discard.len(), 1);
+}
+
+// ---- test_skill and commit -------------------------------------------------
+
+/// The commit window a skill test opens: a `PickMultiple` that holds the test
+/// open, so the test has not ended yet.
+fn assert_at_commit_window(session: &TestSession) {
+    assert_eq!(session.prompt().kind, InputKind::PickMultiple);
+    assert_event_count!(session.events(), 0, Event::SkillTestEnded { .. });
+}
+
+/// `test_skill` starts a plain skill test from where the session rests and
+/// stops at its commit window; `commit(&[])` commits nothing and the test
+/// resolves.
+#[test]
+fn test_skill_stops_at_the_commit_window_and_commit_nothing_resolves_it() {
+    let session = board().session().test_skill(INV, SkillKind::Willpower, 2);
+    assert_at_commit_window(&session);
+
+    let session = session.commit(&[]);
+
+    assert_event!(session.events(), Event::SkillTestEnded { .. });
+}
+
+/// `commit` answers the commit window by card code: the named card leaves the
+/// hand and, once the test resolves, lands in the discard pile; the card
+/// beside it stays.
+#[test]
+fn commit_by_code_commits_that_card() {
+    let (committed, kept) = ("_ts_committed", "_ts_kept");
+    let session = GameStateBuilder::new()
+        .with_seat(seat(1).at(HERE).hand([kept, committed]))
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .session()
+        .test_skill(INV, SkillKind::Willpower, 2)
+        .commit(&[committed]);
+
+    assert_event!(session.events(), Event::SkillTestEnded { .. });
+    let me = &session.state().investigators[&INV];
+    assert_eq!(me.hand, vec![CardCode::new(kept)]);
+    assert_eq!(me.discard, vec![CardCode::new(committed)]);
+}
+
+/// A skill test started from the turn menu exposes the turn again when it
+/// resolves: the session comes back to the menu.
+#[test]
+fn test_skill_from_the_turn_menu_returns_to_the_menu() {
+    let session = board()
+        .open_turn(INV)
+        .session()
+        .test_skill(INV, SkillKind::Intellect, 2);
+    assert_at_commit_window(&session);
+
+    let session = session.commit(&[]);
+
+    assert_event!(session.events(), Event::SkillTestEnded { .. });
+    assert_eq!(
+        session.prompt().target,
+        Some(OptionTarget::TurnControl(INV))
+    );
+}
+
+/// `commit` answers a prompt, so at the turn menu it panics rather than be
+/// read as a turn action.
+#[test]
+#[should_panic(expected = "at the turn menu")]
+fn commit_at_the_turn_menu_panics() {
+    let _ = board().open_turn(INV).session().commit(&[]);
+}
+
+/// `commit` answers a skill test's commit window and nothing else: at another
+/// `PickMultiple` — a mulligan — it panics rather than answer it.
+#[test]
+#[should_panic(expected = "not at a skill test's commit window")]
+fn commit_at_another_pick_multiple_panics() {
+    let _ = board()
+        .with_turn_order([INV])
+        .with_mulligan_remaining([INV])
+        .session()
+        .commit(&[]);
+}
+
+/// `choose_from_hand` answers a `PickMultiple` that is not a commit window: at
+/// a skill test's commit window it panics and sends the author to `commit`.
+#[test]
+#[should_panic(expected = "commit cards with `commit(&[code])`")]
+fn choose_from_hand_at_a_commit_window_panics() {
+    let _ = board()
+        .session()
+        .test_skill(INV, SkillKind::Willpower, 2)
+        .choose_from_hand(&[]);
+}
+
+// ---- submit_off_menu ---------------------------------------------------------
+
+/// `submit_off_menu` sends an action the menu does not offer straight to its
+/// handler — what a client could send over the wire without consulting the
+/// menu. With no actions left the menu withholds the activation, and the
+/// handler itself rejects it: the reason reads back, nothing is spent, and the
+/// turn menu still stands.
+#[test]
+fn submit_off_menu_reaches_the_handler_and_its_rejection_reads_back() {
+    let mut state = board().open_turn(INV).build();
+    state
+        .investigators
+        .get_mut(&INV)
+        .expect("seated")
+        .actions_remaining = 0;
+
+    let action = activate(&state, DECIDE);
+    let session = TestSession::new(state).submit_off_menu(&action);
+
+    assert!(
+        session.expect_rejected().contains("action"),
+        "the handler names the missing action: {}",
+        session.expect_rejected(),
+    );
+    assert_eq!(resources(&session), 5);
+    assert_eq!(
+        session.prompt().target,
+        Some(OptionTarget::TurnControl(INV))
+    );
+}
+
+// ---- answer_with -------------------------------------------------------------
+
+/// A reply policy that answers every prompt: commits nothing, confirms, and
+/// declines everything else. Counts the prompts it answered.
+#[derive(Default)]
+struct CommitNothing {
+    answered: Rc<Cell<usize>>,
+}
+
+impl ChoiceResolver for CommitNothing {
+    fn next(&mut self, request: &InputRequest, _state: &GameState) -> InputResponse {
+        self.answered.set(self.answered.get() + 1);
+        match request.kind {
+            InputKind::PickMultiple => InputResponse::PickMultiple { selected: vec![] },
+            InputKind::Confirm => InputResponse::Confirm,
+            _ => InputResponse::Skip,
+        }
+    }
+}
+
+/// A resolver installed with `answer_with` answers every prompt a step opens,
+/// so the step drains to rest — and it stays installed for the steps after.
+#[test]
+fn answer_with_drives_each_step_to_rest_and_stays_installed() {
+    let policy = CommitNothing::default();
+    let answered = Rc::clone(&policy.answered);
+    let session = board()
+        .open_turn(INV)
+        .session()
+        .answer_with(policy)
+        .test_skill(INV, SkillKind::Willpower, 2);
+    assert_eq!(
+        session.prompt().target,
+        Some(OptionTarget::TurnControl(INV))
+    );
+    assert_eq!(answered.get(), 1, "the commit window was answered");
+
+    let session = session.test_skill(INV, SkillKind::Agility, 2);
+
+    assert_event_count!(session.events(), 2, Event::SkillTestEnded { .. });
+    assert_eq!(answered.get(), 2);
+    assert_eq!(
+        session.prompt().target,
+        Some(OptionTarget::TurnControl(INV))
+    );
+}
+
+/// `resolve_choices` after `answer_with` puts the script back: with nothing
+/// scripted, the next step stops at the first prompt again.
+#[test]
+fn resolve_choices_after_answer_with_restores_the_script() {
+    let session = board()
+        .open_turn(INV)
+        .session()
+        .answer_with(CommitNothing::default())
+        .resolve_choices(|_| {})
+        .test_skill(INV, SkillKind::Willpower, 2);
+
+    assert_at_commit_window(&session);
 }
 
 // ---- take ----------------------------------------------------------------
@@ -211,10 +507,7 @@ fn take_applies_a_turn_action_and_returns_to_the_turn_menu() {
 #[test]
 #[should_panic(expected = "not at the turn menu")]
 fn take_away_from_the_turn_menu_panics() {
-    let _ = board()
-        .open_turn(INV)
-        .session()
-        .take(&activate(SELECT_INST))
+    let _ = activating(board().open_turn(INV).session(), SELECT)
         .take(&TurnAction::Resource { investigator: INV });
 }
 
@@ -225,10 +518,7 @@ fn take_away_from_the_turn_menu_panics() {
 /// damages it and not the first.
 #[test]
 fn pick_chooses_the_anchored_option_whatever_its_position() {
-    let session = board()
-        .open_turn(INV)
-        .session()
-        .take(&activate(SELECT_INST));
+    let session = activating(board().open_turn(INV).session(), SELECT);
     let prompt = session.prompt();
     assert_eq!(prompt.nature, PromptNature::Selection);
     assert_eq!(
@@ -254,11 +544,8 @@ fn pick_chooses_the_anchored_option_whatever_its_position() {
 #[test]
 #[should_panic(expected = "no option anchored to")]
 fn pick_of_an_unoffered_target_panics() {
-    let _ = board()
-        .open_turn(INV)
-        .session()
-        .take(&activate(SELECT_INST))
-        .pick(OptionTarget::Enemy(EnemyId(99)));
+    let _ =
+        activating(board().open_turn(INV).session(), SELECT).pick(OptionTarget::Enemy(EnemyId(99)));
 }
 
 /// An option choosing an investigator anchors to that investigator's card, so
@@ -266,22 +553,13 @@ fn pick_of_an_unoffered_target_panics() {
 /// (#950): the heal's choice between two damaged investigators.
 #[test]
 fn pick_chooses_an_investigator_by_their_card() {
-    let mut mine = test_support::test_investigator(1);
-    mine.investigator_card.accumulated_damage = 1;
-    mine.cards_in_play.push(CardInPlay::enter_play(
-        CardCode::new(HEAL),
-        HEAL_INST,
-        Owner::Investigator(InvestigatorId(1)),
-    ));
-    let mut other = test_support::test_investigator(2);
-    other.investigator_card.accumulated_damage = 1;
-    let session = GameStateBuilder::new()
-        .with_investigator_at(mine, HERE)
-        .with_investigator_at(other, HERE)
+    let board = GameStateBuilder::new()
+        .with_seat(seat(1).at(HERE).harm(1, 0).in_play([HEAL]))
+        .with_seat(seat(2).at(HERE).harm(1, 0))
         .with_location(test_support::test_location(HERE.0, "Study"))
         .open_turn(INV)
-        .session()
-        .take(&activate(HEAL_INST));
+        .session();
+    let session = activating(board, HEAL);
     let theirs = session.state().investigators[&InvestigatorId(2)].card_anchor();
 
     let session = session.pick(theirs);
@@ -298,10 +576,7 @@ fn pick_chooses_an_investigator_by_their_card() {
 /// `pick_nth` answers a Decision by printed position.
 #[test]
 fn pick_nth_answers_a_decision_by_position() {
-    let session = board()
-        .open_turn(INV)
-        .session()
-        .take(&activate(DECIDE_INST));
+    let session = activating(board().open_turn(INV).session(), DECIDE);
     assert_eq!(session.prompt().nature, PromptNature::Decision);
 
     let session = session.pick_nth(1);
@@ -313,11 +588,93 @@ fn pick_nth_answers_a_decision_by_position() {
 #[test]
 #[should_panic(expected = "pick by target")]
 fn pick_nth_on_a_selection_panics() {
-    let _ = board()
+    let _ = activating(board().open_turn(INV).session(), SELECT).pick_nth(1);
+}
+
+// ---- pick_nth_at -----------------------------------------------------------
+
+/// Two abilities printed on one card share its anchor in a Fast window, so
+/// `pick` cannot name either; `pick_nth_at` names the card and the ability by
+/// the order the card prints it.
+#[test]
+fn pick_nth_at_chooses_among_abilities_printed_on_one_card() {
+    let session = turn_begins_window_with(TWO_FREE).session();
+    let card = session.state().card(INV, TWO_FREE);
+    assert_eq!(
+        session.offered_at(&card),
+        2,
+        "both abilities are offered on the card: {:?}",
+        session.prompt(),
+    );
+
+    let session = session.pick_nth_at(card, 1);
+
+    assert_eq!(resources(&session), 7, "the second ability gains 2");
+}
+
+/// With a lone option at the anchor, `pick` names it, and `pick_nth_at` sends
+/// the author there.
+#[test]
+#[should_panic(expected = "pick a lone one with `pick(OptionTarget)`")]
+fn pick_nth_at_a_lone_anchored_option_panics() {
+    let session = turn_begins_window().session();
+    let free = session.state().card(INV, FREE);
+    let _ = session.pick_nth_at(free, 0);
+}
+
+// ---- offered_at, assert_at_turn_menu and assert_at_encounter_draw -----------
+
+/// `offered_at` counts the prompt's options anchored to a target: one for the
+/// lone free ability, none for an entity the window does not offer.
+#[test]
+fn offered_at_counts_the_options_at_an_anchor() {
+    let session = turn_begins_window().session();
+
+    assert_eq!(session.offered_at(&session.state().card(INV, FREE)), 1);
+    assert_eq!(session.offered_at(&OptionTarget::Enemy(FIRST)), 0);
+}
+
+/// `assert_at_turn_menu` passes at the named investigator's turn menu.
+#[test]
+fn assert_at_turn_menu_passes_at_the_turn_menu() {
+    board().open_turn(INV).session().assert_at_turn_menu(INV);
+}
+
+/// `assert_at_turn_menu` fails at any other prompt: a Fast window is not the
+/// turn menu.
+#[test]
+#[should_panic(expected = "expected InvestigatorId(1)'s turn menu")]
+fn assert_at_turn_menu_at_another_prompt_panics() {
+    turn_begins_window().session().assert_at_turn_menu(INV);
+}
+
+/// `assert_at_turn_menu` names whose menu: another investigator's turn menu
+/// fails it.
+#[test]
+#[should_panic(expected = "expected InvestigatorId(2)'s turn menu")]
+fn assert_at_turn_menu_of_another_investigator_panics() {
+    board()
         .open_turn(INV)
         .session()
-        .take(&activate(SELECT_INST))
-        .pick_nth(1);
+        .assert_at_turn_menu(InvestigatorId(2));
+}
+
+/// `assert_at_encounter_draw` passes at a staged Mythos encounter draw.
+#[test]
+fn assert_at_encounter_draw_passes_at_the_encounter_draw() {
+    board()
+        .with_turn_order([INV])
+        .with_mythos_draw_remaining([INV])
+        .session()
+        .assert_at_encounter_draw();
+}
+
+/// `assert_at_encounter_draw` fails anywhere else: the turn menu is not the
+/// encounter draw.
+#[test]
+#[should_panic(expected = "expected the encounter-draw prompt")]
+fn assert_at_encounter_draw_at_the_turn_menu_panics() {
+    board().open_turn(INV).session().assert_at_encounter_draw();
 }
 
 // ---- confirm and skip ------------------------------------------------------
@@ -350,9 +707,9 @@ fn confirm_acknowledges_a_pause() {
 /// re-opens after the play. Passing the turn-begins window opens the turn.
 #[test]
 fn skip_passes_a_fast_window_and_pick_plays_from_it() {
-    let session = turn_begins_window()
-        .session()
-        .pick(OptionTarget::CardInstance(FREE_INST));
+    let session = turn_begins_window().session();
+    let free = session.state().card(INV, FREE);
+    let session = session.pick(free);
     assert_eq!(resources(&session), 6);
     assert!(session.prompt().skippable, "the window re-opens");
 
@@ -392,13 +749,12 @@ fn a_rejected_step_reads_back_and_leaves_the_prompt_standing() {
 /// on standing at the choice, and the next step answers it.
 #[test]
 fn a_rejected_reply_in_the_drain_rests_at_the_prompt_it_answered() {
-    let session = board()
-        .open_turn(INV)
-        .session()
-        .resolve_choices(|c| {
+    let session = activating(
+        board().open_turn(INV).session().resolve_choices(|c| {
             c.pick_single(OptionId(99));
-        })
-        .take(&activate(DECIDE_INST));
+        }),
+        DECIDE,
+    );
 
     assert!(!session.expect_rejected().is_empty());
     assert_eq!(session.prompt().nature, PromptNature::Decision);
@@ -435,13 +791,11 @@ fn expect_rejected_on_an_accepted_step_panics() {
 /// `apply` takes a raw action and drains like any other step.
 #[test]
 fn apply_takes_a_raw_action() {
-    let session = board()
-        .open_turn(INV)
-        .session()
-        .take(&activate(DECIDE_INST))
-        .apply(Action::Player(PlayerAction::ResolveInput {
+    let session = activating(board().open_turn(INV).session(), DECIDE).apply(Action::Player(
+        PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(1)),
-        }));
+        },
+    ));
 
     assert_eq!(resources(&session), 7);
     assert_eq!(
@@ -454,13 +808,12 @@ fn apply_takes_a_raw_action() {
 /// the step drains past them to the next rest.
 #[test]
 fn the_reply_policy_set_before_a_step_answers_its_prompts() {
-    let session = board()
-        .open_turn(INV)
-        .session()
-        .resolve_choices(|c| {
+    let session = activating(
+        board().open_turn(INV).session().resolve_choices(|c| {
             c.pick_single(OptionId(1));
-        })
-        .take(&activate(DECIDE_INST));
+        }),
+        DECIDE,
+    );
 
     assert_eq!(resources(&session), 7);
     assert_eq!(
@@ -473,13 +826,12 @@ fn the_reply_policy_set_before_a_step_answers_its_prompts() {
 /// enemy is damaged whatever its position.
 #[test]
 fn a_scripted_pick_answers_by_anchor() {
-    let session = board()
-        .open_turn(INV)
-        .session()
-        .resolve_choices(|c| {
+    let session = activating(
+        board().open_turn(INV).session().resolve_choices(|c| {
             c.pick(OptionTarget::Enemy(SECOND));
-        })
-        .take(&activate(SELECT_INST));
+        }),
+        SELECT,
+    );
 
     assert_eq!(session.state().enemies[&SECOND].damage, 1);
     assert_eq!(session.state().enemies[&FIRST].damage, 0);
@@ -494,9 +846,68 @@ fn a_scripted_pick_answers_by_anchor() {
 #[test]
 #[should_panic(expected = "unanswered prompt")]
 fn finish_at_an_unanswered_prompt_panics() {
+    let _ = activating(board().open_turn(INV).session(), SELECT).finish();
+}
+
+/// `rejection` reads a rejected step's reason, and `None` after an accepted one.
+#[test]
+fn rejection_reads_the_reason_or_none() {
+    let accepted = board()
+        .open_turn(INV)
+        .session()
+        .take(&TurnAction::Resource { investigator: INV });
+    assert_eq!(accepted.rejection(), None);
+
+    let rejected = accepted.apply(Action::Player(PlayerAction::ResolveInput {
+        response: InputResponse::Confirm,
+    }));
+    assert_eq!(rejected.rejection(), Some(rejected.expect_rejected()));
+}
+
+/// `assert_rejects` runs a step the engine refuses on its first apply and
+/// returns the reason, having checked the state and the resting prompt did not
+/// move: an activation with no actions left.
+#[test]
+fn assert_rejects_returns_the_reason_of_a_step_that_moved_nothing() {
+    let state = board().open_turn(INV).build();
+    let action = activate(&state, DECIDE);
+    let mut state = state;
+    state
+        .investigators
+        .get_mut(&INV)
+        .expect("seated")
+        .actions_remaining = 0;
+
+    let reason = TestSession::new(state).assert_rejects(|s| s.submit_off_menu(&action));
+
+    assert!(
+        reason.contains("action"),
+        "the handler names the missing action: {reason}"
+    );
+}
+
+/// `assert_rejects` on a step the engine accepts panics.
+#[test]
+#[should_panic(expected = "was not rejected")]
+fn assert_rejects_on_an_accepted_step_panics() {
     let _ = board()
         .open_turn(INV)
         .session()
-        .take(&activate(SELECT_INST))
-        .finish();
+        .assert_rejects(|s| s.take(&TurnAction::Resource { investigator: INV }));
+}
+
+/// A reply rejected partway through a step's drain is not a step that moved
+/// nothing — the activation's action is already spent — so `assert_rejects`
+/// panics on it.
+#[test]
+#[should_panic(expected = "must leave state byte-identical")]
+fn assert_rejects_on_a_rejection_after_the_state_moved_panics() {
+    let _ = board().open_turn(INV).session().assert_rejects(|s| {
+        activating(
+            s.resolve_choices(|c| {
+                c.pick_single(OptionId(99));
+            }),
+            DECIDE,
+        )
+    });
 }

@@ -43,20 +43,19 @@
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use card_dsl::dsl::{self, Cost, Determination, InvestigatorTarget, TestOutcome};
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
-use game_core::engine::{ApplyResult, EngineOutcome, InputKind, InputRequest, OptionId};
+use game_core::engine::OptionTarget;
 use game_core::event::{Event, FailureReason};
 use game_core::scenario::{
     ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRegistry, SymbolCtx, SymbolOutcome,
     TokenEffect,
 };
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    DiscardPile, GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind,
-    TokenModifiers, TokenResolution, Zone,
+    AbilityAddress, AbilitySource, CardCode, CardInstanceId, ChaosBag, ChaosToken, DiscardPile,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenModifiers,
+    TokenResolution, Zone,
 };
-use game_core::test_support::{self, ChoiceResolver, MockRegistry, TakeOneFastPlay};
+use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event, scenario_registry};
 
 /// Mock asset: `[fast] Spend 1 resource: this skill test automatically
@@ -222,146 +221,124 @@ fn install_mock_registry() {
     });
 }
 
-/// The one board every test here builds on: the controller at willpower 5,
-/// holding `hand`, with an in-play instance of each code in `in_play`
-/// (instance ids ascending from 0), drawing from `bag`.
-fn board_with(in_play: &[&str], hand: &[&str], bag: ChaosBag) -> (GameState, InvestigatorId) {
-    let id = InvestigatorId(1);
-    let mut inv = test_support::test_investigator(1);
-    inv.skills.willpower = 5;
-    inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
-    for (i, code) in in_play.iter().enumerate() {
-        inv.cards_in_play.push(CardInPlay::enter_play(
-            CardCode::new(*code),
-            CardInstanceId(u32::try_from(i).expect("a handful of mocks")),
-            Owner::Investigator(InvestigatorId(1)),
-        ));
-    }
+const INV: InvestigatorId = InvestigatorId(1);
+/// The investigator's location on the Investigate board.
+const HERE: LocationId = LocationId(10);
 
+/// The one board every test here builds on: the controller at willpower 5,
+/// holding `hand`, with an in-play instance of each code in `in_play`,
+/// drawing from `bag`, on their open turn.
+fn board_with(in_play: &[&str], hand: &[&str], bag: ChaosBag) -> (GameState, InvestigatorId) {
     let state = GameStateBuilder::new()
-        .with_investigator(inv)
-        .open_turn(id)
+        .with_seat(
+            seat(1)
+                .skill(SkillKind::Willpower, 5)
+                .hand(hand.iter().copied())
+                .in_play(in_play.iter().copied()),
+        )
+        .open_turn(INV)
         .with_chaos_bag(bag)
         .with_token_modifiers(TokenModifiers::default())
         // Named so the mock module's symbol hook is reachable; only a
         // `[skull]` in the bag actually consults it.
         .with_scenario_id(ScenarioId::new(SYMBOL_SCENARIO))
         .build();
-    (state, id)
+    (state, INV)
 }
 
 /// [`board_with`] plus a location the investigator stands at, holding one
 /// clue behind `shroud` — the board an Investigate action needs. Bag is a
 /// single `Numeric(0)`.
 fn investigate_board(hand: &[&str], shroud: u8) -> (GameState, InvestigatorId, LocationId) {
-    let id = InvestigatorId(1);
-    let loc = LocationId(10);
-    let mut inv = test_support::test_investigator(1);
-    inv.current_location = Some(loc);
-    inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
-    let mut location = test_support::test_location(10, "Study");
+    let mut location = test_support::test_location(HERE.0, "Study");
     location.clues = 1;
     location.shroud = shroud;
     let state = GameStateBuilder::new()
-        .with_investigator(inv)
-        .open_turn(id)
+        .with_seat(seat(1).at(HERE).hand(hand.iter().copied()))
+        .open_turn(INV)
         .with_location(location)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
         .with_scenario_id(ScenarioId::new(SYMBOL_SCENARIO))
         .build();
-    (state, id, loc)
+    (state, INV, HERE)
 }
 
-/// A [`ChoiceResolver`] that takes the first offered fast play *and* commits
-/// a named set of cards at the commit window, declining every other window.
-///
-/// [`TakeOneFastPlay`] commits nothing and [`ScriptedResolver`] cannot pin
-/// down a fast window's prompt count; the skipped-draw tests need both at
-/// once — a card latching the determination before ST.3, and a card
-/// committed to the test it resolves.
-///
-/// [`ScriptedResolver`]: game_core::test_support::ScriptedResolver
-struct FastPlayAndCommit {
-    commit: Vec<CardCode>,
-    used: bool,
-}
-
-impl FastPlayAndCommit {
-    fn committing(codes: &[&str]) -> Self {
-        Self {
-            commit: codes.iter().map(|c| CardCode::new(*c)).collect(),
-            used: false,
-        }
-    }
-}
-
-impl ChoiceResolver for FastPlayAndCommit {
-    fn next(&mut self, request: &InputRequest, state: &GameState) -> InputResponse {
-        // Assumes the first skippable `PickSingle` offering anything is the
-        // test's fast window — true for every board built in this file, where
-        // nothing else opens one.
-        if request.skippable {
-            if !self.used && request.kind == InputKind::PickSingle && !request.options.is_empty() {
-                self.used = true;
-                return InputResponse::PickSingle(request.options[0].id);
-            }
-            return InputResponse::Skip;
-        }
-        match request.kind {
-            InputKind::Confirm => InputResponse::Confirm,
-            // The commit window: hand indices, resolved against the hand as
-            // it stands now (the fast play above already left it).
-            InputKind::PickMultiple => {
-                let inv = state
-                    .current_skill_test()
-                    .and_then(|t| state.investigators.get(&t.investigator))
-                    .expect("the commit window implies an in-flight test");
-                let mut used = vec![false; inv.hand.len()];
-                let selected = self
-                    .commit
-                    .iter()
-                    .map(|code| {
-                        let i = inv
-                            .hand
-                            .iter()
-                            .enumerate()
-                            .find_map(|(i, c)| (!used[i] && c == code).then_some(i))
-                            .unwrap_or_else(|| {
-                                panic!("commit code {code:?} not in hand {:?}", inv.hand)
-                            });
-                        used[i] = true;
-                        OptionId(u32::try_from(i).expect("hand index fits u32"))
-                    })
-                    .collect();
-                InputResponse::PickMultiple { selected }
-            }
-            other => panic!(
-                "FastPlayAndCommit: unexpected non-skippable {other:?}: {:?}",
-                request.prompt
-            ),
-        }
-    }
-}
-
-/// [`board_with`] for the common case: one in-play instance of `code`
-/// (instance 0), empty hand, and a single-`Numeric(0)` chaos bag so the token
-/// contributes nothing and every number below is the card's doing.
+/// [`board_with`] for the common case: one in-play instance of `code`, empty
+/// hand, and a single-`Numeric(0)` chaos bag so the token contributes nothing
+/// and every number below is the card's doing. Returns the instance id too.
 fn board(code: &str) -> (GameState, InvestigatorId, CardInstanceId) {
     let (state, id) = board_with(&[code], &[], ChaosBag::new([ChaosToken::Numeric(0)]));
-    (state, id, CardInstanceId(0))
+    let instance_id = state.in_play(id, code);
+    (state, id, instance_id)
 }
 
-/// Run a willpower test against `difficulty`, taking the card's offered fast
-/// activation at the test's player window.
-fn test_taking_the_fast_play(state: GameState, id: InvestigatorId, difficulty: i8) -> ApplyResult {
-    test_support::drive_skill_test(
-        state,
-        id,
-        SkillKind::Willpower,
-        difficulty,
-        TakeOneFastPlay::at_index(0),
+/// The fast play of the hand card `code` on `state`: a player window anchors
+/// a hand play to the card's place in the hand.
+fn play_from_hand(state: &GameState, code: &str) -> OptionTarget {
+    let hand_index = state.investigators[&INV]
+        .hand
+        .iter()
+        .position(|c| c.as_str() == code)
+        .unwrap_or_else(|| panic!("{code} is not in hand"));
+    OptionTarget::HandCard {
+        investigator: INV,
+        hand_index: u8::try_from(hand_index).expect("a short hand"),
+    }
+}
+
+/// Resolve a skill test the session has just started, activating the fast
+/// ability on the in-play card `card` at the ST.1 player window and
+/// committing `commit`. The ability stays offered, so the ST.1 window re-opens
+/// after it resolves and the ST.2 (pre-token) window opens too; both are
+/// declined. The test resolves back to the turn menu.
+fn activating_through_the_test(
+    session: TestSession,
+    card: CardInstanceId,
+    commit: &[&str],
+) -> TestSession {
+    let session = session
+        .pick(OptionTarget::CardInstance(card))
+        .skip()
+        .commit(commit)
+        .skip();
+    session.assert_at_turn_menu(INV);
+    session
+}
+
+/// Resolve a skill test the session has just started, playing the fast event
+/// `play` from hand at the ST.1 player window and committing `commit`. The
+/// played event leaves nothing to offer, so no window opens after it. The test
+/// resolves back to the turn menu.
+fn playing_through_the_test(
+    session: TestSession,
+    play: OptionTarget,
+    commit: &[&str],
+) -> TestSession {
+    let session = session.pick(play).commit(commit);
+    session.assert_at_turn_menu(INV);
+    session
+}
+
+/// Run a willpower test against `difficulty`, activating the in-play `card`'s
+/// fast ability at the test's player window and committing nothing.
+fn test_activating(state: GameState, card: CardInstanceId, difficulty: i8) -> TestSession {
+    activating_through_the_test(
+        TestSession::new(state).test_skill(INV, SkillKind::Willpower, difficulty),
+        card,
+        &[],
     )
+}
+
+/// Run a willpower test against `difficulty` on a board with nothing to play
+/// or commit: no player window opens, and the test resolves through an empty
+/// commit back to the turn menu.
+fn test_with_nothing_to_play(state: GameState, difficulty: i8) -> TestSession {
+    let session = TestSession::new(state)
+        .test_skill(INV, SkillKind::Willpower, difficulty)
+        .commit(&[]);
+    session.assert_at_turn_menu(INV);
+    session
 }
 
 /// *"the investigator's total skill value for that test is considered 0"* —
@@ -369,11 +346,11 @@ fn test_taking_the_fast_play(state: GameState, id: InvestigatorId, difficulty: i
 /// 3**, which an "if you fail by 2 or more" clause on the same test reads.
 #[test]
 fn a_card_latched_automatic_failure_fails_the_test_with_the_real_margin() {
-    let (state, id, _) = board(AUTO_FAIL);
-    let result = test_taking_the_fast_play(state, id, 3);
+    let (state, id, card) = board(AUTO_FAIL);
+    let session = test_activating(state, card, 3);
 
     assert_event!(
-        result.events,
+        session.events(),
         Event::SkillTestFailed {
             investigator,
             skill: SkillKind::Willpower,
@@ -381,39 +358,39 @@ fn a_card_latched_automatic_failure_fails_the_test_with_the_real_margin() {
             by: 3,
         } if *investigator == id
     );
-    assert_no_event!(result.events, Event::SkillTestSucceeded { .. });
+    assert_no_event!(session.events(), Event::SkillTestSucceeded { .. });
 }
 
 /// *"the total difficulty of that test is considered 0"* — willpower 5
 /// against difficulty 9 is a loss on the numbers and a success on the card.
 #[test]
 fn a_card_latched_automatic_success_passes_a_test_it_would_have_lost() {
-    let (state, id, _) = board(AUTO_SUCCEED);
-    let result = test_taking_the_fast_play(state, id, 9);
+    let (state, id, card) = board(AUTO_SUCCEED);
+    let session = test_activating(state, card, 9);
 
     assert_event!(
-        result.events,
+        session.events(),
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Willpower, .. }
             if *investigator == id
     );
-    assert_no_event!(result.events, Event::SkillTestFailed { .. });
+    assert_no_event!(session.events(), Event::SkillTestFailed { .. });
 }
 
 /// Automatic failure beats automatic success. Latched failure-first.
 #[test]
 fn automatic_failure_beats_automatic_success_latched_failure_first() {
-    let (state, id, _) = board(FAIL_THEN_SUCCEED);
-    let result = test_taking_the_fast_play(state, id, 3);
+    let (state, _, card) = board(FAIL_THEN_SUCCEED);
+    let session = test_activating(state, card, 3);
 
     assert_event!(
-        result.events,
+        session.events(),
         Event::SkillTestFailed {
             reason: FailureReason::AutoFail,
             by: 3,
             ..
         }
     );
-    assert_no_event!(result.events, Event::SkillTestSucceeded { .. });
+    assert_no_event!(session.events(), Event::SkillTestSucceeded { .. });
 }
 
 /// The same board with the two latches swapped. Precedence is resolved at
@@ -422,20 +399,20 @@ fn automatic_failure_beats_automatic_success_latched_failure_first() {
 /// suppression would pass the test above and fail this one.
 #[test]
 fn automatic_failure_beats_automatic_success_latched_success_first() {
-    let (state, id, _) = board(SUCCEED_THEN_FAIL);
-    let result = test_taking_the_fast_play(state, id, 3);
+    let (state, _, card) = board(SUCCEED_THEN_FAIL);
+    let session = test_activating(state, card, 3);
 
     assert_event!(
-        result.events,
+        session.events(),
         Event::SkillTestFailed {
             reason: FailureReason::AutoFail,
             by: 3,
             ..
         }
     );
-    assert_no_event!(result.events, Event::SkillTestSucceeded { .. });
+    assert_no_event!(session.events(), Event::SkillTestSucceeded { .. });
     assert_event_count!(
-        result.events,
+        session.events(),
         2,
         Event::SkillTestDeterminationLatched { .. }
     );
@@ -455,12 +432,17 @@ fn a_determination_can_be_latched_from_a_play_trigger() {
         ChaosBag::new([ChaosToken::Numeric(0)]),
     );
 
-    let result = test_taking_the_fast_play(state, id, 9);
+    let play = play_from_hand(&state, PLAY_AUTO_SUCCEED);
+    let session = playing_through_the_test(
+        TestSession::new(state).test_skill(id, SkillKind::Willpower, 9),
+        play,
+        &[],
+    );
 
     // No in-play instance to name: an event resolving out of hand latches an
     // unattributed determination, exactly as the row records it.
     assert_event!(
-        result.events,
+        session.events(),
         Event::SkillTestDeterminationLatched {
             determination: Determination::AutomaticSuccess,
             source: None,
@@ -468,10 +450,10 @@ fn a_determination_can_be_latched_from_a_play_trigger() {
         }
     );
     assert_event!(
-        result.events,
+        session.events(),
         Event::SkillTestSucceeded { investigator, .. } if *investigator == id
     );
-    assert_no_event!(result.events, Event::SkillTestFailed { .. });
+    assert_no_event!(session.events(), Event::SkillTestFailed { .. });
 }
 
 /// A determination with no test in flight has no skill-test identity to be
@@ -493,8 +475,11 @@ fn latching_a_determination_outside_a_test_is_rejected() {
         "the open-turn menu must not offer an activation that would reject",
     );
 
-    let result = test_support::dispatch_turn_action_unchecked(state, &action);
-    assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+    // Off the menu, as a client could send it over the wire: the handler
+    // itself refuses it.
+    let refused = TestSession::new(state).submit_off_menu(&action);
+    refused.expect_rejected();
+    let result = refused.finish();
     assert!(result.events.is_empty(), "a rejection emits no events");
     assert_eq!(
         result.state.investigators[&id].resources, resources_before,
@@ -527,27 +512,32 @@ fn an_unrelated_activation_is_still_offered_outside_a_test() {
 /// gives the token's row.
 #[test]
 fn a_card_latched_determination_does_not_survive_into_a_later_test() {
-    let (state, id, _) = board(AUTO_SUCCEED);
-    let first = test_taking_the_fast_play(state, id, 9);
-    assert_event!(first.events, Event::SkillTestSucceeded { .. });
+    let (state, _, card) = board(AUTO_SUCCEED);
+    let first = test_activating(state, card, 9);
+    assert_event!(first.events(), Event::SkillTestSucceeded { .. });
     assert!(
-        first.state.recorded_modifiers.is_empty(),
+        first.state().recorded_modifiers.is_empty(),
         "the determination expires with the test's teardown",
     );
 
     // The second test declines the fast window, so nothing latches: willpower
-    // 5 against difficulty 9 fails by 4 on the numbers.
-    let second =
-        test_support::perform_skill_test_no_commits(first.state, id, SkillKind::Willpower, 9);
+    // 5 against difficulty 9 fails by 4 on the numbers. A fresh session from
+    // the first test's end, so its events are the second test's alone.
+    let second = TestSession::new(first.state().clone())
+        .test_skill(INV, SkillKind::Willpower, 9)
+        .skip()
+        .commit(&[])
+        .skip();
+    second.assert_at_turn_menu(INV);
     assert_event!(
-        second.events,
+        second.events(),
         Event::SkillTestFailed {
             reason: FailureReason::Total,
             by: 4,
             ..
         }
     );
-    assert_no_event!(second.events, Event::SkillTestDeterminationLatched { .. });
+    assert_no_event!(second.events(), Event::SkillTestDeterminationLatched { .. });
 }
 
 /// The event log is the client's only narrative channel: without this event
@@ -557,10 +547,10 @@ fn a_card_latched_determination_does_not_survive_into_a_later_test() {
 #[test]
 fn the_latch_event_names_the_determination_and_its_source() {
     let (state, id, instance_id) = board(AUTO_SUCCEED);
-    let result = test_taking_the_fast_play(state, id, 9);
+    let session = test_activating(state, instance_id, 9);
 
     assert_event!(
-        result.events,
+        session.events(),
         Event::SkillTestDeterminationLatched {
             investigator,
             determination: Determination::AutomaticSuccess,
@@ -568,7 +558,7 @@ fn the_latch_event_names_the_determination_and_its_source() {
         } if *investigator == id && *src == instance_id
     );
     assert_event_count!(
-        result.events,
+        session.events(),
         1,
         Event::SkillTestDeterminationLatched { .. }
     );
@@ -580,18 +570,21 @@ fn the_latch_event_names_the_determination_and_its_source() {
 /// second event for the same moment would read as two determinations.
 #[test]
 fn the_auto_fail_token_latches_no_second_event() {
-    let (state, id) = board_with(&[], &[], ChaosBag::new([ChaosToken::AutoFail]));
-    let result = test_support::perform_skill_test_no_commits(state, id, SkillKind::Willpower, 3);
+    let (state, _) = board_with(&[], &[], ChaosBag::new([ChaosToken::AutoFail]));
+    let session = test_with_nothing_to_play(state, 3);
 
     assert_event!(
-        result.events,
+        session.events(),
         Event::SkillTestFailed {
             reason: FailureReason::AutoFail,
             by: 3,
             ..
         }
     );
-    assert_no_event!(result.events, Event::SkillTestDeterminationLatched { .. });
+    assert_no_event!(
+        session.events(),
+        Event::SkillTestDeterminationLatched { .. }
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -604,18 +597,18 @@ fn the_auto_fail_token_latches_no_second_event() {
 /// not by reading the RNG cursor — and the bag itself is untouched.
 #[test]
 fn a_determination_latched_before_the_reveal_draws_no_token() {
-    let (state, id, _) = board(AUTO_SUCCEED);
+    let (state, id, card) = board(AUTO_SUCCEED);
     let bag_before = state.chaos_bag.clone();
-    let result = test_taking_the_fast_play(state, id, 9);
+    let session = test_activating(state, card, 9);
 
-    assert_no_event!(result.events, Event::ChaosTokenRevealed { .. });
+    assert_no_event!(session.events(), Event::ChaosTokenRevealed { .. });
     assert_event!(
-        result.events,
+        session.events(),
         Event::SkillTestSucceeded { investigator, .. } if *investigator == id
     );
     // The load-bearing assertion is the absent reveal above; this one pins
     // the bag's contents, which a draw never mutates anyway.
-    assert_eq!(result.state.chaos_bag, bag_before);
+    assert_eq!(session.state().chaos_bag, bag_before);
 }
 
 /// *"that step is skipped, along with Step 4"* — the `[skull]`'s immediate
@@ -624,11 +617,12 @@ fn a_determination_latched_before_the_reveal_draws_no_token() {
 #[test]
 fn a_skipped_draw_pushes_no_chaos_symbol_effects() {
     let (state, id) = board_with(&[AUTO_SUCCEED], &[], ChaosBag::new([ChaosToken::Skull]));
-    let result = test_taking_the_fast_play(state, id, 9);
+    let card = state.in_play(id, AUTO_SUCCEED);
+    let session = test_activating(state, card, 9);
 
-    assert_no_event!(result.events, Event::ChaosTokenRevealed { .. });
-    assert_no_event!(result.events, Event::DamageTaken { .. });
-    assert_event!(result.events, Event::SkillTestSucceeded { .. });
+    assert_no_event!(session.events(), Event::ChaosTokenRevealed { .. });
+    assert_no_event!(session.events(), Event::DamageTaken { .. });
+    assert_event!(session.events(), Event::SkillTestSucceeded { .. });
 }
 
 /// The control for the test above: with nothing latched, the same board
@@ -636,17 +630,17 @@ fn a_skipped_draw_pushes_no_chaos_symbol_effects() {
 /// absence asserted there could be a mock that never fires.
 #[test]
 fn the_symbol_effects_still_run_when_nothing_is_latched() {
-    let (state, id) = board_with(&[], &[], ChaosBag::new([ChaosToken::Skull]));
-    let result = test_support::perform_skill_test_no_commits(state, id, SkillKind::Willpower, 9);
+    let (state, _) = board_with(&[], &[], ChaosBag::new([ChaosToken::Skull]));
+    let session = test_with_nothing_to_play(state, 9);
 
     assert_event!(
-        result.events,
+        session.events(),
         Event::ChaosTokenRevealed {
             token: ChaosToken::Skull,
             ..
         }
     );
-    assert_event!(result.events, Event::DamageTaken { amount: 1, .. });
+    assert_event!(session.events(), Event::DamageTaken { amount: 1, .. });
 }
 
 /// *"If a chaos token effect causes an investigator to automatically
@@ -656,18 +650,18 @@ fn the_symbol_effects_still_run_when_nothing_is_latched() {
 /// test fails on it.
 #[test]
 fn a_determination_from_the_revealed_token_skips_nothing() {
-    let (state, id) = board_with(&[], &[], ChaosBag::new([ChaosToken::AutoFail]));
-    let result = test_support::perform_skill_test_no_commits(state, id, SkillKind::Willpower, 3);
+    let (state, _) = board_with(&[], &[], ChaosBag::new([ChaosToken::AutoFail]));
+    let session = test_with_nothing_to_play(state, 3);
 
     assert_event!(
-        result.events,
+        session.events(),
         Event::ChaosTokenRevealed {
             token: ChaosToken::AutoFail,
             resolution: TokenResolution::AutoFail,
         }
     );
     assert_event!(
-        result.events,
+        session.events(),
         Event::SkillTestFailed {
             reason: FailureReason::AutoFail,
             by: 3,
@@ -686,22 +680,21 @@ fn committed_cards_are_still_discarded_when_the_draw_is_skipped() {
         &[FILLER],
         ChaosBag::new([ChaosToken::Numeric(0)]),
     );
-    let result = test_support::drive_skill_test(
-        state,
-        id,
-        SkillKind::Willpower,
-        9,
-        FastPlayAndCommit::committing(&[FILLER]),
+    let card = state.in_play(id, AUTO_SUCCEED);
+    let session = activating_through_the_test(
+        TestSession::new(state).test_skill(id, SkillKind::Willpower, 9),
+        card,
+        &[FILLER],
     );
 
-    assert_no_event!(result.events, Event::ChaosTokenRevealed { .. });
+    assert_no_event!(session.events(), Event::ChaosTokenRevealed { .. });
     assert_event!(
-        result.events,
+        session.events(),
         Event::CardDiscarded { code, from: Zone::Hand, to: DiscardPile::Investigator(investigator) }
             if *investigator == id && code.as_str() == FILLER
     );
     assert!(
-        result.state.investigators[&id]
+        session.state().investigators[&id]
             .discard
             .contains(&CardCode::new(FILLER)),
         "the committed card reaches the discard pile",
@@ -716,36 +709,28 @@ fn committed_cards_are_still_discarded_when_the_draw_is_skipped() {
 fn the_follow_up_and_end_of_test_steps_still_run_on_a_skipped_draw() {
     let (state, id, loc) = investigate_board(&[PLAY_AUTO_SUCCEED, ON_RESOLUTION_GAIN], 9);
     let resources_before = state.investigators[&id].resources;
-    let investigate = TurnAction::Investigate { investigator: id };
-    let idx = enumerate::legal_actions(&state)
-        .iter()
-        .position(|a| a == &investigate)
-        .expect("Investigate must be a legal open-turn action");
-    let result = test_support::drive(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(
-                u32::try_from(idx).expect("action index fits u32"),
-            )),
-        }),
-        FastPlayAndCommit::committing(&[ON_RESOLUTION_GAIN]),
+    let play = play_from_hand(&state, PLAY_AUTO_SUCCEED);
+    let session = playing_through_the_test(
+        TestSession::new(state).take(&TurnAction::Investigate { investigator: id }),
+        play,
+        &[ON_RESOLUTION_GAIN],
     );
 
-    assert_no_event!(result.events, Event::ChaosTokenRevealed { .. });
-    assert_event!(result.events, Event::SkillTestSucceeded { .. });
+    assert_no_event!(session.events(), Event::ChaosTokenRevealed { .. });
+    assert_event!(session.events(), Event::SkillTestSucceeded { .. });
     // ST.7 action follow-up: the shroud-9 location gives up its clue.
-    assert_event!(result.events, Event::CluePlaced { .. });
-    assert_eq!(result.state.locations[&loc].clues, 0);
-    assert_eq!(result.state.investigators[&id].clues, 1);
+    assert_event!(session.events(), Event::CluePlaced { .. });
+    assert_eq!(session.state().locations[&loc].clues, 0);
+    assert_eq!(session.state().investigators[&id].clues, 1);
     // The committed card's end-of-test trigger.
     assert_event!(
-        result.events,
+        session.events(),
         Event::ResourcesGained { investigator, amount: 1 } if *investigator == id
     );
     assert_eq!(
-        result.state.investigators[&id].resources,
+        session.state().investigators[&id].resources,
         resources_before + 1
     );
     // ST.8 teardown.
-    assert_event!(result.events, Event::SkillTestEnded { investigator } if *investigator == id);
+    assert_event!(session.events(), Event::SkillTestEnded { investigator } if *investigator == id);
 }

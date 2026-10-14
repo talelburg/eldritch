@@ -4,6 +4,7 @@ use crate::engine::outcome::{EngineOutcome, OptionId};
 use crate::state::{
     Act, CardCode, CardInstanceId, ChaosBag, ChaosToken, Enemy, GameStateBuilder, Phase,
 };
+use crate::test_support::{seat, Seat};
 use crate::{engine, test_support};
 
 mod act_actions;

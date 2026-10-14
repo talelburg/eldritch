@@ -3,12 +3,15 @@
 //! `ChooseOne`, which suspends. The cascade must let it resolve before the 1.4
 //! draws — no stranded `Effect` frame / `anchor_on_child_pop` panic.
 
-use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
+use game_core::action::RosterEntry;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, ApplyResult, EngineOutcome, InputKind, OptionId, OptionTarget};
-use game_core::state::{CardCode, GameState, InvestigatorId};
-use game_core::{scenario_registry, test_support};
+use game_core::engine::{self, InputKind, OptionTarget};
+use game_core::scenario_registry;
+use game_core::state::{CardCode, InvestigatorId};
+use game_core::test_support::{self, TestSession};
 use scenarios::the_gathering;
+
+const INV: InvestigatorId = InvestigatorId(1);
 
 #[ctor::ctor(unsafe)]
 fn install_registries() {
@@ -18,41 +21,36 @@ fn install_registries() {
 
 /// Seat Roland, set agenda doom to threshold-1, give the lead a card (so the
 /// random-discard branch is legal and the `ChooseOne` genuinely suspends), and
-/// `interactive_acknowledge` per the arg. Returns the result right after `EndTurn`.
-fn drive_to_mythos_advance(interactive: bool) -> ApplyResult {
+/// `interactive_acknowledge` per the arg. Returns the session right after
+/// `EndTurn`.
+fn drive_to_mythos_advance(interactive: bool) -> TestSession {
     let roster = vec![RosterEntry {
-        investigator: CardCode("01001".into()),
+        investigator: CardCode::new("01001"),
         deck: vec![],
     }];
-    let mut state: GameState = engine::seat_and_open(the_gathering::setup(), &roster).state;
-    state = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        }),
-    )
-    .state;
+    // seat_and_open rests at the mulligan; Roland keeps his (empty) hand.
+    let mut state = TestSession::new(engine::seat_and_open(the_gathering::setup(), &roster).state)
+        .choose_from_hand(&[])
+        .finish()
+        .state;
     let threshold = state.agenda_deck[state.agenda_index].doom_threshold;
     state.agenda_doom = threshold - 1;
     state.encounter_discard.clear();
     state.interactive_acknowledge = interactive;
     state
         .investigators
-        .values_mut()
-        .next()
+        .get_mut(&INV)
         .unwrap()
         .hand
-        .push(CardCode("01088".into()));
-    test_support::take_turn_action(state, &TurnAction::EndTurn)
+        .push(CardCode::new("01088"));
+    TestSession::new(state).take(&TurnAction::EndTurn)
 }
 
 #[test]
 fn mythos_agenda_advance_choose_one_resolves_without_panic() {
     // Flag off: no acknowledge — the live prompt is the lead's ChooseOne.
-    let r = drive_to_mythos_advance(false);
-    let EngineOutcome::AwaitingInput { request, .. } = &r.outcome else {
-        panic!("expected the agenda ChooseOne prompt, got {:?}", r.outcome);
-    };
+    let session = drive_to_mythos_advance(false);
+    let request = session.prompt();
     assert_eq!(
         request.kind,
         InputKind::PickSingle,
@@ -62,30 +60,28 @@ fn mythos_agenda_advance_choose_one_resolves_without_panic() {
     // The choice is live BEFORE the encounter draws, and BEFORE the cursor bumps
     // (Finalize runs only after the reverse resolves — RR order).
     assert_eq!(
-        r.state.current_encounter_drawer(),
+        session.state().current_encounter_drawer(),
         None,
         "draws wait for the advance choice"
     );
     assert_eq!(
-        r.state.agenda_index, 0,
+        session.state().agenda_index,
+        0,
         "cursor bumps only after the reverse resolves"
     );
 
-    // Resolve the choice (branch 1 = lead takes 2 horror): the agenda finalizes
-    // (cursor bumps) and the cascade proceeds into the 1.4 encounter draw.
-    let r2 = engine::apply(
-        r.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(1)),
-        }),
-    );
+    // Resolve the choice (the second printed branch = lead takes 2 horror): the
+    // agenda finalizes (cursor bumps) and the cascade proceeds into the 1.4
+    // encounter draw.
+    let session = session.pick_nth(1);
     assert_eq!(
-        r2.state.agenda_index, 1,
+        session.state().agenda_index,
+        1,
         "agenda finalized after the choice"
     );
     assert_eq!(
-        r2.state.current_encounter_drawer(),
-        Some(InvestigatorId(1)),
+        session.state().current_encounter_drawer(),
+        Some(INV),
         "the 1.4 draws run after the advance fully resolved"
     );
 }
@@ -94,10 +90,8 @@ fn mythos_agenda_advance_choose_one_resolves_without_panic() {
 fn mythos_agenda_advance_acknowledge_precedes_the_choice() {
     // Flag on (server path): the forced agenda advance surfaces as an on-card
     // flip pick anchored to the agenda, and it precedes the ChooseOne (#558).
-    let r = drive_to_mythos_advance(true);
-    let EngineOutcome::AwaitingInput { request, .. } = &r.outcome else {
-        panic!("expected the advance flip pick, got {:?}", r.outcome);
-    };
+    let session = drive_to_mythos_advance(true);
+    let request = session.prompt();
     assert_eq!(request.kind, InputKind::PickSingle, "{request:?}");
     assert_eq!(request.options.len(), 1, "a single 'Advance' option");
     assert_eq!(
@@ -106,17 +100,6 @@ fn mythos_agenda_advance_acknowledge_precedes_the_choice() {
         "the flip pick anchors to the agenda card"
     );
     // Click the flip → the ChooseOne becomes the live prompt.
-    let r2 = engine::apply(
-        r.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(0)),
-        }),
-    );
-    let EngineOutcome::AwaitingInput { request, .. } = &r2.outcome else {
-        panic!(
-            "expected the ChooseOne after the flip pick, got {:?}",
-            r2.outcome
-        );
-    };
-    assert_eq!(request.kind, InputKind::PickSingle);
+    let session = session.pick(OptionTarget::Agenda);
+    assert_eq!(session.prompt().kind, InputKind::PickSingle);
 }

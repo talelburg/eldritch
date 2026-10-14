@@ -10,13 +10,9 @@ mod turn_end;
 /// turn. `dying` is the one about to be defeated.
 fn two_investigator_open_turn(whose: InvestigatorId) -> GameState {
     let (a, b) = (InvestigatorId(1), InvestigatorId(2));
-    let mut first = test_support::test_investigator(1);
-    first.actions_remaining = 2;
-    let mut second = test_support::test_investigator(2);
-    second.actions_remaining = 2;
     GameStateBuilder::new()
-        .with_investigator(first)
-        .with_investigator(second)
+        .with_seat(test_support::seat(1).actions(2))
+        .with_seat(test_support::seat(2).actions(2))
         .with_turn_order([a, b])
         .open_turn(whose)
         .build()

@@ -393,6 +393,8 @@ impl InputRequest {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ResumeToken(pub(crate) u64);
 
+// The prompt types and their `OptionId`s are these tests' subject, so they
+// build options by hand rather than reading them off a session.
 #[cfg(test)]
 mod tests {
     use super::*;

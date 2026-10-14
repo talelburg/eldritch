@@ -8,83 +8,64 @@
 use cards::REGISTRY;
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId,
-    LocationId, TokenModifiers,
+    ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId, LocationId, TokenModifiers,
 };
-use game_core::test_support::{self, TestSession};
+use game_core::test_support::{self, seat, TestSession};
 
 const VICIOUS_BLOW: &str = "01025";
 const INV: InvestigatorId = InvestigatorId(1);
 const ENEMY: EnemyId = EnemyId(100);
+const HERE: LocationId = LocationId(10);
 
 #[ctor::ctor(unsafe)]
 fn install() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// Board: the controller (combat 3) engaged with one enemy (fight 2,
-/// health 10 so the dealt damage is observable, not clamped), Vicious
-/// Blow in hand, a `Numeric(0)` chaos bag for a deterministic success.
-fn board() -> GameState {
-    let loc_id = LocationId(10);
-    let mut inv = test_support::test_investigator(1);
-    inv.skills.combat = 3;
-    inv.hand = vec![CardCode::new(VICIOUS_BLOW)];
-    inv.current_location = Some(loc_id);
-
-    let mut enemy = test_support::test_enemy(100, "Ghoul");
+/// The controller (combat 3) engaged with one enemy (fight 2, health 10 so the
+/// dealt damage is observable, not clamped), Vicious Blow in hand, a
+/// `Numeric(0)` chaos bag for a deterministic success, fighting it and
+/// committing `commit`.
+fn fight_committing(commit: &[&str]) -> TestSession {
+    let mut enemy = test_support::test_enemy(ENEMY.0, "Ghoul");
     enemy.fight = 2;
     enemy.max_health = 10;
-    enemy.engaged_with = Some(INV);
-    enemy.current_location = Some(loc_id); // co-located: Fight is location-gated (#401)
 
     GameStateBuilder::new()
-        .with_investigator(inv)
-        .with_location(test_support::test_location(10, "Study"))
-        .with_enemy(enemy)
+        .with_seat(seat(1).at(HERE).hand([VICIOUS_BLOW]))
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        // Co-located: Fight is location-gated (#401).
+        .with_enemy_engaged(enemy, INV)
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
-        .build()
-}
-
-fn fight_action() -> TurnAction {
-    TurnAction::Fight {
-        investigator: INV,
-        enemy: ENEMY,
-    }
+        .session()
+        .take(&TurnAction::Fight {
+            investigator: INV,
+            enemy: ENEMY,
+        })
+        .commit(commit)
 }
 
 /// Committing Vicious Blow to a successful Fight deals `1 base + 1 = 2`.
 #[test]
 fn committing_vicious_blow_adds_one_attack_damage() {
-    let r = TestSession::new(board())
-        .resolve_choices(|c| {
-            c.commit_cards(&[CardCode::new(VICIOUS_BLOW)]);
-        })
-        .take(&fight_action())
-        .finish();
+    let session = fight_committing(&[VICIOUS_BLOW]);
 
-    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
-    assert_event!(r.events, Event::EnemyDamaged { amount: 2, .. });
-    assert_eq!(r.state.enemies[&ENEMY].damage, 2);
+    session.assert_at_turn_menu(INV);
+    assert_event!(session.events(), Event::EnemyDamaged { amount: 2, .. });
+    assert_eq!(session.state().enemies[&ENEMY].damage, 2);
 }
 
 /// The same Fight without committing Vicious Blow deals the base `1` —
 /// confirms the +1 comes from the card, not the action.
 #[test]
 fn fight_without_vicious_blow_deals_base_damage() {
-    let r = TestSession::new(board())
-        .resolve_choices(|c| {
-            c.commit_cards(&[]);
-        })
-        .take(&fight_action())
-        .finish();
+    let session = fight_committing(&[]);
 
-    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
-    assert_event!(r.events, Event::EnemyDamaged { amount: 1, .. });
-    assert_eq!(r.state.enemies[&ENEMY].damage, 1);
+    session.assert_at_turn_menu(INV);
+    assert_event!(session.events(), Event::EnemyDamaged { amount: 1, .. });
+    assert_eq!(session.state().enemies[&ENEMY].damage, 1);
 }

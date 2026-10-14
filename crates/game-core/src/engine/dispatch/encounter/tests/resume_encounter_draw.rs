@@ -1,8 +1,9 @@
 use super::*;
-use crate::engine::dispatch;
 use crate::engine::outcome::InputKind;
-use crate::state::{CardCode, Continuation, GameStateBuilder, InvestigatorId, Phase};
-use crate::test_support;
+use crate::state::{
+    CardCode, GameState, GameStateBuilder, InvestigatorId, MythosPhaseFrame, MythosResume, Phase,
+};
+use crate::test_support::{self, TestSession};
 
 // The former `rejects_outside_mythos_phase` / `rejects_when_no_draw_pending`
 // / `rejects_when_out_of_order` tests are gone (#348 part 2c-iii-b): the
@@ -14,36 +15,45 @@ use crate::test_support;
 // The frame-presence gate is exercised by `apply`'s `EncounterDraw` guard
 // and `resolve_input`'s no-frame rejection.
 
+/// Investigator 1's Mythos step-1.4 encounter draw, the moment it is asked.
+fn drawing() -> GameState {
+    GameStateBuilder::default()
+        .with_seat(test_support::seat(1))
+        .with_phase(Phase::Mythos)
+        .with_phase_anchor(MythosPhaseFrame {
+            resume: MythosResume::AfterDraws,
+        })
+        .with_turn_order([InvestigatorId(1)])
+        .with_mythos_draw_remaining([InvestigatorId(1)])
+        .build()
+}
+
 #[test]
 fn rejects_non_confirm_response_and_preserves_frame() {
     // Validate-first: a non-`Confirm` response rejects and leaves the
-    // `EncounterDraw` frame intact for retry.
-    let mut state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
-        .with_phase(Phase::Mythos)
-        .with_turn_order([InvestigatorId(1)])
-        .with_mythos_draw_remaining([InvestigatorId(1)])
-        .build();
-    let mut events = Vec::new();
-    let outcome = resume_encounter_draw(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
-        &InputResponse::Skip,
-    );
-    assert!(matches!(
-        outcome,
-        EngineOutcome::Rejected { reason } if reason.contains("expects InputResponse::Confirm")
-    ));
+    // encounter draw in place for retry.
+    let session = TestSession::new(drawing());
+    let events_before = session.events().len();
+    let session = session.skip();
+
     assert!(
-        matches!(
-            state.continuations.top(),
-            Some(Continuation::EncounterDraw(EncounterDrawFrame { remaining, .. })) if remaining == &[InvestigatorId(1)]
-        ),
-        "the EncounterDraw frame must survive a rejected response for retry",
+        session
+            .expect_rejected()
+            .contains("expects InputResponse::Confirm"),
+        "unexpected reject reason: {:?}",
+        session.expect_rejected(),
     );
-    assert!(events.is_empty(), "a rejected response emits no events");
+    // The encounter draw must survive a rejected response for retry.
+    session.assert_at_encounter_draw();
+    assert_eq!(
+        session.state().current_encounter_drawer(),
+        Some(InvestigatorId(1))
+    );
+    assert_eq!(
+        session.events().len(),
+        events_before,
+        "a rejected response emits no events"
+    );
 }
 
 #[test]
@@ -52,20 +62,8 @@ fn the_draw_prompt_is_anchored_to_the_encounter_deck() {
     // cosmetic skill-test acknowledge on the wire — both are option-less
     // `Confirm`s (ADR 0011). A rewritten builder that drops the `.at(…)`
     // relocates the Draw button to the banner, and this is what catches it.
-    let mut state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
-        .with_phase(Phase::Mythos)
-        .with_turn_order([InvestigatorId(1)])
-        .with_mythos_draw_remaining([InvestigatorId(1)])
-        .build();
-    let mut events = Vec::new();
-    let outcome = prompt_encounter_draw(&Cx {
-        state: &mut state,
-        events: &mut events,
-    });
-    let EngineOutcome::AwaitingInput { request, .. } = outcome else {
-        panic!("the encounter draw suspends for a Confirm");
-    };
+    let session = TestSession::new(drawing());
+    let request = session.prompt();
     assert_eq!(request.kind, InputKind::Confirm);
     assert!(request.options.is_empty(), "a Confirm carries no options");
     assert_eq!(request.target, Some(OptionTarget::EncounterDeck));
@@ -80,12 +78,7 @@ fn the_draw_prompt_is_anchored_to_the_encounter_deck() {
 /// `encounter_card_revealed_tests` pattern.
 #[test]
 fn rejects_an_unknown_encounter_code() {
-    let mut state = GameStateBuilder::default()
-        .with_investigator(test_support::test_investigator(1))
-        .with_phase(Phase::Mythos)
-        .with_turn_order([InvestigatorId(1)])
-        .with_mythos_draw_remaining([InvestigatorId(1)])
-        .build();
+    let mut state = drawing();
     // Seed the encounter deck with an unknown code so we prove the
     // reject fires at the unknown-code check, not at the
     // empty-deck check.
@@ -93,34 +86,22 @@ fn rejects_an_unknown_encounter_code() {
         .encounter_deck
         .push_back(CardCode("__no_such_card".into()));
     let pre_deck_len = state.encounter_deck.len();
-    let mut events = Vec::new();
-    // `resume_encounter_draw` now only pushes the per-drawer `PlayerDraw`
-    // chain frame; the actual draw (and its unknown-code reject)
-    // happens in the `drive` loop's `PlayerDraw` arm (callsite-migration).
-    // Run it through `drive` so the reject surfaces as the engine produces it.
-    let outcome = {
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
-        let outcome = resume_encounter_draw(&mut cx, &InputResponse::Confirm);
-        dispatch::drive(&mut cx, outcome)
-    };
-    match outcome {
-        EngineOutcome::Rejected { reason } => {
-            assert!(
-                reason.contains("unknown card code"),
-                "unexpected reject reason: {reason:?}",
-            );
-        }
-        other => panic!("expected Rejected, got {other:?}"),
-    }
+    // `resume_encounter_draw` only pushes the per-drawer `PlayerDraw` chain
+    // frame; the actual draw (and its unknown-code reject) happens in the
+    // `drive` loop's `PlayerDraw` arm (callsite-migration), which the step's
+    // drain runs.
+    let session = TestSession::new(state).confirm();
+    let reason = session.expect_rejected();
+    assert!(
+        reason.contains("unknown card code"),
+        "unexpected reject reason: {reason:?}",
+    );
     // Deck must not grow; may shrink by 1 if draw happened before
     // the unknown-code reject (documented exception matching the
     // encounter_card_revealed validate-first caveat).
     assert!(
-        state.encounter_deck.len() <= pre_deck_len,
+        session.state().encounter_deck.len() <= pre_deck_len,
         "deck should not grow; expected <= {pre_deck_len}, got {}",
-        state.encounter_deck.len(),
+        session.state().encounter_deck.len(),
     );
 }

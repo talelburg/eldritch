@@ -50,17 +50,15 @@
 //! Own process → installs `cards::REGISTRY`.
 
 use cards::REGISTRY;
-use game_core::action::{Action, EngineRecord};
-use game_core::assert_event;
 use game_core::engine::enumerate::{self, TurnAction};
-use game_core::engine::{ApplyResult, OptionId};
+use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    ContinuationStack, GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, Phase,
-    SkillKind, Zone,
+    GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, Zone,
 };
-use game_core::test_support::{self, ScriptedResolver, TestSession};
+use game_core::test_support::{self, seat, Seat, TestSession};
+use game_core::{assert_event, assert_no_event};
 
 /// Lita Chantler — the `Ally` the Parlor grants to.
 const LITA: &str = "01117";
@@ -75,8 +73,10 @@ const GRASPING_HANDS: &str = "01162";
 const INV: InvestigatorId = InvestigatorId(1);
 const PARLOR_ID: LocationId = LocationId(1);
 const HALLWAY_ID: LocationId = LocationId(2);
+/// Lita's instance id. A seat cannot place a card at a location, so the
+/// builder does not mint hers; it is fixed here, and seated cards are minted
+/// past it.
 const LITA_INST: CardInstanceId = CardInstanceId(50);
-const COP_INST: CardInstanceId = CardInstanceId(51);
 
 #[ctor::ctor(unsafe)]
 fn install() {
@@ -102,50 +102,49 @@ fn parley() -> TurnAction {
     }
 }
 
-/// The board: the investigator in the revealed Parlor, Lita in play *at* the Parlor under
-/// nobody's control, and a Hallway to stand in instead. `token` is the only
-/// chaos token in the bag, so the test's outcome is fixed.
-fn board(token: ChaosToken) -> GameState {
-    let mut parlor = test_support::test_location(1, "Parlor");
+/// The investigator: intellect 5, so a `[intellect]` (4) test turns on the
+/// chaos token rather than on the investigator.
+fn sharp() -> Seat {
+    seat(1).skill(SkillKind::Intellect, 5)
+}
+
+/// Lita as she is put into play at the Parlor: the scenario's, under nobody's
+/// control.
+fn lita_at_the_parlor() -> CardInPlay {
+    CardInPlay::enter_play(CardCode::new(LITA), LITA_INST, Owner::Scenario)
+}
+
+/// The board: [`sharp`] in the revealed Parlor, Lita in play *at* the Parlor
+/// under nobody's control, and a Hallway to stand in instead. `token` is the
+/// only chaos token in the bag, so the test's outcome is fixed.
+fn board(token: ChaosToken) -> GameStateBuilder {
+    board_with(sharp().at(PARLOR_ID), lita_at_the_parlor(), token)
+}
+
+/// [`board`] with the investigator seated as `investigator` and Lita as
+/// `lita`.
+fn board_with(investigator: Seat, lita: CardInPlay, token: ChaosToken) -> GameStateBuilder {
+    let mut parlor = test_support::test_location(PARLOR_ID.0, "Parlor");
     parlor.code = CardCode::new(PARLOR);
     parlor.revealed = true;
-    let mut hallway = test_support::test_location(2, "Hallway");
+    parlor.cards_at_location.push(lita);
+    let mut hallway = test_support::test_location(HALLWAY_ID.0, "Hallway");
     hallway.code = CardCode::new("01112");
 
-    let mut inv = test_support::test_investigator(1);
-    // Intellect 5, so a `[intellect]` (4) test turns on the chaos token rather
-    // than on the investigator.
-    inv.skills.intellect = 5;
-
-    let mut state = GameStateBuilder::new()
-        .with_investigator_at(inv, PARLOR_ID)
+    GameStateBuilder::new()
+        .with_seat(investigator)
         .with_location(parlor)
         .with_location(hallway)
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([token]))
-        .build();
-    state
-        .locations
-        .get_mut(&PARLOR_ID)
-        .expect("the Parlor is on the board")
-        .cards_at_location
-        .push(CardInPlay::enter_play(
-            CardCode::new(LITA),
-            LITA_INST,
-            Owner::Scenario,
-        ));
-    state
 }
 
-/// Drive the Parley to resolution: the activation opens a commit window
-/// (nothing to commit), then the test resolves.
-fn drive_parley(state: GameState) -> ApplyResult {
-    TestSession::new(state)
-        .resolve_choices(|c: &mut ScriptedResolver| {
-            c.commit_cards(&[]);
-        })
-        .take(&parley())
-        .finish()
+/// Take the Parley and play it to resolution: the activation opens a commit
+/// window (nothing to commit), then the test resolves and the turn goes on.
+fn parley_on(board: GameStateBuilder) -> TestSession {
+    let session = board.session().take(&parley()).commit(&[]);
+    session.assert_at_turn_menu(INV);
+    session
 }
 
 // ---- the offer -------------------------------------------------------
@@ -156,7 +155,7 @@ fn drive_parley(state: GameState) -> ApplyResult {
 /// the Parlor's location card.
 #[test]
 fn an_investigator_in_the_parlor_is_offered_litas_parley() {
-    let state = board(ChaosToken::Numeric(0));
+    let state = board(ChaosToken::Numeric(0)).build();
     assert!(
         enumerate::legal_actions(&state).contains(&parley()),
         "the Parley is offered on Lita, got {:?}",
@@ -168,12 +167,12 @@ fn an_investigator_in_the_parlor_is_offered_litas_parley() {
 /// bullet, and Lita is at the Parlor.
 #[test]
 fn an_investigator_elsewhere_is_not_offered_the_parley() {
-    let mut state = board(ChaosToken::Numeric(0));
-    state
-        .investigators
-        .get_mut(&INV)
-        .expect("investigator present")
-        .current_location = Some(HALLWAY_ID);
+    let state = board_with(
+        sharp().at(HALLWAY_ID),
+        lita_at_the_parlor(),
+        ChaosToken::Numeric(0),
+    )
+    .build();
     assert!(
         !enumerate::legal_actions(&state).contains(&parley()),
         "the Parley is out of reach from the Hallway, got {:?}",
@@ -186,11 +185,11 @@ fn an_investigator_elsewhere_is_not_offered_the_parley() {
 /// removed the ability; the sweep simply stops producing it.
 #[test]
 fn the_parley_is_no_longer_offered_once_she_is_controlled() {
-    let result = drive_parley(board(ChaosToken::Numeric(0)));
+    let result = parley_on(board(ChaosToken::Numeric(0)));
     assert!(
-        !enumerate::legal_actions(&result.state).contains(&parley()),
+        !enumerate::legal_actions(result.state()).contains(&parley()),
         "the grant lapses the instant a player controls her, got {:?}",
-        enumerate::legal_actions(&result.state),
+        enumerate::legal_actions(result.state()),
     );
 }
 
@@ -202,27 +201,27 @@ fn the_parley_is_no_longer_offered_once_she_is_controlled() {
 /// your play area (not your hand)"*.
 #[test]
 fn a_successful_parley_takes_control_of_lita() {
-    let result = drive_parley(board(ChaosToken::Numeric(0)));
+    let result = parley_on(board(ChaosToken::Numeric(0)));
 
     assert_event!(
-        result.events,
+        result.events(),
         Event::SkillTestSucceeded {
             skill: SkillKind::Intellect,
             ..
         }
     );
     assert_event!(
-        result.events,
+        result.events(),
         Event::ControlTaken { investigator, code, .. }
             if *investigator == INV && code.as_str() == LITA
     );
     assert!(
-        result.state.locations[&PARLOR_ID]
+        result.state().locations[&PARLOR_ID]
             .cards_at_location
             .is_empty(),
         "she left the location's zone",
     );
-    let in_play = &result.state.investigators[&INV].cards_in_play;
+    let in_play = &result.state().investigators[&INV].cards_in_play;
     assert_eq!(
         in_play.len(),
         1,
@@ -236,19 +235,12 @@ fn a_successful_parley_takes_control_of_lita() {
 /// **success** side alone.
 #[test]
 fn a_failed_parley_leaves_her_where_she_is() {
-    let result = drive_parley(board(ChaosToken::Numeric(-2)));
+    let result = parley_on(board(ChaosToken::Numeric(-2)));
 
-    assert_event!(result.events, Event::SkillTestFailed { .. });
-    assert!(
-        !result
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::ControlTaken { .. })),
-        "nothing took control, got {:?}",
-        result.events,
-    );
+    assert_event!(result.events(), Event::SkillTestFailed { .. });
+    assert_no_event!(result.events(), Event::ControlTaken { .. });
     assert_eq!(
-        result.state.locations[&PARLOR_ID].cards_at_location.len(),
+        result.state().locations[&PARLOR_ID].cards_at_location.len(),
         1,
         "she is still in play at the Parlor",
     );
@@ -261,19 +253,15 @@ fn a_failed_parley_leaves_her_where_she_is() {
 /// engine's to apply.
 #[test]
 fn the_parley_provokes_no_attack_of_opportunity() {
-    let mut state = board(ChaosToken::Numeric(0));
     let mut attacker = test_support::test_enemy(100, "Ghoul");
-    attacker.current_location = Some(PARLOR_ID);
-    attacker.engaged_with = Some(INV);
     attacker.attack_damage = 2;
-    state.enemies.insert(attacker.id, attacker);
 
-    let result = drive_parley(state);
+    let result = parley_on(board(ChaosToken::Numeric(0)).with_enemy_engaged(attacker, INV));
     assert_eq!(
-        result.state.investigators[&INV].damage(),
+        result.state().investigators[&INV].damage(),
         0,
         "a Parley is attack-of-opportunity exempt, got {:?}",
-        result.events,
+        result.events(),
     );
 }
 
@@ -285,20 +273,17 @@ fn the_parley_provokes_no_attack_of_opportunity() {
 /// instance id and her usage counters.
 #[test]
 fn taking_control_preserves_her_instance() {
-    let mut state = board(ChaosToken::Numeric(0));
-    {
-        let lita = &mut state
-            .locations
-            .get_mut(&PARLOR_ID)
-            .expect("the Parlor is on the board")
-            .cards_at_location[0];
-        lita.accumulated_damage = 2;
-        lita.accumulated_horror = 1;
-        lita.bump_ability_usage(0, 0);
-    }
+    let mut lita = lita_at_the_parlor();
+    lita.accumulated_damage = 2;
+    lita.accumulated_horror = 1;
+    lita.bump_ability_usage(0, 0);
 
-    let result = drive_parley(state);
-    let lita = &result.state.investigators[&INV].cards_in_play[0];
+    let result = parley_on(board_with(
+        sharp().at(PARLOR_ID),
+        lita,
+        ChaosToken::Numeric(0),
+    ));
+    let lita = &result.state().investigators[&INV].cards_in_play[0];
     assert_eq!(
         lita.instance_id, LITA_INST,
         "the same instance moved, rather than a fresh one being minted",
@@ -317,8 +302,8 @@ fn taking_control_preserves_her_instance() {
 /// enters the investigator's play area still owned by the scenario.
 #[test]
 fn after_a_parley_she_is_still_scenario_owned() {
-    let result = drive_parley(board(ChaosToken::Numeric(0)));
-    let lita = &result.state.investigators[&INV].cards_in_play[0];
+    let result = parley_on(board(ChaosToken::Numeric(0)));
+    let lita = &result.state().investigators[&INV].cards_in_play[0];
     assert_eq!(lita.code.as_str(), LITA);
     assert_eq!(lita.owner, Owner::Scenario);
 }
@@ -330,20 +315,12 @@ fn after_a_parley_she_is_still_scenario_owned() {
 /// Cop is the investigator's own card, so it lands in their discard pile.
 #[test]
 fn taking_control_makes_room_in_the_ally_slot() {
-    let mut state = board(ChaosToken::Numeric(0));
-    state
-        .investigators
-        .get_mut(&INV)
-        .expect("investigator present")
-        .cards_in_play
-        .push(CardInPlay::enter_play(
-            CardCode::new(BEAT_COP),
-            COP_INST,
-            Owner::Investigator(INV),
-        ));
-
-    let result = drive_parley(state);
-    let inv = &result.state.investigators[&INV];
+    let result = parley_on(board_with(
+        sharp().at(PARLOR_ID).in_play([BEAT_COP]),
+        lita_at_the_parlor(),
+        ChaosToken::Numeric(0),
+    ));
+    let inv = &result.state().investigators[&INV];
     assert_eq!(
         inv.cards_in_play.len(),
         1,
@@ -367,40 +344,36 @@ fn taking_control_makes_room_in_the_ally_slot() {
 /// damage onto her.
 #[test]
 fn lita_defeated_by_soaked_damage_is_removed_from_the_game() {
-    let mut state = drive_parley(board(ChaosToken::Numeric(0))).state;
-    {
-        let inv = state
-            .investigators
-            .get_mut(&INV)
-            .expect("investigator present");
-        // Health 3: one damage already on her, so the two soaked points defeat
-        // her.
-        inv.cards_in_play[0].accumulated_damage = 1;
-    }
-    // Drop the open-turn prompt and draw straight: an encounter card is
-    // revealed at rest, never beneath an outstanding prompt.
-    state.continuations = ContinuationStack::new();
-    state.phase = Phase::Mythos;
-    // Agility 3 against Grasping Hands' printed 3, minus 2 — a failure by 2,
-    // so the treachery deals 2 damage.
+    // Health 3: one damage already on her, so the two soaked points defeat
+    // her. A spare deck card keeps the round's Upkeep draw off an empty deck.
+    let mut lita = lita_at_the_parlor();
+    lita.accumulated_damage = 1;
+    let controlled = parley_on(board_with(
+        sharp().at(PARLOR_ID).deck(["01088"]),
+        lita,
+        ChaosToken::Numeric(0),
+    ));
+    // The bag that let the Parley succeed now rigs the treachery: Agility 3
+    // against Grasping Hands' printed 3, minus 2 — a failure by 2, so it
+    // deals 2 damage. The turn's board is re-settled with the new bag and
+    // Grasping Hands on top of the encounter deck.
+    let mut state = controlled.state().clone();
     state.chaos_bag.tokens = vec![ChaosToken::Numeric(-2)];
     state
         .encounter_deck
         .push_back(CardCode::new(GRASPING_HANDS));
 
-    let mut resolver = ScriptedResolver::new();
-    resolver.commit_cards(&[]);
-    // Option 0 is the investigator, option 1 the one controlled soaker; both
-    // points go to her.
-    resolver.pick_single(OptionId(1));
-    resolver.pick_single(OptionId(1));
-    let r = test_support::drive(
-        state,
-        Action::Engine(EngineRecord::EncounterCardRevealed { investigator: INV }),
-        resolver,
-    );
+    // The turn ends and the round runs on to the next Mythos phase, whose
+    // encounter draw reveals Grasping Hands.
+    let drawing = TestSession::new(state).take(&TurnAction::EndTurn);
+    drawing.assert_at_encounter_draw();
+    // Each point of the failure's damage asks where it goes: the investigator
+    // or the one controlled soaker, Lita. Both go to her.
+    let lita = OptionTarget::CardInstance(LITA_INST);
+    let r = drawing.confirm().commit(&[]).pick(lita.clone()).pick(lita);
+    let r = r.state();
 
-    let inv = &r.state.investigators[&INV];
+    let inv = &r.investigators[&INV];
     assert!(
         inv.cards_in_play.is_empty(),
         "she soaked her third damage and left play, got {:?}",
@@ -412,9 +385,9 @@ fn lita_defeated_by_soaked_damage_is_removed_from_the_game() {
         inv.discard,
     );
     assert!(
-        r.state.removed_from_game.contains(&CardCode::new(LITA)),
+        r.removed_from_game.contains(&CardCode::new(LITA)),
         "the soak-defeat exit removes her from the game too, got {:?}",
-        r.state.removed_from_game,
+        r.removed_from_game,
     );
 }
 
@@ -428,7 +401,7 @@ fn lita_defeated_by_soaked_damage_is_removed_from_the_game() {
 #[test]
 fn eliminating_her_controller_removes_her_to_the_scenarios_pile() {
     // The test investigator has 8 health; 8 damage defeats it outright.
-    let state = TestSession::new(drive_parley(board(ChaosToken::Numeric(0))).state)
+    let state = parley_on(board(ChaosToken::Numeric(0)))
         .take_damage(INV, 8)
         .finish()
         .state;
@@ -458,33 +431,28 @@ fn eliminating_her_controller_removes_her_to_the_scenarios_pile() {
 /// slot she now fills.
 #[test]
 fn lita_leaving_play_while_controlled_is_removed_from_the_game() {
-    let controlled = drive_parley(board(ChaosToken::Numeric(0))).state;
-    let mut state = controlled;
-    {
-        let inv = state
-            .investigators
-            .get_mut(&INV)
-            .expect("investigator present");
-        inv.hand.push(CardCode::new(BEAT_COP));
-        inv.resources = 5;
-        inv.actions_remaining = 3;
-    }
+    // Beat Cop waits in hand, with the resources for it, through the Parley;
+    // the Parley leaves an action to play it with.
+    let controlled = parley_on(board_with(
+        sharp().at(PARLOR_ID).hand([BEAT_COP]).resources(5),
+        lita_at_the_parlor(),
+        ChaosToken::Numeric(0),
+    ));
 
     let hand_index = u8::try_from(
-        state.investigators[&INV]
+        controlled.state().investigators[&INV]
             .hand
             .iter()
             .position(|c| c.as_str() == BEAT_COP)
             .expect("Beat Cop is in hand"),
     )
     .expect("hand index fits u8");
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::PlayCard {
+    let result = controlled
+        .take(&TurnAction::PlayCard {
             investigator: INV,
             hand_index,
-        },
-    );
+        })
+        .finish();
 
     let inv = &result.state.investigators[&INV];
     assert!(

@@ -11,7 +11,6 @@
 //!
 //! ```
 //! use game_core::engine::enumerate::TurnAction;
-//! use game_core::engine::EngineOutcome;
 //! use game_core::state::{GameStateBuilder, InvestigatorId};
 //! use game_core::test_support;
 //!
@@ -24,20 +23,21 @@
 //!     .open_turn(InvestigatorId(1))
 //!     .build();
 //!
-//! let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
-//! assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
+//! // Investigator 1 ends their turn, which opens investigator 2's.
+//! let session = test_support::TestSession::new(state).take(&TurnAction::EndTurn);
+//! session.assert_at_turn_menu(InvestigatorId(2));
 //! ```
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::rng::RngState;
 use crate::scenario::ScenarioId;
 use crate::state::{
-    ChaosBag, Continuation, ContinuationStack, Counter, EncounterDrawFrame, Enemy, EnemyId,
-    EnemyPhaseFrame, EnemyResume, FastActorScope, FastWindowFrame, FastWindowKind, GameState,
-    HandSizeDiscard, InvestigationPhaseFrame, InvestigationResume, Investigator, InvestigatorId,
-    InvestigatorTurnFrame, Location, LocationId, MulliganFrame, Phase, TokenModifiers,
-    UpkeepPhaseFrame, UpkeepResume,
+    CardInstanceId, ChaosBag, Continuation, ContinuationStack, Counter, EncounterDrawFrame, Enemy,
+    EnemyId, EnemyPhaseFrame, EnemyResume, FastActorScope, FastWindowFrame, FastWindowKind,
+    GameState, HandSizeDiscard, InvestigationPhaseFrame, InvestigationResume, Investigator,
+    InvestigatorId, InvestigatorTurnFrame, Location, LocationId, MulliganFrame, Phase,
+    TokenModifiers, UpkeepPhaseFrame, UpkeepResume,
 };
 
 /// Fluent builder for a [`GameState`].
@@ -410,14 +410,58 @@ impl GameStateBuilder {
         self
     }
 
+    /// Every card-instance id on a card staged so far — in a play area, a
+    /// threat area, at or attached to a location, or attached to an enemy —
+    /// **except investigator cards'**. A stock test investigator's card takes
+    /// `u32::MAX - id`, out of the range the counter mints from, and seeding
+    /// past it would saturate the counter.
+    pub(crate) fn card_instance_ids_in_use(&self) -> impl Iterator<Item = CardInstanceId> + '_ {
+        let investigators = self
+            .investigators
+            .values()
+            .flat_map(|inv| inv.cards_in_play.iter().chain(&inv.threat_area));
+        let locations = self
+            .locations
+            .values()
+            .flat_map(|loc| loc.attachments.iter().chain(&loc.cards_at_location));
+        let enemies = self.enemies.values().flat_map(|enemy| &enemy.attachments);
+        investigators
+            .chain(locations)
+            .chain(enemies)
+            .map(|card| card.instance_id)
+    }
+
+    /// The id the card-instance counter mints next: one past every id
+    /// [in use](Self::card_instance_ids_in_use), so the engine's first mint
+    /// can never take an id a fixture already placed.
+    pub(crate) fn next_card_instance_id(&self) -> u32 {
+        self.card_instance_ids_in_use()
+            .map(|id| id.0.saturating_add(1))
+            .max()
+            .unwrap_or(0)
+    }
+
     /// Materialize the configured [`GameState`].
+    ///
+    /// The card-instance counter starts one past every card-instance id
+    /// already on the board (investigator cards aside), so the first card the
+    /// engine mints never collides with one the caller placed.
     ///
     /// # Panics
     ///
-    /// Panics if an enemy was engaged via
+    /// Panics if two staged cards share a card-instance id (investigator
+    /// cards aside), or if an enemy was engaged via
     /// [`with_enemy_engaged`](Self::with_enemy_engaged) with an investigator
     /// that was never added.
     pub fn build(mut self) -> GameState {
+        let mut seen = BTreeSet::new();
+        for id in self.card_instance_ids_in_use() {
+            assert!(
+                seen.insert(id),
+                "GameStateBuilder::build: two staged cards share the instance id {id:?}",
+            );
+        }
+        let card_instance_ids = Counter::at(self.next_card_instance_id());
         for (enemy, investigator) in self.engagements {
             let location = self
                 .investigators
@@ -478,7 +522,7 @@ impl GameStateBuilder {
             active_investigator: self.active_investigator,
             turn_order: self.turn_order,
             rng: self.rng,
-            card_instance_ids: Counter::new(),
+            card_instance_ids,
             enemy_ids: Counter::new(),
             location_ids: Counter::new(),
             skill_test_ids: Counter::new(),
@@ -533,12 +577,12 @@ mod set_aside_cards_tests {
 mod with_open_window_tests {
     use super::*;
     use crate::state::PhaseStep;
-    use crate::test_support;
+    use crate::test_support::seat;
 
     #[test]
     fn with_open_window_pushes_onto_the_stack() {
         let state = GameStateBuilder::new()
-            .with_investigator(test_support::test_investigator(1))
+            .with_seat(seat(1))
             .with_open_window(
                 FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
                 FastActorScope::Any,
@@ -561,7 +605,7 @@ mod with_open_window_tests {
     #[test]
     fn with_open_window_stacks_in_order() {
         let state = GameStateBuilder::new()
-            .with_investigator(test_support::test_investigator(1))
+            .with_seat(seat(1))
             .with_open_window(
                 FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
                 FastActorScope::Any,

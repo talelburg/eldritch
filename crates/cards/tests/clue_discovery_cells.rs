@@ -28,13 +28,12 @@
 use card_dsl::dsl::{self, Ability, Effect, EventPattern, EventTiming, InvestigatorTarget};
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{ApplyResult, OptionId};
 use game_core::event::{Event, LapseReason};
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Owner,
+    CardCode, ChaosBag, ChaosToken, Continuation, GameState, GameStateBuilder, InvestigatorId,
+    LocationId,
 };
-use game_core::test_support::{self, MockRegistry, TestSession};
+use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
 
 /// `when`-tagged reaction: +4 resources. Declaring interrupt timing on this
 /// condition is accepted now that it is coordinator-owned — before #703 the
@@ -75,47 +74,44 @@ fn install() {
 }
 
 const INV: InvestigatorId = InvestigatorId(1);
-const LOC: LocationId = LocationId(10);
+const HERE: LocationId = LocationId(10);
 
-/// Investigation-phase board: the active investigator at a `location_clues`-clue
-/// location with `codes` in their threat area, 0 resources, and a single
-/// `Numeric(0)` chaos token so the Intellect-3-vs-shroud-2 Investigate always
-/// succeeds and discovers exactly 1 clue.
-fn board_with(codes: &[&str], location_clues: u8) -> GameState {
-    let mut inv = test_support::test_investigator(1);
-    inv.resources = 0;
-    for (i, code) in codes.iter().enumerate() {
-        inv.threat_area.push(CardInPlay::enter_play(
-            CardCode::new(*code),
-            CardInstanceId(u32::try_from(i).expect("fixture card count fits u32")),
-            Owner::EncounterDeck,
-        ));
-    }
-    let mut location = test_support::test_location(10, "Study");
+/// The investigator's turn at a `location_clues`-clue Study with `codes` in
+/// their threat area, 0 resources, and a single `Numeric(0)` chaos token so
+/// the Intellect-3-vs-shroud-2 Investigate always succeeds and discovers
+/// exactly 1 clue.
+fn board_with(codes: &[&str], location_clues: u8) -> TestSession {
+    let mut location = test_support::test_location(HERE.0, "Study");
     location.clues = location_clues;
     GameStateBuilder::new()
-        .with_investigator_at(inv, LOC)
+        .with_seat(
+            seat(1)
+                .at(HERE)
+                .resources(0)
+                .threat_area(codes.iter().copied()),
+        )
         .with_location(location)
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_rng_seed(1)
-        .build()
+        .session()
 }
 
-/// Investigate, committing nothing and firing the single offered reaction in
-/// each of the `windows` cells that opens one. An empty cell prompts for
-/// nothing, so the script length is itself an assertion about how many cells
-/// were populated (`ScriptedResolver` panics on an unscripted prompt).
-fn investigate_firing(state: GameState, windows: usize) -> ApplyResult {
-    TestSession::new(state)
-        .resolve_choices(|c| {
-            c.commit_cards(&[]);
-            for _ in 0..windows {
-                c.pick_single(OptionId(0));
-            }
-        })
+/// Investigate, committing nothing, then fire the reaction of each card in
+/// `fired`, in order, each in the window that offers it. After the last, the
+/// investigation resolves back to the turn menu: an empty cell prompts for
+/// nothing, so `fired` is itself an assertion about how many cells were
+/// populated (any further window would stop the session short of the menu).
+fn investigate_firing(session: TestSession, fired: &[&str]) -> TestSession {
+    let mut session = session
         .take(&TurnAction::Investigate { investigator: INV })
-        .finish()
+        .commit(&[]);
+    for code in fired {
+        let card = session.state().card(INV, *code);
+        session = session.pick(card);
+    }
+    session.assert_at_turn_menu(INV);
+    session
 }
 
 /// Every `ResourcesGained` amount and every `CluePlaced`, in emission order —
@@ -131,14 +127,18 @@ fn timeline(events: &[Event]) -> Vec<Option<u8>> {
         .collect()
 }
 
-/// Whether the walk left nothing behind: no coordinator, timing point, window
+/// Assert the walk left nothing behind: no coordinator, timing point, window
 /// or effect frame outlives the sequence. The idle `InvestigatorTurn` sentinel
 /// stays on the stack for the whole turn and is not one.
-fn no_queued_frames(r: &ApplyResult) -> bool {
-    !r.state
-        .continuations
-        .iter()
-        .any(Continuation::is_queued_ability)
+fn assert_no_queued_frames(state: &GameState, why: &str) {
+    assert!(
+        !state
+            .continuations
+            .iter()
+            .any(Continuation::is_queued_ability),
+        "{why}: {:?}",
+        state.continuations,
+    );
 }
 
 /// The headline claim: the discovery happens *between* the `when` and `at`
@@ -147,16 +147,24 @@ fn no_queued_frames(r: &ApplyResult) -> bool {
 /// `after` cells did not exist for this condition at all.
 #[test]
 fn the_discovery_resolves_between_the_when_and_at_cells() {
-    let r = investigate_firing(board_with(&[WHEN, AT, AFTER], 2), 3);
+    let session = investigate_firing(board_with(&[WHEN, AT, AFTER], 2), &[WHEN, AT, AFTER]);
     assert_eq!(
-        timeline(&r.events),
+        timeline(session.events()),
         vec![Some(4), None, Some(1), Some(2)],
         "expected when → discovery → at → after; events = {:?}",
-        r.events
+        session.events()
     );
-    assert_eq!(r.state.locations[&LOC].clues, 1, "location -1");
-    assert_eq!(r.state.investigators[&INV].clues, 1, "investigator +1");
-    assert_eq!(r.state.investigators[&INV].resources, 7, "4 + 1 + 2");
+    assert_eq!(session.state().locations[&HERE].clues, 1, "location -1");
+    assert_eq!(
+        session.state().investigators[&INV].clues,
+        1,
+        "investigator +1"
+    );
+    assert_eq!(
+        session.state().investigators[&INV].resources,
+        7,
+        "4 + 1 + 2"
+    );
 }
 
 /// An after-discovery ability is declarable for the first time, and it resolves
@@ -165,17 +173,16 @@ fn the_discovery_resolves_between_the_when_and_at_cells() {
 /// fully resolved"*.
 #[test]
 fn an_after_ability_resolves_once_the_clues_have_moved() {
-    let r = investigate_firing(board_with(&[AFTER], 2), 1);
+    let session = investigate_firing(board_with(&[AFTER], 2), &[AFTER]);
     assert_eq!(
-        timeline(&r.events),
+        timeline(session.events()),
         vec![None, Some(2)],
         "the discovery must precede the `after` ability; events = {:?}",
-        r.events
+        session.events()
     );
-    assert!(
-        no_queued_frames(&r),
-        "the empty `when`/`at` cells left frames behind: {:?}",
-        r.state.continuations
+    assert_no_queued_frames(
+        session.state(),
+        "the empty `when`/`at` cells left frames behind",
     );
 }
 
@@ -185,12 +192,12 @@ fn an_after_ability_resolves_once_the_clues_have_moved() {
 /// the condition's impact lands.
 #[test]
 fn an_at_ability_resolves_after_the_clues_move_and_before_any_after_ability() {
-    let r = investigate_firing(board_with(&[AT, AFTER], 2), 2);
+    let session = investigate_firing(board_with(&[AT, AFTER], 2), &[AT, AFTER]);
     assert_eq!(
-        timeline(&r.events),
+        timeline(session.events()),
         vec![None, Some(1), Some(2)],
         "expected discovery → at → after; events = {:?}",
-        r.events
+        session.events()
     );
 }
 
@@ -206,27 +213,35 @@ fn an_at_ability_resolves_after_the_clues_move_and_before_any_after_ability() {
 #[test]
 fn a_cancelled_discovery_suppresses_the_at_and_after_cells() {
     // One window only: the `when` cell. The `at` and `after` cells never open,
-    // and `ScriptedResolver` would panic on an unscripted prompt if they did.
-    let r = investigate_firing(board_with(&[CANCEL, AT, AFTER], 2), 1);
+    // and the session would stop short of the turn menu if they did.
+    let session = investigate_firing(board_with(&[CANCEL, AT, AFTER], 2), &[CANCEL]);
     assert_eq!(
-        timeline(&r.events),
+        timeline(session.events()),
         Vec::<Option<u8>>::new(),
         "neither the discovery nor any later cell may run; events = {:?}",
-        r.events
+        session.events()
     );
-    assert_eq!(r.state.locations[&LOC].clues, 2, "location untouched");
-    assert_eq!(r.state.investigators[&INV].clues, 0, "discovered nothing");
-    assert_eq!(r.state.investigators[&INV].resources, 0, "no marker fired");
+    assert_eq!(
+        session.state().locations[&HERE].clues,
+        2,
+        "location untouched"
+    );
+    assert_eq!(
+        session.state().investigators[&INV].clues,
+        0,
+        "discovered nothing"
+    );
+    assert_eq!(
+        session.state().investigators[&INV].resources,
+        0,
+        "no marker fired"
+    );
     assert!(
-        !r.state.pending_cancellation,
+        !session.state().pending_cancellation,
         "the signal must be consumed at the resolve step, not left to catch the \
          next condition"
     );
-    assert!(
-        no_queued_frames(&r),
-        "the abandoned sequence left frames behind: {:?}",
-        r.state.continuations
-    );
+    assert_no_queued_frames(session.state(), "the abandoned sequence left frames behind");
 }
 
 /// Suppression reaches the rest of the **current** cell too, per the same Dodge
@@ -237,41 +252,45 @@ fn a_cancelled_discovery_suppresses_the_at_and_after_cells() {
 fn a_cancel_withdraws_the_remaining_when_cell_abilities() {
     // The `when` cell opens with two candidates (CANCEL first, in threat-area
     // order); firing CANCEL withdraws WHEN rather than re-prompting, so one
-    // pick is the whole script.
-    let r = investigate_firing(board_with(&[CANCEL, WHEN, AT, AFTER], 2), 1);
+    // pick is the whole drive.
+    let session = investigate_firing(board_with(&[CANCEL, WHEN, AT, AFTER], 2), &[CANCEL]);
     assert_eq!(
-        timeline(&r.events),
+        timeline(session.events()),
         Vec::<Option<u8>>::new(),
         "no sibling `when` ability may resolve after the cancel; events = {:?}",
-        r.events
+        session.events()
     );
     assert_event!(
-        &r.events,
+        session.events(),
         Event::ReactionOptionLapsed {
             code,
             reason: LapseReason::ConditionPrevented,
             ..
         } if *code == CardCode::new(WHEN)
     );
-    assert_eq!(r.state.locations[&LOC].clues, 2, "location untouched");
-    assert_eq!(r.state.investigators[&INV].resources, 0, "no marker fired");
+    assert_eq!(
+        session.state().locations[&HERE].clues,
+        2,
+        "location untouched"
+    );
+    assert_eq!(
+        session.state().investigators[&INV].resources,
+        0,
+        "no marker fired"
+    );
 }
 
 /// A discovery of nothing is not a discovery: `discover_clue` returns before
 /// the emit when the location holds no clues, so no cell runs at all.
 #[test]
 fn no_condition_is_emitted_when_the_location_has_no_clues() {
-    let r = investigate_firing(board_with(&[AT, AFTER], 0), 0);
+    let session = investigate_firing(board_with(&[AT, AFTER], 0), &[]);
     assert_eq!(
-        timeline(&r.events),
+        timeline(session.events()),
         Vec::<Option<u8>>::new(),
         "no discovery, so no sequence; events = {:?}",
-        r.events
+        session.events()
     );
-    assert_eq!(r.state.investigators[&INV].resources, 0);
-    assert!(
-        no_queued_frames(&r),
-        "no frames left behind: {:?}",
-        r.state.continuations
-    );
+    assert_eq!(session.state().investigators[&INV].resources, 0);
+    assert_no_queued_frames(session.state(), "no frames left behind");
 }

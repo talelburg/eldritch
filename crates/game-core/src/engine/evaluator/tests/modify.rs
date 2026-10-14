@@ -22,9 +22,7 @@ fn modify_with_while_in_play_scope_under_non_constant_trigger_rejects() {
 /// what a `ThisSkillTest` modifier needs in order to have an identity to
 /// be stamped with.
 fn state_during_test(test_id: SkillTestId) -> GameState {
-    let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
-        .build();
+    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
     state
         .continuations
         .push(Continuation::SkillTest(test_support::test_skill_test(
@@ -73,9 +71,7 @@ fn modify_with_this_skill_test_scope_records_a_row_stamped_with_the_test() {
 /// banked onto whatever test comes next (#676).
 #[test]
 fn modify_with_this_skill_test_scope_rejects_outside_a_test() {
-    let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
-        .build();
+    let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
     let mut events = Vec::new();
     let outcome = run(
         &mut Cx {

@@ -19,10 +19,11 @@
 //! until it lands.
 
 use cards::REGISTRY;
-use game_core::action::{Action, EngineRecord};
-use game_core::engine::{ApplyResult, EngineOutcome};
-use game_core::state::{CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support::{self, ScriptedResolver};
+use game_core::state::{
+    CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame,
+    MythosResume, Phase,
+};
+use game_core::test_support::{self, seat, TestSession};
 
 /// Acolyte (01169) — Core enemy, "Spawn - Any empty location".
 const ACOLYTE: &str = "01169";
@@ -31,51 +32,49 @@ const GHOUL_MINION: &str = "01160";
 /// The Study (01111) — The Gathering's starting location.
 const STUDY: &str = "01111";
 
+const INV: InvestigatorId = InvestigatorId(1);
+const HERE: LocationId = LocationId(20);
+
 #[ctor::ctor(unsafe)]
 fn install_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// One investigator in the Study, with `top` on top of the encounter deck.
+/// Mythos step 1.4: one investigator in the Study to draw, with `top` on top
+/// of the encounter deck.
 fn state_with_top_encounter(top: &str) -> GameState {
-    let mut study = test_support::test_location(20, "Study");
+    let mut study = test_support::test_location(HERE.0, "Study");
     study.code = CardCode::new(STUDY);
     let mut state = GameStateBuilder::new()
-        .with_investigator_at(test_support::test_investigator(1), LocationId(20))
+        .with_seat(seat(1).at(HERE))
         .with_location(study)
-        .with_turn_order([InvestigatorId(1)])
+        .with_turn_order([INV])
+        .with_phase(Phase::Mythos)
+        .with_phase_anchor(MythosPhaseFrame {
+            resume: MythosResume::AfterDraws,
+        })
+        .with_mythos_draw_remaining([INV])
         .build();
     state.encounter_deck.push_back(CardCode::new(top));
     state
 }
 
-/// Reveal the top encounter card for investigator 1.
-fn reveal_top(state: GameState) -> ApplyResult {
-    test_support::drive(
-        state,
-        Action::Engine(EngineRecord::EncounterCardRevealed {
-            investigator: InvestigatorId(1),
-        }),
-        ScriptedResolver::new(),
-    )
+/// Draw the top encounter card for investigator 1.
+fn reveal_top(state: GameState) -> TestSession {
+    TestSession::new(state).confirm()
 }
 
 #[test]
 fn acolyte_refuses_rather_than_spawning_at_the_drawers_location() {
-    let result = reveal_top(state_with_top_encounter(ACOLYTE));
+    let session = reveal_top(state_with_top_encounter(ACOLYTE));
 
-    let EngineOutcome::Rejected { reason } = &result.outcome else {
-        panic!(
-            "an unmodelled spawn instruction must reject, got {:?}",
-            result.outcome
-        );
-    };
+    let reason = session.expect_rejected();
     assert!(
         reason.contains("Any empty location"),
         "the rejection must name the clause it could not model: {reason}",
     );
     assert!(
-        result.state.enemies.is_empty(),
+        session.state().enemies.is_empty(),
         "the Acolyte must not be placed anywhere — least of all at the \
          drawing investigator's (non-empty) location",
     );
@@ -90,28 +89,25 @@ fn acolyte_refuses_rather_than_spawning_at_the_drawers_location() {
 fn an_enemy_with_no_spawn_line_still_spawns_engaged_with_the_drawer() {
     // Regression guard for the other half of the distinction: #635 must not
     // turn the no-instruction rule into a refusal too.
-    let result = reveal_top(state_with_top_encounter(GHOUL_MINION));
+    let session = reveal_top(state_with_top_encounter(GHOUL_MINION));
 
-    assert_eq!(
-        result.outcome,
-        EngineOutcome::Done,
-        "a card printing no Spawn line resolves normally: {:?}",
-        result.outcome,
-    );
-    let (_, enemy) = result
-        .state
+    // A card printing no Spawn line resolves normally: play runs on out of the
+    // Mythos phase to the turn.
+    session.assert_at_turn_menu(INV);
+    let (_, enemy) = session
+        .state()
         .enemies
         .iter()
         .next()
         .expect("the Ghoul Minion spawns");
     assert_eq!(
         enemy.current_location,
-        Some(LocationId(20)),
+        Some(HERE),
         "spawns at the drawing investigator's location",
     );
     assert_eq!(
         enemy.engaged_with,
-        Some(InvestigatorId(1)),
+        Some(INV),
         "and engaged with the drawing investigator",
     );
 }

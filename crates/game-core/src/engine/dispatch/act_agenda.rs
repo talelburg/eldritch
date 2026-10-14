@@ -511,7 +511,7 @@ mod doom_agenda_tests {
         // forced on-advance ability binds the lead — so both are needed.
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_support::test_investigator(1))
+            .with_seat(test_support::seat(1))
             .with_turn_order([inv])
             .build();
         state.agenda_deck = vec![Agenda {
@@ -576,23 +576,22 @@ mod doom_agenda_tests {
 #[cfg(test)]
 mod advance_act_tests {
     use super::*;
+    use crate::assert_event;
     use crate::engine::enumerate::{self, TurnAction};
     use crate::engine::outcome::EngineOutcome;
     use crate::event::Event;
     use crate::scenario::ResolutionId;
     use crate::state::{Act, CardCode, GameStateBuilder, InvestigatorId};
-    use crate::{assert_event, test_support};
+    use crate::test_support::{self, TestSession};
 
     #[test]
     fn round_end_advance_affordable_tracks_hallway_clues_vs_threshold() {
         // A location coded "HALL"; the investigator stands on it.
         let mut hall = test_support::test_location(1, "Hallway");
         hall.code = CardCode("HALL".into());
-        let mut investigator = test_support::test_investigator(1);
-        investigator.current_location = Some(LocationId(1));
         let mut state = GameStateBuilder::new()
             .with_location(hall)
-            .with_investigator(investigator)
+            .with_seat(test_support::seat(1).at(LocationId(1)))
             .with_turn_order([InvestigatorId(1)])
             .build();
         state.act_deck = vec![Act {
@@ -624,10 +623,8 @@ mod advance_act_tests {
     #[test]
     fn advance_act_rejects_when_clues_insufficient() {
         let inv = InvestigatorId(1);
-        let mut investigator = test_support::test_investigator(1);
-        investigator.clues = 1;
         let mut state = GameStateBuilder::new()
-            .with_investigator(investigator)
+            .with_seat(test_support::seat(1).clues(1))
             .open_turn(inv)
             .build();
         state.act_deck = vec![Act {
@@ -653,10 +650,9 @@ mod advance_act_tests {
         // neither offered nor accepted — even with no forced ability served for
         // it (the game-core test registry knows nothing of 01110).
         let inv = InvestigatorId(1);
-        let mut investigator = test_support::test_investigator(1);
-        investigator.clues = 5; // plenty — reject must be the objective, not affordability
         let mut state = GameStateBuilder::new()
-            .with_investigator(investigator)
+            // Plenty of clues — the reject must be the objective, not affordability.
+            .with_seat(test_support::seat(1).clues(5))
             .open_turn(inv)
             .build();
         state.act_deck = vec![Act {
@@ -672,20 +668,16 @@ mod advance_act_tests {
         );
         // Bypass the legality menu (the assert above already proves it's not
         // offered) to confirm the handler itself rejects, leaving state unchanged.
-        let result = test_support::dispatch_turn_action_unchecked(
-            state,
-            &TurnAction::AdvanceAct { investigator: inv },
-        );
+        let session =
+            TestSession::new(state).submit_off_menu(&TurnAction::AdvanceAct { investigator: inv });
+        session.expect_rejected();
         assert!(
-            matches!(result.outcome, EngineOutcome::Rejected { .. }),
-            "AdvanceAct must be rejected for a zero-threshold objective act"
-        );
-        assert!(
-            result.state.ending.is_none(),
+            session.state().ending.is_none(),
             "rejected AdvanceAct must not latch the act's Won resolution"
         );
         assert_eq!(
-            result.state.investigators[&inv].clues, 5,
+            session.state().investigators[&inv].clues,
+            5,
             "rejected AdvanceAct must not spend clues"
         );
     }
@@ -699,10 +691,8 @@ mod advance_act_tests {
     #[test]
     fn advance_act_spends_clues_and_advances_non_terminal() {
         let inv = InvestigatorId(1);
-        let mut investigator = test_support::test_investigator(1);
-        investigator.clues = 3;
         let mut state = GameStateBuilder::new()
-            .with_investigator(investigator)
+            .with_seat(test_support::seat(1).clues(3))
             .open_turn(inv)
             .build();
         state.act_deck = vec![
@@ -716,16 +706,16 @@ mod advance_act_tests {
             },
         ];
 
-        let result =
-            test_support::take_turn_action(state, &TurnAction::AdvanceAct { investigator: inv });
-        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert_eq!(result.state.act_index, 1);
+        let session = TestSession::new(state).take(&TurnAction::AdvanceAct { investigator: inv });
+        session.assert_at_turn_menu(inv);
+        assert_eq!(session.state().act_index, 1);
         assert_eq!(
-            result.state.investigators[&inv].clues, 1,
+            session.state().investigators[&inv].clues,
+            1,
             "spent exactly 2 of 3"
         );
-        assert!(result.state.ending.is_none());
-        assert_event!(result.events, Event::ActAdvanced { from } if *from == 0);
+        assert!(session.state().ending.is_none());
+        assert_event!(session.events(), Event::ActAdvanced { from } if *from == 0);
     }
 
     /// The act-side mirror of
@@ -736,10 +726,8 @@ mod advance_act_tests {
     #[test]
     fn terminal_act_advances_and_its_reverse_latches_the_ending() {
         let inv = InvestigatorId(1);
-        let mut investigator = test_support::test_investigator(1);
-        investigator.clues = 2;
         let mut state = GameStateBuilder::new()
-            .with_investigator(investigator)
+            .with_seat(test_support::seat(1).clues(2))
             .open_turn(inv)
             .build();
         state.act_deck = vec![Act {
@@ -747,9 +735,11 @@ mod advance_act_tests {
             clue_threshold: 2,
         }];
 
-        let result =
-            test_support::take_turn_action(state, &TurnAction::AdvanceAct { investigator: inv });
-        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        // The ending is latched, so the game is over: `Done`.
+        let result = TestSession::new(state)
+            .take(&TurnAction::AdvanceAct { investigator: inv })
+            .finish();
+        assert_eq!(result.outcome, EngineOutcome::Done);
         assert_eq!(
             result.state.act_index, 0,
             "a terminal act does not bump the cursor — there is no next card"
@@ -765,10 +755,8 @@ mod advance_act_tests {
     #[test]
     fn advance_act_with_no_forced_ability_still_advances() {
         let inv = InvestigatorId(1);
-        let mut investigator = test_support::test_investigator(1);
-        investigator.clues = 2;
         let mut state = GameStateBuilder::new()
-            .with_investigator(investigator)
+            .with_seat(test_support::seat(1).clues(2))
             .open_turn(inv)
             .build();
         state.act_deck = vec![
@@ -781,11 +769,11 @@ mod advance_act_tests {
                 clue_threshold: 3,
             },
         ];
-        let result =
-            test_support::take_turn_action(state, &TurnAction::AdvanceAct { investigator: inv });
-        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        let session = TestSession::new(state).take(&TurnAction::AdvanceAct { investigator: inv });
+        session.assert_at_turn_menu(inv);
         assert_eq!(
-            result.state.act_index, 1,
+            session.state().act_index,
+            1,
             "cursor advances even with no forced ability"
         );
     }
@@ -794,13 +782,9 @@ mod advance_act_tests {
     fn advance_act_spends_acting_investigator_first_then_turn_order() {
         let acting = InvestigatorId(1);
         let other = InvestigatorId(2);
-        let mut inv1 = test_support::test_investigator(1);
-        inv1.clues = 1;
-        let mut inv2 = test_support::test_investigator(2);
-        inv2.clues = 2;
         let mut state = GameStateBuilder::new()
-            .with_investigator(inv1)
-            .with_investigator(inv2)
+            .with_seat(test_support::seat(1).clues(1))
+            .with_seat(test_support::seat(2).clues(2))
             .with_turn_order([acting, other])
             .open_turn(acting)
             .build();
@@ -820,21 +804,19 @@ mod advance_act_tests {
         ];
 
         // Threshold 2: acting (1 clue) drained fully first, then 1 from `other`.
-        let result = test_support::take_turn_action(
-            state,
-            &TurnAction::AdvanceAct {
-                investigator: acting,
-            },
-        );
-        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        let session = TestSession::new(state).take(&TurnAction::AdvanceAct {
+            investigator: acting,
+        });
+        session.assert_at_turn_menu(acting);
+        let state = session.state();
         assert_eq!(
-            result.state.investigators[&acting].clues, 0,
+            state.investigators[&acting].clues, 0,
             "acting drained first"
         );
         assert_eq!(
-            result.state.investigators[&other].clues, 1,
+            state.investigators[&other].clues, 1,
             "remainder taken from turn_order"
         );
-        assert_eq!(result.state.act_index, 1);
+        assert_eq!(state.act_index, 1);
     }
 }

@@ -13,19 +13,17 @@
 use cards::REGISTRY;
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, TokenModifiers,
-    UseKind,
+    GameState, GameStateBuilder, InvestigatorId, Location, LocationId, Owner, SkillKind,
+    TokenModifiers, UseKind,
 };
-use game_core::test_support::{self, TestSession};
+use game_core::test_support::{self, seat, uses, SeatLookup as _, TestSession};
 
 const FLASHLIGHT: &str = "01087";
 const INV: InvestigatorId = InvestigatorId(1);
-const LOC: LocationId = LocationId(10);
-const TORCH_INST: CardInstanceId = CardInstanceId(0);
+const HERE: LocationId = LocationId(10);
 
 #[ctor::ctor(unsafe)]
 fn install() {
@@ -35,50 +33,59 @@ fn install() {
 /// Board: Flashlight in play with 3 supplies; the active investigator at a
 /// revealed `shroud`-shroud location holding 1 clue, with `intellect`
 /// intellect. A `Numeric(0)` chaos bag makes the Investigate deterministic.
-fn board(intellect: i8, shroud: u8, revealed: bool) -> GameState {
-    let mut inv = test_support::test_investigator(1);
-    inv.skills.intellect = intellect;
-    let mut torch = CardInPlay::enter_play(
-        CardCode::new(FLASHLIGHT),
-        TORCH_INST,
-        Owner::Investigator(InvestigatorId(1)),
-    );
-    torch.uses.insert(UseKind::Supplies, 3);
-    inv.cards_in_play.push(torch);
+fn board(intellect: i8, shroud: u8, revealed: bool) -> GameStateBuilder {
+    board_at(study(shroud, revealed), intellect)
+}
 
-    let mut location = test_support::test_location(10, "Study");
+/// The Study at `HERE`: `shroud` shroud, 1 clue, revealed or not.
+fn study(shroud: u8, revealed: bool) -> Location {
+    let mut location = test_support::test_location(HERE.0, "Study");
     location.shroud = shroud;
     location.clues = 1;
     location.revealed = revealed;
+    location
+}
 
+/// [`board`] at `location`.
+fn board_at(location: Location, intellect: i8) -> GameStateBuilder {
     GameStateBuilder::new()
-        .with_investigator_at(inv, LOC)
+        .with_seat(
+            seat(1)
+                .at(HERE)
+                .skill(SkillKind::Intellect, intellect)
+                .in_play([(FLASHLIGHT, uses(UseKind::Supplies, 3))]),
+        )
         .with_location(location)
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
-        .build()
 }
 
 fn supplies(state: &GameState) -> Option<u8> {
     state.investigators[&INV]
         .cards_in_play
         .iter()
-        .find(|c| c.instance_id == TORCH_INST)
+        .find(|c| c.code.as_str() == FLASHLIGHT)
         .map(|c| c.uses.get(&UseKind::Supplies).copied().unwrap_or(0))
 }
 
-fn activate(state: GameState) -> ApplyResult {
-    TestSession::new(state)
-        .resolve_choices(|c| {
-            c.commit_cards(&[]);
-        })
-        .take(&TurnAction::ActivateAbility {
-            investigator: INV,
-            source: AbilitySource::InPlay(TORCH_INST),
-            address: AbilityAddress::Printed(0),
-        })
-        .finish()
+/// Flashlight's `[action]` ability.
+fn activation(state: &GameState) -> TurnAction {
+    TurnAction::ActivateAbility {
+        investigator: INV,
+        source: AbilitySource::InPlay(state.in_play(INV, FLASHLIGHT)),
+        address: AbilityAddress::Printed(0),
+    }
+}
+
+/// Activate the Flashlight and commit nothing to its investigation; the
+/// session comes back to the turn menu.
+fn activate(board: GameStateBuilder) -> TestSession {
+    let session = board.session();
+    let activation = activation(session.state());
+    let session = session.take(&activation).commit(&[]);
+    session.assert_at_turn_menu(INV);
+    session
 }
 
 #[test]
@@ -86,16 +93,19 @@ fn minus_two_shroud_turns_a_failing_investigation_into_a_success() {
     // Intellect 2 + 0 = 2. Base difficulty (shroud 4) would fail; the -2
     // brings it to 2 → success by 0, discovering the location's clue.
     let r = activate(board(2, 4, true));
-    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_event!(
-        r.events,
+        r.events(),
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, margin: 0 }
             if *investigator == INV
     );
-    assert_event!(r.events, Event::CluePlaced { investigator, .. } if *investigator == INV);
-    assert_eq!(r.state.investigators[&INV].clues, 1, "1 clue discovered");
-    assert_eq!(r.state.locations[&LOC].clues, 0, "clue left the location");
-    assert_eq!(supplies(&r.state), Some(2), "1 supply spent");
+    assert_event!(r.events(), Event::CluePlaced { investigator, .. } if *investigator == INV);
+    assert_eq!(r.state().investigators[&INV].clues, 1, "1 clue discovered");
+    assert_eq!(
+        r.state().locations[&HERE].clues,
+        0,
+        "clue left the location"
+    );
+    assert_eq!(supplies(r.state()), Some(2), "1 supply spent");
 }
 
 #[test]
@@ -103,13 +113,12 @@ fn reduced_shroud_clamps_at_zero() {
     // Shroud 1, -2 → difficulty (1 - 2).max(0) = 0, not -1 (which would
     // reject as a negative difficulty). Intellect 0 + 0 = 0 ≥ 0 → success.
     let r = activate(board(0, 1, true));
-    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_event!(
-        r.events,
+        r.events(),
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, margin: 0 }
             if *investigator == INV
     );
-    assert_eq!(supplies(&r.state), Some(2), "1 supply spent");
+    assert_eq!(supplies(r.state()), Some(2), "1 supply spent");
 }
 
 #[test]
@@ -117,17 +126,12 @@ fn rejects_without_a_revealed_location_before_spending_a_supply() {
     // Validate-first: an unrevealed location is not investigatable, so the
     // activation rejects before the supply cost is paid. The ability is not
     // offered (unrevealed location → not legal), so bypass the gate.
-    let r = test_support::dispatch_turn_action_unchecked(
-        board(2, 4, false),
-        &TurnAction::ActivateAbility {
-            investigator: INV,
-            source: AbilitySource::InPlay(TORCH_INST),
-            address: AbilityAddress::Printed(0),
-        },
-    );
-    assert!(matches!(r.outcome, EngineOutcome::Rejected { .. }));
+    let session = board(2, 4, false).session();
+    let activation = activation(session.state());
+    let r = session.submit_off_menu(&activation);
+    let _ = r.expect_rejected();
     assert_eq!(
-        supplies(&r.state),
+        supplies(r.state()),
         Some(3),
         "no supply spent on a rejected activation"
     );
@@ -140,20 +144,20 @@ fn rejects_without_a_revealed_location_before_spending_a_supply() {
 /// different cards contribute to.
 const FOG: &str = "01168";
 
+/// The instance id of the Obscuring Fog [`fogged_board`] attaches. A seat
+/// cannot place a location attachment, so the builder does not mint this one;
+/// it is fixed here, and seated cards are minted past it.
+const FOG_ID: CardInstanceId = CardInstanceId(7);
+
 /// [`board`], with Obscuring Fog attached to the location.
-fn fogged_board(intellect: i8, shroud: u8) -> GameState {
-    let mut state = board(intellect, shroud, true);
-    state
-        .locations
-        .get_mut(&LOC)
-        .expect("the board's location")
-        .attachments
-        .push(CardInPlay::enter_play(
-            CardCode::new(FOG),
-            CardInstanceId(1),
-            Owner::EncounterDeck,
-        ));
-    state
+fn fogged_board(intellect: i8, shroud: u8) -> GameStateBuilder {
+    let mut location = study(shroud, true);
+    location.attachments.push(CardInPlay::enter_play(
+        CardCode::new(FOG),
+        FOG_ID,
+        Owner::EncounterDeck,
+    ));
+    board_at(location, intellect)
 }
 
 /// The shroud is **one** modified quantity that both cards contribute
@@ -164,7 +168,7 @@ fn fogged_board(intellect: i8, shroud: u8) -> GameState {
 fn fog_and_flashlight_compose_into_one_shroud() {
     let r = activate(fogged_board(2, 2));
     assert_event!(
-        r.events,
+        r.events(),
         Event::SkillTestStarted {
             skill: SkillKind::Intellect,
             difficulty: 2,
@@ -173,12 +177,12 @@ fn fog_and_flashlight_compose_into_one_shroud() {
     );
     // Intellect 2 + 0 = 2 against that difficulty → success by 0.
     assert_event!(
-        r.events,
+        r.events(),
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, margin: 0 }
             if *investigator == INV
     );
     assert!(
-        r.state.recorded_modifiers.is_empty(),
+        r.state().recorded_modifiers.is_empty(),
         "the -2 shroud is scoped to the investigation and expires with it",
     );
 }
@@ -194,7 +198,7 @@ fn fog_and_flashlight_compose_into_one_shroud() {
 fn the_clamp_applies_once_after_both_modifiers() {
     let r = activate(fogged_board(1, 1));
     assert_event!(
-        r.events,
+        r.events(),
         Event::SkillTestStarted {
             skill: SkillKind::Intellect,
             difficulty: 1,
@@ -202,7 +206,7 @@ fn the_clamp_applies_once_after_both_modifiers() {
         }
     );
     assert_event!(
-        r.events,
+        r.events(),
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, margin: 0 }
             if *investigator == INV
     );

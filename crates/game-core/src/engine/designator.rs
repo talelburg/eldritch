@@ -97,7 +97,7 @@ mod tests {
 
     use super::*;
     use crate::state::{GameStateBuilder, LocationId};
-    use crate::test_support;
+    use crate::test_support::{self, seat};
 
     const ME: InvestigatorId = InvestigatorId(1);
     const HERE: LocationId = LocationId(1);
@@ -118,13 +118,11 @@ mod tests {
     /// A board with the investigator at a revealed [`HERE`] and `enemies`
     /// co-located there.
     fn board(revealed: bool, enemies: u32) -> GameState {
-        let mut inv = test_support::test_investigator(1);
-        inv.current_location = Some(HERE);
-        let mut loc = test_support::test_location(1, "Study");
+        let mut loc = test_support::test_location(HERE.0, "Study");
         loc.revealed = revealed;
         let mut builder = GameStateBuilder::new()
-            .with_investigator(inv)
-            .with_location(loc);
+            .with_location(loc)
+            .with_seat(seat(ME.0).at(HERE));
         for n in 0..enemies {
             let mut enemy = test_support::test_enemy(n + 1, "Ghoul");
             enemy.current_location = Some(HERE);

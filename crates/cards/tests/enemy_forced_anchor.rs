@@ -18,14 +18,19 @@
 //!
 //! Driven with `interactive_acknowledge` on, so the one-option "Resolve"
 //! acknowledge surfaces *before* the effect (the #466 confirm-before-effect
-//! pause), which is where the anchor is readable. Firing the `EnemyAttacks`
-//! timing point deals the attack at its resolve step, and the `after` cell the
-//! card prints then offers the acknowledge.
+//! pause), which is where the anchor is readable. The investigator ends their
+//! turn engaged with the Acolyte, the Enemy phase deals its attack, and the
+//! `after` cell the card prints then offers the acknowledge.
 
 use cards::REGISTRY;
-use game_core::engine::{OptionTarget, TimingEvent};
-use game_core::state::{Agenda, CardCode, EnemyId, GameStateBuilder, InvestigatorId};
-use game_core::test_support::{self, TestSession};
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::OptionTarget;
+use game_core::state::{Agenda, CardCode, EnemyId, GameStateBuilder, InvestigatorId, LocationId};
+use game_core::test_support::{self, seat, TestSession};
+
+const LEAD: InvestigatorId = InvestigatorId(1);
+const HERE: LocationId = LocationId(10);
+const ATTACKER: EnemyId = EnemyId(7);
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
@@ -34,15 +39,13 @@ fn install_registry() {
 
 #[test]
 fn enemy_01102_forced_ack_anchors_to_the_attacking_enemy() {
-    let lead = InvestigatorId(1);
-    let attacker_id = EnemyId(7);
-    let inv = test_support::test_investigator(1);
-    let mut attacker = test_support::test_enemy(7, "Silver Twilight Acolyte");
+    let mut attacker = test_support::test_enemy(ATTACKER.0, "Silver Twilight Acolyte");
     attacker.code = CardCode::new("01102");
     let mut state = GameStateBuilder::new()
-        .with_investigator(inv)
-        .with_turn_order([lead])
-        .with_enemy(attacker)
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_seat(seat(1).at(HERE))
+        .with_enemy_engaged(attacker, LEAD)
+        .open_turn(LEAD)
         .build();
     // The card places doom on the current agenda, so one must be current for the
     // effect to have the potential to change the game state (RR p.2 initiation).
@@ -53,20 +56,18 @@ fn enemy_01102_forced_ack_anchors_to_the_attacking_enemy() {
     state.agenda_index = 0;
     state.interactive_acknowledge = true;
 
-    let session = TestSession::new(state).fire_at(TimingEvent::EnemyAttacks {
-        enemy: attacker_id,
-        investigator: lead,
-    });
+    // Ending the turn runs into the Enemy phase, where the Acolyte attacks.
+    let session = TestSession::new(state).take(&TurnAction::EndTurn);
     let request = session.prompt();
     assert_eq!(
         request.options.len(),
         1,
         "the interactive forced-acknowledge is a one-option 'Resolve' pick \
-         before the effect resolves",
+         before the effect resolves: {request:?}",
     );
     assert_eq!(
-        request.options[0].target,
-        Some(OptionTarget::Enemy(attacker_id)),
+        session.offered_at(&OptionTarget::Enemy(ATTACKER)),
+        1,
         "an attacking enemy's own forced ability anchors to that enemy, where \
          it used to anchor to nothing (#735)",
     );

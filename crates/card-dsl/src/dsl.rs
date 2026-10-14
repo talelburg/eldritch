@@ -2047,7 +2047,7 @@ pub enum SkillTestKind {
     /// The Evade action's agility test against an enemy.
     Evade,
     /// Any other skill test: treachery effects, agenda effects, or a plain skill test
-    /// invoked directly (the synthetic `perform_skill_test` test entry point). Cards qualifying their bonus with one of the
+    /// invoked directly (the synthetic `TestSession::test_skill` test entry point). Cards qualifying their bonus with one of the
     /// named-action variants will NOT contribute here.
     Plain,
 }

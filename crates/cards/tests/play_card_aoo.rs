@@ -27,14 +27,12 @@
 #![allow(clippy::too_many_lines)]
 
 use cards::REGISTRY;
-use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{EngineOutcome, OptionTarget};
+use game_core::assert_no_event;
+use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::OptionTarget;
 use game_core::event::Event;
-use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, Enemy, GameStateBuilder, InvestigatorId, LocationId,
-    Owner, Status,
-};
-use game_core::test_support;
+use game_core::state::{CardCode, Enemy, GameStateBuilder, InvestigatorId, LocationId, Status};
+use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
 
 /// Emergency Cache (01088): non-fast event, `OnPlay` gain 3 resources → provokes.
 const EMERGENCY_CACHE: &str = "01088";
@@ -44,6 +42,15 @@ const GUARD_DOG: &str = "01021";
 const WORKING_A_HUNCH: &str = "01037";
 /// Machete (01020): non-fast Guardian weapon asset → playing it provokes.
 const MACHETE: &str = "01020";
+
+const INV: InvestigatorId = InvestigatorId(1);
+const HERE: LocationId = LocationId(101);
+
+/// Play the first card in hand.
+const PLAY_FIRST: TurnAction = TurnAction::PlayCard {
+    investigator: INV,
+    hand_index: 0,
+};
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
@@ -60,6 +67,38 @@ fn ready_attacker(id: u32, damage: u8, max_health: u8) -> Enemy {
     e
 }
 
+/// Investigator 1 at the Study holding `card`, with 3 actions.
+fn holding(card: &str) -> Seat {
+    seat(1).at(HERE).hand([card]).actions(3)
+}
+
+/// `investigator`'s turn at the Study (with `clues` clues), engaged by
+/// `attacker` if one is given.
+fn board(investigator: Seat, clues: u8, attacker: Option<Enemy>) -> TestSession {
+    let mut location = test_support::test_location(HERE.0, "Study");
+    location.clues = clues;
+    let builder = GameStateBuilder::new()
+        .with_location(location)
+        .with_seat(investigator)
+        .open_turn(INV);
+    match attacker {
+        Some(enemy) => builder.with_enemy_engaged(enemy, INV),
+        None => builder,
+    }
+    .session()
+}
+
+/// The accumulated damage on the seated Guard Dog.
+fn dog_damage(session: &TestSession) -> u8 {
+    let dog = session.state().in_play(INV, GUARD_DOG);
+    session.state().investigators[&INV]
+        .cards_in_play
+        .iter()
+        .find(|c| c.instance_id == dog)
+        .expect("Guard Dog still in play")
+        .accumulated_damage
+}
+
 // -----------------------------------------------------------------------
 // Playing a non-fast event provokes an AoO (the new #378 firing site).
 // -----------------------------------------------------------------------
@@ -70,66 +109,44 @@ fn ready_attacker(id: u32, damage: u8, max_health: u8) -> Enemy {
 /// resources" effect resolves.
 #[test]
 fn playing_a_non_fast_event_while_engaged_provokes_an_aoo() {
-    let dog = CardInstanceId(1);
-    let inv_id = InvestigatorId(1);
-    let loc = LocationId(101);
-
-    let mut investigator = test_support::test_investigator(1);
-    investigator.current_location = Some(loc);
-    investigator.hand = vec![CardCode::new(EMERGENCY_CACHE)];
-    investigator.cards_in_play = vec![CardInPlay::enter_play(
-        CardCode::new(GUARD_DOG),
-        dog,
-        Owner::Investigator(InvestigatorId(1)),
-    )];
-    let resources_before = investigator.resources;
-
-    let attacker = ready_attacker(7, 2, 5);
+    let session = board(
+        seat(1)
+            .at(HERE)
+            .hand([EMERGENCY_CACHE])
+            .in_play([GUARD_DOG]),
+        0,
+        Some(ready_attacker(7, 2, 5)),
+    );
+    let dog = session.state().card(INV, GUARD_DOG);
+    let resources_before = session.state().investigators[&INV].resources;
 
     // The AoO prompts for the soak distribution (#44/K5b), one prompt per point
     // of damage: assign both onto Guard Dog.
-    let session = GameStateBuilder::new()
-        .with_location(test_support::test_location(101, "Study"))
-        .with_investigator(investigator)
-        .open_turn(inv_id)
-        .with_enemy_engaged(attacker, inv_id)
-        .session()
-        .resolve_choices(|c| {
-            c.pick(OptionTarget::CardInstance(dog));
-            c.pick(OptionTarget::CardInstance(dog));
-        })
-        .take(&TurnAction::PlayCard {
-            investigator: inv_id,
-            hand_index: 0,
-        });
+    let session = session.take(&PLAY_FIRST).pick(dog.clone()).pick(dog);
     let state = session.state();
 
     assert_ne!(
         session.prompt().target,
-        Some(OptionTarget::TurnControl(inv_id)),
+        Some(OptionTarget::TurnControl(INV)),
         "the AoO's damage window must suspend the play"
     );
-    let dog_in_play = state.investigators[&inv_id]
-        .cards_in_play
-        .iter()
-        .find(|c| c.instance_id == dog)
-        .expect("Guard Dog still in play");
     // Assigned to Guard Dog, not yet placed: the open window is its own `when`
     // cell, between the rules' two steps (#727). This test is about the AoO
     // suspending the play, which it now does one step earlier.
     assert_eq!(
-        dog_in_play.accumulated_damage, 0,
+        dog_damage(&session),
+        0,
         "AoO damage from the play is assigned to Guard Dog, not yet placed"
     );
     assert_eq!(
-        state.investigators[&inv_id].damage(),
+        state.investigators[&INV].damage(),
         0,
         "investigator took no AoO damage"
     );
     // The "gain 3 resources" effect has NOT run yet — it resolves only after the
     // AoO window closes.
     assert_eq!(
-        state.investigators[&inv_id].resources, resources_before,
+        state.investigators[&INV].resources, resources_before,
         "the card's effect resolves after the AoO, not before"
     );
 }
@@ -143,40 +160,19 @@ fn playing_a_non_fast_event_while_engaged_provokes_an_aoo() {
 /// resolved effect together.
 #[test]
 fn playing_a_non_fast_event_spends_one_action() {
-    let inv_id = InvestigatorId(1);
-    let loc = LocationId(101);
+    let session = board(holding(EMERGENCY_CACHE), 0, None);
+    let resources_before = session.state().investigators[&INV].resources;
 
-    let mut investigator = test_support::test_investigator(1);
-    investigator.current_location = Some(loc);
-    investigator.actions_remaining = 3;
-    investigator.hand = vec![CardCode::new(EMERGENCY_CACHE)];
-    let resources_before = investigator.resources;
+    let session = session.take(&PLAY_FIRST);
+    session.assert_at_turn_menu(INV);
+    let state = session.state();
 
-    let state = GameStateBuilder::new()
-        .with_location(test_support::test_location(101, "Study"))
-        .with_investigator(investigator)
-        .open_turn(inv_id)
-        .build();
-
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::PlayCard {
-            investigator: inv_id,
-            hand_index: 0,
-        },
-    );
-    let state = result.state;
-
-    assert!(matches!(
-        result.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
     assert_eq!(
-        state.investigators[&inv_id].actions_remaining, 2,
+        state.investigators[&INV].actions_remaining, 2,
         "playing a non-fast card spent one action"
     );
     assert_eq!(
-        state.investigators[&inv_id].resources,
+        state.investigators[&INV].resources,
         resources_before + 3,
         "the effect still resolved (gain 3 resources)"
     );
@@ -185,37 +181,24 @@ fn playing_a_non_fast_event_spends_one_action() {
 /// Playing a non-fast card with no actions left is rejected (validate-first).
 #[test]
 fn playing_a_non_fast_card_with_no_actions_is_rejected() {
-    let inv_id = InvestigatorId(1);
-    let loc = LocationId(101);
+    let session = board(holding(EMERGENCY_CACHE).actions(0), 0, None);
 
-    let mut investigator = test_support::test_investigator(1);
-    investigator.current_location = Some(loc);
-    investigator.actions_remaining = 0;
-    investigator.hand = vec![CardCode::new(EMERGENCY_CACHE)];
-
-    let state = GameStateBuilder::new()
-        .with_location(test_support::test_location(101, "Study"))
-        .with_investigator(investigator)
-        .open_turn(inv_id)
-        .build();
-
-    // 0 actions remaining → PlayCard not offered; bypass the gate.
-    let result = test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: inv_id,
-            hand_index: 0,
-        },
-    );
-
+    // 0 actions remaining → PlayCard not offered; send it off the menu to prove
+    // the handler itself refuses it.
     assert!(
-        matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "a non-fast play with 0 actions must be rejected: {:?}",
-        result.outcome
+        !enumerate::legal_actions(session.state()).contains(&PLAY_FIRST),
+        "the menu does not offer a non-fast play with 0 actions",
+    );
+    let result = session.submit_off_menu(&PLAY_FIRST);
+
+    let reason = result.expect_rejected();
+    assert!(
+        !reason.is_empty(),
+        "a non-fast play with 0 actions must be rejected: {reason}",
     );
     // Card stays in hand, untouched.
     assert!(
-        result.state.investigators[&inv_id]
+        result.state().investigators[&INV]
             .hand
             .contains(&CardCode::new(EMERGENCY_CACHE)),
         "the rejected play left the card in hand"
@@ -230,66 +213,26 @@ fn playing_a_non_fast_card_with_no_actions_is_rejected() {
 /// provokes no `AoO` and spends no action; its effect (discover 1 clue) resolves.
 #[test]
 fn playing_a_fast_event_while_engaged_provokes_no_aoo_and_spends_no_action() {
-    let dog = CardInstanceId(1);
-    let inv_id = InvestigatorId(1);
-    let loc = LocationId(101);
-
-    let mut investigator = test_support::test_investigator(1);
-    investigator.current_location = Some(loc);
-    investigator.actions_remaining = 3;
-    investigator.hand = vec![CardCode::new(WORKING_A_HUNCH)];
-    investigator.cards_in_play = vec![CardInPlay::enter_play(
-        CardCode::new(GUARD_DOG),
-        dog,
-        Owner::Investigator(InvestigatorId(1)),
-    )];
-
-    let mut location = test_support::test_location(101, "Study");
-    location.clues = 1;
-
-    let attacker = ready_attacker(7, 2, 5);
-
-    let state = GameStateBuilder::new()
-        .with_location(location)
-        .with_investigator(investigator)
-        .open_turn(inv_id)
-        .with_enemy_engaged(attacker, inv_id)
-        .build();
-
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::PlayCard {
-            investigator: inv_id,
-            hand_index: 0,
-        },
-    );
-    let state = result.state;
+    let session = board(
+        holding(WORKING_A_HUNCH).in_play([GUARD_DOG]),
+        1,
+        Some(ready_attacker(7, 2, 5)),
+    )
+    .take(&PLAY_FIRST);
 
     // A fast event provokes no AoO: the play resolves and returns to the
-    // open-turn menu (`AwaitingInput`). The *no-AoO* proof is the
-    // `accumulated_damage == 0` assertion below — an AoO would have soaked
-    // onto Guard Dog — not the outcome variant (the open-turn menu is itself
-    // `AwaitingInput`).
-    assert!(
-        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
-        "the fast play resolves to the open-turn menu: {:?}",
-        result.outcome
-    );
-    let dog_in_play = state.investigators[&inv_id]
-        .cards_in_play
-        .iter()
-        .find(|c| c.instance_id == dog)
-        .expect("Guard Dog still in play");
+    // open-turn menu. The *no-AoO* proof is the Guard Dog damage assertion
+    // below — an AoO would have soaked onto Guard Dog — not where the session
+    // rests.
+    session.assert_at_turn_menu(INV);
+    let state = session.state();
+    assert_eq!(dog_damage(&session), 0, "no AoO soaked onto Guard Dog");
     assert_eq!(
-        dog_in_play.accumulated_damage, 0,
-        "no AoO soaked onto Guard Dog"
-    );
-    assert_eq!(
-        state.investigators[&inv_id].actions_remaining, 3,
+        state.investigators[&INV].actions_remaining, 3,
         "a fast play spends no action"
     );
     assert_eq!(
-        state.locations[&loc].clues, 0,
+        state.locations[&HERE].clues, 0,
         "the fast event's effect resolved (discovered the clue)"
     );
 }
@@ -305,59 +248,33 @@ fn playing_a_fast_event_while_engaged_provokes_no_aoo_and_spends_no_action() {
 /// from the game (RR p.10, step 1), and the mid-play event is one of them (#604).
 #[test]
 fn aoo_that_defeats_the_player_suppresses_the_event_effect() {
-    let inv_id = InvestigatorId(1);
-    let loc = LocationId(101);
-
-    let mut investigator = test_support::test_investigator(1);
-    investigator.current_location = Some(loc);
-    investigator.actions_remaining = 3;
-    investigator.hand = vec![CardCode::new(EMERGENCY_CACHE)];
-
     // Lethal AoO, no soaker / no Dodge → the actor is defeated before the
     // "gain 3 resources" effect can resolve.
-    let attacker = ready_attacker(7, 50, 5);
-
-    let state = GameStateBuilder::new()
-        .with_location(test_support::test_location(101, "Study"))
-        .with_investigator(investigator)
-        .open_turn(inv_id)
-        .with_enemy_engaged(attacker, inv_id)
-        .build();
-
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::PlayCard {
-            investigator: inv_id,
-            hand_index: 0,
-        },
-    );
+    let result = board(holding(EMERGENCY_CACHE), 0, Some(ready_attacker(7, 50, 5)))
+        .take(&PLAY_FIRST)
+        .finish();
     let state = result.state;
 
     assert_ne!(
-        state.investigators[&inv_id].status,
+        state.investigators[&INV].status,
         Status::Active,
         "the lethal AoO defeated the actor"
     );
     // Elimination zeroes the wallet, so assert on the absent event, not the value.
-    assert!(
-        !result
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::ResourcesGained { .. })),
-        "the event's effect did not resolve (no ResourcesGained) — defeated mid-play: {:?}",
-        result.events
-    );
+    // The event's effect did not resolve (no ResourcesGained) — defeated
+    // mid-play.
+    assert_no_event!(result.events, Event::ResourcesGained { .. });
     // The card was still played — it left hand — but a dead investigator has no
     // discard pile to receive it: elimination removed it from the game.
     assert!(
-        !state.investigators[&inv_id]
+        !state.investigators[&INV]
             .discard
             .contains(&CardCode::new(EMERGENCY_CACHE)),
         "the mid-play event must not land in the drained discard pile of an \
          eliminated investigator"
     );
     assert!(
-        state.investigators[&inv_id]
+        state.investigators[&INV]
             .removed_from_game
             .contains(&CardCode::new(EMERGENCY_CACHE)),
         "the mid-play event was removed from the game with its owner (RR p.10 step 1)"
@@ -376,47 +293,28 @@ fn aoo_that_defeats_the_player_suppresses_the_event_effect() {
 /// onto Guard Dog); after the soak window closes, the asset enters play.
 #[test]
 fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
-    let dog = CardInstanceId(1);
-    let inv_id = InvestigatorId(1);
-    let loc = LocationId(101);
-
-    let mut investigator = test_support::test_investigator(1);
-    investigator.current_location = Some(loc);
-    investigator.actions_remaining = 3;
-    investigator.hand = vec![CardCode::new(MACHETE)];
-    investigator.cards_in_play = vec![CardInPlay::enter_play(
-        CardCode::new(GUARD_DOG),
-        dog,
-        Owner::Investigator(InvestigatorId(1)),
-    )];
-
-    let attacker = ready_attacker(7, 2, 5);
+    let session = board(
+        holding(MACHETE).in_play([GUARD_DOG]),
+        0,
+        Some(ready_attacker(7, 2, 5)),
+    );
+    let dog = session.state().card(INV, GUARD_DOG);
 
     // Step 1: play Machete → AoO soaks onto Guard Dog → soak window; Machete is
     // mid-play — it left hand when the play commenced and enters play only once
     // the play completes. The AoO prompts for the soak distribution (#44/K5b),
     // one prompt per point of damage: assign both onto Guard Dog.
-    let session = GameStateBuilder::new()
-        .with_location(test_support::test_location(101, "Study"))
-        .with_investigator(investigator)
-        .open_turn(inv_id)
-        .with_enemy_engaged(attacker, inv_id)
-        .session()
-        .resolve_choices(|c| {
-            c.pick(OptionTarget::CardInstance(dog));
-            c.pick(OptionTarget::CardInstance(dog));
-        })
-        .take(&TurnAction::PlayCard {
-            investigator: inv_id,
-            hand_index: 0,
-        });
+    let session = session
+        .take(&PLAY_FIRST)
+        .pick(dog.clone())
+        .pick(dog.clone());
     let state = session.state();
     assert_eq!(
-        state.investigators[&inv_id].actions_remaining, 2,
+        state.investigators[&INV].actions_remaining, 2,
         "playing the asset spent one action before the AoO"
     );
     assert!(
-        !state.investigators[&inv_id]
+        !state.investigators[&INV]
             .hand
             .contains(&CardCode::new(MACHETE)),
         "the asset left hand when the play commenced (RR Appendix I step 3)"
@@ -430,17 +328,17 @@ fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
 
     // Step 2: fire Guard Dog's reaction (closes the soak window) → the play
     // resumes → Machete enters play.
-    let session = session.pick(OptionTarget::CardInstance(dog));
+    let session = session.pick(dog);
     let state = session.state();
     assert!(
-        state.investigators[&inv_id]
+        state.investigators[&INV]
             .cards_in_play
             .iter()
             .any(|c| c.code == CardCode::new(MACHETE)),
         "Machete entered play after the AoO soak window closed"
     );
     assert!(
-        !state.investigators[&inv_id]
+        !state.investigators[&INV]
             .hand
             .contains(&CardCode::new(MACHETE)),
         "Machete left hand once it entered play"
@@ -453,53 +351,32 @@ fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
 /// step 1) — it is neither in play nor stranded mid-play.
 #[test]
 fn aoo_that_defeats_the_player_mid_asset_play_leaves_no_asset_in_play() {
-    let inv_id = InvestigatorId(1);
-    let loc = LocationId(101);
-
-    let mut investigator = test_support::test_investigator(1);
-    investigator.current_location = Some(loc);
-    investigator.actions_remaining = 3;
-    investigator.hand = vec![CardCode::new(MACHETE)];
-
     // Lethal AoO, no soaker / no Dodge → defeated before Machete enters play.
-    let attacker = ready_attacker(7, 50, 5);
-
-    let state = GameStateBuilder::new()
-        .with_location(test_support::test_location(101, "Study"))
-        .with_investigator(investigator)
-        .open_turn(inv_id)
-        .with_enemy_engaged(attacker, inv_id)
-        .build();
-
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::PlayCard {
-            investigator: inv_id,
-            hand_index: 0,
-        },
-    );
-    let state = result.state;
+    let state = board(holding(MACHETE), 0, Some(ready_attacker(7, 50, 5)))
+        .take(&PLAY_FIRST)
+        .finish()
+        .state;
 
     assert_ne!(
-        state.investigators[&inv_id].status,
+        state.investigators[&INV].status,
         Status::Active,
         "the lethal AoO defeated the actor"
     );
     assert!(
-        !state.investigators[&inv_id]
+        !state.investigators[&INV]
             .cards_in_play
             .iter()
             .any(|c| c.code == CardCode::new(MACHETE)),
         "Machete never entered play — the defeat suppressed the enter-play step"
     );
     assert!(
-        !state.investigators[&inv_id]
+        !state.investigators[&INV]
             .hand
             .contains(&CardCode::new(MACHETE)),
         "the asset had already left hand when the play commenced"
     );
     assert!(
-        state.investigators[&inv_id]
+        state.investigators[&INV]
             .removed_from_game
             .contains(&CardCode::new(MACHETE)),
         "elimination swept the un-entered asset off its frame and out of the game"

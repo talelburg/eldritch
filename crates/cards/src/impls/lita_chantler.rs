@@ -239,10 +239,10 @@ mod tests {
     };
     use game_core::engine::evaluator::EvalContext;
     use game_core::state::{
-        AbilitySource, CardCode, CardInPlay, CardInstanceId, Continuation, EnemyId, GameState,
-        GameStateBuilder, InvestigatorId, LocationId, Owner, SkillTestFollowUp, SkillTestId,
+        AbilitySource, CardCode, Continuation, EnemyId, GameState, GameStateBuilder,
+        InvestigatorId, LocationId, SkillTestFollowUp, SkillTestId,
     };
-    use game_core::test_support;
+    use game_core::test_support::{self, seat, SeatLookup as _};
 
     use crate::impls;
 
@@ -345,16 +345,8 @@ mod tests {
         const ELSEWHERE: LocationId = LocationId(2);
         let attacker = InvestigatorId(2);
 
-        let mut lita_controller = test_support::test_investigator(1);
-        lita_controller.current_location = Some(HERE);
-        lita_controller.cards_in_play.push(CardInPlay::enter_play(
-            CardCode::new(super::CODE),
-            CardInstanceId(9),
-            Owner::Investigator(InvestigatorId(1)),
-        ));
-
-        let mut other = test_support::test_investigator(2);
-        other.current_location = Some(if attacker_here { HERE } else { ELSEWHERE });
+        let lita_controller = seat(1).at(HERE).in_play([super::CODE]);
+        let other = seat(2).at(if attacker_here { HERE } else { ELSEWHERE });
 
         // Ghoul Minion 01160 (Humanoid. Monster. Ghoul.) and Silver Twilight
         // Acolyte 01102 (Humanoid. Cultist. Silver Twilight.), the corpus's
@@ -367,10 +359,10 @@ mod tests {
         acolyte.code = CardCode::new("01102");
 
         let mut state = GameStateBuilder::new()
-            .with_investigator(lita_controller)
-            .with_investigator(other)
-            .with_location(test_support::test_location(1, "Parlor"))
-            .with_location(test_support::test_location(2, "Hallway"))
+            .with_seat(lita_controller)
+            .with_seat(other)
+            .with_location(test_support::test_location(HERE.0, "Parlor"))
+            .with_location(test_support::test_location(ELSEWHERE.0, "Hallway"))
             .with_enemy(ghoul)
             .with_enemy(acolyte)
             .build();
@@ -387,7 +379,9 @@ mod tests {
                 enemy: if monster { EnemyId(1) } else { EnemyId(2) },
                 extra_damage: 0,
             };
-            // The builder staged no frame, so the test is the whole stack.
+            // The builder staged no frame, so the test is the whole stack. A
+            // predicate unit test reads no prompt: it needs a Fight in flight,
+            // so the frame is staged directly rather than driven to.
             state.continuations =
                 test_support::from_frames_unchecked([Continuation::SkillTest(test)]);
         }
@@ -421,7 +415,7 @@ mod tests {
             state,
             &EvalContext::for_controller_with_source(
                 InvestigatorId(1),
-                AbilitySource::InPlay(CardInstanceId(9)),
+                AbilitySource::InPlay(state.in_play(InvestigatorId(1), super::CODE)),
             ),
         )
     }
