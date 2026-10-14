@@ -45,6 +45,16 @@ pub fn module_for(id: &ScenarioId) -> Option<&'static ScenarioModule> {
 /// [`game_core::scenario_registry::install`].
 pub const REGISTRY: ScenarioRegistry = ScenarioRegistry { module_for };
 
+/// The registries a scenario test names: [`cards::TEST_REGISTRY`] (the real
+/// corpus with the synthetic test cards) paired with this crate's
+/// [`REGISTRY`]. Lives here because `cards` cannot see `scenarios`; a card
+/// test, which needs no scenario module, names [`cards::TEST_REGISTRIES`].
+#[cfg(feature = "test-support")]
+pub const TEST_REGISTRIES: game_core::engine::Registries = game_core::engine::Registries {
+    cards: &cards::TEST_REGISTRY,
+    scenarios: &REGISTRY,
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -303,15 +303,12 @@ fn owner(
 ) -> Owner {
     let player_card = || {
         (cards.metadata_for)(code).is_some_and(|meta| {
-                meta.weakness
-                    || matches!(
-                        meta.card_type(),
-                        CardType::Investigator
-                            | CardType::Asset
-                            | CardType::Event
-                            | CardType::Skill
-                    )
-            })
+            meta.weakness
+                || matches!(
+                    meta.card_type(),
+                    CardType::Investigator | CardType::Asset | CardType::Event | CardType::Skill
+                )
+        })
     };
     if zone == SeatZone::InPlay || player_card() {
         Owner::Investigator(investigator)

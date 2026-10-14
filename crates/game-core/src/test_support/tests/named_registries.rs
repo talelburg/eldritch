@@ -13,9 +13,7 @@ use crate::engine::enumerate::TurnAction;
 use crate::engine::Registries;
 use crate::event::Event;
 use crate::scenario::{ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRegistry};
-use crate::state::{
-    Act, CardCode, GameState, GameStateBuilder, InvestigatorId, Owner, SkillKind,
-};
+use crate::state::{Act, CardCode, GameState, GameStateBuilder, InvestigatorId, Owner, SkillKind};
 use crate::test_support::{seat, terminal_code, TestSession, TEST_REGISTRY};
 
 const INV: InvestigatorId = InvestigatorId(1);

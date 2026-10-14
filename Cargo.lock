@@ -1984,6 +1984,7 @@ dependencies = [
  "cards",
  "ctor",
  "game-core",
+ "scenarios",
  "serde_json",
 ]
 

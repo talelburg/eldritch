@@ -165,8 +165,7 @@ fn test_registry_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> 
 
 #[cfg(feature = "test-support")]
 fn test_registry_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-    game_core::test_support::abilities_for_terminal(code)
-        .or_else(|| registry_abilities_for(code))
+    game_core::test_support::abilities_for_terminal(code).or_else(|| registry_abilities_for(code))
 }
 
 #[cfg(test)]
