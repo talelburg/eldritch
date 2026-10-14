@@ -33,7 +33,7 @@ pub use dispatch::choice::{resolve_grounded_choice, Grounded};
 pub use dispatch::movement::{enemy_can_enter_location, investigator_can_enter_location};
 pub use dispatch::uses::SpendUsesError;
 // `pub(crate)`: `test_support`'s session deals damage outside any attack.
-pub(crate) use dispatch::elimination::take_damage;
+pub(crate) use dispatch::combat::deal_harm;
 pub use enumerate::{legal_actions, TurnAction};
 pub use evaluator::{location_id_by_code, EvalContext};
 pub use modified_value::{

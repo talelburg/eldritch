@@ -171,21 +171,19 @@ fn last_investigator_defeated_latches_lost_resolution() {
     // scenario-ending latch is set (Rules Reference p.10 step 6).
     let inv = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        // After #448 cp2a: max_sanity() reads from the registry (TEST_INV = 8).
-        // Pre-load 7 horror so 1 more = 8 = max_sanity → lethal horror.
-        .with_seat(test_support::seat(1).harm(0, 7))
+        .with_seat(test_support::seat(1))
         .open_turn(inv)
         .build();
     let mut events = Vec::new();
 
-    // Apply the final point of lethal horror through the standard defeat path.
-    take_horror(
+    // Defeat the only investigator by horror through the standard defeat path.
+    apply_investigator_elimination(
         &mut Cx {
             state: &mut state,
             events: &mut events,
         },
         inv,
-        1,
+        EliminationCause::Horror,
     );
 
     assert_event!(events, Event::AllInvestigatorsEliminated);

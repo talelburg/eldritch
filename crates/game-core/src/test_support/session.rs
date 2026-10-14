@@ -268,13 +268,14 @@ impl TestSession {
     }
 
     /// Step: deal `amount` damage to `investigator` outside any attack, the
-    /// way a card effect does, then drain. Lethal damage defeats them and runs
-    /// `glossary/Elimination.md` to its end — including the scenario ending
-    /// once no investigator is left.
+    /// way a card effect does, then drain. A soak-bearing asset is offered the
+    /// soak, so the session may rest at the distribution prompt. Lethal damage
+    /// defeats them and runs `glossary/Elimination.md` to its end — including
+    /// the scenario ending once no investigator is left.
     pub fn take_damage(self, investigator: InvestigatorId, amount: u8) -> Self {
         self.framework_step(|cx| {
-            engine::take_damage(cx, investigator, amount);
-            engine::drive(cx, EngineOutcome::Done)
+            let outcome = engine::deal_harm(cx, investigator, amount, 0);
+            engine::drive(cx, outcome)
         })
     }
 

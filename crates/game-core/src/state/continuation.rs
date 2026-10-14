@@ -66,8 +66,8 @@ pub enum AttackLoopStage {
 /// A computed damage/horror distribution for one source of harm (C5b #237).
 ///
 /// How much of the harm's damage and horror lands on the defending investigator
-/// versus each soak-bearing asset. Built by `assign_attack` (soak-first) or the
-/// interactive per-point distribution (#44/K5b); placed simultaneously by
+/// versus each soak-bearing asset. Built by the per-point distribution
+/// (#44/K5b), which prompts for each contested point; placed simultaneously by
 /// `place_assignment`, per Rules Reference page 7's "Apply Damage/Horror" clause.
 /// Lives here (not in `engine`) because the live one is owned by the
 /// [`Continuation::DealDamage`] frame that walks the two steps, and each of the
@@ -102,8 +102,12 @@ pub enum DamageSource {
         /// The attacking enemy (binds the retaliate's target).
         enemy: EnemyId,
     },
-    /// A card/treachery `Effect::Deal` (K5b-2): at `Finish`, resume the parked
-    /// effect walk so any remaining iterations run.
+    /// Every deal that isn't an enemy attack: a card/treachery `Effect::Deal`
+    /// (K5b-2), a card-local native's harm, or a rule's (the deck-out horror),
+    /// all through the one harm adapter `deal_harm` or `Effect::Deal`. Nothing
+    /// in the corpus distinguishes harm from a rule from harm from a card
+    /// effect, so they share the arm. Like the enemy attack's, its `Finish` is a
+    /// pop and no more: whatever the caller does next is on the frames beneath.
     Effect,
 }
 
@@ -1013,9 +1017,22 @@ pub enum UpkeepResume {
     AfterPhaseStartForced,
     /// Post-4.1 window closed; run `upkeep_resume` (steps 4.2–4.6).
     Begins,
-    /// Steps 4.2–4.4 ran and the 4.4 draw pushed a drawn-weakness Revelation
-    /// (#509) that ceded to the drive loop. On re-exposure of the anchor, run
-    /// 4.5 (hand size) + 4.6 (phase end).
+    /// Step 4.4's per-investigator cursor: `drew` has drawn their card, and the
+    /// draw pushed frames above this anchor (the deck-out horror's deal, a drawn
+    /// weakness's Revelation) that ceded to the drive loop. On re-exposure —
+    /// once `drew`'s draw has completely resolved — the next active investigator
+    /// in player order draws, or, after the last, each investigator gains 1
+    /// resource and 4.5 + 4.6 run. Appendix II 4.4: *"In player order, each
+    /// investigator draws 1 card. Once those cards have been drawn, each
+    /// investigator gains 1 resource."*
+    Drawing {
+        /// The investigator whose draw is resolving above the anchor.
+        drew: InvestigatorId,
+    },
+    /// Step 4.4 is complete (every draw and resource): on re-exposure of the
+    /// anchor, run 4.5 (hand size) + 4.6 (phase end). The engine runs 4.5
+    /// inline once 4.4 completes, so only a staged state rests here
+    /// (`GameStateBuilder::ending_upkeep_phase`).
     AfterDraw,
     /// Step 4.6's `PhaseEnded { Upkeep }` forced abilities are *queued* above
     /// this anchor. On re-exposure — once those frames have resolved — emit
@@ -1965,13 +1982,24 @@ pub struct InvestigatorTurnFrame {
     pub ending: bool,
 }
 
-/// An action paused over its attack-of-opportunity loop (#293, keystone of
-/// #393). Pushed above [`Continuation::InvestigatorTurn`] when an AoO-provoking action is
-/// taken; the `AoO` [`Continuation::AttackLoop`] is its child. On the loop's pop the
-/// `drive` loop resumes this frame: it re-validates (actor still active +
-/// the primary's precondition) and runs the primary effect, then pops.
-/// Transient — it persists across an `apply()` boundary only while a window
-/// suspends the loop. Never awaits input itself.
+/// An action or an activated ability paused over something that must resolve
+/// before its effect, with the effect gated on the actor still being `Active`.
+///
+/// Two pushers:
+///
+/// - **An action over its attack-of-opportunity loop** (#293, keystone of
+///   #393). Pushed above [`Continuation::InvestigatorTurn`] when an
+///   AoO-provoking action is taken; the `AoO` [`Continuation::AttackLoop`] is
+///   its child.
+/// - **A fast activated ability over its harm cost** (#1029). A fast ability
+///   is not an action, so this may sit above a fast window rather than the
+///   turn; the harm's [`Continuation::DealDamage`] is its child, and `resume`
+///   is always [`ActionResume::ActivateAbility`].
+///
+/// On the child's pop the `drive` loop resumes this frame: it re-validates
+/// (actor still active + the primary's precondition) and runs the primary
+/// effect, then pops. Transient — it persists across an `apply()` boundary
+/// only while its child suspends. Never awaits input itself.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActionResolutionFrame {
     /// The acting investigator.

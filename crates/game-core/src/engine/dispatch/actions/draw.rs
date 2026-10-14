@@ -49,6 +49,5 @@ pub(in crate::engine::dispatch) fn perform(
     cx: &mut Cx,
     investigator: InvestigatorId,
 ) -> EngineOutcome {
-    cards::draw_one_with_deckout(cx, investigator);
-    EngineOutcome::Done
+    cards::draw_one_with_deckout(cx, investigator)
 }

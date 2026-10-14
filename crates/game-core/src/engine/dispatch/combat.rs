@@ -153,12 +153,12 @@ pub(super) fn damage_enemy(cx: &mut Cx, enemy_id: EnemyId, amount: u8, by: Optio
 // live one is owned by the `Continuation::DealDamage` frame that walks the two
 // steps of dealing it (ADR 0009). Imported above.
 
-/// One eligible soaker for [`assign_attack`] (C5b #237).
+/// One eligible soaker for a deal's distribution (C5b #237).
 ///
 /// `remaining_health` / `remaining_sanity` are the asset's *remaining*
 /// damage / horror capacity — printed stat (registry metadata) minus
 /// already-`accumulated_*`. The caller ([`build_soakers`]) derives these
-/// so [`assign_attack`] stays a pure function with no registry coupling.
+/// so [`eligible_targets`] stays a pure function with no registry coupling.
 #[derive(Debug)]
 pub(super) struct Soaker {
     /// The asset instance that may soak.
@@ -167,55 +167,6 @@ pub(super) struct Soaker {
     pub remaining_health: u8,
     /// Remaining horror capacity (printed sanity − accumulated horror).
     pub remaining_sanity: u8,
-}
-
-/// Deterministic soak-first assignment of an enemy attack's damage and
-/// horror (C5b #237).
-///
-/// Fills `soakers` (already ordered by the caller, by `CardInstanceId`
-/// to match the codebase's other simultaneous loops) up to each one's
-/// remaining capacity, then the **investigator card** absorbs the
-/// remainder. The investigator card is the always-eligible,
-/// mandatory-remainder soaker (RR: "all damage/horror that cannot be
-/// assigned to an asset must be assigned to the investigator") — it takes
-/// whatever the assets cannot, *uncapped* (overflowing its own capacity is
-/// exactly how the investigator is defeated). Its share rides
-/// `Assignment::investigator_damage/horror` (not `asset_*`) so
-/// [`place_assignment`] routes it onto `investigator_card.accumulated_*`
-/// via the numeric helpers, keeping the [`Event::DamageTaken`] /
-/// [`Event::HorrorTaken`] emission and the elimination wiring intact.
-/// Damage and horror are assigned **independently** — an asset with
-/// only health soaks damage, an asset with only sanity soaks horror.
-///
-/// Soak-first deterministic assignment, used by [`soak_and_place`] when no
-/// point is contested (no soaker with capacity) and by the remaining
-/// synchronous callers of `take_damage`/`take_horror`. The interactive
-/// per-point distribution (#44/K5) lives in [`deal_enemy_attack`] /
-/// [`resume_damage_distribution`] and `begin_deal_damage`; the two sites
-/// still routed through the synchronous auto-soak wrapper are tracked in
-/// `TODO(#427)` (Dynamite Blast's native loop) and `TODO(#429)` (the
-/// deck-out horror penalty).
-pub(super) fn assign_attack(soakers: &[Soaker], mut damage: u8, mut horror: u8) -> Assignment {
-    let mut assignment = Assignment::default();
-    for soaker in soakers {
-        let soaked_damage = damage.min(soaker.remaining_health);
-        if soaked_damage > 0 {
-            assignment
-                .asset_damage
-                .insert(soaker.instance, soaked_damage);
-            damage -= soaked_damage;
-        }
-        let soaked_horror = horror.min(soaker.remaining_sanity);
-        if soaked_horror > 0 {
-            assignment
-                .asset_horror
-                .insert(soaker.instance, soaked_horror);
-            horror -= soaked_horror;
-        }
-    }
-    assignment.investigator_damage = damage;
-    assignment.investigator_horror = horror;
-    assignment
 }
 
 /// Mutable handle to the controlled in-play instance `inst`, or `None`
@@ -444,34 +395,6 @@ pub(super) fn apply_horror_numeric(cx: &mut Cx, investigator: InvestigatorId, am
     lethal
 }
 
-/// Distribute `damage` + `horror` to `investigator` across eligible soakers
-/// then self (soak-first, RR p.7), place simultaneously, and defeat overflowed
-/// assets — **synchronously, in one call** (#44/K5a).
-///
-/// This is the shape the whole of dealing damage had before #727, and the two
-/// callers left on it are `take_damage` / `take_horror`, whose own callers do
-/// synchronous work afterwards (Dynamite Blast 01024's `for inv in
-/// investigators` loop most of all). So it announces neither
-/// [`DamageAssigned`](super::emit::TimingEvent::DamageAssigned) nor
-/// [`DamagePlaced`](super::emit::TimingEvent::DamagePlaced): there is no cursor
-/// here to sequence two emits on, and emitting one synchronously is what ADR
-/// 0003 forbids.
-///
-/// TODO(#728): migrate both entry points onto [`begin_deal_damage`]. Until then
-/// an ability keyed to either condition fires for an enemy attack and for
-/// `Effect::Deal` but not for these.
-/// Nothing in the Core or Dunwich corpus observes the gap.
-///
-/// `build_soakers` returns empty when no registry is installed or the
-/// investigator controls no soak-bearing asset, so the assignment then drops
-/// all damage/horror on the investigator — behavior-identical to the pre-soak
-/// direct-apply path.
-pub(super) fn soak_and_place(cx: &mut Cx, investigator: InvestigatorId, damage: u8, horror: u8) {
-    let soakers = build_soakers(cx.state, investigator);
-    let assignment = assign_attack(&soakers, damage, horror);
-    place_assignment(cx, investigator, &assignment);
-}
-
 /// Begin one deal of `damage` + `horror` to `investigator`: push the
 /// [`Continuation::DealDamage`] frame at its first step and return `Done`, which
 /// hands the `drive` loop a frame it dispatches on sight.
@@ -500,6 +423,28 @@ pub(crate) fn begin_deal_damage(
         },
     });
     EngineOutcome::Done
+}
+
+/// Deal `damage` + `horror` to `investigator` from anything that is not an enemy
+/// attack: the one harm adapter (#1025). It begins a deal with
+/// [`DamageSource::Effect`], so the harm is distributed through the interactive
+/// soak prompt and announces both `DamageAssigned` and `DamagePlaced`, exactly as
+/// an enemy attack's does.
+///
+/// **Tail position** (ADR 0003), like [`begin_deal_damage`]: nothing is placed
+/// when this returns. A caller with work to do afterwards parks it on a frame
+/// beneath first. `deal_harm(.., 0, 0)` deals nothing and pushes no frame.
+#[must_use = "deal_harm only pushes the deal frame: return its outcome (ADR 0003)"]
+pub(crate) fn deal_harm(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    damage: u8,
+    horror: u8,
+) -> EngineOutcome {
+    if damage == 0 && horror == 0 {
+        return EngineOutcome::Done;
+    }
+    begin_deal_damage(cx, investigator, damage, horror, DamageSource::Effect)
 }
 
 /// Build the eligible soakers for an enemy attack against `investigator`
@@ -971,7 +916,9 @@ pub(crate) fn drive_deal_damage(cx: &mut Cx) -> EngineOutcome {
                 // `AttackLoop`'s exhaust and the next attacker (#704).
                 DamageSource::EnemyAttack { .. } => EngineOutcome::Done,
                 // K5b-2: resume the parked effect walk, so subsequent effects
-                // run (and may prompt again) with no point lost (#422/#44).
+                // run (and may prompt again) with no point lost (#422/#44). A
+                // `deal_harm` caller's own work (a native's enclosing frames, a
+                // drawn weakness's Revelation) is likewise on the frames beneath.
                 DamageSource::Effect => choice::resume_effect_walk(cx),
             }
         }

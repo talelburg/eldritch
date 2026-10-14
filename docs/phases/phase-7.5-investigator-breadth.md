@@ -63,7 +63,7 @@ ship untested by anything but a unit test.
 
 ## Ordering
 
-**#776 → #777 → #778 → (#366) → #779 → #780 → #781 → #782.**
+**#1025 ✅ PR #1030 → #776 → #777 → #778 → (#366) → #779 → #780 → #781 → #782.**
 
 **Vertical slices, one investigator at a time** — investigator card, signature
 pair, and that investigator's class pool, each slice ending in someone playable.

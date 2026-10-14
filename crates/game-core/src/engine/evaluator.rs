@@ -943,8 +943,7 @@ fn draw_cards_effect(
             reason: format!("DrawCards: investigator {target_id:?} is not in the state").into(),
         };
     }
-    cards::draw_with_deckout(cx, target_id, count);
-    EngineOutcome::Done
+    cards::draw_with_deckout(cx, target_id, count)
 }
 
 /// Resolve [`Effect::SearchDeck`]: the resolved investigator looks at a deck
@@ -1717,8 +1716,7 @@ fn deal_effect(
     // `DealDamage` frame: distribution across soakers + self (#44/K5b-2, prompting
     // per contested point), then the `DamageAssigned` and `DamagePlaced`
     // conditions. This call is therefore **tail position** — the effect walk is
-    // parked on its own frame beneath and `Finish` resumes it. The `take_damage` /
-    // `take_horror` wrappers still place synchronously and announce nothing (#728).
+    // parked on its own frame beneath and `Finish` resumes it.
     let (damage, horror) = match kind {
         HarmKind::Damage => (amount, 0),
         HarmKind::Horror => (0, amount),

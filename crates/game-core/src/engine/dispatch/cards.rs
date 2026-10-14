@@ -12,7 +12,7 @@ use crate::engine::dispatch::actions::take::{self, ActionDescription};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::legality::PlayCheckResult;
 use crate::engine::dispatch::{
-    elimination, emit, encounter, legality, phases, slots, threat_area, PlayDestination,
+    combat, emit, encounter, legality, phases, slots, threat_area, PlayDestination,
 };
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
@@ -459,8 +459,9 @@ fn reshuffle_discard_into_deck(cx: &mut Cx, investigator: InvestigatorId) {
 /// (the `Draw` action and Upkeep step 4.4).
 ///
 /// Caller guarantees `investigator` exists in `state.investigators`.
-pub(super) fn draw_one_with_deckout(cx: &mut Cx, investigator: InvestigatorId) {
-    draw_with_deckout(cx, investigator, 1);
+#[must_use = "a deck-out draw may push frames: return its outcome (ADR 0003)"]
+pub(super) fn draw_one_with_deckout(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
+    draw_with_deckout(cx, investigator, 1)
 }
 
 /// Draw `count` cards for `investigator`, applying the empty-deck rule
@@ -490,8 +491,17 @@ pub(super) fn draw_one_with_deckout(cx: &mut Cx, investigator: InvestigatorId) {
 /// and the other three Core skills, #636). The setup / mulligan paths
 /// deliberately do not — they use [`draw_cards`].
 ///
+/// **Tail position** (ADR 0003): the deck-out horror is dealt through
+/// [`combat::deal_harm`], and a drawn weakness's Revelation is pushed beneath
+/// it, so a caller returns the outcome and puts no work after the call.
+///
 /// Caller guarantees `investigator` exists in `state.investigators`.
-pub(in crate::engine) fn draw_with_deckout(cx: &mut Cx, investigator: InvestigatorId, count: u8) {
+#[must_use = "a deck-out draw may push frames: return its outcome (ADR 0003)"]
+pub(in crate::engine) fn draw_with_deckout(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    count: u8,
+) -> EngineOutcome {
     let mut drawn: u8 = 0;
     let mut deck_ran_out = false;
     while drawn < count {
@@ -524,19 +534,20 @@ pub(in crate::engine) fn draw_with_deckout(cx: &mut Cx, investigator: Investigat
         investigator,
         count: drawn,
     });
-    if deck_ran_out {
-        elimination::take_horror(cx, investigator, 1);
-    }
     // RR Weakness keyword: a weakness drawn during play reveals + resolves its
     // Revelation (#509). Setup's opening-hand draw uses `draw_cards` directly,
     // so it is unaffected (it sets aside instead, #508).
     //
-    // Last, after the deck-out horror: the horror is part of "completion of
-    // the entire draw", and a Revelation that follows it therefore sees the
-    // post-horror state. This is the order the Draw action and Upkeep 4.4
-    // already used; it now also governs the `Effect::DrawCards` path, which
-    // previously ran the revelation with no horror in between.
+    // The Revelation frames go on the stack *before* the deck-out horror's deal
+    // frame, so the deal sits on top and resolves first: the horror is part of
+    // "completion of the entire draw", and a Revelation that follows it sees the
+    // post-horror state. Only the Revelation's synchronous `CardRevealed`
+    // announcement precedes the horror; its effects resolve after it.
     resolve_drawn_weaknesses(cx, investigator);
+    if deck_ran_out {
+        return combat::deal_harm(cx, investigator, 0, 1);
+    }
+    EngineOutcome::Done
 }
 
 /// Push a [`Continuation::Mulligan`](crate::state::Continuation::Mulligan)
@@ -1198,20 +1209,37 @@ mod grant_resources_tests {
 #[cfg(test)]
 mod draw_with_deckout_tests {
     use super::*;
-    use crate::state::{GameStateBuilder, InvestigatorId};
+    use crate::state::{Continuation, GameState, GameStateBuilder, InvestigatorId};
     use crate::test_support;
 
+    /// The deck-out horror is dealt, not placed: the draw's tail is one
+    /// `DealDamage { Effect }` frame for 1 horror (#1027), so the soak prompt
+    /// and both damage conditions run before anything lands.
+    fn assert_deals_one_deckout_horror(state: &GameState, id: InvestigatorId) {
+        let deals: Vec<_> = state
+            .continuations
+            .iter()
+            .filter(|c| matches!(c, Continuation::DealDamage(_)))
+            .collect();
+        assert_eq!(deals.len(), 1, "one deal for the whole draw: {deals:?}");
+        test_support::assert_effect_deal(state.continuations.top(), id, 0, 1);
+        assert_eq!(
+            state.investigators[&id].horror(),
+            0,
+            "dealt, not yet placed"
+        );
+    }
+
     #[test]
-    fn draw_one_with_deckout_empty_deck_reshuffles_and_takes_horror() {
+    fn draw_one_with_deckout_empty_deck_reshuffles_and_deals_horror() {
         let id = InvestigatorId(1);
-        // After #448 cp2a: horror accumulates on investigator_card, accessor reads it.
         let mut state = GameStateBuilder::default()
             .with_seat(test_support::seat(1).discard(["filler0", "filler1"]))
             .build();
         let hand_before = state.investigators[&id].hand.len();
         let mut events = Vec::new();
 
-        draw_one_with_deckout(
+        let out = draw_one_with_deckout(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -1219,19 +1247,13 @@ mod draw_with_deckout_tests {
             id,
         );
 
+        assert_eq!(out, EngineOutcome::Done);
         assert_eq!(
             state.investigators[&id].hand.len(),
             hand_before + 1,
             "drew 1"
         );
-        assert_eq!(
-            state.investigators[&id].horror(),
-            1,
-            "deck-out costs 1 horror"
-        );
-        assert!(events
-            .iter()
-            .any(|e| matches!(e, Event::HorrorTaken { amount: 1, .. })));
+        assert_deals_one_deckout_horror(&state, id);
     }
 
     /// A multi-card draw that empties the deck partway through completes the
@@ -1251,7 +1273,7 @@ mod draw_with_deckout_tests {
         let hand_before = state.investigators[&id].hand.len();
         let mut events = Vec::new();
 
-        draw_with_deckout(
+        let _ = draw_with_deckout(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -1264,9 +1286,8 @@ mod draw_with_deckout_tests {
         assert_eq!(inv.hand.len(), hand_before + 3, "drew the full count");
         assert_eq!(inv.deck.len(), 1, "1 + 3 cards, 3 of them drawn");
         assert!(inv.discard.is_empty(), "discard shuffled back in");
-        assert_eq!(inv.horror(), 1, "exactly 1 horror for the whole draw");
-        // One horror event, not one per card.
-        crate::assert_event_count!(events, 1, Event::HorrorTaken { .. });
+        // Exactly 1 horror for the whole draw: one deal, not one per card.
+        assert_deals_one_deckout_horror(&state, id);
         // Drawn simultaneously ⇒ one event carrying the whole count, even
         // though the reshuffle split the move into two hops.
         crate::assert_event_count!(events, 1, Event::CardsDrawn { .. });
@@ -1288,13 +1309,18 @@ mod draw_with_deckout_tests {
         let hand_before = state.investigators[&id].hand.len();
         let mut events = Vec::new();
 
-        draw_with_deckout(
+        let out = draw_with_deckout(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
             },
             id,
             2,
+        );
+        assert_eq!(out, EngineOutcome::Done);
+        assert!(
+            state.continuations.top().is_none(),
+            "no deck-out, no deal frame"
         );
 
         let inv = &state.investigators[&id];

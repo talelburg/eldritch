@@ -2,7 +2,9 @@ use super::*;
 use crate::engine::enumerate::TurnAction;
 use crate::engine::outcome::EngineOutcome;
 use crate::event::Event;
-use crate::state::{EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase, Status};
+use crate::state::{
+    EnemyId, FastActorScope, GameStateBuilder, InvestigatorId, LocationId, Phase, Status,
+};
 use crate::test_support::{self, SeatLookup as _, TestSession};
 use crate::{assert_event, assert_event_sequence, assert_no_event};
 
@@ -239,10 +241,26 @@ fn ready_exhausted_cards_keeps_existing_engagement_no_duplicate() {
     assert_no_event!(events, Event::EnemyEngaged { .. });
 }
 
+/// Stage the post-4.1 player window open over the Upkeep anchor, then close it,
+/// so steps 4.2–4.6 run through the drive loop.
+fn run_upkeep(builder: GameStateBuilder) -> TestSession {
+    builder
+        .with_phase(Phase::Upkeep)
+        .with_phase_anchor(UpkeepPhaseFrame {
+            resume: UpkeepResume::Begins,
+        })
+        .with_open_window(
+            FastWindowKind::Phase(PhaseStep::UpkeepBegins),
+            FastActorScope::Any,
+        )
+        .session()
+        .skip()
+}
+
 #[test]
-fn upkeep_draw_and_resource_draws_and_grants_per_active_investigator() {
+fn upkeep_draws_and_grants_a_resource_to_each_active_investigator_only() {
     let (a, b, c) = (InvestigatorId(1), InvestigatorId(2), InvestigatorId(3));
-    let mut state = GameStateBuilder::default()
+    let builder = GameStateBuilder::default()
         .with_seat(test_support::seat(1).deck(["filler0"]))
         .with_seat(test_support::seat(2).deck(["filler1"]))
         // Resigned, so skipped.
@@ -251,18 +269,15 @@ fn upkeep_draw_and_resource_draws_and_grants_per_active_investigator() {
                 .deck(["filler2"])
                 .status(Status::Resigned),
         )
-        .with_turn_order([a, b, c])
-        .build();
-    let res_a = state.investigators[&a].resources;
-    let res_b = state.investigators[&b].resources;
-    let res_c = state.investigators[&c].resources;
-    let hand_a = state.investigators[&a].hand.len();
-    let mut events = Vec::new();
+        .with_turn_order([a, b, c]);
+    let before = builder.clone().build();
+    let res_a = before.investigators[&a].resources;
+    let res_b = before.investigators[&b].resources;
+    let res_c = before.investigators[&c].resources;
+    let hand_a = before.investigators[&a].hand.len();
 
-    upkeep_draw_and_resource(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    let session = run_upkeep(builder);
+    let state = session.state();
 
     assert_eq!(state.investigators[&a].resources, res_a + 1);
     assert_eq!(state.investigators[&b].resources, res_b + 1);
@@ -279,32 +294,24 @@ fn upkeep_draw_and_resource_draws_and_grants_per_active_investigator() {
 }
 
 #[test]
-fn upkeep_draw_and_resource_two_pass_ordering() {
-    // All CardsDrawn events precede all ResourcesGained events.
+fn upkeep_draws_in_player_order_then_grants_resources() {
+    // Appendix II 4.4: "In player order, each investigator draws 1 card. Once
+    // those cards have been drawn, each investigator gains 1 resource."
     let (a, b) = (InvestigatorId(1), InvestigatorId(2));
-    let mut state = GameStateBuilder::default()
-        .with_seat(test_support::seat(1).deck(["filler0"]))
-        .with_seat(test_support::seat(2).deck(["filler1"]))
-        .with_turn_order([a, b])
-        .build();
-    let mut events = Vec::new();
+    let session = run_upkeep(
+        GameStateBuilder::default()
+            .with_seat(test_support::seat(1).deck(["filler0"]))
+            .with_seat(test_support::seat(2).deck(["filler1"]))
+            // Investigator 2 leads, so draws first.
+            .with_turn_order([b, a]),
+    );
 
-    upkeep_draw_and_resource(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
-
-    let last_draw = events
-        .iter()
-        .rposition(|e| matches!(e, Event::CardsDrawn { .. }))
-        .expect("draws");
-    let first_gain = events
-        .iter()
-        .position(|e| matches!(e, Event::ResourcesGained { .. }))
-        .expect("gains");
-    assert!(
-        last_draw < first_gain,
-        "all draws must precede all resource gains"
+    assert_event_sequence!(
+        session.events(),
+        Event::CardsDrawn { investigator, .. } if *investigator == b,
+        Event::CardsDrawn { investigator, .. } if *investigator == a,
+        Event::ResourcesGained { investigator, .. } if *investigator == b,
+        Event::ResourcesGained { investigator, .. } if *investigator == a,
     );
 }
 
