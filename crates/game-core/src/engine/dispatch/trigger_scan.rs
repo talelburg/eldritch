@@ -474,6 +474,9 @@ pub(super) fn trigger_matches(
         // the board, in [`scope_matches`]).
         TimingEvent::EndOfTurn { investigator }
         | TimingEvent::DiscoverClues { investigator, .. } => *investigator == controller,
+        // "After **you** play a [[Spell]] card" (Heirloom of Hyperborea 01012).
+        // The card filter reads metadata, in [`scope_matches`].
+        TimingEvent::CardPlayed { investigator, .. } => *investigator == controller,
         // "**When an enemy attack** deals damage to Guard Dog" (01021). The
         // self-binding half is the source's, in [`scope_matches`]; this half is
         // the card's narrowing to an enemy attack, which `Effect::Deal` harm
@@ -631,6 +634,19 @@ fn scope_matches(
         // Up 01007).
         TimingEvent::DiscoverClues { location, .. } => {
             location_of(state, controller) == Some(*location)
+        }
+        // "After you play a **[[Spell]]** card" (Heirloom of Hyperborea 01012):
+        // the played card's printed metadata passes the pattern's filter. Not a
+        // narrowing of where the ability's card is, but it needs the registry,
+        // which [`trigger_matches`] does not take.
+        TimingEvent::CardPlayed { code: played, .. } => {
+            let EventPattern::CardPlayed { filter } = pattern else {
+                unreachable!(
+                    "scope_matches: trigger_matches paired {pattern:?} with CardPlayed, but \
+                     only EventPattern::CardPlayed has that condition"
+                )
+            };
+            (cards.metadata_for)(played).is_some_and(|meta| filter.matches(meta))
         }
         // Board-wide conditions, and conditions whose only scope is the
         // controller (read in `trigger_matches`): no card's position narrows

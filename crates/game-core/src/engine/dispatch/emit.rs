@@ -228,6 +228,31 @@ pub enum TimingEvent {
         /// where `move::perform`'s locals are long out of scope.
         destination: LocationId,
     },
+    /// An investigator's play of a card has **completed** — announced once
+    /// `Appendix_I_Initiation_Sequence.md` step 4 has: *"The card is regarded
+    /// as played (and placed in play, or in its owner's discard pile if it's an
+    /// event), and the ability is considered resolved simultaneously with the
+    /// completion of this step."* So an event is already in the discard pile
+    /// and an asset already in play. The 01012 ruling puts Heirloom of
+    /// Hyperborea's *"After you play a \[\[Spell\]\] card"* here: *"This trigger
+    /// occurs after the Spell card has resolved in full."*
+    ///
+    /// Not the logged [`Event::CardPlayed`](crate::event::Event::CardPlayed),
+    /// which records step 3, the card *commencing* being played. A **bare
+    /// milestone** (ADR 0008): the placement precedes it, so its resolve step
+    /// is a no-op.
+    ///
+    /// Announced from both play paths, the play action and a Fast event played
+    /// from a reaction window, because both dispose of the card through
+    /// `dispose_play_from_hand`. A played card something else already placed
+    /// (Barricade 01038 attaching itself) is not announced.
+    CardPlayed {
+        /// The investigator who played the card.
+        investigator: InvestigatorId,
+        /// The played card, which a [`CardFilter`](card_dsl::dsl::CardFilter)
+        /// narrows on.
+        code: CardCode,
+    },
 }
 
 impl TimingEvent {
@@ -252,7 +277,8 @@ impl TimingEvent {
             | TimingEvent::SkillTestResolved { investigator, .. }
             | TimingEvent::EnemyAttacks { investigator, .. }
             | TimingEvent::DiscoverClues { investigator, .. }
-            | TimingEvent::LeftLocation { investigator, .. } => Some(*investigator),
+            | TimingEvent::LeftLocation { investigator, .. }
+            | TimingEvent::CardPlayed { investigator, .. } => Some(*investigator),
             TimingEvent::EnteredPlay { controller, .. } => Some(*controller),
             TimingEvent::EnemyDefeated { by, .. } => *by,
             TimingEvent::PhaseStarted { .. }
@@ -292,6 +318,7 @@ impl TimingEvent {
             TimingEvent::DiscoverClues { .. } => TriggeringCondition::DiscoverClues,
             TimingEvent::EnteredPlay { .. } => TriggeringCondition::EnteredPlay,
             TimingEvent::LeftLocation { .. } => TriggeringCondition::LeftLocation,
+            TimingEvent::CardPlayed { .. } => TriggeringCondition::CardPlayed,
         }
     }
 
@@ -369,12 +396,26 @@ impl TimingEvent {
             //   location successfully attacks a [[Monster]] enemy: That
             //   investigator deals +1 damage."* — a `when` whose whole point is
             //   to raise the damage before ST.7 applies it.
+            // - `CardPlayed` — born coordinator-owned (#1048). The condition is
+            //   the play's *completion*, not its placement: the 01012 ruling
+            //   puts Heirloom of Hyperborea's *"After you play a [[Spell]]
+            //   card"* *"after the Spell card has resolved in full"*, and
+            //   Appendix I step 4 makes the card *"regarded as played"*
+            //   simultaneously with the step's completion. A completion is a
+            //   milestone like `PhaseStarted`, so the placement — the event to
+            //   the discard pile, the asset into play — precedes the emit rather
+            //   than being its resolve step. It could not be the resolve step
+            //   anyway: between the emit and that step the card would sit in no
+            //   zone, carried only by the event, where elimination's sweep could
+            //   not find it (ADR 0002). Its `when` cell is walked and no corpus
+            //   card listens there.
             TimingEvent::PhaseStarted { .. }
             | TimingEvent::RoundEnded
             | TimingEvent::GameEnd
             | TimingEvent::EliminationGameEnd { .. }
             | TimingEvent::SkillTestResolved { .. }
-            | TimingEvent::DamageAssigned { .. } => {
+            | TimingEvent::DamageAssigned { .. }
+            | TimingEvent::CardPlayed { .. } => {
                 ConditionResolution::Coordinator(resolve_bare_milestone)
             }
             // The fourth migration (#727/#722), which cost a model rather than
