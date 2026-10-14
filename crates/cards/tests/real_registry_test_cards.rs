@@ -86,7 +86,7 @@ fn a_terminal_act_still_ends_the_scenario() {
         .build();
     // The builder stages no act deck.
     state.act_deck = vec![Act {
-        code: test_support::terminal_code(1),
+        code: terminal_code(1),
         clue_threshold: 1,
     }];
 

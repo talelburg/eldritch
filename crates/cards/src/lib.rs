@@ -118,7 +118,7 @@ fn registry_native_condition_for(tag: &str) -> Option<NativeConditionFn> {
 
 /// Ready-made [`CardRegistry`] backed by this crate's corpus and
 /// implementations. The host passes it to every [`game_core::engine::apply`]
-/// inside a [`Registries`](game_core::engine::Registries).
+/// inside a [`Registries`].
 pub const REGISTRY: CardRegistry = CardRegistry {
     metadata_for: registry_metadata_for,
     abilities_for: registry_abilities_for,
