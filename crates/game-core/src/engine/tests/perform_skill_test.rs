@@ -308,7 +308,7 @@ fn a_skill_tests_teardown_expires_only_its_own_recorded_rows() {
     )];
 
     let session = run_test(
-        TestSession::new_with_registries(state, TEST_REGISTRIES),
+        TestSession::new(state, TEST_REGISTRIES),
         SkillKind::Willpower,
         4,
     );
@@ -343,12 +343,12 @@ fn perform_skill_test_advances_rng_and_log_round_trips() {
     .with_rng_seed(123)
     .build();
     let first = run_test(
-        TestSession::new_with_registries(initial.clone(), TEST_REGISTRIES),
+        TestSession::new(initial.clone(), TEST_REGISTRIES),
         SkillKind::Willpower,
         3,
     );
     let second = run_test(
-        TestSession::new_with_registries(initial, TEST_REGISTRIES),
+        TestSession::new(initial, TEST_REGISTRIES),
         SkillKind::Willpower,
         3,
     );

@@ -146,8 +146,8 @@ fn seat_keeping_hands(state: GameState, investigators: &[&str]) -> TestSession {
             deck: vec![],
         })
         .collect();
-    let session = TestSession::new_with_registries(
-        engine::seat_and_open_with_registries(state, &roster, TEST_REGISTRIES).state,
+    let session = TestSession::new(
+        engine::seat_and_open(state, &roster, TEST_REGISTRIES).state,
         TEST_REGISTRIES,
     );
     investigators

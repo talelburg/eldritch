@@ -63,7 +63,6 @@ use crate::card_registry::CardRegistry;
 use crate::event::Event;
 use crate::scenario::ScenarioRegistry;
 use crate::state::{CardCode, Continuation, GameState, ScenarioEndFrame, ScenarioEndStep};
-use crate::{card_registry, scenario_registry};
 
 /// The card and scenario registries one [`apply`] runs against. The host
 /// hands them in; the engine carries them on its `Cx` for the length of the
@@ -77,18 +76,6 @@ pub struct Registries {
     pub cards: &'static CardRegistry,
     /// The scenario registry: modules by scenario id.
     pub scenarios: &'static ScenarioRegistry,
-}
-
-impl Registries {
-    /// The installed globals, each falling back to its knows-nothing `EMPTY`
-    /// when none is installed: what the global-reading entry points ([`apply`],
-    /// [`seat_and_open`]) run against.
-    pub(crate) fn from_globals() -> Self {
-        Self {
-            cards: card_registry::current().unwrap_or(&CardRegistry::EMPTY),
-            scenarios: scenario_registry::current().unwrap_or(&ScenarioRegistry::EMPTY),
-        }
-    }
 }
 
 /// The registries game-core's unit tests run against: the test card registry
@@ -152,26 +139,14 @@ pub struct ApplyResult {
 /// drives the rest of resolution in a subsequent `apply` call. While
 /// paused, every non-`ResolveInput` player action rejects.
 ///
-/// Runs against the installed global registries, each falling back to its
-/// `EMPTY` when none is installed; [`apply_with_registries`] takes them as
-/// a value instead.
-pub fn apply(state: GameState, action: Action) -> ApplyResult {
-    apply_with_registries(state, action, Registries::from_globals())
-}
-
-/// [`apply`] against the [`Registries`] it is handed rather than the installed
-/// globals. The contract is `apply`'s, including the post-apply scenario
+/// Runs against the [`Registries`] it is handed. The post-apply scenario
 /// resolution hook: a `Rejected` outcome clears events and skips it; any
 /// non-`Rejected` outcome (`Done` or `AwaitingInput`) fires it iff this apply
 /// left the scenario's
 /// [`ScenarioEnd`](crate::state::Continuation::ScenarioEnd) frame on top at its
 /// finalize step — i.e. the resolution latched *and* the game-end Forced
 /// abilities it queued have finished (#566).
-pub fn apply_with_registries(
-    state: GameState,
-    action: Action,
-    registries: Registries,
-) -> ApplyResult {
+pub fn apply(state: GameState, action: Action, registries: Registries) -> ApplyResult {
     apply_via(state, registries, |cx| match action {
         Action::Player(p) => apply_player_action(cx, &p),
         Action::Engine(e) => dispatch::apply_engine_record(cx, &e),
@@ -187,17 +162,7 @@ pub fn apply_with_registries(
 /// replay never re-runs setup RNG. Validation mirrors a player action: an
 /// empty roster, an unknown/non-investigator code, or an already-started
 /// state rejects with state unchanged.
-///
-/// Runs against the installed global registries, each falling back to its
-/// `EMPTY` when none is installed; [`seat_and_open_with_registries`] takes
-/// them as a value instead.
-pub fn seat_and_open(setup_state: GameState, roster: &[RosterEntry]) -> ApplyResult {
-    seat_and_open_with_registries(setup_state, roster, Registries::from_globals())
-}
-
-/// [`seat_and_open`] against the [`Registries`] it is handed rather than the
-/// installed globals.
-pub fn seat_and_open_with_registries(
+pub fn seat_and_open(
     setup_state: GameState,
     roster: &[RosterEntry],
     registries: Registries,
@@ -212,7 +177,7 @@ pub fn seat_and_open_with_registries(
 /// Builds the [`Cx`] — resolving the scenario module once, from
 /// `state.scenario_id` — runs `dispatch` to produce the outcome, then applies the
 /// transactional-restore + resolution-hook contract uniformly:
-/// [`apply_with_registries`] passes the typed-action dispatch;
+/// [`apply`] passes the typed-action dispatch;
 /// [`TestSession::submit_off_menu`](crate::test_support::TestSession::submit_off_menu)
 /// passes a [`TurnAction`]-through-handler dispatch that bypasses the
 /// enumeration gate (so handler-level corruption panics are reachable from

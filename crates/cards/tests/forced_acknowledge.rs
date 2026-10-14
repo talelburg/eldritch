@@ -34,7 +34,7 @@ fn enter(code: &str, interactive: bool) -> TestSession {
         .open_turn(INV)
         .build();
     state.interactive_acknowledge = interactive;
-    TestSession::new_with_registries(state, TEST_REGISTRIES).take(&TurnAction::Move {
+    TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::Move {
         investigator: INV,
         destination: FORCED,
     })

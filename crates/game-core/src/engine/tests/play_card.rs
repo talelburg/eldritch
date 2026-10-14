@@ -57,8 +57,7 @@ fn play_card_by_defeated_investigator_is_rejected() {
     // No seat setter for status: a defeated investigator whose turn is
     // still open is what the handler defends against.
     state.investigators.get_mut(&INV).expect("seated").status = Status::Defeated;
-    TestSession::new_with_registries(state, TEST_REGISTRIES)
-        .assert_rejects(|s| s.submit_off_menu(&play(0)));
+    TestSession::new(state, TEST_REGISTRIES).assert_rejects(|s| s.submit_off_menu(&play(0)));
 }
 
 #[test]

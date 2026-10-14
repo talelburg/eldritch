@@ -36,7 +36,7 @@ fn elder_sign_token_adds_zero_without_an_elder_sign_ability() {
         .build();
     // Willpower 3, difficulty 2, ElderSign token. Bonus 0 → total 3 → succeed by 1.
     state.chaos_bag.tokens = vec![ChaosToken::ElderSign];
-    let session = TestSession::new_with_registries(state, crate::engine::TEST_REGISTRIES)
+    let session = TestSession::new(state, crate::engine::TEST_REGISTRIES)
         .test_skill(inv, SkillKind::Willpower, 2)
         .commit(&[]);
     session.assert_at_turn_menu(inv);

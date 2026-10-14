@@ -188,7 +188,7 @@ fn resolve_input_without_any_outstanding_prompt_rejects() {
     // resume. The empty stack is the moment under test, so the state is
     // applied to directly rather than settled into a session.
     let state = GameStateBuilder::new().build();
-    let result = apply_with_registries(
+    let result = apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple { selected: vec![] },

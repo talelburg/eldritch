@@ -62,8 +62,7 @@ fn the_acolyte_keeps_its_bearer_as_owner_through_its_attack() {
     }];
     state.agenda_index = 0;
 
-    let session =
-        TestSession::new_with_registries(state, TEST_REGISTRIES).take(&TurnAction::EndTurn);
+    let session = TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::EndTurn);
 
     // 2, not 1: the `EndTurn` cascade runs on through Upkeep into the next
     // round's Mythos, whose step 1.2 places a doom of its own before parking on

@@ -24,7 +24,7 @@ fn substitution_turn(inv: InvestigatorId) -> TestSession {
         use_skill: SkillKind::Intellect,
         for_skills: vec![SkillKind::Combat, SkillKind::Agility],
     });
-    TestSession::new_with_registries(state, crate::engine::TEST_REGISTRIES)
+    TestSession::new(state, crate::engine::TEST_REGISTRIES)
 }
 
 fn substitution_state(inv: InvestigatorId) -> GameState {
@@ -259,12 +259,11 @@ fn no_active_substitution_opens_commit_window_directly() {
     let inv = InvestigatorId(1);
     let mut state = substitution_turn(inv).state().clone();
     state.skill_substitutions.clear();
-    let session = TestSession::new_with_registries(state, crate::engine::TEST_REGISTRIES).take(
-        &TurnAction::Fight {
+    let session =
+        TestSession::new(state, crate::engine::TEST_REGISTRIES).take(&TurnAction::Fight {
             investigator: inv,
             enemy: GHOUL,
-        },
-    );
+        });
     // No prompt: straight to the commit window.
     assert_eq!(session.prompt().kind, InputKind::PickMultiple);
     assert_eq!(

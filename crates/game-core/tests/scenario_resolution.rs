@@ -152,8 +152,8 @@ const INV: InvestigatorId = InvestigatorId(1);
 /// window it opens closed keeping the whole hand: Investigation, round 1, at
 /// `INV`'s turn menu. Neither test asserts on the events the close emits.
 fn opened() -> TestSession {
-    let session = TestSession::new_with_registries(
-        game_core::engine::seat_and_open_with_registries(setup(), &roster(), registries()).state,
+    let session = TestSession::new(
+        game_core::engine::seat_and_open(setup(), &roster(), registries()).state,
         registries(),
     )
     .choose_from_hand(&[]);
@@ -168,7 +168,7 @@ fn scenario_resolves_won_via_act_advance() {
     // it again.
     let mut state = opened().state().clone();
     state.investigators.get_mut(&INV).unwrap().clues = 4;
-    let session = TestSession::new_with_registries(state, registries())
+    let session = TestSession::new(state, registries())
         .take(&TurnAction::AdvanceAct { investigator: INV }) // act 0 -> 1
         .take(&TurnAction::AdvanceAct { investigator: INV }); // act 1 -> Won
 

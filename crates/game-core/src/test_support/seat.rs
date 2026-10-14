@@ -160,13 +160,13 @@ impl Seat {
     ///
     /// The lookup happens in [`with_seat`](GameStateBuilder::with_seat),
     /// against the registries named by
-    /// [`with_registries`](GameStateBuilder::with_registries) (or, until the
-    /// test names them, the installed registry).
+    /// [`with_registries`](GameStateBuilder::with_registries).
     ///
     /// # Panics
     ///
-    /// `with_seat` panics, naming `code`, if the registry does not know `code`
-    /// or `code` is not an investigator card.
+    /// `with_seat` panics if the test never named its registries, and, naming
+    /// `code`, if the registry does not know `code` or `code` is not an
+    /// investigator card.
     pub fn as_card(mut self, code: impl Into<CardCode>) -> Self {
         self.printed = Some(Printed {
             code: code.into(),
@@ -294,15 +294,16 @@ impl Seat {
 }
 
 /// The owner of a card a seat puts in `zone`: the investigator for the play
-/// area, and for the threat area whoever the printed card says.
+/// area, and for the threat area whoever the printed card says, read from the
+/// named `cards`.
 fn owner(
-    cards: &CardRegistry,
+    cards: Option<&CardRegistry>,
     zone: SeatZone,
     code: &CardCode,
     investigator: InvestigatorId,
 ) -> Owner {
     let player_card = || {
-        (cards.metadata_for)(code).is_some_and(|meta| {
+        (named(cards).metadata_for)(code).is_some_and(|meta| {
             meta.weakness
                 || matches!(
                     meta.card_type(),
@@ -315,6 +316,21 @@ fn owner(
     } else {
         Owner::EncounterDeck
     }
+}
+
+/// The card registry a seat's lookup reads: the one the test named.
+///
+/// # Panics
+///
+/// Panics if the test never named its registries. A seat that looks nothing
+/// up (no printed investigator, no threat-area card) never asks.
+fn named(cards: Option<&CardRegistry>) -> &CardRegistry {
+    cards.unwrap_or_else(|| {
+        panic!(
+            "with_seat: name the registries first, with `.with_registries(..)` on the \
+             builder before the first `.with_seat(..)`"
+        )
+    })
 }
 
 /// Seat the printed investigator `code` on `investigator`, from `cards`.
@@ -337,19 +353,11 @@ impl GameStateBuilder {
     /// before the first `with_seat`.
     ///
     /// Test-only, like `with_seat`: a production builder never names
-    /// registries, since the host hands them to `apply` directly. Until a test
-    /// names them, the fixtures fall back to the installed registries.
+    /// registries, since the host hands them to `apply` directly. There is no
+    /// default: a fixture that needs them before they are named panics.
     pub fn with_registries(mut self, registries: Registries) -> Self {
         self.set_registries(registries);
         self
-    }
-
-    /// The card registry the fixtures resolve against: the named one, or the
-    /// installed one until a test names its registries.
-    fn fixture_cards(&self) -> &'static CardRegistry {
-        self.registries()
-            .unwrap_or_else(Registries::from_globals)
-            .cards
     }
 
     /// Add the investigator `seat` describes, minting instance ids for the
@@ -369,17 +377,19 @@ impl GameStateBuilder {
     ///
     /// # Panics
     ///
-    /// Panics if an [`in_play_as`](Seat::in_play_as) id is already in use, or
-    /// as [`as_card`](Seat::as_card) describes.
+    /// Panics if an [`in_play_as`](Seat::in_play_as) id is already in use, if
+    /// the seat needs a lookup (a printed investigator or a threat-area card)
+    /// before the test named its registries, or as [`as_card`](Seat::as_card)
+    /// describes.
     pub fn with_seat(self, seat: Seat) -> Self {
         let Seat {
             mut investigator,
             printed,
             cards,
         } = seat;
-        let registry = self.fixture_cards();
+        let registry = self.registries().map(|registries| registries.cards);
         if let Some(Printed { code, overrides }) = printed {
-            print(registry, &mut investigator, code);
+            print(named(registry), &mut investigator, code);
             for skill in overrides {
                 skill.apply(&mut investigator.skills);
             }

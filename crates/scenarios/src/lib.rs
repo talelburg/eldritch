@@ -7,12 +7,10 @@
 //! # Engine integration
 //!
 //! The engine (in `game-core`) can't depend on this crate (cycle).
-//! Engine code that needs a scenario lookup goes through
-//! [`game_core::scenario_registry`]. This crate exposes [`REGISTRY`]
-//! as a ready-made [`game_core::scenario::ScenarioRegistry`] value that the
-//! host installs via
-//! [`game_core::scenario_registry::install`]
-//! before running actions that touch scenario data.
+//! Engine code that needs a scenario lookup goes through a
+//! [`game_core::scenario::ScenarioRegistry`]. This crate exposes [`REGISTRY`]
+//! as a ready-made value that the host hands to every
+//! [`game_core::engine::apply`].
 //!
 //! [`the_gathering`] is the first real scenario module (Night of the
 //! Zealot, scenario 1; Slice 1 C1a skeleton). **Every module in this
@@ -41,8 +39,8 @@ pub fn module_for(id: &ScenarioId) -> Option<&'static ScenarioModule> {
 }
 
 /// Ready-made [`ScenarioRegistry`] backed by this crate's scenario
-/// modules. The host installs it once at startup with
-/// [`game_core::scenario_registry::install`].
+/// modules. The host passes it to every [`game_core::engine::apply`]
+/// inside a [`Registries`](game_core::engine::Registries).
 pub const REGISTRY: ScenarioRegistry = ScenarioRegistry { module_for };
 
 /// The registries a scenario test names: [`cards::TEST_REGISTRY`] (the real

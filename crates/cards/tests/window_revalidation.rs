@@ -77,7 +77,7 @@ fn after_defeat_board(location_clues: u8, shape: impl FnOnce(Seat) -> Seat) -> G
 /// Fight the enemy on `state`, committing nothing: the defeat opens the
 /// after-defeat window, where the session rests.
 fn defeat_the_enemy(state: GameState) -> TestSession {
-    TestSession::new_with_registries(state, TEST_REGISTRIES)
+    TestSession::new(state, TEST_REGISTRIES)
         .take(&TurnAction::Fight {
             investigator: INV,
             enemy: ENEMY,
@@ -355,7 +355,7 @@ fn rolands_reaction_lapses_as_usage_limit_reached_once_its_limit_is_used() {
         .investigator_card
         .bump_ability_usage(0, round);
 
-    let resurfaced = TestSession::new_with_registries(state, TEST_REGISTRIES);
+    let resurfaced = TestSession::new(state, TEST_REGISTRIES);
 
     assert_event!(
         resurfaced.events(),
@@ -372,7 +372,7 @@ fn rolands_reaction_lapses_as_not_active_once_he_is_eliminated() {
     let mut state = rolands_window_open();
     state.investigators.get_mut(&INV).expect("seated").status = Status::Defeated;
 
-    let resurfaced = TestSession::new_with_registries(state, TEST_REGISTRIES);
+    let resurfaced = TestSession::new(state, TEST_REGISTRIES);
 
     assert_event!(
         resurfaced.events(),

@@ -1,5 +1,5 @@
 //! Test-only support: fixtures, event-assertion macros, and the
-//! [`MockRegistry`] builder a test binary installs its mock card
+//! [`MockRegistry`] builder a test binary builds its mock card
 //! registry through. The submodules are private and every public item is
 //! re-exported here, so `test_support::<item>` is the one spelling. The
 //! production [`GameStateBuilder`](crate::state::GameStateBuilder) is
@@ -18,7 +18,7 @@ use std::sync::OnceLock;
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Skills};
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, InvestigatorTarget};
 
-use crate::card_registry::{self, CardRegistry};
+use crate::card_registry::CardRegistry;
 use crate::state::CardCode;
 
 pub mod assertions;
@@ -32,8 +32,8 @@ mod session;
 #[cfg(test)]
 mod tests;
 
-/// Synthetic investigator-card code for unit tests. Registered by
-/// [`install_test_registry`] with 8 health / 8 sanity (mirroring the legacy
+/// Synthetic investigator-card code for unit tests. Served by
+/// [`TEST_REGISTRY`] with 8 health / 8 sanity (mirroring the legacy
 /// `test_investigator` capacity).
 pub const TEST_INV: &str = "TEST_INV";
 
@@ -63,21 +63,20 @@ fn test_inv_metadata() -> &'static CardMetadata {
 }
 
 /// Synthetic **player-cardtype** card code for unit tests: an asset, with one
-/// `[action]` ability. Registered by [`install_test_registry`].
+/// `[action]` ability. Served by [`TEST_REGISTRY`].
 ///
 /// For a fixture that needs a card's cardtype to be a player one — a
 /// player card in a threat area, which co-location must not reach (#975) —
 /// without borrowing a real corpus code the unit registry does not know.
 ///
 /// **A probe, shared rather than test-local.** ADR 0016 keeps probe cards
-/// in the one binary that reads them, but game-core's unit tests are one
-/// binary with one registry, installed before its harness runs
-/// ([`install_test_registry`]), so a unit-test probe can only be served from
-/// here. Integration binaries define their own.
+/// in the one binary that reads them; these two are shared because most of
+/// game-core's unit tests name the one [`TEST_REGISTRY`] rather than a
+/// registry of their own. Integration binaries define their own.
 pub const TEST_ASSET: &str = "TEST_ASSET";
 
 /// Synthetic **encounter-cardtype** card code for unit tests: a treachery,
-/// with one `[action]` ability. Registered by [`install_test_registry`]. The
+/// with one `[action]` ability. Served by [`TEST_REGISTRY`]. The
 /// encounter counterpart of [`TEST_ASSET`], and shared for the same reason.
 pub const TEST_TREACHERY: &str = "TEST_TREACHERY";
 
@@ -176,7 +175,7 @@ pub fn terminal_code(n: u8) -> CardCode {
 /// Reference's advance procedure rather than a triggered ability. One card
 /// serving both decks keeps the fixture surface to a single code family.
 ///
-/// Composed into [`install_test_registry`], and into out-of-crate mocks the way
+/// Composed into [`TEST_REGISTRY`], and into out-of-crate mocks the way
 /// [`metadata_for_test_inv`] is:
 ///
 /// ```ignore
@@ -206,52 +205,10 @@ pub fn abilities_for_terminal(code: &CardCode) -> Option<Vec<Ability>> {
     ])
 }
 
-/// Install `base` with the synthetic test cards composed in: `TEST_INV` into its
-/// `metadata_for`, and the terminal cards ([`terminal_code`]) into its
-/// `abilities_for`. Whatever `base` already knows is served unchanged.
-///
-/// For **integration tests in other crates**, which install a real registry
-/// (`cards::REGISTRY`, or one built locally in the test binary) into the
-/// process-global `OnceLock` and so cannot compose at the definition site the
-/// way [`install_test_registry`] does. Every real-registry binary installs
-/// through here, so [`test_investigator`] resolves in all of them and no test
-/// borrows a real investigator's code as a placeholder (#934):
-///
-/// ```ignore
-/// #[ctor::ctor(unsafe)]
-/// fn install() {
-///     game_core::test_support::install_registry_with_test_cards(cards::REGISTRY);
-/// }
-/// ```
-///
-/// Idempotent, and — like [`card_registry::install`]
-/// — first-install-wins.
-pub fn install_registry_with_test_cards(base: CardRegistry) {
-    static BASE: OnceLock<CardRegistry> = OnceLock::new();
-    fn metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
-        metadata_for_test_inv(code)
-            .or_else(|| BASE.get().and_then(|base| (base.metadata_for)(code)))
-    }
-    fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-        abilities_for_terminal(code)
-            .or_else(|| BASE.get().and_then(|base| (base.abilities_for)(code)))
-    }
-    let _ = BASE.set(base);
-    // `back_abilities_for` rides `..base` deliberately: the terminal cards are
-    // synthetic acts/agendas with no reverse side, so there is nothing to
-    // compose in, and overriding the slot would switch the *real* registry's
-    // back sides off for every test that installs through here (#774).
-    let _ = card_registry::install(CardRegistry {
-        metadata_for,
-        abilities_for,
-        ..base
-    });
-}
-
 /// Metadata lookup for the synthetic `TEST_INV` investigator code.
 ///
-/// Integration tests in `crates/game-core/tests/` install their own
-/// mock `CardRegistry` instead of calling [`install_test_registry`].
+/// Integration tests in `crates/game-core/tests/` build their own
+/// mock `CardRegistry` rather than naming [`TEST_REGISTRY`].
 /// When those mocks use `test_investigator`, the investigator's
 /// `investigator_card.code` is `TEST_INV`. Any code path that reads
 /// `max_health()` / `max_sanity()` (damage/horror application, defeat
@@ -271,8 +228,9 @@ pub fn metadata_for_test_inv(code: &CardCode) -> Option<&'static CardMetadata> {
 
 /// game-core's test registry: it knows `TEST_INV`, the synthetic cardtype cards
 /// ([`TEST_ASSET`], [`TEST_TREACHERY`]) and the synthetic terminal cards
-/// ([`terminal_code`]), and nothing else. [`install_test_registry`] installs it;
-/// a test that hands the engine its registries directly passes it as a value.
+/// ([`terminal_code`]), and nothing else. Capacity-reading code
+/// (`max_health` / `max_sanity` / soak / defeat) needs `TEST_INV`, and a
+/// fixture whose act/agenda deck ends in a terminal card needs its reverse.
 pub const TEST_REGISTRY: CardRegistry = CardRegistry {
     metadata_for: test_registry_metadata_for,
     abilities_for: test_registry_abilities_for,
@@ -285,21 +243,6 @@ fn test_registry_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> 
 
 fn test_registry_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
     abilities_for_terminal(code).or_else(|| abilities_for_test_cardtypes(code))
-}
-
-/// Install [`TEST_REGISTRY`], game-core's minimal test registry. Idempotent;
-/// safe to call from any test. Capacity-reading code (`max_health()` /
-/// `max_sanity()` / soak / defeat) needs this installed, and so does any fixture
-/// whose act/agenda deck ends in a terminal card — without the registry its
-/// reverse never fires and the advance finds no ending latched.
-///
-/// game-core's own tests never call it: they name their registries instead
-/// (`TEST_REGISTRY` as a value).
-///
-/// One registry for the whole crate because `OnceLock<CardRegistry>` is
-/// process-global: a second per-test install would collide.
-pub fn install_test_registry() {
-    let _ = card_registry::install(TEST_REGISTRY);
 }
 
 pub use deal::assert_effect_deal;

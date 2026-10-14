@@ -330,11 +330,7 @@ fn playing_through_the_test(
 /// fast ability at the test's player window and committing nothing.
 fn test_activating(state: GameState, card: CardInstanceId, difficulty: i8) -> TestSession {
     activating_through_the_test(
-        TestSession::new_with_registries(state, registries()).test_skill(
-            INV,
-            SkillKind::Willpower,
-            difficulty,
-        ),
+        TestSession::new(state, registries()).test_skill(INV, SkillKind::Willpower, difficulty),
         card,
         &[],
     )
@@ -344,7 +340,7 @@ fn test_activating(state: GameState, card: CardInstanceId, difficulty: i8) -> Te
 /// or commit: no player window opens, and the test resolves through an empty
 /// commit back to the turn menu.
 fn test_with_nothing_to_play(state: GameState, difficulty: i8) -> TestSession {
-    let session = TestSession::new_with_registries(state, registries())
+    let session = TestSession::new(state, registries())
         .test_skill(INV, SkillKind::Willpower, difficulty)
         .commit(&[]);
     session.assert_at_turn_menu(INV);
@@ -444,11 +440,7 @@ fn a_determination_can_be_latched_from_a_play_trigger() {
 
     let play = play_from_hand(&state, PLAY_AUTO_SUCCEED);
     let session = playing_through_the_test(
-        TestSession::new_with_registries(state, registries()).test_skill(
-            id,
-            SkillKind::Willpower,
-            9,
-        ),
+        TestSession::new(state, registries()).test_skill(id, SkillKind::Willpower, 9),
         play,
         &[],
     );
@@ -491,7 +483,7 @@ fn latching_a_determination_outside_a_test_is_rejected() {
 
     // Off the menu, as a client could send it over the wire: the handler
     // itself refuses it.
-    let refused = TestSession::new_with_registries(state, registries()).submit_off_menu(&action);
+    let refused = TestSession::new(state, registries()).submit_off_menu(&action);
     refused.expect_rejected();
     let result = refused.finish();
     assert!(result.events.is_empty(), "a rejection emits no events");
@@ -539,7 +531,7 @@ fn a_card_latched_determination_does_not_survive_into_a_later_test() {
     // The second test declines the fast window, so nothing latches: willpower
     // 5 against difficulty 9 fails by 4 on the numbers. A fresh session from
     // the first test's end, so its events are the second test's alone.
-    let second = TestSession::new_with_registries(first.state().clone(), registries())
+    let second = TestSession::new(first.state().clone(), registries())
         .test_skill(INV, SkillKind::Willpower, 9)
         .skip()
         .commit(&[])
@@ -698,11 +690,7 @@ fn committed_cards_are_still_discarded_when_the_draw_is_skipped() {
     );
     let card = state.in_play(id, AUTO_SUCCEED);
     let session = activating_through_the_test(
-        TestSession::new_with_registries(state, registries()).test_skill(
-            id,
-            SkillKind::Willpower,
-            9,
-        ),
+        TestSession::new(state, registries()).test_skill(id, SkillKind::Willpower, 9),
         card,
         &[FILLER],
     );
@@ -731,8 +719,7 @@ fn the_follow_up_and_end_of_test_steps_still_run_on_a_skipped_draw() {
     let resources_before = state.investigators[&id].resources;
     let play = play_from_hand(&state, PLAY_AUTO_SUCCEED);
     let session = playing_through_the_test(
-        TestSession::new_with_registries(state, registries())
-            .take(&TurnAction::Investigate { investigator: id }),
+        TestSession::new(state, registries()).take(&TurnAction::Investigate { investigator: id }),
         play,
         &[ON_RESOLUTION_GAIN],
     );

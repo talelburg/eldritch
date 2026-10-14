@@ -330,13 +330,14 @@ mod tests {
 
     // Hallway(2) hub connects to Attic(3), Cellar(4), Parlor(5).
     fn star_board() -> GameState {
-        star_board_from(GameStateBuilder::new())
+        star_board_from(GameStateBuilder::new().with_registries(crate::TEST_REGISTRIES))
     }
 
     /// The [`star_board`] with investigator 1 seated in the Hallway.
     fn star_board_with_investigator_in_hallway() -> GameState {
         star_board_from(
             GameStateBuilder::new()
+                .with_registries(crate::TEST_REGISTRIES)
                 .with_seat(test_support::seat(1).at(LocationId(2)))
                 .with_turn_order([InvestigatorId(1)]),
         )
@@ -384,6 +385,7 @@ mod tests {
     /// Investigators 1 and 2, seated in that turn order.
     fn two_investigators() -> GameState {
         GameStateBuilder::new()
+            .with_registries(crate::TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
             .with_seat(test_support::seat(2))
             .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
@@ -606,6 +608,7 @@ mod tests {
         let loc =
             |id, code: &str, name| Location::new(LocationId(id), CardCode::new(code), name, 1, 0);
         let mut state = GameStateBuilder::new()
+            .with_registries(crate::TEST_REGISTRIES)
             .with_location(loc(2, "01112", "Hallway"))
             .with_location(loc(3, "01113", "Attic"))
             .with_location(loc(4, "01114", "Cellar"))

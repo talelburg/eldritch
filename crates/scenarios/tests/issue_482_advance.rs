@@ -22,8 +22,8 @@ fn drive_to_mythos_advance(interactive: bool) -> TestSession {
         deck: vec![],
     }];
     // seat_and_open rests at the mulligan; Roland keeps his (empty) hand.
-    let mut state = TestSession::new_with_registries(
-        game_core::engine::seat_and_open_with_registries(
+    let mut state = TestSession::new(
+        game_core::engine::seat_and_open(
             the_gathering::setup(),
             &roster,
             scenarios::TEST_REGISTRIES,
@@ -44,7 +44,7 @@ fn drive_to_mythos_advance(interactive: bool) -> TestSession {
         .unwrap()
         .hand
         .push(CardCode::new("01088"));
-    TestSession::new_with_registries(state, scenarios::TEST_REGISTRIES).take(&TurnAction::EndTurn)
+    TestSession::new(state, scenarios::TEST_REGISTRIES).take(&TurnAction::EndTurn)
 }
 
 #[test]

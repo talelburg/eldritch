@@ -38,7 +38,7 @@ fn test_investigator_takes_harm_under_the_real_registry() {
     state.chaos_bag.tokens = vec![ChaosToken::Numeric(-2)];
     state.encounter_deck.push_back(CardCode::new("01163"));
 
-    let session = TestSession::new_with_registries(state, TEST_REGISTRIES)
+    let session = TestSession::new(state, TEST_REGISTRIES)
         .confirm()
         .commit(&[]);
 
@@ -90,7 +90,7 @@ fn a_terminal_act_still_ends_the_scenario() {
         clue_threshold: 1,
     }];
 
-    let result = TestSession::new_with_registries(state, TEST_REGISTRIES)
+    let result = TestSession::new(state, TEST_REGISTRIES)
         .take(&TurnAction::AdvanceAct { investigator: INV })
         .finish();
 

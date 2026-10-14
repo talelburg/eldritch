@@ -10,9 +10,8 @@ fn offers_end_turn(state: &GameState) -> bool {
 
 /// `roster` seated through real setup, settled at its mulligan.
 fn seated_at_mulligan(roster: &[RosterEntry]) -> TestSession {
-    TestSession::new_with_registries(
-        seat_and_open_with_registries(GameStateBuilder::new().build(), roster, TEST_REGISTRIES)
-            .state,
+    TestSession::new(
+        seat_and_open(GameStateBuilder::new().build(), roster, TEST_REGISTRIES).state,
         TEST_REGISTRIES,
     )
 }

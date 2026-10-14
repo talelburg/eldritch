@@ -326,7 +326,7 @@ mod tests {
             trigger: AdvanceTrigger::Forced,
         });
 
-        let session = TestSession::new_with_registries(state, crate::engine::TEST_REGISTRIES);
+        let session = TestSession::new(state, crate::engine::TEST_REGISTRIES);
         assert_eq!(
             session.prompt().options.len(),
             1,

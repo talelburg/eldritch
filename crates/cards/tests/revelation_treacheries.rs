@@ -49,7 +49,7 @@ fn board_seating(
     state.encounter_deck.push_back(CardCode::new(treachery));
     // The builder stages no agenda deck.
     state.agenda_deck = agenda;
-    TestSession::new_with_registries(state, TEST_REGISTRIES)
+    TestSession::new(state, TEST_REGISTRIES)
 }
 
 /// [`board_seating`] with a plain investigator at `HERE` and no agenda.

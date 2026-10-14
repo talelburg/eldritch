@@ -169,7 +169,7 @@ fn board(
 /// forced native runs at `PhaseEnded { Enemy }`. Settling runs the phase end
 /// and play goes on through Upkeep into the next round's Mythos.
 fn end_the_enemy_phase(act: &str, pool: Option<&[(UseKind, u8)]>) -> TestSession {
-    let session = TestSession::new_with_registries(
+    let session = TestSession::new(
         board(GameStateBuilder::ending_enemy_phase, act, pool),
         registries(),
     );
@@ -276,7 +276,7 @@ fn spending_from_a_card_not_in_play_is_an_error_the_native_sees() {
     // phase is reached by the step that really gets there: the last
     // investigator ending their turn ends the Investigation phase, and play
     // runs on through the Enemy phase to its end, where the native rejects.
-    let session = TestSession::new_with_registries(
+    let session = TestSession::new(
         board(|b| b.open_turn(HOLDER), SPEND_SECRET_ACT, None),
         registries(),
     )

@@ -53,8 +53,7 @@ fn enemy_01102_forced_ack_anchors_to_the_attacking_enemy() {
     state.interactive_acknowledge = true;
 
     // Ending the turn runs into the Enemy phase, where the Acolyte attacks.
-    let session =
-        TestSession::new_with_registries(state, TEST_REGISTRIES).take(&TurnAction::EndTurn);
+    let session = TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::EndTurn);
     let request = session.prompt();
     assert_eq!(
         request.options.len(),

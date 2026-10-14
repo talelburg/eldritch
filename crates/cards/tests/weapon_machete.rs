@@ -87,7 +87,7 @@ fn machete_fight(state: &GameState) -> TurnAction {
 /// the open-turn menu.
 fn activate_machete(state: GameState) -> TestSession {
     let fight = machete_fight(&state);
-    let session = TestSession::new_with_registries(state, TEST_REGISTRIES)
+    let session = TestSession::new(state, TEST_REGISTRIES)
         .take(&fight)
         .commit(&[]);
     session.assert_at_turn_menu(INV);
@@ -107,7 +107,7 @@ fn sole_engaged_enemy_gets_bonus_damage() {
 /// target pick.
 fn to_target_pick(state: GameState) -> TestSession {
     let fight = machete_fight(&state);
-    TestSession::new_with_registries(state, TEST_REGISTRIES).take(&fight)
+    TestSession::new(state, TEST_REGISTRIES).take(&fight)
 }
 
 /// [`to_target_pick`], attack `enemy`, then commit nothing back to the
@@ -271,7 +271,7 @@ fn no_co_located_enemy_activation_is_rejected_precost() {
     let state = board(0);
     let actions_before = state.investigators[&INV].actions_remaining;
     let fight = machete_fight(&state);
-    let session = TestSession::new_with_registries(state, TEST_REGISTRIES).submit_off_menu(&fight);
+    let session = TestSession::new(state, TEST_REGISTRIES).submit_off_menu(&fight);
     session.expect_rejected();
     // No cost paid: actions unchanged.
     assert_eq!(

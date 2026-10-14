@@ -455,7 +455,7 @@ fn a_modifier_on_an_enemys_fight_raises_a_fight_actions_difficulty() {
             state.agenda_deck = vec![agenda(RITUAL_BEGINS)];
             state.agenda_index = 0;
         }
-        let session = TestSession::new_with_registries(state, registries())
+        let session = TestSession::new(state, registries())
             .take(&TurnAction::Fight {
                 investigator: ME,
                 enemy: EnemyId(7),
@@ -501,7 +501,7 @@ fn a_modifier_on_an_enemys_evade_raises_an_evade_actions_difficulty() {
             state.agenda_deck = vec![agenda(RITUAL_BEGINS)];
             state.agenda_index = 0;
         }
-        let session = TestSession::new_with_registries(state, registries())
+        let session = TestSession::new(state, registries())
             .take(&TurnAction::Evade {
                 investigator: ME,
                 enemy: EnemyId(7),
@@ -549,7 +549,7 @@ fn a_fights_difficulty_is_re_read_after_the_test_started() {
     state.agenda_index = 0;
 
     // ST.1: announced against the unmodified fight of 2.
-    let started = TestSession::new_with_registries(state, registries()).take(&TurnAction::Fight {
+    let started = TestSession::new(state, registries()).take(&TurnAction::Fight {
         investigator: ME,
         enemy: EnemyId(7),
     });

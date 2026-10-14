@@ -13,7 +13,7 @@ fn rejected_actions_do_not_mutate_state() {
     let active_before = state.active_investigator;
 
     // ResolveInput is a Phase-1 stub — guaranteed to be Rejected.
-    let result = apply_with_registries(
+    let result = apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::Confirm,
@@ -47,7 +47,7 @@ fn guard_ladder_reject_leaves_state_byte_identical() {
         .build();
     let before = state.clone();
 
-    let result = apply_with_registries(
+    let result = apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::Skip,
@@ -111,7 +111,7 @@ fn engine_record_applied_while_a_prompt_is_outstanding_is_rejected() {
         investigator: CardCode::new(test_support::TEST_INV),
         deck: (0..20).map(|i| CardCode::new(format!("d-{i}"))).collect(),
     }];
-    let opened = seat_and_open_with_registries(
+    let opened = seat_and_open(
         GameStateBuilder::new().with_rng_seed(7).build(),
         &roster,
         TEST_REGISTRIES,
@@ -123,7 +123,7 @@ fn engine_record_applied_while_a_prompt_is_outstanding_is_rejected() {
     );
     let before = opened.state.clone();
 
-    let result = apply_with_registries(
+    let result = apply(
         opened.state,
         Action::Engine(EngineRecord::DeckShuffled {
             investigator: InvestigatorId(1),

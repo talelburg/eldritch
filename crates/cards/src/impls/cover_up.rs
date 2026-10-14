@@ -221,6 +221,7 @@ mod tests {
         // Predicate: true while the source instance holds clues, false at 0.
         let pred = impls::native_condition_for("01007:has-clues").expect("registered");
         let mut state = GameStateBuilder::new()
+            .with_registries(crate::TEST_REGISTRIES)
             .with_seat(seat(1).threat_area([(CODE, clues(3))]))
             .build();
         let ctx = EvalContext::for_controller_with_source(

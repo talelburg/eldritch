@@ -100,7 +100,7 @@ fn activation(state: &GameState) -> TurnAction {
 /// Activate the mock asset and commit nothing to its test.
 fn activate(state: GameState) -> ApplyResult {
     let action = activation(&state);
-    TestSession::new_with_registries(state, registries())
+    TestSession::new(state, registries())
         .take(&action)
         .commit(&[])
         .finish()
@@ -162,7 +162,7 @@ fn a_modal_on_success_keeps_the_activating_cards_anchor_across_the_test() {
     let state = board(2, 2);
     let action = activation(&state);
     let card = state.in_play(INV, MODAL_HEAL_ON_SUCCESS);
-    let session = TestSession::new_with_registries(state, registries())
+    let session = TestSession::new(state, registries())
         .take(&action)
         .commit(&[]);
     // The session rests at the `on_success` ChooseOne.

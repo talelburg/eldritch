@@ -98,7 +98,7 @@ fn fired_in_round_0(mut state: GameState) -> GameState {
 /// Fight the enemy from `state`, committing nothing. The session rests at
 /// Roland's reaction window if it opened, or back at the turn menu.
 fn fight(state: GameState) -> TestSession {
-    TestSession::new_with_registries(state, TEST_REGISTRIES)
+    TestSession::new(state, TEST_REGISTRIES)
         .take(&FIGHT)
         .commit(&[])
 }

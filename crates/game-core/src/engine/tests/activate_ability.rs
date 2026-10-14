@@ -72,6 +72,6 @@ fn activate_ability_when_defeated_is_rejected() {
     // still open is what the handler defends against.
     state.investigators.get_mut(&INV).expect("seated").status = Status::Defeated;
     let asset = state.in_play(INV, ASSET);
-    TestSession::new_with_registries(state, TEST_REGISTRIES)
+    TestSession::new(state, TEST_REGISTRIES)
         .assert_rejects(|s| s.submit_off_menu(&activate(asset)));
 }

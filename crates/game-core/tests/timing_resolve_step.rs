@@ -133,7 +133,7 @@ fn with_act(board: GameStateBuilder, act: impl Into<CardCode>, clue_threshold: u
 /// play goes on into the next round's Mythos phase; settling would panic had
 /// the walk been rejected.
 fn end_the_upkeep_phase(act: &str) -> TestSession {
-    let session = TestSession::new_with_registries(
+    let session = TestSession::new(
         with_act(lead_alone().ending_upkeep_phase(), act, 0),
         registries(),
     );
@@ -162,7 +162,7 @@ fn caller_owned_condition_rejects_a_declared_interrupt() {
     // A rejected phase end cannot be settled into a session, so the Upkeep
     // phase end is reached by the step that really gets there: ending the
     // last turn runs the Investigation, Enemy and Upkeep phases to step 4.6.
-    let session = TestSession::new_with_registries(
+    let session = TestSession::new(
         with_act(lead_alone().open_turn(INV), WHEN_ACT, 0),
         registries(),
     )
@@ -230,7 +230,7 @@ fn the_game_ending_is_a_bare_milestone_that_walks_its_when_cell() {
         .with_seat(seat(INV.0).clues(1).threat_area([GAME_END_CARD]))
         .with_turn_order([INV])
         .open_turn(INV);
-    let session = TestSession::new_with_registries(
+    let session = TestSession::new(
         with_act(board, test_support::terminal_code(1), 1),
         registries(),
     )

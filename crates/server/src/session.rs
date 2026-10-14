@@ -121,7 +121,7 @@ impl GameSession {
         // (#478); the engine gates that pause on this flag (default off for tests
         // and non-interactive consumers). The flag persists through seating.
         setup.interactive_acknowledge = true;
-        let result = engine::seat_and_open_with_registries(setup, &roster, registries);
+        let result = engine::seat_and_open(setup, &roster, registries);
         let outcome = match result.outcome {
             EngineOutcome::Rejected { reason } => {
                 return Err(SessionError::Seating(reason.to_string()))
@@ -176,8 +176,7 @@ impl GameSession {
         action: PlayerAction,
     ) -> Result<(Vec<Event>, EngineOutcome), SessionError> {
         let logged = Action::Player(action);
-        let result =
-            engine::apply_with_registries(self.state.clone(), logged.clone(), self.registries);
+        let result = engine::apply(self.state.clone(), logged.clone(), self.registries);
 
         if !matches!(result.outcome, EngineOutcome::Rejected { .. }) {
             let action_json = serde_json::to_string(&logged)?;
@@ -224,7 +223,7 @@ impl GameSession {
         let mut seq: i64 = 0;
         for action_json in store::load_actions(&db, game_id).await? {
             let action: Action = serde_json::from_str(&action_json)?;
-            let result = engine::apply_with_registries(state, action, registries);
+            let result = engine::apply(state, action, registries);
             // A rejection means the log no longer reproduces the session it
             // recorded. Stop loudly rather than serving the prefix that did
             // replay (#707) — see `SessionError::Replay`.

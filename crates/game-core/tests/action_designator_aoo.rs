@@ -208,7 +208,7 @@ fn damage_after_activating(
     let action = activation(source(&state), ability_index);
     // `take` panics unless the menu offers the activation; the
     // `AbilityActivated` event proves the handler did not reject it.
-    let session = TestSession::new_with_registries(state, registries()).take(&action);
+    let session = TestSession::new(state, registries()).take(&action);
     assert_event!(session.events(), Event::AbilityActivated { investigator, .. } if *investigator == MINE);
     session.state().investigators[&MINE].damage()
 }

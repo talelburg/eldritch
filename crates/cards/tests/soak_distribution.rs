@@ -67,7 +67,7 @@ fn two_damage_attack_splits_one_to_guard_dog_one_to_self() {
 
     // EndTurn → enemy phase → distribution prompt (Guard Dog has capacity).
     // First point → Guard Dog; still contested → second prompt → self.
-    let session = TestSession::new_with_registries(state, TEST_REGISTRIES)
+    let session = TestSession::new(state, TEST_REGISTRIES)
         .take(&TurnAction::EndTurn)
         .pick(OptionTarget::CardInstance(dog))
         .pick(me.clone());
@@ -113,7 +113,7 @@ fn player_may_decline_to_soak_taking_all_damage() {
     let me = state.investigators[&INV].card_anchor();
 
     // Both points to the investigator — decline to soak.
-    let session = TestSession::new_with_registries(state, TEST_REGISTRIES)
+    let session = TestSession::new(state, TEST_REGISTRIES)
         .take(&TurnAction::EndTurn)
         .pick(me.clone())
         .pick(me);
@@ -138,7 +138,7 @@ fn a_full_soaker_drops_out_of_the_next_prompt() {
     state.investigators.get_mut(&INV).unwrap().cards_in_play[0].accumulated_damage = 2;
 
     // First point → Guard Dog (its last point of capacity).
-    let session = TestSession::new_with_registries(state, TEST_REGISTRIES)
+    let session = TestSession::new(state, TEST_REGISTRIES)
         .take(&TurnAction::EndTurn)
         .pick(OptionTarget::CardInstance(dog));
 

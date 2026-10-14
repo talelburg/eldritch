@@ -192,7 +192,7 @@ fn mid_investigation() -> TestSession {
     }];
     state.act_index = 0;
     state.encounter_deck.push_back(CardCode::new(TREACHERY));
-    TestSession::new_with_registries(state, registries())
+    TestSession::new(state, registries())
 }
 
 /// End the turn from [`mid_investigation`]: the cascade runs 2.3 → 3.1 → 3.4 →

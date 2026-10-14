@@ -24,8 +24,7 @@
 //! constant-modifier queries during skill tests, …) goes through
 //! [`game_core::card_registry`]. This crate exposes [`REGISTRY`] as a
 //! ready-made [`game_core::card_registry::CardRegistry`] value that the host
-//! installs via [`game_core::card_registry::install`] before running
-//! actions that touch card data.
+//! hands to every [`game_core::engine::apply`].
 //!
 //! [`card-data-pipeline`]: ../../card_data_pipeline/index.html
 
@@ -64,8 +63,7 @@ pub fn by_code(code: &str) -> Option<&'static CardMetadata> {
 /// in the corpus. Spell the trait with a [`generated::traits`] constant.
 ///
 /// Reads the corpus directly, so card and scenario code asking about an
-/// entity's traits (an enemy's, through its code) needs no installed
-/// registry.
+/// entity's traits (an enemy's, through its code) needs no registry.
 #[must_use]
 pub fn has_trait(code: &str, trait_name: &str) -> bool {
     by_code(code).is_some_and(|m| m.has_trait(trait_name))
@@ -119,9 +117,8 @@ fn registry_native_condition_for(tag: &str) -> Option<NativeConditionFn> {
 }
 
 /// Ready-made [`CardRegistry`] backed by this crate's corpus and
-/// implementations. The host installs it once at startup with
-/// [`game_core::card_registry::install`]; engine code then calls
-/// [`game_core::card_registry::current`] when it needs a lookup.
+/// implementations. The host passes it to every [`game_core::engine::apply`]
+/// inside a [`Registries`](game_core::engine::Registries).
 pub const REGISTRY: CardRegistry = CardRegistry {
     metadata_for: registry_metadata_for,
     abilities_for: registry_abilities_for,
@@ -138,9 +135,8 @@ pub const REGISTRY: CardRegistry = CardRegistry {
 /// plain [`test_investigator`](game_core::test_support::test_investigator)
 /// next to the corpus without borrowing a real investigator's code (#934).
 ///
-/// The value a real-card test names, rather than installing `REGISTRY`
-/// through `install_registry_with_test_cards`. Pair it with a scenario registry
-/// in [`TEST_REGISTRIES`], or in `scenarios`' pairing for a scenario test.
+/// The value a real-card test names. Pair it with a scenario registry in
+/// [`TEST_REGISTRIES`], or in `scenarios`' pairing for a scenario test.
 #[cfg(feature = "test-support")]
 pub const TEST_REGISTRY: CardRegistry = CardRegistry {
     metadata_for: test_registry_metadata_for,

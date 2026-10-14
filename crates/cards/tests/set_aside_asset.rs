@@ -266,7 +266,7 @@ fn an_uncontrolled_asset_cannot_soak_damage_for_a_colocated_investigator() {
     // Grasping Hands.
     state.encounter_deck.push_back(CardCode::new("01162"));
     // Draw it, and commit nothing to its Agility test.
-    let session = TestSession::new_with_registries(state, TEST_REGISTRIES)
+    let session = TestSession::new(state, TEST_REGISTRIES)
         .confirm()
         .commit(&[]);
 

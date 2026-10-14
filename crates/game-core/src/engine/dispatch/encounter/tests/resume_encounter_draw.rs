@@ -33,7 +33,7 @@ fn drawing() -> GameState {
 fn rejects_non_confirm_response_and_preserves_frame() {
     // Validate-first: a non-`Confirm` response rejects and leaves the
     // encounter draw in place for retry.
-    let session = TestSession::new_with_registries(drawing(), crate::engine::TEST_REGISTRIES);
+    let session = TestSession::new(drawing(), crate::engine::TEST_REGISTRIES);
     let events_before = session.events().len();
     let session = session.skip();
 
@@ -63,7 +63,7 @@ fn the_draw_prompt_is_anchored_to_the_encounter_deck() {
     // cosmetic skill-test acknowledge on the wire — both are option-less
     // `Confirm`s (ADR 0011). A rewritten builder that drops the `.at(…)`
     // relocates the Draw button to the banner, and this is what catches it.
-    let session = TestSession::new_with_registries(drawing(), crate::engine::TEST_REGISTRIES);
+    let session = TestSession::new(drawing(), crate::engine::TEST_REGISTRIES);
     let request = session.prompt();
     assert_eq!(request.kind, InputKind::Confirm);
     assert!(request.options.is_empty(), "a Confirm carries no options");
@@ -91,7 +91,7 @@ fn rejects_an_unknown_encounter_code() {
     // frame; the actual draw (and its unknown-code reject) happens in the
     // `drive` loop's `PlayerDraw` arm (callsite-migration), which the step's
     // drain runs.
-    let session = TestSession::new_with_registries(state, crate::engine::TEST_REGISTRIES).confirm();
+    let session = TestSession::new(state, crate::engine::TEST_REGISTRIES).confirm();
     let reason = session.expect_rejected();
     assert!(
         reason.contains("unknown card code"),

@@ -359,6 +359,7 @@ mod tests {
         acolyte.code = CardCode::new("01102");
 
         let mut state = GameStateBuilder::new()
+            .with_registries(crate::TEST_REGISTRIES)
             .with_seat(lita_controller)
             .with_seat(other)
             .with_location(test_support::test_location(HERE.0, "Parlor"))

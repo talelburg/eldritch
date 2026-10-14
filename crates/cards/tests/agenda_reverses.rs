@@ -60,7 +60,7 @@ fn agenda_01105_reverse_choice_lead_takes_two_horror() {
     assert_eq!(state.investigators[&LEAD].horror(), 0);
 
     // Advancing fires the reverse, which suspends on the lead's choice.
-    let session = TestSession::new_with_registries(state, TEST_REGISTRIES);
+    let session = TestSession::new(state, TEST_REGISTRIES);
     assert_eq!(
         session.prompt().nature,
         PromptNature::Decision,
@@ -86,7 +86,7 @@ fn agenda_01105_reverse_choice_random_discard_each() {
     // card.
     let state = ending_the_round_on(0, seat(1).hand(["01088"]), &[]);
 
-    let session = TestSession::new_with_registries(state, TEST_REGISTRIES).pick_nth(0);
+    let session = TestSession::new(state, TEST_REGISTRIES).pick_nth(0);
     session.assert_at_encounter_draw();
     let lead_inv = &session.state().investigators[&LEAD];
     assert!(lead_inv.hand.is_empty(), "the one hand card was discarded");
@@ -108,7 +108,7 @@ fn agenda_01105_reverse_choice_random_discard_each() {
 /// Ghoul enemy)].
 #[test]
 fn agenda_01106_reverse_digs_until_a_ghoul_and_the_lead_draws_it() {
-    let session = TestSession::new_with_registries(
+    let session = TestSession::new(
         ending_the_round_on(
             1,
             seat(1),
@@ -178,7 +178,7 @@ fn encounter_deck_discards(events: &[Event]) -> Vec<CardCode> {
 /// first, so the order is read off the discard pile.
 #[test]
 fn agenda_01106_reverse_discards_non_ghoul_cards() {
-    let session = TestSession::new_with_registries(
+    let session = TestSession::new(
         ending_the_round_on(
             1,
             seat(1),

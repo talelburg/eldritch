@@ -227,7 +227,7 @@ fn mulligan_replays_from_the_action_log_bit_for_bit() {
         let mut state = make_initial();
         let mut events = Vec::new();
         for a in log {
-            let result = apply_with_registries(state, a.clone(), TEST_REGISTRIES);
+            let result = apply(state, a.clone(), TEST_REGISTRIES);
             assert!(
                 !matches!(result.outcome, EngineOutcome::Rejected { .. }),
                 "replay log action was rejected: {:?}",
@@ -279,7 +279,7 @@ fn mulligan_resolve_with_no_frame_outstanding_is_rejected() {
     // built state rather than through a session.
     let mut state = mulligan_board().build();
     state.continuations = crate::state::ContinuationStack::new();
-    let result = apply_with_registries(state, mulligan_resolve(&[0]), TEST_REGISTRIES);
+    let result = apply(state, mulligan_resolve(&[0]), TEST_REGISTRIES);
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert!(result.events.is_empty());
 }
@@ -312,7 +312,7 @@ fn start_scenario_seeds_mulligan_loop() {
         investigator: CardCode::new(test_support::TEST_INV),
         deck: make_test_deck(10),
     }];
-    let result = seat_and_open_with_registries(state, &roster, TEST_REGISTRIES);
+    let result = seat_and_open(state, &roster, TEST_REGISTRIES);
     assert!(
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
         "seat_and_open opens the mulligan prompt, got {:?}",

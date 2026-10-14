@@ -89,7 +89,7 @@ fn terminal_act_state(clues: u8) -> GameState {
 
 /// The stamp scenario after `INV` advances its terminal act.
 fn advanced() -> TestSession {
-    TestSession::new_with_registries(terminal_act_state(1), registries()).take(&ADVANCE_ACT)
+    TestSession::new(terminal_act_state(1), registries()).take(&ADVANCE_ACT)
 }
 
 #[test]
@@ -144,7 +144,7 @@ fn resolution_cancels_the_open_turn_and_does_not_refire() {
 
 #[test]
 fn resolution_skipped_on_rejected_outcome() {
-    let session = TestSession::new_with_registries(terminal_act_state(0), registries());
+    let session = TestSession::new(terminal_act_state(0), registries());
     // With 0 clues AdvanceAct is illegal, so it is not enumerated — there is
     // no OptionId to submit (OptionId-routing #447 expresses illegality as
     // non-enumeration).

@@ -142,7 +142,7 @@ fn ward(state: &GameState) -> CardInstanceId {
 /// Take `action` off the menu; the activation resolves and play is back at my
 /// turn menu.
 fn take_activation(state: GameState, action: &TurnAction) -> TestSession {
-    let session = TestSession::new_with_registries(state, registries()).take(action);
+    let session = TestSession::new(state, registries()).take(action);
     session.assert_at_turn_menu(MINE);
     session
 }
@@ -223,8 +223,8 @@ fn an_ability_on_another_investigators_card_is_neither_offered_nor_activatable()
     );
 
     // Activating another investigator's card must reject.
-    let reason = TestSession::new_with_registries(state, registries())
-        .assert_rejects(|s| s.submit_off_menu(&action));
+    let reason =
+        TestSession::new(state, registries()).assert_rejects(|s| s.submit_off_menu(&action));
     assert!(
         reason.contains("cannot reach"),
         "the reason should name reachability, got: {reason}",
@@ -295,8 +295,8 @@ fn discarding_your_investigator_card_as_a_cost_rejects_rather_than_panicking() {
     );
 
     // The menu offers it, and taking it must reject.
-    let reason = TestSession::new_with_registries(state, registries())
-        .assert_rejects(|session| session.take(&action));
+    let reason =
+        TestSession::new(state, registries()).assert_rejects(|session| session.take(&action));
     assert!(
         reason.contains("cannot be discarded as a cost"),
         "the reason should say why, got: {reason}",

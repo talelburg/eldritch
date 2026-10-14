@@ -81,7 +81,7 @@ fn end_turn(state: GameState, regs: Registries) -> GameState {
     let action = Action::Player(PlayerAction::ResolveInput {
         response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
     });
-    let result = engine::apply_with_registries(state, action, regs);
+    let result = engine::apply(state, action, regs);
     assert!(
         !matches!(result.outcome, EngineOutcome::Rejected { .. }),
         "EndTurn rejected: {:?}",

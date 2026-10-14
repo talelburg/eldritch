@@ -74,7 +74,7 @@ fn enemy_phase_end_moves_ghoul_before_the_upkeep_transition() {
     // The step-3.4 site runs once the Enemy phase's attacks are done. One Ghoul
     // in the Hallway, one step from the Parlor. The cascade runs on into
     // Upkeep: give the investigator a card to draw.
-    let session = TestSession::new_with_registries(
+    let session = TestSession::new(
         board_from(
             GameStateBuilder::new()
                 .with_registries(TEST_REGISTRIES)
@@ -147,7 +147,7 @@ fn ghoul_moved_into_the_investigator_engages_then_attacks_next_enemy_phase() {
     // the attack this test is about alone.
     state.encounter_deck.push_back(CardCode::new("01168"));
 
-    let session = TestSession::new_with_registries(state, TEST_REGISTRIES);
+    let session = TestSession::new(state, TEST_REGISTRIES);
     let (state, events) = (session.state(), session.events());
 
     assert_eq!(
@@ -199,7 +199,7 @@ fn ghoul_moved_into_the_investigator_engages_then_attacks_next_enemy_phase() {
 #[test]
 fn round_end_places_doom_per_ghoul_in_hallway_or_parlor() {
     // The round ends once the Upkeep phase does.
-    let session = TestSession::new_with_registries(
+    let session = TestSession::new(
         board_from(
             GameStateBuilder::new()
                 .with_registries(TEST_REGISTRIES)
@@ -248,7 +248,7 @@ fn round_end_act_when_window_opens_before_agenda_at_doom() {
     }];
     state.act_index = 0;
 
-    let window = TestSession::new_with_registries(state, TEST_REGISTRIES);
+    let window = TestSession::new(state, TEST_REGISTRIES);
 
     // The act's `when the round ends` window opens first...
     let offered: Vec<_> = window
@@ -317,7 +317,7 @@ fn table_at_act(n: u32, act_index: usize) -> GameState {
 /// and the round runs on into the next Mythos phase, where 01107 advances and
 /// its reverse — the `AgendaAdvanced` forced — resolves.
 fn advance_01107(state: GameState) -> TestSession {
-    let mut session = TestSession::new_with_registries(state, TEST_REGISTRIES);
+    let mut session = TestSession::new(state, TEST_REGISTRIES);
     while session.state().ending.is_none() {
         session = session.take(&TurnAction::EndTurn);
     }

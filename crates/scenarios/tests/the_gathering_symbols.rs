@@ -47,7 +47,7 @@ fn gathering_state(token: ChaosToken, ghouls: u8) -> GameState {
 /// nothing, run through to the turn menu so the symbol path resolves
 /// end-to-end. Returns the session back at the turn menu.
 fn perform(state: GameState, difficulty: i8) -> TestSession {
-    let session = TestSession::new_with_registries(state, scenarios::TEST_REGISTRIES)
+    let session = TestSession::new(state, scenarios::TEST_REGISTRIES)
         .test_skill(INV, SkillKind::Willpower, difficulty)
         .commit(&[]);
     session.assert_at_turn_menu(INV);
@@ -189,7 +189,7 @@ fn tablet_immediate_damage_suspends_on_soak_without_redrawing() {
     let state = gathering_board(ChaosToken::Tablet, 1, &[GUARD_DOG]);
     let dog = state.in_play(INV, GUARD_DOG);
 
-    let session = TestSession::new_with_registries(state, scenarios::TEST_REGISTRIES)
+    let session = TestSession::new(state, scenarios::TEST_REGISTRIES)
         .test_skill(INV, SkillKind::Willpower, 0)
         .commit(&[]) // ST.2 commit window: commit nothing.
         .pick(OptionTarget::CardInstance(dog)); // soak the 1 damage onto Guard Dog.
@@ -240,7 +240,7 @@ fn drive_combat_test_soaking_onto_the_ally(state: GameState) -> (TestSession, Ca
     let cop = state.in_play(INV, BEAT_COP);
     // Beat Cop's own [fast] ability makes both RR p.26 player windows live
     // (ST.1→ST.2 and ST.2→ST.3); pass on each.
-    let session = TestSession::new_with_registries(state, scenarios::TEST_REGISTRIES)
+    let session = TestSession::new(state, scenarios::TEST_REGISTRIES)
         .test_skill(INV, SkillKind::Combat, 2)
         .skip()
         .commit(&[])
@@ -366,7 +366,7 @@ fn resolvable_state_with_attic(revealed: bool, clues: u8) -> GameState {
 /// Take `AdvanceAct` from the turn menu; the terminal act's reverse ends the
 /// game.
 fn advance_to_resolution(state: GameState) -> ApplyResult {
-    let r = TestSession::new_with_registries(state, scenarios::TEST_REGISTRIES)
+    let r = TestSession::new(state, scenarios::TEST_REGISTRIES)
         .take(&TurnAction::AdvanceAct { investigator: INV })
         .finish();
     assert_eq!(r.outcome, EngineOutcome::Done, "the game is over");

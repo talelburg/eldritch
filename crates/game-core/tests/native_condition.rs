@@ -81,7 +81,7 @@ fn state_with_agenda(code: &str, doom: u8) -> GameState {
 /// phase, so a branch is read off its `ResourcesGained` event rather than the
 /// pool.
 fn end_the_enemy_phase(state: GameState) -> TestSession {
-    let session = TestSession::new_with_registries(state, registries()).take(&TurnAction::EndTurn);
+    let session = TestSession::new(state, registries()).take(&TurnAction::EndTurn);
     assert_event!(
         session.events(),
         Event::PhaseEnded {
@@ -117,7 +117,7 @@ fn native_condition_failing_takes_the_else_branch() {
 fn native_condition_rejects_unknown_tag() {
     let state = state_with_agenda(AGENDA_BAD, 1);
     let before = resources(&state);
-    let session = TestSession::new_with_registries(state, registries()).take(&TurnAction::EndTurn);
+    let session = TestSession::new(state, registries()).take(&TurnAction::EndTurn);
     session.expect_rejected();
     // The rejection unwinds the whole step back to the turn menu.
     session.assert_at_turn_menu(INV);

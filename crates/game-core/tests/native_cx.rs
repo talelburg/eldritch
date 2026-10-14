@@ -137,8 +137,7 @@ fn end_enemy_phase(session: TestSession) -> TestSession {
 
 #[test]
 fn a_native_that_writes_then_suspends_is_rejected_and_its_write_rolled_back() {
-    let session =
-        TestSession::new_with_registries(state_with_act(WRITE_THEN_SUSPEND_ACT), registries());
+    let session = TestSession::new(state_with_act(WRITE_THEN_SUSPEND_ACT), registries());
     let before = session.state().clone();
 
     let session = end_enemy_phase(session);
@@ -157,7 +156,7 @@ fn a_native_that_writes_then_suspends_is_rejected_and_its_write_rolled_back() {
 
 #[test]
 fn a_native_that_suspends_before_writing_suspends_and_resumes() {
-    let session = end_enemy_phase(TestSession::new_with_registries(
+    let session = end_enemy_phase(TestSession::new(
         state_with_act(SUSPEND_THEN_WRITE_ACT),
         registries(),
     ));

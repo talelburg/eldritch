@@ -79,7 +79,7 @@ fn upkeep_round_end_state(clues: u8) -> GameState {
 /// the round-end coordinator, which scans act 01109's `When`-`RoundEnded`
 /// reaction and suspends on it.
 fn opened_round_end_window(clues: u8) -> TestSession {
-    let session = TestSession::new_with_registries(upkeep_round_end_state(clues), registries());
+    let session = TestSession::new(upkeep_round_end_state(clues), registries());
     let offered: Vec<_> = session
         .prompt()
         .options

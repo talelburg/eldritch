@@ -250,11 +250,7 @@ fn ward_of(state: &GameState, bearer: InvestigatorId) -> AbilitySource {
 /// auto-skip the window and land on the commit prompt instead, and a test that
 /// mistook one for the other would pass for the wrong reason.
 fn at_player_window(state: GameState) -> (TestSession, Vec<OptionTarget>) {
-    let session = TestSession::new_with_registries(state, registries()).test_skill(
-        MINE,
-        SkillKind::Willpower,
-        4,
-    );
+    let session = TestSession::new(state, registries()).test_skill(MINE, SkillKind::Willpower, 4);
     assert_eq!(
         session.state().phase,
         Phase::Mythos,

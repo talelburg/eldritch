@@ -281,7 +281,7 @@ fn defeat(by: Option<InvestigatorId>) -> TimingEvent {
 /// advance.
 fn fire(state: GameState, event: TimingEvent) -> TestSession {
     let active = state.active_investigator.expect("an open turn");
-    let session = TestSession::new_with_registries(state, registries()).fire_at(event);
+    let session = TestSession::new(state, registries()).fire_at(event);
     session.assert_at_turn_menu(active);
     session
 }
@@ -290,7 +290,7 @@ fn fire(state: GameState, event: TimingEvent) -> TestSession {
 /// [`ending_upkeep_phase`](GameStateBuilder::ending_upkeep_phase) — so the
 /// `RoundEnded` scan runs. Play goes on into the next round's Mythos phase.
 fn end_the_round(state: GameState) -> TestSession {
-    let session = TestSession::new_with_registries(state, registries());
+    let session = TestSession::new(state, registries());
     assert_event!(
         session.events(),
         Event::PhaseEnded {
@@ -624,7 +624,7 @@ fn a_board_wide_condition_reaches_every_kind_of_source_in_walk_order() {
 /// The window `event` opens over the open turn. Fired on its own, as
 /// [`fire`] says why.
 fn window(state: GameState, event: TimingEvent) -> TestSession {
-    TestSession::new_with_registries(state, registries()).fire_at(event)
+    TestSession::new(state, registries()).fire_at(event)
 }
 
 /// The anchors of the options the reaction window offers after `event`.

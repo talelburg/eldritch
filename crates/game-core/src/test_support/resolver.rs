@@ -748,7 +748,7 @@ mod tests {
                 response: InputResponse::Confirm,
             }),
             &mut ScriptedResolver::new(),
-            |state, action| engine::apply_with_registries(state, action, engine::TEST_REGISTRIES),
+            |state, action| engine::apply(state, action, engine::TEST_REGISTRIES),
         );
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     }
@@ -768,7 +768,7 @@ mod tests {
         // No builder setter for the acknowledge flag.
         state.interactive_acknowledge = true;
 
-        let session = TestSession::new_with_registries(state, engine::TEST_REGISTRIES)
+        let session = TestSession::new(state, engine::TEST_REGISTRIES)
             .test_skill(inv, SkillKind::Willpower, 2)
             .commit(&[]);
         assert_eq!(
