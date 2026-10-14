@@ -14,10 +14,7 @@ fn shuffle_encounter_deck_emits_event_when_two_or_more_cards() {
     state.encounter_deck.push_back(CardCode("c".into()));
 
     let mut events = Vec::new();
-    shuffle_encounter_deck(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    shuffle_encounter_deck(&mut Cx::for_test(&mut state, &mut events));
 
     assert!(matches!(events.as_slice(), [Event::EncounterDeckShuffled]));
     assert_eq!(state.encounter_deck.len(), 3);
@@ -41,10 +38,7 @@ fn shuffle_encounter_deck_is_silent_on_zero_or_one_card() {
             state.encounter_deck.push_back(CardCode(format!("c{i}")));
         }
         let mut events = Vec::new();
-        shuffle_encounter_deck(&mut Cx {
-            state: &mut state,
-            events: &mut events,
-        });
+        shuffle_encounter_deck(&mut Cx::for_test(&mut state, &mut events));
         assert!(events.is_empty(), "expected no event for n={n} deck");
     }
 }
@@ -58,10 +52,7 @@ fn reshuffle_encounter_discard_moves_discard_into_deck_and_shuffles() {
     }
 
     let mut events = Vec::new();
-    reshuffle_encounter_discard(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    reshuffle_encounter_discard(&mut Cx::for_test(&mut state, &mut events));
 
     assert!(
         state.encounter_discard.is_empty(),
@@ -80,10 +71,7 @@ fn reshuffle_encounter_discard_is_silent_when_discard_has_one_card() {
     state.encounter_discard.push(CardCode("solo".into()));
 
     let mut events = Vec::new();
-    reshuffle_encounter_discard(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    reshuffle_encounter_discard(&mut Cx::for_test(&mut state, &mut events));
 
     assert!(state.encounter_discard.is_empty());
     assert_eq!(state.encounter_deck.len(), 1);
@@ -100,31 +88,19 @@ fn draw_encounter_top_drains_deck_then_returns_none() {
     let mut events = Vec::new();
 
     assert_eq!(
-        draw_encounter_top(&mut Cx {
-            state: &mut state,
-            events: &mut events,
-        }),
+        draw_encounter_top(&mut Cx::for_test(&mut state, &mut events)),
         Some(CardCode("a".into()))
     );
     assert_eq!(
-        draw_encounter_top(&mut Cx {
-            state: &mut state,
-            events: &mut events,
-        }),
+        draw_encounter_top(&mut Cx::for_test(&mut state, &mut events)),
         Some(CardCode("b".into()))
     );
     assert_eq!(
-        draw_encounter_top(&mut Cx {
-            state: &mut state,
-            events: &mut events,
-        }),
+        draw_encounter_top(&mut Cx::for_test(&mut state, &mut events)),
         Some(CardCode("c".into()))
     );
     assert_eq!(
-        draw_encounter_top(&mut Cx {
-            state: &mut state,
-            events: &mut events,
-        }),
+        draw_encounter_top(&mut Cx::for_test(&mut state, &mut events)),
         None
     );
     assert!(
@@ -142,10 +118,7 @@ fn draw_encounter_top_reshuffles_discard_on_empty_deck() {
     state.encounter_discard.push(CardCode("z".into()));
 
     let mut events = Vec::new();
-    let drawn = draw_encounter_top(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    let drawn = draw_encounter_top(&mut Cx::for_test(&mut state, &mut events));
 
     let drawn_code = drawn.expect("should reshuffle and draw");
     assert!(
@@ -174,10 +147,7 @@ fn draw_encounter_top_returns_none_when_deck_and_discard_both_empty() {
     let mut state = GameStateBuilder::new().build();
     let mut events = Vec::new();
     assert_eq!(
-        draw_encounter_top(&mut Cx {
-            state: &mut state,
-            events: &mut events,
-        }),
+        draw_encounter_top(&mut Cx::for_test(&mut state, &mut events)),
         None
     );
     assert!(events.is_empty(), "no events on empty-on-both");
@@ -219,10 +189,7 @@ fn encounter_deck_shuffle_is_deterministic_from_seed() {
             state.encounter_deck.push_back(CardCode(format!("c{i:02}")));
         }
         let mut events = Vec::new();
-        shuffle_encounter_deck(&mut Cx {
-            state: &mut state,
-            events: &mut events,
-        });
+        shuffle_encounter_deck(&mut Cx::for_test(&mut state, &mut events));
         state.encounter_deck.iter().cloned().collect()
     }
 

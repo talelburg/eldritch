@@ -130,7 +130,8 @@ mod tests {
             .build();
         state.interactive_acknowledge = true;
         let ctx = EvalContext::for_controller(InvestigatorId(1));
-        let (out, _) = test_support::run_native(&mut state, crypt_chill_fail, &ctx);
+        let (out, _) =
+            test_support::run_native(&mut state, &crate::REGISTRY, crypt_chill_fail, &ctx);
         match out {
             EngineOutcome::AwaitingInput { request, .. } => {
                 assert_eq!(
@@ -151,7 +152,8 @@ mod tests {
             .with_seat(seat(1).in_play(["01020"]))
             .build();
         let ctx = EvalContext::for_controller(InvestigatorId(1));
-        let (out, _) = test_support::run_native(&mut state, crypt_chill_fail, &ctx);
+        let (out, _) =
+            test_support::run_native(&mut state, &crate::REGISTRY, crypt_chill_fail, &ctx);
         assert!(
             matches!(out, EngineOutcome::Done),
             "flag off: auto-discard, no suspend"
@@ -172,7 +174,8 @@ mod tests {
         // native's tail, and nothing is placed until that frame runs (#1027).
         let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
         let ctx = EvalContext::for_controller(InvestigatorId(1));
-        let (out, _) = test_support::run_native(&mut state, crypt_chill_fail, &ctx);
+        let (out, _) =
+            test_support::run_native(&mut state, &crate::REGISTRY, crypt_chill_fail, &ctx);
         assert_eq!(out, EngineOutcome::Done);
         test_support::assert_effect_deal(state.continuations.top(), InvestigatorId(1), 2, 0);
         assert_eq!(state.investigators[&InvestigatorId(1)].damage(), 0);

@@ -897,6 +897,8 @@ fn step_native(cx: &mut Cx, tag: &str, eval_ctx: EvalContext, node: &Effect) -> 
     let mut native_cx = NativeCx::new(Cx {
         state: &mut *cx.state,
         events: &mut *cx.events,
+        cards: cx.cards,
+        scenario: cx.scenario,
     });
     let outcome = f(&mut native_cx, &eval_ctx);
     let written = native_cx.written();

@@ -63,10 +63,7 @@ fn upkeep_anchor_present_while_suspended_at_hand_size() {
         .with_phase(Phase::Upkeep)
         .build();
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let entry = upkeep_phase(&mut cx);
     let outcome = drive_phase(&mut cx, entry);
     assert!(

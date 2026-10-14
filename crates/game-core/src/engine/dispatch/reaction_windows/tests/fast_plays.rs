@@ -30,10 +30,7 @@ fn open_fast_window_with_no_eligibility_auto_skips_inline() {
         .build();
     let mut events = Vec::new();
     open_fast_window(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
     );
 

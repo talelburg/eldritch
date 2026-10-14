@@ -125,7 +125,8 @@ fn with_cx(
     state: &mut GameState,
     f: impl FnOnce(&mut NativeCx) -> EngineOutcome,
 ) -> (EngineOutcome, Vec<Event>) {
-    test_support::run_native(state, |cx, _| f(cx), &EvalContext::for_controller(INV))
+    let reg = card_registry::current().expect("registry installed");
+    test_support::run_native(state, reg, |cx, _| f(cx), &EvalContext::for_controller(INV))
 }
 
 /// 01109's reverse, as the registry resolves it for the forced dispatch.
@@ -133,7 +134,7 @@ fn reverse(state: &mut GameState) -> (EngineOutcome, Vec<Event>) {
     let reg = card_registry::current().expect("registry installed");
     let native =
         (reg.native_effect_for)("01109:reverse").expect("01109:reverse is registered by 01109");
-    test_support::run_native(state, native, &EvalContext::for_controller(INV))
+    test_support::run_native(state, reg, native, &EvalContext::for_controller(INV))
 }
 
 // ---- the entry path --------------------------------------------------

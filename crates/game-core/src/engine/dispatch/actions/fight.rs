@@ -292,10 +292,7 @@ mod tests {
                 )
             }));
         let mut events = Vec::new();
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
 
         after_test(&mut cx, inv, EnemyId(7), 1);
 

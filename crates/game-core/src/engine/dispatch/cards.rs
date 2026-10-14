@@ -1167,14 +1167,7 @@ mod grant_resources_tests {
         let before = state.investigators[&id].resources;
         let mut events = Vec::new();
 
-        grant_resources(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            id,
-            2,
-        );
+        grant_resources(&mut Cx::for_test(&mut state, &mut events), id, 2);
 
         assert_eq!(state.investigators[&id].resources, before + 2);
         assert!(events.iter().any(|e| matches!(
@@ -1192,14 +1185,7 @@ mod grant_resources_tests {
         let before = state.investigators[&id].resources;
         let mut events = Vec::new();
 
-        grant_resources(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            id,
-            0,
-        );
+        grant_resources(&mut Cx::for_test(&mut state, &mut events), id, 0);
 
         assert_eq!(state.investigators[&id].resources, before);
         assert!(events.is_empty());
@@ -1239,13 +1225,7 @@ mod draw_with_deckout_tests {
         let hand_before = state.investigators[&id].hand.len();
         let mut events = Vec::new();
 
-        let out = draw_one_with_deckout(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            id,
-        );
+        let out = draw_one_with_deckout(&mut Cx::for_test(&mut state, &mut events), id);
 
         assert_eq!(out, EngineOutcome::Done);
         assert_eq!(
@@ -1273,14 +1253,7 @@ mod draw_with_deckout_tests {
         let hand_before = state.investigators[&id].hand.len();
         let mut events = Vec::new();
 
-        let _ = draw_with_deckout(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            id,
-            3,
-        );
+        let _ = draw_with_deckout(&mut Cx::for_test(&mut state, &mut events), id, 3);
 
         let inv = &state.investigators[&id];
         assert_eq!(inv.hand.len(), hand_before + 3, "drew the full count");
@@ -1309,14 +1282,7 @@ mod draw_with_deckout_tests {
         let hand_before = state.investigators[&id].hand.len();
         let mut events = Vec::new();
 
-        let out = draw_with_deckout(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            id,
-            2,
-        );
+        let out = draw_with_deckout(&mut Cx::for_test(&mut state, &mut events), id, 2);
         assert_eq!(out, EngineOutcome::Done);
         assert!(
             state.continuations.top().is_none(),

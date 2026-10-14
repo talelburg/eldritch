@@ -37,10 +37,7 @@ fn drive_parked_attack_loop_exhausts_the_head_then_advances_the_cursor() {
     });
 
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let outcome = drive_parked_attack_loop(&mut cx);
 
     assert!(
@@ -103,10 +100,7 @@ fn a_head_attacker_that_dealt_nothing_still_exhausts() {
     });
 
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let _ = drive_parked_attack_loop(&mut cx);
 
     assert_eq!(
@@ -143,10 +137,7 @@ fn an_attack_of_opportunity_attacker_never_exhausts() {
     });
 
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let _ = drive_parked_attack_loop(&mut cx);
 
     assert!(
@@ -170,10 +161,7 @@ fn drive_retaliate_deals_damage_but_does_not_exhaust_the_attacker() {
         .with_enemy(enemy)
         .build();
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
 
     // The attack is queued on the coordinator (#704), so drive it out: the
     // loop's `Done` means *queued*, not *dealt*.
@@ -207,10 +195,7 @@ fn drive_aoo_deals_damage_but_does_not_exhaust_the_attacker() {
         .with_enemy(enemy)
         .build();
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
 
     let outcome = drive_aoo(&mut cx, inv_id);
     let outcome = dispatch::drive(&mut cx, outcome);

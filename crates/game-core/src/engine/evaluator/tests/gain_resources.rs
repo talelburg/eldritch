@@ -8,10 +8,7 @@ fn gain_resources_increments_target_wallet_and_emits_event() {
     let mut events = Vec::new();
 
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::gain_resources(InvestigatorTarget::You, 3),
         ctx(1),
     );
@@ -33,10 +30,7 @@ fn push_effect_then_drive_runs_to_completion() {
     let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
     let resources_before = state.investigators[&id].resources;
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
 
     push_effect(
         &mut cx,
@@ -66,10 +60,7 @@ fn gain_resources_zero_amount_is_a_silent_noop() {
     let mut events = Vec::new();
 
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::gain_resources(InvestigatorTarget::Active, 0),
         ctx(1),
     );
@@ -87,10 +78,7 @@ fn gain_resources_active_target_rejects_without_active_investigator() {
     let mut events = Vec::new();
 
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::gain_resources(InvestigatorTarget::Active, 1),
         ctx(1),
     );

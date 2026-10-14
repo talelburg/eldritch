@@ -52,10 +52,7 @@ fn relocate_enemy_engages_on_arrival() {
     let mut events = Vec::new();
 
     relocate_enemy(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         EnemyId(1),
         LocationId(2),
     );
@@ -81,10 +78,7 @@ fn relocate_enemy_exhausted_arrives_unengaged() {
     let mut events = Vec::new();
 
     relocate_enemy(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         EnemyId(1),
         LocationId(2),
     );
@@ -111,10 +105,7 @@ fn relocate_enemy_to_empty_location_leaves_it_unengaged() {
     let mut events = Vec::new();
 
     relocate_enemy(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         EnemyId(1),
         LocationId(2),
     );
@@ -142,10 +133,7 @@ fn relocate_enemy_keeps_an_existing_engagement() {
     let mut events = Vec::new();
 
     relocate_enemy(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         EnemyId(1),
         LocationId(2),
     );

@@ -34,10 +34,7 @@ fn open_turn_leaves_investigator_turn_frame_on_top() {
 
     let mut events = Vec::new();
     let outcome = {
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
         // investigation_phase pushes the anchor + opens (auto-skips) both
         // windows, landing the first investigator's open turn.
         investigation_phase(&mut cx);
@@ -112,10 +109,7 @@ fn investigation_anchor_pushed_and_persists_through_turn() {
         .with_phase(Phase::Investigation)
         .build();
     let mut events = Vec::new();
-    investigation_phase(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    investigation_phase(&mut Cx::for_test(&mut state, &mut events));
     assert!(
         state
             .continuations
@@ -141,10 +135,7 @@ fn investigation_phase_emits_phase_started_and_rotates_to_lead() {
         .build();
 
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let outcome = investigation_phase(&mut cx);
     drive_phase(&mut cx, outcome);
 
@@ -186,10 +177,7 @@ fn investigation_phase_with_empty_turn_order_parks() {
         .build();
 
     let mut events = Vec::new();
-    investigation_phase(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    investigation_phase(&mut Cx::for_test(&mut state, &mut events));
 
     assert_eq!(
         state.active_investigator, None,
@@ -224,10 +212,7 @@ fn investigation_phase_skips_defeated_lead_and_picks_first_active() {
         .status = Status::Defeated;
 
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let outcome = investigation_phase(&mut cx);
     drive_phase(&mut cx, outcome);
 
@@ -338,10 +323,7 @@ fn step_phase_emits_no_phase_ended() {
         .build();
 
     let mut events = Vec::new();
-    step_phase(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    step_phase(&mut Cx::for_test(&mut state, &mut events));
 
     assert_eq!(
         events
@@ -365,10 +347,7 @@ fn investigation_entry_emits_phase_started_then_windows_then_lead_active() {
         .build();
 
     let mut events = Vec::new();
-    step_phase(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    }); // Mythos→Investigation
+    step_phase(&mut Cx::for_test(&mut state, &mut events)); // Mythos→Investigation
 
     assert_eq!(state.phase, Phase::Investigation);
     assert_eq!(state.active_investigator, Some(InvestigatorId(1)));

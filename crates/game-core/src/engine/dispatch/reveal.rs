@@ -78,13 +78,7 @@ mod tests {
             .with_location(unrevealed(5, "x", ClueValue::PerInvestigator(2)))
             .build();
         let mut events = Vec::new();
-        reveal::reveal_location(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            LocationId(5),
-        );
+        reveal::reveal_location(&mut Cx::for_test(&mut state, &mut events), LocationId(5));
         let loc = &state.locations[&LocationId(5)];
         assert!(loc.revealed);
         assert_eq!(loc.clues, 4, "2 per-investigator × 2 investigators");
@@ -99,13 +93,7 @@ mod tests {
             .with_location(unrevealed(5, "x", ClueValue::Fixed(3)))
             .build();
         let mut events = Vec::new();
-        reveal::reveal_location(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            LocationId(5),
-        );
+        reveal::reveal_location(&mut Cx::for_test(&mut state, &mut events), LocationId(5));
         assert_eq!(state.locations[&LocationId(5)].clues, 3);
     }
 
@@ -124,13 +112,7 @@ mod tests {
             .with_location(loc)
             .build();
         let mut events = Vec::new();
-        reveal::reveal_location(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            LocationId(5),
-        );
+        reveal::reveal_location(&mut Cx::for_test(&mut state, &mut events), LocationId(5));
         assert_eq!(
             state.locations[&LocationId(5)].clues,
             4,
@@ -157,13 +139,7 @@ mod tests {
             ))
             .build();
         let mut events = Vec::new();
-        reveal::reveal_location(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            LocationId(5),
-        );
+        reveal::reveal_location(&mut Cx::for_test(&mut state, &mut events), LocationId(5));
         assert_eq!(state.locations[&LocationId(5)].clues, 9, "unchanged");
         assert!(!events
             .iter()

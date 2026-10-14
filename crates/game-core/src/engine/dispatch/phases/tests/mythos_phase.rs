@@ -18,15 +18,9 @@ fn mythos_phase_emits_phase_started_and_prompts_first_drawer() {
     // mythos_phase parks the anchor at Draws (#482); the 1.4 draws run when
     // the drive loop processes that anchor (no agenda deck ⇒ no advance to
     // wait on, so this completes in the same drive).
-    mythos_phase(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    mythos_phase(&mut Cx::for_test(&mut state, &mut events));
     let outcome = dispatch::drive(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         EngineOutcome::Done,
     );
 
@@ -86,16 +80,10 @@ fn mythos_anchor_pushed_during_phase() {
         .with_turn_order([InvestigatorId(1)])
         .build();
     let mut events = Vec::new();
-    mythos_phase(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    mythos_phase(&mut Cx::for_test(&mut state, &mut events));
     // Draws run from the anchor's Draws resume (#482); drive to reach them.
     let outcome = dispatch::drive(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         EngineOutcome::Done,
     );
     assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
@@ -119,10 +107,7 @@ fn mythos_phase_with_empty_turn_order_opens_after_draws_window_inline() {
     // No drawers → MythosAfterDraws auto-skips, mythos_phase_end pushes the
     // Investigation anchor; `drive` then advances it (slice 1b) — completing
     // the Mythos→Investigation transition that was synchronous in slice 1a.
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let outcome = mythos_phase(&mut cx);
     let outcome = dispatch::drive(&mut cx, outcome);
 
@@ -166,10 +151,7 @@ fn mythos_phase_end_emits_phase_ended_and_steps_to_investigation() {
     // mythos_phase_end pops the Mythos anchor + pushes the Investigation
     // anchor (Entry); `drive` advances it to run investigation_phase (slice
     // 1b) — completing the transition.
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     mythos_phase_end(&mut cx);
     let _ = dispatch::drive(&mut cx, EngineOutcome::Done);
 
@@ -221,16 +203,10 @@ fn mythos_phase_skips_eliminated_lead_when_seeding_queue() {
         .status = Status::Defeated;
     let mut events = Vec::new();
 
-    mythos_phase(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    mythos_phase(&mut Cx::for_test(&mut state, &mut events));
     // The 1.4 draws (queue seeding) run from the Draws anchor (#482); drive.
     dispatch::drive(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         EngineOutcome::Done,
     );
 
@@ -262,17 +238,11 @@ fn mythos_phase_with_all_investigators_eliminated_opens_after_draws_window() {
         .status = Status::Defeated;
     let mut events = Vec::new();
 
-    mythos_phase(&mut Cx {
-        state: &mut state,
-        events: &mut events,
-    });
+    mythos_phase(&mut Cx::for_test(&mut state, &mut events));
     // No Active drawers: the Draws anchor opens + auto-skips MythosAfterDraws,
     // cascading to Investigation — all once the loop processes it (#482).
     dispatch::drive(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         EngineOutcome::Done,
     );
 

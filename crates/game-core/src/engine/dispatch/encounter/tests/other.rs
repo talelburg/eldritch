@@ -31,10 +31,7 @@ fn rejects_an_unknown_encounter_card() {
     let mut events = Vec::new();
 
     let outcome = dispatch::apply_engine_record(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &EngineRecord::EncounterCardRevealed {
             investigator: InvestigatorId(1),
         },

@@ -51,10 +51,7 @@ fn state_with_window_of(
 
 fn withdraw(state: &mut GameState) -> (usize, Vec<Event>) {
     let mut events = Vec::new();
-    let n = withdraw_suppressed_candidates(&mut Cx {
-        state,
-        events: &mut events,
-    });
+    let n = withdraw_suppressed_candidates(&mut Cx::for_test(state, &mut events));
     (n, events)
 }
 

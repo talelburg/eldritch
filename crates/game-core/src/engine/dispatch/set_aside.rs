@@ -200,10 +200,7 @@ mod tests {
             .build();
         let mut events = Vec::new();
         let outcome = set_aside::put_set_aside_card_into_play(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
+            &mut Cx::for_test(&mut state, &mut events),
             "01116",
             Some("01112"),
             Owner::EncounterDeck,
@@ -228,10 +225,7 @@ mod tests {
         state.set_aside_cards.push(CardCode::new("01116"));
         let mut events = Vec::new();
         let outcome = set_aside::put_set_aside_card_into_play(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
+            &mut Cx::for_test(&mut state, &mut events),
             "01116",
             Some("01112"), // not in play
             Owner::EncounterDeck,

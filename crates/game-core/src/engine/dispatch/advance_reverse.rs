@@ -232,10 +232,7 @@ mod tests {
         let mut state = state_advancing_agenda(false);
         let mut events = Vec::new();
         let out = dispatch::drive(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
+            &mut Cx::for_test(&mut state, &mut events),
             EngineOutcome::Done,
         );
         assert_eq!(out, EngineOutcome::Done);
@@ -260,10 +257,7 @@ mod tests {
         let mut state = state_advancing_agenda(true);
         let mut events = Vec::new();
         let out = dispatch::drive(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
+            &mut Cx::for_test(&mut state, &mut events),
             EngineOutcome::Done,
         );
         let EngineOutcome::AwaitingInput { request, .. } = &out else {
@@ -288,10 +282,7 @@ mod tests {
     fn forced_interactive_act_advance_anchors_to_the_act() {
         let mut state = state_advancing_act(true, AdvanceTrigger::Forced);
         let mut events = Vec::new();
-        let out = drive(&mut Cx {
-            state: &mut state,
-            events: &mut events,
-        });
+        let out = drive(&mut Cx::for_test(&mut state, &mut events));
         let EngineOutcome::AwaitingInput { request, .. } = &out else {
             panic!("expected the on-card advance pick, got {out:?}");
         };
@@ -383,10 +374,7 @@ mod tests {
         state.agenda_deck.truncate(1);
         let mut events = Vec::new();
         let _ = dispatch::drive(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
+            &mut Cx::for_test(&mut state, &mut events),
             EngineOutcome::Done,
         );
     }
@@ -399,10 +387,7 @@ mod tests {
     fn deliberate_interactive_advance_skips_the_ack() {
         let mut state = state_advancing_act(true, AdvanceTrigger::Deliberate);
         let mut events = Vec::new();
-        let out = drive(&mut Cx {
-            state: &mut state,
-            events: &mut events,
-        });
+        let out = drive(&mut Cx::for_test(&mut state, &mut events));
         assert_eq!(out, EngineOutcome::Done, "deliberate: no pause");
         assert!(
             matches!(

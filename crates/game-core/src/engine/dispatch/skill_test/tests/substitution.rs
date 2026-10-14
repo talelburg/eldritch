@@ -45,10 +45,7 @@ fn combat_test_with_substitution_prompts_then_becomes_intellect_on_yes() {
     let mut state = substitution_state(inv);
     let mut events = Vec::new();
     let out = {
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
         // A weapon's "+2 [combat] for this attack".
         start_skill_test(
             &mut cx,
@@ -73,20 +70,14 @@ fn combat_test_with_substitution_prompts_then_becomes_intellect_on_yes() {
     );
 
     let out = {
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
         // The Decision's first option, "yes". The weapon's initiator modifier
         // below is one no session step can supply, so this test drives the
         // entry point and the resume handler directly.
         resume_substitution_choice(&mut cx, &InputResponse::PickSingle(OptionId(0)))
     };
     let out = {
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
         dispatch::drive(&mut cx, out)
     };
     assert!(
@@ -134,10 +125,7 @@ fn substitution_prompt_keeps_the_test_on_its_frame() {
     let mut state = substitution_state(inv);
     let mut events = Vec::new();
     let out = {
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
         start_skill_test(
             &mut cx,
             inv,
@@ -204,10 +192,7 @@ fn resume_substitution_choice_parks_for_the_loop() {
     let mut state = substitution_state(inv);
     let mut events = Vec::new();
     let out = {
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
         start_skill_test(
             &mut cx,
             inv,
@@ -230,10 +215,7 @@ fn resume_substitution_choice_parks_for_the_loop() {
     // PARKS — it does not itself open the commit window. The resume handler's
     // own return is the subject, so it is called directly.
     let out = {
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
         resume_substitution_choice(&mut cx, &InputResponse::PickSingle(OptionId(0)))
     };
     assert_eq!(
@@ -260,10 +242,7 @@ fn resume_substitution_choice_parks_for_the_loop() {
 
     // The loop drives the parked test to its commit window.
     let out = {
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
+        let mut cx = Cx::for_test(&mut state, &mut events);
         dispatch::drive(&mut cx, out)
     };
     assert!(

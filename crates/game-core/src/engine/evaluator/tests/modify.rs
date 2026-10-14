@@ -8,10 +8,7 @@ fn modify_with_while_in_play_scope_under_non_constant_trigger_rejects() {
     let mut state = GameStateBuilder::new().build();
     let mut events = Vec::new();
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::modify(Stat::Willpower, 1, ModifierScope::WhileInPlay),
         ctx(1),
     );
@@ -42,10 +39,7 @@ fn modify_with_this_skill_test_scope_records_a_row_stamped_with_the_test() {
     let mut state = state_during_test(test_id);
     let mut events = Vec::new();
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::modify(Stat::Intellect, 1, ModifierScope::ThisSkillTest),
         ctx(1),
     );
@@ -74,10 +68,7 @@ fn modify_with_this_skill_test_scope_rejects_outside_a_test() {
     let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
     let mut events = Vec::new();
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::modify(Stat::Intellect, 1, ModifierScope::ThisSkillTest),
         ctx(1),
     );
@@ -98,10 +89,7 @@ fn modify_records_source_when_ctx_has_one() {
     let mut events = Vec::new();
     let ctx_with_src = EvalContext::for_controller_with_source(id, AbilitySource::InPlay(src));
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::modify(Stat::Combat, 2, ModifierScope::ThisSkillTest),
         ctx_with_src,
     );
@@ -114,10 +102,7 @@ fn modify_with_this_turn_scope_rejects_with_todo() {
     let mut state = GameStateBuilder::new().build();
     let mut events = Vec::new();
     let outcome = run(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &dsl::modify(Stat::Willpower, 1, ModifierScope::ThisTurn),
         ctx(1),
     );

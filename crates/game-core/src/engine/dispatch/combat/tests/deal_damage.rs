@@ -44,10 +44,7 @@ fn resume_damage_distribution_rejects_invalid_pick_and_keeps_frame() {
         },
     });
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
 
     // Wrong response variant → reject, frame untouched.
     let wrong = resume_damage_distribution(&mut cx, &InputResponse::Skip);
@@ -91,10 +88,7 @@ fn deal_damage_cursor_walks_distribute_announce_place_finish() {
         .with_seat(test_support::seat(1))
         .build();
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
 
     // Entry parks the frame at the top of the cursor and returns `Done`:
     // dealing damage is tail position, like an emit.
@@ -218,10 +212,7 @@ fn the_two_damage_conditions_are_classified_as_the_adr_says() {
         .build();
     let before = state.clone();
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     let ConditionResolution::Coordinator(resolve) = assigned.condition_resolution() else {
         unreachable!()
     };
@@ -262,10 +253,7 @@ fn deal_harm_walks_distribute_announce_place_finish_from_an_effect() {
         .with_seat(test_support::seat(1))
         .build();
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
 
     assert_eq!(deal_harm(&mut cx, id, 0, 1), EngineOutcome::Done);
     test_support::assert_effect_deal(cx.state.continuations.top(), id, 0, 1);
@@ -320,10 +308,7 @@ fn deal_harm_of_nothing_pushes_no_frame() {
         .with_seat(test_support::seat(1))
         .build();
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     assert_eq!(
         deal_harm(&mut cx, InvestigatorId(1), 0, 0),
         EngineOutcome::Done

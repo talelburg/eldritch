@@ -372,13 +372,7 @@ mod tests {
         card: LeavingCard,
     ) -> (Option<Placement>, Vec<Event>) {
         let mut events = Vec::new();
-        let left = exit(
-            &mut Cx {
-                state,
-                events: &mut events,
-            },
-            card,
-        );
+        let left = exit(&mut Cx::for_test(state, &mut events), card);
         (left, events)
     }
 
@@ -693,13 +687,7 @@ mod tests {
         ];
         study.cards_at_location = vec![instance("STORY", 73, Owner::Scenario)];
         let mut events = Vec::new();
-        let removed = remove_location_from_game(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            STUDY,
-        );
+        let removed = remove_location_from_game(&mut Cx::for_test(&mut state, &mut events), STUDY);
 
         assert!(removed);
         assert!(!state.locations.contains_key(&STUDY));
@@ -742,13 +730,8 @@ mod tests {
         let mut state = empty_board();
         let before = state.clone();
         let mut events = Vec::new();
-        let removed = remove_location_from_game(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            LocationId(99),
-        );
+        let removed =
+            remove_location_from_game(&mut Cx::for_test(&mut state, &mut events), LocationId(99));
         assert!(!removed);
         assert!(events.is_empty());
         assert_eq!(state, before);

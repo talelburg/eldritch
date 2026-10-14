@@ -100,7 +100,7 @@ fn run(cx: &mut Cx, effect: &Effect, ctx: EvalContext) -> EngineOutcome {
 /// loop), then drives the resumed top effect run **bounded** — in a unit
 /// test there is no `apply()`→`drive()` afterward to step it (Slice D #423).
 fn resume_pick(state: &mut GameState, events: &mut Vec<Event>, i: u32) -> EngineOutcome {
-    let mut cx = Cx { state, events };
+    let mut cx = Cx::for_test(state, events);
     let recorded = choice::resume_effect_choice(&mut cx, &InputResponse::PickSingle(OptionId(i)));
     // A reject (bad pick / top not a Leaf) propagates as-is; otherwise the
     // pick is recorded and the resumed run is driven bounded (base = depth

@@ -85,10 +85,7 @@ fn spawn_enemy_at_places_enemy_at_the_given_location_not_the_drawers() {
     let metadata = synth_enemy_metadata(None);
     let mut events = Vec::new();
     let outcome = spawn_enemy_at(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         CardCode("_synth_enemy".into()),
         &metadata,
         THERE,
@@ -131,10 +128,7 @@ fn spawn_enemy_reads_combat_stats_and_keywords_from_metadata() {
     );
     let mut events = Vec::new();
     spawn_enemy(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
@@ -175,10 +169,7 @@ fn spawn_enemy_scales_per_investigator_health_by_investigator_count() {
     );
     let mut events = Vec::new();
     spawn_enemy(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
@@ -212,10 +203,7 @@ fn spawn_enemy_reads_victory_from_metadata() {
     );
     let mut events = Vec::new();
     spawn_enemy(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
@@ -242,10 +230,7 @@ fn spawn_at_specific_location_with_one_investigator_engages_them() {
     let mut events = Vec::new();
 
     let outcome = spawn_enemy(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
@@ -284,10 +269,7 @@ fn spawn_at_specific_location_with_no_investigators_leaves_unengaged() {
     let mut events = Vec::new();
 
     let outcome = spawn_enemy(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
@@ -315,10 +297,7 @@ fn spawn_at_specific_location_discards_when_location_not_in_play() {
     }));
     let mut events = Vec::new();
     let outcome = spawn_enemy(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
@@ -353,10 +332,7 @@ fn spawn_with_unrepresented_instruction_rejects_without_mutating() {
     let mut events = Vec::new();
 
     let outcome = spawn_enemy(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
@@ -393,10 +369,7 @@ fn spawn_with_no_instruction_places_at_drawing_investigators_location() {
     let mut events = Vec::new();
 
     let outcome = spawn_enemy(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
@@ -423,10 +396,7 @@ fn spawn_with_no_instruction_rejects_when_drawing_investigator_has_no_location()
     let metadata = synth_enemy_metadata(None);
     let mut events = Vec::new();
     let outcome = spawn_enemy(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
@@ -457,10 +427,7 @@ fn spawn_engages_sole_colocated_investigator() {
     let metadata = synth_enemy_metadata(None);
     let mut events = Vec::new();
     let outcome = spawn_enemy(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
@@ -485,10 +452,7 @@ fn spawn_tie_suspends_for_lead_pick() {
     let metadata = synth_enemy_metadata(None);
     let mut events = Vec::new();
     let outcome = spawn_enemy(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
@@ -520,10 +484,7 @@ fn resume_spawn_engage_rejects_bad_pick_and_preserves_pending() {
     let metadata = synth_enemy_metadata(None);
     let mut events = Vec::new();
     let _ = spawn_enemy(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
@@ -537,10 +498,7 @@ fn resume_spawn_engage_rejects_bad_pick_and_preserves_pending() {
     // a malformed response no step can name, so the resume handler is called
     // with it raw.
     let outcome = hunters::resume_spawn_engage(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         &InputResponse::PickSingle(OptionId(99)),
     );
     assert!(
@@ -572,19 +530,13 @@ fn spawn_mints_distinct_enemy_ids() {
     let mut events = Vec::new();
 
     let _ = spawn_enemy(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
     );
     let _ = spawn_enemy(
-        &mut Cx {
-            state: &mut state,
-            events: &mut events,
-        },
+        &mut Cx::for_test(&mut state, &mut events),
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,

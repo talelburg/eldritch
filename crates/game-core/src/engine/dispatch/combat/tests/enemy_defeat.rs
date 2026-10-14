@@ -10,10 +10,7 @@ fn defeating_victory_enemy_places_it_in_the_victory_display() {
     let mut state = GameStateBuilder::new().build();
     state.enemies.insert(eid, enemy);
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     damage_enemy(&mut cx, eid, 1, Some(InvestigatorId(1)));
 
     assert_eq!(state.victory_display, vec![CardCode::new("01116")]);
@@ -43,10 +40,7 @@ fn defeating_non_victory_enemy_places_its_card_in_the_encounter_discard() {
     let mut state = GameStateBuilder::new().build();
     state.enemies.insert(eid, enemy);
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     damage_enemy(&mut cx, eid, 1, Some(InvestigatorId(1)));
 
     assert!(state.victory_display.is_empty());
@@ -66,10 +60,7 @@ fn defeating_enemy_with_no_card_metadata_still_removes_it() {
     let mut state = GameStateBuilder::new().build();
     state.enemies.insert(eid, enemy);
     let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
+    let mut cx = Cx::for_test(&mut state, &mut events);
     damage_enemy(&mut cx, eid, 1, Some(InvestigatorId(1)));
     assert!(!state.enemies.contains_key(&eid), "defeated enemy removed");
 }
