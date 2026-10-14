@@ -24,7 +24,6 @@
 
 use std::sync::LazyLock;
 
-use card_dsl::card_data::{CardKind, CardMetadata, Class, Skills};
 use card_dsl::dsl::{
     self, Determination, Effect, HarmKind, IntExpr, InvestigatorTarget, TokenOutcome,
 };
@@ -33,59 +32,35 @@ use game_core::engine::Registries;
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
-    ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenModifiers,
+    ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId,
+    RecordedModifierKind, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{self, seat, MockRegistry, TestSession};
+use game_core::test_support::{self, seat, test_investigator_card, MockRegistry, TestSession};
 use game_core::{assert_event, assert_no_event};
 
-/// Elder sign: `+2. If you succeed, gain 2 resources.`
+/// Elder sign: modifier `+2`, and an `on_success` arm that gains 2 resources.
 const ON_SUCCESS: &str = "_es_on_success";
-/// Elder sign: `+0. If you fail, take 1 horror.`
+/// Elder sign: modifier `+0`, and an `on_fail` arm that deals 1 horror.
 const ON_FAIL: &str = "_es_on_fail";
-/// Elder sign: `+0. You automatically succeed instead.` — Wendy Adams 01005's
-/// shape with its "If Wendy's Amulet is in play" condition dropped, since the
-/// DSL has no "card is in play" condition yet (#780).
+/// Elder sign: modifier `+0`, and an `immediate` arm that is
+/// `AutoResolve(AutomaticSuccess)`, unconditionally. Wendy Adams 01005 is
+/// the motivating consumer, and registers with her own condition in #780.
 const AUTO_SUCCESS: &str = "_es_auto_success";
 
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
 
-/// An investigator card printed 3 in every skill, 8 health, 8 sanity.
-fn investigator(code: &str) -> CardMetadata {
-    CardMetadata {
-        code: code.to_owned(),
-        name: code.to_owned(),
-        traits: vec![],
-        text: None,
-        back_name: None,
-        back_text: None,
-        pack_code: "_mock".to_owned(),
-        weakness: false,
-        kind: CardKind::Investigator {
-            class: Class::Neutral,
-            skills: Skills {
-                willpower: 3,
-                intellect: 3,
-                combat: 3,
-                agility: 3,
-            },
-            health: 8,
-            sanity: 8,
-        },
-    }
-}
-
 fn registries() -> Registries {
     static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
         cards: MockRegistry::new()
-            .with_card(investigator(ON_SUCCESS))
+            .with_card(test_investigator_card(ON_SUCCESS))
             .with_abilities(ON_SUCCESS, || {
                 vec![dsl::elder_sign_with(TokenOutcome {
                     on_success: Some(dsl::gain_resources(InvestigatorTarget::You, 2)),
                     ..TokenOutcome::modifier(IntExpr::Lit(2))
                 })]
             })
-            .with_card(investigator(ON_FAIL))
+            .with_card(test_investigator_card(ON_FAIL))
             .with_abilities(ON_FAIL, || {
                 vec![dsl::elder_sign_with(TokenOutcome {
                     on_fail: Some(Effect::Deal {
@@ -96,7 +71,7 @@ fn registries() -> Registries {
                     ..TokenOutcome::default()
                 })]
             })
-            .with_card(investigator(AUTO_SUCCESS))
+            .with_card(test_investigator_card(AUTO_SUCCESS))
             .with_abilities(AUTO_SUCCESS, || {
                 vec![dsl::elder_sign_with(TokenOutcome {
                     immediate: Some(dsl::auto_resolve(Determination::AutomaticSuccess)),
@@ -112,6 +87,11 @@ fn registries() -> Registries {
 /// The investigator printed as `code`, at `HERE` (holding `clues` clues),
 /// drawing only `[elder_sign]`, with play at their turn menu.
 fn session(code: &str, clues: u8) -> TestSession {
+    TestSession::new(board(code, clues), registries())
+}
+
+/// The board [`session`] starts from.
+fn board(code: &str, clues: u8) -> GameState {
     let mut here = test_support::test_location(HERE.0, "Here");
     here.clues = clues;
     GameStateBuilder::new()
@@ -121,7 +101,7 @@ fn session(code: &str, clues: u8) -> TestSession {
         .with_chaos_bag(ChaosBag::new([ChaosToken::ElderSign]))
         .with_token_modifiers(TokenModifiers::default())
         .open_turn(INV)
-        .session()
+        .build()
 }
 
 /// A plain willpower test at `difficulty`, committing nothing, run to the end.
@@ -245,4 +225,24 @@ fn an_elder_signs_immediate_automatic_success_wins_a_test_the_numbers_lose() {
             ..
         }
     );
+    // The latched determination's recorded row names the investigator card
+    // too. Read at the post-ST.6 acknowledge, before ST.8 sweeps the row.
+    let mut state = board(AUTO_SUCCESS, 0);
+    state.interactive_acknowledge = true;
+    let paused = TestSession::new(state, registries())
+        .test_skill(INV, SkillKind::Willpower, 6)
+        .commit(&[]);
+    let state = paused.state();
+    let card = state.investigators[&INV].investigator_card.instance_id;
+    let row = state
+        .recorded_modifiers
+        .iter()
+        .find(|row| {
+            matches!(
+                row.kind,
+                RecordedModifierKind::Determination(Determination::AutomaticSuccess)
+            )
+        })
+        .expect("the elder sign latches an automatic-success row");
+    assert_eq!(row.source, Some(card));
 }

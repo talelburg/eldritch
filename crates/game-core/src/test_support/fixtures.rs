@@ -19,7 +19,7 @@
 
 use std::collections::BTreeSet;
 
-use card_dsl::card_data::{ClueValue, Prey};
+use card_dsl::card_data::{CardKind, CardMetadata, Class, ClueValue, Prey};
 use card_dsl::dsl::SkillTestKind;
 
 use crate::engine::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
@@ -69,6 +69,37 @@ pub fn test_investigator(id: u32) -> Investigator {
         removed_from_game: Vec::new(),
         action_surcharge_spent_this_round: BTreeSet::new(),
         investigator_card,
+    }
+}
+
+/// Metadata for a stock investigator card printed as `code`: 3 in every
+/// skill, 8 health, 8 sanity, Neutral, no traits, named after its code.
+///
+/// For an integration binary that registers its own synthetic investigators
+/// on a [`MockRegistry`](crate::test_support::MockRegistry), each modelling
+/// one ability shape on otherwise identical printed stats.
+#[must_use]
+pub fn test_investigator_card(code: &str) -> CardMetadata {
+    CardMetadata {
+        code: code.to_owned(),
+        name: code.to_owned(),
+        traits: vec![],
+        text: None,
+        back_name: None,
+        back_text: None,
+        pack_code: "_mock".to_owned(),
+        weakness: false,
+        kind: CardKind::Investigator {
+            class: Class::Neutral,
+            skills: Skills {
+                willpower: 3,
+                intellect: 3,
+                combat: 3,
+                agility: 3,
+            },
+            health: 8,
+            sanity: 8,
+        },
     }
 }
 

@@ -1,17 +1,17 @@
-//! An elder-sign modifier that counts the controller's horror, read live at
-//! ST.5 (ADR 0005).
+//! An elder-sign modifier of `Count(Quantity::HorrorOnController)`, read
+//! live at ST.5 (ADR 0005).
 //!
-//! The shape is Agnes Baker 01004's (`data/arkhamdb-snapshot/pack/core/core.json`):
+//! The motivating consumer is Agnes Baker 01004
+//! (`data/arkhamdb-snapshot/pack/core/core.json`), who registers in #777:
 //!
 //! > \[elder_sign\] effect: +1 for each horror on Agnes Baker.
 //!
 //! Synthetic investigators only (ADR 0016): each models the primitive, and
-//! none stands in for the printed card, which registers in #777. Its own
-//! integration-test binary, so its `MockRegistry` gets a process to itself.
+//! none stands in for the printed card. Its own integration-test binary, so
+//! its `MockRegistry` gets a process to itself.
 
 use std::sync::LazyLock;
 
-use card_dsl::card_data::{CardKind, CardMetadata, Class, Skills};
 use card_dsl::dsl::{self, Effect, HarmKind, IntExpr, InvestigatorTarget, Quantity, TokenOutcome};
 use game_core::assert_event;
 use game_core::engine::modified_value::{
@@ -24,7 +24,7 @@ use game_core::state::{
     ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId, ModifierTarget,
     SkillKind, TokenModifiers,
 };
-use game_core::test_support::{self, seat, MockRegistry, TestSession};
+use game_core::test_support::{self, seat, test_investigator_card, MockRegistry, TestSession};
 
 /// Elder sign: `+1 for each horror on you.`
 const COUNTS_HORROR: &str = "_es_counts_horror";
@@ -36,41 +36,16 @@ const TAKES_THEN_COUNTS: &str = "_es_takes_then_counts";
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
 
-/// An investigator card printed 3 in every skill, 8 health, 8 sanity.
-fn investigator(code: &str) -> CardMetadata {
-    CardMetadata {
-        code: code.to_owned(),
-        name: code.to_owned(),
-        traits: vec![],
-        text: None,
-        back_name: None,
-        back_text: None,
-        pack_code: "_mock".to_owned(),
-        weakness: false,
-        kind: CardKind::Investigator {
-            class: Class::Neutral,
-            skills: Skills {
-                willpower: 3,
-                intellect: 3,
-                combat: 3,
-                agility: 3,
-            },
-            health: 8,
-            sanity: 8,
-        },
-    }
-}
-
 fn registries() -> Registries {
     static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
         cards: MockRegistry::new()
-            .with_card(investigator(COUNTS_HORROR))
+            .with_card(test_investigator_card(COUNTS_HORROR))
             .with_abilities(COUNTS_HORROR, || {
                 vec![dsl::elder_sign(IntExpr::Count(
                     Quantity::HorrorOnController,
                 ))]
             })
-            .with_card(investigator(TAKES_THEN_COUNTS))
+            .with_card(test_investigator_card(TAKES_THEN_COUNTS))
             .with_abilities(TAKES_THEN_COUNTS, || {
                 vec![dsl::elder_sign_with(TokenOutcome {
                     immediate: Some(Effect::Deal {

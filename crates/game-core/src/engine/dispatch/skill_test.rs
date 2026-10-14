@@ -493,31 +493,39 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
     // investigator card as source, so whatever it latches names that card.
     let token_idx = cx.state.rng.next_index(cx.state.chaos_bag.tokens.len());
     let token = cx.state.chaos_bag.tokens[token_idx];
-    let (outcome, source) = match token {
-        ChaosToken::Skull | ChaosToken::Cultist | ChaosToken::Tablet | ChaosToken::ElderThing => (
-            scenario::resolve_symbol_token(cx.scenario, cx.state, token, investigator),
-            None,
-        ),
+    let printed = state::resolve_token(token, &cx.state.token_modifiers);
+    let (outcome, source, resolution) = match token {
+        ChaosToken::Skull | ChaosToken::Cultist | ChaosToken::Tablet | ChaosToken::ElderThing => {
+            let outcome =
+                scenario::resolve_symbol_token(cx.scenario, cx.state, token, investigator);
+            // A scenario symbol's modifier is evaluated once for the
+            // announcement only; the row below stays the unevaluated
+            // expression. An unexpressible condition contributes nothing to
+            // the fold, so it announces `0`.
+            let resolution = match &outcome {
+                Some(o) => {
+                    let ctx = EvalContext::for_controller_with_optional_source(investigator, None);
+                    TokenResolution::Modifier(
+                        evaluator::eval_int_expr(cx.state, cx.cards, &ctx, &o.modifier)
+                            .unwrap_or(0),
+                    )
+                }
+                None => printed,
+            };
+            (outcome, None, resolution)
+        }
+        // The elder sign keeps its own resolution label.
         ChaosToken::ElderSign => (
             modified_value::elder_sign_outcome(cx.state, cx.cards, investigator),
             cx.state
                 .investigators
                 .get(&investigator)
                 .map(|inv| AbilitySource::InPlay(inv.investigator_card.instance_id)),
+            printed,
         ),
-        _ => (None, None),
+        _ => (None, None, printed),
     };
     let ctx = EvalContext::for_controller_with_optional_source(investigator, source);
-    let resolution = match &outcome {
-        // A scenario symbol's modifier is evaluated once for the announcement
-        // only; the row below stays the unevaluated expression. An
-        // unexpressible condition contributes nothing to the fold, so it
-        // announces `0`. The elder sign keeps its own resolution label.
-        Some(o) if token != ChaosToken::ElderSign => TokenResolution::Modifier(
-            evaluator::eval_int_expr(cx.state, cx.cards, &ctx, &o.modifier).unwrap_or(0),
-        ),
-        _ => state::resolve_token(token, &cx.state.token_modifiers),
-    };
     cx.events
         .push(Event::ChaosTokenRevealed { token, resolution });
     record_token_contribution(
