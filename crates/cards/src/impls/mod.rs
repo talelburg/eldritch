@@ -88,6 +88,7 @@ use game_core::card_registry::{NativeConditionFn, NativeEffectFn};
 
 pub mod agnes_baker;
 pub mod ancient_evils;
+pub mod arcane_studies;
 pub mod attic;
 pub mod automatic_45;
 pub mod barricade;
@@ -99,9 +100,11 @@ pub mod deduction;
 pub mod dissonant_voices;
 pub mod dodge;
 pub mod dr_milan_christopher;
+pub mod drawn_to_the_flame;
 pub mod dynamite_blast;
 pub mod emergency_cache;
 pub mod evidence;
+pub mod fearless;
 pub mod first_aid;
 pub mod flashlight;
 pub mod frozen_in_fear;
@@ -213,6 +216,7 @@ impl CardRecord {
 pub const ALL: &[CardRecord] = &[
     agnes_baker::CARD,
     ancient_evils::CARD,
+    arcane_studies::CARD,
     attic::CARD,
     automatic_45::CARD,
     barricade::CARD,
@@ -224,9 +228,11 @@ pub const ALL: &[CardRecord] = &[
     dissonant_voices::CARD,
     dodge::CARD,
     dr_milan_christopher::CARD,
+    drawn_to_the_flame::CARD,
     dynamite_blast::CARD,
     emergency_cache::CARD,
     evidence::CARD,
+    fearless::CARD,
     first_aid::CARD,
     flashlight::CARD,
     frozen_in_fear::CARD,
