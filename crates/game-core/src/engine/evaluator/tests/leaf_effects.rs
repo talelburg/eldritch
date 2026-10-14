@@ -1,18 +1,41 @@
 use super::*;
+use card_dsl::dsl::EventTiming;
+
+use crate::state::{
+    EmitEventFrame, TimingMode, TimingPointFrame, TimingPointWindowFrame, TimingSub,
+};
 use crate::test_support::TEST_REGISTRIES;
 
+/// `Effect::Cancel` flags the condition whose `when` cell is open (#1055):
+/// stage the frames a coordinator leaves under a `when`-cell window, the fired
+/// candidate already taken out of it.
 #[test]
-fn cancel_effect_sets_pending_cancellation() {
-    // Effect::Cancel asserts an open window frame is present; stage a minimal one.
+fn cancel_effect_flags_the_condition_in_its_when_cell() {
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
-        .with_open_window(
-            FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
-            FastActorScope::Any,
-        )
         .build();
-    assert!(!state.pending_cancellation);
+    let discovery = TimingEvent::DiscoverClues {
+        investigator: InvestigatorId(1),
+        location: LocationId(10),
+        count: 1,
+    };
+    state.continuations.push(EmitEventFrame {
+        event: discovery.clone(),
+        step: EmitStep::When,
+        prevented: false,
+    });
+    state.continuations.push(TimingPointFrame {
+        event: discovery.clone(),
+        bucket: EventTiming::When,
+        sub: TimingSub::Done,
+    });
+    state.continuations.push(TimingPointWindowFrame {
+        event: discovery,
+        bucket: EventTiming::When,
+        mode: TimingMode::Reaction,
+        candidates: Vec::new(),
+    });
     let mut events = Vec::new();
     let outcome = run(
         &mut Cx::for_test(&mut state, &mut events),
@@ -20,7 +43,13 @@ fn cancel_effect_sets_pending_cancellation() {
         ctx(1),
     );
     assert_eq!(outcome, EngineOutcome::Done);
-    assert!(state.pending_cancellation);
+    assert!(
+        state
+            .continuations
+            .topmost_of::<EmitEventFrame>()
+            .expect("the condition is still on the stack")
+            .prevented
+    );
 }
 
 /// `Effect::BoostAttackDamage` accumulates onto the in-flight test's

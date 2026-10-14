@@ -653,6 +653,7 @@ pub(crate) fn queue_event(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
     cx.state.continuations.push(EmitEventFrame {
         event: event.clone(),
         step: EmitStep::When,
+        prevented: false,
     });
     EngineOutcome::Done
 }

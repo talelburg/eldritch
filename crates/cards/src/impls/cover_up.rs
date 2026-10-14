@@ -80,8 +80,8 @@ pub fn abilities() -> Vec<Ability> {
             // "Discard that many clues from Cover Up instead": run the discard,
             // then cancel the discovery — cancel = degenerate replacement
             // (Axis D #336). The `when` cell resolves before the clues move, and
-            // the coordinator abandons the sequence when `pending_cancellation`
-            // is set (#703, #714), so the discovery never happens — and neither
+            // the coordinator abandons the sequence the cancel flagged (#703,
+            // #714, #1055), so the discovery never happens — and neither
             // does any other ability referencing it. `glossary/Instead.md`: this
             // "would" replacement changes the nature of the triggering
             // condition, so *"No further abilities referencing the original

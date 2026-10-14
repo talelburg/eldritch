@@ -550,7 +550,6 @@ impl GameStateBuilder {
             recorded_modifiers: Vec::new(),
             continuations,
             scenario_id: self.scenario_id,
-            pending_cancellation: false,
             skill_substitutions: Vec::new(),
             encounter_deck: VecDeque::new(),
             encounter_discard: Vec::new(),

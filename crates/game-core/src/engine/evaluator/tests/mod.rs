@@ -5,9 +5,8 @@ use super::*;
 use crate::action::InputResponse;
 use crate::engine::dispatch::coordinator;
 use crate::state::{
-    Act, Agenda, CardInPlay, DifficultyBasis, FastActorScope, FastWindowKind, GameStateBuilder,
-    InFlightSkillTest, PhaseStep, RecordedModifierKind, SkillKind, SkillTestFollowUp, SkillTestId,
-    SkillTestStep, Status,
+    Act, Agenda, CardInPlay, DifficultyBasis, GameStateBuilder, InFlightSkillTest,
+    RecordedModifierKind, SkillKind, SkillTestFollowUp, SkillTestId, SkillTestStep, Status,
 };
 use crate::test_support::{seat, SeatLookup as _, TEST_REGISTRIES};
 use crate::{assert_event, assert_no_event, test_support};

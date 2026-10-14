@@ -33,7 +33,7 @@ use game_core::engine::Registries;
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
-    CardCode, Enemy, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase,
+    CardCode, Continuation, Enemy, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
 use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
 use std::sync::LazyLock;
@@ -281,9 +281,12 @@ fn a_cancelled_attack_suppresses_the_at_and_after_cells_but_still_exhausts() {
     );
     assert_event!(r.events(), Event::EnemyExhausted { enemy } if *enemy == ATTACKER);
     assert!(
-        !r.state().pending_cancellation,
-        "the signal must be consumed at the resolve step, not left to catch the \
-         next condition"
+        !r.state()
+            .continuations
+            .iter()
+            .any(|c| matches!(c, Continuation::EmitEvent(e) if e.prevented)),
+        "the cancelled condition must leave the stack at its resolve step; stack = {:?}",
+        r.state().continuations
     );
 }
 

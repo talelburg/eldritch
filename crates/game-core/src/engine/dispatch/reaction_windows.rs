@@ -25,8 +25,9 @@ use crate::engine::outcome::{
 use crate::engine::{abilities_in_effect, ability_source, Cx};
 use crate::event::{Event, LapseReason};
 use crate::state::{
-    CandidateSource, Continuation, FastActorScope, FastWindowFrame, FastWindowKind, GameState,
-    InvestigatorId, PlayFromHandFrame, ResolutionCandidate, TimingMode, TimingPointWindowFrame,
+    CandidateSource, Continuation, EmitEventFrame, FastActorScope, FastWindowFrame, FastWindowKind,
+    GameState, InvestigatorId, PlayFromHandFrame, ResolutionCandidate, TimingMode,
+    TimingPointWindowFrame,
 };
 
 /// Push a reaction window frame for `candidates` at `bucket`. The shared push
@@ -279,7 +280,9 @@ fn withdraw_lapsed_candidates(cx: &mut Cx) -> usize {
 /// options are still perfectly initiable, and would still be found by a fresh
 /// scan. What has gone is the condition they reference. The rule and its
 /// citations are on `coordinator::prevented_in_the_when_cell`, which reads the
-/// same signal one frame down; the half that matters here is
+/// same flag — the window's own condition's
+/// [`EmitEventFrame::prevented`](crate::state::EmitEventFrame::prevented), the
+/// nearest `EmitEvent` beneath the window (#1055); the half that matters here is
 /// that Dodge 01023's ruling covers a `when`-cell ability, so the suppression
 /// reaches the rest of the *current* cell and not only the cells after it.
 ///
@@ -298,7 +301,14 @@ fn withdraw_lapsed_candidates(cx: &mut Cx) -> usize {
 /// `crates/cards/tests/dodge.rs` proves it against Silver Twilight Acolyte
 /// 01102. `0` for any other top frame, so the callers need no guard.
 fn withdraw_suppressed_candidates(cx: &mut Cx) -> usize {
-    if !cx.state.pending_cancellation {
+    // A window is pushed straight above its cell's `TimingPoint`, which sits
+    // straight above its condition's `EmitEvent`: the nearest one down is ours.
+    if !cx
+        .state
+        .continuations
+        .topmost_of::<EmitEventFrame>()
+        .is_some_and(|condition| condition.prevented)
+    {
         return 0;
     }
     let suppressed = match cx.state.continuations.top() {

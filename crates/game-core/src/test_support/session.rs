@@ -285,6 +285,7 @@ impl TestSession {
             cx.state.continuations.push(EmitEventFrame {
                 event,
                 step: EmitStep::When,
+                prevented: false,
             });
             engine::drive(cx, EngineOutcome::Done)
         })

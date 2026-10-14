@@ -2300,6 +2300,23 @@ pub struct EmitEventFrame {
     /// (`crates/server/src/session.rs`), so no persisted artifact can carry
     /// this field.
     pub step: EmitStep,
+    /// Whether a `when`-cell ability has **prevented** this condition — set by
+    /// [`Effect::Cancel`] on the topmost frame still at [`EmitStep::When`]
+    /// (Axis D #336; Cover Up 01007, Dodge 01023,
+    /// Ward of Protection 01065). While set, the rest of the sequence is
+    /// abandoned: the rest of the `when` cell, the resolve step, and the `at`
+    /// and `after` cells (#714). The citations live on
+    /// `coordinator::prevented_in_the_when_cell`, which reads it.
+    ///
+    /// On the frame rather than on [`GameState`](crate::state::GameState), so
+    /// the cancel names the condition it prevents (#1055). A condition emitted
+    /// *after* the cancel within the same effect — Ward's *"Then, take 1
+    /// horror"* — is a frame of its own, starts unprevented, and resolves; the
+    /// former single global bool was consumed by whichever resolve step ran
+    /// next. A flag rather than a stack position, because positions shift when
+    /// a scenario ending is inserted at the bottom mid-sequence. Same wire
+    /// story as `step`: the frame lives only in memory, mid-sequence.
+    pub prevented: bool,
 }
 
 /// Coordinator: one timing bucket of an [`EmitEvent`](EmitEventFrame) walk,

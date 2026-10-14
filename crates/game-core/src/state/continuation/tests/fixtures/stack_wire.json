@@ -269,7 +269,8 @@
   {
     "EmitEvent": {
       "event": "RoundEnded",
-      "step": "After"
+      "step": "After",
+      "prevented": false
     }
   },
   {

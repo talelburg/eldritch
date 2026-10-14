@@ -1635,10 +1635,12 @@ pub enum Effect {
     /// 01168). Rejects if there is no source or the instance isn't in play.
     DiscardSelf,
     /// Cancel the current cancellable game impact — the subject of the
-    /// Before-timing window this effect resolves inside. Sets the engine's
-    /// `pending_cancellation` signal, which the emit site honors after the
-    /// window closes, skipping the prevented impact (an enemy attack's
-    /// damage/horror — Dodge 01023; or a clue discovery — Cover Up 01007).
+    /// `when`-cell window this effect resolves inside. Flags that triggering
+    /// condition as prevented (the engine's `EmitEventFrame::prevented`, #1055),
+    /// and its timing coordinator skips the prevented impact at its resolve step
+    /// (an enemy attack's damage/horror — Dodge 01023; or a clue discovery —
+    /// Cover Up 01007). The flag is the condition's own, so a condition the same
+    /// effect emits after the cancel still resolves.
     /// RR p.6: the cancelled thing is "still regarded as initiated", only
     /// its effects are prevented. (Axis D #336.)
     ///
