@@ -12,7 +12,7 @@
 //! the card prints: it tests `[willpower]` in place of `[combat]` (the
 //! designator's skill override), deals `1 + 1` damage on success, and carries
 //! the horror clause onto the attack's skill test as a
-//! [`RevealClause`](card_dsl::dsl::RevealClause). The ability's own effect is
+//! [`RevealClause`]. The ability's own effect is
 //! empty.
 //!
 //! The horror is not a reaction to the token. Ruling
