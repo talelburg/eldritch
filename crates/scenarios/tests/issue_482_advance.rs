@@ -5,19 +5,12 @@
 
 use game_core::action::RosterEntry;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, InputKind, OptionTarget};
-use game_core::scenario_registry;
+use game_core::engine::{InputKind, OptionTarget};
 use game_core::state::{CardCode, InvestigatorId};
-use game_core::test_support::{self, TestSession};
+use game_core::test_support::TestSession;
 use scenarios::the_gathering;
 
 const INV: InvestigatorId = InvestigatorId(1);
-
-#[ctor::ctor(unsafe)]
-fn install_registries() {
-    let _ = scenario_registry::install(scenarios::REGISTRY);
-    test_support::install_registry_with_test_cards(cards::REGISTRY);
-}
 
 /// Seat Roland, set agenda doom to threshold-1, give the lead a card (so the
 /// random-discard branch is legal and the `ChooseOne` genuinely suspends), and
@@ -29,10 +22,18 @@ fn drive_to_mythos_advance(interactive: bool) -> TestSession {
         deck: vec![],
     }];
     // seat_and_open rests at the mulligan; Roland keeps his (empty) hand.
-    let mut state = TestSession::new(engine::seat_and_open(the_gathering::setup(), &roster).state)
-        .choose_from_hand(&[])
-        .finish()
-        .state;
+    let mut state = TestSession::new_with_registries(
+        game_core::engine::seat_and_open_with_registries(
+            the_gathering::setup(),
+            &roster,
+            scenarios::TEST_REGISTRIES,
+        )
+        .state,
+        scenarios::TEST_REGISTRIES,
+    )
+    .choose_from_hand(&[])
+    .finish()
+    .state;
     let threshold = state.agenda_deck[state.agenda_index].doom_threshold;
     state.agenda_doom = threshold - 1;
     state.encounter_discard.clear();
@@ -43,7 +44,7 @@ fn drive_to_mythos_advance(interactive: bool) -> TestSession {
         .unwrap()
         .hand
         .push(CardCode::new("01088"));
-    TestSession::new(state).take(&TurnAction::EndTurn)
+    TestSession::new_with_registries(state, scenarios::TEST_REGISTRIES).take(&TurnAction::EndTurn)
 }
 
 #[test]
