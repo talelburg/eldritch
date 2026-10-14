@@ -6,11 +6,12 @@ use std::collections::BTreeMap;
 use card_dsl::dsl::{ActionDesignator, Cost, Effect, Trigger, UsageLimit};
 
 use crate::card_registry;
-use crate::engine::dispatch::actions::take::{self, ActionDescription};
-use crate::engine::dispatch::combat;
-use crate::engine::dispatch::initiation;
-use crate::engine::dispatch::legality::{self, ActivateCheckResult};
-use crate::engine::dispatch::uses::{self, SpendUsesError};
+use crate::engine::dispatch::{
+    actions::take::{self, ActionDescription},
+    combat, initiation,
+    legality::{self, ActivateCheckResult},
+    uses::{self, SpendUsesError},
+};
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::{abilities_in_effect, ability_source, board, Cx};

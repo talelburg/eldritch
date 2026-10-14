@@ -1211,10 +1211,7 @@ mod grant_resources_tests {
 #[cfg(test)]
 mod draw_with_deckout_tests {
     use super::*;
-    use crate::state::{
-        Continuation, DamageSource, DealDamageFrame, DealDamageStep, GameState, GameStateBuilder,
-        InvestigatorId,
-    };
+    use crate::state::{Continuation, GameState, GameStateBuilder, InvestigatorId};
     use crate::test_support;
 
     /// The deck-out horror is dealt, not placed: the draw's tail is one
@@ -1227,22 +1224,7 @@ mod draw_with_deckout_tests {
             .filter(|c| matches!(c, Continuation::DealDamage(_)))
             .collect();
         assert_eq!(deals.len(), 1, "one deal for the whole draw: {deals:?}");
-        assert!(
-            matches!(
-                state.continuations.top(),
-                Some(Continuation::DealDamage(DealDamageFrame {
-                    investigator,
-                    source: DamageSource::Effect,
-                    step: DealDamageStep::Distribute {
-                        remaining_damage: 0,
-                        remaining_horror: 1,
-                    },
-                    ..
-                })) if *investigator == id
-            ),
-            "deck-out horror deal frame on top, got {:?}",
-            state.continuations.top()
-        );
+        test_support::assert_effect_deal(state.continuations.top(), id, 0, 1);
         assert_eq!(
             state.investigators[&id].horror(),
             0,

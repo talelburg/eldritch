@@ -94,9 +94,7 @@ fn discard_asset_instance(cx: &mut NativeCx, instance: CardInstanceId) -> Engine
 #[cfg(test)]
 mod tests {
     use card_dsl::dsl::Effect;
-    use game_core::state::{
-        CardCode, Continuation, DamageSource, DealDamageFrame, DealDamageStep, GameStateBuilder,
-    };
+    use game_core::state::{CardCode, GameStateBuilder};
     use game_core::test_support::{self, seat};
 
     use super::*;
@@ -176,22 +174,7 @@ mod tests {
         let ctx = EvalContext::for_controller(InvestigatorId(1));
         let (out, _) = test_support::run_native(&mut state, crypt_chill_fail, &ctx);
         assert_eq!(out, EngineOutcome::Done);
-        assert!(
-            matches!(
-                state.continuations.top(),
-                Some(Continuation::DealDamage(DealDamageFrame {
-                    investigator: InvestigatorId(1),
-                    source: DamageSource::Effect,
-                    step: DealDamageStep::Distribute {
-                        remaining_damage: 2,
-                        remaining_horror: 0,
-                    },
-                    ..
-                }))
-            ),
-            "expected a DealDamage{{Effect}} frame for 2 damage, got {:?}",
-            state.continuations.top()
-        );
+        test_support::assert_effect_deal(state.continuations.top(), InvestigatorId(1), 2, 0);
         assert_eq!(state.investigators[&InvestigatorId(1)].damage(), 0);
     }
 }

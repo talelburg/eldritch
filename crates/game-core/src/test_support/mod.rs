@@ -22,6 +22,7 @@ use crate::card_registry::{self, CardRegistry};
 use crate::state::CardCode;
 
 pub mod assertions;
+mod deal;
 mod fixtures;
 mod mock_registry;
 mod native;
@@ -312,6 +313,7 @@ fn install_for_unit_tests() {
     install_test_registry();
 }
 
+pub use deal::assert_effect_deal;
 pub use fixtures::{
     awaiting_commit_input, awaiting_confirm_input, awaiting_pick_single_input,
     awaiting_pick_single_with, awaiting_request, awaiting_skippable_commit_input,

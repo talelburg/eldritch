@@ -268,18 +268,7 @@ fn deal_harm_walks_distribute_announce_place_finish_from_an_effect() {
     };
 
     assert_eq!(deal_harm(&mut cx, id, 0, 1), EngineOutcome::Done);
-    assert!(matches!(
-        cx.state.continuations.top(),
-        Some(Continuation::DealDamage(DealDamageFrame {
-            investigator,
-            source: DamageSource::Effect,
-            step: DealDamageStep::Distribute {
-                remaining_damage: 0,
-                remaining_horror: 1,
-            },
-            ..
-        })) if *investigator == id
-    ));
+    test_support::assert_effect_deal(cx.state.continuations.top(), id, 0, 1);
 
     // Distribute drains (no soaker), then Announce emits DamageAssigned.
     assert_eq!(drive_deal_damage(&mut cx), EngineOutcome::Done);

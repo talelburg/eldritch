@@ -122,24 +122,25 @@ fn blast_location(cx: &mut NativeCx, controller: InvestigatorId, loc: LocationId
         .collect();
     // One deal per investigator, pushed in reverse id order so they resolve
     // ascending: each deal (its soak prompt, both conditions, any reaction)
-    // completes before the next frame is exposed. Every push returns `Done`
-    // and this is the native's tail (ADR 0003), so nothing runs after it.
-    for inv in investigators.into_iter().rev() {
-        let _ = cx.deal_harm(inv, DAMAGE, 0);
-    }
-
-    EngineOutcome::Done
+    // completes before the next frame is exposed. The deals are the native's
+    // tail (ADR 0003): every push returns `Done`, and the fold returns the
+    // last one's outcome, so nothing runs after them.
+    investigators
+        .into_iter()
+        .rev()
+        .fold(EngineOutcome::Done, |_, inv| cx.deal_harm(inv, DAMAGE, 0))
 }
 
 #[cfg(test)]
 mod tests {
     use card_dsl::dsl::{Effect, Trigger};
-    use game_core::state::{
-        Continuation, DamageSource, DealDamageFrame, DealDamageStep, GameStateBuilder,
-    };
+    use game_core::state::{Continuation, GameStateBuilder};
     use game_core::test_support;
 
     use super::*;
+
+    /// The lone location, with no connections, so the blast auto-targets it.
+    const HERE: LocationId = LocationId(1);
 
     #[test]
     fn one_on_play_native_blast() {
@@ -164,10 +165,9 @@ mod tests {
         // Sole candidate (controller's location, no connections). With
         // interactive_acknowledge on, the blast target must surface as a
         // one-option pick rather than auto-targeting silently (#466).
-        let here = LocationId(1);
-        let loc = test_support::test_location(here.0, "Lonely Spot"); // no connections by default
+        let loc = test_support::test_location(HERE.0, "Lonely Spot"); // no connections by default
         let mut state = GameStateBuilder::new()
-            .with_seat(test_support::seat(1).at(here))
+            .with_seat(test_support::seat(1).at(HERE))
             .with_location(loc)
             .build();
         state.interactive_acknowledge = true;
@@ -191,42 +191,25 @@ mod tests {
         // 3 damage through the one harm adapter (#1028), investigator 1's
         // frame on top so the deals resolve in ascending id order. Nothing is
         // placed until the frames run.
-        let here = LocationId(1);
         let mut state = GameStateBuilder::new()
-            .with_seat(test_support::seat(1).at(here))
-            .with_seat(test_support::seat(2).at(here))
-            .with_location(test_support::test_location(here.0, "Lonely Spot"))
+            .with_seat(test_support::seat(1).at(HERE))
+            .with_seat(test_support::seat(2).at(HERE))
+            .with_location(test_support::test_location(HERE.0, "Lonely Spot"))
             .build();
         let ctx = EvalContext::for_controller(InvestigatorId(1));
         let (out, _) = test_support::run_native(&mut state, dynamite_blast, &ctx);
         assert_eq!(out, EngineOutcome::Done);
 
-        let deals: Vec<(InvestigatorId, DamageSource, &DealDamageStep)> = state
+        // Top first.
+        let deals: Vec<&Continuation> = state
             .continuations
             .iter()
             .rev()
-            .filter_map(|frame| match frame {
-                Continuation::DealDamage(DealDamageFrame {
-                    investigator,
-                    source,
-                    step,
-                    ..
-                }) => Some((*investigator, *source, step)),
-                _ => None,
-            })
+            .filter(|frame| matches!(frame, Continuation::DealDamage(_)))
             .collect();
-        let three = DealDamageStep::Distribute {
-            remaining_damage: 3,
-            remaining_horror: 0,
-        };
-        assert_eq!(
-            deals,
-            vec![
-                (InvestigatorId(1), DamageSource::Effect, &three),
-                (InvestigatorId(2), DamageSource::Effect, &three),
-            ],
-            "top first",
-        );
+        assert_eq!(deals.len(), 2, "one deal per investigator: {deals:?}");
+        test_support::assert_effect_deal(Some(deals[0]), InvestigatorId(1), 3, 0);
+        test_support::assert_effect_deal(Some(deals[1]), InvestigatorId(2), 3, 0);
         assert_eq!(state.investigators[&InvestigatorId(1)].damage(), 0);
         assert_eq!(state.investigators[&InvestigatorId(2)].damage(), 0);
     }

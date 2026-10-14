@@ -2,7 +2,9 @@ use super::*;
 use crate::engine::enumerate::TurnAction;
 use crate::engine::outcome::EngineOutcome;
 use crate::event::Event;
-use crate::state::{EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase, Status};
+use crate::state::{
+    EnemyId, FastActorScope, GameStateBuilder, InvestigatorId, LocationId, Phase, Status,
+};
 use crate::test_support::{self, SeatLookup as _, TestSession};
 use crate::{assert_event, assert_event_sequence, assert_no_event};
 
@@ -239,19 +241,24 @@ fn ready_exhausted_cards_keeps_existing_engagement_no_duplicate() {
     assert_no_event!(events, Event::EnemyEngaged { .. });
 }
 
-/// Settle a session staged at the Upkeep anchor's post-4.1 resume, so steps
-/// 4.2–4.6 run through the drive loop.
+/// Stage the post-4.1 player window open over the Upkeep anchor, then close it,
+/// so steps 4.2–4.6 run through the drive loop.
 fn run_upkeep(builder: GameStateBuilder) -> TestSession {
     builder
         .with_phase(Phase::Upkeep)
         .with_phase_anchor(UpkeepPhaseFrame {
             resume: UpkeepResume::Begins,
         })
+        .with_open_window(
+            FastWindowKind::Phase(PhaseStep::UpkeepBegins),
+            FastActorScope::Any,
+        )
         .session()
+        .skip()
 }
 
 #[test]
-fn upkeep_draw_and_resource_draws_and_grants_per_active_investigator() {
+fn upkeep_draws_and_grants_a_resource_to_each_active_investigator_only() {
     let (a, b, c) = (InvestigatorId(1), InvestigatorId(2), InvestigatorId(3));
     let builder = GameStateBuilder::default()
         .with_seat(test_support::seat(1).deck(["filler0"]))
