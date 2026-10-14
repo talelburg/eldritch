@@ -23,6 +23,7 @@ use crate::common::TEST_SCENARIO_ID;
 async fn seed(pool: &SqlitePool, game_id: &str) {
     GameSession::create(
         pool.clone(),
+        common::REGISTRIES,
         game_id,
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
@@ -33,7 +34,6 @@ async fn seed(pool: &SqlitePool, game_id: &str) {
 
 #[tokio::test]
 async fn reconnect_delivers_in_flight_awaiting_input() {
-    common::install_registry();
     let pool = common::memory_pool().await;
     seed(&pool, "g-resume").await;
     let addr = common::spawn_server(pool).await;
@@ -65,7 +65,6 @@ async fn reconnect_delivers_in_flight_awaiting_input() {
 
 #[tokio::test]
 async fn restart_restores_awaiting_input_from_persisted_seed_outcome() {
-    common::install_registry();
     let pool = common::memory_pool().await;
     seed(&pool, "g-restart").await;
 
@@ -87,7 +86,6 @@ async fn restart_restores_awaiting_input_from_persisted_seed_outcome() {
 
 #[tokio::test]
 async fn resolve_input_resumes_and_completes() {
-    common::install_registry();
     let pool = common::memory_pool().await;
     seed(&pool, "g-do-resolve").await;
     let addr = common::spawn_server(pool).await;
@@ -121,7 +119,6 @@ async fn resolve_input_resumes_and_completes() {
 
 #[tokio::test]
 async fn invalid_mulligan_response_is_rejected() {
-    common::install_registry();
     let pool = common::memory_pool().await;
     seed(&pool, "g-busy").await;
     let addr = common::spawn_server(pool).await;

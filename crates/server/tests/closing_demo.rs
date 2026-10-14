@@ -49,10 +49,10 @@ fn applied_events(msg: ServerMessage) -> Vec<Event> {
 
 #[tokio::test]
 async fn phase_5_closing_demo() {
-    common::install_registry();
     let pool = common::memory_pool().await;
     GameSession::create(
         pool.clone(),
+        common::REGISTRIES,
         "demo",
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
