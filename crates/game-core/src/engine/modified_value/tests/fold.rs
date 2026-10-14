@@ -85,8 +85,8 @@ fn a_breakdown_attributes_each_contribution_to_its_source() {
     assert_eq!(breakdown.total(), 3);
 }
 
-/// `elder_sign_expr` reads the controller's investigator card's
-/// `Trigger::ElderSign { modifier }` and hands back the expression
+/// `elder_sign_outcome` reads the controller's investigator card's
+/// `Trigger::ElderSign { outcome }`, whose modifier is the expression
 /// itself. Roland's `Count(CluesAtControllerLocation)` evaluates to the
 /// clue count at his location; an investigator with no elder-sign
 /// ability has no expression to record at all.
@@ -101,7 +101,8 @@ fn an_elder_sign_modifier_evaluates_its_expression() {
         .with_investigator(inv)
         .with_location(loc)
         .build();
-    let expr = elder_sign_expr(&state, &mock_registry(), InvestigatorId(1))
+    let expr = elder_sign_outcome(&state, &mock_registry(), InvestigatorId(1))
+        .map(|outcome| outcome.modifier)
         .expect("the investigator card carries an elder-sign ability");
     let ctx = EvalContext::for_controller(InvestigatorId(1));
     assert_eq!(
@@ -113,7 +114,8 @@ fn an_elder_sign_modifier_evaluates_its_expression() {
     plain.investigator_card.code = CardCode::new("no-elder-sign");
     let state = GameStateBuilder::new().with_investigator(plain).build();
     assert_eq!(
-        elder_sign_expr(&state, &mock_registry(), InvestigatorId(2)),
+        elder_sign_outcome(&state, &mock_registry(), InvestigatorId(2))
+            .map(|outcome| outcome.modifier),
         None
     );
 }

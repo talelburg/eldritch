@@ -802,18 +802,6 @@ pub(crate) fn elder_sign_outcome(
     })
 }
 
-/// The modifier of [`elder_sign_outcome`], copied unevaluated: the
-/// projection the fold tests pin the elder-sign row's expression through.
-#[cfg(test)]
-#[must_use]
-pub(crate) fn elder_sign_expr(
-    state: &GameState,
-    registry: &CardRegistry,
-    controller: InvestigatorId,
-) -> Option<card_dsl::dsl::IntExpr> {
-    elder_sign_outcome(state, registry, controller).map(|outcome| outcome.modifier)
-}
-
 /// The [`Stat`] a tested [`SkillKind`] names.
 ///
 /// The one place the two vocabularies are mapped: [`stat_matches`] reads it
