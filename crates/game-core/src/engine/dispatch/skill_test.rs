@@ -164,6 +164,7 @@ pub(in crate::engine) fn start_skill_test(
             bonus_clues_discovered: 0,
             resolved: None,
             token_results: Box::default(),
+            revealed: None,
         }));
     // The initiating effect's one-shot modifier becomes a row scoped to the
     // test just minted — the weapon's "+N for this attack" and Flashlight's
@@ -458,8 +459,10 @@ pub(super) fn acknowledge_outcome(cx: &mut Cx) -> EngineOutcome {
 /// outcome's result-conditional parts (Cultist 01104's `on_fail` horror) are
 /// stashed on [`token_results`](InFlightSkillTest::token_results) for the ST.7
 /// [`ApplyTokenResult`](SkillTestStep::ApplyTokenResult) step, which picks one
-/// by the (by then known) result. Pre-advances to `DetermineOutcome`
-/// **before** pushing the immediate effect (the suspend/resume invariant).
+/// by the (by then known) result. The token and its announced resolution are
+/// also kept on [`revealed`](InFlightSkillTest::revealed), a display record
+/// nothing reads back; the skip above leaves it `None`. Pre-advances to
+/// `DetermineOutcome` **before** pushing the immediate effect (the suspend/resume invariant).
 ///
 /// A scenario symbol's modifier is an [`IntExpr`]. The recorded row keeps it
 /// unevaluated, so ST.5 reads it live; the `i8` that
@@ -533,6 +536,8 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
             .current_skill_test_mut()
             .expect("run_resolution: the SkillTest frame must exist");
         *t.token_results = token_results;
+        // The display record of what was just announced; nothing reads it back.
+        t.revealed = Some((token, resolution));
         t.continuation = SkillTestStep::DetermineOutcome;
     }
 
@@ -820,6 +825,7 @@ fn determine_outcome_step(
         failed_by,
         margin,
         fail_reason,
+        total,
     });
 
     // ST.6 logged events — emitted here, so they follow the ST.4 immediate

@@ -120,7 +120,8 @@
         "on_success": null,
         "on_fail": null,
         "source": null
-      }
+      },
+      "revealed": null
     }
   },
   {
