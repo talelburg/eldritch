@@ -3,38 +3,6 @@ use crate::state::EmitEventFrame;
 use crate::test_support::SeatLookup as _;
 
 #[test]
-fn soak_and_place_with_no_soakers_matches_old_behavior() {
-    // Regression guard for the assign/place/window rewrite: an attack
-    // of 2 damage / 1 horror against an investigator controlling no
-    // soak-bearing assets must land entirely on the investigator, just
-    // as the pre-rewrite direct apply_damage/horror_numeric path did.
-    let id = InvestigatorId(1);
-    // max_health()/max_sanity() now read from the registry (TEST_INV = 8/8).
-    // 2 damage and 1 horror both land below capacity, so no defeat fires.
-    // The old explicit max_health = 10 / max_sanity = 10 are vestigial.
-
-    let mut state = GameStateBuilder::new()
-        .with_seat(test_support::seat(1))
-        .build();
-    let mut events = Vec::new();
-    let mut cx = Cx {
-        state: &mut state,
-        events: &mut events,
-    };
-
-    soak_and_place(&mut cx, id, 2, 1);
-
-    assert_eq!(state.investigators[&id].damage(), 2, "all damage on inv");
-    assert_eq!(state.investigators[&id].horror(), 1, "all horror on inv");
-    assert_event!(events, Event::DamageTaken { investigator, amount: 2 } if *investigator == id);
-    assert_event!(events, Event::HorrorTaken { investigator, amount: 1 } if *investigator == id);
-    assert!(
-        state.open_windows().is_empty(),
-        "no soak window without soakers"
-    );
-}
-
-#[test]
 fn advance_distribution_drains_without_soakers_and_prompts_with_one() {
     // No soaker → fully deterministic: all damage to the investigator, drained.
     let mut asg = Assignment::default();
@@ -286,7 +254,7 @@ fn soak_options_anchor_assets_to_card_instances() {
 /// does (#727): `deal_harm` parks a `DealDamage { source: Effect }` frame, and
 /// the walk announces `DamageAssigned` then `DamagePlaced` before anything
 /// lands. Walked once here on the kernel adapter; each caller (Crypt Chill, the
-/// deck-out penalty) only asserts that it pushes this frame.
+/// deck-out penalty, Dynamite Blast) only asserts that it pushes this frame.
 #[test]
 fn deal_harm_walks_distribute_announce_place_finish_from_an_effect() {
     let id = InvestigatorId(1);

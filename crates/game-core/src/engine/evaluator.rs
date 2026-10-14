@@ -1716,8 +1716,7 @@ fn deal_effect(
     // `DealDamage` frame: distribution across soakers + self (#44/K5b-2, prompting
     // per contested point), then the `DamageAssigned` and `DamagePlaced`
     // conditions. This call is therefore **tail position** — the effect walk is
-    // parked on its own frame beneath and `Finish` resumes it. The `take_damage`
-    // wrapper still places synchronously and announces nothing (#728).
+    // parked on its own frame beneath and `Finish` resumes it.
     let (damage, horror) = match kind {
         HarmKind::Damage => (amount, 0),
         HarmKind::Horror => (0, amount),

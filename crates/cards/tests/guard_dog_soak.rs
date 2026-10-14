@@ -421,12 +421,9 @@ fn only_guard_dogs_reaction_is_offered_not_another_controlled_soaker() {
     // soak window is scoped to the *damaged* asset, and only Guard Dog has
     // an `EnemyAttackDamagedSelf` reaction. So exactly one window opens
     // — keyed to Guard Dog's instance — even though another soaker sits in
-    // play. (Two surviving *damaged* soakers from a single attack isn't
-    // constructible: `assign_attack` fills each soaker to capacity before
-    // the next, and reaching capacity defeats it — so any non-final soaker
-    // that takes damage is defeated. The honest demonstration is therefore
-    // "the keyed instance is the one whose reaction fires," not two live
-    // reacting allies — which two Ally slots also forbid.)
+    // play. (The demonstration is "the keyed instance is the one whose
+    // reaction fires," not two live reacting allies — which two Ally slots
+    // forbid.)
     let enemy_id = EnemyId(7);
     let inv_id = INV;
     let state = soak_state(

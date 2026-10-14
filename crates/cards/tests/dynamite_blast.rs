@@ -16,10 +16,11 @@
 use cards::REGISTRY;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
+use game_core::event::Event;
 use game_core::state::{
     CardCode, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
 };
-use game_core::test_support::{self, seat, TestSession};
+use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
 
 const DYNAMITE: &str = "01024";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -200,4 +201,80 @@ fn blast_is_rejected_when_the_controller_has_no_location() {
         "event back in hand",
     );
     assert!(s.state().investigators[&INV].discard.is_empty());
+}
+
+/// Guard Dog 01021: health 3, sanity 1. The health-bearing soaker.
+const GUARD_DOG: &str = "01021";
+
+/// The blast's investigator damage is dealt the way an enemy attack's is
+/// (#1028): a health-bearing asset is offered the soak, one point at a time,
+/// rather than absorbing the damage silently.
+#[test]
+fn blasted_investigator_is_offered_the_soak() {
+    let state = GameStateBuilder::new()
+        .with_seat(seat(1).at(HERE).hand([DYNAMITE]).in_play([GUARD_DOG]))
+        .with_location(test_support::test_location(HERE.0, "Cellar"))
+        .open_turn(INV)
+        .build();
+    let dog = state.in_play(INV, GUARD_DOG);
+
+    let s = play(state);
+    let dog_target = OptionTarget::CardInstance(dog);
+    let me = s.state().investigators[&INV].card_anchor();
+    assert_eq!((s.offered_at(&dog_target), s.offered_at(&me)), (1, 1));
+    assert_eq!(
+        s.state().investigators[&INV].damage(),
+        0,
+        "nothing placed yet"
+    );
+
+    // One point on the dog, two on the investigator: the player's split, not
+    // the soak-first default.
+    let s = s.pick(dog_target).pick(me.clone()).pick(me);
+    s.assert_at_turn_menu(INV);
+    assert_eq!(s.state().investigators[&INV].damage(), 2);
+    let dog_card = s.state().investigators[&INV]
+        .cards_in_play
+        .iter()
+        .find(|c| c.instance_id == dog)
+        .expect("Guard Dog still in play");
+    assert_eq!(dog_card.accumulated_damage, 1);
+}
+
+/// With two investigators at the chosen location, each is dealt their own
+/// damage in ascending id order, the first deal completing before the second
+/// begins: investigator 1's damage is placed while investigator 2's soak
+/// prompt is still open.
+#[test]
+fn two_blasted_investigators_are_dealt_one_at_a_time_in_ascending_order() {
+    let state = GameStateBuilder::new()
+        .with_seat(seat(1).at(HERE).hand([DYNAMITE]))
+        .with_seat(seat(2).at(HERE).in_play([GUARD_DOG]))
+        .with_location(test_support::test_location(HERE.0, "Cellar"))
+        .open_turn(INV)
+        .build();
+    let dog = OptionTarget::CardInstance(state.in_play(INV2, GUARD_DOG));
+
+    let s = play(state);
+    assert_eq!(s.offered_at(&dog), 1, "investigator 2's soak prompt");
+    assert_eq!(
+        s.state().investigators[&INV].damage(),
+        3,
+        "investigator 1's deal completed first"
+    );
+    assert_eq!(s.state().investigators[&INV2].damage(), 0);
+
+    let me2 = s.state().investigators[&INV2].card_anchor();
+    let s = s.pick(me2.clone()).pick(me2.clone()).pick(me2);
+    s.assert_at_turn_menu(INV);
+    assert_eq!(s.state().investigators[&INV2].damage(), 3);
+    let taken: Vec<InvestigatorId> = s
+        .events()
+        .iter()
+        .filter_map(|e| match e {
+            Event::DamageTaken { investigator, .. } => Some(*investigator),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(taken, vec![INV, INV2]);
 }

@@ -1686,8 +1686,7 @@ pub(super) fn peril_check(
 /// [`Deal`](card_dsl::dsl::Effect::Deal) targeting the tester), or `None` if empty.
 /// `Effect::Deal` routes through the interactive `begin_deal_damage` path, so
 /// these suspend when the tester controls a soak asset — RR-correct (the player
-/// assigns damage/horror to soak assets), unlike the old auto-assigning
-/// `take_damage`/`take_horror` shortcut.
+/// assigns damage/horror to soak assets).
 fn symbol_effects_to_effect(effects: &[TokenEffect]) -> Option<Effect> {
     let deals: Vec<Effect> = effects
         .iter()

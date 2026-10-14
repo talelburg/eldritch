@@ -12,8 +12,9 @@
 //! 3 damage to every enemy
 //! ([`deal_damage_to_enemy`](NativeCx::deal_damage_to_enemy), which handles
 //! defeat → victory points / Roland's reaction) and every investigator
-//! ([`take_damage`](NativeCx::take_damage) — the controller included if they
-//! blast their own location) at the chosen location.
+//! ([`deal_harm`](NativeCx::deal_harm) — the controller included if they
+//! blast their own location) at the chosen location. Each investigator gets
+//! their own deal, with its own soak prompt, resolving in ascending id order.
 //!
 //! # Native, not a typed fan-out — on purpose
 //!
@@ -119,8 +120,12 @@ fn blast_location(cx: &mut NativeCx, controller: InvestigatorId, loc: LocationId
         .filter(|(_, i)| i.current_location == Some(loc))
         .map(|(id, _)| *id)
         .collect();
-    for inv in investigators {
-        cx.take_damage(inv, DAMAGE);
+    // One deal per investigator, pushed in reverse id order so they resolve
+    // ascending: each deal (its soak prompt, both conditions, any reaction)
+    // completes before the next frame is exposed. Every push returns `Done`
+    // and this is the native's tail (ADR 0003), so nothing runs after it.
+    for inv in investigators.into_iter().rev() {
+        let _ = cx.deal_harm(inv, DAMAGE, 0);
     }
 
     EngineOutcome::Done
@@ -129,7 +134,9 @@ fn blast_location(cx: &mut NativeCx, controller: InvestigatorId, loc: LocationId
 #[cfg(test)]
 mod tests {
     use card_dsl::dsl::{Effect, Trigger};
-    use game_core::state::GameStateBuilder;
+    use game_core::state::{
+        Continuation, DamageSource, DealDamageFrame, DealDamageStep, GameStateBuilder,
+    };
     use game_core::test_support;
 
     use super::*;
@@ -176,5 +183,51 @@ mod tests {
             }
             other => panic!("expected a one-option blast suspend, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn blast_pushes_one_effect_deal_per_investigator_ascending_from_the_top() {
+        // Two investigators at the lone location → auto-target; each is dealt
+        // 3 damage through the one harm adapter (#1028), investigator 1's
+        // frame on top so the deals resolve in ascending id order. Nothing is
+        // placed until the frames run.
+        let here = LocationId(1);
+        let mut state = GameStateBuilder::new()
+            .with_seat(test_support::seat(1).at(here))
+            .with_seat(test_support::seat(2).at(here))
+            .with_location(test_support::test_location(here.0, "Lonely Spot"))
+            .build();
+        let ctx = EvalContext::for_controller(InvestigatorId(1));
+        let (out, _) = test_support::run_native(&mut state, dynamite_blast, &ctx);
+        assert_eq!(out, EngineOutcome::Done);
+
+        let deals: Vec<(InvestigatorId, DamageSource, &DealDamageStep)> = state
+            .continuations
+            .iter()
+            .rev()
+            .filter_map(|frame| match frame {
+                Continuation::DealDamage(DealDamageFrame {
+                    investigator,
+                    source,
+                    step,
+                    ..
+                }) => Some((*investigator, *source, step)),
+                _ => None,
+            })
+            .collect();
+        let three = DealDamageStep::Distribute {
+            remaining_damage: 3,
+            remaining_horror: 0,
+        };
+        assert_eq!(
+            deals,
+            vec![
+                (InvestigatorId(1), DamageSource::Effect, &three),
+                (InvestigatorId(2), DamageSource::Effect, &three),
+            ],
+            "top first",
+        );
+        assert_eq!(state.investigators[&InvestigatorId(1)].damage(), 0);
+        assert_eq!(state.investigators[&InvestigatorId(2)].damage(), 0);
     }
 }

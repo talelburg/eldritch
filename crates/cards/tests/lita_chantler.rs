@@ -438,14 +438,18 @@ fn a_non_attack_damage_effect_gets_nothing() {
     }
     .build();
     let keeper = state.investigators[&KEEPER].card_anchor();
-    // The keeper's share of the blast asks where its damage goes — Lita, an
-    // ally in play, can soak it — and he takes it himself. Nothing else is
-    // asked: no reaction window opens.
+    // Playing the event provokes the engaged ghoul's attack of opportunity,
+    // whose 1 damage asks where it goes — Lita, an ally in play, can soak it —
+    // and then so does each of the 3 points the blast deals the keeper. He
+    // takes all four himself. Nothing else is asked: no reaction window opens.
     let result = TestSession::new(state)
         .take(&TurnAction::PlayCard {
             investigator: KEEPER,
             hand_index: 0,
         })
+        .pick(keeper.clone())
+        .pick(keeper.clone())
+        .pick(keeper.clone())
         .pick(keeper);
     result.assert_at_turn_menu(KEEPER);
     assert_eq!(

@@ -3,7 +3,7 @@
 
 use crate::engine::board::{self, Placement};
 use crate::engine::dispatch::emit::TimingEvent;
-use crate::engine::dispatch::{act_agenda, combat, cursor, emit, hunters, trigger_scan};
+use crate::engine::dispatch::{act_agenda, cursor, emit, hunters, trigger_scan};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::event::{Event, TraumaKind};
@@ -477,25 +477,6 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
             )
         });
     inv.current_location = None;
-}
-
-/// Apply `amount` damage to `investigator` synchronously, soak-first, then
-/// apply defeat (cause [`EliminationCause::Damage`]) if it was lethal.
-///
-/// Every other investigator harm is dealt through
-/// [`deal_harm`](super::combat::deal_harm). The callers left here are Dynamite
-/// Blast 01024 (as [`NativeCx::take_damage`](crate::engine::NativeCx::take_damage))
-/// and the `TestSession::take_damage` step.
-pub fn take_damage(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
-    // Route through the shared soak entry (#44/K5a) so a controlled health-bearing
-    // asset (Guard Dog, Beat Cop) absorbs non-attack damage; `place_assignment`
-    // applies investigator defeat (cause Damage) when the investigator's share is
-    // lethal, preserving this wrapper's prior behaviour.
-    //
-    // TODO(#728): this places synchronously, so it announces neither
-    // `DamageAssigned` nor `DamagePlaced`. Dynamite Blast 01024's `for inv in
-    // investigators` loop moves onto `deal_harm` with one frame per investigator.
-    combat::soak_and_place(cx, investigator, amount, 0);
 }
 
 /// Defeat `investigator` outright by a card ability, with no damage or horror

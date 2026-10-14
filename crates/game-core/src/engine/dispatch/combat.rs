@@ -153,12 +153,12 @@ pub(super) fn damage_enemy(cx: &mut Cx, enemy_id: EnemyId, amount: u8, by: Optio
 // live one is owned by the `Continuation::DealDamage` frame that walks the two
 // steps of dealing it (ADR 0009). Imported above.
 
-/// One eligible soaker for [`assign_attack`] (C5b #237).
+/// One eligible soaker for a deal's distribution (C5b #237).
 ///
 /// `remaining_health` / `remaining_sanity` are the asset's *remaining*
 /// damage / horror capacity — printed stat (registry metadata) minus
 /// already-`accumulated_*`. The caller ([`build_soakers`]) derives these
-/// so [`assign_attack`] stays a pure function with no registry coupling.
+/// so [`eligible_targets`] stays a pure function with no registry coupling.
 #[derive(Debug)]
 pub(super) struct Soaker {
     /// The asset instance that may soak.
@@ -167,53 +167,6 @@ pub(super) struct Soaker {
     pub remaining_health: u8,
     /// Remaining horror capacity (printed sanity − accumulated horror).
     pub remaining_sanity: u8,
-}
-
-/// Deterministic soak-first assignment of an enemy attack's damage and
-/// horror (C5b #237).
-///
-/// Fills `soakers` (already ordered by the caller, by `CardInstanceId`
-/// to match the codebase's other simultaneous loops) up to each one's
-/// remaining capacity, then the **investigator card** absorbs the
-/// remainder. The investigator card is the always-eligible,
-/// mandatory-remainder soaker (RR: "all damage/horror that cannot be
-/// assigned to an asset must be assigned to the investigator") — it takes
-/// whatever the assets cannot, *uncapped* (overflowing its own capacity is
-/// exactly how the investigator is defeated). Its share rides
-/// `Assignment::investigator_damage/horror` (not `asset_*`) so
-/// [`place_assignment`] routes it onto `investigator_card.accumulated_*`
-/// via the numeric helpers, keeping the [`Event::DamageTaken`] /
-/// [`Event::HorrorTaken`] emission and the elimination wiring intact.
-/// Damage and horror are assigned **independently** — an asset with
-/// only health soaks damage, an asset with only sanity soaks horror.
-///
-/// Soak-first deterministic assignment, used by [`soak_and_place`] when no
-/// point is contested (no soaker with capacity) and by the remaining
-/// synchronous caller, `take_damage`. The interactive per-point distribution
-/// (#44/K5) lives in [`deal_enemy_attack`] / [`resume_damage_distribution`] and
-/// `begin_deal_damage`; the one site still routed through the synchronous
-/// auto-soak wrapper is tracked in `TODO(#427)` (Dynamite Blast's native loop).
-pub(super) fn assign_attack(soakers: &[Soaker], mut damage: u8, mut horror: u8) -> Assignment {
-    let mut assignment = Assignment::default();
-    for soaker in soakers {
-        let soaked_damage = damage.min(soaker.remaining_health);
-        if soaked_damage > 0 {
-            assignment
-                .asset_damage
-                .insert(soaker.instance, soaked_damage);
-            damage -= soaked_damage;
-        }
-        let soaked_horror = horror.min(soaker.remaining_sanity);
-        if soaked_horror > 0 {
-            assignment
-                .asset_horror
-                .insert(soaker.instance, soaked_horror);
-            horror -= soaked_horror;
-        }
-    }
-    assignment.investigator_damage = damage;
-    assignment.investigator_horror = horror;
-    assignment
 }
 
 /// Mutable handle to the controlled in-play instance `inst`, or `None`
@@ -440,34 +393,6 @@ pub(super) fn apply_horror_numeric(cx: &mut Cx, investigator: InvestigatorId, am
         amount,
     });
     lethal
-}
-
-/// Distribute `damage` + `horror` to `investigator` across eligible soakers
-/// then self (soak-first, RR p.7), place simultaneously, and defeat overflowed
-/// assets — **synchronously, in one call** (#44/K5a).
-///
-/// This is the shape the whole of dealing damage had before #727, and the one
-/// caller left on it is `take_damage`, whose own caller does synchronous work
-/// afterwards (Dynamite Blast 01024's `for inv in investigators` loop). So it
-/// announces neither
-/// [`DamageAssigned`](super::emit::TimingEvent::DamageAssigned) nor
-/// [`DamagePlaced`](super::emit::TimingEvent::DamagePlaced): there is no cursor
-/// here to sequence two emits on, and emitting one synchronously is what ADR
-/// 0003 forbids.
-///
-/// TODO(#728): migrate that entry point onto [`deal_harm`]. Until then an
-/// ability keyed to either condition fires for every other harm but not for
-/// this one.
-/// Nothing in the Core or Dunwich corpus observes the gap.
-///
-/// `build_soakers` returns empty when no registry is installed or the
-/// investigator controls no soak-bearing asset, so the assignment then drops
-/// all damage/horror on the investigator — behavior-identical to the pre-soak
-/// direct-apply path.
-pub(super) fn soak_and_place(cx: &mut Cx, investigator: InvestigatorId, damage: u8, horror: u8) {
-    let soakers = build_soakers(cx.state, investigator);
-    let assignment = assign_attack(&soakers, damage, horror);
-    place_assignment(cx, investigator, &assignment);
 }
 
 /// Begin one deal of `damage` + `horror` to `investigator`: push the
