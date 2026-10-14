@@ -272,6 +272,15 @@ impl<'a> NativeCx<'a> {
         encounter::take_encounter_top(self.write_access())
     }
 
+    /// Draw the top card of the encounter deck, shuffling the encounter
+    /// discard back in first if the deck is empty — the encounter draw's own
+    /// rule. `None` when the deck and the discard are both empty, a state no
+    /// rule defines. The card is the caller's to resolve, as
+    /// [`resolve_encounter_card`](Self::resolve_encounter_card) does.
+    pub fn draw_encounter_top(&mut self) -> Option<CardCode> {
+        encounter::draw_encounter_top(self.write_access())
+    }
+
     /// Shuffle the encounter discard back into the encounter deck.
     pub fn reshuffle_encounter_discard(&mut self) {
         encounter::reshuffle_encounter_discard(self.write_access());
