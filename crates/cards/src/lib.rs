@@ -34,6 +34,10 @@ use std::sync::OnceLock;
 use card_dsl::card_data::CardMetadata;
 use card_dsl::dsl::Ability;
 use game_core::card_registry::{CardRegistry, NativeConditionFn, NativeEffectFn};
+#[cfg(feature = "test-support")]
+use game_core::engine::Registries;
+#[cfg(feature = "test-support")]
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::CardCode;
 
 pub mod generated;
@@ -125,6 +129,44 @@ pub const REGISTRY: CardRegistry = CardRegistry {
     native_effect_for: registry_native_effect_for,
     native_condition_for: registry_native_condition_for,
 };
+
+/// [`REGISTRY`] with game-core's synthetic test cards composed in: the
+/// investigator [`TEST_INV`](game_core::test_support::TEST_INV) in
+/// `metadata_for`, and the terminal acts/agendas
+/// ([`terminal_code`](game_core::test_support::terminal_code)) in
+/// `abilities_for`. Every real card is served unchanged, so a test seats a
+/// plain [`test_investigator`](game_core::test_support::test_investigator)
+/// next to the corpus without borrowing a real investigator's code (#934).
+///
+/// The value a real-card test names, rather than installing `REGISTRY`
+/// through `install_registry_with_test_cards`. Pair it with a scenario registry
+/// in [`TEST_REGISTRIES`], or in `scenarios`' pairing for a scenario test.
+#[cfg(feature = "test-support")]
+pub const TEST_REGISTRY: CardRegistry = CardRegistry {
+    metadata_for: test_registry_metadata_for,
+    abilities_for: test_registry_abilities_for,
+    // `back_abilities_for` and the native slots stay the real ones: the
+    // terminal cards have no reverse side and no natives to compose in.
+    ..REGISTRY
+};
+
+/// [`TEST_REGISTRY`] with no scenario modules: the registries a card test runs
+/// against, since no card test needs a scenario module.
+#[cfg(feature = "test-support")]
+pub const TEST_REGISTRIES: Registries = Registries {
+    cards: &TEST_REGISTRY,
+    scenarios: &ScenarioRegistry::EMPTY,
+};
+
+#[cfg(feature = "test-support")]
+fn test_registry_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
+    game_core::test_support::metadata_for_test_inv(code).or_else(|| registry_metadata_for(code))
+}
+
+#[cfg(feature = "test-support")]
+fn test_registry_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
+    game_core::test_support::abilities_for_terminal(code).or_else(|| registry_abilities_for(code))
+}
 
 #[cfg(test)]
 mod tests {

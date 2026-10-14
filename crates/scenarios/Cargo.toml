@@ -15,9 +15,17 @@ card-dsl = { path = "../card-dsl" }
 game-core = { path = "../game-core" }
 cards = { path = "../cards" }
 
+[features]
+# `TEST_REGISTRIES`: `cards::TEST_REGISTRY` paired with this crate's scenario
+# modules, for scenario tests to name.
+test-support = ["cards/test-support"]
+
 [dev-dependencies]
 serde_json = "1"
 # Runs an installer before the test harness `main`, so every test in a binary
 # sees the global card/scenario registry already installed — no per-test call
 # to forget, no race on the process-global `OnceLock` (#473).
 ctor = "1.0"
+# This crate's own integration tests reach `TEST_REGISTRIES` through the
+# feature (see the same line in `cards`).
+scenarios = { path = ".", features = ["test-support"] }
