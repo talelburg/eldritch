@@ -9,7 +9,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use card_dsl::card_data::CardKind;
 use card_dsl::dsl::{
-    Determination, Effect, IntExpr, SkillTestKind, Stat, TestOutcome, TokenOutcome, Trigger,
+    Determination, Effect, IntExpr, RevealClause, SkillTestKind, Stat, TestOutcome, TokenOutcome,
+    Trigger,
 };
 
 use crate::action::InputResponse;
@@ -66,9 +67,10 @@ pub(in crate::engine) struct InitiatorModifier {
     pub delta: IntExpr,
 }
 
-// Nine args: the skill-test parameters are genuinely independent axes
-// (skill, kind, difficulty, success/fail follow-ups, source). A params
-// struct would add indirection without grouping anything cohesive.
+// Eleven args: the skill-test parameters are genuinely independent axes
+// (skill, kind, difficulty, success/fail follow-ups, source, the initiator's
+// modifier and reveal clause). A params struct would add indirection without
+// grouping anything cohesive.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::engine) fn start_skill_test(
     cx: &mut Cx,
@@ -81,6 +83,7 @@ pub(in crate::engine) fn start_skill_test(
     on_fail: Option<Effect>,
     source: Option<AbilitySource>,
     initiator_modifier: Option<InitiatorModifier>,
+    reveal_clause: Option<RevealClause>,
 ) -> EngineOutcome {
     // Validate-first: investigator must exist and be Active; chaos
     // bag must be non-empty so we can draw; difficulty must be non-
@@ -164,6 +167,7 @@ pub(in crate::engine) fn start_skill_test(
             bonus_clues_discovered: 0,
             resolved: None,
             revealed: None,
+            reveal_clause,
         }));
     // The initiating effect's one-shot modifier becomes a row scoped to the
     // test just minted — the weapon's "+N for this attack" and Flashlight's
@@ -463,6 +467,11 @@ pub(super) fn acknowledge_outcome(cx: &mut Cx) -> EngineOutcome {
 /// (by then known) result. Pre-advances to `DetermineOutcome` **before**
 /// pushing the immediate effect (the suspend/resume invariant).
 ///
+/// The initiating card's [`reveal_clause`](InFlightSkillTest::reveal_clause)
+/// fires here as well when the token's symbol is in its set, pushed after the
+/// immediate effect so it resolves first: the clause is ST.3, the symbol
+/// effect ST.4.
+///
 /// A scenario symbol's modifier is an [`IntExpr`]. The recorded row keeps it
 /// unevaluated, so ST.5 reads it live; the `i8` that
 /// [`ChaosTokenRevealed`](Event::ChaosTokenRevealed) announces is the same
@@ -534,6 +543,22 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
     // DetermineOutcome.
     if let Some(effect) = outcome.as_ref().and_then(|o| o.immediate.as_ref()) {
         evaluator::push_effect(cx, effect, ctx);
+    }
+
+    // ST.3 the initiating card's reveal clause, pushed last so it resolves
+    // first: Shrivelling 01060's ruling (https://arkhamdb.com/card/01060),
+    // *"The "If a symbol is revealed..." effect triggers during Step 3 of the
+    // Skill Test Timing."*, ahead of the ST.4 symbol effect above.
+    let t = cx
+        .state
+        .current_skill_test()
+        .expect("run_resolution: the SkillTest frame must exist");
+    if let (Some(clause), Some(symbol)) = (&t.reveal_clause, token.symbol()) {
+        if clause.fires_on(symbol) {
+            let effect = clause.effect.clone();
+            let ctx = EvalContext::for_controller_with_optional_source(investigator, t.source);
+            evaluator::push_effect(cx, &effect, ctx);
+        }
     }
 }
 
@@ -1762,6 +1787,7 @@ pub(crate) fn perform_skill_test(
         None,
         None,
         None, // bare PerformSkillTest: no effect modifier
+        None,
     )
 }
 

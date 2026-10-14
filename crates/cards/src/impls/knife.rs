@@ -72,6 +72,7 @@ mod tests {
                 Some(ActionDesignator::Fight {
                     combat_modifier,
                     extra_damage,
+                    ..
                 }),
         } = &abilities[index].trigger
         else {

@@ -67,17 +67,18 @@
 //! state, events, and RNG position on `Rejected` — so validate-first
 //! here is about cheap, precise rejections, not state safety.
 
-use card_dsl::card_data::CardType;
+use card_dsl::card_data::{CardType, SkillKind};
 use card_dsl::dsl::{
     ActionClass, ActionDesignator, CardFilter, ChoiceBranch, CmpOp, Condition, ControlStatus,
     Determination, Effect, EnemyTarget, EntityScope, HarmKind, IntExpr, InvestigatorTarget,
     LocationSet, LocationTarget, ModifierAudience, ModifierScope, Quantity, Restriction,
-    SearchScope, SkillTestKind, Stat, Trigger,
+    RevealClause, SearchScope, SkillTestKind, Stat, Trigger,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::card_registry::{self, CardRegistry};
 use crate::engine::board::{self, Placement};
+use crate::engine::dispatch::actions::fight::FightModification;
 use crate::engine::dispatch::choice::{ChoiceResolution, Grounded};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{
@@ -508,7 +509,16 @@ fn perform_designated(
         ActionDesignator::Fight {
             combat_modifier,
             extra_damage,
-        } => perform_designated_fight(cx, eval_ctx, combat_modifier, extra_damage),
+            skill_override,
+            reveal_clause,
+        } => perform_designated_fight(
+            cx,
+            eval_ctx,
+            combat_modifier,
+            extra_damage,
+            *skill_override,
+            reveal_clause.as_ref(),
+        ),
         ActionDesignator::Investigate { shroud_modifier } => {
             // Reject rather than reach `perform`'s lapse suppression: a board
             // that changed underneath the activation is a rejection here.
@@ -548,7 +558,8 @@ fn perform_designated(
 
 /// The **Fight** arm of [`perform_designated`]: evaluate `extra_damage` against
 /// the live board, then run the shared Fight primary against the grounded
-/// target.
+/// target, testing `skill_override` if the card prints one and carrying its
+/// `reveal_clause` onto the test.
 ///
 /// `extra_damage` is evaluated here because the Fight follow-up consumes it as a
 /// `u8`; `combat_modifier` is **not**, travelling into the test as an
@@ -561,6 +572,8 @@ fn perform_designated_fight(
     eval_ctx: &EvalContext,
     combat_modifier: &IntExpr,
     extra_damage: &IntExpr,
+    skill_override: Option<SkillKind>,
+    reveal_clause: Option<&RevealClause>,
 ) -> EngineOutcome {
     let extra_damage_n = match eval_int_expr(cx.state, cx.cards, eval_ctx, extra_damage) {
         Ok(v) => u8::try_from(v.max(0)).unwrap_or(u8::MAX),
@@ -587,8 +600,12 @@ fn perform_designated_fight(
         cx,
         eval_ctx.controller,
         enemy_id,
-        Some(combat_modifier.clone()),
-        extra_damage_n,
+        FightModification {
+            combat_modifier: Some(combat_modifier.clone()),
+            extra_damage: extra_damage_n,
+            skill_override,
+            reveal_clause: reveal_clause.cloned(),
+        },
         eval_ctx.ability_source,
     )
 }
@@ -716,6 +733,7 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
             on_success.as_ref().map(|b| (**b).clone()),
             on_fail.as_ref().map(|b| (**b).clone()),
             eval_ctx.ability_source,
+            None,
             None,
         ),
         Effect::DiscardSelf => discard_self(cx, &eval_ctx),

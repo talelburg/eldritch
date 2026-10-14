@@ -54,6 +54,7 @@ fn skill_test_runs_on_success_effect_on_a_passing_draw() {
         None,
         None,
         None,
+        None,
     );
     assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
     let out = finish_skill_test(&mut cx, &[]);
@@ -278,6 +279,7 @@ fn finish_skill_test_parks_the_resolution_for_the_loop() {
         SkillTestKind::Plain,
         DifficultyBasis::Fixed(2),
         SkillTestFollowUp::None,
+        None,
         None,
         None,
         None,

@@ -65,6 +65,7 @@ fn combat_test_with_substitution_prompts_then_becomes_intellect_on_yes() {
                 stat: Stat::Combat,
                 delta: IntExpr::Lit(2),
             }),
+            None,
         )
     };
     assert!(matches!(out, EngineOutcome::AwaitingInput { .. }), "prompt");
@@ -140,6 +141,7 @@ fn substitution_prompt_keeps_the_test_on_its_frame() {
             None,
             None,
             None,
+            None,
         )
     };
     assert!(
@@ -203,6 +205,7 @@ fn resume_substitution_choice_parks_for_the_loop() {
             SkillTestKind::Fight,
             DifficultyBasis::Fixed(3),
             SkillTestFollowUp::None,
+            None,
             None,
             None,
             None,

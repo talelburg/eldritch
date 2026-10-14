@@ -26,6 +26,7 @@ use std::fmt;
 use card_dsl::dsl::{ActionClass, ActionDesignator};
 
 use crate::card_registry::CardRegistry;
+use crate::engine::dispatch::actions::fight::FightModification;
 use crate::engine::dispatch::actions::{draw, engage, evade, fight, investigate, r#move, resource};
 use crate::engine::dispatch::{abilities, cards, combat};
 use crate::engine::outcome::EngineOutcome;
@@ -349,7 +350,9 @@ pub(in crate::engine::dispatch) fn perform(
         // A basic attack carries no modification. A designated Fight (every
         // corpus weapon) reaches the same primary with its combat bonus and its
         // bonus damage.
-        ActionResume::Fight { enemy } => fight::perform(cx, investigator, enemy, None, 0, None),
+        ActionResume::Fight { enemy } => {
+            fight::perform(cx, investigator, enemy, FightModification::default(), None)
+        }
         ActionResume::Evade { enemy } => evade::perform(cx, investigator, enemy),
         ActionResume::ActivateAbility {
             source,
