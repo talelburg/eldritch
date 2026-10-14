@@ -26,10 +26,10 @@ use crate::engine::Cx;
 use crate::event::{Event, FailureReason};
 use crate::scenario;
 use crate::state::{
-    self, AbilitySource, CardCode, ChaosToken, Continuation, DifficultyBasis, DiscardPile,
-    FastWindowKind, GameState, InFlightSkillTest, InvestigatorId, Lifetime, RecordedModifier,
-    ResolvedTest, SkillKind, SkillSubstitution, SkillTestFollowUp, SkillTestStep, Status,
-    SubstitutionPromptFrame, TokenResolution, TokenResults, Zone,
+    self, AbilitySource, CardCode, CardInstanceId, ChaosToken, Continuation, DifficultyBasis,
+    DiscardPile, FastWindowKind, GameState, InFlightSkillTest, InvestigatorId, Lifetime,
+    RecordedModifier, ResolvedTest, SkillKind, SkillSubstitution, SkillTestFollowUp, SkillTestStep,
+    Status, SubstitutionPromptFrame, TokenResolution, TokenResults, Zone,
 };
 
 /// The one-shot modifier an initiator grants the test it starts: a weapon's
@@ -520,7 +520,13 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
     };
     cx.events
         .push(Event::ChaosTokenRevealed { token, resolution });
-    record_token_contribution(cx, investigator, resolution, outcome.as_ref());
+    record_token_contribution(
+        cx,
+        investigator,
+        resolution,
+        outcome.as_ref(),
+        ctx.source_instance(),
+    );
 
     // Park the ST.7 result-conditional parts (Cultist horror, an elder sign's
     // "If you succeed") for later, with the source they evaluate under.
@@ -585,7 +591,8 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
 ///   (`data/arkhamdb-snapshot/pack/core/core.json`) counts the clues on his
 ///   location when ST.5 reads the row, not the ones that were there when the
 ///   token came out — the ST.4 window sits between the two. An investigator
-///   with no elder-sign ability records no row.
+///   with no elder-sign ability records no row. The row is attributed to the
+///   investigator card, so the ST.5 breakdown names whose ability it is.
 /// - [`AutoFail`](TokenResolution::AutoFail) records a **determination**
 ///   rather than a modifier: it carries no ±N, and what it does instead —
 ///   *"the investigator's total skill value for that test is considered
@@ -596,11 +603,15 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
 ///   makes a card-latched automatic failure
 ///   ([`Effect::AutoResolve`](card_dsl::dsl::Effect::AutoResolve)) the same one
 ///   rule and not a second one.
+///
+/// `source` is the instance the chaos symbol effect is sourced to: the
+/// investigator card for an elder sign, `None` for every other token.
 fn record_token_contribution(
     cx: &mut Cx,
     investigator: InvestigatorId,
     resolution: TokenResolution,
     outcome: Option<&TokenOutcome>,
+    source: Option<CardInstanceId>,
 ) {
     let (test_id, skill) = {
         let t = cx
@@ -626,7 +637,7 @@ fn record_token_contribution(
                     investigator,
                     Determination::AutomaticFailure,
                     Lifetime::SkillTest(test_id),
-                    None,
+                    source,
                 ));
             return;
         }
@@ -636,7 +647,7 @@ fn record_token_contribution(
         modified_value::stat_for_skill(skill),
         delta,
         Lifetime::SkillTest(test_id),
-        None,
+        source,
     ));
 }
 
