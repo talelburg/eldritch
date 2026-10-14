@@ -103,13 +103,6 @@ impl<'a> NativeCx<'a> {
         combat::deal_harm(self.write_access(), investigator, damage, horror)
     }
 
-    /// Deal `amount` damage to `investigator` from a single source, placed
-    /// synchronously with soak-first assignment. Dynamite Blast 01024's
-    /// remaining path; it moves onto [`deal_harm`](Self::deal_harm) in #1028.
-    pub fn take_damage(&mut self, investigator: InvestigatorId, amount: u8) {
-        elimination::take_damage(self.write_access(), investigator, amount);
-    }
-
     /// Defeat `investigator` by a card ability and run elimination. A no-op
     /// for an investigator who is not active.
     pub fn defeat_investigator(&mut self, investigator: InvestigatorId) {

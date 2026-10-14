@@ -55,7 +55,7 @@ use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, Zone,
+    GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, Status, Zone,
 };
 use game_core::test_support::{self, seat, Seat, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -400,13 +400,21 @@ fn lita_defeated_by_soaked_damage_is_removed_from_the_game() {
 /// cards, which she explicitly is not.
 #[test]
 fn eliminating_her_controller_removes_her_to_the_scenarios_pile() {
-    // The test investigator has 8 health; 8 damage defeats it outright.
-    let state = parley_on(board(ChaosToken::Numeric(0)))
-        .take_damage(INV, 8)
-        .finish()
-        .state;
+    // The test investigator has 8 health; 8 damage defeats it outright. Lita can
+    // soak, so each point asks where it goes: all 8 go on the investigator.
+    let mut session = parley_on(board(ChaosToken::Numeric(0))).take_damage(INV, 8);
+    let me = session.state().investigators[&INV].card_anchor();
+    for _ in 0..8 {
+        session = session.pick(me.clone());
+    }
+    let state = session.finish().state;
 
     let inv = &state.investigators[&INV];
+    assert_eq!(
+        inv.status,
+        Status::Defeated,
+        "the damage eliminated her controller"
+    );
     assert!(
         inv.cards_in_play.is_empty(),
         "every card she controlled left play, got {:?}",

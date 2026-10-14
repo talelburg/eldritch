@@ -66,8 +66,8 @@ pub enum AttackLoopStage {
 /// A computed damage/horror distribution for one source of harm (C5b #237).
 ///
 /// How much of the harm's damage and horror lands on the defending investigator
-/// versus each soak-bearing asset. Built by `assign_attack` (soak-first) or the
-/// interactive per-point distribution (#44/K5b); placed simultaneously by
+/// versus each soak-bearing asset. Built by the per-point distribution
+/// (#44/K5b), which prompts for each contested point; placed simultaneously by
 /// `place_assignment`, per Rules Reference page 7's "Apply Damage/Horror" clause.
 /// Lives here (not in `engine`) because the live one is owned by the
 /// [`Continuation::DealDamage`] frame that walks the two steps, and each of the
