@@ -43,13 +43,15 @@
 use std::sync::LazyLock;
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
-use card_dsl::dsl::{self, Cost, Determination, InvestigatorTarget, TestOutcome};
+use card_dsl::dsl::{
+    self, Cost, Determination, Effect, HarmKind, IntExpr, InvestigatorTarget, TestOutcome,
+    TokenOutcome,
+};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{OptionTarget, Registries};
 use game_core::event::{Event, FailureReason};
 use game_core::scenario::{
-    ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRegistry, SymbolCtx, SymbolOutcome,
-    TokenEffect,
+    ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRegistry, SymbolCtx,
 };
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInstanceId, ChaosBag, ChaosToken, DiscardPile,
@@ -129,14 +131,17 @@ fn play_auto_succeed_metadata() -> CardMetadata {
 
 /// Mock symbol hook: a `[skull]` contributes nothing to the total and deals
 /// 1 damage at ST.4.
-fn mock_resolve_symbol(token: ChaosToken, _ctx: &SymbolCtx) -> SymbolOutcome {
+fn mock_resolve_symbol(token: ChaosToken, _ctx: &SymbolCtx) -> TokenOutcome {
     match token {
-        ChaosToken::Skull => SymbolOutcome {
-            modifier: 0,
-            immediate: vec![TokenEffect::Damage(1)],
-            on_fail: vec![],
+        ChaosToken::Skull => TokenOutcome {
+            immediate: Some(Effect::Deal {
+                kind: HarmKind::Damage,
+                target: InvestigatorTarget::You,
+                amount: IntExpr::Lit(1),
+            }),
+            ..TokenOutcome::modifier(IntExpr::Lit(0))
         },
-        _ => SymbolOutcome::default(),
+        _ => TokenOutcome::default(),
     }
 }
 

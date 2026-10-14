@@ -28,12 +28,10 @@
 //! Lita Chantler at R1 are campaign machinery and stay with #766.
 
 use card_dsl::card_data::CardKind;
+use card_dsl::dsl::{Effect, HarmKind, IntExpr, InvestigatorTarget, TokenOutcome};
 use cards::generated::traits::GHOUL;
 use game_core::event::Event;
-use game_core::scenario::{
-    LocationLayout, ScenarioEnding, ScenarioId, ScenarioModule, SymbolCtx, SymbolOutcome,
-    TokenEffect,
-};
+use game_core::scenario::{LocationLayout, ScenarioEnding, ScenarioId, ScenarioModule, SymbolCtx};
 use game_core::state::{Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder};
 
 /// Read an agenda's printed doom threshold from the corpus.
@@ -141,36 +139,45 @@ fn ghoul_count_at_investigator_location(cx: &SymbolCtx) -> u8 {
 }
 
 /// 01104 The Gathering chaos-symbol effects — **Easy/Standard face only**
-/// (verified card text): `[skull]` −X (X = Ghouls at your location);
-/// `[cultist]` −1, 1 horror on failure; `[tablet]` −2, 1 damage if a Ghoul
-/// is at your location. The Gathering's Standard bag has no Elder Thing
-/// token. The Hard/Expert back (skull −2; cultist "reveal another token";
-/// tablet −4, 1 damage AND 1 horror) is unimplemented — when difficulty
-/// selection lands (`TODO(#862)`) this fn needs a difficulty parameter, and
-/// the Hard/Expert cultist needs a token-re-draw shape `SymbolOutcome` can't
-/// express yet.
-fn resolve_symbol(token: ChaosToken, cx: &SymbolCtx) -> SymbolOutcome {
+/// (`data/arkhamdb-snapshot/pack/core/core_encounter.json`):
+///
+/// > \[skull\] -X. X is the number of \[\[Ghoul\]\] enemies at your location.
+/// > \[cultist\] -1. If you fail, take 1 horror.
+/// > \[tablet\] -2. If there is a \[\[Ghoul\]\] enemy at your location, take 1 damage.
+///
+/// Each symbol is a [`TokenOutcome`]: the cultist's horror is its `on_fail`
+/// part and the tablet's damage its `immediate` part, both plain
+/// [`Effect::Deal`]s on the tester. The hook runs once at reveal, so the
+/// tablet's Ghoul gate and the skull's X are decided then; every modifier is
+/// an `IntExpr::Lit` computed at reveal. The Gathering's Standard bag has no
+/// Elder Thing token. The Hard/Expert back (skull −2; cultist "reveal another
+/// token"; tablet −4, 1 damage AND 1 horror) is unimplemented — when
+/// difficulty selection lands (`TODO(#862)`) this fn needs a difficulty
+/// parameter, and the Hard/Expert cultist needs a token-re-draw shape
+/// `TokenOutcome` can't express yet.
+fn resolve_symbol(token: ChaosToken, cx: &SymbolCtx) -> TokenOutcome {
     let ghouls = ghoul_count_at_investigator_location(cx);
+    let deal_to_tester = |kind| Effect::Deal {
+        kind,
+        target: InvestigatorTarget::You,
+        amount: IntExpr::Lit(1),
+    };
     match token {
-        ChaosToken::Skull => SymbolOutcome {
-            modifier: -(i8::try_from(ghouls).unwrap_or(i8::MAX)),
-            ..SymbolOutcome::default()
+        // TODO(#779): the live-read candidate. X is frozen at reveal here; once
+        // `Quantity::Matching` can count the Ghouls at the tester's location,
+        // the modifier becomes an unevaluated count that ST.5 reads live.
+        ChaosToken::Skull => {
+            TokenOutcome::modifier(IntExpr::Lit(-(i8::try_from(ghouls).unwrap_or(i8::MAX))))
+        }
+        ChaosToken::Cultist => TokenOutcome {
+            on_fail: Some(deal_to_tester(HarmKind::Horror)),
+            ..TokenOutcome::modifier(IntExpr::Lit(-1))
         },
-        ChaosToken::Cultist => SymbolOutcome {
-            modifier: -1,
-            on_fail: vec![TokenEffect::Horror(1)],
-            ..SymbolOutcome::default()
+        ChaosToken::Tablet => TokenOutcome {
+            immediate: (ghouls > 0).then(|| deal_to_tester(HarmKind::Damage)),
+            ..TokenOutcome::modifier(IntExpr::Lit(-2))
         },
-        ChaosToken::Tablet => SymbolOutcome {
-            modifier: -2,
-            immediate: if ghouls > 0 {
-                vec![TokenEffect::Damage(1)]
-            } else {
-                vec![]
-            },
-            ..SymbolOutcome::default()
-        },
-        _ => SymbolOutcome::default(),
+        _ => TokenOutcome::default(),
     }
 }
 

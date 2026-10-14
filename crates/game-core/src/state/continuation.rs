@@ -1284,22 +1284,47 @@ pub struct InFlightSkillTest {
     /// moved from `Resolving` to `DetermineOutcome` by #674, so the ST.5 sum
     /// sees the board the ST.4 chaos-symbol effects left behind.)
     pub resolved: Option<ResolvedTest>,
-    /// A chaos symbol token's result-conditional `on_fail` effect (Cultist
-    /// 01104's "if this test is failed, take 1 horror"), built at the
-    /// `Resolving` step and pushed at the `ApplySymbolOnFail` step (RR ST.7,
-    /// *after* the outcome timing point). `None` when the test passed or the
-    /// symbol has no `on_fail`. Held here (a sibling of [`on_fail`](Self::on_fail)
-    /// / [`on_success`](Self::on_success)) because it is a non-`Copy` `Effect`
-    /// needed several steps after the token is drawn. (Slice D #423.)
-    pub symbol_on_fail: Option<Effect>,
+    /// The revealed chaos token's result-conditional parts — its
+    /// [`TokenOutcome`](card_dsl::dsl::TokenOutcome)'s `on_success` / `on_fail`
+    /// (Cultist 01104's "if this test is failed, take 1 horror") — parked at
+    /// the `Resolving` step (ST.3) and pushed at the
+    /// [`ApplyTokenResult`](SkillTestStep::ApplyTokenResult) step (RR ST.7,
+    /// *after* the outcome timing point). Empty when no token was drawn or
+    /// the token has no result-conditional part. Held here (a sibling of
+    /// [`on_fail`](Self::on_fail) / [`on_success`](Self::on_success)) because
+    /// each is a non-`Copy` `Effect` needed several steps after the token is
+    /// drawn. The outcome's `modifier` is already a recorded row and its
+    /// `immediate` part is spent at ST.4, so neither is kept.
+    ///
+    /// Boxed because two more `Effect`s inline would make `SkillTest` the
+    /// [`Continuation`] variant that sizes every frame on the stack.
+    pub token_results: Box<TokenResults>,
+}
+
+/// A revealed chaos token's ST.7 consequences, parked on
+/// [`InFlightSkillTest::token_results`] from ST.3 until
+/// [`ApplyTokenResult`](SkillTestStep::ApplyTokenResult) pushes the one the
+/// test's result selects.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TokenResults {
+    /// Pushed at ST.7 when the test succeeded.
+    pub on_success: Option<Effect>,
+    /// Pushed at ST.7 when the test failed, with the test's failure margin
+    /// threaded in (so `Count(SkillTestFailedBy)` reads it, as in a card's
+    /// own `on_fail`).
+    pub on_fail: Option<Effect>,
+    /// The source the pushed effect evaluates with — the mirror of
+    /// [`InFlightSkillTest::source`]. `None` for a scenario symbol, whose
+    /// effects run with the controller-only context.
+    pub source: Option<AbilitySource>,
 }
 
 /// The outcome of a skill test's chaos-token resolution (RR ST.6), stored on
 /// [`InFlightSkillTest::resolved`] once computed and read by every subsequent
 /// driver step. One source of truth, rather than routing the same fields
 /// through each [`SkillTestStep`] payload. `Copy` (all scalar fields) so the
-/// driver reads it cheaply; the result-conditional symbol `on_fail` *effect*
-/// lives separately on [`InFlightSkillTest::symbol_on_fail`].
+/// driver reads it cheaply; the revealed token's result-conditional *effects*
+/// live separately on [`InFlightSkillTest::token_results`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResolvedTest {
     /// Whether the test passed: the test's determination where it has one,
@@ -1449,9 +1474,10 @@ pub enum SkillTestStep {
     /// the ST.7 half — the discovery itself, and any *"if this test is
     /// successful"* clause — that a doubling effect would double.
     DetermineOutcome,
-    /// Cosmetic acknowledgment pause (#478). The result events
-    /// (`ChaosTokenRevealed`, `SkillTestSucceeded`/`Failed`) are already emitted
-    /// at [`DetermineOutcome`](Self::DetermineOutcome); when
+    /// Cosmetic acknowledgment pause (#478). The result events are already
+    /// emitted — `ChaosTokenRevealed` at [`Resolving`](Self::Resolving),
+    /// `SkillTestSucceeded`/`Failed` at
+    /// [`DetermineOutcome`](Self::DetermineOutcome); when
     /// [`GameState::interactive_acknowledge`](crate::state::GameState::interactive_acknowledge)
     /// is set, `advance` suspends here with an `AwaitingInput { InputKind::Confirm }`
     /// so an interactive host can show the player the result before the ST.7
@@ -1486,18 +1512,25 @@ pub enum SkillTestStep {
     /// 01162's margin damage). Exactly one (or neither) is pushed; it runs
     /// after the follow-up because this step is sequenced after
     /// [`ApplyFollowUp`](Self::ApplyFollowUp). Pre-advances to
-    /// [`ApplySymbolOnFail`](Self::ApplySymbolOnFail). (Slice D #423.)
+    /// [`ApplyTokenResult`](Self::ApplyTokenResult). (Slice D #423.)
     ApplyResultEffect,
-    /// RR ST.7 — push a chaos symbol token's result-conditional `on_fail`
-    /// effect (Cultist 01104's horror), held on
-    /// [`InFlightSkillTest::symbol_on_fail`], when the test failed. Sits among
-    /// the ST.7 result effects (after the card `on_fail` of
-    /// [`ApplyResultEffect`](Self::ApplyResultEffect)); RR lets the test-performer
-    /// order multiple results, the engine sequences deterministically. Pushed
-    /// via [`Effect::Deal`] so a sanity-soak (Holy
-    /// Rosary 01028) suspends cleanly. Pre-advances to
-    /// [`FireOnResolution`](Self::FireOnResolution). (Slice D #423.)
-    ApplySymbolOnFail,
+    /// RR ST.7 — push the revealed chaos token's result-conditional part,
+    /// held on [`InFlightSkillTest::token_results`]: `on_success` when the
+    /// test succeeded, `on_fail` (with the failure margin threaded in) when it
+    /// failed (Cultist 01104's horror). One step for scenario symbols and
+    /// elder signs alike, evaluated with the stored
+    /// [`TokenResults::source`]. Pushed as an effect frame, so a sanity-soak
+    /// (Holy Rosary 01028) on an [`Effect::Deal`] suspends cleanly.
+    /// Pre-advances to [`FireOnResolution`](Self::FireOnResolution) before the
+    /// push. (Slice D #423.)
+    ///
+    /// Sits among the ST.7 result effects, after the action follow-up and the
+    /// card result of [`ApplyResultEffect`](Self::ApplyResultEffect). RR ST.7:
+    /// *"If there are multiple results to be applied during this step, the
+    /// investigator performing the test applies those results in the order of
+    /// his or her choice."* The engine sequences them in this fixed order
+    /// instead — the divergence #642 tracks.
+    ApplyTokenResult,
     /// RR ST.7 — fire the committed cards' [`OnSkillTestResolution`] triggers,
     /// one effect per driver visit so they cursor-sequence in committed-card
     /// order (no LIFO). `next` is the index into the flattened

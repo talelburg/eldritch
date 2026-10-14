@@ -29,6 +29,7 @@
 
 use std::fmt;
 
+use card_dsl::dsl::TokenOutcome;
 use serde::{Deserialize, Serialize};
 
 use crate::event::Event;
@@ -172,33 +173,6 @@ impl<'a> SymbolCtx<'a> {
     }
 }
 
-/// What a drawn chaos **symbol** token does this skill test: a numeric
-/// modifier plus side effects, split by resolution timing.
-///
-/// The `modifier` is applied to the skill total *before* success/failure
-/// is computed; `immediate` effects apply regardless of outcome (e.g.
-/// 01104 tablet's board-gated damage); `on_fail` effects apply only when
-/// the test fails (e.g. 01104 cultist's horror). The hook is evaluated
-/// once at token reveal, so board-gated branches are decided up front.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct SymbolOutcome {
-    /// Added to the test's skill total.
-    pub modifier: i8,
-    /// Applied to the testing investigator regardless of pass/fail.
-    pub immediate: Vec<TokenEffect>,
-    /// Applied to the testing investigator only if the test fails.
-    pub on_fail: Vec<TokenEffect>,
-}
-
-/// A symbol token's side effect on the testing investigator.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TokenEffect {
-    /// Deal N damage to the testing investigator.
-    Damage(u8),
-    /// Deal N horror to the testing investigator.
-    Horror(u8),
-}
-
 /// A scenario's **location layout**: the connections printed as connection
 /// symbols on its location cards, as unordered pairs of card codes. Each
 /// pair is wired bidirectionally when the second of its two locations
@@ -222,11 +196,19 @@ pub type LocationLayout = &'static [(&'static str, &'static str)];
 #[derive(Debug, Clone, Copy)]
 pub struct ScenarioModule {
     /// Resolve a drawn chaos **symbol** token (Skull/Cultist/Tablet/
-    /// `ElderThing`) against live board state. `None` means this scenario
-    /// has no reference-card symbol effects (test fixtures); the engine
-    /// then falls back to the static [`TokenModifiers`](crate::state::TokenModifiers)
-    /// table. Never called for Numeric/AutoFail/ElderSign tokens.
-    pub resolve_symbol: Option<fn(ChaosToken, &SymbolCtx) -> SymbolOutcome>,
+    /// `ElderThing`) against live board state, as the scenario reference
+    /// card's [`TokenOutcome`] — the same shape an investigator's elder sign
+    /// carries. `None` means this scenario has no reference-card symbol
+    /// effects (test fixtures); the engine then falls back to the static
+    /// [`TokenModifiers`](crate::state::TokenModifiers) table. Never called
+    /// for Numeric/AutoFail/ElderSign tokens.
+    ///
+    /// The hook runs once, at token reveal (ST.3), so a board-gated branch
+    /// (The Gathering's `[tablet]` damage) is decided up front. The returned
+    /// `modifier` is recorded unevaluated and read at ST.5, so a hook that
+    /// wants a live value returns a live [`IntExpr`](card_dsl::dsl::IntExpr);
+    /// one that returns `IntExpr::Lit` freezes the value it computed at reveal.
+    pub resolve_symbol: Option<fn(ChaosToken, &SymbolCtx) -> TokenOutcome>,
     /// Build the scenario's initial [`GameState`]. Places locations,
     /// populates encounter / act / agenda decks, sets chaos-bag
     /// modifiers, etc.
@@ -295,7 +277,7 @@ pub fn resolve_symbol_token(
     state: &GameState,
     token: ChaosToken,
     investigator: InvestigatorId,
-) -> Option<SymbolOutcome> {
+) -> Option<TokenOutcome> {
     let hook = scenario?.resolve_symbol?;
     Some(hook(token, &SymbolCtx::new(state, investigator)))
 }
@@ -347,20 +329,6 @@ mod tests {
         let reg = fake_registry();
         let id = ScenarioId::new("nonexistent");
         assert!((reg.module_for)(&id).is_none());
-    }
-
-    #[test]
-    fn symbol_outcome_default_is_inert() {
-        let out = SymbolOutcome::default();
-        assert_eq!(out.modifier, 0);
-        assert!(out.immediate.is_empty());
-        assert!(out.on_fail.is_empty());
-    }
-
-    #[test]
-    fn token_effect_variants_construct() {
-        assert_eq!(TokenEffect::Damage(1), TokenEffect::Damage(1));
-        assert_ne!(TokenEffect::Damage(1), TokenEffect::Horror(1));
     }
 
     #[test]

@@ -762,8 +762,9 @@ fn audience_reaches(
 }
 
 /// The controller's **elder-sign** skill-test modifier as an
-/// [`IntExpr`](card_dsl::dsl::IntExpr): the expression on their investigator
-/// card's [`Trigger::ElderSign`] ability, **copied unevaluated**.
+/// [`IntExpr`](card_dsl::dsl::IntExpr): the `modifier` of the
+/// [`TokenOutcome`](card_dsl::dsl::TokenOutcome) on their investigator card's
+/// [`Trigger::ElderSign`] ability, **copied unevaluated**.
 ///
 /// Lives here rather than in the evaluator because it answers the same
 /// question as [`modified_value`] — what is contributing to this
@@ -786,9 +787,10 @@ fn audience_reaches(
 /// registry, or it carries no elder-sign ability — so every investigator
 /// without an elder-sign contributes no row at all rather than a zero one.
 ///
-/// **Scope (#118), sunset by #448:** handles only pure-modifier
-/// elder-signs. Signs that also run an effect (Daisy / Agnes) are
-/// deferred — see [`Trigger::ElderSign`].
+/// Only the modifier is projected here. A sign's effect arms (Skids
+/// O'Toole's success-conditional resources, Daisy Walker's per-Tome draw)
+/// ride the same outcome and are not yet pushed — see
+/// [`Trigger::ElderSign`].
 #[must_use]
 pub(crate) fn elder_sign_expr(
     state: &GameState,
@@ -798,7 +800,7 @@ pub(crate) fn elder_sign_expr(
     let inv = state.investigators.get(&controller)?;
     let abilities = (registry.abilities_for)(&inv.investigator_card.code)?;
     abilities.iter().find_map(|ability| match &ability.trigger {
-        Trigger::ElderSign { modifier } => Some(modifier.clone()),
+        Trigger::ElderSign { outcome } => Some(outcome.modifier.clone()),
         _ => None,
     })
 }

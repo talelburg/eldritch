@@ -49,7 +49,7 @@ ship untested by anything but a unit test.
 
 | Issue | Work |
 |---|---|
-| #776 | `Trigger::ElderSign` grows an on-success effect — the prefactor |
+| #776 | Elder signs and scenario symbols share one token outcome — the prefactor: #1040 (one `TokenOutcome`), #1041 (elder-sign effects), #1042 (`HorrorOnController`), #1043 (`revealed` / `total`) |
 | #366 | Replacement effects beyond cancel — Wendy's blocker, re-milestoned here |
 | #777 | Slice 1 — Agnes Baker 01004 + Heirloom / Dark Memory + Mystic level 0 |
 | #778 | Slice 2 — "Skids" O'Toole 01003 + On the Lam / Hospital Debts + Rogue level 0 |
@@ -94,8 +94,10 @@ This is where the stress test bites. Verbatim from
 | Daisy 01002 | `+0. If you succeed, draw 1 card for each [[Tome]] you control.` | that, plus trait-counting |
 | Wendy 01005 | `+0. If Wendy's Amulet is in play, you automatically succeed instead.` | an outcome override |
 
-`Trigger::ElderSign { modifier: IntExpr }` models exactly Roland's shape — a number
-added to the chaos-token `Modifier` total at ST.4 — and has no field for an effect.
+`Trigger::ElderSign` carries a `TokenOutcome` — the shape a scenario's symbol table
+returns too: a modifier, an `immediate` part, and `on_success` / `on_fail` parts
+(#1040). The modifier is copied unevaluated into a test-scoped row at ST.3 and read
+at ST.5; the elder sign's three effect arms are carried but not yet pushed (#1041).
 
 **The one question worth arguing about is Wendy's**, and it is deliberately isolated
 in #776 rather than buried in her slice: is *"you automatically succeed instead"* an
