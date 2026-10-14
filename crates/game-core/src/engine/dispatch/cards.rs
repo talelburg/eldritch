@@ -901,7 +901,10 @@ pub(super) fn resolve_play_target(
 /// [`PlayFromHand`](crate::state::Continuation::PlayFromHand) frame
 /// (Slice D #423) that holds the card; when that effect pops, the frame's
 /// disposal places it — into `cards_in_play` for assets, or into `discard`
-/// (with an emitted [`Event::CardDiscarded`]) for events.
+/// (with an emitted [`Event::CardDiscarded`]) for events. Only then, at step 4,
+/// is the completed play announced to the timing system as
+/// `TimingEvent::CardPlayed` (Heirloom of Hyperborea 01012); the step-3
+/// [`Event::CardPlayed`] is the log entry, not that announcement.
 ///
 /// # State-mutation contract
 ///
@@ -945,7 +948,7 @@ pub(super) fn play_card(
     // A non-fast play is taken as an action: the step pays its one action, and
     // provokes attacks of opportunity before the play completes on resume. Its
     // hook pays the resource cost (RR p.22, before any attack resolves, #501)
-    // and commences the play: `CardPlayed` is announced and the card leaves hand
+    // and commences the play: `Event::CardPlayed` is logged and the card leaves hand
     // to ride the frames until it is placed (RR Appendix I step 3 → 4). The
     // card itself rides the `ActionResolution` frame through the attacks.
     let description = ActionDescription::play(code.clone(), play_designator(&abilities).cloned());
