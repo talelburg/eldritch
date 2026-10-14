@@ -141,9 +141,9 @@ fn ghoul_count_at_investigator_location(cx: &SymbolCtx) -> u8 {
 /// 01104 The Gathering chaos-symbol effects — **Easy/Standard face only**
 /// (`data/arkhamdb-snapshot/pack/core/core_encounter.json`):
 ///
-/// > [skull] -X. X is the number of [[Ghoul]] enemies at your location.
-/// > [cultist] -1. If you fail, take 1 horror.
-/// > [tablet] -2. If there is a [[Ghoul]] enemy at your location, take 1 damage.
+/// > \[skull\] -X. X is the number of \[\[Ghoul\]\] enemies at your location.
+/// > \[cultist\] -1. If you fail, take 1 horror.
+/// > \[tablet\] -2. If there is a \[\[Ghoul\]\] enemy at your location, take 1 damage.
 ///
 /// Each symbol is a [`TokenOutcome`]: the cultist's horror is its `on_fail`
 /// part and the tablet's damage its `immediate` part, both plain

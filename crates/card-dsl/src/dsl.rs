@@ -441,10 +441,10 @@ pub enum Trigger {
 /// (`Appendix_II_Timing_and_Gameplay.md`):
 ///
 /// > Each of the following symbols indicates that an ability on the scenario
-/// > reference card must initiate: [skull], [cultist], [tablet], or
-/// > [elder_thing].
+/// > reference card must initiate: \[skull\], \[cultist\], \[tablet\], or
+/// > \[elder_thing\].
 /// >
-/// > The [elder_sign] symbol indicates that the [elder_sign] ability on the
+/// > The \[elder_sign\] symbol indicates that the \[elder_sign\] ability on the
 /// > investigator card belonging to the player performing the test must
 /// > initiate.
 ///
