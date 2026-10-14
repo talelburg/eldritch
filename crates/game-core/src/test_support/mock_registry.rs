@@ -1,4 +1,4 @@
-//! The mock card registry a test binary installs; see [`MockRegistry`].
+//! The mock card registry a test binary builds or installs; see [`MockRegistry`].
 
 use std::sync::OnceLock;
 
@@ -23,7 +23,9 @@ type AbilitiesFn = Box<dyn Fn() -> Vec<Ability> + Send + Sync>;
 ///
 /// Populated **only** by an [`install`](MockRegistry::install) that won the
 /// registry slot, so the invariant every lookup below relies on holds: if
-/// `TABLES` is set, the installed registry is this module's.
+/// `TABLES` is set, the installed registry is this module's — or by
+/// [`build`](MockRegistry::build), which installs nothing and hands the
+/// registry out as a value.
 static TABLES: OnceLock<MockRegistry> = OnceLock::new();
 
 /// A builder for the mock [`CardRegistry`] a test binary installs.
@@ -164,30 +166,68 @@ impl MockRegistry {
     /// stored only when this call won the slot, so a builder that lost leaves
     /// nothing behind for a lookup to serve from a registry that isn't ours.
     ///
-    /// The literal below names all five slots rather than spreading
-    /// [`CardRegistry::EMPTY`], so a slot added later is a compile error here —
-    /// which is what a builder wants, since every slot is one it must decide
-    /// whether to expose a `with_*` for. (`EMPTY` is the right base for a
-    /// *partial* literal; this one is total.)
-    ///
     /// The winning call publishes the registry a step before its tables, so a
     /// lookup racing the install proper would see an empty one. Nothing does:
     /// an install runs from a `#[ctor]` or from the top of a test, both of them
     /// ahead of any card lookup in the binary.
     pub fn install(self) {
-        let won = card_registry::install(CardRegistry {
-            metadata_for,
-            abilities_for,
-            back_abilities_for,
-            native_effect_for,
-            native_condition_for,
-        })
-        .is_ok();
+        let won = card_registry::install(MOCK).is_ok();
         if won {
             let _ = TABLES.set(self);
         }
     }
+
+    /// This registry as a value, for a test to name — on the board
+    /// ([`with_registries`](crate::state::GameStateBuilder::with_registries))
+    /// or the session — rather than install. It composes the same standard
+    /// lookups as [`install`](Self::install).
+    ///
+    /// The lookups still read one process-wide table (a `fn` pointer cannot
+    /// capture), so a process holds **one** mock. Build it once per test
+    /// binary and cache it:
+    ///
+    /// ```
+    /// use std::sync::LazyLock;
+    /// use game_core::card_registry::CardRegistry;
+    /// use game_core::test_support::MockRegistry;
+    ///
+    /// fn cards() -> &'static CardRegistry {
+    ///     static CARDS: LazyLock<&'static CardRegistry> =
+    ///         LazyLock::new(|| MockRegistry::new().build());
+    ///     *CARDS
+    /// }
+    /// # let _ = cards();
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if a mock was already built or installed in this process: a
+    /// second table would otherwise be served silently from the first.
+    #[must_use]
+    pub fn build(self) -> &'static CardRegistry {
+        assert!(
+            TABLES.set(self).is_ok(),
+            "MockRegistry::build: a mock registry was already built in this process; \
+             build one per test binary and cache it",
+        );
+        &MOCK
+    }
 }
+
+/// The registry every mock serves through: all five slots read [`TABLES`].
+///
+/// The literal names all five slots rather than spreading
+/// [`CardRegistry::EMPTY`], so a slot added later is a compile error here —
+/// which is what a builder wants, since every slot is one it must decide
+/// whether to expose a `with_*` for. (`EMPTY` is the right base for a
+/// *partial* literal; this one is total.)
+static MOCK: CardRegistry = CardRegistry {
+    metadata_for,
+    abilities_for,
+    back_abilities_for,
+    native_effect_for,
+    native_condition_for,
+};
 
 /// Serve `tag` out of one of the `Copy`-valued native tables. The two native
 /// slots differ only in the function type they carry, so they share this scan.
