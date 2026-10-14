@@ -5,6 +5,7 @@ use card_dsl::card_data::CardMetadata;
 
 use crate::card_registry::CardRegistry;
 use crate::engine::board::{self, LeavingCard, Placement};
+use crate::engine::dispatch::actions::take;
 use crate::engine::dispatch::{
     act_agenda, cards, combat, elimination, encounter, hunters, placement, reveal, set_aside,
     skill_test, threat_area,
@@ -307,6 +308,16 @@ impl<'a> NativeCx<'a> {
         metadata: &CardMetadata,
     ) -> EngineOutcome {
         encounter::resolve_encounter_card(self.write_access(), investigator, code, metadata)
+    }
+
+    // --- Actions ---
+
+    /// `investigator` loses `count` actions: they have that many fewer to take
+    /// this turn, never fewer than none. Emits
+    /// [`Event::ActionsRemainingChanged`](crate::event::Event::ActionsRemainingChanged)
+    /// when the count changes.
+    pub fn lose_actions(&mut self, investigator: InvestigatorId, count: u8) {
+        take::lose_actions(self.write_access(), investigator, count);
     }
 
     // --- Acts and skill tests ---

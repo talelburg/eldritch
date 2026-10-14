@@ -184,28 +184,46 @@ pub enum ActionDesignator {
         /// attack (Shrivelling 01060's horror). See [`RevealClause`].
         reveal_clause: Option<RevealClause>,
     },
-    /// **Evade** — performs an evade action. Ten corpus cards print it, none
-    /// implemented, so the engine rejects a designated Evade rather than
-    /// guessing at a payload (`TODO(#818)`). Eight are **events** whose bold
-    /// word rides their `Trigger::OnPlay` ability (Blinding Light 01066/01069,
-    /// Cunning Distraction 01078, Bind Monster 02031, Bait and Switch 02034),
-    /// built by [`on_play_as`]. The two activated ones are assets:
-    /// Fire Extinguisher 02114's *"\[action\] Exile Fire Extinguisher:
-    /// **Evade.** You get +3 \[agility\] for this test…"*, whose `+3` is the
-    /// [`Fight`](Self::Fight) modification's twin, and Strange Solution 02264's
-    /// *"\[action\] Spend 1 supply: **Evade.** Evade with a base \[agility\]
-    /// skill of 6."*, whose **base-value replacement** (`GLOSSARY.md`, "Base
-    /// value") is a shape no designator payload carries yet. So the field is
-    /// unfixed because two live cards disagree about what it should be, not
-    /// for want of a sample.
-    Evade,
+    /// **Evade** — performs an evade action against an enemy *engaged with the
+    /// controller* (`glossary/Evade_Action.md`: *"an investigator can only
+    /// perform an evade action against an enemy engaged with him or her"*).
+    /// Blinding Light 01066, an event whose bold word rides its
+    /// `Trigger::OnPlay` ability, built by [`on_play_as`].
+    ///
+    /// The modification is as far as Blinding Light prints it: the skill
+    /// override, the reveal clause, and a success clause. Built by [`evade`]
+    /// and the chaining builders [`testing`](Self::testing),
+    /// [`with_reveal_clause`](Self::with_reveal_clause) and
+    /// [`on_success`](Self::on_success). Two corpus printings take shapes it
+    /// does not carry yet: Fire Extinguisher 02114's *"You get +3 \[agility\]
+    /// for this test"* (the [`Fight`](Self::Fight) combat modifier's twin) and
+    /// Strange Solution 02264's *"Evade with a base \[agility\] skill of 6"*,
+    /// a **base-value replacement** (`GLOSSARY.md`, "Base value"). Each grows
+    /// its field when it is built.
+    Evade {
+        /// The skill the evasion tests in place of `[agility]`, or `None` for
+        /// agility. Blinding Light 01066: *"This evasion attempt uses
+        /// \[willpower\] instead of \[agility\]."*
+        skill_override: Option<SkillKind>,
+        /// What happens if one of a set of chaos symbols is revealed during the
+        /// evasion attempt (Blinding Light's lost action). See
+        /// [`RevealClause`].
+        reveal_clause: Option<RevealClause>,
+        /// What happens if the evasion succeeds, after the enemy is evaded
+        /// (Blinding Light's *"If you succeed, deal 1 damage to the enemy just
+        /// evaded."*). It resolves inside the test, at Skill Test Timing step
+        /// 7, where the evaded enemy is still the test's; the ability's
+        /// residual effect runs only after the test has ended. Boxed, as
+        /// [`RevealClause::effect`] is.
+        on_success: Option<Box<Effect>>,
+    },
     /// **Move** — performs a move action. **No corpus card prints it**, though
     /// 29 in the snapshot do (Sled Dog 08127's *"\[action\] Exhaust X Sled
     /// Dogs: **Move.** Move X times."*, Ring Library 11624's *"\[action\]:
     /// **Move.** Move to a revealed \[\[Passageway\]\] location."*), so its
     /// modification is a *destination or a repeat count* rather than a stat
-    /// row. Rejected on the same `TODO(#818)` as [`Evade`](Self::Evade), for
-    /// the stronger reason: nothing the build compiles prints one at all. Named
+    /// row. Rejected (`TODO(#1059)`) because nothing the build compiles prints
+    /// one at all, so there is no printed shape to take its payload from. Named
     /// as a designator by the rules quote above and by Frozen in Fear 01164's
     /// ruling.
     Move,
@@ -274,15 +292,16 @@ impl ActionDesignator {
     pub fn action_class(&self) -> Option<ActionClass> {
         match self {
             Self::Fight { .. } => Some(ActionClass::Fight),
-            Self::Evade => Some(ActionClass::Evade),
+            Self::Evade { .. } => Some(ActionClass::Evade),
             Self::Move => Some(ActionClass::Move),
             Self::Investigate { .. } | Self::Parley | Self::Resign => None,
         }
     }
 
-    /// This designator's attack, testing `skill` instead of `[combat]`
+    /// This designator's test, testing `skill` instead of the action's own
     /// (Shrivelling 01060's *"This attack uses \[willpower\] instead of
-    /// \[combat\]"*).
+    /// \[combat\]"*, Blinding Light 01066's *"This evasion attempt uses
+    /// \[willpower\] instead of \[agility\]."*).
     ///
     /// # Panics
     ///
@@ -292,14 +311,18 @@ impl ActionDesignator {
     #[must_use]
     pub fn testing(mut self, skill: SkillKind) -> Self {
         match &mut self {
-            Self::Fight { skill_override, .. } => *skill_override = Some(skill),
+            Self::Fight { skill_override, .. } | Self::Evade { skill_override, .. } => {
+                *skill_override = Some(skill);
+            }
             other => panic!("{other:?} carries no skill override"),
         }
         self
     }
 
     /// This designator's test, carrying `clause` (Shrivelling 01060's *"If a
-    /// \[skull\], … symbol is revealed during this attack, take 1 horror."*).
+    /// \[skull\], … symbol is revealed during this attack, take 1 horror."*,
+    /// Blinding Light 01066's *"… during this evasion attempt, lose 1 action
+    /// this turn."*).
     ///
     /// # Panics
     ///
@@ -308,8 +331,28 @@ impl ActionDesignator {
     #[must_use]
     pub fn with_reveal_clause(mut self, clause: RevealClause) -> Self {
         match &mut self {
-            Self::Fight { reveal_clause, .. } => *reveal_clause = Some(clause),
+            Self::Fight { reveal_clause, .. } | Self::Evade { reveal_clause, .. } => {
+                *reveal_clause = Some(clause);
+            }
             other => panic!("{other:?} carries no reveal clause"),
+        }
+        self
+    }
+
+    /// This designator's evasion, resolving `effect` if it succeeds (Blinding
+    /// Light 01066's *"If you succeed, deal 1 damage to the enemy just
+    /// evaded."*). `effect` evaluates with the test's performer as its
+    /// controller, while the test is still in flight.
+    ///
+    /// # Panics
+    ///
+    /// On a designator other than [`Evade`](Self::Evade), the one whose printed
+    /// success clause has a field yet, as [`testing`](Self::testing) does.
+    #[must_use]
+    pub fn on_success(mut self, effect: Effect) -> Self {
+        match &mut self {
+            Self::Evade { on_success, .. } => *on_success = Some(Box::new(effect)),
+            other => panic!("{other:?} carries no success clause"),
         }
         self
     }
@@ -1346,12 +1389,20 @@ impl Ability {
         }
         match &self.designator {
             None
-            | Some(
-                ActionDesignator::Evade
-                | ActionDesignator::Move
-                | ActionDesignator::Parley
-                | ActionDesignator::Resign,
-            ) => {}
+            | Some(ActionDesignator::Move | ActionDesignator::Parley | ActionDesignator::Resign) => {
+            }
+            Some(ActionDesignator::Evade {
+                skill_override: _,
+                reveal_clause,
+                on_success,
+            }) => {
+                if let Some(clause) = reveal_clause {
+                    clause.effect.collect_native_refs(refs);
+                }
+                if let Some(effect) = on_success {
+                    effect.collect_native_refs(refs);
+                }
+            }
             Some(ActionDesignator::Fight {
                 combat_modifier,
                 extra_damage,
@@ -3210,6 +3261,19 @@ pub fn fight(
         extra_damage: extra_damage.into(),
         skill_override: None,
         reveal_clause: None,
+    }
+}
+
+/// Build an [`ActionDesignator::Evade`]: a basic evasion, testing `[agility]`
+/// with no reveal or success clause. Chain [`ActionDesignator::testing`],
+/// [`ActionDesignator::with_reveal_clause`] and [`ActionDesignator::on_success`]
+/// for what a card prints (Blinding Light 01066).
+#[must_use]
+pub fn evade() -> ActionDesignator {
+    ActionDesignator::Evade {
+        skill_override: None,
+        reveal_clause: None,
+        on_success: None,
     }
 }
 

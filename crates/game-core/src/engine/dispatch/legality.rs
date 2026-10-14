@@ -195,6 +195,15 @@ pub(crate) fn check_play_card(
         )
         .into());
     }
+    // Before the gate, as the activation path asks it: a designated event's
+    // change-state question is its action's (`initiation::performs_an_action`),
+    // so Blinding Light 01066's **Evade** with no enemy engaged is refused here,
+    // before its resources or its action are paid.
+    let designator = cards::play_designator(&abilities);
+    if let Some(designator) = designator {
+        designator::can_perform(state, investigator, designator)
+            .map_err(|why| Cow::from(format!("PlayCard: {why}")))?;
+    }
     // The initiation gate, as a play (ADR 0017): the investigator is Active, an
     // event's effect can change the game state (#495), no "cannot play" forbids
     // the card's type (Dissonant Voices 01165, #852), and its resource cost can
@@ -288,7 +297,7 @@ pub(crate) fn check_play_card(
             state,
             cards,
             investigator,
-            &ActionDescription::play(code.clone()),
+            &ActionDescription::play(code.clone(), designator.cloned()),
         )
         .map_err(|why| Cow::from(format!("PlayCard: {why}")))?;
     }

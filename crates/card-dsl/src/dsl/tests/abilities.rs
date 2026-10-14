@@ -5,10 +5,7 @@ use super::*;
 #[test]
 fn a_designator_maps_onto_the_action_class_it_performs() {
     assert_eq!(fight(0u8, 0u8).action_class(), Some(ActionClass::Fight));
-    assert_eq!(
-        ActionDesignator::Evade.action_class(),
-        Some(ActionClass::Evade)
-    );
+    assert_eq!(evade().action_class(), Some(ActionClass::Evade));
     assert_eq!(
         ActionDesignator::Move.action_class(),
         Some(ActionClass::Move)
@@ -35,9 +32,9 @@ fn only_the_activated_and_on_play_builders_carry_a_designator() {
 
     // Blinding Light 01066: "<b>Evade.</b> This evasion attempt uses
     // [willpower] instead of [agility]. …"
-    let played = on_play_as(ActionDesignator::Evade, seq([]));
+    let played = on_play_as(evade(), seq([]));
     assert_eq!(played.trigger, Trigger::OnPlay);
-    assert_eq!(played.designator, Some(ActionDesignator::Evade));
+    assert_eq!(played.designator, Some(evade()));
     assert!(played.costs.is_empty());
 
     for undesignated in [

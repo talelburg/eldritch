@@ -14,13 +14,15 @@
 //! the action surcharge.
 //!
 //! [`can_perform`] answers *"can this designated ability initiate at all"* —
-//! whether **some** legal target exists, never which one. Its caller is the
-//! activation validator (`check_activate_ability`), pre-cost, which the
-//! turn-menu enumerator filters through in turn, so menu and handler cannot
-//! disagree about what is offerable.
+//! whether **some** legal target exists, never which one. Its callers are the
+//! activation validator (`check_activate_ability`) and the play validator
+//! (`check_play_card`, for an event's designated `OnPlay` ability), both
+//! pre-cost, which the turn-menu enumerator filters through in turn, so menu
+//! and handler cannot disagree about what is offerable.
 //!
 //! What it answers *from* is the basic action's own `candidates`
-//! (`actions::fight::candidates`, `actions::investigate::candidates`), the one
+//! (`actions::fight::candidates`, `actions::evade::candidates`,
+//! `actions::investigate::candidates`), the one
 //! list the basic action's handler and the turn menu read too. A basic action
 //! names its target up front, so its handler asks whether *this* enemy is in the
 //! list, a question `can_perform` deliberately does not ask. Sharing the list
@@ -32,7 +34,7 @@ use std::borrow::Cow;
 
 use card_dsl::dsl::ActionDesignator;
 
-use crate::engine::dispatch::actions::{self, fight, investigate};
+use crate::engine::dispatch::actions::{self, evade, fight, investigate};
 use crate::state::{GameState, InvestigatorId};
 
 /// Whether `investigator` can perform the action `designator` names, ignoring
@@ -48,6 +50,9 @@ use crate::state::{GameState, InvestigatorId};
 ///   engaged-only: per RR you choose an enemy at your location to attack and
 ///   need not already be engaged (an Aloof enemy, or one engaged with another
 ///   investigator in MP, is a legal target). #451.
+/// - **Evade** — needs ≥1 enemy *engaged with you*. `glossary/Evade_Action.md`:
+///   *"Unlike the fight and engage action, an investigator can only perform an
+///   evade action against an enemy engaged with him or her."*
 /// - **Investigate** — needs the controller at a *revealed* location to test.
 /// - **Parley** — performs nothing (`glossary/Parley.md` gives it no
 ///   procedure), so nothing can be missing. Whether the ability is worth
@@ -55,14 +60,10 @@ use crate::state::{GameState, InvestigatorId};
 ///   gate asks separately.
 /// - **Resign** — eliminating the controller is always available to an
 ///   investigator who reached the ability at all.
-/// - **Evade** / **Move** — rejected, with the reason one shared helper gives
-///   ([`actions::designated_unimplemented`], `TODO(#818)`). Neither variant
-///   carries a modification, and no implemented card prints either, so the
-///   engine says so rather than performing a guess. Note the two differ in
-///   *why*: ten corpus cards print **Evade** and disagree about the payload's
-///   shape (Fire Extinguisher 02114's `+3 [agility]` row vs Strange Solution
-///   02264's base-value replacement), while **Move** is printed by no corpus
-///   card at all. See the variants' own docs.
+/// - **Move** — rejected, with the reason
+///   [`actions::designated_unimplemented_move`] gives (`TODO(#1059)`). The
+///   variant carries no modification because no corpus card prints a bold
+///   **Move**, so the engine says so rather than performing a guess.
 pub(crate) fn can_perform(
     state: &GameState,
     investigator: InvestigatorId,
@@ -86,17 +87,24 @@ pub(crate) fn can_perform(
             Ok(())
         }
         ActionDesignator::Parley | ActionDesignator::Resign => Ok(()),
-        ActionDesignator::Evade => Err(actions::designated_unimplemented("Evade")),
-        ActionDesignator::Move => Err(actions::designated_unimplemented("Move")),
+        ActionDesignator::Evade { .. } => {
+            if evade::candidates(state, investigator).is_empty() {
+                return Err(
+                    "an Evade ability needs an enemy engaged with you (none engaged)".into(),
+                );
+            }
+            Ok(())
+        }
+        ActionDesignator::Move => Err(actions::designated_unimplemented_move()),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::IntExpr;
+    use card_dsl::dsl::{self, IntExpr};
 
     use super::*;
-    use crate::state::{GameStateBuilder, LocationId};
+    use crate::state::{EnemyId, GameStateBuilder, LocationId};
     use crate::test_support::{self, seat, TEST_REGISTRIES};
 
     const ME: InvestigatorId = InvestigatorId(1);
@@ -157,15 +165,25 @@ mod tests {
         assert!(can_perform(&state, ME, &ActionDesignator::Resign).is_ok());
     }
 
-    /// The two designators no *implemented* card prints reject rather than
-    /// performing a guess — and they reject *pre-cost*, so nothing is spent.
-    /// (Corpus cards printing **Evade** exist — Fire Extinguisher 02114,
-    /// Strange Solution 02264 — but none is built, so nothing reaches this.)
+    /// An evade needs an enemy *engaged with you*: one merely co-located, which
+    /// a Fight could target, is no evade target.
+    #[test]
+    fn an_evade_needs_an_engaged_enemy() {
+        let mut state = board(true, 2);
+        assert!(can_perform(&state, ME, &dsl::evade()).is_err());
+        state
+            .enemies
+            .get_mut(&EnemyId(2))
+            .expect("the board's second enemy")
+            .engaged_with = Some(ME);
+        assert!(can_perform(&state, ME, &dsl::evade()).is_ok());
+    }
+
+    /// The designator no *implemented* card prints rejects rather than
+    /// performing a guess — and it rejects *pre-cost*, so nothing is spent.
     #[test]
     fn an_unprinted_designator_rejects_rather_than_guessing() {
         let state = board(true, 1);
-        for d in [ActionDesignator::Evade, ActionDesignator::Move] {
-            assert!(can_perform(&state, ME, &d).is_err(), "{d:?}");
-        }
+        assert!(can_perform(&state, ME, &ActionDesignator::Move).is_err());
     }
 }
