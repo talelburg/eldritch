@@ -459,8 +459,7 @@ fn reshuffle_discard_into_deck(cx: &mut Cx, investigator: InvestigatorId) {
 /// (the `Draw` action and Upkeep step 4.4).
 ///
 /// Caller guarantees `investigator` exists in `state.investigators`.
-#[must_use = "draw_one_with_deckout may push the deck-out deal and Revelation frames: \
-              return the outcome and put no work after it (ADR 0003)"]
+#[must_use = "a deck-out draw may push frames: return its outcome (ADR 0003)"]
 pub(super) fn draw_one_with_deckout(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
     draw_with_deckout(cx, investigator, 1)
 }
@@ -497,8 +496,7 @@ pub(super) fn draw_one_with_deckout(cx: &mut Cx, investigator: InvestigatorId) -
 /// it, so a caller returns the outcome and puts no work after the call.
 ///
 /// Caller guarantees `investigator` exists in `state.investigators`.
-#[must_use = "draw_with_deckout may push the deck-out deal and Revelation frames: \
-              return the outcome and put no work after it (ADR 0003)"]
+#[must_use = "a deck-out draw may push frames: return its outcome (ADR 0003)"]
 pub(in crate::engine) fn draw_with_deckout(
     cx: &mut Cx,
     investigator: InvestigatorId,

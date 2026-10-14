@@ -434,9 +434,7 @@ pub(crate) fn begin_deal_damage(
 /// **Tail position** (ADR 0003), like [`begin_deal_damage`]: nothing is placed
 /// when this returns. A caller with work to do afterwards parks it on a frame
 /// beneath first. `deal_harm(.., 0, 0)` deals nothing and pushes no frame.
-#[must_use = "deal_harm only pushes the deal frame: work after the harm belongs on a \
-              frame beneath it, not after this call (ADR 0003). Return the outcome, or \
-              bind it to `_` at a site whose caller owns the suspension channel"]
+#[must_use = "deal_harm only pushes the deal frame: return its outcome (ADR 0003)"]
 pub(crate) fn deal_harm(
     cx: &mut Cx,
     investigator: InvestigatorId,

@@ -92,8 +92,7 @@ impl<'a> NativeCx<'a> {
     /// **Return its outcome.** The deal runs on a frame above everything the
     /// native leaves beneath it, so work written after this call would run
     /// before the harm lands (ADR 0003).
-    #[must_use = "deal_harm only pushes the deal frame: return its outcome from the \
-                  native, and put no work after it (ADR 0003)"]
+    #[must_use = "deal_harm only pushes the deal frame: return its outcome (ADR 0003)"]
     pub fn deal_harm(
         &mut self,
         investigator: InvestigatorId,
