@@ -88,8 +88,8 @@ use crate::state::{
 /// assert_eq!(session.prompt().target, Some(OptionTarget::TurnControl(me)));
 /// ```
 ///
-/// Construct via [`GameStateBuilder::session`](crate::state::GameStateBuilder::session) or
-/// [`TestSession::new`].
+/// Construct via [`GameStateBuilder::session`](crate::state::GameStateBuilder::session),
+/// [`TestSession::new_with_registries`] or [`TestSession::new`].
 #[derive(Debug)]
 #[must_use = "a TestSession step returns the advanced session"]
 pub struct TestSession {
@@ -105,6 +105,9 @@ pub struct TestSession {
     /// Every event since construction, settling included.
     events: Vec<Event>,
     policy: Policy,
+    /// The registries every step's `apply` runs against, fixed at
+    /// construction.
+    registries: Registries,
 }
 
 /// How the drain answers the prompts a step opens.
@@ -138,18 +141,26 @@ impl std::fmt::Debug for Policy {
 }
 
 impl GameStateBuilder {
-    /// Build and settle into a [`TestSession`]. Equivalent to
-    /// `TestSession::new(self.build())`. Lives here (test-only) rather than on
-    /// the builder itself so the production builder in [`crate::state`] carries
-    /// no test dependency.
+    /// Build and settle into a [`TestSession`] driven with the registries named
+    /// by [`with_registries`](GameStateBuilder::with_registries): equivalent to
+    /// `TestSession::new_with_registries(self.build(), regs)`, or, until the
+    /// test names them, `TestSession::new(self.build())`. Lives here
+    /// (test-only) rather than on the builder itself so the production builder
+    /// in [`crate::state`] carries no test dependency.
     pub fn session(self) -> TestSession {
-        TestSession::new(self.build())
+        let registries = self.registries();
+        let state = self.build();
+        match registries {
+            Some(registries) => TestSession::new_with_registries(state, registries),
+            None => TestSession::new(state),
+        }
     }
 }
 
 impl TestSession {
     /// Settle `state` to where the engine would rest, through the production
-    /// `apply` scaffolding.
+    /// `apply` scaffolding, driving it with the installed registries. Prefer
+    /// [`new_with_registries`](Self::new_with_registries), which names them.
     ///
     /// # Panics
     ///
@@ -157,7 +168,19 @@ impl TestSession {
     /// engine never rests at. Build the state before the prompt and drive into
     /// it instead.
     pub fn new(state: GameState) -> Self {
-        let settled = engine::apply_via(state, Registries::from_globals(), |cx| {
+        Self::new_with_registries(state, Registries::from_globals())
+    }
+
+    /// Settle `state` to where the engine would rest, as [`new`](Self::new)
+    /// does, driving it — and every later step — with `registries`. The way in
+    /// for a hand-built state; a board names its registries on the builder
+    /// instead ([`with_registries`](GameStateBuilder::with_registries)).
+    ///
+    /// # Panics
+    ///
+    /// As [`new`](Self::new).
+    pub fn new_with_registries(state: GameState, registries: Registries) -> Self {
+        let settled = engine::apply_via(state, registries, |cx| {
             let outcome = engine::drive(cx, EngineOutcome::Done);
             if matches!(outcome, EngineOutcome::Done) {
                 if let Some(top) = cx.state.continuations.top() {
@@ -185,6 +208,7 @@ impl TestSession {
             last_events: events.clone(),
             events,
             policy: Policy::Script(ScriptedResolver::new()),
+            registries,
         }
     }
 
@@ -230,7 +254,8 @@ impl TestSession {
     /// Step: apply a raw `action`, then drain. The escape hatch for engine
     /// records and hand-built responses; prefer the named steps.
     pub fn apply(self, action: Action) -> Self {
-        self.advance(|state| engine::apply(state, action))
+        let registries = self.registries;
+        self.advance(|state| engine::apply_with_registries(state, action, registries))
     }
 
     /// Step: fire the timing point `event` from where the session rests, the
@@ -402,7 +427,8 @@ impl TestSession {
     /// Apply one framework entry point `dispatch` through the production
     /// `apply` scaffolding, then drive on and drain.
     fn framework_step(self, dispatch: impl FnOnce(&mut Cx) -> EngineOutcome) -> Self {
-        self.advance(|state| engine::apply_via(state, Registries::from_globals(), dispatch))
+        let registries = self.registries;
+        self.advance(|state| engine::apply_via(state, registries, dispatch))
     }
 
     /// The one step body: apply `first` to the resting state, then drain its
@@ -415,6 +441,7 @@ impl TestSession {
             last_events: _,
             mut events,
             mut policy,
+            registries,
         } = self;
         // The last prompt the step reached. A reply the engine rejects restores
         // the state to that prompt, so the session rests there rather than where
@@ -430,7 +457,7 @@ impl TestSession {
         let result = drain_with_applier(
             first,
             |request, state| policy.answer(request, state),
-            |state, action| note(engine::apply(state, action)),
+            |state, action| note(engine::apply_with_registries(state, action, registries)),
         );
         let ApplyResult {
             state,
@@ -448,6 +475,7 @@ impl TestSession {
             last_events: step_events,
             events,
             policy,
+            registries,
         }
     }
 

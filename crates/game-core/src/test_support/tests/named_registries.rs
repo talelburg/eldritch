@@ -9,10 +9,14 @@ use std::sync::OnceLock;
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Skills};
 
 use crate::card_registry::CardRegistry;
+use crate::engine::enumerate::TurnAction;
 use crate::engine::Registries;
-use crate::scenario::ScenarioRegistry;
-use crate::state::{CardCode, GameStateBuilder, InvestigatorId, Owner, SkillKind};
-use crate::test_support::seat;
+use crate::event::Event;
+use crate::scenario::{ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRegistry};
+use crate::state::{
+    Act, CardCode, GameState, GameStateBuilder, InvestigatorId, Owner, SkillKind,
+};
+use crate::test_support::{seat, terminal_code, TestSession, TEST_REGISTRY};
 
 const INV: InvestigatorId = InvestigatorId(1);
 
@@ -94,6 +98,76 @@ const NAMED: Registries = Registries {
     cards: &PROBES,
     scenarios: &ScenarioRegistry::EMPTY,
 };
+
+/// The scenario id only [`STAMP_SCENARIOS`] knows.
+const STAMP: &str = "_named_stamp";
+
+/// What [`stamp_apply`] sets the investigator's resources to, so a test can
+/// tell the named scenario module's hook ran.
+const STAMPED: u8 = 99;
+
+fn stamp_apply(_ending: ScenarioEnding, state: &mut GameState, _events: &mut Vec<Event>) {
+    if let Some(investigator) = state.investigators.values_mut().next() {
+        investigator.resources = STAMPED;
+    }
+}
+
+fn unused_setup() -> GameState {
+    GameStateBuilder::new().build()
+}
+
+static STAMP_MODULE: ScenarioModule = ScenarioModule {
+    resolve_symbol: None,
+    setup: unused_setup,
+    apply_resolution: stamp_apply,
+    layout: &[],
+};
+
+const STAMP_SCENARIOS: ScenarioRegistry = ScenarioRegistry {
+    module_for: |id| (id.as_str() == STAMP).then_some(&STAMP_MODULE),
+};
+
+/// game-core's test registry, which serves the terminal act's reverse, paired
+/// with a scenario registry only these tests know.
+const STAMPING: Registries = Registries {
+    cards: &TEST_REGISTRY,
+    scenarios: &STAMP_SCENARIOS,
+};
+
+/// The stamp scenario at `INV`'s turn menu, `INV` holding one clue.
+fn stamp_board() -> GameStateBuilder {
+    GameStateBuilder::new()
+        .with_seat(seat(1).clues(1))
+        .open_turn(INV)
+        .with_scenario_id(ScenarioId::new(STAMP))
+}
+
+#[test]
+fn the_board_session_ends_the_scenario_through_the_named_module() {
+    // Lethal damage eliminates the only investigator, which ends the scenario
+    // with no resolution; finishing it runs the module's `apply_resolution`.
+    let session = stamp_board()
+        .with_registries(STAMPING)
+        .session()
+        .take_damage(INV, 8);
+    assert!(session.state().ending.is_some(), "the scenario ended");
+    assert_eq!(session.state().investigators[&INV].resources, STAMPED);
+}
+
+#[test]
+fn a_session_on_a_hand_built_state_ends_the_scenario_through_the_named_module() {
+    let mut state = stamp_board().build();
+    // No builder setter for the act deck. The act is terminal (ADR 0013) and
+    // affordable, so advancing it latches `Resolution(1)`.
+    state.act_deck = vec![Act {
+        code: terminal_code(1),
+        clue_threshold: 1,
+    }];
+    let session = TestSession::new_with_registries(state, STAMPING)
+        .take(&TurnAction::AdvanceAct { investigator: INV });
+    assert!(session.state().ending.is_some(), "the scenario ended");
+    assert_eq!(session.state().investigators[&INV].resources, STAMPED);
+}
 
 #[test]
 fn as_card_reads_the_printed_investigator_from_the_named_registries() {
