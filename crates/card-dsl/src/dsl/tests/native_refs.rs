@@ -96,3 +96,25 @@ fn a_native_condition_carried_by_an_action_designator_is_reported_as_a_condition
     );
     assert_eq!(ability.native_refs(), [condition_ref("x:in-designator")]);
 }
+
+#[test]
+fn an_elder_signs_modifier_and_effect_arms_are_all_walked() {
+    let mut ability = elder_sign(IntExpr::Lit(0));
+    ability.trigger = Trigger::ElderSign {
+        outcome: TokenOutcome {
+            modifier: IntExpr::cond(native_condition("x:in-modifier"), 1, 0),
+            immediate: Some(native("x:immediate")),
+            on_success: Some(native("x:on-success")),
+            on_fail: Some(native("x:on-fail")),
+        },
+    };
+    assert_eq!(
+        ability.native_refs(),
+        [
+            condition_ref("x:in-modifier"),
+            effect_ref("x:immediate"),
+            effect_ref("x:on-success"),
+            effect_ref("x:on-fail"),
+        ]
+    );
+}

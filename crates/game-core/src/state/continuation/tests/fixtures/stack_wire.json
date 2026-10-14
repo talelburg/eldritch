@@ -116,7 +116,7 @@
       "bonus_attack_damage": 0,
       "bonus_clues_discovered": 0,
       "resolved": null,
-      "symbol_on_fail": null
+      "revealed": null
     }
   },
   {

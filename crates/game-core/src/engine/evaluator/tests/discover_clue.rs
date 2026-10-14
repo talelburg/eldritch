@@ -155,7 +155,7 @@ fn discover_clue_tested_location_resolves_to_in_flight_test_location() {
             bonus_attack_damage: 0,
             bonus_clues_discovered: 0,
             resolved: None,
-            symbol_on_fail: None,
+            revealed: None,
         }));
     let mut events = Vec::new();
 
@@ -213,7 +213,7 @@ fn tested_location_rejects_when_test_has_no_location_snapshot() {
             bonus_attack_damage: 0,
             bonus_clues_discovered: 0,
             resolved: None,
-            symbol_on_fail: None,
+            revealed: None,
         }));
     let mut events = Vec::new();
 

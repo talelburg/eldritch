@@ -145,13 +145,14 @@ fn on_event_ability_round_trips_through_serde_json() {
 }
 
 /// `Trigger::ElderSign` is a config-on-trigger variant (like
-/// `Activated { action_cost }`): it carries the elder-sign's printed
-/// modifier as an `IntExpr` and round-trips through serde. Roland's
-/// "+1 for each clue on your location" is `Count(CluesAtControllerLocation)`.
+/// `Activated { action_cost }`): it carries the elder-sign's
+/// [`TokenOutcome`], whose modifier is an `IntExpr`, and round-trips through
+/// serde. Roland's "+1 for each clue on your location" is
+/// `Count(CluesAtControllerLocation)`.
 #[test]
 fn elder_sign_trigger_carries_int_expr_and_round_trips() {
     let t = Trigger::ElderSign {
-        modifier: IntExpr::Count(Quantity::CluesAtControllerLocation),
+        outcome: TokenOutcome::modifier(IntExpr::Count(Quantity::CluesAtControllerLocation)),
     };
     let json = serde_json::to_string(&t).expect("serialize");
     let back: Trigger = serde_json::from_str(&json).expect("deserialize");
@@ -160,10 +161,24 @@ fn elder_sign_trigger_carries_int_expr_and_round_trips() {
     assert_ne!(
         t,
         Trigger::ElderSign {
-            modifier: IntExpr::Lit(1),
+            outcome: TokenOutcome::modifier(IntExpr::Lit(1)),
         },
     );
     assert_ne!(t, Trigger::Constant);
+}
+
+/// The default token outcome is inert: `+0` and no effect in any arm.
+#[test]
+fn the_default_token_outcome_is_inert() {
+    assert_eq!(
+        TokenOutcome::default(),
+        TokenOutcome {
+            modifier: IntExpr::Lit(0),
+            immediate: None,
+            on_success: None,
+            on_fail: None,
+        },
+    );
 }
 
 /// The `elder_sign` builder produces an [`Ability`] with the correct
@@ -176,7 +191,7 @@ fn elder_sign_builder_constructs_the_trigger() {
     assert_eq!(
         a.trigger,
         Trigger::ElderSign {
-            modifier: IntExpr::Count(Quantity::CluesAtControllerLocation),
+            outcome: TokenOutcome::modifier(IntExpr::Count(Quantity::CluesAtControllerLocation)),
         },
     );
     assert!(a.costs.is_empty());

@@ -94,7 +94,8 @@
 
 use card_dsl::card_data::SkillKind;
 use card_dsl::dsl::{
-    Determination, Effect, IntExpr, ModifierAudience, ModifierScope, SkillTestKind, Stat, Trigger,
+    Determination, Effect, ModifierAudience, ModifierScope, SkillTestKind, Stat, TokenOutcome,
+    Trigger,
 };
 
 use crate::card_registry::CardRegistry;
@@ -761,20 +762,23 @@ fn audience_reaches(
     }
 }
 
-/// The controller's **elder-sign** skill-test modifier as an
-/// [`IntExpr`](card_dsl::dsl::IntExpr): the expression on their investigator
-/// card's [`Trigger::ElderSign`] ability, **copied unevaluated**.
+/// The controller's **elder-sign** [`TokenOutcome`]: the whole outcome on
+/// their investigator card's [`Trigger::ElderSign`] ability — the modifier
+/// and the `immediate` / `on_success` / `on_fail` effects — cloned as
+/// declared, nothing evaluated.
 ///
-/// Lives here rather than in the evaluator because it answers the same
-/// question as [`modified_value`] — what is contributing to this
+/// Lives here rather than in the evaluator because its modifier answers the
+/// same question as [`modified_value`] — what is contributing to this
 /// investigator's total right now — for the one contributor the sweep
 /// cannot see: the revealed chaos token. When an `[elder_sign]` is
-/// revealed at ST.3 the skill-test driver records this expression as a
+/// revealed at ST.3 the skill-test driver records the modifier as a
 /// [`RecordedModifier`](crate::state::RecordedModifier) scoped to that
 /// test, and [`collect_recorded`] evaluates it at ST.5 like every other
-/// row (#684).
+/// row (#684). The same driver step pushes the outcome's `immediate` part at
+/// ST.4, and the ST.7 step calls this again to read its `on_success` /
+/// `on_fail` once the test's result is known.
 ///
-/// The expression must **not** be resolved to a literal at reveal time.
+/// The modifier must **not** be resolved to a literal at reveal time.
 /// Roland Banks 01001 (*"`[elder_sign]` effect: +1 for each clue on your
 /// location."*) is the corpus consumer, and freezing his clue count at the
 /// reveal would pin it across the ST.4 window — the staleness ADR 0005
@@ -785,20 +789,16 @@ fn audience_reaches(
 /// `None` when the controller is not found, the card isn't in the
 /// registry, or it carries no elder-sign ability — so every investigator
 /// without an elder-sign contributes no row at all rather than a zero one.
-///
-/// **Scope (#118), sunset by #448:** handles only pure-modifier
-/// elder-signs. Signs that also run an effect (Daisy / Agnes) are
-/// deferred — see [`Trigger::ElderSign`].
 #[must_use]
-pub(crate) fn elder_sign_expr(
+pub(crate) fn elder_sign_outcome(
     state: &GameState,
     registry: &CardRegistry,
     controller: InvestigatorId,
-) -> Option<IntExpr> {
+) -> Option<TokenOutcome> {
     let inv = state.investigators.get(&controller)?;
     let abilities = (registry.abilities_for)(&inv.investigator_card.code)?;
     abilities.iter().find_map(|ability| match &ability.trigger {
-        Trigger::ElderSign { modifier } => Some(modifier.clone()),
+        Trigger::ElderSign { outcome } => Some(outcome.clone()),
         _ => None,
     })
 }
