@@ -558,9 +558,10 @@ pub fn reshuffle_encounter_discard(cx: &mut Cx) {
 /// the deck and the discard are empty, a state no rule defines: the
 /// Rules Reference covers only the empty deck ("shuffle the encounter
 /// discard pile back into the encounter deck"). Callers therefore
-/// reject it or treat it as malformed scenario data; each documents
-/// which.
-pub(super) fn draw_encounter_top(cx: &mut Cx) -> Option<CardCode> {
+/// reject it, treat it as malformed scenario data, or draw nothing; each
+/// documents which. A card-local native reaches it as
+/// [`NativeCx::draw_encounter_top`](crate::engine::NativeCx::draw_encounter_top).
+pub fn draw_encounter_top(cx: &mut Cx) -> Option<CardCode> {
     if cx.state.encounter_deck.is_empty() {
         if cx.state.encounter_discard.is_empty() {
             return None;

@@ -99,6 +99,7 @@ pub mod deduction;
 pub mod dissonant_voices;
 pub mod dodge;
 pub mod dr_milan_christopher;
+pub mod drawn_to_the_flame;
 pub mod dynamite_blast;
 pub mod emergency_cache;
 pub mod evidence;
@@ -225,6 +226,7 @@ pub const ALL: &[CardRecord] = &[
     dissonant_voices::CARD,
     dodge::CARD,
     dr_milan_christopher::CARD,
+    drawn_to_the_flame::CARD,
     dynamite_blast::CARD,
     emergency_cache::CARD,
     evidence::CARD,
