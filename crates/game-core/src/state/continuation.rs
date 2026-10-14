@@ -1285,21 +1285,6 @@ pub struct InFlightSkillTest {
     /// moved from `Resolving` to `DetermineOutcome` by #674, so the ST.5 sum
     /// sees the board the ST.4 chaos-symbol effects left behind.)
     pub resolved: Option<ResolvedTest>,
-    /// The revealed chaos token's result-conditional parts — its
-    /// [`TokenOutcome`](card_dsl::dsl::TokenOutcome)'s `on_success` / `on_fail`
-    /// (Cultist 01104's "if this test is failed, take 1 horror") — parked at
-    /// the `Resolving` step (ST.3) and pushed at the
-    /// [`ApplyTokenResult`](SkillTestStep::ApplyTokenResult) step (RR ST.7,
-    /// *after* the outcome timing point). Empty when no token was drawn or
-    /// the token has no result-conditional part. Held here (a sibling of
-    /// [`on_fail`](Self::on_fail) / [`on_success`](Self::on_success)) because
-    /// each is a non-`Copy` `Effect` needed several steps after the token is
-    /// drawn. The outcome's `modifier` is already a recorded row and its
-    /// `immediate` part is spent at ST.4, so neither is kept.
-    ///
-    /// Boxed because two more `Effect`s inline would make `SkillTest` the
-    /// [`Continuation`] variant that sizes every frame on the stack.
-    pub token_results: Box<TokenResults>,
     /// The chaos token revealed at ST.3 and its resolution, as the
     /// [`ChaosTokenRevealed`](crate::event::Event::ChaosTokenRevealed) event
     /// announced them — for a scenario symbol, the modifier evaluated once at
@@ -1307,30 +1292,20 @@ pub struct InFlightSkillTest {
     /// `None` until then, and for the whole test when a determination known
     /// before ST.3 skips the draw.
     ///
-    /// A display record for the client, which the engine never reads back.
-    /// ADR 0007 retired `token_resolution` because its sole reader was the
-    /// total computation, which reads the token's recorded row instead; ADR
-    /// 0005 forbids a stored value that is re-read in place of live state.
-    /// Neither applies to a field nothing in the engine branches on.
+    /// The token is engine-read: it identifies the chaos symbol effect whose
+    /// result-conditional parts the
+    /// [`ApplyTokenResult`](SkillTestStep::ApplyTokenResult) step (RR ST.7)
+    /// looks up again — the investigator card's `[elder_sign]` ability, or the
+    /// scenario's symbol hook. Which token came out of the bag is a fixed fact
+    /// of this test, not a snapshot of a live value, so ADR 0005's ban on
+    /// re-reading a stored value in place of live state does not reach it; the
+    /// parts it names are read live at ST.7. The resolution half is display
+    /// only for the client: ADR 0007 retired `token_resolution` because the
+    /// total computation reads the token's recorded row instead.
+    ///
+    /// TODO(#921): make the tuple a named struct when the client half of
+    /// item 19 reads it.
     pub revealed: Option<(ChaosToken, TokenResolution)>,
-}
-
-/// A revealed chaos token's ST.7 consequences, parked on
-/// [`InFlightSkillTest::token_results`] from ST.3 until
-/// [`ApplyTokenResult`](SkillTestStep::ApplyTokenResult) pushes the one the
-/// test's result selects.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TokenResults {
-    /// Pushed at ST.7 when the test succeeded.
-    pub on_success: Option<Effect>,
-    /// Pushed at ST.7 when the test failed, with the test's failure margin
-    /// threaded in (so `Count(SkillTestFailedBy)` reads it, as in a card's
-    /// own `on_fail`).
-    pub on_fail: Option<Effect>,
-    /// The source the pushed effect evaluates with — the mirror of
-    /// [`InFlightSkillTest::source`]. `None` for a scenario symbol, whose
-    /// effects run with the controller-only context.
-    pub source: Option<AbilitySource>,
 }
 
 /// The outcome of a skill test's chaos-token resolution (RR ST.6), stored on
@@ -1338,7 +1313,7 @@ pub struct TokenResults {
 /// driver step. One source of truth, rather than routing the same fields
 /// through each [`SkillTestStep`] payload. `Copy` (all scalar fields) so the
 /// driver reads it cheaply; the revealed token's result-conditional *effects*
-/// live separately on [`InFlightSkillTest::token_results`].
+/// are looked up again at ST.7 from [`InFlightSkillTest::revealed`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResolvedTest {
     /// Whether the test passed: the test's determination where it has one,
@@ -1455,7 +1430,11 @@ pub enum SkillTestStep {
     /// [`RecordedModifier`](crate::state::game_state::RecordedModifier) scoped to this test — an `[auto_fail]` records a
     /// [`Determination`](card_dsl::dsl::Determination) instead — and computes
     /// **no** total, margin, or verdict: those are ST.5/ST.6 and belong after
-    /// the symbol effects have resolved (#674, #684, #685).
+    /// the symbol effects have resolved (#674, #684, #685). The outcome's
+    /// result-conditional parts are not kept either: the token goes on
+    /// [`InFlightSkillTest::revealed`], and
+    /// [`ApplyTokenResult`](Self::ApplyTokenResult) looks its outcome up again
+    /// at ST.7.
     ///
     /// **The reveal is conditional (#687).** A determination already latched
     /// when the driver arrives here skips ST.3 and ST.4 outright — *"No chaos
@@ -1539,12 +1518,17 @@ pub enum SkillTestStep {
     /// [`ApplyFollowUp`](Self::ApplyFollowUp). Pre-advances to
     /// [`ApplyTokenResult`](Self::ApplyTokenResult). (Slice D #423.)
     ApplyResultEffect,
-    /// RR ST.7 — push the revealed chaos token's result-conditional part,
-    /// held on [`InFlightSkillTest::token_results`]: `on_success` when the
-    /// test succeeded, `on_fail` (with the failure margin threaded in) when it
-    /// failed (Cultist 01104's horror). One step for scenario symbols and
-    /// elder signs alike, evaluated with the stored
-    /// [`TokenResults::source`]. Pushed as an effect frame, so a sanity-soak
+    /// RR ST.7 — push the revealed chaos token's result-conditional part:
+    /// `on_success` when the test succeeded, `on_fail` (with the failure
+    /// margin threaded in) when it failed (Cultist 01104's horror). Nothing is
+    /// stored for it: the step looks the token's
+    /// [`TokenOutcome`](card_dsl::dsl::TokenOutcome) up again from
+    /// [`InFlightSkillTest::revealed`], as
+    /// [`FireOnCommit`](Self::FireOnCommit) and
+    /// [`FireOnResolution`](Self::FireOnResolution) look up the committed
+    /// cards' abilities — an elder sign from the investigator card, sourced to
+    /// it, and a scenario symbol from the scenario's symbol hook, with the
+    /// controller-only context. Pushed as an effect frame, so a sanity-soak
     /// (Holy Rosary 01028) on an [`Effect::Deal`] suspends cleanly.
     /// Pre-advances to [`FireOnResolution`](Self::FireOnResolution) before the
     /// push. (Slice D #423.)

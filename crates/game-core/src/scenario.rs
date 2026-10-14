@@ -203,11 +203,23 @@ pub struct ScenarioModule {
     /// [`TokenModifiers`](crate::state::TokenModifiers) table. Never called
     /// for Numeric/AutoFail/ElderSign tokens.
     ///
-    /// The hook runs once, at token reveal (ST.3), so a board-gated branch
-    /// (The Gathering's `[tablet]` damage) is decided up front. The returned
-    /// `modifier` is recorded unevaluated and read at ST.5, so a hook that
-    /// wants a live value returns a live [`IntExpr`](card_dsl::dsl::IntExpr);
-    /// one that returns `IntExpr::Lit` freezes the value it computed at reveal.
+    /// The hook is called twice per revealed symbol, and each call's result is
+    /// read for different parts:
+    ///
+    /// - **At token reveal (ST.3).** Its `immediate` part is pushed for ST.4,
+    ///   so a board-gated branch (The Gathering's `[tablet]` damage) is decided
+    ///   against the board at reveal. Its `modifier` is recorded unevaluated
+    ///   and read at ST.5, so a hook that wants a live value returns a live
+    ///   [`IntExpr`](card_dsl::dsl::IntExpr); one that returns `IntExpr::Lit`
+    ///   freezes the value it computed at reveal.
+    /// - **Again at ST.7**, after the test's result is known. Only its
+    ///   result-conditional parts, `on_success` / `on_fail`, are read, and
+    ///   they are read live (ADR 0005): a board-gated choice between them is
+    ///   decided against the board at ST.7, not at reveal. Nothing from the
+    ///   ST.3 call is kept for this one.
+    ///
+    /// So the hook must be a pure function of its token and the board it is
+    /// handed.
     pub resolve_symbol: Option<fn(ChaosToken, &SymbolCtx) -> TokenOutcome>,
     /// Build the scenario's initial [`GameState`]. Places locations,
     /// populates encounter / act / agenda decks, sets chaos-bag
