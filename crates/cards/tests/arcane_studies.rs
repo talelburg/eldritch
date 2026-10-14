@@ -78,7 +78,11 @@ fn willpower_ability_buffs_a_willpower_test() {
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Willpower, margin: 0 }
             if *investigator == INV
     );
-    assert_eq!(result.state().investigators[&INV].resources, 4, "1 resource paid");
+    assert_eq!(
+        result.state().investigators[&INV].resources,
+        4,
+        "1 resource paid"
+    );
 }
 
 #[test]
@@ -135,5 +139,9 @@ fn the_ability_can_be_bought_as_often_as_it_can_be_paid() {
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Willpower, margin: 0 }
             if *investigator == INV
     );
-    assert_eq!(result.state().investigators[&INV].resources, 1, "3 resources paid");
+    assert_eq!(
+        result.state().investigators[&INV].resources,
+        1,
+        "3 resources paid"
+    );
 }

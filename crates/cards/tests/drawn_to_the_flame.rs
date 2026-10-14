@@ -88,12 +88,14 @@ fn the_drawn_card_resolves_before_two_clues_are_discovered() {
         matches!(e, Event::CardRevealed { investigator, code, .. }
             if *investigator == INV && code.as_str() == DISSONANT_VOICES)
     });
-    let revelation = position(events, |e| {
-        matches!(e, Event::CardEnteredThreatArea { code, .. } if code.as_str() == DISSONANT_VOICES)
-    });
-    let discovered = position(events, |e| {
-        matches!(e, Event::CluePlaced { investigator, count: 2 } if *investigator == INV)
-    });
+    let revelation = position(
+        events,
+        |e| matches!(e, Event::CardEnteredThreatArea { code, .. } if code.as_str() == DISSONANT_VOICES),
+    );
+    let discovered = position(
+        events,
+        |e| matches!(e, Event::CluePlaced { investigator, count: 2 } if *investigator == INV),
+    );
     assert!(
         revealed < revelation && revelation < discovered,
         "reveal, then Revelation, then the discovery; got {events:#?}",
@@ -158,10 +160,13 @@ fn with_no_encounter_card_anywhere_the_discovery_still_happens() {
 #[test]
 fn a_drawn_card_that_eliminates_the_drawer_discovers_nothing() {
     // Agility 3 vs 3 on an auto-fail: fail by 3, 3 damage on top of 6 of 8.
-    let session = play(board(seat(1).harm(6, 0), 3, &[GRASPING_HANDS], &[]))
-        .commit(&[]);
+    let session = play(board(seat(1).harm(6, 0), 3, &[GRASPING_HANDS], &[])).commit(&[]);
 
-    assert!(session.rejection().is_none(), "the play is not rolled back: {:?}", session.rejection());
+    assert!(
+        session.rejection().is_none(),
+        "the play is not rolled back: {:?}",
+        session.rejection()
+    );
     assert_event!(
         session.events(),
         Event::InvestigatorEliminated { investigator, .. } if *investigator == INV
