@@ -443,7 +443,7 @@ pub enum Trigger {
     ///
     /// The determination substitutes the difficulty, not the skill value, so
     /// ST.5 still determines the modified skill value. Wendy's ruling
-    /// (https://arkhamdb.com/card/01005):
+    /// (<https://arkhamdb.com/card/01005>):
     ///
     /// > If a skill test automatically succeeds, the total difficulty of that
     /// > test is considered 0.

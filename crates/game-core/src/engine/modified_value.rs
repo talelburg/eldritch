@@ -94,8 +94,8 @@
 
 use card_dsl::card_data::SkillKind;
 use card_dsl::dsl::{
-    Determination, Effect, IntExpr, ModifierAudience, ModifierScope, SkillTestKind, Stat,
-    TokenOutcome, Trigger,
+    Determination, Effect, ModifierAudience, ModifierScope, SkillTestKind, Stat, TokenOutcome,
+    Trigger,
 };
 
 use crate::card_registry::CardRegistry;
@@ -810,7 +810,7 @@ pub(crate) fn elder_sign_expr(
     state: &GameState,
     registry: &CardRegistry,
     controller: InvestigatorId,
-) -> Option<IntExpr> {
+) -> Option<card_dsl::dsl::IntExpr> {
     elder_sign_outcome(state, registry, controller).map(|outcome| outcome.modifier)
 }
 

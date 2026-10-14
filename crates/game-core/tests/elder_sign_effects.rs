@@ -208,7 +208,7 @@ fn an_elder_signs_failure_part_resolves_only_on_failure() {
 /// `glossary/Automatic_Failure_Success.md`: *"If a chaos token effect causes
 /// an investigator to automatically succeed or fail at a skill test, continue
 /// with Steps 3 and 4, as normal."* Wendy Adams's ruling
-/// (https://arkhamdb.com/card/01005): *"If a skill test automatically
+/// (<https://arkhamdb.com/card/01005>): *"If a skill test automatically
 /// succeeds, the total difficulty of that test is considered 0."*
 #[test]
 fn an_elder_signs_immediate_automatic_success_wins_a_test_the_numbers_lose() {

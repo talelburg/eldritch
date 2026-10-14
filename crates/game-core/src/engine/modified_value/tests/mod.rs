@@ -1,4 +1,4 @@
-use card_dsl::dsl::{self, Ability, ControlStatus, GrantTarget, Quantity};
+use card_dsl::dsl::{self, Ability, ControlStatus, GrantTarget, IntExpr, Quantity};
 
 use super::*;
 use crate::state::{
