@@ -70,7 +70,7 @@ use crate::card_data::{CardMetadata, CardType, SkillKind, UseKind};
 
 // ---- triggers --------------------------------------------------
 
-/// The **bold action designator** an activated ability prints (`glossary/Ability.md`,
+/// The **bold action designator** an ability prints (`glossary/Ability.md`,
 /// "Action Designators"), verbatim:
 ///
 /// > Some abilities have bold action designators (such as **Fight**, **Evade**,
@@ -78,8 +78,8 @@ use crate::card_data::{CardMetadata, CardType, SkillKind, UseKind};
 /// > designated action as described in the rules, but modified in the manner
 /// > described by the ability.
 ///
-/// It is **declared on the trigger, not inferred from the effect**, because the
-/// rules quote the designator and not the effect the ability happens to have.
+/// It is **declared on the [`Ability`], not inferred from the effect**, because
+/// the rules quote the designator and not the effect the ability happens to have.
 /// `glossary/Attack_of_Opportunity.md`, verbatim:
 ///
 /// > Each time an investigator is engaged with one or more ready enemies and
@@ -139,15 +139,17 @@ use crate::card_data::{CardMetadata, CardType, SkillKind, UseKind};
 ///   to have been defeated."* Nothing in the corpus parameterises the
 ///   resignation, so the modification is empty.
 ///
-/// `TODO(#778)`: the designator rides [`Trigger::Activated`] because no
-/// implemented card prints one on another trigger. Backstab 01051 — which #778
-/// brings in with the rest of the level-0 Rogue pool — prints a bold
-/// **Fight** on an *event* (`Trigger::OnPlay`) and the rules attach the
-/// designator to the ability rather than to how it was reached — the FAQ
-/// answers for Ursula Downs 04002 that *"Ursula's reaction allows you to take
-/// any investigate action, including those performed via the activate action or
-/// via the play action."* Promoting the field to [`Ability`] is mechanical when
-/// Backstab lands; doing it now would be speculation.
+/// # It lives on the ability, not on the trigger
+///
+/// The rules attach the designator to the ability rather than to how it was
+/// reached — the FAQ answers for Ursula Downs 04002 that *"Ursula's reaction
+/// allows you to take any investigate action, including those performed via
+/// the activate action or via the play action."* So it is
+/// [`Ability::designator`], and an *event* can print one on its
+/// [`Trigger::OnPlay`] ability (Blinding Light 01066's **Evade**, Backstab
+/// 01051's **Fight**) as readily as an asset prints one on its
+/// [`Trigger::Activated`] ability. Those are the only two triggers that carry
+/// one: it is set only by [`activated_as`] and [`on_play_as`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ActionDesignator {
     /// **Fight** — performs a fight action against an enemy *at the
@@ -177,10 +179,9 @@ pub enum ActionDesignator {
     /// **Evade** — performs an evade action. Ten corpus cards print it, none
     /// implemented, so the engine rejects a designated Evade rather than
     /// guessing at a payload (`TODO(#818)`). Eight are **events** whose bold
-    /// word rides `Trigger::OnPlay` (Blinding Light 01066/01069, Cunning
-    /// Distraction 01078, Bind Monster 02031, Bait and Switch 02034), which
-    /// needs the designator promoted off [`Trigger::Activated`] first — the
-    /// `TODO(#778)` above. The two that are already this shape are assets:
+    /// word rides their `Trigger::OnPlay` ability (Blinding Light 01066/01069,
+    /// Cunning Distraction 01078, Bind Monster 02031, Bait and Switch 02034),
+    /// built by [`on_play_as`]. The two activated ones are assets:
     /// Fire Extinguisher 02114's *"\[action\] Exile Fire Extinguisher:
     /// **Evade.** You get +3 \[agility\] for this test…"*, whose `+3` is the
     /// [`Fight`](Self::Fight) modification's twin, and Strange Solution 02264's
@@ -277,6 +278,11 @@ impl ActionDesignator {
 /// Phase-3 set. Later phases add `AtPhaseStart`/`AtPhaseEnd`,
 /// `OnLeavePlay`, and additional reactive patterns as cards demand.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "the elder sign outcome was already the largest variant; the lint fired only \
+              when the designator moved off Activated (#1053), which shrank the runner-up"
+)]
 pub enum Trigger {
     /// Always-on while the card is in play. The ability's `effect`
     /// describes a passive contribution to engine queries (most
@@ -324,13 +330,9 @@ pub enum Trigger {
     /// validation and event-emission straightforward.
     Activated {
         /// Number of action points required to activate. `0` = Fast.
+        /// The bold action designator, if the ability prints one, is
+        /// [`Ability::designator`].
         action_cost: u8,
-        /// The **bold action designator** the card prints above the
-        /// effect, if any — `None` for an ability that prints none.
-        ///
-        /// This is what the rules key off, so it is declared rather than
-        /// inferred from the effect tree: see [`ActionDesignator`].
-        designator: Option<ActionDesignator>,
     },
     /// Fires during the resolution of a skill test the card is
     /// committed to, after the outcome is determined and gated on
@@ -1103,6 +1105,15 @@ pub enum UsagePeriod {
 #[non_exhaustive]
 pub struct Ability {
     pub trigger: Trigger,
+    /// The **bold action designator** the ability prints, if any — `None` for
+    /// an ability that prints none. It performs the designated action, carrying
+    /// the modification the text describes; see [`ActionDesignator`], which
+    /// also says why it lives here rather than on the trigger.
+    ///
+    /// Only a [`Trigger::Activated`] or [`Trigger::OnPlay`] ability carries
+    /// one, and only [`activated_as`] and [`on_play_as`] set it. Stays
+    /// implicitly optional on the wire, like `usage_limit`.
+    pub designator: Option<ActionDesignator>,
     /// Payment costs (besides action cost). Empty for abilities with no
     /// non-action payment. Required on the wire (#453).
     pub costs: Vec<Cost>,
@@ -1167,8 +1178,8 @@ impl Ability {
     /// namespace it resolves in — the `cards` crate's corpus test checks each
     /// one is registered (#986).
     ///
-    /// Walks the whole ability: its own eligibility, the trigger's action
-    /// designator and elder-sign modifier, and the effect tree, descending
+    /// Walks the whole ability: its own eligibility, its action designator,
+    /// the trigger's elder-sign outcome, and the effect tree, descending
     /// into every [`Effect`], [`Condition`] and [`IntExpr`] it holds,
     /// granted abilities included. The matches carry no wildcard arms, so a
     /// new variant does not compile until someone decides whether it can
@@ -1185,6 +1196,25 @@ impl Ability {
         if let Some(eligibility) = &self.eligibility {
             eligibility.collect_native_refs(refs);
         }
+        match &self.designator {
+            None
+            | Some(
+                ActionDesignator::Evade
+                | ActionDesignator::Move
+                | ActionDesignator::Parley
+                | ActionDesignator::Resign,
+            ) => {}
+            Some(ActionDesignator::Fight {
+                combat_modifier,
+                extra_damage,
+            }) => {
+                combat_modifier.collect_native_refs(refs);
+                extra_damage.collect_native_refs(refs);
+            }
+            Some(ActionDesignator::Investigate { shroud_modifier }) => {
+                shroud_modifier.collect_native_refs(refs);
+            }
+        }
         match &self.trigger {
             // None of these holds an effect, condition or integer expression: an
             // event pattern names what happened, never a condition on it.
@@ -1194,28 +1224,7 @@ impl Ability {
             | Trigger::Revelation
             | Trigger::OnSkillTestResolution { .. }
             | Trigger::OnEvent { .. }
-            | Trigger::Activated {
-                designator: None, ..
-            } => {}
-            Trigger::Activated {
-                designator: Some(designator),
-                ..
-            } => match designator {
-                ActionDesignator::Fight {
-                    combat_modifier,
-                    extra_damage,
-                } => {
-                    combat_modifier.collect_native_refs(refs);
-                    extra_damage.collect_native_refs(refs);
-                }
-                ActionDesignator::Investigate { shroud_modifier } => {
-                    shroud_modifier.collect_native_refs(refs);
-                }
-                ActionDesignator::Evade
-                | ActionDesignator::Move
-                | ActionDesignator::Parley
-                | ActionDesignator::Resign => {}
-            },
+            | Trigger::Activated { .. } => {}
             Trigger::ElderSign { outcome } => outcome.collect_native_refs(refs),
         }
         self.effect.collect_native_refs(refs);
@@ -2545,6 +2554,7 @@ pub enum TestOutcome {
 pub fn constant(effect: Effect) -> Ability {
     Ability {
         trigger: Trigger::Constant,
+        designator: None,
         costs: Vec::new(),
         effect,
         usage_limit: None,
@@ -2560,10 +2570,27 @@ pub fn constant(effect: Effect) -> Ability {
 pub fn on_play(effect: Effect) -> Ability {
     Ability {
         trigger: Trigger::OnPlay,
+        designator: None,
         costs: Vec::new(),
         effect,
         usage_limit: None,
         eligibility: None,
+    }
+}
+
+/// [`on_play`], for an event that prints a bold [`ActionDesignator`] —
+/// Blinding Light 01066's *"**Evade.** …"*, Backstab 01051's *"**Fight.** …"*.
+///
+/// As with [`activated_as`], **the designator performs the action and `effect`
+/// is the residual** the text prints beside it; the modification the action
+/// itself takes rides the designator. Playing the event *is* that action — the
+/// FAQ's Ursula Downs 04002 answer counts an investigate action *"performed
+/// via the play action"* — see [`ActionDesignator`].
+#[must_use]
+pub fn on_play_as(designator: ActionDesignator, effect: Effect) -> Ability {
+    Ability {
+        designator: Some(designator),
+        ..on_play(effect)
     }
 }
 
@@ -2573,6 +2600,7 @@ pub fn on_play(effect: Effect) -> Ability {
 pub fn on_commit(effect: Effect) -> Ability {
     Ability {
         trigger: Trigger::OnCommit,
+        designator: None,
         costs: Vec::new(),
         effect,
         usage_limit: None,
@@ -2588,6 +2616,7 @@ pub fn on_commit(effect: Effect) -> Ability {
 pub fn on_skill_test_resolution(outcome: TestOutcome, effect: Effect) -> Ability {
     Ability {
         trigger: Trigger::OnSkillTestResolution { outcome },
+        designator: None,
         costs: Vec::new(),
         effect,
         usage_limit: None,
@@ -2611,6 +2640,7 @@ pub fn on_event(
             timing,
             kind,
         },
+        designator: None,
         costs: Vec::new(),
         effect,
         usage_limit: None,
@@ -2641,6 +2671,7 @@ pub fn reaction_on_event(pattern: EventPattern, timing: EventTiming, effect: Eff
 pub fn revelation(effect: Effect) -> Ability {
     Ability {
         trigger: Trigger::Revelation,
+        designator: None,
         costs: Vec::new(),
         effect,
         usage_limit: None,
@@ -2663,10 +2694,8 @@ pub fn revelation(effect: Effect) -> Ability {
 #[must_use]
 pub fn activated(action_cost: u8, costs: Vec<Cost>, effect: Effect) -> Ability {
     Ability {
-        trigger: Trigger::Activated {
-            action_cost,
-            designator: None,
-        },
+        trigger: Trigger::Activated { action_cost },
+        designator: None,
         costs,
         effect,
         usage_limit: None,
@@ -2693,10 +2722,8 @@ pub fn activated_as(
     effect: Effect,
 ) -> Ability {
     Ability {
-        trigger: Trigger::Activated {
-            action_cost,
-            designator: Some(designator),
-        },
+        trigger: Trigger::Activated { action_cost },
+        designator: Some(designator),
         costs,
         effect,
         usage_limit: None,
@@ -2726,6 +2753,7 @@ pub fn elder_sign(modifier: IntExpr) -> Ability {
 pub fn elder_sign_with(outcome: TokenOutcome) -> Ability {
     Ability {
         trigger: Trigger::ElderSign { outcome },
+        designator: None,
         costs: Vec::new(),
         effect: Effect::Seq(Vec::new()),
         usage_limit: None,

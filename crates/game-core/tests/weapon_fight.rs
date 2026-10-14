@@ -1,6 +1,6 @@
 //! End-to-end weapon flow with a mock `CardRegistry`: a firearm-shaped
 //! asset that carries `Uses (4 ammo)` and an `[action] Spend 1 ammo:
-//! Fight` activated ability — an `ActionDesignator::Fight` on the trigger,
+//! Fight` activated ability — an `ActionDesignator::Fight` on the ability,
 //! carrying the `+1 [combat]` / `+1` damage the card prints. The designator is
 //! what makes it a fight action and what **performs** the attack (#696, #805):
 //! it is what the attack-of-opportunity exemption, the pre-cost "needs a
