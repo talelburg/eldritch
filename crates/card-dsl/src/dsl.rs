@@ -175,6 +175,14 @@ pub enum ActionDesignator {
         combat_modifier: IntExpr,
         /// Bonus damage beyond the base 1 (.38 Special: +1).
         extra_damage: IntExpr,
+        /// The skill the attack tests in place of `[combat]`, or `None` for
+        /// combat. Shrivelling 01060: *"This attack uses \[willpower\] instead
+        /// of \[combat\]"*. `combat_modifier` modifies the overriding skill,
+        /// since it is a bonus *"for this attack"*, whatever the attack tests.
+        skill_override: Option<SkillKind>,
+        /// What happens if one of a set of chaos symbols is revealed during the
+        /// attack (Shrivelling 01060's horror). See [`RevealClause`].
+        reveal_clause: Option<RevealClause>,
     },
     /// **Evade** — performs an evade action. Ten corpus cards print it, none
     /// implemented, so the engine rejects a designated Evade rather than
@@ -270,6 +278,103 @@ impl ActionDesignator {
             Self::Move => Some(ActionClass::Move),
             Self::Investigate { .. } | Self::Parley | Self::Resign => None,
         }
+    }
+
+    /// This designator's attack, testing `skill` instead of `[combat]`
+    /// (Shrivelling 01060's *"This attack uses \[willpower\] instead of
+    /// \[combat\]"*).
+    ///
+    /// # Panics
+    ///
+    /// On a designator whose action has no skill test to override. A card
+    /// module calling it so is an authoring mistake, caught by the first test
+    /// that builds the card's abilities.
+    #[must_use]
+    pub fn testing(mut self, skill: SkillKind) -> Self {
+        match &mut self {
+            Self::Fight { skill_override, .. } => *skill_override = Some(skill),
+            other => panic!("{other:?} carries no skill override"),
+        }
+        self
+    }
+
+    /// This designator's test, carrying `clause` (Shrivelling 01060's *"If a
+    /// \[skull\], … symbol is revealed during this attack, take 1 horror."*).
+    ///
+    /// # Panics
+    ///
+    /// On a designator whose action has no skill test to reveal a token in, as
+    /// [`testing`](Self::testing) does.
+    #[must_use]
+    pub fn with_reveal_clause(mut self, clause: RevealClause) -> Self {
+        match &mut self {
+            Self::Fight { reveal_clause, .. } => *reveal_clause = Some(clause),
+            other => panic!("{other:?} carries no reveal clause"),
+        }
+        self
+    }
+}
+
+/// The symbol on a chaos token: every token but a numeric one. The card-side
+/// name for `game_core::state::ChaosToken`'s symbol variants, which a card
+/// names without reaching into the kernel (`card-dsl` has no workspace
+/// dependencies).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ChaosSymbol {
+    /// `[skull]`.
+    Skull,
+    /// `[cultist]`.
+    Cultist,
+    /// `[tablet]`.
+    Tablet,
+    /// `[elder_thing]`.
+    ElderThing,
+    /// `[auto_fail]`.
+    AutoFail,
+    /// `[elder_sign]`.
+    ElderSign,
+}
+
+impl ChaosSymbol {
+    /// The four scenario symbols and `[auto_fail]`: every symbol but the elder
+    /// sign. Shrivelling 01060 and Blinding Light 01066 both print exactly this
+    /// list (*"If a `[skull]`, `[cultist]`, `[tablet]`, `[elder_thing]`, or
+    /// `[auto_fail]` symbol is revealed"*).
+    pub const ALL_BUT_ELDER_SIGN: [Self; 5] = [
+        Self::Skull,
+        Self::Cultist,
+        Self::Tablet,
+        Self::ElderThing,
+        Self::AutoFail,
+    ];
+}
+
+/// A card's *"If a \<symbol\> is revealed during this test, \<effect\>"*,
+/// carried by the skill test the card starts.
+///
+/// It is the initiating card's, not the token's: the chaos symbol effect a
+/// token initiates is the scenario's or the investigator card's
+/// ([`TokenOutcome`]), and resolves beside this one. It resolves at Skill Test
+/// Timing step 3, once the token is revealed and before step 4's symbol
+/// effects (Shrivelling 01060's ruling, <https://arkhamdb.com/card/01060>:
+/// *"The "If a symbol is revealed..." effect triggers during Step 3 of the
+/// Skill Test Timing."*). `effect` evaluates with the test's performer as its
+/// controller.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct RevealClause {
+    /// The symbols that fire it.
+    pub symbols: Vec<ChaosSymbol>,
+    /// What it does when one of them is revealed. Boxed, as
+    /// [`Effect::SkillTest`]'s branches are, so the designator carrying it
+    /// stays small.
+    pub effect: Box<Effect>,
+}
+
+impl RevealClause {
+    /// Whether revealing `symbol` fires this clause.
+    #[must_use]
+    pub fn fires_on(&self, symbol: ChaosSymbol) -> bool {
+        self.symbols.contains(&symbol)
     }
 }
 
@@ -1250,9 +1355,14 @@ impl Ability {
             Some(ActionDesignator::Fight {
                 combat_modifier,
                 extra_damage,
+                skill_override: _,
+                reveal_clause,
             }) => {
                 combat_modifier.collect_native_refs(refs);
                 extra_damage.collect_native_refs(refs);
+                if let Some(clause) = reveal_clause {
+                    clause.effect.collect_native_refs(refs);
+                }
             }
             Some(ActionDesignator::Investigate { shroud_modifier }) => {
                 shroud_modifier.collect_native_refs(refs);
@@ -3087,7 +3197,9 @@ pub fn put_into_threat_area_with_clues(code: impl Into<String>, clues: u8) -> Ef
 /// prints on its attack — the combat modifier and the bonus damage beyond the
 /// base 1 (.38 Special: `fight(IntExpr::cond(Condition::Compare { quantity: Quantity::CluesAtControllerLocation, op: CmpOp::Gt, value: 0 }, 3, 1), 1u8)`).
 /// The fight itself is the designator's; this only says how it differs from a
-/// basic one (#805).
+/// basic one (#805). It tests `[combat]` and carries no reveal clause; chain
+/// [`ActionDesignator::testing`] and [`ActionDesignator::with_reveal_clause`]
+/// for a card that prints either (Shrivelling 01060).
 #[must_use]
 pub fn fight(
     combat_modifier: impl Into<IntExpr>,
@@ -3096,6 +3208,8 @@ pub fn fight(
     ActionDesignator::Fight {
         combat_modifier: combat_modifier.into(),
         extra_damage: extra_damage.into(),
+        skill_override: None,
+        reveal_clause: None,
     }
 }
 

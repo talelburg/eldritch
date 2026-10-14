@@ -73,6 +73,7 @@ mod tests {
         let Some(ActionDesignator::Fight {
             combat_modifier,
             extra_damage,
+            ..
         }) = &abilities[index].designator
         else {
             panic!(

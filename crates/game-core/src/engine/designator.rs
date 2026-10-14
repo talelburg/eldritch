@@ -106,6 +106,8 @@ mod tests {
         ActionDesignator::Fight {
             combat_modifier: IntExpr::Lit(1),
             extra_damage: IntExpr::Lit(0),
+            skill_override: None,
+            reveal_clause: None,
         }
     }
 

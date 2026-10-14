@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::{iter, mem};
 
 use card_dsl::card_data::SkillKind;
-use card_dsl::dsl::{ActionDesignator, Effect, EventTiming, SkillTestKind};
+use card_dsl::dsl::{ActionDesignator, Effect, EventTiming, RevealClause, SkillTestKind};
 use serde::{Deserialize, Serialize};
 
 use crate::engine::evaluator::EvalContext;
@@ -1306,6 +1306,15 @@ pub struct InFlightSkillTest {
     /// TODO(#921): make the tuple a named struct when the client half of
     /// item 19 reads it.
     pub revealed: Option<(ChaosToken, TokenResolution)>,
+    /// The initiating card's *"If a \<symbol\> is revealed during this test"*
+    /// clause (Shrivelling 01060), set when the test starts and fired at ST.3
+    /// against the token on [`revealed`](Self::revealed).
+    ///
+    /// Carried rather than looked up again from [`source`](Self::source), as
+    /// the elder sign's outcome is: an event's `OnPlay` starts its test with
+    /// no source, so an event printing one (Blinding Light 01066) has nowhere
+    /// else to keep it. `None` for every test whose initiator prints none.
+    pub reveal_clause: Option<RevealClause>,
 }
 
 /// The outcome of a skill test's chaos-token resolution (RR ST.6), stored on

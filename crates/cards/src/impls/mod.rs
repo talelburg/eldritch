@@ -134,6 +134,7 @@ pub mod roland_38_special;
 pub mod roland_banks;
 pub mod rotting_remains;
 pub mod scrying;
+pub mod shrivelling;
 pub mod silver_twilight_acolyte;
 pub mod the_barrier;
 pub mod theyre_getting_out;
@@ -265,6 +266,7 @@ pub const ALL: &[CardRecord] = &[
     roland_banks::CARD,
     rotting_remains::CARD,
     scrying::CARD,
+    shrivelling::CARD,
     silver_twilight_acolyte::CARD,
     the_barrier::CARD,
     theyre_getting_out::CARD,
