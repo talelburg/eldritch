@@ -97,6 +97,17 @@ fn a_native_condition_carried_by_an_action_designator_is_reported_as_a_condition
     assert_eq!(ability.native_refs(), [condition_ref("x:in-designator")]);
 }
 
+/// The walk reads the ability's designator whichever trigger it rides, so an
+/// event's designated `OnPlay` ability reports its natives too.
+#[test]
+fn a_native_condition_in_an_on_play_designator_is_reported() {
+    let ability = on_play_as(
+        fight(IntExpr::cond(native_condition("x:on-play"), 1, 0), 0u8),
+        seq([]),
+    );
+    assert_eq!(ability.native_refs(), [condition_ref("x:on-play")]);
+}
+
 #[test]
 fn an_elder_signs_modifier_and_effect_arms_are_all_walked() {
     let mut ability = elder_sign(IntExpr::Lit(0));

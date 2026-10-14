@@ -303,6 +303,17 @@ impl TestSession {
         })
     }
 
+    /// Step: deal `amount` horror to `investigator` outside any attack — the
+    /// horror twin of [`take_damage`](Self::take_damage), with the same soak
+    /// offer, the same two conditions announced (so a reaction to the
+    /// placement opens its window), and the same drain.
+    pub fn take_horror(self, investigator: InvestigatorId, amount: u8) -> Self {
+        self.framework_step(|cx| {
+            let outcome = engine::deal_harm(cx, investigator, 0, amount);
+            engine::drive(cx, outcome)
+        })
+    }
+
     /// Change the resting state in place **without** settling, so the prompt
     /// the session rests at is not re-asked: it is now stale, like a prompt a
     /// client still holds after the board changed under it. The next step

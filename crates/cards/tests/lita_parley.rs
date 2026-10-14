@@ -49,13 +49,14 @@
 //!
 //! Runs against `cards::TEST_REGISTRIES`.
 
+use card_dsl::dsl::UsagePeriod;
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, Status, Zone,
+    GameStateBuilder, InvestigatorId, LocationId, Owner, Phase, SkillKind, Status, Zone,
 };
 use game_core::test_support::{self, seat, Seat, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -272,7 +273,7 @@ fn taking_control_preserves_her_instance() {
     let mut lita = lita_at_the_parlor();
     lita.accumulated_damage = 2;
     lita.accumulated_horror = 1;
-    lita.bump_ability_usage(0, 0);
+    lita.bump_ability_usage(0, UsagePeriod::Round, 0, Phase::Investigation);
 
     let result = parley_on(board_with(
         sharp().at(PARLOR_ID),

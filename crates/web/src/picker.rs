@@ -38,24 +38,71 @@ pub const ROLAND_DEFAULT_DECK: &[&str] = &[
     "01007", // Cover Up (signature weakness)
 ];
 
+/// Placeholder default deck for Agnes Baker (01004) until decklist import
+/// (#782) retires both scaffolds. Implemented cards she may take only, so every
+/// draw is playable; her signatures and the rest of the Mystic pool join as
+/// each lands (#777). NOT a legal deck — a scaffold for UI testing, like
+/// [`ROLAND_DEFAULT_DECK`].
+pub const AGNES_DEFAULT_DECK: &[&str] = &[
+    "01059", "01059", // Holy Rosary
+    "01061", "01061", // Scrying
+    "01062", "01062", // Arcane Studies
+    "01064", "01064", // Drawn to the Flame
+    "01067", "01067", // Fearless
+    "01086", "01086", // Knife
+    "01087", "01087", // Flashlight
+    "01088", "01088", // Emergency Cache
+    "01089", "01089", // Guts
+    "01090", "01090", // Perception
+    "01091", "01091", // Overpower
+    "01092", "01092", // Manual Dexterity
+    "01093", "01093", // Unexpected Courage
+];
+
+/// The investigators the picker offers, each with its placeholder deck.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Pick {
+    Roland,
+    Agnes,
+}
+
+impl Pick {
+    fn roster(self) -> Vec<RosterEntry> {
+        match self {
+            Pick::Roland => roland_roster(),
+            Pick::Agnes => agnes_roster(),
+        }
+    }
+}
+
+/// A one-investigator roster of `investigator` with `deck`.
+fn roster(investigator: &str, deck: &[&str]) -> Vec<RosterEntry> {
+    vec![RosterEntry {
+        investigator: CardCode::new(investigator),
+        deck: deck.iter().map(|c| CardCode::new(*c)).collect(),
+    }]
+}
+
 /// Build the default Roland roster: investigator 01001 + the placeholder deck.
 pub fn roland_roster() -> Vec<RosterEntry> {
-    vec![RosterEntry {
-        investigator: CardCode::new("01001"),
-        deck: ROLAND_DEFAULT_DECK
-            .iter()
-            .map(|c| CardCode::new(*c))
-            .collect(),
-    }]
+    roster("01001", ROLAND_DEFAULT_DECK)
+}
+
+/// Build the default Agnes roster: investigator 01004 + the placeholder deck.
+pub fn agnes_roster() -> Vec<RosterEntry> {
+    roster("01004", AGNES_DEFAULT_DECK)
 }
 
 /// Pre-game picker, rendered as a **full-viewport overlay**. Renders only while
 /// `status == AwaitingRoster` — i.e. only before there is a board — and submits a
-/// `CreateGameRequest` (The Gathering + Roland) on click.
+/// `CreateGameRequest` (The Gathering + the picked investigator) on click.
 #[component]
 pub fn PickerView() -> impl IntoView {
     let store = store::use_store();
     let create_tx = use_context::<CreateTx>();
+    // Outside the render closure, so a store update that re-renders the
+    // overlay keeps the pick.
+    let picked = RwSignal::new(Pick::Roland);
 
     view! {
         {move || {
@@ -72,7 +119,26 @@ pub fn PickerView() -> impl IntoView {
                     <label>"Scenario: " <select><option>"The Gathering"</option></select></label>
                     <fieldset>
                         <legend>"Investigator"</legend>
-                        <label><input type="radio" name="inv" checked=true/> "Roland Banks (01001)"</label>
+                        <label>
+                            <input
+                                type="radio"
+                                name="inv"
+                                value="01001"
+                                prop:checked=move || picked.get() == Pick::Roland
+                                on:change=move |_| picked.set(Pick::Roland)
+                            />
+                            " Roland Banks (01001)"
+                        </label>
+                        <label>
+                            <input
+                                type="radio"
+                                name="inv"
+                                value="01004"
+                                prop:checked=move || picked.get() == Pick::Agnes
+                                on:change=move |_| picked.set(Pick::Agnes)
+                            />
+                            " Agnes Baker (01004)"
+                        </label>
                     </fieldset>
                     <button
                         class="create-game"
@@ -80,7 +146,7 @@ pub fn PickerView() -> impl IntoView {
                             if let Some(tx) = tx.clone() {
                                 let _ = tx.unbounded_send(CreateGameRequest {
                                     scenario_id: "the-gathering".to_string(),
-                                    roster: roland_roster(),
+                                    roster: picked.get_untracked().roster(),
                                 });
                             }
                         }

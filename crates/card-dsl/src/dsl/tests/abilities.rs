@@ -22,6 +22,43 @@ fn a_designator_maps_onto_the_action_class_it_performs() {
     }
 }
 
+/// The designator is the ability's, and only two builders set it (D21 of
+/// #777): `activated_as` on an `Activated` ability and `on_play_as` on an
+/// event's `OnPlay` ability. Every other builder leaves it `None`, so a
+/// designator on a reaction, constant, commit, revelation or elder-sign
+/// ability is not something a card can build.
+#[test]
+fn only_the_activated_and_on_play_builders_carry_a_designator() {
+    let parlor = activated_as(ActionDesignator::Resign, 1, vec![], seq([]));
+    assert_eq!(parlor.trigger, Trigger::Activated { action_cost: 1 });
+    assert_eq!(parlor.designator, Some(ActionDesignator::Resign));
+
+    // Blinding Light 01066: "<b>Evade.</b> This evasion attempt uses
+    // [willpower] instead of [agility]. …"
+    let played = on_play_as(ActionDesignator::Evade, seq([]));
+    assert_eq!(played.trigger, Trigger::OnPlay);
+    assert_eq!(played.designator, Some(ActionDesignator::Evade));
+    assert!(played.costs.is_empty());
+
+    for undesignated in [
+        constant(seq([])),
+        on_play(seq([])),
+        on_commit(seq([])),
+        on_skill_test_resolution(TestOutcome::Success, seq([])),
+        reaction_on_event(EventPattern::RoundEnded, EventTiming::After, seq([])),
+        forced_on_event(EventPattern::RoundEnded, EventTiming::After, seq([])),
+        revelation(seq([])),
+        activated(1, vec![], seq([])),
+        elder_sign(IntExpr::Lit(1)),
+    ] {
+        assert_eq!(
+            undesignated.designator, None,
+            "{:?} prints no designator",
+            undesignated.trigger,
+        );
+    }
+}
+
 #[test]
 fn with_eligibility_sets_the_condition_and_default_is_none() {
     let bare = reaction_on_event(EventPattern::RoundEnded, EventTiming::When, Effect::Cancel);
