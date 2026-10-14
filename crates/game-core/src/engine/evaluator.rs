@@ -89,8 +89,8 @@ use crate::event::Event;
 use crate::scenario::{ResolutionId, ScenarioEnding};
 use crate::state::{
     AbilitySource, AdvanceTrigger, CardCode, CardInstanceId, Continuation, DamageSource,
-    DifficultyBasis, EffectFrame, EnemyId, GameState, InvestigatorId, Lifetime, LocationId, Owner,
-    PlayFromHandFrame, RecordedModifier, SkillTestFollowUp,
+    DifficultyBasis, EffectFrame, EmitStep, EnemyId, GameState, InvestigatorId, Lifetime,
+    LocationId, Owner, PlayFromHandFrame, RecordedModifier, SkillTestFollowUp,
 };
 
 /// Failure margin of the just-resolved skill test (bound only while running an
@@ -1606,14 +1606,20 @@ fn discover_clue(
     )
 }
 
-/// Set the `pending_cancellation` signal for [`Effect::Cancel`] (Axis D #336).
+/// Flag the condition [`Effect::Cancel`] prevents (Axis D #336): the topmost
+/// [`EmitEventFrame`](crate::state::EmitEventFrame) whose cursor is still at
+/// [`EmitStep::When`], i.e. the condition whose `when` cell is open (#1055).
 ///
-/// A resolution frame must be open: `Cancel` only resolves inside a
-/// Before-timing reaction window (via `fire_pending_trigger` /
-/// `play_fast_event`), which keeps its frame on the continuation stack until
-/// close. The check scans for any window frame's *presence* (not just the top,
-/// and ignoring whether candidates remain — the fired candidate is already
-/// removed by the time its effect runs).
+/// That is the cancelled condition's own frame. `Cancel` only resolves inside a
+/// `when`-cell window (via `fire_pending_trigger` / `play_fast_event`), and a
+/// condition's cursor stays at `When` until that cell finishes. A condition the
+/// same effect emits *before* its `Cancel` has completed by then, and one it
+/// emits after starts on a fresh, unflagged frame.
+///
+/// Two invariants, both of which a malformed card breaks: a resolution window
+/// is open (scanned for by *presence*, not just the top, and ignoring whether
+/// candidates remain — the fired candidate is already removed by the time its
+/// effect runs), and a `when`-step condition sits beneath it.
 fn cancel_current_impact(cx: &mut Cx) -> EngineOutcome {
     debug_assert!(
         cx.state
@@ -1621,10 +1627,25 @@ fn cancel_current_impact(cx: &mut Cx) -> EngineOutcome {
             .iter()
             .any(|c| c.pending_candidates().is_some()),
         "Effect::Cancel evaluated with no open resolution window — a card \
-         cancelled outside a Before-timing window (TODO(#367) covers nesting; \
-         a malformed card otherwise)"
+         cancelled outside a Before-timing window"
     );
-    cx.state.pending_cancellation = true;
+    let prevented = cx
+        .state
+        .continuations
+        .frames_mut()
+        .rev()
+        .find_map(|c| match c {
+            Continuation::EmitEvent(emit) if emit.step == EmitStep::When => Some(emit),
+            _ => None,
+        });
+    debug_assert!(
+        prevented.is_some(),
+        "Effect::Cancel evaluated with no condition at its `when` step — \
+         nothing for the cancel to prevent"
+    );
+    if let Some(emit) = prevented {
+        emit.prevented = true;
+    }
     EngineOutcome::Done
 }
 

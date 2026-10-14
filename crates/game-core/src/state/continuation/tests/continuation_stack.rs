@@ -104,7 +104,6 @@ fn omitting_any_required_field_is_rejected() {
     serde_json::from_value::<GameState>(full.clone()).expect("full object deserializes");
     for field in [
         "continuations",
-        "pending_cancellation",
         "skill_substitutions",
         // #676's two: a defaulted `skill_test_ids` would re-mint ids a
         // live row already names, and a defaulted `recorded_modifiers`
@@ -224,6 +223,7 @@ fn emit_event_frame_roundtrips_serde() {
     let frame = Continuation::EmitEvent(EmitEventFrame {
         event: TimingEvent::RoundEnded,
         step: EmitStep::ResolveCondition,
+        prevented: true,
     });
     let json = serde_json::to_string(&frame).expect("serialize");
     let back: Continuation = serde_json::from_str(&json).expect("deserialize");

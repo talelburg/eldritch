@@ -12,9 +12,9 @@
 //! when …" instruction plays "as if the described timing point were a
 //! triggering condition", so the play-timing predicate IS the
 //! [`Trigger::OnEvent`] pattern (the same machinery Evidence! 01022 uses).
-//! "Cancel that attack" is [`Effect::Cancel`]: the emit site (the
-//! enemy-attack loop) skips the attack's damage/horror but still exhausts the
-//! attacker (RR p.6 + p.25). The Fast/cost metadata comes from the corpus.
+//! "Cancel that attack" is [`Effect::Cancel`]: the attack condition's timing
+//! coordinator skips its damage/horror but the attacker still exhausts (RR p.6
+//! + p.25). The Fast/cost metadata comes from the corpus.
 //!
 //! **Cell: the `when` cell of the `EnemyAttacks` condition.** The printed word
 //! is *"when"* — *"Fast. Play when an enemy attacks an investigator at your

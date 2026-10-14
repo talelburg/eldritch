@@ -1013,8 +1013,8 @@ synchronously and announce nothing, because their callers do synchronous post-ca
 work (Dynamite Blast 01024's `for inv in investigators` loop wants #704's shape in
 miniature) — `TODO(#728)` at each site; and a full cancel in `DamageAssigned`'s `when`
 cell would abandon the coordinator's sequence but not the frame beneath it, which is
-**#366**'s to fix along with partial replacement, since the one `pending_cancellation`
-bool cannot say *whose*. `run_reaction_continuation` was deleted on the way out: with
+**#366**'s to fix along with partial replacement, since the prevention flag
+cannot say *whose*. `run_reaction_continuation` was deleted on the way out: with
 the last two conditions that had post-window work now walking the coordinator, every
 arm had collapsed to `Done`.
 
@@ -1055,7 +1055,10 @@ Spatial targets use `Choose<S> { scope }` (`LocationSet { Here, Anywhere }` /
 + an `Effect::Cancel` leaf setting `pending_cancellation` (a `bool` suffices —
 Before-windows don't nest in scope, #367), honored on window close. One bool for
 both suppressing arms (cancel, nature-changing replacement); the non-suppressing
-third — replace-with-a-different-impact — is #366, unmodelled until a card wants it. A reaction event
+third — replace-with-a-different-impact — is #366, unmodelled until a card wants it.
+(#1055 superseded the single bool: Ward of Protection 01065 cancels and then deals
+horror through conditions of its own, so the flag moved onto the cancelled
+condition's `EmitEventFrame`; ADR 0008.) A reaction event
 (Evidence! 01022) rides the window's candidate list and is *played* when picked
 (`TriggerKind::Reaction` `OnEvent`, window-only).
 
