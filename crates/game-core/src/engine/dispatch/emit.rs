@@ -141,9 +141,10 @@ pub enum TimingEvent {
     /// the cards (Mark Harrigan 03001's *"After damage is placed on a card you
     /// control"*).
     ///
-    /// No card-facing [`EventPattern`](card_dsl::dsl::EventPattern) yet: none of
-    /// those cards is in the Core or Dunwich corpus, and a pattern with no
-    /// declaration to match is decoration. See
+    /// Neither of those cards is in the Core or Dunwich corpus. The card-facing
+    /// pattern is [`EventPattern::HarmPlaced`](card_dsl::dsl::EventPattern::HarmPlaced),
+    /// whose first consumer is Agnes Baker 01004's *"After 1 or more horror is
+    /// placed on Agnes Baker"* in the `after` cell. See
     /// `docs/adr/0009-damage-is-assigned-then-placed.md`.
     DamagePlaced {
         /// What dealt the harm.

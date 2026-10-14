@@ -26,6 +26,7 @@
 //! Lives at `crates/cards/tests/` so it can run against
 //! `cards::TEST_REGISTRIES`, which `game-core` cannot reach by crate direction.
 
+use card_dsl::dsl::UsagePeriod;
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
@@ -346,14 +347,14 @@ fn rolands_window_open() -> GameState {
 #[test]
 fn rolands_reaction_lapses_as_usage_limit_reached_once_its_limit_is_used() {
     let mut state = rolands_window_open();
-    let round = state.round;
+    let (round, phase) = (state.round, state.phase);
     // His reaction is the first ability printed on his card (`roland_banks.rs`).
     state
         .investigators
         .get_mut(&INV)
         .expect("seated")
         .investigator_card
-        .bump_ability_usage(0, round);
+        .bump_ability_usage(0, UsagePeriod::Round, round, phase);
 
     let resurfaced = TestSession::new(state, TEST_REGISTRIES);
 

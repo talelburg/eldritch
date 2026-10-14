@@ -23,8 +23,8 @@
 
 use card_dsl::card_data::CardType;
 use card_dsl::dsl::{
-    self, AttackerScope, EventPattern, EventTiming, TargetScope, TestedLocationScope, Trigger,
-    TriggerKind,
+    self, AttackerScope, EventPattern, EventTiming, HarmKind, HarmPlacedScope, TargetScope,
+    TestedLocationScope, Trigger, TriggerKind,
 };
 
 use crate::card_registry::CardRegistry;
@@ -516,11 +516,38 @@ pub(super) fn trigger_matches(
             controller: window_controller,
             ..
         } => *window_controller == controller,
+        // "After 1 or more horror is **placed on Agnes Baker**" (01004): the
+        // controller's own investigator card took at least 1 of the kind. Only
+        // the investigator card's share counts, so horror soaked by an asset
+        // does not — her ruling, *"You cannot use Agnes' ability if you assign
+        // horror to an asset."* (<https://arkhamdb.com/card/01004>). The event
+        // is emitted even when every point was soaked, which is why the share
+        // is read rather than the event's presence.
+        TimingEvent::DamagePlaced {
+            investigator,
+            assignment,
+            ..
+        } => {
+            let EventPattern::HarmPlaced { kind, scope } = pattern else {
+                unreachable!(
+                    "trigger_matches: the condition check paired {pattern:?} with DamagePlaced, \
+                     but only EventPattern::HarmPlaced has that condition"
+                )
+            };
+            match scope {
+                HarmPlacedScope::YourInvestigator => {
+                    let placed = match kind {
+                        HarmKind::Damage => assignment.investigator_damage,
+                        HarmKind::Horror => assignment.investigator_horror,
+                    };
+                    *investigator == controller && placed >= 1
+                }
+            }
+        }
         // The condition is the whole of what the event says. Every scope these
         // patterns carry is about where the card is, in [`scope_matches`]:
         // the attacker and the target, the entered and the left location, the
-        // advancing card, elimination's weaknesses. `DamagePlaced` has no
-        // pattern yet, so the condition check above has refused every one.
+        // advancing card, elimination's weaknesses.
         TimingEvent::EnemyAttacks { .. }
         | TimingEvent::RoundEnded
         | TimingEvent::EnteredLocation { .. }
@@ -528,8 +555,7 @@ pub(super) fn trigger_matches(
         | TimingEvent::AgendaAdvanced { .. }
         | TimingEvent::GameEnd
         | TimingEvent::EliminationGameEnd { .. }
-        | TimingEvent::LeftLocation { .. }
-        | TimingEvent::DamagePlaced { .. } => true,
+        | TimingEvent::LeftLocation { .. } => true,
     }
 }
 

@@ -719,6 +719,24 @@ pub enum EventPattern {
     /// **attack** dealing damage to self. The generalization waits for the card
     /// that contests it.
     EnemyAttackDamagedSelf,
+    /// At least 1 of `kind` was **placed** on the card `scope` names — step 2
+    /// of dealing damage, once the assignment has settled (ADR 0009). Agnes
+    /// Baker 01004: *"`[reaction]` After 1 or more horror is placed on Agnes
+    /// Baker: Deal 1 damage to an enemy at your location. (Limit once per
+    /// phase.)"* is `{ Horror, YourInvestigator }` in the `after` cell.
+    ///
+    /// **Placed on, not taken by** (`GLOSSARY.md`, "Taken by you / placed on
+    /// your investigator"): the scope reads only the share that lands on the
+    /// named card, so horror the controller assigns to a soaking asset does not
+    /// count. Her ruling (<https://arkhamdb.com/card/01004>): *"You cannot use
+    /// Agnes' ability if you assign horror to an asset."* The "taken by you"
+    /// scope, which counts assets too (`glossary/You_Your.md`), is #781's.
+    HarmPlaced {
+        /// Which harm must have been placed, at least 1 of it.
+        kind: HarmKind,
+        /// Which card it must have been placed on.
+        scope: HarmPlacedScope,
+    },
     /// An enemy attacks an investigator (RR p.25 step 3.3) — one triggering
     /// condition in all three cells since #704, so a card declares this pattern
     /// plus the trigger word it prints:
@@ -790,11 +808,23 @@ impl EventPattern {
             // card's narrowing of the damage *assignment*, not a condition of
             // its own (ADR 0009).
             EventPattern::EnemyAttackDamagedSelf => TriggeringCondition::DamageAssigned,
+            EventPattern::HarmPlaced { .. } => TriggeringCondition::DamagePlaced,
             EventPattern::EnemyAttacks { .. } => TriggeringCondition::EnemyAttacks,
             EventPattern::EnteredPlay => TriggeringCondition::EnteredPlay,
             EventPattern::LeftLocation => TriggeringCondition::LeftLocation,
         }
     }
+}
+
+/// Which card an [`EventPattern::HarmPlaced`] ability reads the placement on.
+/// Only the scope a corpus card prints; *"a card you control"* (Mark Harrigan
+/// 03001) arrives with the first card that needs it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum HarmPlacedScope {
+    /// The controller's own investigator card — Agnes Baker 01004's *"placed
+    /// on Agnes Baker"*, printed on her investigator card. Assets the
+    /// controller soaks with are not part of it.
+    YourInvestigator,
 }
 
 /// Which attacking enemy an [`EventPattern::EnemyAttacks`] ability listens
@@ -846,8 +876,9 @@ pub enum TestedLocationScope {
 /// `card-dsl`, below both. Fieldless: what narrows a match within one condition
 /// (a phase, a test outcome, *"you"*) is on the pattern and the event, not here.
 ///
-/// A condition can have no pattern yet: `DamagePlaced` is announced by the
-/// engine but no corpus card listens to it.
+/// A condition can have no pattern yet: the engine announces what the rules
+/// define whether or not a corpus card listens to it. (`DamagePlaced` was one
+/// until Agnes Baker 01004's [`EventPattern::HarmPlaced`].)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TriggeringCondition {
     /// An investigator entered a location.
@@ -1073,16 +1104,26 @@ pub struct UsageLimit {
 
 /// The period a [`UsageLimit`] is measured over.
 ///
-/// Phase-3 minimal set: `Round` (Roland's "Limit once per round").
-/// `Phase` ("limit once per turn") and `Game` ("limit once per game"
-/// — group or player) land when the first consumer appears.
+/// `Round` (Roland's "Limit once per round") and `Phase` (Agnes Baker's
+/// "Limit once per phase"). `Turn` ("limit once per turn") and `Game`
+/// ("limit once per game" — group or player) land when the first consumer
+/// appears.
+///
+/// The period decides when a counter resets, and nothing else: the engine's
+/// usage record notes the round **and** phase of its last fire either way, and
+/// each period compares the part of that clock it is measured over.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum UsagePeriod {
     /// A game round, as defined by the framework: begins at 1.1 Mythos,
     /// ends at 4.6 Upkeep (Rules Reference page 23). Counter resets
     /// when `GameState::round` (in `game_core::state`)
-    /// advances.
+    /// advances — and not at a phase change within the round.
     Round,
+    /// A game phase (Mythos, Investigation, Enemy, Upkeep). Counter resets
+    /// when either `GameState::phase` or `GameState::round` changes, so the
+    /// Investigation phase of one round is a different period from the
+    /// Investigation phase of the next.
+    Phase,
 }
 
 // ---- abilities -------------------------------------------------
@@ -2209,7 +2250,7 @@ pub enum LocationSet {
 
 /// An entity-choice filter. Locational today; non-spatial arms (`Engaged`,
 /// `WithTrait`, …) accrete here when a card needs them — additively, touching
-/// neither [`LocationSet`] nor location-picks. (The `UsagePeriod::Round`-only
+/// neither [`LocationSet`] nor location-picks. (The `UsagePeriod`
 /// minimal-enum-with-a-growth-path idiom.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum EntityScope {

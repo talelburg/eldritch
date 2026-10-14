@@ -32,9 +32,9 @@
 //! `docs/adr/0009-damage-is-assigned-then-placed.md` splits `DamageAssigned`
 //! from `DamagePlaced` to model, and it is the whole of what this file asserts.
 //!
-//! **Two substitutions**, and neither is a convenience. Both of the example's
-//! other cards are in the corpus but **unimplemented** — they have no
-//! `abilities()` impl, so the engine sees only their metadata:
+//! **Two substitutions**, and neither is a convenience. Goat Spawn is in the
+//! corpus but **unimplemented** — it has no `abilities()` impl, so the engine
+//! sees only its metadata — and Agnes's level hangs off its horror:
 //!
 //! - Goat Spawn 01180 (`pack/core/core_encounter.json`), *"**Forced** - When
 //!   Goat Spawn is defeated: Each investigator at this location takes 1
@@ -46,14 +46,12 @@
 //! - Agnes Baker 01004 (`pack/core/core.json`), *"[reaction] After 1 or more
 //!   horror is placed on Agnes Baker: Deal 1 damage to an enemy at your
 //!   location. (Limit once per phase.)"* — the example's third nesting level.
-//!   Implementing it would need a card-facing pattern for `DamagePlaced`, which
-//!   #727 deliberately did **not** build ("a card-facing pattern with no corpus
-//!   declaration would be decoration"), so that level is not reproduced. The
-//!   LIFO discipline it demonstrates is the same one asserted here one level up.
+//!   She ships (#1045, `agnes_baker.rs`), but with no Goat Spawn horror to
+//!   react to, that level is not reproduced here: the LIFO discipline it
+//!   demonstrates is the same one asserted here one level up.
 //!
-//! Implementing either card is card work neither #727 nor #722 asked for; what
-//! this file owes them is the *shape*, and the shape does not depend on which
-//! ability the defeat spawns.
+//! What this file owes the example is the *shape*, and the shape does not
+//! depend on which ability the defeat spawns.
 //!
 //! Sibling files: `guard_dog_soak.rs` (the soak pipeline itself),
 //! `enemy_attack_cells.rs` (#704's condition), `clue_discovery_cells.rs` (#703's).
