@@ -424,8 +424,8 @@ fn restrictions_met(
     Ok(())
 }
 
-/// Whether `ability` is an activated ability whose bold action designator
-/// performs an action — every designator but **Parley**, which performs nothing.
+/// Whether `ability` prints a bold action designator that performs an action
+/// — every designator but **Parley**, which performs nothing.
 ///
 /// Such an ability's substance is the action, not the residual effect printed
 /// beside the bold word (#805; `glossary/Ability.md`: *"Activating such an
@@ -437,13 +437,16 @@ fn restrictions_met(
 /// leaves with the activation path: `check_activate_ability` asks it before it
 /// asks this gate. A Parley ability falls through to the residual, which is all
 /// it has to change the game state with.
+///
+/// The designator is the ability's, whichever trigger reached it (see
+/// [`ActionDesignator`]), so an event's designated `OnPlay` ability skips the
+/// residual check too. Its action check is then the play path's to ask, as the
+/// activation path asks it; no implemented event prints a designator yet, and
+/// Blinding Light 01066 brings that check with it (#1054).
 fn performs_an_action(ability: &Ability) -> bool {
     matches!(
-        &ability.trigger,
-        Trigger::Activated {
-            designator: Some(designator),
-            ..
-        } if !matches!(designator, ActionDesignator::Parley)
+        &ability.designator,
+        Some(designator) if !matches!(designator, ActionDesignator::Parley)
     )
 }
 

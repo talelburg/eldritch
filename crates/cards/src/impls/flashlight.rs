@@ -63,14 +63,12 @@ mod tests {
     fn one_action_ability_spending_a_supply_to_investigate_minus_two_shroud() {
         let abilities = abilities();
         assert_eq!(abilities.len(), 1);
+        assert_eq!(abilities[0].trigger, Trigger::Activated { action_cost: 1 });
         assert_eq!(
-            abilities[0].trigger,
-            Trigger::Activated {
-                action_cost: 1,
-                designator: Some(ActionDesignator::Investigate {
-                    shroud_modifier: IntExpr::Lit(-2),
-                }),
-            }
+            abilities[0].designator,
+            Some(ActionDesignator::Investigate {
+                shroud_modifier: IntExpr::Lit(-2),
+            }),
         );
         assert_eq!(
             abilities[0].costs,

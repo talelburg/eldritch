@@ -491,11 +491,7 @@ pub(super) fn resolve_activated_ability(
             .into(),
         });
     };
-    let Trigger::Activated {
-        action_cost,
-        ref designator,
-    } = ability.trigger
-    else {
+    let Trigger::Activated { action_cost } = ability.trigger else {
         return Err(EngineOutcome::Rejected {
             reason: format!(
                 "ActivateAbility: {address:?} on {code} is not an Activated \
@@ -507,7 +503,7 @@ pub(super) fn resolve_activated_ability(
     };
     Ok(ActivatedAbility {
         action_cost,
-        designator: designator.clone(),
+        designator: ability.designator.clone(),
         costs: ability.costs.clone(),
         effect: ability.effect.clone(),
         usage_limit: ability.usage_limit,

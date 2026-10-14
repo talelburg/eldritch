@@ -338,6 +338,28 @@ mod tests {
         }
     }
 
+    /// A bold action designator is the ability's, but only an `Activated`
+    /// ability (an asset's *"\[action\]: **Fight.**"*) or an event's `OnPlay`
+    /// ability (*"**Evade.** …"*) prints one. Anywhere else the engine would
+    /// ignore it silently, so no card in the corpus may carry one there.
+    #[test]
+    fn only_activated_and_on_play_abilities_carry_a_designator() {
+        use card_dsl::dsl::Trigger;
+        for record in impls::ALL {
+            for ability in record_abilities(record) {
+                if ability.designator.is_some() {
+                    assert!(
+                        matches!(ability.trigger, Trigger::Activated { .. } | Trigger::OnPlay),
+                        "{}: designator {:?} rides a {:?} ability",
+                        record.code,
+                        ability.designator,
+                        ability.trigger,
+                    );
+                }
+            }
+        }
+    }
+
     #[test]
     fn every_registered_tag_is_prefixed_with_its_own_code_and_kebab_case() {
         for record in impls::ALL {
