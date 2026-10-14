@@ -46,6 +46,7 @@
 use std::collections::VecDeque;
 
 use crate::action::{Action, InputResponse, PlayerAction};
+use crate::card_registry::CardRegistry;
 use crate::engine::enumerate::TurnAction;
 use crate::engine::{
     enumerate, ApplyResult, ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget,
@@ -310,8 +311,13 @@ pub(super) fn sole_option_at(
 /// The turn-menu [`OptionId`] of the open-turn action `action` on `state`, or a
 /// panic naming `caller` and listing what is offered. Behind the session's
 /// `take` step.
-pub(super) fn turn_action_option(state: &GameState, action: &TurnAction, caller: &str) -> OptionId {
-    let actions = enumerate::legal_actions(state, crate::engine::Registries::from_globals().cards);
+pub(super) fn turn_action_option(
+    state: &GameState,
+    cards: &CardRegistry,
+    action: &TurnAction,
+    caller: &str,
+) -> OptionId {
+    let actions = enumerate::legal_actions(state, cards);
     let idx = actions
         .iter()
         .position(|a| a == action)

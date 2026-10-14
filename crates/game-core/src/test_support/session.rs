@@ -490,7 +490,12 @@ impl TestSession {
             "TestSession::take: the session is not at the turn menu; it rests at {:?}",
             self.rest,
         );
-        let id = turn_action_option(&self.state, action, "TestSession::take");
+        let id = turn_action_option(
+            &self.state,
+            self.registries.cards,
+            action,
+            "TestSession::take",
+        );
         self.respond(InputResponse::PickSingle(id))
     }
 
