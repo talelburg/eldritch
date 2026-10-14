@@ -49,6 +49,7 @@ ship untested by anything but a unit test.
 
 | Issue | Work |
 |---|---|
+| #1025 | Every investigator harm rides the `DealDamage` frame and announces (#921 item 04) — Agnes's reaction and Forbidden Knowledge's harm cost build on it. #1027 is in: the `deal_harm` adapter, Crypt Chill and the deck-out penalty on it, and Upkeep 4.4 resolving one investigator's draw at a time. #1028 and #1029 remain |
 | #776 | `Trigger::ElderSign` grows an on-success effect — the prefactor |
 | #366 | Replacement effects beyond cancel — Wendy's blocker, re-milestoned here |
 | #777 | Slice 1 — Agnes Baker 01004 + Heirloom / Dark Memory + Mystic level 0 |
@@ -63,7 +64,7 @@ ship untested by anything but a unit test.
 
 ## Ordering
 
-**#776 → #777 → #778 → (#366) → #779 → #780 → #781 → #782.**
+**#1025 → #776 → #777 → #778 → (#366) → #779 → #780 → #781 → #782.**
 
 **Vertical slices, one investigator at a time** — investigator card, signature
 pair, and that investigator's class pool, each slice ending in someone playable.

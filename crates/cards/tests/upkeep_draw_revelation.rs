@@ -6,7 +6,8 @@
 //! resolving a drawn-weakness Revelation `push_effect`s onto the live stack,
 //! burying the anchor — so step 4.6's `set_upkeep_resume` used to find the
 //! pushed effect instead of the anchor and hit `unreachable!()`. The fix makes
-//! 4.4 cede to the drive loop (resume at `AfterDraw`) when it pushed.
+//! 4.4 cede to the drive loop when it pushed (since #1027, resuming at
+//! `Drawing` to run the next investigator's draw).
 //!
 //! Drives a solo game via the public `EndTurn` apply path so the Investigation
 //! → Enemy → Upkeep cascade actually engages the drive loop (unlike the

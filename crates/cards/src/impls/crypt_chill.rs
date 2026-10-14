@@ -73,11 +73,8 @@ fn crypt_chill_fail(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     ) {
         Grounded::Picked(instance) => discard_asset_instance(cx, instance),
         // Cannot discard an asset → take 2 damage instead (the printed
-        // fallback; defeat handled by the kernel helper).
-        Grounded::Empty => {
-            cx.take_damage(controller, 2);
-            EngineOutcome::Done
-        }
+        // fallback), dealt as the native's tail.
+        Grounded::Empty => cx.deal_harm(controller, 2, 0),
         Grounded::Suspend(outcome) => outcome,
     }
 }
@@ -97,7 +94,9 @@ fn discard_asset_instance(cx: &mut NativeCx, instance: CardInstanceId) -> Engine
 #[cfg(test)]
 mod tests {
     use card_dsl::dsl::Effect;
-    use game_core::state::{CardCode, GameStateBuilder};
+    use game_core::state::{
+        CardCode, Continuation, DamageSource, DealDamageFrame, DealDamageStep, GameStateBuilder,
+    };
     use game_core::test_support::{self, seat};
 
     use super::*;
@@ -166,5 +165,33 @@ mod tests {
             vec![CardCode::new("01020")],
             "asset moved to discard"
         );
+    }
+
+    #[test]
+    fn no_asset_fallback_deals_two_damage_through_the_deal_frame() {
+        // No asset to discard → "take 2 damage instead", dealt through the one
+        // harm adapter: a `DealDamage { Effect }` frame for 2 damage is the
+        // native's tail, and nothing is placed until that frame runs (#1027).
+        let mut state = GameStateBuilder::new().with_seat(seat(1)).build();
+        let ctx = EvalContext::for_controller(InvestigatorId(1));
+        let (out, _) = test_support::run_native(&mut state, crypt_chill_fail, &ctx);
+        assert_eq!(out, EngineOutcome::Done);
+        assert!(
+            matches!(
+                state.continuations.top(),
+                Some(Continuation::DealDamage(DealDamageFrame {
+                    investigator: InvestigatorId(1),
+                    source: DamageSource::Effect,
+                    step: DealDamageStep::Distribute {
+                        remaining_damage: 2,
+                        remaining_horror: 0,
+                    },
+                    ..
+                }))
+            ),
+            "expected a DealDamage{{Effect}} frame for 2 damage, got {:?}",
+            state.continuations.top()
+        );
+        assert_eq!(state.investigators[&InvestigatorId(1)].damage(), 0);
     }
 }

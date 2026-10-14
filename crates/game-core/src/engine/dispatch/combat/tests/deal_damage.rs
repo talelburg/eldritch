@@ -281,3 +281,95 @@ fn soak_options_anchor_assets_to_card_instances() {
     assert_eq!(opts[0].label, "Test Investigator");
     assert_eq!(opts[1].label, "Test Asset");
 }
+
+/// The one harm adapter (#1027) deals through the same cursor an enemy attack
+/// does (#727): `deal_harm` parks a `DealDamage { source: Effect }` frame, and
+/// the walk announces `DamageAssigned` then `DamagePlaced` before anything
+/// lands. Walked once here on the kernel adapter; each caller (Crypt Chill, the
+/// deck-out penalty) only asserts that it pushes this frame.
+#[test]
+fn deal_harm_walks_distribute_announce_place_finish_from_an_effect() {
+    let id = InvestigatorId(1);
+    let mut state = GameStateBuilder::new()
+        .with_seat(test_support::seat(1))
+        .build();
+    let mut events = Vec::new();
+    let mut cx = Cx {
+        state: &mut state,
+        events: &mut events,
+    };
+
+    assert_eq!(deal_harm(&mut cx, id, 0, 1), EngineOutcome::Done);
+    assert!(matches!(
+        cx.state.continuations.top(),
+        Some(Continuation::DealDamage(DealDamageFrame {
+            investigator,
+            source: DamageSource::Effect,
+            step: DealDamageStep::Distribute {
+                remaining_damage: 0,
+                remaining_horror: 1,
+            },
+            ..
+        })) if *investigator == id
+    ));
+
+    // Distribute drains (no soaker), then Announce emits DamageAssigned.
+    assert_eq!(drive_deal_damage(&mut cx), EngineOutcome::Done);
+    assert_eq!(drive_deal_damage(&mut cx), EngineOutcome::Done);
+    assert!(matches!(
+        cx.state.continuations.top(),
+        Some(Continuation::EmitEvent(EmitEventFrame {
+            event: TimingEvent::DamageAssigned {
+                source: DamageSource::Effect,
+                ..
+            },
+            ..
+        }))
+    ));
+    assert_eq!(cx.state.investigators[&id].horror(), 0);
+    cx.state.continuations.pop();
+
+    // Place emits DamagePlaced; the horror lands at its resolve step.
+    assert_eq!(drive_deal_damage(&mut cx), EngineOutcome::Done);
+    let Some(Continuation::EmitEvent(EmitEventFrame {
+        event: placed @ TimingEvent::DamagePlaced { .. },
+        ..
+    })) = cx.state.continuations.top().cloned()
+    else {
+        panic!("Place must emit DamagePlaced");
+    };
+    assert_eq!(cx.state.investigators[&id].horror(), 0);
+    cx.state.continuations.pop();
+    let ConditionResolution::Coordinator(resolve) = placed.condition_resolution() else {
+        panic!("DamagePlaced must be coordinator-owned");
+    };
+    assert_eq!(resolve(&mut cx, &placed), EngineOutcome::Done);
+    assert_eq!(cx.state.investigators[&id].horror(), 1, "placed at last");
+    assert_event!(cx.events, Event::HorrorTaken { investigator, amount: 1 } if *investigator == id);
+
+    // Finish pops the frame and hands back `Done`: nothing to resume.
+    assert_eq!(drive_deal_damage(&mut cx), EngineOutcome::Done);
+    assert!(
+        cx.state.continuations.top().is_none(),
+        "the frame pops at Finish"
+    );
+}
+
+/// No harm, no deal: `deal_harm(.., 0, 0)` pushes nothing, so no condition
+/// announces an empty assignment.
+#[test]
+fn deal_harm_of_nothing_pushes_no_frame() {
+    let mut state = GameStateBuilder::new()
+        .with_seat(test_support::seat(1))
+        .build();
+    let mut events = Vec::new();
+    let mut cx = Cx {
+        state: &mut state,
+        events: &mut events,
+    };
+    assert_eq!(
+        deal_harm(&mut cx, InvestigatorId(1), 0, 0),
+        EngineOutcome::Done
+    );
+    assert!(cx.state.continuations.top().is_none());
+}

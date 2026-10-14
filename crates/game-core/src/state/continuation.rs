@@ -102,8 +102,12 @@ pub enum DamageSource {
         /// The attacking enemy (binds the retaliate's target).
         enemy: EnemyId,
     },
-    /// A card/treachery `Effect::Deal` (K5b-2): at `Finish`, resume the parked
-    /// effect walk so any remaining iterations run.
+    /// Every deal that isn't an enemy attack: a card/treachery `Effect::Deal`
+    /// (K5b-2), a card-local native's harm, or a rule's (the deck-out horror),
+    /// all through the one harm adapter `deal_harm` or `Effect::Deal`. Nothing
+    /// in the corpus distinguishes harm from a rule from harm from a card
+    /// effect, so they share the arm. Like the enemy attack's, its `Finish` is a
+    /// pop and no more: whatever the caller does next is on the frames beneath.
     Effect,
 }
 
@@ -1013,9 +1017,22 @@ pub enum UpkeepResume {
     AfterPhaseStartForced,
     /// Post-4.1 window closed; run `upkeep_resume` (steps 4.2–4.6).
     Begins,
-    /// Steps 4.2–4.4 ran and the 4.4 draw pushed a drawn-weakness Revelation
-    /// (#509) that ceded to the drive loop. On re-exposure of the anchor, run
-    /// 4.5 (hand size) + 4.6 (phase end).
+    /// Step 4.4's per-investigator cursor: `drew` has drawn their card, and the
+    /// draw pushed frames above this anchor (the deck-out horror's deal, a drawn
+    /// weakness's Revelation) that ceded to the drive loop. On re-exposure —
+    /// once `drew`'s draw has completely resolved — the next active investigator
+    /// in player order draws, or, after the last, each investigator gains 1
+    /// resource and 4.5 + 4.6 run. Appendix II 4.4: *"In player order, each
+    /// investigator draws 1 card. Once those cards have been drawn, each
+    /// investigator gains 1 resource."*
+    Drawing {
+        /// The investigator whose draw is resolving above the anchor.
+        drew: InvestigatorId,
+    },
+    /// Step 4.4 is complete (every draw and resource): on re-exposure of the
+    /// anchor, run 4.5 (hand size) + 4.6 (phase end). The engine runs 4.5
+    /// inline once 4.4 completes, so only a staged state rests here
+    /// (`GameStateBuilder::ending_upkeep_phase`).
     AfterDraw,
     /// Step 4.6's `PhaseEnded { Upkeep }` forced abilities are *queued* above
     /// this anchor. On re-exposure — once those frames have resolved — emit

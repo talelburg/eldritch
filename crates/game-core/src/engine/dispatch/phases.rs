@@ -893,8 +893,14 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
             );
             upkeep_resume(cx)
         }
-        // A step-4.4 drawn-weakness Revelation (#509) drained, re-exposing this
-        // anchor: run 4.5 (hand size) + 4.6 (phase end + transition).
+        // One investigator's step-4.4 draw (its deck-out horror, a drawn
+        // weakness's Revelation, #509) has resolved, re-exposing this anchor:
+        // the next investigator draws, or 4.4 completes.
+        Some(Continuation::UpkeepPhase(UpkeepPhaseFrame {
+            resume: UpkeepResume::Drawing { drew },
+        })) => upkeep_draws_after(cx, Some(drew)),
+        // A staged state rests after step 4.4: run 4.5 (hand size) + 4.6
+        // (phase end + transition).
         Some(Continuation::UpkeepPhase(UpkeepPhaseFrame {
             resume: UpkeepResume::AfterDraw,
         })) => upkeep_after_draw(cx),
@@ -1081,46 +1087,64 @@ fn upkeep_after_phase_start(cx: &mut Cx) -> EngineOutcome {
     reaction_windows::open_fast_window(cx, FastWindowKind::Phase(PhaseStep::UpkeepBegins))
 }
 
-/// The post-4.1 window continuation. Steps 4.2–4.4 run inline as named call
-/// sites. The 4.4 draw may resolve a drawn-weakness Revelation (#509), which
-/// `push_effect`s onto the stack above this anchor; when that happens
-/// `upkeep_resume` cedes (resume `AfterDraw`) so the drive loop drains the
-/// Revelation, then re-runs 4.5/4.6 via [`upkeep_after_draw`] on re-exposure.
-/// Otherwise 4.5/4.6 run inline: step 4.5 ([`check_hand_size`]) may suspend
-/// with [`EngineOutcome::AwaitingInput`] when an investigator is over the hand
-/// cap — in which case 4.6 runs only once the discard resolves — else it hands
-/// to [`upkeep_phase_end`] for 4.6 + transition.
+/// The post-4.1 window continuation. Steps 4.2 and 4.3 run inline, then the 4.4
+/// draws start from the first active investigator ([`upkeep_draws_after`]),
+/// which runs 4.5/4.6 inline once every draw has resolved. Step 4.5
+/// ([`check_hand_size`]) may suspend with [`EngineOutcome::AwaitingInput`] when
+/// an investigator is over the hand cap — in which case 4.6 runs only once the
+/// discard resolves — else it hands to [`upkeep_phase_end`] for 4.6 +
+/// transition.
 pub(super) fn upkeep_resume(cx: &mut Cx) -> EngineOutcome {
     reset_actions(cx); // 4.2
     ready_exhausted_cards(cx); // 4.3
-                               // Sentinel for "4.4 pushed a continuation *above us*". Captured after
-                               // 4.2/4.3 because those are pure state mutations that never push — so a
-                               // change here is attributable to the 4.4 draw (a drawn-weakness
-                               // Revelation; or any future pusher, which the cede below handles
-                               // uniformly).
-                               //
-                               // Compares the top frame rather than the stack depth: 4.4's draw can
-                               // deal lethal harm, and eliminating the last investigator latches a
-                               // resolution, which inserts a `ScenarioEnd` frame at the *bottom* of the
-                               // stack (#566). That grows the depth without pushing anything above this
-                               // anchor, so a length sentinel would cede to a Revelation that does not
-                               // exist.
-    let top_before = cx.state.continuations.top().cloned();
-    upkeep_draw_and_resource(cx); // 4.4 — may push a drawn-weakness Revelation (#509)
-    if cx.state.continuations.top() != top_before.as_ref() {
-        // 4.4 pushed a drawn-weakness Revelation above the (now-buried) UpkeepPhase
-        // anchor. Cede: the drive loop resolves the Revelation, then re-exposes the
-        // anchor at AfterDraw (anchor_on_child_pop → upkeep_after_draw) for 4.5/4.6.
-        set_upkeep_resume(cx, UpkeepResume::AfterDraw);
-        return EngineOutcome::Done;
-    }
-    upkeep_after_draw(cx) // 4.5 + 4.6 inline — common case, nothing pushed
+    upkeep_draws_after(cx, None) // 4.4, then 4.5 + 4.6
 }
 
-/// Steps 4.5 (hand size; may suspend) + 4.6 (phase end + round-end transition).
-/// Run inline by `upkeep_resume` when 4.4 pushed nothing, or via
-/// `anchor_on_child_pop`'s `AfterDraw` arm once a 4.4 drawn-weakness Revelation
-/// has drained.
+/// Step 4.4's per-investigator cursor: draw for each active investigator in
+/// player order after `drew` (from the first when `None`), one at a time.
+///
+/// Appendix II 4.4: *"In player order, each investigator draws 1 card. Once
+/// those cards have been drawn, each investigator gains 1 resource."* With
+/// `glossary/In_Player_Order.md`: *"the lead investigator performs his or her
+/// part of the sequence first, followed by the other players in clockwise
+/// order."* So one investigator's draw resolves **completely** — the deck-out
+/// horror's deal with its soak prompt and reactions, then a drawn weakness's
+/// Revelation — before the next investigator draws.
+///
+/// A draw that pushes frames cedes to the drive loop with the anchor at
+/// [`UpkeepResume::Drawing`], whose re-exposure calls back here with that
+/// investigator. Once every draw has resolved, each active investigator gains
+/// 1 resource and 4.5/4.6 run.
+fn upkeep_draws_after(cx: &mut Cx, drew: Option<InvestigatorId>) -> EngineOutcome {
+    let mut next = match drew {
+        None => cursor::first_active_investigator(cx.state),
+        Some(prev) => cursor::next_active_investigator_after(cx.state, prev),
+    };
+    while let Some(id) = next {
+        // Park the cursor before the draw (ADR 0003): the frames it may push
+        // resolve above the anchor, which then resumes after `id`.
+        set_upkeep_resume(cx, UpkeepResume::Drawing { drew: id });
+        // Compares the top frame rather than the stack depth: the draw can
+        // eliminate the last investigator, whose latched resolution inserts a
+        // `ScenarioEnd` frame at the *bottom* of the stack (#566), growing the
+        // depth without pushing anything above this anchor.
+        let top_before = cx.state.continuations.top().cloned();
+        // Tail position for this investigator's draw: when it pushed, the
+        // outcome (`Done`) is returned as the cede below.
+        let outcome = cards::draw_one_with_deckout(cx, id);
+        if cx.state.continuations.top() != top_before.as_ref() {
+            return outcome;
+        }
+        next = cursor::next_active_investigator_after(cx.state, id);
+    }
+    for id in cursor::active_investigators_in_turn_order(cx.state) {
+        cards::grant_resources(cx, id, 1);
+    }
+    upkeep_after_draw(cx)
+}
+
+/// Steps 4.5 (hand size; may suspend) + 4.6 (phase end + round-end transition),
+/// once step 4.4 is complete.
 fn upkeep_after_draw(cx: &mut Cx) -> EngineOutcome {
     if let outcome @ EngineOutcome::AwaitingInput { .. } = check_hand_size(cx) {
         return outcome; // 4.5 parked for discard; 4.6 runs on resume
@@ -1437,21 +1461,6 @@ fn reset_actions(cx: &mut Cx) {
                 new_count: ACTIONS_PER_TURN,
             });
         }
-    }
-}
-
-/// 4.4 Each investigator draws 1 card and gains 1 resource. Rules
-/// Reference p.25: "In player order, each investigator draws 1 card.
-/// Once those cards have been drawn, each investigator gains 1
-/// resource." Two passes to honor that ordering: all draws first, then
-/// all resource gains.
-fn upkeep_draw_and_resource(cx: &mut Cx) {
-    let ids = cursor::active_investigators_in_turn_order(cx.state);
-    for &id in &ids {
-        cards::draw_one_with_deckout(cx, id);
-    }
-    for &id in &ids {
-        cards::grant_resources(cx, id, 1);
     }
 }
 

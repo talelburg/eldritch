@@ -479,57 +479,22 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     inv.current_location = None;
 }
 
-/// Apply `amount` horror to an investigator. If their accumulated
-/// horror reaches `max_sanity`, flip status to [`Status::Defeated`],
-/// emit [`Event::InvestigatorEliminated`], and (if no `Active`
-/// investigators remain) emit [`Event::AllInvestigatorsEliminated`].
+/// Apply `amount` damage to `investigator` synchronously, soak-first, then
+/// apply defeat (cause [`EliminationCause::Damage`]) if it was lethal.
 ///
-/// No-ops when `amount == 0` or the investigator is already defeated.
-///
-/// Single-source horror application (the Draw-from-empty-deck penalty,
-/// treachery/card `Effect::Deal` horror) funnels through this wrapper,
-/// which routes through the shared soak entry
-/// [`soak_and_place`](super::combat::soak_and_place) (#44/K5a) — so a
-/// controlled sanity-bearing asset absorbs the horror, and
-/// [`place_assignment`](super::combat::place_assignment) handles the
-/// simultaneous-placement + investigator-defeat semantics. The
-/// single-source-damage twin [`take_damage`] is symmetric for
-/// [`EliminationCause::Damage`]. Enemy attacks (which deal both damage and horror
-/// from one source) reach the same entry via
-/// [`enemy_attack`](super::combat::enemy_attack).
-///
-/// [`Status::Defeated`]: crate::state::Status::Defeated
-pub(crate) fn take_horror(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
-    // Route through the shared soak entry (#44/K5a) so a controlled sanity-bearing
-    // asset (Beat Cop, Holy Rosary) absorbs non-attack horror; `place_assignment`
-    // applies investigator defeat (cause Horror) when the investigator's share is
-    // lethal, preserving this wrapper's prior behaviour.
-    //
-    // TODO(#728): this places synchronously, so it announces neither
-    // `DamageAssigned` nor `DamagePlaced` — an ability keyed to either does not
-    // see harm dealt this way. Migrating means parking this caller's tail on a
-    // frame first (see `combat::soak_and_place`).
-    combat::soak_and_place(cx, investigator, 0, amount);
-}
-
-/// Apply `amount` damage to `investigator` via the numeric helper,
-/// then apply defeat (cause [`EliminationCause::Damage`]) if it was lethal.
-/// The single-source-damage twin of `take_horror` — called by
-/// `Effect::Deal`'s evaluator (the `HarmKind::Damage` arm).
-///
-/// Card-local native effects (#276) reach it as
-/// [`NativeCx::take_damage`](crate::engine::NativeCx::take_damage), so they deal
-/// damage without re-implementing the defeat check — the first such consumer is
-/// Crypt Chill's (01167) no-asset failure branch.
+/// Every other investigator harm is dealt through
+/// [`deal_harm`](super::combat::deal_harm). The callers left here are Dynamite
+/// Blast 01024 (as [`NativeCx::take_damage`](crate::engine::NativeCx::take_damage))
+/// and the `TestSession::take_damage` step.
 pub fn take_damage(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
     // Route through the shared soak entry (#44/K5a) so a controlled health-bearing
     // asset (Guard Dog, Beat Cop) absorbs non-attack damage; `place_assignment`
     // applies investigator defeat (cause Damage) when the investigator's share is
     // lethal, preserving this wrapper's prior behaviour.
     //
-    // TODO(#728): announces neither condition — see the note on `take_horror`.
-    // Dynamite Blast 01024's `for inv in investigators` loop is the caller that
-    // makes this the harder of the two to migrate.
+    // TODO(#728): this places synchronously, so it announces neither
+    // `DamageAssigned` nor `DamagePlaced`. Dynamite Blast 01024's `for inv in
+    // investigators` loop moves onto `deal_harm` with one frame per investigator.
     combat::soak_and_place(cx, investigator, amount, 0);
 }
 
@@ -552,9 +517,9 @@ pub fn take_damage(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
 /// card printing *"each investigator that has not resigned"* skip the filter:
 /// `apply_investigator_elimination`'s own status gate is the filter.
 ///
-/// The twin of [`take_damage`] / `take_horror` for the non-numeric case: those
-/// route through the soak entry because damage and horror can be absorbed, and a
-/// card-ability defeat cannot be.
+/// The non-numeric counterpart of [`deal_harm`](super::combat::deal_harm): harm
+/// is distributed because damage and horror can be absorbed, and a card-ability
+/// defeat cannot be.
 pub fn defeat_investigator(cx: &mut Cx, investigator: InvestigatorId) {
     apply_investigator_elimination(cx, investigator, EliminationCause::CardAbility);
 }

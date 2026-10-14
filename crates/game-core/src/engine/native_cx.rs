@@ -84,18 +84,30 @@ impl<'a> NativeCx<'a> {
 
     // --- Harm and defeat ---
 
-    /// Deal `amount` damage to `investigator` from a single source. A
-    /// controlled health-bearing asset may absorb it, and lethal damage
-    /// defeats them.
-    pub fn take_damage(&mut self, investigator: InvestigatorId, amount: u8) {
-        elimination::take_damage(self.write_access(), investigator, amount);
+    /// Deal `damage` + `horror` to `investigator`: the one way a native deals
+    /// harm to an investigator. It is dealt the way an enemy attack's is — the
+    /// player is offered the soak, and both `DamageAssigned` and `DamagePlaced`
+    /// are announced — so nothing is placed when this returns.
+    ///
+    /// **Return its outcome.** The deal runs on a frame above everything the
+    /// native leaves beneath it, so work written after this call would run
+    /// before the harm lands (ADR 0003).
+    #[must_use = "deal_harm only pushes the deal frame: return its outcome from the \
+                  native, and put no work after it (ADR 0003)"]
+    pub fn deal_harm(
+        &mut self,
+        investigator: InvestigatorId,
+        damage: u8,
+        horror: u8,
+    ) -> EngineOutcome {
+        combat::deal_harm(self.write_access(), investigator, damage, horror)
     }
 
-    /// Deal `amount` horror to `investigator` from a single source. A
-    /// controlled sanity-bearing asset may absorb it, and lethal horror
-    /// defeats them.
-    pub fn take_horror(&mut self, investigator: InvestigatorId, amount: u8) {
-        elimination::take_horror(self.write_access(), investigator, amount);
+    /// Deal `amount` damage to `investigator` from a single source, placed
+    /// synchronously with soak-first assignment. Dynamite Blast 01024's
+    /// remaining path; it moves onto [`deal_harm`](Self::deal_harm) in #1028.
+    pub fn take_damage(&mut self, investigator: InvestigatorId, amount: u8) {
+        elimination::take_damage(self.write_access(), investigator, amount);
     }
 
     /// Defeat `investigator` by a card ability and run elimination. A no-op
