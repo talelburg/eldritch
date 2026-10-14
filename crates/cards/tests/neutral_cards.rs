@@ -8,29 +8,25 @@
 //! The other three draw-skills (Perception/Overpower/Manual Dexterity) are
 //! structurally identical to Guts; their impl unit tests cover them.
 //!
-//! Own process → installs `cards::REGISTRY`.
+//! Runs against `cards::TEST_REGISTRIES`.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{seat, Seat, TestSession};
-use game_core::{assert_event, assert_no_event, test_support};
+use game_core::{assert_event, assert_no_event};
 
 const EMERGENCY_CACHE: &str = "01088";
 const GUTS: &str = "01089";
 const INV: InvestigatorId = InvestigatorId(1);
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 #[test]
 fn emergency_cache_play_gains_three_resources() {
     let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).hand([EMERGENCY_CACHE]))
         .open_turn(INV)
         .session();
@@ -55,6 +51,7 @@ fn holding_guts() -> Seat {
 /// vs difficulty 1; `AutoFail` → failure).
 fn guts_board(investigator: Seat, token: ChaosToken) -> TestSession {
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(investigator)
         .with_chaos_bag(ChaosBag::new([token]))
         .with_token_modifiers(TokenModifiers::default())

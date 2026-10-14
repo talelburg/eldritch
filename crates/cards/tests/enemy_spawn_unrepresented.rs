@@ -18,7 +18,7 @@
 //! empty locations is deliberately out of scope here; the engine refuses
 //! until it lands.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::state::{
     CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame,
     MythosResume, Phase,
@@ -35,17 +35,13 @@ const STUDY: &str = "01111";
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(20);
 
-#[ctor::ctor(unsafe)]
-fn install_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// Mythos step 1.4: one investigator in the Study to draw, with `top` on top
 /// of the encounter deck.
 fn state_with_top_encounter(top: &str) -> GameState {
     let mut study = test_support::test_location(HERE.0, "Study");
     study.code = CardCode::new(STUDY);
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
         .with_location(study)
         .with_turn_order([INV])
@@ -61,7 +57,7 @@ fn state_with_top_encounter(top: &str) -> GameState {
 
 /// Draw the top encounter card for investigator 1.
 fn reveal_top(state: GameState) -> TestSession {
-    TestSession::new(state).confirm()
+    TestSession::new_with_registries(state, TEST_REGISTRIES).confirm()
 }
 
 #[test]

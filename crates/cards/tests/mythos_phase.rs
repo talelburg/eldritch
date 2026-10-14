@@ -4,10 +4,9 @@
 //! `EndTurn` → `DrawEncounterCard`, verifying the per-card 5-step
 //! sub-sequence and the post-1.4 Fast window end-to-end.
 //!
-//! Lives in `crates/cards/tests/` (ADR 0016) so it can install the real
-//! `cards::REGISTRY`: `game-core` cannot reach the corpus by crate direction,
-//! and each `tests/*.rs` is its own process, so this install does not collide
-//! with the registries other integration binaries claim.
+//! Lives in `crates/cards/tests/` (ADR 0016) so it can run against
+//! `cards::TEST_REGISTRIES`: `game-core` cannot reach the corpus by crate
+//! direction.
 //!
 //! The cards, all Core Set, all verified against
 //! `data/arkhamdb-snapshot/pack/core/` and their rulings files:
@@ -63,7 +62,7 @@
 //! `mythos_phase_probes.rs` with their probes inline.
 
 use card_dsl::card_data::{CardKind, CardType};
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::action::RosterEntry;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, InputKind};
@@ -93,11 +92,6 @@ const ROLAND: &str = "01001";
 const INV1: InvestigatorId = InvestigatorId(1);
 const INV2: InvestigatorId = InvestigatorId(2);
 
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// Rise of the Ghouls' printed doom threshold, read from the corpus rather
 /// than transcribed, so a snapshot refresh cannot silently invalidate the
 /// "no agenda ever advances" premise in the module docs.
@@ -118,11 +112,12 @@ fn agenda_doom_threshold(code: &str) -> u8 {
 /// not hand-stamped onto a `test_location`: shroud, printed clues and victory
 /// come off card 01113 rather than from a fixture wearing its code, which is
 /// the impersonation ADR 0016 forbids. Its *"**Forced** - After you enter the
-/// Attic: Take 1 horror."* is live in the installed registry and simply never
+/// Attic: Take 1 horror."* is live in the registry and simply never
 /// fires — only the Move action emits `EnteredLocation`, and `seat_and_open`
 /// *places* the roster rather than moving it.
 fn board() -> (GameState, LocationId) {
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
     let attic = state.add_location(cards::by_code(ATTIC).expect("Attic 01113 in corpus"));
@@ -151,7 +146,10 @@ fn seat_keeping_hands(state: GameState, investigators: &[&str]) -> TestSession {
             deck: vec![],
         })
         .collect();
-    let session = TestSession::new(engine::seat_and_open(state, &roster).state);
+    let session = TestSession::new_with_registries(
+        engine::seat_and_open_with_registries(state, &roster, TEST_REGISTRIES).state,
+        TEST_REGISTRIES,
+    );
     investigators
         .iter()
         .fold(session, |session, _| session.choose_from_hand(&[]))

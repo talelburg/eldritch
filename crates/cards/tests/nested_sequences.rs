@@ -58,7 +58,7 @@
 //! Sibling files: `guard_dog_soak.rs` (the soak pipeline itself),
 //! `enemy_attack_cells.rs` (#704's condition), `clue_discovery_cells.rs` (#703's).
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::assert_event_sequence;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
@@ -81,11 +81,6 @@ const AUTOMATIC_45: &str = "01016";
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(101);
 const SPAWN: EnemyId = EnemyId(7);
-
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 /// The Goat Spawn's stand-in: ready, **2 damage already on it** and 3 health,
 /// so Guard Dog's 1 retaliate damage defeats it — the example's setup exactly.
@@ -134,6 +129,7 @@ fn the_damage_dealt_to_the_guard_dog_resolves_last() {
     study.clues = 1;
 
     let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(study)
         .with_seat(
             seat(1)

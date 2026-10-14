@@ -41,7 +41,7 @@
 //! and Ghoul Priest, and its bearer for Mob Enforcer (`glossary/Weakness.md`). No
 //! engine path spawns a weakness enemy from a draw yet (#514).
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::ApplyResult;
 use game_core::event::Event;
@@ -64,11 +64,6 @@ const INV: InvestigatorId = InvestigatorId(1);
 const ENEMY: EnemyId = EnemyId(100);
 const HERE: LocationId = LocationId(10);
 
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// A solo investigator engaged with `code`, one point of damage short of
 /// defeat, with combat high enough that the Fight test cannot fail against the
 /// bag's single `Numeric(0)` token. The unarmed Fight deals 1 damage — enough
@@ -90,6 +85,7 @@ fn solo_investigator_facing(
     enemy.owner = owner;
 
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_round(0)
         .with_seat(seat(1).at(HERE).skill(SkillKind::Combat, 8).deck(["01088"]))
         // Fight is location-gated (#401); an engaged enemy is at its
@@ -105,7 +101,7 @@ fn solo_investigator_facing(
 /// Fight the enemy to death: the Fight suspends on the commit window, and
 /// committing nothing resolves the test, the damage, and the defeat.
 fn fight_to_defeat(state: GameState) -> TestSession {
-    let session = TestSession::new(state)
+    let session = TestSession::new_with_registries(state, TEST_REGISTRIES)
         .take(&TurnAction::Fight {
             investigator: INV,
             enemy: ENEMY,

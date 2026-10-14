@@ -29,11 +29,14 @@ use card_dsl::dsl::{
 };
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
+use game_core::engine::Registries;
 use game_core::event::Event;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     CardCode, Enemy, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
 use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
+use std::sync::LazyLock;
 
 /// `when`-tagged reaction on a card the attacked investigator controls: +4
 /// resources. Declaring interrupt timing on this condition is *accepted* now
@@ -87,32 +90,6 @@ fn enemy_forced(timing: EventTiming, amount: u8) -> Ability {
     )
 }
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    // `TEST_INV`'s metadata rides `install`'s composed `metadata_for_test_inv`.
-    MockRegistry::new()
-        .with_abilities(WHEN, || vec![on_attack(EventTiming::When, 4)])
-        .with_abilities(AT, || vec![on_attack(EventTiming::At, 1)])
-        .with_abilities(AFTER, || vec![on_attack(EventTiming::After, 2)])
-        .with_abilities(CANCEL, || {
-            vec![dsl::reaction_on_event(
-                EventPattern::EnemyAttacks {
-                    attacker: AttackerScope::Any,
-                    target: TargetScope::AtYourLocation,
-                },
-                EventTiming::When,
-                Effect::Cancel,
-            )]
-        })
-        .with_abilities(ENEMY_FORCED_AFTER, || {
-            vec![enemy_forced(EventTiming::After, 8)]
-        })
-        .with_abilities(ENEMY_FORCED_WHEN, || {
-            vec![enemy_forced(EventTiming::When, 16)]
-        })
-        .install();
-}
-
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
 const ATTACKER: EnemyId = EnemyId(7);
@@ -136,6 +113,7 @@ fn attacker(code: &str) -> Enemy {
 /// interactive distribution (#44/K5b) and the only prompts are the cells' own.
 fn board_with(codes: &[&str], enemy_code: &str) -> GameStateBuilder {
     GameStateBuilder::new()
+        .with_registries(registries())
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(
             seat(1)
@@ -188,6 +166,36 @@ fn timeline(events: &[Event]) -> Vec<Option<u8>> {
             _ => None,
         })
         .collect()
+}
+
+/// The binary's one mock, built once on first use.
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        // `TEST_INV`'s metadata rides `build`'s composed `metadata_for_test_inv`.
+        cards: MockRegistry::new()
+            .with_abilities(WHEN, || vec![on_attack(EventTiming::When, 4)])
+            .with_abilities(AT, || vec![on_attack(EventTiming::At, 1)])
+            .with_abilities(AFTER, || vec![on_attack(EventTiming::After, 2)])
+            .with_abilities(CANCEL, || {
+                vec![dsl::reaction_on_event(
+                    EventPattern::EnemyAttacks {
+                        attacker: AttackerScope::Any,
+                        target: TargetScope::AtYourLocation,
+                    },
+                    EventTiming::When,
+                    Effect::Cancel,
+                )]
+            })
+            .with_abilities(ENEMY_FORCED_AFTER, || {
+                vec![enemy_forced(EventTiming::After, 8)]
+            })
+            .with_abilities(ENEMY_FORCED_WHEN, || {
+                vec![enemy_forced(EventTiming::When, 16)]
+            })
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 /// The headline claim: the attack lands *between* the `when` and `at` cells.

@@ -6,7 +6,7 @@
 //! intellect to investigate tests but not to other intellect tests."
 //! This file closes that loop with the real card and real registry.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
@@ -26,11 +26,6 @@ const PLAY_MAGNIFYING_GLASS: TurnAction = TurnAction::PlayCard {
     hand_index: 0,
 };
 
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// A session at the controller's turn menu, with Magnifying Glass in hand,
 /// placed at a 4-shroud location with a clue, and a single-Numeric(0) chaos
 /// bag so the token modifier is always 0. Skill defaults (3 intellect) plus
@@ -42,6 +37,7 @@ fn mg_in_hand() -> TestSession {
     location.clues = 1;
 
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(location)
         .with_seat(seat(1).at(HERE).hand([MAGNIFYING_GLASS]))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))

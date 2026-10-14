@@ -1,20 +1,12 @@
 //! B2: seating a roster resolves investigator stats from the real corpus
 //! ([`game_core::card_registry::CardRegistry`]) and takes the deck from the payload. Integration test so
-//! it can install `cards::REGISTRY` in its own process (per the test layering
-//! in `docs/agents/standards.md`).
+//! it can run against `cards::TEST_REGISTRIES` (per the test layering in
+//! `docs/agents/standards.md`).
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::action::RosterEntry;
 use game_core::engine::{self, EngineOutcome};
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, Skills};
-
-/// Install the real card registry exactly once for this integration-test
-/// binary. Idempotent at the `OnceLock` level; the `Once` wrapper avoids
-/// the futile second `install` call.
-#[ctor::ctor(unsafe)]
-fn install_registry() {
-    game_core::test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 #[test]
 fn seats_roland_with_corpus_stats_and_payload_deck() {
@@ -23,9 +15,11 @@ fn seats_roland_with_corpus_stats_and_payload_deck() {
         investigator: CardCode::new("01001"),
         deck: deck.clone(),
     }];
-    let state = GameStateBuilder::new().build();
+    let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .build();
 
-    let result = engine::seat_and_open(state, &roster);
+    let result = engine::seat_and_open_with_registries(state, &roster, TEST_REGISTRIES);
 
     // seat_and_open seats the roster and opens the setup mulligan prompt
     // (AwaitingInput) for the first investigator (#348).
@@ -49,14 +43,8 @@ fn seats_roland_with_corpus_stats_and_payload_deck() {
             agility: 2
         }
     );
-    assert_eq!(
-        inv.max_health(game_core::card_registry::current().expect("card registry installed")),
-        9
-    );
-    assert_eq!(
-        inv.max_sanity(game_core::card_registry::current().expect("card registry installed")),
-        5
-    );
+    assert_eq!(inv.max_health(TEST_REGISTRIES.cards), 9);
+    assert_eq!(inv.max_sanity(TEST_REGISTRIES.cards), 5);
     // Deck + hand together account for the 2 supplied cards (the 5-card
     // opening-hand draw takes only what's available).
     assert_eq!(inv.deck.len() + inv.hand.len(), deck.len());
@@ -69,8 +57,10 @@ fn rejects_non_investigator_code() {
         investigator: CardCode::new("01030"),
         deck: vec![],
     }];
-    let state = GameStateBuilder::new().build();
-    let result = engine::seat_and_open(state, &roster);
+    let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .build();
+    let result = engine::seat_and_open_with_registries(state, &roster, TEST_REGISTRIES);
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert_eq!(result.state.round, 0);
     assert!(result.events.is_empty());
@@ -82,8 +72,10 @@ fn seated_investigator_carries_its_card_code() {
         investigator: CardCode::new("01001"),
         deck: vec![],
     }];
-    let state = GameStateBuilder::new().build();
-    let result = engine::seat_and_open(state, &roster);
+    let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .build();
+    let result = engine::seat_and_open_with_registries(state, &roster, TEST_REGISTRIES);
     let inv = result
         .state
         .investigators
@@ -98,8 +90,10 @@ fn rejects_unknown_code() {
         investigator: CardCode::new("99999"),
         deck: vec![],
     }];
-    let state = GameStateBuilder::new().build();
-    let result = engine::seat_and_open(state, &roster);
+    let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .build();
+    let result = engine::seat_and_open_with_registries(state, &roster, TEST_REGISTRIES);
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert_eq!(result.state.round, 0);
     assert!(result.events.is_empty());

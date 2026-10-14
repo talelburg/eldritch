@@ -25,7 +25,7 @@
 //! answers, without a registry — is `engine::ability_source`'s unit tests,
 //! which build the same board shape one crate down.
 //!
-//! Own integration-test binary so it can install its own `MockRegistry`.
+//! Own integration-test binary so it can build its own `MockRegistry`.
 //! The abilities are **purpose-built** rather than borrowed from the corpus, so
 //! that "reachable here" and "unreachable there" differ only in the source: the
 //! same three probes sit on the location, on the enemy, on the threat-area card
@@ -39,12 +39,15 @@ use card_dsl::card_data::{CardKind, CardMetadata};
 use card_dsl::dsl::{self, Ability, InvestigatorTarget, UsageLimit, UsagePeriod};
 use game_core::assert_event;
 use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::Registries;
 use game_core::event::Event;
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInstanceId, EnemyId, GameState, GameStateBuilder,
     InvestigatorId, LocationId,
 };
 use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession, TEST_INV};
+use std::sync::LazyLock;
 
 /// Synthetic **location** card, standing in for the Parlor 01115. Both
 /// locations on the board print it, so "reachable here" and "unreachable
@@ -115,26 +118,6 @@ fn metadata(code: &'static str, name: &'static str, kind: CardKind) -> CardMetad
     }
 }
 
-#[ctor::ctor(unsafe)]
-fn install_probe_registry() {
-    // `TEST_INV`'s metadata rides `install`'s composed `metadata_for_test_inv`.
-    MockRegistry::new()
-        .with_card(metadata(
-            WARD,
-            "Ward",
-            CardKind::Treachery {
-                surge: false,
-                peril: false,
-                quantity: 1,
-            },
-        ))
-        .with_abilities(TEST_INV, probe_abilities)
-        .with_abilities(HALL, probe_abilities)
-        .with_abilities(CULTIST, probe_abilities)
-        .with_abilities(WARD, probe_abilities)
-        .install();
-}
-
 /// Two locations printing the same card, an enemy on each, and three
 /// investigators: mine and a neighbour standing `HERE`, a stranger `THERE`.
 /// The neighbour and the stranger each carry a threat-area card, so the only
@@ -154,6 +137,7 @@ fn board() -> GameState {
     distant_cultist.current_location = Some(THERE);
 
     GameStateBuilder::new()
+        .with_registries(registries())
         .with_seat(seat(1).at(HERE))
         .with_seat(seat(2).at(HERE).threat_area([WARD]))
         .with_seat(seat(3).at(THERE).threat_area([WARD]))
@@ -184,20 +168,13 @@ fn activation(source: AbilitySource, ability_index: u8) -> TurnAction {
 fn assert_offered_and_activatable(state: GameState, source: AbilitySource, why: &str) {
     let action = activation(source, LIVE);
     assert!(
-        enumerate::legal_actions(
-            &state,
-            game_core::card_registry::current().expect("card registry installed")
-        )
-        .contains(&action),
+        enumerate::legal_actions(&state, registries().cards).contains(&action),
         "{why}, so its ability belongs in the turn menu; menu was {:?}",
-        enumerate::legal_actions(
-            &state,
-            game_core::card_registry::current().expect("card registry installed")
-        ),
+        enumerate::legal_actions(&state, registries().cards),
     );
 
     let before = state.investigators[&MINE].resources;
-    let session = TestSession::new(state).take(&action);
+    let session = TestSession::new_with_registries(state, registries()).take(&action);
     session.assert_at_turn_menu(MINE);
     assert_eq!(
         session.state().investigators[&MINE].resources,
@@ -212,24 +189,42 @@ fn assert_out_of_reach(state: GameState, source: AbilitySource, why: &str) {
     let action = activation(source, LIVE);
 
     assert!(
-        !enumerate::legal_actions(
-            &state,
-            game_core::card_registry::current().expect("card registry installed")
-        )
-        .contains(&action),
+        !enumerate::legal_actions(&state, registries().cards).contains(&action),
         "{why}, so it must stay out of the turn menu; menu was {:?}",
-        enumerate::legal_actions(
-            &state,
-            game_core::card_registry::current().expect("card registry installed")
-        ),
+        enumerate::legal_actions(&state, registries().cards),
     );
 
     // Activating it must reject.
-    let reason = TestSession::new(state).assert_rejects(|s| s.submit_off_menu(&action));
+    let reason = TestSession::new_with_registries(state, registries())
+        .assert_rejects(|s| s.submit_off_menu(&action));
     assert!(
         reason.contains("cannot reach"),
         "{why}, so the reason should name reachability, got: {reason}",
     );
+}
+
+/// The binary's one mock, built once on first use.
+fn registries() -> Registries {
+    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
+        // `TEST_INV`'s metadata rides `build`'s composed `metadata_for_test_inv`.
+        cards: MockRegistry::new()
+            .with_card(metadata(
+                WARD,
+                "Ward",
+                CardKind::Treachery {
+                    surge: false,
+                    peril: false,
+                    quantity: 1,
+                },
+            ))
+            .with_abilities(TEST_INV, probe_abilities)
+            .with_abilities(HALL, probe_abilities)
+            .with_abilities(CULTIST, probe_abilities)
+            .with_abilities(WARD, probe_abilities)
+            .build(),
+        scenarios: &ScenarioRegistry::EMPTY,
+    });
+    *REGISTRIES
 }
 
 /// *"This includes the location itself"* — the Parlor's Resign, in the shape
@@ -248,7 +243,7 @@ fn the_location_you_stand_at_offers_its_ability() {
 /// ability.
 #[test]
 fn the_activation_event_names_a_source_with_no_card_instance() {
-    let result = TestSession::new(board())
+    let result = TestSession::new_with_registries(board(), registries())
         .take(&activation(AbilitySource::Location(HERE), LIVE))
         .finish();
     assert_event!(
@@ -323,10 +318,7 @@ fn a_threat_area_card_on_an_investigator_elsewhere_does_not() {
 #[test]
 fn an_inert_ability_stays_unoffered_from_every_newly_reachable_source() {
     let state = board();
-    let menu = enumerate::legal_actions(
-        &state,
-        game_core::card_registry::current().expect("card registry installed"),
-    );
+    let menu = enumerate::legal_actions(&state, registries().cards);
     for source in [
         AbilitySource::Location(HERE),
         AbilitySource::Enemy(CULTIST_HERE),
@@ -351,20 +343,14 @@ fn a_usage_limited_ability_on_a_location_rejects_naming_699_rather_than_panickin
     let action = activation(AbilitySource::Location(HERE), LIMITED);
 
     assert!(
-        !enumerate::legal_actions(
-            &state,
-            game_core::card_registry::current().expect("card registry installed")
-        )
-        .contains(&action),
+        !enumerate::legal_actions(&state, registries().cards).contains(&action),
         "an ability the engine cannot cap must not be offered; menu was {:?}",
-        enumerate::legal_actions(
-            &state,
-            game_core::card_registry::current().expect("card registry installed")
-        ),
+        enumerate::legal_actions(&state, registries().cards),
     );
 
     // A usage-limited location ability must reject.
-    let reason = TestSession::new(state).assert_rejects(|s| s.submit_off_menu(&action));
+    let reason = TestSession::new_with_registries(state, registries())
+        .assert_rejects(|s| s.submit_off_menu(&action));
     assert!(
         reason.contains("usage limit") && reason.contains("#699"),
         "the reason should name the limit and the issue that builds it, got: {reason}",
@@ -377,19 +363,12 @@ fn a_usage_limited_ability_on_a_location_rejects_naming_699_rather_than_panickin
 fn the_same_limit_on_a_card_instance_is_not_refused() {
     let state = board();
     assert!(
-        enumerate::legal_actions(
-            &state,
-            game_core::card_registry::current().expect("card registry installed")
-        )
-        .contains(&activation(
+        enumerate::legal_actions(&state, registries().cards).contains(&activation(
             AbilitySource::InPlay(ward_of(&state, NEIGHBOUR)),
             LIMITED
         )),
         "a threat-area card carries per-instance usage state; menu was {:?}",
-        enumerate::legal_actions(
-            &state,
-            game_core::card_registry::current().expect("card registry installed")
-        ),
+        enumerate::legal_actions(&state, registries().cards),
     );
 }
 

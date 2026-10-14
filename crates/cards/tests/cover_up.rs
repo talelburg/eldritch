@@ -2,11 +2,11 @@
 //! `cards::REGISTRY` — the 3-clue threat-area Revelation, the before-timing
 //! clue-discovery interrupt, and the game-end mental-trauma forced point.
 //!
-//! Own process → installs `cards::REGISTRY`. The interrupt / game-end shapes
+//! Runs against `cards::TEST_REGISTRIES`. The interrupt / game-end shapes
 //! were first proved by the C5a synthetic fixture; that fixture's test binary is
 //! gone (#871, ADR 0016) and this file is its successor.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{EngineOutcome, OptionTarget};
 use game_core::event::{Event, TraumaKind};
@@ -22,14 +22,6 @@ const COVER_UP: &str = "01007";
 const DEDUCTION: &str = "01039";
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
-
-#[ctor::ctor(unsafe)]
-fn install() {
-    // The game-end fixtures below end their act deck in a synthetic terminal
-    // card, which reaches its resolution point by running an effect on its
-    // reverse (ADR 0013) and so needs the registry to serve it.
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 /// Investigator 1 at the Study, holding a Cover Up with `held` clues in their
 /// threat area.
@@ -59,6 +51,7 @@ fn cover_up_clues(state: &GameState) -> u8 {
 fn revelation_puts_cover_up_in_threat_area_with_three_clues() {
     // Mythos step 1.4: `INV` is to draw the top encounter card, Cover Up.
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_turn_order([INV])
@@ -69,7 +62,7 @@ fn revelation_puts_cover_up_in_threat_area_with_three_clues() {
         .with_mythos_draw_remaining([INV])
         .build();
     state.encounter_deck.push_back(CardCode::new(COVER_UP));
-    let drawing = TestSession::new(state);
+    let drawing = TestSession::new_with_registries(state, TEST_REGISTRIES);
     drawing.assert_at_encounter_draw();
 
     // Drawing the card reveals it: it resolves without a prompt of its own, and
@@ -102,6 +95,7 @@ fn investigate_board(investigator: Seat, location_clues: u8) -> GameStateBuilder
     let mut location = test_support::test_location(HERE.0, "Study");
     location.clues = location_clues;
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(investigator)
         .with_location(location)
         .open_turn(INV)
@@ -308,6 +302,7 @@ fn with_terminal_act(mut state: GameState) -> GameState {
 fn resolving_state(cover_up_clues: u8) -> GameState {
     with_terminal_act(
         GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
             // 1 clue meets the act's clue threshold.
             .with_seat(
                 seat(1)
@@ -333,7 +328,8 @@ fn interactive(mut state: GameState) -> GameState {
 /// a #466 acknowledge before it runs. That acknowledge is not what these tests
 /// are about — the `GameEnd` forced that follows it is — so it is answered here.
 fn advance_terminal_act_interactively(state: GameState) -> TestSession {
-    let paused = TestSession::new(state).take(&TurnAction::AdvanceAct { investigator: INV });
+    let paused = TestSession::new_with_registries(state, TEST_REGISTRIES)
+        .take(&TurnAction::AdvanceAct { investigator: INV });
     assert_eq!(
         paused.offered_at(&OptionTarget::Act),
         1,
@@ -357,8 +353,8 @@ fn advance_terminal_act_interactively(state: GameState) -> TestSession {
 /// this is asserted as a sequence rather than as two independent presences.
 #[test]
 fn game_end_trauma_resolves_before_the_ending_finalizes() {
-    let session =
-        TestSession::new(resolving_state(3)).take(&TurnAction::AdvanceAct { investigator: INV });
+    let session = TestSession::new_with_registries(resolving_state(3), TEST_REGISTRIES)
+        .take(&TurnAction::AdvanceAct { investigator: INV });
     assert_event_sequence!(
         session.events(),
         Event::TraumaSuffered {
@@ -372,8 +368,8 @@ fn game_end_trauma_resolves_before_the_ending_finalizes() {
 
 #[test]
 fn game_end_emits_no_trauma_when_cover_up_empty() {
-    let session =
-        TestSession::new(resolving_state(0)).take(&TurnAction::AdvanceAct { investigator: INV });
+    let session = TestSession::new_with_registries(resolving_state(0), TEST_REGISTRIES)
+        .take(&TurnAction::AdvanceAct { investigator: INV });
     assert_event!(session.events(), Event::ScenarioResolved { .. });
     assert_no_event!(session.events(), Event::TraumaSuffered { .. });
 }
@@ -458,6 +454,7 @@ fn two_simultaneous_game_end_forceds_both_resolve() {
 
     let state = with_terminal_act(interactive(
         GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
             // 1 clue meets the act's clue threshold.
             .with_seat(seat(1).clues(1).threat_area([(COVER_UP, clues(3))]))
             .with_seat(seat(2).threat_area([(COVER_UP, clues(2))]))
@@ -518,6 +515,7 @@ fn colocated_investigate_board(other: Seat) -> GameStateBuilder {
     let mut location = test_support::test_location(HERE.0, "Study");
     location.clues = 2;
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(holding_cover_up(3))
         .with_seat(other.at(HERE))
         .with_location(location)
@@ -530,7 +528,7 @@ fn colocated_investigate_board(other: Seat) -> GameStateBuilder {
 /// `OTHER` investigates committing nothing and plays Roland's Cover Up at the
 /// before-discover window.
 fn colocated_investigate_and_play_cover_up(state: GameState) -> TestSession {
-    let offered = TestSession::new(state)
+    let offered = TestSession::new_with_registries(state, TEST_REGISTRIES)
         .take(&TurnAction::Investigate {
             investigator: OTHER,
         })
@@ -566,6 +564,7 @@ fn a_colocated_investigator_discards_from_rolands_cover_up() {
 fn game_end_trauma_goes_to_the_investigator_holding_cover_up() {
     let state = with_terminal_act(
         GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
             .with_seat(holding_cover_up(2))
             // 1 clue meets the act's clue threshold.
             .with_seat(seat(2).at(HERE).clues(1))
@@ -576,9 +575,10 @@ fn game_end_trauma_goes_to_the_investigator_holding_cover_up() {
             .build(),
     );
 
-    let session = TestSession::new(state).take(&TurnAction::AdvanceAct {
-        investigator: OTHER,
-    });
+    let session =
+        TestSession::new_with_registries(state, TEST_REGISTRIES).take(&TurnAction::AdvanceAct {
+            investigator: OTHER,
+        });
 
     assert_eq!(
         traumas(&session),

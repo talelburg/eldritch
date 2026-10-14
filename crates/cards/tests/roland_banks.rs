@@ -10,12 +10,13 @@
 //! `[elder_sign]` half stays on its `+0` placeholder; #118 picks it
 //! up alongside the dynamic skill-test modifier DSL primitive.
 //!
-//! Lives at `crates/cards/tests/` so it can install [`cards::REGISTRY`]
-//! in its own integration-test process without colliding with the
-//! mock-registry tests in `crates/game-core/tests/reaction_windows.rs`.
+//! Lives at `crates/cards/tests/` so it can run against
+//! `cards::TEST_REGISTRIES`, which `game-core` cannot reach by crate
+//! direction.
 
 use card_dsl::dsl::{UsageLimit, UsagePeriod};
 use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
@@ -37,11 +38,6 @@ const FIGHT: TurnAction = TurnAction::Fight {
     enemy: ENEMY,
 };
 
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// Build a Fight-ready scenario with Roland engaged with an enemy at
 /// 1 HP and fight 1, so a successful Combat test defeats it. Roland's
 /// investigator card is placed in `cards_in_play` (the seat's investigator
@@ -56,6 +52,7 @@ fn roland_at_location_with_enemy(location_clues: u8, round: u32) -> GameState {
     loc.clues = location_clues;
 
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_round(round)
         .with_seat(
             seat(1)
@@ -101,7 +98,9 @@ fn fired_in_round_0(mut state: GameState) -> GameState {
 /// Fight the enemy from `state`, committing nothing. The session rests at
 /// Roland's reaction window if it opened, or back at the turn menu.
 fn fight(state: GameState) -> TestSession {
-    TestSession::new(state).take(&FIGHT).commit(&[])
+    TestSession::new_with_registries(state, TEST_REGISTRIES)
+        .take(&FIGHT)
+        .commit(&[])
 }
 
 /// [`fight`], then fire Roland's reaction from its window.

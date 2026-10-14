@@ -18,7 +18,7 @@
 //! `Trigger::Revelation` at all, so it would have pushed nothing and never
 //! tripped the bug — which is the gap ADR 0016 was written from, and #878
 //! deleted the fixture.
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
@@ -31,11 +31,6 @@ const HOLY_ROSARY: &str = "01059"; // a real non-weakness asset, deck filler
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(101);
 
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 #[test]
 fn upkeep_draw_of_cover_up_does_not_panic_and_cedes_to_the_drive_loop() {
     // Solo investigator mid-Investigation, no enemies (so the Enemy phase
@@ -47,6 +42,7 @@ fn upkeep_draw_of_cover_up_does_not_panic_and_cedes_to_the_drive_loop() {
     // fix this panics at `set_upkeep_resume`'s `unreachable!`; after, 4.4 cedes,
     // the drive loop resolves the Revelation, and 4.5/4.6 run on re-exposure.
     let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE).deck([COVER_UP, HOLY_ROSARY, HOLY_ROSARY]))
         .with_location(test_support::test_location(HERE.0, "Study"))
         .open_turn(INV)

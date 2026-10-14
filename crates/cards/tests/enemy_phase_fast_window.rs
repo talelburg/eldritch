@@ -1,6 +1,6 @@
 //! The Enemy phase's per-investigator `BeforeInvestigatorAttacked` player
 //! window **pauses** when a Fast play is eligible (#842), driven end-to-end
-//! through the public [`apply`] API with the real card corpus installed.
+//! through the public [`apply`] API against the real card corpus.
 //!
 //! Rules Reference, Appendix II — the flow chart's Enemy phase, verbatim:
 //!
@@ -13,7 +13,7 @@
 //! ```
 //!
 //! `game-core`'s own unit test for that window covers the **Skip-resume** path
-//! against a synthetic (empty) window, because the engine crate cannot install
+//! against a synthetic (empty) window, because the engine crate cannot reach
 //! `cards::REGISTRY` and so cannot make anything Fast-eligible. The other half
 //! — the window pausing for input instead of auto-skipping — needs a real
 //! eligible play, which is what this file supplies.
@@ -42,7 +42,7 @@
 //! can be used is exactly the question of whether a player window stands open
 //! there. Step 3.3's does.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{InputKind, OptionTarget};
 use game_core::event::Event;
@@ -59,11 +59,6 @@ const BEAT_COP: &str = "01018";
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(101);
 const ATTACKER: EnemyId = EnemyId(7);
-
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 /// A ready enemy dealing 1 damage. `max_health` is the caller's to choose: 2
 /// leaves it alive through a single point of Beat Cop damage, 1 lets the Fast
@@ -85,6 +80,7 @@ fn board(beat_cop: bool, enemy_health: u8) -> GameStateBuilder {
         .deck(["01088"]);
     let me = if beat_cop { me.in_play([BEAT_COP]) } else { me };
     GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(me)
         .with_enemy_engaged(ready_attacker(enemy_health), INV)

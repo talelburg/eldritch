@@ -56,9 +56,10 @@
 //! discriminates the printed predicate (*"each investigator at your location"*)
 //! from its 1p reading.
 //!
-//! Own process → installs `cards::REGISTRY`.
+//! Runs against `cards::TEST_REGISTRIES`.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
+use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::modified_value::{self, ModifiedQuantity, ReadContext};
 use game_core::engine::OptionTarget;
@@ -68,7 +69,6 @@ use game_core::state::{
     GameStateBuilder, InvestigatorId, LocationId, ModifierTarget, Owner, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
-use game_core::{assert_event, card_registry};
 
 /// Lita Chantler.
 const LITA: &str = "01117";
@@ -90,11 +90,6 @@ const HALLWAY: LocationId = LocationId(2);
 
 const GHOUL: EnemyId = EnemyId(100);
 const NON_MONSTER: EnemyId = EnemyId(101);
-
-#[ctor::ctor(unsafe)]
-fn install() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 /// How the board is arranged for one case.
 struct Board {
@@ -153,6 +148,7 @@ impl Board {
         acolyte.current_location = Some(self.enemies_at);
 
         let mut state = GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
             .with_seat(keeper)
             .with_seat(other)
             .with_location(test_support::test_location(PARLOR.0, "Parlor"))
@@ -210,7 +206,7 @@ impl Board {
 fn combat(state: &GameState, who: InvestigatorId) -> i32 {
     modified_value::modified_value(
         state,
-        card_registry::current().expect("card registry installed"),
+        TEST_REGISTRIES.cards,
         ModifierTarget::Investigator(who),
         ModifiedQuantity::Skill(SkillKind::Combat),
         ReadContext::OutsideTest,
@@ -278,7 +274,7 @@ fn lita(state: &GameState) -> OptionTarget {
 /// `actor` fights `enemy` committing nothing: the session rests at Lita's
 /// reaction window, or back at the turn menu if none opened.
 fn fight(state: GameState, actor: InvestigatorId, enemy: EnemyId) -> TestSession {
-    TestSession::new(state)
+    TestSession::new_with_registries(state, TEST_REGISTRIES)
         .take(&TurnAction::Fight {
             investigator: actor,
             enemy,
@@ -403,7 +399,7 @@ fn a_designated_fight_ability_gets_the_bonus() {
     .build();
     let machete = state.in_play(KEEPER, MACHETE);
     let lita = lita(&state);
-    let result = TestSession::new(state)
+    let result = TestSession::new_with_registries(state, TEST_REGISTRIES)
         .take(&TurnAction::ActivateAbility {
             investigator: KEEPER,
             source: AbilitySource::InPlay(machete),
@@ -442,7 +438,7 @@ fn a_non_attack_damage_effect_gets_nothing() {
     // whose 1 damage asks where it goes — Lita, an ally in play, can soak it —
     // and then so does each of the 3 points the blast deals the keeper. He
     // takes all four himself. Nothing else is asked: no reaction window opens.
-    let result = TestSession::new(state)
+    let result = TestSession::new_with_registries(state, TEST_REGISTRIES)
         .take(&TurnAction::PlayCard {
             investigator: KEEPER,
             hand_index: 0,

@@ -10,10 +10,9 @@
 //!   its Revelation effect, and discards the card.
 //! - Empty-deck reject when both deck and discard are empty.
 //!
-//! Lives in `crates/cards/tests/` (ADR 0016) because it installs the real
-//! `cards::REGISTRY`: `game-core` cannot reach the corpus by crate direction,
-//! and each `tests/*.rs` is its own process, so this install does not collide
-//! with the registries other integration binaries claim.
+//! Lives in `crates/cards/tests/` (ADR 0016) because it runs against
+//! `cards::TEST_REGISTRIES`: `game-core` cannot reach the corpus by crate
+//! direction.
 //!
 //! The cards, all Core Set, all verified against
 //! `data/arkhamdb-snapshot/pack/core/` and their rulings files:
@@ -34,13 +33,13 @@
 //!   forbids.
 
 use card_dsl::card_data::{CardKind, CardType};
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::assert_event;
 use game_core::event::Event;
 use game_core::state::{
     Agenda, CardCode, GameStateBuilder, InvestigatorId, MythosPhaseFrame, MythosResume, Phase,
 };
-use game_core::test_support::{self, seat, TestSession};
+use game_core::test_support::{seat, TestSession};
 
 /// Ancient Evils — *"**Revelation** - Place 1 doom on the current agenda."*
 const ANCIENT_EVILS: &str = "01166";
@@ -50,11 +49,6 @@ const RISE_OF_THE_GHOULS: &str = "01106";
 const STUDY: &str = "01111";
 
 const INV: InvestigatorId = InvestigatorId(1);
-
-#[ctor::ctor(unsafe)]
-fn install_real_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
 
 /// Rise of the Ghouls' printed doom threshold, read from the corpus rather than
 /// transcribed, so a snapshot refresh cannot silently invalidate the "the agenda
@@ -72,6 +66,7 @@ fn agenda_doom_threshold(code: &str) -> u8 {
 /// investigator is placed there afterwards.
 fn drawing(encounter_deck: &[&str]) -> TestSession {
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .with_turn_order([INV])
         .with_phase(Phase::Mythos)
@@ -94,7 +89,7 @@ fn drawing(encounter_deck: &[&str]) -> TestSession {
     state
         .encounter_deck
         .extend(encounter_deck.iter().map(|c| CardCode::new(*c)));
-    TestSession::new(state)
+    TestSession::new_with_registries(state, TEST_REGISTRIES)
 }
 
 #[test]

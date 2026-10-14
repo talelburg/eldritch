@@ -31,9 +31,9 @@
 //! now leaves play through the engine's discard-from-play exit, which files a
 //! card by its **owner** — the scenario, for Lita.
 //!
-//! Own process → installs `cards::REGISTRY`.
+//! Runs against `cards::TEST_REGISTRIES`.
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::assert_event;
 use game_core::engine::TurnAction;
 use game_core::event::Event;
@@ -53,11 +53,6 @@ const PARLOR: &str = "01115";
 const INV: InvestigatorId = InvestigatorId(1);
 const PARLOR_ID: LocationId = LocationId(1);
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// The investigator's turn in the revealed Parlor with Lita put into play
 /// there, scenario-owned — act 01109b's *"Put the set-aside Lita Chantler into
 /// play in the Parlor"*. A `0` token makes the Parley's intellect 5 vs 4
@@ -67,6 +62,7 @@ fn parlor_with_lita() -> (GameState, CardInstanceId) {
     parlor.code = CardCode::new(PARLOR);
     parlor.revealed = true;
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         // A filler deck card so the round's Upkeep step-4.4 draw doesn't deal
         // empty-deck horror.
         .with_seat(
@@ -106,7 +102,9 @@ fn parley(state: GameState, lita: CardInstanceId) -> TestSession {
             sub: 0,
         },
     };
-    let session = TestSession::new(state).take(&parley).commit(&[]);
+    let session = TestSession::new_with_registries(state, TEST_REGISTRIES)
+        .take(&parley)
+        .commit(&[]);
     session.assert_at_turn_menu(INV);
     session
 }
@@ -118,7 +116,8 @@ fn reveal_crypt_chill(controlled: &TestSession) -> TestSession {
     let mut state = controlled.state().clone();
     state.chaos_bag.tokens = vec![ChaosToken::AutoFail];
     state.encounter_deck.push_back(CardCode::new(CRYPT_CHILL));
-    let drawing = TestSession::new(state).take(&TurnAction::EndTurn);
+    let drawing =
+        TestSession::new_with_registries(state, TEST_REGISTRIES).take(&TurnAction::EndTurn);
     drawing.assert_at_encounter_draw();
     drawing.confirm().commit(&[])
 }

@@ -5,7 +5,7 @@
 //!
 //! Lives in `crates/cards/tests/` because every assertion needs real card
 //! abilities (Grasping Hands' revelation, Cover Up's step-0 Forced) — `game-core`
-//! can't reach the corpus by crate direction, and `install_test_registry`
+//! can't reach the corpus by crate direction, and its test registry
 //! resolves metadata for `TEST_INV` only. The threat area is routed by each
 //! card's owner, not by its metadata (#982).
 //!
@@ -30,7 +30,7 @@
 //! play in your threat area. You cannot play assets or events. <b>Forced</b> -
 //! At the end of the round: Discard Dissonant Voices."
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{ApplyResult, EngineOutcome, InputKind};
 use game_core::event::{Event, TraumaKind};
@@ -58,11 +58,6 @@ const SURVIVOR: InvestigatorId = InvestigatorId(2);
 const HERE: LocationId = LocationId(20);
 const ELSEWHERE: LocationId = LocationId(21);
 
-#[ctor::ctor(unsafe)]
-fn install_registry() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// The test investigator (8 health) at the location with `damage` already on
 /// it, holding `hand`.
 fn hurt(damage: u8, hand: &[&str]) -> Seat {
@@ -86,6 +81,7 @@ fn hurt_with_threat(damage: u8, threat: &[(&str, u8)]) -> Seat {
 /// Upkeep step 4.4's draw.
 fn drawing_grasping_hands(investigator: Seat, survivor: bool) -> GameState {
     let builder = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Here"))
         .with_seat(investigator);
     let builder = if survivor {
@@ -113,7 +109,9 @@ fn drawing_grasping_hands(investigator: Seat, survivor: bool) -> GameState {
 /// Draw the top encounter card for investigator 1, committing `commit` at the
 /// revelation's skill-test window, and play on to the next rest.
 fn reveal_committing(state: GameState, commit: &[&str]) -> TestSession {
-    TestSession::new(state).confirm().commit(commit)
+    TestSession::new_with_registries(state, TEST_REGISTRIES)
+        .confirm()
+        .commit(commit)
 }
 
 /// [`reveal_committing`], ended: the commit step's state, events and outcome.

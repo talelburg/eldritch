@@ -2,12 +2,12 @@
 //! 1 damage) surfaces a one-option acknowledge *before* the harm lands when
 //! `interactive_acknowledge` is on, and resolves synchronously when it is off.
 //!
-//! Own process → installs `cards::REGISTRY`. The forced effect is driven through
+//! Runs against `cards::TEST_REGISTRIES`. The forced effect is driven through
 //! the real `EnteredLocation` timing point by taking the Move into the location;
 //! the interactive pause is then resumed by picking the acknowledge (the same
 //! way a host resumes an `AwaitingInput`).
 
-use cards::REGISTRY;
+use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId};
@@ -18,11 +18,6 @@ const HERE: LocationId = LocationId(2);
 /// The location printing the forced on-enter ability under test.
 const FORCED: LocationId = LocationId(1);
 
-#[ctor::ctor(unsafe)]
-fn install() {
-    test_support::install_registry_with_test_cards(REGISTRY);
-}
-
 /// `INV`'s open turn at a plain location connected to one whose card `code`
 /// carries a forced on-enter ability, with `interactive_acknowledge` set as
 /// given; the session takes the Move into it.
@@ -32,13 +27,14 @@ fn enter(code: &str, interactive: bool) -> TestSession {
     let mut forced = test_support::test_location(FORCED.0, "Forced Location");
     forced.code = CardCode::new(code);
     let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
         .with_location(here)
         .with_location(forced)
         .open_turn(INV)
         .build();
     state.interactive_acknowledge = interactive;
-    TestSession::new(state).take(&TurnAction::Move {
+    TestSession::new_with_registries(state, TEST_REGISTRIES).take(&TurnAction::Move {
         investigator: INV,
         destination: FORCED,
     })
