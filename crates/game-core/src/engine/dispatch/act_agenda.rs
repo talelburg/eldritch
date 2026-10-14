@@ -8,7 +8,7 @@ use card_dsl::dsl::{EventPattern, EventTiming, Trigger, TriggerKind};
 
 use crate::card_registry::CardRegistry;
 use crate::engine::outcome::EngineOutcome;
-use crate::engine::{evaluator, Cx};
+use crate::engine::{board, evaluator, Cx};
 use crate::scenario::ScenarioEnding;
 use crate::state::{
     AdvanceDeck, AdvanceReverseFrame, AdvanceStep, AdvanceTrigger, GameState, InvestigatorId,
@@ -58,12 +58,10 @@ pub fn place_doom_on_agenda(cx: &mut Cx, count: u8) {
 }
 
 /// Mythos step 1.3 (Rules Reference p.24): compare doom in play with the
-/// current agenda's threshold; if met, the agenda advances. We model
-/// doom only on the agenda (no corpus card carries doom yet — summing
-/// "doom on each other card in play" would add zero).
-///
-/// TODO(#572): sum doom on other cards in play once a
-/// doom-bearing card exists.
+/// current agenda's threshold; if met, the agenda advances. The doom compared
+/// is [`board::doom_in_play`] — the agenda's plus every card's
+/// (`glossary/Act_Deck_and_Agenda_Deck.md`: *"doom on the agenda card as well as
+/// doom on any other cards in play"*), such as Arcane Initiate 01063's.
 ///
 /// **Every** agenda advances the same way, terminal or not (ADR 0013): emit
 /// [`Event::AgendaAdvanced`], pause on the advance-flip acknowledge, fire the
@@ -79,7 +77,7 @@ pub(crate) fn check_doom_threshold(cx: &mut Cx) {
         return;
     }
     let agenda = &cx.state.agenda_deck[cx.state.agenda_index];
-    if cx.state.agenda_doom < agenda.doom_threshold {
+    if board::doom_in_play(cx.state) < u32::from(agenda.doom_threshold) {
         return;
     }
     advance_agenda(cx);

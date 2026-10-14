@@ -195,6 +195,14 @@ impl<'a> NativeCx<'a> {
         act_agenda::place_doom_on_agenda(self.write_access(), count);
     }
 
+    /// Place `count` doom on the card instance `instance`, wherever it is on
+    /// the board; a no-op once it has left play. The doom counts toward the
+    /// agenda's threshold at the next check, not at once. No event announces
+    /// doom yet (#593).
+    pub fn place_doom_on_card(&mut self, instance: CardInstanceId, count: u8) {
+        board::place_doom(self.write_access(), instance, count);
+    }
+
     /// Remove up to `count` clues from the card instance `instance`, wherever
     /// it is on the board, saturating at zero. No event names clues leaving a
     /// card.

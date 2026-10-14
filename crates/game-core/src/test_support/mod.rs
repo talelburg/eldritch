@@ -265,5 +265,5 @@ pub use fixtures::{
 pub use mock_registry::MockRegistry;
 pub use native::run_native;
 pub use resolver::{ChoiceResolver, ScriptedResolver};
-pub use seat::{clues, seat, uses, CardSetup, Seat, SeatCard, SeatLookup};
+pub use seat::{clues, doom, seat, uses, CardSetup, Seat, SeatCard, SeatLookup};
 pub use session::TestSession;
