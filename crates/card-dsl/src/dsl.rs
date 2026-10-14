@@ -2458,7 +2458,7 @@ pub enum Quantity {
     /// Clues on the controller's current location.
     CluesAtControllerLocation,
     /// Horror on the controller's investigator card — Agnes Baker 01004's
-    /// *"[elder_sign] effect: +1 for each horror on Agnes Baker."* Horror on
+    /// `[elder_sign]` effect: *"+1 for each horror on Agnes Baker."* Horror on
     /// the controller's assets is not on the investigator, so it does not
     /// count.
     HorrorOnController,

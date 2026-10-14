@@ -3,7 +3,7 @@
 //!
 //! The shape is Agnes Baker 01004's (`data/arkhamdb-snapshot/pack/core/core.json`):
 //!
-//! > [elder_sign] effect: +1 for each horror on Agnes Baker.
+//! > \[elder_sign\] effect: +1 for each horror on Agnes Baker.
 //!
 //! Synthetic investigators only (ADR 0016): each models the primitive, and
 //! none stands in for the printed card, which registers in #777. Its own
