@@ -278,7 +278,9 @@ impl ActionDesignator {
 /// Phase-3 set. Later phases add `AtPhaseStart`/`AtPhaseEnd`,
 /// `OnLeavePlay`, and additional reactive patterns as cards demand.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[expect(
+// `allow`, not `expect`: the lint is pointer-width dependent and does not fire
+// on wasm32, where an unfulfilled `expect` would fail `wasm-clippy`.
+#[allow(
     clippy::large_enum_variant,
     reason = "the elder sign outcome was already the largest variant; the lint fired only \
               when the designator moved off Activated (#1053), which shrank the runner-up"
