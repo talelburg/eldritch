@@ -52,6 +52,8 @@ const ON_ATTACHED_INVESTIGATED: &str = "_ts_on_attached_investigated";
 const ON_THIS_ATTACKS: &str = "_ts_on_this_attacks";
 /// *"Forced - At the end of your turn"*.
 const ON_END_OF_TURN: &str = "_ts_on_end_of_turn";
+/// *"Forced - After this card enters play"*.
+const ON_THIS_ENTERS: &str = "_ts_on_this_enters";
 /// *"Forced - After this agenda advances"*.
 const ON_AGENDA_ADVANCED: &str = "_ts_on_agenda_advanced";
 /// A weakness printing *"Forced - When the game ends"*. Its effect is a native
@@ -158,6 +160,7 @@ fn registries() -> Registries {
                 horror_on(EventPattern::EndOfTurn, EventTiming::At)
             })
             .with_card(treachery(ON_END_OF_TURN, false))
+            .with_abilities(ON_THIS_ENTERS, || after_horror(EventPattern::EnteredPlay))
             .with_abilities(ON_AGENDA_ADVANCED, || {
                 after_horror(EventPattern::AgendaAdvanced)
             })
@@ -488,6 +491,49 @@ fn the_end_of_a_turn_fires_only_the_ending_investigators_card() {
     .build();
     let session = fire(state, TimingEvent::EndOfTurn { investigator: TWO });
     assert_eq!(horror(session.state(), TWO), 1);
+    assert_eq!(horror(session.state(), ONE), 0);
+}
+
+/// #1046: a forced ability printed on a card in hand is scanned, bound to the
+/// investigator holding it — Dark Memory 01013's *"If Dark Memory is in your
+/// hand at the end of your turn"*.
+#[test]
+fn a_forced_ability_in_hand_fires_bound_to_the_investigator_holding_it() {
+    let state = board(
+        seat(ONE.0).hand([ON_END_OF_TURN]),
+        seat(TWO.0).hand([ON_END_OF_TURN]),
+        study(),
+        hallway(),
+    )
+    .open_turn(ONE)
+    .build();
+    let session = fire(state, TimingEvent::EndOfTurn { investigator: ONE });
+    assert_eq!(horror(session.state(), ONE), 1);
+    assert_eq!(horror(session.state(), TWO), 0);
+}
+
+/// #1046: a self-scoped forced ability does not fire from hand. Its card is out
+/// of play, and `glossary/Ability.md` keeps an ability that does not reference
+/// its use from an out-of-play area from interacting with the game — Arcane
+/// Initiate 01063's *"After Arcane Initiate enters play"*, held while another
+/// of its controller's cards enters play.
+#[test]
+fn a_self_scoped_forced_ability_in_hand_does_not_fire() {
+    let state = board(
+        seat(ONE.0).hand([ON_THIS_ENTERS]),
+        seat(TWO.0),
+        study(),
+        hallway(),
+    )
+    .open_turn(ONE)
+    .build();
+    let session = fire(
+        state,
+        TimingEvent::EnteredPlay {
+            instance: CardInstanceId(70),
+            controller: ONE,
+        },
+    );
     assert_eq!(horror(session.state(), ONE), 0);
 }
 

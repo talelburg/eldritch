@@ -95,6 +95,7 @@ pub mod beat_cop;
 pub mod cellar;
 pub mod cover_up;
 pub mod crypt_chill;
+pub mod dark_memory;
 pub mod deduction;
 pub mod dissonant_voices;
 pub mod dodge;
@@ -223,6 +224,7 @@ pub const ALL: &[CardRecord] = &[
     cellar::CARD,
     cover_up::CARD,
     crypt_chill::CARD,
+    dark_memory::CARD,
     deduction::CARD,
     dissonant_voices::CARD,
     dodge::CARD,
