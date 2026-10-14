@@ -30,19 +30,14 @@
 //! ```
 //! use game_core::action::{Action, InputResponse, PlayerAction};
 //! use game_core::engine::EngineOutcome;
-//! use game_core::engine::Registries;
-//! use game_core::scenario::ScenarioRegistry;
 //! use game_core::state::GameStateBuilder;
-//! use game_core::test_support::TEST_REGISTRY;
+//! use game_core::test_support::TEST_REGISTRIES;
 //!
 //! // A `ResolveInput` against a bare state with no outstanding prompt
 //! // rejects — a tiny smoke test for the fluent API without needing a
 //! // real chaos bag or any setup.
 //! let session = GameStateBuilder::new()
-//!     .with_registries(Registries {
-//!         cards: &TEST_REGISTRY,
-//!         scenarios: &ScenarioRegistry::EMPTY,
-//!     })
+//!     .with_registries(TEST_REGISTRIES)
 //!     .session()
 //!     .apply(Action::Player(PlayerAction::ResolveInput {
 //!         response: InputResponse::Skip,
@@ -433,7 +428,7 @@ mod tests {
     use crate::event::Event;
     use crate::state::SkillKind;
     use crate::state::{ChaosBag, ChaosToken, Continuation, GameStateBuilder, SkillTestId};
-    use crate::test_support::{self, TestSession};
+    use crate::test_support::{self, TestSession, TEST_REGISTRIES};
 
     fn empty_state() -> GameState {
         GameStateBuilder::new().build()
@@ -748,7 +743,7 @@ mod tests {
                 response: InputResponse::Confirm,
             }),
             &mut ScriptedResolver::new(),
-            |state, action| engine::apply(state, action, engine::TEST_REGISTRIES),
+            |state, action| engine::apply(state, action, TEST_REGISTRIES),
         );
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     }
@@ -760,7 +755,7 @@ mod tests {
     fn flag_on_confirming_the_acknowledge_resolves_the_test() {
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_registries(engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
             .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
             .open_turn(inv)
@@ -768,7 +763,7 @@ mod tests {
         // No builder setter for the acknowledge flag.
         state.interactive_acknowledge = true;
 
-        let session = TestSession::new(state, engine::TEST_REGISTRIES)
+        let session = TestSession::new(state, TEST_REGISTRIES)
             .test_skill(inv, SkillKind::Willpower, 2)
             .commit(&[]);
         assert_eq!(

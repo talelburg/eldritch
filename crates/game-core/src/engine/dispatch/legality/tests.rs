@@ -1,12 +1,12 @@
 use super::*;
 use crate::state::{CardInstanceId, GameStateBuilder};
 use crate::test_support;
-use crate::test_support::TEST_REGISTRY;
+use crate::test_support::{TEST_REGISTRIES, TEST_REGISTRY};
 
 #[test]
 fn check_play_card_returns_err_for_unknown_hand_index() {
     let state = GameStateBuilder::default()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_active_investigator(InvestigatorId(1))
         .build();
@@ -32,7 +32,7 @@ fn check_play_card_returns_err_when_investigator_missing() {
 #[test]
 fn check_activate_ability_returns_err_for_unreachable_source() {
     let state = GameStateBuilder::default()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_active_investigator(InvestigatorId(1))
         .build();

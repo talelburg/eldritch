@@ -171,7 +171,7 @@ mod tests {
         Act, AdvanceDeck, AdvanceStep, AdvanceTrigger, Agenda, CardCode, Continuation, GameState,
         GameStateBuilder, InvestigatorId,
     };
-    use crate::test_support::{self, TestSession};
+    use crate::test_support::{self, TestSession, TEST_REGISTRIES};
 
     fn state_advancing_agenda(interactive: bool) -> GameState {
         let mut state = GameStateBuilder::new().build();
@@ -305,7 +305,7 @@ mod tests {
     #[test]
     fn a_terminal_act_pauses_on_the_flip_acknowledge_before_its_reverse_ends_the_scenario() {
         let mut state = GameStateBuilder::new()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
             .with_turn_order([InvestigatorId(1)])
             .build();
@@ -326,7 +326,7 @@ mod tests {
             trigger: AdvanceTrigger::Forced,
         });
 
-        let session = TestSession::new(state, crate::engine::TEST_REGISTRIES);
+        let session = TestSession::new(state, TEST_REGISTRIES);
         assert_eq!(
             session.prompt().options.len(),
             1,

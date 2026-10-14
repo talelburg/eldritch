@@ -1,5 +1,5 @@
 use super::*;
-use crate::test_support::TEST_REGISTRY;
+use crate::test_support::{TEST_REGISTRIES, TEST_REGISTRY};
 
 /// Whether `state`'s menu offers an `EndTurn`.
 fn offers_end_turn(state: &GameState) -> bool {

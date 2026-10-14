@@ -1,5 +1,5 @@
 use super::*;
-use crate::test_support::TEST_REGISTRY;
+use crate::test_support::{TEST_REGISTRIES, TEST_REGISTRY};
 
 /// A raw setup-mulligan answer: `indices` are the hand indices to redraw
 /// (empty = keep the hand). Only for the tests whose subject is the wire

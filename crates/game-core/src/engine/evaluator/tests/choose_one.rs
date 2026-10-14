@@ -1,11 +1,12 @@
 use super::*;
+use crate::test_support::TEST_REGISTRIES;
 
 #[test]
 fn choose_one_single_branch_auto_resolves() {
     // 1 legal option ⇒ auto-bind, no input round-trip.
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .build();
     let before = state.investigators[&id].resources;
@@ -103,7 +104,7 @@ fn choose_one_with_no_branches_still_rejects() {
 fn choose_one_two_branches_suspends_with_a_choice_frame() {
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .build();
     let before = state.investigators[&id].resources;
@@ -134,7 +135,7 @@ fn choose_one_resumes_the_pick() {
     // Resuming with pick = branch 1 runs the +3 branch.
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .build();
     let before = state.investigators[&id].resources;
@@ -167,7 +168,7 @@ fn choice_after_earlier_seq_step_no_longer_rejects() {
     // applied) and resumes without double-applying the first step (#422).
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .build();
     let before = state.investigators[&id].resources;
@@ -211,7 +212,7 @@ fn choose_one_then_chosen_target_resumes_both_picks() {
     // case the old single-pass replay model rejected (#346). The parent
     // ChooseOne pop leaves the branch's grounding to suspend independently.
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .with_seat(seat(2))
         .build();
@@ -255,7 +256,7 @@ fn two_choices_resume_one_round_trip_at_a_time() {
     // completes. Drives `resume_effect_choice` (via `resume_pick`) — the same
     // path `apply(ResolveInput)` routes to.
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .with_seat(seat(2))
         .build();

@@ -1,5 +1,6 @@
 use super::*;
 use crate::state::Status;
+use crate::test_support::TEST_REGISTRIES;
 
 /// The location the investigators stand at.
 const STUDY: LocationId = LocationId(3);
@@ -151,7 +152,7 @@ fn granting_card_board(controlled: bool) -> (GameState, InvestigatorId) {
         seated
     };
     let state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_location(location)
         .with_seat(seated)
         .build();
@@ -219,7 +220,7 @@ fn a_granted_modifier_vanishes_when_the_grants_condition_flips() {
 /// controlling a `combat-plus-1-here` card and holding `status`.
 fn neighbours_combat_with_buffer(status: Status) -> i32 {
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(STUDY.0, "Study"))
         .with_seat(seat(1).at(STUDY).in_play(["combat-plus-1-here"]))
         .with_seat(seat(2).at(STUDY))
@@ -250,7 +251,7 @@ fn an_eliminated_investigators_card_modifier_no_longer_applies() {
 /// modifier.
 fn combat_granted_by_neighbour_with(status: Status) -> i32 {
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).in_play(["grants-combat-to-recipient"]))
         .with_seat(seat(2).in_play(["grant-recipient"]))
         .build();

@@ -1,5 +1,6 @@
 use super::*;
 use crate::state::{MythosPhaseFrame, MythosResume};
+use crate::test_support::TEST_REGISTRIES;
 
 // Card actions can't use the enumeration form here: game-core's
 // `TEST_INV`-only registry never enumerates a card-bearing PlayCard, so the

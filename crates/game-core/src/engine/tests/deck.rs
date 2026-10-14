@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::TEST_REGISTRIES;
 
 // An engine record applies only with no prompt outstanding (see
 // `engine_record_applied_while_a_prompt_is_outstanding_is_rejected` in

@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::TEST_REGISTRIES;
 
 #[test]
 fn discover_clue_can_change_state_only_with_clues_present() {
@@ -78,7 +79,7 @@ fn state_with_harm(seeds: &[(u32, u8, u8, usize)]) -> GameState {
         })
         .fold(
             GameStateBuilder::new()
-                .with_registries(crate::engine::TEST_REGISTRIES)
+                .with_registries(TEST_REGISTRIES)
                 .with_location(test_support::test_location(HERE.0, "Study")),
             GameStateBuilder::with_seat,
         )

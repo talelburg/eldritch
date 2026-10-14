@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::TEST_REGISTRIES;
 
 /// `INV`'s open turn holding `hand`, with a `Numeric(0)` bag.
 fn commit_board(hand: &[&str]) -> GameStateBuilder {

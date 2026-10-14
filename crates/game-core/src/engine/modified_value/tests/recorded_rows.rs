@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::TEST_REGISTRIES;
 
 /// One investigator, `rows` recorded, and the test identified by
 /// [`IN_FLIGHT`] in flight — the shape a `ThisSkillTest` row is read
@@ -11,7 +12,7 @@ fn state_with_recorded(rows: Vec<RecordedModifier>) -> GameState {
 /// the caller — so a row can be read against a *different* test.
 fn state_with_recorded_during(rows: Vec<RecordedModifier>, in_flight: SkillTestId) -> GameState {
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .build();
     state.recorded_modifiers = rows;
@@ -92,7 +93,7 @@ fn a_recorded_row_is_invisible_to_an_outside_test_read() {
 fn a_recorded_row_contributes_nothing_with_no_test_in_flight() {
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .build();
     state.recorded_modifiers = vec![recorded(id, Stat::Willpower, 5)];

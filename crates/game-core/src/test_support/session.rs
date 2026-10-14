@@ -76,13 +76,8 @@ use crate::state::{
 /// ```
 /// # use game_core::engine::{enumerate::TurnAction, OptionTarget};
 /// # use game_core::state::{GameStateBuilder, InvestigatorId};
-/// # use game_core::engine::Registries;
-/// # use game_core::scenario::ScenarioRegistry;
 /// # use game_core::test_support;
-/// # let registries = Registries {
-/// #     cards: &test_support::TEST_REGISTRY,
-/// #     scenarios: &ScenarioRegistry::EMPTY,
-/// # };
+/// # let registries = test_support::TEST_REGISTRIES;
 /// let me = InvestigatorId(1);
 /// let session = GameStateBuilder::new()
 ///     .with_registries(registries)
@@ -150,8 +145,9 @@ impl GameStateBuilder {
     /// Build and settle into a [`TestSession`] driven with the registries named
     /// by [`with_registries`](GameStateBuilder::with_registries): equivalent to
     /// `TestSession::new(self.build(), regs)`. Lives here (test-only) rather
-    /// than on the builder itself so the production builder in
-    /// [`crate::state`] carries no test dependency.
+    /// than on the builder itself because [`TestSession`] is a test type: the
+    /// production builder in [`crate::state`] holds only the optional
+    /// registries slot this reads.
     ///
     /// # Panics
     ///
@@ -220,15 +216,10 @@ impl TestSession {
     /// resolver's place, starting from the closure's answers.
     ///
     /// ```
-    /// # use game_core::engine::Registries;
-    /// # use game_core::scenario::ScenarioRegistry;
     /// # use game_core::state::GameStateBuilder;
-    /// # use game_core::test_support::TEST_REGISTRY;
+    /// # use game_core::test_support::TEST_REGISTRIES;
     /// let _session = GameStateBuilder::new()
-    ///     .with_registries(Registries {
-    ///         cards: &TEST_REGISTRY,
-    ///         scenarios: &ScenarioRegistry::EMPTY,
-    ///     })
+    ///     .with_registries(TEST_REGISTRIES)
     ///     .session()
     ///     .resolve_choices(|c| {
     ///         c.commit_cards(&[]);
@@ -836,7 +827,7 @@ impl TestSession {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support;
+    use crate::test_support::{self, TEST_REGISTRIES};
 
     #[test]
     fn test_session_fluent_round_trip() {
@@ -845,7 +836,7 @@ mod tests {
         // (back to the next investigator's turn menu) rather than a
         // round-ending cascade.
         let result = GameStateBuilder::new()
-            .with_registries(engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_investigator(test_support::test_investigator(1))
             .with_investigator(test_support::test_investigator(2))
             .with_location(test_support::test_location(10, "Study"))

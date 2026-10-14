@@ -10,7 +10,7 @@ use crate::state::{
     EliminationCause, Enemy, EnemyId, GameStateBuilder, InvestigatorId, Lifetime, LocationId,
     Phase, RecordedModifier, SkillKind, SkillTestId, Status, TokenModifiers, TokenResolution, Zone,
 };
-use crate::test_support::{self, seat, Seat, TestSession};
+use crate::test_support::{self, seat, Seat, TestSession, TEST_REGISTRIES};
 use crate::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
 
 mod activate_ability;

@@ -19,6 +19,8 @@ use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Skills};
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, InvestigatorTarget};
 
 use crate::card_registry::CardRegistry;
+use crate::engine::Registries;
+use crate::scenario::ScenarioRegistry;
 use crate::state::CardCode;
 
 pub mod assertions;
@@ -235,6 +237,13 @@ pub const TEST_REGISTRY: CardRegistry = CardRegistry {
     metadata_for: test_registry_metadata_for,
     abilities_for: test_registry_abilities_for,
     ..CardRegistry::EMPTY
+};
+
+/// The registries a game-core test runs against: [`TEST_REGISTRY`] and no
+/// scenarios. Name this rather than hand-building the pair.
+pub const TEST_REGISTRIES: Registries = Registries {
+    cards: &TEST_REGISTRY,
+    scenarios: &ScenarioRegistry::EMPTY,
 };
 
 fn test_registry_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {

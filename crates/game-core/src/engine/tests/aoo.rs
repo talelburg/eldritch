@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::TEST_REGISTRIES;
 
 /// `INV`'s open turn at the Study with a one-card deck (so a draw succeeds
 /// without the empty-deck horror path muddying an `AoO` assertion).

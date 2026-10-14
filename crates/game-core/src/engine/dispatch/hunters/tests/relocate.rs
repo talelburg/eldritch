@@ -3,6 +3,7 @@
 use super::*;
 use crate::engine::Cx;
 use crate::state::GameStateBuilder;
+use crate::test_support::TEST_REGISTRIES;
 use crate::{assert_event, assert_no_event, test_support};
 
 /// Two adjacent locations: investigator 1 in the Hallway (2), a ready
@@ -15,7 +16,7 @@ fn two_rooms() -> GameStateBuilder {
         e
     };
     GameStateBuilder::default()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(LocationId(2)))
         .with_location(test_support::test_location(1, "Attic"))
         .with_location(test_support::test_location(2, "Hallway"))

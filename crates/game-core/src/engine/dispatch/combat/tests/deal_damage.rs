@@ -1,7 +1,7 @@
 use super::*;
 use crate::state::EmitEventFrame;
 use crate::test_support::SeatLookup as _;
-use crate::test_support::TEST_REGISTRY;
+use crate::test_support::{TEST_REGISTRIES, TEST_REGISTRY};
 
 #[test]
 fn advance_distribution_drains_without_soakers_and_prompts_with_one() {
@@ -32,7 +32,7 @@ fn advance_distribution_drains_without_soakers_and_prompts_with_one() {
 fn resume_damage_distribution_rejects_invalid_pick_and_keeps_frame() {
     let inv_id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .build();
     // Park a DealDamage frame mid-distribution (2 damage to assign).
@@ -87,7 +87,7 @@ fn resume_damage_distribution_rejects_invalid_pick_and_keeps_frame() {
 fn deal_damage_cursor_walks_distribute_announce_place_finish() {
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .build();
     let mut events = Vec::new();
@@ -211,7 +211,7 @@ fn the_two_damage_conditions_are_classified_as_the_adr_says() {
     }
     // The milestone's resolve step changes nothing; the other's places.
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .build();
     let before = state.clone();
@@ -228,7 +228,7 @@ fn the_two_damage_conditions_are_classified_as_the_adr_says() {
 #[test]
 fn soak_options_anchor_assets_to_card_instances() {
     let state = GameStateBuilder::default()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).in_play([test_support::TEST_ASSET]))
         .build();
     let asset = state.in_play(InvestigatorId(1), test_support::TEST_ASSET);
@@ -255,7 +255,7 @@ fn soak_options_anchor_assets_to_card_instances() {
 fn deal_harm_walks_distribute_announce_place_finish_from_an_effect() {
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .build();
     let mut events = Vec::new();
@@ -311,7 +311,7 @@ fn deal_harm_walks_distribute_announce_place_finish_from_an_effect() {
 #[test]
 fn deal_harm_of_nothing_pushes_no_frame() {
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .build();
     let mut events = Vec::new();

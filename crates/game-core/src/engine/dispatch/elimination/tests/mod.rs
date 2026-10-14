@@ -1,5 +1,6 @@
 use super::*;
 use crate::state::{Continuation, GameStateBuilder};
+use crate::test_support::TEST_REGISTRIES;
 use crate::{assert_event, assert_no_event, test_support};
 
 mod defeat;
@@ -11,7 +12,7 @@ mod turn_end;
 fn two_investigator_open_turn(whose: InvestigatorId) -> GameState {
     let (a, b) = (InvestigatorId(1), InvestigatorId(2));
     GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).actions(2))
         .with_seat(test_support::seat(2).actions(2))
         .with_turn_order([a, b])

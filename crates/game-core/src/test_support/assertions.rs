@@ -28,12 +28,7 @@
 //! use game_core::state::{GameStateBuilder, InvestigatorId};
 //! use game_core::test_support::{self, TestSession};
 //! use game_core::{assert_event, assert_no_event};
-//! # use game_core::engine::Registries;
-//! # use game_core::scenario::ScenarioRegistry;
-//! # let registries = Registries {
-//! #     cards: &test_support::TEST_REGISTRY,
-//! #     scenarios: &ScenarioRegistry::EMPTY,
-//! # };
+//! # let registries = test_support::TEST_REGISTRIES;
 //!
 //! let state = GameStateBuilder::new()
 //!     .with_investigator(test_support::test_investigator(1))

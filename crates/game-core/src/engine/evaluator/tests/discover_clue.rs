@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::TEST_REGISTRIES;
 
 #[test]
 fn discover_clue_moves_one_clue_from_location_to_controller() {
@@ -102,7 +103,7 @@ fn discover_clue_rejects_when_controller_is_between_locations() {
     // "You" has no current_location — LocationTarget::
     // YourLocation can't resolve.
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1)) // current_location = None
         .build();
     let mut events = Vec::new();
@@ -131,7 +132,7 @@ fn discover_clue_tested_location_resolves_to_in_flight_test_location() {
     let elsewhere_loc = test_support::test_location(elsewhere.0, "Hall");
 
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_location(tested_loc)
         .with_location(elsewhere_loc)
         .with_seat(seat(1).at(elsewhere))
@@ -191,7 +192,7 @@ fn tested_location_rejects_when_test_has_no_location_snapshot() {
     // In-flight test exists but tested_location is None (e.g.
     // a bare plain skill test invoked while between locations).
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .build();
     state

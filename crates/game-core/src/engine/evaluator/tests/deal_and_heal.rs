@@ -1,9 +1,10 @@
 use super::*;
+use crate::test_support::TEST_REGISTRIES;
 
 #[test]
 fn heal_reduces_horror_saturating_and_emits_event() {
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).harm(0, 1))
         .build();
     let mut events = Vec::new();
@@ -28,7 +29,7 @@ fn heal_reduces_horror_saturating_and_emits_event() {
 #[test]
 fn deal_damage_adds_damage_and_emits_event() {
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .with_active_investigator(InvestigatorId(1))
         .build();
@@ -50,7 +51,7 @@ fn deal_damage_adds_damage_and_emits_event() {
 #[test]
 fn deal_horror_adds_horror_and_emits_event() {
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .with_active_investigator(InvestigatorId(1))
         .build();
@@ -77,7 +78,7 @@ fn deal_damage_at_max_health_defeats_investigator() {
     // 5 + 3 = 8 = defeated with a 3-damage deal.
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(id.0).harm(5, 0))
         .build();
     let mut events = Vec::new();
@@ -102,7 +103,7 @@ fn deal_amount_can_be_a_count_of_failure_margin() {
         IntExpr::Count(Quantity::SkillTestFailedBy),
     );
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .with_active_investigator(InvestigatorId(1))
         .build();

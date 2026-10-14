@@ -1,10 +1,11 @@
 use super::*;
+use crate::test_support::TEST_REGISTRIES;
 
 #[test]
 fn gain_resources_increments_target_wallet_and_emits_event() {
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .build();
     let resources_before = state.investigators[&id].resources;
@@ -31,7 +32,7 @@ fn gain_resources_increments_target_wallet_and_emits_event() {
 fn push_effect_then_drive_runs_to_completion() {
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .build();
     let resources_before = state.investigators[&id].resources;
@@ -62,7 +63,7 @@ fn gain_resources_zero_amount_is_a_silent_noop() {
     // active investigator doesn't reject for amount=0.
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .build();
     let resources_before = state.investigators[&id].resources;
@@ -84,7 +85,7 @@ fn gain_resources_active_target_rejects_without_active_investigator() {
     // No active investigator (default phase is Mythos), so
     // InvestigatorTarget::Active should fail to resolve.
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .build();
     let mut events = Vec::new();

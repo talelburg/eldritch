@@ -372,8 +372,9 @@ impl GameStateBuilder {
     /// threat-area cards' owners are read from the registries named by
     /// [`with_registries`](Self::with_registries).
     ///
-    /// Lives here (test-only), like [`session`](GameStateBuilder::session), so
-    /// the production builder carries no test dependency.
+    /// Lives here (test-only), like [`session`](GameStateBuilder::session),
+    /// because [`Seat`] is a test fixture: the production builder holds only
+    /// the optional registries slot this reads, never a fixture type.
     ///
     /// # Panics
     ///

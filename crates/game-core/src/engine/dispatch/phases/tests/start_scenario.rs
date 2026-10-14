@@ -3,13 +3,13 @@ use card_dsl::card_data::SkillKind;
 use super::*;
 use crate::action::RosterEntry;
 use crate::state::{CardCode, GameStateBuilder, SkillSubstitution};
-use crate::test_support::{TestSession, TEST_INV};
+use crate::test_support::{TestSession, TEST_INV, TEST_REGISTRIES};
 use crate::{engine, test_support};
 
 #[test]
 fn start_scenario_rejects_when_roster_would_seat_zero_investigators() {
     let state = GameStateBuilder::new().build();
-    let result = engine::seat_and_open(state, &[], engine::TEST_REGISTRIES);
+    let result = engine::seat_and_open(state, &[], TEST_REGISTRIES);
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert_eq!(result.state.round, 0, "state unchanged on reject");
     assert!(result.events.is_empty(), "no events on reject");
@@ -22,7 +22,7 @@ fn round_end_clears_round_scoped_skill_substitutions() {
     // abilities), not the next Mythos step.
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_registries(engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_turn_order([id])
         .with_round(1)
@@ -35,7 +35,7 @@ fn round_end_clears_round_scoped_skill_substitutions() {
     });
 
     // Settling runs the round end; play goes on to round 2's Mythos phase.
-    let session = TestSession::new(state, engine::TEST_REGISTRIES);
+    let session = TestSession::new(state, TEST_REGISTRIES);
     crate::assert_event!(
         session.events(),
         Event::PhaseEnded {
@@ -52,7 +52,7 @@ fn round_end_clears_round_scoped_skill_substitutions() {
 #[test]
 fn seat_and_open_rejects_an_empty_roster() {
     let state = GameStateBuilder::new().build();
-    let result = engine::seat_and_open(state, &[], engine::TEST_REGISTRIES);
+    let result = engine::seat_and_open(state, &[], TEST_REGISTRIES);
     assert!(
         matches!(result.outcome, EngineOutcome::Rejected { .. }),
         "an empty roster must reject, got {:?}",
@@ -79,7 +79,7 @@ fn start_scenario_shuffles_the_encounter_deck() {
         deck: vec![],
     }];
 
-    let result = engine::seat_and_open(state, &roster, engine::TEST_REGISTRIES);
+    let result = engine::seat_and_open(state, &roster, TEST_REGISTRIES);
 
     assert!(matches!(
         result.outcome,
@@ -103,7 +103,7 @@ fn start_scenario_rejects_unresolvable_roster_entry() {
         investigator: CardCode::new("01001"),
         deck: vec![],
     }];
-    let result = engine::seat_and_open(state, &roster, engine::TEST_REGISTRIES);
+    let result = engine::seat_and_open(state, &roster, TEST_REGISTRIES);
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert_eq!(result.state.round, 0, "state unchanged on reject");
     assert!(result.events.is_empty());

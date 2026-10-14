@@ -222,7 +222,7 @@ mod tests {
     use crate::state::{
         Continuation, EffectFrame, GameStateBuilder, InFlightSkillTest, SkillTestId,
     };
-    use crate::test_support;
+    use crate::test_support::{self, TEST_REGISTRIES};
 
     /// The `Investigate` follow-up pushes **one** `DiscoverClue` of
     /// `1 + bonus_clues_discovered` at the test's `tested_location`, reading the
@@ -234,7 +234,7 @@ mod tests {
         let inv = InvestigatorId(1);
         let loc = LocationId(10);
         let mut state = GameStateBuilder::new()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1).at(loc))
             .with_location(test_support::test_location(loc.0, "Study"))
             .build();

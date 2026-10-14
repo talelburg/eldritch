@@ -5,7 +5,7 @@ use crate::action::EngineRecord;
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::{dispatch, Cx};
 use crate::state::{CardCode, GameStateBuilder, InvestigatorId};
-use crate::test_support;
+use crate::test_support::{self, TEST_REGISTRIES};
 
 /// Exercises the early-reject guard: when the handler cannot
 /// proceed past the registry / metadata checks, it must reject
@@ -16,7 +16,7 @@ use crate::test_support;
 #[test]
 fn rejects_an_unknown_encounter_card() {
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .build();
     // Seed the encounter deck so we can prove the reject fires

@@ -172,7 +172,7 @@ pub(super) fn put_into_play_at_location(
 mod tests {
     use super::*;
     use crate::state::GameStateBuilder;
-    use crate::test_support;
+    use crate::test_support::{self, TEST_REGISTRIES};
 
     #[test]
     fn attach_mints_id_pushes_to_location_and_emits_event() {
@@ -203,7 +203,7 @@ mod tests {
     #[test]
     fn place_mints_id_pushes_instance_and_emits_event() {
         let mut state = GameStateBuilder::new()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
             .build();
         let mut events = Vec::new();

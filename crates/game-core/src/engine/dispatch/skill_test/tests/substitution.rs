@@ -2,7 +2,7 @@ use super::*;
 use crate::engine::enumerate::TurnAction;
 use crate::state::{EnemyId, LocationId};
 use crate::test_support::TestSession;
-use crate::test_support::TEST_REGISTRY;
+use crate::test_support::{TEST_REGISTRIES, TEST_REGISTRY};
 
 const HERE: LocationId = LocationId(10);
 const GHOUL: EnemyId = EnemyId(7);
@@ -12,7 +12,7 @@ const GHOUL: EnemyId = EnemyId(7);
 /// shape). Taking Fight or Evade starts a test the substitution applies to.
 fn substitution_turn(inv: InvestigatorId) -> TestSession {
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(test_support::seat(1).at(HERE))
         .with_enemy_engaged(test_support::test_enemy(GHOUL.0, "Ghoul"), inv)
@@ -24,12 +24,12 @@ fn substitution_turn(inv: InvestigatorId) -> TestSession {
         use_skill: SkillKind::Intellect,
         for_skills: vec![SkillKind::Combat, SkillKind::Agility],
     });
-    TestSession::new(state, crate::engine::TEST_REGISTRIES)
+    TestSession::new(state, TEST_REGISTRIES)
 }
 
 fn substitution_state(inv: InvestigatorId) -> GameState {
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_active_investigator(inv)
         .build();
@@ -259,11 +259,10 @@ fn no_active_substitution_opens_commit_window_directly() {
     let inv = InvestigatorId(1);
     let mut state = substitution_turn(inv).state().clone();
     state.skill_substitutions.clear();
-    let session =
-        TestSession::new(state, crate::engine::TEST_REGISTRIES).take(&TurnAction::Fight {
-            investigator: inv,
-            enemy: GHOUL,
-        });
+    let session = TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::Fight {
+        investigator: inv,
+        enemy: GHOUL,
+    });
     // No prompt: straight to the commit window.
     assert_eq!(session.prompt().kind, InputKind::PickMultiple);
     assert_eq!(

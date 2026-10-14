@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::TEST_REGISTRIES;
 
 #[test]
 fn modify_with_while_in_play_scope_under_non_constant_trigger_rejects() {
@@ -20,7 +21,7 @@ fn modify_with_while_in_play_scope_under_non_constant_trigger_rejects() {
 /// be stamped with.
 fn state_during_test(test_id: SkillTestId) -> GameState {
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .build();
     state
@@ -69,7 +70,7 @@ fn modify_with_this_skill_test_scope_records_a_row_stamped_with_the_test() {
 #[test]
 fn modify_with_this_skill_test_scope_rejects_outside_a_test() {
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .build();
     let mut events = Vec::new();

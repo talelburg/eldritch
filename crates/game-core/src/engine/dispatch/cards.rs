@@ -1143,13 +1143,13 @@ fn discard_played_card(cx: &mut Cx, investigator: InvestigatorId, card: CardCode
 mod grant_resources_tests {
     use super::*;
     use crate::state::{GameStateBuilder, InvestigatorId};
-    use crate::test_support;
+    use crate::test_support::{self, TEST_REGISTRIES};
 
     #[test]
     fn grant_resources_adds_to_wallet_and_emits() {
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::default()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
             .build();
         let before = state.investigators[&id].resources;
@@ -1168,7 +1168,7 @@ mod grant_resources_tests {
     fn grant_resources_zero_is_silent_noop() {
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::default()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
             .build();
         let before = state.investigators[&id].resources;
@@ -1185,7 +1185,7 @@ mod grant_resources_tests {
 mod draw_with_deckout_tests {
     use super::*;
     use crate::state::{Continuation, GameState, GameStateBuilder, InvestigatorId};
-    use crate::test_support;
+    use crate::test_support::{self, TEST_REGISTRIES};
 
     /// The deck-out horror is dealt, not placed: the draw's tail is one
     /// `DealDamage { Effect }` frame for 1 horror (#1027), so the soak prompt
@@ -1209,7 +1209,7 @@ mod draw_with_deckout_tests {
     fn draw_one_with_deckout_empty_deck_reshuffles_and_deals_horror() {
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::default()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1).discard(["filler0", "filler1"]))
             .build();
         let hand_before = state.investigators[&id].hand.len();
@@ -1234,7 +1234,7 @@ mod draw_with_deckout_tests {
     fn draw_with_deckout_completes_the_count_across_a_midway_reshuffle() {
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::default()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_seat(
                 test_support::seat(1)
                     .deck(["filler0"])
@@ -1264,7 +1264,7 @@ mod draw_with_deckout_tests {
     fn draw_with_deckout_on_a_stocked_deck_neither_reshuffles_nor_takes_horror() {
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::default()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_seat(
                 test_support::seat(1)
                     .deck(["filler0", "filler1", "filler2"])

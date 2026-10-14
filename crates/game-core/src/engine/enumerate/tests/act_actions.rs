@@ -1,11 +1,11 @@
 use super::*;
-use crate::test_support::TEST_REGISTRY;
+use crate::test_support::{TEST_REGISTRIES, TEST_REGISTRY};
 
 /// An open-turn state with an advanceable act (threshold `t`) and the
 /// investigator holding `clues`.
 fn open_turn_with_act(threshold: u8, clues: u8) -> GameState {
     let mut state = GameStateBuilder::default()
-        .with_registries(engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).clues(clues))
         .open_turn(InvestigatorId(1))
         .build();
@@ -41,7 +41,7 @@ fn advance_act_absent_when_clues_insufficient() {
 fn advance_act_absent_with_no_act_deck() {
     // A bare open turn has an empty act_deck → AdvanceAct not offered.
     let state = GameStateBuilder::default()
-        .with_registries(engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .open_turn(InvestigatorId(1))
         .build();
