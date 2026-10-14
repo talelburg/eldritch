@@ -6,12 +6,12 @@
 use std::mem;
 
 use card_dsl::card_data::{CardKind, Class, SkillIcons, Slot};
-use game_core::card_registry;
 use game_core::engine::OptionTarget;
 use game_core::state::{CardCode, CardInPlay, InvestigatorId, UseKind};
 use leptos::prelude::*;
 
 use crate::interaction::{self, MultiSelect, PendingOptions};
+use crate::registry;
 
 /// A parsed run of card text. `Symbol`/`Unknown` carry the bare token without
 /// brackets; the renderer re-adds brackets for `Unknown` so unmapped tokens are
@@ -313,9 +313,9 @@ pub fn live_state_chips(inst: &CardInPlay, kind: &CardKind) -> Vec<String> {
 
 /// One card rendered as a faithful mini-card rectangle, colour-coded by class.
 ///
-/// Looks metadata up via the installed registry; a card with no metadata
-/// (unimplemented stub, or registry absent in a render-only path) falls back to
-/// a bare rectangle showing the raw code. Non-hand card kinds render as a
+/// Looks metadata up in the registry provided at mount; a card with no
+/// metadata (an unimplemented stub) falls back to a bare rectangle showing the
+/// raw code. Non-hand card kinds render as a
 /// generic rectangle (name/traits/text) — their detailed faces are later slices.
 /// Display-only: no click handlers.
 // `code` and `in_play` are taken by value: Leptos `#[component]` generates a
@@ -327,7 +327,7 @@ pub fn live_state_chips(inst: &CardInPlay, kind: &CardKind) -> Vec<String> {
 #[allow(clippy::needless_pass_by_value, clippy::too_many_lines)]
 #[component]
 pub fn Card(code: CardCode, #[prop(optional)] in_play: Option<CardInPlay>) -> impl IntoView {
-    let Some(meta) = card_registry::current().and_then(|r| (r.metadata_for)(&code)) else {
+    let Some(meta) = (registry::use_cards().metadata_for)(&code) else {
         return view! {
             <div class="card card--unknown">
                 <span class="card-name">{code.to_string()}</span>

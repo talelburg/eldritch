@@ -1,9 +1,8 @@
-//! Headless render test for the Act/Agenda cards. Own binary so it installs the
-//! real `cards::REGISTRY` (registry install is first-wins per process); mounts
-//! `act_agenda_view` directly (no investigator panel → no `TEST_INV` lookup).
+//! Headless render test for the Act/Agenda cards, against the real corpus
+//! (`cards::TEST_REGISTRY`); mounts `act_agenda_view` directly (no investigator
+//! panel → no `TEST_INV` lookup).
 #![cfg(target_arch = "wasm32")]
 
-use cards::REGISTRY;
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
@@ -19,6 +18,7 @@ use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::act_agenda;
 use web::interaction::PendingOptions;
+use web::registry::provide_cards;
 use web::store::ClientState;
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlElement};
@@ -38,7 +38,6 @@ fn section_text() -> String {
 
 #[wasm_bindgen_test]
 async fn act_and_agenda_render_name_text_and_thresholds() {
-    test_support::install_registry_with_test_cards(REGISTRY);
     // Act 01109 "The Barrier" (Objective text); Agenda 01107 "They're Getting
     // Out!" (Forced text).
     let mut state = GameStateBuilder::new().build();
@@ -52,7 +51,10 @@ async fn act_and_agenda_render_name_text_and_thresholds() {
     }];
     state.agenda_doom = 1;
 
-    mount_to_body(move || act_agenda::act_agenda_view(&state));
+    mount_to_body(move || {
+        provide_cards(&cards::TEST_REGISTRY);
+        act_agenda::act_agenda_view(&state)
+    });
     task::tick().await;
 
     let text = section_text();
@@ -85,7 +87,6 @@ fn act_card() -> Element {
 /// Mount `act_agenda_view` (act 01109) with a store carrying `outcome`, a derived
 /// `PendingOptions`, an `OutboundTx`, and a capturing channel.
 async fn mount_with_prompt(outcome: EngineOutcome) -> UnboundedReceiver<ClientMessage> {
-    test_support::install_registry_with_test_cards(REGISTRY);
     let mut state = GameStateBuilder::new().build();
     state.act_deck = vec![Act {
         code: CardCode::new("01109"),
@@ -101,6 +102,7 @@ async fn mount_with_prompt(outcome: EngineOutcome) -> UnboundedReceiver<ClientMe
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let tx_for_mount: OutboundTx = tx;
     mount_to_body(move || {
+        provide_cards(&cards::TEST_REGISTRY);
         provide_context(store);
         provide_context::<OutboundTx>(tx_for_mount.clone());
         let pending = Signal::derive(move || store.with(web::interaction::pending_options));
@@ -216,7 +218,6 @@ async fn agenda_card_inert_without_an_agenda_anchored_option() {
 /// Mount `act_agenda_view` with the given deck's leaving card mid-advance at
 /// `step`. Pushes an `AdvanceReverse` frame as the engine would (#558).
 async fn mount_advancing(deck: AdvanceDeck, code: &str, step: AdvanceStep) {
-    test_support::install_registry_with_test_cards(REGISTRY);
     let mut state = GameStateBuilder::new().build();
     match deck {
         AdvanceDeck::Agenda => {
@@ -244,7 +245,10 @@ async fn mount_advancing(deck: AdvanceDeck, code: &str, step: AdvanceStep) {
                 trigger: AdvanceTrigger::Forced,
             }),
         ]));
-    mount_to_body(move || act_agenda::act_agenda_view(&state));
+    mount_to_body(move || {
+        provide_cards(&cards::TEST_REGISTRY);
+        act_agenda::act_agenda_view(&state)
+    });
     task::tick().await;
 }
 

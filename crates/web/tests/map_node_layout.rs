@@ -5,15 +5,11 @@
 //! was invisible in a real act-3 run once an investigator stood in the Parlor.
 //!
 //! These tests measure rather than inspect: the real `style.css` is injected and
-//! the real `cards::REGISTRY` installed, so the node is filled with the text the
+//! the real corpus (`cards::TEST_REGISTRY`) provided, so the node is filled with the text the
 //! app actually renders, and the assertion is that no token's box falls outside
 //! the node's client box at solo or two-investigator density.
-//!
-//! Own test binary: the real registry install is first-wins per process, and
-//! `tests/map.rs` installs the synthetic one.
 #![cfg(target_arch = "wasm32")]
 
-use cards::REGISTRY;
 use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, GameState, GameStateBuilder, LocationId,
@@ -27,6 +23,7 @@ use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::board::BoardView;
 use web::interaction::PendingOptions;
+use web::registry::provide_cards;
 use web::store::{self, ClientState};
 use web_sys::{Element, HtmlElement};
 
@@ -57,8 +54,8 @@ fn inject_style() {
 }
 
 /// The Parlor (01115) with Lita Chantler (01117) at it, and `investigators`
-/// investigators standing in it. Real card codes throughout — the real registry
-/// is installed, so the investigator's capacity lookup needs a real code.
+/// investigators standing in it. Real card codes throughout — the real corpus
+/// is provided, so the investigator's capacity lookup needs a real code.
 fn parlor_state(investigators: usize) -> GameState {
     let mut parlor = test_support::test_location(5, "Parlor");
     parlor.code = CardCode::new("01115");
@@ -90,10 +87,10 @@ async fn mount(state: GameState) -> Element {
 
 /// As [`mount`], but with a live `outcome` so the board has options to anchor.
 async fn mount_with(state: GameState, outcome: EngineOutcome) -> Element {
-    test_support::install_registry_with_test_cards(REGISTRY);
     inject_style();
     let store = RwSignal::new(ClientState::default());
     mount_to_body(move || {
+        provide_cards(&cards::TEST_REGISTRY);
         provide_context(store);
         let pending = Signal::derive(move || store.with(web::interaction::pending_options));
         provide_context(PendingOptions(pending));

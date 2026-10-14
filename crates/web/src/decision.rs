@@ -17,7 +17,10 @@
 
 #[cfg(target_arch = "wasm32")]
 use game_core::action::InputResponse;
-use game_core::engine::{board, ChoiceOption, EngineOutcome, OptionTarget, PromptNature};
+use game_core::card_registry::CardRegistry;
+use game_core::engine::{
+    board, ChoiceOption, EngineOutcome, InputRequest, OptionTarget, PromptNature,
+};
 use game_core::state::{AdvanceDeck, GameState};
 use leptos::prelude::*;
 
@@ -26,6 +29,7 @@ use crate::card;
 #[cfg(target_arch = "wasm32")]
 use crate::controls;
 use crate::drag::Drag;
+use crate::registry;
 use crate::store::{self, ClientState};
 
 /// The card a decision came from, as the modal names it: the printed name and
@@ -54,17 +58,21 @@ pub struct Decision {
     pub source: Option<DecisionSource>,
 }
 
-/// The live decision prompt, or `None` when the live prompt is a selection (or
-/// there is none). Reads the nature the engine attached — never the prompt's
-/// shape. Pure.
-#[must_use]
-pub fn live_decision(state: &ClientState) -> Option<Decision> {
+/// The live prompt when it is a decision. Reads the nature the engine
+/// attached — never the prompt's shape.
+fn live_decision_request(state: &ClientState) -> Option<&InputRequest> {
     let Some(EngineOutcome::AwaitingInput { request, .. }) = &state.outcome else {
         return None;
     };
-    if request.nature != PromptNature::Decision {
-        return None;
-    }
+    (request.nature == PromptNature::Decision).then_some(request)
+}
+
+/// The live decision prompt, or `None` when the live prompt is a selection (or
+/// there is none). Reads the nature the engine attached — never the prompt's
+/// shape; the source card's name and text come from `cards`. Pure.
+#[must_use]
+pub fn live_decision(cards: &CardRegistry, state: &ClientState) -> Option<Decision> {
+    let request = live_decision_request(state)?;
     Some(Decision {
         prompt: request.prompt.clone(),
         options: request.options.clone(),
@@ -72,7 +80,7 @@ pub fn live_decision(state: &ClientState) -> Option<Decision> {
             .game
             .as_ref()
             .zip(request.target.as_ref())
-            .and_then(|(game, target)| decision_source(game, target)),
+            .and_then(|(game, target)| decision_source(cards, game, target)),
     })
 }
 
@@ -82,7 +90,7 @@ pub fn live_decision(state: &ClientState) -> Option<Decision> {
 /// (the pattern [`crate::skill_test_result::modal_is_live`] already set). Pure.
 #[must_use]
 pub fn modal_is_live(state: &ClientState) -> bool {
-    live_decision(state).is_some()
+    live_decision_request(state).is_some()
 }
 
 /// Context newtype carrying "a decision modal is up" as a signal, so a board
@@ -106,7 +114,11 @@ pub fn menus_are_suppressed() -> bool {
 /// Resolve a decision's anchor to the card it names. `None` for an anchor that
 /// is not a card the modal can print — no decision site raises one today, and a
 /// modal with no source header is a better failure than a fabricated one.
-fn decision_source(game: &GameState, target: &OptionTarget) -> Option<DecisionSource> {
+fn decision_source(
+    cards: &CardRegistry,
+    game: &GameState,
+    target: &OptionTarget,
+) -> Option<DecisionSource> {
     let (code, face) = match target {
         OptionTarget::Act => (
             game.act_deck.get(game.act_index)?.code.clone(),
@@ -122,7 +134,7 @@ fn decision_source(game: &GameState, target: &OptionTarget) -> Option<DecisionSo
         ),
         _ => return None,
     };
-    let (name, text) = act_agenda::name_and_text_src(&code, face);
+    let (name, text) = act_agenda::name_and_text_src(cards, &code, face);
     Some(DecisionSource { name, text })
 }
 
@@ -141,6 +153,7 @@ fn decision_source(game: &GameState, target: &OptionTarget) -> Option<DecisionSo
 #[component]
 pub fn DecisionView() -> impl IntoView {
     let store = store::use_store();
+    let cards = registry::use_cards();
     // The prompt's fingerprint: which applied batch a live modal is up for. The
     // batch count is what tells one prompt from the next when liveness does not
     // — one decision answered straight into another (#857).
@@ -151,7 +164,7 @@ pub fn DecisionView() -> impl IntoView {
     view! {
         {move || {
             let st = store.get();
-            let Some(decision) = live_decision(&st) else {
+            let Some(decision) = live_decision(cards, &st) else {
                 return ().into_any();
             };
             let source = decision.source.map(|s| {
@@ -225,7 +238,7 @@ mod tests {
         CardInstanceId, ChaosToken, Continuation, GameStateBuilder, InvestigatorId,
         Owner as CardOwner, TokenResolution, UseKind,
     };
-    use game_core::{card_registry, test_support};
+    use game_core::test_support;
 
     use super::*;
     use crate::skill_test_result;
@@ -246,12 +259,6 @@ mod tests {
             step: AdvanceStep::FireReverse,
             trigger: AdvanceTrigger::Forced,
         })
-    }
-
-    fn install_registry() {
-        // Idempotent (`OnceLock`, first-wins) and safe in the web lib test
-        // binary, which has no competing installer.
-        let _ = card_registry::install(REGISTRY);
     }
 
     fn branches() -> Vec<ChoiceOption> {
@@ -289,7 +296,7 @@ mod tests {
             None,
             InputRequest::pick_single("Choose an enemy", branches()),
         );
-        assert!(live_decision(&state).is_none());
+        assert!(live_decision(&REGISTRY, &state).is_none());
         assert!(!modal_is_live(&state));
     }
 
@@ -304,14 +311,13 @@ mod tests {
 
     #[test]
     fn a_decision_names_the_card_instance_it_is_printed_on() {
-        install_registry();
         let state = awaiting(
             Some(board_with_first_aid()),
             InputRequest::pick_single("Choose one", branches())
                 .at(OptionTarget::CardInstance(KIT))
                 .deciding(),
         );
-        let d = live_decision(&state).expect("a live decision");
+        let d = live_decision(&REGISTRY, &state).expect("a live decision");
         let source = d.source.expect("First Aid is in play, so it is named");
         assert_eq!(source.name, "First Aid");
         assert!(
@@ -330,7 +336,6 @@ mod tests {
     /// 01168, attached to it.
     #[test]
     fn a_decision_names_a_card_at_a_location_or_attached_to_one() {
-        install_registry();
         let lita = CardInstanceId(60);
         let fog = CardInstanceId(61);
         let mut parlor = test_support::test_location(5, "Parlor");
@@ -355,7 +360,7 @@ mod tests {
                     .at(OptionTarget::CardInstance(instance))
                     .deciding(),
             );
-            let source = live_decision(&state)
+            let source = live_decision(&REGISTRY, &state)
                 .expect("a live decision")
                 .source
                 .unwrap_or_else(|| panic!("{name} is on the board, so it is named"));
@@ -368,7 +373,6 @@ mod tests {
     /// track.
     #[test]
     fn an_advancing_agenda_is_named_by_its_reverse() {
-        install_registry();
         let mut game = GameStateBuilder::new()
             .with_investigator(test_support::test_investigator(1))
             .build();
@@ -387,7 +391,7 @@ mod tests {
                 .at(OptionTarget::Agenda)
                 .deciding(),
         );
-        let source = live_decision(&state)
+        let source = live_decision(&REGISTRY, &state)
             .expect("a live decision")
             .source
             .expect("the agenda is named");
@@ -411,12 +415,11 @@ mod tests {
     /// unanswerable prompt is a deadlock, not a cosmetic slip (ADR 0011).
     #[test]
     fn a_decision_with_no_live_source_still_carries_its_branches() {
-        install_registry();
         let state = awaiting(
             Some(board_with_first_aid()),
             InputRequest::pick_single("Choose one", branches()).deciding(),
         );
-        let d = live_decision(&state).expect("a live decision");
+        let d = live_decision(&REGISTRY, &state).expect("a live decision");
         assert!(d.source.is_none(), "un-anchored: nothing to name");
         assert_eq!(d.options.len(), 2);
     }
@@ -425,14 +428,13 @@ mod tests {
     /// rather than fabricating a source.
     #[test]
     fn an_unresolvable_anchor_names_nothing() {
-        install_registry();
         let state = awaiting(
             Some(board_with_first_aid()),
             InputRequest::pick_single("Choose one", branches())
                 .at(OptionTarget::CardInstance(CardInstanceId(999)))
                 .deciding(),
         );
-        assert!(live_decision(&state)
+        assert!(live_decision(&REGISTRY, &state)
             .expect("a live decision")
             .source
             .is_none());
@@ -478,7 +480,6 @@ mod tests {
     /// step an act decision can arise from.
     #[test]
     fn an_advancing_act_is_named_and_quoted_by_its_reverse() {
-        install_registry();
         let mut game = GameStateBuilder::new()
             .with_investigator(test_support::test_investigator(1))
             .build();
@@ -497,7 +498,7 @@ mod tests {
                 .at(OptionTarget::Act)
                 .deciding(),
         );
-        let source = live_decision(&state)
+        let source = live_decision(&REGISTRY, &state)
             .expect("a live decision")
             .source
             .expect("the act is named");
@@ -519,7 +520,6 @@ mod tests {
     /// reaching for the reverse.
     #[test]
     fn an_act_anchor_resolves_to_the_current_act() {
-        install_registry();
         let mut game = GameStateBuilder::new()
             .with_investigator(test_support::test_investigator(1))
             .build();
@@ -534,7 +534,7 @@ mod tests {
                 .at(OptionTarget::Act)
                 .deciding(),
         );
-        let source = live_decision(&state)
+        let source = live_decision(&REGISTRY, &state)
             .expect("a live decision")
             .source
             .expect("the act is named");

@@ -28,6 +28,9 @@ serde_json = "1"
 web-sys = { version = "0.3", features = ["Storage", "Location", "Window", "Element", "HtmlElement", "HtmlDivElement", "MouseEvent", "EventTarget", "PointerEvent"] }
 
 [dev-dependencies]
+# `TEST_REGISTRY` / `TEST_REGISTRIES`: the real corpus with game-core's
+# synthetic test cards composed in, for the tests to provide at mount.
+cards = { path = "../cards", features = ["test-support"] }
 wasm-bindgen-test = "0.3"
 wasm-bindgen = "0.2"
 web-sys = { version = "0.3", features = ["Element", "EventTarget", "NodeList", "HtmlElement", "HtmlButtonElement", "HtmlHeadElement", "MouseEvent", "PointerEvent", "PointerEventInit"] }

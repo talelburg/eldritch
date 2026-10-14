@@ -1,11 +1,9 @@
 //! Headless render test for the location-card fields that come from the corpus
-//! (traits / ability text / victory). Its own binary so it can install the real
-//! `cards::REGISTRY` without colliding with `tests/map.rs`'s synthetic registry
-//! (registry install is first-wins per process). Mounts `location_map` directly
-//! (no investigator panel → no `TEST_INV` capacity lookup). wasm32-only.
+//! (traits / ability text / victory), against the real corpus
+//! (`cards::TEST_REGISTRY`). Mounts `location_map` directly (no investigator
+//! panel → no `TEST_INV` capacity lookup). wasm32-only.
 #![cfg(target_arch = "wasm32")]
 
-use cards::REGISTRY;
 use game_core::state::{CardCode, GameStateBuilder};
 use game_core::test_support;
 use leptos::prelude::document;
@@ -13,6 +11,7 @@ use leptos::{mount, task};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::map;
+use web::registry::provide_cards;
 use web_sys::Element;
 
 wasm_bindgen_test_configure!(run_in_browser);
@@ -32,13 +31,15 @@ fn node_text(name: &str) -> String {
 
 #[wasm_bindgen_test]
 async fn revealed_location_shows_metadata_text_and_victory() {
-    test_support::install_registry_with_test_cards(REGISTRY);
     // Attic 01113: victory 1, Forced text "After you enter the Attic: Take 1 horror."
     let mut attic = test_support::test_location(1, "Attic");
     attic.code = CardCode::new("01113");
     attic.revealed = true;
     let game = GameStateBuilder::new().with_location(attic).build();
-    mount::mount_to_body(move || map::location_map(&game));
+    mount::mount_to_body(move || {
+        provide_cards(&cards::TEST_REGISTRY);
+        map::location_map(&game)
+    });
     task::tick().await;
 
     let text = node_text("Attic");
@@ -48,13 +49,15 @@ async fn revealed_location_shows_metadata_text_and_victory() {
 
 #[wasm_bindgen_test]
 async fn revealed_location_shows_metadata_traits() {
-    test_support::install_registry_with_test_cards(REGISTRY);
     // Miskatonic University 01129: traits "Arkham."
     let mut misk = test_support::test_location(2, "Miskatonic University");
     misk.code = CardCode::new("01129");
     misk.revealed = true;
     let game = GameStateBuilder::new().with_location(misk).build();
-    mount::mount_to_body(move || map::location_map(&game));
+    mount::mount_to_body(move || {
+        provide_cards(&cards::TEST_REGISTRY);
+        map::location_map(&game)
+    });
     task::tick().await;
 
     let text = node_text("Miskatonic University");
@@ -63,7 +66,6 @@ async fn revealed_location_shows_metadata_traits() {
 
 #[wasm_bindgen_test]
 async fn unrevealed_location_withholds_metadata() {
-    test_support::install_registry_with_test_cards(REGISTRY);
     // Attic 01113 has victory 1 + Forced text ("...Take 1 horror."); unrevealed
     // must withhold all of it (hidden info).
     let mut attic = test_support::test_location(3, "Hidden Attic");
@@ -72,7 +74,10 @@ async fn unrevealed_location_withholds_metadata() {
     attic.shroud = 7;
     attic.clues = 9;
     let game = GameStateBuilder::new().with_location(attic).build();
-    mount::mount_to_body(move || map::location_map(&game));
+    mount::mount_to_body(move || {
+        provide_cards(&cards::TEST_REGISTRY);
+        map::location_map(&game)
+    });
     task::tick().await;
 
     let text = node_text("Hidden Attic");

@@ -1,9 +1,8 @@
 //! #484: the board renders card/location *names*, not raw codes/ids.
-//! wasm32-only (browser DOM). Own test binary so it can install the real
-//! `cards::REGISTRY` (a code→name source) without colliding with other binaries.
+//! wasm32-only (browser DOM). Runs against the real corpus
+//! (`cards::TEST_REGISTRY`), the code→name source.
 #![cfg(target_arch = "wasm32")]
 
-use cards::REGISTRY;
 use game_core::engine::EngineOutcome;
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId};
 use game_core::test_support;
@@ -12,16 +11,13 @@ use leptos::{mount, prelude, task};
 use protocol::ServerMessage;
 use wasm_bindgen_test::*;
 use web::board::BoardView;
+use web::registry::provide_cards;
 use web::store::{self, ClientState};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
 #[wasm_bindgen_test]
 async fn board_renders_card_and_location_names() {
-    // Install the real corpus registry (the code→name source). Idempotent
-    // (OnceLock, first-wins); `web` has no `ctor` dev-dep, so install in-test.
-    test_support::install_registry_with_test_cards(REGISTRY);
-
     let inv_id = InvestigatorId(1);
     let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LocationId(10));
@@ -35,6 +31,7 @@ async fn board_renders_card_and_location_names() {
 
     let store = RwSignal::new(ClientState::default());
     mount::mount_to_body(move || {
+        provide_cards(&cards::TEST_REGISTRY);
         provide_context(store);
         leptos::view! { <BoardView/> }
     });

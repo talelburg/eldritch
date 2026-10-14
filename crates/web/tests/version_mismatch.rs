@@ -12,6 +12,7 @@ use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::app::Overlays;
 use web::interaction::{ConfirmAnchor, MultiSelect, PendingOptions};
+use web::registry::provide_cards;
 use web::store::{ClientState, ConnStatus};
 use web::version_mismatch::VersionMismatchView;
 use web_sys::HtmlElement;
@@ -134,6 +135,8 @@ async fn the_real_overlay_set_declares_the_mismatch_card_last() {
         .expect("append_child");
 
     mount_to(container.clone(), move || {
+        // The decision modal among the overlays reads the registry.
+        provide_cards(&test_support::TEST_REGISTRY);
         provide_context(store);
         let pending = Signal::derive(move || store.with(web::interaction::pending_options));
         provide_context(PendingOptions(pending));
