@@ -145,8 +145,9 @@ impl GameStateBuilder {
     /// Build and settle into a [`TestSession`] driven with the registries named
     /// by [`with_registries`](GameStateBuilder::with_registries): equivalent to
     /// `TestSession::new(self.build(), regs)`. Lives here (test-only) rather
-    /// than on the builder itself so the production builder in
-    /// [`crate::state`] carries no test dependency.
+    /// than on the builder itself because [`TestSession`] is a test type: the
+    /// production builder in [`crate::state`] holds only the optional
+    /// registries slot this reads.
     ///
     /// # Panics
     ///
