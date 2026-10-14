@@ -380,6 +380,30 @@ fn reject_incompatible_costs(costs: &[Cost]) -> Result<(), Cow<'static, str>> {
     Ok(())
 }
 
+/// Reject a [`Cost::TakeHarm`](card_dsl::dsl::Cost::TakeHarm) on an `[action]`
+/// ability (#1029). On the action path the harm would have to resolve before
+/// the attacks of opportunity — Appendix I step 2, *"Upon completion of this
+/// step, attacks of opportunity, if applicable, resolve"* — and the
+/// take-an-action step's hook pays its costs inline and parks the effect behind
+/// the attacks, with no place for a deal frame between the two. Core and
+/// Dunwich print no such card, so it is deliberately unlifted (YAGNI, as with
+/// `reject_incompatible_costs`); the first card to print one lifts it.
+fn reject_harm_cost_on_an_action(
+    code: &CardCode,
+    action_cost: u8,
+    costs: &[Cost],
+) -> Result<(), Cow<'static, str>> {
+    if action_cost > 0 && costs.iter().any(|c| matches!(c, Cost::TakeHarm { .. })) {
+        return Err(format!(
+            "ActivateAbility: {code}'s Cost::TakeHarm is supported only on a [fast] ability, not \
+             an [action] ability: its harm would have to resolve before the attacks of \
+             opportunity, which the take-an-action step does not do yet"
+        )
+        .into());
+    }
+    Ok(())
+}
+
 /// Reject an ability whose *"Limit X per \[period\]"* sits on a source with no
 /// card instance to record the use against — a location, an enemy, the act or
 /// the agenda.
@@ -563,6 +587,7 @@ pub(crate) fn check_activate_ability(
     }
 
     reject_incompatible_costs(&costs)?;
+    reject_harm_cost_on_an_action(&source_code, action_cost, &costs)?;
     reject_source_costs_without_an_instance(source, &source_code, &costs)?;
     // Before the gate: a designated ability's change-state question is this
     // check's (`initiation::performs_an_action`).

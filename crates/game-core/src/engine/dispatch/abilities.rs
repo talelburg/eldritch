@@ -7,6 +7,7 @@ use card_dsl::dsl::{ActionDesignator, Cost, Effect, Trigger, UsageLimit};
 
 use crate::card_registry;
 use crate::engine::dispatch::actions::take::{self, ActionDescription};
+use crate::engine::dispatch::combat;
 use crate::engine::dispatch::initiation;
 use crate::engine::dispatch::legality::{self, ActivateCheckResult};
 use crate::engine::dispatch::uses::{self, SpendUsesError};
@@ -15,8 +16,8 @@ use crate::engine::outcome::EngineOutcome;
 use crate::engine::{abilities_in_effect, ability_source, board, Cx};
 use crate::event::Event;
 use crate::state::{
-    AbilityAddress, AbilitySource, ActionResume, CandidateSource, CardCode, CardInPlay,
-    CardInstanceId, GameState, Investigator, InvestigatorId, UseKind,
+    AbilityAddress, AbilitySource, ActionResolutionFrame, ActionResume, CandidateSource, CardCode,
+    CardInPlay, CardInstanceId, GameState, Investigator, InvestigatorId, UseKind,
 };
 
 /// Handler for `TurnAction::ActivateAbility`.
@@ -43,6 +44,18 @@ use crate::state::{
 /// resume ([`resume_activate_ability`]). A fast ability spends no action, so it
 /// takes none: it pays, announces and resolves synchronously, as an exempt
 /// action ability does.
+///
+/// # A harm cost
+///
+/// A fast ability with a [`Cost::TakeHarm`] pays its other costs inline and
+/// announces, then parks both halves on an `ActionResolution` frame — the
+/// actor-`Active` gate attacks of opportunity use — and deals the harm on top
+/// (#1029). The harm, its soak prompt and every nested sequence it opens
+/// therefore resolve first: Appendix I pays *"the cost(s)"* at step 2, before the
+/// effect at steps 3–4. If the harm eliminates the controller, the gate
+/// suppresses the effect, as Dynamite Blast 01024's ruling has it for an attack
+/// of opportunity: *"If the enemies' attacks defeat you, the effects won't
+/// resolve."* An action-cost ability with the cost is refused at validation.
 ///
 /// # Timing gate
 ///
@@ -147,9 +160,20 @@ pub(super) fn activate_ability(
         if let Err(reason) = pay_and_announce(cx) {
             return EngineOutcome::Rejected { reason };
         }
-        let eval_ctx = EvalContext::for_controller_with_source(investigator, source);
-        push_activation_resolution(cx, designator.as_ref(), &effect, eval_ctx);
-        return EngineOutcome::Done;
+        let Some((damage, horror)) = harm_cost(&costs) else {
+            let eval_ctx = EvalContext::for_controller_with_source(investigator, source);
+            push_activation_resolution(cx, designator.as_ref(), &effect, eval_ctx);
+            return EngineOutcome::Done;
+        };
+        cx.state.continuations.push(ActionResolutionFrame {
+            investigator,
+            resume: ActionResume::ActivateAbility {
+                source,
+                designator,
+                effect,
+            },
+        });
+        return combat::deal_harm(cx, investigator, damage, horror);
     }
 
     // An action-cost ability is taken as an action. The step pays the actions,
@@ -164,6 +188,18 @@ pub(super) fn activate_ability(
             effect,
         })
     })
+}
+
+/// The damage and horror an ability's [`Cost::TakeHarm`] costs total, or `None`
+/// when it declares none.
+fn harm_cost(costs: &[Cost]) -> Option<(u8, u8)> {
+    costs
+        .iter()
+        .filter_map(|cost| match cost {
+            Cost::TakeHarm { damage, horror } => Some((*damage, *horror)),
+            _ => None,
+        })
+        .reduce(|(d1, h1), (d2, h2)| (d1.saturating_add(d2), h1.saturating_add(h2)))
 }
 
 /// Push an activated ability's two halves for the global drive loop, in
@@ -314,6 +350,10 @@ fn pay_activation_costs(
             Cost::DiscardCardFromHand => {
                 unreachable!("DiscardCardFromHand rejected earlier in check_cost_payable")
             }
+            // The harm is not paid inline: it is dealt through the deal frame
+            // once every other cost is paid and the ability announced, by
+            // `activate_ability` (`harm_cost`).
+            Cost::TakeHarm { .. } => {}
         }
     }
     Ok(())
@@ -391,6 +431,7 @@ fn cost_label(cost: &Cost) -> &'static str {
         Cost::SpendUses { .. } => "spend-uses",
         Cost::DiscardSelf => "discard-self",
         Cost::DiscardCardFromHand => "discard-a-card-from-hand",
+        Cost::TakeHarm { .. } => "take-harm",
     }
 }
 
@@ -515,6 +556,8 @@ pub(super) fn check_cost_payable(
         // Source is in play by the activation precondition (check_activate_ability
         // located it in cards_in_play), so it is always payable.
         Cost::DiscardSelf => Ok(()),
+        // You can always take harm, even lethal harm.
+        Cost::TakeHarm { .. } => Ok(()),
         Cost::DiscardCardFromHand => Err(
             "TODO: Cost::DiscardCardFromHand requires AwaitingInput + ResolveInput \
              dispatch; no card uses this cost yet so the engine consumer hasn't landed."
