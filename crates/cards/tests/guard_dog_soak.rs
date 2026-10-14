@@ -80,8 +80,8 @@ fn soak_state(assets: &[&str], damage: u8, enemies: Vec<Enemy>) -> GameState {
         .in_play(assets.iter().copied())
         // A deck with cards left in it. The Upkeep draw these cases cascade
         // through otherwise draws from an empty deck, whose penalty is 1
-        // horror (#429) — which Guard Dog's 1 printed sanity soaks and dies
-        // to, in the middle of a test measuring what the *attack* did to it.
+        // horror (#429) — which offers Guard Dog's 1 printed sanity the soak,
+        // in the middle of a test measuring what the *attack* did to it.
         .deck(["01087"; 5]);
     enemies
         .into_iter()

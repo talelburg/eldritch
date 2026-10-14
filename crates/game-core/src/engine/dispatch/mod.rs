@@ -42,7 +42,7 @@ pub(crate) mod combat;
 mod control;
 pub(super) mod coordinator;
 mod cursor;
-// pub(super): evaluator reaches take_damage/take_horror via the full path
+// pub(super): native_cx reaches take_damage/defeat_investigator via the full path
 // crate::engine::dispatch::elimination (a sibling of dispatch).
 pub(super) mod elimination;
 pub(super) mod encounter;

@@ -189,12 +189,10 @@ pub(super) struct Soaker {
 ///
 /// Soak-first deterministic assignment, used by [`soak_and_place`] when no
 /// point is contested (no soaker with capacity) and by the remaining
-/// synchronous callers of `take_damage`/`take_horror`. The interactive
-/// per-point distribution (#44/K5) lives in [`deal_enemy_attack`] /
-/// [`resume_damage_distribution`] and `begin_deal_damage`; the two sites
-/// still routed through the synchronous auto-soak wrapper are tracked in
-/// `TODO(#427)` (Dynamite Blast's native loop) and `TODO(#429)` (the
-/// deck-out horror penalty).
+/// synchronous caller, `take_damage`. The interactive per-point distribution
+/// (#44/K5) lives in [`deal_enemy_attack`] / [`resume_damage_distribution`] and
+/// `begin_deal_damage`; the one site still routed through the synchronous
+/// auto-soak wrapper is tracked in `TODO(#427)` (Dynamite Blast's native loop).
 pub(super) fn assign_attack(soakers: &[Soaker], mut damage: u8, mut horror: u8) -> Assignment {
     let mut assignment = Assignment::default();
     for soaker in soakers {
@@ -448,18 +446,18 @@ pub(super) fn apply_horror_numeric(cx: &mut Cx, investigator: InvestigatorId, am
 /// then self (soak-first, RR p.7), place simultaneously, and defeat overflowed
 /// assets — **synchronously, in one call** (#44/K5a).
 ///
-/// This is the shape the whole of dealing damage had before #727, and the two
-/// callers left on it are `take_damage` / `take_horror`, whose own callers do
-/// synchronous work afterwards (Dynamite Blast 01024's `for inv in
-/// investigators` loop most of all). So it announces neither
+/// This is the shape the whole of dealing damage had before #727, and the one
+/// caller left on it is `take_damage`, whose own caller does synchronous work
+/// afterwards (Dynamite Blast 01024's `for inv in investigators` loop). So it
+/// announces neither
 /// [`DamageAssigned`](super::emit::TimingEvent::DamageAssigned) nor
 /// [`DamagePlaced`](super::emit::TimingEvent::DamagePlaced): there is no cursor
 /// here to sequence two emits on, and emitting one synchronously is what ADR
 /// 0003 forbids.
 ///
-/// TODO(#728): migrate both entry points onto [`begin_deal_damage`]. Until then
-/// an ability keyed to either condition fires for an enemy attack and for
-/// `Effect::Deal` but not for these.
+/// TODO(#728): migrate that entry point onto [`deal_harm`]. Until then an
+/// ability keyed to either condition fires for every other harm but not for
+/// this one.
 /// Nothing in the Core or Dunwich corpus observes the gap.
 ///
 /// `build_soakers` returns empty when no registry is installed or the
@@ -500,6 +498,30 @@ pub(crate) fn begin_deal_damage(
         },
     });
     EngineOutcome::Done
+}
+
+/// Deal `damage` + `horror` to `investigator` from anything that is not an enemy
+/// attack: the one harm adapter (#1025). It begins a deal with
+/// [`DamageSource::Effect`], so the harm is distributed through the interactive
+/// soak prompt and announces both `DamageAssigned` and `DamagePlaced`, exactly as
+/// an enemy attack's does.
+///
+/// **Tail position** (ADR 0003), like [`begin_deal_damage`]: nothing is placed
+/// when this returns. A caller with work to do afterwards parks it on a frame
+/// beneath first. `deal_harm(.., 0, 0)` deals nothing and pushes no frame.
+#[must_use = "deal_harm only pushes the deal frame: work after the harm belongs on a \
+              frame beneath it, not after this call (ADR 0003). Return the outcome, or \
+              bind it to `_` at a site whose caller owns the suspension channel"]
+pub(crate) fn deal_harm(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    damage: u8,
+    horror: u8,
+) -> EngineOutcome {
+    if damage == 0 && horror == 0 {
+        return EngineOutcome::Done;
+    }
+    begin_deal_damage(cx, investigator, damage, horror, DamageSource::Effect)
 }
 
 /// Build the eligible soakers for an enemy attack against `investigator`
@@ -971,7 +993,9 @@ pub(crate) fn drive_deal_damage(cx: &mut Cx) -> EngineOutcome {
                 // `AttackLoop`'s exhaust and the next attacker (#704).
                 DamageSource::EnemyAttack { .. } => EngineOutcome::Done,
                 // K5b-2: resume the parked effect walk, so subsequent effects
-                // run (and may prompt again) with no point lost (#422/#44).
+                // run (and may prompt again) with no point lost (#422/#44). A
+                // `deal_harm` caller's own work (a native's enclosing frames, a
+                // drawn weakness's Revelation) is likewise on the frames beneath.
                 DamageSource::Effect => choice::resume_effect_walk(cx),
             }
         }

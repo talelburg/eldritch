@@ -145,7 +145,7 @@ fn draw_by_defeated_investigator_is_rejected() {
 fn draw_with_low_sanity_investigator_defeated_by_reshuffle_horror() {
     // Interaction: 1-sanity investigator + empty deck + empty
     // discard → the 1-horror penalty defeats the investigator
-    // via take_horror's defeat path (#80). Verifies the Draw
+    // through the dealt horror's placement (#80, #1027). Verifies the Draw
     // flow correctly composes with the defeat helpers.
     // Pre-load accumulated_horror so remaining sanity = 1 (lethal with the 1-horror penalty).
     // max_sanity()=8 from TEST_INV; 7+1=8=defeated.
