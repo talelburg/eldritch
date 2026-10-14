@@ -60,7 +60,7 @@ mod tests {
     use crate::engine::Cx;
     use crate::event::Event;
     use crate::state::{CardCode, GameStateBuilder, Location, LocationId};
-    use crate::test_support;
+    use crate::test_support::{self, TEST_REGISTRIES};
 
     fn unrevealed(id: u32, code: &str, printed: ClueValue) -> Location {
         let mut loc = Location::new(LocationId(id), CardCode(code.into()), "L", 1, 0);
@@ -73,7 +73,7 @@ mod tests {
     #[test]
     fn reveal_places_per_investigator_clues_times_count() {
         let mut state = GameStateBuilder::new()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
             .with_seat(test_support::seat(2))
             .with_location(unrevealed(5, "x", ClueValue::PerInvestigator(2)))
@@ -89,7 +89,7 @@ mod tests {
     #[test]
     fn reveal_places_fixed_clues_regardless_of_count() {
         let mut state = GameStateBuilder::new()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
             .with_seat(test_support::seat(2))
             .with_location(unrevealed(5, "x", ClueValue::Fixed(3)))
@@ -109,7 +109,7 @@ mod tests {
         let mut loc = unrevealed(5, "x", ClueValue::PerInvestigator(1));
         loc.clues = 2;
         let mut state = GameStateBuilder::new()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
             .with_seat(test_support::seat(2))
             .with_location(loc)
@@ -132,7 +132,7 @@ mod tests {
     #[test]
     fn reveal_is_idempotent_on_already_revealed() {
         let mut state = GameStateBuilder::new()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
             .with_location(Location::new(
                 LocationId(5),

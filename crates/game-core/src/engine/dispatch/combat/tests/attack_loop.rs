@@ -3,7 +3,7 @@ use crate::action::{Action, PlayerAction};
 use crate::engine::enumerate::TurnAction;
 use crate::engine::outcome::OptionTarget;
 use crate::state::{EnemyPhaseFrame, LocationId};
-use crate::test_support::TestSession;
+use crate::test_support::{TestSession, TEST_REGISTRIES};
 
 /// The parked loop's re-exposure (#704): the head attacker's sequence has
 /// popped, so the loop takes it off, exhausts it, and — with none left —
@@ -21,7 +21,7 @@ fn drive_parked_attack_loop_exhausts_the_head_then_advances_the_cursor() {
     enemy.engaged_with = Some(inv_id);
 
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_turn_order([inv_id])
         .with_enemy(enemy)
@@ -85,7 +85,7 @@ fn a_head_attacker_that_dealt_nothing_still_exhausts() {
     enemy.engaged_with = Some(inv_id);
 
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_turn_order([inv_id])
         .with_enemy(enemy)
@@ -127,7 +127,7 @@ fn an_attack_of_opportunity_attacker_never_exhausts() {
     enemy.engaged_with = Some(inv_id);
 
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_turn_order([inv_id])
         .with_enemy(enemy)
@@ -160,7 +160,7 @@ fn drive_retaliate_deals_damage_but_does_not_exhaust_the_attacker() {
     enemy.attack_horror = 0;
     // Not engaged: a retaliate fires regardless of engagement, driven by enemy id.
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_enemy(enemy)
         .build();
@@ -195,7 +195,7 @@ fn drive_aoo_deals_damage_but_does_not_exhaust_the_attacker() {
     enemy.attack_damage = 1;
     enemy.attack_horror = 0;
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_enemy(enemy)
         .build();
@@ -231,7 +231,7 @@ fn engaged_by_two() -> TestSession {
     let mut e_b = test_support::test_enemy(6, "B"); // EnemyId(6), dmg 2
     e_b.attack_damage = 2;
     GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(here.0, "Study"))
         .with_seat(test_support::seat(1).at(here))
         .with_enemy_engaged(e_a, InvestigatorId(1))

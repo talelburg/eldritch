@@ -394,6 +394,7 @@ mod doom_agenda_tests {
     use crate::event::Event;
     use crate::scenario::ResolutionId;
     use crate::state::{Agenda, CardCode, GameStateBuilder};
+    use crate::test_support::TEST_REGISTRIES;
     use crate::{assert_event, test_support};
 
     #[test]
@@ -479,7 +480,7 @@ mod doom_agenda_tests {
         // forced on-advance ability binds the lead — so both are needed.
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
             .with_turn_order([inv])
             .build();
@@ -543,7 +544,7 @@ mod advance_act_tests {
     use crate::scenario::ResolutionId;
     use crate::state::{Act, CardCode, GameStateBuilder, InvestigatorId};
     use crate::test_support::TEST_REGISTRY;
-    use crate::test_support::{self, TestSession};
+    use crate::test_support::{self, TestSession, TEST_REGISTRIES};
 
     #[test]
     fn round_end_advance_affordable_tracks_hallway_clues_vs_threshold() {
@@ -551,7 +552,7 @@ mod advance_act_tests {
         let mut hall = test_support::test_location(1, "Hallway");
         hall.code = CardCode("HALL".into());
         let mut state = GameStateBuilder::new()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_location(hall)
             .with_seat(test_support::seat(1).at(LocationId(1)))
             .with_turn_order([InvestigatorId(1)])
@@ -586,7 +587,7 @@ mod advance_act_tests {
     fn advance_act_rejects_when_clues_insufficient() {
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1).clues(1))
             .open_turn(inv)
             .build();
@@ -614,7 +615,7 @@ mod advance_act_tests {
         // it (the game-core test registry knows nothing of 01110).
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             // Plenty of clues — the reject must be the objective, not affordability.
             .with_seat(test_support::seat(1).clues(5))
             .open_turn(inv)
@@ -632,7 +633,7 @@ mod advance_act_tests {
         );
         // Bypass the legality menu (the assert above already proves it's not
         // offered) to confirm the handler itself rejects, leaving state unchanged.
-        let session = TestSession::new(state, crate::engine::TEST_REGISTRIES)
+        let session = TestSession::new(state, TEST_REGISTRIES)
             .submit_off_menu(&TurnAction::AdvanceAct { investigator: inv });
         session.expect_rejected();
         assert!(
@@ -656,7 +657,7 @@ mod advance_act_tests {
     fn advance_act_spends_clues_and_advances_non_terminal() {
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1).clues(3))
             .open_turn(inv)
             .build();
@@ -671,7 +672,7 @@ mod advance_act_tests {
             },
         ];
 
-        let session = TestSession::new(state, crate::engine::TEST_REGISTRIES)
+        let session = TestSession::new(state, TEST_REGISTRIES)
             .take(&TurnAction::AdvanceAct { investigator: inv });
         session.assert_at_turn_menu(inv);
         assert_eq!(session.state().act_index, 1);
@@ -693,7 +694,7 @@ mod advance_act_tests {
     fn terminal_act_advances_and_its_reverse_latches_the_ending() {
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1).clues(2))
             .open_turn(inv)
             .build();
@@ -703,7 +704,7 @@ mod advance_act_tests {
         }];
 
         // The ending is latched, so the game is over: `Done`.
-        let result = TestSession::new(state, crate::engine::TEST_REGISTRIES)
+        let result = TestSession::new(state, TEST_REGISTRIES)
             .take(&TurnAction::AdvanceAct { investigator: inv })
             .finish();
         assert_eq!(result.outcome, EngineOutcome::Done);
@@ -723,7 +724,7 @@ mod advance_act_tests {
     fn advance_act_with_no_forced_ability_still_advances() {
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1).clues(2))
             .open_turn(inv)
             .build();
@@ -737,7 +738,7 @@ mod advance_act_tests {
                 clue_threshold: 3,
             },
         ];
-        let session = TestSession::new(state, crate::engine::TEST_REGISTRIES)
+        let session = TestSession::new(state, TEST_REGISTRIES)
             .take(&TurnAction::AdvanceAct { investigator: inv });
         session.assert_at_turn_menu(inv);
         assert_eq!(
@@ -752,7 +753,7 @@ mod advance_act_tests {
         let acting = InvestigatorId(1);
         let other = InvestigatorId(2);
         let mut state = GameStateBuilder::new()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1).clues(1))
             .with_seat(test_support::seat(2).clues(2))
             .with_turn_order([acting, other])
@@ -774,10 +775,9 @@ mod advance_act_tests {
         ];
 
         // Threshold 2: acting (1 clue) drained fully first, then 1 from `other`.
-        let session =
-            TestSession::new(state, crate::engine::TEST_REGISTRIES).take(&TurnAction::AdvanceAct {
-                investigator: acting,
-            });
+        let session = TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::AdvanceAct {
+            investigator: acting,
+        });
         session.assert_at_turn_menu(acting);
         let state = session.state();
         assert_eq!(

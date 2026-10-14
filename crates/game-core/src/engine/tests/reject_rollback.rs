@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::TEST_REGISTRIES;
 
 // The subject of this file is the rejection of a `ResolveInput` itself, so
 // each test sends one raw. The first two send it with no prompt outstanding:

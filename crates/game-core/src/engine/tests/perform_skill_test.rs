@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::TEST_REGISTRIES;
 
 /// Standard-difficulty Night of the Zealot symbol-token values.
 fn night_of_the_zealot_standard() -> TokenModifiers {

@@ -1,5 +1,5 @@
 use super::*;
-use crate::test_support::TEST_REGISTRY;
+use crate::test_support::{TEST_REGISTRIES, TEST_REGISTRY};
 
 const FIGHT: TurnAction = TurnAction::Fight {
     investigator: INV,

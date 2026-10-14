@@ -13,12 +13,7 @@
 //! use game_core::engine::enumerate::TurnAction;
 //! use game_core::state::{GameStateBuilder, InvestigatorId};
 //! use game_core::test_support;
-//! # use game_core::engine::Registries;
-//! # use game_core::scenario::ScenarioRegistry;
-//! # let registries = Registries {
-//! #     cards: &test_support::TEST_REGISTRY,
-//! #     scenarios: &ScenarioRegistry::EMPTY,
-//! # };
+//! # let registries = test_support::TEST_REGISTRIES;
 //!
 //! let state = GameStateBuilder::new()
 //!     .with_investigator(test_support::test_investigator(1))
@@ -603,12 +598,12 @@ mod set_aside_cards_tests {
 mod with_open_window_tests {
     use super::*;
     use crate::state::PhaseStep;
-    use crate::test_support::seat;
+    use crate::test_support::{seat, TEST_REGISTRIES};
 
     #[test]
     fn with_open_window_pushes_onto_the_stack() {
         let state = GameStateBuilder::new()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_seat(seat(1))
             .with_open_window(
                 FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
@@ -632,7 +627,7 @@ mod with_open_window_tests {
     #[test]
     fn with_open_window_stacks_in_order() {
         let state = GameStateBuilder::new()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_seat(seat(1))
             .with_open_window(
                 FastWindowKind::Phase(PhaseStep::MythosAfterDraws),

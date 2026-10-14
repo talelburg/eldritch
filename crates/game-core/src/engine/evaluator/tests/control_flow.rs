@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::TEST_REGISTRIES;
 
 fn state_with_in_flight_kind(kind: SkillTestKind) -> GameState {
     let mut state = state_with_clues_at_location(2);
@@ -85,7 +86,7 @@ fn if_skill_test_kind_runs_else_branch_when_present_and_kind_differs() {
 #[test]
 fn if_skill_test_kind_rejects_without_in_flight_test() {
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .build();
     let mut events = Vec::new();

@@ -322,7 +322,7 @@ mod tests {
         CardInstanceId, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
     };
     use crate::test_support::TEST_REGISTRY;
-    use crate::test_support::{self, SeatLookup as _};
+    use crate::test_support::{self, SeatLookup as _, TEST_REGISTRIES};
 
     /// A `ChooseOne` branch that is **live** — one `effect_can_change_state`
     /// cannot prove inert, so #664's mode filter keeps it in the offer. (An
@@ -335,7 +335,7 @@ mod tests {
     /// A state holding the investigator [`live_branch`] pays out to.
     fn state_with_investigator() -> GameState {
         GameStateBuilder::default()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
             .build()
     }
@@ -532,7 +532,7 @@ mod tests {
     /// and a [`test_support::TEST_ASSET`] in play (find it with [`asset`]).
     fn labelled_board() -> GameState {
         GameStateBuilder::default()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_location(test_support::test_location(HERE.0, "Study"))
             .with_seat(
                 test_support::seat(1)
@@ -713,7 +713,7 @@ mod tests {
     fn grounded_choice_anchors_investigators_to_their_card() {
         let ctx = EvalContext::for_controller(InvestigatorId(1));
         let state = GameStateBuilder::new()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
             .with_seat(test_support::seat(2))
             .build();

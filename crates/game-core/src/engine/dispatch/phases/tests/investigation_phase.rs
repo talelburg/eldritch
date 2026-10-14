@@ -4,13 +4,13 @@ use crate::engine::dispatch;
 use crate::engine::enumerate::TurnAction;
 use crate::engine::outcome::EngineOutcome;
 use crate::state::{GameStateBuilder, InvestigatorId, Phase, Status};
-use crate::test_support;
+use crate::test_support::{self, TEST_REGISTRIES};
 
 #[test]
 fn investigator_turn_defaults_to_not_ending() {
     // The builder-staged open-turn frame is not mid-end-turn.
     let state = GameStateBuilder::default()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .open_turn(InvestigatorId(1))
         .build();
@@ -28,7 +28,7 @@ fn open_turn_leaves_investigator_turn_frame_on_top() {
     // Reach the open turn the way production does: enter the Investigation
     // phase for a single investigator (no Fast cards → windows auto-skip).
     let mut state = GameStateBuilder::default()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_turn_order([InvestigatorId(1)])
         .with_phase(Phase::Investigation)
@@ -69,7 +69,7 @@ fn mulligan_completion_kicks_off_investigation_phase() {
     // windows during setup; the game begins after mulligans).
     // active_investigator defaults to None (set when the phase rotates).
     let session = GameStateBuilder::default()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_phase(Phase::Investigation)
         .with_turn_order([InvestigatorId(1)])
@@ -107,7 +107,7 @@ fn investigation_anchor_pushed_and_persists_through_turn() {
     // auto-skip closed.
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::default()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_turn_order([id])
         .with_phase(Phase::Investigation)
@@ -132,7 +132,7 @@ fn investigation_phase_emits_phase_started_and_rotates_to_lead() {
     // and then rotate to the first investigator in turn_order
     // (Rules Reference p.24 step 2.1 → window → step 2.2 lead-first).
     let mut state = GameStateBuilder::default()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_seat(test_support::seat(2))
         .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
@@ -205,7 +205,7 @@ fn investigation_phase_skips_defeated_lead_and_picks_first_active() {
     // Investigator 1 (lead) is Defeated; investigator 2 is Active.
     // investigation_phase must skip Id(1) and rotate to Id(2).
     let mut state = GameStateBuilder::default()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_seat(test_support::seat(2))
         .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
@@ -235,7 +235,7 @@ fn end_turn_for_last_investigator_ends_phase_and_steps_to_enemy() {
     // PhaseEnded(Investigation) (2.3) from investigation_phase_end,
     // then the cascade enters the Enemy phase.
     let session = GameStateBuilder::default()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .open_turn(InvestigatorId(1))
         .session()
@@ -286,7 +286,7 @@ fn end_turn_rotates_to_next_active_and_opens_turn_window() {
     // Two investigators: ending #1's turn returns to 2.2 for #2 and
     // opens the InvestigatorTurnBegins window for them.
     let session = GameStateBuilder::default()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_seat(test_support::seat(2))
         .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
@@ -325,7 +325,7 @@ fn step_phase_emits_no_phase_ended() {
     // downstream cascade may emit PhaseEnded for Enemy/Upkeep via
     // their own *_end helpers, but that's correct and expected.
     let mut state = GameStateBuilder::default()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_turn_order([InvestigatorId(1)])
         .with_phase(Phase::Investigation)
@@ -350,7 +350,7 @@ fn investigation_entry_emits_phase_started_then_windows_then_lead_active() {
     // both windows (test registry → nothing Fast-eligible) and lands
     // the lead active, with no PhaseEnded yet.
     let mut state = GameStateBuilder::default()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_turn_order([InvestigatorId(1)])
         .with_phase(Phase::Mythos)

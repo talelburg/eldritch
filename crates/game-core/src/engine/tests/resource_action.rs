@@ -1,5 +1,5 @@
 use super::*;
-use crate::test_support::TEST_REGISTRY;
+use crate::test_support::{TEST_REGISTRIES, TEST_REGISTRY};
 
 const RESOURCE: TurnAction = TurnAction::Resource { investigator: INV };
 

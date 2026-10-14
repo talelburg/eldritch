@@ -304,7 +304,7 @@ fn zone_left(placement: Placement) -> Zone {
 mod tests {
     use super::*;
     use crate::state::{GameState, GameStateBuilder, InvestigatorId, UseKind};
-    use crate::test_support::{self, seat};
+    use crate::test_support::{self, seat, TEST_REGISTRIES};
 
     /// The investigator whose areas the leaving cards sit in.
     const CONTROLLER: InvestigatorId = InvestigatorId(1);
@@ -342,7 +342,7 @@ mod tests {
         let mut ghoul = test_support::test_enemy(1, "Ghoul");
         ghoul.current_location = Some(STUDY);
         GameStateBuilder::new()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_seat(seat(CONTROLLER.0).at(STUDY))
             .with_seat(seat(OWNER.0).at(STUDY))
             .with_location(test_support::test_location(STUDY.0, "Study"))

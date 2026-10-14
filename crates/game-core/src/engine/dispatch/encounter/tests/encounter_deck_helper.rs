@@ -4,6 +4,7 @@ use crate::engine;
 use crate::event::Event;
 use crate::rng::RngState;
 use crate::state::{CardCode, GameStateBuilder};
+use crate::test_support::TEST_REGISTRIES;
 
 #[test]
 fn shuffle_encounter_deck_emits_event_when_two_or_more_cards() {
@@ -165,7 +166,7 @@ fn engine_record_encounter_deck_shuffled_drives_shuffle() {
     let result = engine::apply(
         state,
         Action::Engine(EngineRecord::EncounterDeckShuffled),
-        engine::TEST_REGISTRIES,
+        TEST_REGISTRIES,
     );
 
     assert!(

@@ -260,7 +260,7 @@ pub(in crate::engine::dispatch) fn fire_retaliate_if_any(
 mod tests {
     use super::*;
     use crate::state::{Continuation, GameStateBuilder, InFlightSkillTest, SkillTestId};
-    use crate::test_support;
+    use crate::test_support::{self, TEST_REGISTRIES};
 
     /// The `Fight` follow-up deals `1 + extra_damage + bonus_attack_damage`,
     /// reading the commit-time accumulator off the in-flight record
@@ -272,7 +272,7 @@ mod tests {
         let mut enemy = test_support::test_enemy(7, "Goon");
         enemy.max_health = 10; // avoid clamping so the dealt damage is observable
         let mut state = GameStateBuilder::new()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
             .with_enemy(enemy)
             .build();

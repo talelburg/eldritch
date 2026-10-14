@@ -131,7 +131,7 @@ pub(super) fn turn_frame_ending_mut(
 mod tests {
     use super::*;
     use crate::state::{GameStateBuilder, Status};
-    use crate::test_support;
+    use crate::test_support::{self, TEST_REGISTRIES};
 
     #[test]
     fn active_investigators_in_turn_order_excludes_eliminated() {
@@ -141,7 +141,7 @@ mod tests {
         let inv1 = InvestigatorId(1);
         let inv2 = InvestigatorId(2);
         let state = GameStateBuilder::new()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1).status(Status::Defeated))
             .with_seat(test_support::seat(2))
             .with_turn_order([inv1, inv2])

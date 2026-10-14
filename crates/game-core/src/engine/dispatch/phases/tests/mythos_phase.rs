@@ -3,12 +3,12 @@ use crate::assert_event;
 use crate::engine::dispatch;
 use crate::engine::outcome::InputKind;
 use crate::state::{GameStateBuilder, InvestigatorId, Phase, Status};
-use crate::test_support::{self, TestSession};
+use crate::test_support::{self, TestSession, TEST_REGISTRIES};
 
 #[test]
 fn mythos_phase_emits_phase_started_and_prompts_first_drawer() {
     let mut state = GameStateBuilder::default()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_seat(test_support::seat(2))
         .with_phase(Phase::Mythos)
@@ -50,7 +50,7 @@ fn mythos_drives_from_entry_via_the_loop() {
     // loop) and suspends at the first drawer prompt — same as the old
     // synchronous mythos_phase entry.
     let session = GameStateBuilder::default()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_phase(Phase::Mythos)
         .with_phase_anchor(MythosPhaseFrame {
@@ -77,7 +77,7 @@ fn mythos_anchor_pushed_during_phase() {
     // The Mythos driver pushes its anchor at entry; it sits beneath the
     // encounter-draw loop while the phase is suspended (slice 1a).
     let mut state = GameStateBuilder::default()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_phase(Phase::Mythos)
         .with_turn_order([InvestigatorId(1)])
@@ -142,7 +142,7 @@ fn mythos_phase_end_emits_phase_ended_and_steps_to_investigation() {
     // mythos_phase_end now runs only with the MythosPhase anchor on top
     // (slice 1a) — it pops the anchor as its first act.
     let mut state = GameStateBuilder::default()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_phase(Phase::Mythos)
         .with_turn_order([InvestigatorId(1)])
@@ -195,7 +195,7 @@ fn mythos_phase_end_emits_phase_ended_and_steps_to_investigation() {
 #[test]
 fn mythos_phase_skips_eliminated_lead_when_seeding_queue() {
     let mut state = GameStateBuilder::default()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_seat(test_support::seat(2))
         .with_phase(Phase::Mythos)
@@ -232,7 +232,7 @@ fn mythos_phase_skips_eliminated_lead_when_seeding_queue() {
 #[test]
 fn mythos_phase_with_all_investigators_eliminated_opens_after_draws_window() {
     let mut state = GameStateBuilder::default()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_phase(Phase::Mythos)
         .with_turn_order([InvestigatorId(1)])
@@ -267,7 +267,7 @@ fn mythos_phase_with_all_investigators_eliminated_opens_after_draws_window() {
 #[test]
 fn advance_encounter_draw_skips_eliminated_middle_investigator() {
     let mut state = GameStateBuilder::default()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_seat(test_support::seat(2).status(Status::Defeated))
         .with_seat(test_support::seat(3))
@@ -285,7 +285,7 @@ fn advance_encounter_draw_skips_eliminated_middle_investigator() {
 
     // inv1 draws: the queue drops inv1 and must skip the Defeated inv2,
     // landing on inv3.
-    let session = TestSession::new(state, crate::engine::TEST_REGISTRIES);
+    let session = TestSession::new(state, TEST_REGISTRIES);
     assert_eq!(
         session.state().current_encounter_drawer(),
         Some(InvestigatorId(1))
@@ -305,7 +305,7 @@ fn advance_encounter_draw_skips_eliminated_middle_investigator() {
 #[test]
 fn first_active_investigator_finds_first_active_skipping_eliminated() {
     let mut state = GameStateBuilder::default()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_seat(test_support::seat(2))
         .with_seat(test_support::seat(3))
@@ -332,7 +332,7 @@ fn first_active_investigator_finds_first_active_skipping_eliminated() {
 #[test]
 fn first_active_investigator_returns_none_when_all_eliminated() {
     let mut state = GameStateBuilder::default()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_turn_order([InvestigatorId(1)])
         .build();
@@ -354,7 +354,7 @@ fn first_active_investigator_returns_none_when_turn_order_empty() {
 #[test]
 fn next_active_investigator_after_skips_eliminated_middle() {
     let mut state = GameStateBuilder::default()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_seat(test_support::seat(2))
         .with_seat(test_support::seat(3))
@@ -392,7 +392,7 @@ fn next_active_investigator_after_skips_eliminated_middle() {
 #[test]
 fn next_active_investigator_after_returns_none_when_current_not_in_turn_order() {
     let state = GameStateBuilder::default()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_turn_order([InvestigatorId(1)])
         .build();
@@ -409,7 +409,7 @@ fn next_active_investigator_after_works_when_current_is_non_active() {
     // time we advance from them. The cursor still finds the right
     // successor.
     let mut state = GameStateBuilder::default()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_seat(test_support::seat(2))
         .with_turn_order([InvestigatorId(1), InvestigatorId(2)])

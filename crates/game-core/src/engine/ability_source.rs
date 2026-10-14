@@ -333,7 +333,7 @@ mod tests {
         AbilityAddress, Act, Agenda, CardInstanceId, EnemyId, GameStateBuilder, Owner,
     };
     use crate::test_support::TEST_REGISTRY;
-    use crate::test_support::{self, seat, SeatLookup as _};
+    use crate::test_support::{self, seat, SeatLookup as _, TEST_REGISTRIES};
 
     const STUDY: LocationId = LocationId(1);
     const HALLWAY: LocationId = LocationId(2);
@@ -398,7 +398,7 @@ mod tests {
         there.current_location = Some(HALLWAY);
 
         GameStateBuilder::new()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_location(study)
             .with_location(hallway)
             .with_enemy(here)
@@ -474,7 +474,7 @@ mod tests {
                                threat-area card CardCode(\"NOT_A_CARD\")")]
     fn an_unknown_colocated_threat_area_card_panics_in_debug() {
         let state = GameStateBuilder::new()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_location(test_support::test_location(STUDY.0, "Study"))
             .with_seat(seat(1).at(STUDY))
             .with_seat(seat(2).at(STUDY).threat_area(["NOT_A_CARD"]))
@@ -568,7 +568,7 @@ mod tests {
     /// is open.
     fn threat_area_with_a_player_card_and_a_treachery(turn: InvestigatorId) -> GameState {
         GameStateBuilder::new()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_location(test_support::test_location(STUDY.0, "Study"))
             .with_seat(
                 seat(1)

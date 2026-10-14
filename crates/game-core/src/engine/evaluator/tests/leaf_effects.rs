@@ -1,10 +1,11 @@
 use super::*;
+use crate::test_support::TEST_REGISTRIES;
 
 #[test]
 fn cancel_effect_sets_pending_cancellation() {
     // Effect::Cancel asserts an open window frame is present; stage a minimal one.
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .with_open_window(
             FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
@@ -28,7 +29,7 @@ fn cancel_effect_sets_pending_cancellation() {
 #[test]
 fn boost_attack_damage_accumulates_on_in_flight_test() {
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .build();
     let mut events = Vec::new();
@@ -83,7 +84,7 @@ fn boost_attack_damage_accumulates_on_in_flight_test() {
 #[test]
 fn discover_additional_clues_accumulates_on_in_flight_test() {
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .build();
     let mut events = Vec::new();
@@ -136,7 +137,7 @@ fn discover_additional_clues_accumulates_on_in_flight_test() {
 #[test]
 fn draw_cards_effect_draws_for_target() {
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).deck(["d1", "d2", "d3"]))
         .build();
     let mut events = Vec::new();
@@ -167,7 +168,7 @@ fn draw_cards_effect_draws_for_target() {
 #[test]
 fn attach_self_to_location_rejects_with_no_pending_event() {
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .build();
     let mut events = Vec::new();
@@ -183,7 +184,7 @@ fn attach_self_to_location_rejects_with_no_pending_event() {
 fn put_into_threat_area_with_clues_seeds_the_placed_instance() {
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .build();
     let mut events = Vec::new();
@@ -208,7 +209,7 @@ fn put_into_threat_area_with_clues_seeds_the_placed_instance() {
 fn put_into_threat_area_records_the_revealed_cards_owner() {
     for owner in [Owner::Investigator(InvestigatorId(1)), Owner::EncounterDeck] {
         let mut state = GameStateBuilder::new()
-            .with_registries(crate::engine::TEST_REGISTRIES)
+            .with_registries(TEST_REGISTRIES)
             .with_seat(seat(1))
             .build();
         let mut events = Vec::new();
@@ -231,7 +232,7 @@ fn put_into_threat_area_records_the_revealed_cards_owner() {
 #[test]
 fn put_into_threat_area_outside_a_revelation_rejects() {
     let mut state = GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .build();
     let mut events = Vec::new();

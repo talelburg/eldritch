@@ -13,7 +13,7 @@ use crate::engine::Registries;
 use crate::event::Event;
 use crate::scenario::{ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRegistry};
 use crate::state::{Act, CardCode, GameState, GameStateBuilder, InvestigatorId, Owner, SkillKind};
-use crate::test_support::{seat, terminal_code, TestSession, TEST_REGISTRY};
+use crate::test_support::{seat, terminal_code, TestSession, TEST_REGISTRIES, TEST_REGISTRY};
 
 const INV: InvestigatorId = InvestigatorId(1);
 
@@ -134,7 +134,7 @@ const STAMPING: Registries = Registries {
 /// The stamp scenario at `INV`'s turn menu, `INV` holding one clue.
 fn stamp_board() -> GameStateBuilder {
     GameStateBuilder::new()
-        .with_registries(crate::engine::TEST_REGISTRIES)
+        .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).clues(1))
         .open_turn(INV)
         .with_scenario_id(ScenarioId::new(STAMP))

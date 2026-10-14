@@ -3,6 +3,7 @@
 //! which names one.
 
 use super::*;
+use crate::test_support::TEST_REGISTRIES;
 
 const ADVANCE_ACT: TurnAction = TurnAction::AdvanceAct { investigator: INV };
 
