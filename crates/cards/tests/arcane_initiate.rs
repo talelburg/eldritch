@@ -171,7 +171,7 @@ fn its_doom_leaves_play_with_it() {
     assert!(s.state().investigators[&INV]
         .discard
         .contains(&CardCode::new(INITIATE)));
-    assert_eq!(board::doom_in_play(s.state()), 5, "its doom left with it",);
+    assert_eq!(board::doom_in_play(s.state()), 5, "its doom left with it");
 }
 
 /// The fast search takes the one Spell among the top 3 — Dark Memory

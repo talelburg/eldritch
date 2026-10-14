@@ -415,7 +415,7 @@ pub(crate) fn place_doom(cx: &mut Cx, instance_id: CardInstanceId, count: u8) {
 /// than the agenda (such as enemies, allies, locations, etc.) counts towards
 /// the amount of doom in play."* The agenda's threshold check compares this.
 ///
-/// Reads the unfiltered [`walk`], so a card in an eliminated investigator's
+/// Reads the unfiltered board walk, so a card in an eliminated investigator's
 /// area still counts: it is still in play until it leaves. Doom leaves play
 /// with its card, since it lives on the [`CardInPlay`] the leave-play exits
 /// take off the board. Enemy doom (Acolyte 01169) is not modeled yet.
