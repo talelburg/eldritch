@@ -387,7 +387,7 @@ fn reject_incompatible_costs(costs: &[Cost]) -> Result<(), Cow<'static, str>> {
 /// take-an-action step's hook pays its costs inline and parks the effect behind
 /// the attacks, with no place for a deal frame between the two. Core and
 /// Dunwich print no such card, so it is deliberately unlifted (YAGNI, as with
-/// `reject_incompatible_costs`); the first card to print one lifts it.
+/// `reject_incompatible_costs`); the first card to print one lifts it (#1031).
 fn reject_harm_cost_on_an_action(
     code: &CardCode,
     action_cost: u8,
@@ -395,9 +395,9 @@ fn reject_harm_cost_on_an_action(
 ) -> Result<(), Cow<'static, str>> {
     if action_cost > 0 && costs.iter().any(|c| matches!(c, Cost::TakeHarm { .. })) {
         return Err(format!(
-            "ActivateAbility: {code}'s Cost::TakeHarm is supported only on a [fast] ability, not \
-             an [action] ability: its harm would have to resolve before the attacks of \
-             opportunity, which the take-an-action step does not do yet"
+            "TODO(#1031): ActivateAbility: {code}'s Cost::TakeHarm on an [action] ability needs \
+             its harm resolved before the attacks of opportunity (lands with #1031); it is \
+             supported only on a [fast] ability"
         )
         .into());
     }
