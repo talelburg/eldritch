@@ -195,15 +195,8 @@ pub(crate) fn check_play_card(
         )
         .into());
     }
-    // Before the gate, as the activation path asks it: a designated event's
-    // change-state question is its action's (`initiation::performs_an_action`),
-    // so Blinding Light 01066's **Evade** with no enemy engaged is refused here,
-    // before its resources or its action are paid.
-    let designator = cards::play_designator(&abilities);
-    if let Some(designator) = designator {
-        designator::can_perform(state, investigator, designator)
-            .map_err(|why| Cow::from(format!("PlayCard: {why}")))?;
-    }
+    // Before the gate, as the activation path asks it.
+    let designator = check_play_designator(state, investigator, &abilities)?;
     // The initiation gate, as a play (ADR 0017): the investigator is Active, an
     // event's effect can change the game state (#495), no "cannot play" forbids
     // the card's type (Dissonant Voices 01165, #852), and its resource cost can
@@ -306,6 +299,25 @@ pub(crate) fn check_play_card(
         is_fast,
         card_type,
     })
+}
+
+/// The bold designator the card's `OnPlay` ability prints, if any, once it is
+/// known the investigator can perform its action — refused otherwise. A
+/// designated event's change-state question is its action's
+/// (`initiation::performs_an_action`), so Blinding Light 01066's **Evade** with
+/// no enemy engaged is refused here, before its resources or its action are
+/// paid, as `check_activation_target_available` refuses an activation.
+fn check_play_designator<'a>(
+    state: &GameState,
+    investigator: InvestigatorId,
+    abilities: &'a [Ability],
+) -> Result<Option<&'a ActionDesignator>, Cow<'static, str>> {
+    let designator = cards::play_designator(abilities);
+    if let Some(designator) = designator {
+        designator::can_perform(state, investigator, designator)
+            .map_err(|why| Cow::from(format!("PlayCard: {why}")))?;
+    }
+    Ok(designator)
 }
 
 /// Reject an activation that cannot get what it needs, at the check layer —

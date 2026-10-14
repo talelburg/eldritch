@@ -495,8 +495,9 @@ fn step_designated(
 /// > described by the ability.
 ///
 /// Every arm routes through the **same primary the basic action uses**
-/// (`actions::fight::perform` / `actions::investigate::perform` /
-/// `elimination::resign_investigator`), passing the modification as its only
+/// (`actions::fight::perform` / `actions::evade::perform` /
+/// `actions::investigate::perform` / `elimination::resign_investigator`),
+/// passing the modification as its only
 /// difference — so *"a designated Fight is a Fight action"* holds in code rather
 /// than by parallel construction.
 ///
