@@ -553,11 +553,10 @@ pub(super) fn check_cost_payable(
             }
             Ok(())
         }
-        // Source is in play by the activation precondition (check_activate_ability
-        // located it in cards_in_play), so it is always payable.
-        Cost::DiscardSelf => Ok(()),
-        // You can always take harm, even lethal harm.
-        Cost::TakeHarm { .. } => Ok(()),
+        // Always payable. `DiscardSelf`: the source is in play by the activation
+        // precondition (check_activate_ability located it in cards_in_play).
+        // `TakeHarm`: you can always take harm, even lethal harm.
+        Cost::DiscardSelf | Cost::TakeHarm { .. } => Ok(()),
         Cost::DiscardCardFromHand => Err(
             "TODO: Cost::DiscardCardFromHand requires AwaitingInput + ResolveInput \
              dispatch; no card uses this cost yet so the engine consumer hasn't landed."
