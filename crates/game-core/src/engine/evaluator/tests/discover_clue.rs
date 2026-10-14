@@ -156,6 +156,7 @@ fn discover_clue_tested_location_resolves_to_in_flight_test_location() {
             bonus_clues_discovered: 0,
             resolved: None,
             token_results: Box::default(),
+            revealed: None,
         }));
     let mut events = Vec::new();
 
@@ -214,6 +215,7 @@ fn tested_location_rejects_when_test_has_no_location_snapshot() {
             bonus_clues_discovered: 0,
             resolved: None,
             token_results: Box::default(),
+            revealed: None,
         }));
     let mut events = Vec::new();
 

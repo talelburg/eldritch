@@ -183,6 +183,7 @@ pub fn test_skill_test(
         bonus_clues_discovered: 0,
         resolved: None,
         token_results: Box::default(),
+        revealed: None,
     }
 }
 

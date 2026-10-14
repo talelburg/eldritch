@@ -14,6 +14,7 @@ use crate::engine::TimingEvent;
 use crate::event::FailureReason;
 use crate::state::ability_source::{AbilityAddress, AbilitySource};
 use crate::state::card::{CardCode, CardInPlay, CardInstanceId, Owner};
+use crate::state::chaos_bag::{ChaosToken, TokenResolution};
 use crate::state::continuation::frame::impl_frame;
 use crate::state::enemy::EnemyId;
 use crate::state::game_state::{DifficultyBasis, SkillTestId};
@@ -1299,6 +1300,19 @@ pub struct InFlightSkillTest {
     /// Boxed because two more `Effect`s inline would make `SkillTest` the
     /// [`Continuation`] variant that sizes every frame on the stack.
     pub token_results: Box<TokenResults>,
+    /// The chaos token revealed at ST.3 and its resolution, as the
+    /// [`ChaosTokenRevealed`](crate::event::Event::ChaosTokenRevealed) event
+    /// announced them — for a scenario symbol, the modifier evaluated once at
+    /// reveal. Set whenever a token is drawn, whether or not it has effects;
+    /// `None` until then, and for the whole test when a determination known
+    /// before ST.3 skips the draw.
+    ///
+    /// A display record for the client, which the engine never reads back.
+    /// ADR 0007 retired `token_resolution` because its sole reader was the
+    /// total computation, which reads the token's recorded row instead; ADR
+    /// 0005 forbids a stored value that is re-read in place of live state.
+    /// Neither applies to a field nothing in the engine branches on.
+    pub revealed: Option<(ChaosToken, TokenResolution)>,
 }
 
 /// A revealed chaos token's ST.7 consequences, parked on
@@ -1341,6 +1355,16 @@ pub struct ResolvedTest {
     /// Why the test failed (meaningful only when `!succeeded`); supplied to the
     /// logged [`SkillTestFailed`](crate::event::Event::SkillTestFailed).
     pub fail_reason: FailureReason,
+    /// The ST.5 modified skill value the ST.6 comparison used, the revealed
+    /// token's contribution and the substitution included (an automatic
+    /// failure makes it 0).
+    ///
+    /// A display record for the client, written once here after the verdict
+    /// like [`margin`](Self::margin), which the engine never reads back: ADR
+    /// 0005 makes every modified quantity a read over live state, so a later
+    /// step that needs the total re-reads it rather than this field. ADR 0007
+    /// retired a stored token resolution for the same reason.
+    pub total: i8,
 }
 
 /// Where the skill-test resolution driver should resume on the next
