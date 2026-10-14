@@ -37,7 +37,7 @@ pub use continuation::{
     ResolutionCandidate, ResolvedTest, ScenarioEndDisposition, ScenarioEndFrame, ScenarioEndStep,
     SkillTestFollowUp, SkillTestStep, SlotDiscardFrame, SpawnEngagePending,
     SubstitutionPromptFrame, TimingMode, TimingPointFrame, TimingPointWindowFrame, TimingSub,
-    UpkeepPhaseFrame, UpkeepResume,
+    TokenResults, UpkeepPhaseFrame, UpkeepResume,
 };
 pub use counter::Counter;
 // `define_id!` is used by the id submodules; kept crate-internal.

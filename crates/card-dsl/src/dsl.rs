@@ -410,25 +410,83 @@ pub enum Trigger {
     /// the investigator's *own* symbol token: its effect is sourced from
     /// the investigator card rather than the scenario bag.
     ///
-    /// `modifier` is the printed skill-test modifier the elder-sign grants,
-    /// as an [`IntExpr`] so board-state-dependent values (Roland Banks's
-    /// "+1 for each clue on your location" → `Count(CluesAtControllerLocation)`)
-    /// resolve when the token is revealed. The engine adds this to the test total through
-    /// the existing `Modifier` path (`skill_test.rs`), keeping the
-    /// `ElderSign` resolution label for observability.
+    /// `outcome` is the sign's [`TokenOutcome`], the same shape a scenario's
+    /// symbol table returns for `[skull]` / `[cultist]` / `[tablet]` /
+    /// `[elder_thing]`. Its `modifier` is an [`IntExpr`] so board-state-dependent
+    /// values (Roland Banks's "+1 for each clue on your location" →
+    /// `Count(CluesAtControllerLocation)`) stay live: ST.3 copies the
+    /// expression **unevaluated** into a test-scoped recorded row, and the
+    /// ST.5 fold evaluates it at every read (ADR 0005, ADR 0007). Nothing
+    /// freezes it at reveal.
     ///
     /// Config-on-trigger, like [`Activated`](Self::Activated) /
-    /// [`OnSkillTestResolution`](Self::OnSkillTestResolution).
+    /// [`OnSkillTestResolution`](Self::OnSkillTestResolution). The ability's
+    /// own `effect` slot stays the inert empty `Seq`; the sign's effects live
+    /// in the outcome's `immediate` / `on_success` / `on_fail` arms.
     ///
-    /// **Scope (#118):** only pure-*modifier* elder-signs are handled. Signs
-    /// that also run an effect (Daisy's per-Tome draw, Agnes's optional
-    /// damage) or substitute/reveal another token are deferred — the first
-    /// such card should build a full `SymbolOutcome` from the investigator
-    /// card for uniformity with the scenario symbol path.
+    /// **Scope:** only the `modifier` is read for an elder sign today. The
+    /// three effect arms are carried and walked for native refs, but the
+    /// engine does not yet push them for an elder sign — that lands with
+    /// #1041.
     ElderSign {
-        /// The printed skill-test modifier the elder-sign grants.
-        modifier: IntExpr,
+        /// What the elder sign does when revealed.
+        outcome: TokenOutcome,
     },
+}
+
+/// What a revealed chaos-symbol token does: one **chaos symbol effect**
+/// (`GLOSSARY.md`), whether it comes from the scenario reference card
+/// (`[skull]` / `[cultist]` / `[tablet]` / `[elder_thing]`) or from the
+/// performing investigator's elder-sign ability. ST.4
+/// (`Appendix_II_Timing_and_Gameplay.md`):
+///
+/// > Each of the following symbols indicates that an ability on the scenario
+/// > reference card must initiate: [skull], [cultist], [tablet], or
+/// > [elder_thing].
+/// >
+/// > The [elder_sign] symbol indicates that the [elder_sign] ability on the
+/// > investigator card belonging to the player performing the test must
+/// > initiate.
+///
+/// The four parts land at different steps of the test:
+///
+/// - `modifier` is copied unevaluated into a test-scoped recorded row at ST.3
+///   and read live by the ST.5 fold.
+/// - `immediate` runs at ST.4, before the modified skill value is determined.
+/// - `on_success` / `on_fail` run at ST.7, after the test's own result,
+///   according to the success or failure established at ST.6.
+///
+/// Built by literal (scenario symbol tables do so), so it is deliberately not
+/// `#[non_exhaustive]`. [`Default`] is the inert outcome: `+0` and no effects.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct TokenOutcome {
+    /// The token's contribution to the investigator's skill value.
+    pub modifier: IntExpr,
+    /// The unconditional part, resolved at ST.4.
+    pub immediate: Option<Effect>,
+    /// The part that resolves at ST.7 only if the test succeeded.
+    pub on_success: Option<Effect>,
+    /// The part that resolves at ST.7 only if the test failed.
+    pub on_fail: Option<Effect>,
+}
+
+impl Default for TokenOutcome {
+    fn default() -> Self {
+        Self::modifier(IntExpr::Lit(0))
+    }
+}
+
+impl TokenOutcome {
+    /// A modifier-only outcome: `modifier`, and no effects.
+    #[must_use]
+    pub fn modifier(modifier: IntExpr) -> Self {
+        Self {
+            modifier,
+            immediate: None,
+            on_success: None,
+            on_fail: None,
+        }
+    }
 }
 
 /// Whether an [`Trigger::OnEvent`] ability resolves mandatorily (forced)
@@ -1022,7 +1080,7 @@ pub enum UsagePeriod {
 /// [`UsageLimit`]. `None` means "unlimited within the rules' default
 /// once-per-occurrence cap on reaction abilities" (Rules Reference
 /// page 2). A `Some(...)` value applies the stronger printed cap.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct Ability {
     pub trigger: Trigger,
@@ -1139,7 +1197,7 @@ impl Ability {
                 | ActionDesignator::Parley
                 | ActionDesignator::Resign => {}
             },
-            Trigger::ElderSign { modifier } => modifier.collect_native_refs(refs),
+            Trigger::ElderSign { outcome } => outcome.collect_native_refs(refs),
         }
         self.effect.collect_native_refs(refs);
     }
@@ -1161,6 +1219,18 @@ pub enum NativeKind {
 pub struct NativeRef<'a> {
     pub kind: NativeKind,
     pub tag: &'a str,
+}
+
+impl TokenOutcome {
+    fn collect_native_refs<'a>(&'a self, refs: &mut Vec<NativeRef<'a>>) {
+        self.modifier.collect_native_refs(refs);
+        for effect in [&self.immediate, &self.on_success, &self.on_fail]
+            .into_iter()
+            .flatten()
+        {
+            effect.collect_native_refs(refs);
+        }
+    }
 }
 
 impl Effect {
@@ -1274,7 +1344,7 @@ impl IntExpr {
 /// investigator at your location."* — labelling means **splitting** it, so the
 /// card's module doc quotes the full printed sentence directly above the
 /// derived labels and the split stays auditable.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ChoiceBranch {
     /// What the controller reads when offered this branch.
     pub label: String,
@@ -1288,7 +1358,7 @@ pub struct ChoiceBranch {
 /// [`Effect::If`] branches, [`Effect::ForEach`] applies a body once
 /// per resolved target, [`Effect::ChooseOne`] presents alternatives
 /// to the controller.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Effect {
     /// Add resources to the wallet of the resolved target investigator.
     GainResources {
@@ -1977,7 +2047,7 @@ pub enum Determination {
 /// A constant restriction a card imposes while in play, carried by a
 /// [`Trigger::Constant`] [`Effect::Restrict`]. The engine inspects these
 /// at decision points rather than executing them.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Restriction {
     /// The controller cannot play cards of this type (Dissonant Voices
     /// 01165 declares one per forbidden type — assets and events).
@@ -2043,7 +2113,7 @@ pub enum Restriction {
 }
 
 /// One action kind an [`Restriction::ExtraActionCost`] can surcharge.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ActionClass {
     /// The Move action.
     Move,
@@ -2610,11 +2680,11 @@ pub fn activated_as(
     }
 }
 
-/// Construct a [`Trigger::ElderSign`]-driven [`Ability`] with the given
-/// modifier expression. The effect is empty (`Effect::Seq(vec![])`) because
-/// pure-modifier elder-signs have no additional on-resolution effect; for
-/// signs that run an effect (Daisy / Agnes) add a `Seq` with the desired
-/// sub-effects.
+/// Construct a modifier-only [`Trigger::ElderSign`]-driven [`Ability`]: its
+/// [`TokenOutcome`] carries `modifier` and no effects. The ability's own
+/// `effect` slot is the inert empty `Seq` for every elder sign; a sign's
+/// effects belong in its outcome's `immediate` / `on_success` / `on_fail`
+/// arms, never in that slot.
 ///
 /// Called by investigator card impls in the `cards` crate and by tests in
 /// `game-core` that build mock registries. (The `Ability` struct is
@@ -2623,7 +2693,9 @@ pub fn activated_as(
 #[must_use]
 pub fn elder_sign(modifier: IntExpr) -> Ability {
     Ability {
-        trigger: Trigger::ElderSign { modifier },
+        trigger: Trigger::ElderSign {
+            outcome: TokenOutcome::modifier(modifier),
+        },
         costs: Vec::new(),
         effect: Effect::Seq(Vec::new()),
         usage_limit: None,

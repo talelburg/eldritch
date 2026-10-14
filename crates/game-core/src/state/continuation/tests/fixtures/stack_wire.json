@@ -116,7 +116,11 @@
       "bonus_attack_damage": 0,
       "bonus_clues_discovered": 0,
       "resolved": null,
-      "symbol_on_fail": null
+      "token_results": {
+        "on_success": null,
+        "on_fail": null,
+        "source": null
+      }
     }
   },
   {

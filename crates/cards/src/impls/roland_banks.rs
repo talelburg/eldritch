@@ -14,10 +14,11 @@
 //! # Scope
 //!
 //! `abilities()` ships both halves: the `[reaction]` and the
-//! `[elder_sign]`. The elder-sign is a [`Trigger::ElderSign`] carrying
-//! `IntExpr::Count(Quantity::CluesAtControllerLocation)` — "+1 for each clue
-//! on your location" — which the skill-test resolution adds to the total when
-//! Roland's elder-sign token is drawn (#118). Reached via
+//! `[elder_sign]`. The elder-sign is a [`Trigger::ElderSign`] carrying a
+//! modifier-only token outcome, `IntExpr::Count(Quantity::CluesAtControllerLocation)`
+//! — "+1 for each clue on your location" — which the skill-test resolution
+//! records unevaluated when Roland's elder-sign token is drawn and reads at
+//! ST.5 (#118, #684). Reached via
 //! `investigator_card.code` after the bridge fields were retired (#448 cp3b).
 //!
 //! The reaction compiles to a [`Trigger::OnEvent`] with the
@@ -87,8 +88,8 @@ pub fn abilities() -> Vec<Ability> {
 #[cfg(test)]
 mod tests {
     use card_dsl::dsl::{
-        Effect, EventPattern, EventTiming, IntExpr, LocationTarget, Quantity, Trigger, TriggerKind,
-        UsageLimit, UsagePeriod,
+        Effect, EventPattern, EventTiming, IntExpr, LocationTarget, Quantity, TokenOutcome,
+        Trigger, TriggerKind, UsageLimit, UsagePeriod,
     };
 
     #[test]
@@ -130,12 +131,14 @@ mod tests {
         assert_eq!(
             abilities[1].trigger,
             Trigger::ElderSign {
-                modifier: IntExpr::Count(Quantity::CluesAtControllerLocation),
+                outcome: TokenOutcome::modifier(IntExpr::Count(
+                    Quantity::CluesAtControllerLocation
+                )),
             },
         );
         assert!(abilities[1].usage_limit.is_none());
-        // Pure-modifier elder-sign: inert empty `Seq` effect (the engine reads
-        // the trigger's `modifier`, not the effect).
+        // Modifier-only elder-sign: inert empty `Seq` effect (the engine reads
+        // the trigger's outcome, not the effect).
         assert!(matches!(&abilities[1].effect, Effect::Seq(v) if v.is_empty()),);
     }
 

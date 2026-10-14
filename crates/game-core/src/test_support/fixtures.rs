@@ -182,7 +182,7 @@ pub fn test_skill_test(
         bonus_attack_damage: 0,
         bonus_clues_discovered: 0,
         resolved: None,
-        symbol_on_fail: None,
+        token_results: Box::default(),
     }
 }
 
