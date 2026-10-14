@@ -1982,13 +1982,24 @@ pub struct InvestigatorTurnFrame {
     pub ending: bool,
 }
 
-/// An action paused over its attack-of-opportunity loop (#293, keystone of
-/// #393). Pushed above [`Continuation::InvestigatorTurn`] when an AoO-provoking action is
-/// taken; the `AoO` [`Continuation::AttackLoop`] is its child. On the loop's pop the
-/// `drive` loop resumes this frame: it re-validates (actor still active +
-/// the primary's precondition) and runs the primary effect, then pops.
-/// Transient — it persists across an `apply()` boundary only while a window
-/// suspends the loop. Never awaits input itself.
+/// An action or an activated ability paused over something that must resolve
+/// before its effect, with the effect gated on the actor still being `Active`.
+///
+/// Two pushers:
+///
+/// - **An action over its attack-of-opportunity loop** (#293, keystone of
+///   #393). Pushed above [`Continuation::InvestigatorTurn`] when an
+///   AoO-provoking action is taken; the `AoO` [`Continuation::AttackLoop`] is
+///   its child.
+/// - **A fast activated ability over its harm cost** (#1029). A fast ability
+///   is not an action, so this may sit above a fast window rather than the
+///   turn; the harm's [`Continuation::DealDamage`] is its child, and `resume`
+///   is always [`ActionResume::ActivateAbility`].
+///
+/// On the child's pop the `drive` loop resumes this frame: it re-validates
+/// (actor still active + the primary's precondition) and runs the primary
+/// effect, then pops. Transient — it persists across an `apply()` boundary
+/// only while its child suspends. Never awaits input itself.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActionResolutionFrame {
     /// The acting investigator.

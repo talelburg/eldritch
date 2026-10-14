@@ -932,6 +932,34 @@ pub enum Cost {
     /// the ability's effect. Must be the only source-referencing cost on an
     /// ability (it removes the source); paid last.
     DiscardSelf,
+    /// The controller takes `damage` damage and `horror` horror (#1029). One
+    /// variant carries both kinds because the snapshot prints both, on three
+    /// cards that agree on the shape:
+    ///
+    /// - Forbidden Knowledge 01058: *"\[fast\] Exhaust Forbidden Knowledge and
+    ///   take 1 horror: Move 1 secret from Forbidden Knowledge to your resource
+    ///   pool, as a resource."*
+    /// - Smoking Pipe 02116: *"\[fast\] Spend 1 supply, exhaust Smoking Pipe,
+    ///   and take 1 damage: Heal 1 horror."*
+    /// - Painkillers 02117: *"\[fast\] Spend 1 supply, exhaust Painkillers, and
+    ///   take 1 horror: Heal 1 damage."*
+    ///
+    /// Always payable: you can always take harm, and activating into a lethal
+    /// cost is legal. The harm is dealt like any other — offered to soakers,
+    /// then placed — and resolves, with every nested sequence it opens, before
+    /// the ability's effect, which is skipped if the harm eliminated the
+    /// controller. Refused on an `[action]` ability: there the harm would have to
+    /// resolve before the attacks of opportunity, which the take-an-action step
+    /// does not do yet.
+    ///
+    /// Distinct from harm dealt *to the source* as a cost (Beat Cop 01028's
+    /// *"deal 1 damage to it"*), which this does not express.
+    TakeHarm {
+        /// Damage the controller takes.
+        damage: u8,
+        /// Horror the controller takes.
+        horror: u8,
+    },
 }
 
 // ---- usage limits ----------------------------------------------
