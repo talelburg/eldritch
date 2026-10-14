@@ -24,7 +24,7 @@ use crate::state::{ActionResume, EnemyId, GameState, InvestigatorId, LocationId,
 /// `current_location` dangles: that corruption is the handler's to surface
 /// loudly, so the menu offers nothing rather than panicking. A designated
 /// **Move** is not implemented yet
-/// ([`designated_unimplemented`](super::designated_unimplemented)).
+/// ([`designated_unimplemented_move`](super::designated_unimplemented_move)).
 pub(crate) fn candidates(
     state: &GameState,
     cards: &CardRegistry,
@@ -66,13 +66,13 @@ pub(crate) fn candidates(
 /// ([`take::take`]). Move is not on the attack-of-opportunity exempt list, so
 /// each ready engaged enemy attacks before [`perform`] relocates.
 ///
-/// Move's share of the #818 blocker
-/// ([`designated_unimplemented`](super::designated_unimplemented)): the
-/// `ActionDesignator::Move` variant carries no modification because no corpus
-/// card prints a bold **Move** at all, so there is no printed shape to take one
-/// from. Printings outside the corpus suggest a destination or a repeat count
-/// rather than a stat row (#818 lists them). When #818 lands, a designated Move
-/// performs through this module as the basic Move does.
+/// A designated **Move** is rejected
+/// ([`designated_unimplemented_move`](super::designated_unimplemented_move)):
+/// the `ActionDesignator::Move` variant carries no modification because no
+/// corpus card prints a bold **Move** at all, so there is no printed shape to
+/// take one from. Printings outside the corpus suggest a destination or a
+/// repeat count rather than a stat row (#818 lists them). TODO(#1059): a
+/// designated Move performs through this module as the basic Move does.
 pub(in crate::engine::dispatch) fn handle(
     cx: &mut Cx,
     investigator: InvestigatorId,

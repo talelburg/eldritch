@@ -127,7 +127,7 @@ fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             dsl::activated(0, vec![], live()).with_eligibility(dsl::native_condition(SHUT_TAG)),
             dsl::activated(0, vec![], live()).with_usage_limit(once_per_round()),
             dsl::activated(0, vec![Cost::Exhaust], live()),
-            dsl::activated_as(ActionDesignator::Evade, 1, vec![], inert()),
+            dsl::activated_as(dsl::evade(), 1, vec![], inert()),
             dsl::activated_as(ActionDesignator::Parley, 1, vec![], inert()),
             reaction(live()).with_eligibility(clues_here()),
         ]),

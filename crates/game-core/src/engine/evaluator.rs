@@ -78,6 +78,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::card_registry::{self, CardRegistry};
 use crate::engine::board::{self, Placement};
+use crate::engine::dispatch::actions::evade::EvadeModification;
 use crate::engine::dispatch::actions::fight::FightModification;
 use crate::engine::dispatch::choice::{ChoiceResolution, Grounded};
 use crate::engine::dispatch::emit::TimingEvent;
@@ -453,19 +454,23 @@ pub(crate) fn push_designated_action(
 /// Step a [`EffectFrame::Designated`](crate::state::EffectFrame::Designated)
 /// frame: ground the target the designated action needs, then perform it.
 ///
-/// A **Fight** whose target is not yet bound grounds against the co-located
-/// enemy list — auto on exactly one, suspend-in-place on 2+ (re-pushing this
-/// frame, which *is* the prompt, exactly as [`step_leaf`] does). Everything
-/// else needs no grounding and performs immediately.
+/// A **Fight** or **Evade** whose target is not yet bound grounds against its
+/// action's enemy list (co-located for a Fight, engaged for an Evade) — auto
+/// on exactly one, suspend-in-place on 2+ (re-pushing this frame, which *is*
+/// the prompt, exactly as [`step_leaf`] does). Everything else needs no
+/// grounding and performs immediately.
 fn step_designated(
     cx: &mut Cx,
     designator: &ActionDesignator,
     eval_ctx: EvalContext,
 ) -> EngineOutcome {
-    let eval_ctx = if matches!(designator, ActionDesignator::Fight { .. })
-        && eval_ctx.chosen_enemy().is_none()
-    {
-        match ground_fight_target_choice(cx, eval_ctx) {
+    let target = match designator {
+        ActionDesignator::Fight { .. } => Some(DesignatedTarget::Fight),
+        ActionDesignator::Evade { .. } => Some(DesignatedTarget::Evade),
+        _ => None,
+    };
+    let eval_ctx = if let Some(target) = target.filter(|_| eval_ctx.chosen_enemy().is_none()) {
+        match ground_designated_enemy(cx, eval_ctx, target) {
             Ok(ctx) => ctx,
             Err(outcome) => {
                 if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
@@ -490,8 +495,9 @@ fn step_designated(
 /// > described by the ability.
 ///
 /// Every arm routes through the **same primary the basic action uses**
-/// (`actions::fight::perform` / `actions::investigate::perform` /
-/// `elimination::resign_investigator`), passing the modification as its only
+/// (`actions::fight::perform` / `actions::evade::perform` /
+/// `actions::investigate::perform` / `elimination::resign_investigator`),
+/// passing the modification as its only
 /// difference — so *"a designated Fight is a Fight action"* holds in code rather
 /// than by parallel construction.
 ///
@@ -543,15 +549,37 @@ fn perform_designated(
         // 'Activate' action."* No procedure, so nothing to perform — the
         // ability's whole content is its residual effect.
         ActionDesignator::Parley => EngineOutcome::Done,
-        // Unreachable through the activation path: `can_perform` rejects both
-        // pre-cost, since no implemented card prints either. One shared helper
-        // owns the rejection (and its `TODO(#818)`), so the two sites share a
+        ActionDesignator::Evade {
+            skill_override,
+            reveal_clause,
+            on_success,
+        } => {
+            // Bound by `step_designated` before this runs, and `can_perform`
+            // rejected an empty candidate list pre-cost, so `None` is a
+            // state-shape violation.
+            let Some(enemy_id) = eval_ctx.chosen_enemy() else {
+                return EngineOutcome::Rejected {
+                    reason: "Evade: no engaged enemy chosen".into(),
+                };
+            };
+            actions::evade::perform(
+                cx,
+                eval_ctx.controller,
+                enemy_id,
+                EvadeModification {
+                    skill_override: *skill_override,
+                    reveal_clause: reveal_clause.clone(),
+                    on_success: on_success.as_deref().cloned(),
+                },
+                eval_ctx.ability_source,
+            )
+        }
+        // Unreachable through the activation and play paths: `can_perform`
+        // rejects it pre-cost, since no implemented card prints one. One helper
+        // owns the rejection (and its `TODO(#1059)`), so the two sites share a
         // wording.
-        ActionDesignator::Evade => EngineOutcome::Rejected {
-            reason: actions::designated_unimplemented("Evade"),
-        },
         ActionDesignator::Move => EngineOutcome::Rejected {
-            reason: actions::designated_unimplemented("Move"),
+            reason: actions::designated_unimplemented_move(),
         },
     }
 }
@@ -2070,36 +2098,54 @@ fn ground_enemy_choice(
     Ok(ctx)
 }
 
-/// Ground a designated **Fight**'s target against the co-located-enemy list.
+/// The designated actions that target an enemy, which [`step_designated`]
+/// grounds before performing.
+#[derive(Clone, Copy)]
+enum DesignatedTarget {
+    Fight,
+    Evade,
+}
+
+/// Ground a designated **Fight**'s or **Evade**'s target against its action's
+/// own enemy list.
 ///
-/// Candidates are the Fight action's own
-/// [`candidates`](crate::engine::dispatch::actions::fight::candidates) — every
-/// enemy *at the controller's location* (not engaged-only), in ascending
-/// [`EnemyId`] order, the list the basic Fight action validates against (#451).
-/// Unlike the basic action, the grounding does not also filter out a malformed
-/// fight value. Delegates to [`choice::resolve_grounded_choice`]:
-/// - 0 candidates → `Rejected` ("Fight: no enemy at your location").
+/// Candidates are the basic action's own `candidates`, in ascending [`EnemyId`]
+/// order, the list the basic action validates against: for a Fight
+/// [`fight::candidates`](crate::engine::dispatch::actions::fight::candidates),
+/// every enemy *at the controller's location* (not engaged-only, #451); for an
+/// Evade [`evade::candidates`](crate::engine::dispatch::actions::evade::candidates),
+/// every enemy *engaged with the controller*. Unlike the basic action, the
+/// grounding does not also filter out a malformed fight or evade value.
+/// Delegates to [`choice::resolve_grounded_choice`]:
+/// - 0 candidates → `Rejected`.
 /// - 1 candidate → auto-bind (no suspend; preserves single-enemy behaviour).
 /// - 2+ candidates → suspend `AwaitingInput { PickSingle }`.
 ///
 /// On resume the evaluator re-enters the same
 /// [`Designated`](crate::state::EffectFrame::Designated) step; `chosen_option`
 /// is set and `resolve_grounded_choice` picks from the same deterministic list.
-fn ground_fight_target_choice(
+fn ground_designated_enemy(
     cx: &mut Cx,
     eval_ctx: EvalContext,
+    target: DesignatedTarget,
 ) -> Result<EvalContext, EngineOutcome> {
-    let candidates = actions::fight::candidates(cx.state, eval_ctx.controller);
-    let id = picked_or_reject(
-        choice::resolve_grounded_choice(
-            cx.state,
-            cx.cards,
-            &eval_ctx,
-            &candidates,
+    let (candidates, prompt, none) = match target {
+        DesignatedTarget::Fight => (
+            actions::fight::candidates(cx.state, eval_ctx.controller),
             "Choose an enemy to attack",
-            |id| OptionTarget::Enemy(*id),
+            "Fight: no enemy at your location",
         ),
-        "Fight: no enemy at your location",
+        DesignatedTarget::Evade => (
+            actions::evade::candidates(cx.state, eval_ctx.controller),
+            "Choose an enemy to evade",
+            "Evade: no enemy engaged with you",
+        ),
+    };
+    let id = picked_or_reject(
+        choice::resolve_grounded_choice(cx.state, cx.cards, &eval_ctx, &candidates, prompt, |id| {
+            OptionTarget::Enemy(*id)
+        }),
+        none,
     )?;
     let mut ctx = eval_ctx;
     ctx.set_chosen_enemy(id);

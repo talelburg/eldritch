@@ -31,20 +31,16 @@ pub(crate) mod take;
 #[cfg(test)]
 mod tests;
 
-/// Why a designated `designator` (**Evade** or **Move**) rejects: it is not
-/// implemented.
+/// Why a designated **Move** rejects: it is not implemented.
 ///
-/// TODO(#818): neither `ActionDesignator` variant carries a modification yet,
-/// and no card the build compiles prints either, so the engine says so rather
-/// than performing a guess. Each designator's module says why its own payload
-/// has no shape.
+/// TODO(#1059): `ActionDesignator::Move` carries no modification yet, and no
+/// card the build compiles prints one, so the engine says so rather than
+/// performing a guess. [`r#move`] says why its payload has no shape.
 ///
 /// Read pre-cost by `designator::can_perform` and again by the evaluator's
 /// perform dispatch, so the two sites share one wording.
-pub(crate) fn designated_unimplemented(designator: &str) -> Cow<'static, str> {
-    format!(
-        "a designated {designator} is not implemented: no card the build compiles declares \
-         one, so the modification it would carry has no shape yet (TODO(#818))"
-    )
-    .into()
+pub(crate) fn designated_unimplemented_move() -> Cow<'static, str> {
+    "a designated Move is not implemented: no card the build compiles declares one, so the \
+     modification it would carry has no shape yet (TODO(#1059))"
+        .into()
 }
