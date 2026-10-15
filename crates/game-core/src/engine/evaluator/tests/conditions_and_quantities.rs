@@ -38,24 +38,27 @@ fn eval_quantity_reads_clues_engaged_and_margin() {
     assert_eq!(
         eval_quantity(
             &state_with_clues_at_location(2),
+            &TEST_REGISTRY,
             &ctx,
-            Quantity::CluesAtControllerLocation
+            &Quantity::CluesAtControllerLocation
         ),
         2
     );
     assert_eq!(
         eval_quantity(
             &state_with_clues_at_location(0),
+            &TEST_REGISTRY,
             &ctx,
-            Quantity::CluesAtControllerLocation
+            &Quantity::CluesAtControllerLocation
         ),
         0
     );
     // failure margin from the ctx binding
     let mut ctx2 = EvalContext::for_controller(inv);
     ctx2.set_failed_by(3);
-    assert_eq!(eval_quantity(&state, &ctx2, Quantity::SkillTestFailedBy), 3);
-    assert_eq!(eval_quantity(&state, &ctx, Quantity::SkillTestFailedBy), 0);
+    let failed_by = |ctx| eval_quantity(&state, &TEST_REGISTRY, ctx, &Quantity::SkillTestFailedBy);
+    assert_eq!(failed_by(&ctx2), 3);
+    assert_eq!(failed_by(&ctx), 0);
 }
 
 #[test]

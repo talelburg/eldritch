@@ -1687,7 +1687,9 @@ impl Effect {
                 tag,
             }),
             Effect::Deal { amount, .. } => amount.collect_native_refs(refs),
-            Effect::PlaceDoomOnCurrentAgenda { count, .. } => count.collect_native_refs(refs),
+            Effect::PlaceDoomOnCurrentAgenda { count, .. } | Effect::DrawCards { count, .. } => {
+                count.collect_native_refs(refs);
+            }
             Effect::Seq(effects) => {
                 for effect in effects {
                     effect.collect_native_refs(refs);
@@ -1743,7 +1745,6 @@ impl Effect {
             | Effect::DiscardSelf
             | Effect::Cancel
             | Effect::PutIntoThreatArea { .. }
-            | Effect::DrawCards { .. }
             | Effect::BoostAttackDamage(_)
             | Effect::DiscoverAdditionalClues(_)
             | Effect::Restrict(_)
@@ -2123,13 +2124,16 @@ pub enum Effect {
     },
     /// Draw `count` cards for the resolved target investigator —
     /// "draw 1 card" (Guts 01089, Perception 01090, Overpower 01091,
-    /// Manual Dexterity 01092). `count == 0` is a no-op. Deck-out (drawing
+    /// Manual Dexterity 01092), or a count read off state as the effect
+    /// resolves: Daisy Walker 01002's *"draw 1 card for each \[\[Tome\]\]
+    /// you control"* is [`IntExpr::Count`] of [`Quantity::ControlledCards`].
+    /// A count that evaluates to 0 or below is a no-op. Deck-out (drawing
     /// from an empty deck) follows the engine's existing `draw_cards`
     /// behavior; the elimination consequence is out of this primitive's
     /// scope.
     DrawCards {
         target: InvestigatorTarget,
-        count: u8,
+        count: IntExpr,
     },
     /// Add `N` to the in-flight skill test's bonus attack damage —
     /// Vicious Blow 01025's "that attack deals +1 damage." Accumulated at
@@ -3070,7 +3074,7 @@ pub enum ControlStatus {
 
 /// A non-negative count read off game state, usable as a value
 /// ([`IntExpr::Count`]) or compared in a predicate ([`Condition::Compare`]).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Quantity {
     /// Clues on the controller's current location.
     CluesAtControllerLocation,
@@ -3089,6 +3093,14 @@ pub enum Quantity {
     /// results. Switchblade 01044 and .41 Derringer 01047's *"If you succeed by
     /// 2 or more, this attack deals +1 damage."*
     SkillTestSucceededBy,
+    /// Cards the controller controls that match the filter, in their play
+    /// area and their threat area — Daisy Walker 01002's *"draw 1 card for
+    /// each \[\[Tome\]\] you control"*. Their investigator card is not
+    /// counted.
+    ///
+    /// Boxed so a `Quantity` stays pointer-sized: it sits inline in every
+    /// [`Condition`] and [`IntExpr`], and through them in every [`Effect`].
+    ControlledCards(Box<CardFilter>),
 }
 
 /// Comparison operator for [`Condition::Compare`].
@@ -3499,10 +3511,15 @@ pub fn discover_additional_clues(amount: u8) -> Effect {
     Effect::DiscoverAdditionalClues(amount)
 }
 
-/// Build an [`Effect::DrawCards`] drawing `count` cards for `target`.
+/// Build an [`Effect::DrawCards`] drawing `count` cards for `target`. A
+/// literal count is typed (`1u8`), since an untyped integer matches both of
+/// [`IntExpr`]'s `From` impls.
 #[must_use]
-pub fn draw_cards(target: InvestigatorTarget, count: u8) -> Effect {
-    Effect::DrawCards { target, count }
+pub fn draw_cards(target: InvestigatorTarget, count: impl Into<IntExpr>) -> Effect {
+    Effect::DrawCards {
+        target,
+        count: count.into(),
+    }
 }
 
 /// Build an [`Effect::SearchDeck`].

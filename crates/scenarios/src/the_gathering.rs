@@ -163,9 +163,9 @@ fn resolve_symbol(token: ChaosToken, cx: &SymbolCtx) -> TokenOutcome {
         amount: IntExpr::Lit(1),
     };
     match token {
-        // TODO(#779): the live-read candidate. X is frozen at reveal here; once
-        // `Quantity::Matching` can count the Ghouls at the tester's location,
-        // the modifier becomes an unevaluated count that ST.5 reads live.
+        // TODO(#921): the live-read candidate. X is frozen at reveal here; once
+        // a `Quantity` can count the Ghouls at the tester's location, the
+        // modifier becomes an unevaluated count that ST.5 reads live.
         ChaosToken::Skull => {
             TokenOutcome::modifier(IntExpr::Lit(-(i8::try_from(ghouls).unwrap_or(i8::MAX))))
         }

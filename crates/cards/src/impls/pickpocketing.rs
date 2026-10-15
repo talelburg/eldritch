@@ -40,7 +40,7 @@ pub fn abilities() -> Vec<Ability> {
     vec![dsl::reaction_on_event(
         EventPattern::EnemyEvaded,
         EventTiming::After,
-        dsl::draw_cards(InvestigatorTarget::You, 1),
+        dsl::draw_cards(InvestigatorTarget::You, 1u8),
     )
     .with_costs(vec![Cost::Exhaust])]
 }

@@ -175,7 +175,7 @@ fn draw_cards_effect_draws_for_target() {
 
     let outcome = run(
         &mut Cx::for_test(&mut state, &mut events),
-        &dsl::draw_cards(InvestigatorTarget::You, 2),
+        &dsl::draw_cards(InvestigatorTarget::You, 2u8),
         ctx(1),
     );
 
@@ -189,7 +189,7 @@ fn draw_cards_effect_draws_for_target() {
     let mut events0 = Vec::new();
     run(
         &mut Cx::for_test(&mut state, &mut events0),
-        &dsl::draw_cards(InvestigatorTarget::You, 0),
+        &dsl::draw_cards(InvestigatorTarget::You, 0u8),
         ctx(1),
     );
     assert_eq!(state.investigators[&InvestigatorId(1)].hand.len(), 2);

@@ -35,6 +35,6 @@ pub fn abilities() -> Vec<Ability> {
             filter: CardFilter::with_trait(SPELL),
         },
         EventTiming::After,
-        dsl::draw_cards(InvestigatorTarget::You, 1),
+        dsl::draw_cards(InvestigatorTarget::You, 1u8),
     )]
 }
