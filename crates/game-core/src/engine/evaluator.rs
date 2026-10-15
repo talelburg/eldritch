@@ -783,13 +783,11 @@ fn perform_designated(
         // `glossary/Parley.md` in full: *"Some abilities are identified with a
         // **Parley** action designator. Such abilities are initiated using the
         // 'Activate' action."* No procedure, so nothing to perform — the
-        // ability's whole content is its residual effect.
-        ActionDesignator::Parley => EngineOutcome::Done,
-        // An automatic evasion makes no test (the 01076 ruling,
-        // <https://arkhamdb.com/card/01076>: *"no skill test is made for the
-        // evasion attempt whatsoever"*), so the designator has nothing to
-        // perform; the ability's residual `AutoEvade` does the evading.
-        ActionDesignator::AutomaticEvade => EngineOutcome::Done,
+        // ability's whole content is its residual effect. Nor has an automatic
+        // evasion one (the 01076 ruling, <https://arkhamdb.com/card/01076>:
+        // *"no skill test is made for the evasion attempt whatsoever"*); its
+        // residual `AutoEvade` does the evading.
+        ActionDesignator::Parley | ActionDesignator::AutomaticEvade => EngineOutcome::Done,
         ActionDesignator::Evade {
             skill_override,
             reveal_clause,

@@ -60,7 +60,7 @@ use crate::state::{GameState, InvestigatorId};
 ///   gate asks separately.
 /// - **Resign** — eliminating the controller is always available to an
 ///   investigator who reached the ability at all.
-/// - **AutomaticEvade** — performs nothing, as Parley does: no test, and no
+/// - **`AutomaticEvade`** — performs nothing, as Parley does: no test, and no
 ///   engaged enemy needed (Cunning Distraction 01078's ruling,
 ///   <https://arkhamdb.com/card/01078>: *"even those that you're not engaged
 ///   with"*). Whether there is an enemy to evade is its residual effect's
