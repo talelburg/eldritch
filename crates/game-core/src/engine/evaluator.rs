@@ -906,7 +906,7 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
         }
         Effect::Disengage { target } => match resolve_enemy_target(eval_ctx, *target) {
             Ok(enemy) => {
-                combat::disengage(cx, enemy);
+                combat::disengage_from(cx, enemy, eval_ctx.controller);
                 EngineOutcome::Done
             }
             Err(reason) => EngineOutcome::Rejected {
@@ -2543,14 +2543,15 @@ pub(crate) fn effect_can_change_state(
                 && (ctx.chosen_enemy().is_some()
                     || !combat::enemies_in_scope(state, ctx.controller, choose.scope).is_empty())
         }
-        // Disengaging changes state iff the enemy is engaged. Only the
-        // fan-out's bound enemy is provable; a `Chosen` one is not grounded yet.
+        // Disengaging changes state iff the enemy is engaged with the
+        // controller. Only the fan-out's bound enemy is provable; a `Chosen`
+        // one is not grounded yet.
         Effect::Disengage {
             target: EnemyTarget::Each,
         } => ctx
             .each_enemy()
             .and_then(|id| state.enemies.get(&id))
-            .is_none_or(|e| e.engaged_with.is_some()),
+            .is_none_or(|e| e.engaged_with == Some(ctx.controller)),
         // A fan-out changes state iff its body can for some target it would
         // walk: over an empty set it is inert (Elusive 01050 with no enemy
         // engaged with you disengages nothing).

@@ -1807,10 +1807,11 @@ pub enum Effect {
     /// `Native`) so the activation pre-cost check can verify ≥1 candidate
     /// before any cost is paid. `amount == 0` is a no-op.
     DealDamageToEnemy { target: EnemyTarget, amount: u8 },
-    /// Disengage the resolved enemy `target` from the investigator it is
-    /// engaged with. It stays where it is, and stays ready: Elusive 01050's
-    /// ruling, *"Disengaging does not exhaust an enemy."*
-    /// (<https://arkhamdb.com/card/01050>). A no-op on an unengaged enemy.
+    /// Disengage the controller from the resolved enemy `target`. It stays
+    /// where it is, and stays ready: Elusive 01050's ruling, *"Disengaging does
+    /// not exhaust an enemy."* (<https://arkhamdb.com/card/01050>). A no-op on
+    /// an enemy not engaged with the controller — unengaged, or engaged with
+    /// another investigator.
     Disengage { target: EnemyTarget },
     /// Heal `count` of `kind` (damage or horror) from the resolved target
     /// investigator — the inverse of [`Effect::Deal`] (no defeat

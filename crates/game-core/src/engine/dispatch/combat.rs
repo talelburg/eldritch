@@ -62,15 +62,15 @@ pub(crate) fn enemies_in_scope(
         .collect()
 }
 
-/// Break `enemy_id`'s engagement, logging
+/// Break `enemy_id`'s engagement, whoever it is engaged with, logging
 /// [`EnemyDisengaged`](Event::EnemyDisengaged) with the investigator it was
 /// engaged with. An unengaged enemy is left as it is, and nothing is logged.
 ///
-/// The one disengage step a rule or a card asks for by name: an evasion
-/// (`glossary/Evade_Action.md`: *"the enemy is exhausted (if it was ready) and
-/// the engagement is broken"*), and Elusive 01050's *"Disengage from each enemy
-/// engaged with you"* (#1076). Only the enemy's engagement changes; where it
-/// stands, and whether it is ready, are the caller's business.
+/// The evasion's step (`glossary/Evade_Action.md`: *"the enemy is exhausted
+/// (if it was ready) and the engagement is broken"*). Only the enemy's
+/// engagement changes; where it stands, and whether it is ready, are the
+/// caller's business. A card that disengages *you* from an enemy is
+/// [`disengage_from`].
 ///
 /// The enemy is in state: callers name one they have just found there, so a
 /// missing enemy is a state-corruption invariant violation.
@@ -86,6 +86,32 @@ pub(crate) fn disengage(cx: &mut Cx, enemy_id: EnemyId) {
             enemy: enemy_id,
             investigator,
         });
+    }
+}
+
+/// Disengage `investigator` from `enemy_id`: [`disengage`], but only if the
+/// enemy is engaged with `investigator`. An enemy engaged with someone else, or
+/// with nobody, is left as it is, and nothing is logged.
+///
+/// The step [`Effect::Disengage`](card_dsl::dsl::Effect::Disengage) runs for
+/// its controller: Elusive 01050's *"Disengage from each enemy engaged with
+/// you"* (#1076) breaks your engagements, not another investigator's.
+///
+/// The enemy is in state, as for [`disengage`].
+pub(crate) fn disengage_from(cx: &mut Cx, enemy_id: EnemyId, investigator: InvestigatorId) {
+    let engaged_with = cx
+        .state
+        .enemies
+        .get(&enemy_id)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "disengage_from: enemy {enemy_id:?} is not in state.enemies; \
+                 this is a state-corruption invariant violation"
+            )
+        })
+        .engaged_with;
+    if engaged_with == Some(investigator) {
+        disengage(cx, enemy_id);
     }
 }
 
