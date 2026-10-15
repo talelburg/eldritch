@@ -21,40 +21,45 @@ use crate::state::{
 /// The scope of enemies a Fight (basic action or designated **Fight** ability)
 /// may target: any enemy *at your location*. Per RR you choose an enemy at your
 /// location to attack and need not already be engaged, so this is co-located
-/// (`At(Here)`), not engaged-only (#451). Its only reader is the Fight action's
+/// (`EntityScope::at(Here)`), not engaged-only (#451). Its only reader is the Fight action's
 /// [`candidates`](crate::engine::dispatch::actions::fight::candidates), which
 /// is what the basic action's target validation, the turn menu, the activation
 /// pre-cost gate (`designator::can_perform`) and the evaluator's target
 /// grounding (`ground_designated_enemy`) all read in turn.
 pub(crate) fn fight_target_scope() -> EntityScope {
-    EntityScope::At(LocationSet::Here)
+    EntityScope::at(LocationSet::Here)
 }
 
 /// Enemies matching an [`EntityScope`](card_dsl::dsl::EntityScope), in `BTreeMap`
-/// (id) order so the `OptionId` index replays deterministically. Shared by the
-/// evaluator's choice-grounding and the activation pre-cost target check.
+/// (id) order so the `OptionId` index replays deterministically. Honours both
+/// the location set and the `exhausted` filter (Sneak Attack 01052's *"an
+/// exhausted enemy at your location"*). Shared by the evaluator's
+/// choice-grounding and change-state check and the activation pre-cost target
+/// check, so a narrowed scope narrows playability and the prompt alike.
 pub(crate) fn enemies_in_scope(
     state: &GameState,
     controller: InvestigatorId,
     scope: EntityScope,
 ) -> Vec<EnemyId> {
-    let EntityScope::At(set) = scope;
-    match set {
-        LocationSet::Anywhere => state.enemies.keys().copied().collect(),
+    let EntityScope { at, exhausted } = scope;
+    let here = match at {
+        LocationSet::Anywhere => None,
         LocationSet::Here => match state
             .investigators
             .get(&controller)
             .and_then(|i| i.current_location)
         {
-            Some(here) => state
-                .enemies
-                .iter()
-                .filter(|(_, e)| e.current_location == Some(here))
-                .map(|(id, _)| *id)
-                .collect(),
-            None => Vec::new(),
+            Some(here) => Some(here),
+            None => return Vec::new(),
         },
-    }
+    };
+    state
+        .enemies
+        .iter()
+        .filter(|(_, e)| here.is_none_or(|here| e.current_location == Some(here)))
+        .filter(|(_, e)| exhausted.is_none_or(|want| e.exhausted == want))
+        .map(|(id, _)| *id)
+        .collect()
 }
 
 /// The entry point for card effects to deal damage to an enemy.

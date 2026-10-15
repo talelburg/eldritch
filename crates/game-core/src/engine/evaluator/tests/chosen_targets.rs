@@ -113,7 +113,7 @@ fn chosen_location_here_auto_binds_the_controllers_location() {
 #[test]
 fn chosen_at_your_location_auto_binds_the_sole_co_located_investigator() {
     // Investigator 1 (controller) and 2 are in play; only 1 is at the
-    // controller's location. `At(Here)` must offer only investigator 1 and
+    // controller's location. `EntityScope::at(Here)` must offer only investigator 1 and
     // auto-bind it (1 candidate ⇒ no suspend) — `Anywhere` would see 2 and
     // suspend.
     let mut state = GameStateBuilder::new()
@@ -249,6 +249,103 @@ fn deal_damage_to_chosen_enemy_suspends_when_two_are_co_located() {
     );
     assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
     assert_eq!(offered_count(&outcome), 2, "two co-located enemies offered");
+    assert_suspended_leaf(&state);
+}
+
+/// A state with investigator 1 at [`A`] alongside a ready enemy (100) and an
+/// exhausted one (101), each with room to take damage.
+fn state_with_ready_and_exhausted_enemy_here() -> GameState {
+    GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(seat(1).at(A))
+        .with_location(test_support::test_location(A.0, "A"))
+        .with_enemy({
+            let mut e = test_support::test_enemy(100, "Ready");
+            e.max_health = 3;
+            e.current_location = Some(A);
+            e
+        })
+        .with_enemy({
+            let mut e = test_support::test_enemy(101, "Exhausted");
+            e.max_health = 3;
+            e.current_location = Some(A);
+            e.exhausted = true;
+            e
+        })
+        .build()
+}
+
+/// "Deal 1 damage to an enemy at your location", narrowed by `exhausted`.
+fn damage_chosen_enemy_here_with(exhausted: Option<bool>) -> Effect {
+    dsl::deal_damage_to_enemy(
+        EnemyTarget::Chosen(Choose {
+            scope: EntityScope {
+                at: LocationSet::Here,
+                exhausted,
+            },
+        }),
+        1,
+    )
+}
+
+#[test]
+fn exhausted_scope_offers_only_the_exhausted_enemy() {
+    let mut state = state_with_ready_and_exhausted_enemy_here();
+    let mut events = Vec::new();
+    let outcome = run(
+        &mut Cx::for_test(&mut state, &mut events),
+        &damage_chosen_enemy_here_with(Some(true)),
+        ctx(1),
+    );
+    assert_eq!(
+        outcome,
+        EngineOutcome::Done,
+        "the sole exhausted enemy auto-binds; the ready one is not a candidate"
+    );
+    assert_eq!(
+        state.enemies[&EnemyId(101)].damage,
+        1,
+        "exhausted enemy hit"
+    );
+    assert_eq!(
+        state.enemies[&EnemyId(100)].damage,
+        0,
+        "ready enemy untouched"
+    );
+}
+
+#[test]
+fn ready_scope_offers_only_the_ready_enemy() {
+    let mut state = state_with_ready_and_exhausted_enemy_here();
+    let mut events = Vec::new();
+    let outcome = run(
+        &mut Cx::for_test(&mut state, &mut events),
+        &damage_chosen_enemy_here_with(Some(false)),
+        ctx(1),
+    );
+    assert_eq!(
+        outcome,
+        EngineOutcome::Done,
+        "the sole ready enemy auto-binds; the exhausted one is not a candidate"
+    );
+    assert_eq!(state.enemies[&EnemyId(100)].damage, 1, "ready enemy hit");
+    assert_eq!(
+        state.enemies[&EnemyId(101)].damage,
+        0,
+        "exhausted enemy untouched"
+    );
+}
+
+#[test]
+fn unfiltered_scope_offers_ready_and_exhausted_enemies_alike() {
+    let mut state = state_with_ready_and_exhausted_enemy_here();
+    let mut events = Vec::new();
+    let outcome = run(
+        &mut Cx::for_test(&mut state, &mut events),
+        &damage_chosen_enemy_here_with(None),
+        ctx(1),
+    );
+    assert_eq!(offered_count(&outcome), 2, "both enemies offered");
     assert_suspended_leaf(&state);
 }
 

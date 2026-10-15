@@ -172,7 +172,7 @@ fn choose_surface_serde_round_trips() {
     let inv = InvestigatorTarget::chosen_anywhere();
     let loc = LocationTarget::chosen_anywhere();
     let here = InvestigatorTarget::Chosen(Choose {
-        scope: EntityScope::At(LocationSet::Here),
+        scope: EntityScope::at(LocationSet::Here),
     });
     for t in [inv, here] {
         let json = serde_json::to_string(&t).unwrap();
@@ -237,7 +237,7 @@ fn deal_damage_to_enemy_serde_round_trips() {
         e,
         Effect::DealDamageToEnemy {
             target: EnemyTarget::Chosen(Choose {
-                scope: EntityScope::At(LocationSet::Here)
+                scope: EntityScope::at(LocationSet::Here)
             }),
             amount: 1,
         }
