@@ -133,6 +133,7 @@ pub mod mind_over_matter;
 pub mod obscuring_fog;
 pub mod old_book_of_lore;
 pub mod on_the_lam;
+pub mod opportunist;
 pub mod overpower;
 pub mod parlor;
 pub mod perception;
@@ -279,6 +280,7 @@ pub const ALL: &[CardRecord] = &[
     obscuring_fog::CARD,
     old_book_of_lore::CARD,
     on_the_lam::CARD,
+    opportunist::CARD,
     overpower::CARD,
     parlor::CARD,
     perception::CARD,

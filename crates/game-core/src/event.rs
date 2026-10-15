@@ -413,6 +413,18 @@ pub enum Event {
         /// The card moved to hand.
         code: CardCode,
     },
+    /// A card committed to a skill test went back to its investigator's hand
+    /// at RR ST.8, instead of being discarded: Opportunist 01053's *"If you
+    /// succeed by 3 or more, return Opportunist to your hand after this test
+    /// instead of discarding it."* Emitted in place of the
+    /// [`CardDiscarded`](Self::CardDiscarded) the card would otherwise get,
+    /// before [`SkillTestEnded`](Self::SkillTestEnded).
+    CommittedCardReturnedToHand {
+        /// Whose hand the card returned to.
+        investigator: InvestigatorId,
+        /// The card returned to hand.
+        code: CardCode,
+    },
     /// A shuffle of the shared encounter deck occurred. Emitted by
     /// `shuffle_encounter_deck` (in `engine::dispatch`) iff the deck
     /// had ≥ 2 cards (a 0- or 1-card shuffle is a no-op and emits
