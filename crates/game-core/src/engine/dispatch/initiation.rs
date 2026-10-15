@@ -37,7 +37,7 @@ use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::{abilities_in_effect, ability_source, board, Cx};
 use crate::state::{
     AbilitySource, CandidateSource, CardCode, DamageSource, GameState, Investigator,
-    InvestigatorId, ResolutionCandidate, Status,
+    InvestigatorId, ResolutionCandidate, Status, UsageClock,
 };
 
 /// Which path is asking. The kind decides which of the gate's checks apply
@@ -482,8 +482,7 @@ fn usage_exhausted(
                     index,
                     candidate.controller,
                     limit,
-                    state.round,
-                    state.phase,
+                    UsageClock::of(state),
                 )
             })
         })
@@ -642,7 +641,7 @@ pub(super) fn record_initiation(
     let Some(usage_limit) = usage_limit else {
         return;
     };
-    let (current_round, current_phase) = (state.round, state.phase);
+    let now = UsageClock::of(state);
     match candidate.source {
         CandidateSource::Ability(AbilitySource::InPlay(instance_id)) => {
             let (card, _) = board::find_instance_mut(state, instance_id).unwrap_or_else(|| {
@@ -653,13 +652,7 @@ pub(super) fn record_initiation(
                 )
             });
             if let Some(index) = candidate.address.printed_index() {
-                card.bump_ability_usage(
-                    index,
-                    candidate.controller,
-                    usage_limit.period,
-                    current_round,
-                    current_phase,
-                );
+                card.bump_ability_usage(index, candidate.controller, usage_limit.period, now);
             }
         }
         // Listed kind by kind rather than wildcarded: a sixth `AbilitySource`

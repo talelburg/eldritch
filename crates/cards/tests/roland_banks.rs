@@ -21,7 +21,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
     AbilityUsageRecord, CardCode, CardInPlay, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
+    GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers, UsageClock,
 };
 use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -91,7 +91,12 @@ fn fired_in_round_0(mut state: GameState) -> GameState {
         .iter_mut()
         .find(|c| c.instance_id == id)
         .unwrap()
-        .bump_ability_usage(0, INV, UsagePeriod::Round, 0, Phase::Investigation);
+        .bump_ability_usage(
+            0,
+            INV,
+            UsagePeriod::Round,
+            UsageClock::new(0, Phase::Investigation, None),
+        );
     state
 }
 
@@ -134,8 +139,7 @@ fn reaction_fires_after_roland_defeats_enemy_and_discovers_clue() {
         roland_card(state).ability_usage.get(&0),
         Some(&vec![AbilityUsageRecord::new(
             INV,
-            0,
-            Phase::Investigation,
+            UsageClock::new(0, Phase::Investigation, Some(INV)),
             1
         )]),
         "Roland's reaction (ability index 0) should have recorded one fire \
@@ -188,8 +192,7 @@ fn lazy_round_reset_re_enables_reaction_in_a_later_round() {
         roland_card(session.state()).ability_usage.get(&0),
         Some(&vec![AbilityUsageRecord::new(
             INV,
-            1,
-            Phase::Investigation,
+            UsageClock::new(1, Phase::Investigation, Some(INV)),
             1
         )]),
     );

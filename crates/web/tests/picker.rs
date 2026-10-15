@@ -59,6 +59,21 @@ async fn create_button_sends_a_roster() {
 }
 
 #[wasm_bindgen_test]
+async fn selecting_the_skids_radio_sends_skids_roster() {
+    let mut rx = mount_picker();
+    click_last("input[name=inv][value='01003']");
+    click_last(".create-game");
+
+    let req = rx.next().await.expect("a CreateGameRequest was sent");
+    assert_eq!(req.roster.len(), 1);
+    assert_eq!(req.roster[0].investigator.as_str(), "01003");
+    assert!(
+        req.roster[0].deck.iter().any(|c| c.as_str() == "01016"),
+        "Skids is seated with his scaffold deck (.45 Automatic 01016 in it)"
+    );
+}
+
+#[wasm_bindgen_test]
 async fn selecting_the_agnes_radio_sends_agnes_roster() {
     let mut rx = mount_picker();
     click_last("input[name=inv][value='01004']");

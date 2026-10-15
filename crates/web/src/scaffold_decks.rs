@@ -55,3 +55,30 @@ pub const AGNES_DEFAULT_DECK: &[&str] = &[
     "01093", "01093", // Unexpected Courage
     "01013", // Dark Memory (signature weakness)
 ];
+
+/// Placeholder default deck for "Skids" O'Toole (01003) until decklist import
+/// (#782) retires the scaffolds. Implemented cards he may take only, so every
+/// card in it is playable: two of each Guardian level-0 card (his
+/// *"Guardian cards (\[guardian\]) level 0-2"*) and of the neutrals. His
+/// signatures and the Rogue cards join it as they become playable (#1079). NOT
+/// a legal deck — a scaffold for UI testing, like [`ROLAND_DEFAULT_DECK`].
+pub const SKIDS_DEFAULT_DECK: &[&str] = &[
+    "01016", "01016", // .45 Automatic
+    "01017", "01017", // Physical Training
+    "01018", "01018", // Beat Cop
+    "01019", "01019", // First Aid
+    "01020", "01020", // Machete
+    "01021", "01021", // Guard Dog
+    "01022", "01022", // Evidence!
+    "01023", "01023", // Dodge
+    "01024", "01024", // Dynamite Blast
+    "01025", "01025", // Vicious Blow
+    "01086", "01086", // Knife
+    "01087", "01087", // Flashlight
+    "01088", "01088", // Emergency Cache
+    "01089", "01089", // Guts
+    "01090", "01090", // Perception
+    "01091", "01091", // Overpower
+    "01092", "01092", // Manual Dexterity
+    "01093", "01093", // Unexpected Courage
+];

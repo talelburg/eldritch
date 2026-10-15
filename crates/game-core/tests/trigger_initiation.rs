@@ -189,7 +189,7 @@ fn recorded_uses(state: &GameState, instance: CardInstanceId, ability: u8) -> u8
         .get(&ability)
         .into_iter()
         .flatten()
-        .filter(|record| record.round == state.round)
+        .filter(|record| record.clock.round == state.round)
         .map(|record| record.count)
         .sum()
 }

@@ -58,11 +58,13 @@ pub enum Event {
         /// Whose turn it was.
         investigator: InvestigatorId,
     },
-    /// An investigator's action point count changed.
+    /// An investigator's count of **standard** actions changed. Additional
+    /// actions are not announced: gaining, using or losing one emits nothing,
+    /// so a client reads the total from state (`engine::actions_available`).
     ActionsRemainingChanged {
         /// Whose action count changed.
         investigator: InvestigatorId,
-        /// New count.
+        /// New standard count (`Investigator::actions_remaining`).
         new_count: u8,
     },
     /// An investigator moved between locations.

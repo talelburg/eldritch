@@ -20,8 +20,8 @@ pub mod phase;
 pub use ability_source::{AbilityAddress, AbilitySource};
 pub use builder::GameStateBuilder;
 pub use card::{
-    AbilityUsageRecord, CardCode, CardInPlay, CardInstanceId, Deck, DiscardPile, Owner, UseKind,
-    Zone,
+    AbilityUsageRecord, CardCode, CardInPlay, CardInstanceId, Deck, DiscardPile, Owner, UsageClock,
+    UseKind, Zone,
 };
 pub use card_dsl::card_data::{SkillKind, Skills};
 pub use chaos_bag::{resolve_token, ChaosBag, ChaosToken, TokenModifiers, TokenResolution};
@@ -48,6 +48,8 @@ pub use game_state::{
     Act, Agenda, DifficultyBasis, GameState, LastingEffect, LastingEffectKind, Lifetime,
     ModifierTarget, RecordedModifier, RecordedModifierKind, SkillSubstitution, SkillTestId,
 };
-pub use investigator::{EliminationCause, Investigator, InvestigatorId, Status};
+pub use investigator::{
+    AdditionalActionGrant, EliminationCause, Investigator, InvestigatorId, Status,
+};
 pub use location::{Location, LocationId};
 pub use phase::Phase;

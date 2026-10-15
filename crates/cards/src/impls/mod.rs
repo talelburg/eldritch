@@ -147,6 +147,7 @@ pub mod rotting_remains;
 pub mod scrying;
 pub mod shrivelling;
 pub mod silver_twilight_acolyte;
+pub mod skids_otoole;
 pub mod sneak_attack;
 pub mod switchblade;
 pub mod the_barrier;
@@ -293,6 +294,7 @@ pub const ALL: &[CardRecord] = &[
     scrying::CARD,
     shrivelling::CARD,
     silver_twilight_acolyte::CARD,
+    skids_otoole::CARD,
     sneak_attack::CARD,
     switchblade::CARD,
     the_barrier::CARD,

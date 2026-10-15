@@ -4,11 +4,21 @@ use std::collections::BTreeSet;
 use std::iter;
 
 use card_dsl::card_data::CardKind;
+use card_dsl::dsl::AdditionalActionRestriction;
 use serde::{Deserialize, Serialize};
 
 use crate::card_registry::CardRegistry;
 use crate::engine::OptionTarget;
 use crate::state::{CardCode, CardInPlay, CardInstanceId, LocationId, Skills};
+
+/// One additional action an effect granted for this turn, held on
+/// [`Investigator::additional_actions_this_turn`] until it is used or the turn
+/// ends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AdditionalActionGrant {
+    /// What the action may be used for; `None` is any action.
+    pub restriction: Option<AdditionalActionRestriction>,
+}
 
 /// Stable identifier for an investigator within a scenario.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -52,9 +62,20 @@ pub struct Investigator {
     pub clues: u8,
     /// Resources currently held.
     pub resources: u8,
-    /// Action points remaining this turn (refreshed at the start of each
-    /// investigation phase).
+    /// **Standard** actions remaining this turn (refreshed at the start of each
+    /// investigation phase). Additional actions are not counted here: the
+    /// actions the investigator can take are this plus their additional
+    /// actions, which `engine::actions_available` works out (see **Standard
+    /// action / additional action** in `GLOSSARY.md`).
     pub actions_remaining: u8,
+    /// Additional actions pushed by an effect this turn and not yet used —
+    /// "Skids" O'Toole 01003's *"You may take an additional action this
+    /// turn."* Taking an action that one admits removes it; the end of the
+    /// turn forfeits the rest (FAQ 1.31, `glossary/Action.md`: *"Any unused
+    /// actions are forfeited at the end of an investigator's turn"*). A grant
+    /// from a card in play is never stored here: it is read off the card.
+    /// Required on the wire.
+    pub additional_actions_this_turn: Vec<AdditionalActionGrant>,
     /// Active / Killed / Insane / Resigned. See [`Status`].
     pub status: Status,
     /// Player deck. Cards are listed top-to-bottom; the engine draws
@@ -348,6 +369,7 @@ mod threat_area_tests {
             "threat_area",
             "removed_from_game",
             "action_surcharge_spent_this_round",
+            "additional_actions_this_turn",
         ] {
             let mut v = full.clone();
             v.as_object_mut()
@@ -389,11 +411,16 @@ mod threat_area_tests {
 mod ability_usage_tests {
     use card_dsl::dsl::{UsageLimit, UsagePeriod};
 
-    use crate::state::{AbilityUsageRecord, InvestigatorId, Phase};
+    use crate::state::{AbilityUsageRecord, InvestigatorId, Phase, UsageClock};
     use crate::test_support;
 
     /// The investigator triggering the ability in these tests.
     const ME: InvestigatorId = InvestigatorId(1);
+
+    /// The clock at `round` and `phase`, outside any investigator's turn.
+    fn at(round: u32, phase: Phase) -> UsageClock {
+        UsageClock::new(round, phase, None)
+    }
 
     #[test]
     fn new_investigator_card_has_empty_ability_usage() {
@@ -410,25 +437,24 @@ mod ability_usage_tests {
         });
         let card = &mut inv.investigator_card;
         // Ability 0, round 5: not yet fired → not exhausted.
-        assert!(!card.is_usage_exhausted(0, ME, limit, 5, Phase::Investigation));
+        assert!(!card.is_usage_exhausted(0, ME, limit, at(5, Phase::Investigation)));
         // Fire once in round 5 → now exhausted in round 5.
-        card.bump_ability_usage(0, ME, UsagePeriod::Round, 5, Phase::Investigation);
-        assert!(card.is_usage_exhausted(0, ME, limit, 5, Phase::Investigation));
+        card.bump_ability_usage(0, ME, UsagePeriod::Round, at(5, Phase::Investigation));
+        assert!(card.is_usage_exhausted(0, ME, limit, at(5, Phase::Investigation)));
         assert_eq!(
             card.ability_usage.get(&0),
             Some(&vec![AbilityUsageRecord::new(
                 ME,
-                5,
-                Phase::Investigation,
+                at(5, Phase::Investigation),
                 1
             )])
         );
         // A later phase of the same round is the same round: still exhausted.
-        assert!(card.is_usage_exhausted(0, ME, limit, 5, Phase::Enemy));
+        assert!(card.is_usage_exhausted(0, ME, limit, at(5, Phase::Enemy)));
         // Round 6: lazy reset → not exhausted (stored record is stale).
-        assert!(!card.is_usage_exhausted(0, ME, limit, 6, Phase::Investigation));
+        assert!(!card.is_usage_exhausted(0, ME, limit, at(6, Phase::Investigation)));
         // No limit (None) is never exhausted.
-        assert!(!card.is_usage_exhausted(0, ME, None, 5, Phase::Investigation));
+        assert!(!card.is_usage_exhausted(0, ME, None, at(5, Phase::Investigation)));
     }
 
     /// A round limit with a count above 1 keeps counting across a phase change
@@ -441,9 +467,9 @@ mod ability_usage_tests {
             period: UsagePeriod::Round,
         });
         let card = &mut inv.investigator_card;
-        card.bump_ability_usage(0, ME, UsagePeriod::Round, 3, Phase::Investigation);
-        card.bump_ability_usage(0, ME, UsagePeriod::Round, 3, Phase::Enemy);
-        assert!(card.is_usage_exhausted(0, ME, limit, 3, Phase::Upkeep));
+        card.bump_ability_usage(0, ME, UsagePeriod::Round, at(3, Phase::Investigation));
+        card.bump_ability_usage(0, ME, UsagePeriod::Round, at(3, Phase::Enemy));
+        assert!(card.is_usage_exhausted(0, ME, limit, at(3, Phase::Upkeep)));
         assert_eq!(card.ability_usage[&0][0].count, 2);
     }
 
@@ -455,18 +481,34 @@ mod ability_usage_tests {
             period: UsagePeriod::Phase,
         });
         let card = &mut inv.investigator_card;
-        card.bump_ability_usage(0, ME, UsagePeriod::Phase, 3, Phase::Investigation);
-        assert!(card.is_usage_exhausted(0, ME, limit, 3, Phase::Investigation));
+        card.bump_ability_usage(0, ME, UsagePeriod::Phase, at(3, Phase::Investigation));
+        assert!(card.is_usage_exhausted(0, ME, limit, at(3, Phase::Investigation)));
         // A later phase of the same round is a new period.
-        assert!(!card.is_usage_exhausted(0, ME, limit, 3, Phase::Enemy));
+        assert!(!card.is_usage_exhausted(0, ME, limit, at(3, Phase::Enemy)));
         // So is the same phase of the next round.
-        assert!(!card.is_usage_exhausted(0, ME, limit, 4, Phase::Investigation));
+        assert!(!card.is_usage_exhausted(0, ME, limit, at(4, Phase::Investigation)));
         // Firing in the new phase restarts the count there.
-        card.bump_ability_usage(0, ME, UsagePeriod::Phase, 3, Phase::Enemy);
+        card.bump_ability_usage(0, ME, UsagePeriod::Phase, at(3, Phase::Enemy));
         assert_eq!(
             card.ability_usage.get(&0),
-            Some(&vec![AbilityUsageRecord::new(ME, 3, Phase::Enemy, 1)])
+            Some(&vec![AbilityUsageRecord::new(ME, at(3, Phase::Enemy), 1)])
         );
+    }
+
+    /// A turn limit resets when another investigator's turn begins, within the
+    /// same Investigation phase.
+    #[test]
+    fn a_turn_limit_resets_at_the_next_investigators_turn() {
+        let mut inv = test_support::test_investigator(1);
+        let limit = Some(UsageLimit {
+            count: 1,
+            period: UsagePeriod::Turn,
+        });
+        let turn = |id| UsageClock::new(3, Phase::Investigation, Some(InvestigatorId(id)));
+        let card = &mut inv.investigator_card;
+        card.bump_ability_usage(0, ME, UsagePeriod::Turn, turn(1));
+        assert!(card.is_usage_exhausted(0, ME, limit, turn(1)));
+        assert!(!card.is_usage_exhausted(0, ME, limit, turn(2)));
     }
 }
 

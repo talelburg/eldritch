@@ -16,26 +16,38 @@
 //! one place that order is written: pay the actions, pay the caller's own
 //! costs, then the attacks, then perform.
 //!
-//! Additional actions (#778, #779) are not modelled. When they are, payment in
-//! [`take`] is where a pool plugs in, and [`ActionDescription`] is what it tests
-//! an action against.
+//! # The action pool
+//!
+//! An investigator's actions are their **standard** actions
+//! ([`Investigator::actions_remaining`](crate::state::Investigator::actions_remaining))
+//! plus their **additional** actions (see **Standard action / additional
+//! action** in `GLOSSARY.md`). The additional ones are never stored as a count:
+//! [`additional_actions`] works the list out each time it is needed, from the
+//! grants effects pushed this turn ("Skids" O'Toole 01003). FAQ 1.10
+//! (`glossary/Action.md`): *"If an investigator has one or more additional
+//! actions during his or her turn, the first action he or she takes that is
+//! able to qualify as that additional action automatically uses that
+//! additional action."* So [`quote`] counts the entries that admit the action
+//! being taken, and [`take`] spends those before any standard action.
+//! [`ActionDescription`] is what an entry's restriction is tested against
+//! (Daisy Walker 01002, #779).
 
 use std::borrow::Cow;
 use std::fmt;
 
-use card_dsl::dsl::{ActionClass, ActionDesignator};
+use card_dsl::dsl::{ActionClass, ActionDesignator, AdditionalActionRestriction};
 
 use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::actions::evade::EvadeModification;
 use crate::engine::dispatch::actions::fight::FightModification;
 use crate::engine::dispatch::actions::{draw, engage, evade, fight, investigate, r#move, resource};
-use crate::engine::dispatch::{abilities, cards, combat};
+use crate::engine::dispatch::{abilities, cards, combat, cursor};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::{evaluator, Cx};
 use crate::event::Event;
 use crate::state::{
-    AbilitySource, ActionResolutionFrame, ActionResume, CardCode, CardInstanceId, GameState,
-    InvestigatorId, Phase, Status,
+    AbilitySource, ActionResolutionFrame, ActionResume, AdditionalActionGrant, CardCode,
+    CardInstanceId, GameState, InvestigatorId, Phase, Status,
 };
 
 /// What kind of action is being taken: one of the seven basic actions
@@ -187,10 +199,166 @@ impl ActionDescription {
     }
 }
 
-/// What taking an action costs: the total actions, and the surcharge sources to
-/// mark spent once they are paid.
+/// One additional action an investigator holds right now: what it may be used
+/// for, and where it comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct AdditionalAction {
+    restriction: Option<AdditionalActionRestriction>,
+    origin: AdditionalActionOrigin,
+}
+
+impl AdditionalAction {
+    /// Whether taking `description` may use this additional action. An
+    /// unrestricted one admits every action.
+    fn admits(self, _description: &ActionDescription) -> bool {
+        match self.restriction {
+            None => true,
+            // TODO(#779): test the restriction against `_description`.
+            Some(restriction) => match restriction {},
+        }
+    }
+}
+
+/// Where an [`AdditionalAction`] comes from, which decides what using it
+/// changes. Ordered as [`additional_actions`] sorts the entries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum AdditionalActionOrigin {
+    // TODO(#1069): `InPlay(CardInstanceId)`, a `WhileInPlay` grant read from the
+    // constant sweep (Leo De Luca 01048). Declared ahead of `Effect`, so it
+    // sorts first; using one marks its source instance used for the turn.
+    /// The `index`th entry of
+    /// [`Investigator::additional_actions_this_turn`](crate::state::Investigator::additional_actions_this_turn).
+    /// Using it removes the entry.
+    Effect { index: usize },
+}
+
+/// The additional actions `investigator` holds right now, in the order they are
+/// used. Empty unless it is their turn and the turn is not ending
+/// ([`cursor::turn_open`]): every grant is *"during your turn"* or *"this
+/// turn"*, and FAQ 1.31 (`glossary/Action.md`): *"Any unused actions are
+/// forfeited at the end of an investigator's turn"*.
+///
+/// Sorted restricted before unrestricted, then a grant from a card in play
+/// before one an effect granted. Spending takes entries from the front, and
+/// that order stands in for a choice the rules give the player. FAQ 1.10:
+/// *"If an action qualifies as more than one of an investigator's additional
+/// actions, he or she may choose which additional action is used."* Leo De
+/// Luca 01048's ruling says the same of Leo and Quick Thinking (*"you may
+/// choose which additional action you are actually using"*). Spending a
+/// restricted one first keeps the unrestricted ones for actions the restricted
+/// one could not take. Spending a card-in-play one first protects the action
+/// from the card leaving play. While every entry that qualifies carries the
+/// same restriction, nothing the player could choose would change the outcome.
+/// [`quote`] asserts that in debug builds. The first card that breaks it fails
+/// its own test, rather than having the engine silently pick for the player.
+fn additional_actions(
+    state: &GameState,
+    // TODO(#1069): the constant sweep reads the cards' abilities from here.
+    _cards: &CardRegistry,
+    investigator: InvestigatorId,
+) -> Vec<AdditionalAction> {
+    let Some(inv) = state.investigators.get(&investigator) else {
+        return Vec::new();
+    };
+    if !cursor::turn_open(state, investigator) {
+        return Vec::new();
+    }
+    let mut pool: Vec<AdditionalAction> = inv
+        .additional_actions_this_turn
+        .iter()
+        .enumerate()
+        .map(|(index, grant)| AdditionalAction {
+            restriction: grant.restriction,
+            origin: AdditionalActionOrigin::Effect { index },
+        })
+        .collect();
+    pool.sort_by_key(|action| (action.restriction.is_none(), action.origin));
+    pool
+}
+
+/// How many actions `investigator` can still take this turn: their standard
+/// actions plus every additional action they hold, whatever it is restricted
+/// to. What a client shows as "actions remaining". `0` for an investigator not
+/// in state.
+///
+/// Whether a particular action can be afforded is the take step's question, not
+/// this count's: a restricted additional action counts here but pays only for
+/// the actions it admits.
+#[must_use]
+pub fn actions_available(
+    state: &GameState,
+    cards: &CardRegistry,
+    investigator: InvestigatorId,
+) -> u8 {
+    let Some(inv) = state.investigators.get(&investigator) else {
+        return 0;
+    };
+    let additional = additional_actions(state, cards, investigator).len();
+    inv.actions_remaining
+        .saturating_add(u8::try_from(additional).unwrap_or(u8::MAX))
+}
+
+/// Use the additional actions `origins` names for `investigator`: remove each
+/// effect grant. `origins` comes from [`additional_actions`] on the same state.
+fn use_additional_actions(
+    state: &mut GameState,
+    investigator: InvestigatorId,
+    origins: &[AdditionalActionOrigin],
+) {
+    let Some(inv) = state.investigators.get_mut(&investigator) else {
+        return;
+    };
+    let mut effect_indices: Vec<usize> = origins
+        .iter()
+        .map(|origin| match origin {
+            AdditionalActionOrigin::Effect { index } => *index,
+        })
+        .collect();
+    // Highest index first, so each removal leaves the lower indices in place.
+    effect_indices.sort_unstable_by(|a, b| b.cmp(a));
+    for index in effect_indices {
+        inv.additional_actions_this_turn.remove(index);
+    }
+}
+
+/// `investigator` gains an additional action for this turn, which `restriction`
+/// limits to the actions it admits ([`Effect::GainAdditionalAction`] with
+/// [`AdditionalActionScope::ThisTurn`]).
+///
+/// A no-op unless their turn is open and not ending. Outside their turn the
+/// grant has nothing to be used on, and stored it would outlive the turn it was
+/// granted in. "Skids" O'Toole 01003's grant is gated on *"During your turn"*,
+/// so it only gets here during his turn. The one case it reaches here with
+/// nothing to use the grant on is the end-of-turn window, after the unused
+/// actions were forfeited, and there it is forfeited at once.
+///
+/// [`Effect::GainAdditionalAction`]: card_dsl::dsl::Effect::GainAdditionalAction
+/// [`AdditionalActionScope::ThisTurn`]: card_dsl::dsl::AdditionalActionScope::ThisTurn
+pub(crate) fn gain_additional_action(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    restriction: Option<AdditionalActionRestriction>,
+) {
+    debug_assert_eq!(
+        cx.state.active_investigator,
+        Some(investigator),
+        "gain_additional_action: a `ThisTurn` grant outside {investigator:?}'s turn"
+    );
+    if !cursor::turn_open(cx.state, investigator) {
+        return;
+    }
+    if let Some(inv) = cx.state.investigators.get_mut(&investigator) {
+        inv.additional_actions_this_turn
+            .push(AdditionalActionGrant { restriction });
+    }
+}
+
+/// What taking an action costs: the total actions, the additional actions that
+/// pay for part of it, and the surcharge sources to mark spent once they are
+/// paid. The rest of `total` comes from the standard actions.
 struct Quote {
     total: u8,
+    additional: Vec<AdditionalActionOrigin>,
     surcharge_sources: Vec<CardInstanceId>,
 }
 
@@ -199,7 +367,8 @@ struct Quote {
 /// Fear 01164). Pure, so the turn menu can price an action without taking it.
 ///
 /// Checks, in order: the investigator exists, is Active, and it is the
-/// Investigation phase and their turn; then that they can afford the total. An
+/// Investigation phase and their turn; then that they can afford the total,
+/// from their standard actions plus the additional actions that admit it. An
 /// unknown investigator is refused, never a panic, since the id can arrive in a
 /// client message.
 pub(crate) fn check(
@@ -255,11 +424,35 @@ fn quote(
         None => (0, Vec::new()),
     };
     let total = description.action_cost.saturating_add(extra);
-    if inv.actions_remaining < total {
+    let qualifying: Vec<AdditionalAction> = additional_actions(state, cards, investigator)
+        .into_iter()
+        .filter(|action| action.admits(description))
+        .collect();
+    debug_assert!(
+        qualifying
+            .windows(2)
+            .all(|pair| pair[0].restriction == pair[1].restriction),
+        "{name}: qualifies as additional actions with different restrictions, and the \
+         player's FAQ 1.10 choice between them is not built ({qualifying:?})"
+    );
+    // An action costing more than one spends one additional action per action
+    // point, then standard actions for the rest. The vendored rules say nothing
+    // on it directly. The FAQ's Discipline (Balance of Body) answer treats a
+    // multi-action cost as points drawn from separate pools: *"if so, you must
+    // still pay the additional action cost of that ability, and those
+    // additional actions would have to come from your standard pool of actions
+    // or from a source other than Discipline (Balance of Body)."*
+    let from_additional = qualifying.len().min(usize::from(total));
+    let from_standard = total - u8::try_from(from_additional).unwrap_or(total);
+    if inv.actions_remaining < from_standard {
         return Err(format!("{name} requires {total} action point(s)").into());
     }
     Ok(Quote {
         total,
+        additional: qualifying[..from_additional]
+            .iter()
+            .map(|action| action.origin)
+            .collect(),
         surcharge_sources,
     })
 }
@@ -267,6 +460,9 @@ fn quote(
 /// Take the action `description` describes for `investigator`: pay its actions,
 /// mark the surcharge sources it consumed, run `before_attacks`, then either
 /// park the action behind its attacks of opportunity or perform it now.
+///
+/// The actions are paid from the additional actions that admit the action
+/// first, then from the standard ones (FAQ 1.10, see the module doc).
 ///
 /// `before_attacks` pays the caller's own costs and returns the rest of the
 /// action as an [`ActionResume`]. A basic action has no other cost, so its hook
@@ -290,27 +486,34 @@ pub(crate) fn take(
 ) -> EngineOutcome {
     let Quote {
         total,
+        additional,
         surcharge_sources,
     } = match quote(cx.state, cx.cards, investigator, description) {
         Ok(quote) => quote,
         Err(reason) => return EngineOutcome::Rejected { reason },
     };
+    use_additional_actions(cx.state, investigator, &additional);
+    let from_standard = total - u8::try_from(additional.len()).unwrap_or(total);
     let inv = cx
         .state
         .investigators
         .get_mut(&investigator)
         .expect("quote checked the investigator exists");
-    let new_count = inv.actions_remaining - total;
-    inv.actions_remaining = new_count;
     // The surcharge is spent, so its `first_each_round` sources are done for the
     // round: Frozen in Fear 01164's *"The first time you perform one of the
     // following actions (move, fight, or evade) each round"*.
     inv.action_surcharge_spent_this_round
         .extend(surcharge_sources);
-    cx.events.push(Event::ActionsRemainingChanged {
-        investigator,
-        new_count,
-    });
+    // The event announces the standard count, so an action paid wholly from
+    // additional actions changes nothing it reports.
+    if from_standard > 0 {
+        let new_count = inv.actions_remaining - from_standard;
+        inv.actions_remaining = new_count;
+        cx.events.push(Event::ActionsRemainingChanged {
+            investigator,
+            new_count,
+        });
+    }
 
     // TODO(#649): the hook runs ahead of the attacks, and for a play it
     // commences the play: `CardPlayed` is emitted and the card leaves hand. So
@@ -336,22 +539,50 @@ pub(crate) fn take(
 }
 
 /// `investigator` loses `count` actions, saturating at none left.
-/// `glossary/Action.md`: *"If an effect causes an investigator to lose one or
-/// more actions, that investigator has that many fewer standard actions to take
-/// that turn (the investigator’s three standard actions are the ones that are
-/// "lost" first)."* No additional actions are modelled, so the standard ones
-/// are all there is to lose. Announces the new count only when it changed.
+/// `glossary/Action.md` (FAQ 1.10): *"If an effect causes an investigator to
+/// lose one or more actions, that investigator has that many fewer standard
+/// actions to take that turn (the investigator’s three standard actions are the
+/// ones that are "lost" first). If an investigator only has additional actions
+/// remaining, those are then lost, in an order of the investigator’s
+/// choosing."*
+///
+/// So the standard actions go first, then the additional ones in the order
+/// [`additional_actions`] sorts them. That order stands in for the
+/// investigator's choice, as it does for spending.
+///
+/// Announces the new standard count only when it changed.
 ///
 /// Reached through `NativeCx::lose_actions` (Blinding Light 01066's *"lose 1
 /// action this turn"*). An investigator not in state loses nothing.
 pub(crate) fn lose_actions(cx: &mut Cx, investigator: InvestigatorId, count: u8) {
-    let Some(inv) = cx.state.investigators.get_mut(&investigator) else {
+    let Some(standard) = cx
+        .state
+        .investigators
+        .get(&investigator)
+        .map(|inv| inv.actions_remaining)
+    else {
         return;
     };
-    let new_count = inv.actions_remaining.saturating_sub(count);
-    if new_count == inv.actions_remaining {
+    let from_standard = count.min(standard);
+    let from_additional = usize::from(count - from_standard);
+    if from_additional > 0 {
+        let lost: Vec<AdditionalActionOrigin> =
+            additional_actions(cx.state, cx.cards, investigator)
+                .into_iter()
+                .take(from_additional)
+                .map(|action| action.origin)
+                .collect();
+        use_additional_actions(cx.state, investigator, &lost);
+    }
+    if from_standard == 0 {
         return;
     }
+    let inv = cx
+        .state
+        .investigators
+        .get_mut(&investigator)
+        .expect("checked above");
+    let new_count = standard - from_standard;
     inv.actions_remaining = new_count;
     cx.events.push(Event::ActionsRemainingChanged {
         investigator,

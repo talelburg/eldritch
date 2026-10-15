@@ -6,7 +6,7 @@ use std::fmt;
 use card_dsl::dsl::{UsageLimit, UsagePeriod};
 use serde::{Deserialize, Serialize};
 
-use crate::state::{InvestigatorId, Phase};
+use crate::state::{GameState, InvestigatorId, Phase};
 
 /// `ArkhamDB` card code (e.g. `"01030"` for Magnifying Glass).
 ///
@@ -215,8 +215,8 @@ pub struct CardInPlay {
     /// Per-ability usage counter for "Limit X per \[period\]" caps. Key
     /// is the ability index within the card's `abilities()`; value holds one
     /// [`AbilityUsageRecord`] per investigator who has triggered it, each
-    /// recording the round and phase that investigator last fired it in and
-    /// how many times.
+    /// recording the [`UsageClock`] reading (round, phase and turn) that
+    /// investigator last fired it at and how many times.
     ///
     /// **Counted per instance and per triggering investigator.**
     /// `glossary/Limits_and_Maximums.md`: *"Each instance of an ability with
@@ -231,11 +231,11 @@ pub struct CardInPlay {
     ///
     /// Reset is **lazy** — when a query needs the count for the current
     /// period, it reads the record; if the stored clock is outside the
-    /// period containing [`GameState::round`](crate::state::GameState::round)
-    /// and [`GameState::phase`](crate::state::GameState::phase) (a different
-    /// round for a round limit; a different round or phase for a phase
-    /// limit), the count is treated as 0 (and overwritten on next fire). No
-    /// period-end hook is required.
+    /// period containing the current [`UsageClock`] (a different round for a
+    /// round limit; a different round or phase for a phase limit; a different
+    /// round, phase or active investigator for a turn limit), the count is
+    /// treated as 0 (and overwritten on next fire). No period-end hook is
+    /// required.
     ///
     /// Empty for cards with no [`UsageLimit`] on any ability. Required on the
     /// wire (#453).
@@ -294,18 +294,64 @@ pub enum Owner {
     Scenario,
 }
 
+/// A reading of the clock a [`UsagePeriod`] is measured on: the
+/// [`GameState::round`](crate::state::GameState::round), the
+/// [`GameState::phase`](crate::state::GameState::phase), and whose turn it is
+/// ([`GameState::active_investigator`](crate::state::GameState::active_investigator)).
+///
+/// The turn is the active investigator rather than a turn counter: each
+/// investigator takes one turn per Investigation phase, so round, phase and
+/// investigator together name the turn. Outside the Investigation phase the
+/// engine clears the active investigator, so `turn` is `None` there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct UsageClock {
+    pub round: u32,
+    pub phase: Phase,
+    pub turn: Option<InvestigatorId>,
+}
+
+impl UsageClock {
+    /// A clock reading. `#[non_exhaustive]`, so construct it through here.
+    #[must_use]
+    pub fn new(round: u32, phase: Phase, turn: Option<InvestigatorId>) -> Self {
+        Self { round, phase, turn }
+    }
+
+    /// The clock as `state` reads now.
+    #[must_use]
+    pub fn of(state: &GameState) -> Self {
+        Self::new(state.round, state.phase, state.active_investigator)
+    }
+
+    /// Whether `self` and `now` fall in the same `period`. A `Round` period
+    /// ignores the phase, so a round limit does not reset at a phase change; a
+    /// `Phase` period needs both to match, since the same phase recurs every
+    /// round; a `Turn` period also needs the same investigator's turn.
+    fn same_period(self, period: UsagePeriod, now: Self) -> bool {
+        match period {
+            UsagePeriod::Round => self.round == now.round,
+            UsagePeriod::Phase => self.round == now.round && self.phase == now.phase,
+            UsagePeriod::Turn => self == now,
+        }
+    }
+}
+
 /// One investigator's firing record of one ability, for "Limit X per
 /// \[period\]" tracking.
 ///
 /// `investigator` is who triggered it: limits are player specific (see
 /// [`CardInPlay::ability_usage`]), so each triggering investigator has a
-/// record of their own. `round` and `phase` are the values of
-/// [`GameState::round`](crate::state::GameState::round) and
-/// [`GameState::phase`](crate::state::GameState::phase) at last fire —
-/// the clock every [`UsagePeriod`] reads its part of. `count` is the number
-/// of fires during the period that clock reading falls in (compared against
-/// the ability's [`UsageLimit::count`](card_dsl::dsl::UsageLimit::count)
-/// to gate further fires).
+/// record of their own. `clock` is the [`UsageClock`] reading at last fire —
+/// the clock every [`UsagePeriod`] reads its part of. `count` is the number of
+/// fires during the period that clock reading falls in (compared against the
+/// ability's [`UsageLimit::count`](card_dsl::dsl::UsageLimit::count) to gate
+/// further fires).
+///
+/// The two keys are separate. Whose record it is answers *who triggered it*;
+/// the clock's `turn` answers *whose turn it was*, which is what tells one
+/// [`UsagePeriod::Turn`] from the next. They differ when an investigator
+/// triggers an ability during someone else's turn.
 ///
 /// The record stores the whole clock whatever the ability's period, so its
 /// shape does not vary by limit; the period is applied when the record is read
@@ -318,8 +364,7 @@ pub enum Owner {
 #[non_exhaustive]
 pub struct AbilityUsageRecord {
     pub investigator: InvestigatorId,
-    pub round: u32,
-    pub phase: Phase,
+    pub clock: UsageClock,
     pub count: u8,
 }
 
@@ -328,43 +373,30 @@ impl AbilityUsageRecord {
     /// is `#[non_exhaustive]` so downstream code (tests, future
     /// scenario modules) must go through this constructor.
     #[must_use]
-    pub fn new(investigator: InvestigatorId, round: u32, phase: Phase, count: u8) -> Self {
+    pub fn new(investigator: InvestigatorId, clock: UsageClock, count: u8) -> Self {
         Self {
             investigator,
-            round,
-            phase,
+            clock,
             count,
-        }
-    }
-
-    /// Whether this record was made in the same `period` as the clock reading
-    /// `(round, phase)`. A `Round` period ignores the phase, so a round limit
-    /// does not reset at a phase change; a `Phase` period needs both to match,
-    /// since the same phase recurs every round.
-    fn in_period(self, period: UsagePeriod, round: u32, phase: Phase) -> bool {
-        match period {
-            UsagePeriod::Round => self.round == round,
-            UsagePeriod::Phase => self.round == round && self.phase == phase,
         }
     }
 }
 
 /// Whether `investigator` has used the ability at `ability_index` up to its
-/// [`UsageLimit::count`] for the period containing the clock reading
-/// `(current_round, current_phase)`, reading their firing record out of
-/// `usage`. Another investigator's uses do not count (limits are player
-/// specific; see [`CardInPlay::ability_usage`]). Shared by [`CardInPlay`] and
-/// [`Investigator`](crate::state::Investigator) so both usage-bearing
-/// sources apply the same lazy-reset semantics (see the field docs on
-/// [`CardInPlay::ability_usage`]). `None` limit ⇒ no cap ⇒ `false`.
+/// [`UsageLimit::count`] for the period containing the clock reading `now`,
+/// reading their firing record out of `usage`. Another investigator's uses do
+/// not count (limits are player specific; see [`CardInPlay::ability_usage`]).
+/// Shared by [`CardInPlay`] and [`Investigator`](crate::state::Investigator) so
+/// both usage-bearing sources apply the same lazy-reset semantics (see the
+/// field docs on [`CardInPlay::ability_usage`]). `None` limit ⇒ no cap ⇒
+/// `false`.
 #[must_use]
 pub fn usage_exhausted(
     usage: &BTreeMap<u8, Vec<AbilityUsageRecord>>,
     ability_index: u8,
     investigator: InvestigatorId,
     limit: Option<UsageLimit>,
-    current_round: u32,
-    current_phase: Phase,
+    now: UsageClock,
 ) -> bool {
     let Some(limit) = limit else {
         return false;
@@ -374,44 +406,33 @@ pub fn usage_exhausted(
         .into_iter()
         .flatten()
         .filter(|record| record.investigator == investigator)
-        .any(|record| {
-            record.in_period(limit.period, current_round, current_phase)
-                && record.count >= limit.count
-        })
+        .any(|record| record.clock.same_period(limit.period, now) && record.count >= limit.count)
 }
 
 /// Record one firing of the ability at `ability_index` by `investigator`
-/// against the `period` containing the clock reading `(current_round,
-/// current_phase)`, into their record in `usage` (lazy reset when the stored
-/// record is for a stale period).
+/// against the `period` containing the clock reading `now`, into their record
+/// in `usage` (lazy reset when the stored record is for a stale period).
 /// Shared by [`CardInPlay`] and [`Investigator`](crate::state::Investigator).
 pub fn bump_usage(
     usage: &mut BTreeMap<u8, Vec<AbilityUsageRecord>>,
     ability_index: u8,
     investigator: InvestigatorId,
     period: UsagePeriod,
-    current_round: u32,
-    current_phase: Phase,
+    now: UsageClock,
 ) {
     let records = usage.entry(ability_index).or_default();
     let at = records
         .iter()
         .position(|record| record.investigator == investigator)
         .unwrap_or_else(|| {
-            records.push(AbilityUsageRecord::new(
-                investigator,
-                current_round,
-                current_phase,
-                0,
-            ));
+            records.push(AbilityUsageRecord::new(investigator, now, 0));
             records.len() - 1
         });
     let record = &mut records[at];
-    if !record.in_period(period, current_round, current_phase) {
+    if !record.clock.same_period(period, now) {
         record.count = 0;
     }
-    record.round = current_round;
-    record.phase = current_phase;
+    record.clock = now;
     record.count = record.count.saturating_add(1);
 }
 
@@ -455,17 +476,9 @@ impl CardInPlay {
         ability_index: u8,
         investigator: InvestigatorId,
         limit: Option<UsageLimit>,
-        current_round: u32,
-        current_phase: Phase,
+        now: UsageClock,
     ) -> bool {
-        usage_exhausted(
-            &self.ability_usage,
-            ability_index,
-            investigator,
-            limit,
-            current_round,
-            current_phase,
-        )
+        usage_exhausted(&self.ability_usage, ability_index, investigator, limit, now)
     }
 
     /// Record one firing of the ability at `ability_index` by `investigator`
@@ -477,16 +490,14 @@ impl CardInPlay {
         ability_index: u8,
         investigator: InvestigatorId,
         period: UsagePeriod,
-        current_round: u32,
-        current_phase: Phase,
+        now: UsageClock,
     ) {
         bump_usage(
             &mut self.ability_usage,
             ability_index,
             investigator,
             period,
-            current_round,
-            current_phase,
+            now,
         );
     }
 }

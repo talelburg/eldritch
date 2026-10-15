@@ -69,10 +69,11 @@
 
 use card_dsl::card_data::{CardType, SkillKind};
 use card_dsl::dsl::{
-    ActionClass, ActionDesignator, CardFilter, ChoiceBranch, CmpOp, Condition, ControlStatus,
-    Determination, Effect, EnemyTarget, EntityScope, ForEachTargets, HarmKind, IntExpr,
-    InvestigatorTarget, InvestigatorTargetSet, LocationSet, LocationTarget, ModifierAudience,
-    ModifierScope, Quantity, Restriction, RevealClause, SearchScope, SkillTestKind, Stat, Trigger,
+    ActionClass, ActionDesignator, AdditionalActionScope, CardFilter, ChoiceBranch, CmpOp,
+    Condition, ControlStatus, Determination, Effect, EnemyTarget, EntityScope, ForEachTargets,
+    HarmKind, IntExpr, InvestigatorTarget, InvestigatorTargetSet, LocationSet, LocationTarget,
+    ModifierAudience, ModifierScope, Quantity, Restriction, RevealClause, SearchScope,
+    SkillTestKind, Stat, Trigger,
 };
 use serde::{Deserialize, Serialize};
 
@@ -80,6 +81,7 @@ use crate::card_registry::{self, CardRegistry};
 use crate::engine::board::{self, Placement};
 use crate::engine::dispatch::actions::evade::EvadeModification;
 use crate::engine::dispatch::actions::fight::FightModification;
+use crate::engine::dispatch::actions::take;
 use crate::engine::dispatch::choice::{ChoiceResolution, Grounded};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{
@@ -965,6 +967,21 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
                 .into(),
         },
         Effect::TakeControl { code } => dispatch::take_control(cx, eval_ctx.controller, code),
+        Effect::GainAdditionalAction {
+            restriction,
+            scope: AdditionalActionScope::ThisTurn,
+        } => {
+            take::gain_additional_action(cx, eval_ctx.controller, *restriction);
+            EngineOutcome::Done
+        }
+        Effect::GainAdditionalAction {
+            scope: AdditionalActionScope::WhileInPlay,
+            ..
+        } => EngineOutcome::Rejected {
+            reason: "Effect::GainAdditionalAction { WhileInPlay } is a constant marker — read \
+                     off the card in play when actions are counted, never executed"
+                .into(),
+        },
         Effect::BoostAttackDamage(amount) => boost_attack_damage_effect(cx, *amount),
         Effect::DiscoverAdditionalClues(amount) => discover_additional_clues_effect(cx, *amount),
         Effect::DrawCards { target, count } => draw_cards_effect(cx, eval_ctx, *target, *count),
