@@ -1696,11 +1696,11 @@ pub enum SkillTestFollowUp {
     Fight {
         /// The enemy the Fight action targeted.
         enemy: EnemyId,
-        /// Bonus damage beyond the base 1 (weapons), `Lit(0)` for a basic
-        /// Fight. Unevaluated until the follow-up runs at RR ST.7, against
-        /// the test's success margin and the board the damage lands on
-        /// (Switchblade 01044, Machete 01020).
-        extra_damage: IntExpr,
+        /// Bonus damage beyond the base 1 (weapons), `None` for a basic
+        /// Fight, which contributes nothing. Unevaluated until the follow-up
+        /// runs at RR ST.7, against the test's success margin and the board
+        /// the damage lands on (Switchblade 01044, Machete 01020).
+        extra_damage: Option<IntExpr>,
     },
     /// On success, disengage the named enemy from the investigator and
     /// exhaust it. Used by `Evade`.

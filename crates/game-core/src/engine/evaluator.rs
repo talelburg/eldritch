@@ -829,7 +829,7 @@ fn perform_designated_fight(
         enemy_id,
         FightModification {
             combat_modifier: Some(combat_modifier.clone()),
-            extra_damage: extra_damage.clone(),
+            extra_damage: Some(extra_damage.clone()),
             skill_override,
             reveal_clause: reveal_clause.cloned(),
         },

@@ -378,7 +378,7 @@ mod tests {
             );
             test.follow_up = SkillTestFollowUp::Fight {
                 enemy: if monster { EnemyId(1) } else { EnemyId(2) },
-                extra_damage: dsl::IntExpr::Lit(0),
+                extra_damage: None,
             };
             // The builder staged no frame, so the test is the whole stack. A
             // predicate unit test reads no prompt: it needs a Fight in flight,

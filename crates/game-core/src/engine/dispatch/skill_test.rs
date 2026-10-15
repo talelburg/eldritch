@@ -818,7 +818,7 @@ fn apply_follow_up_step(cx: &mut Cx, investigator: InvestigatorId) -> Result<(),
         SkillTestFollowUp::Fight {
             enemy,
             extra_damage,
-        } => fight::after_test(cx, investigator, enemy, &extra_damage)?,
+        } => fight::after_test(cx, investigator, enemy, extra_damage.as_ref())?,
         SkillTestFollowUp::Evade { enemy } => evade::after_test(cx, investigator, enemy),
     }
     Ok(())

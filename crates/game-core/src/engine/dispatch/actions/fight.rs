@@ -125,30 +125,20 @@ pub(in crate::engine::dispatch) fn handle(
 /// as described in the rules, but modified in the manner described by the
 /// ability"*). [`Default`] is the basic Fight action's: a combat test, no
 /// modifier, no extra damage, no clause.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct FightModification {
     /// *"+N \[combat\] for this attack"*, applied to whichever skill the
     /// attack tests.
     pub combat_modifier: Option<IntExpr>,
     /// Damage beyond the base 1 (.38 Special: +1), unevaluated until
-    /// [`after_test`] determines the attack's damage at RR ST.7.
-    pub extra_damage: IntExpr,
+    /// [`after_test`] determines the attack's damage at RR ST.7. `None` is the
+    /// basic Fight's, which deals no extra damage.
+    pub extra_damage: Option<IntExpr>,
     /// The skill tested instead of `[combat]` (Shrivelling 01060's
     /// `[willpower]`).
     pub skill_override: Option<SkillKind>,
     /// The card's *"If a \<symbol\> is revealed during this attack"*.
     pub reveal_clause: Option<RevealClause>,
-}
-
-impl Default for FightModification {
-    fn default() -> Self {
-        Self {
-            combat_modifier: None,
-            extra_damage: IntExpr::Lit(0),
-            skill_override: None,
-            reveal_clause: None,
-        }
-    }
 }
 
 /// Perform a **fight** against `enemy_id`: a Combat test (or the skill
@@ -230,6 +220,8 @@ pub(crate) fn perform(
 /// can do it: the fast hand events are Dodge, Working a Hunch, Evidence and Mind
 /// over Matter, none of which removes an enemy.
 ///
+/// A `None` `extra_damage` (the basic Fight) contributes nothing.
+///
 /// A weapon's bonus damage (.38 Special's +1) rides on `extra_damage`; a
 /// committed skill's bonus (Vicious Blow's +1) accumulates on the in-flight
 /// record at commit time (#307). The in-flight test is still present here —
@@ -239,7 +231,7 @@ pub(in crate::engine::dispatch) fn after_test(
     cx: &mut Cx,
     investigator: InvestigatorId,
     enemy_id: EnemyId,
-    extra_damage: &IntExpr,
+    extra_damage: Option<&IntExpr>,
 ) -> Result<(), EngineOutcome> {
     let (bonus, source, margin) = cx.state.current_skill_test().map_or((0, None, 0), |t| {
         (
@@ -251,12 +243,16 @@ pub(in crate::engine::dispatch) fn after_test(
     let mut ctx = EvalContext::for_controller_with_optional_source(investigator, source);
     ctx.set_chosen_enemy(enemy_id);
     ctx.set_succeeded_by(u8::try_from(margin).unwrap_or(0));
-    let extra =
-        evaluator::eval_int_expr(cx.state, cx.cards, &ctx, extra_damage).map_err(|reason| {
-            EngineOutcome::Rejected {
-                reason: reason.into(),
-            }
-        })?;
+    let extra = match extra_damage {
+        Some(expr) => {
+            evaluator::eval_int_expr(cx.state, cx.cards, &ctx, expr).map_err(|reason| {
+                EngineOutcome::Rejected {
+                    reason: reason.into(),
+                }
+            })?
+        }
+        None => 0,
+    };
     combat::damage_enemy(
         cx,
         enemy_id,
@@ -348,7 +344,7 @@ mod tests {
             .push(Continuation::SkillTest(InFlightSkillTest {
                 follow_up: SkillTestFollowUp::Fight {
                     enemy: EnemyId(7),
-                    extra_damage: IntExpr::Lit(1),
+                    extra_damage: Some(IntExpr::Lit(1)),
                 },
                 bonus_attack_damage: 2,
                 ..test_support::test_skill_test(
@@ -362,7 +358,7 @@ mod tests {
         let mut events = Vec::new();
         let mut cx = Cx::for_test(&mut state, &mut events);
 
-        after_test(&mut cx, inv, EnemyId(7), &IntExpr::Lit(1)).expect("a literal evaluates");
+        after_test(&mut cx, inv, EnemyId(7), Some(&IntExpr::Lit(1))).expect("a literal evaluates");
 
         assert_eq!(
             state.enemies[&EnemyId(7)].damage,
