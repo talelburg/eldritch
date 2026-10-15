@@ -1352,14 +1352,15 @@ pub struct UsageLimit {
 
 /// The period a [`UsageLimit`] is measured over.
 ///
-/// `Round` (Roland's "Limit once per round") and `Phase` (Agnes Baker's
-/// "Limit once per phase"). `Turn` ("limit once per turn") and `Game`
-/// ("limit once per game" — group or player) land when the first consumer
-/// appears.
+/// `Round` (Roland's "Limit once per round"), `Phase` (Agnes Baker's
+/// "Limit once per phase") and `Turn` ("Skids" O'Toole's "Limit once per
+/// turn"). `Game` ("limit once per game" — group or player) lands when the
+/// first consumer appears.
 ///
 /// The period decides when a counter resets, and nothing else: the engine's
-/// usage record notes the round **and** phase of its last fire either way, and
-/// each period compares the part of that clock it is measured over.
+/// usage record notes the round, the phase **and** the turn of its last fire
+/// either way, and each period compares the part of that clock it is measured
+/// over.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum UsagePeriod {
     /// A game round, as defined by the framework: begins at 1.1 Mythos,
@@ -1372,6 +1373,12 @@ pub enum UsagePeriod {
     /// Investigation phase of one round is a different period from the
     /// Investigation phase of the next.
     Phase,
+    /// An investigator's turn. Counter resets when the round, the phase or
+    /// the active investigator changes: each investigator takes one turn per
+    /// Investigation phase, so those three name the turn. Outside the
+    /// Investigation phase there is no turn, and the period is the rest of the
+    /// phase.
+    Turn,
 }
 
 // ---- abilities -------------------------------------------------
@@ -1673,7 +1680,8 @@ impl Effect {
             | Effect::Restrict(_)
             | Effect::SearchDeck { .. }
             | Effect::AttachSelfToLocation
-            | Effect::TakeControl { .. } => {}
+            | Effect::TakeControl { .. }
+            | Effect::GainAdditionalAction { .. } => {}
         }
     }
 }
@@ -2190,6 +2198,59 @@ pub enum Effect {
         /// Printed `ArkhamDB` code of the card to take control of.
         code: String,
     },
+    /// **Grant an additional action** (see **Standard action / additional
+    /// action** in `GLOSSARY.md`): one more action the investigator may take
+    /// this turn, on top of the three standard ones. `glossary/Action.md`:
+    /// *"Some card abilities may grant an investigator additional actions to
+    /// take during his or her turn."*
+    ///
+    /// The `scope` says where the grant comes from, and so how the engine reads
+    /// it:
+    ///
+    /// - [`ThisTurn`](AdditionalActionScope::ThisTurn) is **executed**, by an
+    ///   ability that resolves: "Skids" O'Toole 01003's *"spend 2 resources:
+    ///   You may take an additional action this turn."* The grant is pushed
+    ///   onto the controller and lasts until it is used or the turn ends.
+    /// - [`WhileInPlay`](AdditionalActionScope::WhileInPlay) is **inspected**,
+    ///   under a [`Trigger::Constant`], like [`Restrict`](Self::Restrict):
+    ///   Leo De Luca 01048's *"You may take an additional action during your
+    ///   turn."* Resolving one rejects.
+    ///
+    /// The engine never stores a count of additional actions. It works the list
+    /// out each time it's needed, so a grant from a card in play is gone the
+    /// moment the card leaves play.
+    GainAdditionalAction {
+        /// What the additional action may be used for. `None` is any action.
+        restriction: Option<AdditionalActionRestriction>,
+        /// Where the grant comes from and how long it lasts.
+        scope: AdditionalActionScope,
+    },
+}
+
+/// What an [`Effect::GainAdditionalAction`] may be spent on — Daisy Walker
+/// 01002's *"You may take an additional action during your turn, which can
+/// only be used on \[\[Tome\]\] \[action\] abilities."*
+///
+/// TODO(#779): uninhabited until Daisy defines the first restriction, so every
+/// grant built today is unrestricted (`None`) and nothing on the wire can carry
+/// one. #779 adds the variants; no stored state needs migrating.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum AdditionalActionRestriction {}
+
+/// Where an [`Effect::GainAdditionalAction`] comes from, and how long it lasts.
+///
+/// Its own type rather than [`ModifierScope`], whose `WhileInPlayDuring` and
+/// `ThisSkillTest` mean nothing for a grant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum AdditionalActionScope {
+    /// For as long as the source card is in play, during each of its
+    /// controller's turns, once per turn per card (Leo De Luca 01048). Read
+    /// under a [`Trigger::Constant`], never executed.
+    WhileInPlay,
+    /// Until used, or until the end of the current turn ("Skids" O'Toole
+    /// 01003). FAQ 1.31: *"Any unused actions are forfeited at the end of an
+    /// investigator's turn."*
+    ThisTurn,
 }
 
 /// Which card an [`Effect::Grant`] gives its abilities to.
@@ -2757,6 +2818,8 @@ pub enum Condition {
     ///   stands in for a change-state check its opaque [`Effect::Native`] hides.
     /// - **Lita Chantler 01117**, as eligibility — a trigger narrowing, and a
     ///   misfit there (see [`Ability::eligibility`]).
+    /// - **"Skids" O'Toole 01003**, as eligibility — *"During your turn"* on a
+    ///   `[fast]` ability, a play restriction no declarative condition names.
     ///
     /// `TODO(#609)`: this is an escape hatch, not a pattern. Lita's *"an
     /// investigator at your location successfully attacks a \[\[Monster\]\]
@@ -3154,6 +3217,15 @@ pub fn elder_sign_with(outcome: TokenOutcome) -> Ability {
 #[must_use]
 pub fn gain_resources(target: InvestigatorTarget, amount: u8) -> Effect {
     Effect::GainResources { target, amount }
+}
+
+/// Build an unrestricted [`Effect::GainAdditionalAction`] of `scope`.
+#[must_use]
+pub fn gain_additional_action(scope: AdditionalActionScope) -> Effect {
+    Effect::GainAdditionalAction {
+        restriction: None,
+        scope,
+    }
 }
 
 /// Build an [`Effect::DiscoverClue`].

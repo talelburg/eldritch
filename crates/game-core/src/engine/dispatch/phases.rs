@@ -107,6 +107,7 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
                 threat_area: Vec::new(),
                 removed_from_game: Vec::new(),
                 action_surcharge_spent_this_round: BTreeSet::new(),
+                additional_actions_this_turn: Vec::new(),
                 investigator_card,
             },
         );
@@ -190,7 +191,12 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
             )
         });
 
-    // Drain remaining actions and announce the turn ended.
+    // Drain remaining actions, standard and additional, and announce the turn
+    // ended. FAQ 1.31 (`glossary/Action.md`): "Any unused actions are forfeited
+    // at the end of an investigator's turn". A grant from a card in play is
+    // never stored, so arming the turn frame's `ending` flag below is what ends
+    // it (`cursor::turn_open`).
+    active.additional_actions_this_turn.clear();
     if active.actions_remaining != 0 {
         active.actions_remaining = 0;
         cx.events.push(Event::ActionsRemainingChanged {

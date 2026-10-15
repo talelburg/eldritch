@@ -33,7 +33,7 @@ use game_core::engine::OptionTarget;
 use game_core::event::{Event, LapseReason};
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId,
-    LocationId, SkillKind, Status, TokenModifiers,
+    LocationId, SkillKind, Status, TokenModifiers, UsageClock,
 };
 use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
@@ -347,14 +347,14 @@ fn rolands_window_open() -> GameState {
 #[test]
 fn rolands_reaction_lapses_as_usage_limit_reached_once_its_limit_is_used() {
     let mut state = rolands_window_open();
-    let (round, phase) = (state.round, state.phase);
+    let now = UsageClock::of(&state);
     // His reaction is the first ability printed on his card (`roland_banks.rs`).
     state
         .investigators
         .get_mut(&INV)
         .expect("seated")
         .investigator_card
-        .bump_ability_usage(0, UsagePeriod::Round, round, phase);
+        .bump_ability_usage(0, UsagePeriod::Round, now);
 
     let resurfaced = TestSession::new(state, TEST_REGISTRIES);
 

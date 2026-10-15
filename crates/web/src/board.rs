@@ -3,7 +3,7 @@
 //! their names, read from the registry provided at mount
 //! ([`registry::use_cards`]).
 
-use game_core::engine::OptionTarget;
+use game_core::engine::{self, OptionTarget};
 use game_core::scenario::ScenarioEnding;
 use game_core::state::GameState;
 use leptos::prelude::*;
@@ -94,7 +94,8 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
                     <span class="inv-san">"san " {inv.horror()} "/" {inv.max_sanity(cards)}</span>
                 </div>
             };
-            let pips: Vec<_> = (0..inv.actions_remaining)
+            // Standard plus additional: "Skids" O'Toole's bought action is a pip too.
+            let pips: Vec<_> = (0..engine::actions_available(game, cards, inv_id))
                 .map(|_| view! { <span class="pip">"●"</span> })
                 .collect();
             view! {

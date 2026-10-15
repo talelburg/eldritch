@@ -982,8 +982,6 @@ fn apply_result_effect_step(cx: &mut Cx, investigator: InvestigatorId) {
 /// [`FireOnResolution`](SkillTestStep::FireOnResolution) **before** the push, so
 /// a suspending effect (a sanity-soak on an `Effect::Deal`) resumes past this
 /// step. The fixed position after the card result is #642's divergence.
-// TODO(#778): the investigator-card-sourced ST.7 parts (an elder sign's
-// "If you succeed") get their first test with Skids.
 fn apply_token_result_step(cx: &mut Cx, investigator: InvestigatorId) {
     let ResolvedTest {
         succeeded,

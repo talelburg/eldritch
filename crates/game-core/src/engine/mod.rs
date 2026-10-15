@@ -29,6 +29,7 @@ pub(crate) mod pathfinding;
 // exits that change the game are crate-private: natives reach them as
 // `NativeCx` methods.
 pub use dispatch::act_agenda::round_end_advance_affordable;
+pub use dispatch::actions::take::actions_available;
 pub use dispatch::choice::{resolve_card_choice, resolve_grounded_choice, Grounded};
 pub use dispatch::movement::{enemy_can_enter_location, investigator_can_enter_location};
 pub use dispatch::uses::{MoveUsesError, SpendUsesError};

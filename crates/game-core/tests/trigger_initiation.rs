@@ -187,7 +187,7 @@ fn recorded_uses(state: &GameState, instance: CardInstanceId, ability: u8) -> u8
         .expect("the card is still in the threat area");
     card.ability_usage
         .get(&ability)
-        .filter(|record| record.round == state.round)
+        .filter(|record| record.clock.round == state.round)
         .map_or(0, |record| record.count)
 }
 
