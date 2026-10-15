@@ -95,14 +95,24 @@ use crate::state::{
     LocationId, Owner, PlayFromHandFrame, RecordedModifier, SkillTestFollowUp, Status,
 };
 
-/// Failure margin of the just-resolved skill test (bound only while running an
-/// `on_fail` effect). Innermost-only: same-kind test nesting is carried by the
-/// per-frame snapshot stack, not multiple slots here (corpus-verified moot — no
-/// card reads a non-innermost margin; see the §1 cleanup spec §D).
+/// Margin of the just-resolved skill test, bound only while running one of its
+/// RR ST.7 results: the failure margin for an `on_fail` effect, the success
+/// margin for the attack's damage and an `on_success` effect. Innermost-only:
+/// same-kind test nesting is carried by the per-frame snapshot stack, not
+/// multiple slots here (corpus-verified moot — no card reads a non-innermost
+/// margin; see the §1 cleanup spec §D).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SkillTestBinding {
-    /// Points the test was failed by.
-    pub failed_by: u8,
+pub enum SkillTestBinding {
+    /// The test failed, by this many points.
+    Failed {
+        /// Points the test was failed by.
+        by: u8,
+    },
+    /// The test succeeded, by this many points.
+    Succeeded {
+        /// Points the test was succeeded by.
+        by: u8,
+    },
 }
 
 /// The clue count of the discovery an ability is responding to (bound only
@@ -176,8 +186,9 @@ pub struct EvalContext {
     /// "you" in card text. Resolves [`InvestigatorTarget::You`]
     /// and [`LocationTarget::YourLocation`].
     pub controller: InvestigatorId,
-    /// Skill-test margin binding, bound only while running an `on_fail` effect.
-    /// Read via [`Self::failed_by`]. `None` outside that window.
+    /// Skill-test margin binding, bound only while running an ST.7 result.
+    /// Read via [`Self::failed_by`] and [`Self::succeeded_by`]. `None` outside
+    /// that window.
     pub skill_test: Option<SkillTestBinding>,
     /// Clue-discovery binding, bound only while resolving a `DiscoverClues`
     /// ability's effect (any cell). Read via [`Self::clue_discovery_count`].
@@ -305,7 +316,20 @@ impl EvalContext {
     /// `on_fail` effect). Consumed by `IntExpr::Count(Quantity::SkillTestFailedBy)`.
     #[must_use]
     pub fn failed_by(&self) -> Option<u8> {
-        self.skill_test.map(|b| b.failed_by)
+        match self.skill_test {
+            Some(SkillTestBinding::Failed { by }) => Some(by),
+            _ => None,
+        }
+    }
+    /// Just-resolved skill test's success margin (bound only while running a
+    /// passed test's ST.7 results). Consumed by
+    /// `IntExpr::Count(Quantity::SkillTestSucceededBy)`.
+    #[must_use]
+    pub fn succeeded_by(&self) -> Option<u8> {
+        match self.skill_test {
+            Some(SkillTestBinding::Succeeded { by }) => Some(by),
+            _ => None,
+        }
     }
     /// The clue count of the discovery this ability is responding to — what a
     /// `when` replacement is replacing (Cover Up 01007's "that many"). Bound
@@ -363,7 +387,11 @@ impl EvalContext {
 
     /// Bind the skill-test failure margin (see [`Self::failed_by`]).
     pub fn set_failed_by(&mut self, margin: u8) {
-        self.skill_test = Some(SkillTestBinding { failed_by: margin });
+        self.skill_test = Some(SkillTestBinding::Failed { by: margin });
+    }
+    /// Bind the skill-test success margin (see [`Self::succeeded_by`]).
+    pub fn set_succeeded_by(&mut self, margin: u8) {
+        self.skill_test = Some(SkillTestBinding::Succeeded { by: margin });
     }
     /// Bind the discovery's clue count (see [`Self::clue_discovery_count`]).
     pub fn set_clue_discovery_count(&mut self, count: u8) {
@@ -702,17 +730,15 @@ fn perform_designated(
     }
 }
 
-/// The **Fight** arm of [`perform_designated`]: evaluate `extra_damage` against
-/// the live board, then run the shared Fight primary against the grounded
-/// target, testing `skill_override` if the card prints one and carrying its
-/// `reveal_clause` onto the test.
+/// The **Fight** arm of [`perform_designated`]: run the shared Fight primary
+/// against the grounded target, testing `skill_override` if the card prints one
+/// and carrying its `reveal_clause` onto the test.
 ///
-/// `extra_damage` is evaluated here because the Fight follow-up consumes it as a
-/// `u8`; `combat_modifier` is **not**, travelling into the test as an
-/// unevaluated [`IntExpr`] so the row it becomes is recalculated at every read
-/// (ADR 0005). Machete 01020's conditional `+1` is why the evaluation happens
-/// on this context: `sole_engaged_target` reads the chosen enemy the step above
-/// just bound.
+/// Neither expression is evaluated here. `combat_modifier` travels into the
+/// test as an unevaluated [`IntExpr`] so the row it becomes is recalculated at
+/// every read (ADR 0005); `extra_damage` rides the Fight follow-up to RR ST.7,
+/// where the attack's damage is determined against the test's success margin
+/// (Switchblade 01044) and the board as it then stands (Machete 01020).
 fn perform_designated_fight(
     cx: &mut Cx,
     eval_ctx: &EvalContext,
@@ -721,14 +747,6 @@ fn perform_designated_fight(
     skill_override: Option<SkillKind>,
     reveal_clause: Option<&RevealClause>,
 ) -> EngineOutcome {
-    let extra_damage_n = match eval_int_expr(cx.state, cx.cards, eval_ctx, extra_damage) {
-        Ok(v) => u8::try_from(v.max(0)).unwrap_or(u8::MAX),
-        Err(reason) => {
-            return EngineOutcome::Rejected {
-                reason: reason.into(),
-            }
-        }
-    };
     // Bound by `step_designated` before this runs, and `can_perform` rejected
     // an empty candidate list pre-cost, so `None` is a state-shape violation.
     let Some(enemy_id) = eval_ctx.chosen_enemy() else {
@@ -748,7 +766,7 @@ fn perform_designated_fight(
         enemy_id,
         FightModification {
             combat_modifier: Some(combat_modifier.clone()),
-            extra_damage: extra_damage_n,
+            extra_damage: extra_damage.clone(),
             skill_override,
             reveal_clause: reveal_clause.cloned(),
         },
@@ -1429,6 +1447,7 @@ fn eval_quantity(state: &GameState, eval_ctx: &EvalContext, q: Quantity) -> i8 {
             .map_or(0, |inv| usize::from(inv.horror())),
         Quantity::EngagedEnemies => state.enemies_engaged_with(controller).count(),
         Quantity::SkillTestFailedBy => usize::from(eval_ctx.failed_by().unwrap_or(0)),
+        Quantity::SkillTestSucceededBy => usize::from(eval_ctx.succeeded_by().unwrap_or(0)),
     };
     i8::try_from(n).unwrap_or(i8::MAX)
 }
@@ -1438,7 +1457,7 @@ fn eval_quantity(state: &GameState, eval_ctx: &EvalContext, q: Quantity) -> i8 {
 /// [`IntExpr::Cond`] evaluates its [`Condition`] (reusing
 /// [`eval_condition`]); an unexpressible condition propagates as `Err`,
 /// which the caller turns into [`EngineOutcome::Rejected`].
-pub(super) fn eval_int_expr(
+pub(crate) fn eval_int_expr(
     state: &GameState,
     cards: &CardRegistry,
     eval_ctx: &EvalContext,

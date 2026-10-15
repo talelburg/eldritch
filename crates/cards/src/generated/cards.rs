@@ -134,7 +134,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "core".to_owned(),
             weakness: false,
-            kind: CardKind::Event { class: Class::Neutral, cost: Some(1), xp: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 1, wild: 2 }, is_fast: false, deck_limit: 1, play_only_during_turn: false },
+            kind: CardKind::Event { class: Class::Neutral, cost: Some(1), xp: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 1, wild: 2 }, is_fast: true, deck_limit: 1, play_only_during_turn: true },
         },
         CardMetadata {
             code: "01011".to_owned(),
@@ -4864,7 +4864,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "wda".to_owned(),
             weakness: false,
-            kind: CardKind::Event { class: Class::Rogue, cost: Some(0), xp: Some(3), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 1, play_only_during_turn: true },
+            kind: CardKind::Event { class: Class::Rogue, cost: Some(0), xp: Some(3), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: true, deck_limit: 1, play_only_during_turn: true },
         },
         CardMetadata {
             code: "02267".to_owned(),

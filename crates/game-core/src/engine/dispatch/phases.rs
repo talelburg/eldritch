@@ -18,8 +18,9 @@ use crate::event::Event;
 use crate::state::{
     CardCode, CardInPlay, Continuation, DiscardPile, EncounterDrawFrame, EnemyId, EnemyPhaseFrame,
     EnemyResume, FastWindowKind, GameState, HandSizeDiscard, InvestigationPhaseFrame,
-    InvestigationResume, Investigator, InvestigatorId, InvestigatorTurnFrame, MythosPhaseFrame,
-    MythosResume, Owner, Phase, PhaseStep, Skills, Status, UpkeepPhaseFrame, UpkeepResume, Zone,
+    InvestigationResume, Investigator, InvestigatorId, InvestigatorTurnFrame, Lifetime,
+    MythosPhaseFrame, MythosResume, Owner, Phase, PhaseStep, Skills, Status, UpkeepPhaseFrame,
+    UpkeepResume, Zone,
 };
 
 /// Action points granted to an investigator at the start of their
@@ -1177,6 +1178,15 @@ pub(crate) fn upkeep_phase_end(cx: &mut Cx) -> EngineOutcome {
 /// resume once step 4.6's queued `PhaseEnded { Upkeep }` forced abilities have
 /// resolved.
 ///
+/// First, "until the end of the round" lasting effects expire (#643). Appendix
+/// II step 4.6: *"Any active "until the end of the round" lasting effects
+/// expire at this time."* They expire before `RoundEnded` is emitted, so no
+/// round-end ability sees them: `glossary/Lasting_Effects.md`, *"an "until the
+/// end of the phase" lasting effect expires before an "at the end of the phase"
+/// ability or delayed effect may initiate."* Abilities "at the end of the
+/// upkeep phase" have already resolved by now, inside the round, so they do
+/// see them.
+///
 /// The `when the round ends` act advance (act 01109) and the `at the end of the
 /// round` doom (agenda 01107, Dissonant Voices 01165) resolve as the `RoundEnded`
 /// `EmitEvent` coordinator's `When`/`At` cells (#434) — structural ordering, no
@@ -1185,6 +1195,7 @@ pub(crate) fn upkeep_phase_end(cx: &mut Cx) -> EngineOutcome {
 /// and returns `Done`; the global loop drives the bucket walk (suspending at the
 /// `when` window) and re-exposes this anchor at `AfterRoundEnd` on completion.
 fn upkeep_round_end(cx: &mut Cx) -> EngineOutcome {
+    cx.state.expire_lasting_effects(Lifetime::Round);
     set_upkeep_resume(cx, UpkeepResume::AfterRoundEnd);
     emit::queue_event(cx, &TimingEvent::RoundEnded)
 }
@@ -1205,11 +1216,9 @@ fn set_upkeep_resume(cx: &mut Cx, resume: UpkeepResume) {
 /// Teardown after the round-end `EmitEvent` coordinator pops — reached via the
 /// Upkeep anchor's [`AfterRoundEnd`](crate::state::UpkeepResume::AfterRoundEnd)
 /// resume (#434, subsuming the former `ForcedContinuation::UpkeepAfterRoundEnded`):
-/// expire active "until the end of the round" lasting effects (Mind over Matter
-/// 01036's substitution — RR p.24, "after the round-end forced abilities have
-/// resolved"), then transition Upkeep → Mythos.
+/// transition Upkeep → Mythos. Round-lifetime lasting effects have already
+/// expired, ahead of the emit in [`upkeep_round_end`].
 pub(super) fn upkeep_round_end_teardown(cx: &mut Cx) -> EngineOutcome {
-    cx.state.skill_substitutions.clear();
     // Pop the Upkeep anchor (slice 1a, #393): this is the single Upkeep→Mythos
     // exit, reached after the whole round-end sequence (act window, doom) has
     // resolved, so the anchor is the top frame here.

@@ -508,6 +508,11 @@ fn run() -> Result<(), String> {
         }
     }
 
+    // Warn on a turn-only play restriction without Fast (#576).
+    for warning in all.values().filter_map(fast_timing_inconsistency) {
+        eprintln!("{warning}");
+    }
+
     // Render both files before writing either, so a trait the naming
     // rule refuses leaves the checked-in output untouched.
     let output = render(&all);
@@ -686,15 +691,13 @@ fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
         })
         .transpose()?;
 
-    let is_fast = raw
-        .text
-        .as_deref()
-        .is_some_and(|t| t.starts_with("Fast.") || t.starts_with("Fast "));
+    let is_fast = raw.text.as_deref().is_some_and(is_fast_text);
 
-    let play_only_during_turn = raw
-        .text
-        .as_deref()
-        .is_some_and(|t| t.contains("Play only during your turn"));
+    // On the Lam 01010's "Play after your turn begins" is the same
+    // restriction as "Play only during your turn" (#576).
+    let play_only_during_turn = raw.text.as_deref().is_some_and(|t| {
+        t.contains("Play only during your turn") || t.contains("Play after your turn begins")
+    });
 
     // Enemy keyword/prey/spawn data parsed from card text (read before
     // `raw.text` is moved into the struct, mirroring `is_fast`).
@@ -1117,6 +1120,35 @@ fn strip_html_bold(s: &str) -> String {
 
 /// True if `text` contains the standalone keyword token `"<kw>."`
 /// (e.g. `"Hunter."`). Bold tags are stripped first.
+/// Whether printed text carries the `Fast` keyword: `Fast.` starting the
+/// text, a line, or a sentence on a line (#576). Keyword prefixes come
+/// before it on the same line (Ace in the Hole 02266, `Exceptional. Fast.`)
+/// or on lines of their own (On the Lam 01010, `"Skids" O'Toole deck
+/// only.\nFast.`), so a text-start check alone misses both. A `[fast]`
+/// ability icon is a different thing and never matches.
+fn is_fast_text(text: &str) -> bool {
+    text.starts_with("Fast ")
+        || text.lines().any(|line| {
+            std::iter::once(0)
+                .chain(line.match_indices(". ").map(|(i, sep)| i + sep.len()))
+                .any(|start| line[start..].starts_with("Fast."))
+        })
+}
+
+/// A card restricted to its owner's turn but not read as Fast is almost
+/// certainly a Fast keyword `is_fast_text` failed to find: a non-Fast card
+/// can only be played as an action during its owner's turn already, so
+/// the restriction would add nothing. Returns the warning to print.
+fn fast_timing_inconsistency(card: &NormalizedCard) -> Option<String> {
+    (card.play_only_during_turn && !card.is_fast).then(|| {
+        format!(
+            "card-data-pipeline: {} ({}): play_only_during_turn is set but is_fast is not \
+             — check the text for a Fast keyword the parser missed",
+            card.code, card.name
+        )
+    })
+}
+
 fn has_keyword(text: &str, keyword: &str) -> bool {
     strip_html_bold(text).contains(&format!("{keyword}."))
 }
