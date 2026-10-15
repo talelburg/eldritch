@@ -12,7 +12,7 @@ use game_core::engine::{self, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, DiscardPile, GameState, GameStateBuilder, InvestigatorId, LocationId,
-    Owner, Phase, Zone,
+    Owner, Phase, Status, Zone,
 };
 use game_core::test_support;
 use game_core::test_support::{seat, TestSession};
@@ -451,5 +451,29 @@ fn removing_the_study_discards_its_attachments_by_owner() {
             },
         ],
         "the Study's own event, then one per attachment, in order",
+    );
+}
+
+/// *"Place each investigator in the Hallway."* reaches only the investigators
+/// still in the game: one who has resigned has left it, and is not placed back
+/// onto the board (#1067).
+#[test]
+fn advancing_act_1_does_not_place_a_resigned_investigator() {
+    let mut state = act_1_ready_to_advance();
+    let resigned = InvestigatorId(2);
+    let mut gone = test_support::test_investigator(resigned.0);
+    gone.status = Status::Resigned;
+    state.investigators.insert(resigned, gone);
+    state.turn_order.push(resigned);
+
+    let session = TestSession::new(state, scenarios::TEST_REGISTRIES)
+        .take(&TurnAction::AdvanceAct { investigator: INV });
+    session.assert_at_turn_menu(INV);
+    let state = session.finish().state;
+
+    assert_eq!(state.investigators[&resigned].current_location, None);
+    assert!(
+        state.investigators[&INV].current_location.is_some(),
+        "the investigator still in the game is placed",
     );
 }

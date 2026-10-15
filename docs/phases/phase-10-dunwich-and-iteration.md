@@ -15,7 +15,7 @@ Full Core + Dunwich coverage; ongoing polish.
 | Order | Issue | State |
 |---|---|---|
 | — | [#716](https://github.com/talelburg/eldritch/issues/716) — "place N doom on the current agenda" earns a DSL primitive | ✅ [PR #731](https://github.com/talelburg/eldritch/pull/731) |
-| — | [#363](https://github.com/talelburg/eldritch/issues/363) — general fan-out abstraction (ForEach / EntityTarget) | ⏳ deferred until Dunwich consumers land |
+| — | [#363](https://github.com/talelburg/eldritch/issues/363) — general fan-out abstraction (ForEach / EntityTarget) | ⏳ the walking `ForEach` landed in [#1067](https://github.com/talelburg/eldritch/issues/1067), and agendas 01105 and 01107 ride it; `EntityTarget` and the mixed set wait for Dunwich consumers |
 | — | [#574](https://github.com/talelburg/eldritch/issues/574) — enemy fight/evade `—` ingested as 0 (Yog-Sothoth 02323 auto-evadable) | ⏳ |
 | — | [#609](https://github.com/talelburg/eldritch/issues/609) — promote `Condition::Native` to declarative vocab on the second consumer | ⏳ blocked on the trigger |
 | — | [#652](https://github.com/talelburg/eldritch/issues/652) — Massive cannot be represented (`engaged_with` is a single `Option`) | ⏳ needs-design |

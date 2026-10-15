@@ -34,17 +34,18 @@ fn conditional_branches_box_the_inner_effects() {
     assert!(matches!(with_else, Effect::If { else_: Some(_), .. }));
 }
 
-/// `for_each` boxes its body and accepts a target-set spec.
+/// `for_each` boxes its body and takes an investigator set as an investigator
+/// fan-out.
 #[test]
 fn for_each_runs_body_per_target() {
     let effect = for_each(
         InvestigatorTargetSet::All,
-        gain_resources(InvestigatorTarget::Active, 1),
+        gain_resources(InvestigatorTarget::Each, 1),
     );
     assert!(matches!(
         effect,
         Effect::ForEach {
-            targets: InvestigatorTargetSet::All,
+            targets: ForEachTargets::Investigators(InvestigatorTargetSet::All),
             ..
         }
     ));
