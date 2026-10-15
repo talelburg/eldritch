@@ -102,11 +102,12 @@ fn disengaging_and_moving_leaves_the_other_enemy_behind() {
 
     session.assert_at_turn_menu(INV);
     assert_eq!(location(&session), Some(HALLWAY));
-    assert_eq!(engaged_with(&session, RAT), None, "the rat stayed in the Study");
     assert_eq!(
-        session.state().enemies[&RAT].current_location,
-        Some(HERE)
+        engaged_with(&session, RAT),
+        None,
+        "the rat stayed in the Study"
     );
+    assert_eq!(session.state().enemies[&RAT].current_location, Some(HERE));
     let ghoul = &session.state().enemies[&GHOUL];
     assert!(ghoul.exhausted, "the evaded enemy is exhausted");
     assert_eq!(ghoul.engaged_with, None);
@@ -123,7 +124,11 @@ fn disengaging_without_moving_lets_the_other_enemy_engage_again() {
     session.assert_at_turn_menu(INV);
     assert_eq!(location(&session), Some(HERE));
     assert_eq!(engaged_with(&session, RAT), Some(INV));
-    assert_eq!(engaged_with(&session, GHOUL), None, "the evaded ghoul is exhausted");
+    assert_eq!(
+        engaged_with(&session, GHOUL),
+        None,
+        "the evaded ghoul is exhausted"
+    );
 }
 
 /// Not disengaging is the other half of the all-or-none choice; moving then

@@ -24,10 +24,7 @@ const HERE: LocationId = LocationId(10);
 /// Investigator 1 at an open turn in the Study, with `hand` in hand and
 /// Leather Coat in play when `coat_in_play`.
 fn board(hand: &[&str], coat_in_play: bool) -> TestSession {
-    let seat = seat(1)
-        .at(HERE)
-        .resources(5)
-        .hand(hand.iter().copied());
+    let seat = seat(1).at(HERE).resources(5).hand(hand.iter().copied());
     let seat = if coat_in_play {
         seat.in_play([LEATHER_COAT])
     } else {

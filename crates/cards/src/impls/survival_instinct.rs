@@ -51,6 +51,8 @@
 //! always offered. The other branch's liveness still filters the choice: with
 //! no other enemy engaged the disengage branch is inert, the decline is the
 //! one live branch, and nothing is asked.
+//!
+//! [`Trigger::OnSkillTestResolution`]: card_dsl::dsl::Trigger::OnSkillTestResolution
 
 use card_dsl::dsl::{self, Ability, Condition, EnemySet, EnemyTarget, SkillTestKind, TestOutcome};
 use game_core::engine::evaluator::EvalContext;

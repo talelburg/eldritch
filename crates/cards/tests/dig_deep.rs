@@ -64,7 +64,12 @@ fn test_buying(
 #[test]
 fn willpower_ability_buffs_the_willpower_test_it_is_bought_during() {
     // 3 + 1 vs 4: succeeds by 0, where 3 alone would fail.
-    let session = test_buying(with_dig_deep(5), SkillKind::Willpower, 4, &[WILLPOWER_ABILITY]);
+    let session = test_buying(
+        with_dig_deep(5),
+        SkillKind::Willpower,
+        4,
+        &[WILLPOWER_ABILITY],
+    );
 
     assert_event!(
         session.events(),
@@ -88,7 +93,12 @@ fn agility_ability_buffs_the_agility_test_it_is_bought_during() {
 #[test]
 fn willpower_ability_does_not_buff_an_agility_test() {
     // The row names willpower; the agility test ignores it: 3 vs 4 fails by 1.
-    let session = test_buying(with_dig_deep(5), SkillKind::Agility, 4, &[WILLPOWER_ABILITY]);
+    let session = test_buying(
+        with_dig_deep(5),
+        SkillKind::Agility,
+        4,
+        &[WILLPOWER_ABILITY],
+    );
 
     assert_event!(
         session.events(),
