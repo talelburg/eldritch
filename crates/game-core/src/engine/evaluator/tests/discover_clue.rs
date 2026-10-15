@@ -157,6 +157,7 @@ fn discover_clue_tested_location_resolves_to_in_flight_test_location() {
             resolved: None,
             revealed: None,
             reveal_clause: None,
+            discard_after: None,
         }));
     let mut events = Vec::new();
 
@@ -216,6 +217,7 @@ fn tested_location_rejects_when_test_has_no_location_snapshot() {
             resolved: None,
             revealed: None,
             reveal_clause: None,
+            discard_after: None,
         }));
     let mut events = Vec::new();
 
