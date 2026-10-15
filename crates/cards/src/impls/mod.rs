@@ -105,6 +105,7 @@ pub mod daisys_tote_bag;
 pub mod dark_memory;
 pub mod deduction;
 pub mod derringer_41;
+pub mod dig_deep;
 pub mod dissonant_voices;
 pub mod dodge;
 pub mod dr_milan_christopher;
@@ -127,6 +128,7 @@ pub mod holy_rosary;
 pub mod hospital_debts;
 pub mod hyperawareness;
 pub mod knife;
+pub mod leather_coat;
 pub mod leo_de_luca;
 pub mod lita_chantler;
 pub mod machete;
@@ -257,6 +259,7 @@ pub const ALL: &[CardRecord] = &[
     dark_memory::CARD,
     deduction::CARD,
     derringer_41::CARD,
+    dig_deep::CARD,
     dissonant_voices::CARD,
     dodge::CARD,
     dr_milan_christopher::CARD,
@@ -279,6 +282,7 @@ pub const ALL: &[CardRecord] = &[
     holy_rosary::CARD,
     hyperawareness::CARD,
     knife::CARD,
+    leather_coat::CARD,
     leo_de_luca::CARD,
     lita_chantler::CARD,
     machete::CARD,
