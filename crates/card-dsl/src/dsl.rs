@@ -1011,6 +1011,27 @@ pub enum EventPattern {
     /// and Earl Sawyer 02218 (Dunwich) prints the same condition: *"\[reaction\]
     /// After you evade an enemy, exhaust Earl Sawyer: Draw 1 card."*
     EnemyEvaded,
+    /// **Your** turn began (Appendix II step 2.2, *"Next investigator's turn
+    /// begins."*). Scoped to the ability's controller: the engine's matcher
+    /// hears it only for the investigator whose turn it is. Its `after` cell is
+    /// the first opening of the post-2.2 player window, not the re-openings
+    /// step 2.2.1 returns to after each action.
+    ///
+    /// On the Lam 01010's *"Fast. Play after your turn begins."* is the timing
+    /// point read as a triggering condition — `glossary/Fast.md`: *"If the
+    /// instructions specify when/after a timing point, the card may be played
+    /// as if the described timing point were a triggering condition for playing
+    /// the card."* — so it is played from hand in this cell, as Dodge 01023 is
+    /// in an attack's.
+    ///
+    /// One Core consumer, below `standards.md`'s threshold for a new pattern; a
+    /// play timing has no card-local alternative, and three cards outside the
+    /// Core print the same condition: Leo Anderson 04001's *"\[reaction\] After
+    /// your turn begins: Play an \[\[Ally\]\] asset, reducing its cost by 1."*,
+    /// Tristan Botley 07194's *"\[reaction\] After your turn begins: Choose two
+    /// skills."* and Jenny Barnes 90084's *"\[reaction\] After your turn begins:
+    /// Play a \[\[Talent\]\] asset, reducing its cost by 1."*
+    TurnBegan,
 }
 
 impl EventPattern {
@@ -1048,6 +1069,7 @@ impl EventPattern {
             EventPattern::CardPlayed { .. } => TriggeringCondition::CardPlayed,
             EventPattern::EncounterCardDrawn { .. } => TriggeringCondition::EncounterCardDrawn,
             EventPattern::EnemyEvaded => TriggeringCondition::EnemyEvaded,
+            EventPattern::TurnBegan => TriggeringCondition::TurnBegan,
         }
     }
 
@@ -1078,7 +1100,8 @@ impl EventPattern {
             | EventPattern::EnemyAttacks { .. }
             | EventPattern::EnteredPlay
             | EventPattern::LeftLocation
-            | EventPattern::EnemyEvaded => None,
+            | EventPattern::EnemyEvaded
+            | EventPattern::TurnBegan => None,
         }
     }
 }
@@ -1189,6 +1212,8 @@ pub enum TriggeringCondition {
     /// An investigator evaded an enemy; the disengage and the exhaust are the
     /// condition's resolution.
     EnemyEvaded,
+    /// An investigator's turn began (Appendix II step 2.2).
+    TurnBegan,
 }
 
 /// The four game phases, mirrored in `card-dsl` so [`EventPattern`] can

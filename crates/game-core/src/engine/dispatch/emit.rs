@@ -304,6 +304,22 @@ pub enum TimingEvent {
         /// The evaded enemy.
         enemy: EnemyId,
     },
+    /// An investigator's turn began — Appendix II step 2.2, *"Next
+    /// investigator's turn begins."* Announced once per turn by
+    /// `phases::begin_investigator_turn`, after the active investigator has
+    /// rotated to `investigator`.
+    ///
+    /// A **bare milestone** (ADR 0008): making the investigator active is the
+    /// rotation's, done before this is announced, so its resolve step is a
+    /// no-op. Its `after` cell is the first opening of the post-2.2 player
+    /// window, where On the Lam 01010's *"Play after your turn begins."* is
+    /// played; the window step 2.2.1 returns to after each action is not this
+    /// cell, so the card is not playable there. The post-2.2 Fast window opens
+    /// once this sequence has resolved.
+    TurnBegan {
+        /// The investigator whose turn began.
+        investigator: InvestigatorId,
+    },
 }
 
 impl TimingEvent {
@@ -331,7 +347,8 @@ impl TimingEvent {
             | TimingEvent::LeftLocation { investigator, .. }
             | TimingEvent::CardPlayed { investigator, .. }
             | TimingEvent::EncounterCardDrawn { investigator, .. }
-            | TimingEvent::EnemyEvaded { investigator, .. } => Some(*investigator),
+            | TimingEvent::EnemyEvaded { investigator, .. }
+            | TimingEvent::TurnBegan { investigator } => Some(*investigator),
             TimingEvent::EnteredPlay { controller, .. } => Some(*controller),
             TimingEvent::EnemyDefeated { by, .. } => *by,
             TimingEvent::PhaseStarted { .. }
@@ -374,6 +391,7 @@ impl TimingEvent {
             TimingEvent::CardPlayed { .. } => TriggeringCondition::CardPlayed,
             TimingEvent::EncounterCardDrawn { .. } => TriggeringCondition::EncounterCardDrawn,
             TimingEvent::EnemyEvaded { .. } => TriggeringCondition::EnemyEvaded,
+            TimingEvent::TurnBegan { .. } => TriggeringCondition::TurnBegan,
         }
     }
 
@@ -465,7 +483,14 @@ impl TimingEvent {
             //   zone, carried only by the event, where elimination's sweep could
             //   not find it (ADR 0002). Its `when` cell is walked and no corpus
             //   card listens there.
+            // - `TurnBegan` — born coordinator-owned (#778), like
+            //   `PhaseStarted`: a turn beginning changes nothing by itself. The
+            //   rotation that makes the investigator active precedes the emit,
+            //   and the post-2.2 player window opens on the Investigation
+            //   anchor's resume, after the whole sequence. On the Lam 01010's
+            //   *"Play after your turn begins."* is played in its `after` cell.
             TimingEvent::PhaseStarted { .. }
+            | TimingEvent::TurnBegan { .. }
             | TimingEvent::RoundEnded
             | TimingEvent::GameEnd
             | TimingEvent::EliminationGameEnd { .. }

@@ -261,8 +261,9 @@ fn fast_leading_a_line_after_a_deck_only_line_is_fast() {
     let n = normalize(raw).expect("normalize");
     assert!(n.is_fast, "`Fast.` starts the second line");
     assert!(
-        n.play_only_during_turn,
-        "\"Play after your turn begins\" limits play to your turn"
+        !n.play_only_during_turn,
+        "\"Play after your turn begins\" is a timing point, not a period: \
+         the card module declares it"
     );
 }
 

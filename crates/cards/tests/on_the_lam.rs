@@ -23,9 +23,8 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    Act, CardCode, ChaosBag, ChaosToken, Enemy, EnemyId, FastActorScope, FastWindowKind,
-    GameStateBuilder, InvestigationPhaseFrame, InvestigationResume, InvestigatorId, Location,
-    LocationId, Phase, PhaseStep, SkillKind, TokenModifiers,
+    Act, CardCode, ChaosBag, ChaosToken, Enemy, EnemyId, GameState, GameStateBuilder,
+    InvestigatorId, Location, LocationId, Phase, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{self, seat, Seat, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -41,8 +40,6 @@ const GHOUL_PRIEST: &str = "01116";
 const GHOUL_MINION: &str = "01160";
 /// Wizard of the Order (01170): *Humanoid. Cultist.*, Retaliate — not Elite.
 const WIZARD_OF_THE_ORDER: &str = "01170";
-/// Magnifying Glass (01030): a Fast asset, so a player window offers it.
-const MAGNIFYING_GLASS: &str = "01030";
 /// A deck card for the round-ending cascade's Upkeep step-4.4 draw.
 const FILLER: &str = "01088";
 
@@ -72,32 +69,79 @@ fn skids() -> Seat {
         .deck([FILLER])
 }
 
-/// Investigator 1's turn at the Study (connected to the Hallway), engaged by
-/// each of `enemies`.
-fn board(enemies: Vec<Enemy>) -> TestSession {
+/// The Study (connected to the Hallway) and the Hallway, investigator 1 at the
+/// Study engaged by each of `enemies`.
+fn study_board(seat_one: Seat, enemies: Vec<Enemy>) -> GameStateBuilder {
     let mut study = test_support::test_location(HERE.0, "Study");
     study.connections = vec![HALLWAY];
     let mut hallway = test_support::test_location(HALLWAY.0, "Hallway");
     hallway.connections = vec![HERE];
-    enemies
-        .into_iter()
-        .fold(
-            GameStateBuilder::new()
-                .with_registries(TEST_REGISTRIES)
-                .with_location(study)
-                .with_location(hallway)
-                .with_seat(skids())
-                .open_turn(INV),
-            |b, e| b.with_enemy_engaged(e, INV),
-        )
-        .session()
+    enemies.into_iter().fold(
+        GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
+            .with_location(study)
+            .with_location(hallway)
+            .with_seat(seat_one),
+        |b, e| b.with_enemy_engaged(e, INV),
+    )
+}
+
+/// Investigator 1's turn at the Study, engaged by each of `enemies`, with On
+/// the Lam unplayed.
+fn board(enemies: Vec<Enemy>) -> TestSession {
+    study_board(skids(), enemies).open_turn(INV).session()
+}
+
+/// Investigator 2 at `other_at` takes the turn before investigator 1's. Ending
+/// it begins investigator 1's turn, whose `TurnBegan` `after` cell is where On
+/// the Lam is played.
+fn turn_began(builder: GameStateBuilder, other: Seat) -> TestSession {
+    turn_began_with(builder, other, |_| {})
+}
+
+/// [`turn_began`] on a board `edit` finishes, for what the builder cannot set.
+fn turn_began_with(
+    builder: GameStateBuilder,
+    other: Seat,
+    edit: impl FnOnce(&mut GameState),
+) -> TestSession {
+    let mut state = builder
+        .with_seat(other.deck([FILLER]))
+        .with_turn_order([OTHER, INV])
+        .open_turn(OTHER)
+        .build();
+    edit(&mut state);
+    TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::EndTurn)
+}
+
+/// [`board`], reached at the start of investigator 1's turn and with On the
+/// Lam played there.
+fn on_the_lam_played(enemies: Vec<Enemy>) -> TestSession {
+    play_on_the_lam(turn_began(
+        study_board(skids(), enemies),
+        seat(2).at(HALLWAY),
+    ))
+}
+
+/// The option playing investigator `who`'s On the Lam from hand in a
+/// reaction window.
+fn on_the_lam_of(who: InvestigatorId) -> OptionTarget {
+    OptionTarget::HandCardByCode {
+        investigator: who,
+        code: CardCode::new(ON_THE_LAM),
+    }
 }
 
 fn play_on_the_lam(session: TestSession) -> TestSession {
-    session.take(&TurnAction::PlayCard {
-        investigator: INV,
+    session.pick(on_the_lam_of(INV))
+}
+
+/// The option playing investigator `who`'s first hand card in a Fast window.
+fn hand_card(who: InvestigatorId) -> OptionTarget {
+    OptionTarget::HandCard {
+        investigator: who,
         hand_index: 0,
-    })
+    }
 }
 
 fn move_to_hallway(session: TestSession) -> TestSession {
@@ -127,67 +171,29 @@ fn enemy_phase_events(session: &TestSession) -> Vec<Event> {
 
 // ---- play timing ---------------------------------------------------------
 
-/// The `InvestigatorTurnBegins` window of `active`'s turn, `INV` and `OTHER`
-/// at the Study, `holder` holding On the Lam.
-fn turn_begins_window(active: InvestigatorId, holder: InvestigatorId) -> TestSession {
-    // Investigator 1's Magnifying Glass, a Fast asset, keeps the window
-    // standing whether or not On the Lam is offered in it.
-    let first = if holder == INV {
-        seat(1).hand([ON_THE_LAM, MAGNIFYING_GLASS])
+/// The cell after investigator 1's turn begins, both investigators at the
+/// Study, investigator 1 holding On the Lam and investigator 2 holding a copy
+/// if `other_holds` (as if it were in their deck too).
+fn after_skids_turn_begins(other_holds: bool) -> TestSession {
+    let other = if other_holds {
+        seat(2).at(HERE).hand([ON_THE_LAM]).resources(1)
     } else {
-        seat(1).hand([MAGNIFYING_GLASS])
+        seat(2).at(HERE)
     };
-    let second = if holder == OTHER {
-        seat(2).hand([ON_THE_LAM])
-    } else {
-        seat(2)
-    };
-    GameStateBuilder::new()
-        .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
-        .with_seat(first.at(HERE).resources(2))
-        .with_seat(second.at(HERE).resources(1))
-        .with_turn_order([INV, OTHER])
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(active)
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        .with_open_window(
-            FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
-            FastActorScope::Any,
-        )
-        .session()
-}
-
-fn hand_card(investigator: InvestigatorId) -> OptionTarget {
-    OptionTarget::HandCard {
-        investigator,
-        hand_index: 0,
-    }
+    turn_began(study_board(skids(), vec![]), other)
 }
 
 #[test]
-fn played_at_the_turn_begins_window() {
-    let window = turn_begins_window(INV, INV);
+fn played_after_the_turn_begins() {
+    let window = after_skids_turn_begins(false);
     assert_eq!(
-        window.offered_at(&hand_card(INV)),
+        window.offered_at(&on_the_lam_of(INV)),
         1,
-        "the turn-begins window offers On the Lam: {:?}",
+        "the cell after the turn begins offers On the Lam: {:?}",
         window.prompt(),
     );
-    let session = window.pick(hand_card(INV));
-    assert_event!(
-        session.events(),
-        Event::CardPlayed { investigator: INV, code } if code.as_str() == ON_THE_LAM
-    );
-}
-
-#[test]
-fn played_during_the_turn_without_spending_an_action() {
-    let session = board(vec![]);
-    let before = session.state().investigators[&INV].actions_remaining;
-    let session = play_on_the_lam(session);
+    let before = window.state().investigators[&INV].actions_remaining;
+    let session = play_on_the_lam(window);
     assert_event!(
         session.events(),
         Event::CardPlayed { investigator: INV, code } if code.as_str() == ON_THE_LAM
@@ -201,19 +207,34 @@ fn played_during_the_turn_without_spending_an_action() {
 }
 
 #[test]
+fn not_playable_after_an_action() {
+    // Passed at the start of the turn, then an action taken: the timing point
+    // has gone, and the window 2.2.1 returns to is not its cell.
+    let session = after_skids_turn_begins(false)
+        .skip()
+        .take(&TurnAction::Resource { investigator: INV });
+    session.assert_at_turn_menu(INV);
+    let play = TurnAction::PlayCard {
+        investigator: INV,
+        hand_index: 0,
+    };
+    let _ = session.assert_rejects(|s| s.submit_off_menu(&play));
+}
+
+#[test]
 fn not_playable_in_another_investigators_turn() {
-    let window = turn_begins_window(INV, OTHER);
+    let window = after_skids_turn_begins(true);
     assert_eq!(
-        window.offered_at(&hand_card(OTHER)),
+        window.offered_at(&on_the_lam_of(OTHER)),
         0,
         "it is not investigator 2's turn: {:?}",
         window.prompt(),
     );
-    let session = window.submit_off_menu(&TurnAction::PlayCard {
+    let play = TurnAction::PlayCard {
         investigator: OTHER,
         hand_index: 0,
-    });
-    let _ = session.expect_rejected();
+    };
+    let _ = window.assert_rejects(|s| s.submit_off_menu(&play));
 }
 
 #[test]
@@ -234,18 +255,18 @@ fn not_playable_in_the_enemy_phase() {
         "the Enemy phase window does not offer On the Lam: {:?}",
         paused.prompt(),
     );
-    let session = paused.submit_off_menu(&TurnAction::PlayCard {
+    let play = TurnAction::PlayCard {
         investigator: INV,
         hand_index: 0,
-    });
-    let _ = session.expect_rejected();
+    };
+    let _ = paused.assert_rejects(|s| s.submit_off_menu(&play));
 }
 
 // ---- attacks of opportunity ---------------------------------------------
 
 #[test]
 fn a_non_elite_enemy_makes_no_attack_of_opportunity() {
-    let session = move_to_hallway(play_on_the_lam(board(vec![enemy(ATTACKER, GHOUL_MINION)])));
+    let session = move_to_hallway(on_the_lam_played(vec![enemy(ATTACKER, GHOUL_MINION)]));
     assert_no_event!(session.events(), Event::DamageTaken { .. });
     assert_eq!(
         session.state().investigators[&INV].current_location,
@@ -257,7 +278,7 @@ fn a_non_elite_enemy_makes_no_attack_of_opportunity() {
 
 #[test]
 fn an_elite_enemy_still_makes_an_attack_of_opportunity() {
-    let session = move_to_hallway(play_on_the_lam(board(vec![enemy(ATTACKER, GHOUL_PRIEST)])));
+    let session = move_to_hallway(on_the_lam_played(vec![enemy(ATTACKER, GHOUL_PRIEST)]));
     assert_event!(
         session.events(),
         Event::DamageTaken {
@@ -283,8 +304,7 @@ fn without_on_the_lam_a_non_elite_enemy_attacks_of_opportunity() {
 
 #[test]
 fn a_non_elite_enemy_makes_no_enemy_phase_attack_and_stays_ready() {
-    let session =
-        play_on_the_lam(board(vec![enemy(ATTACKER, GHOUL_MINION)])).take(&TurnAction::EndTurn);
+    let session = on_the_lam_played(vec![enemy(ATTACKER, GHOUL_MINION)]).take(&TurnAction::EndTurn);
     let events = enemy_phase_events(&session);
     assert_event!(
         events,
@@ -299,10 +319,10 @@ fn a_non_elite_enemy_makes_no_enemy_phase_attack_and_stays_ready() {
 #[test]
 fn an_elite_enemy_still_attacks_in_the_enemy_phase() {
     // Engaged with both: the Elite attacks, the non-Elite does not.
-    let session = play_on_the_lam(board(vec![
+    let session = on_the_lam_played(vec![
         enemy(ATTACKER, GHOUL_PRIEST),
         enemy(SECOND_ATTACKER, GHOUL_MINION),
-    ]))
+    ])
     .take(&TurnAction::EndTurn);
     let events = enemy_phase_events(&session);
     let damage: Vec<_> = events
@@ -328,26 +348,18 @@ fn failed_fight_against(code: &str, on_the_lam: bool) -> TestSession {
     e.fight = 5;
     e.max_health = 3;
     e.retaliate = true;
-    // Without On the Lam in hand: held, it would pause the test's player
-    // window as a Fast play.
     let fighter = if on_the_lam {
         skids()
     } else {
         seat(1).at(HERE)
     };
-    let session = GameStateBuilder::new()
-        .with_registries(TEST_REGISTRIES)
-        .with_location(test_support::test_location(HERE.0, "Study"))
-        .with_seat(fighter.skill(SkillKind::Combat, 1))
-        .open_turn(INV)
-        .with_enemy_engaged(e, INV)
+    let builder = study_board(fighter.skill(SkillKind::Combat, 1), vec![e])
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
-        .session();
+        .with_token_modifiers(TokenModifiers::default());
     let session = if on_the_lam {
-        play_on_the_lam(session)
+        play_on_the_lam(turn_began(builder, seat(2).at(HALLWAY)))
     } else {
-        session
+        builder.open_turn(INV).session()
     };
     session
         .take(&TurnAction::Fight {
@@ -397,7 +409,7 @@ fn an_elite_enemy_still_retaliates() {
 /// last turn stops at that window.
 #[test]
 fn the_protection_is_gone_before_any_round_end_ability() {
-    let mut state = GameStateBuilder::new()
+    let builder = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(skids().at(HALLWAY).clues(3))
         .with_location(Location::new(
@@ -406,16 +418,14 @@ fn the_protection_is_gone_before_any_round_end_ability() {
             "Hallway",
             1,
             0,
-        ))
-        .open_turn(INV)
-        .build();
-    state.act_deck = vec![Act {
-        code: CardCode::new("01109"),
-        clue_threshold: 3,
-    }];
-    state.act_index = 0;
-
-    let played = play_on_the_lam(TestSession::new(state, TEST_REGISTRIES));
+        ));
+    let played = play_on_the_lam(turn_began_with(builder, seat(2).at(HALLWAY), |state| {
+        state.act_deck = vec![Act {
+            code: CardCode::new("01109"),
+            clue_threshold: 3,
+        }];
+        state.act_index = 0;
+    }));
     assert!(
         !played.state().lasting_effects.is_empty(),
         "On the Lam's protection lasts through the round",

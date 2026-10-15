@@ -1008,6 +1008,11 @@ pub enum InvestigationResume {
     AfterPhaseStartForced,
     /// Post-2.1 window closed; begin the first investigator's turn.
     Begins,
+    /// Step 2.2's `TurnBegan` sequence is *queued* above this anchor — its
+    /// `after` cell, where On the Lam 01010 is played. On re-exposure, open
+    /// the post-2.2 player window and re-park at [`TurnBegins`](Self::TurnBegins).
+    /// Set by `begin_investigator_turn` before it emits, per ADR 0003.
+    AfterTurnBegan,
     /// Post-2.2 turn-begins window closed; the investigator now acts (no
     /// continuation work — slice 2 makes this an `InvestigatorTurn` frame).
     TurnBegins,

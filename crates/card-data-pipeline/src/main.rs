@@ -695,11 +695,16 @@ fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
 
     let is_fast = raw.text.as_deref().is_some_and(is_fast_text);
 
-    // On the Lam 01010's "Play after your turn begins" is the same
-    // restriction as "Play only during your turn" (#576).
-    let play_only_during_turn = raw.text.as_deref().is_some_and(|t| {
-        t.contains("Play only during your turn") || t.contains("Play after your turn begins")
-    });
+    // A period, not a timing point: On the Lam 01010's "Play after your turn
+    // begins" names a timing point, which `glossary/Fast.md` reads as a
+    // triggering condition ("If the instructions specify when/after a timing
+    // point, the card may be played as if the described timing point were a
+    // triggering condition for playing the card."), so the card's module
+    // declares it and this flag stays clear.
+    let play_only_during_turn = raw
+        .text
+        .as_deref()
+        .is_some_and(|t| t.contains("Play only during your turn"));
 
     // Enemy keyword/prey/spawn data parsed from card text (read before
     // `raw.text` is moved into the struct, mirroring `is_fast`).
@@ -1138,9 +1143,9 @@ fn is_fast_text(text: &str) -> bool {
         })
 }
 
-/// A card restricted to its owner's turn but not read as Fast is almost
-/// certainly a Fast keyword `is_fast_text` failed to find: a non-Fast card
-/// can only be played as an action during its owner's turn already, so
+/// A card printing "Play only during your turn" but not read as Fast is
+/// almost certainly a Fast keyword `is_fast_text` failed to find: a non-Fast
+/// card can only be played as an action during its owner's turn already, so
 /// the restriction would add nothing. Returns the warning to print.
 fn fast_timing_inconsistency(card: &NormalizedCard) -> Option<String> {
     (card.play_only_during_turn && !card.is_fast).then(|| {

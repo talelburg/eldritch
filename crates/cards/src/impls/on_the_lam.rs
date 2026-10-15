@@ -6,7 +6,17 @@
 //! Until the end of the round, non-[[Elite]] enemies cannot attack you.
 //! ```
 //!
-//! One `OnPlay` native: register a round-scoped
+//! One play-timing trigger, as Dodge 01023's is: *"Play after your turn
+//! begins"* names a timing point, and `glossary/Fast.md` reads one as a
+//! triggering condition — *"If the instructions specify when/after a timing
+//! point, the card may be played as if the described timing point were a
+//! triggering condition for playing the card."* So the card is a reaction on
+//! [`EventPattern::TurnBegan`] in its `after` cell, played from hand there:
+//! the first opening of the post-2.2 player window, and not the window step
+//! 2.2.1 returns to after each action. Being a reaction event, it is never
+//! offered at the turn menu or in another player window.
+//!
+//! Its effect is a native: register a round-scoped
 //! [`Restriction::CannotAttack`] protecting the controller, whose exemption is
 //! the printed *"non-\[\[Elite\]\]"* (Barricade 01038's pattern — the engine
 //! names no trait). The engine reads it where enemies are chosen to attack: an
@@ -20,13 +30,13 @@
 //! two-consumer threshold), so it calls the engine's exit directly, as Mind
 //! over Matter 01036 does for its substitution.
 //!
-//! "Fast" and "Play after your turn begins" come from the corpus metadata
-//! (`is_fast`, and the clause ⇒ `CardMetadata::play_only_during_turn()`),
-//! enforced by the play-card gate: the investigator's turn has begun once its
-//! `InvestigatorTurnBegins` window opens, so the card is offered there and at
-//! the turn menu, and nowhere outside that investigator's turn.
+//! "Fast" comes from the corpus metadata (`is_fast`); the pipeline leaves
+//! `play_only_during_turn` clear, since the clause is a timing point rather
+//! than a period.
+//!
+//! [`EventPattern::TurnBegan`]: card_dsl::dsl::EventPattern::TurnBegan
 
-use card_dsl::dsl::{self, Ability, CardFilter, Restriction};
+use card_dsl::dsl::{self, Ability, CardFilter, EventPattern, EventTiming, Restriction};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{EngineOutcome, NativeCx};
 
@@ -41,10 +51,16 @@ pub const CARD: CardRecord = CardRecord::new(CODE, abilities).effects(&[(PROTECT
 
 const PROTECT: &str = "01010:cannot-attack";
 
-/// `OnPlay`: protect the controller from non-Elite attacks for the round.
+/// *"Play after your turn begins. / Until the end of the round, non-\[\[Elite\]\]
+/// enemies cannot attack you."* — played after the controller's turn begins,
+/// protecting them from non-Elite attacks for the round.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![dsl::on_play(dsl::native(PROTECT))]
+    vec![dsl::reaction_on_event(
+        EventPattern::TurnBegan,
+        EventTiming::After,
+        dsl::native(PROTECT),
+    )]
 }
 
 /// Register the round-scoped non-Elite attack restriction for the controller.
@@ -60,13 +76,20 @@ fn protect(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::{Effect, Trigger};
+    use card_dsl::dsl::{Effect, EventPattern, EventTiming, Trigger, TriggerKind};
 
     #[test]
-    fn ability_is_on_play_native() {
+    fn ability_is_an_after_turn_began_reaction_native() {
         let a = super::abilities();
         assert_eq!(a.len(), 1);
-        assert_eq!(a[0].trigger, Trigger::OnPlay);
+        assert_eq!(
+            a[0].trigger,
+            Trigger::OnEvent {
+                pattern: EventPattern::TurnBegan,
+                timing: EventTiming::After,
+                kind: TriggerKind::Reaction,
+            },
+        );
         assert!(matches!(&a[0].effect, Effect::Native { tag } if tag == super::PROTECT));
     }
 }

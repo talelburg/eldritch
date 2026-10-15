@@ -269,8 +269,7 @@ pub(super) fn resume_end_turn(cx: &mut Cx, active_id: InvestigatorId) -> EngineO
     // investigators (Rules Reference p.10) — the same shared helper the
     // Enemy phase uses.
     if let Some(next_id) = cursor::next_active_investigator_after(cx.state, active_id) {
-        begin_investigator_turn(cx, next_id);
-        EngineOutcome::Done
+        begin_investigator_turn(cx, next_id)
     } else {
         cx.state.active_investigator = None;
         // 2.3 → Enemy. The cascade may suspend on a hunter-movement tie
@@ -352,16 +351,22 @@ fn set_investigation_resume(cx: &mut Cx, resume: InvestigationResume) {
 }
 
 /// 2.2 Next investigator's turn begins. Rotates the active cursor to
-/// `who` (the chosen/default investigator) and opens the post-2.2
-/// player window. Called from the `InvestigationBegins` continuation
-/// (first turn of the phase) and from `end_turn` (each subsequent turn,
-/// the rules' "return to 2.2"). Step
+/// `who` (the chosen/default investigator) and announces
+/// [`TimingEvent::TurnBegan`], whose `after` cell is where On the Lam 01010's
+/// *"Play after your turn begins."* is played; the post-2.2 player window opens
+/// once that sequence has resolved ([`investigation_after_turn_began`]). Called
+/// from the `InvestigationBegins` continuation (first turn of the phase) and
+/// from `end_turn` (each subsequent turn, the rules' "return to 2.2"). Step
 /// 2.2.1 (the active investigator's actions) follows as player-driven
 /// inputs while `InvestigatorTurnBegins` is the "previous player window."
 ///
+/// **Emits in tail position** (ADR 0003): the anchor is parked at
+/// [`AfterTurnBegan`](crate::state::InvestigationResume::AfterTurnBegan) before
+/// the emit, so the window cannot be pushed above what the emit queues.
+///
 /// `who` must be an `Active` investigator in `turn_order`; callers
 /// resolve it via `first_active_investigator` / `next_active_investigator_after`.
-pub(super) fn begin_investigator_turn(cx: &mut Cx, who: InvestigatorId) {
+pub(super) fn begin_investigator_turn(cx: &mut Cx, who: InvestigatorId) -> EngineOutcome {
     rotate_to_active(cx, who);
     // A new turn: every card in play grants its additional action again (Leo
     // De Luca 01048). Cleared ahead of the turn-begins window, which is already
@@ -369,9 +374,19 @@ pub(super) fn begin_investigator_turn(cx: &mut Cx, who: InvestigatorId) {
     if let Some(inv) = cx.state.investigators.get_mut(&who) {
         inv.grants_spent_this_turn.clear();
     }
-    // Advance the Investigation anchor to `TurnBegins` so the closing
-    // InvestigatorTurnBegins window routes to the right on_child_pop arm
-    // (slice 1a, #393).
+    set_investigation_resume(cx, InvestigationResume::AfterTurnBegan);
+    emit::queue_event(cx, &TimingEvent::TurnBegan { investigator: who })
+}
+
+/// Reached via the Investigation anchor's
+/// [`AfterTurnBegan`](crate::state::InvestigationResume::AfterTurnBegan) resume
+/// once step 2.2's `TurnBegan` sequence has resolved: open the post-2.2 player
+/// window.
+///
+/// The anchor advances to `TurnBegins` first, so the closing
+/// `InvestigatorTurnBegins` window routes to the right `on_child_pop` arm
+/// (slice 1a, #393).
+fn investigation_after_turn_began(cx: &mut Cx) -> EngineOutcome {
     set_investigation_resume(cx, InvestigationResume::TurnBegins);
     let outcome = reaction_windows::open_fast_window(
         cx,
@@ -382,6 +397,7 @@ pub(super) fn begin_investigator_turn(cx: &mut Cx, who: InvestigatorId) {
         EngineOutcome::Done,
         "open_fast_window(InvestigatorTurnBegins) unexpectedly suspended; this window has no suspending continuation",
     );
+    outcome
 }
 
 /// 2.3 Investigation phase ends. Owns the `PhaseEnded(Investigation)` emit and
@@ -994,14 +1010,19 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
             // Post-2.1 window closed; start the first investigator's turn
             // (step 2.2). No skill-test-in-flight guard: runs at phase start
             // (no test in flight) and does not transition phase.
-            if let Some(id) = cursor::first_active_investigator(cx.state) {
-                begin_investigator_turn(cx, id);
-            }
             // None branch: no active investigator can take a turn — the
             // cascade-breaker park (the loss already resolved at the defeat
             // site). See the former anchor_on_child_pop arm.
-            EngineOutcome::Done
+            match cursor::first_active_investigator(cx.state) {
+                Some(id) => begin_investigator_turn(cx, id),
+                None => EngineOutcome::Done,
+            }
         }
+        // Step 2.2's queued `TurnBegan` sequence has resolved, re-exposing this
+        // anchor: open the post-2.2 window.
+        Some(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+            resume: InvestigationResume::AfterTurnBegan,
+        })) => investigation_after_turn_began(cx),
         Some(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
         })) => {
