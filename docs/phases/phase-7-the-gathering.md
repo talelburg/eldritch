@@ -823,7 +823,8 @@ can complete around it, and doing it properly needs a design call (client-side f
 vs. eligible indices on the `InputRequest`) that has to leave room for the
 conditional-eligibility cards `skill_icons` cannot express — Opportunist 01053's
 *"Commit only to a skill test you are performing"*, Take Heart 04201's *"You may
-commit Take Heart to any type of test"*. None of those are implemented yet.
+commit Take Heart to any type of test"*. Opportunist's restriction is implemented
+(#1073); Take Heart is not.
 
 **Pulled into the gate by the 2026-08-23 recharter:** the whole of #258 — the
 optional content this doc had filed under *Future slices* — plus #769 (the

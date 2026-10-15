@@ -11,7 +11,7 @@ location-index pipeline bugs, p1 — Ruth Turner 01141 is refused on a parser
 bug), #670 (the non-`Specific` spawn shapes and the spawning investigator's
 choice among valid locations — first consumers Acolyte 01169, Wizard of the Order
 01170 and The Masked Hunter 01121b, all Midnight Masks), #792 (doom on a card in
-play, and the phase-boundary forced scan that reaches it — 01169/01170 again), #576/#577 (`is_fast`, play-cost representation), #579 (ingestion-gaps
+play, and the phase-boundary forced scan that reaches it — 01169/01170 again), #577 (play-cost representation), #579 (ingestion-gaps
 umbrella), #679 (conditional constant modifiers — Screeching Byakhee 01175),
 #765 (`is_unique` / `permanent` / `restrictions` ingestion, p1 — deck import
 cannot validate without them), #766 (The Gathering's resolution fidelity: agenda

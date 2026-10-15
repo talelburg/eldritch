@@ -1,7 +1,8 @@
 //! The picker's placeholder decks, one per investigator it offers, until
 //! decklist import (#782) retires both. Host-compiled, unlike the wasm-only
 //! `picker` that seats them, so a host test can play a scenario with
-//! the exact deck the picker sends (`tests/agnes_scaffold_walk.rs`).
+//! the exact deck the picker sends (`tests/agnes_scaffold_walk.rs`,
+//! `tests/skids_scaffold_walk.rs`).
 
 /// Placeholder default deck for Roland (01001) until Phase 9 decklist import.
 /// Implemented Guardian/Seeker/neutral cards only, so the opening hand is
@@ -59,10 +60,23 @@ pub const AGNES_DEFAULT_DECK: &[&str] = &[
 /// Placeholder default deck for "Skids" O'Toole (01003) until decklist import
 /// (#782) retires the scaffolds. Implemented cards he may take only, so every
 /// card in it is playable: two of each Guardian level-0 card (his
-/// *"Guardian cards (\[guardian\]) level 0-2"*) and of the neutrals. His
-/// signatures and the Rogue cards join it as they become playable (#1079). NOT
-/// a legal deck — a scaffold for UI testing, like [`ROLAND_DEFAULT_DECK`].
+/// *"Guardian cards (\[guardian\]) level 0-2"*) and of the neutrals, two of
+/// each Rogue level-0 card, and his two signatures at one copy each (On the
+/// Lam and the Hospital Debts weakness, as his deckbuilding requirements name
+/// them). NOT a legal deck — a scaffold for UI testing, like
+/// [`ROLAND_DEFAULT_DECK`].
 pub const SKIDS_DEFAULT_DECK: &[&str] = &[
+    "01010", // On the Lam (signature)
+    "01044", "01044", // Switchblade
+    "01045", "01045", // Burglary
+    "01046", "01046", // Pickpocketing
+    "01047", "01047", // .41 Derringer
+    "01048", "01048", // Leo De Luca
+    "01049", "01049", // Hard Knocks
+    "01050", "01050", // Elusive
+    "01051", "01051", // Backstab
+    "01052", "01052", // Sneak Attack
+    "01053", "01053", // Opportunist
     "01016", "01016", // .45 Automatic
     "01017", "01017", // Physical Training
     "01018", "01018", // Beat Cop
@@ -81,4 +95,5 @@ pub const SKIDS_DEFAULT_DECK: &[&str] = &[
     "01091", "01091", // Overpower
     "01092", "01092", // Manual Dexterity
     "01093", "01093", // Unexpected Courage
+    "01011", // Hospital Debts (signature weakness)
 ];
