@@ -140,7 +140,7 @@ fn the_reaction_discards_the_chosen_card_cancels_the_token_and_reveals_a_new_one
 }
 
 /// The Bat's ruling, through Wendy's: a cancelled `[skull]` is treated as never
-/// revealed, so the Bat's *"If a \[skull\] or \[auto_fail\] symbol is revealed
+/// revealed, so the Bat's *"If a `[skull]` or `[auto_fail]` symbol is revealed
 /// during this attack, discard Baseball Bat"* never fires. Combat 1 + 2 = 3
 /// against fight 3: the `0` drawn in the skull's place passes the attack.
 #[test]
