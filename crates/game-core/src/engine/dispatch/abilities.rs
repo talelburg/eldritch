@@ -114,6 +114,30 @@ pub(super) fn activate_ability(
     source: AbilitySource,
     address: &AbilityAddress,
 ) -> EngineOutcome {
+    activate(cx, investigator, source, address, None)
+}
+
+/// [`activate_ability`] again, once the player has answered the FAQ 1.10
+/// choice its take step put (#1098): paid for with the `chosen`th additional
+/// action it offered. Nothing was paid when the choice was put, so this is the
+/// whole activation, validation included.
+pub(super) fn activate_ability_paid_with(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    source: AbilitySource,
+    address: &AbilityAddress,
+    chosen: usize,
+) -> EngineOutcome {
+    activate(cx, investigator, source, address, Some(chosen))
+}
+
+fn activate(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    source: AbilitySource,
+    address: &AbilityAddress,
+    chosen_additional_action: Option<usize>,
+) -> EngineOutcome {
     let ActivateCheckResult {
         candidate,
         action_cost,
@@ -180,7 +204,11 @@ pub(super) fn activate_ability(
     // An action-cost ability is taken as an action. The step pays the actions,
     // the hook pays the rest and announces, and the step then either parks the
     // resolution behind the attacks of opportunity or performs it now (#361).
-    let description = ActionDescription::activate(source, action_cost, designator.clone());
+    let mut description =
+        ActionDescription::activate(source, address.clone(), action_cost, designator.clone());
+    if let Some(chosen) = chosen_additional_action {
+        description = description.paid_with_chosen_additional_action(chosen);
+    }
     take::take(cx, investigator, &description, |cx| {
         pay_and_announce(cx)?;
         Ok(ActionResume::ActivateAbility {

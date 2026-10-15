@@ -265,6 +265,8 @@ pub enum Continuation {
     MoveEnter(MoveEnterFrame),
     /// See [`SlotDiscardFrame`].
     SlotDiscard(SlotDiscardFrame),
+    /// See [`AdditionalActionChoiceFrame`].
+    AdditionalActionChoice(AdditionalActionChoiceFrame),
     /// See [`MythosPhaseFrame`].
     MythosPhase(MythosPhaseFrame),
     /// See [`InvestigationPhaseFrame`].
@@ -317,6 +319,7 @@ impl_frame!(EncounterCard, EncounterCardFrame);
 impl_frame!(PlayFromHand, PlayFromHandFrame);
 impl_frame!(MoveEnter, MoveEnterFrame);
 impl_frame!(SlotDiscard, SlotDiscardFrame);
+impl_frame!(AdditionalActionChoice, AdditionalActionChoiceFrame);
 impl_frame!(MythosPhase, MythosPhaseFrame);
 impl_frame!(InvestigationPhase, InvestigationPhaseFrame);
 impl_frame!(EnemyPhase, EnemyPhaseFrame);
@@ -654,7 +657,11 @@ impl Continuation {
             // A framework Fast window is a prompt with or without candidates:
             // `ResolveInput::Skip` closes it (#476), and the loop surfaces its
             // eligible plays as a skippable choice. An opportunity, so cancelled.
+            //
+            // The additional-action choice is put before the action is paid
+            // for, so nothing of the action is under way yet: an opportunity.
             Continuation::FastWindow(_)
+            | Continuation::AdditionalActionChoice(_)
             | Continuation::HunterMove(_)
             | Continuation::SpawnEngage(_)
             | Continuation::HandSizeDiscard(_)
@@ -2621,6 +2628,30 @@ pub struct SlotDiscardFrame {
     /// Why the asset is entering the play area — which decides whether it
     /// is announced as *entering play* once the deficit clears.
     pub entry: AssetEntry,
+}
+
+/// An action-cost activation paused, before anything is paid, for the player
+/// to choose which additional action pays for it (#1098). FAQ 1.10
+/// (`glossary/Action.md`): *"If an action qualifies as more than one of an
+/// investigator’s additional actions, he or she may choose which additional
+/// action is used."* Pushed by the take step when the additional actions the
+/// activation qualifies as carry more than one restriction; resumed by a
+/// `PickSingle(OptionId)` that re-runs the activation paid for with the chosen
+/// one. A [Prompt](FrameActivity::Prompt); not a phase anchor.
+///
+/// It holds an activation because only an activation can be asked: the one
+/// restriction an additional action carries,
+/// [`ActivatedAbilityOn`](card_dsl::dsl::AdditionalActionRestriction::ActivatedAbilityOn),
+/// admits nothing else, and an action admitted only by unrestricted ones has
+/// nothing to choose.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AdditionalActionChoiceFrame {
+    /// The investigator taking the action.
+    pub investigator: InvestigatorId,
+    /// The source of the ability being activated.
+    pub source: AbilitySource,
+    /// Which of the source's abilities.
+    pub address: AbilityAddress,
 }
 
 #[cfg(test)]

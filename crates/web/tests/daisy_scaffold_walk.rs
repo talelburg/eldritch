@@ -48,16 +48,16 @@ const REGISTRIES: Registries = Registries {
 };
 
 const DAISY: &str = "01002";
+/// Her signature asset. The Necronomicon 01009 joins the deck with #1095.
+const TOTE_BAG: &str = "01008";
 const INV: InvestigatorId = InvestigatorId(1);
 /// The Ghoul Priest, set aside until act 2 (01109)'s reverse spawns it.
 const GHOUL_PRIEST: &str = "01116";
 const MIND_OVER_MATTER: &str = "01036";
-const WORKING_A_HUNCH: &str = "01037";
+const MAGNIFYING_GLASS: &str = "01030";
 
 /// Her level-0 Seeker pool, as printed in
-/// `data/arkhamdb-snapshot/pack/core/core.json`. Her signatures join the deck
-/// once they are registered: Daisy's Tote Bag 01008 with #1092, The
-/// Necronomicon 01009 with #1095.
+/// `data/arkhamdb-snapshot/pack/core/core.json`.
 const SEEKER_LEVEL_0: [&str; 10] = [
     "01030", // Magnifying Glass
     "01031", // Old Book of Lore
@@ -88,6 +88,11 @@ fn the_scaffold_deck_holds_her_whole_level_0_seeker_pool() {
         .filter(|code| !copies.contains_key(*code))
         .collect();
     assert!(missing.is_empty(), "missing from the deck: {missing:?}");
+}
+
+#[test]
+fn the_scaffold_deck_holds_one_tote_bag() {
+    assert_eq!(copies().get(TOTE_BAG), Some(&1));
 }
 
 #[test]
@@ -129,20 +134,49 @@ fn seated_daisy() -> GameState {
     session.finish().state
 }
 
-/// The deck's shuffle deals Working a Hunch 01037 into her opening hand, a
-/// fast event, so her turn opens on the start-of-turn fast window (Appendix II
-/// 2.2) offering it; the walk passes it.
-fn pass_start_of_turn_window(session: TestSession) -> TestSession {
-    let offered: Vec<&str> = session
+/// The labels of the fast window `session` rests at.
+fn offered(session: &TestSession) -> Vec<&str> {
+    session
         .prompt()
         .options
         .iter()
         .map(|option| option.label.as_str())
-        .collect();
+        .collect()
+}
+
+/// The deck's shuffle deals Mind over Matter 01036 and Magnifying Glass 01030
+/// into her opening hand, both Fast, so her turn opens on the start-of-turn
+/// fast window (Appendix II 2.2) offering them. The walk plays Magnifying
+/// Glass there, so no later fast window offers it, and passes the window it
+/// reopens on with Mind over Matter, which she keeps for the Priest.
+fn pass_start_of_turn_window(session: TestSession) -> TestSession {
     assert_eq!(
-        offered,
-        [format!("Play {WORKING_A_HUNCH}")],
-        "her turn opens offering Working a Hunch",
+        offered(&session),
+        [
+            format!("Play {MIND_OVER_MATTER}"),
+            format!("Play {MAGNIFYING_GLASS}")
+        ],
+        "her turn opens offering Mind over Matter and Magnifying Glass",
+    );
+    let glass = session.state().investigators[&INV]
+        .hand
+        .iter()
+        .position(|code| code.as_str() == MAGNIFYING_GLASS)
+        .expect("Magnifying Glass is in her hand");
+    let session = session.pick(OptionTarget::HandCard {
+        investigator: INV,
+        hand_index: u8::try_from(glass).expect("a small hand"),
+    });
+    pass_mind_over_matter_window(session)
+}
+
+/// A start-of-turn fast window offering only Mind over Matter; the walk
+/// passes it.
+fn pass_mind_over_matter_window(session: TestSession) -> TestSession {
+    assert_eq!(
+        offered(&session),
+        [format!("Play {MIND_OVER_MATTER}")],
+        "the window offers Mind over Matter",
     );
     session.skip()
 }
@@ -179,16 +213,14 @@ fn daisy_with_her_scaffold_deck_plays_the_gathering_to_a_resolution() {
     assert_eq!(after_spend.state().act_index, 2, "act 2 advanced to act 3");
 
     // Round 2's Mythos draws the seeded Ancient Evils, which resolves before
-    // her turn. Working a Hunch is still in her hand, but the Hallway has no
-    // clue for it to discover, so no fast window opens.
-    let investigation = after_spend.confirm();
+    // her turn. Mind over Matter is still in her hand, so her turn opens on a
+    // fast window offering it, which the walk passes.
+    let investigation = pass_mind_over_matter_window(after_spend.confirm());
     investigation.assert_at_turn_menu(INV);
     assert_eq!(investigation.state().round, 2);
 
     // --- Seed the spawned Priest's health and engagement, as Roland's walk
-    // does: one damage from defeat, engaged with Daisy in the Hallway. And seed
-    // Mind over Matter at the front of her hand, since the deck's shuffle has
-    // not dealt it by now; her resources pay its cost of 1.
+    // does: one damage from defeat, engaged with Daisy in the Hallway.
     let investigation = investigation.edit_state(|state| {
         let priest = state
             .enemies
@@ -197,13 +229,14 @@ fn daisy_with_her_scaffold_deck_plays_the_gathering_to_a_resolution() {
             .expect("act 2's reverse spawned the Ghoul Priest");
         priest.damage = priest.max_health - 1;
         priest.engaged_with = Some(INV);
-        state
-            .investigators
-            .get_mut(&INV)
-            .expect("Daisy seated")
-            .hand
-            .insert(0, CardCode::new(MIND_OVER_MATTER));
     });
+    // The shuffle dealt Mind over Matter into her opening hand; her resources
+    // pay its cost of 1.
+    let mind_over_matter = investigation.state().investigators[&INV]
+        .hand
+        .iter()
+        .position(|code| code.as_str() == MIND_OVER_MATTER)
+        .expect("Mind over Matter is in her hand");
     let priest = investigation
         .state()
         .enemies
@@ -218,7 +251,7 @@ fn daisy_with_her_scaffold_deck_plays_the_gathering_to_a_resolution() {
     let substituting = investigation
         .take(&TurnAction::PlayCard {
             investigator: INV,
-            hand_index: 0,
+            hand_index: u8::try_from(mind_over_matter).expect("a small hand"),
         })
         .take(&TurnAction::Fight {
             investigator: INV,

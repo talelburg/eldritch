@@ -101,6 +101,7 @@ pub mod cellar;
 pub mod cover_up;
 pub mod crypt_chill;
 pub mod daisy_walker;
+pub mod daisys_tote_bag;
 pub mod dark_memory;
 pub mod deduction;
 pub mod derringer_41;
@@ -252,6 +253,7 @@ pub const ALL: &[CardRecord] = &[
     cover_up::CARD,
     crypt_chill::CARD,
     daisy_walker::CARD,
+    daisys_tote_bag::CARD,
     dark_memory::CARD,
     deduction::CARD,
     derringer_41::CARD,
