@@ -1032,7 +1032,7 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
         },
         Effect::TakeControl { code } => dispatch::take_control(cx, eval_ctx.controller, code),
         Effect::GainAdditionalAction { restriction } => {
-            take::gain_additional_action(cx, eval_ctx.controller, *restriction);
+            take::gain_additional_action(cx, eval_ctx.controller, restriction.clone());
             EngineOutcome::Done
         }
         Effect::AdditionalActionWhileInPlay { .. } => EngineOutcome::Rejected {

@@ -32,6 +32,8 @@ A new `Effect` (or `EventPattern`) variant waits until **two or more hand-writte
 
 **Why:** a variant added for one card fixes the DSL's shape around a sample of one, and the kernel then has to keep resolving it. One consumer is a card-local detail; two is a pattern.
 
+**The threshold covers executed effects, where a native is the cheap alternative.** A constant the engine *reads* has no such alternative: `Condition::Native` is the only read-only native kind, so no card-local tag can tell the engine what an additional action may pay for. Such a constant gets the smallest declarative variant at its first consumer. The variants under this clause: `AdditionalActionRestriction::ActivatedAbilityOn` (Daisy Walker 01002).
+
 ### A native changes the game only through an engine exit
 
 A native in `cards` gets a `game_core::engine::NativeCx`. It reads the whole state through `NativeCx::state` and the card registry through `NativeCx::cards`, and its only way to change the game is the exits `NativeCx` offers as methods: `discard_from_play`, `remove_from_game`, `place_doom_on_agenda`, `spend_uses`, `deal_harm` and the rest. The compiler enforces this: `state()` is read-only, nothing on `NativeCx` pushes an event, and the engine's `&mut Cx` functions are crate-private. A native that needs a new way to change the game gets a new exit on `NativeCx`, backed by an engine function that owns the rule — for a new way out of play, a sibling verb on the router in `board::leave_play` — never a write in the card module.

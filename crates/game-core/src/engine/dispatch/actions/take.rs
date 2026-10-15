@@ -30,21 +30,22 @@
 //! able to qualify as that additional action automatically uses that
 //! additional action."* So [`quote`] counts the entries that admit the action
 //! being taken, and [`take`] spends those before any standard action.
-//! [`ActionDescription`] is what an entry's restriction is tested against
-//! (Daisy Walker 01002, #779).
+//! [`ActionDescription`] is what an entry's restriction is tested against:
+//! Daisy Walker 01002's additional action pays only for a Tome's `[action]`
+//! ability.
 
 use std::borrow::Cow;
 use std::fmt;
 
 use card_dsl::dsl::{ActionClass, ActionDesignator, AdditionalActionRestriction, Effect};
 
-use crate::card_registry::CardRegistry;
+use crate::card_registry::{self, CardRegistry};
 use crate::engine::dispatch::actions::evade::EvadeModification;
 use crate::engine::dispatch::actions::fight::FightModification;
 use crate::engine::dispatch::actions::{draw, engage, evade, fight, investigate, r#move, resource};
 use crate::engine::dispatch::{abilities, cards, combat, cursor};
 use crate::engine::outcome::EngineOutcome;
-use crate::engine::{abilities_in_effect, evaluator, Cx};
+use crate::engine::{abilities_in_effect, board, evaluator, Cx};
 use crate::event::Event;
 use crate::state::{
     AbilitySource, ActionResolutionFrame, ActionResume, AdditionalActionGrant, CardCode,
@@ -57,7 +58,7 @@ use crate::state::{
 /// and **Evade**."*), a **Play** of the card `code`, or an **Activate** of an
 /// ability on `source`. The last two carry their source so a rule that applies
 /// to some actions by what they are taken from can be tested against the
-/// description (Daisy Walker 01002, #779).
+/// description (Daisy Walker 01002's Tome-only additional action).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ActionKind {
     Draw,
@@ -202,7 +203,7 @@ impl ActionDescription {
 
 /// One additional action an investigator holds right now: what it may be used
 /// for, and where it comes from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct AdditionalAction {
     restriction: Option<AdditionalActionRestriction>,
     origin: AdditionalActionOrigin,
@@ -211,11 +212,33 @@ struct AdditionalAction {
 impl AdditionalAction {
     /// Whether taking `description` may use this additional action. An
     /// unrestricted one admits every action.
-    fn admits(self, _description: &ActionDescription) -> bool {
-        match self.restriction {
+    ///
+    /// [`ActivatedAbilityOn`](AdditionalActionRestriction::ActivatedAbilityOn)
+    /// admits only an activation that costs an action, of an ability on a card
+    /// in play whose printed card matches the filter: Daisy Walker 01002's
+    /// *"which can only be used on \[\[Tome\]\] \[action\] abilities"*. A
+    /// play, a basic action, and an ability on a location, enemy, act or agenda
+    /// never qualify.
+    fn admits(
+        &self,
+        state: &GameState,
+        cards: &CardRegistry,
+        description: &ActionDescription,
+    ) -> bool {
+        match &self.restriction {
             None => true,
-            // TODO(#779): test the restriction against `_description`.
-            Some(restriction) => match restriction {},
+            Some(AdditionalActionRestriction::ActivatedAbilityOn(filter)) => {
+                let ActionKind::Activate {
+                    source: AbilitySource::InPlay(instance),
+                } = description.kind
+                else {
+                    return false;
+                };
+                description.action_cost >= 1
+                    && board::find_instance(state, instance).is_some_and(|(card, _)| {
+                        card_registry::card_matches(cards, &card.code, filter)
+                    })
+            }
         }
     }
 }
@@ -253,8 +276,10 @@ enum AdditionalActionOrigin {
 /// one could not take. Spending a card-in-play one first protects the action
 /// from the card leaving play. While every entry that qualifies carries the
 /// same restriction, nothing the player could choose would change the outcome.
-/// [`quote`] asserts that in debug builds. The first card that breaks it fails
-/// its own test, rather than having the engine silently pick for the player.
+/// [`quote`] asserts that in debug builds, rather than having the engine
+/// silently pick for the player. Daisy Walker 01002 with Leo De Luca 01048
+/// breaks it: a Tome activation qualifies as both her restricted action and
+/// his unrestricted one, and the choice between them is #1098.
 fn additional_actions(
     state: &GameState,
     cards: &CardRegistry,
@@ -288,7 +313,7 @@ fn additional_actions(
             .iter()
             .enumerate()
             .map(|(index, grant)| AdditionalAction {
-                restriction: grant.restriction,
+                restriction: grant.restriction.clone(),
                 origin: AdditionalActionOrigin::Effect { index },
             }),
     );
@@ -450,10 +475,11 @@ fn quote(
     let total = description.action_cost.saturating_add(extra);
     let qualifying: Vec<AdditionalAction> = additional_actions(state, cards, investigator)
         .into_iter()
-        .filter(|action| action.admits(description))
+        .filter(|action| action.admits(state, cards, description))
         .collect();
-    // TODO(#779): add the #[should_panic] test once a restriction can be
-    // constructed. Until then every grant is unrestricted, so this never trips.
+    // TODO(#1098): offer the FAQ 1.10 choice between differently restricted
+    // additional actions. Daisy Walker 01002 and Leo De Luca 01048 activating
+    // a Tome trips this today.
     debug_assert!(
         qualifying
             .windows(2)

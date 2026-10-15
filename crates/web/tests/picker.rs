@@ -59,6 +59,21 @@ async fn create_button_sends_a_roster() {
 }
 
 #[wasm_bindgen_test]
+async fn selecting_the_daisy_radio_sends_daisy_roster() {
+    let mut rx = mount_picker();
+    click_last("input[name=inv][value='01002']");
+    click_last(".create-game");
+
+    let req = rx.next().await.expect("a CreateGameRequest was sent");
+    assert_eq!(req.roster.len(), 1);
+    assert_eq!(req.roster[0].investigator.as_str(), "01002");
+    assert!(
+        req.roster[0].deck.iter().any(|c| c.as_str() == "01035"),
+        "Daisy is seated with her scaffold deck (Medical Texts 01035 in it)"
+    );
+}
+
+#[wasm_bindgen_test]
 async fn selecting_the_skids_radio_sends_skids_roster() {
     let mut rx = mount_picker();
     click_last("input[name=inv][value='01003']");
