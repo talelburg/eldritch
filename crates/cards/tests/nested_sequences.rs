@@ -58,7 +58,7 @@
 
 use cards::TEST_REGISTRIES;
 use game_core::assert_event_sequence;
-use game_core::engine::enumerate::TurnAction;
+use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
@@ -151,7 +151,7 @@ fn the_damage_dealt_to_the_guard_dog_resolves_last() {
     //    assigns this damage to his Guard Dog" ────────────────────────────────
     let session = session.take(&TurnAction::PlayCard {
         investigator: INV,
-        hand_index: 0,
+        source: PlaySource::Hand(0),
     });
     let session = assign_to(session, dog);
     let state = session.state();

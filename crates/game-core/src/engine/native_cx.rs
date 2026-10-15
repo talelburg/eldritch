@@ -488,4 +488,13 @@ impl<'a> NativeCx<'a> {
     pub fn return_committed_card_to_hand(&mut self, index: u8) {
         skill_test::return_committed_card_to_hand(self.write_access(), index);
     }
+
+    /// Discard `card` from play when the in-flight skill test ends (RR ST.8),
+    /// after its results — an attack's damage included. Baseball Bat 01074's
+    /// *"discard Baseball Bat after the attack resolves"*. Announced by the
+    /// discard's own
+    /// [`Event::CardDiscarded`](crate::event::Event::CardDiscarded) at ST.8.
+    pub fn discard_after_this_test(&mut self, card: CardInstanceId) {
+        skill_test::discard_after_this_test(self.write_access(), card);
+    }
 }

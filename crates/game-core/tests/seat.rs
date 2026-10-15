@@ -9,7 +9,7 @@
 use std::sync::LazyLock;
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Skills};
-use game_core::engine::enumerate::TurnAction;
+use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::{OptionTarget, Registries};
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
@@ -313,7 +313,7 @@ fn a_card_the_engine_mints_after_build_gets_a_fresh_id() {
         .session()
         .take(&TurnAction::PlayCard {
             investigator: INV,
-            hand_index: 0,
+            source: PlaySource::Hand(0),
         });
     let state = session.state();
     let played = state.in_play(INV, ASSET);
@@ -339,7 +339,7 @@ fn a_hand_built_card_present_at_build_is_not_reminted() {
         .session()
         .take(&TurnAction::PlayCard {
             investigator: INV,
-            hand_index: 0,
+            source: PlaySource::Hand(0),
         });
     assert_ne!(session.state().in_play(INV, ASSET), CardInstanceId(0));
 }

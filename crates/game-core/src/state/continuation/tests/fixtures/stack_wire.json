@@ -117,7 +117,8 @@
       "bonus_clues_discovered": 0,
       "resolved": null,
       "revealed": null,
-      "reveal_clause": null
+      "reveal_clause": null,
+      "discard_after": null
     }
   },
   {

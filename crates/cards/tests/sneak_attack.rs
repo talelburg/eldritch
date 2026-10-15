@@ -10,7 +10,7 @@
 //! > Attack. You do not play it during the enemy phase.
 
 use cards::TEST_REGISTRIES;
-use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::enumerate::{self, PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{CardCode, Enemy, EnemyId, GameStateBuilder, InvestigatorId, LocationId};
@@ -24,7 +24,7 @@ const THERE: LocationId = LocationId(11);
 
 const PLAY: TurnAction = TurnAction::PlayCard {
     investigator: INV,
-    hand_index: 0,
+    source: PlaySource::Hand(0),
 };
 
 /// An unengaged 5-health enemy at `at`, exhausted or ready.

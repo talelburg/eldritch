@@ -37,7 +37,7 @@
 //! observable is where the card lands.
 
 use cards::TEST_REGISTRIES;
-use game_core::engine::enumerate::TurnAction;
+use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId, Status};
 use game_core::test_support::{self, seat, TestSession};
@@ -53,7 +53,7 @@ const HALLWAY: LocationId = LocationId(11);
 fn play(session: TestSession, hand_index: u8) -> TestSession {
     session.take(&TurnAction::PlayCard {
         investigator: INV,
-        hand_index,
+        source: PlaySource::Hand(hand_index),
     })
 }
 

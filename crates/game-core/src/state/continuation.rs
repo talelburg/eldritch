@@ -1419,6 +1419,19 @@ pub struct InFlightSkillTest {
     /// no source, so an event printing one (Blinding Light 01066) has nowhere
     /// else to keep it. `None` for every test whose initiator prints none.
     pub reveal_clause: Option<RevealClause>,
+    /// A card in play this test discards as it ends, at RR ST.8 — after the
+    /// ST.7 results, so after an attack's damage.
+    ///
+    /// Baseball Bat 01074's *"If a `[skull]` or `[auto_fail]` symbol is
+    /// revealed during this attack, discard Baseball Bat after the attack
+    /// resolves."*: its reveal clause fires at ST.3 and marks the test here
+    /// (through
+    /// [`NativeCx::discard_after_this_test`](crate::engine::NativeCx::discard_after_this_test)),
+    /// and the teardown does the discard. A test abandoned because its target
+    /// left play discards it too, since the symbol was still revealed during
+    /// it; one abandoned on the tester's elimination does not, as elimination
+    /// removes the card from the game. `None` for every other test.
+    pub discard_after: Option<CardInstanceId>,
 }
 
 /// The outcome of a skill test's chaos-token resolution (RR ST.6), stored on

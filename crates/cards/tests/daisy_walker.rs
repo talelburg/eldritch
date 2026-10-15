@@ -18,7 +18,7 @@
 
 use cards::TEST_REGISTRIES;
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::enumerate::{self, PlaySource, TurnAction};
 use game_core::engine::{self, EngineOutcome, OptionId, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
@@ -161,7 +161,7 @@ fn playing_a_tome_costs_a_standard_action() {
     let session =
         board(daisy().hand([OLD_BOOK_OF_LORE]).resources(3)).take(&TurnAction::PlayCard {
             investigator: INV,
-            hand_index: 0,
+            source: PlaySource::Hand(0),
         });
     session.state().in_play(INV, OLD_BOOK_OF_LORE);
     assert_eq!(standard_actions(session.state()), 2);

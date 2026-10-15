@@ -6,7 +6,7 @@ use cards::REGISTRY;
 use cards::TEST_REGISTRIES;
 use game_core::assert_event;
 use game_core::assert_no_event;
-use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::enumerate::{self, PlaySource, TurnAction};
 use game_core::engine::modified_value::{self, ModifiedQuantity, ReadContext};
 use game_core::engine::{InputKind, OptionTarget};
 use game_core::event::Event;
@@ -214,7 +214,7 @@ fn dissonant_voices_forbids_playing_an_asset() {
     // itself refuses it.
     let play = TurnAction::PlayCard {
         investigator: INV,
-        hand_index: 0,
+        source: PlaySource::Hand(0),
     };
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)

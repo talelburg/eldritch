@@ -24,7 +24,7 @@ use crate::engine::dispatch::actions::take::{self, ActionDescription};
 use crate::engine::dispatch::initiation::{self, InitiationKind, Refusal};
 use crate::engine::dispatch::{cards, combat, hand_discard_cost, slots};
 use crate::engine::outcome::EngineOutcome;
-use crate::engine::{ability_source, designator};
+use crate::engine::{ability_source, designator, PlaySource};
 use crate::state::{
     AbilityAddress, AbilitySource, CandidateSource, CardCode, GameState, InvestigatorId, Phase,
     ResolutionCandidate,
@@ -116,7 +116,7 @@ fn check_play_slot_satisfiable(
 /// *Whether* the card may be played is the initiation gate's answer, asked as
 /// a play ([`initiation::check_play`]); this validator owns only the *when* and
 /// the rest of what a play from the turn menu or a player window needs — the
-/// hand index, reaction events, slots and the turn/Fast timing matrix (ADR
+/// play source, reaction events, slots and the turn/Fast timing matrix (ADR
 /// 0017). A non-fast play's action point is the step's answer
 /// ([`take::check`]).
 ///
@@ -127,20 +127,20 @@ pub(crate) fn check_play_card(
     state: &GameState,
     cards: &CardRegistry,
     investigator: InvestigatorId,
-    hand_index: u8,
+    source: PlaySource,
 ) -> Result<PlayCheckResult, Cow<'static, str>> {
     let Some(inv) = state.investigators.get(&investigator) else {
         return Err(format!("PlayCard: investigator {investigator:?} is not in state").into());
     };
-    let idx = usize::from(hand_index);
-    if idx >= inv.hand.len() {
-        return Err(format!(
-            "PlayCard: hand_index {hand_index} out of bounds (hand size {})",
-            inv.hand.len(),
-        )
+    let Some(code) = source.card(inv).cloned() else {
+        return Err(match source {
+            PlaySource::Hand(_) => format!(
+                "PlayCard: {source} out of bounds (hand size {})",
+                inv.hand.len(),
+            ),
+        }
         .into());
-    }
-    let code: CardCode = inv.hand[idx].clone();
+    };
     // Resolve card type and abilities (also yields is_fast + card_type) before
     // applying the phase/active-investigator gate so the gate can branch on
     // is_fast AND card_type per the Rules Reference (p. 11).

@@ -41,7 +41,7 @@ use card_dsl::card_data::CardType;
 use cards::TEST_REGISTRIES;
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::board::NotLeft;
-use game_core::engine::enumerate::TurnAction;
+use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{EngineOutcome, OptionId, OptionTarget};
 use game_core::event::Event;
@@ -160,7 +160,7 @@ fn fetched_by_research_librarian_the_revelation_still_fires() {
     )
     .take(&TurnAction::PlayCard {
         investigator: INV,
-        hand_index: 0,
+        source: PlaySource::Hand(0),
     });
     // The Librarian's EnteredPlay reaction: fire it. One eligible Tome, so
     // the search auto-takes it.
@@ -405,7 +405,7 @@ fn fetched_over_the_hand_limit_it_makes_room_after_the_search() {
     )
     .take(&TurnAction::PlayCard {
         investigator: INV,
-        hand_index: 0,
+        source: PlaySource::Hand(0),
     });
     let librarian = session.state().card(INV, LIBRARIAN);
     let session = session.pick(librarian);

@@ -15,7 +15,7 @@
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Slot, UseKind, Uses};
 use card_dsl::dsl::{self, Cost, IntExpr};
 use game_core::assert_event;
-use game_core::engine::enumerate::TurnAction;
+use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::{InputKind, OptionTarget, Registries};
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
@@ -208,7 +208,7 @@ fn play_card_seeds_the_ammo_pool_from_metadata() {
         .session()
         .take(&TurnAction::PlayCard {
             investigator: INV,
-            hand_index: 0,
+            source: PlaySource::Hand(0),
         });
     session.assert_at_turn_menu(INV);
     let weapon = session.state().investigators[&INV]

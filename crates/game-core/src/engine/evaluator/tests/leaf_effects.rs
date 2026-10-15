@@ -91,6 +91,7 @@ fn boost_attack_damage_accumulates_on_in_flight_test() {
             resolved: None,
             revealed: None,
             reveal_clause: None,
+            discard_after: None,
         }));
 
     for _ in 0..2 {
@@ -147,6 +148,7 @@ fn discover_additional_clues_accumulates_on_in_flight_test() {
             resolved: None,
             revealed: None,
             reveal_clause: None,
+            discard_after: None,
         }));
 
     for _ in 0..2 {
