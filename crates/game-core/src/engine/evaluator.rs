@@ -1040,6 +1040,11 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
                      card in play when actions are counted, never executed"
                 .into(),
         },
+        Effect::TreatRevealedToken { .. } => EngineOutcome::Rejected {
+            reason: "Effect::TreatRevealedToken is a constant marker — read off the \
+                     performer's cards when a chaos token is revealed, never executed"
+                .into(),
+        },
         Effect::BoostAttackDamage(amount) => boost_attack_damage_effect(cx, *amount),
         Effect::DiscoverAdditionalClues(amount) => discover_additional_clues_effect(cx, *amount),
         Effect::DrawCards { target, count } => draw_cards_effect(cx, eval_ctx, *target, count),

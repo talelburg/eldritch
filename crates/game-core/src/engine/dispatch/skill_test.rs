@@ -23,15 +23,15 @@ use crate::engine::modified_value::{
     self, ContributionSource, ModifiedQuantity, ModifierBreakdown, ModifierTarget, ReadContext,
 };
 use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId, ResumeToken};
-use crate::engine::Cx;
+use crate::engine::{abilities_in_effect, Cx};
 use crate::event::{Event, FailureReason};
 use crate::scenario;
 use crate::state::{
     self, AbilitySource, CardCode, CardInstanceId, ChaosToken, CommittedCard,
     CommittedCardDestination, Continuation, DifficultyBasis, DiscardPile, FastWindowKind,
     GameState, InFlightSkillTest, InvestigatorId, LastingEffect, LastingEffectKind, Lifetime,
-    RecordedModifier, ResolvedTest, SkillKind, SkillSubstitution, SkillTestFollowUp, SkillTestStep,
-    Status, SubstitutionPromptFrame, TokenResolution, Zone,
+    RecordedModifier, ResolvedTest, RevealedToken, SkillKind, SkillSubstitution, SkillTestFollowUp,
+    SkillTestStep, Status, SubstitutionPromptFrame, TokenResolution, Zone,
 };
 
 /// The one-shot modifier an initiator grants the test it starts: a weapon's
@@ -500,12 +500,20 @@ pub(super) fn acknowledge_outcome(cx: &mut Cx) -> EngineOutcome {
 /// state replays identically.
 ///
 /// The token is drawn exactly once here; a soak window suspending inside the
-/// ST.4 effects resumes at `DetermineOutcome` and re-draws nothing. The token
-/// and its announced resolution are kept on
-/// [`revealed`](InFlightSkillTest::revealed); the skip above leaves it `None`.
+/// ST.4 effects resumes at `DetermineOutcome` and re-draws nothing. As it
+/// comes out it is substituted, once, by any
+/// [`Effect::TreatRevealedToken`] on the performer's cards ([`counted_token`]):
+/// The Necronomicon 01009 counts an `[elder_sign]` as an `[auto_fail]`. Every
+/// later read — the resolution, the chaos symbol effect at ST.4 and ST.7, and
+/// the reveal clause — takes the counted token, so a substituted elder sign
+/// never initiates the investigator's elder-sign ability.
+/// [`ChaosTokenRevealed`](Event::ChaosTokenRevealed) names the token drawn
+/// with the counted token's resolution. The drawn token, the counted one and
+/// that resolution are kept on [`revealed`](InFlightSkillTest::revealed); the
+/// skip above leaves it `None`.
 /// The outcome's result-conditional parts (Cultist 01104's `on_fail` horror)
 /// are not kept: the ST.7 [`ApplyTokenResult`](SkillTestStep::ApplyTokenResult)
-/// step looks the outcome up again from that token and picks one part by the
+/// step looks the outcome up again from the counted token and picks one part by the
 /// (by then known) result. Pre-advances to `DetermineOutcome` **before**
 /// pushing the immediate effect (the suspend/resume invariant).
 ///
@@ -539,9 +547,11 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
     // initiates.
     let token_idx = cx.state.rng.next_index(cx.state.chaos_bag.tokens.len());
     let token = cx.state.chaos_bag.tokens[token_idx];
-    let printed = state::resolve_token(token, &cx.state.token_modifiers);
-    let (outcome, ctx) = chaos_symbol_effect(cx, token, investigator);
-    let resolution = match (&outcome, token) {
+    // From here on the test reads the token it counts as, never the drawn one.
+    let counts_as = counted_token(cx, token, investigator);
+    let printed = state::resolve_token(counts_as, &cx.state.token_modifiers);
+    let (outcome, ctx) = chaos_symbol_effect(cx, counts_as, investigator);
+    let resolution = match (&outcome, counts_as) {
         // The elder sign keeps its own resolution label.
         (_, ChaosToken::ElderSign) | (None, _) => printed,
         // A scenario symbol's modifier is evaluated once for the
@@ -575,7 +585,11 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
             .state
             .current_skill_test_mut()
             .expect("run_resolution: the SkillTest frame must exist");
-        t.revealed = Some((token, resolution));
+        t.revealed = Some(RevealedToken {
+            token,
+            counts_as,
+            resolution,
+        });
         t.continuation = SkillTestStep::DetermineOutcome;
     }
 
@@ -595,13 +609,37 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
         .state
         .current_skill_test()
         .expect("run_resolution: the SkillTest frame must exist");
-    if let (Some(clause), Some(symbol)) = (&t.reveal_clause, token.symbol()) {
+    if let (Some(clause), Some(symbol)) = (&t.reveal_clause, counts_as.symbol()) {
         if clause.fires_on(symbol) {
             let effect = clause.effect.clone();
             let ctx = EvalContext::for_controller_with_optional_source(investigator, t.source);
             evaluator::push_effect(cx, &effect, ctx);
         }
     }
+}
+
+/// The token a `drawn` chaos token counts as when `investigator` reveals it:
+/// the `to` of the first in-effect
+/// [`Effect::TreatRevealedToken`] on `investigator`'s own cards whose `from`
+/// is the drawn symbol, or `drawn` itself when none applies.
+///
+/// The Necronomicon 01009: *"Treat each \[elder_sign\] you reveal on a chaos
+/// token as a \[auto_fail\]."* — *"you reveal"*, so the constant is read off
+/// the performer's cards ([`constants_of`](abilities_in_effect::constants_of):
+/// investigator card, play area, threat area) and no one else's. A numeric
+/// token shows no symbol, so nothing substitutes it. One substitution, not a
+/// chain: the counted symbol is not looked up again.
+fn counted_token(cx: &Cx, drawn: ChaosToken, investigator: InvestigatorId) -> ChaosToken {
+    let Some(symbol) = drawn.symbol() else {
+        return drawn;
+    };
+    abilities_in_effect::constants_of(cx.state, cx.cards, investigator)
+        .into_iter()
+        .find_map(|(_, ability)| match ability.effect {
+            Effect::TreatRevealedToken { from, to } if from == symbol => Some(ChaosToken::from(to)),
+            _ => None,
+        })
+        .unwrap_or(drawn)
 }
 
 /// The chaos symbol effect a revealed `token` initiates, with the context its
@@ -1032,7 +1070,7 @@ fn apply_token_result_step(cx: &mut Cx, investigator: InvestigatorId) {
         .current_skill_test()
         .expect("apply_token_result_step: the SkillTest frame must persist")
         .revealed
-        .map(|(token, _)| token);
+        .map(|revealed| revealed.counts_as);
     cx.state
         .current_skill_test_mut()
         .expect("the SkillTest frame must persist across driver steps")

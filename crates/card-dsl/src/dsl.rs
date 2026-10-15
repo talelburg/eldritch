@@ -1752,7 +1752,8 @@ impl Effect {
             | Effect::AttachSelfToLocation
             | Effect::TakeControl { .. }
             | Effect::GainAdditionalAction { .. }
-            | Effect::AdditionalActionWhileInPlay { .. } => {}
+            | Effect::AdditionalActionWhileInPlay { .. }
+            | Effect::TreatRevealedToken { .. } => {}
         }
     }
 }
@@ -2179,6 +2180,20 @@ pub enum Effect {
     AdditionalActionWhileInPlay {
         /// What the additional action may be used for. `None` is any action.
         restriction: Option<AdditionalActionRestriction>,
+    },
+    /// **Treat one revealed chaos symbol as another**, for each token the
+    /// source card's controller reveals: The Necronomicon 01009's *"Treat each
+    /// \[elder_sign\] you reveal on a chaos token as a \[auto_fail\]."* A
+    /// constant marker like [`Restrict`](Self::Restrict), under a
+    /// [`Trigger::Constant`]: **inspected, not executed** — the skill test
+    /// reads it off the performer's cards as the token comes out of the bag,
+    /// and everything downstream of the reveal reads the symbol it counts as.
+    /// Resolving it rejects.
+    TreatRevealedToken {
+        /// The symbol revealed.
+        from: ChaosSymbol,
+        /// The symbol it counts as.
+        to: ChaosSymbol,
     },
     /// Search a region of an investigator's deck for one card matching
     /// `filter`, move it to that investigator's hand, then shuffle the deck.
@@ -3425,6 +3440,13 @@ pub fn restricted_additional_action_while_in_play(
     Effect::AdditionalActionWhileInPlay {
         restriction: Some(restriction),
     }
+}
+
+/// Build an [`Effect::TreatRevealedToken`]: each `from` its controller reveals
+/// counts as `to`. The constant marker; wrap it in [`constant`].
+#[must_use]
+pub fn treat_revealed_token(from: ChaosSymbol, to: ChaosSymbol) -> Effect {
+    Effect::TreatRevealedToken { from, to }
 }
 
 /// Build an [`Effect::DiscoverClue`].
