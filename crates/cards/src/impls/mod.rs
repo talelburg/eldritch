@@ -115,6 +115,7 @@ pub mod frozen_in_fear;
 pub mod grasping_hands;
 pub mod guard_dog;
 pub mod guts;
+pub mod hard_knocks;
 pub mod heirloom_of_hyperborea;
 pub mod holy_rosary;
 pub mod hyperawareness;
@@ -251,6 +252,7 @@ pub const ALL: &[CardRecord] = &[
     grasping_hands::CARD,
     guard_dog::CARD,
     guts::CARD,
+    hard_knocks::CARD,
     heirloom_of_hyperborea::CARD,
     holy_rosary::CARD,
     hyperawareness::CARD,
