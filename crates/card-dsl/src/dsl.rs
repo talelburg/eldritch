@@ -3633,6 +3633,19 @@ pub fn native(tag: impl Into<String>) -> Effect {
     Effect::Native { tag: tag.into() }
 }
 
+/// *"If you succeed by `n` or more"*: [`Quantity::SkillTestSucceededBy`] at
+/// least `n`. Switchblade 01044 and .41 Derringer 01047 (*"If you succeed by 2
+/// or more, this attack deals +1 damage."*), Opportunist 01053 (*"If you
+/// succeed by 3 or more"*).
+#[must_use]
+pub fn succeeded_by(n: i8) -> Condition {
+    Condition::Compare {
+        quantity: Quantity::SkillTestSucceededBy,
+        op: CmpOp::Ge,
+        value: n,
+    }
+}
+
 /// Build a [`Condition::Native`] referencing a host-registered Rust predicate
 /// by `tag` (same `"<cardcode>:<name>"` convention as [`native`]).
 #[must_use]

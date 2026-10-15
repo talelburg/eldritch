@@ -16,9 +16,11 @@
 //! and the ability spends 1 per use via `Cost::SpendUses`. The margin is
 //! [`Quantity::SkillTestSucceededBy`], bound when the Fight follow-up evaluates
 //! `extra_damage` at RR ST.7, so it counts the `+2` and anything committed.
+//!
+//! [`Quantity::SkillTestSucceededBy`]: card_dsl::dsl::Quantity::SkillTestSucceededBy
 
 use card_dsl::card_data::UseKind;
-use card_dsl::dsl::{self, Ability, CmpOp, Condition, Cost, IntExpr, Quantity};
+use card_dsl::dsl::{self, Ability, Cost, IntExpr};
 
 use crate::impls::CardRecord;
 
@@ -28,10 +30,13 @@ pub const CODE: &str = "01047";
 /// This card's registration, listed in [`ALL`](super::ALL).
 pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
+/// The .41 Derringer's one printed ability: *"\[action\] Spend 1 ammo:
+/// **Fight.** You get +2 \[combat\] for this attack. If you succeed by 2 or
+/// more, this attack deals +1 damage."*
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![dsl::activated_as(
-        dsl::fight(2u8, plus_one_if_succeeded_by_two()),
+        dsl::fight(2u8, IntExpr::cond(dsl::succeeded_by(2), 1, 0)),
         1,
         vec![Cost::SpendUses {
             kind: UseKind::Ammo,
@@ -39,19 +44,6 @@ pub fn abilities() -> Vec<Ability> {
         }],
         dsl::seq([]),
     )]
-}
-
-/// *"If you succeed by 2 or more, this attack deals +1 damage."*
-fn plus_one_if_succeeded_by_two() -> IntExpr {
-    IntExpr::cond(
-        Condition::Compare {
-            quantity: Quantity::SkillTestSucceededBy,
-            op: CmpOp::Ge,
-            value: 2,
-        },
-        1,
-        0,
-    )
 }
 
 #[cfg(test)]

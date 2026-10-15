@@ -17,8 +17,10 @@
 //!
 //! *"Fast."* is printed metadata (`is_fast`), which the play gate reads; it is
 //! not an ability here.
+//!
+//! [`Quantity::SkillTestSucceededBy`]: card_dsl::dsl::Quantity::SkillTestSucceededBy
 
-use card_dsl::dsl::{self, Ability, CmpOp, Condition, IntExpr, Quantity};
+use card_dsl::dsl::{self, Ability, IntExpr};
 
 use crate::impls::CardRecord;
 
@@ -28,27 +30,16 @@ pub const CODE: &str = "01044";
 /// This card's registration, listed in [`ALL`](super::ALL).
 pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
+/// Switchblade's one printed ability: *"\[action\]: **Fight.** If you succeed
+/// by 2 or more, this attack deals +1 damage."*
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![dsl::activated_as(
-        dsl::fight(0u8, plus_one_if_succeeded_by_two()),
+        dsl::fight(0u8, IntExpr::cond(dsl::succeeded_by(2), 1, 0)),
         1,
         vec![],
         dsl::seq([]),
     )]
-}
-
-/// *"If you succeed by 2 or more, this attack deals +1 damage."*
-fn plus_one_if_succeeded_by_two() -> IntExpr {
-    IntExpr::cond(
-        Condition::Compare {
-            quantity: Quantity::SkillTestSucceededBy,
-            op: CmpOp::Ge,
-            value: 2,
-        },
-        1,
-        0,
-    )
 }
 
 #[cfg(test)]
@@ -75,7 +66,7 @@ mod tests {
             );
         };
         assert_eq!(*combat_modifier, IntExpr::Lit(0));
-        assert_eq!(*extra_damage, plus_one_if_succeeded_by_two());
+        assert_eq!(*extra_damage, IntExpr::cond(dsl::succeeded_by(2), 1, 0));
         assert_eq!(abilities[0].effect, Effect::Seq(vec![]));
     }
 

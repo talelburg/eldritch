@@ -20,8 +20,10 @@
 //! gives every `OnSkillTestResolution` effect. A card-local native rather than
 //! a DSL effect: Opportunist is the only implemented card returning a
 //! committed card (Try and Try Again 02309 would be the second).
+//!
+//! [`Quantity::SkillTestSucceededBy`]: card_dsl::dsl::Quantity::SkillTestSucceededBy
 
-use card_dsl::dsl::{self, Ability, CmpOp, Condition, Quantity, TestOutcome};
+use card_dsl::dsl::{self, Ability, TestOutcome};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{EngineOutcome, NativeCx};
 
@@ -41,17 +43,8 @@ const RETURN_TO_HAND: &str = "01053:return-to-hand";
 pub fn abilities() -> Vec<Ability> {
     vec![dsl::on_skill_test_resolution(
         TestOutcome::Success,
-        dsl::if_(succeeded_by_three(), dsl::native(RETURN_TO_HAND)),
+        dsl::if_(dsl::succeeded_by(3), dsl::native(RETURN_TO_HAND)),
     )]
-}
-
-/// *"If you succeed by 3 or more"*.
-fn succeeded_by_three() -> Condition {
-    Condition::Compare {
-        quantity: Quantity::SkillTestSucceededBy,
-        op: CmpOp::Ge,
-        value: 3,
-    }
 }
 
 /// Send this committed card to hand, not the discard pile, when the test ends.
@@ -89,7 +82,7 @@ mod tests {
         else {
             panic!("expected an If, got {:?}", abilities[0].effect);
         };
-        assert_eq!(*condition, succeeded_by_three());
+        assert_eq!(*condition, dsl::succeeded_by(3));
         assert!(matches!(&**then, Effect::Native { tag } if tag == RETURN_TO_HAND));
     }
 
