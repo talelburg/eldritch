@@ -15,6 +15,7 @@ use card_dsl::dsl::{
 
 use crate::action::InputResponse;
 use crate::card_registry::CardRegistry;
+use crate::engine::board::{self, NotLeft};
 use crate::engine::dispatch::actions::{evade, fight, investigate};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{choice, emit, reaction_windows};
@@ -169,6 +170,7 @@ pub(in crate::engine) fn start_skill_test(
             resolved: None,
             revealed: None,
             reveal_clause,
+            discard_after: None,
         }));
     // The initiating effect's one-shot modifier becomes a row scoped to the
     // test just minted — the weapon's "+N for this attack" and Flashlight's
@@ -271,6 +273,44 @@ pub fn return_committed_card_to_hand(cx: &mut Cx, index: u8) {
     );
     if let Some(card) = card {
         card.destination = CommittedCardDestination::Hand;
+    }
+}
+
+/// Mark the in-flight test to discard `card` from play as it ends, by setting
+/// its [`discard_after`](InFlightSkillTest::discard_after). A card-local native
+/// reaches it as
+/// [`NativeCx::discard_after_this_test`](crate::engine::NativeCx::discard_after_this_test)
+/// (Baseball Bat 01074's reveal clause). Nothing moves until the teardown,
+/// which announces the discard.
+///
+/// A missing test is a caller bug: `debug_assert!`, and nothing changes in
+/// release.
+pub fn discard_after_this_test(cx: &mut Cx, card: CardInstanceId) {
+    let test = cx.state.current_skill_test_mut();
+    debug_assert!(
+        test.is_some(),
+        "discard_after_this_test: no skill test in flight to mark {card:?} on",
+    );
+    if let Some(test) = test {
+        test.discard_after = Some(card);
+    }
+}
+
+/// Discard the card the test being torn down was marked to discard
+/// ([`InFlightSkillTest::discard_after`]), if any, through the leave-play
+/// router. Called by the ST.8 teardown and by the target-left-play
+/// [`abandon_test`], with the frame still on the stack.
+///
+/// A card already gone from play (an effect discarded it earlier in the test)
+/// is left where it went; one that cannot leave play right now stays in play
+/// (`glossary/Cannot.md`: *"The word "cannot" is absolute, and cannot be
+/// countermanded by other abilities."*). Either way nothing is announced.
+fn discard_marked_card(cx: &mut Cx) {
+    let Some(card) = cx.state.current_skill_test().and_then(|t| t.discard_after) else {
+        return;
+    };
+    match board::discard_from_play(cx, card) {
+        Ok(_) | Err(NotLeft::NotInPlay | NotLeft::Refused) => {}
     }
 }
 
@@ -1416,6 +1456,10 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 // the DetermineOutcome step via `queue_event` (#213) —
                 // forced-before-reaction.
                 discard_committed_cards(cx, investigator, &committed);
+                // A card the test was marked to discard (Baseball Bat 01074's
+                // *"discard Baseball Bat after the attack resolves"*) goes
+                // now, past ST.7's damage and retaliate.
+                discard_marked_card(cx);
                 cx.events.push(Event::SkillTestEnded { investigator });
                 // ModifierScope::ThisSkillTest contributions expire when the
                 // test they were bought for ends. Keyed on this test's
@@ -1503,7 +1547,8 @@ fn difficulty_target_left_play(state: &GameState, basis: DifficultyBasis) -> boo
 /// - **Target left play** passes `Some`. The investigator is still in the
 ///   scenario and the cards are still theirs; dropping them silently would
 ///   delete cards off the board, so they go to the discard pile exactly as an
-///   ST.8 teardown would send them.
+///   ST.8 teardown would send them, and so does the card the test was marked
+///   to discard ([`InFlightSkillTest::discard_after`]).
 ///
 /// [`Event::SkillTestEnded`] still fires either way: the test *is* over, and it
 /// is the documented "test is fully over" signal downstream listeners key on.
@@ -1514,6 +1559,10 @@ fn abandon_test(
 ) -> EngineOutcome {
     if let Some(cards) = committed {
         discard_committed_cards(cx, investigator, cards);
+        // The marked card goes with them: the symbol that marked it was
+        // revealed during this test, abandoned or not. An eliminated tester's
+        // cards are removed from the game instead, so `None` skips it.
+        discard_marked_card(cx);
     }
     cx.events.push(Event::SkillTestEnded { investigator });
     // ModifierScope::ThisSkillTest contributions expire with the test, however

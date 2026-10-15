@@ -217,6 +217,7 @@ pub fn test_skill_test(
         resolved: None,
         revealed: None,
         reveal_clause: None,
+        discard_after: None,
     }
 }
 
