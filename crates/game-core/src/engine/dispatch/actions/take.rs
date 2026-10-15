@@ -679,15 +679,21 @@ fn ask_additional_action_choice(
     description: &ActionDescription,
     offered: &[AdditionalActionOrigin],
 ) -> EngineOutcome {
-    // Only an activation reaches here: the one restriction,
+    // Only an activation reaches here today: the one restriction,
     // `ActivatedAbilityOn`, admits nothing else (see `AdditionalAction::admits`),
-    // and an action only unrestricted entries admit has one option.
+    // and an action only unrestricted entries admit has one option. A later
+    // restriction that admits another kind needs a frame that can resume it, so
+    // until then that kind is refused rather than paused.
     let ActionKind::Activate { source, address } = &description.kind else {
-        unreachable!(
-            "take: only an activation qualifies as differently restricted additional \
-             actions, got {}",
-            description.kind
-        );
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "take: choosing between additional actions is supported only for an \
+                 activation, the one kind a restricted additional action admits today; \
+                 got {}",
+                description.kind
+            )
+            .into(),
+        };
     };
     cx.state.continuations.push(AdditionalActionChoiceFrame {
         investigator,
@@ -765,6 +771,12 @@ pub(in crate::engine::dispatch) fn resume_additional_action_choice(
 /// So the standard actions go first, then the additional ones in the order
 /// [`additional_actions`] sorts them. That order stands in for the
 /// investigator's choice: unlike spending, losing does not ask.
+///
+/// TODO(#1100): this is a gap, not a reading. Daisy Walker 01002's ruling
+/// (<https://arkhamdb.com/card/01002>) has the additional actions lost *"of
+/// your choice"*, and the sort order picks for the investigator instead. Next
+/// to Leo De Luca 01048, it decides whether her Tome-only action or his
+/// unrestricted one survives.
 ///
 /// Announces the new standard count only when it changed.
 ///
