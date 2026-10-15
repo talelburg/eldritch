@@ -21,7 +21,8 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
     AbilityUsageRecord, CardCode, CardInPlay, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers, UsageClock,
+    GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind, SkillTestId, TokenModifiers,
+    UsageClock,
 };
 use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -139,7 +140,12 @@ fn reaction_fires_after_roland_defeats_enemy_and_discovers_clue() {
         roland_card(state).ability_usage.get(&0),
         Some(&std::collections::BTreeMap::from([(
             INV,
-            AbilityUsageRecord::new(UsageClock::new(0, Phase::Investigation, Some(INV)), 1)
+            // The defeat lands at the Fight's ST.7, so the clock also reads
+            // the test in flight — the first one minted.
+            AbilityUsageRecord::new(
+                UsageClock::new(0, Phase::Investigation, Some(INV)).during_test(SkillTestId(0)),
+                1
+            )
         )])),
         "Roland's reaction (ability index 0) should have recorded one fire \
          in round 0",
@@ -191,7 +197,10 @@ fn lazy_round_reset_re_enables_reaction_in_a_later_round() {
         roland_card(session.state()).ability_usage.get(&0),
         Some(&std::collections::BTreeMap::from([(
             INV,
-            AbilityUsageRecord::new(UsageClock::new(1, Phase::Investigation, Some(INV)), 1)
+            AbilityUsageRecord::new(
+                UsageClock::new(1, Phase::Investigation, Some(INV)).during_test(SkillTestId(0)),
+                1
+            )
         )])),
     );
 }

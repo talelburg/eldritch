@@ -6,7 +6,7 @@ use std::fmt;
 use card_dsl::dsl::{UsageLimit, UsagePeriod};
 use serde::{Deserialize, Serialize};
 
-use crate::state::{GameState, InvestigatorId, Phase};
+use crate::state::{GameState, InvestigatorId, Phase, SkillTestId};
 
 /// `ArkhamDB` card code (e.g. `"01030"` for Magnifying Glass).
 ///
@@ -303,36 +303,64 @@ pub enum Owner {
 /// investigator takes one turn per Investigation phase, so round, phase and
 /// investigator together name the turn. Outside the Investigation phase the
 /// engine clears the active investigator, so `turn` is `None` there.
+///
+/// `skill_test` is the [`SkillTestId`] of the test in flight, `None` outside
+/// one: ids are never reused, so a new test is a new period.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct UsageClock {
     pub round: u32,
     pub phase: Phase,
     pub turn: Option<InvestigatorId>,
+    pub skill_test: Option<SkillTestId>,
 }
 
 impl UsageClock {
-    /// A clock reading. `#[non_exhaustive]`, so construct it through here.
+    /// A clock reading outside any skill test. `#[non_exhaustive]`, so
+    /// construct it through here; [`during_test`](Self::during_test) adds the
+    /// test.
     #[must_use]
     pub fn new(round: u32, phase: Phase, turn: Option<InvestigatorId>) -> Self {
-        Self { round, phase, turn }
+        Self {
+            round,
+            phase,
+            turn,
+            skill_test: None,
+        }
+    }
+
+    /// This reading, taken while the skill test `test` is in flight.
+    #[must_use]
+    pub fn during_test(self, test: SkillTestId) -> Self {
+        Self {
+            skill_test: Some(test),
+            ..self
+        }
     }
 
     /// The clock as `state` reads now.
     #[must_use]
     pub fn of(state: &GameState) -> Self {
-        Self::new(state.round, state.phase, state.active_investigator)
+        Self {
+            skill_test: state.current_skill_test().map(|test| test.id),
+            ..Self::new(state.round, state.phase, state.active_investigator)
+        }
     }
 
     /// Whether `self` and `now` fall in the same `period`. A `Round` period
     /// ignores the phase, so a round limit does not reset at a phase change; a
     /// `Phase` period needs both to match, since the same phase recurs every
-    /// round; a `Turn` period also needs the same investigator's turn.
+    /// round; a `Turn` period also needs the same investigator's turn. A
+    /// `SkillTest` period reads the test alone, and no other period reads it,
+    /// so a new test resets no round, phase or turn limit.
     fn same_period(self, period: UsagePeriod, now: Self) -> bool {
         match period {
             UsagePeriod::Round => self.round == now.round,
             UsagePeriod::Phase => self.round == now.round && self.phase == now.phase,
-            UsagePeriod::Turn => self == now,
+            UsagePeriod::Turn => {
+                self.round == now.round && self.phase == now.phase && self.turn == now.turn
+            }
+            UsagePeriod::SkillTest => self.skill_test == now.skill_test,
         }
     }
 }

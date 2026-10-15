@@ -1032,6 +1032,28 @@ pub enum EventPattern {
     /// skills."* and Jenny Barnes 90084's *"\[reaction\] After your turn begins:
     /// Play a \[\[Talent\]\] asset, reducing its cost by 1."*
     TurnBegan,
+    /// **You** revealed a chaos token — Wendy Adams 01005's *"\[reaction\]
+    /// When you reveal a chaos token, choose and discard 1 card from your hand:
+    /// Cancel that chaos token and return it to the bag. Reveal a new chaos
+    /// token."* Scoped to the ability's controller: the engine's matcher hears
+    /// it only for the investigator performing the test.
+    ///
+    /// The condition's own resolution is everything Skill Test Timing step 3
+    /// does with the token once it is out — its modifier row (or its automatic
+    /// failure), the frame's revealed token, step 4's chaos symbol effect and
+    /// the initiating card's reveal clause — so a `when` ability that cancels
+    /// it leaves the test as if the token had never been revealed, Wendy's
+    /// ruling (<https://arkhamdb.com/card/01005>): *"treat it as if you've
+    /// never revealed that token, for purposes of effects that trigger if a
+    /// specific symbol is revealed"*. A test whose result is known before step
+    /// 3 reveals no token, so it never announces this.
+    ///
+    /// Two consumers: Wendy in its `when` cell, and Ritual Candles 02029
+    /// (Dunwich) in its `after` cell, *"\[reaction\] After a `[skull]`,
+    /// `[cultist]`, `[tablet]`, or `[elder_thing]` symbol is revealed during
+    /// a test you are performing: You get +1 skill value for this test."* The
+    /// symbol narrowing arrives with the Candles.
+    ChaosTokenRevealed,
 }
 
 impl EventPattern {
@@ -1070,6 +1092,7 @@ impl EventPattern {
             EventPattern::EncounterCardDrawn { .. } => TriggeringCondition::EncounterCardDrawn,
             EventPattern::EnemyEvaded => TriggeringCondition::EnemyEvaded,
             EventPattern::TurnBegan => TriggeringCondition::TurnBegan,
+            EventPattern::ChaosTokenRevealed => TriggeringCondition::ChaosTokenRevealed,
         }
     }
 
@@ -1101,7 +1124,8 @@ impl EventPattern {
             | EventPattern::EnteredPlay
             | EventPattern::LeftLocation
             | EventPattern::EnemyEvaded
-            | EventPattern::TurnBegan => None,
+            | EventPattern::TurnBegan
+            | EventPattern::ChaosTokenRevealed => None,
         }
     }
 }
@@ -1214,6 +1238,10 @@ pub enum TriggeringCondition {
     EnemyEvaded,
     /// An investigator's turn began (Appendix II step 2.2).
     TurnBegan,
+    /// An investigator performing a skill test revealed a chaos token (Skill
+    /// Test Timing step 3); what the token does to the test is the
+    /// condition's resolution.
+    ChaosTokenRevealed,
 }
 
 /// The four game phases, mirrored in `card-dsl` so [`EventPattern`] can
@@ -1409,8 +1437,9 @@ pub struct UsageLimit {
 /// The period a [`UsageLimit`] is measured over.
 ///
 /// `Round` (Roland's "Limit once per round"), `Phase` (Agnes Baker's
-/// "Limit once per phase") and `Turn` ("Skids" O'Toole's "Limit once per
-/// turn"). `Game` ("limit once per game" — group or player) lands when the
+/// "Limit once per phase"), `Turn` ("Skids" O'Toole's "Limit once per
+/// turn") and `SkillTest` (Wendy Adams's "Limit once per test/ability").
+/// `Game` ("limit once per game" — group or player) lands when the
 /// first consumer appears.
 ///
 /// The period decides when a counter resets, and nothing else: the engine's
@@ -1435,6 +1464,16 @@ pub enum UsagePeriod {
     /// Investigation phase there is no turn, and the period is the rest of the
     /// phase.
     Turn,
+    /// A skill test. Counter resets as each test starts: the engine's usage
+    /// record notes the in-flight test's identity, and a new test has a new
+    /// one.
+    ///
+    /// Wendy Adams 01005 prints *"(Limit once per test/ability.)"*: a chaos
+    /// token revealed by an ability outside any skill test is the
+    /// *"/ability"* half. No corpus card reveals a token outside a test, so
+    /// that half is unreachable and not modelled; outside a test every reveal
+    /// would fall in the one period.
+    SkillTest,
 }
 
 // ---- abilities -------------------------------------------------
@@ -1747,6 +1786,7 @@ impl Effect {
             | Effect::ReachResolution(_)
             | Effect::DiscardSelf
             | Effect::Cancel
+            | Effect::RevealChaosToken
             | Effect::PutIntoThreatArea { .. }
             | Effect::BoostAttackDamage(_)
             | Effect::DiscoverAdditionalClues(_)
@@ -2107,6 +2147,17 @@ pub enum Effect {
     /// replacement whose condition still resolves, and whose later cells
     /// therefore presumably still run.
     Cancel,
+    /// Reveal a new chaos token for the skill test in flight — Wendy Adams
+    /// 01005's *"Cancel that chaos token and return it to the bag. Reveal a
+    /// new chaos token."*, declared as `Seq[Cancel, RevealChaosToken]` in the
+    /// `when` cell of [`EventPattern::ChaosTokenRevealed`].
+    ///
+    /// It sets the test back to its draw step, so once the cancelled reveal's
+    /// sequence is abandoned the test draws again and announces the new token
+    /// in a fresh `when` cell. *"Return it to the bag"* needs nothing: a drawn
+    /// token never leaves the bag, so the redraw can draw the same token.
+    /// Rejected with no test in flight.
+    RevealChaosToken,
     /// Put the card with this printed `code` into the controller's threat
     /// area as a fresh in-play instance. The Revelation of persistent
     /// threat-area treacheries (Frozen in Fear 01164, Dissonant Voices
