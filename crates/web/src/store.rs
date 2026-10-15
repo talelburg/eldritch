@@ -57,10 +57,13 @@ pub struct ClientState {
     /// the token, and for a sharper case (#853): a reaction on `SkillTestResolved`
     /// suspends in the *same* batch as the outcome, so by the time the acknowledge
     /// pause arrives the live batch is empty and the result panel had nothing to
-    /// render. Lita Chantler 01117 fires from that condition's `when` cell and Dr.
-    /// Milan 01033 from its `after` cell; both cells are walked at
-    /// `SkillTestStep::DetermineOutcome`, before `AcknowledgeOutcome`, so either
-    /// splits the batch.
+    /// render. Lita Chantler 01117 fires from that condition's `when` cell, before
+    /// its resolve step logs the result (#1111), and Dr. Milan 01033 from its
+    /// `after` cell, after it; both cells are walked before `AcknowledgeOutcome`,
+    /// so either splits the batch. A prompt in the `when` cell therefore has no
+    /// result latched yet: the banner shows
+    /// [`provisional_verdict`](crate::skill_test_result::provisional_verdict)
+    /// there instead.
     /// Cleared by `SkillTestEnded`, by a new test's `SkillTestStarted`, and by
     /// `Hello`.
     pub last_skill_test_result: Option<Event>,

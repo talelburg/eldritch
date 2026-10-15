@@ -1376,9 +1376,11 @@ fn open_skill_test_player_window(
 ///   immediate symbol effects; advance to
 ///   [`DetermineOutcome`](SkillTestStep::DetermineOutcome).
 /// - [`DetermineOutcome`](SkillTestStep::DetermineOutcome) → ST.5 modified skill
-///   value + ST.6 comparison, then the logged success/failure events and the
-///   `SkillTestResolved` timing point (every test/outcome), before the ST.7
-///   consequences; advance to [`FireOnCommit`](SkillTestStep::FireOnCommit).
+///   value + ST.6 comparison, then the `SkillTestResolved` timing point (every
+///   test/outcome), whose resolve step re-totals and logs the success/failure
+///   event, before the ST.7 consequences; advance to
+///   [`AcknowledgeOutcome`](SkillTestStep::AcknowledgeOutcome), or back here
+///   if the re-total flipped the verdict.
 /// - [`FireOnCommit`](SkillTestStep::FireOnCommit) → ST.7 head (`OnCommit`
 ///   effects); advance to [`ApplyFollowUp`](SkillTestStep::ApplyFollowUp).
 /// - [`ApplyFollowUp`](SkillTestStep::ApplyFollowUp) → ST.7 action follow-up
@@ -1496,10 +1498,12 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
             }
             SkillTestStep::DetermineOutcome => {
                 // RR ST.5 (sum the modified skill value, off the board the ST.4
-                // effects left behind) + ST.6 (compare, set the outcome), then the
-                // logged success/failure events and the general SkillTestResolved
-                // timing point (every test/outcome) — BEFORE the ST.7 consequences.
-                // Pre-advances to FireOnCommit; yields if a 2+ forced run suspends.
+                // effects left behind) + ST.6 (compare, set the provisional
+                // outcome), then the general SkillTestResolved timing point
+                // (every test/outcome) — BEFORE the ST.7 consequences. Its resolve
+                // step logs the verdict, or sends the test back here when a
+                // `when`-cell modifier flipped it (#1111). Pre-advances to
+                // AcknowledgeOutcome; yields if a 2+ forced run suspends.
                 //
                 // A token was revealed and resolved, or the result was known
                 // before ST.3. Neither means a `when`-cell cancel left the test
@@ -1524,7 +1528,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
             }
             SkillTestStep::AcknowledgeOutcome => {
                 // RR-neutral cosmetic pause (#478). The result events were emitted
-                // at DetermineOutcome; if interactive acknowledgment is enabled,
+                // by SkillTestResolved's resolve step; if interactive acknowledgment is enabled,
                 // suspend with a Confirm so the player registers the result before
                 // the ST.7 consequence resolves. The cursor stays at
                 // AcknowledgeOutcome across the suspension — `acknowledge_outcome`
