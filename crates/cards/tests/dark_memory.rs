@@ -247,6 +247,12 @@ fn an_overflow_partly_of_weaknesses_discards_only_the_non_weaknesses() {
     let mut hand = vec![DARK_MEMORY; 9];
     hand.push("01086");
     let session = ending_upkeep_holding(&hand);
+    assert_eq!(
+        session.prompt().prompt,
+        "You have more than 8 cards in hand — choose 1 card to discard. Weaknesses can't be \
+         chosen.",
+        "the prompt asks for the one discard the pick must hold",
+    );
 
     // Rejected, the same prompt stays pending for a legal answer.
     let session = session.choose_from_hand(&["01086", DARK_MEMORY]);

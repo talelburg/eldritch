@@ -667,30 +667,19 @@ fn scope_matches(
         TimingEvent::DiscoverClues { location, .. } => {
             location_of(state, controller) == Some(*location)
         }
-        // "After you play a **[[Spell]]** card" (Heirloom of Hyperborea 01012):
-        // the played card's printed metadata passes the pattern's filter. Not a
-        // narrowing of where the ability's card is, but it needs the registry,
-        // which [`trigger_matches`] does not take.
-        TimingEvent::CardPlayed { code: played, .. } => {
-            let EventPattern::CardPlayed { filter } = pattern else {
+        // "After you play a **[[Spell]]** card" (Heirloom of Hyperborea 01012)
+        // and "When you draw a **non-weakness treachery** card" (Ward of
+        // Protection 01065): the played or drawn card's printed metadata passes
+        // the pattern's filter. Not a narrowing of where the ability's card is,
+        // but it needs the registry, which [`trigger_matches`] does not take.
+        TimingEvent::CardPlayed { code, .. } | TimingEvent::EncounterCardDrawn { code, .. } => {
+            let Some(filter) = pattern.card_filter() else {
                 unreachable!(
-                    "scope_matches: trigger_matches paired {pattern:?} with CardPlayed, but \
-                     only EventPattern::CardPlayed has that condition"
+                    "scope_matches: trigger_matches paired {pattern:?} with {event:?}, but only \
+                     a pattern carrying a card filter has that condition"
                 )
             };
-            (cards.metadata_for)(played).is_some_and(|meta| filter.matches(meta))
-        }
-        // "When you draw a **non-weakness treachery** card" (Ward of Protection
-        // 01065): the drawn card's printed metadata passes the pattern's filter,
-        // read here for the same reason as `CardPlayed`'s.
-        TimingEvent::EncounterCardDrawn { code: drawn, .. } => {
-            let EventPattern::EncounterCardDrawn { filter } = pattern else {
-                unreachable!(
-                    "scope_matches: trigger_matches paired {pattern:?} with EncounterCardDrawn, \
-                     but only EventPattern::EncounterCardDrawn has that condition"
-                )
-            };
-            (cards.metadata_for)(drawn).is_some_and(|meta| filter.matches(meta))
+            (cards.metadata_for)(code).is_some_and(|meta| filter.matches(meta))
         }
         // Board-wide conditions, and conditions whose only scope is the
         // controller (read in `trigger_matches`): no card's position narrows

@@ -2313,20 +2313,49 @@ pub struct EmitEventFrame {
     pub step: EmitStep,
     /// Whether a `when`-cell ability has **prevented** this condition — set by
     /// [`Effect::Cancel`] on the topmost frame still at [`EmitStep::When`]
-    /// (Axis D #336; Cover Up 01007, Dodge 01023,
-    /// Ward of Protection 01065). While set, the rest of the sequence is
-    /// abandoned: the rest of the `when` cell, the resolve step, and the `at`
-    /// and `after` cells (#714). The citations live on
-    /// `coordinator::prevented_in_the_when_cell`, which reads it.
+    /// (Axis D #336; Cover Up 01007's *"…instead"*, Dodge 01023, Ward of
+    /// Protection 01065). The coordinator reads it at the resolve step rather
+    /// than at the window's close: the check belongs between the `when` cell and
+    /// step 2, which is where the sequence puts the chance to prevent the
+    /// condition from resolving.
     ///
-    /// On the frame rather than on [`GameState`](crate::state::GameState), so
-    /// the cancel names the condition it prevents (#1055). A condition emitted
-    /// *after* the cancel within the same effect — Ward's *"Then, take 1
-    /// horror"* — is a frame of its own, starts unprevented, and resolves; the
-    /// former single global bool was consumed by whichever resolve step ran
-    /// next. A flag rather than a stack position, because positions shift when
-    /// a scenario ending is inserted at the bottom mid-sequence. Same wire
-    /// story as `step`: the frame lives only in memory, mid-sequence.
+    /// While set, **the whole rest of the sequence** is abandoned, not just
+    /// step 2 (#714): the rest of the `when` cell, the resolve step, and the
+    /// `at` and `after` cells. Dodge 01023's ruling,
+    /// `data/arkhamdb-faq/core/01023.md`, verbatim:
+    ///
+    /// > If the attacking enemy has a **Forced** ability that says "When attacks" or
+    /// > "After attacks", that ability does not trigger if an attack is Dodged.
+    ///
+    /// `glossary/After.md` agrees from the other side — after is *"the moment
+    /// immediately after the specified timing point or triggering condition
+    /// **has fully resolved**"*, and a prevented condition never fully resolves
+    /// — as does `glossary/Instead.md` for the nature-changing case: *"If a
+    /// replacement effect that uses the word "would" changes the nature of a
+    /// triggering condition, the original triggering condition is replaced with
+    /// the new triggering condition. No further abilities referencing the
+    /// original triggering condition may be used."* Cover Up 01007 (*"When you
+    /// would discover 1 or more clues at your location: Discard that many clues
+    /// from Cover Up instead."*) is exactly that.
+    ///
+    /// **One signal, two suppressing arms.** A cancel (`glossary/Cancel.md`:
+    /// *"Cancel abilities interrupt the initiation of an effect, and prevent the
+    /// effect from initiating."*) and a nature-changing replacement suppress
+    /// identically, so the engine does not distinguish them. The third arm — a
+    /// replacement that resolves the condition *by other means*, whose later
+    /// cells presumably do still run — is **not** modelled: no corpus card wants
+    /// one, and it is already recorded as #366 (replace-with-different-impact).
+    /// See ADR 0008.
+    ///
+    /// **The flag is the condition's own** (#1055), so the cancel names the
+    /// condition it prevents. Ward of Protection 01065's *"Cancel that card's
+    /// revelation effect. Then, take 1 horror."* emits the horror's conditions
+    /// while the cancel is live; each is a frame of its own, starts unprevented,
+    /// and resolves, and the cancelled revelation stays cancelled. Nothing needs
+    /// clearing, because the flag leaves with the frame it sits on. A flag
+    /// rather than a stack position, because positions shift when a scenario
+    /// ending is inserted at the bottom mid-sequence. Same wire story as `step`:
+    /// the frame lives only in memory, mid-sequence.
     pub prevented: bool,
 }
 

@@ -138,7 +138,9 @@ pub fn move_uses_to_resource_pool(
         return Err(MoveUsesError::NoSuchInvestigator);
     }
     let (card, _) = board::find_instance_mut(cx.state, instance).ok_or(MoveUsesError::NotInPlay)?;
-    let remaining = card.uses.entry(kind).or_insert(0);
+    let Some(remaining) = card.uses.get_mut(&kind) else {
+        return Ok(());
+    };
     let moved = amount.min(*remaining);
     if moved == 0 {
         return Ok(());

@@ -175,9 +175,6 @@ pub struct GameState {
     // [`Self::current_encounter_drawer`]. The former `mythos_draw_pending:
     // Option<InvestigatorId>` cursor is removed — the continuation stack is the
     // single source of truth (mirroring the `mulligan_pending` fold).
-    // The former `pending_cancellation: bool` is removed (#1055): a cancel now
-    // flags the condition it prevents, as `EmitEventFrame::prevented`, so a
-    // condition emitted after the cancel cannot consume it.
     // The former `pending_revelation_discard: Option<CardCode>` side-channel is
     // removed (#380): a drawn treachery's disposal now rides a
     // `Continuation::EncounterCard` frame whose framework teardown discards it

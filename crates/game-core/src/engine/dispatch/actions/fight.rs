@@ -148,8 +148,7 @@ pub(crate) struct FightModification {
 /// in the corpus, and Shrivelling 01060). `glossary/Ability.md`: *"Activating
 /// such an ability **performs the designated action** as described in the
 /// rules, but modified in the manner described by the ability."* The
-/// [`FightModification`] is the *only* thing that differs; before #805 the two
-/// built their own near-identical tests side by side.
+/// [`FightModification`] is the *only* thing that differs.
 ///
 /// `combat_modifier` is *"+N \[combat\] for this attack"* — a row over the
 /// controller's tested skill scoped to the test about to start, not a number

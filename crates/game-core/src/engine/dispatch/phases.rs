@@ -1302,17 +1302,28 @@ fn park_hand_size_discard(cx: &mut Cx, remaining: Vec<InvestigatorId>) -> Engine
     cx.state
         .continuations
         .push(Continuation::HandSizeDiscard(HandSizeDiscard { remaining }));
-    hand_size_discard_prompt()
+    hand_size_discard_prompt(cx)
 }
 
 /// The [`EngineOutcome::AwaitingInput`] a [`HandSizeDiscard`] frame on top
 /// waits on: shown by [`park_hand_size_discard`] when it pushes the frame, and
-/// again by the main loop when it meets the frame on top.
-pub(super) fn hand_size_discard_prompt() -> EngineOutcome {
+/// again by the main loop when it meets the frame on top. It names the count
+/// the pick must hold ([`hand_size_discard_count`] for the investigator
+/// prompted), which falls short of reaching the cap when weaknesses fill the
+/// overflow, and says that weaknesses can't be chosen.
+pub(super) fn hand_size_discard_prompt(cx: &Cx) -> EngineOutcome {
+    let count = cx
+        .state
+        .continuations
+        .top_expect::<HandSizeDiscard>()
+        .remaining
+        .first()
+        .map_or(0, |id| hand_size_discard_count(cx, *id));
+    let cards = if count == 1 { "card" } else { "cards" };
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_multiple(format!(
-            "You have more than {HAND_SIZE_LIMIT} cards in hand — choose cards to discard \
-             down to {HAND_SIZE_LIMIT}.",
+            "You have more than {HAND_SIZE_LIMIT} cards in hand — choose {count} {cards} to \
+             discard. Weaknesses can't be chosen.",
         )),
         resume_token: ResumeToken(0),
     }

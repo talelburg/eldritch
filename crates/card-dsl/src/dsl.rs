@@ -989,6 +989,36 @@ impl EventPattern {
             EventPattern::EncounterCardDrawn { .. } => TriggeringCondition::EncounterCardDrawn,
         }
     }
+
+    /// The filter a pattern narrows its condition's card by — the played card
+    /// of [`EventPattern::CardPlayed`], the drawn card of
+    /// [`EventPattern::EncounterCardDrawn`] — or `None` for a pattern whose
+    /// condition names no card to filter. Exhaustive, like [`Self::condition`],
+    /// so a new pattern carrying a filter cannot forget to say so.
+    #[must_use]
+    pub fn card_filter(&self) -> Option<&CardFilter> {
+        match self {
+            EventPattern::CardPlayed { filter } | EventPattern::EncounterCardDrawn { filter } => {
+                Some(filter)
+            }
+            EventPattern::EnemyDefeated { .. }
+            | EventPattern::EnteredLocation
+            | EventPattern::PhaseStarted { .. }
+            | EventPattern::PhaseEnded { .. }
+            | EventPattern::ActAdvanced
+            | EventPattern::AgendaAdvanced
+            | EventPattern::RoundEnded
+            | EventPattern::EndOfTurn
+            | EventPattern::SkillTestResolved { .. }
+            | EventPattern::DiscoverClues
+            | EventPattern::GameEnd
+            | EventPattern::EnemyAttackDamagedSelf
+            | EventPattern::HarmPlaced { .. }
+            | EventPattern::EnemyAttacks { .. }
+            | EventPattern::EnteredPlay
+            | EventPattern::LeftLocation => None,
+        }
+    }
 }
 
 /// Which card an [`EventPattern::HarmPlaced`] ability reads the placement on.
@@ -1924,9 +1954,9 @@ pub enum Effect {
     ///
     /// A cancelled triggering condition takes **the rest of its sequence** with
     /// it: the `at` and `after` cells do not run, and neither does the rest of
-    /// the `when` cell (#714). Dodge 01023's ruling is the citation, quoted at
-    /// the engine's read site (`coordinator::prevented_in_the_when_cell`), which
-    /// applies it to every coordinator-owned condition.
+    /// the `when` cell (#714). Dodge 01023's ruling is the citation, quoted on
+    /// the engine's flag (`EmitEventFrame::prevented`), which every
+    /// coordinator-owned condition reads.
     ///
     /// Cancel is the degenerate replacement ("replace with nothing"): a card
     /// that replaces with its own effect runs that effect then `Cancel`

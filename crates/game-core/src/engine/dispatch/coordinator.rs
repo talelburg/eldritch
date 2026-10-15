@@ -20,7 +20,7 @@
 //! - A `when`-cell ability that **prevents** the condition suppresses the rest
 //!   of the sequence — the resolve step, the `at` and `after` cells, and the
 //!   remainder of the `when` cell itself (#714; citations on
-//!   [`prevented_in_the_when_cell`]).
+//!   [`EmitEventFrame::prevented`]).
 //!
 //! Neither driver suspends *itself*: each does one step and returns `Done`, and
 //! the loop re-dispatches the (mutated) top frame — or `AwaitingInput` when the
@@ -74,11 +74,11 @@ pub(in crate::engine) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
     if step == EmitStep::ResolveCondition {
         return match resolution {
             ConditionResolution::Coordinator(resolve) => {
-                if prevented_in_the_when_cell(prevented) {
+                if prevented {
                     // A `when`-cell ability prevented the condition, so neither
                     // step 2 nor the cells after it happen: the sequence is
                     // abandoned where it stands (#714, and see
-                    // [`prevented_in_the_when_cell`] for the citations).
+                    // [`EmitEventFrame::prevented`] for the citations).
                     abandon_emit(cx);
                     EngineOutcome::Done
                 } else {
@@ -153,7 +153,7 @@ pub(in crate::engine) fn dispatch_timing_point(cx: &mut Cx) -> EngineOutcome {
         .continuations
         .top_expect::<TimingPointFrame>()
         .clone();
-    if bucket == EventTiming::When && parent_is_prevented(cx) {
+    if bucket == EventTiming::When && condition_is_prevented(cx) {
         // A `when`-cell ability just prevented the condition. The rest of *this*
         // cell is suppressed along with the cells after it (#714) — Dodge
         // 01023's ruling reaches the `when` cell itself. Any candidate still
@@ -222,60 +222,19 @@ fn advance_or_finish_emit(cx: &mut Cx) {
     }
 }
 
-/// Whether the condition at its resolve step was prevented in its `when` cell:
-/// its own [`EmitEventFrame::prevented`] flag, set by an
-/// [`Effect::Cancel`](card_dsl::dsl::Effect::Cancel) (Cover Up 01007's
-/// *"…instead"*, #336).
-///
-/// Read at the resolve step rather than at the window's close: the check belongs
-/// between the `when` cell and step 2, which is where the sequence puts the
-/// chance to prevent the condition from resolving.
-///
-/// A `true` here suppresses **the whole rest of the sequence**, not just step 2
-/// (#714). Dodge 01023's ruling, `data/arkhamdb-faq/core/01023.md`, verbatim:
-///
-/// > If the attacking enemy has a **Forced** ability that says "When attacks" or
-/// > "After attacks", that ability does not trigger if an attack is Dodged.
-///
-/// `glossary/After.md` agrees from the other side — after is *"the moment
-/// immediately after the specified timing point or triggering condition **has
-/// fully resolved**"*, and a prevented condition never fully resolves — as does
-/// `glossary/Instead.md` for the nature-changing case: *"If a replacement effect
-/// that uses the word "would" changes the nature of a triggering condition, the
-/// original triggering condition is replaced with the new triggering condition.
-/// No further abilities referencing the original triggering condition may be
-/// used."* Cover Up 01007 (*"When you would discover 1 or more clues at your
-/// location: Discard that many clues from Cover Up instead."*) is exactly that.
-///
-/// **One signal, two suppressing arms.** A cancel (`glossary/Cancel.md`: *"Cancel
-/// abilities interrupt the initiation of an effect, and prevent the effect from
-/// initiating."*) and a nature-changing replacement suppress identically, so the
-/// engine does not distinguish them. The third arm — a replacement that resolves
-/// the condition *by other means*, whose later cells presumably do still run —
-/// is **not** modelled: no corpus card wants one, and it is already recorded as
-/// #366 (replace-with-different-impact). See ADR 0008.
-///
-/// **The flag is the condition's own** (#1055). Until then it was one global
-/// bool that the next coordinator-owned resolve step to run read and cleared,
-/// whichever condition that was. Ward of Protection 01065's *"Cancel that
-/// card's revelation effect. Then, take 1 horror."* breaks that: the horror's
-/// own conditions resolve while the cancel is live, so the first of them would
-/// eat the signal and the cancelled revelation would run. On the frame, a nested condition
-/// starts unflagged and the cancelled one stays cancelled, and nothing needs
-/// clearing because the flag leaves with the frame it sits on.
-fn prevented_in_the_when_cell(prevented: bool) -> bool {
-    prevented
-}
-
-/// Whether the [`Continuation::EmitEvent`](crate::state::Continuation::EmitEvent)
-/// that owns the [`Continuation::TimingPoint`](crate::state::Continuation::TimingPoint)
-/// on top was prevented. The coordinator pushes its timing point and returns, so
-/// the nearest `EmitEvent` beneath the point is its parent.
-fn parent_is_prevented(cx: &Cx) -> bool {
+/// Whether the condition the frame on top belongs to was prevented in its
+/// `when` cell: the [`EmitEventFrame::prevented`] flag of the nearest
+/// [`Continuation::EmitEvent`](crate::state::Continuation::EmitEvent) on the
+/// stack. A [`Continuation::TimingPoint`](crate::state::Continuation::TimingPoint)
+/// is pushed straight above its condition's `EmitEvent`, and a window straight
+/// above its cell's `TimingPoint`, so for either on top the nearest one down is
+/// its own condition. The one reading both the coordinator and the window's
+/// withdrawal share (#1055).
+pub(super) fn condition_is_prevented(cx: &Cx) -> bool {
     cx.state
         .continuations
         .topmost_of::<EmitEventFrame>()
-        .is_some_and(|parent| parent.prevented)
+        .is_some_and(|condition| condition.prevented)
 }
 
 /// Pop the [`Continuation::EmitEvent`](crate::state::Continuation::EmitEvent) coordinator on top **without** walking

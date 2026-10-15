@@ -402,7 +402,7 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // uses. Reached when a state is settled with one of them on top.
             Continuation::Mulligan(_) => return cards::mulligan_prompt(),
             Continuation::EncounterDraw(_) => return encounter::prompt_encounter_draw(cx),
-            Continuation::HandSizeDiscard(_) => return phases::hand_size_discard_prompt(),
+            Continuation::HandSizeDiscard(_) => return phases::hand_size_discard_prompt(cx),
             // Prompts whose handler surfaced `AwaitingInput` when it pushed
             // them: nothing to drive until `resolve_input` answers.
             Continuation::SubstitutionPrompt(_)

@@ -767,8 +767,8 @@ pub enum LapseReason {
     NoStateChange,
     /// The triggering condition the window belongs to was **prevented** from
     /// resolving by a sibling `when`-cell ability, so the rest of its sequence
-    /// is suppressed (#714 — Dodge 01023's ruling, quoted at the read site,
-    /// `engine::dispatch::coordinator::prevented_in_the_when_cell`). Unlike the
+    /// is suppressed (#714 — Dodge 01023's ruling, quoted on the flag,
+    /// [`EmitEventFrame::prevented`](crate::state::EmitEventFrame::prevented)). Unlike the
     /// other reasons, this candidate is not withdrawn by a re-scan — it is
     /// still perfectly initiable; the condition it references is simply no
     /// longer happening.

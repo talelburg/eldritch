@@ -12,7 +12,7 @@ use crate::{assert_event, assert_event_sequence, assert_no_event};
 fn hand_size_discard_prompt_is_player_facing() {
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_seat(test_support::seat(1))
+        .with_seat(test_support::seat(1).hand(["filler0"; 10]))
         .build();
     let mut events = Vec::new();
     let outcome = park_hand_size_discard(
@@ -29,7 +29,12 @@ fn hand_size_discard_prompt_is_player_facing() {
             request.prompt
         );
     }
-    assert!(request.prompt.contains("discard down to 8"));
+    assert!(
+        request.prompt.contains("choose 2 cards to discard"),
+        "{}",
+        request.prompt
+    );
+    assert!(request.prompt.contains("Weaknesses can't be chosen"));
 }
 
 #[test]
