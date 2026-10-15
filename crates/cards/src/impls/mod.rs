@@ -125,6 +125,7 @@ pub mod holy_rosary;
 pub mod hospital_debts;
 pub mod hyperawareness;
 pub mod knife;
+pub mod leo_de_luca;
 pub mod lita_chantler;
 pub mod machete;
 pub mod magnifying_glass;
@@ -273,6 +274,7 @@ pub const ALL: &[CardRecord] = &[
     holy_rosary::CARD,
     hyperawareness::CARD,
     knife::CARD,
+    leo_de_luca::CARD,
     lita_chantler::CARD,
     machete::CARD,
     magnifying_glass::CARD,
