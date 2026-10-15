@@ -174,18 +174,20 @@ fn shortfall(reg: &CardRegistry, grants: &[SlotGrant], assets: &[CardCode]) -> S
         .iter()
         .flat_map(|(_, need)| need.keys().copied())
         .collect();
-    slot_types
-        .into_iter()
-        .filter_map(|slot| {
-            let mut pools = SlotPools::of(slot, grants);
-            let overflow = needs
-                .iter()
-                .filter_map(|(code, need)| need.get(&slot).map(|&units| (code, units)))
-                .map(|(code, units)| pools.place(reg, code, units))
-                .fold(0u8, u8::saturating_add);
-            (overflow > 0).then_some((slot, overflow))
-        })
-        .collect()
+    let mut short = SlotCounts::new();
+    for slot in slot_types {
+        let mut pools = SlotPools::of(slot, grants);
+        let mut overflow = 0u8;
+        for (code, need) in &needs {
+            if let Some(&units) = need.get(&slot) {
+                overflow = overflow.saturating_add(pools.place(reg, code, units));
+            }
+        }
+        if overflow > 0 {
+            short.insert(slot, overflow);
+        }
+    }
+    short
 }
 
 /// The slot multiset `code` needs to enter play, read from `cards`. Empty
