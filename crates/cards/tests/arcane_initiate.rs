@@ -133,6 +133,29 @@ fn entering_play_places_one_doom_on_it() {
     assert_eq!(s.state().agenda_doom, 0, "on it, not on the agenda");
 }
 
+/// Held in hand, the Initiate is out of play, and its forced does not reference
+/// a use from there, so another asset entering play leaves it inert:
+/// `glossary/Ability.md` — *"Card abilities only interact with the game if the
+/// card bearing the ability is in play, unless the ability (or rules for the
+/// cardtype) specifically references its use from an out-of-play area."*
+#[test]
+fn held_in_hand_it_stays_inert_when_another_asset_enters_play() {
+    let s = turn(seat(1).hand([SHRIVELLING, INITIATE]).resources(3)).take(&TurnAction::PlayCard {
+        investigator: INV,
+        hand_index: 0,
+    });
+    s.assert_at_turn_menu(INV);
+    let inv = &s.state().investigators[&INV];
+    assert_eq!(inv.hand, vec![CardCode::new(INITIATE)], "still in hand");
+    assert!(
+        inv.cards_in_play
+            .iter()
+            .any(|c| c.code == CardCode::new(SHRIVELLING)),
+        "Shrivelling entered play",
+    );
+    assert_eq!(board::doom_in_play(s.state()), 0, "no doom placed anywhere");
+}
+
 /// The Initiate's doom counts toward the threshold: 5 on the agenda, 1 from
 /// Mythos step 1.2 and 1 on the Initiate make Rise of the Ghouls' 7, so the
 /// agenda advances — and step 1 of the advance clears the Initiate's doom.

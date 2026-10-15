@@ -1375,6 +1375,29 @@ pub struct Ability {
     /// can't express. `None` for the common no-gate case; stays implicitly
     /// optional on the wire (#453 per-field carve-out, like `usage_limit`).
     pub eligibility: Option<Condition>,
+    /// Where the card must be for this ability to interact with the game.
+    /// [`AbilityZone::InPlay`] for every ability [`Self::with_active_in`] does
+    /// not move; required on the wire (#453).
+    pub active_in: AbilityZone,
+}
+
+/// The zone a card's ability is live in — see [`Ability::active_in`].
+///
+/// `glossary/Ability.md`: *"Card abilities only interact with the game if the
+/// card bearing the ability is in play, unless the ability (or rules for the
+/// cardtype) specifically references its use from an out-of-play area."* The
+/// default is the rule; a card whose ability names an out-of-play area says so
+/// with [`Ability::with_active_in`]. The forced trigger scan reads a zone's
+/// cards only for the abilities live there. A Fast event's reaction is not read
+/// through this: it is played from hand, a rule of the event cardtype.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum AbilityZone {
+    /// On the board: in a play area, a threat area, at a location, or the
+    /// current act or agenda.
+    InPlay,
+    /// In the hand of the investigator holding the card — Dark Memory 01013's
+    /// *"If Dark Memory is in your hand at the end of your turn"*.
+    Hand,
 }
 
 impl Ability {
@@ -1394,6 +1417,16 @@ impl Ability {
     #[must_use]
     pub fn with_eligibility(mut self, condition: Condition) -> Self {
         self.eligibility = Some(condition);
+        self
+    }
+
+    /// Make this ability live in `zone` rather than in play (see
+    /// [`Self::active_in`]), for an ability that names its use from an
+    /// out-of-play area. Builder-style sugar, chainable off the `on_event(...)`
+    /// constructors.
+    #[must_use]
+    pub fn with_active_in(mut self, zone: AbilityZone) -> Self {
+        self.active_in = zone;
         self
     }
 
@@ -2814,6 +2847,7 @@ pub fn constant(effect: Effect) -> Ability {
         effect,
         usage_limit: None,
         eligibility: None,
+        active_in: AbilityZone::InPlay,
     }
 }
 
@@ -2830,6 +2864,7 @@ pub fn on_play(effect: Effect) -> Ability {
         effect,
         usage_limit: None,
         eligibility: None,
+        active_in: AbilityZone::InPlay,
     }
 }
 
@@ -2860,6 +2895,7 @@ pub fn on_commit(effect: Effect) -> Ability {
         effect,
         usage_limit: None,
         eligibility: None,
+        active_in: AbilityZone::InPlay,
     }
 }
 
@@ -2876,6 +2912,7 @@ pub fn on_skill_test_resolution(outcome: TestOutcome, effect: Effect) -> Ability
         effect,
         usage_limit: None,
         eligibility: None,
+        active_in: AbilityZone::InPlay,
     }
 }
 
@@ -2900,6 +2937,7 @@ pub fn on_event(
         effect,
         usage_limit: None,
         eligibility: None,
+        active_in: AbilityZone::InPlay,
     }
 }
 
@@ -2931,6 +2969,7 @@ pub fn revelation(effect: Effect) -> Ability {
         effect,
         usage_limit: None,
         eligibility: None,
+        active_in: AbilityZone::InPlay,
     }
 }
 
@@ -2955,6 +2994,7 @@ pub fn activated(action_cost: u8, costs: Vec<Cost>, effect: Effect) -> Ability {
         effect,
         usage_limit: None,
         eligibility: None,
+        active_in: AbilityZone::InPlay,
     }
 }
 
@@ -2983,6 +3023,7 @@ pub fn activated_as(
         effect,
         usage_limit: None,
         eligibility: None,
+        active_in: AbilityZone::InPlay,
     }
 }
 
@@ -3013,6 +3054,7 @@ pub fn elder_sign_with(outcome: TokenOutcome) -> Ability {
         effect: Effect::Seq(Vec::new()),
         usage_limit: None,
         eligibility: None,
+        active_in: AbilityZone::InPlay,
     }
 }
 

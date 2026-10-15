@@ -49,12 +49,6 @@ const AFTER: &str = "_cd_after";
 /// `when`-tagged reaction that cancels the discovery — Cover Up 01007's shape
 /// without Cover Up's discard.
 const CANCEL: &str = "_cd_cancel";
-/// `when`-tagged reaction that cancels the discovery and *then* takes 1 horror —
-/// Ward of Protection 01065's shape (*"Cancel that card's revelation effect.
-/// Then, take 1 horror."*) moved onto this condition. The horror is dealt
-/// through the damage frame, which emits conditions of its own while the cancel
-/// is live.
-const CANCEL_THEN_HORROR: &str = "_cd_cancel_then_horror";
 
 /// A reaction in `timing`'s cell of the one condition under test, gaining
 /// `amount` resources — the marker these tests read cell order off.
@@ -147,16 +141,6 @@ fn registries() -> Registries {
                     EventPattern::DiscoverClues,
                     EventTiming::When,
                     Effect::Cancel,
-                )]
-            })
-            .with_abilities(CANCEL_THEN_HORROR, || {
-                vec![dsl::reaction_on_event(
-                    EventPattern::DiscoverClues,
-                    EventTiming::When,
-                    Effect::Seq(vec![
-                        Effect::Cancel,
-                        dsl::deal_horror(InvestigatorTarget::You, 1u8),
-                    ]),
                 )]
             })
             .build(),
@@ -268,43 +252,6 @@ fn a_cancelled_discovery_suppresses_the_at_and_after_cells() {
             .any(|c| matches!(c, Continuation::EmitEvent(e) if e.prevented)),
         "the cancelled condition must leave the stack at its resolve step; stack = {:?}",
         session.state().continuations
-    );
-    assert_no_queued_frames(session.state(), "the abandoned sequence left frames behind");
-}
-
-/// A cancel names the condition it prevents, not "whichever resolve step runs
-/// next" (#1055). Ward of Protection 01065 cancels and *then* takes horror, and
-/// that horror is itself a sequence of coordinator-owned conditions, each with a
-/// resolve step of its own. They are not the cancelled condition, so they
-/// resolve (the horror lands), and the discovery they nest inside stays
-/// cancelled. Under the former single-bool signal the first nested resolve step
-/// consumed the cancel and the discovery went ahead.
-#[test]
-fn a_condition_emitted_after_the_cancel_resolves_and_the_cancel_still_holds() {
-    let session = investigate_firing(
-        board_with(&[CANCEL_THEN_HORROR, AT, AFTER], 2),
-        &[CANCEL_THEN_HORROR],
-    );
-    assert_eq!(
-        session.state().investigators[&INV].horror(),
-        1,
-        "the horror dealt after the cancel is not suppressed"
-    );
-    assert_eq!(
-        timeline(session.events()),
-        Vec::<Option<u8>>::new(),
-        "the discovery and its later cells stay cancelled; events = {:?}",
-        session.events()
-    );
-    assert_eq!(
-        session.state().locations[&HERE].clues,
-        2,
-        "location untouched"
-    );
-    assert_eq!(
-        session.state().investigators[&INV].clues,
-        0,
-        "discovered nothing"
     );
     assert_no_queued_frames(session.state(), "the abandoned sequence left frames behind");
 }

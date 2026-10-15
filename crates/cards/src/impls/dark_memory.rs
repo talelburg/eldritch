@@ -10,22 +10,26 @@
 //! The play effect is Ancient Evils 01166's: the second sentence makes it
 //! [`place_doom_that_can_advance_the_agenda`](dsl::place_doom_that_can_advance_the_agenda).
 //!
+//! **Cell: the `at` cell of the `EndOfTurn` condition**, for the forced
+//! ability: its *"If … at the end of your turn"* is a bare *"if"* on a settled
+//! state, as Frozen in Fear 01164's *"At the end of your turn"* is.
+//!
 //! **The forced ability works from hand**, the one corpus ability that does.
 //! `glossary/Ability.md`: *"Card abilities only interact with the game if the
 //! card bearing the ability is in play, unless the ability (or rules for the
 //! cardtype) specifically references its use from an out-of-play area."* This
-//! one names *"in your hand"*, so the forced scan reads the forced abilities of
-//! cards in hand (ADR 0018), and the `EndOfTurn` pattern's *"your turn"* binds
-//! it to the investigator holding it. It sits in the *"at"* cell, as Frozen in
-//! Fear 01164's *"At the end of your turn"* does. *"Reveal it"* shows the card
-//! to the table and changes nothing the engine models; the card stays in hand.
+//! one names *"in your hand"*, so it is marked live in hand
+//! ([`AbilityZone::Hand`]), which the forced scan reads (ADR 0018), and the
+//! `EndOfTurn` pattern's *"your turn"* binds it to the investigator holding it.
+//! *"Reveal it"* shows the card to the table and changes nothing the engine
+//! models; the card stays in hand.
 //!
 //! Its ruling (<https://arkhamdb.com/card/01013>) *"You cannot choose to discard
 //! a Weakness card from your hand, neither for exceeding the max number of
 //! cards in hand, …"* is the engine's, not this card's: the upkeep hand-size
 //! discard refuses any weakness.
 
-use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, InvestigatorTarget};
+use card_dsl::dsl::{self, Ability, AbilityZone, EventPattern, EventTiming, InvestigatorTarget};
 
 use crate::impls::CardRecord;
 
@@ -45,6 +49,7 @@ pub fn abilities() -> Vec<Ability> {
             EventPattern::EndOfTurn,
             EventTiming::At,
             dsl::deal_horror(InvestigatorTarget::You, 2u8),
-        ),
+        )
+        .with_active_in(AbilityZone::Hand),
     ]
 }
