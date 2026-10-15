@@ -396,6 +396,17 @@ impl<'a> NativeCx<'a> {
         cards::discard_random_from_hand(self.write_access(), investigator)
     }
 
+    /// Move the card at `index` of `investigator`'s discard pile to their
+    /// hand, returning it, or `None` for an index past the pile's end. Emits
+    /// [`Event::CardAddedToHandFromDiscard`](crate::event::Event::CardAddedToHandFromDiscard).
+    pub fn add_discarded_card_to_hand(
+        &mut self,
+        investigator: InvestigatorId,
+        index: usize,
+    ) -> Option<CardCode> {
+        cards::add_discarded_card_to_hand(self.write_access(), investigator, index)
+    }
+
     // --- Decks ---
 
     /// Move the card `from` cards below the top of `deck` to `to` cards below

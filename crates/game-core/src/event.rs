@@ -449,6 +449,15 @@ pub enum Event {
         /// The card returned to hand.
         code: CardCode,
     },
+    /// A card moved from an investigator's discard pile to their hand:
+    /// Scavenging 01073's *"Choose an \[\[Item\]\] card in your discard pile and
+    /// add it to your hand."* Not a draw, so no on-draw trigger keys off it.
+    CardAddedToHandFromDiscard {
+        /// Whose discard pile the card left, and whose hand it joined.
+        investigator: InvestigatorId,
+        /// The card moved.
+        code: CardCode,
+    },
     /// A shuffle of the shared encounter deck occurred. Emitted by
     /// `shuffle_encounter_deck` (in `engine::dispatch`) iff the deck
     /// had ≥ 2 cards (a 0- or 1-card shuffle is a no-op and emits
