@@ -66,7 +66,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::card_data::{CardMetadata, CardType, SkillKind, UseKind};
+use crate::card_data::{CardMetadata, CardType, SkillKind, Slot, UseKind};
 
 // ---- triggers --------------------------------------------------
 
@@ -1752,7 +1752,8 @@ impl Effect {
             | Effect::AttachSelfToLocation
             | Effect::TakeControl { .. }
             | Effect::GainAdditionalAction { .. }
-            | Effect::AdditionalActionWhileInPlay { .. } => {}
+            | Effect::AdditionalActionWhileInPlay { .. }
+            | Effect::AdditionalSlots { .. } => {}
         }
     }
 }
@@ -2179,6 +2180,25 @@ pub enum Effect {
     AdditionalActionWhileInPlay {
         /// What the additional action may be used for. `None` is any action.
         restriction: Option<AdditionalActionRestriction>,
+    },
+    /// **Additional slots for as long as the source card is in play**:
+    /// Daisy's Tote Bag 01008's *"You have 2 additional hand slots, which can
+    /// only be used to hold \[\[Tome\]\] assets."* A constant marker like
+    /// [`AdditionalActionWhileInPlay`](Self::AdditionalActionWhileInPlay),
+    /// under a [`Trigger::Constant`]: **inspected, not executed** — the engine
+    /// reads it off the investigator's cards each time it works out their slot
+    /// capacity, so the slots are gone the moment the card leaves play.
+    /// Resolving it rejects.
+    ///
+    /// Each grant is its own pool of `count` slots of type `slot`; `only`
+    /// limits which assets the pool may hold.
+    AdditionalSlots {
+        /// The slot type granted.
+        slot: Slot,
+        /// How many slots of that type.
+        count: u8,
+        /// The assets these slots can hold. `None` is any asset of the type.
+        only: Option<CardFilter>,
     },
     /// Search a region of an investigator's deck for one card matching
     /// `filter`, move it to that investigator's hand, then shuffle the deck.
