@@ -38,7 +38,7 @@
 //! reveal reads the auto-fail, so Daisy's own `[elder_sign]` ability never
 //! initiates while this is in play.
 //!
-//! *"[action]: Move 1 horror from The Necronomicon to Daisy Walker. Then, if
+//! *"`[action]`: Move 1 horror from The Necronomicon to Daisy Walker. Then, if
 //! The Necronomicon has no horror on it, discard it."* is a native on
 //! [`NativeCx::move_horror`]: a move, not a deal, so nothing keyed on harm
 //! fires. The ruling (<https://arkhamdb.com/card/01009>): *"Moving damage or

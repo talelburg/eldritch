@@ -46,10 +46,9 @@ use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{EngineOutcome, OptionId, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, DiscardPile,
-    EliminationCause, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, TokenModifiers,
-    TokenResolution, UseKind, Zone,
+    AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, DiscardPile, EliminationCause,
+    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind,
+    TokenModifiers, TokenResolution, UseKind, Zone,
 };
 use game_core::test_support::{self, horror, seat, uses, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
@@ -676,7 +675,10 @@ fn a_move_that_reaches_her_sanity_defeats_her() {
     assert_eq!(session.state().investigators[&INV].horror(), 9);
     assert_event!(
         session.events(),
-        Event::InvestigatorEliminated { investigator: INV, cause: EliminationCause::Horror }
+        Event::InvestigatorEliminated {
+            investigator: INV,
+            cause: EliminationCause::Horror
+        }
     );
     assert_no_event!(session.events(), Event::HorrorTaken { .. });
 }

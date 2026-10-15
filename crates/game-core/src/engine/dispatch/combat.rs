@@ -470,7 +470,7 @@ pub enum MoveHorrorError {
     NotInPlay,
     /// The destination has no sanity value. The official FAQ: *"An effect
     /// that can “move” damage/horror from one card to another—such as Wrong
-    /// Place, Right Time ([fhvp] 115)—must move that damage/horror to a card
+    /// Place, Right Time (\[fhvp\] 115)—must move that damage/horror to a card
     /// that has a health or sanity value, respectively."*
     NoSanity,
 }
@@ -501,8 +501,7 @@ pub(crate) fn move_horror(
 ) -> Result<(), MoveHorrorError> {
     let (source, _) = board::find_instance(cx.state, from).ok_or(MoveHorrorError::NotInPlay)?;
     let available = source.accumulated_horror;
-    let (dest, placement) =
-        board::find_instance(cx.state, to).ok_or(MoveHorrorError::NotInPlay)?;
+    let (dest, placement) = board::find_instance(cx.state, to).ok_or(MoveHorrorError::NotInPlay)?;
     let sanity = match placement {
         board::Placement::InvestigatorCard(id) => {
             Some(cx.state.investigators[&id].max_sanity(cx.cards))
