@@ -188,6 +188,7 @@ pub(crate) fn for_candidate_source(
 /// the additional-action sweep (`Effect::AdditionalActionWhileInPlay`), the
 /// skill test's token substitution (`Effect::TreatRevealedToken`),
 /// `slots::slot_grants` (`Effect::AdditionalSlots`),
+/// [`events_go_to_bottom_of_deck`] (`Effect::PlaceEventsOnBottomOfDeck`),
 /// `evaluator::pending_action_surcharge` (`Restriction::ExtraActionCost`) and
 /// `evaluator::play_is_prohibited` (`Restriction::CannotPlay`). Empty for an
 /// investigator not in state.
@@ -241,6 +242,34 @@ pub(crate) fn cannot_leave_play(state: &GameState, reg: &CardRegistry, id: CardI
             }
             _ => false,
         })
+}
+
+/// Whether an event `owner` owns goes to the bottom of their deck rather than
+/// their discard pile: an in-effect [`Effect::PlaceEventsOnBottomOfDeck`] on a
+/// card `owner` controls. Wendy's Amulet 01014: *"**Forced** - After you play an
+/// event or discard an event from play: Place it on the bottom of your deck
+/// instead of in your discard pile."*
+///
+/// Read by owner, not by who played or discarded it: the pile an event goes to
+/// is its owner's (`glossary/Ownership_and_Control.md`: *"If a card would enter
+/// an out-of-play area that does not belong to the card's owner, the card is
+/// physically placed in its owner's equivalent out-of-play area instead."*),
+/// so *"your deck"* is the owner's. No ruling settles another player's event;
+/// in solo the readings coincide.
+///
+/// The two placements that read it are a played event's, at RR Appendix I
+/// step 4 (`cards::dispose_play_from_hand`), and an event's leaving play
+/// (`leave_play`'s owner filing). A second card that changes where an event
+/// goes is the trigger for #366's general machinery.
+#[must_use]
+pub(crate) fn events_go_to_bottom_of_deck(
+    state: &GameState,
+    reg: &CardRegistry,
+    owner: InvestigatorId,
+) -> bool {
+    constants_of(state, reg, owner)
+        .iter()
+        .any(|(_, ability)| ability.effect == Effect::PlaceEventsOnBottomOfDeck)
 }
 
 /// Pair each of a card's printed abilities with the address that names it.

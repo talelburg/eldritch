@@ -94,6 +94,7 @@ pub mod attic;
 pub mod automatic_45;
 pub mod backstab;
 pub mod barricade;
+pub mod baseball_bat;
 pub mod beat_cop;
 pub mod blinding_light;
 pub mod burglary;
@@ -165,6 +166,7 @@ pub mod trapped;
 pub mod unexpected_courage;
 pub mod vicious_blow;
 pub mod ward_of_protection;
+pub mod wendys_amulet;
 pub mod what_have_you_done;
 pub mod whats_going_on;
 pub mod working_a_hunch;
@@ -250,6 +252,7 @@ pub const ALL: &[CardRecord] = &[
     automatic_45::CARD,
     backstab::CARD,
     barricade::CARD,
+    baseball_bat::CARD,
     beat_cop::CARD,
     blinding_light::CARD,
     burglary::CARD,
@@ -321,6 +324,7 @@ pub const ALL: &[CardRecord] = &[
     unexpected_courage::CARD,
     vicious_blow::CARD,
     ward_of_protection::CARD,
+    wendys_amulet::CARD,
     what_have_you_done::CARD,
     whats_going_on::CARD,
     working_a_hunch::CARD,

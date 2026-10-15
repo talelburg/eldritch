@@ -16,7 +16,7 @@ use crate::engine::dispatch::{
 };
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
-use crate::engine::Cx;
+use crate::engine::{abilities_in_effect, Cx};
 use crate::event::Event;
 use crate::state::{
     ActionResume, AssetEntry, CardCode, CardInPlay, Deck, DiscardPile, InvestigatorId,
@@ -984,7 +984,9 @@ pub(super) fn resolve_play_target(
 /// [`PlayFromHand`](crate::state::Continuation::PlayFromHand) frame
 /// (Slice D #423) that holds the card; when that effect pops, the frame's
 /// disposal places it — into `cards_in_play` for assets, or into `discard`
-/// (with an emitted [`Event::CardDiscarded`]) for events. Only then, at step 4,
+/// (with an emitted [`Event::CardDiscarded`]) for events, or the deck's bottom
+/// when the owner's cards redirect it ([`Event::CardPlacedOnBottomOfDeck`],
+/// Wendy's Amulet 01014). Only then, at step 4,
 /// is the completed play announced to the timing system as
 /// `TimingEvent::CardPlayed` (Heirloom of Hyperborea 01012); the step-3
 /// [`Event::CardPlayed`] is the log entry, not that announcement.
@@ -1093,7 +1095,8 @@ pub(in crate::engine) fn enter_asset_into_play(
 /// Appendix I step 4, where the card "is regarded as played (and placed in play,
 /// or in its owner's discard pile if it's an event)". Pops the frame first (which
 /// takes the card off it), then places the card by destination: an **event** goes
-/// to its owner's discard pile, an **asset** is minted into play and announced via
+/// to its owner's discard pile, or the bottom of their deck under Wendy's Amulet
+/// 01014 ([`place_played_event`]), an **asset** is minted into play and announced via
 /// `EnteredPlay`. Either way the completed play is then announced via
 /// `CardPlayed` (Heirloom of Hyperborea 01012). Because the frame is popped
 /// *before* `queue_event`, a reaction window the latter queues (Research
@@ -1122,7 +1125,7 @@ pub(super) fn dispose_play_from_hand(cx: &mut Cx) -> EngineOutcome {
 
     match destination {
         PlayDestination::Discard => {
-            discard_played_card(cx, investigator, card.clone());
+            place_played_event(cx, investigator, card.clone());
             // The play is complete (Appendix I step 4): announced in tail
             // position (ADR 0003).
             emit::queue_event(
@@ -1283,17 +1286,48 @@ pub(super) fn commence_play(
 /// [`Event::CardDiscarded`] with `from: Zone::Hand` — hand is the zone the card
 /// left when it commenced being played, and it has been in none since.
 ///
+/// **Unless the owner's cards redirect it** to the bottom of their deck
+/// ([`events_go_to_bottom_of_deck`](abilities_in_effect::events_go_to_bottom_of_deck),
+/// Wendy's Amulet 01014), which emits [`Event::CardPlacedOnBottomOfDeck`] in
+/// place of the discard. The redirect is checked here, inside step 4, because
+/// the Official FAQ puts it there: *"An event card is placed on top of its
+/// owner’s discard pile during step 4 of the play/initiation sequence, so any
+/// effect that modifies where the event goes (such as Parallel Agnes Baker or
+/// Crystallizer of Dreams) must occur during that step. An effect that
+/// triggers “after you play” an event but does not modify where the event goes
+/// (such as Heirloom of Hyberborea’s ability) would naturally trigger just after
+/// step 4."* The Amulet is the corpus's only such effect, so the redirect is one
+/// constant read here rather than a step-4 replacement window; a second card
+/// that changes where an event goes is the trigger for #366's general
+/// machinery. Pushing onto the deck's bottom also makes an empty deck the event
+/// itself, as the Amulet's ruling has it (<https://arkhamdb.com/card/01014>):
+/// *"If your deck is empty, and Wendy’s Amulet would have you place an event
+/// “on the bottom of your deck,” that event becomes your new deck."*
+///
 /// The only caller is [`dispose_play_from_hand`], reached exactly once per play
-/// that resolves, so an event is placed in discard exactly once —
-/// "simultaneously with the completion" of its effect.
-fn discard_played_card(cx: &mut Cx, investigator: InvestigatorId, card: CardCode) {
+/// that resolves, so an event is placed exactly once — "simultaneously with the
+/// completion" of its effect.
+fn place_played_event(cx: &mut Cx, investigator: InvestigatorId, card: CardCode) {
+    let to_bottom_of_deck =
+        abilities_in_effect::events_go_to_bottom_of_deck(cx.state, cx.cards, investigator);
     if let Some(inv) = cx.state.investigators.get_mut(&investigator) {
-        inv.discard.push(card.clone());
+        if to_bottom_of_deck {
+            inv.deck.push(card.clone());
+        } else {
+            inv.discard.push(card.clone());
+        }
     }
-    cx.events.push(Event::CardDiscarded {
-        code: card,
-        from: Zone::Hand,
-        to: DiscardPile::Investigator(investigator),
+    cx.events.push(if to_bottom_of_deck {
+        Event::CardPlacedOnBottomOfDeck {
+            investigator,
+            code: card,
+        }
+    } else {
+        Event::CardDiscarded {
+            code: card,
+            from: Zone::Hand,
+            to: DiscardPile::Investigator(investigator),
+        }
     });
 }
 
