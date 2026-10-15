@@ -1,10 +1,10 @@
 //! Combat helpers: enemy damage, investigator damage/horror, attacks.
 
 use card_dsl::card_data::CardKind;
-use card_dsl::dsl::{EntityScope, LocationSet};
+use card_dsl::dsl::{EntityScope, LocationSet, Restriction};
 
 use crate::action::InputResponse;
-use crate::card_registry::CardRegistry;
+use crate::card_registry::{self, CardRegistry};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{choice, elimination, emit, reaction_windows};
 use crate::engine::outcome::{
@@ -14,8 +14,8 @@ use crate::engine::{board, Cx};
 use crate::event::Event;
 use crate::state::{
     Assignment, AttackLoopFrame, AttackLoopStage, CardInPlay, CardInstanceId, DamageSource,
-    DealDamageFrame, DealDamageStep, EliminationCause, EnemyAttackSource, EnemyId, GameState,
-    InvestigatorId, Status,
+    DealDamageFrame, DealDamageStep, EliminationCause, Enemy, EnemyAttackSource, EnemyId,
+    GameState, InvestigatorId, LastingEffect, LastingEffectKind, Lifetime, Status,
 };
 
 /// The scope of enemies a Fight (basic action or designated **Fight** ability)
@@ -498,13 +498,7 @@ fn build_soakers(
 /// never exhaust (RR p.7) — honored by
 /// [`EnemyAttackSource::AttackOfOpportunity`].
 pub(super) fn drive_aoo(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
-    let attackers: Vec<EnemyId> = cx
-        .state
-        .enemies
-        .iter()
-        .filter(|(_, e)| e.engaged_with == Some(investigator) && !e.exhausted)
-        .map(|(id, _)| *id)
-        .collect();
+    let attackers = ready_engaged_attackers(cx.state, cx.cards, investigator);
     drive_attack_loop(
         cx,
         investigator,
@@ -552,16 +546,87 @@ pub(super) fn resolve_attacks_for_investigator(
     cx: &mut Cx,
     investigator: InvestigatorId,
 ) -> EngineOutcome {
-    // Snapshot ready engaged attackers in deterministic EnemyId order.
-    // BTreeMap iteration is already key-sorted.
-    let attackers: Vec<EnemyId> = cx
-        .state
+    let attackers = ready_engaged_attackers(cx.state, cx.cards, investigator);
+    drive_attack_loop(cx, investigator, attackers, EnemyAttackSource::EnemyPhase)
+}
+
+/// The ready enemies engaged with `investigator` that may attack them, in
+/// deterministic `EnemyId` order (`BTreeMap` iteration is already key-sorted).
+/// The attacker snapshot of an attack of opportunity and of the Enemy phase's
+/// step 3.3 alike.
+fn ready_engaged_attackers(
+    state: &GameState,
+    cards: &CardRegistry,
+    investigator: InvestigatorId,
+) -> Vec<EnemyId> {
+    state
         .enemies
         .iter()
         .filter(|(_, e)| e.engaged_with == Some(investigator) && !e.exhausted)
+        .filter(|(_, e)| enemy_may_attack(state, cards, e, investigator))
         .map(|(id, _)| *id)
-        .collect();
-    drive_attack_loop(cx, investigator, attackers, EnemyAttackSource::EnemyPhase)
+        .collect()
+}
+
+/// Whether `enemy` may attack `investigator`: false while a lasting
+/// [`Restriction::CannotAttack`] protects the investigator and the enemy's
+/// printed card does not pass its exemption. On the Lam 01010 supplies its
+/// own *"non-\[\[Elite\]\]"* as that exemption, checked by code through
+/// [`card_registry::card_matches`], so a code `cards` doesn't know fails
+/// closed and the enemy may not attack.
+///
+/// Read at all three places an enemy attacks — an attack of opportunity, the
+/// Enemy phase's step 3.3 and a Retaliate — each of which leaves a covered
+/// enemy out of the attack. Left out, it is never exhausted:
+/// `Appendix_II_Timing_and_Gameplay.md` 3.3 exhausts an enemy only *"Upon
+/// completion of dealing the attack"*.
+///
+/// Reads the lasting effects alone; a constant `CannotAttack` has no reader.
+pub(super) fn enemy_may_attack(
+    state: &GameState,
+    cards: &CardRegistry,
+    enemy: &Enemy,
+    investigator: InvestigatorId,
+) -> bool {
+    !state.lasting_effects.iter().any(|e| match &e.kind {
+        LastingEffectKind::Restriction {
+            investigator: protected,
+            restriction: Restriction::CannotAttack { exempt },
+        } => {
+            *protected == investigator
+                && !exempt
+                    .as_ref()
+                    .is_some_and(|f| card_registry::card_matches(cards, &enemy.code, f))
+        }
+        _ => false,
+    })
+}
+
+/// Register `restriction` protecting `investigator` for the rest of the round,
+/// as a [`LastingEffect`] stamped [`Lifetime::Round`]. A card-local native
+/// (On the Lam 01010) reaches it as
+/// [`NativeCx::add_lasting_restriction`](crate::engine::NativeCx::add_lasting_restriction).
+/// Round is the only lifetime in scope: On the Lam's protection lasts *"Until
+/// the end of the round"*. No event announces it.
+///
+/// [`Restriction::CannotAttack`] is the one restriction with a lasting reader
+/// ([`enemy_may_attack`]); registering any other would be a silent no-op.
+pub fn add_lasting_restriction(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    restriction: Restriction,
+) {
+    debug_assert!(
+        matches!(restriction, Restriction::CannotAttack { .. }),
+        "add_lasting_restriction: {restriction:?} has no lasting reader",
+    );
+    cx.state.lasting_effects.push(LastingEffect {
+        lifetime: Lifetime::Round,
+        kind: LastingEffectKind::Restriction {
+            investigator,
+            restriction,
+        },
+    });
 }
 
 /// Exhaust the attacker that has just completed its attack sequence — the enemy
