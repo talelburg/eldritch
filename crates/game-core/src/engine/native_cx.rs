@@ -8,8 +8,8 @@ use crate::card_registry::CardRegistry;
 use crate::engine::board::{self, LeavingCard, MoveResourcesError, Placement};
 use crate::engine::dispatch::actions::{r#move, take};
 use crate::engine::dispatch::{
-    act_agenda, cards, combat, elimination, encounter, hunters, movement, placement, reveal,
-    set_aside, skill_test, threat_area,
+    act_agenda, cards, combat, elimination, encounter, hunters, placement, reveal, set_aside,
+    skill_test, threat_area,
     uses::{self, MoveUsesError, SpendUsesError},
 };
 use crate::engine::outcome::EngineOutcome;
@@ -17,7 +17,7 @@ use crate::engine::Cx;
 use crate::event::TraumaKind;
 use crate::state::{
     CardCode, CardInstanceId, Deck, EnemyId, GameState, InvestigatorId, LocationId, Owner,
-    SkillSubstitution, Status, UseKind, Zone,
+    SkillSubstitution, UseKind, Zone,
 };
 
 /// What a [`NativeEffectFn`](crate::card_registry::NativeEffectFn) gets: full
@@ -211,31 +211,7 @@ impl<'a> NativeCx<'a> {
         investigator: InvestigatorId,
         destination: LocationId,
     ) -> EngineOutcome {
-        let state = &*self.cx.state;
-        let from = state
-            .investigators
-            .get(&investigator)
-            .filter(|i| i.status == Status::Active)
-            .and_then(|i| i.current_location);
-        let Some(from) = from else {
-            return EngineOutcome::Rejected {
-                reason: format!("move_investigator: {investigator:?} is not active at a location")
-                    .into(),
-            };
-        };
-        if from == destination
-            || !state.locations.contains_key(&destination)
-            || !movement::investigator_can_enter_location(state, self.cx.cards, destination)
-        {
-            return EngineOutcome::Rejected {
-                reason: format!(
-                    "move_investigator: {investigator:?} cannot move from {from:?} to \
-                     {destination:?}"
-                )
-                .into(),
-            };
-        }
-        r#move::begin_move(self.write_access(), investigator, from, destination)
+        r#move::move_by_effect(self.write_access(), investigator, destination)
     }
 
     /// Apply the engagement rule: each ready, unengaged enemy at a location
