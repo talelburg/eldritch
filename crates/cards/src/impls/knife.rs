@@ -66,18 +66,19 @@ mod tests {
     /// with, asserting on the way that it is a 1-action **Fight** designator
     /// with nothing printed beside it.
     fn fight_modification(abilities: &[Ability], index: usize) -> (IntExpr, IntExpr) {
-        let Trigger::Activated {
-            action_cost: 1,
-            designator:
-                Some(ActionDesignator::Fight {
-                    combat_modifier,
-                    extra_damage,
-                }),
-        } = &abilities[index].trigger
+        assert_eq!(
+            abilities[index].trigger,
+            Trigger::Activated { action_cost: 1 }
+        );
+        let Some(ActionDesignator::Fight {
+            combat_modifier,
+            extra_damage,
+            ..
+        }) = &abilities[index].designator
         else {
             panic!(
-                "expected a 1-action Fight designator at index {index}, got {:?}",
-                abilities[index].trigger
+                "expected a Fight designator at index {index}, got {:?}",
+                abilities[index].designator
             );
         };
         assert_eq!(abilities[index].effect, Effect::Seq(vec![]));

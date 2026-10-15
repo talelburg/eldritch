@@ -82,7 +82,7 @@
 //!
 //! # Designator and effect
 //!
-//! **Designator: Resign**, declared on the trigger, which is what exempts the
+//! **Designator: Resign**, declared on the ability, which is what exempts the
 //! activation from attacks of opportunity — `glossary/Attack_of_Opportunity.md`
 //! exempts *"an action other than to **fight**, to **evade**, or to activate a
 //! **parley** or **resign** ability"* — and which **performs the elimination**
@@ -171,13 +171,8 @@ mod tests {
     fn abilities_are_one_action_costed_resign_then_the_lita_grant() {
         let abilities = super::abilities();
         assert_eq!(abilities.len(), 2);
-        assert_eq!(
-            abilities[0].trigger,
-            Trigger::Activated {
-                action_cost: 1,
-                designator: Some(ActionDesignator::Resign),
-            }
-        );
+        assert_eq!(abilities[0].trigger, Trigger::Activated { action_cost: 1 },);
+        assert_eq!(abilities[0].designator, Some(ActionDesignator::Resign),);
         assert!(abilities[0].costs.is_empty());
         // The designator performs the resignation; nothing is printed beside it.
         assert_eq!(abilities[0].effect, Effect::Seq(vec![]));
@@ -223,13 +218,8 @@ mod tests {
     #[test]
     fn the_granted_ability_is_a_one_action_parley_intellect_four_take_control() {
         let parley = super::lita_parley();
-        assert_eq!(
-            parley.trigger,
-            Trigger::Activated {
-                action_cost: 1,
-                designator: Some(ActionDesignator::Parley),
-            }
-        );
+        assert_eq!(parley.trigger, Trigger::Activated { action_cost: 1 },);
+        assert_eq!(parley.designator, Some(ActionDesignator::Parley),);
         assert!(parley.costs.is_empty());
         assert!(
             parley.usage_limit.is_none(),

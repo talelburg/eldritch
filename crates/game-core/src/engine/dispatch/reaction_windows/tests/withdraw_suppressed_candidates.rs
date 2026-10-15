@@ -1,5 +1,8 @@
 use super::*;
-use crate::state::{CardInstanceId, GameStateBuilder, LocationId, TimingPointFrame, TimingSub};
+use crate::state::{
+    CardInstanceId, EmitEventFrame, EmitStep, GameStateBuilder, LocationId, TimingPointFrame,
+    TimingSub,
+};
 use crate::test_support::{self, TEST_REGISTRIES};
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -22,8 +25,29 @@ fn state_with_window(bucket: EventTiming, prevented: bool) -> GameState {
     state_with_window_of(discovery(), bucket, TimingMode::Reaction, prevented)
 }
 
-/// A one-candidate window over `event`, in `bucket`, of `mode`, on top of a
-/// minimal state whose `pending_cancellation` is `prevented`.
+/// Push the frames a coordinator walking `event`'s `bucket` cell leaves beneath
+/// that cell's window: the condition's [`EmitEventFrame`], flagged `prevented`,
+/// and its [`TimingPointFrame`].
+fn push_cell(state: &mut GameState, event: &TimingEvent, bucket: EventTiming, prevented: bool) {
+    let step = match bucket {
+        EventTiming::When => EmitStep::When,
+        EventTiming::At => EmitStep::At,
+        EventTiming::After => EmitStep::After,
+    };
+    state.continuations.push(EmitEventFrame {
+        event: event.clone(),
+        step,
+        prevented,
+    });
+    state.continuations.push(TimingPointFrame {
+        event: event.clone(),
+        bucket,
+        sub: TimingSub::Done,
+    });
+}
+
+/// A one-candidate window over `event`, in `bucket`, of `mode`, above its
+/// condition's frames, the condition flagged `prevented`.
 fn state_with_window_of(
     event: TimingEvent,
     bucket: EventTiming,
@@ -35,7 +59,7 @@ fn state_with_window_of(
         .with_seat(test_support::seat(1))
         .with_active_investigator(INV)
         .build();
-    state.pending_cancellation = prevented;
+    push_cell(&mut state, &event, bucket, prevented);
     state.continuations.push(TimingPointWindowFrame {
         event,
         bucket,
@@ -82,7 +106,7 @@ fn a_prevented_condition_empties_its_when_cell_window() {
     );
 }
 
-/// No signal, no suppression — the ordinary window is left entirely alone
+/// No flag, no suppression — the ordinary window is left entirely alone
 /// (its own re-scan withdrawal is `withdraw_lapsed_candidates`' job).
 #[test]
 fn an_unprevented_condition_withdraws_nothing() {
@@ -94,7 +118,7 @@ fn an_unprevented_condition_withdraws_nothing() {
 }
 
 /// Scoped to the `when` cell: it is the only one whose abilities resolve
-/// before the condition does, so a signal seen at an `at` or `after` window
+/// before the condition does, so a flag seen at an `at` or `after` window
 /// belongs to something else and must not empty it.
 #[test]
 fn a_later_cells_window_is_untouched() {
@@ -130,7 +154,7 @@ fn a_forced_run_in_the_when_cell_empties_too() {
 }
 
 /// A **caller-owned** condition is left alone: it has already mutated the
-/// board by the time any window opens, so a prevention signal in flight is
+/// board by the time any window opens, so a prevention flag in flight is
 /// not its to consume. The enemy attack used to be this fixture and #704
 /// migrated it; the soak condition stood in until #727 replaced it with the
 /// coordinator-owned `DamageAssigned`/`DamagePlaced` pair, so `EnteredPlay`
@@ -159,12 +183,7 @@ fn a_caller_owned_conditions_window_is_untouched() {
 #[test]
 fn a_non_window_frame_is_a_no_op() {
     let mut state = GameStateBuilder::default().build();
-    state.pending_cancellation = true;
-    state.continuations.push(TimingPointFrame {
-        event: discovery(),
-        bucket: EventTiming::When,
-        sub: TimingSub::Reaction,
-    });
+    push_cell(&mut state, &discovery(), EventTiming::When, true);
     let (n, events) = withdraw(&mut state);
     assert_eq!(n, 0);
     assert!(events.is_empty());

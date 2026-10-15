@@ -5,16 +5,17 @@ use card_dsl::card_data::CardMetadata;
 
 use crate::card_registry::CardRegistry;
 use crate::engine::board::{self, LeavingCard, Placement};
+use crate::engine::dispatch::actions::take;
 use crate::engine::dispatch::{
     act_agenda, cards, combat, elimination, encounter, hunters, placement, reveal, set_aside,
     skill_test, threat_area,
-    uses::{self, SpendUsesError},
+    uses::{self, MoveUsesError, SpendUsesError},
 };
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::event::TraumaKind;
 use crate::state::{
-    CardCode, CardInstanceId, EnemyId, GameState, InvestigatorId, LocationId, Owner,
+    CardCode, CardInstanceId, Deck, EnemyId, GameState, InvestigatorId, LocationId, Owner,
     SkillSubstitution, UseKind, Zone,
 };
 
@@ -49,7 +50,8 @@ use crate::state::{
 /// apply's snapshot rollback then undoes what it wrote (#571).
 ///
 /// Read-only helpers, such as
-/// [`resolve_grounded_choice`](crate::engine::resolve_grounded_choice) and
+/// [`resolve_grounded_choice`](crate::engine::resolve_grounded_choice),
+/// [`resolve_card_choice`](crate::engine::resolve_card_choice) and
 /// [`enemy_can_enter_location`](crate::engine::enemy_can_enter_location), are
 /// free functions called on [`state`](Self::state), so asking never counts as
 /// writing. No exit suspends by itself: one that needs a later step, such as an
@@ -194,6 +196,14 @@ impl<'a> NativeCx<'a> {
         act_agenda::place_doom_on_agenda(self.write_access(), count);
     }
 
+    /// Place `count` doom on the card instance `instance`, wherever it is on
+    /// the board; a no-op once it has left play. The doom counts toward the
+    /// agenda's threshold at the next check, not at once. No event announces
+    /// doom yet (#593).
+    pub fn place_doom_on_card(&mut self, instance: CardInstanceId, count: u8) {
+        board::place_doom(self.write_access(), instance, count);
+    }
+
     /// Remove up to `count` clues from the card instance `instance`, wherever
     /// it is on the board, saturating at zero. No event names clues leaving a
     /// card.
@@ -219,6 +229,33 @@ impl<'a> NativeCx<'a> {
         amount: u8,
     ) -> Result<(), SpendUsesError> {
         uses::spend_uses(self.write_access(), investigator, instance, kind, amount)
+    }
+
+    /// Move up to `amount` uses of `kind` off `instance` into
+    /// `investigator`'s resource pool, each becoming a resource (Forbidden
+    /// Knowledge 01058), emitting
+    /// [`Event::UsesMovedToResourcePool`](crate::event::Event::UsesMovedToResourcePool)
+    /// with the number moved. The move is neither a spend nor a gain, so
+    /// [`Event::UsesSpent`](crate::event::Event::UsesSpent) and
+    /// [`Event::ResourcesGained`](crate::event::Event::ResourcesGained) stay
+    /// silent. If it empties a pool the card prints as discard-when-empty, the
+    /// card is discarded to its owner's pile at once, as for
+    /// [`spend_uses`](Self::spend_uses).
+    ///
+    /// # Errors
+    ///
+    /// [`MoveUsesError::NotInPlay`] when `instance` is not on the board;
+    /// [`MoveUsesError::NoSuchInvestigator`] when `investigator` is not in the
+    /// game; [`MoveUsesError::Undiscardable`] when the depletion discard has
+    /// nowhere to take the card from.
+    pub fn move_uses_to_resource_pool(
+        &mut self,
+        investigator: InvestigatorId,
+        instance: CardInstanceId,
+        kind: UseKind,
+        amount: u8,
+    ) -> Result<(), MoveUsesError> {
+        uses::move_uses_to_resource_pool(self.write_access(), investigator, instance, kind, amount)
     }
 
     // --- Leaving play ---
@@ -255,6 +292,15 @@ impl<'a> NativeCx<'a> {
         cards::discard_random_from_hand(self.write_access(), investigator)
     }
 
+    // --- Decks ---
+
+    /// Move the card `from` cards below the top of `deck` to `to` cards below
+    /// the top, returning whether anything moved (an index past the bottom is
+    /// a no-op). No event announces it: a deck's order is hidden.
+    pub fn move_card_in_deck(&mut self, deck: Deck, from: usize, to: usize) -> bool {
+        cards::move_card_in_deck(self.write_access(), deck, from, to)
+    }
+
     // --- The encounter deck ---
 
     /// Take the top card of the encounter deck, or `None` if it is empty. Never
@@ -264,15 +310,25 @@ impl<'a> NativeCx<'a> {
         encounter::take_encounter_top(self.write_access())
     }
 
+    /// Draw the top card of the encounter deck, shuffling the encounter
+    /// discard back in first if the deck is empty — the encounter draw's own
+    /// rule. `None` when the deck and the discard are both empty, a state no
+    /// rule defines. The card is the caller's to resolve, as
+    /// [`resolve_encounter_card`](Self::resolve_encounter_card) does.
+    pub fn draw_encounter_top(&mut self) -> Option<CardCode> {
+        encounter::draw_encounter_top(self.write_access())
+    }
+
     /// Shuffle the encounter discard back into the encounter deck.
     pub fn reshuffle_encounter_discard(&mut self) {
         encounter::reshuffle_encounter_discard(self.write_access());
     }
 
     /// Resolve the already-drawn encounter card `code` for `investigator`: it
-    /// is revealed, and its Revelation and its disposal (discard or spawn) are
-    /// pushed as frames for the drive loop to step. `Rejected` for a cardtype
-    /// that cannot be drawn this way.
+    /// is revealed, and the draw — whose resolve step is the Revelation, which
+    /// a `when` ability may cancel — and the card's disposal (discard or spawn)
+    /// are pushed as frames for the drive loop to step. `Rejected` for a
+    /// cardtype that cannot be drawn this way.
     pub fn resolve_encounter_card(
         &mut self,
         investigator: InvestigatorId,
@@ -280,6 +336,16 @@ impl<'a> NativeCx<'a> {
         metadata: &CardMetadata,
     ) -> EngineOutcome {
         encounter::resolve_encounter_card(self.write_access(), investigator, code, metadata)
+    }
+
+    // --- Actions ---
+
+    /// `investigator` loses `count` actions: they have that many fewer to take
+    /// this turn, never fewer than none. Emits
+    /// [`Event::ActionsRemainingChanged`](crate::event::Event::ActionsRemainingChanged)
+    /// when the count changes.
+    pub fn lose_actions(&mut self, investigator: InvestigatorId, count: u8) {
+        take::lose_actions(self.write_access(), investigator, count);
     }
 
     // --- Acts and skill tests ---

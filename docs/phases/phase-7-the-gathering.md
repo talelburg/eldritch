@@ -1013,8 +1013,8 @@ synchronously and announce nothing, because their callers do synchronous post-ca
 work (Dynamite Blast 01024's `for inv in investigators` loop wants #704's shape in
 miniature) — `TODO(#728)` at each site; and a full cancel in `DamageAssigned`'s `when`
 cell would abandon the coordinator's sequence but not the frame beneath it, which is
-**#366**'s to fix along with partial replacement, since the one `pending_cancellation`
-bool cannot say *whose*. `run_reaction_continuation` was deleted on the way out: with
+**#366**'s to fix along with partial replacement, since the prevention flag
+cannot say *whose*. `run_reaction_continuation` was deleted on the way out: with
 the last two conditions that had post-window work now walking the coordinator, every
 arm had collapsed to `Done`.
 

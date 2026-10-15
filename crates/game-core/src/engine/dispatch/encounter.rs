@@ -6,6 +6,7 @@ use card_dsl::card_data::{CardKind, CardMetadata, CardType, HealthValue, Spawn, 
 use card_dsl::dsl::{Ability, Effect, Trigger};
 
 use crate::action::InputResponse;
+use crate::engine::dispatch::emit::{self, TimingEvent};
 use crate::engine::dispatch::hunters::PreyResolution;
 use crate::engine::dispatch::{choice, cursor, hunters, reaction_windows, skill_test};
 use crate::engine::evaluator::{self, EvalContext};
@@ -104,16 +105,19 @@ pub(crate) fn treachery_is_persistent(abilities: &[Ability]) -> bool {
 /// `encounter_card_revealed` (the `EngineRecord::EncounterCardRevealed` path),
 /// by the Mythos draw chain (`draw_encounter_card_into_frame`, driven by the
 /// [`PlayerDraw`](Continuation::PlayerDraw) frame), and by card effects that
-/// draw from the encounter deck (agenda 01106's reverse).
+/// draw from the encounter deck (agenda 01106's reverse, Drawn to the Flame
+/// 01064).
 ///
-/// Body (#423): emits [`Event::CardRevealed`], then pushes a
+/// Body: emits [`Event::CardRevealed`], pushes a
 /// [`Continuation::EncounterCard`] disposition frame (treachery → `Discard`,
-/// enemy → `Spawn`) and the card's [`Trigger::Revelation`] effects (combined
-/// into one `Seq`, via `push_effect`), returning [`EngineOutcome::Done`] for
-/// the global `drive` loop to step. The loop resolves the Revelation, then
-/// disposes of the card via `dispose_encounter_card_if_top` — discarding a
-/// one-shot treachery or spawning the enemy (which may itself suspend on an
-/// engagement tie). Any other card type rejects.
+/// enemy → `Spawn`), then announces the draw,
+/// [`TimingEvent::EncounterCardDrawn`], in tail position (ADR 0003). The
+/// revelation is that condition's resolve step ([`resolve_revelation`], #1056),
+/// so a `when` ability can cancel it (Ward of Protection 01065); the disposal
+/// frame beneath the condition still runs once the sequence has drained,
+/// through `dispose_encounter_card_if_top` — discarding a one-shot treachery
+/// or spawning the enemy (which may itself suspend on an engagement tie). Any
+/// other card type rejects.
 ///
 /// **Mid-resolution caveat:** [`Event::CardRevealed`] emits before Revelation
 /// resolves (Before-timing reactions need that ordering, per #126's design
@@ -139,13 +143,13 @@ pub fn resolve_encounter_card(
         card_type,
     });
 
-    // Treachery and enemy both: push the disposition frame BEFORE the
-    // Revelation, then push the Revelation effects for the `drive` loop to own
-    // (#423). The framework disposes of the card via
-    // `dispose_encounter_card_if_top` once the Revelation's whole
-    // sub-resolution completes — even if it suspends into a skill test or a
-    // choice (#380). A mid-Revelation `Rejected` is rolled back by the apply
-    // loop's transactional snapshot, this frame included.
+    // Treachery and enemy both: push the disposition frame BEFORE the draw
+    // condition whose resolve step is the Revelation (#423, #1056). The
+    // framework disposes of the card via `dispose_encounter_card_if_top` once
+    // the condition's whole sequence completes — even if the Revelation
+    // suspends into a skill test or a choice (#380), and even if a `when`
+    // ability cancelled it. A mid-Revelation `Rejected` is rolled back by the
+    // apply loop's transactional snapshot, this frame included.
     let disposition = match card_type {
         CardType::Treachery => EncounterDisposition::Discard,
         CardType::Enemy => EncounterDisposition::Spawn { investigator },
@@ -160,36 +164,53 @@ pub fn resolve_encounter_card(
         }
     };
 
-    let registry = cx.cards;
-    let abilities = (registry.abilities_for)(&code).unwrap_or_default();
+    cx.state.continuations.push(EncounterCardFrame {
+        card: code.clone(),
+        disposition,
+        revelation_resolved: false,
+    });
+    emit::queue_event(cx, &TimingEvent::EncounterCardDrawn { investigator, code })
+}
 
-    // Revelation effects on enemies (rare, but printed on some encounter
-    // enemies — e.g. "Revelation - Discard 1 card from your hand at random.")
-    // fire BEFORE the enemy spawns into play, per Rules Reference p.24 ("1.4
-    // Each investigator draws 1 encounter card"): "3. Resolve the revelation
-    // ability on the drawn card." then "4. If the card is an enemy, spawn it
-    // following any spawn instruction the card bears." The spawn happens at
-    // disposal, after the Revelation frames the loop drives have all resolved.
-    let revelation_effects: Vec<Effect> = abilities
+/// Resolve the drawn card `code`'s Revelation for `investigator`: the resolve
+/// step of [`TimingEvent::EncounterCardDrawn`], reached only when no `when`
+/// ability cancelled it (#1056).
+///
+/// Marks the drawn card's [`EncounterCardFrame`] — the topmost one, directly
+/// beneath the draw condition's coordinator — as revealed, then pushes the
+/// card's [`Trigger::Revelation`] effects, combined into one `Seq`, for the
+/// global `drive` loop to step. Nothing is pushed when there are none.
+///
+/// Revelation effects on enemies (rare, but printed on some encounter enemies
+/// — e.g. "Revelation - Discard 1 card from your hand at random.") fire BEFORE
+/// the enemy spawns into play, per Rules Reference p.24 ("1.4 Each
+/// investigator draws 1 encounter card"): "3. Resolve the revelation ability
+/// on the drawn card." then "4. If the card is an enemy, spawn it following
+/// any spawn instruction the card bears." The spawn happens at disposal, after
+/// the condition's sequence has drained. The drawing investigator controls the
+/// Revelation; the card is the encounter deck's.
+pub(super) fn resolve_revelation(cx: &mut Cx, investigator: InvestigatorId, code: &CardCode) {
+    let frame = cx
+        .state
+        .continuations
+        .topmost_of_mut::<EncounterCardFrame>()
+        .expect("resolve_revelation: the draw condition sits above its EncounterCard frame");
+    debug_assert_eq!(
+        &frame.card, code,
+        "resolve_revelation: the topmost EncounterCard frame is not the drawn card's"
+    );
+    frame.revelation_resolved = true;
+
+    let revelation_effects: Vec<Effect> = (cx.cards.abilities_for)(code)
+        .unwrap_or_default()
         .into_iter()
         .filter(|a| a.trigger == Trigger::Revelation)
         .map(|a| a.effect)
         .collect();
-
-    cx.state.continuations.push(EncounterCardFrame {
-        card: code,
-        disposition,
-    });
-
-    // Push the Revelation effects (combined into one `Seq`) for the global
-    // `drive` loop to step; push nothing when there are none (the disposal
-    // frame is then top and the loop disposes immediately). The drawing
-    // investigator controls the Revelation; the card is the encounter deck's.
     if !revelation_effects.is_empty() {
         let eval_ctx = EvalContext::for_revelation(investigator, Owner::EncounterDeck);
         evaluator::push_effect(cx, &Effect::Seq(revelation_effects), eval_ctx);
     }
-    EngineOutcome::Done
 }
 
 /// Spawn one encounter-deck enemy into play.
@@ -558,9 +579,10 @@ pub fn reshuffle_encounter_discard(cx: &mut Cx) {
 /// the deck and the discard are empty, a state no rule defines: the
 /// Rules Reference covers only the empty deck ("shuffle the encounter
 /// discard pile back into the encounter deck"). Callers therefore
-/// reject it or treat it as malformed scenario data; each documents
-/// which.
-pub(super) fn draw_encounter_top(cx: &mut Cx) -> Option<CardCode> {
+/// reject it, treat it as malformed scenario data, or draw nothing; each
+/// documents which. A card-local native reaches it as
+/// [`NativeCx::draw_encounter_top`](crate::engine::NativeCx::draw_encounter_top).
+pub fn draw_encounter_top(cx: &mut Cx) -> Option<CardCode> {
     if cx.state.encounter_deck.is_empty() {
         if cx.state.encounter_discard.is_empty() {
             return None;
@@ -863,14 +885,25 @@ pub(super) fn dispose_encounter_card_if_top(cx: &mut Cx) -> EngineOutcome {
         .top_of::<EncounterCardFrame>()
         .is_some()
     {
-        let EncounterCardFrame { card, disposition } =
-            cx.state.continuations.pop_expect::<EncounterCardFrame>();
+        let EncounterCardFrame {
+            card,
+            disposition,
+            revelation_resolved,
+        } = cx.state.continuations.pop_expect::<EncounterCardFrame>();
 
         match disposition {
             EncounterDisposition::Discard => {
-                let persistent = (cx.cards.abilities_for)(&card)
-                    .is_some_and(|abilities| treachery_is_persistent(&abilities));
-                if !persistent {
+                // A persistent treachery placed itself during its Revelation.
+                // One whose Revelation was cancelled (Ward of Protection 01065)
+                // placed nothing, so it is discarded like any other —
+                // `glossary/Cancel.md`: *"If the effects of a treachery card
+                // are canceled, the card is still regarded as having been
+                // drawn, and it is still placed in the encounter discard
+                // pile."*
+                let placed_itself = revelation_resolved
+                    && (cx.cards.abilities_for)(&card)
+                        .is_some_and(|abilities| treachery_is_persistent(&abilities));
+                if !placed_itself {
                     cx.state.encounter_discard.push(card.clone());
                 }
             }

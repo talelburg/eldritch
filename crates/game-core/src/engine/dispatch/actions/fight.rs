@@ -2,11 +2,12 @@
 //! primary shared with the designated Fight, its after-test damage, and the
 //! retaliate attack a failed fight provokes.
 
-use card_dsl::dsl::{IntExpr, SkillTestKind, Stat};
+use card_dsl::dsl::{IntExpr, RevealClause, SkillTestKind};
 
 use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
 use crate::engine::dispatch::skill_test::InitiatorModifier;
 use crate::engine::dispatch::{combat, skill_test};
+use crate::engine::modified_value;
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::state::{
@@ -118,20 +119,39 @@ pub(in crate::engine::dispatch) fn handle(
     })
 }
 
-/// Perform a **fight** against `enemy_id`: a Combat test whose difficulty *is*
-/// that enemy's modified fight value, read at ST.6 rather than snapshotted here
-/// (#677), dealing `1 + extra_damage` on success.
+/// How an attack differs from a basic Fight: the modification a **Fight**
+/// designator carries (`glossary/Ability.md`: *"performs the designated action
+/// as described in the rules, but modified in the manner described by the
+/// ability"*), with `extra_damage` already evaluated. [`Default`] is the basic
+/// Fight action's: a combat test, no modifier, no extra damage, no clause.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct FightModification {
+    /// *"+N \[combat\] for this attack"*, applied to whichever skill the
+    /// attack tests.
+    pub combat_modifier: Option<IntExpr>,
+    /// Damage beyond the base 1 (.38 Special: +1).
+    pub extra_damage: u8,
+    /// The skill tested instead of `[combat]` (Shrivelling 01060's
+    /// `[willpower]`).
+    pub skill_override: Option<SkillKind>,
+    /// The card's *"If a \<symbol\> is revealed during this attack"*.
+    pub reveal_clause: Option<RevealClause>,
+}
+
+/// Perform a **fight** against `enemy_id`: a Combat test (or the skill
+/// `modification` tests instead) whose difficulty *is* that enemy's modified
+/// fight value, read at ST.6 rather than snapshotted here (#677), dealing
+/// `1 + extra_damage` on success.
 ///
 /// The one primary behind both ways of attacking (#805) — the basic Fight
 /// action and an ability printing the bold **Fight** designator (every weapon
-/// in the corpus). `glossary/Ability.md`: *"Activating such an ability
-/// **performs the designated action** as described in the rules, but modified
-/// in the manner described by the ability."* The modification is
-/// `combat_modifier` + `extra_damage`, and it is the *only* thing that differs;
-/// before this the two built their own near-identical tests side by side.
+/// in the corpus, and Shrivelling 01060). `glossary/Ability.md`: *"Activating
+/// such an ability **performs the designated action** as described in the
+/// rules, but modified in the manner described by the ability."* The
+/// [`FightModification`] is the *only* thing that differs.
 ///
 /// `combat_modifier` is *"+N \[combat\] for this attack"* — a row over the
-/// controller's combat skill scoped to the test about to start, not a number
+/// controller's tested skill scoped to the test about to start, not a number
 /// added to a snapshotted total. It travels unevaluated so the row answers from
 /// the board at every read (ADR 0005), which is what makes Esoteric Formula
 /// 02254's *"+2 \[willpower\] for this attack for each clue on the attacked
@@ -143,14 +163,20 @@ pub(crate) fn perform(
     cx: &mut Cx,
     investigator: InvestigatorId,
     enemy_id: EnemyId,
-    combat_modifier: Option<IntExpr>,
-    extra_damage: u8,
+    modification: FightModification,
     source: Option<AbilitySource>,
 ) -> EngineOutcome {
+    let FightModification {
+        combat_modifier,
+        extra_damage,
+        skill_override,
+        reveal_clause,
+    } = modification;
+    let skill = skill_override.unwrap_or(SkillKind::Combat);
     skill_test::start_skill_test(
         cx,
         investigator,
-        SkillKind::Combat,
+        skill,
         SkillTestKind::Fight,
         DifficultyBasis::Fight(enemy_id),
         SkillTestFollowUp::Fight {
@@ -162,9 +188,10 @@ pub(crate) fn perform(
         source,
         combat_modifier.map(|delta| InitiatorModifier {
             target: ModifierTarget::Investigator(investigator),
-            stat: Stat::Combat,
+            stat: modified_value::stat_for_skill(skill),
             delta,
         }),
+        reveal_clause,
     )
 }
 

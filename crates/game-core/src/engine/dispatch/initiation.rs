@@ -424,8 +424,8 @@ fn restrictions_met(
     Ok(())
 }
 
-/// Whether `ability` is an activated ability whose bold action designator
-/// performs an action — every designator but **Parley**, which performs nothing.
+/// Whether `ability` prints a bold action designator that performs an action
+/// — every designator but **Parley**, which performs nothing.
 ///
 /// Such an ability's substance is the action, not the residual effect printed
 /// beside the bold word (#805; `glossary/Ability.md`: *"Activating such an
@@ -437,13 +437,17 @@ fn restrictions_met(
 /// leaves with the activation path: `check_activate_ability` asks it before it
 /// asks this gate. A Parley ability falls through to the residual, which is all
 /// it has to change the game state with.
+///
+/// The designator is the ability's, whichever trigger reached it (see
+/// [`ActionDesignator`]), so an event's designated `OnPlay` ability skips the
+/// residual check too. Its action check is then the play path's to ask, as the
+/// activation path asks it: `check_play_card` asks `designator::can_perform`
+/// before this gate, so Blinding Light 01066's **Evade** with no enemy engaged
+/// is refused there.
 fn performs_an_action(ability: &Ability) -> bool {
     matches!(
-        &ability.trigger,
-        Trigger::Activated {
-            designator: Some(designator),
-            ..
-        } if !matches!(designator, ActionDesignator::Parley)
+        &ability.designator,
+        Some(designator) if !matches!(designator, ActionDesignator::Parley)
     )
 }
 
@@ -467,7 +471,7 @@ fn usage_exhausted(
     ability_source::source_card(state, source)
         .and_then(|card| {
             card.instance()
-                .map(|instance| instance.is_usage_exhausted(index, limit, state.round))
+                .map(|instance| instance.is_usage_exhausted(index, limit, state.round, state.phase))
         })
         .unwrap_or(false)
 }
@@ -597,10 +601,10 @@ pub(super) fn record_initiation(
     candidate: &ResolutionCandidate,
     usage_limit: Option<UsageLimit>,
 ) {
-    if usage_limit.is_none() {
+    let Some(usage_limit) = usage_limit else {
         return;
-    }
-    let current_round = state.round;
+    };
+    let (current_round, current_phase) = (state.round, state.phase);
     match candidate.source {
         CandidateSource::Ability(AbilitySource::InPlay(instance_id)) => {
             let (card, _) = board::find_instance_mut(state, instance_id).unwrap_or_else(|| {
@@ -611,7 +615,7 @@ pub(super) fn record_initiation(
                 )
             });
             if let Some(index) = candidate.address.printed_index() {
-                card.bump_ability_usage(index, current_round);
+                card.bump_ability_usage(index, usage_limit.period, current_round, current_phase);
             }
         }
         // Listed kind by kind rather than wildcarded: a sixth `AbilitySource`

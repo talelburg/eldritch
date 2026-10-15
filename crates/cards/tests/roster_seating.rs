@@ -50,6 +50,47 @@ fn seats_roland_with_corpus_stats_and_payload_deck() {
     assert_eq!(inv.deck.len() + inv.hand.len(), deck.len());
 }
 
+/// Agnes Baker 01004 (`pack/core/core.json`): Willpower 5, Intellect 2,
+/// Combat 2, Agility 3; health 6, sanity 8.
+#[test]
+fn seats_agnes_with_corpus_stats_and_payload_deck() {
+    let deck = vec![CardCode::new("01059"), CardCode::new("01088")];
+    let roster = vec![RosterEntry {
+        investigator: CardCode::new("01004"),
+        deck: deck.clone(),
+    }];
+    let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .build();
+
+    let result = engine::seat_and_open(state, &roster, TEST_REGISTRIES);
+
+    assert!(
+        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
+        "seat_and_open opens the mulligan prompt, got {:?}",
+        result.outcome
+    );
+    let inv = result
+        .state
+        .investigators
+        .get(&InvestigatorId(1))
+        .expect("Agnes seated at id 1");
+    assert_eq!(inv.name, "Agnes Baker");
+    assert_eq!(inv.investigator_card.code, CardCode::new("01004"));
+    assert_eq!(
+        inv.skills,
+        Skills {
+            willpower: 5,
+            intellect: 2,
+            combat: 2,
+            agility: 3
+        }
+    );
+    assert_eq!(inv.max_health(TEST_REGISTRIES.cards), 6);
+    assert_eq!(inv.max_sanity(TEST_REGISTRIES.cards), 8);
+    assert_eq!(inv.deck.len() + inv.hand.len(), deck.len());
+}
+
 #[test]
 fn rejects_non_investigator_code() {
     // 01030 (Magnifying Glass) is an Asset, not an investigator.

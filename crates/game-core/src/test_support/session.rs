@@ -285,6 +285,7 @@ impl TestSession {
             cx.state.continuations.push(EmitEventFrame {
                 event,
                 step: EmitStep::When,
+                prevented: false,
             });
             engine::drive(cx, EngineOutcome::Done)
         })
@@ -298,6 +299,17 @@ impl TestSession {
     pub fn take_damage(self, investigator: InvestigatorId, amount: u8) -> Self {
         self.framework_step(|cx| {
             let outcome = engine::deal_harm(cx, investigator, amount, 0);
+            engine::drive(cx, outcome)
+        })
+    }
+
+    /// Step: deal `amount` horror to `investigator` outside any attack — the
+    /// horror twin of [`take_damage`](Self::take_damage), with the same soak
+    /// offer, the same two conditions announced (so a reaction to the
+    /// placement opens its window), and the same drain.
+    pub fn take_horror(self, investigator: InvestigatorId, amount: u8) -> Self {
+        self.framework_step(|cx| {
+            let outcome = engine::deal_harm(cx, investigator, 0, amount);
             engine::drive(cx, outcome)
         })
     }

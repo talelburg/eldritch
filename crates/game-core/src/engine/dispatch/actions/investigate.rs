@@ -169,6 +169,7 @@ pub(crate) fn perform(
             stat: Stat::Shroud,
             delta,
         }),
+        None,
     )
 }
 

@@ -20,15 +20,13 @@
 //! - A `when`-cell ability that **prevents** the condition suppresses the rest
 //!   of the sequence — the resolve step, the `at` and `after` cells, and the
 //!   remainder of the `when` cell itself (#714; citations on
-//!   [`prevented_in_the_when_cell`]).
+//!   [`EmitEventFrame::prevented`]).
 //!
 //! Neither driver suspends *itself*: each does one step and returns `Done`, and
 //! the loop re-dispatches the (mutated) top frame — or `AwaitingInput` when the
 //! step opens a window / forced run. On a child's pop the parent's cursor has
 //! already been advanced, so re-dispatch makes progress (never re-scans the same
 //! cell into a loop).
-
-use std::mem;
 
 use card_dsl::dsl::EventTiming;
 
@@ -63,7 +61,11 @@ use crate::state::{EmitEventFrame, EmitStep, TimingPointFrame, TimingSub};
 /// leaf can emit a condition whose own resolution happens here, so a driver that
 /// stopped at this frame would leave the effect half-resolved.
 pub(in crate::engine) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
-    let EmitEventFrame { event, step } = cx
+    let EmitEventFrame {
+        event,
+        step,
+        prevented,
+    } = cx
         .state
         .continuations
         .top_expect::<EmitEventFrame>()
@@ -72,11 +74,11 @@ pub(in crate::engine) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
     if step == EmitStep::ResolveCondition {
         return match resolution {
             ConditionResolution::Coordinator(resolve) => {
-                if prevented_in_the_when_cell(cx) {
+                if prevented {
                     // A `when`-cell ability prevented the condition, so neither
                     // step 2 nor the cells after it happen: the sequence is
                     // abandoned where it stands (#714, and see
-                    // [`prevented_in_the_when_cell`] for the citations).
+                    // [`EmitEventFrame::prevented`] for the citations).
                     abandon_emit(cx);
                     EngineOutcome::Done
                 } else {
@@ -87,9 +89,8 @@ pub(in crate::engine) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
                 }
             }
             // Already resolved, by the caller, before it emitted — so there is
-            // nothing here to prevent, and the signal is left untouched (a
-            // caller-owned condition's `when` cell is not walked, so no ability
-            // of its own can have set it).
+            // nothing here to prevent (a caller-owned condition's `when` cell is
+            // not walked, so no ability of its own can have flagged it).
             ConditionResolution::Caller => {
                 advance_or_finish_emit(cx);
                 EngineOutcome::Done
@@ -152,7 +153,7 @@ pub(in crate::engine) fn dispatch_timing_point(cx: &mut Cx) -> EngineOutcome {
         .continuations
         .top_expect::<TimingPointFrame>()
         .clone();
-    if bucket == EventTiming::When && cx.state.pending_cancellation {
+    if bucket == EventTiming::When && condition_is_prevented(cx) {
         // A `when`-cell ability just prevented the condition. The rest of *this*
         // cell is suppressed along with the cells after it (#714) — Dodge
         // 01023's ruling reaches the `when` cell itself. Any candidate still
@@ -160,16 +161,13 @@ pub(in crate::engine) fn dispatch_timing_point(cx: &mut Cx) -> EngineOutcome {
         // `reaction_windows::withdraw_suppressed_candidates` before that window
         // closed; this is the cursor half, skipping the sub-steps not yet
         // started. Finishing the point hands back to the coordinator, which
-        // reads the same signal at its resolve step and abandons the sequence.
+        // reads the same flag at its resolve step and abandons the sequence.
         //
         // No ownership check is needed: a caller-owned condition's `when` cell is
         // never walked (the arm above returns before any `TimingPoint` is
         // pushed), so a `When` bucket here is coordinator-owned by construction.
-        // The signal names no condition, though — it is one global bool while
-        // Before-windows cannot nest (TODO(#367)) — so a condition emitted while
-        // it is live would consume it and skip the wrong cell. Unreachable today:
-        // the only setter, `Effect::Cancel`, is terminal in every card that uses
-        // it, and one cancellable impact is in flight at a time.
+        // The flag is this point's own parent's (#1055), so a condition emitted
+        // while another is cancelled walks its own `when` cell untouched.
         finish_timing_point(cx);
         return EngineOutcome::Done;
     }
@@ -224,46 +222,19 @@ fn advance_or_finish_emit(cx: &mut Cx) {
     }
 }
 
-/// Read **and clear** the prevention signal an
-/// [`Effect::Cancel`](card_dsl::dsl::Effect::Cancel) in the `when` cell set (Cover
-/// Up 01007's *"…instead"*, #336).
-///
-/// Read at the resolve step rather than at the window's close: the check belongs
-/// between the `when` cell and step 2, which is where the sequence puts the
-/// chance to prevent the condition from resolving.
-///
-/// A `true` here suppresses **the whole rest of the sequence**, not just step 2
-/// (#714). Dodge 01023's ruling, `data/arkhamdb-faq/core/01023.md`, verbatim:
-///
-/// > If the attacking enemy has a **Forced** ability that says "When attacks" or
-/// > "After attacks", that ability does not trigger if an attack is Dodged.
-///
-/// `glossary/After.md` agrees from the other side — after is *"the moment
-/// immediately after the specified timing point or triggering condition **has
-/// fully resolved**"*, and a prevented condition never fully resolves — as does
-/// `glossary/Instead.md` for the nature-changing case: *"If a replacement effect
-/// that uses the word "would" changes the nature of a triggering condition, the
-/// original triggering condition is replaced with the new triggering condition.
-/// No further abilities referencing the original triggering condition may be
-/// used."* Cover Up 01007 (*"When you would discover 1 or more clues at your
-/// location: Discard that many clues from Cover Up instead."*) is exactly that.
-///
-/// **One signal, two suppressing arms.** A cancel (`glossary/Cancel.md`: *"Cancel
-/// abilities interrupt the initiation of an effect, and prevent the effect from
-/// initiating."*) and a nature-changing replacement suppress identically, so the
-/// engine does not distinguish them. The third arm — a replacement that resolves
-/// the condition *by other means*, whose later cells presumably do still run —
-/// is **not** modelled: no corpus card wants one, and it is already recorded as
-/// #366 (replace-with-different-impact). See ADR 0008.
-///
-/// The clear is **every** coordinator-owned arm's, not this or that condition's
-/// — including one whose resolve step ignores the value, like the round end's
-/// bare milestone. That is deliberate: an unconsumed signal would otherwise
-/// reach the next condition's resolve step and cancel the wrong thing. A
-/// caller-owned condition is untouched: its `when` cell is never walked, so it
-/// has no interrupt of its own to have set the signal.
-fn prevented_in_the_when_cell(cx: &mut Cx) -> bool {
-    mem::take(&mut cx.state.pending_cancellation)
+/// Whether the condition the frame on top belongs to was prevented in its
+/// `when` cell: the [`EmitEventFrame::prevented`] flag of the nearest
+/// [`Continuation::EmitEvent`](crate::state::Continuation::EmitEvent) on the
+/// stack. A [`Continuation::TimingPoint`](crate::state::Continuation::TimingPoint)
+/// is pushed straight above its condition's `EmitEvent`, and a window straight
+/// above its cell's `TimingPoint`, so for either on top the nearest one down is
+/// its own condition. The one reading both the coordinator and the window's
+/// withdrawal share (#1055).
+pub(super) fn condition_is_prevented(cx: &Cx) -> bool {
+    cx.state
+        .continuations
+        .topmost_of::<EmitEventFrame>()
+        .is_some_and(|condition| condition.prevented)
 }
 
 /// Pop the [`Continuation::EmitEvent`](crate::state::Continuation::EmitEvent) coordinator on top **without** walking

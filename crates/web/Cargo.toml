@@ -34,3 +34,8 @@ cards = { path = "../cards", features = ["test-support"] }
 wasm-bindgen-test = "0.3"
 wasm-bindgen = "0.2"
 web-sys = { version = "0.3", features = ["Element", "EventTarget", "NodeList", "HtmlElement", "HtmlButtonElement", "HtmlHeadElement", "MouseEvent", "PointerEvent", "PointerEventInit"] }
+
+# The host-only scenario walk (`tests/agnes_scaffold_walk.rs`) plays The
+# Gathering with the picker's scaffold deck, so it needs the scenario modules.
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+scenarios = { path = "../scenarios" }

@@ -67,17 +67,19 @@
 //! state, events, and RNG position on `Rejected` — so validate-first
 //! here is about cheap, precise rejections, not state safety.
 
-use card_dsl::card_data::CardType;
+use card_dsl::card_data::{CardType, SkillKind};
 use card_dsl::dsl::{
     ActionClass, ActionDesignator, CardFilter, ChoiceBranch, CmpOp, Condition, ControlStatus,
     Determination, Effect, EnemyTarget, EntityScope, HarmKind, IntExpr, InvestigatorTarget,
     LocationSet, LocationTarget, ModifierAudience, ModifierScope, Quantity, Restriction,
-    SearchScope, SkillTestKind, Stat, Trigger,
+    RevealClause, SearchScope, SkillTestKind, Stat, Trigger,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::card_registry::{self, CardRegistry};
 use crate::engine::board::{self, Placement};
+use crate::engine::dispatch::actions::evade::EvadeModification;
+use crate::engine::dispatch::actions::fight::FightModification;
 use crate::engine::dispatch::choice::{ChoiceResolution, Grounded};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{
@@ -89,8 +91,8 @@ use crate::event::Event;
 use crate::scenario::{ResolutionId, ScenarioEnding};
 use crate::state::{
     AbilitySource, AdvanceTrigger, CardCode, CardInstanceId, Continuation, DamageSource,
-    DifficultyBasis, EffectFrame, EnemyId, GameState, InvestigatorId, Lifetime, LocationId, Owner,
-    PlayFromHandFrame, RecordedModifier, SkillTestFollowUp,
+    DifficultyBasis, EffectFrame, EmitStep, EnemyId, GameState, InvestigatorId, Lifetime,
+    LocationId, Owner, PlayFromHandFrame, RecordedModifier, SkillTestFollowUp,
 };
 
 /// Failure margin of the just-resolved skill test (bound only while running an
@@ -452,19 +454,23 @@ pub(crate) fn push_designated_action(
 /// Step a [`EffectFrame::Designated`](crate::state::EffectFrame::Designated)
 /// frame: ground the target the designated action needs, then perform it.
 ///
-/// A **Fight** whose target is not yet bound grounds against the co-located
-/// enemy list — auto on exactly one, suspend-in-place on 2+ (re-pushing this
-/// frame, which *is* the prompt, exactly as [`step_leaf`] does). Everything
-/// else needs no grounding and performs immediately.
+/// A **Fight** or **Evade** whose target is not yet bound grounds against its
+/// action's enemy list (co-located for a Fight, engaged for an Evade) — auto
+/// on exactly one, suspend-in-place on 2+ (re-pushing this frame, which *is*
+/// the prompt, exactly as [`step_leaf`] does). Everything else needs no
+/// grounding and performs immediately.
 fn step_designated(
     cx: &mut Cx,
     designator: &ActionDesignator,
     eval_ctx: EvalContext,
 ) -> EngineOutcome {
-    let eval_ctx = if matches!(designator, ActionDesignator::Fight { .. })
-        && eval_ctx.chosen_enemy().is_none()
-    {
-        match ground_fight_target_choice(cx, eval_ctx) {
+    let target = match designator {
+        ActionDesignator::Fight { .. } => Some(DesignatedTarget::Fight),
+        ActionDesignator::Evade { .. } => Some(DesignatedTarget::Evade),
+        _ => None,
+    };
+    let eval_ctx = if let Some(target) = target.filter(|_| eval_ctx.chosen_enemy().is_none()) {
+        match ground_designated_enemy(cx, eval_ctx, target) {
             Ok(ctx) => ctx,
             Err(outcome) => {
                 if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
@@ -489,8 +495,9 @@ fn step_designated(
 /// > described by the ability.
 ///
 /// Every arm routes through the **same primary the basic action uses**
-/// (`actions::fight::perform` / `actions::investigate::perform` /
-/// `elimination::resign_investigator`), passing the modification as its only
+/// (`actions::fight::perform` / `actions::evade::perform` /
+/// `actions::investigate::perform` / `elimination::resign_investigator`),
+/// passing the modification as its only
 /// difference — so *"a designated Fight is a Fight action"* holds in code rather
 /// than by parallel construction.
 ///
@@ -508,7 +515,16 @@ fn perform_designated(
         ActionDesignator::Fight {
             combat_modifier,
             extra_damage,
-        } => perform_designated_fight(cx, eval_ctx, combat_modifier, extra_damage),
+            skill_override,
+            reveal_clause,
+        } => perform_designated_fight(
+            cx,
+            eval_ctx,
+            combat_modifier,
+            extra_damage,
+            *skill_override,
+            reveal_clause.as_ref(),
+        ),
         ActionDesignator::Investigate { shroud_modifier } => {
             // Reject rather than reach `perform`'s lapse suppression: a board
             // that changed underneath the activation is a rejection here.
@@ -533,22 +549,45 @@ fn perform_designated(
         // 'Activate' action."* No procedure, so nothing to perform — the
         // ability's whole content is its residual effect.
         ActionDesignator::Parley => EngineOutcome::Done,
-        // Unreachable through the activation path: `can_perform` rejects both
-        // pre-cost, since no implemented card prints either. One shared helper
-        // owns the rejection (and its `TODO(#818)`), so the two sites share a
+        ActionDesignator::Evade {
+            skill_override,
+            reveal_clause,
+            on_success,
+        } => {
+            // Bound by `step_designated` before this runs, and `can_perform`
+            // rejected an empty candidate list pre-cost, so `None` is a
+            // state-shape violation.
+            let Some(enemy_id) = eval_ctx.chosen_enemy() else {
+                return EngineOutcome::Rejected {
+                    reason: "Evade: no engaged enemy chosen".into(),
+                };
+            };
+            actions::evade::perform(
+                cx,
+                eval_ctx.controller,
+                enemy_id,
+                EvadeModification {
+                    skill_override: *skill_override,
+                    reveal_clause: reveal_clause.clone(),
+                    on_success: on_success.as_deref().cloned(),
+                },
+                eval_ctx.ability_source,
+            )
+        }
+        // Unreachable through the activation and play paths: `can_perform`
+        // rejects it pre-cost, since no implemented card prints one. One helper
+        // owns the rejection (and its `TODO(#1059)`), so the two sites share a
         // wording.
-        ActionDesignator::Evade => EngineOutcome::Rejected {
-            reason: actions::designated_unimplemented("Evade"),
-        },
         ActionDesignator::Move => EngineOutcome::Rejected {
-            reason: actions::designated_unimplemented("Move"),
+            reason: actions::designated_unimplemented_move(),
         },
     }
 }
 
 /// The **Fight** arm of [`perform_designated`]: evaluate `extra_damage` against
 /// the live board, then run the shared Fight primary against the grounded
-/// target.
+/// target, testing `skill_override` if the card prints one and carrying its
+/// `reveal_clause` onto the test.
 ///
 /// `extra_damage` is evaluated here because the Fight follow-up consumes it as a
 /// `u8`; `combat_modifier` is **not**, travelling into the test as an
@@ -561,6 +600,8 @@ fn perform_designated_fight(
     eval_ctx: &EvalContext,
     combat_modifier: &IntExpr,
     extra_damage: &IntExpr,
+    skill_override: Option<SkillKind>,
+    reveal_clause: Option<&RevealClause>,
 ) -> EngineOutcome {
     let extra_damage_n = match eval_int_expr(cx.state, cx.cards, eval_ctx, extra_damage) {
         Ok(v) => u8::try_from(v.max(0)).unwrap_or(u8::MAX),
@@ -587,8 +628,12 @@ fn perform_designated_fight(
         cx,
         eval_ctx.controller,
         enemy_id,
-        Some(combat_modifier.clone()),
-        extra_damage_n,
+        FightModification {
+            combat_modifier: Some(combat_modifier.clone()),
+            extra_damage: extra_damage_n,
+            skill_override,
+            reveal_clause: reveal_clause.cloned(),
+        },
         eval_ctx.ability_source,
     )
 }
@@ -716,6 +761,7 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
             on_success.as_ref().map(|b| (**b).clone()),
             on_fail.as_ref().map(|b| (**b).clone()),
             eval_ctx.ability_source,
+            None,
             None,
         ),
         Effect::DiscardSelf => discard_self(cx, &eval_ctx),
@@ -946,8 +992,8 @@ fn draw_cards_effect(
 /// Resolve [`Effect::SearchDeck`]: the resolved investigator looks at a deck
 /// region (`scope`) ∩ `filter`, takes one eligible card to hand (Rules
 /// Reference p.18: obligated if any exist; 0 ⇒ find nothing), then shuffles
-/// the deck. The select reuses the Axis-A choice machinery (cursor replay /
-/// suspend on 2+), exactly like [`apply_choose_one`]. A `Chosen` target is
+/// the deck. The select is a pick among cards in a deck, so it goes through
+/// [`choice::resolve_card_choice`], as a native's would. A `Chosen` target is
 /// already bound by [`ground_chosen_targets`]; the take + shuffle are the only
 /// mutations and run after the pick resolves.
 fn apply_search_deck(
@@ -992,34 +1038,23 @@ fn apply_search_deck(
         .collect();
 
     // 3. Choice convention — but 0 ⇒ find nothing (not reject).
-    let chosen_deck_index: Option<usize> =
-        match choice::resolve_choice_count(eligible.len(), cx.state.interactive_acknowledge) {
-            ChoiceResolution::Empty => None,
-            ChoiceResolution::Auto(i) => Some(eligible[i].0),
-            ChoiceResolution::Suspend => {
-                if let Some(OptionId(i)) = eval_ctx.chosen_option() {
-                    match eligible.get(i as usize) {
-                        Some((idx, _)) => Some(*idx),
-                        None => {
-                            return EngineOutcome::Rejected {
-                                reason: format!(
-                                    "SearchDeck: pick {i} out of range (0..{})",
-                                    eligible.len()
-                                )
-                                .into(),
-                            }
-                        }
-                    }
-                } else {
-                    let labels = eligible
-                        .iter()
-                        .map(|(_, c)| choice::card_name(cx.cards, c))
-                        .collect();
-                    suspend_leaf_in_place(cx, node, eval_ctx);
-                    return choice::awaiting_choice("Search: choose a card to take", labels);
-                }
+    let eligible_codes: Vec<CardCode> = eligible.iter().map(|(_, c)| c.clone()).collect();
+    let chosen_deck_index: Option<usize> = match choice::resolve_card_choice(
+        cx.state,
+        cx.cards,
+        &eval_ctx,
+        &eligible_codes,
+        "Search: choose a card to take",
+    ) {
+        Grounded::Empty => None,
+        Grounded::Picked(i) => Some(eligible[i].0),
+        Grounded::Suspend(outcome) => {
+            if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
+                suspend_leaf_in_place(cx, node, eval_ctx);
             }
-        };
+            return outcome;
+        }
+    };
 
     // 4. Take chosen → hand.
     if let Some(idx) = chosen_deck_index {
@@ -1606,14 +1641,20 @@ fn discover_clue(
     )
 }
 
-/// Set the `pending_cancellation` signal for [`Effect::Cancel`] (Axis D #336).
+/// Flag the condition [`Effect::Cancel`] prevents (Axis D #336): the topmost
+/// [`EmitEventFrame`](crate::state::EmitEventFrame) whose cursor is still at
+/// [`EmitStep::When`], i.e. the condition whose `when` cell is open (#1055).
 ///
-/// A resolution frame must be open: `Cancel` only resolves inside a
-/// Before-timing reaction window (via `fire_pending_trigger` /
-/// `play_fast_event`), which keeps its frame on the continuation stack until
-/// close. The check scans for any window frame's *presence* (not just the top,
-/// and ignoring whether candidates remain — the fired candidate is already
-/// removed by the time its effect runs).
+/// That is the cancelled condition's own frame. `Cancel` only resolves inside a
+/// `when`-cell window (via `fire_pending_trigger` / `play_fast_event`), and a
+/// condition's cursor stays at `When` until that cell finishes. A condition the
+/// same effect emits *before* its `Cancel` has completed by then, and one it
+/// emits after starts on a fresh, unflagged frame.
+///
+/// Two invariants, both of which a malformed card breaks: a resolution window
+/// is open (scanned for by *presence*, not just the top, and ignoring whether
+/// candidates remain — the fired candidate is already removed by the time its
+/// effect runs), and a `when`-step condition sits beneath it.
 fn cancel_current_impact(cx: &mut Cx) -> EngineOutcome {
     debug_assert!(
         cx.state
@@ -1621,10 +1662,25 @@ fn cancel_current_impact(cx: &mut Cx) -> EngineOutcome {
             .iter()
             .any(|c| c.pending_candidates().is_some()),
         "Effect::Cancel evaluated with no open resolution window — a card \
-         cancelled outside a Before-timing window (TODO(#367) covers nesting; \
-         a malformed card otherwise)"
+         cancelled outside a Before-timing window"
     );
-    cx.state.pending_cancellation = true;
+    let prevented = cx
+        .state
+        .continuations
+        .frames_mut()
+        .rev()
+        .find_map(|c| match c {
+            Continuation::EmitEvent(emit) if emit.step == EmitStep::When => Some(emit),
+            _ => None,
+        });
+    debug_assert!(
+        prevented.is_some(),
+        "Effect::Cancel evaluated with no condition at its `when` step — \
+         nothing for the cancel to prevent"
+    );
+    if let Some(emit) = prevented {
+        emit.prevented = true;
+    }
     EngineOutcome::Done
 }
 
@@ -2042,36 +2098,54 @@ fn ground_enemy_choice(
     Ok(ctx)
 }
 
-/// Ground a designated **Fight**'s target against the co-located-enemy list.
+/// The designated actions that target an enemy, which [`step_designated`]
+/// grounds before performing.
+#[derive(Clone, Copy)]
+enum DesignatedTarget {
+    Fight,
+    Evade,
+}
+
+/// Ground a designated **Fight**'s or **Evade**'s target against its action's
+/// own enemy list.
 ///
-/// Candidates are the Fight action's own
-/// [`candidates`](crate::engine::dispatch::actions::fight::candidates) — every
-/// enemy *at the controller's location* (not engaged-only), in ascending
-/// [`EnemyId`] order, the list the basic Fight action validates against (#451).
-/// Unlike the basic action, the grounding does not also filter out a malformed
-/// fight value. Delegates to [`choice::resolve_grounded_choice`]:
-/// - 0 candidates → `Rejected` ("Fight: no enemy at your location").
+/// Candidates are the basic action's own `candidates`, in ascending [`EnemyId`]
+/// order, the list the basic action validates against: for a Fight
+/// [`fight::candidates`](crate::engine::dispatch::actions::fight::candidates),
+/// every enemy *at the controller's location* (not engaged-only, #451); for an
+/// Evade [`evade::candidates`](crate::engine::dispatch::actions::evade::candidates),
+/// every enemy *engaged with the controller*. Unlike the basic action, the
+/// grounding does not also filter out a malformed fight or evade value.
+/// Delegates to [`choice::resolve_grounded_choice`]:
+/// - 0 candidates → `Rejected`.
 /// - 1 candidate → auto-bind (no suspend; preserves single-enemy behaviour).
 /// - 2+ candidates → suspend `AwaitingInput { PickSingle }`.
 ///
 /// On resume the evaluator re-enters the same
 /// [`Designated`](crate::state::EffectFrame::Designated) step; `chosen_option`
 /// is set and `resolve_grounded_choice` picks from the same deterministic list.
-fn ground_fight_target_choice(
+fn ground_designated_enemy(
     cx: &mut Cx,
     eval_ctx: EvalContext,
+    target: DesignatedTarget,
 ) -> Result<EvalContext, EngineOutcome> {
-    let candidates = actions::fight::candidates(cx.state, eval_ctx.controller);
-    let id = picked_or_reject(
-        choice::resolve_grounded_choice(
-            cx.state,
-            cx.cards,
-            &eval_ctx,
-            &candidates,
+    let (candidates, prompt, none) = match target {
+        DesignatedTarget::Fight => (
+            actions::fight::candidates(cx.state, eval_ctx.controller),
             "Choose an enemy to attack",
-            |id| OptionTarget::Enemy(*id),
+            "Fight: no enemy at your location",
         ),
-        "Fight: no enemy at your location",
+        DesignatedTarget::Evade => (
+            actions::evade::candidates(cx.state, eval_ctx.controller),
+            "Choose an enemy to evade",
+            "Evade: no enemy engaged with you",
+        ),
+    };
+    let id = picked_or_reject(
+        choice::resolve_grounded_choice(cx.state, cx.cards, &eval_ctx, &candidates, prompt, |id| {
+            OptionTarget::Enemy(*id)
+        }),
+        none,
     )?;
     let mut ctx = eval_ctx;
     ctx.set_chosen_enemy(id);
@@ -2221,6 +2295,23 @@ pub(crate) fn effect_can_change_state(
             ..
         }
         | Effect::AutoResolve { .. } => state.current_skill_test().is_some(),
+        // Dealing damage to a chosen enemy needs an enemy to choose: with none
+        // in the scope grounding would find no candidate and reject, so the
+        // ability is provably inert. Agnes Baker 01004's *"Deal 1 damage to an
+        // enemy at your location"* is not offered with no enemy there. Scans the
+        // same candidates `ground_enemy_choice` enumerates, so the gate and
+        // the grounding agree; once an enemy is bound (re-entry within an
+        // evaluation) it is the target. Beat Cop 01018's activation keeps its
+        // own pre-cost check (`legality::check_activation_target_available`),
+        // which runs first and words the rejection.
+        Effect::DealDamageToEnemy {
+            target: EnemyTarget::Chosen(choose),
+            amount,
+        } => {
+            *amount > 0
+                && (ctx.chosen_enemy().is_some()
+                    || !combat::enemies_in_scope(state, ctx.controller, choose.scope).is_empty())
+        }
         // A sequence changes state iff any step can (an empty `Seq` is inert).
         Effect::Seq(steps) => steps
             .iter()

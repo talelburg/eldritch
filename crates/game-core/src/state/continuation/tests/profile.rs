@@ -64,6 +64,7 @@ fn an_encounter_card_disposal_does_not_await_input() {
     let f = Continuation::EncounterCard(EncounterCardFrame {
         card: CardCode::new("01163"),
         disposition: EncounterDisposition::Discard,
+        revelation_resolved: false,
     });
     assert!(!f.awaits_input());
 }
@@ -101,6 +102,7 @@ fn the_emit_event_coordinator_does_not_await_input() {
     let f = Continuation::EmitEvent(EmitEventFrame {
         event: TimingEvent::RoundEnded,
         step: EmitStep::When,
+        prevented: false,
     });
     assert!(!f.awaits_input());
 }
@@ -377,6 +379,7 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             Continuation::EmitEvent(EmitEventFrame {
                 event: TimingEvent::RoundEnded,
                 step: EmitStep::After,
+                prevented: false,
             }),
             profile(DRIVEN, COMPLETE),
         ),
@@ -394,6 +397,7 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
                 disposition: EncounterDisposition::Spawn {
                     investigator: InvestigatorId(1),
                 },
+                revelation_resolved: false,
             }),
             profile(DRIVEN, COMPLETE),
         ),

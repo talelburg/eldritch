@@ -4,7 +4,7 @@
 use std::cmp;
 
 use card_dsl::card_data::{CardMetadata, CardType};
-use card_dsl::dsl::{Ability, Effect, Trigger};
+use card_dsl::dsl::{Ability, ActionDesignator, Effect, Trigger};
 
 use crate::action::InputResponse;
 use crate::card_registry::CardRegistry;
@@ -19,8 +19,8 @@ use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
-    ActionResume, AssetEntry, CardCode, CardInPlay, DiscardPile, InvestigatorId, MulliganFrame,
-    Owner, PlayFromHandFrame, Zone,
+    ActionResume, AssetEntry, CardCode, CardInPlay, Deck, DiscardPile, InvestigatorId,
+    MulliganFrame, Owner, PlayFromHandFrame, Zone,
 };
 
 /// Starting hand size at scenario setup. Per the Rules Reference,
@@ -31,8 +31,10 @@ pub(super) const INITIAL_HAND_SIZE: u8 = 5;
 /// code has no metadata — so the engine's unit tests, whose test registry knows
 /// no real card, behave as if no card is a weakness.
 ///
-/// One consumer: the opening-hand set-aside below. Where a card goes when it
-/// leaves play is its owner's question, not this one's (#976).
+/// Two consumers: the opening-hand set-aside below, and the upkeep hand-size
+/// discard, which may not choose a weakness (`phases::hand_size_discard_count`).
+/// Where a card goes when it leaves play is its owner's question, not this
+/// one's (#976).
 pub(super) fn is_weakness_code(cards: &CardRegistry, code: &CardCode) -> bool {
     (cards.metadata_for)(code).is_some_and(CardMetadata::is_weakness)
 }
@@ -367,6 +369,39 @@ pub fn discard_random_from_hand(cx: &mut Cx, investigator: InvestigatorId) -> Op
         to: DiscardPile::Investigator(investigator),
     });
     Some(card)
+}
+
+/// Move the card `from` cards below the top of `deck` to `to` cards below the
+/// top, shifting the cards between them by one (#1047: Scrying 01061 returns
+/// the cards it looked at *"to the top of that deck in any order"*). Returns
+/// whether it moved anything: an index past the bottom, or a missing
+/// investigator, is a no-op.
+///
+/// No event announces it. The deck's order is hidden information, and an event
+/// naming the moved card would put it in every player's log, while one naming
+/// no card would announce nothing the activation hasn't.
+pub(crate) fn move_card_in_deck(cx: &mut Cx, deck: Deck, from: usize, to: usize) -> bool {
+    match deck {
+        Deck::Investigator(id) => {
+            let Some(inv) = cx.state.investigators.get_mut(&id) else {
+                return false;
+            };
+            if from >= inv.deck.len() || to >= inv.deck.len() {
+                return false;
+            }
+            let card = inv.deck.remove(from);
+            inv.deck.insert(to, card);
+        }
+        Deck::Encounter => {
+            let deck = &mut cx.state.encounter_deck;
+            if from >= deck.len() || to >= deck.len() {
+                return false;
+            }
+            let card = deck.remove(from).expect("index checked above");
+            deck.insert(to, card);
+        }
+    }
+    true
 }
 
 /// Grant `amount` resources to `investigator`: saturating-add to the
@@ -866,7 +901,10 @@ pub(super) fn resolve_play_target(
 /// [`PlayFromHand`](crate::state::Continuation::PlayFromHand) frame
 /// (Slice D #423) that holds the card; when that effect pops, the frame's
 /// disposal places it — into `cards_in_play` for assets, or into `discard`
-/// (with an emitted [`Event::CardDiscarded`]) for events.
+/// (with an emitted [`Event::CardDiscarded`]) for events. Only then, at step 4,
+/// is the completed play announced to the timing system as
+/// `TimingEvent::CardPlayed` (Heirloom of Hyperborea 01012); the step-3
+/// [`Event::CardPlayed`] is the log entry, not that announcement.
 ///
 /// # State-mutation contract
 ///
@@ -880,7 +918,7 @@ pub(super) fn play_card(
     hand_index: u8,
 ) -> EngineOutcome {
     let PlayCheckResult {
-        abilities: _,
+        abilities,
         is_fast,
         card_type: _,
     } = match legality::check_play_card(cx.state, cx.cards, investigator, hand_index) {
@@ -910,10 +948,10 @@ pub(super) fn play_card(
     // A non-fast play is taken as an action: the step pays its one action, and
     // provokes attacks of opportunity before the play completes on resume. Its
     // hook pays the resource cost (RR p.22, before any attack resolves, #501)
-    // and commences the play: `CardPlayed` is announced and the card leaves hand
+    // and commences the play: `Event::CardPlayed` is logged and the card leaves hand
     // to ride the frames until it is placed (RR Appendix I step 3 → 4). The
     // card itself rides the `ActionResolution` frame through the attacks.
-    let description = ActionDescription::play(code.clone());
+    let description = ActionDescription::play(code.clone(), play_designator(&abilities).cloned());
     take::take(cx, investigator, &description, |cx| {
         pay_play_cost(cx, investigator, &code);
         let card = commence_play(cx, investigator, idx);
@@ -922,8 +960,9 @@ pub(super) fn play_card(
 }
 
 /// Move the asset **instance** `card` into `investigator`'s play area (RR
-/// Appendix I step 4, "placed in play"): push it to `cards_in_play` and announce
-/// it via the `EnteredPlay` timing event. The emit outcome is intentionally
+/// Appendix I step 4, "placed in play"): push it to `cards_in_play` and, for a
+/// card played from hand, announce the completed play (`CardPlayed`) and its
+/// entering play (`EnteredPlay`). The emit outcomes are intentionally
 /// discarded — the frame driving this call is already popped, so the `drive`
 /// loop opens any after-enters-play reaction window (Research Librarian 01032)
 /// itself. Called by `slots::enter_asset_making_room` once the asset's slots are
@@ -942,6 +981,7 @@ pub(in crate::engine) fn enter_asset_into_play(
     entry: AssetEntry,
 ) {
     let instance = card.instance_id;
+    let code = card.code.clone();
     cx.state
         .investigators
         .get_mut(&investigator)
@@ -952,6 +992,9 @@ pub(in crate::engine) fn enter_asset_into_play(
     // was already in play and stays there, so announcing it would fire every
     // after-enters-play reaction a second time (#772).
     if entry == AssetEntry::PlayedFromHand {
+        // The play is complete (Appendix I step 4). Queued first so that
+        // `EnteredPlay`'s sequence, pushed above it, resolves first.
+        let _ = emit::queue_event(cx, &TimingEvent::CardPlayed { investigator, code });
         let _ = emit::queue_event(
             cx,
             &TimingEvent::EnteredPlay {
@@ -968,17 +1011,18 @@ pub(in crate::engine) fn enter_asset_into_play(
 /// or in its owner's discard pile if it's an event)". Pops the frame first (which
 /// takes the card off it), then places the card by destination: an **event** goes
 /// to its owner's discard pile, an **asset** is minted into play and announced via
-/// `EnteredPlay`. Because the frame is popped *before* `queue_event`, a reaction
-/// window the latter queues (Research Librarian 01032) lands on top and the drive
-/// loop opens it — no manual window open, no second stage. Returns `Done`
-/// (disposal never awaits input); a missing-registry re-derive surfaces as
-/// `Rejected`.
+/// `EnteredPlay`. Either way the completed play is then announced via
+/// `CardPlayed` (Heirloom of Hyperborea 01012). Because the frame is popped
+/// *before* `queue_event`, a reaction window the latter queues (Research
+/// Librarian 01032) lands on top and the drive loop opens it — no manual window
+/// open, no second stage. Returns `Done` (disposal never awaits input); a
+/// missing-registry re-derive surfaces as `Rejected`.
 ///
 /// The frame holds no card when something else already placed it: elimination's
 /// sweep removed it from the game (RR p.10 step 1), or
 /// [`Effect::AttachSelfToLocation`](card_dsl::dsl::Effect::AttachSelfToLocation)
 /// re-homed it (Barricade 01038). Either way there is nothing left to place and
-/// the pop is the whole disposal.
+/// the pop is the whole disposal, with no `CardPlayed` announced.
 pub(super) fn dispose_play_from_hand(cx: &mut Cx) -> EngineOutcome {
     let PlayFromHandFrame { investigator, card } =
         cx.state.continuations.pop_expect::<PlayFromHandFrame>();
@@ -995,8 +1039,16 @@ pub(super) fn dispose_play_from_hand(cx: &mut Cx) -> EngineOutcome {
 
     match destination {
         PlayDestination::Discard => {
-            discard_played_card(cx, investigator, card);
-            EngineOutcome::Done
+            discard_played_card(cx, investigator, card.clone());
+            // The play is complete (Appendix I step 4): announced in tail
+            // position (ADR 0003).
+            emit::queue_event(
+                cx,
+                &TimingEvent::CardPlayed {
+                    investigator,
+                    code: card,
+                },
+            )
         }
         PlayDestination::InPlay => {
             // Play from hand mints the instance here, at the door: the card is
@@ -1039,6 +1091,13 @@ pub(super) fn dispose_play_from_hand(cx: &mut Cx) -> EngineOutcome {
 /// `OnPlay`); the rejecting `DiscoverClue` cards (Working a Hunch 01037,
 /// Evidence! 01022) are all Fast and never park. Give this suppress-on-lapse
 /// when a board-changing `AoO` reaction lands.
+///
+/// An event printing a bold designator on its `OnPlay` ability (Blinding Light
+/// 01066's **Evade**) performs that action when played, as an activated
+/// ability does (`abilities::push_activation_resolution`): the designated
+/// action goes on top of the residual effect, so it resolves first, and the
+/// card is disposed of only once both have. The legality check asked
+/// `designator::can_perform` before anything was paid.
 fn complete_play(cx: &mut Cx, investigator: InvestigatorId, card: CardCode) -> EngineOutcome {
     let (_destination, abilities, _is_fast, _card_type) = match resolve_play_target(cx.cards, &card)
     {
@@ -1053,16 +1112,32 @@ fn complete_play(cx: &mut Cx, investigator: InvestigatorId, card: CardCode) -> E
         investigator,
         card: Some(card),
     });
+    let eval_ctx = EvalContext::for_controller(investigator);
     let on_play: Vec<Effect> = abilities
-        .into_iter()
+        .iter()
         .filter(|a| a.trigger == Trigger::OnPlay)
-        .map(|a| a.effect)
+        .map(|a| a.effect.clone())
         .collect();
     if !on_play.is_empty() {
-        let eval_ctx = EvalContext::for_controller(investigator);
         evaluator::push_effect(cx, &Effect::Seq(on_play), eval_ctx);
     }
+    if let Some(designator) = play_designator(&abilities) {
+        evaluator::push_designated_action(cx, designator, eval_ctx);
+    }
     EngineOutcome::Done
+}
+
+/// The bold action designator a card's `OnPlay` ability prints, if any:
+/// Blinding Light 01066's **Evade**. Playing the card performs that action
+/// (`ActionDesignator`'s "It lives on the ability, not on the trigger"), so the
+/// play's legality, its action description and its resolution all read it from
+/// here. No card prints more than one `OnPlay` ability with a designator; the
+/// first is the one read.
+pub(super) fn play_designator(abilities: &[Ability]) -> Option<&ActionDesignator> {
+    abilities
+        .iter()
+        .filter(|a| a.trigger == Trigger::OnPlay)
+        .find_map(|a| a.designator.as_ref())
 }
 
 /// Complete a non-fast card play after its `AoO` loop (#378). The actor-`Active`

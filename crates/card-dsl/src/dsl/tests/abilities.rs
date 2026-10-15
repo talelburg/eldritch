@@ -5,10 +5,7 @@ use super::*;
 #[test]
 fn a_designator_maps_onto_the_action_class_it_performs() {
     assert_eq!(fight(0u8, 0u8).action_class(), Some(ActionClass::Fight));
-    assert_eq!(
-        ActionDesignator::Evade.action_class(),
-        Some(ActionClass::Evade)
-    );
+    assert_eq!(evade().action_class(), Some(ActionClass::Evade));
     assert_eq!(
         ActionDesignator::Move.action_class(),
         Some(ActionClass::Move)
@@ -19,6 +16,43 @@ fn a_designator_maps_onto_the_action_class_it_performs() {
         ActionDesignator::Resign,
     ] {
         assert_eq!(d.action_class(), None, "{d:?} names no ActionClass");
+    }
+}
+
+/// The designator is the ability's, and only two builders set it (D21 of
+/// #777): `activated_as` on an `Activated` ability and `on_play_as` on an
+/// event's `OnPlay` ability. Every other builder leaves it `None`, so a
+/// designator on a reaction, constant, commit, revelation or elder-sign
+/// ability is not something a card can build.
+#[test]
+fn only_the_activated_and_on_play_builders_carry_a_designator() {
+    let parlor = activated_as(ActionDesignator::Resign, 1, vec![], seq([]));
+    assert_eq!(parlor.trigger, Trigger::Activated { action_cost: 1 });
+    assert_eq!(parlor.designator, Some(ActionDesignator::Resign));
+
+    // Blinding Light 01066: "<b>Evade.</b> This evasion attempt uses
+    // [willpower] instead of [agility]. …"
+    let played = on_play_as(evade(), seq([]));
+    assert_eq!(played.trigger, Trigger::OnPlay);
+    assert_eq!(played.designator, Some(evade()));
+    assert!(played.costs.is_empty());
+
+    for undesignated in [
+        constant(seq([])),
+        on_play(seq([])),
+        on_commit(seq([])),
+        on_skill_test_resolution(TestOutcome::Success, seq([])),
+        reaction_on_event(EventPattern::RoundEnded, EventTiming::After, seq([])),
+        forced_on_event(EventPattern::RoundEnded, EventTiming::After, seq([])),
+        revelation(seq([])),
+        activated(1, vec![], seq([])),
+        elder_sign(IntExpr::Lit(1)),
+    ] {
+        assert_eq!(
+            undesignated.designator, None,
+            "{:?} prints no designator",
+            undesignated.trigger,
+        );
     }
 }
 

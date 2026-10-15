@@ -214,6 +214,7 @@ pub fn test_skill_test(
         bonus_clues_discovered: 0,
         resolved: None,
         revealed: None,
+        reveal_clause: None,
     }
 }
 

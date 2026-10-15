@@ -26,6 +26,8 @@ use std::fmt;
 use card_dsl::dsl::{ActionClass, ActionDesignator};
 
 use crate::card_registry::CardRegistry;
+use crate::engine::dispatch::actions::evade::EvadeModification;
+use crate::engine::dispatch::actions::fight::FightModification;
 use crate::engine::dispatch::actions::{draw, engage, evade, fight, investigate, r#move, resource};
 use crate::engine::dispatch::{abilities, cards, combat};
 use crate::engine::outcome::EngineOutcome;
@@ -112,14 +114,20 @@ impl ActionDescription {
         }
     }
 
-    /// A non-fast play of the card `code`, which costs one action. An event
-    /// carries no designator until #778 gives it one; Backstab 01051's
-    /// **Fight** then makes its play exempt with no change here.
-    pub(crate) fn play(code: CardCode) -> Self {
+    /// A non-fast play of the card `code`, which costs one action, printing
+    /// `designator` on its `OnPlay` ability if it prints one. Playing such an
+    /// event *is* the designated action, so it is exempt from attacks of
+    /// opportunity and surcharged as that action. Official FAQ,
+    /// `Frequently_Asked_Questions.md`, on Backstab 01051: *"Abilities with a
+    /// bold action designator (like Fight, Evade or Investigate) count as an
+    /// action of that type. In this case, since Backstab counts as a Fight
+    /// action, no attacks of opportunity are made"*. Blinding Light 01066's
+    /// **Evade** is the one built.
+    pub(crate) fn play(code: CardCode, designator: Option<ActionDesignator>) -> Self {
         Self {
             kind: ActionKind::Play { code },
             action_cost: 1,
-            designator: None,
+            designator,
         }
     }
 
@@ -170,7 +178,7 @@ impl ActionDescription {
             self.designator,
             Some(
                 ActionDesignator::Fight { .. }
-                    | ActionDesignator::Evade
+                    | ActionDesignator::Evade { .. }
                     | ActionDesignator::Parley
                     | ActionDesignator::Resign
             )
@@ -327,6 +335,30 @@ pub(crate) fn take(
     }
 }
 
+/// `investigator` loses `count` actions, saturating at none left.
+/// `glossary/Action.md`: *"If an effect causes an investigator to lose one or
+/// more actions, that investigator has that many fewer standard actions to take
+/// that turn (the investigator’s three standard actions are the ones that are
+/// "lost" first)."* No additional actions are modelled, so the standard ones
+/// are all there is to lose. Announces the new count only when it changed.
+///
+/// Reached through `NativeCx::lose_actions` (Blinding Light 01066's *"lose 1
+/// action this turn"*). An investigator not in state loses nothing.
+pub(crate) fn lose_actions(cx: &mut Cx, investigator: InvestigatorId, count: u8) {
+    let Some(inv) = cx.state.investigators.get_mut(&investigator) else {
+        return;
+    };
+    let new_count = inv.actions_remaining.saturating_sub(count);
+    if new_count == inv.actions_remaining {
+        return;
+    }
+    inv.actions_remaining = new_count;
+    cx.events.push(Event::ActionsRemainingChanged {
+        investigator,
+        new_count,
+    });
+}
+
 /// Perform the action `resume` names for `investigator`: the action's effect,
 /// once its costs are paid and any attacks of opportunity are made.
 ///
@@ -349,8 +381,14 @@ pub(in crate::engine::dispatch) fn perform(
         // A basic attack carries no modification. A designated Fight (every
         // corpus weapon) reaches the same primary with its combat bonus and its
         // bonus damage.
-        ActionResume::Fight { enemy } => fight::perform(cx, investigator, enemy, None, 0, None),
-        ActionResume::Evade { enemy } => evade::perform(cx, investigator, enemy),
+        ActionResume::Fight { enemy } => {
+            fight::perform(cx, investigator, enemy, FightModification::default(), None)
+        }
+        // Likewise a basic evasion; a designated Evade (Blinding Light 01066)
+        // reaches the same primary with its skill override and clauses.
+        ActionResume::Evade { enemy } => {
+            evade::perform(cx, investigator, enemy, EvadeModification::default(), None)
+        }
         ActionResume::ActivateAbility {
             source,
             designator,

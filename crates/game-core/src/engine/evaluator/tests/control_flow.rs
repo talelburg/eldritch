@@ -23,6 +23,7 @@ fn state_with_in_flight_kind(kind: SkillTestKind) -> GameState {
             bonus_clues_discovered: 0,
             resolved: None,
             revealed: None,
+            reveal_clause: None,
         }));
     state
 }

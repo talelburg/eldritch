@@ -101,6 +101,48 @@ pub fn resolve_grounded_choice<T: Clone>(
     }
 }
 
+/// Offer the controller a choice among cards **in a deck** (#1047): the one way
+/// an evaluator arm or a card-local native picks a card that has no board
+/// surface to anchor on, such as a searched card or a card looked at on top of
+/// a deck. It hands back the picked card's index into `codes`.
+///
+/// The rule is [`resolve_grounded_choice`]'s, so a threaded pick is checked
+/// first and a lone card is prompted only under
+/// `state.interactive_acknowledge` (#466). The difference is the prompt: each
+/// option is labelled with its card's name and left un-anchored, so the host
+/// renders it in the prompt banner (ADR 0015 excludes deck cards from its two
+/// natures).
+///
+/// `codes` must be read from `state` in a deterministic order, because a
+/// resumed node reads them again and indexes the same list by the pick. Like
+/// `resolve_grounded_choice`, it pushes nothing.
+pub fn resolve_card_choice(
+    state: &GameState,
+    cards: &CardRegistry,
+    ctx: &EvalContext,
+    codes: &[CardCode],
+    prompt: &str,
+) -> Grounded<usize> {
+    if let Some(OptionId(i)) = ctx.chosen_option() {
+        let i = i as usize;
+        return if i < codes.len() {
+            Grounded::Picked(i)
+        } else {
+            Grounded::Suspend(EngineOutcome::Rejected {
+                reason: format!("{prompt}: pick {i} out of range (0..{})", codes.len()).into(),
+            })
+        };
+    }
+    match resolve_choice_count(codes.len(), state.interactive_acknowledge) {
+        ChoiceResolution::Empty => Grounded::Empty,
+        ChoiceResolution::Auto(i) => Grounded::Picked(i),
+        ChoiceResolution::Suspend => {
+            let labels = codes.iter().map(|code| card_name(cards, code)).collect();
+            Grounded::Suspend(awaiting_choice(prompt, labels))
+        }
+    }
+}
+
 /// Build the `AwaitingInput` for a controller pick among board entities, one
 /// anchor per offered option in offered order (`OptionId(i)` is the index).
 /// Each option renders on the entity its anchor names (S5, #540), and its label
@@ -253,12 +295,11 @@ pub(crate) fn awaiting_decision(
 
 /// Build the `AwaitingInput` for a controller choice from one render label per
 /// offered option, each **un-anchored** (no board home, so the host renders it in
-/// the prompt banner). Used by the search-deck pick, whose options are cards in a
-/// deck with no board surface (ADR 0015 excludes it), labelled by [`card_name`].
-/// Card-local native choices went the other way in #950: they are entity
-/// selections, offered through [`resolve_grounded_choice`] with an anchor per
-/// option.
-pub(crate) fn awaiting_choice(prompt: impl Into<String>, labels: Vec<String>) -> EngineOutcome {
+/// the prompt banner). Used by [`resolve_card_choice`], whose options are cards
+/// in a deck with no board surface (ADR 0015 excludes them), labelled by
+/// [`card_name`]. A choice among board entities goes the other way (#950):
+/// through [`resolve_grounded_choice`], with an anchor per option.
+fn awaiting_choice(prompt: impl Into<String>, labels: Vec<String>) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_single(
             prompt,

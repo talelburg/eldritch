@@ -70,7 +70,7 @@ use crate::card_data::{CardMetadata, CardType, SkillKind, UseKind};
 
 // ---- triggers --------------------------------------------------
 
-/// The **bold action designator** an activated ability prints (`glossary/Ability.md`,
+/// The **bold action designator** an ability prints (`glossary/Ability.md`,
 /// "Action Designators"), verbatim:
 ///
 /// > Some abilities have bold action designators (such as **Fight**, **Evade**,
@@ -78,8 +78,8 @@ use crate::card_data::{CardMetadata, CardType, SkillKind, UseKind};
 /// > designated action as described in the rules, but modified in the manner
 /// > described by the ability.
 ///
-/// It is **declared on the trigger, not inferred from the effect**, because the
-/// rules quote the designator and not the effect the ability happens to have.
+/// It is **declared on the [`Ability`], not inferred from the effect**, because
+/// the rules quote the designator and not the effect the ability happens to have.
 /// `glossary/Attack_of_Opportunity.md`, verbatim:
 ///
 /// > Each time an investigator is engaged with one or more ready enemies and
@@ -139,15 +139,17 @@ use crate::card_data::{CardMetadata, CardType, SkillKind, UseKind};
 ///   to have been defeated."* Nothing in the corpus parameterises the
 ///   resignation, so the modification is empty.
 ///
-/// `TODO(#778)`: the designator rides [`Trigger::Activated`] because no
-/// implemented card prints one on another trigger. Backstab 01051 — which #778
-/// brings in with the rest of the level-0 Rogue pool — prints a bold
-/// **Fight** on an *event* (`Trigger::OnPlay`) and the rules attach the
-/// designator to the ability rather than to how it was reached — the FAQ
-/// answers for Ursula Downs 04002 that *"Ursula's reaction allows you to take
-/// any investigate action, including those performed via the activate action or
-/// via the play action."* Promoting the field to [`Ability`] is mechanical when
-/// Backstab lands; doing it now would be speculation.
+/// # It lives on the ability, not on the trigger
+///
+/// The rules attach the designator to the ability rather than to how it was
+/// reached — the FAQ answers for Ursula Downs 04002 that *"Ursula's reaction
+/// allows you to take any investigate action, including those performed via
+/// the activate action or via the play action."* So it is
+/// [`Ability::designator`], and an *event* can print one on its
+/// [`Trigger::OnPlay`] ability (Blinding Light 01066's **Evade**, Backstab
+/// 01051's **Fight**) as readily as an asset prints one on its
+/// [`Trigger::Activated`] ability. Those are the only two triggers that carry
+/// one: it is set only by [`activated_as`] and [`on_play_as`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ActionDesignator {
     /// **Fight** — performs a fight action against an enemy *at the
@@ -173,30 +175,55 @@ pub enum ActionDesignator {
         combat_modifier: IntExpr,
         /// Bonus damage beyond the base 1 (.38 Special: +1).
         extra_damage: IntExpr,
+        /// The skill the attack tests in place of `[combat]`, or `None` for
+        /// combat. Shrivelling 01060: *"This attack uses \[willpower\] instead
+        /// of \[combat\]"*. `combat_modifier` modifies the overriding skill,
+        /// since it is a bonus *"for this attack"*, whatever the attack tests.
+        skill_override: Option<SkillKind>,
+        /// What happens if one of a set of chaos symbols is revealed during the
+        /// attack (Shrivelling 01060's horror). See [`RevealClause`].
+        reveal_clause: Option<RevealClause>,
     },
-    /// **Evade** — performs an evade action. Ten corpus cards print it, none
-    /// implemented, so the engine rejects a designated Evade rather than
-    /// guessing at a payload (`TODO(#818)`). Eight are **events** whose bold
-    /// word rides `Trigger::OnPlay` (Blinding Light 01066/01069, Cunning
-    /// Distraction 01078, Bind Monster 02031, Bait and Switch 02034), which
-    /// needs the designator promoted off [`Trigger::Activated`] first — the
-    /// `TODO(#778)` above. The two that are already this shape are assets:
-    /// Fire Extinguisher 02114's *"\[action\] Exile Fire Extinguisher:
-    /// **Evade.** You get +3 \[agility\] for this test…"*, whose `+3` is the
-    /// [`Fight`](Self::Fight) modification's twin, and Strange Solution 02264's
-    /// *"\[action\] Spend 1 supply: **Evade.** Evade with a base \[agility\]
-    /// skill of 6."*, whose **base-value replacement** (`GLOSSARY.md`, "Base
-    /// value") is a shape no designator payload carries yet. So the field is
-    /// unfixed because two live cards disagree about what it should be, not
-    /// for want of a sample.
-    Evade,
+    /// **Evade** — performs an evade action against an enemy *engaged with the
+    /// controller* (`glossary/Evade_Action.md`: *"an investigator can only
+    /// perform an evade action against an enemy engaged with him or her"*).
+    /// Blinding Light 01066, an event whose bold word rides its
+    /// `Trigger::OnPlay` ability, built by [`on_play_as`].
+    ///
+    /// The modification is as far as Blinding Light prints it: the skill
+    /// override, the reveal clause, and a success clause. Built by [`evade`]
+    /// and the chaining builders [`testing`](Self::testing),
+    /// [`with_reveal_clause`](Self::with_reveal_clause) and
+    /// [`on_success`](Self::on_success). Two corpus printings take shapes it
+    /// does not carry yet: Fire Extinguisher 02114's *"You get +3 \[agility\]
+    /// for this test"* (the [`Fight`](Self::Fight) combat modifier's twin) and
+    /// Strange Solution 02264's *"Evade with a base \[agility\] skill of 6"*,
+    /// a **base-value replacement** (`GLOSSARY.md`, "Base value"). Each grows
+    /// its field when it is built.
+    Evade {
+        /// The skill the evasion tests in place of `[agility]`, or `None` for
+        /// agility. Blinding Light 01066: *"This evasion attempt uses
+        /// \[willpower\] instead of \[agility\]."*
+        skill_override: Option<SkillKind>,
+        /// What happens if one of a set of chaos symbols is revealed during the
+        /// evasion attempt (Blinding Light's lost action). See
+        /// [`RevealClause`].
+        reveal_clause: Option<RevealClause>,
+        /// What happens if the evasion succeeds, after the enemy is evaded
+        /// (Blinding Light's *"If you succeed, deal 1 damage to the enemy just
+        /// evaded."*). It resolves inside the test, at Skill Test Timing step
+        /// 7, where the evaded enemy is still the test's; the ability's
+        /// residual effect runs only after the test has ended. Boxed, as
+        /// [`RevealClause::effect`] is.
+        on_success: Option<Box<Effect>>,
+    },
     /// **Move** — performs a move action. **No corpus card prints it**, though
     /// 29 in the snapshot do (Sled Dog 08127's *"\[action\] Exhaust X Sled
     /// Dogs: **Move.** Move X times."*, Ring Library 11624's *"\[action\]:
     /// **Move.** Move to a revealed \[\[Passageway\]\] location."*), so its
     /// modification is a *destination or a repeat count* rather than a stat
-    /// row. Rejected on the same `TODO(#818)` as [`Evade`](Self::Evade), for
-    /// the stronger reason: nothing the build compiles prints one at all. Named
+    /// row. Rejected (`TODO(#1059)`) because nothing the build compiles prints
+    /// one at all, so there is no printed shape to take its payload from. Named
     /// as a designator by the rules quote above and by Frozen in Fear 01164's
     /// ruling.
     Move,
@@ -265,10 +292,132 @@ impl ActionDesignator {
     pub fn action_class(&self) -> Option<ActionClass> {
         match self {
             Self::Fight { .. } => Some(ActionClass::Fight),
-            Self::Evade => Some(ActionClass::Evade),
+            Self::Evade { .. } => Some(ActionClass::Evade),
             Self::Move => Some(ActionClass::Move),
             Self::Investigate { .. } | Self::Parley | Self::Resign => None,
         }
+    }
+
+    /// This designator's test, testing `skill` instead of the action's own
+    /// (Shrivelling 01060's *"This attack uses \[willpower\] instead of
+    /// \[combat\]"*, Blinding Light 01066's *"This evasion attempt uses
+    /// \[willpower\] instead of \[agility\]."*).
+    ///
+    /// # Panics
+    ///
+    /// On a designator whose action has no skill test to override. A card
+    /// module calling it so is an authoring mistake, caught by the first test
+    /// that builds the card's abilities.
+    #[must_use]
+    pub fn testing(mut self, skill: SkillKind) -> Self {
+        match &mut self {
+            Self::Fight { skill_override, .. } | Self::Evade { skill_override, .. } => {
+                *skill_override = Some(skill);
+            }
+            other => panic!("{other:?} carries no skill override"),
+        }
+        self
+    }
+
+    /// This designator's test, carrying `clause` (Shrivelling 01060's *"If a
+    /// \[skull\], … symbol is revealed during this attack, take 1 horror."*,
+    /// Blinding Light 01066's *"… during this evasion attempt, lose 1 action
+    /// this turn."*).
+    ///
+    /// # Panics
+    ///
+    /// On a designator whose action has no skill test to reveal a token in, as
+    /// [`testing`](Self::testing) does.
+    #[must_use]
+    pub fn with_reveal_clause(mut self, clause: RevealClause) -> Self {
+        match &mut self {
+            Self::Fight { reveal_clause, .. } | Self::Evade { reveal_clause, .. } => {
+                *reveal_clause = Some(clause);
+            }
+            other => panic!("{other:?} carries no reveal clause"),
+        }
+        self
+    }
+
+    /// This designator's evasion, resolving `effect` if it succeeds (Blinding
+    /// Light 01066's *"If you succeed, deal 1 damage to the enemy just
+    /// evaded."*). `effect` evaluates with the test's performer as its
+    /// controller, while the test is still in flight.
+    ///
+    /// # Panics
+    ///
+    /// On a designator other than [`Evade`](Self::Evade), the one whose printed
+    /// success clause has a field yet, as [`testing`](Self::testing) does.
+    #[must_use]
+    pub fn on_success(mut self, effect: Effect) -> Self {
+        match &mut self {
+            Self::Evade { on_success, .. } => *on_success = Some(Box::new(effect)),
+            other => panic!("{other:?} carries no success clause"),
+        }
+        self
+    }
+}
+
+/// The symbol on a chaos token: every token but a numeric one. The card-side
+/// name for `game_core::state::ChaosToken`'s symbol variants, which a card
+/// names without reaching into the kernel (`card-dsl` has no workspace
+/// dependencies).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ChaosSymbol {
+    /// `[skull]`.
+    Skull,
+    /// `[cultist]`.
+    Cultist,
+    /// `[tablet]`.
+    Tablet,
+    /// `[elder_thing]`.
+    ElderThing,
+    /// `[auto_fail]`.
+    AutoFail,
+    /// `[elder_sign]`.
+    ElderSign,
+}
+
+impl ChaosSymbol {
+    /// The four scenario symbols and `[auto_fail]`: every symbol but the elder
+    /// sign. Shrivelling 01060 and Blinding Light 01066 both print exactly this
+    /// list (*"If a `[skull]`, `[cultist]`, `[tablet]`, `[elder_thing]`, or
+    /// `[auto_fail]` symbol is revealed"*).
+    pub const ALL_BUT_ELDER_SIGN: [Self; 5] = [
+        Self::Skull,
+        Self::Cultist,
+        Self::Tablet,
+        Self::ElderThing,
+        Self::AutoFail,
+    ];
+}
+
+/// A card's *"If a \<symbol\> is revealed during this test, \<effect\>"*,
+/// carried by the skill test the card starts.
+///
+/// It is the initiating card's, not the token's: the chaos symbol effect a
+/// token initiates is the scenario's or the investigator card's
+/// ([`TokenOutcome`]), and resolves beside this one. It resolves at Skill Test
+/// Timing step 3, once the token is revealed and before step 4's symbol
+/// effects (Shrivelling 01060's ruling, <https://arkhamdb.com/card/01060>:
+/// *"The "If a symbol is revealed..." effect triggers during Step 3 of the
+/// Skill Test Timing."*). `effect` evaluates with the test's performer as its
+/// controller.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct RevealClause {
+    /// The symbols that fire it.
+    pub symbols: Vec<ChaosSymbol>,
+    /// What it does when one of them is revealed. Boxed, as
+    /// [`Effect::SkillTest`]'s branches are, so the designator carrying it
+    /// stays small.
+    pub effect: Box<Effect>,
+}
+
+impl RevealClause {
+    /// Whether revealing `symbol` fires this clause.
+    #[must_use]
+    pub fn fires_on(&self, symbol: ChaosSymbol) -> bool {
+        self.symbols.contains(&symbol)
     }
 }
 
@@ -277,6 +426,13 @@ impl ActionDesignator {
 /// Phase-3 set. Later phases add `AtPhaseStart`/`AtPhaseEnd`,
 /// `OnLeavePlay`, and additional reactive patterns as cards demand.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+// `allow`, not `expect`: the lint is pointer-width dependent and does not fire
+// on wasm32, where an unfulfilled `expect` would fail `wasm-clippy`.
+#[allow(
+    clippy::large_enum_variant,
+    reason = "the elder sign outcome was already the largest variant; the lint fired only \
+              when the designator moved off Activated (#1053), which shrank the runner-up"
+)]
 pub enum Trigger {
     /// Always-on while the card is in play. The ability's `effect`
     /// describes a passive contribution to engine queries (most
@@ -324,13 +480,9 @@ pub enum Trigger {
     /// validation and event-emission straightforward.
     Activated {
         /// Number of action points required to activate. `0` = Fast.
+        /// The bold action designator, if the ability prints one, is
+        /// [`Ability::designator`].
         action_cost: u8,
-        /// The **bold action designator** the card prints above the
-        /// effect, if any — `None` for an ability that prints none.
-        ///
-        /// This is what the rules key off, so it is declared rather than
-        /// inferred from the effect tree: see [`ActionDesignator`].
-        designator: Option<ActionDesignator>,
     },
     /// Fires during the resolution of a skill test the card is
     /// committed to, after the outcome is determined and gated on
@@ -715,6 +867,24 @@ pub enum EventPattern {
     /// **attack** dealing damage to self. The generalization waits for the card
     /// that contests it.
     EnemyAttackDamagedSelf,
+    /// At least 1 of `kind` was **placed** on the card `scope` names — step 2
+    /// of dealing damage, once the assignment has settled (ADR 0009). Agnes
+    /// Baker 01004: *"`[reaction]` After 1 or more horror is placed on Agnes
+    /// Baker: Deal 1 damage to an enemy at your location. (Limit once per
+    /// phase.)"* is `{ Horror, YourInvestigator }` in the `after` cell.
+    ///
+    /// **Placed on, not taken by** (`GLOSSARY.md`, "Taken by you / placed on
+    /// your investigator"): the scope reads only the share that lands on the
+    /// named card, so horror the controller assigns to a soaking asset does not
+    /// count. Her ruling (<https://arkhamdb.com/card/01004>): *"You cannot use
+    /// Agnes' ability if you assign horror to an asset."* The "taken by you"
+    /// scope, which counts assets too (`glossary/You_Your.md`), is #781's.
+    HarmPlaced {
+        /// Which harm must have been placed, at least 1 of it.
+        kind: HarmKind,
+        /// Which card it must have been placed on.
+        scope: HarmPlacedScope,
+    },
     /// An enemy attacks an investigator (RR p.25 step 3.3) — one triggering
     /// condition in all three cells since #704, so a card declares this pattern
     /// plus the trigger word it prints:
@@ -756,6 +926,31 @@ pub enum EventPattern {
     /// engine's matcher hears it only on an attachment of the *left* location,
     /// and binds the leaving investigator.
     LeftLocation,
+    /// **You** played a card the `filter` passes — Heirloom of Hyperborea
+    /// 01012's *"\[reaction\] After you play a \[\[Spell\]\] card: Draw 1
+    /// card."* Scoped to plays by the ability's controller; the filter reads
+    /// the played card's printed metadata ([`CardFilter::matches`]).
+    ///
+    /// The condition is the play's *completion*, after Appendix I step 4: the
+    /// 01012 ruling puts the trigger *"after the Spell card has resolved in
+    /// full"* — an event already in its owner's discard pile, an asset already
+    /// in play.
+    CardPlayed {
+        /// Which played cards the ability listens to.
+        filter: CardFilter,
+    },
+    /// **You** drew an encounter card the `filter` passes — Ward of Protection
+    /// 01065's *"Fast. Play when you draw a non-weakness treachery card."*
+    /// Scoped to draws by the ability's controller; the filter reads the drawn
+    /// card's printed metadata ([`CardFilter::matches`]).
+    ///
+    /// The condition's own resolution is the card's revelation, so a `when`
+    /// ability that cancels it (Ward's *"Cancel that card's revelation
+    /// effect"*) prevents the revelation, and the card is still disposed of.
+    EncounterCardDrawn {
+        /// Which drawn cards the ability listens to.
+        filter: CardFilter,
+    },
 }
 
 impl EventPattern {
@@ -786,11 +981,55 @@ impl EventPattern {
             // card's narrowing of the damage *assignment*, not a condition of
             // its own (ADR 0009).
             EventPattern::EnemyAttackDamagedSelf => TriggeringCondition::DamageAssigned,
+            EventPattern::HarmPlaced { .. } => TriggeringCondition::DamagePlaced,
             EventPattern::EnemyAttacks { .. } => TriggeringCondition::EnemyAttacks,
             EventPattern::EnteredPlay => TriggeringCondition::EnteredPlay,
             EventPattern::LeftLocation => TriggeringCondition::LeftLocation,
+            EventPattern::CardPlayed { .. } => TriggeringCondition::CardPlayed,
+            EventPattern::EncounterCardDrawn { .. } => TriggeringCondition::EncounterCardDrawn,
         }
     }
+
+    /// The filter a pattern narrows its condition's card by — the played card
+    /// of [`EventPattern::CardPlayed`], the drawn card of
+    /// [`EventPattern::EncounterCardDrawn`] — or `None` for a pattern whose
+    /// condition names no card to filter. Exhaustive, like [`Self::condition`],
+    /// so a new pattern carrying a filter cannot forget to say so.
+    #[must_use]
+    pub fn card_filter(&self) -> Option<&CardFilter> {
+        match self {
+            EventPattern::CardPlayed { filter } | EventPattern::EncounterCardDrawn { filter } => {
+                Some(filter)
+            }
+            EventPattern::EnemyDefeated { .. }
+            | EventPattern::EnteredLocation
+            | EventPattern::PhaseStarted { .. }
+            | EventPattern::PhaseEnded { .. }
+            | EventPattern::ActAdvanced
+            | EventPattern::AgendaAdvanced
+            | EventPattern::RoundEnded
+            | EventPattern::EndOfTurn
+            | EventPattern::SkillTestResolved { .. }
+            | EventPattern::DiscoverClues
+            | EventPattern::GameEnd
+            | EventPattern::EnemyAttackDamagedSelf
+            | EventPattern::HarmPlaced { .. }
+            | EventPattern::EnemyAttacks { .. }
+            | EventPattern::EnteredPlay
+            | EventPattern::LeftLocation => None,
+        }
+    }
+}
+
+/// Which card an [`EventPattern::HarmPlaced`] ability reads the placement on.
+/// Only the scope a corpus card prints; *"a card you control"* (Mark Harrigan
+/// 03001) arrives with the first card that needs it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum HarmPlacedScope {
+    /// The controller's own investigator card — Agnes Baker 01004's *"placed
+    /// on Agnes Baker"*, printed on her investigator card. Assets the
+    /// controller soaks with are not part of it.
+    YourInvestigator,
 }
 
 /// Which attacking enemy an [`EventPattern::EnemyAttacks`] ability listens
@@ -842,8 +1081,9 @@ pub enum TestedLocationScope {
 /// `card-dsl`, below both. Fieldless: what narrows a match within one condition
 /// (a phase, a test outcome, *"you"*) is on the pattern and the event, not here.
 ///
-/// A condition can have no pattern yet: `DamagePlaced` is announced by the
-/// engine but no corpus card listens to it.
+/// A condition can have no pattern yet: the engine announces what the rules
+/// define whether or not a corpus card listens to it. (`DamagePlaced` was one
+/// until Agnes Baker 01004's [`EventPattern::HarmPlaced`].)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TriggeringCondition {
     /// An investigator entered a location.
@@ -879,6 +1119,11 @@ pub enum TriggeringCondition {
     EnteredPlay,
     /// An investigator left a location.
     LeftLocation,
+    /// An investigator's play of a card completed (after Appendix I step 4).
+    CardPlayed,
+    /// An investigator drew an encounter card (framework step 1.4, or a card
+    /// effect's draw); its revelation is the condition's resolution.
+    EncounterCardDrawn,
 }
 
 /// The four game phases, mirrored in `card-dsl` so [`EventPattern`] can
@@ -1069,16 +1314,26 @@ pub struct UsageLimit {
 
 /// The period a [`UsageLimit`] is measured over.
 ///
-/// Phase-3 minimal set: `Round` (Roland's "Limit once per round").
-/// `Phase` ("limit once per turn") and `Game` ("limit once per game"
-/// — group or player) land when the first consumer appears.
+/// `Round` (Roland's "Limit once per round") and `Phase` (Agnes Baker's
+/// "Limit once per phase"). `Turn` ("limit once per turn") and `Game`
+/// ("limit once per game" — group or player) land when the first consumer
+/// appears.
+///
+/// The period decides when a counter resets, and nothing else: the engine's
+/// usage record notes the round **and** phase of its last fire either way, and
+/// each period compares the part of that clock it is measured over.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum UsagePeriod {
     /// A game round, as defined by the framework: begins at 1.1 Mythos,
     /// ends at 4.6 Upkeep (Rules Reference page 23). Counter resets
     /// when `GameState::round` (in `game_core::state`)
-    /// advances.
+    /// advances — and not at a phase change within the round.
     Round,
+    /// A game phase (Mythos, Investigation, Enemy, Upkeep). Counter resets
+    /// when either `GameState::phase` or `GameState::round` changes, so the
+    /// Investigation phase of one round is a different period from the
+    /// Investigation phase of the next.
+    Phase,
 }
 
 // ---- abilities -------------------------------------------------
@@ -1103,6 +1358,15 @@ pub enum UsagePeriod {
 #[non_exhaustive]
 pub struct Ability {
     pub trigger: Trigger,
+    /// The **bold action designator** the ability prints, if any — `None` for
+    /// an ability that prints none. It performs the designated action, carrying
+    /// the modification the text describes; see [`ActionDesignator`], which
+    /// also says why it lives here rather than on the trigger.
+    ///
+    /// Only a [`Trigger::Activated`] or [`Trigger::OnPlay`] ability carries
+    /// one, and only [`activated_as`] and [`on_play_as`] set it. Stays
+    /// implicitly optional on the wire, like `usage_limit`.
+    pub designator: Option<ActionDesignator>,
     /// Payment costs (besides action cost). Empty for abilities with no
     /// non-action payment. Required on the wire (#453).
     pub costs: Vec<Cost>,
@@ -1141,6 +1405,29 @@ pub struct Ability {
     /// can't express. `None` for the common no-gate case; stays implicitly
     /// optional on the wire (#453 per-field carve-out, like `usage_limit`).
     pub eligibility: Option<Condition>,
+    /// Where the card must be for this ability to interact with the game.
+    /// [`AbilityZone::InPlay`] for every ability [`Self::with_active_in`] does
+    /// not move; required on the wire (#453).
+    pub active_in: AbilityZone,
+}
+
+/// The zone a card's ability is live in — see [`Ability::active_in`].
+///
+/// `glossary/Ability.md`: *"Card abilities only interact with the game if the
+/// card bearing the ability is in play, unless the ability (or rules for the
+/// cardtype) specifically references its use from an out-of-play area."* The
+/// default is the rule; a card whose ability names an out-of-play area says so
+/// with [`Ability::with_active_in`]. The forced trigger scan reads a zone's
+/// cards only for the abilities live there. A Fast event's reaction is not read
+/// through this: it is played from hand, a rule of the event cardtype.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum AbilityZone {
+    /// On the board: in a play area, a threat area, at a location, or the
+    /// current act or agenda.
+    InPlay,
+    /// In the hand of the investigator holding the card — Dark Memory 01013's
+    /// *"If Dark Memory is in your hand at the end of your turn"*.
+    Hand,
 }
 
 impl Ability {
@@ -1163,12 +1450,22 @@ impl Ability {
         self
     }
 
+    /// Make this ability live in `zone` rather than in play (see
+    /// [`Self::active_in`]), for an ability that names its use from an
+    /// out-of-play area. Builder-style sugar, chainable off the `on_event(...)`
+    /// constructors.
+    #[must_use]
+    pub fn with_active_in(mut self, zone: AbilityZone) -> Self {
+        self.active_in = zone;
+        self
+    }
+
     /// Every native tag this ability references, each with the registry
     /// namespace it resolves in — the `cards` crate's corpus test checks each
     /// one is registered (#986).
     ///
-    /// Walks the whole ability: its own eligibility, the trigger's action
-    /// designator and elder-sign modifier, and the effect tree, descending
+    /// Walks the whole ability: its own eligibility, its action designator,
+    /// the trigger's elder-sign outcome, and the effect tree, descending
     /// into every [`Effect`], [`Condition`] and [`IntExpr`] it holds,
     /// granted abilities included. The matches carry no wildcard arms, so a
     /// new variant does not compile until someone decides whether it can
@@ -1185,6 +1482,38 @@ impl Ability {
         if let Some(eligibility) = &self.eligibility {
             eligibility.collect_native_refs(refs);
         }
+        match &self.designator {
+            None
+            | Some(ActionDesignator::Move | ActionDesignator::Parley | ActionDesignator::Resign) => {
+            }
+            Some(ActionDesignator::Evade {
+                skill_override: _,
+                reveal_clause,
+                on_success,
+            }) => {
+                if let Some(clause) = reveal_clause {
+                    clause.effect.collect_native_refs(refs);
+                }
+                if let Some(effect) = on_success {
+                    effect.collect_native_refs(refs);
+                }
+            }
+            Some(ActionDesignator::Fight {
+                combat_modifier,
+                extra_damage,
+                skill_override: _,
+                reveal_clause,
+            }) => {
+                combat_modifier.collect_native_refs(refs);
+                extra_damage.collect_native_refs(refs);
+                if let Some(clause) = reveal_clause {
+                    clause.effect.collect_native_refs(refs);
+                }
+            }
+            Some(ActionDesignator::Investigate { shroud_modifier }) => {
+                shroud_modifier.collect_native_refs(refs);
+            }
+        }
         match &self.trigger {
             // None of these holds an effect, condition or integer expression: an
             // event pattern names what happened, never a condition on it.
@@ -1194,28 +1523,7 @@ impl Ability {
             | Trigger::Revelation
             | Trigger::OnSkillTestResolution { .. }
             | Trigger::OnEvent { .. }
-            | Trigger::Activated {
-                designator: None, ..
-            } => {}
-            Trigger::Activated {
-                designator: Some(designator),
-                ..
-            } => match designator {
-                ActionDesignator::Fight {
-                    combat_modifier,
-                    extra_damage,
-                } => {
-                    combat_modifier.collect_native_refs(refs);
-                    extra_damage.collect_native_refs(refs);
-                }
-                ActionDesignator::Investigate { shroud_modifier } => {
-                    shroud_modifier.collect_native_refs(refs);
-                }
-                ActionDesignator::Evade
-                | ActionDesignator::Move
-                | ActionDesignator::Parley
-                | ActionDesignator::Resign => {}
-            },
+            | Trigger::Activated { .. } => {}
             Trigger::ElderSign { outcome } => outcome.collect_native_refs(refs),
         }
         self.effect.collect_native_refs(refs);
@@ -1635,18 +1943,20 @@ pub enum Effect {
     /// 01168). Rejects if there is no source or the instance isn't in play.
     DiscardSelf,
     /// Cancel the current cancellable game impact — the subject of the
-    /// Before-timing window this effect resolves inside. Sets the engine's
-    /// `pending_cancellation` signal, which the emit site honors after the
-    /// window closes, skipping the prevented impact (an enemy attack's
-    /// damage/horror — Dodge 01023; or a clue discovery — Cover Up 01007).
+    /// `when`-cell window this effect resolves inside. Flags that triggering
+    /// condition as prevented (the engine's `EmitEventFrame::prevented`, #1055),
+    /// and its timing coordinator skips the prevented impact at its resolve step
+    /// (an enemy attack's damage/horror — Dodge 01023; or a clue discovery —
+    /// Cover Up 01007). The flag is the condition's own, so a condition the same
+    /// effect emits after the cancel still resolves.
     /// RR p.6: the cancelled thing is "still regarded as initiated", only
     /// its effects are prevented. (Axis D #336.)
     ///
     /// A cancelled triggering condition takes **the rest of its sequence** with
     /// it: the `at` and `after` cells do not run, and neither does the rest of
-    /// the `when` cell (#714). Dodge 01023's ruling is the citation, quoted at
-    /// the engine's read site (`coordinator::prevented_in_the_when_cell`), which
-    /// applies it to every coordinator-owned condition.
+    /// the `when` cell (#714). Dodge 01023's ruling is the citation, quoted on
+    /// the engine's flag (`EmitEventFrame::prevented`), which every
+    /// coordinator-owned condition reads.
     ///
     /// Cancel is the degenerate replacement ("replace with nothing"): a card
     /// that replaces with its own effect runs that effect then `Cancel`
@@ -1862,9 +2172,10 @@ pub enum SearchScope {
     EntireDeck,
 }
 
-/// A predicate on a printed card: an optional trait and an optional card type.
-/// Both fields, when `Some`, must hold (trait AND type); an empty filter
-/// matches every card. Used by [`Effect::SearchDeck`]. `trait_` is owned (the
+/// A predicate on a printed card: an optional trait, an optional card type, and
+/// whether weaknesses are excluded. Every narrowing set must hold; an empty
+/// filter matches every card. Used by [`Effect::SearchDeck`] and by the
+/// card-reading [`EventPattern`]s. `trait_` is owned (the
 /// [`Effect`] enum is serde-serializable, so no borrowed `&'static str`).
 ///
 /// Build one from a generated trait constant with the constructors, e.g.
@@ -1876,6 +2187,9 @@ pub struct CardFilter {
     /// Required card type (e.g. [`CardType::Asset`]).
     /// `None` = any type.
     pub kind: Option<CardType>,
+    /// Whether weaknesses are excluded — Ward of Protection 01065's *"a
+    /// non-weakness treachery card"*. `false` = weaknesses pass too.
+    pub non_weakness: bool,
 }
 
 impl CardFilter {
@@ -1885,6 +2199,7 @@ impl CardFilter {
         Self {
             trait_: Some(trait_name.to_owned()),
             kind: None,
+            non_weakness: false,
         }
     }
 
@@ -1894,6 +2209,17 @@ impl CardFilter {
         Self {
             trait_: None,
             kind: Some(kind),
+            non_weakness: false,
+        }
+    }
+
+    /// This filter, additionally excluding weaknesses
+    /// ([`CardMetadata::is_weakness`]).
+    #[must_use]
+    pub fn and_non_weakness(self) -> Self {
+        Self {
+            non_weakness: true,
+            ..self
         }
     }
 
@@ -1916,12 +2242,13 @@ impl CardFilter {
     }
 
     /// Whether the printed card `meta` passes the filter: it has the trait
-    /// (via [`CardMetadata::has_trait`], so printed traits only) and is of the
-    /// type, for whichever of the two are set.
+    /// (via [`CardMetadata::has_trait`], so printed traits only), is of the
+    /// type, and is not a weakness, for whichever of the three are set.
     #[must_use]
     pub fn matches(&self, meta: &CardMetadata) -> bool {
         self.trait_.as_deref().is_none_or(|t| meta.has_trait(t))
             && self.kind.is_none_or(|k| meta.card_type() == k)
+            && !(self.non_weakness && meta.is_weakness())
     }
 }
 
@@ -2196,7 +2523,7 @@ pub enum LocationSet {
 
 /// An entity-choice filter. Locational today; non-spatial arms (`Engaged`,
 /// `WithTrait`, …) accrete here when a card needs them — additively, touching
-/// neither [`LocationSet`] nor location-picks. (The `UsagePeriod::Round`-only
+/// neither [`LocationSet`] nor location-picks. (The `UsagePeriod`
 /// minimal-enum-with-a-growth-path idiom.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum EntityScope {
@@ -2545,10 +2872,12 @@ pub enum TestOutcome {
 pub fn constant(effect: Effect) -> Ability {
     Ability {
         trigger: Trigger::Constant,
+        designator: None,
         costs: Vec::new(),
         effect,
         usage_limit: None,
         eligibility: None,
+        active_in: AbilityZone::InPlay,
     }
 }
 
@@ -2560,10 +2889,28 @@ pub fn constant(effect: Effect) -> Ability {
 pub fn on_play(effect: Effect) -> Ability {
     Ability {
         trigger: Trigger::OnPlay,
+        designator: None,
         costs: Vec::new(),
         effect,
         usage_limit: None,
         eligibility: None,
+        active_in: AbilityZone::InPlay,
+    }
+}
+
+/// [`on_play`], for an event that prints a bold [`ActionDesignator`] —
+/// Blinding Light 01066's *"**Evade.** …"*, Backstab 01051's *"**Fight.** …"*.
+///
+/// As with [`activated_as`], **the designator performs the action and `effect`
+/// is the residual** the text prints beside it; the modification the action
+/// itself takes rides the designator. Playing the event *is* that action — the
+/// FAQ's Ursula Downs 04002 answer counts an investigate action *"performed
+/// via the play action"* — see [`ActionDesignator`].
+#[must_use]
+pub fn on_play_as(designator: ActionDesignator, effect: Effect) -> Ability {
+    Ability {
+        designator: Some(designator),
+        ..on_play(effect)
     }
 }
 
@@ -2573,10 +2920,12 @@ pub fn on_play(effect: Effect) -> Ability {
 pub fn on_commit(effect: Effect) -> Ability {
     Ability {
         trigger: Trigger::OnCommit,
+        designator: None,
         costs: Vec::new(),
         effect,
         usage_limit: None,
         eligibility: None,
+        active_in: AbilityZone::InPlay,
     }
 }
 
@@ -2588,10 +2937,12 @@ pub fn on_commit(effect: Effect) -> Ability {
 pub fn on_skill_test_resolution(outcome: TestOutcome, effect: Effect) -> Ability {
     Ability {
         trigger: Trigger::OnSkillTestResolution { outcome },
+        designator: None,
         costs: Vec::new(),
         effect,
         usage_limit: None,
         eligibility: None,
+        active_in: AbilityZone::InPlay,
     }
 }
 
@@ -2611,10 +2962,12 @@ pub fn on_event(
             timing,
             kind,
         },
+        designator: None,
         costs: Vec::new(),
         effect,
         usage_limit: None,
         eligibility: None,
+        active_in: AbilityZone::InPlay,
     }
 }
 
@@ -2641,10 +2994,12 @@ pub fn reaction_on_event(pattern: EventPattern, timing: EventTiming, effect: Eff
 pub fn revelation(effect: Effect) -> Ability {
     Ability {
         trigger: Trigger::Revelation,
+        designator: None,
         costs: Vec::new(),
         effect,
         usage_limit: None,
         eligibility: None,
+        active_in: AbilityZone::InPlay,
     }
 }
 
@@ -2663,14 +3018,13 @@ pub fn revelation(effect: Effect) -> Ability {
 #[must_use]
 pub fn activated(action_cost: u8, costs: Vec<Cost>, effect: Effect) -> Ability {
     Ability {
-        trigger: Trigger::Activated {
-            action_cost,
-            designator: None,
-        },
+        trigger: Trigger::Activated { action_cost },
+        designator: None,
         costs,
         effect,
         usage_limit: None,
         eligibility: None,
+        active_in: AbilityZone::InPlay,
     }
 }
 
@@ -2693,14 +3047,13 @@ pub fn activated_as(
     effect: Effect,
 ) -> Ability {
     Ability {
-        trigger: Trigger::Activated {
-            action_cost,
-            designator: Some(designator),
-        },
+        trigger: Trigger::Activated { action_cost },
+        designator: Some(designator),
         costs,
         effect,
         usage_limit: None,
         eligibility: None,
+        active_in: AbilityZone::InPlay,
     }
 }
 
@@ -2726,10 +3079,12 @@ pub fn elder_sign(modifier: IntExpr) -> Ability {
 pub fn elder_sign_with(outcome: TokenOutcome) -> Ability {
     Ability {
         trigger: Trigger::ElderSign { outcome },
+        designator: None,
         costs: Vec::new(),
         effect: Effect::Seq(Vec::new()),
         usage_limit: None,
         eligibility: None,
+        active_in: AbilityZone::InPlay,
     }
 }
 
@@ -3014,7 +3369,9 @@ pub fn put_into_threat_area_with_clues(code: impl Into<String>, clues: u8) -> Ef
 /// prints on its attack — the combat modifier and the bonus damage beyond the
 /// base 1 (.38 Special: `fight(IntExpr::cond(Condition::Compare { quantity: Quantity::CluesAtControllerLocation, op: CmpOp::Gt, value: 0 }, 3, 1), 1u8)`).
 /// The fight itself is the designator's; this only says how it differs from a
-/// basic one (#805).
+/// basic one (#805). It tests `[combat]` and carries no reveal clause; chain
+/// [`ActionDesignator::testing`] and [`ActionDesignator::with_reveal_clause`]
+/// for a card that prints either (Shrivelling 01060).
 #[must_use]
 pub fn fight(
     combat_modifier: impl Into<IntExpr>,
@@ -3023,6 +3380,21 @@ pub fn fight(
     ActionDesignator::Fight {
         combat_modifier: combat_modifier.into(),
         extra_damage: extra_damage.into(),
+        skill_override: None,
+        reveal_clause: None,
+    }
+}
+
+/// Build an [`ActionDesignator::Evade`]: a basic evasion, testing `[agility]`
+/// with no reveal or success clause. Chain [`ActionDesignator::testing`],
+/// [`ActionDesignator::with_reveal_clause`] and [`ActionDesignator::on_success`]
+/// for what a card prints (Blinding Light 01066).
+#[must_use]
+pub fn evade() -> ActionDesignator {
+    ActionDesignator::Evade {
+        skill_override: None,
+        reveal_clause: None,
+        on_success: None,
     }
 }
 

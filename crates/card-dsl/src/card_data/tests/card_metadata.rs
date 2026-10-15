@@ -445,11 +445,45 @@ fn trait_and_kind_filter_needs_both() {
     assert!(!tome_assets.matches(&tome_event));
 }
 
+/// A synthetic treachery, a weakness when `weakness` is set.
+fn treachery(weakness: bool) -> CardMetadata {
+    CardMetadata {
+        code: "_synth_treachery".into(),
+        name: "Synth Treachery".into(),
+        traits: vec!["Terror".into()],
+        weakness,
+        kind: CardKind::Treachery {
+            surge: false,
+            peril: false,
+            quantity: 1,
+        },
+        ..tome_asset()
+    }
+}
+
+/// Ward of Protection 01065's *"a non-weakness treachery card"*: a weakness
+/// treachery fails the filter, a non-weakness one and a weakness of the wrong
+/// type are told apart by the right field.
+#[test]
+fn non_weakness_filter_excludes_weaknesses() {
+    let ward = CardFilter::of_kind(CardType::Treachery).and_non_weakness();
+    assert!(ward.matches(&treachery(false)));
+    assert!(!ward.matches(&treachery(true)), "a weakness is excluded");
+    assert!(!ward.matches(&tome_asset()), "not a treachery");
+
+    let any_treachery = CardFilter::of_kind(CardType::Treachery);
+    assert!(
+        any_treachery.matches(&treachery(true)),
+        "without the narrowing a weakness passes",
+    );
+}
+
 #[test]
 fn empty_filter_matches_everything() {
     let any = CardFilter {
         trait_: None,
         kind: None,
+        non_weakness: false,
     };
     assert!(any.matches(&tome_asset()));
     assert!(any.matches(&ally_asset()));
@@ -463,6 +497,7 @@ fn constructors_set_exactly_the_named_fields() {
         CardFilter {
             trait_: Some("Tome".to_owned()),
             kind: None,
+            non_weakness: false,
         }
     );
     assert_eq!(
@@ -470,11 +505,13 @@ fn constructors_set_exactly_the_named_fields() {
         CardFilter {
             trait_: None,
             kind: Some(CardType::Asset),
+            non_weakness: false,
         }
     );
     let both = CardFilter {
         trait_: Some("Tome".to_owned()),
         kind: Some(CardType::Asset),
+        non_weakness: false,
     };
     assert_eq!(
         CardFilter::with_trait("Tome").and_kind(CardType::Asset),

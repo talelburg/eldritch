@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::{iter, mem};
 
 use card_dsl::card_data::SkillKind;
-use card_dsl::dsl::{ActionDesignator, Effect, EventTiming, SkillTestKind};
+use card_dsl::dsl::{ActionDesignator, Effect, EventTiming, RevealClause, SkillTestKind};
 use serde::{Deserialize, Serialize};
 
 use crate::engine::evaluator::EvalContext;
@@ -1306,6 +1306,15 @@ pub struct InFlightSkillTest {
     /// TODO(#921): make the tuple a named struct when the client half of
     /// item 19 reads it.
     pub revealed: Option<(ChaosToken, TokenResolution)>,
+    /// The initiating card's *"If a \<symbol\> is revealed during this test"*
+    /// clause (Shrivelling 01060), set when the test starts and fired at ST.3
+    /// against the token on [`revealed`](Self::revealed).
+    ///
+    /// Carried rather than looked up again from [`source`](Self::source), as
+    /// the elder sign's outcome is: an event's `OnPlay` starts its test with
+    /// no source, so an event printing one (Blinding Light 01066) has nowhere
+    /// else to keep it. `None` for every test whose initiator prints none.
+    pub reveal_clause: Option<RevealClause>,
 }
 
 /// The outcome of a skill test's chaos-token resolution (RR ST.6), stored on
@@ -1846,10 +1855,12 @@ pub enum CandidateSource {
     /// (the Attic's forced horror), an enemy (Silver Twilight Acolyte 01102's
     /// forced doom), the current act or the current agenda.
     Ability(AbilitySource),
-    /// A Fast event in the controller's hand (Axis C) — *played* rather than
-    /// fired. No instance until it would enter play (events never do), and not
-    /// an ability source: no bullet of `glossary/Triggered_Abilities.md` names
-    /// a card in hand.
+    /// A card in the controller's hand. In a reaction window it is a Fast event
+    /// (Axis C), *played* rather than fired; in a forced run it is a forced
+    /// ability that works from hand (Dark Memory 01013, #1046), fired with the
+    /// card left in hand. No instance until it would enter play (events never
+    /// do), and not an ability source: no bullet of
+    /// `glossary/Triggered_Abilities.md` names a card in hand.
     Hand,
 }
 
@@ -2300,6 +2311,52 @@ pub struct EmitEventFrame {
     /// (`crates/server/src/session.rs`), so no persisted artifact can carry
     /// this field.
     pub step: EmitStep,
+    /// Whether a `when`-cell ability has **prevented** this condition — set by
+    /// [`Effect::Cancel`] on the topmost frame still at [`EmitStep::When`]
+    /// (Axis D #336; Cover Up 01007's *"…instead"*, Dodge 01023, Ward of
+    /// Protection 01065). The coordinator reads it at the resolve step rather
+    /// than at the window's close: the check belongs between the `when` cell and
+    /// step 2, which is where the sequence puts the chance to prevent the
+    /// condition from resolving.
+    ///
+    /// While set, **the whole rest of the sequence** is abandoned, not just
+    /// step 2 (#714): the rest of the `when` cell, the resolve step, and the
+    /// `at` and `after` cells. Dodge 01023's ruling,
+    /// `data/arkhamdb-faq/core/01023.md`, verbatim:
+    ///
+    /// > If the attacking enemy has a **Forced** ability that says "When attacks" or
+    /// > "After attacks", that ability does not trigger if an attack is Dodged.
+    ///
+    /// `glossary/After.md` agrees from the other side — after is *"the moment
+    /// immediately after the specified timing point or triggering condition
+    /// **has fully resolved**"*, and a prevented condition never fully resolves
+    /// — as does `glossary/Instead.md` for the nature-changing case: *"If a
+    /// replacement effect that uses the word "would" changes the nature of a
+    /// triggering condition, the original triggering condition is replaced with
+    /// the new triggering condition. No further abilities referencing the
+    /// original triggering condition may be used."* Cover Up 01007 (*"When you
+    /// would discover 1 or more clues at your location: Discard that many clues
+    /// from Cover Up instead."*) is exactly that.
+    ///
+    /// **One signal, two suppressing arms.** A cancel (`glossary/Cancel.md`:
+    /// *"Cancel abilities interrupt the initiation of an effect, and prevent the
+    /// effect from initiating."*) and a nature-changing replacement suppress
+    /// identically, so the engine does not distinguish them. The third arm — a
+    /// replacement that resolves the condition *by other means*, whose later
+    /// cells presumably do still run — is **not** modelled: no corpus card wants
+    /// one, and it is already recorded as #366 (replace-with-different-impact).
+    /// See ADR 0008.
+    ///
+    /// **The flag is the condition's own** (#1055), so the cancel names the
+    /// condition it prevents. Ward of Protection 01065's *"Cancel that card's
+    /// revelation effect. Then, take 1 horror."* emits the horror's conditions
+    /// while the cancel is live; each is a frame of its own, starts unprevented,
+    /// and resolves, and the cancelled revelation stays cancelled. Nothing needs
+    /// clearing, because the flag leaves with the frame it sits on. A flag
+    /// rather than a stack position, because positions shift when a scenario
+    /// ending is inserted at the bottom mid-sequence. Same wire story as `step`:
+    /// the frame lives only in memory, mid-sequence.
+    pub prevented: bool,
 }
 
 /// Coordinator: one timing bucket of an [`EmitEvent`](EmitEventFrame) walk,
@@ -2390,12 +2447,13 @@ pub struct PlayerDrawFrame {
 /// A drawn encounter card whose Revelation is mid-resolution (#380), tagged
 /// with how the framework disposes of it once the Revelation's whole
 /// sub-resolution completes (#423). Pushed by `resolve_encounter_card`
-/// *before* it runs the Revelation; sits beneath any suspension the
+/// *before* it announces the draw, whose resolve step runs the Revelation
+/// (#1056); sits beneath the draw condition's sequence and any suspension the
 /// Revelation opens (a skill test, a choice, a nested effect). When that
-/// sub-resolution completes and this frame is top again, the **framework**
+/// sequence completes and this frame is top again, the **framework**
 /// disposes of the card per its [`EncounterDisposition`] and pops:
-/// a treachery (`Discard`) goes to `encounter_discard` (or — if persistent —
-/// is skipped, having placed itself during its Revelation); an enemy
+/// a treachery (`Discard`) goes to `encounter_discard` (or — if persistent and
+/// its Revelation ran — is skipped, having placed itself); an enemy
 /// (`Spawn`) is minted into play. Suspension-reason-agnostic. Never emits
 /// `AwaitingInput`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2404,6 +2462,11 @@ pub struct EncounterCardFrame {
     pub card: CardCode,
     /// How the framework disposes of the card once its Revelation resolves.
     pub disposition: EncounterDisposition,
+    /// Whether the card's Revelation ran — set by the draw condition's resolve
+    /// step, and left `false` when a `when` ability cancelled it (Ward of
+    /// Protection 01065, #1056). A persistent treachery whose Revelation was
+    /// cancelled never placed itself, so disposal discards it.
+    pub revelation_resolved: bool,
 }
 
 /// A card being played from hand, mid-resolution (Slice D #423). Pushed

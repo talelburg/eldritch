@@ -395,6 +395,57 @@ pub(crate) fn remove_clues(cx: &mut Cx, instance_id: CardInstanceId, count: u8) 
     }
 }
 
+/// Place `count` doom on the card instance `instance_id`, wherever it sits on
+/// the board (the [`find_instance`] walk). A no-op for an instance not on the
+/// board. No threshold check: `glossary/Doom.md` — *"Unless a card otherwise
+/// specifies that it can advance the agenda, this is the only time at which
+/// the agenda can advance"* — puts the check at Mythos step 1.3. No event
+/// announces doom yet (#593).
+///
+/// The exit a card-local native takes to place doom on a card (Arcane
+/// Initiate 01063's *"Place 1 doom on it."*).
+pub(crate) fn place_doom(cx: &mut Cx, instance_id: CardInstanceId, count: u8) {
+    if let Some((card, _)) = find_instance_mut(cx.state, instance_id) {
+        card.doom = card.doom.saturating_add(count);
+    }
+}
+
+/// **The doom in play**: the doom on the current agenda plus the doom on
+/// every card instance on the board. `glossary/Doom.md`: *"Doom on cards other
+/// than the agenda (such as enemies, allies, locations, etc.) counts towards
+/// the amount of doom in play."* The agenda's threshold check compares this.
+///
+/// Reads the unfiltered board walk, so a card in an eliminated investigator's
+/// area still counts: it is still in play until it leaves. Doom leaves play
+/// with its card, since it lives on the [`CardInPlay`] the leave-play exits
+/// take off the board. Enemy doom (Acolyte 01169) is not modeled yet.
+#[must_use]
+pub fn doom_in_play(state: &GameState) -> u32 {
+    let on_cards: u32 = walk(state)
+        .iter()
+        .filter_map(|walked| walked.card.instance())
+        .map(|card| u32::from(card.doom))
+        .sum();
+    u32::from(state.agenda_doom) + on_cards
+}
+
+/// Remove all doom from each card instance on the board — step 1 of advancing
+/// the agenda deck (`glossary/Act_Deck_and_Agenda_Deck.md`: *"If the agenda
+/// deck is advancing, remove all doom from each card in play."*).
+pub(crate) fn clear_doom_on_cards(state: &mut GameState) {
+    let dooms: Vec<CardInstanceId> = walk(state)
+        .iter()
+        .filter_map(|walked| walked.card.instance())
+        .filter(|card| card.doom > 0)
+        .map(|card| card.instance_id)
+        .collect();
+    for instance_id in dooms {
+        if let Some((card, _)) = find_instance_mut(state, instance_id) {
+            card.doom = 0;
+        }
+    }
+}
+
 /// Take the card instance `instance_id` off the board, with the [`Placement`]
 /// it left. `None` when it is not on the board, and for an investigator card,
 /// which is not in a zone a card can be taken out of.

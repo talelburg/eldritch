@@ -6,7 +6,7 @@ use std::fmt;
 use card_dsl::dsl::{UsageLimit, UsagePeriod};
 use serde::{Deserialize, Serialize};
 
-use crate::state::InvestigatorId;
+use crate::state::{InvestigatorId, Phase};
 
 /// `ArkhamDB` card code (e.g. `"01030"` for Magnifying Glass).
 ///
@@ -51,6 +51,16 @@ impl fmt::Display for CardCode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&self.0, f)
     }
+}
+
+/// One of the decks a card effect can look into: an investigator's deck or
+/// the encounter deck. Both keep their top card at index 0.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Deck {
+    /// This investigator's deck.
+    Investigator(InvestigatorId),
+    /// The encounter deck.
+    Encounter,
 }
 
 /// A card-bearing zone, used as the `from` field on movement events
@@ -184,17 +194,25 @@ pub struct CardInPlay {
     /// and location clue pools. Most cards never carry clues (0). Required
     /// on the wire (#453).
     pub clues: u8,
+    /// Doom sitting on this card instance (Arcane Initiate 01063: *"Place 1
+    /// doom on it."*). It counts toward the agenda's threshold —
+    /// `glossary/Doom.md`: *"Doom on cards other than the agenda (such as
+    /// enemies, allies, locations, etc.) counts towards the amount of doom in
+    /// play."* — through [`board::doom_in_play`](crate::engine::board::doom_in_play),
+    /// and it leaves play with the card. Required on the wire (#453).
+    pub doom: u8,
     /// Per-ability usage counter for "Limit X per \[period\]" caps. Key
     /// is the ability index within the card's `abilities()`; value
-    /// records the last round the ability fired and how many times.
+    /// records the round and phase the ability last fired in and how many
+    /// times.
     ///
     /// Reset is **lazy** — when a query needs the count for the current
-    /// round, it reads the record; if the stored `round` doesn't match
-    /// [`GameState::round`](crate::state::GameState::round), the count
-    /// is treated as 0 (and overwritten on next fire). No explicit
-    /// round-end hook is required, which matters because Phase 3 has
-    /// no round-cycling framework yet — rounds tick by a test or future
-    /// scenario action mutating `state.round`.
+    /// period, it reads the record; if the stored clock is outside the
+    /// period containing [`GameState::round`](crate::state::GameState::round)
+    /// and [`GameState::phase`](crate::state::GameState::phase) (a different
+    /// round for a round limit; a different round or phase for a phase
+    /// limit), the count is treated as 0 (and overwritten on next fire). No
+    /// period-end hook is required.
     ///
     /// Empty for cards with no [`UsageLimit`] on any ability. Required on the
     /// wire (#453).
@@ -255,19 +273,26 @@ pub enum Owner {
 
 /// One ability's firing record for "Limit X per \[period\]" tracking.
 ///
-/// `round` is the value of
-/// [`GameState::round`](crate::state::GameState::round) at last fire.
-/// `count` is the number of fires during that round (compared against
+/// `round` and `phase` are the values of
+/// [`GameState::round`](crate::state::GameState::round) and
+/// [`GameState::phase`](crate::state::GameState::phase) at last fire —
+/// the clock every [`UsagePeriod`] reads its part of. `count` is the number
+/// of fires during the period that clock reading falls in (compared against
 /// the ability's [`UsageLimit::count`](card_dsl::dsl::UsageLimit::count)
 /// to gate further fires).
 ///
-/// `#[non_exhaustive]` so future periods (`Phase`, `Game`) can add
-/// fields without breaking downstream construction. Use
-/// [`AbilityUsageRecord::new`] to construct from outside the crate.
+/// The record stores the whole clock whatever the ability's period, so its
+/// shape does not vary by limit; the period is applied when the record is read
+/// or bumped.
+///
+/// `#[non_exhaustive]` so future periods (`Game`) can add fields without
+/// breaking downstream construction. Use [`AbilityUsageRecord::new`] to
+/// construct from outside the crate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct AbilityUsageRecord {
     pub round: u32,
+    pub phase: Phase,
     pub count: u8,
 }
 
@@ -276,14 +301,30 @@ impl AbilityUsageRecord {
     /// is `#[non_exhaustive]` so downstream code (tests, future
     /// scenario modules) must go through this constructor.
     #[must_use]
-    pub fn new(round: u32, count: u8) -> Self {
-        Self { round, count }
+    pub fn new(round: u32, phase: Phase, count: u8) -> Self {
+        Self {
+            round,
+            phase,
+            count,
+        }
+    }
+
+    /// Whether this record was made in the same `period` as the clock reading
+    /// `(round, phase)`. A `Round` period ignores the phase, so a round limit
+    /// does not reset at a phase change; a `Phase` period needs both to match,
+    /// since the same phase recurs every round.
+    fn in_period(self, period: UsagePeriod, round: u32, phase: Phase) -> bool {
+        match period {
+            UsagePeriod::Round => self.round == round,
+            UsagePeriod::Phase => self.round == round && self.phase == phase,
+        }
     }
 }
 
 /// Whether the ability at `ability_index` has reached its
-/// [`UsageLimit::count`] for the current period, reading the firing
-/// record out of `usage`. Shared by [`CardInPlay`] and
+/// [`UsageLimit::count`] for the period containing the clock reading
+/// `(current_round, current_phase)`, reading the firing record out of
+/// `usage`. Shared by [`CardInPlay`] and
 /// [`Investigator`](crate::state::Investigator) so both usage-bearing
 /// sources apply the same lazy-reset semantics (see the field docs on
 /// [`CardInPlay::ability_usage`]). `None` limit ⇒ no cap ⇒ `false`.
@@ -293,40 +334,35 @@ pub fn usage_exhausted(
     ability_index: u8,
     limit: Option<UsageLimit>,
     current_round: u32,
+    current_phase: Phase,
 ) -> bool {
     let Some(limit) = limit else {
         return false;
     };
-    match limit.period {
-        UsagePeriod::Round => {
-            let Some(record) = usage.get(&ability_index) else {
-                return false;
-            };
-            if record.round != current_round {
-                return false;
-            }
-            record.count >= limit.count
-        }
-    }
+    usage.get(&ability_index).is_some_and(|record| {
+        record.in_period(limit.period, current_round, current_phase) && record.count >= limit.count
+    })
 }
 
 /// Record one firing of the ability at `ability_index` against the
-/// current period, into `usage` (lazy reset when the stored record is
-/// for a stale period). Shared by [`CardInPlay`] and
-/// [`Investigator`](crate::state::Investigator).
+/// `period` containing the clock reading `(current_round, current_phase)`,
+/// into `usage` (lazy reset when the stored record is for a stale period).
+/// Shared by [`CardInPlay`] and [`Investigator`](crate::state::Investigator).
 pub fn bump_usage(
     usage: &mut BTreeMap<u8, AbilityUsageRecord>,
     ability_index: u8,
+    period: UsagePeriod,
     current_round: u32,
+    current_phase: Phase,
 ) {
-    let record = usage.entry(ability_index).or_insert(AbilityUsageRecord {
-        round: current_round,
-        count: 0,
-    });
-    if record.round != current_round {
-        record.round = current_round;
+    let record = usage
+        .entry(ability_index)
+        .or_insert(AbilityUsageRecord::new(current_round, current_phase, 0));
+    if !record.in_period(period, current_round, current_phase) {
         record.count = 0;
     }
+    record.round = current_round;
+    record.phase = current_phase;
     record.count = record.count.saturating_add(1);
 }
 
@@ -349,6 +385,7 @@ impl CardInPlay {
             accumulated_damage: 0,
             accumulated_horror: 0,
             clues: 0,
+            doom: 0,
             ability_usage: BTreeMap::new(),
             owner,
         }
@@ -368,16 +405,35 @@ impl CardInPlay {
         ability_index: u8,
         limit: Option<UsageLimit>,
         current_round: u32,
+        current_phase: Phase,
     ) -> bool {
-        usage_exhausted(&self.ability_usage, ability_index, limit, current_round)
+        usage_exhausted(
+            &self.ability_usage,
+            ability_index,
+            limit,
+            current_round,
+            current_phase,
+        )
     }
 
     /// Record one firing of the ability at `ability_index` against the
-    /// current period. Resets the counter if the stored record is for
+    /// current `period`. Resets the counter if the stored record is for
     /// a stale period (lazy reset — see the field-level docs on
     /// [`ability_usage`](Self::ability_usage)).
-    pub fn bump_ability_usage(&mut self, ability_index: u8, current_round: u32) {
-        bump_usage(&mut self.ability_usage, ability_index, current_round);
+    pub fn bump_ability_usage(
+        &mut self,
+        ability_index: u8,
+        period: UsagePeriod,
+        current_round: u32,
+        current_phase: Phase,
+    ) {
+        bump_usage(
+            &mut self.ability_usage,
+            ability_index,
+            period,
+            current_round,
+            current_phase,
+        );
     }
 }
 
@@ -410,13 +466,13 @@ mod tests {
 
     #[test]
     fn omitting_any_required_field_is_rejected() {
-        // `clues`, `ability_usage` and `owner` are required on the wire
-        // (#453): a payload missing one fails loudly rather than silently
-        // defaulting.
+        // `clues`, `doom`, `ability_usage` and `owner` are required on the
+        // wire (#453): a payload missing one fails loudly rather than
+        // silently defaulting.
         let c = CardInPlay::enter_play(CardCode("_x".into()), CardInstanceId(1), Owner::Scenario);
         let full = serde_json::to_value(&c).expect("serialize");
         serde_json::from_value::<CardInPlay>(full.clone()).expect("full object deserializes");
-        for field in ["clues", "ability_usage", "owner"] {
+        for field in ["clues", "doom", "ability_usage", "owner"] {
             let mut v = full.clone();
             v.as_object_mut()
                 .expect("card serializes to a JSON object")

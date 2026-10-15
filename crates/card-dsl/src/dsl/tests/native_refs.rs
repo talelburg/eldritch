@@ -97,6 +97,37 @@ fn a_native_condition_carried_by_an_action_designator_is_reported_as_a_condition
     assert_eq!(ability.native_refs(), [condition_ref("x:in-designator")]);
 }
 
+/// The walk reads the ability's designator whichever trigger it rides, so an
+/// event's designated `OnPlay` ability reports its natives too.
+#[test]
+fn a_native_condition_in_an_on_play_designator_is_reported() {
+    let ability = on_play_as(
+        fight(IntExpr::cond(native_condition("x:on-play"), 1, 0), 0u8),
+        seq([]),
+    );
+    assert_eq!(ability.native_refs(), [condition_ref("x:on-play")]);
+}
+
+/// An Evade designator's reveal and success clauses are effects the test
+/// resolves, so their natives are walked too (Blinding Light 01066 carries one
+/// in each).
+#[test]
+fn an_evade_designators_reveal_and_success_clauses_are_walked() {
+    let ability = on_play_as(
+        evade()
+            .with_reveal_clause(RevealClause {
+                symbols: ChaosSymbol::ALL_BUT_ELDER_SIGN.to_vec(),
+                effect: Box::new(native("x:revealed")),
+            })
+            .on_success(native("x:succeeded")),
+        seq([]),
+    );
+    assert_eq!(
+        ability.native_refs(),
+        [effect_ref("x:revealed"), effect_ref("x:succeeded")]
+    );
+}
+
 #[test]
 fn an_elder_signs_modifier_and_effect_arms_are_all_walked() {
     let mut ability = elder_sign(IntExpr::Lit(0));

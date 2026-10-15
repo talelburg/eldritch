@@ -31,7 +31,7 @@
 use card_dsl::dsl::{SkillTestKind, TestOutcome, TriggeringCondition};
 use serde::{Deserialize, Serialize};
 
-use crate::engine::dispatch::{actions, combat};
+use crate::engine::dispatch::{actions, combat, encounter};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::{evaluator, Cx};
 use crate::state::{
@@ -141,9 +141,10 @@ pub enum TimingEvent {
     /// the cards (Mark Harrigan 03001's *"After damage is placed on a card you
     /// control"*).
     ///
-    /// No card-facing [`EventPattern`](card_dsl::dsl::EventPattern) yet: none of
-    /// those cards is in the Core or Dunwich corpus, and a pattern with no
-    /// declaration to match is decoration. See
+    /// Neither of those cards is in the Core or Dunwich corpus. The card-facing
+    /// pattern is [`EventPattern::HarmPlaced`](card_dsl::dsl::EventPattern::HarmPlaced),
+    /// whose first consumer is Agnes Baker 01004's *"After 1 or more horror is
+    /// placed on Agnes Baker"* in the `after` cell. See
     /// `docs/adr/0009-damage-is-assigned-then-placed.md`.
     DamagePlaced {
         /// What dealt the harm.
@@ -202,8 +203,9 @@ pub enum TimingEvent {
         /// quantity, not the requested one (#471).
         count: u8,
     },
-    /// A card entered play (reaction-only, After). Opens the `AfterEnteredPlay`
-    /// window — Research Librarian 01032's tutor.
+    /// A card entered play (After). Opens the `AfterEnteredPlay` window —
+    /// Research Librarian 01032's tutor (a reaction) and Arcane Initiate
+    /// 01063's doom (a forced).
     EnteredPlay {
         /// The card instance that entered play (self-binding scope).
         instance: CardInstanceId,
@@ -227,6 +229,63 @@ pub enum TimingEvent {
         /// resolved from this event's value at the coordinator's resolve step,
         /// where `move::perform`'s locals are long out of scope.
         destination: LocationId,
+    },
+    /// An investigator's play of a card has **completed** — announced once
+    /// `Appendix_I_Initiation_Sequence.md` step 4 has: *"The card is regarded
+    /// as played (and placed in play, or in its owner's discard pile if it's an
+    /// event), and the ability is considered resolved simultaneously with the
+    /// completion of this step."* So an event is already in the discard pile
+    /// and an asset already in play. The 01012 ruling puts Heirloom of
+    /// Hyperborea's *"After you play a \[\[Spell\]\] card"* here: *"This trigger
+    /// occurs after the Spell card has resolved in full."*
+    ///
+    /// Not the logged [`Event::CardPlayed`](crate::event::Event::CardPlayed),
+    /// which records step 3, the card *commencing* being played. A **bare
+    /// milestone** (ADR 0008): the placement precedes it, so its resolve step
+    /// is a no-op.
+    ///
+    /// Announced from both play paths, the play action and a Fast event played
+    /// from a reaction window, because both dispose of the card through
+    /// `dispose_play_from_hand`. A played card something else already placed
+    /// (Barricade 01038 attaching itself) is not announced.
+    CardPlayed {
+        /// The investigator who played the card.
+        investigator: InvestigatorId,
+        /// The played card, which a [`CardFilter`](card_dsl::dsl::CardFilter)
+        /// narrows on.
+        code: CardCode,
+    },
+    /// An investigator **drew** an encounter card — framework step 1.4
+    /// (`Appendix_II_Timing_and_Gameplay.md`), a card effect's draw (Drawn to
+    /// the Flame 01064), or a scenario's (Rise of the Ghouls 01106's *"The lead
+    /// investigator draws that enemy."*). Every one of them resolves the card
+    /// through `encounter::resolve_encounter_card`, which announces this.
+    ///
+    /// **Coordinator-owned**, born so (#1056): its resolve step is the drawn
+    /// card's revelation, step 3 of 1.4's *"3. Resolve the revelation ability
+    /// on the drawn card."* So a `when` ability resolves before the revelation —
+    /// `glossary/When.md`'s *"When you draw an enemy card" initiates
+    /// immediately after you draw the enemy card, but before resolving its
+    /// revelation ability, spawning it, etc."* — which is where Ward of
+    /// Protection 01065's *"Cancel that card's revelation effect"* has to sit.
+    /// A cancel abandons the revelation and nothing else: the card's disposal
+    /// (step 4, the discard or the spawn) is on the `EncounterCard` frame
+    /// beneath this one, and still runs — `glossary/Cancel.md`: *"If the
+    /// effects of a treachery card are canceled, the card is still regarded as
+    /// having been drawn, and it is still placed in the encounter discard
+    /// pile."*
+    ///
+    /// The `after` cell therefore runs *before* the disposal, where
+    /// `glossary/After.md` would put "after you draw" after *"resolving its
+    /// revelation ability, spawning it, etc."* An interpretation with no
+    /// consumer: no Core or Dunwich card prints an `after`-draw-encounter
+    /// trigger.
+    EncounterCardDrawn {
+        /// The investigator who drew the card.
+        investigator: InvestigatorId,
+        /// The drawn card, which a [`CardFilter`](card_dsl::dsl::CardFilter)
+        /// narrows on.
+        code: CardCode,
     },
 }
 
@@ -252,7 +311,9 @@ impl TimingEvent {
             | TimingEvent::SkillTestResolved { investigator, .. }
             | TimingEvent::EnemyAttacks { investigator, .. }
             | TimingEvent::DiscoverClues { investigator, .. }
-            | TimingEvent::LeftLocation { investigator, .. } => Some(*investigator),
+            | TimingEvent::LeftLocation { investigator, .. }
+            | TimingEvent::CardPlayed { investigator, .. }
+            | TimingEvent::EncounterCardDrawn { investigator, .. } => Some(*investigator),
             TimingEvent::EnteredPlay { controller, .. } => Some(*controller),
             TimingEvent::EnemyDefeated { by, .. } => *by,
             TimingEvent::PhaseStarted { .. }
@@ -292,6 +353,8 @@ impl TimingEvent {
             TimingEvent::DiscoverClues { .. } => TriggeringCondition::DiscoverClues,
             TimingEvent::EnteredPlay { .. } => TriggeringCondition::EnteredPlay,
             TimingEvent::LeftLocation { .. } => TriggeringCondition::LeftLocation,
+            TimingEvent::CardPlayed { .. } => TriggeringCondition::CardPlayed,
+            TimingEvent::EncounterCardDrawn { .. } => TriggeringCondition::EncounterCardDrawn,
         }
     }
 
@@ -369,12 +432,26 @@ impl TimingEvent {
             //   location successfully attacks a [[Monster]] enemy: That
             //   investigator deals +1 damage."* — a `when` whose whole point is
             //   to raise the damage before ST.7 applies it.
+            // - `CardPlayed` — born coordinator-owned (#1048). The condition is
+            //   the play's *completion*, not its placement: the 01012 ruling
+            //   puts Heirloom of Hyperborea's *"After you play a [[Spell]]
+            //   card"* *"after the Spell card has resolved in full"*, and
+            //   Appendix I step 4 makes the card *"regarded as played"*
+            //   simultaneously with the step's completion. A completion is a
+            //   milestone like `PhaseStarted`, so the placement — the event to
+            //   the discard pile, the asset into play — precedes the emit rather
+            //   than being its resolve step. It could not be the resolve step
+            //   anyway: between the emit and that step the card would sit in no
+            //   zone, carried only by the event, where elimination's sweep could
+            //   not find it (ADR 0002). Its `when` cell is walked and no corpus
+            //   card listens there.
             TimingEvent::PhaseStarted { .. }
             | TimingEvent::RoundEnded
             | TimingEvent::GameEnd
             | TimingEvent::EliminationGameEnd { .. }
             | TimingEvent::SkillTestResolved { .. }
-            | TimingEvent::DamageAssigned { .. } => {
+            | TimingEvent::DamageAssigned { .. }
+            | TimingEvent::CardPlayed { .. } => {
                 ConditionResolution::Coordinator(resolve_bare_milestone)
             }
             // The fourth migration (#727/#722), which cost a model rather than
@@ -419,6 +496,13 @@ impl TimingEvent {
             // stay on the `MoveEnter` frame parked beneath the emit (#569).
             TimingEvent::LeftLocation { .. } => {
                 ConditionResolution::Coordinator(resolve_left_location)
+            }
+            // Born coordinator-owned (#1056). Ward of Protection 01065 prints
+            // *"Fast. Play when you draw a non-weakness treachery card. / Cancel
+            // that card's revelation effect."*, so the revelation has to be able
+            // to not happen: it is the condition's resolve step.
+            TimingEvent::EncounterCardDrawn { .. } => {
+                ConditionResolution::Coordinator(resolve_encounter_draw)
             }
             // Every other condition is still caller-owned: the emitting call site
             // mutates the board and *then* emits. Each flips to a coordinator-
@@ -611,6 +695,27 @@ fn resolve_left_location(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
     EngineOutcome::Done
 }
 
+/// The resolve step of [`TimingEvent::EncounterCardDrawn`]: the drawn card's
+/// revelation (#1056).
+///
+/// Framework step 1.4's *"3. Resolve the revelation ability on the drawn
+/// card."*, after the `when` cell has had its chance to cancel it (Ward of
+/// Protection 01065) and before the `at` and `after` cells. The revelation's
+/// effects are pushed above the coordinator, whose cursor is already at `At`,
+/// so one that suspends (a skill test, a choice) resumes into the `at` cell
+/// rather than revealing twice.
+///
+/// **Not** here: the disposal. It is step 4, on the
+/// [`EncounterCard`](crate::state::Continuation::EncounterCard) frame beneath
+/// the coordinator, and a cancelled revelation still reaches it.
+fn resolve_encounter_draw(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
+    let TimingEvent::EncounterCardDrawn { investigator, code } = event else {
+        unreachable!("resolve_encounter_draw: not an EncounterCardDrawn event: {event:?}");
+    };
+    encounter::resolve_revelation(cx, *investigator, code);
+    EngineOutcome::Done
+}
+
 /// Dispatch a timing event: push its `when → resolve → at → after` coordinator
 /// (#702). **Every** triggering condition goes through it — since #704 there is
 /// no bypass and no per-condition table of any kind here.
@@ -653,6 +758,7 @@ pub(crate) fn queue_event(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
     cx.state.continuations.push(EmitEventFrame {
         event: event.clone(),
         step: EmitStep::When,
+        prevented: false,
     });
     EngineOutcome::Done
 }

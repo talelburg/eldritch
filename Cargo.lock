@@ -3153,6 +3153,7 @@ dependencies = [
  "gloo-timers",
  "leptos",
  "protocol",
+ "scenarios",
  "serde_json",
  "wasm-bindgen",
  "wasm-bindgen-futures",

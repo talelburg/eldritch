@@ -100,12 +100,13 @@ pub struct SeatCard {
     setup: CardSetup,
 }
 
-/// The state a [`SeatCard`] enters with: [`uses`] or [`clues`]. A plain code
-/// enters with neither — no printed uses are seeded.
+/// The state a [`SeatCard`] enters with: [`uses`], [`clues`] or [`doom`]. A
+/// plain code enters with none — no printed uses are seeded.
 #[derive(Debug, Clone, Default)]
 pub struct CardSetup {
     uses: BTreeMap<UseKind, u8>,
     clues: u8,
+    doom: u8,
 }
 
 /// A card entering with `n` uses of `kind`: `(FIRST_AID, uses(UseKind::Supplies, 3))`.
@@ -113,7 +114,7 @@ pub struct CardSetup {
 pub fn uses(kind: UseKind, n: u8) -> CardSetup {
     CardSetup {
         uses: BTreeMap::from([(kind, n)]),
-        clues: 0,
+        ..CardSetup::default()
     }
 }
 
@@ -121,8 +122,17 @@ pub fn uses(kind: UseKind, n: u8) -> CardSetup {
 #[must_use]
 pub fn clues(n: u8) -> CardSetup {
     CardSetup {
-        uses: BTreeMap::new(),
         clues: n,
+        ..CardSetup::default()
+    }
+}
+
+/// A card entering with `n` doom on it: `(ARCANE_INITIATE, doom(1))`.
+#[must_use]
+pub fn doom(n: u8) -> CardSetup {
+    CardSetup {
+        doom: n,
+        ..CardSetup::default()
     }
 }
 
@@ -418,6 +428,7 @@ impl GameStateBuilder {
             let mut in_play = CardInPlay::enter_play(card.code, instance_id, owner);
             in_play.uses = card.setup.uses;
             in_play.clues = card.setup.clues;
+            in_play.doom = card.setup.doom;
             match zone {
                 SeatZone::InPlay => investigator.cards_in_play.push(in_play),
                 SeatZone::ThreatArea => investigator.threat_area.push(in_play),

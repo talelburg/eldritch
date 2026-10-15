@@ -12,7 +12,8 @@
 //!   must agree first, then a `match` on the event with no wildcard arm.
 //! - [`collect_forced`] — the forced filter over the two: one candidate per
 //!   hit, bound to one controller by the forced-binding rule, not filtered by
-//!   reachability.
+//!   reachability, plus the forced abilities live in hand
+//!   ([`AbilityZone::Hand`]) of the cards in each investigator's hand.
 //! - [`collect_reactions`] — the reaction filter: one candidate per
 //!   investigator who can reach the hit's source (ADR 0010), plus the Fast
 //!   events in each investigator's hand.
@@ -22,8 +23,8 @@
 
 use card_dsl::card_data::CardType;
 use card_dsl::dsl::{
-    self, AttackerScope, EventPattern, EventTiming, TargetScope, TestedLocationScope, Trigger,
-    TriggerKind,
+    self, AbilityZone, AttackerScope, EventPattern, EventTiming, HarmKind, HarmPlacedScope,
+    TargetScope, TestedLocationScope, Trigger, TriggerKind,
 };
 
 use crate::card_registry::CardRegistry;
@@ -42,7 +43,7 @@ use crate::state::{
 #[derive(Debug, Clone, Copy)]
 pub(super) struct BoardSource<'a> {
     /// Where the card is — a board source, or [`CandidateSource::Hand`] for a
-    /// Fast event in an investigator's hand.
+    /// card in an investigator's hand.
     pub(super) source: CandidateSource,
     /// The card's code, which its abilities are looked up by.
     pub(super) code: &'a CardCode,
@@ -57,10 +58,15 @@ pub(super) struct BoardSource<'a> {
 /// [board walk](board::walk), in its order (ADR 0018), with two changes the scan
 /// alone makes.
 ///
-/// - **Fast events in hand are added**, after the whole board — the act and
-///   the agenda included — one investigator's hand at a time in the walk's
-///   investigator order. A hand is not on the board, but a Fast event's
-///   reaction is played from there.
+/// - **Hand cards are added**, after the whole board — the act and the agenda
+///   included — one investigator's hand at a time in the walk's investigator
+///   order. A hand is not on the board, but a Fast event's reaction is played
+///   from there, and a forced ability live in hand works from there (Dark
+///   Memory 01013's *"If Dark Memory is in your hand at the end of your
+///   turn"*). Which hand cards depends on `kind`: for a
+///   [`Reaction`](TriggerKind::Reaction) scan only the Fast events, for a
+///   [`Forced`](TriggerKind::Forced) scan every card, of whose abilities
+///   [`triggers_at`] reads only those live in hand.
 /// - **At an advance, the act or agenda slot holds the card the event names.**
 ///   It is still the current one while its reverse resolves (the cursor moves
 ///   on at the advance's finalize step), and the event's code is the authority
@@ -74,19 +80,19 @@ pub(super) struct BoardSource<'a> {
 /// [`TimingEvent::EliminationGameEnd`] names, who has already been flipped off
 /// `Active` when Elimination step 0 fires for their weaknesses.
 ///
-/// The walk does not filter by kind, timing or pattern. The forced collector
-/// ignores the hand slot (no corpus card prints a forced ability that works
-/// from hand); [`collect_reactions`] uses it for Fast events.
+/// Beyond the hand slot, the walk does not filter by kind, timing or pattern.
 pub(super) fn board_walk<'a>(
     state: &'a GameState,
     cards: &'a CardRegistry,
     event: &'a TimingEvent,
+    kind: TriggerKind,
 ) -> Vec<BoardSource<'a>> {
     let exempt = match event {
         TimingEvent::EliminationGameEnd { investigator } => Some(*investigator),
         _ => None,
     };
-    // The Fast events in `id`'s hand.
+    // The cards in `id`'s hand a `kind` scan reads: the Fast events for a
+    // reaction scan, every card for a forced one.
     let hand = |id: InvestigatorId| {
         let held = state
             .investigators
@@ -94,10 +100,11 @@ pub(super) fn board_walk<'a>(
             .map(|inv| {
                 inv.hand
                     .iter()
-                    .filter(|code| {
-                        (cards.metadata_for)(code).is_some_and(|meta| {
+                    .filter(|code| match kind {
+                        TriggerKind::Forced => true,
+                        TriggerKind::Reaction => (cards.metadata_for)(code).is_some_and(|meta| {
                             meta.is_fast() && meta.card_type() == CardType::Event
-                        })
+                        }),
                     })
                     .collect::<Vec<_>>()
             })
@@ -173,9 +180,19 @@ pub(super) fn board_walk<'a>(
 /// - the current **act** or **agenda** → the lead proxy, the first Active
 ///   investigator in `turn_order` (GLOSSARY "Lead investigator");
 /// - any other **uncontrolled** card → the condition's
-///   [`subject`](TimingEvent::subject), or the lead proxy when it has none.
+///   [`subject`](TimingEvent::subject), or the lead proxy when it has none;
+/// - a card in **hand** → the investigator holding it.
 ///
 /// A hit with no one to bind (no lead and no subject) is not collected.
+///
+/// A card's forced abilities are read where they are live
+/// ([`Ability::active_in`](dsl::Ability::active_in)) — `glossary/Ability.md`:
+/// *"Card abilities only interact with the game if the card bearing the ability
+/// is in play, unless the ability (or rules for the cardtype) specifically
+/// references its use from an out-of-play area."* A card in hand contributes
+/// only the abilities marked live in hand, Dark Memory 01013's alone in the
+/// corpus, so Arcane Initiate 01063's *"After Arcane Initiate enters play"*
+/// stays inert there.
 pub(super) fn collect_forced(
     state: &GameState,
     cards: &CardRegistry,
@@ -184,17 +201,14 @@ pub(super) fn collect_forced(
 ) -> Vec<ResolutionCandidate> {
     let lead = cursor::first_active_investigator(state);
     let mut hits = Vec::new();
-    for walked in board_walk(state, cards, event) {
-        // Forced abilities on cards out of play are not scanned: no corpus
-        // card prints one.
-        let CandidateSource::Ability(source) = walked.source else {
-            continue;
-        };
-        let bound = walked.controller.or(match source {
-            AbilitySource::Act | AbilitySource::Agenda => lead,
-            AbilitySource::InPlay(_) | AbilitySource::Location(_) | AbilitySource::Enemy(_) => {
-                event.subject().or(lead)
-            }
+    for walked in board_walk(state, cards, event, TriggerKind::Forced) {
+        // A hand card's controller is the investigator holding it.
+        let bound = walked.controller.or(match walked.source {
+            CandidateSource::Hand => None,
+            CandidateSource::Ability(AbilitySource::Act | AbilitySource::Agenda) => lead,
+            CandidateSource::Ability(
+                AbilitySource::InPlay(_) | AbilitySource::Location(_) | AbilitySource::Enemy(_),
+            ) => event.subject().or(lead),
         });
         let Some(controller) = bound else {
             continue;
@@ -273,7 +287,7 @@ pub(super) fn collect_reactions(
     // board hit needs them.
     let mut reach: Option<Vec<(InvestigatorId, Vec<AbilitySource>)>> = None;
     let mut hits = Vec::new();
-    for walked in board_walk(state, cards, event) {
+    for walked in board_walk(state, cards, event, TriggerKind::Reaction) {
         let reactions = triggers_at(
             state,
             cards,
@@ -360,6 +374,13 @@ pub(super) fn collect_reactions(
 /// with their addresses: through the side-in-effect / grant funnel for a board
 /// source, the printed front for a card in hand (nothing grants to a card out
 /// of play).
+///
+/// Only the abilities live where the card is
+/// ([`Ability::active_in`](dsl::Ability::active_in)): in play for a board
+/// source, in hand for a forced ability on a hand card. A Fast event's
+/// reaction in hand is not gated this way — the event is played from there, a
+/// rule of its cardtype, and [`board_walk`] has already narrowed the hand to
+/// Fast events.
 fn triggers_at(
     state: &GameState,
     cards: &CardRegistry,
@@ -371,6 +392,11 @@ fn triggers_at(
     abilities_in_effect::for_candidate_source(state, cards, source, code)
         .unwrap_or_default()
         .into_iter()
+        .filter(|(_, ability)| match (source, kind) {
+            (CandidateSource::Hand, TriggerKind::Reaction) => true,
+            (CandidateSource::Hand, TriggerKind::Forced) => ability.active_in == AbilityZone::Hand,
+            (CandidateSource::Ability(_), _) => ability.active_in == AbilityZone::InPlay,
+        })
         .filter_map(|(address, ability)| match ability.trigger {
             Trigger::OnEvent {
                 pattern,
@@ -449,11 +475,16 @@ pub(super) fn trigger_matches(
         TimingEvent::PhaseEnded { phase } => {
             matches!(pattern, EventPattern::PhaseEnded { phase: p } if *p == dsl_phase(*phase))
         }
-        // "At the end of **your** turn" (Frozen in Fear 01164) and "…**you**
+        // "At the end of **your** turn" (Frozen in Fear 01164), "…**you**
         // discover clues" (Cover Up 01007; its "at your location" half reads
-        // the board, in [`scope_matches`]).
+        // the board, in [`scope_matches`]), "After **you** play a [[Spell]]
+        // card" (Heirloom of Hyperborea 01012) and "Play when **you** draw a
+        // non-weakness treachery card" (Ward of Protection 01065). The last
+        // two's card filters read metadata, in [`scope_matches`].
         TimingEvent::EndOfTurn { investigator }
-        | TimingEvent::DiscoverClues { investigator, .. } => *investigator == controller,
+        | TimingEvent::DiscoverClues { investigator, .. }
+        | TimingEvent::CardPlayed { investigator, .. }
+        | TimingEvent::EncounterCardDrawn { investigator, .. } => *investigator == controller,
         // "**When an enemy attack** deals damage to Guard Dog" (01021). The
         // self-binding half is the source's, in [`scope_matches`]; this half is
         // the card's narrowing to an enemy attack, which `Effect::Deal` harm
@@ -496,11 +527,38 @@ pub(super) fn trigger_matches(
             controller: window_controller,
             ..
         } => *window_controller == controller,
+        // "After 1 or more horror is **placed on Agnes Baker**" (01004): the
+        // controller's own investigator card took at least 1 of the kind. Only
+        // the investigator card's share counts, so horror soaked by an asset
+        // does not — her ruling, *"You cannot use Agnes' ability if you assign
+        // horror to an asset."* (<https://arkhamdb.com/card/01004>). The event
+        // is emitted even when every point was soaked, which is why the share
+        // is read rather than the event's presence.
+        TimingEvent::DamagePlaced {
+            investigator,
+            assignment,
+            ..
+        } => {
+            let EventPattern::HarmPlaced { kind, scope } = pattern else {
+                unreachable!(
+                    "trigger_matches: the condition check paired {pattern:?} with DamagePlaced, \
+                     but only EventPattern::HarmPlaced has that condition"
+                )
+            };
+            match scope {
+                HarmPlacedScope::YourInvestigator => {
+                    let placed = match kind {
+                        HarmKind::Damage => assignment.investigator_damage,
+                        HarmKind::Horror => assignment.investigator_horror,
+                    };
+                    *investigator == controller && placed >= 1
+                }
+            }
+        }
         // The condition is the whole of what the event says. Every scope these
         // patterns carry is about where the card is, in [`scope_matches`]:
         // the attacker and the target, the entered and the left location, the
-        // advancing card, elimination's weaknesses. `DamagePlaced` has no
-        // pattern yet, so the condition check above has refused every one.
+        // advancing card, elimination's weaknesses.
         TimingEvent::EnemyAttacks { .. }
         | TimingEvent::RoundEnded
         | TimingEvent::EnteredLocation { .. }
@@ -508,8 +566,7 @@ pub(super) fn trigger_matches(
         | TimingEvent::AgendaAdvanced { .. }
         | TimingEvent::GameEnd
         | TimingEvent::EliminationGameEnd { .. }
-        | TimingEvent::LeftLocation { .. }
-        | TimingEvent::DamagePlaced { .. } => true,
+        | TimingEvent::LeftLocation { .. } => true,
     }
 }
 
@@ -610,6 +667,20 @@ fn scope_matches(
         TimingEvent::DiscoverClues { location, .. } => {
             location_of(state, controller) == Some(*location)
         }
+        // "After you play a **[[Spell]]** card" (Heirloom of Hyperborea 01012)
+        // and "When you draw a **non-weakness treachery** card" (Ward of
+        // Protection 01065): the played or drawn card's printed metadata passes
+        // the pattern's filter. Not a narrowing of where the ability's card is,
+        // but it needs the registry, which [`trigger_matches`] does not take.
+        TimingEvent::CardPlayed { code, .. } | TimingEvent::EncounterCardDrawn { code, .. } => {
+            let Some(filter) = pattern.card_filter() else {
+                unreachable!(
+                    "scope_matches: trigger_matches paired {pattern:?} with {event:?}, but only \
+                     a pattern carrying a card filter has that condition"
+                )
+            };
+            (cards.metadata_for)(code).is_some_and(|meta| filter.matches(meta))
+        }
         // Board-wide conditions, and conditions whose only scope is the
         // controller (read in `trigger_matches`): no card's position narrows
         // them.
@@ -627,10 +698,10 @@ fn scope_matches(
 /// against `source`: a card instance must pass `is_self`, and a board source
 /// with no instance (a location, an enemy, the act, the agenda) never does.
 ///
-/// A Fast event in hand passes unread. It has no instance on the board for the
-/// self to be, so a Fast event declaring the pattern is played in that
-/// condition's window unscoped by it — as `trigger_initiation.rs` relies on
-/// (#964).
+/// A card in hand has no instance on the board for the self to be, and passes
+/// unread: whether its ability is read at all is [`triggers_at`]'s zone gate.
+/// So a Fast event declaring the pattern is played in that condition's window
+/// unscoped by it, as `trigger_initiation.rs` relies on (#964).
 fn self_scoped(source: CandidateSource, is_self: impl Fn(CardInstanceId) -> bool) -> bool {
     match source {
         CandidateSource::Ability(source) => source.instance().is_some_and(is_self),

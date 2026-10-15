@@ -175,24 +175,6 @@ pub struct GameState {
     // [`Self::current_encounter_drawer`]. The former `mythos_draw_pending:
     // Option<InvestigatorId>` cursor is removed — the continuation stack is the
     // single source of truth (mirroring the `mulligan_pending` fold).
-    /// Set by [`Effect::Cancel`](card_dsl::dsl::Effect::Cancel) while a `when`-cell
-    /// reaction window resolves, to skip the prevented impact (Axis D #336).
-    /// Read-and-cleared by whoever owns the condition's resolution: the timing
-    /// coordinator at its resolve step for a coordinator-owned condition (clue
-    /// discovery, #703), the emit site after the window closes for a
-    /// caller-owned one (the enemy-attack loop). A bool suffices because
-    /// Before-windows do not nest in scope — exactly one cancellable impact is
-    /// ever in flight. TODO(#367): typed marker once Before-windows can nest.
-    /// Required on the wire (#453).
-    ///
-    /// While set, a coordinator-owned condition's sequence is **abandoned**, not
-    /// merely stripped of its resolve step: the `at` and `after` cells and the
-    /// rest of the `when` cell are all suppressed (#714). One bool serves both
-    /// suppressing arms — a cancel and a nature-changing replacement behave
-    /// identically — and the non-suppressing third arm is #366. The citations
-    /// live on `coordinator::prevented_in_the_when_cell`, which is where the
-    /// signal is read.
-    pub pending_cancellation: bool,
     // The former `pending_revelation_discard: Option<CardCode>` side-channel is
     // removed (#380): a drawn treachery's disposal now rides a
     // `Continuation::EncounterCard` frame whose framework teardown discards it

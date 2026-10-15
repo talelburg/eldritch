@@ -290,7 +290,8 @@ fn use_kind_label(kind: UseKind) -> &'static str {
 
 /// Live per-instance state of an in-play card as chip strings: uses pools first
 /// (`"2 ammo"`), then soak (`"dmg 1/2"` / `"hor 0/2"`) for an `Asset` that has
-/// that capacity. Empty for a plain asset with no uses and no soak capacity.
+/// that capacity, then clues and doom on the card when non-zero. Empty for a
+/// plain asset with no uses, no soak capacity and no tokens.
 #[must_use]
 pub fn live_state_chips(inst: &CardInPlay, kind: &CardKind) -> Vec<String> {
     let mut chips = Vec::new();
@@ -307,6 +308,9 @@ pub fn live_state_chips(inst: &CardInPlay, kind: &CardKind) -> Vec<String> {
     }
     if inst.clues > 0 {
         chips.push(format!("clues {}", inst.clues));
+    }
+    if inst.doom > 0 {
+        chips.push(format!("doom {}", inst.doom));
     }
     chips
 }
@@ -719,6 +723,26 @@ mod tests {
         assert_eq!(
             live_state_chips(&inst, &meta.kind),
             vec!["clues 3".to_string()]
+        );
+    }
+
+    #[test]
+    fn live_state_chips_includes_doom_on_card() {
+        // Arcane Initiate (ally, health 1 / sanity 2) with its 1 doom.
+        let meta = cards::by_code("01063").expect("Arcane Initiate in corpus");
+        let mut inst = TestCardInPlay::enter_play(
+            CardCode::new("01063"),
+            CardInstanceId(0),
+            CardOwner::Investigator(InvestigatorId(1)),
+        );
+        inst.doom = 1;
+        assert_eq!(
+            live_state_chips(&inst, &meta.kind),
+            vec![
+                "dmg 0/1".to_string(),
+                "hor 0/2".to_string(),
+                "doom 1".to_string(),
+            ]
         );
     }
 

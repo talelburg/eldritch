@@ -5,7 +5,7 @@
 //! enemy is the only enemy engaged with you, this attack deals +1 damage.
 //! ```
 //!
-//! **Designator: Fight** — the bold word, declared on the trigger, which
+//! **Designator: Fight** — the bold word, declared on the ability, which
 //! **performs the attack** and carries the two modifications the printed text
 //! describes: the `+1 [combat]` and the conditional `+1` damage (#805). There
 //! is no effect beside it that could root the ability in a different action;
@@ -112,18 +112,16 @@ mod tests {
     fn one_costless_activated_fight_ability() {
         let abilities = abilities();
         assert_eq!(abilities.len(), 1);
-        let Trigger::Activated {
-            action_cost: 1,
-            designator:
-                Some(ActionDesignator::Fight {
-                    combat_modifier,
-                    extra_damage,
-                }),
-        } = &abilities[0].trigger
+        assert_eq!(abilities[0].trigger, Trigger::Activated { action_cost: 1 });
+        let Some(ActionDesignator::Fight {
+            combat_modifier,
+            extra_damage,
+            ..
+        }) = &abilities[0].designator
         else {
             panic!(
-                "expected a 1-action Fight designator, got {:?}",
-                abilities[0].trigger
+                "expected a Fight designator, got {:?}",
+                abilities[0].designator
             );
         };
         assert!(

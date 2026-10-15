@@ -7,7 +7,7 @@ use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::outcome::{
     ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
 };
-use crate::engine::Cx;
+use crate::engine::{board, Cx};
 use crate::event::Event;
 use crate::state::{AdvanceDeck, AdvanceReverseFrame, AdvanceStep, AdvanceTrigger, CardCode};
 
@@ -108,9 +108,15 @@ pub(super) fn drive(cx: &mut Cx) -> EngineOutcome {
 /// that has run off the end of the deck.
 fn finalize(cx: &mut Cx, deck: AdvanceDeck, from: usize) {
     // Doom leaves the agenda whether or not a next one becomes current: RR step
-    // 1 removes the tokens, and only step 3 has a next card to move to.
+    // 1 removes the tokens, and only step 3 has a next card to move to. The
+    // same step clears the doom on every other card:
+    // `glossary/Act_Deck_and_Agenda_Deck.md` step 1 — "If the agenda deck is
+    // advancing, remove all doom from each card in play." Both clears run
+    // here, after the reverse, though step 1 places them before it; no
+    // in-scope reverse reads doom.
     if matches!(deck, AdvanceDeck::Agenda) {
         cx.state.agenda_doom = 0;
+        board::clear_doom_on_cards(cx.state);
     }
     let (cursor, deck_len, label) = match deck {
         AdvanceDeck::Agenda => (

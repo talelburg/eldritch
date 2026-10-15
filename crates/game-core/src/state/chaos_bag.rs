@@ -1,5 +1,6 @@
 //! The chaos bag: pool of tokens drawn during skill tests.
 
+use card_dsl::dsl::ChaosSymbol;
 use serde::{Deserialize, Serialize};
 
 /// One token in the chaos bag.
@@ -33,6 +34,23 @@ pub enum ChaosToken {
     AutoFail,
     /// Elder Sign. Investigator's own elder-sign ability triggers.
     ElderSign,
+}
+
+impl ChaosToken {
+    /// The symbol this token shows, as a card names it, or `None` for a
+    /// numeric token.
+    #[must_use]
+    pub fn symbol(self) -> Option<ChaosSymbol> {
+        match self {
+            Self::Numeric(_) => None,
+            Self::Skull => Some(ChaosSymbol::Skull),
+            Self::Cultist => Some(ChaosSymbol::Cultist),
+            Self::Tablet => Some(ChaosSymbol::Tablet),
+            Self::ElderThing => Some(ChaosSymbol::ElderThing),
+            Self::AutoFail => Some(ChaosSymbol::AutoFail),
+            Self::ElderSign => Some(ChaosSymbol::ElderSign),
+        }
+    }
 }
 
 /// The pool of chaos tokens for the current scenario.

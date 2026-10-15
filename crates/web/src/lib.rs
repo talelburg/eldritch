@@ -17,6 +17,7 @@ pub mod interaction;
 pub mod map;
 pub mod names;
 pub mod registry;
+pub mod scaffold_decks;
 pub mod skill_test_result;
 pub mod status_bar;
 pub mod store;

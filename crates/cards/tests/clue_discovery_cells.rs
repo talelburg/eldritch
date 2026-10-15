@@ -245,9 +245,13 @@ fn a_cancelled_discovery_suppresses_the_at_and_after_cells() {
         "no marker fired"
     );
     assert!(
-        !session.state().pending_cancellation,
-        "the signal must be consumed at the resolve step, not left to catch the \
-         next condition"
+        !session
+            .state()
+            .continuations
+            .iter()
+            .any(|c| matches!(c, Continuation::EmitEvent(e) if e.prevented)),
+        "the cancelled condition must leave the stack at its resolve step; stack = {:?}",
+        session.state().continuations
     );
     assert_no_queued_frames(session.state(), "the abandoned sequence left frames behind");
 }

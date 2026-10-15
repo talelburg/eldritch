@@ -9,7 +9,7 @@
 3. each enemy by id, then its attachments;
 4. the current act, then the current agenda.
 
-The walk itself is unfiltered, and the scan (`trigger_scan::board_walk`) narrows it three ways. It appends the Fast events in each investigator's hand, in the walk's investigator order, after the act and the agenda: a hand is not on the board, so it comes after the whole of it. It skips eliminated investigators, since Rules Reference p.10 removes their cards and only this filter keeps their investigator card out (#567). The one exception is the investigator `EliminationGameEnd` names, who is already off `Active` when step 0 fires for their weaknesses. And at an advance, the act or agenda slot holds the card the event names: during its reverse it is still the current one, and the event's code is the authority for which card that is.
+The walk itself is unfiltered, and the scan (`trigger_scan::board_walk`) narrows it three ways. It appends each investigator's hand, in the walk's investigator order, after the act and the agenda: a hand is not on the board, so it comes after the whole of it. The reaction scan reads only the Fast events there. The forced scan reads only the forced abilities a card marks live in hand (`Ability::active_in`). A card in hand is out of play, and `glossary/Ability.md` keeps its abilities from the game *"unless the ability … specifically references its use from an out-of-play area"*. Dark Memory 01013's *"If Dark Memory is in your hand at the end of your turn"* is such an ability, and the only one in the corpus (#1046). So Arcane Initiate 01063's *"After Arcane Initiate enters play"* stays inert in hand, whatever its pattern. On the board, the scan reads only the abilities live in play. It skips eliminated investigators, since Rules Reference p.10 removes their cards and only this filter keeps their investigator card out (#567). The one exception is the investigator `EliminationGameEnd` names, who is already off `Active` when step 0 fires for their weaknesses. And at an advance, the act or agenda slot holds the card the event names: during its reverse it is still the current one, and the event's code is the authority for which card that is.
 
 ## What narrows a condition is on the card
 
@@ -26,7 +26,8 @@ A forced hit is one candidate, and it is not filtered by reachability. ADR 0010:
 
 - a **controlled** card → its controller;
 - the current **act** or **agenda** → the lead proxy, the first Active investigator in `turn_order` (GLOSSARY "Lead investigator");
-- any other **uncontrolled** card — a location, an enemy, an attachment on either → the condition's **subject**, falling back to the lead proxy when there is none.
+- any other **uncontrolled** card — a location, an enemy, an attachment on either → the condition's **subject**, falling back to the lead proxy when there is none;
+- a card in **hand** → the investigator holding it.
 
 The subject is `TimingEvent::subject`, another exhaustive match: the investigator who entered, left, was attacked, tested, discovered, was dealt harm, ended their turn or was eliminated, and `by` for an enemy defeat. Phase boundaries, advances and the round's and game's end have none. The rule reproduces every binding the per-point arms made. It also reaches cards they never did: a location's *"after an enemy is defeated"* binds the investigator who defeated it.
 
@@ -67,4 +68,4 @@ Each caller filters the walk to what it needs:
 
 ---
 
-*Folded #983 (the sweeps, reachability and the instance lookup moved onto the walk, which moved from `trigger_scan` to `engine::board`, and the Fast events in hand to after the whole board), and #975 (the cardtype filter on co-located threat areas).*
+*Folded #983 (the sweeps, reachability and the instance lookup moved onto the walk, which moved from `trigger_scan` to `engine::board`, and the Fast events in hand to after the whole board), #975 (the cardtype filter on co-located threat areas), and #1046 (forced abilities live in hand, which the ability declares).*

@@ -25,7 +25,7 @@ use crate::state::{
 /// [`candidates`](crate::engine::dispatch::actions::fight::candidates), which
 /// is what the basic action's target validation, the turn menu, the activation
 /// pre-cost gate (`designator::can_perform`) and the evaluator's target
-/// grounding (`ground_fight_target_choice`) all read in turn.
+/// grounding (`ground_designated_enemy`) all read in turn.
 pub(crate) fn fight_target_scope() -> EntityScope {
     EntityScope::At(LocationSet::Here)
 }

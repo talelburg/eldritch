@@ -1302,30 +1302,64 @@ fn park_hand_size_discard(cx: &mut Cx, remaining: Vec<InvestigatorId>) -> Engine
     cx.state
         .continuations
         .push(Continuation::HandSizeDiscard(HandSizeDiscard { remaining }));
-    hand_size_discard_prompt()
+    hand_size_discard_prompt(cx)
 }
 
 /// The [`EngineOutcome::AwaitingInput`] a [`HandSizeDiscard`] frame on top
 /// waits on: shown by [`park_hand_size_discard`] when it pushes the frame, and
-/// again by the main loop when it meets the frame on top.
-pub(super) fn hand_size_discard_prompt() -> EngineOutcome {
+/// again by the main loop when it meets the frame on top. It names the count
+/// the pick must hold ([`hand_size_discard_count`] for the investigator
+/// prompted), which falls short of reaching the cap when weaknesses fill the
+/// overflow, and says that weaknesses can't be chosen.
+pub(super) fn hand_size_discard_prompt(cx: &Cx) -> EngineOutcome {
+    let count = cx
+        .state
+        .continuations
+        .top_expect::<HandSizeDiscard>()
+        .remaining
+        .first()
+        .map_or(0, |id| hand_size_discard_count(cx, *id));
+    let cards = if count == 1 { "card" } else { "cards" };
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_multiple(format!(
-            "You have more than {HAND_SIZE_LIMIT} cards in hand — choose cards to discard \
-             down to {HAND_SIZE_LIMIT}.",
+            "You have more than {HAND_SIZE_LIMIT} cards in hand — choose {count} {cards} to \
+             discard. Weaknesses can't be chosen.",
         )),
         resume_token: ResumeToken(0),
     }
 }
 
+/// How many cards `id` must discard at step 4.5: the overflow over
+/// [`HAND_SIZE_LIMIT`], capped at the non-weakness cards in hand.
+///
+/// `glossary/Weakness.md`: *"A player may not optionally choose to discard a
+/// weakness card from hand, unless a card explicitly specifies otherwise."* An
+/// overflow the non-weaknesses cannot meet is not met: the hand stays over the
+/// cap. The Official FAQ (`data/official-faq/Frequently_Asked_Questions.md`,
+/// Forced Learning) answers the same shortfall that way: *"Weaknesses cannot be
+/// chosen to be discarded from your hand. … If you draw 2 weaknesses, you cannot
+/// discard either one, and must resolve both of them."*
+fn hand_size_discard_count(cx: &Cx, id: InvestigatorId) -> usize {
+    let hand = &cx.state.investigators[&id].hand;
+    let overflow = hand.len().saturating_sub(HAND_SIZE_LIMIT as usize);
+    let discardable = hand
+        .iter()
+        .filter(|code| !cards::is_weakness_code(cx.cards, code))
+        .count();
+    overflow.min(discardable)
+}
+
 /// 4.5 Each investigator checks hand size. In player order, each
-/// investigator over [`HAND_SIZE_LIMIT`] is prompted to discard down to
-/// the cap. Returns [`EngineOutcome::AwaitingInput`] (parking on the
-/// first over-cap investigator) when anyone is over, or
-/// [`EngineOutcome::Done`] when nobody is — in which case the caller
-/// proceeds straight to 4.6.
+/// investigator over [`HAND_SIZE_LIMIT`] with a card it may discard is
+/// prompted to discard down to the cap ([`hand_size_discard_count`]). Returns
+/// [`EngineOutcome::AwaitingInput`] (parking on the first such investigator)
+/// when anyone is, or [`EngineOutcome::Done`] when nobody is — in which case
+/// the caller proceeds straight to 4.6.
 fn check_hand_size(cx: &mut Cx) -> EngineOutcome {
-    let remaining = over_cap_investigators(cx.state);
+    let remaining: Vec<InvestigatorId> = over_cap_investigators(cx.state)
+        .into_iter()
+        .filter(|&id| hand_size_discard_count(cx, id) > 0)
+        .collect();
     if remaining.is_empty() {
         return EngineOutcome::Done;
     }
@@ -1334,8 +1368,8 @@ fn check_hand_size(cx: &mut Cx) -> EngineOutcome {
 
 /// Resume a parked upkeep hand-size discard (#111). Validates the
 /// `PickMultiple` response against the currently-prompted investigator
-/// (`remaining[0]`): the indices must be unique, in-bounds, and exactly
-/// `hand.len() - HAND_SIZE_LIMIT` in count. On success, discards the
+/// (`remaining[0]`): the indices must be unique, in-bounds, name no weakness,
+/// and be exactly [`hand_size_discard_count`] in count. On success, discards the
 /// chosen cards (emitting [`Event::CardDiscarded`] per card), pops the
 /// queue front, and either re-prompts the next over-cap investigator or
 /// — when the queue drains — runs [`upkeep_phase_end`] (4.6 + transition
@@ -1364,12 +1398,12 @@ pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) ->
         unreachable!("resume_hand_size_discard: prompted investigator {current:?} vanished")
     });
     let hand_len = inv.hand.len();
-    let target = hand_len.saturating_sub(HAND_SIZE_LIMIT as usize);
+    let target = hand_size_discard_count(cx, current);
     if indices.len() != target {
         return EngineOutcome::Rejected {
             reason: format!(
                 "hand-size discard: {current:?} must discard exactly {target} card(s) \
-                 (hand {hand_len}, cap {HAND_SIZE_LIMIT}), got {}",
+                 (hand {hand_len}, cap {HAND_SIZE_LIMIT}, weaknesses excluded), got {}",
                 indices.len(),
             )
             .into(),
@@ -1386,6 +1420,16 @@ pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) ->
             return EngineOutcome::Rejected {
                 reason: format!(
                     "hand-size discard: hand index {i} out of bounds (hand size {hand_len})",
+                )
+                .into(),
+            };
+        }
+        let code = &inv.hand[i as usize];
+        if cards::is_weakness_code(cx.cards, code) {
+            return EngineOutcome::Rejected {
+                reason: format!(
+                    "hand-size discard: {code} at hand index {i} is a weakness, which may not \
+                     be chosen to be discarded",
                 )
                 .into(),
             };

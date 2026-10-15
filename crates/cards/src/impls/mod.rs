@@ -86,27 +86,36 @@
 use card_dsl::dsl::Ability;
 use game_core::card_registry::{NativeConditionFn, NativeEffectFn};
 
+pub mod agnes_baker;
 pub mod ancient_evils;
+pub mod arcane_initiate;
+pub mod arcane_studies;
 pub mod attic;
 pub mod automatic_45;
 pub mod barricade;
 pub mod beat_cop;
+pub mod blinding_light;
 pub mod cellar;
 pub mod cover_up;
 pub mod crypt_chill;
+pub mod dark_memory;
 pub mod deduction;
 pub mod dissonant_voices;
 pub mod dodge;
 pub mod dr_milan_christopher;
+pub mod drawn_to_the_flame;
 pub mod dynamite_blast;
 pub mod emergency_cache;
 pub mod evidence;
+pub mod fearless;
 pub mod first_aid;
 pub mod flashlight;
+pub mod forbidden_knowledge;
 pub mod frozen_in_fear;
 pub mod grasping_hands;
 pub mod guard_dog;
 pub mod guts;
+pub mod heirloom_of_hyperborea;
 pub mod holy_rosary;
 pub mod hyperawareness;
 pub mod knife;
@@ -127,12 +136,15 @@ pub mod rise_of_the_ghouls;
 pub mod roland_38_special;
 pub mod roland_banks;
 pub mod rotting_remains;
+pub mod scrying;
+pub mod shrivelling;
 pub mod silver_twilight_acolyte;
 pub mod the_barrier;
 pub mod theyre_getting_out;
 pub mod trapped;
 pub mod unexpected_courage;
 pub mod vicious_blow;
+pub mod ward_of_protection;
 pub mod what_have_you_done;
 pub mod whats_going_on;
 pub mod working_a_hunch;
@@ -210,27 +222,36 @@ impl CardRecord {
 /// Every implemented card's registration, one entry per card module. A card
 /// is playable iff it is listed here.
 pub const ALL: &[CardRecord] = &[
+    agnes_baker::CARD,
     ancient_evils::CARD,
+    arcane_initiate::CARD,
+    arcane_studies::CARD,
     attic::CARD,
     automatic_45::CARD,
     barricade::CARD,
     beat_cop::CARD,
+    blinding_light::CARD,
     cellar::CARD,
     cover_up::CARD,
     crypt_chill::CARD,
+    dark_memory::CARD,
     deduction::CARD,
     dissonant_voices::CARD,
     dodge::CARD,
     dr_milan_christopher::CARD,
+    drawn_to_the_flame::CARD,
     dynamite_blast::CARD,
     emergency_cache::CARD,
     evidence::CARD,
+    fearless::CARD,
     first_aid::CARD,
     flashlight::CARD,
+    forbidden_knowledge::CARD,
     frozen_in_fear::CARD,
     grasping_hands::CARD,
     guard_dog::CARD,
     guts::CARD,
+    heirloom_of_hyperborea::CARD,
     holy_rosary::CARD,
     hyperawareness::CARD,
     knife::CARD,
@@ -251,12 +272,15 @@ pub const ALL: &[CardRecord] = &[
     roland_38_special::CARD,
     roland_banks::CARD,
     rotting_remains::CARD,
+    scrying::CARD,
+    shrivelling::CARD,
     silver_twilight_acolyte::CARD,
     the_barrier::CARD,
     theyre_getting_out::CARD,
     trapped::CARD,
     unexpected_courage::CARD,
     vicious_blow::CARD,
+    ward_of_protection::CARD,
     what_have_you_done::CARD,
     whats_going_on::CARD,
     working_a_hunch::CARD,
