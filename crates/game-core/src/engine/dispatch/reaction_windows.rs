@@ -15,9 +15,9 @@ use crate::action::InputResponse;
 use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::emit::{ConditionResolution, TimingEvent};
 use crate::engine::dispatch::initiation::{self, InitiationKind, Refusal};
-use crate::engine::dispatch::legality::{check_activate_ability, check_play_card};
+use crate::engine::dispatch::legality::{self, check_activate_ability, check_play_card};
 use crate::engine::dispatch::{cards, coordinator, cursor, phases, skill_test, trigger_scan};
-use crate::engine::enumerate::{PlaySource, TurnAction};
+use crate::engine::enumerate::{self, PlaySource, TurnAction};
 use crate::engine::evaluator::EvalContext;
 use crate::engine::outcome::{
     ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
@@ -116,7 +116,9 @@ pub(super) fn open_forced_resolution(
 }
 
 /// The board anchor for a resolution candidate's source: a Fast hand event by
-/// code — every copy (#539); everything else through the one
+/// code — every copy (#539); a Fast event on top of the discard pile on the
+/// card whose permission it is played under, since the client renders no
+/// discard pile (#1101); everything else through the one
 /// [`AbilitySource`] → [`OptionTarget`] map, which the turn menu
 /// (`TurnAction::target`) shares (#735).
 ///
@@ -134,6 +136,7 @@ pub(super) fn candidate_anchor(cand: &ResolutionCandidate) -> OptionTarget {
             investigator: cand.controller,
             code: cand.code.clone(),
         },
+        CandidateSource::TopOfDiscardPile { permission } => OptionTarget::CardInstance(permission),
         CandidateSource::Ability(source) => source.into(),
     }
 }
@@ -144,8 +147,15 @@ pub(super) fn candidate_anchor(cand: &ResolutionCandidate) -> OptionTarget {
 /// shared with [`super::choice`]. The label distinguishes a hand Fast-event
 /// play ([`CandidateSource::Hand`] in a reaction window) from an in-play
 /// reaction, and from a `forced` run's ability on a card in hand, which fires
-/// without being played (Dark Memory 01013, #1046).
-fn build_resolution_options(candidates: &[ResolutionCandidate], forced: bool) -> Vec<ChoiceOption> {
+/// without being played (Dark Memory 01013, #1046). A play from the top of the
+/// discard pile names the event and the permission's card, as the turn menu
+/// does (`enumerate::play_under_permission_label`).
+fn build_resolution_options(
+    state: &GameState,
+    cards: &CardRegistry,
+    candidates: &[ResolutionCandidate],
+    forced: bool,
+) -> Vec<ChoiceOption> {
     candidates
         .iter()
         .enumerate()
@@ -156,6 +166,14 @@ fn build_resolution_options(candidates: &[ResolutionCandidate], forced: bool) ->
             let label = match cand.source {
                 CandidateSource::Hand if forced => format!("Resolve {} in hand", cand.code),
                 CandidateSource::Hand => format!("Play {} from hand", cand.code),
+                CandidateSource::TopOfDiscardPile { permission } => {
+                    enumerate::play_under_permission_label(
+                        state,
+                        cards,
+                        Some(&cand.code),
+                        permission,
+                    )
+                }
                 CandidateSource::Ability(_) => format!("Resolve reaction: {}", cand.code),
             };
             ChoiceOption::new(id, label).at(candidate_anchor(cand))
@@ -390,12 +408,15 @@ fn lapse_reason(
     candidate: &ResolutionCandidate,
     mode: &TimingMode,
 ) -> LapseReason {
-    if !candidate_source_present(state, candidate) {
+    if !candidate_source_present(state, cards, candidate) {
         return LapseReason::SourceGone;
     }
     let kind = match (mode, candidate.source) {
         (TimingMode::Forced, _) => InitiationKind::Forced,
-        (TimingMode::Reaction, CandidateSource::Hand) => InitiationKind::Play,
+        (
+            TimingMode::Reaction,
+            CandidateSource::Hand | CandidateSource::TopOfDiscardPile { .. },
+        ) => InitiationKind::Play,
         (TimingMode::Reaction, CandidateSource::Ability(_)) => InitiationKind::Reaction,
     };
     match initiation::check(state, cards, candidate, kind) {
@@ -423,18 +444,33 @@ fn lapse_reason_for(refusal: &Refusal) -> LapseReason {
 /// [`LapseReason::SourceGone`] probe.
 ///
 /// A hand candidate is present while its code is still in the controller's
-/// hand. Every other candidate names an [`AbilitySource`], and is present while
+/// hand. A discard-pile candidate is present while the same card is still
+/// playable from the top of the pile under the same permission — the zone
+/// check the play paths share, `legality::play_source_available`, so a card
+/// discarded on top of it, or the permission leaving play, withdraws it. Every
+/// other candidate names an [`AbilitySource`], and is present while
 /// that source still names **the same card** the scan minted the candidate from
 /// — `ability_source::source_card` walks the board, and the code comparison is
 /// what makes an *advanced* act's queued ability lapse: `AbilitySource::Act`
 /// names *the current* act, so the source has not vanished, it has become a
 /// different card.
-fn candidate_source_present(state: &GameState, candidate: &ResolutionCandidate) -> bool {
+fn candidate_source_present(
+    state: &GameState,
+    cards: &CardRegistry,
+    candidate: &ResolutionCandidate,
+) -> bool {
     match candidate.source {
         CandidateSource::Hand => state
             .investigators
             .get(&candidate.controller)
             .is_some_and(|inv| inv.hand.contains(&candidate.code)),
+        CandidateSource::TopOfDiscardPile { permission } => legality::play_source_available(
+            state,
+            cards,
+            candidate.controller,
+            PlaySource::TopOfDiscardPile { permission },
+        )
+        .is_some_and(|code| *code == candidate.code),
         CandidateSource::Ability(source) => ability_source::source_card(state, source)
             .is_some_and(|card| *card.code() == candidate.code),
     }
@@ -494,6 +530,8 @@ pub(crate) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
         ", or InputResponse::Skip to close"
     };
     let options = build_resolution_options(
+        cx.state,
+        cx.cards,
         window
             .pending_candidates()
             .expect("open_queued_reaction_window: top window has candidates"),
@@ -641,7 +679,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // forced run is a forced ability working from hand (Dark Memory 01013,
     // #1046): it fires in place like any other forced hit, and the card stays
     // in hand.
-    if trigger.source == CandidateSource::Hand && !forced {
+    if trigger.source.is_play() && !forced {
         cx.state
             .continuations
             .top_frame_mut()
@@ -746,24 +784,33 @@ fn play_fast_event(
     event: &TimingEvent,
 ) -> EngineOutcome {
     let controller = candidate.controller;
-    // Find the event in the controller's hand by code (first match — copies
-    // are fungible; resolving by code avoids stale indices after a prior play).
-    // A miss is unreachable behind the fire-time gate, but it rejects rather than
-    // panicking: nothing has been paid or moved yet, so the reject is clean, and
-    // a panic here would take the whole session down over one bad option id
-    // (#568).
-    let Some(source) = cx
-        .state
-        .investigators
-        .get(&controller)
-        .and_then(|inv| inv.hand.iter().position(|c| *c == candidate.code))
-        .and_then(|index| u8::try_from(index).ok())
-        .map(PlaySource::Hand)
-    else {
+    // Find the event where the candidate says it is: in the controller's hand
+    // by code (first match — copies are fungible; resolving by code avoids
+    // stale indices after a prior play), or still on top of their discard pile
+    // under the same permission. A miss is unreachable behind the fire-time
+    // gate, but it rejects rather than panicking: nothing has been paid or
+    // moved yet, so the reject is clean, and a panic here would take the whole
+    // session down over one bad option id (#568).
+    let source = match candidate.source {
+        CandidateSource::TopOfDiscardPile { permission } => {
+            let source = PlaySource::TopOfDiscardPile { permission };
+            legality::play_source_available(cx.state, cx.cards, controller, source)
+                .filter(|code| **code == candidate.code)
+                .map(|_| source)
+        }
+        _ => cx
+            .state
+            .investigators
+            .get(&controller)
+            .and_then(|inv| inv.hand.iter().position(|c| *c == candidate.code))
+            .and_then(|index| u8::try_from(index).ok())
+            .map(PlaySource::Hand),
+    };
+    let Some(source) = source else {
         return EngineOutcome::Rejected {
             reason: format!(
-                "ResolveInput: {code} is no longer in {controller:?}'s hand and cannot be played \
-                 from this window",
+                "ResolveInput: {code} is no longer where {controller:?} could play it from and \
+                 cannot be played from this window",
                 code = candidate.code,
             )
             .into(),
@@ -852,7 +899,7 @@ pub(super) fn advance_resolution(cx: &mut Cx) -> EngineOutcome {
     } else {
         ", or InputResponse::Skip to close"
     };
-    let options = build_resolution_options(candidates, window.is_forced());
+    let options = build_resolution_options(cx.state, cx.cards, candidates, window.is_forced());
     let mut request = InputRequest::pick_single(
         format!(
             "Resolution window: {} option(s). \
@@ -1069,7 +1116,7 @@ pub(super) fn drive_fast_window(cx: &mut Cx) -> EngineOutcome {
         .map(|(i, a)| {
             ChoiceOption::new(
                 OptionId(u32::try_from(i).unwrap_or(u32::MAX)),
-                a.label(cx.state),
+                a.label(cx.state, cx.cards),
             )
             .maybe_at(a.target(cx.state))
         })
@@ -1093,13 +1140,10 @@ pub(super) fn drive_fast_window(cx: &mut Cx) -> EngineOutcome {
 /// that dispatch path verbatim.
 pub(super) fn enumerate_fast_plays(state: &GameState, cards: &CardRegistry) -> Vec<TurnAction> {
     let mut out = Vec::new();
-    for (&inv_id, inv) in &state.investigators {
-        // Fast events / Fast assets in hand.
-        for hand_idx_usize in 0..inv.hand.len() {
-            let Ok(hand_index) = u8::try_from(hand_idx_usize) else {
-                break;
-            };
-            let source = PlaySource::Hand(hand_index);
+    for &inv_id in state.investigators.keys() {
+        // Fast events / Fast assets in hand, and a Fast event on top of the
+        // discard pile under a permission (Wendy's Amulet 01014).
+        for source in legality::play_sources(state, cards, inv_id) {
             if let Ok(result) = check_play_card(state, cards, inv_id, source) {
                 if result.is_fast {
                     out.push(TurnAction::PlayCard {

@@ -1315,6 +1315,11 @@ pub(super) fn commence_play(
         .expect("commence_play: caller guarantees investigator exists");
     let card = match source {
         PlaySource::Hand(index) => inv.hand.remove(usize::from(index)),
+        // The pile's top is its last element.
+        PlaySource::TopOfDiscardPile { .. } => inv
+            .discard
+            .pop()
+            .expect("commence_play: caller guarantees the discard pile holds a card"),
     };
     cx.events.push(Event::CardPlayed {
         investigator,
@@ -1345,6 +1350,13 @@ pub(super) fn commence_play(
 /// itself, as the Amulet's ruling has it (<https://arkhamdb.com/card/01014>):
 /// *"If your deck is empty, and Wendy’s Amulet would have you place an event
 /// “on the bottom of your deck,” that event becomes your new deck."*
+///
+/// An event played from the discard pile (Wendy's Amulet 01014, #1112) is
+/// placed by the same redirect: the Amulet that let it be played also sends it
+/// to the deck's bottom. Only if the Amulet left play mid-resolution would one
+/// reach the discard branch, where the event still says `from: Zone::Hand` —
+/// the frame does not carry the zone the play started from. Nothing in the
+/// corpus discards an Amulet while an event resolves.
 ///
 /// The only caller is [`dispose_play_from_hand`], reached exactly once per play
 /// that resolves, so an event is placed exactly once — "simultaneously with the

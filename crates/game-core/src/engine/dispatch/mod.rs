@@ -135,7 +135,7 @@ fn turn_menu(state: &GameState, cards: &CardRegistry) -> InputRequest {
         .map(|(i, a)| {
             ChoiceOption::new(
                 OptionId(u32::try_from(i).unwrap_or(u32::MAX)),
-                a.label(state),
+                a.label(state, cards),
             )
             .maybe_at(a.target(state))
         })

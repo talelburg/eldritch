@@ -34,15 +34,29 @@
 //! your deck,” that event becomes your new deck."* — the event is pushed onto
 //! the deck's bottom, which an empty deck makes the whole deck.
 //!
+//! **The first ability is a play permission**: an
+//! [`Effect::PlayTopmostEventInDiscardPile`] constant the play paths read
+//! where they list what may be played from where — the turn menu, a Fast
+//! window, and the reaction scan for a Fast event such as "Look what I
+//! found!" 01079. `glossary/As_If.md` makes it a normal play throughout: *"The
+//! game state is considered to be altered throughout the duration of the
+//! indicated ability or action, from its initiation (including the paying of
+//! its costs, attacks of opportunity, etc) through the resolution of each
+//! aspect of its effect, and up until its completion."* — so the event pays
+//! its cost, keeps its timing, and provokes attacks of opportunity as a hand
+//! play does, and nothing else sees it as in hand. The option is offered on
+//! the Amulet, labelled *"Play \<event\> (Wendy's Amulet)"*: the client has no
+//! discard-pile view (#1101). Played that way, the event is then placed by the
+//! Forced, on the bottom of the deck.
+//!
+//! The ruling (<https://arkhamdb.com/card/01014>) *"'Play' and 'Commit' are
+//! two different game terms. Wendy's Amulet allows you to 'play' the topmost
+//! event card in your discard pile, but it does not allow you to 'commit' it
+//! to a skill test."* is met by construction: a commit names hand positions,
+//! and no commit path reads the permission.
+//!
 //! "Wendy Adams deck only." is a deckbuilding restriction the engine does not
 //! police.
-//!
-//! # Module gap
-//!
-//! The first ability, *"You may play the topmost event in your discard pile as
-//! if it were in your hand."*, is not implemented: TODO(#1112) lands the play
-//! permission. Until then the Amulet redirects events but plays none from the
-//! discard pile.
 
 use card_dsl::dsl::{self, Ability, Effect};
 
@@ -54,12 +68,16 @@ pub const CODE: &str = "01014";
 /// This card's registration, listed in [`ALL`](super::ALL).
 pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
-/// The Amulet's Forced: *"After you play an event or discard an event from
-/// play: Place it on the bottom of your deck instead of in your discard
-/// pile."* The play permission is TODO(#1112).
+/// *"You may play the topmost event in your discard pile as if it were in
+/// your hand."*, then the Forced: *"After you play an event or discard an
+/// event from play: Place it on the bottom of your deck instead of in your
+/// discard pile."* Both are constants the engine reads.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![dsl::constant(Effect::PlaceEventsOnBottomOfDeck)]
+    vec![
+        dsl::constant(Effect::PlayTopmostEventInDiscardPile),
+        dsl::constant(Effect::PlaceEventsOnBottomOfDeck),
+    ]
 }
 
 #[cfg(test)]

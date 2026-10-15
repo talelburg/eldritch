@@ -1891,7 +1891,8 @@ impl Effect {
             | Effect::AdditionalActionWhileInPlay { .. }
             | Effect::AdditionalSlots { .. }
             | Effect::TreatRevealedToken { .. }
-            | Effect::PlaceEventsOnBottomOfDeck => {}
+            | Effect::PlaceEventsOnBottomOfDeck
+            | Effect::PlayTopmostEventInDiscardPile => {}
         }
     }
 }
@@ -2388,6 +2389,15 @@ pub enum Effect {
     /// off the owner's cards where it places the event, so it is a routing rule
     /// rather than an ability with a window of its own. Resolving it rejects.
     PlaceEventsOnBottomOfDeck,
+    /// **Its controller may play the topmost card of their discard pile, if it
+    /// is an event, as if it were in their hand**: Wendy's Amulet 01014's *"You
+    /// may play the topmost event in your discard pile as if it were in your
+    /// hand."* A play permission, under a [`Trigger::Constant`]: **inspected,
+    /// not executed** — the play paths read it off the controller's cards when
+    /// they list where a card may be played from. It reaches plays only, never
+    /// a commit (<https://arkhamdb.com/card/01014>: *"'Play' and 'Commit' are
+    /// two different game terms."*). Resolving it rejects.
+    PlayTopmostEventInDiscardPile,
     /// Search a region of an investigator's deck for one card matching
     /// `filter`, move it to that investigator's hand, then shuffle the deck.
     /// Old Book of Lore 01031 (top 3, any card, chosen investigator) and

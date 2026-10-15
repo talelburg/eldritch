@@ -1,4 +1,4 @@
-//! Whether a card may be played from hand ([`check_play_card`]) or an
+//! Whether a card may be played from where it is ([`check_play_card`]) or an
 //! activated ability activated ([`check_activate_ability`]) right now: the pure
 //! validators the `play_card` / `activate_ability` handlers, the open-turn menu
 //! and the Fast-window enumeration all ask, so none of them can offer what the
@@ -24,10 +24,10 @@ use crate::engine::dispatch::actions::take::{self, ActionDescription};
 use crate::engine::dispatch::initiation::{self, InitiationKind, Refusal};
 use crate::engine::dispatch::{cards, combat, hand_discard_cost, slots};
 use crate::engine::outcome::EngineOutcome;
-use crate::engine::{ability_source, designator, PlaySource};
+use crate::engine::{abilities_in_effect, ability_source, designator, PlaySource};
 use crate::state::{
-    AbilityAddress, AbilitySource, CandidateSource, CardCode, GameState, InvestigatorId, Phase,
-    ResolutionCandidate,
+    AbilityAddress, AbilitySource, CandidateSource, CardCode, GameState, Investigator,
+    InvestigatorId, Phase, ResolutionCandidate,
 };
 
 /// Validated payload returned by [`check_play_card`] on success.
@@ -109,6 +109,68 @@ fn check_play_slot_satisfiable(
     Ok(())
 }
 
+/// Every source `investigator` may try to play a card from, in menu order:
+/// each hand position, then the top of their discard pile if a card they
+/// control lets them play from there (Wendy's Amulet 01014). Positional, as
+/// [`PlaySource::card`] is — [`check_play_card`] asks the rest, the turn menu
+/// and the Fast window each asking it of every source listed here.
+pub(crate) fn play_sources(
+    state: &GameState,
+    cards: &CardRegistry,
+    investigator: InvestigatorId,
+) -> Vec<PlaySource> {
+    let Some(inv) = state.investigators.get(&investigator) else {
+        return Vec::new();
+    };
+    let hand = (0..inv.hand.len())
+        .map_while(|index| u8::try_from(index).ok())
+        .map(PlaySource::Hand);
+    let discard = abilities_in_effect::discard_play_permission(state, cards, investigator)
+        .map(|permission| PlaySource::TopOfDiscardPile { permission });
+    hand.chain(discard).collect()
+}
+
+/// The card `investigator` may play from `source`, or `None` when there is
+/// none there or nothing lets them play it from there: **the one zone check
+/// every play path asks** — [`check_play_card`] for the turn menu and the Fast
+/// window, and the trigger scan's board walk and the reaction window's lapse
+/// probe for a Fast event played in a reaction window. ADR 0017 keeps the
+/// zone a card is played from with the play paths, out of the initiation gate.
+///
+/// A hand position holds its card. The top of the discard pile is playable
+/// while `permission` still carries an in-effect
+/// [`Effect::PlayTopmostEventInDiscardPile`] for `investigator`
+/// ([`abilities_in_effect::discard_play_permission`]) and the card is an
+/// event — Wendy's Amulet 01014: *"You may play the topmost event in your
+/// discard pile as if it were in your hand."* The pile's top is its **last**
+/// element ([`Investigator::discard`](crate::state::Investigator::discard)), so
+/// an event beneath another card is not reached.
+///
+/// Only plays ask this; no commit path does, which is the ruling
+/// (<https://arkhamdb.com/card/01014>): *"Wendy's Amulet allows you to 'play'
+/// the topmost event card in your discard pile, but it does not allow you to
+/// 'commit' it to a skill test."*
+pub(crate) fn play_source_available<'a>(
+    state: &'a GameState,
+    cards: &CardRegistry,
+    investigator: InvestigatorId,
+    source: PlaySource,
+) -> Option<&'a CardCode> {
+    let inv = state.investigators.get(&investigator)?;
+    let card = source.card(inv)?;
+    match source {
+        PlaySource::Hand(_) => Some(card),
+        PlaySource::TopOfDiscardPile { permission } => {
+            let permitted =
+                abilities_in_effect::discard_play_permission(state, cards, investigator)
+                    == Some(permission);
+            let event =
+                (cards.metadata_for)(card).is_some_and(|meta| meta.card_type() == CardType::Event);
+            (permitted && event).then_some(card)
+        }
+    }
+}
+
 /// Pure-validation peer to [`play_card`](cards::play_card). Returns `Ok` if the named
 /// card is currently playable by `investigator`, `Err(reason)` if
 /// not.
@@ -132,14 +194,8 @@ pub(crate) fn check_play_card(
     let Some(inv) = state.investigators.get(&investigator) else {
         return Err(format!("PlayCard: investigator {investigator:?} is not in state").into());
     };
-    let Some(code) = source.card(inv).cloned() else {
-        return Err(match source {
-            PlaySource::Hand(_) => format!(
-                "PlayCard: {source} out of bounds (hand size {})",
-                inv.hand.len(),
-            ),
-        }
-        .into());
+    let Some(code) = play_source_available(state, cards, investigator, source).cloned() else {
+        return Err(source_refusal(inv, source));
     };
     // Resolve card type and abilities (also yields is_fast + card_type) before
     // applying the phase/active-investigator gate so the gate can branch on
@@ -303,6 +359,21 @@ pub(crate) fn check_play_card(
         is_fast,
         card_type,
     })
+}
+
+/// Why [`play_source_available`] found nothing to play at `source`.
+fn source_refusal(inv: &Investigator, source: PlaySource) -> Cow<'static, str> {
+    match source {
+        PlaySource::Hand(_) => format!(
+            "PlayCard: {source} out of bounds (hand size {})",
+            inv.hand.len(),
+        ),
+        PlaySource::TopOfDiscardPile { .. } => format!(
+            "PlayCard: nothing is playable from {source} — the pile is empty, its top card is \
+             not an event, or that card no longer permits the play (Wendy's Amulet 01014)",
+        ),
+    }
+    .into()
 }
 
 /// The bold designator the card's `OnPlay` ability prints, if any, once it is

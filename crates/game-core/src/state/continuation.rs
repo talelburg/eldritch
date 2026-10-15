@@ -1991,8 +1991,11 @@ pub struct HandSizeDiscard {
 /// place, from the [`AbilitySource`] it names; a [`Hand`](Self::Hand) candidate
 /// (Axis C, #335) is a Fast event **played** from hand (RR Appendix I —
 /// `CardPlayed`, run the matched ability's effect, discard), not fired in
-/// place. That is the whole of the distinction, which is why the firing half is
-/// not a set of kinds of its own: **where an ability comes from is
+/// place, and a [`TopOfDiscardPile`](Self::TopOfDiscardPile) candidate is the
+/// same play made from the top of the discard pile under a permission
+/// (Wendy's Amulet 01014, #1112). [`is_play`](Self::is_play) names the two
+/// play sources. That is the whole of the distinction, which is why the firing
+/// half is not a set of kinds of its own: **where an ability comes from is
 /// [`AbilitySource`]**, the same vocabulary an activation names (#735, ADR
 /// 0010).
 ///
@@ -2019,6 +2022,21 @@ pub enum CandidateSource {
     /// do), and not an ability source: no bullet of
     /// `glossary/Triggered_Abilities.md` names a card in hand.
     Hand,
+    /// The topmost card of the controller's discard pile — the pile's last
+    /// element — a Fast event *played* from there as if it were in hand, under
+    /// the play permission on the in-play card `permission`: Wendy's Amulet
+    /// 01014, *"You may play the topmost event in your discard pile as if it
+    /// were in your hand."* Reaction windows only: under `glossary/As_If.md`
+    /// the card counts as in hand for its own play and nothing else, so a
+    /// forced run never reads it. Not an ability source, as
+    /// [`Hand`](Self::Hand) is not; the permission's instance is carried so
+    /// the option anchors on the card that grants it (the client renders no
+    /// discard pile, #1101) and so the lapse probe can ask whether that
+    /// permission still holds.
+    TopOfDiscardPile {
+        /// The in-play card whose permission the play is made under.
+        permission: CardInstanceId,
+    },
 }
 
 impl CandidateSource {
@@ -2033,12 +2051,13 @@ impl CandidateSource {
     pub fn instance(self) -> Option<CardInstanceId> {
         match self {
             CandidateSource::Ability(source) => source.instance(),
-            CandidateSource::Hand => None,
+            CandidateSource::Hand | CandidateSource::TopOfDiscardPile { .. } => None,
         }
     }
 
-    /// The [`AbilitySource`] this candidate fires from — `None` only for
-    /// [`Hand`](Self::Hand), which is a *play*, not an ability. Unlike
+    /// The [`AbilitySource`] this candidate fires from — `None` only for the
+    /// two play sources, [`Hand`](Self::Hand) and
+    /// [`TopOfDiscardPile`](Self::TopOfDiscardPile). Unlike
     /// [`instance`](Self::instance) this keeps the board sources (the act, the
     /// agenda, a location, an enemy), which is what lets a choice inside the
     /// effect anchor to the card it is printed on (#555). Feeds
@@ -2048,7 +2067,19 @@ impl CandidateSource {
     pub fn ability(self) -> Option<AbilitySource> {
         match self {
             CandidateSource::Ability(source) => Some(source),
-            CandidateSource::Hand => None,
+            CandidateSource::Hand | CandidateSource::TopOfDiscardPile { .. } => None,
+        }
+    }
+
+    /// Whether this candidate is a card **played** rather than an ability
+    /// fired in place: a Fast event in hand or on top of the discard pile.
+    /// (A [`Hand`](Self::Hand) candidate in a forced run is fired, not played —
+    /// the run's mode decides that, not the source.)
+    #[must_use]
+    pub fn is_play(self) -> bool {
+        match self {
+            CandidateSource::Hand | CandidateSource::TopOfDiscardPile { .. } => true,
+            CandidateSource::Ability(_) => false,
         }
     }
 }

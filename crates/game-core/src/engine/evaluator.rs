@@ -1078,6 +1078,12 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
                      owner's cards when an event is placed, never executed"
                 .into(),
         },
+        Effect::PlayTopmostEventInDiscardPile => EngineOutcome::Rejected {
+            reason: "Effect::PlayTopmostEventInDiscardPile is a constant marker — read off \
+                     the controller's cards when the play paths list where a card may be \
+                     played from, never executed"
+                .into(),
+        },
         Effect::BoostAttackDamage(amount) => boost_attack_damage_effect(cx, *amount),
         Effect::DiscoverAdditionalClues(amount) => discover_additional_clues_effect(cx, *amount),
         Effect::DrawCards { target, count } => draw_cards_effect(cx, eval_ctx, *target, count),

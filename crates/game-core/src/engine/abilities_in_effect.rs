@@ -160,10 +160,11 @@ pub(crate) fn for_source(
     Some(out)
 }
 
-/// [`for_source`] for a [`CandidateSource`]. A [`Hand`](CandidateSource::Hand)
-/// candidate is a card being *played*, never a board card with two faces, so
-/// it reads the front — and nothing grants to a card in hand, which is not in
-/// play, so every address it yields is [`AbilityAddress::Printed`].
+/// [`for_source`] for a [`CandidateSource`]. A play source — a card in hand or
+/// on top of the discard pile ([`CandidateSource::is_play`]) — is a card being
+/// *played*, never a board card with two faces, so it reads the front — and
+/// nothing grants to a card out of play, so every address it yields is
+/// [`AbilityAddress::Printed`].
 #[must_use]
 pub(crate) fn for_candidate_source(
     state: &GameState,
@@ -173,7 +174,9 @@ pub(crate) fn for_candidate_source(
 ) -> Option<Vec<(AbilityAddress, Ability)>> {
     match source {
         CandidateSource::Ability(source) => for_source(state, reg, source, code),
-        CandidateSource::Hand => Some(addressed_as_printed((reg.abilities_for)(code)?)),
+        CandidateSource::Hand | CandidateSource::TopOfDiscardPile { .. } => {
+            Some(addressed_as_printed((reg.abilities_for)(code)?))
+        }
     }
 }
 
@@ -189,6 +192,7 @@ pub(crate) fn for_candidate_source(
 /// skill test's token substitution (`Effect::TreatRevealedToken`),
 /// `slots::slot_grants` (`Effect::AdditionalSlots`),
 /// [`events_go_to_bottom_of_deck`] (`Effect::PlaceEventsOnBottomOfDeck`),
+/// [`discard_play_permission`] (`Effect::PlayTopmostEventInDiscardPile`),
 /// `evaluator::pending_action_surcharge` (`Restriction::ExtraActionCost`) and
 /// `evaluator::play_is_prohibited` (`Restriction::CannotPlay`). Empty for an
 /// investigator not in state.
@@ -270,6 +274,25 @@ pub(crate) fn events_go_to_bottom_of_deck(
     constants_of(state, reg, owner)
         .iter()
         .any(|(_, ability)| ability.effect == Effect::PlaceEventsOnBottomOfDeck)
+}
+
+/// The card instance whose in-effect [`Effect::PlayTopmostEventInDiscardPile`]
+/// lets `investigator` play the topmost event of their discard pile, if they
+/// control one: Wendy's Amulet 01014's *"You may play the topmost event in
+/// your discard pile as if it were in your hand."* The first in sweep order
+/// when several would (no corpus deck can hold two: the Amulet is a signature
+/// card). Whether the top card is an event is the play paths' question
+/// (`legality::play_source_available`), not this reader's.
+#[must_use]
+pub(crate) fn discard_play_permission(
+    state: &GameState,
+    reg: &CardRegistry,
+    investigator: InvestigatorId,
+) -> Option<CardInstanceId> {
+    constants_of(state, reg, investigator)
+        .into_iter()
+        .find(|(_, ability)| ability.effect == Effect::PlayTopmostEventInDiscardPile)
+        .map(|(instance, _)| instance)
 }
 
 /// Pair each of a card's printed abilities with the address that names it.

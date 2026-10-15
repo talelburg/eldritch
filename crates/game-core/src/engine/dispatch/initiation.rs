@@ -267,7 +267,8 @@ pub(super) fn check(
     )
 }
 
-/// Whether `controller` may play `code` from hand — [`check`] as
+/// Whether `controller` may play `code` — from hand, or from wherever a
+/// permission lets them (Wendy's Amulet 01014): [`check`] as
 /// [`InitiationKind::Play`] for the play validator, which names a card rather
 /// than one of its abilities.
 ///
@@ -672,10 +673,11 @@ pub(super) fn record_initiation(
             | AbilitySource::Act
             | AbilitySource::Agenda,
         )
-        | CandidateSource::Hand => {
+        | CandidateSource::Hand
+        | CandidateSource::TopOfDiscardPile { .. } => {
             unreachable!(
                 "record_initiation: a usage-limited candidate must be an in-play instance \
-                 (a hand candidate, and an ability source with no card instance behind it — a \
+                 (a played card, and an ability source with no card instance behind it — a \
                  location, an enemy, the act, the agenda — have nowhere to record uses); \
                  candidate {candidate:?}"
             )
