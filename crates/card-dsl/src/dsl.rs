@@ -2320,11 +2320,16 @@ pub enum Effect {
 /// 01002's *"You may take an additional action during your turn, which can
 /// only be used on \[\[Tome\]\] \[action\] abilities."*
 ///
-/// TODO(#779): uninhabited until Daisy defines the first restriction, so every
-/// grant built today is unrestricted (`None`) and nothing on the wire can carry
-/// one. #779 adds the variants; no stored state needs migrating.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum AdditionalActionRestriction {}
+/// **Inspected, not executed**: the engine tests the action being taken against
+/// it each time it works out which additional actions can pay for that action.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum AdditionalActionRestriction {
+    /// Only an `[action]` ability (an action cost of at least one) on a card in
+    /// play whose printed metadata matches the filter. Playing a card, a basic
+    /// action, and an ability on a location, enemy, act or agenda never
+    /// qualify. Daisy Walker 01002 filters on the Tome trait.
+    ActivatedAbilityOn(CardFilter),
+}
 
 /// Which card an [`Effect::Grant`] gives its abilities to.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -3386,6 +3391,17 @@ pub fn gain_additional_action() -> Effect {
 #[must_use]
 pub fn additional_action_while_in_play() -> Effect {
     Effect::AdditionalActionWhileInPlay { restriction: None }
+}
+
+/// Build an [`Effect::AdditionalActionWhileInPlay`] that only the actions
+/// `restriction` admits can use; wrap it in [`constant`].
+#[must_use]
+pub fn restricted_additional_action_while_in_play(
+    restriction: AdditionalActionRestriction,
+) -> Effect {
+    Effect::AdditionalActionWhileInPlay {
+        restriction: Some(restriction),
+    }
 }
 
 /// Build an [`Effect::DiscoverClue`].

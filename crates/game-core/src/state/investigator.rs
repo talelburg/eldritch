@@ -14,7 +14,7 @@ use crate::state::{CardCode, CardInPlay, CardInstanceId, LocationId, Skills};
 /// One additional action an effect granted for this turn, held on
 /// [`Investigator::additional_actions_this_turn`] until it is used or the turn
 /// ends.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AdditionalActionGrant {
     /// What the action may be used for; `None` is any action.
     pub restriction: Option<AdditionalActionRestriction>,
