@@ -171,20 +171,10 @@ fn wendys_card(session: &TestSession) -> OptionTarget {
     )
 }
 
-#[test]
-fn wendy_with_her_scaffold_deck_plays_the_gathering_to_a_resolution() {
-    let mut state = seated_wendy();
-    // Seed: clues for both act thresholds (act 1 = 2, act 2 = 3), as Roland's
-    // walk does — discovering them is covered elsewhere. And seed the Amulet
-    // and Backstab at the front of her hand, in that order.
-    state
-        .investigators
-        .get_mut(&INV)
-        .expect("Wendy seated")
-        .clues = 5;
-    to_front_of_hand(&mut state, BACKSTAB);
-    to_front_of_hand(&mut state, WENDYS_AMULET);
-
+/// Round 1, from the seeded state to her turn menu after the investigation:
+/// act 1 advanced, the Amulet in play, and Backstab on top of her discard
+/// pile.
+fn round_one(state: GameState) -> TestSession {
     // --- Act 1: spend clues to advance; the reverse builds the board and moves
     // Wendy to the Hallway.
     let session =
@@ -199,7 +189,6 @@ fn wendy_with_her_scaffold_deck_plays_the_gathering_to_a_resolution() {
         source: PlaySource::Hand(0),
     });
     session.assert_at_turn_menu(INV);
-    let amulet = session.state().in_play(INV, WENDYS_AMULET);
 
     // An investigation, whose reveal offers her reaction: she takes it and
     // pays its cost with Backstab, now at the front of her hand. The `0`
@@ -233,6 +222,25 @@ fn wendy_with_her_scaffold_deck_plays_the_gathering_to_a_resolution() {
         Some(&CardCode::new(BACKSTAB)),
         "Backstab tops her discard pile",
     );
+    investigated
+}
+
+#[test]
+fn wendy_with_her_scaffold_deck_plays_the_gathering_to_a_resolution() {
+    let mut state = seated_wendy();
+    // Seed: clues for both act thresholds (act 1 = 2, act 2 = 3), as Roland's
+    // walk does — discovering them is covered elsewhere. And seed the Amulet
+    // and Backstab at the front of her hand, in that order.
+    state
+        .investigators
+        .get_mut(&INV)
+        .expect("Wendy seated")
+        .clues = 5;
+    to_front_of_hand(&mut state, BACKSTAB);
+    to_front_of_hand(&mut state, WENDYS_AMULET);
+
+    let investigated = round_one(state);
+    let amulet = investigated.state().in_play(INV, WENDYS_AMULET);
 
     // --- Act 2: ending the round opens its round-end clue-spend window; the
     // spend advances it and its reverse spawns the Ghoul Priest in the Hallway.
