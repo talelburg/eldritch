@@ -1,7 +1,7 @@
 //! Combat helpers: enemy damage, investigator damage/horror, attacks.
 
 use card_dsl::card_data::CardKind;
-use card_dsl::dsl::{EntityScope, LocationSet, Restriction};
+use card_dsl::dsl::{EnemyScope, LocationSet, Restriction};
 
 use crate::action::InputResponse;
 use crate::card_registry::{self, CardRegistry};
@@ -21,16 +21,16 @@ use crate::state::{
 /// The scope of enemies a Fight (basic action or designated **Fight** ability)
 /// may target: any enemy *at your location*. Per RR you choose an enemy at your
 /// location to attack and need not already be engaged, so this is co-located
-/// (`EntityScope::at(Here)`), not engaged-only (#451). Its only reader is the Fight action's
+/// (`EnemyScope::at(Here)`), not engaged-only (#451). Its only reader is the Fight action's
 /// [`candidates`](crate::engine::dispatch::actions::fight::candidates), which
 /// is what the basic action's target validation, the turn menu, the activation
 /// pre-cost gate (`designator::can_perform`) and the evaluator's target
 /// grounding (`ground_designated_enemy`) all read in turn.
-pub(crate) fn fight_target_scope() -> EntityScope {
-    EntityScope::at(LocationSet::Here)
+pub(crate) fn fight_target_scope() -> EnemyScope {
+    EnemyScope::at(LocationSet::Here)
 }
 
-/// Enemies matching an [`EntityScope`](card_dsl::dsl::EntityScope), in `BTreeMap`
+/// Enemies matching an [`EnemyScope`](card_dsl::dsl::EnemyScope), in `BTreeMap`
 /// (id) order so the `OptionId` index replays deterministically. Honours both
 /// the location set and the `exhausted` filter (Sneak Attack 01052's *"an
 /// exhausted enemy at your location"*). Shared by the evaluator's
@@ -39,9 +39,9 @@ pub(crate) fn fight_target_scope() -> EntityScope {
 pub(crate) fn enemies_in_scope(
     state: &GameState,
     controller: InvestigatorId,
-    scope: EntityScope,
+    scope: EnemyScope,
 ) -> Vec<EnemyId> {
-    let EntityScope { at, exhausted } = scope;
+    let EnemyScope { at, exhausted } = scope;
     let here = match at {
         LocationSet::Anywhere => None,
         LocationSet::Here => match state

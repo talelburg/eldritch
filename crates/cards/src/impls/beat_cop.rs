@@ -44,7 +44,7 @@ pub fn abilities() -> Vec<Ability> {
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::{Choose, Effect, EntityScope, LocationSet, ModifierAudience, Trigger};
+    use card_dsl::dsl::{Choose, Effect, EnemyScope, LocationSet, ModifierAudience, Trigger};
 
     use super::*;
 
@@ -74,7 +74,7 @@ mod tests {
             abilities[1].effect,
             Effect::DealDamageToEnemy {
                 target: EnemyTarget::Chosen(Choose {
-                    scope: EntityScope {
+                    scope: EnemyScope {
                         at: LocationSet::Here,
                         exhausted: None,
                     },

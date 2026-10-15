@@ -113,7 +113,7 @@ fn chosen_location_here_auto_binds_the_controllers_location() {
 #[test]
 fn chosen_at_your_location_auto_binds_the_sole_co_located_investigator() {
     // Investigator 1 (controller) and 2 are in play; only 1 is at the
-    // controller's location. `EntityScope::at(Here)` must offer only investigator 1 and
+    // controller's location. `LocationSet::Here` must offer only investigator 1 and
     // auto-bind it (1 candidate ⇒ no suspend) — `Anywhere` would see 2 and
     // suspend.
     let mut state = GameStateBuilder::new()
@@ -279,7 +279,7 @@ fn state_with_ready_and_exhausted_enemy_here() -> GameState {
 fn damage_chosen_enemy_here_with(exhausted: Option<bool>) -> Effect {
     dsl::deal_damage_to_enemy(
         EnemyTarget::Chosen(Choose {
-            scope: EntityScope {
+            scope: EnemyScope {
                 at: LocationSet::Here,
                 exhausted,
             },

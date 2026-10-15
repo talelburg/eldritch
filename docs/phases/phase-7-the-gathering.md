@@ -1052,7 +1052,7 @@ no `DecisionCursor`. DSL targets bind through `ground_chosen_targets`
 (#988 superseded this split: evaluator arms and natives alike now resolve a board pick
 through `engine::resolve_grounded_choice`, and `resolve_choice_count` is crate-private.)
 Spatial targets use `Choose<S> { scope }` (`LocationSet { Here, Anywhere }` /
-`EntityScope`). Before-timing cancellation is a Before window the caller suspends on
+`EnemyScope`). Before-timing cancellation is a Before window the caller suspends on
 + an `Effect::Cancel` leaf setting `pending_cancellation` (a `bool` suffices —
 Before-windows don't nest in scope, #367), honored on window close. One bool for
 both suppressing arms (cancel, nature-changing replacement); the non-suppressing

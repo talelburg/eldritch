@@ -5,7 +5,7 @@
 //! ```
 //!
 //! An `OnPlay` [`DealDamageToEnemy`] on an enemy chosen from one
-//! [`EntityScope`] with both constraints set: `at` your location and
+//! [`EnemyScope`] with both constraints set: `at` your location and
 //! `exhausted: Some(true)`. With no such enemy the change-state check proves
 //! the effect inert, so the play is not offered. The damage is attributed to
 //! the controller, like any card-dealt damage.
@@ -17,7 +17,7 @@
 //!
 //! [`DealDamageToEnemy`]: card_dsl::dsl::Effect::DealDamageToEnemy
 
-use card_dsl::dsl::{self, Ability, Choose, EnemyTarget, EntityScope, LocationSet};
+use card_dsl::dsl::{self, Ability, Choose, EnemyScope, EnemyTarget, LocationSet};
 
 use crate::impls::CardRecord;
 
@@ -32,7 +32,7 @@ pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 pub fn abilities() -> Vec<Ability> {
     vec![dsl::on_play(dsl::deal_damage_to_enemy(
         EnemyTarget::Chosen(Choose {
-            scope: EntityScope {
+            scope: EnemyScope {
                 at: LocationSet::Here,
                 exhausted: Some(true),
             },

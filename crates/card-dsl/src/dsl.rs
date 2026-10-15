@@ -2681,7 +2681,7 @@ pub enum SkillTestKind {
 /// forced-dispatch `controller = lead` binding. The wrapper reserves its home.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Choose<S> {
-    /// The candidate filter (an [`EntityScope`] or [`LocationSet`]).
+    /// The candidate filter (an [`EnemyScope`] or a [`LocationSet`]).
     pub scope: S,
 }
 
@@ -2698,28 +2698,31 @@ pub enum LocationSet {
     // `YourOrConnecting` is added by PR-8 (#306) with the adjacency model.
 }
 
-/// An entity-choice filter: a conjunction of constraints a candidate must meet.
-/// A card that narrows the choice further (Stray Cat's trait exclusion, #780)
-/// adds a field here rather than an arm, so the constraints compose — *"an
-/// exhausted enemy at your location"* is one scope with two fields set. A new
-/// field is optional, so [`EntityScope::at`] keeps reading as "no further
+/// An enemy-choice filter: a conjunction of constraints a candidate enemy must
+/// meet. A card that narrows the choice further (Stray Cat's trait exclusion,
+/// #780) adds a field here rather than an arm, so the constraints compose —
+/// *"an exhausted enemy at your location"* is one scope with two fields set. A
+/// new field is optional, so [`EnemyScope::at`] keeps reading as "no further
 /// constraint", touching neither [`LocationSet`] nor location-picks.
+///
+/// Enemy choices only: an investigator choice is scoped by a bare
+/// [`LocationSet`] (see [`InvestigatorTarget::Chosen`]), since an investigator
+/// has no exhausted state for a filter to read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct EntityScope {
-    /// The entity's location must be in this [`LocationSet`].
+pub struct EnemyScope {
+    /// The enemy's location must be in this [`LocationSet`].
     pub at: LocationSet,
-    /// `Some(true)` admits only exhausted entities, `Some(false)` only ready
-    /// ones, `None` either. Enemies only: investigators have no exhausted
-    /// state, so an investigator scope leaves this `None` (Sneak Attack 01052,
-    /// *"an exhausted enemy at your location"*).
+    /// `Some(true)` admits only exhausted enemies, `Some(false)` only ready
+    /// ones, `None` either (Sneak Attack 01052, *"an exhausted enemy at your
+    /// location"*).
     pub exhausted: Option<bool>,
 }
 
-impl EntityScope {
-    /// An entity at `set`, with no further constraint.
+impl EnemyScope {
+    /// An enemy at `set`, with no further constraint.
     #[must_use]
     pub const fn at(set: LocationSet) -> Self {
-        EntityScope {
+        EnemyScope {
             at: set,
             exhausted: None,
         }
@@ -2737,9 +2740,10 @@ pub enum InvestigatorTarget {
     /// The active investigator at evaluation time. May or may not be
     /// "you"; matters during reactions across turns.
     Active,
-    /// The chooser picks one investigator from the [`Choose`]'s scope. Bound by
-    /// the evaluator's `ground_chosen_targets` before the effect's handler runs.
-    Chosen(Choose<EntityScope>),
+    /// The chooser picks one investigator at a location in the [`Choose`]'s
+    /// [`LocationSet`]. Bound by the evaluator's `ground_chosen_targets` before
+    /// the effect's handler runs.
+    Chosen(Choose<LocationSet>),
     /// The investigator an enclosing [`Effect::ForEach`] is currently applying
     /// its body to — *"each investigator … discards"*. Bound per iteration by
     /// the evaluator's walking frame, separately from [`You`](Self::You), so a
@@ -2754,7 +2758,7 @@ impl InvestigatorTarget {
     #[must_use]
     pub fn chosen_anywhere() -> Self {
         InvestigatorTarget::Chosen(Choose {
-            scope: EntityScope::at(LocationSet::Anywhere),
+            scope: LocationSet::Anywhere,
         })
     }
 
@@ -2762,7 +2766,7 @@ impl InvestigatorTarget {
     #[must_use]
     pub fn chosen_at_your_location() -> Self {
         InvestigatorTarget::Chosen(Choose {
-            scope: EntityScope::at(LocationSet::Here),
+            scope: LocationSet::Here,
         })
     }
 }
@@ -2870,7 +2874,7 @@ impl LocationTarget {
 pub enum EnemyTarget {
     /// The chooser picks one enemy from the [`Choose`]'s scope. Bound by
     /// `ground_chosen_targets` before the handler runs.
-    Chosen(Choose<EntityScope>),
+    Chosen(Choose<EnemyScope>),
     /// The enemy the enclosing [`Effect::ForEach`] over an [`EnemySet`] is
     /// currently running its body for. Valid only inside such a body.
     Each,
@@ -2881,7 +2885,7 @@ impl EnemyTarget {
     #[must_use]
     pub fn chosen_at_your_location() -> Self {
         EnemyTarget::Chosen(Choose {
-            scope: EntityScope::at(LocationSet::Here),
+            scope: EnemyScope::at(LocationSet::Here),
         })
     }
 }
