@@ -100,13 +100,14 @@ pub struct SeatCard {
     setup: CardSetup,
 }
 
-/// The state a [`SeatCard`] enters with: [`uses`], [`clues`] or [`doom`]. A
+/// The state a [`SeatCard`] enters with: [`uses`], [`clues`], [`doom`] or [`horror`]. A
 /// plain code enters with none — no printed uses are seeded.
 #[derive(Debug, Clone, Default)]
 pub struct CardSetup {
     uses: BTreeMap<UseKind, u8>,
     clues: u8,
     doom: u8,
+    horror: u8,
 }
 
 /// A card entering with `n` uses of `kind`: `(FIRST_AID, uses(UseKind::Supplies, 3))`.
@@ -123,6 +124,15 @@ pub fn uses(kind: UseKind, n: u8) -> CardSetup {
 pub fn clues(n: u8) -> CardSetup {
     CardSetup {
         clues: n,
+        ..CardSetup::default()
+    }
+}
+
+/// A card entering with `n` horror on it: `(NECRONOMICON, horror(3))`.
+#[must_use]
+pub fn horror(n: u8) -> CardSetup {
+    CardSetup {
+        horror: n,
         ..CardSetup::default()
     }
 }
@@ -429,6 +439,7 @@ impl GameStateBuilder {
             in_play.uses = card.setup.uses;
             in_play.clues = card.setup.clues;
             in_play.doom = card.setup.doom;
+            in_play.accumulated_horror = card.setup.horror;
             match zone {
                 SeatZone::InPlay => investigator.cards_in_play.push(in_play),
                 SeatZone::ThreatArea => investigator.threat_area.push(in_play),

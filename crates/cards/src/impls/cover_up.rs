@@ -176,7 +176,7 @@ mod tests {
         assert_eq!(abilities[0].trigger, Trigger::Revelation);
         assert!(matches!(
             &abilities[0].effect,
-            Effect::PutIntoThreatArea { code, clues: 3 } if code == CODE
+            Effect::PutIntoThreatArea { code, clues: 3, horror: 0 } if code == CODE
         ));
         assert!(matches!(
             abilities[1].trigger,
