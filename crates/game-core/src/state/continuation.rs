@@ -189,24 +189,34 @@ pub enum AdvanceTrigger {
     Deliberate,
 }
 
-/// **Why an asset instance is entering an investigator's play area** — which
-/// decides whether the arrival is announced as *entering play* (#772).
+/// **Why an asset instance is entering one of an investigator's areas** —
+/// which decides the area it lands in and whether the arrival is announced as
+/// *entering play* (#772).
 ///
-/// The two paths share the slot make-room machinery, because
-/// `glossary/Slots.md` writes them into one sentence — *"If playing **or
-/// gaining control** of an asset would put an investigator above his or her slot
-/// limit …"* — but only one of them is a card entering play. A card whose
-/// control changes was already in play and does not enter it again, so
-/// announcing it would fire every after-enters-play reaction a second time.
+/// The paths share the slot make-room machinery, because
+/// `glossary/Slots.md` writes playing and taking control into one sentence —
+/// *"If playing **or gaining control** of an asset would put an investigator
+/// above his or her slot limit …"* — and `glossary/Put_into_Play.md` holds a
+/// card put into play to the same standard: *"cards that enter play in this
+/// manner must do so in a play area that satisfies the standard game rules
+/// associated with playing or drawing (for encounter cards) that card."* Only
+/// a play from hand is announced as entering play. A card whose control
+/// changes was already in play and does not enter it again, so announcing it
+/// would fire every after-enters-play reaction a second time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AssetEntry {
-    /// Played from hand (RR Appendix I step 4, *"placed in play"*). Announced
-    /// via the `EnteredPlay` timing event.
+    /// Played from hand (RR Appendix I step 4, *"placed in play"*). Lands in
+    /// the play area, announced via the `EnteredPlay` timing event.
     PlayedFromHand,
     /// Control of an already-in-play card was taken
-    /// ([`Effect::TakeControl`]). Not
+    /// ([`Effect::TakeControl`]). Lands in the play area, not
     /// announced: the card never left play, so it does not re-enter it.
     ControlTaken,
+    /// Put into play in the investigator's **threat area**
+    /// ([`Effect::PutIntoThreatArea`], #1097): The Necronomicon 01009's
+    /// Revelation. Announced as every threat-area entry is, by
+    /// [`Event::CardEnteredThreatArea`](crate::event::Event::CardEnteredThreatArea).
+    PutIntoThreatArea,
 }
 
 /// A frame on the [`GameState::continuations`](crate::state::game_state::GameState::continuations) suspend/resume stack
@@ -2604,16 +2614,20 @@ pub struct PlayFromHandFrame {
     pub card: Option<CardCode>,
 }
 
-/// A slot-conflicting asset play paused for the player to choose which
+/// A slot-conflicting asset entry paused for the player to choose which
 /// occupying asset to discard to make room (RR p.19, #498). Pushed by
 /// `slots::enter_asset_making_room` when 2+ co-controlled assets occupy a
-/// slot type the new asset needs; the asset stays mid-play, riding this
-/// frame until the deficit is cleared, then enters play. Resumed by
+/// slot type the new asset needs; the asset stays mid-entry, riding this
+/// frame until the deficit is cleared, then enters the area its
+/// [`entry`](Self::entry) names. Pushed from a play, from a take-control, or
+/// from inside a Revelation putting the card into the threat area (#1097);
+/// the frames below it resume once it pops. Resumed by
 /// `slots::resume_slot_discard` via a `PickSingle(OptionId)` indexing the
 /// candidate list. A [Prompt](FrameActivity::Prompt); not a phase anchor.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SlotDiscardFrame {
-    /// The investigator playing the asset, or taking control of it.
+    /// The investigator playing the asset, taking control of it, or having it
+    /// put into their threat area.
     pub investigator: InvestigatorId,
     /// The asset mid-entry — see [`Continuation::play_in_progress`].
     ///
@@ -2625,8 +2639,8 @@ pub struct SlotDiscardFrame {
     /// accumulated damage and horror, her uses and her usage counters, and
     /// a code would drop all four.
     pub card: Option<CardInPlay>,
-    /// Why the asset is entering the play area — which decides whether it
-    /// is announced as *entering play* once the deficit clears.
+    /// Why the asset is entering — which decides the area it lands in and
+    /// whether it is announced as *entering play* once the deficit clears.
     pub entry: AssetEntry,
 }
 

@@ -7,8 +7,9 @@
 //! Treat each [elder_sign] you reveal on a chaos token as a [auto_fail].
 //! ```
 //!
-//! This file covers the Revelation reaching the board (#1090) and the elder
-//! sign counted as an auto-fail (#1094). `glossary/Weakness.md`:
+//! This file covers the Revelation reaching the board (#1090), making room in
+//! the hand slots as it does (#1097), and the elder sign counted as an
+//! auto-fail (#1094). `glossary/Weakness.md`:
 //!
 //! > When an investigator draws a weakness with a player cardtype *(for
 //! > example, an asset, an event, or a skill weakness)*, resolve any Revelation
@@ -28,11 +29,11 @@ use card_dsl::card_data::CardType;
 use cards::TEST_REGISTRIES;
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::OptionId;
+use game_core::engine::{OptionId, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId,
-    LocationId, Owner, SkillKind, TokenModifiers, TokenResolution, UseKind,
+    AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, EnemyId, GameStateBuilder,
+    InvestigatorId, LocationId, Owner, SkillKind, TokenModifiers, TokenResolution, UseKind,
 };
 use game_core::test_support::{self, horror, seat, uses, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
@@ -302,4 +303,154 @@ fn fetched_by_old_book_of_lore_the_revelation_still_fires() {
     );
     assert_entered_with_three_horror(&session);
     assert_resolved_after_the_shuffle(&session);
+}
+
+// ---- Making room as it enters the threat area (#1097) ----
+//
+// `glossary/Put_into_Play.md`: *"Unless otherwise stated by the put into play
+// ability, cards that enter play in this manner must do so in a play area
+// that satisfies the standard game rules associated with playing or drawing
+// (for encounter cards) that card."* The Necronomicon holds a hand slot from
+// the threat area (`glossary/Slots.md`: *"Each asset in an investigator's
+// play area or threat area with a slot symbol is held in a slot of that
+// type."*), so entering over the limit makes room: *"the investigator must
+// choose and discard other assets under his or her control simultaneously
+// with the new asset entering the slot."*
+
+const TOTE_BAG: &str = "01008"; // two Tome-only hand slots
+const MAGNIFYING_GLASS: &str = "01030"; // Item. Tool. — single Hand
+const FLASHLIGHT: &str = "01087"; // Item. Tool. — single Hand
+const COVER_UP: &str = "01007"; // Task. — a weakness treachery, no slot symbol
+
+/// Daisy draws `top` off her deck from the turn menu, with `in_play` already
+/// in her play area.
+fn daisy_draws(top: &str, in_play: &[&str]) -> TestSession {
+    board(
+        seat(1)
+            .as_card(DAISY)
+            .at(HERE)
+            .actions(3)
+            .in_play(in_play.iter().copied())
+            .deck([top, GUTS, GUTS]),
+    )
+    .take(&TurnAction::Draw { investigator: INV })
+}
+
+fn codes_in_play(session: &TestSession) -> Vec<&str> {
+    session.state().investigators[&INV]
+        .cards_in_play
+        .iter()
+        .map(|c| c.code.as_str())
+        .collect()
+}
+
+#[test]
+fn entering_over_the_hand_limit_asks_which_hand_asset_to_discard() {
+    let session = daisy_draws(NECRONOMICON, &[MAGNIFYING_GLASS, FLASHLIGHT]);
+    let glass = session.state().in_play(INV, MAGNIFYING_GLASS);
+    let flashlight = session.state().in_play(INV, FLASHLIGHT);
+    assert_eq!(
+        (
+            session.offered_at(&OptionTarget::CardInstance(glass)),
+            session.offered_at(&OptionTarget::CardInstance(flashlight)),
+        ),
+        (1, 1),
+        "expected a make-room prompt offering both hand assets, got {:?}",
+        session.prompt(),
+    );
+    assert!(
+        session.state().investigators[&INV].threat_area.is_empty(),
+        "the card enters only once room is made",
+    );
+
+    let session = session.pick(OptionTarget::CardInstance(glass));
+
+    session.assert_at_turn_menu(INV);
+    assert_entered_with_three_horror(&session);
+    assert_eq!(codes_in_play(&session), vec![FLASHLIGHT]);
+    assert_eq!(
+        session.state().investigators[&INV].discard,
+        vec![CardCode::new(MAGNIFYING_GLASS)],
+    );
+}
+
+/// The same prompt pauses a Revelation under a deck search: Research Librarian
+/// 01032 fetches it, the search shuffles, and the make-room prompt comes
+/// before the card enters.
+#[test]
+fn fetched_over_the_hand_limit_it_makes_room_after_the_search() {
+    let session = board(
+        seat(1)
+            .as_card(DAISY)
+            .at(HERE)
+            .resources(5)
+            .in_play([MAGNIFYING_GLASS, FLASHLIGHT])
+            .hand([LIBRARIAN])
+            .deck([GUTS, NECRONOMICON, GUTS]),
+    )
+    .take(&TurnAction::PlayCard {
+        investigator: INV,
+        hand_index: 0,
+    });
+    let librarian = session.state().card(INV, LIBRARIAN);
+    let session = session.pick(librarian);
+    let flashlight = session.state().in_play(INV, FLASHLIGHT);
+    assert_eq!(
+        session.offered_at(&OptionTarget::CardInstance(flashlight)),
+        1,
+        "expected the make-room prompt, got {:?}",
+        session.prompt(),
+    );
+
+    let session = session.pick(OptionTarget::CardInstance(flashlight));
+
+    session.assert_at_turn_menu(INV);
+    assert_entered_with_three_horror(&session);
+    assert_resolved_after_the_shuffle(&session);
+    assert_eq!(codes_in_play(&session), vec![MAGNIFYING_GLASS, LIBRARIAN]);
+}
+
+#[test]
+fn a_free_hand_slot_takes_it_without_a_prompt() {
+    let session = daisy_draws(NECRONOMICON, &[MAGNIFYING_GLASS]);
+
+    session.assert_at_turn_menu(INV);
+    assert_entered_with_three_horror(&session);
+    assert_eq!(codes_in_play(&session), vec![MAGNIFYING_GLASS]);
+    assert!(session.state().investigators[&INV].discard.is_empty());
+}
+
+/// Daisy's Tote Bag 01008: *"You have 2 additional hand slots, which can only
+/// be used to hold \[\[Tome\]\] assets."* The Necronomicon is a Tome, so it
+/// fits there with both default hand slots full.
+#[test]
+fn a_free_tote_bag_slot_takes_it_without_a_prompt() {
+    let session = daisy_draws(NECRONOMICON, &[TOTE_BAG, MAGNIFYING_GLASS, FLASHLIGHT]);
+
+    session.assert_at_turn_menu(INV);
+    assert_entered_with_three_horror(&session);
+    assert_eq!(
+        codes_in_play(&session),
+        vec![TOTE_BAG, MAGNIFYING_GLASS, FLASHLIGHT]
+    );
+    assert!(session.state().investigators[&INV].discard.is_empty());
+}
+
+/// A threat-area card with no slot symbol holds no slot, so it never makes
+/// room, however full the hand slots are. Cover Up 01007: *"Revelation - Put
+/// Cover Up into play in your threat area, with 3 clues on it."*
+#[test]
+fn a_slotless_threat_area_card_never_prompts() {
+    let session = daisy_draws(COVER_UP, &[MAGNIFYING_GLASS, FLASHLIGHT]);
+
+    session.assert_at_turn_menu(INV);
+    let inv = &session.state().investigators[&INV];
+    let cover_up = inv
+        .threat_area
+        .iter()
+        .find(|c| c.code.as_str() == COVER_UP)
+        .expect("Cover Up enters the threat area");
+    assert_eq!(cover_up.clues, 3);
+    assert_eq!(codes_in_play(&session), vec![MAGNIFYING_GLASS, FLASHLIGHT]);
+    assert!(inv.discard.is_empty());
 }
