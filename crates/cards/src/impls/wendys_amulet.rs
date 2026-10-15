@@ -45,7 +45,7 @@
 //! aspect of its effect, and up until its completion."* — so the event pays
 //! its cost, keeps its timing, and provokes attacks of opportunity as a hand
 //! play does, and nothing else sees it as in hand. The option is offered on
-//! the Amulet, labelled *"Play <event> (Wendy's Amulet)"*: the client has no
+//! the Amulet, labelled *"Play \<event\> (Wendy's Amulet)"*: the client has no
 //! discard-pile view (#1101). Played that way, the event is then placed by the
 //! Forced, on the bottom of the deck.
 //!
