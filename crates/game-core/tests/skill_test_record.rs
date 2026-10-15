@@ -22,8 +22,8 @@ use game_core::scenario::{
     ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRegistry, SymbolCtx,
 };
 use game_core::state::{
-    ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
-    TokenModifiers, TokenResolution,
+    ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId, RevealedToken,
+    SkillKind, TokenModifiers, TokenResolution,
 };
 use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession, TEST_INV};
 
@@ -109,14 +109,14 @@ fn board(token: ChaosToken, in_play: &[&str]) -> GameState {
 
 /// Run a difficulty-1 willpower test drawing `token`, committing nothing, to
 /// the post-ST.6 pause. Returns the `revealed` record and the `total`.
-fn paused_after(token: ChaosToken) -> (Option<(ChaosToken, TokenResolution)>, i8) {
+fn paused_after(token: ChaosToken) -> (Option<RevealedToken>, i8) {
     let session = TestSession::new(board(token, &[]), registries())
         .test_skill(INV, SkillKind::Willpower, 1)
         .commit(&[]);
     read_record(&session)
 }
 
-fn read_record(session: &TestSession) -> (Option<(ChaosToken, TokenResolution)>, i8) {
+fn read_record(session: &TestSession) -> (Option<RevealedToken>, i8) {
     let test = session
         .state()
         .current_skill_test()
@@ -125,13 +125,26 @@ fn read_record(session: &TestSession) -> (Option<(ChaosToken, TokenResolution)>,
     (test.revealed, resolved.total)
 }
 
+/// The record of drawing `token` with nothing substituting it: it counts as
+/// itself.
+fn drawn(token: ChaosToken, resolution: TokenResolution) -> RevealedToken {
+    RevealedToken {
+        token,
+        counts_as: token,
+        resolution,
+    }
+}
+
 #[test]
 fn a_numeric_token_is_recorded_and_counts_in_the_total() {
     // Willpower 3, -1: total 2.
     let (revealed, total) = paused_after(ChaosToken::Numeric(-1));
     assert_eq!(
         revealed,
-        Some((ChaosToken::Numeric(-1), TokenResolution::Modifier(-1)))
+        Some(drawn(
+            ChaosToken::Numeric(-1),
+            TokenResolution::Modifier(-1)
+        ))
     );
     assert_eq!(total, 2);
 }
@@ -142,7 +155,7 @@ fn a_scenario_symbol_is_recorded_at_its_value_on_reveal() {
     let (revealed, total) = paused_after(ChaosToken::Skull);
     assert_eq!(
         revealed,
-        Some((ChaosToken::Skull, TokenResolution::Modifier(2)))
+        Some(drawn(ChaosToken::Skull, TokenResolution::Modifier(2)))
     );
     assert_eq!(total, 5);
 }
@@ -153,7 +166,7 @@ fn an_elder_sign_is_recorded_and_its_modifier_counts_in_the_total() {
     let (revealed, total) = paused_after(ChaosToken::ElderSign);
     assert_eq!(
         revealed,
-        Some((ChaosToken::ElderSign, TokenResolution::ElderSign))
+        Some(drawn(ChaosToken::ElderSign, TokenResolution::ElderSign))
     );
     assert_eq!(total, 5);
 }
