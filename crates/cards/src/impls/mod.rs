@@ -164,6 +164,7 @@ pub mod trapped;
 pub mod unexpected_courage;
 pub mod vicious_blow;
 pub mod ward_of_protection;
+pub mod wendy_adams;
 pub mod wendys_amulet;
 pub mod what_have_you_done;
 pub mod whats_going_on;
@@ -320,6 +321,7 @@ pub const ALL: &[CardRecord] = &[
     unexpected_courage::CARD,
     vicious_blow::CARD,
     ward_of_protection::CARD,
+    wendy_adams::CARD,
     wendys_amulet::CARD,
     what_have_you_done::CARD,
     whats_going_on::CARD,
