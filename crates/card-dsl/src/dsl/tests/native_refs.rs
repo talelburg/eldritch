@@ -19,7 +19,7 @@ fn condition_ref(tag: &str) -> NativeRef<'_> {
 #[test]
 fn an_effect_native_inside_a_seq_is_reported_as_an_effect() {
     let ability = on_play(seq([
-        draw_cards(InvestigatorTarget::You, 1),
+        draw_cards(InvestigatorTarget::You, 1u8),
         native("x:in-seq"),
     ]));
     assert_eq!(ability.native_refs(), [effect_ref("x:in-seq")]);
@@ -60,6 +60,15 @@ fn a_native_condition_inside_an_int_expr_cond_is_reported_as_a_condition() {
 }
 
 #[test]
+fn a_native_condition_inside_a_draw_count_is_reported_as_a_condition() {
+    let ability = on_play(draw_cards(
+        InvestigatorTarget::You,
+        IntExpr::cond(native_condition("x:in-draw"), 2, 1),
+    ));
+    assert_eq!(ability.native_refs(), [condition_ref("x:in-draw")]);
+}
+
+#[test]
 fn a_native_condition_inside_an_if_is_reported_as_a_condition() {
     let ability = on_play(if_(native_condition("x:in-if"), discard_self()));
     assert_eq!(ability.native_refs(), [condition_ref("x:in-if")]);
@@ -68,7 +77,7 @@ fn a_native_condition_inside_an_if_is_reported_as_a_condition() {
 #[test]
 fn an_effect_native_inside_a_choose_one_branch_is_reported_as_an_effect() {
     let ability = on_play(choose_one([
-        ("Draw", draw_cards(InvestigatorTarget::You, 1)),
+        ("Draw", draw_cards(InvestigatorTarget::You, 1u8)),
         ("Native", native("x:in-branch")),
     ]));
     assert_eq!(ability.native_refs(), [effect_ref("x:in-branch")]);

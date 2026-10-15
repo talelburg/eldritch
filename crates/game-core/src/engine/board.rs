@@ -52,6 +52,9 @@
 //! play, wherever it sits. Both file the card by its **owner** through one
 //! router and apply the Leaves Play consequences in the same step; the private
 //! `leave_play` module's docs give the owner table and the rules behind it.
+//! An exit answers [`NotLeft`] when the card stays: it was not in play, or it
+//! cannot leave play right now (The Necronomicon 01009 while it has horror).
+//! Elimination alone overrides that refusal, with its own two verbs.
 //!
 //! `place_in_victory_display` is the victory display's exit, which a defeated
 //! Victory enemy takes. `discard_encounter_card` files an encounter card that
@@ -63,11 +66,12 @@
 
 mod leave_play;
 
-pub use leave_play::LeavingCard;
 pub(crate) use leave_play::{
-    discard_encounter_card, discard_from_play, place_in_victory_display, remove_from_game,
+    discard_encounter_card, discard_from_play, discard_from_play_on_elimination,
+    place_in_victory_display, remove_from_game, remove_from_game_on_elimination,
     remove_location_from_game,
 };
+pub use leave_play::{LeavingCard, NotLeft};
 
 use std::collections::BTreeMap;
 

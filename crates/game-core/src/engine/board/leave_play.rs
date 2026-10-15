@@ -49,6 +49,31 @@
 //!
 //! The third consequence, lasting-effect expiry, is not applied here.
 //!
+//! # Cards that cannot leave play
+//!
+//! A card can forbid its own exit: The Necronomicon 01009's *"It cannot leave
+//! play while it has 1 or more horror on it."*, declared as a constant
+//! `Restriction::CannotLeavePlay`. `glossary/Cannot.md` admits no exception:
+//! *"The word "cannot" is absolute, and cannot be countermanded by other
+//! abilities."* So every exit checks it before taking the card, and a card it
+//! forbids stays where it is, untouched, with no event, and the exit answers
+//! [`NotLeft::Refused`]. Each caller decides what a refusal means for it: a
+//! cost that discards its source cannot be paid, an effect that discards one
+//! rejects, a slot make-room never offers the card.
+//!
+//! Tokens do not dissolve the prohibition first. Leaves Play returns them
+//! *"simultaneously with the card leaving play"*, so while the card is still
+//! in play its horror is still on it.
+//!
+//! **Elimination is the one override.** `glossary/Elimination.md` step 0:
+//! *"For the purpose of resolving weakness cards, the game has ended for the
+//! eliminated investigator. Trigger any “when the game ends” abilities on each
+//! weakness the eliminated investigator owns that is in play. Then, remove
+//! those weaknesses from the game."* The game is over for that investigator,
+//! so nothing they hold stays in play. Elimination's drains take
+//! [`remove_from_game_on_elimination`] and [`discard_from_play_on_elimination`],
+//! which skip the check.
+//!
 //! # One event per card
 //!
 //! Every card that leaves emits exactly one event: [`Event::CardDiscarded`]
@@ -69,7 +94,7 @@
 //! caller always knows which exit it means.
 
 use crate::engine::board::{self, Placement};
-use crate::engine::Cx;
+use crate::engine::{abilities_in_effect, Cx};
 use crate::event::Event;
 use crate::state::{
     CardCode, CardInPlay, CardInstanceId, DiscardPile, EnemyId, LocationId, Owner, Zone,
@@ -109,11 +134,16 @@ impl From<EnemyId> for LeavingCard {
 /// owner, and its tokens go away.
 ///
 /// Returns the [`Placement`] the card left, from which a caller derives the
-/// investigator whose area held it or the location it was at. `None`, with
-/// nothing changed and no event, when `card` is not in play — or names an
-/// investigator card, which never leaves play.
-pub fn discard_from_play(cx: &mut Cx, card: impl Into<LeavingCard>) -> Option<Placement> {
-    leave_play(cx, card.into(), Exit::Discard)
+/// investigator whose area held it or the location it was at.
+///
+/// # Errors
+///
+/// With nothing changed and no event: [`NotLeft::NotInPlay`] when `card` is not
+/// in play, or names an investigator card, which never leaves play;
+/// [`NotLeft::Refused`] when the card cannot leave play right now (see the
+/// `leave_play` module docs).
+pub fn discard_from_play(cx: &mut Cx, card: impl Into<LeavingCard>) -> Result<Placement, NotLeft> {
+    leave_play(cx, card.into(), Exit::Discard, Prohibition::Honoured)
 }
 
 /// **Remove `card` from the game**, wherever it sits: an investigator's card to
@@ -122,10 +152,47 @@ pub fn discard_from_play(cx: &mut Cx, card: impl Into<LeavingCard>) -> Option<Pl
 /// — Leaves Play discards them whichever way the card itself went — and its
 /// tokens go away.
 ///
-/// Returns the [`Placement`] the card left; `None`, with nothing changed and no
-/// event, as for [`discard_from_play`].
-pub fn remove_from_game(cx: &mut Cx, card: impl Into<LeavingCard>) -> Option<Placement> {
-    leave_play(cx, card.into(), Exit::RemoveFromGame)
+/// Returns the [`Placement`] the card left.
+///
+/// # Errors
+///
+/// [`NotLeft`], with nothing changed and no event, as for
+/// [`discard_from_play`].
+pub fn remove_from_game(cx: &mut Cx, card: impl Into<LeavingCard>) -> Result<Placement, NotLeft> {
+    leave_play(cx, card.into(), Exit::RemoveFromGame, Prohibition::Honoured)
+}
+
+/// [`remove_from_game`] for Elimination step 1, which removes the cards an
+/// eliminated investigator controls in play even where they cannot leave play
+/// (see the `leave_play` module docs).
+///
+/// # Errors
+///
+/// [`NotLeft::NotInPlay`] alone, as for [`discard_from_play`].
+pub fn remove_from_game_on_elimination(
+    cx: &mut Cx,
+    card: impl Into<LeavingCard>,
+) -> Result<Placement, NotLeft> {
+    leave_play(
+        cx,
+        card.into(),
+        Exit::RemoveFromGame,
+        Prohibition::Overridden,
+    )
+}
+
+/// [`discard_from_play`] for Elimination step 4, which empties the eliminated
+/// investigator's threat area of the cards step 1 left there, even where they
+/// cannot leave play (see the `leave_play` module docs).
+///
+/// # Errors
+///
+/// [`NotLeft::NotInPlay`] alone, as for [`discard_from_play`].
+pub fn discard_from_play_on_elimination(
+    cx: &mut Cx,
+    card: impl Into<LeavingCard>,
+) -> Result<Placement, NotLeft> {
+    leave_play(cx, card.into(), Exit::Discard, Prohibition::Overridden)
 }
 
 /// **Place `card` in the victory display**, wherever it sits, worth `victory`
@@ -139,14 +206,23 @@ pub fn remove_from_game(cx: &mut Cx, card: impl Into<LeavingCard>) -> Option<Pla
 /// defeated, place the card in the victory display instead of in the discard
 /// pile."*
 ///
-/// Returns the [`Placement`] the card left; `None`, with nothing changed and no
-/// event, as for [`discard_from_play`].
+/// Returns the [`Placement`] the card left.
+///
+/// # Errors
+///
+/// [`NotLeft`], with nothing changed and no event, as for
+/// [`discard_from_play`].
 pub fn place_in_victory_display(
     cx: &mut Cx,
     card: impl Into<LeavingCard>,
     victory: u8,
-) -> Option<Placement> {
-    leave_play(cx, card.into(), Exit::VictoryDisplay { victory })
+) -> Result<Placement, NotLeft> {
+    leave_play(
+        cx,
+        card.into(),
+        Exit::VictoryDisplay { victory },
+        Prohibition::Honoured,
+    )
 }
 
 /// **Remove `location` from the game**: its card to the game's removed-from-game
@@ -196,6 +272,29 @@ pub fn discard_encounter_card(cx: &mut Cx, code: CardCode, from: Zone) {
     file(cx, code, Owner::EncounterDeck, from, Exit::Discard);
 }
 
+/// Why a card an exit was asked to take did not leave play. Nothing changed
+/// and no event was emitted either way.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotLeft {
+    /// The card is not in play, or is an investigator card, which never leaves
+    /// play.
+    NotInPlay,
+    /// The card is in play but cannot leave it right now: a constant
+    /// `Restriction::CannotLeavePlay` on it holds (see the `leave_play` module
+    /// docs).
+    Refused,
+}
+
+/// Whether an exit honours a card's `Restriction::CannotLeavePlay`. Private:
+/// only elimination's verbs override it.
+#[derive(Debug, Clone, Copy)]
+enum Prohibition {
+    /// The exit refuses a card that cannot leave play.
+    Honoured,
+    /// Elimination: the card leaves regardless.
+    Overridden,
+}
+
 /// Which exit a card takes. Private: each variant has its own public verb.
 #[derive(Debug, Clone, Copy)]
 enum Exit {
@@ -207,16 +306,30 @@ enum Exit {
     VictoryDisplay { victory: u8 },
 }
 
-/// The router: take `card` off the board, file it through `exit` by its owner,
-/// then discard its attachments.
-fn leave_play(cx: &mut Cx, card: LeavingCard, exit: Exit) -> Option<Placement> {
+/// The router: refuse a card that cannot leave play (unless `prohibition` is
+/// overridden), else take `card` off the board, file it through `exit` by its
+/// owner, then discard its attachments.
+///
+/// Only a card instance is checked: an enemy is no [`CardInPlay`], and no enemy
+/// in the corpus prints that it cannot leave play.
+fn leave_play(
+    cx: &mut Cx,
+    card: LeavingCard,
+    exit: Exit,
+    prohibition: Prohibition,
+) -> Result<Placement, NotLeft> {
     let (code, owner, placement, attachments) = match card {
         LeavingCard::Instance(id) => {
-            let (card, placement) = board::take_instance(cx.state, id)?;
+            if matches!(prohibition, Prohibition::Honoured)
+                && abilities_in_effect::cannot_leave_play(cx.state, cx.cards, id)
+            {
+                return Err(NotLeft::Refused);
+            }
+            let (card, placement) = board::take_instance(cx.state, id).ok_or(NotLeft::NotInPlay)?;
             (card.code, card.owner, placement, Vec::new())
         }
         LeavingCard::Enemy(id) => {
-            let enemy = cx.state.enemies.remove(&id)?;
+            let enemy = cx.state.enemies.remove(&id).ok_or(NotLeft::NotInPlay)?;
             (
                 enemy.code,
                 enemy.owner,
@@ -227,7 +340,7 @@ fn leave_play(cx: &mut Cx, card: LeavingCard, exit: Exit) -> Option<Placement> {
     };
     file(cx, code, owner, zone_left(placement), exit);
     discard_attachments(cx, attachments, Zone::EnemyAttachment);
-    Some(placement)
+    Ok(placement)
 }
 
 /// Discard `attachments`, already taken off the card they were attached to,
@@ -369,19 +482,19 @@ mod tests {
 
     fn run(
         state: &mut GameState,
-        exit: fn(&mut Cx, LeavingCard) -> Option<Placement>,
+        exit: fn(&mut Cx, LeavingCard) -> Result<Placement, NotLeft>,
         card: LeavingCard,
-    ) -> (Option<Placement>, Vec<Event>) {
+    ) -> (Result<Placement, NotLeft>, Vec<Event>) {
         let mut events = Vec::new();
         let left = exit(&mut Cx::for_test(state, &mut events), card);
         (left, events)
     }
 
-    fn discard(cx: &mut Cx, card: LeavingCard) -> Option<Placement> {
+    fn discard(cx: &mut Cx, card: LeavingCard) -> Result<Placement, NotLeft> {
         discard_from_play(cx, card)
     }
 
-    fn remove(cx: &mut Cx, card: LeavingCard) -> Option<Placement> {
+    fn remove(cx: &mut Cx, card: LeavingCard) -> Result<Placement, NotLeft> {
         remove_from_game(cx, card)
     }
 
@@ -423,7 +536,7 @@ mod tests {
                 let (mut state, card) = board_with(owner, zone);
                 let (left, events) = run(&mut state, discard, card);
                 let case = format!("{owner:?} leaving {zone:?}");
-                assert_eq!(left, Some(zone), "{case}: reports where it left");
+                assert_eq!(left, Ok(zone), "{case}: reports where it left");
                 assert!(!still_on_board(&state, card), "{case}: off the board");
                 let code = CardCode::new(LEAVING_CODE);
                 let from = zone_left(zone);
@@ -467,7 +580,7 @@ mod tests {
                 let (mut state, card) = board_with(owner, zone);
                 let (left, events) = run(&mut state, remove, card);
                 let case = format!("{owner:?} leaving {zone:?}");
-                assert_eq!(left, Some(zone), "{case}: reports where it left");
+                assert_eq!(left, Ok(zone), "{case}: reports where it left");
                 assert!(!still_on_board(&state, card), "{case}: off the board");
                 let landed = match owner {
                     Owner::Investigator(_) => only(LEAVING_CODE, 3),
@@ -508,7 +621,7 @@ mod tests {
                     card,
                 );
                 let case = format!("{owner:?} leaving {zone:?}");
-                assert_eq!(left, Some(zone), "{case}: reports where it left");
+                assert_eq!(left, Ok(zone), "{case}: reports where it left");
                 assert!(!still_on_board(&state, card), "{case}: off the board");
                 assert_eq!(
                     state.victory_display,
@@ -549,7 +662,7 @@ mod tests {
     #[test]
     fn an_enemys_attachments_are_discarded_each_by_its_own_owner() {
         for exit in [
-            discard as fn(&mut Cx, LeavingCard) -> Option<Placement>,
+            discard as fn(&mut Cx, LeavingCard) -> Result<Placement, NotLeft>,
             remove,
         ] {
             let mut state = empty_board();
@@ -561,7 +674,7 @@ mod tests {
                 instance("STORY", 73, Owner::Scenario),
             ];
             let (left, events) = run(&mut state, exit, GHOUL.into());
-            assert_eq!(left, Some(Placement::Enemy(GHOUL)));
+            assert_eq!(left, Ok(Placement::Enemy(GHOUL)));
             assert!(!state.enemies.contains_key(&GHOUL));
             for id in [71, 72, 73] {
                 assert!(board::find_instance(&state, CardInstanceId(id)).is_none());
@@ -623,8 +736,9 @@ mod tests {
             state.investigators[&OWNER].clues,
         ];
 
-        run(&mut state, discard, card);
+        let (left, _) = run(&mut state, discard, card);
 
+        assert_eq!(left, Ok(Placement::ThreatArea(CONTROLLER)));
         assert!(board::find_instance(&state, LEAVING).is_none());
         assert_eq!(
             state.locations[&STUDY].clues, location_clues,
@@ -659,13 +773,13 @@ mod tests {
             LeavingCard::Enemy(EnemyId(99)),
         ] {
             for exit in [
-                discard as fn(&mut Cx, LeavingCard) -> Option<Placement>,
+                discard as fn(&mut Cx, LeavingCard) -> Result<Placement, NotLeft>,
                 remove,
             ] {
                 let mut state = empty_board();
                 let before = piles(&state);
                 let (left, events) = run(&mut state, exit, card);
-                assert_eq!(left, None, "{card:?}");
+                assert_eq!(left, Err(NotLeft::NotInPlay), "{card:?}");
                 assert!(events.is_empty(), "{card:?}");
                 assert_eq!(piles(&state), before, "{card:?}");
             }

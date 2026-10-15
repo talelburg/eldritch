@@ -5,8 +5,9 @@ use card_dsl::card_data::CardMetadata;
 use card_dsl::dsl::Restriction;
 
 use crate::card_registry::CardRegistry;
-use crate::engine::board::{self, LeavingCard, MoveResourcesError, Placement};
+use crate::engine::board::{self, LeavingCard, MoveResourcesError, NotLeft, Placement};
 use crate::engine::dispatch::actions::{r#move, take};
+use crate::engine::dispatch::tokens::{self, MoveHorrorError};
 use crate::engine::dispatch::{
     act_agenda, cards, combat, elimination, encounter, hunters, placement, reveal, set_aside,
     skill_test, threat_area,
@@ -164,6 +165,13 @@ impl<'a> NativeCx<'a> {
 
     /// Put `code` into `investigator`'s threat area under `owner`, returning
     /// its new instance id, or `None` when the investigator is not in the game.
+    ///
+    /// **Makes no room.** A card with a slot symbol lands even when its slot is
+    /// full, and no occupier is discarded. [`Effect::PutIntoThreatArea`] is the
+    /// entry that makes room first, and can suspend on the make-room prompt
+    /// (#1097). Use this one only for a card that holds no slot.
+    ///
+    /// [`Effect::PutIntoThreatArea`]: card_dsl::dsl::Effect::PutIntoThreatArea
     pub fn place_in_threat_area(
         &mut self,
         investigator: InvestigatorId,
@@ -316,17 +324,55 @@ impl<'a> NativeCx<'a> {
         board::move_resources_to_card(self.write_access(), investigator, instance, amount)
     }
 
+    /// Move up to `amount` horror from the card instance `from` onto the card
+    /// instance `to`, wherever each is on the board (The Necronomicon 01009),
+    /// emitting [`Event::HorrorMoved`](crate::event::Event::HorrorMoved) with
+    /// the number moved. A move, neither a deal nor a heal, so
+    /// [`Event::HorrorTaken`](crate::event::Event::HorrorTaken) stays silent
+    /// and no harm window opens. A source with no horror moves nothing and
+    /// announces nothing.
+    ///
+    /// A destination the horror defeats is defeated: an investigator card is
+    /// eliminated, an asset discarded. So `to`'s card may be out of play when
+    /// this returns.
+    ///
+    /// # Errors
+    ///
+    /// [`MoveHorrorError::NotInPlay`] when `from` or `to` is not on the board;
+    /// [`MoveHorrorError::NoSanity`] when `to` has no sanity value.
+    pub fn move_horror(
+        &mut self,
+        from: CardInstanceId,
+        to: CardInstanceId,
+        amount: u8,
+    ) -> Result<(), MoveHorrorError> {
+        tokens::move_horror(self.write_access(), from, to, amount)
+    }
+
     // --- Leaving play ---
 
     /// Discard `card` from play to its owner's pile, with its leave-play
-    /// consequences. Returns where it was, or `None` if it was not in play.
-    pub fn discard_from_play(&mut self, card: impl Into<LeavingCard>) -> Option<Placement> {
+    /// consequences. Returns where it was.
+    ///
+    /// # Errors
+    ///
+    /// [`NotLeft::NotInPlay`] if it was not in play, and [`NotLeft::Refused`]
+    /// if it cannot leave play right now (The Necronomicon 01009 while it has
+    /// horror); nothing changes either way.
+    pub fn discard_from_play(
+        &mut self,
+        card: impl Into<LeavingCard>,
+    ) -> Result<Placement, NotLeft> {
         board::discard_from_play(self.write_access(), card)
     }
 
     /// Remove `card` from the game, with its leave-play consequences. Returns
-    /// where it was, or `None` if it was not in play.
-    pub fn remove_from_game(&mut self, card: impl Into<LeavingCard>) -> Option<Placement> {
+    /// where it was.
+    ///
+    /// # Errors
+    ///
+    /// [`NotLeft`], as for [`discard_from_play`](Self::discard_from_play).
+    pub fn remove_from_game(&mut self, card: impl Into<LeavingCard>) -> Result<Placement, NotLeft> {
         board::remove_from_game(self.write_access(), card)
     }
 

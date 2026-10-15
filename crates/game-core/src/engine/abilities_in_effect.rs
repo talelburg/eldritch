@@ -87,7 +87,7 @@
 //!
 //! [`Location::revealed`]: crate::state::Location::revealed
 
-use card_dsl::dsl::{Ability, Condition, Effect, GrantTarget, Trigger};
+use card_dsl::dsl::{Ability, Condition, Effect, GrantTarget, Restriction, Trigger};
 
 use crate::card_registry::CardRegistry;
 use crate::engine::board;
@@ -182,11 +182,15 @@ pub(crate) fn for_candidate_source(
 /// each paired with the instance it is on. Read through [`for_source`], so a
 /// constant the board grants one of those cards counts as one printed on it.
 ///
-/// The one constant sweep over an investigator's own cards. Its readers each
-/// match their own [`Effect`] shape: the additional-action sweep
-/// (`Effect::AdditionalActionWhileInPlay`), `evaluator::pending_action_surcharge`
-/// (`Restriction::ExtraActionCost`) and `evaluator::play_is_prohibited`
-/// (`Restriction::CannotPlay`). Empty for an investigator not in state.
+/// The constant sweep over everything an investigator controls. The other
+/// constant read, [`cannot_leave_play`], asks one card rather than an
+/// investigator. This sweep's readers each match their own [`Effect`] shape:
+/// the additional-action sweep (`Effect::AdditionalActionWhileInPlay`), the
+/// skill test's token substitution (`Effect::TreatRevealedToken`),
+/// `slots::slot_grants` (`Effect::AdditionalSlots`),
+/// `evaluator::pending_action_surcharge` (`Restriction::ExtraActionCost`) and
+/// `evaluator::play_is_prohibited` (`Restriction::CannotPlay`). Empty for an
+/// investigator not in state.
 #[must_use]
 pub(crate) fn constants_of(
     state: &GameState,
@@ -210,6 +214,33 @@ pub(crate) fn constants_of(
             .map(move |(_, ability)| (card.instance_id, ability))
         })
         .collect()
+}
+
+/// Whether the card instance `id` is currently forbidden from leaving play: an
+/// in-effect constant [`Restriction::CannotLeavePlay`] on it whose `while_`
+/// holds. The Necronomicon 01009: *"It cannot leave play while it has 1 or
+/// more horror on it."* `false` for an instance not on the board.
+///
+/// The condition is read with the card as its source and its controller as
+/// "you", through [`condition_holds`], so a condition needing a "you" does not
+/// hold for a card nobody controls. The only corpus carrier sits in a threat
+/// area, which has a controller.
+#[must_use]
+pub(crate) fn cannot_leave_play(state: &GameState, reg: &CardRegistry, id: CardInstanceId) -> bool {
+    let Some((card, placement)) = board::find_instance(state, id) else {
+        return false;
+    };
+    let source = AbilitySource::InPlay(id);
+    for_source(state, reg, source, &card.code)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|(_, ability)| ability.trigger == Trigger::Constant)
+        .any(|(_, ability)| match &ability.effect {
+            Effect::Restrict(Restriction::CannotLeavePlay { while_ }) => {
+                condition_holds(state, reg, while_, placement.investigator(), source)
+            }
+            _ => false,
+        })
 }
 
 /// Pair each of a card's printed abilities with the address that names it.

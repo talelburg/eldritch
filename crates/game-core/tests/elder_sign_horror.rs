@@ -1,4 +1,4 @@
-//! An elder-sign modifier of `Count(Quantity::HorrorOnController)`, read
+//! An elder-sign modifier of `Count(Quantity::HorrorOnSource)`, read
 //! live at ST.5 (ADR 0005).
 //!
 //! The motivating consumer is Agnes Baker 01004
@@ -41,9 +41,7 @@ fn registries() -> Registries {
         cards: MockRegistry::new()
             .with_card(test_investigator_card(COUNTS_HORROR))
             .with_abilities(COUNTS_HORROR, || {
-                vec![dsl::elder_sign(IntExpr::Count(
-                    Quantity::HorrorOnController,
-                ))]
+                vec![dsl::elder_sign(IntExpr::Count(Quantity::HorrorOnSource))]
             })
             .with_card(test_investigator_card(TAKES_THEN_COUNTS))
             .with_abilities(TAKES_THEN_COUNTS, || {
@@ -53,7 +51,7 @@ fn registries() -> Registries {
                         target: InvestigatorTarget::You,
                         amount: IntExpr::Lit(2),
                     }),
-                    ..TokenOutcome::modifier(IntExpr::Count(Quantity::HorrorOnController))
+                    ..TokenOutcome::modifier(IntExpr::Count(Quantity::HorrorOnSource))
                 })]
             })
             .build(),

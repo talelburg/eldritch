@@ -66,7 +66,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::card_data::{CardMetadata, CardType, SkillKind, UseKind};
+use crate::card_data::{CardMetadata, CardType, SkillKind, Slot, UseKind};
 
 // ---- triggers --------------------------------------------------
 
@@ -1687,7 +1687,9 @@ impl Effect {
                 tag,
             }),
             Effect::Deal { amount, .. } => amount.collect_native_refs(refs),
-            Effect::PlaceDoomOnCurrentAgenda { count, .. } => count.collect_native_refs(refs),
+            Effect::PlaceDoomOnCurrentAgenda { count, .. } | Effect::DrawCards { count, .. } => {
+                count.collect_native_refs(refs);
+            }
             Effect::Seq(effects) => {
                 for effect in effects {
                     effect.collect_native_refs(refs);
@@ -1731,6 +1733,9 @@ impl Effect {
                     ability.collect_native_refs(refs);
                 }
             }
+            Effect::Restrict(Restriction::CannotLeavePlay { while_ }) => {
+                while_.collect_native_refs(refs);
+            }
             Effect::GainResources { .. }
             | Effect::DiscoverClue { .. }
             | Effect::DealDamageToEnemy { .. }
@@ -1743,15 +1748,22 @@ impl Effect {
             | Effect::DiscardSelf
             | Effect::Cancel
             | Effect::PutIntoThreatArea { .. }
-            | Effect::DrawCards { .. }
             | Effect::BoostAttackDamage(_)
             | Effect::DiscoverAdditionalClues(_)
-            | Effect::Restrict(_)
+            | Effect::Restrict(
+                Restriction::CannotPlay(_)
+                | Restriction::ExtraActionCost { .. }
+                | Restriction::EnemyMovementBlocked { .. }
+                | Restriction::InvestigatorMovementBlocked
+                | Restriction::CannotAttack { .. },
+            )
             | Effect::SearchDeck { .. }
             | Effect::AttachSelfToLocation
             | Effect::TakeControl { .. }
             | Effect::GainAdditionalAction { .. }
-            | Effect::AdditionalActionWhileInPlay { .. } => {}
+            | Effect::AdditionalActionWhileInPlay { .. }
+            | Effect::AdditionalSlots { .. }
+            | Effect::TreatRevealedToken { .. } => {}
         }
     }
 }
@@ -2097,7 +2109,8 @@ pub enum Effect {
     /// Put the card with this printed `code` into the controller's threat
     /// area as a fresh in-play instance. The Revelation of persistent
     /// threat-area treacheries (Frozen in Fear 01164, Dissonant Voices
-    /// 01165) — the card names its own `CODE`. (Attaching to a *location*
+    /// 01165) and of asset weaknesses that enter play there (The
+    /// Necronomicon 01009) — the card names its own `CODE`. (Attaching to a *location*
     /// stays card-local because of per-card rules like Obscuring Fog's
     /// "Limit 1 per location".)
     ///
@@ -2114,16 +2127,24 @@ pub enum Effect {
         /// Clues to seed on the placed instance ("with 3 clues on it",
         /// Cover Up 01007). `0` for cards that enter clue-less.
         clues: u8,
+        /// Horror to seed on the placed instance ("with 3 horror on it",
+        /// The Necronomicon 01009). `0` for cards that enter without horror.
+        /// The horror is *placed* as the card enters play, not dealt, so no
+        /// harm event fires for it.
+        horror: u8,
     },
     /// Draw `count` cards for the resolved target investigator —
     /// "draw 1 card" (Guts 01089, Perception 01090, Overpower 01091,
-    /// Manual Dexterity 01092). `count == 0` is a no-op. Deck-out (drawing
+    /// Manual Dexterity 01092), or a count read off state as the effect
+    /// resolves: Daisy Walker 01002's *"draw 1 card for each \[\[Tome\]\]
+    /// you control"* is [`IntExpr::Count`] of [`Quantity::ControlledCards`].
+    /// A count that evaluates to 0 or below is a no-op. Deck-out (drawing
     /// from an empty deck) follows the engine's existing `draw_cards`
     /// behavior; the elimination consequence is out of this primitive's
     /// scope.
     DrawCards {
         target: InvestigatorTarget,
-        count: u8,
+        count: IntExpr,
     },
     /// Add `N` to the in-flight skill test's bonus attack damage —
     /// Vicious Blow 01025's "that attack deals +1 damage." Accumulated at
@@ -2170,6 +2191,39 @@ pub enum Effect {
         /// What the additional action may be used for. `None` is any action.
         restriction: Option<AdditionalActionRestriction>,
     },
+    /// **Additional slots for as long as the source card is in play**:
+    /// Daisy's Tote Bag 01008's *"You have 2 additional hand slots, which can
+    /// only be used to hold \[\[Tome\]\] assets."* A constant marker like
+    /// [`AdditionalActionWhileInPlay`](Self::AdditionalActionWhileInPlay),
+    /// under a [`Trigger::Constant`]: **inspected, not executed** — the engine
+    /// reads it off the investigator's cards each time it works out their slot
+    /// capacity, so the slots are gone the moment the card leaves play.
+    /// Resolving it rejects.
+    ///
+    /// Each grant is its own pool of `count` slots of type `slot`; `only`
+    /// limits which assets the pool may hold.
+    AdditionalSlots {
+        /// The slot type granted.
+        slot: Slot,
+        /// How many slots of that type.
+        count: u8,
+        /// The assets these slots can hold. `None` is any asset of the type.
+        only: Option<CardFilter>,
+    },
+    /// **Treat one revealed chaos symbol as another**, for each token the
+    /// source card's controller reveals: The Necronomicon 01009's *"Treat each
+    /// `[elder_sign]` you reveal on a chaos token as a `[auto_fail]`."* A
+    /// constant marker like [`Restrict`](Self::Restrict), under a
+    /// [`Trigger::Constant`]: **inspected, not executed** — the skill test
+    /// reads it off the performer's cards as the token comes out of the bag,
+    /// and everything downstream of the reveal reads the symbol it counts as.
+    /// Resolving it rejects.
+    TreatRevealedToken {
+        /// The symbol revealed.
+        from: ChaosSymbol,
+        /// The symbol it counts as.
+        to: ChaosSymbol,
+    },
     /// Search a region of an investigator's deck for one card matching
     /// `filter`, move it to that investigator's hand, then shuffle the deck.
     /// Old Book of Lore 01031 (top 3, any card, chosen investigator) and
@@ -2180,8 +2234,13 @@ pub enum Effect {
     /// ⇒ find nothing, 1 ⇒ auto-take, 2+ ⇒ the controller picks. An entire-deck
     /// search must shuffle on completion; top-N shuffles too (Old Book
     /// "shuffles the remaining cards into the deck"). Both "draws it" (Old
-    /// Book) and "add to your hand" (Librarian) are modeled as a move to hand —
-    /// the only rules difference (on-draw triggers) has no Core consumer.
+    /// Book) and "add to your hand" (Librarian) are modeled as a move to hand.
+    /// Either way a weakness taken resolves as if drawn: `glossary/Weakness.md`,
+    /// *"If a weakness enters an investigator's hand in a manner that did not
+    /// involve drawing the card, that investigator must resolve the card
+    /// (including any Revelation abilities) as if he or she had just drawn
+    /// it"* (The Necronomicon 01009). Its Revelation resolves after the
+    /// shuffle.
     SearchDeck {
         /// Whose deck is searched.
         target: InvestigatorTarget,
@@ -2320,11 +2379,16 @@ pub enum Effect {
 /// 01002's *"You may take an additional action during your turn, which can
 /// only be used on \[\[Tome\]\] \[action\] abilities."*
 ///
-/// TODO(#779): uninhabited until Daisy defines the first restriction, so every
-/// grant built today is unrestricted (`None`) and nothing on the wire can carry
-/// one. #779 adds the variants; no stored state needs migrating.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum AdditionalActionRestriction {}
+/// **Inspected, not executed**: the engine tests the action being taken against
+/// it each time it works out which additional actions can pay for that action.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum AdditionalActionRestriction {
+    /// Only an `[action]` ability (an action cost of at least one) on a card in
+    /// play whose printed metadata matches the filter. Playing a card, a basic
+    /// action, and an ability on a location, enemy, act or agenda never
+    /// qualify. Daisy Walker 01002 filters on the Tome trait.
+    ActivatedAbilityOn(CardFilter),
+}
 
 /// Which card an [`Effect::Grant`] gives its abilities to.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -2656,6 +2720,24 @@ pub enum Restriction {
         /// Enemies whose printed card passes this filter may still attack.
         /// `None` stops every enemy.
         exempt: Option<CardFilter>,
+    },
+    /// The card this restriction is printed on cannot leave play while
+    /// `while_` holds (The Necronomicon 01009: *"It cannot leave play while it
+    /// has 1 or more horror on it."*). `while_` is evaluated with the card as
+    /// its source, so [`Quantity::HorrorOnSource`] reads the card's own horror.
+    ///
+    /// **Inspected, not executed** — the leave-play router in `game-core`
+    /// reads it and refuses every exit while it holds, since
+    /// `glossary/Cannot.md` makes no exception: *"The word "cannot" is
+    /// absolute, and cannot be countermanded by other abilities."* A slot
+    /// make-room never offers the card. Elimination is the one override. The
+    /// rule is its step 0, which ends the game for the eliminated investigator
+    /// and removes their weaknesses from the game. The code bypasses the check
+    /// in steps 1 and 4, whose drains remove what the investigator controls and
+    /// discard what is left in their threat area.
+    CannotLeavePlay {
+        /// While this holds, the card stays in play.
+        while_: Condition,
     },
 }
 
@@ -3054,15 +3136,16 @@ pub enum ControlStatus {
 
 /// A non-negative count read off game state, usable as a value
 /// ([`IntExpr::Count`]) or compared in a predicate ([`Condition::Compare`]).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Quantity {
     /// Clues on the controller's current location.
     CluesAtControllerLocation,
-    /// Horror on the controller's investigator card — Agnes Baker 01004's
-    /// `[elder_sign]` effect: *"+1 for each horror on Agnes Baker."* Horror on
-    /// the controller's assets is not on the investigator, so it does not
-    /// count.
-    HorrorOnController,
+    /// Horror on the card the evaluation is sourced to, wherever it sits; `0`
+    /// with no source card. Agnes Baker 01004's `[elder_sign]` effect, *"+1 for
+    /// each horror on Agnes Baker."*, is sourced to her investigator card, so it
+    /// reads her own horror and not the horror on her assets. The Necronomicon
+    /// 01009's *"while it has 1 or more horror on it"* reads the card's own.
+    HorrorOnSource,
     /// Enemies engaged with the controller.
     EngagedEnemies,
     /// Failure margin of the resolving skill test (0 outside one).
@@ -3073,6 +3156,14 @@ pub enum Quantity {
     /// results. Switchblade 01044 and .41 Derringer 01047's *"If you succeed by
     /// 2 or more, this attack deals +1 damage."*
     SkillTestSucceededBy,
+    /// Cards the controller controls that match the filter, in their play
+    /// area and their threat area — Daisy Walker 01002's *"draw 1 card for
+    /// each \[\[Tome\]\] you control"*. Their investigator card is not
+    /// counted.
+    ///
+    /// Boxed so a `Quantity` stays pointer-sized: it sits inline in every
+    /// [`Condition`] and [`IntExpr`], and through them in every [`Effect`].
+    ControlledCards(Box<CardFilter>),
 }
 
 /// Comparison operator for [`Condition::Compare`].
@@ -3388,6 +3479,24 @@ pub fn additional_action_while_in_play() -> Effect {
     Effect::AdditionalActionWhileInPlay { restriction: None }
 }
 
+/// Build an [`Effect::AdditionalActionWhileInPlay`] that only the actions
+/// `restriction` admits can use; wrap it in [`constant`].
+#[must_use]
+pub fn restricted_additional_action_while_in_play(
+    restriction: AdditionalActionRestriction,
+) -> Effect {
+    Effect::AdditionalActionWhileInPlay {
+        restriction: Some(restriction),
+    }
+}
+
+/// Build an [`Effect::TreatRevealedToken`]: each `from` its controller reveals
+/// counts as `to`. The constant marker; wrap it in [`constant`].
+#[must_use]
+pub fn treat_revealed_token(from: ChaosSymbol, to: ChaosSymbol) -> Effect {
+    Effect::TreatRevealedToken { from, to }
+}
+
 /// Build an [`Effect::DiscoverClue`].
 #[must_use]
 pub fn discover_clue(from: LocationTarget, count: u8) -> Effect {
@@ -3472,10 +3581,15 @@ pub fn discover_additional_clues(amount: u8) -> Effect {
     Effect::DiscoverAdditionalClues(amount)
 }
 
-/// Build an [`Effect::DrawCards`] drawing `count` cards for `target`.
+/// Build an [`Effect::DrawCards`] drawing `count` cards for `target`. A
+/// literal count is typed (`1u8`), since an untyped integer matches both of
+/// [`IntExpr`]'s `From` impls.
 #[must_use]
-pub fn draw_cards(target: InvestigatorTarget, count: u8) -> Effect {
-    Effect::DrawCards { target, count }
+pub fn draw_cards(target: InvestigatorTarget, count: impl Into<IntExpr>) -> Effect {
+    Effect::DrawCards {
+        target,
+        count: count.into(),
+    }
 }
 
 /// Build an [`Effect::SearchDeck`].
@@ -3665,6 +3779,7 @@ pub fn put_into_threat_area(code: impl Into<String>) -> Effect {
     Effect::PutIntoThreatArea {
         code: code.into(),
         clues: 0,
+        horror: 0,
     }
 }
 
@@ -3676,6 +3791,19 @@ pub fn put_into_threat_area_with_clues(code: impl Into<String>, clues: u8) -> Ef
     Effect::PutIntoThreatArea {
         code: code.into(),
         clues,
+        horror: 0,
+    }
+}
+
+/// Build an [`Effect::PutIntoThreatArea`] seeding `horror` on the placed
+/// instance (The Necronomicon 01009: "Put The Necronomicon into play in your
+/// threat area, with 3 horror on it").
+#[must_use]
+pub fn put_into_threat_area_with_horror(code: impl Into<String>, horror: u8) -> Effect {
+    Effect::PutIntoThreatArea {
+        code: code.into(),
+        clues: 0,
+        horror,
     }
 }
 

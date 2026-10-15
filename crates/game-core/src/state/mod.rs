@@ -24,21 +24,23 @@ pub use card::{
     UseKind, Zone,
 };
 pub use card_dsl::card_data::{SkillKind, Skills};
-pub use chaos_bag::{resolve_token, ChaosBag, ChaosToken, TokenModifiers, TokenResolution};
+pub use chaos_bag::{
+    resolve_token, ChaosBag, ChaosToken, RevealedToken, TokenModifiers, TokenResolution,
+};
 pub use continuation::{
-    AcknowledgeForcedFrame, ActionResolutionFrame, ActionResume, AdvanceDeck, AdvanceReverseFrame,
-    AdvanceStep, AdvanceTrigger, AssetEntry, Assignment, AttackLoopFrame, AttackLoopStage,
-    CandidateSource, CommittedCard, CommittedCardDestination, Continuation, ContinuationStack,
-    DamageSource, DealDamageFrame, DealDamageStep, EffectFrame, EliminationFrame, EliminationStep,
-    EmitEventFrame, EmitStep, EncounterCardFrame, EncounterDisposition, EncounterDrawFrame,
-    EnemyAttackSource, EnemyPhaseFrame, EnemyResume, FastActorScope, FastWindowFrame,
-    FastWindowKind, Frame, FrameActivity, FrameProfile, HandSizeDiscard, HunterChoice,
-    InFlightSkillTest, InvestigationPhaseFrame, InvestigationResume, InvestigatorTurnFrame,
-    MoveEnterFrame, MulliganFrame, MythosPhaseFrame, MythosResume, PhaseStep, PlayFromHandFrame,
-    PlayerDrawFrame, ResolutionCandidate, ResolvedTest, ScenarioEndDisposition, ScenarioEndFrame,
-    ScenarioEndStep, SkillTestFollowUp, SkillTestStep, SlotDiscardFrame, SpawnEngagePending,
-    SubstitutionPromptFrame, TimingMode, TimingPointFrame, TimingPointWindowFrame, TimingSub,
-    UpkeepPhaseFrame, UpkeepResume,
+    AcknowledgeForcedFrame, ActionResolutionFrame, ActionResume, AdditionalActionChoiceFrame,
+    AdvanceDeck, AdvanceReverseFrame, AdvanceStep, AdvanceTrigger, AssetEntry, Assignment,
+    AttackLoopFrame, AttackLoopStage, CandidateSource, CommittedCard, CommittedCardDestination,
+    Continuation, ContinuationStack, DamageSource, DealDamageFrame, DealDamageStep, EffectFrame,
+    EliminationFrame, EliminationStep, EmitEventFrame, EmitStep, EncounterCardFrame,
+    EncounterDisposition, EncounterDrawFrame, EnemyAttackSource, EnemyPhaseFrame, EnemyResume,
+    FastActorScope, FastWindowFrame, FastWindowKind, Frame, FrameActivity, FrameProfile,
+    HandSizeDiscard, HunterChoice, InFlightSkillTest, InvestigationPhaseFrame, InvestigationResume,
+    InvestigatorTurnFrame, MoveEnterFrame, MulliganFrame, MythosPhaseFrame, MythosResume,
+    PhaseStep, PlayFromHandFrame, PlayerDrawFrame, ResolutionCandidate, ResolvedTest,
+    ScenarioEndDisposition, ScenarioEndFrame, ScenarioEndStep, SkillTestFollowUp, SkillTestStep,
+    SlotDiscardFrame, SpawnEngagePending, SubstitutionPromptFrame, TimingMode, TimingPointFrame,
+    TimingPointWindowFrame, TimingSub, UpkeepPhaseFrame, UpkeepResume,
 };
 pub use counter::Counter;
 // `define_id!` is used by the id submodules; kept crate-internal.

@@ -8,7 +8,9 @@ use game_core::state::CardCode;
 use leptos::prelude::*;
 use protocol::CreateGameRequest;
 
-use crate::scaffold_decks::{AGNES_DEFAULT_DECK, ROLAND_DEFAULT_DECK, SKIDS_DEFAULT_DECK};
+use crate::scaffold_decks::{
+    AGNES_DEFAULT_DECK, DAISY_DEFAULT_DECK, ROLAND_DEFAULT_DECK, SKIDS_DEFAULT_DECK,
+};
 use crate::store::{self, ConnStatus};
 
 /// Channel the picker uses to hand a chosen `CreateGameRequest` to the
@@ -19,6 +21,7 @@ pub type CreateTx = UnboundedSender<CreateGameRequest>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Pick {
     Roland,
+    Daisy,
     Skids,
     Agnes,
 }
@@ -27,6 +30,7 @@ impl Pick {
     fn roster(self) -> Vec<RosterEntry> {
         match self {
             Pick::Roland => roland_roster(),
+            Pick::Daisy => daisy_roster(),
             Pick::Skids => skids_roster(),
             Pick::Agnes => agnes_roster(),
         }
@@ -44,6 +48,11 @@ fn roster(investigator: &str, deck: &[&str]) -> Vec<RosterEntry> {
 /// Build the default Roland roster: investigator 01001 + the placeholder deck.
 pub fn roland_roster() -> Vec<RosterEntry> {
     roster("01001", ROLAND_DEFAULT_DECK)
+}
+
+/// Build the default Daisy roster: investigator 01002 + the placeholder deck.
+pub fn daisy_roster() -> Vec<RosterEntry> {
+    roster("01002", DAISY_DEFAULT_DECK)
 }
 
 /// Build the default Skids roster: investigator 01003 + the placeholder deck.
@@ -91,6 +100,16 @@ pub fn PickerView() -> impl IntoView {
                                 on:change=move |_| picked.set(Pick::Roland)
                             />
                             " Roland Banks (01001)"
+                        </label>
+                        <label>
+                            <input
+                                type="radio"
+                                name="inv"
+                                value="01002"
+                                prop:checked=move || picked.get() == Pick::Daisy
+                                on:change=move |_| picked.set(Pick::Daisy)
+                            />
+                            " Daisy Walker (01002)"
                         </label>
                         <label>
                             <input

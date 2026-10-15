@@ -100,6 +100,8 @@ pub mod burglary;
 pub mod cellar;
 pub mod cover_up;
 pub mod crypt_chill;
+pub mod daisy_walker;
+pub mod daisys_tote_bag;
 pub mod dark_memory;
 pub mod deduction;
 pub mod derringer_41;
@@ -153,6 +155,7 @@ pub mod skids_otoole;
 pub mod sneak_attack;
 pub mod switchblade;
 pub mod the_barrier;
+pub mod the_necronomicon;
 pub mod theyre_getting_out;
 pub mod trapped;
 pub mod unexpected_courage;
@@ -249,6 +252,8 @@ pub const ALL: &[CardRecord] = &[
     cellar::CARD,
     cover_up::CARD,
     crypt_chill::CARD,
+    daisy_walker::CARD,
+    daisys_tote_bag::CARD,
     dark_memory::CARD,
     deduction::CARD,
     derringer_41::CARD,
@@ -302,6 +307,7 @@ pub const ALL: &[CardRecord] = &[
     sneak_attack::CARD,
     switchblade::CARD,
     the_barrier::CARD,
+    the_necronomicon::CARD,
     theyre_getting_out::CARD,
     trapped::CARD,
     unexpected_courage::CARD,

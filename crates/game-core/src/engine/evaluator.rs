@@ -79,7 +79,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::card_registry::{self, CardRegistry};
 use crate::engine::abilities_in_effect;
-use crate::engine::board::{self, Placement};
+use crate::engine::board::{self, NotLeft, Placement};
 use crate::engine::dispatch::actions::evade::EvadeModification;
 use crate::engine::dispatch::actions::fight::FightModification;
 use crate::engine::dispatch::actions::take;
@@ -989,7 +989,11 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
         ),
         Effect::DiscardSelf => discard_self(cx, &eval_ctx),
         Effect::Cancel => cancel_current_impact(cx),
-        Effect::PutIntoThreatArea { code, clues } => {
+        Effect::PutIntoThreatArea {
+            code,
+            clues,
+            horror,
+        } => {
             // The card going into play is the one being revealed, so its owner
             // is whoever owns the revealed card.
             let Some(owner) = eval_ctx.revealed_card_owner() else {
@@ -1001,16 +1005,16 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
                     .into(),
                 };
             };
-            let inst = threat_area::place_in_threat_area(
+            // A card with a slot symbol makes room first, which can suspend on
+            // the make-room prompt (#1097).
+            threat_area::put_into_threat_area(
                 cx,
                 eval_ctx.controller,
                 CardCode::new(code.clone()),
                 owner,
-            );
-            if let Some((card, _)) = inst.and_then(|id| board::find_instance_mut(cx.state, id)) {
-                card.clues = *clues;
-            }
-            EngineOutcome::Done
+                *clues,
+                *horror,
+            )
         }
         Effect::Restrict(_) => EngineOutcome::Rejected {
             reason: "Effect::Restrict is a constant marker — inspected at decision points, \
@@ -1024,7 +1028,7 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
         },
         Effect::TakeControl { code } => dispatch::take_control(cx, eval_ctx.controller, code),
         Effect::GainAdditionalAction { restriction } => {
-            take::gain_additional_action(cx, eval_ctx.controller, *restriction);
+            take::gain_additional_action(cx, eval_ctx.controller, restriction.clone());
             EngineOutcome::Done
         }
         Effect::AdditionalActionWhileInPlay { .. } => EngineOutcome::Rejected {
@@ -1032,9 +1036,19 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
                      card in play when actions are counted, never executed"
                 .into(),
         },
+        Effect::AdditionalSlots { .. } => EngineOutcome::Rejected {
+            reason: "Effect::AdditionalSlots is a constant marker — read off the \
+                     investigator's cards when slot capacity is counted, never executed"
+                .into(),
+        },
+        Effect::TreatRevealedToken { .. } => EngineOutcome::Rejected {
+            reason: "Effect::TreatRevealedToken is a constant marker — read off the \
+                     performer's cards when a chaos token is revealed, never executed"
+                .into(),
+        },
         Effect::BoostAttackDamage(amount) => boost_attack_damage_effect(cx, *amount),
         Effect::DiscoverAdditionalClues(amount) => discover_additional_clues_effect(cx, *amount),
-        Effect::DrawCards { target, count } => draw_cards_effect(cx, eval_ctx, *target, *count),
+        Effect::DrawCards { target, count } => draw_cards_effect(cx, eval_ctx, *target, count),
         Effect::SearchDeck {
             target,
             scope,
@@ -1194,14 +1208,23 @@ fn step_native(cx: &mut Cx, tag: &str, eval_ctx: EvalContext, node: &Effect) -> 
 /// target investigator via the engine's `draw_with_deckout` helper —
 /// the same empty-deck path the Draw action and Upkeep step 4.4 use, so
 /// a card-effect draw on an empty deck reshuffles the discard, completes
-/// the draw, and takes 1 horror on completion (#636). `count == 0`
-/// is a clean no-op (no target resolution, no event).
+/// the draw, and takes 1 horror on completion (#636). `count` is evaluated
+/// as the effect resolves; one of 0 or below is a clean no-op (no target
+/// resolution, no event).
 fn draw_cards_effect(
     cx: &mut Cx,
     eval_ctx: EvalContext,
     target: InvestigatorTarget,
-    count: u8,
+    count: &IntExpr,
 ) -> EngineOutcome {
+    let count = match eval_int_expr(cx.state, cx.cards, &eval_ctx, count) {
+        Ok(v) => u8::try_from(v.max(0)).unwrap_or(u8::MAX),
+        Err(reason) => {
+            return EngineOutcome::Rejected {
+                reason: reason.into(),
+            }
+        }
+    };
     if count == 0 {
         return EngineOutcome::Done;
     }
@@ -1227,7 +1250,8 @@ fn draw_cards_effect(
 /// the deck. The select is a pick among cards in a deck, so it goes through
 /// [`choice::resolve_card_choice`], as a native's would. A `Chosen` target is
 /// already bound by [`ground_chosen_targets`]; the take + shuffle are the only
-/// mutations and run after the pick resolves.
+/// mutations and run after the pick resolves. A weakness taken then resolves
+/// as if drawn ([`cards::resolve_weakness_entering_hand`]), last.
 fn apply_search_deck(
     cx: &mut Cx,
     eval_ctx: EvalContext,
@@ -1289,7 +1313,7 @@ fn apply_search_deck(
     };
 
     // 4. Take chosen → hand.
-    if let Some(idx) = chosen_deck_index {
+    let taken_hand_index = chosen_deck_index.map(|idx| {
         let inv = cx.state.investigators.get_mut(&who).expect("checked above");
         let code = inv.deck.remove(idx);
         inv.hand.push(code.clone());
@@ -1297,11 +1321,20 @@ fn apply_search_deck(
             investigator: who,
             code,
         });
-    }
+        inv.hand.len() - 1
+    });
 
     // 5. Shuffle (RR p.18 entire-deck mandatory; Old Book "shuffle the
     //    remaining cards into the deck"). RNG-replayable; no-op on <2 cards.
     cards::shuffle_player_deck(cx, who);
+
+    // 6. A weakness that entered hand resolves as if just drawn
+    //    (`glossary/Weakness.md`; The Necronomicon 01009's ruling). Tail
+    //    position: its Revelation is pushed last, so it resolves after the
+    //    search has finished shuffling.
+    if let Some(hand_index) = taken_hand_index {
+        cards::resolve_weakness_entering_hand(cx, who, hand_index);
+    }
     EngineOutcome::Done
 }
 
@@ -1393,18 +1426,26 @@ fn discover_additional_clues_effect(cx: &mut Cx, amount: u8) -> EngineOutcome {
 /// play through [`board::discard_from_play`], wherever it sits, which files it
 /// by its **owner** — Barricade 01038 to the player who played it, whoever's
 /// leaving fired it (#371), and Obscuring Fog 01168 to the encounter discard.
-/// Rejects loudly if there is no source or the instance is not in play.
+/// Rejects loudly if there is no source, the instance is not in play, or it
+/// cannot leave play right now (`glossary/Cannot.md`: *"The word "cannot" is
+/// absolute, and cannot be countermanded by other abilities."*).
 fn discard_self(cx: &mut Cx, eval_ctx: &EvalContext) -> EngineOutcome {
     let Some(source) = eval_ctx.source_instance() else {
         return EngineOutcome::Rejected {
             reason: "DiscardSelf: no source instance in context".into(),
         };
     };
-    if board::discard_from_play(cx, source).is_some() {
-        return EngineOutcome::Done;
-    }
+    let reason = match board::discard_from_play(cx, source) {
+        Ok(_) => return EngineOutcome::Done,
+        Err(NotLeft::NotInPlay) => {
+            format!("DiscardSelf: source instance {source:?} is not in play")
+        }
+        Err(NotLeft::Refused) => {
+            format!("DiscardSelf: source instance {source:?} cannot leave play")
+        }
+    };
     EngineOutcome::Rejected {
-        reason: format!("DiscardSelf: source instance {source:?} is not in play").into(),
+        reason: reason.into(),
     }
 }
 
@@ -1476,7 +1517,7 @@ pub(crate) fn eval_condition(
             op,
             value,
         } => {
-            let lhs = eval_quantity(state, eval_ctx, *quantity);
+            let lhs = eval_quantity(state, reg, eval_ctx, quantity);
             let rhs = *value;
             Ok(match op {
                 CmpOp::Eq => lhs == rhs,
@@ -1513,8 +1554,14 @@ pub(crate) fn eval_condition(
 
 /// Resolve a [`Quantity`] against current state for the controller.
 /// Always non-negative; returned as `i8` to compose in [`IntExpr`].
-/// Used by [`IntExpr::Count`] and [`Condition::Compare`].
-fn eval_quantity(state: &GameState, eval_ctx: &EvalContext, q: Quantity) -> i8 {
+/// Used by [`IntExpr::Count`] and [`Condition::Compare`]. `cards` answers a
+/// [`CardFilter`]'s trait and kind questions.
+fn eval_quantity(
+    state: &GameState,
+    cards: &CardRegistry,
+    eval_ctx: &EvalContext,
+    q: &Quantity,
+) -> i8 {
     let controller = eval_ctx.controller;
     let n: usize = match q {
         // Only the location's own `clues` count. Clues sitting on a *card* at
@@ -1534,10 +1581,12 @@ fn eval_quantity(state: &GameState, eval_ctx: &EvalContext, q: Quantity) -> i8 {
             .and_then(|inv| inv.current_location)
             .and_then(|loc| state.locations.get(&loc))
             .map_or(0, |l| usize::from(l.clues)),
-        Quantity::HorrorOnController => state
-            .investigators
-            .get(&controller)
-            .map_or(0, |inv| usize::from(inv.horror())),
+        // `find_instance` reaches an investigator card too, so an elder sign
+        // (sourced to the investigator card) reads the investigator's horror.
+        Quantity::HorrorOnSource => eval_ctx
+            .source_instance()
+            .and_then(|id| board::find_instance(state, id))
+            .map_or(0, |(card, _)| usize::from(card.accumulated_horror)),
         Quantity::EngagedEnemies => state.enemies_engaged_with(controller).count(),
         // On the other outcome (and outside a test) the margin reads 0. That
         // is right for every "by N or more" reader, since the clause cannot
@@ -1548,6 +1597,16 @@ fn eval_quantity(state: &GameState, eval_ctx: &EvalContext, q: Quantity) -> i8 {
         // all outside the core corpus; #1084 tracks reading the outcome too.
         Quantity::SkillTestFailedBy => usize::from(eval_ctx.failed_by().unwrap_or(0)),
         Quantity::SkillTestSucceededBy => usize::from(eval_ctx.succeeded_by().unwrap_or(0)),
+        // Play area and threat area only. `controlled_card_instances` would
+        // also yield the investigator card, which no "for each <trait> you
+        // control" card means to count.
+        Quantity::ControlledCards(filter) => {
+            state.investigators.get(&controller).map_or(0, |inv| {
+                inv.play_and_threat_area()
+                    .filter(|card| card_registry::card_matches(cards, &card.code, filter))
+                    .count()
+            })
+        }
     };
     i8::try_from(n).unwrap_or(i8::MAX)
 }
@@ -1574,7 +1633,7 @@ pub(crate) fn eval_int_expr(
         } else {
             *otherwise
         }),
-        IntExpr::Count(q) => Ok(eval_quantity(state, eval_ctx, *q)),
+        IntExpr::Count(q) => Ok(eval_quantity(state, cards, eval_ctx, q)),
     }
 }
 

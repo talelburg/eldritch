@@ -90,14 +90,16 @@ pub(crate) struct ActivateCheckResult {
 /// Gates RR p.19 slot capacity: Assets only; the only hard slot reject — a merely-full
 /// slot is not rejected here, make-room at enter-play handles it.
 fn check_play_slot_satisfiable(
+    state: &GameState,
     cards: &CardRegistry,
+    investigator: InvestigatorId,
     card_type: CardType,
     code: &CardCode,
 ) -> Result<(), Cow<'static, str>> {
     if card_type != CardType::Asset {
         return Ok(());
     }
-    if let Some(slot) = slots::unsatisfiable_slot(cards, code) {
+    if let Some(slot) = slots::unsatisfiable_slot(state, cards, investigator, code) {
         return Err(format!(
             "PlayCard: {code} needs more {slot:?} slots than the investigator has \
              (slot capacity exceeded; RR p.19)."
@@ -207,10 +209,12 @@ pub(crate) fn check_play_card(
     initiation::check_play(state, cards, investigator, &code)?;
     // RR p.19 slots (#498): reject only when the card needs more of a slot type
     // than the investigator has capacity for — unsatisfiable even after discarding
-    // every occupying asset. A merely-full slot is NOT rejected here; the play
-    // proceeds and discards occupiers to make room at enter-play time. Unreachable
-    // in the current corpus (max need is Hand×2 = cap 2); no silent no-op.
-    check_play_slot_satisfiable(cards, card_type, &code)?;
+    // every occupying asset that may leave play. A merely-full slot is NOT
+    // rejected here; the play proceeds and discards occupiers to make room at
+    // enter-play time. An occupier that cannot leave play stays fixed, so a
+    // two-handed asset beside a Necronomicon 01009 that still has horror is
+    // refused here (`slots::unsatisfiable_slot`; `tests/cannot_leave_play.rs`).
+    check_play_slot_satisfiable(state, cards, investigator, card_type, &code)?;
     // Timing gate — see play_card doc-comment "# Timing gate" section.
     let active_during_investigation =
         state.phase == Phase::Investigation && state.active_investigator == Some(investigator);
@@ -610,7 +614,8 @@ pub(crate) fn check_activate_ability(
     // takes no action and never asks: the same ruling taxes *fast* designated
     // abilities too, which no corpus card can reach (#759).
     if action_cost > 0 {
-        let description = ActionDescription::activate(source, action_cost, designator.clone());
+        let description =
+            ActionDescription::activate(source, address.clone(), action_cost, designator.clone());
         take::check(state, cards, investigator, &description)
             .map_err(|why| Cow::from(format!("ActivateAbility: {why}")))?;
     }

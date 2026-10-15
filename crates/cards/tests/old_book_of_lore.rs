@@ -143,3 +143,36 @@ fn an_empty_deck_cannot_be_searched() {
         "no action spent on a reject",
     );
 }
+
+/// Old Book of Lore *draws* the card it finds, so a weakness found resolves as
+/// a drawn one would. `glossary/Weakness.md`: *"If a weakness enters an
+/// investigator's hand in a manner that did not involve drawing the card, that
+/// investigator must resolve the card (including any Revelation abilities) as
+/// if he or she had just drawn it."* Cover Up 01007, a persistent treachery
+/// weakness, goes to the threat area with its 3 clues instead of staying in
+/// hand.
+#[test]
+fn a_weakness_found_resolves_as_if_drawn() {
+    const COVER_UP: &str = "01007";
+    let session = board(
+        seat(1)
+            .at(HERE)
+            .in_play([OLD_BOOK])
+            .deck([COVER_UP, "90002", "90003", "90004"]),
+    );
+    let book = book(&session);
+    let s = session.take(&activate_book(book)).apply(take_searched(0));
+
+    s.assert_at_turn_menu(INV);
+    let inv = &s.state().investigators[&INV];
+    assert!(
+        !inv.hand.contains(&CardCode::new(COVER_UP)),
+        "a found weakness does not stay in hand",
+    );
+    let placed = inv
+        .threat_area
+        .iter()
+        .find(|c| c.code == CardCode::new(COVER_UP))
+        .expect("Cover Up resolved its Revelation into the threat area");
+    assert_eq!(placed.clues, 3);
+}

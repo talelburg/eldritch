@@ -5,17 +5,18 @@ use card_dsl::dsl::{EnemyScope, LocationSet, Restriction};
 
 use crate::action::InputResponse;
 use crate::card_registry::{self, CardRegistry};
+use crate::engine::board;
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{choice, elimination, emit, reaction_windows};
 use crate::engine::outcome::{
     ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
 };
-use crate::engine::{board, Cx};
+use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
     Assignment, AttackLoopFrame, AttackLoopStage, CardInPlay, CardInstanceId, DamageSource,
     DealDamageFrame, DealDamageStep, EliminationCause, Enemy, EnemyAttackSource, EnemyId,
-    GameState, InvestigatorId, LastingEffect, LastingEffectKind, Lifetime, Status,
+    GameState, Investigator, InvestigatorId, LastingEffect, LastingEffectKind, Lifetime, Status,
 };
 
 /// The scope of enemies a Fight (basic action or designated **Fight** ability)
@@ -172,11 +173,14 @@ pub(super) fn damage_enemy(cx: &mut Cx, enemy_id: EnemyId, amount: u8, by: Optio
         // `glossary/Victory_Display_Victory_Points.md`, *"As a victory point
         // enemy is defeated, place the card in the victory display instead of
         // in the discard pile."*
-        if let Some(victory) = defeated_victory.filter(|v| *v > 0) {
-            board::place_in_victory_display(cx, enemy_id, victory);
+        //
+        // The router refuses only a card instance that cannot leave play, never
+        // an enemy, so the exit's answer carries nothing to act on here.
+        let _left = if let Some(victory) = defeated_victory.filter(|v| *v > 0) {
+            board::place_in_victory_display(cx, enemy_id, victory)
         } else {
-            board::discard_from_play(cx, enemy_id);
-        }
+            board::discard_from_play(cx, enemy_id)
+        };
         // Enemy defeated: dispatch the timing point through the unified
         // chokepoint (Axis-B T5a). `queue_event` queues the after-defeat
         // reaction window (Roland 01001) and the forced act objectives (act 3's
@@ -273,21 +277,52 @@ fn defeat_overflowed_assets(cx: &mut Cx, investigator: InvestigatorId) {
     let defeated: Vec<CardInstanceId> = inv
         .cards_in_play
         .iter()
-        .filter_map(|card| {
-            let meta = (reg.metadata_for)(&card.code)?;
-            let CardKind::Asset { health, sanity, .. } = meta.kind else {
-                return None;
-            };
-            let dmg_defeated = health.is_some_and(|h| card.accumulated_damage >= h);
-            let hor_defeated = sanity.is_some_and(|s| card.accumulated_horror >= s);
-            (dmg_defeated || hor_defeated).then_some(card.instance_id)
-        })
+        .filter(|card| asset_overflowed(reg, card))
+        .map(|card| card.instance_id)
         .collect();
 
     for inst in defeated {
-        // RR p.7: a defeated asset goes to its owner's discard pile.
-        board::discard_from_play(cx, inst).expect("soak defeat: the defeated asset is in play");
+        defeat_asset(cx, inst);
     }
+}
+
+/// Whether `card` is an **asset** whose accumulated damage or horror has
+/// reached its printed health or sanity. `false` for a card whose metadata
+/// can't be resolved, a non-asset, and a stat the asset does not print.
+pub(super) fn asset_overflowed(reg: &CardRegistry, card: &CardInPlay) -> bool {
+    let Some(meta) = (reg.metadata_for)(&card.code) else {
+        return false;
+    };
+    let CardKind::Asset { health, sanity, .. } = meta.kind else {
+        return false;
+    };
+    let dmg_defeated = health.is_some_and(|h| card.accumulated_damage >= h);
+    let hor_defeated = sanity.is_some_and(|s| card.accumulated_horror >= s);
+    dmg_defeated || hor_defeated
+}
+
+/// Defeat the asset instance `inst`: it leaves play through
+/// [`board::discard_from_play`] to its owner's discard pile.
+pub(super) fn defeat_asset(cx: &mut Cx, inst: CardInstanceId) {
+    // RR p.7: a defeated asset goes to its owner's discard pile.
+    //
+    // The rules do not settle a defeated asset that cannot leave play.
+    // `glossary/Cannot.md` reads *"The word "cannot" is absolute, and cannot
+    // be countermanded by other abilities."*, which keeps it in play.
+    // `glossary/Partner.md` reads *"A partner asset cannot leave play unless
+    // it is defeated"*, but only for its own keyword, so it is no general
+    // rule that defeat overrides "cannot". The only corpus card that cannot
+    // leave play, The Necronomicon 01009, has no health or sanity to be
+    // defeated through, so nothing reaches this case yet. The first card
+    // that does must decide it, and until then the assertion below fails
+    // its test rather than leaving the card silently in play.
+    let left = board::discard_from_play(cx, inst);
+    debug_assert!(
+        left.is_ok(),
+        "asset defeat: the defeated asset {inst:?} did not leave play ({left:?}); \
+         a refusal means an asset that cannot leave play was defeated, which no \
+         rule settles yet",
+    );
 }
 
 /// Place a computed [`Assignment`] simultaneously, then defeat overflowed
@@ -442,12 +477,21 @@ pub(super) fn apply_horror_numeric(cx: &mut Cx, investigator: InvestigatorId, am
         .investigator_card
         .accumulated_horror
         .saturating_add(amount);
-    let lethal = inv.horror() >= inv.max_sanity(cx.cards);
+    let lethal = sanity_reached(inv, cx.cards);
     cx.events.push(Event::HorrorTaken {
         investigator,
         amount,
     });
     lethal
+}
+
+/// Whether `inv`'s horror has reached their sanity, so they are defeated by
+/// it (`glossary/Sanity_and_Horror.md`). `false` for an investigator no longer
+/// [`Status::Active`]: one already out of the game is not defeated again.
+/// Defeat application is the caller's, through
+/// [`super::elimination::apply_investigator_elimination`].
+pub(super) fn sanity_reached(inv: &Investigator, cards: &CardRegistry) -> bool {
+    inv.status == Status::Active && inv.horror() >= inv.max_sanity(cards)
 }
 
 /// Begin one deal of `damage` + `horror` to `investigator`: push the

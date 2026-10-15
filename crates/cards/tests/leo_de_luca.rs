@@ -149,6 +149,36 @@ fn with_leo_and_skids_grant_an_investigator_has_five_actions() {
     }
 }
 
+/// Leo's and "Skids" O'Toole 01003's grant are both unrestricted, so the
+/// first action qualifies as either and nothing is asked. Leo's is used
+/// first, since only his can leave play: defeated after that action, he takes
+/// nothing with him, and the three standard actions and Skids' grant are left.
+#[test]
+fn with_leo_and_skids_grant_leos_is_used_first_without_asking() {
+    let session = staged(seat(1).as_card(SKIDS).at(HERE).in_play([LEO])).session();
+    let skids = session.state().investigators[&INV]
+        .investigator_card
+        .instance_id;
+    let leo = session.state().in_play(INV, LEO);
+    let session = session
+        .take(&TurnAction::ActivateAbility {
+            investigator: INV,
+            source: AbilitySource::InPlay(skids),
+            address: AbilityAddress::Printed(0),
+        })
+        .take(&RESOURCE);
+    session.assert_at_turn_menu(INV);
+    assert_eq!(standard_actions(session.state()), 3);
+
+    let session = soak_onto(session.take_damage(INV, 2), leo);
+    assert!(!leo_in_play(session.state()));
+    assert_eq!(
+        actions(session.state()),
+        4,
+        "three standard and Skids' grant"
+    );
+}
+
 /// The ruling: *"If Leo De Luca is discarded mid-turn, you do not lose 1
 /// action from your total pool of actions for the turn."* His action was the
 /// first one spent; the attack of opportunity it provoked defeats him, and the

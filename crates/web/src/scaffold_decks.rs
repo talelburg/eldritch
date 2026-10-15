@@ -1,8 +1,8 @@
 //! The picker's placeholder decks, one per investigator it offers, until
-//! decklist import (#782) retires both. Host-compiled, unlike the wasm-only
+//! decklist import (#782) retires them all. Host-compiled, unlike the wasm-only
 //! `picker` that seats them, so a host test can play a scenario with
 //! the exact deck the picker sends (`tests/agnes_scaffold_walk.rs`,
-//! `tests/skids_scaffold_walk.rs`).
+//! `tests/daisy_scaffold_walk.rs`, `tests/skids_scaffold_walk.rs`).
 
 /// Placeholder default deck for Roland (01001) until Phase 9 decklist import.
 /// Implemented Guardian/Seeker/neutral cards only, so the opening hand is
@@ -26,6 +26,35 @@ pub const ROLAND_DEFAULT_DECK: &[&str] = &[
     "01092", // Manual Dexterity
     "01093", // Unexpected Courage
     "01007", // Cover Up (signature weakness)
+];
+
+/// Placeholder default deck for Daisy Walker (01002) until decklist import
+/// (#782) retires the scaffolds. Implemented cards she may take only, so every
+/// card in it is playable: her two signatures at one copy each (Daisy's Tote
+/// Bag 01008 and The Necronomicon 01009 weakness), then two of each Seeker
+/// level-0 card and of the neutrals. NOT a legal deck — a scaffold for UI
+/// testing, like [`ROLAND_DEFAULT_DECK`].
+pub const DAISY_DEFAULT_DECK: &[&str] = &[
+    "01008", // Daisy's Tote Bag (signature)
+    "01030", "01030", // Magnifying Glass
+    "01031", "01031", // Old Book of Lore
+    "01032", "01032", // Research Librarian
+    "01033", "01033", // Dr. Milan Christopher
+    "01034", "01034", // Hyperawareness
+    "01035", "01035", // Medical Texts
+    "01036", "01036", // Mind over Matter
+    "01037", "01037", // Working a Hunch
+    "01038", "01038", // Barricade
+    "01039", "01039", // Deduction
+    "01086", "01086", // Knife
+    "01087", "01087", // Flashlight
+    "01088", "01088", // Emergency Cache
+    "01089", "01089", // Guts
+    "01090", "01090", // Perception
+    "01091", "01091", // Overpower
+    "01092", "01092", // Manual Dexterity
+    "01093", "01093", // Unexpected Courage
+    "01009", // The Necronomicon (signature weakness)
 ];
 
 /// Placeholder default deck for Agnes Baker (01004) until decklist import
