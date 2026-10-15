@@ -453,6 +453,17 @@ struct Quote {
 /// distinct restriction, as indices into `qualifying`. A choice exists only
 /// when there are two or more. Within one restriction the sort's front entry
 /// dominates the rest (see [`additional_actions`]), so it stands for them.
+///
+/// **One pick, so only for an action costing 1.** [`quote`] asks only when
+/// the action leaves a qualifying entry unspent: an action that spends every
+/// one of them has nothing to choose, and pays as the sort orders it. An
+/// action costing 2 or more that leaves one unspent really asks for a *set*
+/// of entries, which one pick followed by the sort's order cannot express.
+/// No corpus card reaches that case (no Tome prints a multi-action ability,
+/// and Frozen in Fear 01164's surcharge prices only move, fight and evade), so
+/// the set choice is not built and [`quote`] trips a `debug_assert!` there.
+/// The first card that reaches it fails its own test, rather than inheriting
+/// a guess at what the player meant.
 fn additional_action_options(qualifying: &[AdditionalAction]) -> Vec<usize> {
     let mut options: Vec<usize> = Vec::new();
     for (index, action) in qualifying.iter().enumerate() {
@@ -532,19 +543,38 @@ fn quote(
         .into_iter()
         .filter(|action| action.admits(state, cards, description))
         .collect();
+    // An action costing more than one spends one additional action per action
+    // point, then standard actions for the rest. The vendored rules say nothing
+    // on it directly. The FAQ's Discipline (Balance of Body) answer treats a
+    // multi-action cost as points drawn from separate pools: *"if so, you must
+    // still pay the additional action cost of that ability, and those
+    // additional actions would have to come from your standard pool of actions
+    // or from a source other than Discipline (Balance of Body)."*
+    let from_additional = qualifying.len().min(usize::from(total));
     // FAQ 1.10's choice, where the qualifying entries carry more than one
-    // restriction. Unanswered, the quote names the options for [`take`] to
-    // ask. Answered, the chosen entry is spent first and the rest keep the
-    // sort's order.
+    // restriction and the action leaves at least one of them unspent (one that
+    // spends them all has nothing to choose). Unanswered, the quote names the
+    // options for [`take`] to ask. Answered, the chosen entry is spent first
+    // and the rest keep the sort's order.
     let options = additional_action_options(&qualifying);
+    let offered = if options.len() > 1 && from_additional < qualifying.len() {
+        debug_assert!(
+            total <= 1,
+            "{name}: an action costing {total} leaves a FAQ 1.10 additional-action choice, \
+             which is a choice of a set of grants; only a one-pick choice is built \
+             (see additional_action_options)"
+        );
+        options.len()
+    } else {
+        0
+    };
     let mut choice = Vec::new();
     match description.chosen_additional_action {
-        None if options.len() > 1 => {
+        None if offered > 0 => {
             choice = options.iter().map(|&i| qualifying[i].origin).collect();
         }
         None => {}
         Some(chosen) => {
-            let offered = if options.len() > 1 { options.len() } else { 0 };
             let Some(&index) = options.get(chosen).filter(|_| offered > 0) else {
                 return Err(format!(
                     "{name}: additional action option {chosen} out of range (0..{offered})"
@@ -555,14 +585,6 @@ fn quote(
             qualifying.insert(0, chosen);
         }
     }
-    // An action costing more than one spends one additional action per action
-    // point, then standard actions for the rest. The vendored rules say nothing
-    // on it directly. The FAQ's Discipline (Balance of Body) answer treats a
-    // multi-action cost as points drawn from separate pools: *"if so, you must
-    // still pay the additional action cost of that ability, and those
-    // additional actions would have to come from your standard pool of actions
-    // or from a source other than Discipline (Balance of Body)."*
-    let from_additional = qualifying.len().min(usize::from(total));
     let from_standard = total - u8::try_from(from_additional).unwrap_or(total);
     if inv.actions_remaining < from_standard {
         return Err(format!("{name} requires {total} action point(s)").into());
