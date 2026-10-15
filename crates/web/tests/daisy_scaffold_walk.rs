@@ -13,15 +13,13 @@
 //! Priest 01116, and the Priest's defeat advances the terminal act to its
 //! printed choice. Roland lands the killing blow with a basic Fight at combat 4
 //! against the Priest's fight 4; Daisy's combat is 2, so on the walk's
-//! `Numeric(0)` bag a basic Fight fails. She plays Mind over Matter 01036 first:
+//! `Numeric(0)` bag a basic Fight fails. Her round-1 upkeep draws Knife 01086,
+//! which she plays and then discards for its second ability:
 //!
-//! > Fast. Play only during your turn.
-//! > Until the end of the round, you may use your [intellect] in place of your
-//! > [combat] and [agility].
+//! > [action] Discard Knife: **Fight.** You get +2 [combat] for this attack.
+//! > This attack deals +1 damage.
 //!
-//! Its ruling (<https://arkhamdb.com/card/01036>): *"When making a Combat or
-//! Agility skill test, you may make an Intellect test instead."* Her intellect
-//! is 5.
+//! Combat 2 + 2 meets the Priest's fight 4.
 //!
 //! Host-only: the browser tests in this directory are wasm32-only, and this one
 //! needs no DOM.
@@ -32,11 +30,13 @@ use std::collections::BTreeMap;
 use game_core::action::RosterEntry;
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, OptionTarget, PromptNature, Registries};
+use game_core::engine::{self, OptionTarget, Registries};
 use game_core::event::Event;
 use game_core::scenario::{ResolutionId, ScenarioEnding};
-use game_core::state::{CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId, Phase};
-use game_core::test_support::TestSession;
+use game_core::state::{
+    AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId, Phase,
+};
+use game_core::test_support::{SeatLookup as _, TestSession};
 use scenarios::the_gathering;
 use web::scaffold_decks::DAISY_DEFAULT_DECK;
 
@@ -48,13 +48,15 @@ const REGISTRIES: Registries = Registries {
 };
 
 const DAISY: &str = "01002";
-/// Her signature asset. The Necronomicon 01009 joins the deck with #1095.
+/// Her signature asset.
 const TOTE_BAG: &str = "01008";
+/// Her signature weakness.
+const NECRONOMICON: &str = "01009";
 const INV: InvestigatorId = InvestigatorId(1);
 /// The Ghoul Priest, set aside until act 2 (01109)'s reverse spawns it.
 const GHOUL_PRIEST: &str = "01116";
-const MIND_OVER_MATTER: &str = "01036";
-const MAGNIFYING_GLASS: &str = "01030";
+const WORKING_A_HUNCH: &str = "01037";
+const KNIFE: &str = "01086";
 
 /// Her level-0 Seeker pool, as printed in
 /// `data/arkhamdb-snapshot/pack/core/core.json`.
@@ -91,8 +93,10 @@ fn the_scaffold_deck_holds_her_whole_level_0_seeker_pool() {
 }
 
 #[test]
-fn the_scaffold_deck_holds_one_tote_bag() {
-    assert_eq!(copies().get(TOTE_BAG), Some(&1));
+fn the_scaffold_deck_holds_one_of_each_signature() {
+    let copies = copies();
+    assert_eq!(copies.get(TOTE_BAG), Some(&1));
+    assert_eq!(copies.get(NECRONOMICON), Some(&1));
 }
 
 #[test]
@@ -144,41 +148,26 @@ fn offered(session: &TestSession) -> Vec<&str> {
         .collect()
 }
 
-/// The deck's shuffle deals Mind over Matter 01036 and Magnifying Glass 01030
-/// into her opening hand, both Fast, so her turn opens on the start-of-turn
-/// fast window (Appendix II 2.2) offering them. The walk plays Magnifying
-/// Glass there, so no later fast window offers it, and passes the window it
-/// reopens on with Mind over Matter, which she keeps for the Priest.
+/// The deck's shuffle deals Working a Hunch 01037, a Fast event, into her
+/// opening hand, so her turn opens on the start-of-turn fast window (Appendix
+/// II 2.2) offering it. The walk passes it, keeping her actions for the acts.
 fn pass_start_of_turn_window(session: TestSession) -> TestSession {
     assert_eq!(
         offered(&session),
-        [
-            format!("Play {MIND_OVER_MATTER}"),
-            format!("Play {MAGNIFYING_GLASS}")
-        ],
-        "her turn opens offering Mind over Matter and Magnifying Glass",
-    );
-    let glass = session.state().investigators[&INV]
-        .hand
-        .iter()
-        .position(|code| code.as_str() == MAGNIFYING_GLASS)
-        .expect("Magnifying Glass is in her hand");
-    let session = session.pick(OptionTarget::HandCard {
-        investigator: INV,
-        hand_index: u8::try_from(glass).expect("a small hand"),
-    });
-    pass_mind_over_matter_window(session)
-}
-
-/// A start-of-turn fast window offering only Mind over Matter; the walk
-/// passes it.
-fn pass_mind_over_matter_window(session: TestSession) -> TestSession {
-    assert_eq!(
-        offered(&session),
-        [format!("Play {MIND_OVER_MATTER}")],
-        "the window offers Mind over Matter",
+        [format!("Play {WORKING_A_HUNCH}")],
+        "her turn opens offering Working a Hunch",
     );
     session.skip()
+}
+
+/// Where `code` sits in her hand.
+fn hand_index(session: &TestSession, code: &str) -> u8 {
+    let index = session.state().investigators[&INV]
+        .hand
+        .iter()
+        .position(|c| c.as_str() == code)
+        .unwrap_or_else(|| panic!("{code} is in her hand"));
+    u8::try_from(index).expect("a small hand")
 }
 
 #[test]
@@ -213,9 +202,9 @@ fn daisy_with_her_scaffold_deck_plays_the_gathering_to_a_resolution() {
     assert_eq!(after_spend.state().act_index, 2, "act 2 advanced to act 3");
 
     // Round 2's Mythos draws the seeded Ancient Evils, which resolves before
-    // her turn. Mind over Matter is still in her hand, so her turn opens on a
-    // fast window offering it, which the walk passes.
-    let investigation = pass_mind_over_matter_window(after_spend.confirm());
+    // her turn. Working a Hunch is still in her hand, but the Hallway has no
+    // clue for it to discover, so no fast window opens.
+    let investigation = after_spend.confirm();
     investigation.assert_at_turn_menu(INV);
     assert_eq!(investigation.state().round, 2);
 
@@ -230,44 +219,26 @@ fn daisy_with_her_scaffold_deck_plays_the_gathering_to_a_resolution() {
         priest.damage = priest.max_health - 1;
         priest.engaged_with = Some(INV);
     });
-    // The shuffle dealt Mind over Matter into her opening hand; her resources
-    // pay its cost of 1.
-    let mind_over_matter = investigation.state().investigators[&INV]
-        .hand
-        .iter()
-        .position(|code| code.as_str() == MIND_OVER_MATTER)
-        .expect("Mind over Matter is in her hand");
-    let priest = investigation
-        .state()
-        .enemies
-        .values()
-        .find(|e| e.code.as_str() == GHOUL_PRIEST)
-        .expect("the Priest is in play")
-        .id;
-
-    // --- Mind over Matter, then a basic Fight made as an Intellect test:
-    // intellect 5 + Numeric(0) against the Priest's fight 4 succeeds, and its
-    // 1 damage defeats the Priest.
-    let substituting = investigation
-        .take(&TurnAction::PlayCard {
-            investigator: INV,
-            hand_index: u8::try_from(mind_over_matter).expect("a small hand"),
-        })
-        .take(&TurnAction::Fight {
-            investigator: INV,
-            enemy: priest,
-        });
-    // The substitution prompt: its first option makes the test with intellect
-    // (combat 2 would fail on this bag).
-    assert_eq!(
-        substituting.prompt().nature,
-        PromptNature::Decision,
-        "the substitution prompt, got {:?}",
-        substituting.prompt(),
-    );
-    let defeated = substituting.pick_nth(0).commit(&[]);
+    // --- Her round-1 upkeep drew Knife; her resources pay its cost of 1. Its
+    // discard ability fights the one enemy at her location, at combat 2 + 2 +
+    // Numeric(0) against the Priest's fight 4, which succeeds, and its 1 + 1
+    // damage defeats the Priest.
+    let knife = hand_index(&investigation, KNIFE);
+    let armed = investigation.take(&TurnAction::PlayCard {
+        investigator: INV,
+        hand_index: knife,
+    });
+    armed.assert_at_turn_menu(INV);
+    let knife = armed.state().in_play(INV, KNIFE);
+    let fighting = armed.take(&TurnAction::ActivateAbility {
+        investigator: INV,
+        source: AbilitySource::InPlay(knife),
+        address: AbilityAddress::Printed(1),
+    });
+    assert_eq!(fighting.rejection(), None, "Knife's discard ability");
+    let defeated = fighting.commit(&[]);
     assert_event!(defeated.events(), Event::SkillTestSucceeded { .. });
-    assert_event!(defeated.events(), Event::EnemyDamaged { amount: 1, .. });
+    assert_event!(defeated.events(), Event::EnemyDamaged { amount: 2, .. });
     assert_event!(defeated.events(), Event::EnemyDefeated { .. });
     assert_event!(defeated.events(), Event::ActAdvanced { from } if *from == 2);
 
