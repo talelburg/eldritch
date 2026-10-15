@@ -210,7 +210,7 @@ struct AdditionalAction {
 impl AdditionalAction {
     /// Whether taking `description` may use this additional action. An
     /// unrestricted one admits every action.
-    fn admits(&self, _description: &ActionDescription) -> bool {
+    fn admits(self, _description: &ActionDescription) -> bool {
         match self.restriction {
             None => true,
             // TODO(#779): test the restriction against `_description`.

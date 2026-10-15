@@ -59,7 +59,7 @@ pub const AGNES_DEFAULT_DECK: &[&str] = &[
 /// Placeholder default deck for "Skids" O'Toole (01003) until decklist import
 /// (#782) retires the scaffolds. Implemented cards he may take only, so every
 /// card in it is playable: two of each Guardian level-0 card (his
-/// *"Guardian cards ([guardian]) level 0-2"*) and of the neutrals. His
+/// *"Guardian cards (\[guardian\]) level 0-2"*) and of the neutrals. His
 /// signatures and the Rogue cards join it as they become playable (#1079). NOT
 /// a legal deck — a scaffold for UI testing, like [`ROLAND_DEFAULT_DECK`].
 pub const SKIDS_DEFAULT_DECK: &[&str] = &[
