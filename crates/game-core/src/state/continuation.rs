@@ -9,7 +9,7 @@ use card_dsl::card_data::SkillKind;
 use card_dsl::dsl::{ActionDesignator, Effect, EventTiming, IntExpr, RevealClause, SkillTestKind};
 use serde::{Deserialize, Serialize};
 
-use crate::engine::evaluator::EvalContext;
+use crate::engine::evaluator::{EachBinding, EvalContext};
 use crate::engine::TimingEvent;
 use crate::event::FailureReason;
 use crate::state::ability_source::{AbilityAddress, AbilitySource};
@@ -388,6 +388,37 @@ pub enum EffectFrame {
         /// Index of the next child to run.
         next: usize,
         /// The evaluation context for this sequence.
+        ctx: EvalContext,
+    },
+    /// A `ForEach` in progress: the **walking** fan-out (#1067). Its target list
+    /// is snapshotted when the walk starts, and `next` is the cursor into it.
+    /// Each step re-checks `targets[next]` and skips one that has left the game
+    /// in the meantime (an investigator no longer `Active`), so an investigator
+    /// eliminated partway through is not reached. Otherwise it re-pushes itself
+    /// with the cursor advanced and pushes `body` above, with that target bound
+    /// as `ctx`'s [`EachBinding`]. The
+    /// walk advances when the body's frames have all popped, and pops itself
+    /// once the cursor runs off the end.
+    ///
+    /// **Correct only for a body whose intermediate state nobody can observe.**
+    /// The rules resolve a "for each" on all its targets at once
+    /// (`glossary/Priority_of_Simultaneous_Resolution.md`: *"Once all necessary
+    /// choices have been made, the effect resolves simultaneously upon all
+    /// affected entities."*). The walk resolves them one after another instead, so
+    /// anything that triggers on or reads a target's result sees the earlier
+    /// targets resolved and the later ones not. The simultaneous form is #1026.
+    ///
+    /// Generic over the kind of target: the list holds [`EachBinding`]s, and
+    /// the arm that makes a binding is the only per-kind code.
+    ForEach {
+        /// The targets, resolved and ordered when the walk started.
+        targets: Vec<EachBinding>,
+        /// Index of the next target to run the body for.
+        next: usize,
+        /// The effect run once per target.
+        body: Box<Effect>,
+        /// The evaluation context the walk began in. Each body run gets a
+        /// copy with its own target bound.
         ctx: EvalContext,
     },
     /// A single effect node to evaluate. A terminal effect runs and pops;

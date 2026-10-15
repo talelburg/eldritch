@@ -41,7 +41,7 @@
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::evaluator::{self, EvalContext};
 use game_core::engine::{EngineOutcome, NativeCx};
-use game_core::state::Owner;
+use game_core::state::{Owner, Status};
 
 use crate::impls::CardRecord;
 
@@ -118,8 +118,15 @@ fn board_build(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
         unreachable!("01108 board-build: the Hallway just entered play");
     };
     // A placement, not a move: no engaged enemy follows and no move trigger
-    // fires.
-    let ids: Vec<_> = cx.state().investigators.keys().copied().collect();
+    // fires. "Each investigator" is each one still in the game: a resigned or
+    // defeated investigator has left the board and is not placed back onto it.
+    let ids: Vec<_> = cx
+        .state()
+        .investigators
+        .iter()
+        .filter(|(_, i)| i.status == Status::Active)
+        .map(|(&id, _)| id)
+        .collect();
     for id in ids {
         cx.place_investigator(id, dest);
     }

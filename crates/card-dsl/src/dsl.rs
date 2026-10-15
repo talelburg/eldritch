@@ -1879,9 +1879,9 @@ pub enum Effect {
     },
     /// Resolve `targets` and run `body` once per resolved target.
     /// Each iteration binds the target into the evaluator's scope so
-    /// the body can refer to it.
+    /// the body can refer to it (as [`InvestigatorTarget::Each`]).
     ForEach {
-        targets: InvestigatorTargetSet,
+        targets: ForEachTargets,
         body: Box<Effect>,
     },
     /// Present alternatives to the controller. Resolves to the chosen
@@ -2650,6 +2650,12 @@ pub enum InvestigatorTarget {
     /// The chooser picks one investigator from the [`Choose`]'s scope. Bound by
     /// the evaluator's `ground_chosen_targets` before the effect's handler runs.
     Chosen(Choose<EntityScope>),
+    /// The investigator an enclosing [`Effect::ForEach`] is currently applying
+    /// its body to — *"each investigator … discards"*. Bound per iteration by
+    /// the evaluator's walking frame, separately from [`You`](Self::You), so a
+    /// body can name both the card's controller and the iterated investigator.
+    /// Resolving it outside a `ForEach` body over investigators is a rejection.
+    Each,
 }
 
 impl InvestigatorTarget {
@@ -2672,12 +2678,34 @@ impl InvestigatorTarget {
 }
 
 /// Set-of-investigators target spec for [`Effect::ForEach`].
+///
+/// Either set holds only investigators still in the game (`Active`): one who
+/// has resigned or been defeated is no longer an investigator the card can
+/// reach. Both are walked in turn order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum InvestigatorTargetSet {
     /// All investigators currently in the scenario, in turn order.
     All,
     /// All investigators at the controller's location.
     AtControllerLocation,
+}
+
+/// What an [`Effect::ForEach`] fans out over: one arm per kind of entity, so
+/// the walk is the same whatever it walks. The body reads the current one
+/// through that kind's `Each` target ([`InvestigatorTarget::Each`]).
+///
+/// [`for_each`] takes anything that converts into this, so a call site names
+/// the set alone: `for_each(InvestigatorTargetSet::All, body)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ForEachTargets {
+    /// A set of investigators.
+    Investigators(InvestigatorTargetSet),
+}
+
+impl From<InvestigatorTargetSet> for ForEachTargets {
+    fn from(set: InvestigatorTargetSet) -> Self {
+        ForEachTargets::Investigators(set)
+    }
 }
 
 /// Single-location target spec.
@@ -3369,11 +3397,12 @@ pub fn if_else(condition: Condition, then: Effect, else_: Effect) -> Effect {
     }
 }
 
-/// Build an [`Effect::ForEach`].
+/// Build an [`Effect::ForEach`] over `targets` — any set that converts into a
+/// [`ForEachTargets`], such as an [`InvestigatorTargetSet`].
 #[must_use]
-pub fn for_each(targets: InvestigatorTargetSet, body: Effect) -> Effect {
+pub fn for_each(targets: impl Into<ForEachTargets>, body: Effect) -> Effect {
     Effect::ForEach {
-        targets,
+        targets: targets.into(),
         body: Box::new(body),
     }
 }
