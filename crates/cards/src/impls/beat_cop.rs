@@ -77,6 +77,7 @@ mod tests {
                     scope: EnemyScope {
                         at: LocationSet::Here,
                         exhausted: None,
+                        exempt: None,
                     },
                 }),
                 amount: 1,

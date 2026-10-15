@@ -33,7 +33,7 @@ use crate::state::{
 /// whether *this* enemy is in the list; the gate asks only whether the list is
 /// empty, and the evaluator offers the list as the pick.
 pub(crate) fn candidates(state: &GameState, investigator: InvestigatorId) -> Vec<EnemyId> {
-    combat::enemies_in_scope(state, investigator, combat::fight_target_scope())
+    combat::enemies_in_scope_before_exemption(state, investigator, &combat::fight_target_scope())
 }
 
 /// Whether `enemy`'s printed fight value is malformed (negative), which makes

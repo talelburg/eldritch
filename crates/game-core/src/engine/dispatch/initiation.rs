@@ -441,7 +441,9 @@ fn restrictions_met(
 /// location, no Investigate. That is a designator-target check, which ADR 0017
 /// leaves with the activation path: `check_activate_ability` asks it before it
 /// asks this gate. A Parley ability falls through to the residual, which is all
-/// it has to change the game state with.
+/// it has to change the game state with, and so does an **AutomaticEvade**
+/// (Cunning Distraction 01078), whose residual is the evasion itself: with no
+/// enemy at your location it has nothing to evade, and is not playable.
 ///
 /// The designator is the ability's, whichever trigger reached it (see
 /// [`ActionDesignator`]), so an event's designated `OnPlay` ability skips the
@@ -452,7 +454,10 @@ fn restrictions_met(
 fn performs_an_action(ability: &Ability) -> bool {
     matches!(
         &ability.designator,
-        Some(designator) if !matches!(designator, ActionDesignator::Parley)
+        Some(designator) if !matches!(
+            designator,
+            ActionDesignator::Parley | ActionDesignator::AutomaticEvade
+        )
     )
 }
 
