@@ -10,6 +10,7 @@ use protocol::CreateGameRequest;
 
 use crate::scaffold_decks::{
     AGNES_DEFAULT_DECK, DAISY_DEFAULT_DECK, ROLAND_DEFAULT_DECK, SKIDS_DEFAULT_DECK,
+    WENDY_DEFAULT_DECK,
 };
 use crate::store::{self, ConnStatus};
 
@@ -24,6 +25,7 @@ enum Pick {
     Daisy,
     Skids,
     Agnes,
+    Wendy,
 }
 
 impl Pick {
@@ -33,6 +35,7 @@ impl Pick {
             Pick::Daisy => daisy_roster(),
             Pick::Skids => skids_roster(),
             Pick::Agnes => agnes_roster(),
+            Pick::Wendy => wendy_roster(),
         }
     }
 }
@@ -63,6 +66,11 @@ pub fn skids_roster() -> Vec<RosterEntry> {
 /// Build the default Agnes roster: investigator 01004 + the placeholder deck.
 pub fn agnes_roster() -> Vec<RosterEntry> {
     roster("01004", AGNES_DEFAULT_DECK)
+}
+
+/// Build the default Wendy roster: investigator 01005 + the placeholder deck.
+pub fn wendy_roster() -> Vec<RosterEntry> {
+    roster("01005", WENDY_DEFAULT_DECK)
 }
 
 /// Pre-game picker, rendered as a **full-viewport overlay**. Renders only while
@@ -130,6 +138,16 @@ pub fn PickerView() -> impl IntoView {
                                 on:change=move |_| picked.set(Pick::Agnes)
                             />
                             " Agnes Baker (01004)"
+                        </label>
+                        <label>
+                            <input
+                                type="radio"
+                                name="inv"
+                                value="01005"
+                                prop:checked=move || picked.get() == Pick::Wendy
+                                on:change=move |_| picked.set(Pick::Wendy)
+                            />
+                            " Wendy Adams (01005)"
                         </label>
                     </fieldset>
                     <button
