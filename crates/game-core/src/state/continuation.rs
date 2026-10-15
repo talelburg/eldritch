@@ -1380,10 +1380,14 @@ pub struct InFlightSkillTest {
     /// second discovery: Cover Up 01007 replaces one discovery of 2, not two
     /// of 1 (#471). See the **Discovery** entry in `GLOSSARY.md`.
     pub bonus_clues_discovered: u8,
-    /// The test's determination, set once at the
+    /// The test's determination, set at the
     /// [`DetermineOutcome`](SkillTestStep::DetermineOutcome) step (RR ST.5–ST.6)
     /// and read by every later step instead of threading `succeeded`/`failed_by`
-    /// through each cursor variant. `None` until the test resolves — so
+    /// through each cursor variant. Provisional until the `SkillTestResolved`
+    /// condition's resolve step re-totals and rewrites it (#1111), and kept
+    /// current while that condition's `when` cell is open, so a modifier played
+    /// there (Lucky! 01080) is reflected. It stays `Some` when a flipped verdict
+    /// rewinds the cursor to `DetermineOutcome`. `None` until the test resolves — so
     /// `resolved.is_some()` is the structural witness for "the test is past
     /// [`DetermineOutcome`](SkillTestStep::DetermineOutcome)". (Slice D #423;
     /// moved from `Resolving` to `DetermineOutcome` by #674, so the ST.5 sum
@@ -1449,7 +1453,7 @@ pub struct ResolvedTest {
     /// The signed margin `total - difficulty`: ≥ 0 on success, ≤ 0 on failure.
     /// Supplied to the logged
     /// [`SkillTestSucceeded`](crate::event::Event::SkillTestSucceeded) at the
-    /// `DetermineOutcome` step; read back at ST.7 through
+    /// `SkillTestResolved` resolve step; read back at ST.7 through
     /// [`succeeded_by`](Self::succeeded_by) and [`failed_by`](Self::failed_by),
     /// which split it by outcome.
     ///
@@ -1604,16 +1608,23 @@ pub enum SkillTestStep {
     Resolving,
     /// RR ST.5–ST.7 boundary. Sum the modified skill value (ST.5) from the
     /// board as it stands *now* — after the ST.4 symbol effects — compare it
-    /// against the difficulty (ST.6), then emit the logged
-    /// [`SkillTestSucceeded`](crate::event::Event::SkillTestSucceeded) /
-    /// [`SkillTestFailed`](crate::event::Event::SkillTestFailed) and fire the general
+    /// against the difficulty (ST.6), then fire the general
     /// skill-test-outcome timing point (`TimingEvent::SkillTestResolved`) for
     /// **every** test and both outcomes — "after you successfully investigate"
     /// (Obscuring Fog 01168 forced + Dr. Milan 01033 reaction) is the
     /// `{ Investigate, Success }` narrowing. Fires before any ST.7 consequence;
-    /// an empty forced/reaction candidate set opens no window. Reads the outcome
-    /// off [`InFlightSkillTest::resolved`]; pre-advances to
-    /// [`FireOnCommit`](Self::FireOnCommit). (Slice D #423.)
+    /// an empty forced/reaction candidate set opens no window. Stores the
+    /// provisional outcome on [`InFlightSkillTest::resolved`]; pre-advances to
+    /// [`AcknowledgeOutcome`](Self::AcknowledgeOutcome). (Slice D #423.)
+    ///
+    /// **The condition's resolve step comes back here when the verdict
+    /// flipped (#1111).** It re-totals after the `when` cell, and logs the
+    /// [`SkillTestSucceeded`](crate::event::Event::SkillTestSucceeded) /
+    /// [`SkillTestFailed`](crate::event::Event::SkillTestFailed) if the verdict
+    /// stands. If a `when`-cell modifier (Lucky! 01080) turned it into the other
+    /// verdict, it voids the rest of the sequence and sets the cursor back to
+    /// this step, which announces the fresh verdict. The revealed token and its
+    /// row stay, so ST.3 and ST.4 do not run again.
     ///
     /// **Firing here rather than at ST.7 is the published rule, twice over.**
     /// `data/official-faq/Rulings_and_Clarifications.md`, section 1.7:
@@ -1637,8 +1648,9 @@ pub enum SkillTestStep {
     DetermineOutcome,
     /// Cosmetic acknowledgment pause (#478). The result events are already
     /// emitted — `ChaosTokenRevealed` at [`Resolving`](Self::Resolving),
-    /// `SkillTestSucceeded`/`Failed` at
-    /// [`DetermineOutcome`](Self::DetermineOutcome); when
+    /// `SkillTestSucceeded`/`Failed` at the resolve step of the
+    /// `SkillTestResolved` condition [`DetermineOutcome`](Self::DetermineOutcome)
+    /// emitted; when
     /// [`GameState::interactive_acknowledge`](crate::state::GameState::interactive_acknowledge)
     /// is set, `advance` suspends here with an `AwaitingInput { InputKind::Confirm }`
     /// so an interactive host can show the player the result before the ST.7

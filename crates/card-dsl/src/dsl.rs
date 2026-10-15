@@ -1385,7 +1385,13 @@ pub enum EventTiming {
     ///
     /// `glossary/Instead.md` gives this cell an internal sub-order the engine
     /// does not implement — *"'When X would occur' resolves before 'When X
-    /// occurs.'"* — because no corpus card puts both on one condition.
+    /// occurs.'"* No Core card puts both on one condition. Science Building
+    /// 02056 (Dunwich) is the card that will: its *"**Forced** - When you
+    /// fail a \[willpower\] test in the Science Building: Take 1 damage."*
+    /// shares `SkillTestResolved`'s failure with Lucky! 01080's *"Play when
+    /// you would fail a skill test"*, and as a plain `when` it must resolve
+    /// after Lucky!, so a test Lucky! turns into a success deals no damage.
+    /// Unmodelled, the Forced resolves first, forced-before-reaction.
     ///
     /// Rejected on a condition whose resolve step has not been migrated; see
     /// the enum's own docs.
@@ -2707,6 +2713,16 @@ pub enum Stat {
     /// An enemy's evade value (Cold Spring Glen 02244: *"Each enemy in
     /// Cold Spring Glen gets -1 evade."*).
     Evade,
+    /// "Your skill value for that test" — whichever skill the in-flight
+    /// test is against. Lucky! 01080: *"Get +2 to your skill value for
+    /// that test."*; Ritual Candles 02029: *"You get +1 skill value for
+    /// this test."*
+    ///
+    /// Meaningful only under [`ModifierScope::ThisSkillTest`], where the
+    /// evaluator resolves it to the test's own skill as it records the
+    /// row. A constant modifier has no test to name, so the sweep never
+    /// matches it.
+    TestedSkill,
 }
 
 /// Who an [`Effect::Modify`] applies to, read off the printed text's

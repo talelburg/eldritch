@@ -18,7 +18,7 @@ use crate::card_registry::CardRegistry;
 use crate::engine::board::{self, NotLeft};
 use crate::engine::dispatch::actions::{evade, fight, investigate};
 use crate::engine::dispatch::emit::TimingEvent;
-use crate::engine::dispatch::{choice, emit, reaction_windows};
+use crate::engine::dispatch::{choice, coordinator, emit, reaction_windows};
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::modified_value::{
     self, ContributionSource, ModifiedQuantity, ModifierBreakdown, ModifierTarget, ReadContext,
@@ -969,17 +969,21 @@ fn apply_follow_up_step(cx: &mut Cx, investigator: InvestigatorId) -> Result<(),
     Ok(())
 }
 
-/// RR ST.5–ST.7 — the [`DetermineOutcome`](SkillTestStep::DetermineOutcome)
+/// RR ST.5–ST.6 — the [`DetermineOutcome`](SkillTestStep::DetermineOutcome)
 /// step. Sum the **modified skill value** (ST.5) and compare it against the
-/// difficulty (ST.6), stashing the verdict on
-/// [`InFlightSkillTest::resolved`](crate::state::InFlightSkillTest::resolved);
-/// then emit the logged
+/// difficulty (ST.6) — [`verdict`] — stashing the result on
+/// [`InFlightSkillTest::resolved`](crate::state::InFlightSkillTest::resolved),
+/// then fire the general `SkillTestResolved` timing point for **every** test and
+/// both outcomes (the `{ Investigate, Success }` narrowing is Obscuring Fog 01168
+/// forced with Dr. Milan 01033 reaction; one `queue_event` so forced precedes
+/// reaction — RR p.2, #213).
+///
+/// The verdict announced here is **provisional**: the condition's own resolve
+/// step ([`resolve_verdict`]) re-totals after the `when` cell, logs the
 /// [`SkillTestSucceeded`](crate::event::Event::SkillTestSucceeded) /
-/// [`SkillTestFailed`](crate::event::Event::SkillTestFailed) and fire the general
-/// `SkillTestResolved` timing point for **every** test and both outcomes (the
-/// `{ Investigate, Success }` narrowing is Obscuring Fog 01168 forced with
-/// Dr. Milan 01033 reaction; one `queue_event` so forced precedes reaction —
-/// RR p.2, #213).
+/// [`SkillTestFailed`](crate::event::Event::SkillTestFailed), and sends the test
+/// back here if a `when`-cell modifier turned it into the other verdict (Lucky!
+/// 01080, #1111).
 ///
 /// The sum happens **here** rather than at
 /// [`Resolving`](SkillTestStep::Resolving) because
@@ -995,34 +999,62 @@ fn apply_follow_up_step(cx: &mut Cx, investigator: InvestigatorId) -> Result<(),
 /// the `queue_event` outcome so the caller yields if a 2+ forced run suspends.
 /// Pre-advances the cursor to [`AcknowledgeOutcome`](SkillTestStep::AcknowledgeOutcome)
 /// **before** the emit, so a suspending reaction window resumes past this step.
-fn determine_outcome_step(
-    cx: &mut Cx,
-    investigator: InvestigatorId,
-    committed: &[CommittedCard],
-) -> EngineOutcome {
-    let (skill, kind) = {
-        let t = cx
-            .state
-            .current_skill_test()
-            .expect("determine_outcome_step: the SkillTest frame must persist");
-        (t.skill, t.kind)
-    };
+fn determine_outcome_step(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
+    let provisional = verdict(cx.state, cx.cards);
+    let t = cx
+        .state
+        .current_skill_test_mut()
+        .expect("determine_outcome_step: the SkillTest frame must persist");
+    t.resolved = Some(provisional);
+    t.continuation = SkillTestStep::AcknowledgeOutcome;
+    let kind = t.kind;
+    emit::queue_event(
+        cx,
+        &TimingEvent::SkillTestResolved {
+            investigator,
+            kind,
+            outcome: outcome_of(provisional),
+        },
+    )
+}
+
+/// RR ST.5–ST.6 read off the board as it stands: the in-flight test's modified
+/// skill value, compared against its current difficulty, with any
+/// determination applied. A pure read, so the resolve step of
+/// `SkillTestResolved` can re-total ([`resolve_verdict`]) and an open `when`
+/// cell can ask whether the verdict it was opened for still holds
+/// (`reaction_windows`, D17 of #780).
+///
+/// # Panics
+///
+/// With no skill test in flight — every caller is inside one.
+pub(crate) fn verdict(state: &GameState, cards: &CardRegistry) -> ResolvedTest {
+    let t = state
+        .current_skill_test()
+        .expect("verdict: a skill test must be in flight");
     // ST.6's determination, resolved once for the whole test across both
     // quantities it can substitute — automatic failure beating automatic
     // success whichever was latched first (ADR 0007). The `[auto_fail]`
     // token wrote its row at ST.3 like any other latch; nothing here knows
     // a token was involved.
-    let determination = modified_value::test_determination(cx.state, ReadContext::DuringTest(kind));
+    let determination = modified_value::test_determination(state, ReadContext::DuringTest(t.kind));
     // The total difficulty, read the same way as the total skill value: off
     // the board as it stands now, not as it stood at ST.1. An enemy's
     // modified fight value *is* the difficulty of a Fight action, so a card
     // that changed it since initiation has changed this test (#677).
-    let difficulty = current_difficulty(cx.state, cx.cards);
+    let difficulty = current_difficulty(state, cards);
 
     // ST.5 modified skill value — read off the board as the ST.4 symbol effects
     // left it, with the revealed token's own row already among the modifiers
     // it folds and the clamp applied once at the end (#684).
-    let total = sum_skill_value(cx.state, cx.cards, investigator, skill, kind, committed);
+    let total = sum_skill_value(
+        state,
+        cards,
+        t.investigator,
+        t.skill,
+        t.kind,
+        &t.committed_by_active,
+    );
     // Both quantities above already carry the ST.6 substitution, applied as
     // the last stage of the fold that produced them:
     // `glossary/Automatic_Failure_Success.md` — *"If a skill test
@@ -1061,53 +1093,85 @@ fn determine_outcome_step(
         Some(Determination::AutomaticSuccess) => (true, FailureReason::Total),
         None => (margin >= 0, FailureReason::Total),
     };
-    let resolved_test = ResolvedTest {
+    ResolvedTest {
         succeeded,
         margin,
         fail_reason,
         total,
-    };
-    cx.state
-        .current_skill_test_mut()
-        .expect("the SkillTest frame was present immediately above")
-        .resolved = Some(resolved_test);
+    }
+}
 
-    // ST.6 logged events — emitted here, so they follow the ST.4 immediate
-    // symbol effects in the event log.
-    if succeeded {
+/// The [`TestOutcome`] a verdict announces.
+fn outcome_of(resolved: ResolvedTest) -> TestOutcome {
+    if resolved.succeeded {
+        TestOutcome::Success
+    } else {
+        TestOutcome::Failure
+    }
+}
+
+/// The resolve step of `SkillTestResolved` (#1111): **re-total**, then either
+/// confirm the verdict the condition announced or void it.
+///
+/// Lucky! 01080 prints *"Fast. Play when you would fail a skill test. Get +2 to
+/// your skill value for that test."*, so a `when`-cell modifier can change the
+/// total after the provisional verdict was announced. The fresh result is
+/// always written back to the frame, margin included, so an `after`-cell margin
+/// narrowing ("Look what I found!" 01079's *"by 2 or less"*) reads the
+/// re-totalled margin even when the verdict stands.
+///
+/// - **The verdict stands:** log the
+///   [`SkillTestSucceeded`](crate::event::Event::SkillTestSucceeded) /
+///   [`SkillTestFailed`](crate::event::Event::SkillTestFailed), after the ST.4
+///   symbol effects and the `when` cell, and let the sequence run on to its `at`
+///   and `after` cells.
+/// - **The verdict flipped:** void the rest of this sequence — the stale
+///   verdict's `at` and `after` cells never run, and nothing is logged for it —
+///   and rewind the cursor to
+///   [`DetermineOutcome`](SkillTestStep::DetermineOutcome), which announces the
+///   fresh verdict in a sequence of its own. The revealed token and its recorded
+///   row stay, so ST.3 and ST.4 do not run again (the 01080 ruling's *"If you
+///   reveal an `[auto_fail]` auto-fail token, your total skill value is
+///   considered to be 0, overriding any modifiers"* holds on the re-total for the
+///   same reason, <https://arkhamdb.com/card/01080>).
+///
+/// `resolved` stays `Some` across the rewind, so the past-ST.6 guard on
+/// target-left-play abandonment does not reopen.
+pub(super) fn resolve_verdict(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    announced: TestOutcome,
+) -> EngineOutcome {
+    let fresh = verdict(cx.state, cx.cards);
+    let t = cx
+        .state
+        .current_skill_test_mut()
+        .expect("resolve_verdict: the SkillTest frame must persist under its condition");
+    t.resolved = Some(fresh);
+    let skill = t.skill;
+    if outcome_of(fresh) != announced {
+        t.continuation = SkillTestStep::DetermineOutcome;
+        coordinator::void_remaining_sequence(cx);
+        return EngineOutcome::Done;
+    }
+    if fresh.succeeded {
         cx.events.push(Event::SkillTestSucceeded {
             investigator,
             skill,
-            margin,
+            margin: fresh.margin,
         });
     } else {
         cx.events.push(Event::SkillTestFailed {
             investigator,
             skill,
-            reason: fail_reason,
+            reason: fresh.fail_reason,
             // `failed_by` is a non-negative margin as a `u8`; the event field
             // is `i8`. Realistic margins are tiny, so the conversion never
             // saturates.
-            by: i8::try_from(resolved_test.failed_by().unwrap_or(0)).unwrap_or(i8::MAX),
+            by: i8::try_from(fresh.failed_by().unwrap_or(0)).unwrap_or(i8::MAX),
         });
     }
-    cx.state
-        .current_skill_test_mut()
-        .expect("the SkillTest frame must persist across driver steps")
-        .continuation = SkillTestStep::AcknowledgeOutcome;
-    let outcome = if succeeded {
-        TestOutcome::Success
-    } else {
-        TestOutcome::Failure
-    };
-    emit::queue_event(
-        cx,
-        &TimingEvent::SkillTestResolved {
-            investigator,
-            kind,
-            outcome,
-        },
-    )
+    EngineOutcome::Done
 }
 
 /// RR ST.7 part 2 — the [`ApplyResultEffect`](SkillTestStep::ApplyResultEffect)
@@ -1312,9 +1376,11 @@ fn open_skill_test_player_window(
 ///   immediate symbol effects; advance to
 ///   [`DetermineOutcome`](SkillTestStep::DetermineOutcome).
 /// - [`DetermineOutcome`](SkillTestStep::DetermineOutcome) → ST.5 modified skill
-///   value + ST.6 comparison, then the logged success/failure events and the
-///   `SkillTestResolved` timing point (every test/outcome), before the ST.7
-///   consequences; advance to [`FireOnCommit`](SkillTestStep::FireOnCommit).
+///   value + ST.6 comparison, then the `SkillTestResolved` timing point (every
+///   test/outcome), whose resolve step re-totals and logs the success/failure
+///   event, before the ST.7 consequences; advance to
+///   [`AcknowledgeOutcome`](SkillTestStep::AcknowledgeOutcome), or back here
+///   if the re-total flipped the verdict.
 /// - [`FireOnCommit`](SkillTestStep::FireOnCommit) → ST.7 head (`OnCommit`
 ///   effects); advance to [`ApplyFollowUp`](SkillTestStep::ApplyFollowUp).
 /// - [`ApplyFollowUp`](SkillTestStep::ApplyFollowUp) → ST.7 action follow-up
@@ -1432,10 +1498,12 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
             }
             SkillTestStep::DetermineOutcome => {
                 // RR ST.5 (sum the modified skill value, off the board the ST.4
-                // effects left behind) + ST.6 (compare, set the outcome), then the
-                // logged success/failure events and the general SkillTestResolved
-                // timing point (every test/outcome) — BEFORE the ST.7 consequences.
-                // Pre-advances to FireOnCommit; yields if a 2+ forced run suspends.
+                // effects left behind) + ST.6 (compare, set the provisional
+                // outcome), then the general SkillTestResolved timing point
+                // (every test/outcome) — BEFORE the ST.7 consequences. Its resolve
+                // step logs the verdict, or sends the test back here when a
+                // `when`-cell modifier flipped it (#1111). Pre-advances to
+                // AcknowledgeOutcome; yields if a 2+ forced run suspends.
                 //
                 // A token was revealed and resolved, or the result was known
                 // before ST.3. Neither means a `when`-cell cancel left the test
@@ -1453,14 +1521,14 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                     "a skill test reached ST.5 with its chaos token cancelled and no new token \
                      revealed"
                 );
-                let outcome = determine_outcome_step(cx, investigator, &committed);
+                let outcome = determine_outcome_step(cx, investigator);
                 if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
                     return outcome;
                 }
             }
             SkillTestStep::AcknowledgeOutcome => {
                 // RR-neutral cosmetic pause (#478). The result events were emitted
-                // at DetermineOutcome; if interactive acknowledgment is enabled,
+                // by SkillTestResolved's resolve step; if interactive acknowledgment is enabled,
                 // suspend with a Confirm so the player registers the result before
                 // the ST.7 consequence resolves. The cursor stays at
                 // AcknowledgeOutcome across the suspension — `acknowledge_outcome`

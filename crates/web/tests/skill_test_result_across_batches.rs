@@ -21,14 +21,21 @@
 //! > \[\[Monster\]\] enemy: That investigator deals +1 damage."
 //!
 //! She is the *occasion*, not the subject: her reaction sits in the `when` cell
-//! of `SkillTestResolved`, which the engine walks at `DetermineOutcome` — in the
-//! same apply as `SkillTestSucceeded` and before `AcknowledgeOutcome`. The cell
-//! is not what matters, though: the `after` cell is walked at the same step, so
-//! Dr. Milan 01033 (*"\[reaction\] After you successfully investigate: Gain 1
-//! resource."*, an `after` reaction) splits the batch exactly the same way. What
-//! is load-bearing is that the ability **suspends for input** at all — a forced
-//! trigger that prompts for nothing, like Obscuring Fog 01168's, leaves the
-//! result and the acknowledge in one batch and never showed the bug.
+//! of `SkillTestResolved`, which the engine walks before `AcknowledgeOutcome`.
+//! When #853 was found the verdict was logged *before* that cell, so her window
+//! split the result from the acknowledge. Since #1111 the condition's resolve
+//! step logs it, after the `when` cell, so her pick's batch carries both and
+//! she no longer splits anything; her tests stay as the control for a `when`
+//! cell.
+//!
+//! The splitter now is an `after` reaction: **Dr. Milan Christopher (01033)**,
+//! `text` verbatim (`data/arkhamdb-snapshot/pack/core/core.json`): *"You get +1
+//! \[intellect\]. \[reaction\] After you successfully investigate: Gain 1
+//! resource."* The result is logged, then his window suspends, and the
+//! acknowledge arrives on a batch of its own. What is load-bearing is that the
+//! ability **suspends for input** at all — a forced trigger that prompts for
+//! nothing, like Obscuring Fog 01168's, leaves the result and the acknowledge
+//! in one batch and never showed the bug.
 //!
 //! It runs against `cards::TEST_REGISTRIES`: the real corpus with the
 //! synthetic test investigator composed in.
@@ -115,16 +122,56 @@ struct Pause {
 /// any offered reaction (the only `PickSingle` in flight is Lita's window) and
 /// commits no cards. Returns one entry per pause the client rendered.
 fn fight_ghoul(lita_in_play: bool) -> Vec<Pause> {
-    let state = board(lita_in_play);
+    drive(
+        board(lita_in_play),
+        &TurnAction::Fight {
+            investigator: OTHER,
+            enemy: GHOUL,
+        },
+    )
+}
 
-    let fight = TurnAction::Fight {
-        investigator: OTHER,
-        enemy: GHOUL,
-    };
+/// Dr. Milan Christopher.
+const MILAN: &str = "01033";
+
+/// The keeper alone in the Parlor (shroud 2, 3 clues) with Dr. Milan in play,
+/// investigating against a `+0` bag: intellect 3 + 1 succeeds, and his `after`
+/// reaction opens a window between the result and the acknowledge.
+fn investigate_with_milan() -> Vec<Pause> {
+    let mut keeper = test_support::test_investigator(1);
+    keeper.current_location = Some(PARLOR);
+    keeper.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new(MILAN),
+        CardInstanceId(50),
+        CardOwner::Investigator(KEEPER),
+    ));
+    let mut parlor = test_support::test_location(1, "Parlor");
+    parlor.shroud = 2;
+    parlor.clues = 3;
+    let mut state = GameStateBuilder::new()
+        .with_investigator(keeper)
+        .with_location(parlor)
+        .with_turn_order([KEEPER])
+        .open_turn(KEEPER)
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .with_token_modifiers(TokenModifiers::default())
+        .build();
+    state.interactive_acknowledge = true;
+    drive(
+        state,
+        &TurnAction::Investigate {
+            investigator: KEEPER,
+        },
+    )
+}
+
+/// Take `action` from the turn menu and answer every prompt through the end of
+/// the test, folding each apply into a `ClientState`. See [`fight_ghoul`].
+fn drive(state: GameState, action: &TurnAction) -> Vec<Pause> {
     let idx = enumerate::legal_actions(&state, TEST_REGISTRIES.cards)
         .iter()
-        .position(|a| *a == fight)
-        .expect("the Fight is a legal action on this board");
+        .position(|a| a == action)
+        .expect("the action is legal on this board");
     let mut result = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
@@ -199,13 +246,20 @@ fn a_plain_attack_shows_the_result_modal() {
     assert!(modal_at_acknowledge(&fight_ghoul(false)));
 }
 
-/// #853: with Lita in play the result lands in the *reaction window's* batch and
-/// the acknowledge's batch is empty — so a modal that reads only the live batch
-/// never renders, and the player is asked to acknowledge a result they were
-/// never shown.
+/// A `when`-cell reaction between the verdict and the acknowledge: Lita's window
+/// comes before the result is logged, so her pick's batch carries both.
 #[test]
 fn an_attack_through_litas_reaction_window_still_shows_the_result_modal() {
     assert!(modal_at_acknowledge(&fight_ghoul(true)));
+}
+
+/// #853: with Dr. Milan in play the result lands in the batch that opens his
+/// `after` window, and the acknowledge's batch is empty — so a modal that reads
+/// only the live batch never renders, and the player is asked to acknowledge a
+/// result they were never shown.
+#[test]
+fn an_investigation_through_milans_reaction_window_still_shows_the_result_modal() {
+    assert!(modal_at_acknowledge(&investigate_with_milan()));
 }
 
 /// The latch is not a leak: once the test is torn down the modal is gone, so a

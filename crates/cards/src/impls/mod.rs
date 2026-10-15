@@ -134,6 +134,7 @@ pub mod leather_coat;
 pub mod leo_de_luca;
 pub mod lita_chantler;
 pub mod look_what_i_found;
+pub mod lucky;
 pub mod machete;
 pub mod magnifying_glass;
 pub mod manual_dexterity;
@@ -297,6 +298,7 @@ pub const ALL: &[CardRecord] = &[
     leo_de_luca::CARD,
     lita_chantler::CARD,
     look_what_i_found::CARD,
+    lucky::CARD,
     machete::CARD,
     magnifying_glass::CARD,
     manual_dexterity::CARD,

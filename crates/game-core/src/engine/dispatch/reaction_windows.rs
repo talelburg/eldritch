@@ -9,7 +9,7 @@
 //! an ability activated is [`legality`]'s, which the Fast-window enumeration
 //! asks.
 
-use card_dsl::dsl::{EventTiming, Trigger};
+use card_dsl::dsl::{EventTiming, TestOutcome, Trigger};
 
 use crate::action::InputResponse;
 use crate::card_registry::CardRegistry;
@@ -252,6 +252,7 @@ fn withdraw_lapsed_candidates(cx: &mut Cx) -> usize {
         return 0;
     };
     let (event, bucket, mode) = (event.clone(), bucket, mode.clone());
+    refresh_provisional_verdict(cx, &event, bucket);
     let stored = cx
         .state
         .continuations
@@ -291,6 +292,21 @@ fn withdraw_lapsed_candidates(cx: &mut Cx) -> usize {
         .top_mut::<TimingPointWindowFrame>()
         .candidates = kept;
     lapsed.len()
+}
+
+/// Keep a skill test's stored verdict live while its `when` cell is open: a
+/// modifier played there (Lucky! 01080) changes the total before the resolve
+/// step re-totals, and the client shows the player the stored verdict while
+/// they decide whether to play another (#1111). Written before every re-offer,
+/// so the window's own re-scan and the client read the same result.
+fn refresh_provisional_verdict(cx: &mut Cx, event: &TimingEvent, bucket: EventTiming) {
+    if bucket != EventTiming::When || !matches!(event, TimingEvent::SkillTestResolved { .. }) {
+        return;
+    }
+    let fresh = skill_test::verdict(cx.state, cx.cards);
+    if let Some(test) = cx.state.current_skill_test_mut() {
+        test.resolved = Some(fresh);
+    }
 }
 
 /// Withdraw **every** remaining candidate from an open `when`-cell window whose
@@ -377,6 +393,7 @@ fn open_window_cell(state: &GameState) -> Option<(&TimingEvent, EventTiming, &Ti
 
 /// The scan that filled a window of `mode`, re-run at its recorded cell: the
 /// reaction scan for a reaction window, the forced collector for a forced run.
+/// The condition is re-asked as it [now stands](condition_as_it_now_stands).
 fn rescan(
     state: &GameState,
     cards: &CardRegistry,
@@ -384,9 +401,46 @@ fn rescan(
     bucket: EventTiming,
     mode: &TimingMode,
 ) -> Vec<ResolutionCandidate> {
+    let event = condition_as_it_now_stands(state, cards, event, bucket);
     match mode {
-        TimingMode::Reaction => trigger_scan::collect_reactions(state, cards, event, bucket),
-        TimingMode::Forced => trigger_scan::collect_forced(state, cards, event, bucket),
+        TimingMode::Reaction => trigger_scan::collect_reactions(state, cards, &event, bucket),
+        TimingMode::Forced => trigger_scan::collect_forced(state, cards, &event, bucket),
+    }
+}
+
+/// The condition an open window's re-scan asks about. Every condition is the
+/// one the window was opened for, except a skill test's verdict in its `when`
+/// cell: that verdict is provisional until the resolve step re-totals (#1111),
+/// so the re-scan re-totals too, and asks about the verdict the test would now
+/// resolve with.
+///
+/// So once one Lucky! 01080 has turned a failure into a success, a second is
+/// withdrawn: *"Play when you would fail a skill test"* no longer holds, and
+/// `glossary/Triggering_Condition.md` lets only an **eligible** instance be used
+/// — *"Each eligible ability that triggers in reference to a specified timing
+/// point may be used once each time that timing point occurs."* While the test
+/// still fails, both stay offered. An ability matching either verdict is
+/// unaffected, and the intersection in [`withdraw_lapsed_candidates`] never
+/// adds the other verdict's abilities: those wait for the fresh sequence.
+fn condition_as_it_now_stands(
+    state: &GameState,
+    cards: &CardRegistry,
+    event: &TimingEvent,
+    bucket: EventTiming,
+) -> TimingEvent {
+    match event {
+        TimingEvent::SkillTestResolved {
+            investigator, kind, ..
+        } if bucket == EventTiming::When => TimingEvent::SkillTestResolved {
+            investigator: *investigator,
+            kind: *kind,
+            outcome: if skill_test::verdict(state, cards).succeeded {
+                TestOutcome::Success
+            } else {
+                TestOutcome::Failure
+            },
+        },
+        _ => event.clone(),
     }
 }
 

@@ -476,22 +476,6 @@ impl TimingEvent {
             //   *"also formalizes the beginning of a new game round"*
             //   (`Appendix_II_Timing_and_Gameplay.md`), so an ability firing at
             //   this milestone must already read the new round.
-            // - `SkillTestResolved` — RR ST.6 is *"Determine success/failure
-            //   of skill test"*, and a determination is not a mutation: the
-            //   verdict is stashed on `InFlightSkillTest::resolved` and the
-            //   `SkillTestSucceeded`/`SkillTestFailed` events are logged, and no
-            //   card, enemy, location or investigator moves. What *looks* like
-            //   the impact is ST.7, *"Apply skill test results"* — the
-            //   success/failure effect, the `OnSkillTestResolution` abilities,
-            //   and the action follow-up that discovers the clue or deals the
-            //   attack's damage — and every one of those belongs to the
-            //   `SkillTest` frame, which advances its own cursor to
-            //   `AcknowledgeOutcome` *before* emitting and so runs them once the
-            //   whole sequence has drained. Migrated by #773, for Lita Chantler
-            //   01117's *"[reaction] **When** an investigator at your
-            //   location successfully attacks a [[Monster]] enemy: That
-            //   investigator deals +1 damage."* — a `when` whose whole point is
-            //   to raise the damage before ST.7 applies it.
             // - `CardPlayed` — born coordinator-owned (#1048). The condition is
             //   the play's *completion*, not its placement: the 01012 ruling
             //   puts Heirloom of Hyperborea's *"After you play a [[Spell]]
@@ -516,10 +500,26 @@ impl TimingEvent {
             | TimingEvent::RoundEnded
             | TimingEvent::GameEnd
             | TimingEvent::EliminationGameEnd { .. }
-            | TimingEvent::SkillTestResolved { .. }
             | TimingEvent::DamageAssigned { .. }
             | TimingEvent::CardPlayed { .. } => {
                 ConditionResolution::Coordinator(resolve_bare_milestone)
+            }
+            // Migrated by #773 as a bare milestone, for Lita Chantler 01117's
+            // *"[reaction] **When** an investigator at your location
+            // successfully attacks a [[Monster]] enemy: That investigator deals
+            // +1 damage."* — a `when` whose point is to raise the damage before
+            // ST.7 applies it. ST.7 itself still belongs to the `SkillTest`
+            // frame, which advances its cursor to `AcknowledgeOutcome` before
+            // emitting and applies the results once the whole sequence drains.
+            //
+            // No longer bare since #1111. Lucky! 01080 prints *"Fast. Play when
+            // you would fail a skill test. Get +2 to your skill value for that
+            // test."*, so the verdict announced is provisional until the `when`
+            // cell is done: the resolve step re-totals, logs the
+            // `SkillTestSucceeded`/`SkillTestFailed`, and voids the rest of the
+            // sequence when the verdict has flipped.
+            TimingEvent::SkillTestResolved { .. } => {
+                ConditionResolution::Coordinator(resolve_skill_test_resolved)
             }
             // The fourth migration (#727/#722), which cost a model rather than
             // an arm: `EnemyAttackDamagedSelf` could not be flipped to
@@ -810,6 +810,23 @@ fn resolve_enemy_evaded(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
     };
     actions::evade::resolve_evasion(cx, *investigator, *enemy);
     EngineOutcome::Done
+}
+
+/// The resolve step of [`TimingEvent::SkillTestResolved`]: re-total the test
+/// and confirm or void the verdict the event announced (#1111,
+/// `skill_test::resolve_verdict`). After the `when` cell, so a modifier played
+/// there (Lucky! 01080) is counted; before the `at` and `after` cells, so a
+/// verdict it flipped never reaches them.
+fn resolve_skill_test_resolved(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
+    let TimingEvent::SkillTestResolved {
+        investigator,
+        outcome,
+        ..
+    } = event
+    else {
+        unreachable!("resolve_skill_test_resolved: not a SkillTestResolved event: {event:?}");
+    };
+    skill_test::resolve_verdict(cx, *investigator, *outcome)
 }
 
 /// The resolve step of [`TimingEvent::ChaosTokenRevealed`]: the token takes
