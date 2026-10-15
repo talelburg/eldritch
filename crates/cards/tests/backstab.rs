@@ -86,7 +86,11 @@ fn the_attack_tests_agility_against_fight_and_deals_two_extra_damage() {
     );
     assert_event!(
         session.events(),
-        Event::SkillTestSucceeded { skill: SkillKind::Agility, margin: 1, .. }
+        Event::SkillTestSucceeded {
+            skill: SkillKind::Agility,
+            margin: 1,
+            ..
+        }
     );
     assert_event!(session.events(), Event::EnemyDamaged { amount: 3, .. });
     assert_eq!(session.state().enemies[&ENEMY].damage, 3);
@@ -106,7 +110,11 @@ fn a_failed_attack_deals_no_damage() {
     let session = play(2);
     assert_event!(
         session.events(),
-        Event::SkillTestFailed { skill: SkillKind::Agility, by: 1, .. }
+        Event::SkillTestFailed {
+            skill: SkillKind::Agility,
+            by: 1,
+            ..
+        }
     );
     assert_no_event!(session.events(), Event::EnemyDamaged { .. });
     assert_eq!(session.state().enemies[&ENEMY].damage, 0);
