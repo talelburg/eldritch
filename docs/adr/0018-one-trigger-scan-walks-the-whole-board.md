@@ -40,7 +40,7 @@ The two kinds share the walk and the matcher, and differ only in how a hit becom
 - a controlled card → its controller. An encounter card in a threat area also goes to each other investigator at that location, the clause Haunted 01098's ruling settles (ADR 0010);
 - a location, a card attached to it or put into play at it, an enemy and its attachments → each investigator at that location;
 - the current act or agenda → **one** candidate, bound to the lead proxy. Every investigator reaches it, and the corpus reaction printed there is a group's single offer: The Barrier 01109's *"When the round ends, investigators in the hallway may, as a group, spend the requisite number of clues to advance."*;
-- a Fast event in hand, or on top of a discard pile a permission lets its owner play from → that investigator, gated as a play. Whether the card may be played from where it is (the zone check `legality::play_source_available`) stays with the play paths, as ADR 0017 keeps a hand index there.
+- a Fast event in hand, or on top of a discard pile a permission lets its owner play from → that investigator, gated as a play. Whether the card may be played from where it is (the zone check `legality::play_source_available`) stays with the play paths, as ADR 0017 keeps a play's source zone there.
 
 Before this, the reaction scans reached only the investigators' controlled cards and the act and agenda, so a reaction on a location or an encounter card at your location was never offered. That contradicted ADR 0010's list of sources.
 

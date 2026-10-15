@@ -11,7 +11,7 @@
 //!
 //! > […] if an ability automatically evades 1 or more enemies, no skill test is
 //! > made for the evasion attempt whatsoever. Consequentially, because no skill
-//! > test is made, it is not considered a "successful" evasion.
+//! > test is made, it is not considered a “successful” evasion.
 //!
 //! Pickpocketing 01046's ruling (<https://arkhamdb.com/card/01046>) says an
 //! automatic evasion still triggers it: *"the auto-evade effect from Breaking

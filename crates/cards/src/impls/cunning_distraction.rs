@@ -11,7 +11,7 @@
 //! ruling (<https://arkhamdb.com/card/01076>), which 01078 carries too: *"if an
 //! ability automatically evades 1 or more enemies, no skill test is made for
 //! the evasion attempt whatsoever. Consequentially, because no skill test is
-//! made, it is not considered a "successful" evasion."*
+//! made, it is not considered a “successful” evasion."*
 //!
 //! The designator performs nothing; the evading is the ability's effect, a
 //! fan-out over each enemy at your location. Its ruling

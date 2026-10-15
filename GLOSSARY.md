@@ -132,7 +132,7 @@ A determination known **before** the chaos token is revealed skips ST.3 and ST.4
 _Avoid_: Reading "if a `[skull]` or `[auto_fail]` symbol is revealed" as a clause about failing; it is a clause about the token. No Core + Dunwich card keys off the *determination* being an automatic failure rather than an ordinary one, so `FailureReason::AutoFail` is display attribution, not a rules distinction.
 
 **Automatic evasion**:
-Evading an enemy with **no skill test at all**: the investigator simply exhausts the enemy and breaks its engagement (Stray Cat 01076, Cunning Distraction 01078). The 01076 ruling: *"if an ability automatically evades 1 or more enemies, no skill test is made for the evasion attempt whatsoever. Consequentially, because no skill test is made, it is not considered a "successful" evasion."* The enemy need not be engaged with the evader.
+Evading an enemy with **no skill test at all**: the investigator simply exhausts the enemy and breaks its engagement (Stray Cat 01076, Cunning Distraction 01078). The 01076 ruling: *"if an ability automatically evades 1 or more enemies, no skill test is made for the evasion attempt whatsoever. Consequentially, because no skill test is made, it is not considered a “successful” evasion."* The enemy need not be engaged with the evader.
 _Avoid_: Treating it as an **automatic success** on an evasion attempt — that test still takes place, with commits and a total skill value, while an automatic evasion has none. "Successful evasion" never describes an automatic evasion.
 
 **Chaos symbol effect**:

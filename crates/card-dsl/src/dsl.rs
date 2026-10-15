@@ -294,7 +294,7 @@ pub enum ActionDesignator {
     /// is needed. The 01076 ruling (<https://arkhamdb.com/card/01076>): *"if an
     /// ability automatically evades 1 or more enemies, no skill test is made
     /// for the evasion attempt whatsoever. Consequentially, because no skill
-    /// test is made, it is not considered a "successful" evasion."*
+    /// test is made, it is not considered a “successful” evasion."*
     ///
     /// Performs nothing, as [`Parley`](Self::Parley) does: which enemies are
     /// evaded is the ability's residual effect ([`Effect::AutoEvade`]), and
@@ -1077,7 +1077,9 @@ pub enum EventPattern {
     /// (Dunwich) in its `after` cell, *"\[reaction\] After a `[skull]`,
     /// `[cultist]`, `[tablet]`, or `[elder_thing]` symbol is revealed during
     /// a test you are performing: You get +1 skill value for this test."* The
-    /// symbol narrowing arrives with the Candles.
+    /// symbol narrowing arrives with the Candles. Wendy is its only corpus
+    /// consumer, so it is a spec-approved exception to `standards.md`'s
+    /// DSL-primitive threshold (#780).
     ChaosTokenRevealed,
 }
 
@@ -2265,7 +2267,9 @@ pub enum Effect {
     /// sequence is abandoned the test draws again and announces the new token
     /// in a fresh `when` cell. *"Return it to the bag"* needs nothing: a drawn
     /// token never leaves the bag, so the redraw can draw the same token.
-    /// Rejected with no test in flight.
+    /// Rejected with no test in flight. Wendy is its only consumer, a
+    /// spec-approved exception to `standards.md`'s DSL-primitive threshold
+    /// (#780).
     RevealChaosToken,
     /// Put the card with this printed `code` into the controller's threat
     /// area as a fresh in-play instance. The Revelation of persistent
@@ -2721,7 +2725,9 @@ pub enum Stat {
     /// Meaningful only under [`ModifierScope::ThisSkillTest`], where the
     /// evaluator resolves it to the test's own skill as it records the
     /// row. A constant modifier has no test to name, so the sweep never
-    /// matches it.
+    /// matches it. Lucky! is its only corpus consumer, so it is a
+    /// spec-approved exception to `standards.md`'s DSL-primitive threshold
+    /// (#780).
     TestedSkill,
 }
 
