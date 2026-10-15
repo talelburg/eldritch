@@ -5,10 +5,10 @@ use card_dsl::card_data::CardMetadata;
 
 use crate::card_registry::CardRegistry;
 use crate::engine::board::{self, LeavingCard, MoveResourcesError, Placement};
-use crate::engine::dispatch::actions::take;
+use crate::engine::dispatch::actions::{r#move, take};
 use crate::engine::dispatch::{
-    act_agenda, cards, combat, elimination, encounter, hunters, placement, reveal, set_aside,
-    skill_test, threat_area,
+    act_agenda, cards, combat, elimination, encounter, hunters, movement, placement, reveal,
+    set_aside, skill_test, threat_area,
     uses::{self, MoveUsesError, SpendUsesError},
 };
 use crate::engine::outcome::EngineOutcome;
@@ -16,7 +16,7 @@ use crate::engine::Cx;
 use crate::event::TraumaKind;
 use crate::state::{
     CardCode, CardInstanceId, Deck, EnemyId, GameState, InvestigatorId, LocationId, Owner,
-    SkillSubstitution, UseKind, Zone,
+    SkillSubstitution, Status, UseKind, Zone,
 };
 
 /// What a [`NativeEffectFn`](crate::card_registry::NativeEffectFn) gets: full
@@ -186,6 +186,64 @@ impl<'a> NativeCx<'a> {
     /// `location`.
     pub fn place_investigator(&mut self, investigator: InvestigatorId, location: LocationId) {
         placement::place_investigator(self.write_access(), investigator, location);
+    }
+
+    /// Move `investigator` to `destination` by a card effect: a move, not a
+    /// placement, so it fires the same leave and enter timing as the Move
+    /// action — the left location's *"when … leaves"* and the entered one's
+    /// *"after you enter"* abilities, the reveal, and engagement on entering.
+    /// The destination need not connect; the native has already chosen it by
+    /// its own card's rule. No attack of opportunity: that is the Move
+    /// action's, not the move's.
+    ///
+    /// `Rejected`, changing nothing, when the investigator is not active at a
+    /// location, `destination` is where they already are or not in play, or a
+    /// rule forbids moving there
+    /// ([`investigator_can_enter_location`](crate::engine::investigator_can_enter_location)).
+    ///
+    /// **Return its outcome.** The move runs on frames above everything the
+    /// native leaves beneath it, so work written after this call would run
+    /// before the move lands (ADR 0003).
+    #[must_use = "move_investigator only queues the move: return its outcome (ADR 0003)"]
+    pub fn move_investigator(
+        &mut self,
+        investigator: InvestigatorId,
+        destination: LocationId,
+    ) -> EngineOutcome {
+        let state = &*self.cx.state;
+        let from = state
+            .investigators
+            .get(&investigator)
+            .filter(|i| i.status == Status::Active)
+            .and_then(|i| i.current_location);
+        let Some(from) = from else {
+            return EngineOutcome::Rejected {
+                reason: format!("move_investigator: {investigator:?} is not active at a location")
+                    .into(),
+            };
+        };
+        if from == destination
+            || !state.locations.contains_key(&destination)
+            || !movement::investigator_can_enter_location(state, self.cx.cards, destination)
+        {
+            return EngineOutcome::Rejected {
+                reason: format!(
+                    "move_investigator: {investigator:?} cannot move from {from:?} to \
+                     {destination:?}"
+                )
+                .into(),
+            };
+        }
+        r#move::begin_move(self.write_access(), investigator, from, destination)
+    }
+
+    /// Apply the engagement rule: each ready, unengaged enemy at a location
+    /// with an investigator engages one there (`glossary/Enemy_Engagement.md`:
+    /// *"Any time a ready unengaged enemy is at the same location as an
+    /// investigator, it engages that investigator."*). For an effect that leaves
+    /// enemies ready and unengaged beside an investigator, once it has resolved.
+    pub fn engage_ready_enemies(&mut self) {
+        hunters::engage_ready_enemies(self.write_access());
     }
 
     // --- Tokens ---

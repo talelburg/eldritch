@@ -1702,6 +1702,7 @@ impl Effect {
             Effect::GainResources { .. }
             | Effect::DiscoverClue { .. }
             | Effect::DealDamageToEnemy { .. }
+            | Effect::Disengage { .. }
             | Effect::Heal { .. }
             | Effect::Modify { .. }
             | Effect::AutoResolve { .. }
@@ -1797,6 +1798,11 @@ pub enum Effect {
     /// `Native`) so the activation pre-cost check can verify ≥1 candidate
     /// before any cost is paid. `amount == 0` is a no-op.
     DealDamageToEnemy { target: EnemyTarget, amount: u8 },
+    /// Disengage the resolved enemy `target` from the investigator it is
+    /// engaged with. It stays where it is, and stays ready: Elusive 01050's
+    /// ruling, *"Disengaging does not exhaust an enemy."*
+    /// (<https://arkhamdb.com/card/01050>). A no-op on an unengaged enemy.
+    Disengage { target: EnemyTarget },
     /// Heal `count` of `kind` (damage or horror) from the resolved target
     /// investigator — the inverse of [`Effect::Deal`] (no defeat
     /// interaction). Heals at most the current amount (saturating at 0).
@@ -2690,9 +2696,19 @@ pub enum InvestigatorTargetSet {
     AtControllerLocation,
 }
 
+/// Set-of-enemies target spec for [`Effect::ForEach`], walked in enemy-id
+/// order. The body names the current one as [`EnemyTarget::Each`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum EnemySet {
+    /// Each enemy engaged with the controller — Elusive 01050's *"each enemy
+    /// engaged with you"*.
+    EngagedWithYou,
+}
+
 /// What an [`Effect::ForEach`] fans out over: one arm per kind of entity, so
 /// the walk is the same whatever it walks. The body reads the current one
-/// through that kind's `Each` target ([`InvestigatorTarget::Each`]).
+/// through that kind's `Each` target ([`InvestigatorTarget::Each`],
+/// [`EnemyTarget::Each`]).
 ///
 /// [`for_each`] takes anything that converts into this, so a call site names
 /// the set alone: `for_each(InvestigatorTargetSet::All, body)`.
@@ -2700,11 +2716,19 @@ pub enum InvestigatorTargetSet {
 pub enum ForEachTargets {
     /// A set of investigators.
     Investigators(InvestigatorTargetSet),
+    /// A set of enemies.
+    Enemies(EnemySet),
 }
 
 impl From<InvestigatorTargetSet> for ForEachTargets {
     fn from(set: InvestigatorTargetSet) -> Self {
         ForEachTargets::Investigators(set)
+    }
+}
+
+impl From<EnemySet> for ForEachTargets {
+    fn from(set: EnemySet) -> Self {
+        ForEachTargets::Enemies(set)
     }
 }
 
@@ -2756,13 +2780,16 @@ impl LocationTarget {
     }
 }
 
-/// Single-enemy target spec. One variant today (`Chosen`); a non-chosen form
-/// (`Engaged`, a specific spawned enemy) lands with its first consumer.
+/// Single-enemy target spec. Another non-chosen form (`Engaged`, a specific
+/// spawned enemy) lands with its first consumer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum EnemyTarget {
     /// The chooser picks one enemy from the [`Choose`]'s scope. Bound by
     /// `ground_chosen_targets` before the handler runs.
     Chosen(Choose<EntityScope>),
+    /// The enemy the enclosing [`Effect::ForEach`] over an [`EnemySet`] is
+    /// currently running its body for. Valid only inside such a body.
+    Each,
 }
 
 impl EnemyTarget {
@@ -3297,6 +3324,12 @@ pub fn deal_damage_to_enemy(target: EnemyTarget, amount: u8) -> Effect {
     Effect::DealDamageToEnemy { target, amount }
 }
 
+/// Build an [`Effect::Disengage`].
+#[must_use]
+pub fn disengage(target: EnemyTarget) -> Effect {
+    Effect::Disengage { target }
+}
+
 /// Build an [`Effect::BoostAttackDamage`] adding `amount` to the
 /// in-flight Fight test's bonus damage (Vicious Blow 01025).
 #[must_use]
@@ -3398,7 +3431,7 @@ pub fn if_else(condition: Condition, then: Effect, else_: Effect) -> Effect {
 }
 
 /// Build an [`Effect::ForEach`] over `targets` — any set that converts into a
-/// [`ForEachTargets`], such as an [`InvestigatorTargetSet`].
+/// [`ForEachTargets`], such as an [`InvestigatorTargetSet`] or an [`EnemySet`].
 #[must_use]
 pub fn for_each(targets: impl Into<ForEachTargets>, body: Effect) -> Effect {
     Effect::ForEach {

@@ -1,0 +1,269 @@
+//! Elusive 01050 end-to-end against the real corpus.
+//!
+//! Card text (`data/arkhamdb-snapshot/pack/core/core.json`, 01050):
+//!
+//! > Fast. Play only during your turn.
+//! > Disengage from each enemy engaged with you and move to a revealed location
+//! > with no enemies.
+//!
+//! Rulings (<https://arkhamdb.com/card/01050>):
+//!
+//! > - Disengaging does not exhaust an enemy.
+//! > - You can play Elusive to move to another location even if you're not
+//! >   engaged with any enemies.
+//! > - You can move to any revealed location with no enemies, not necessarily a
+//! >   connecting one.
+//! > - You must move when you play Elusive, as it is not a 'may' effect, unless
+//! >   there is no legal place to move to or a rule effect forbids movement.
+
+use cards::TEST_REGISTRIES;
+use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::OptionTarget;
+use game_core::event::Event;
+use game_core::state::{
+    CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameStateBuilder, InvestigatorId,
+    Location, LocationId, Owner,
+};
+use game_core::test_support::{self, seat, TestSession};
+use game_core::{assert_event, assert_event_sequence, assert_no_event};
+
+const ELUSIVE: &str = "01050";
+const INV: InvestigatorId = InvestigatorId(1);
+const HERE: LocationId = LocationId(10);
+/// A revealed location with no enemies, not connected to `HERE`.
+const THERE: LocationId = LocationId(11);
+/// A revealed location with no enemies, connected to `HERE`.
+const NEXT_DOOR: LocationId = LocationId(12);
+/// A location that has not been revealed.
+const UNREVEALED: LocationId = LocationId(13);
+/// A revealed location with an enemy at it.
+const OCCUPIED: LocationId = LocationId(14);
+
+const BARRICADE: &str = "01038";
+const ATTIC: &str = "01113";
+
+const PLAY: TurnAction = TurnAction::PlayCard {
+    investigator: INV,
+    hand_index: 0,
+};
+
+/// A ready enemy whose attack deals 1 damage, so an attack of opportunity
+/// would show on the investigator.
+fn enemy(id: u32) -> Enemy {
+    test_support::test_enemy(id, "Ghoul")
+}
+
+/// `INV` at `HERE` with Elusive in hand and the resources to play it, the
+/// given extra locations in play, and `engaged` enemies engaged with `INV`.
+fn board(
+    locations: impl IntoIterator<Item = Location>,
+    engaged: impl IntoIterator<Item = Enemy>,
+) -> GameStateBuilder {
+    let mut builder = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(seat(1).at(HERE).hand([ELUSIVE]).resources(2).actions(3))
+        .with_location(test_support::test_location(HERE.0, "Here"));
+    for location in locations {
+        builder = builder.with_location(location);
+    }
+    for enemy in engaged {
+        builder = builder.with_enemy_engaged(enemy, INV);
+    }
+    builder
+}
+
+fn session(builder: GameStateBuilder) -> TestSession {
+    builder.open_turn(INV).session()
+}
+
+fn location_of(session: &TestSession) -> Option<LocationId> {
+    session.state().investigators[&INV].current_location
+}
+
+fn location(id: LocationId, name: &str) -> Location {
+    test_support::test_location(id.0, name)
+}
+
+/// `builder` plus the two locations Elusive cannot move to: an unrevealed one,
+/// and a revealed one with an (exhausted, so it stays put) unengaged enemy at
+/// it.
+fn with_non_destinations(builder: GameStateBuilder) -> GameStateBuilder {
+    let mut unrevealed = location(UNREVEALED, "Unrevealed");
+    unrevealed.revealed = false;
+    let mut lurker = enemy(200);
+    lurker.current_location = Some(OCCUPIED);
+    lurker.exhausted = true;
+    builder
+        .with_location(unrevealed)
+        .with_location(location(OCCUPIED, "Occupied"))
+        .with_enemy(lurker)
+}
+
+fn is_playable(session: &TestSession) -> bool {
+    enumerate::legal_actions(session.state(), TEST_REGISTRIES.cards).contains(&PLAY)
+}
+
+#[test]
+fn both_engaged_enemies_are_disengaged_and_stay_ready() {
+    let (a, b) = (EnemyId(100), EnemyId(101));
+    let session = session(board(
+        [test_support::test_location(THERE.0, "There")],
+        [enemy(a.0), enemy(b.0)],
+    ))
+    .take(&PLAY);
+
+    session.assert_at_turn_menu(INV);
+    for id in [a, b] {
+        let e = &session.state().enemies[&id];
+        assert_eq!(e.engaged_with, None, "{id:?} disengaged");
+        assert!(
+            !e.exhausted,
+            "{id:?} still ready: disengaging does not exhaust"
+        );
+        assert_eq!(e.current_location, Some(HERE), "{id:?} stays behind");
+        assert_event!(
+            session.events(),
+            Event::EnemyDisengaged { enemy, investigator } if *enemy == id && *investigator == INV
+        );
+    }
+    assert_eq!(
+        location_of(&session),
+        Some(THERE),
+        "moved to the lone destination"
+    );
+    let inv = &session.state().investigators[&INV];
+    assert_eq!(inv.damage(), 0, "no attack of opportunity");
+    assert_eq!(inv.actions_remaining, 3, "a Fast play spends no action");
+    assert_eq!(inv.resources, 0, "cost 2 paid");
+    assert_eq!(inv.discard, vec![CardCode::new(ELUSIVE)]);
+}
+
+#[test]
+fn several_destinations_offer_each_revealed_enemy_free_location_connecting_or_not() {
+    // `HERE` connects to `NEXT_DOOR` only; `THERE` does not connect at all.
+    let mut here = location(HERE, "Here");
+    here.connections = vec![NEXT_DOOR];
+    let session = session(with_non_destinations(board(
+        [
+            here,
+            location(THERE, "There"),
+            location(NEXT_DOOR, "Next door"),
+        ],
+        [enemy(100)],
+    )))
+    .take(&PLAY);
+
+    assert_eq!(session.offered_at(&OptionTarget::Location(NEXT_DOOR)), 1);
+    assert_eq!(
+        session.offered_at(&OptionTarget::Location(THERE)),
+        1,
+        "a non-connecting revealed location is offered too"
+    );
+    for (ruled_out, why) in [
+        (UNREVEALED, "unrevealed"),
+        (OCCUPIED, "has an enemy"),
+        (HERE, "where you are"),
+    ] {
+        assert_eq!(
+            session.offered_at(&OptionTarget::Location(ruled_out)),
+            0,
+            "{why}: not offered"
+        );
+    }
+
+    let session = session.pick(OptionTarget::Location(THERE));
+    session.assert_at_turn_menu(INV);
+    assert_eq!(location_of(&session), Some(THERE));
+}
+
+#[test]
+fn with_no_destination_you_stay_and_the_disengaged_enemies_engage_you_again() {
+    let (a, b) = (EnemyId(100), EnemyId(101));
+    let session = session(with_non_destinations(board([], [enemy(a.0), enemy(b.0)]))).take(&PLAY);
+
+    session.assert_at_turn_menu(INV);
+    assert_eq!(
+        location_of(&session),
+        Some(HERE),
+        "nowhere to move: no move"
+    );
+    assert_no_event!(session.events(), Event::InvestigatorMoved { .. });
+    for id in [a, b] {
+        // Disengaged by the card, then re-engaged by the engagement rule once
+        // it has resolved: a ready unengaged enemy at your location engages you.
+        assert_event_sequence!(
+            session.events(),
+            Event::EnemyDisengaged { enemy, .. } if *enemy == id,
+            Event::EnemyEngaged { enemy, investigator } if *enemy == id && *investigator == INV,
+        );
+        let e = &session.state().enemies[&id];
+        assert_eq!(e.engaged_with, Some(INV), "{id:?} engages you again");
+        assert!(!e.exhausted, "{id:?} still ready");
+    }
+    assert_eq!(
+        session.state().investigators[&INV].discard,
+        vec![CardCode::new(ELUSIVE)],
+        "the card still resolved"
+    );
+}
+
+#[test]
+fn playable_with_no_engaged_enemies_and_moves_you() {
+    let session = session(board([location(THERE, "There")], []));
+    assert!(is_playable(&session));
+
+    let session = session.take(&PLAY);
+    session.assert_at_turn_menu(INV);
+    assert_eq!(location_of(&session), Some(THERE));
+    assert_no_event!(session.events(), Event::EnemyDisengaged { .. });
+}
+
+#[test]
+fn not_playable_when_it_can_neither_disengage_nor_move() {
+    // No enemy engaged with you, and nowhere Elusive could move you: the effect
+    // cannot change the game state, so the play is not offered.
+    let session = session(with_non_destinations(board([], [])));
+    assert!(
+        !is_playable(&session),
+        "Elusive must not be on the turn menu"
+    );
+}
+
+#[test]
+fn the_move_fires_leave_and_enter_timing() {
+    // Barricade 01038 at `HERE`: "Forced - When an investigator leaves attached
+    // location: Discard Barricade." The Attic 01113 as the lone destination:
+    // "Forced - After you enter the Attic: Take 1 horror."
+    let mut here = location(HERE, "Here");
+    here.attachments.push(CardInPlay::enter_play(
+        CardCode::new(BARRICADE),
+        CardInstanceId(900),
+        Owner::Investigator(INV),
+    ));
+    let mut attic = None;
+    let session = session(board([here], [enemy(100)]))
+        .edit_state(|state| {
+            let id = state.add_location(cards::by_code(ATTIC).expect("Attic 01113 in corpus"));
+            state.locations.get_mut(&id).expect("just added").revealed = true;
+            attic = Some(id);
+        })
+        .take(&PLAY);
+    let attic = attic.expect("minted");
+
+    session.assert_at_turn_menu(INV);
+    assert_eq!(location_of(&session), Some(attic));
+    assert_event_sequence!(
+        session.events(),
+        Event::CardDiscarded { code, .. } if code.as_str() == BARRICADE,
+        Event::InvestigatorMoved { to, .. } if *to == attic,
+    );
+    assert!(
+        session.state().locations[&HERE].attachments.is_empty(),
+        "Barricade discarded on leaving"
+    );
+    assert_eq!(
+        session.state().investigators[&INV].horror(),
+        1,
+        "the Attic's after-enter Forced resolved"
+    );
+}
