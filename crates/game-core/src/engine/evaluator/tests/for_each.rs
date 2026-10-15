@@ -5,6 +5,9 @@ use card_dsl::dsl::InvestigatorTargetSet;
 
 use super::*;
 
+/// A second location, away from [`HERE`].
+const HALL: LocationId = LocationId(11);
+
 /// Investigators 1, 2 and 3 seated in turn order `order`, all at [`HERE`].
 fn three_at_here(order: [u32; 3]) -> GameState {
     GameStateBuilder::new()
@@ -82,16 +85,15 @@ fn for_each_leaves_out_an_investigator_who_has_resigned() {
 /// controller stands.
 #[test]
 fn for_each_at_controller_location_walks_only_the_co_located() {
-    let elsewhere = LocationId(11);
     let mut state = three_at_here([1, 2, 3]);
     state
         .locations
-        .insert(elsewhere, test_support::test_location(elsewhere.0, "Hall"));
+        .insert(HALL, test_support::test_location(HALL.0, "Hall"));
     state
         .investigators
         .get_mut(&InvestigatorId(3))
         .expect("seated")
-        .current_location = Some(elsewhere);
+        .current_location = Some(HALL);
     let mut events = Vec::new();
 
     let outcome = run(

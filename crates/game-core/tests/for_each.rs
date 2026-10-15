@@ -12,7 +12,7 @@ use std::sync::LazyLock;
 
 use card_dsl::dsl::{self, EventPattern, EventTiming, InvestigatorTarget, InvestigatorTargetSet};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{EngineOutcome, NativeCx, Registries, TimingEvent};
+use game_core::engine::{EngineOutcome, NativeCx, Registries};
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{self, Act, CardCode, GameStateBuilder, InvestigatorId, Status};
@@ -70,7 +70,7 @@ fn an_investigator_eliminated_partway_through_the_walk_is_skipped() {
         .with_seat(seat(2))
         .with_seat(seat(3))
         .with_turn_order([FIRST, SECOND, THIRD])
-        .open_turn(FIRST)
+        .ending_enemy_phase()
         .build();
     // No builder setter stages the act deck.
     state.act_deck = vec![Act {
@@ -78,13 +78,23 @@ fn an_investigator_eliminated_partway_through_the_walk_is_skipped() {
         clue_threshold: 99,
     }];
 
-    let session = TestSession::new(state, registries()).fire_at(TimingEvent::PhaseEnded {
-        phase: state::Phase::Enemy,
-    });
+    // Settling runs step 3.4: the Enemy phase ends, and the act's forced
+    // ability walks its targets.
+    let session = TestSession::new(state, registries());
 
+    // The Upkeep phase that follows gives everyone a resource too: read only
+    // what happened before it began.
     let gainers: Vec<InvestigatorId> = session
         .events()
         .iter()
+        .take_while(|e| {
+            !matches!(
+                e,
+                Event::PhaseStarted {
+                    phase: state::Phase::Upkeep
+                }
+            )
+        })
         .filter_map(|e| match e {
             Event::ResourcesGained { investigator, .. } => Some(*investigator),
             _ => None,

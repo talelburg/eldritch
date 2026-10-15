@@ -18,7 +18,7 @@ fn start_scenario_rejects_when_roster_would_seat_zero_investigators() {
 }
 
 #[test]
-fn round_end_clears_round_scoped_skill_substitutions() {
+fn round_end_clears_round_lifetime_lasting_effects() {
     // Appendix II step 4.6: "until the end of the round" lasting effects
     // expire as the round ends — in upkeep_round_end, before `RoundEnded` is
     // emitted, not at the next Mythos step. That they expire ahead of the
