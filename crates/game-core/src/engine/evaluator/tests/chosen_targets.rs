@@ -282,6 +282,7 @@ fn damage_chosen_enemy_here_with(exhausted: Option<bool>) -> Effect {
             scope: EnemyScope {
                 at: LocationSet::Here,
                 exhausted,
+                exempt: None,
             },
         }),
         1,

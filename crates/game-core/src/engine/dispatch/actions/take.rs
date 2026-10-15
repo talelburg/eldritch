@@ -223,6 +223,7 @@ impl ActionDescription {
             Some(
                 ActionDesignator::Fight { .. }
                     | ActionDesignator::Evade { .. }
+                    | ActionDesignator::AutomaticEvade
                     | ActionDesignator::Parley
                     | ActionDesignator::Resign
             )

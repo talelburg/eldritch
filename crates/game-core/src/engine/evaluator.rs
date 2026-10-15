@@ -606,6 +606,21 @@ fn for_each_targets(
     targets: ForEachTargets,
 ) -> Vec<EachBinding> {
     match targets {
+        ForEachTargets::Enemies(EnemySet::AtYourLocation) => {
+            let Some(here) = state
+                .investigators
+                .get(&ctx.controller)
+                .and_then(|i| i.current_location)
+            else {
+                return Vec::new();
+            };
+            state
+                .enemies
+                .iter()
+                .filter(|(_, e)| e.current_location == Some(here))
+                .map(|(&id, _)| EachBinding::Enemy(id))
+                .collect()
+        }
         ForEachTargets::Investigators(set) => {
             let here = state
                 .investigators
@@ -768,8 +783,11 @@ fn perform_designated(
         // `glossary/Parley.md` in full: *"Some abilities are identified with a
         // **Parley** action designator. Such abilities are initiated using the
         // 'Activate' action."* No procedure, so nothing to perform — the
-        // ability's whole content is its residual effect.
-        ActionDesignator::Parley => EngineOutcome::Done,
+        // ability's whole content is its residual effect. Nor has an automatic
+        // evasion one (the 01076 ruling, <https://arkhamdb.com/card/01076>:
+        // *"no skill test is made for the evasion attempt whatsoever"*); its
+        // residual `AutoEvade` does the evading.
+        ActionDesignator::Parley | ActionDesignator::AutomaticEvade => EngineOutcome::Done,
         ActionDesignator::Evade {
             skill_override,
             reveal_clause,
@@ -902,13 +920,21 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
             deal_effect(cx, eval_ctx, *kind, *target, n)
         }
         Effect::DealDamageToEnemy { target, amount } => {
-            deal_damage_to_enemy_effect(cx, eval_ctx, *target, *amount)
+            deal_damage_to_enemy_effect(cx, eval_ctx, target, *amount)
         }
-        Effect::Disengage { target } => match resolve_enemy_target(eval_ctx, *target) {
+        Effect::Disengage { target } => match resolve_enemy_target(eval_ctx, target) {
             Ok(enemy) => {
                 combat::disengage_from(cx, enemy, eval_ctx.controller);
                 EngineOutcome::Done
             }
+            Err(reason) => EngineOutcome::Rejected {
+                reason: reason.into(),
+            },
+        },
+        // The shared evade exit, which queues the coordinator-owned
+        // `EnemyEvaded` (ADR 0003): returned as is, with no work after it.
+        Effect::AutoEvade { target } => match resolve_enemy_target(eval_ctx, target) {
+            Ok(enemy) => actions::evade::evade_enemy(cx, eval_ctx.controller, enemy),
             Err(reason) => EngineOutcome::Rejected {
                 reason: reason.into(),
             },
@@ -2072,7 +2098,7 @@ fn deal_effect(
 fn deal_damage_to_enemy_effect(
     cx: &mut Cx,
     eval_ctx: EvalContext,
-    target: EnemyTarget,
+    target: &EnemyTarget,
     amount: u8,
 ) -> EngineOutcome {
     if amount == 0 {
@@ -2261,10 +2287,13 @@ fn ground_chosen_targets(
     }
     | Effect::Disengage {
         target: EnemyTarget::Chosen(choose),
+    }
+    | Effect::AutoEvade {
+        target: EnemyTarget::Chosen(choose),
     } = effect
     {
         if eval_ctx.chosen_enemy().is_none() {
-            return ground_enemy_choice(cx, eval_ctx, choose.scope);
+            return ground_enemy_choice(cx, eval_ctx, &choose.scope);
         }
     }
 
@@ -2372,9 +2401,9 @@ fn ground_location_choice(
 fn ground_enemy_choice(
     cx: &mut Cx,
     eval_ctx: EvalContext,
-    scope: EnemyScope,
+    scope: &EnemyScope,
 ) -> Result<EvalContext, EngineOutcome> {
-    let candidates = combat::enemies_in_scope(cx.state, eval_ctx.controller, scope);
+    let candidates = combat::enemies_in_scope(cx.state, cx.cards, eval_ctx.controller, scope);
     let id = picked_or_reject(
         choice::resolve_grounded_choice(
             cx.state,
@@ -2593,23 +2622,25 @@ pub(crate) fn effect_can_change_state(
         }
         | Effect::AutoResolve { .. }
         | Effect::RevealChaosToken => state.current_skill_test().is_some(),
-        // Dealing damage to a chosen enemy needs an enemy to choose: with none
-        // in the scope grounding would find no candidate and reject, so the
-        // ability is provably inert. Agnes Baker 01004's *"Deal 1 damage to an
-        // enemy at your location"* is not offered with no enemy there. Scans the
-        // same candidates `ground_enemy_choice` enumerates, so the gate and
-        // the grounding agree; once an enemy is bound (re-entry within an
-        // evaluation) it is the target. Beat Cop 01018's activation keeps its
-        // own pre-cost check (`legality::check_activation_target_available`),
-        // which runs first and words the rejection.
+        // Dealing damage to, or automatically evading, a chosen enemy needs an
+        // enemy to choose: with none in the scope grounding would find no
+        // candidate and reject, so the ability is provably inert. Agnes Baker
+        // 01004's *"Deal 1 damage to an enemy at your location"* is not offered
+        // with no enemy there. Scans the candidates `ground_enemy_choice`
+        // enumerates, but before the scope's `exempt` filter, which needs the
+        // card registry this check does not hold: over-inclusive, as the
+        // conservative contract allows. Once an enemy is bound (re-entry
+        // within an evaluation) it is the target. Beat Cop 01018's and Stray
+        // Cat 01076's activations keep their own pre-cost check
+        // (`legality::check_activation_target_available`), which runs first,
+        // applies the exemption and words the rejection.
         Effect::DealDamageToEnemy {
             target: EnemyTarget::Chosen(choose),
             amount,
-        } => {
-            *amount > 0
-                && (ctx.chosen_enemy().is_some()
-                    || !combat::enemies_in_scope(state, ctx.controller, choose.scope).is_empty())
-        }
+        } => *amount > 0 && any_enemy_in_scope(state, ctx, &choose.scope),
+        Effect::AutoEvade {
+            target: EnemyTarget::Chosen(choose),
+        } => any_enemy_in_scope(state, ctx, &choose.scope),
         // Disengaging changes state iff the enemy is engaged with the
         // controller. Only the fan-out's bound enemy is provable; a `Chosen`
         // one is not grounded yet.
@@ -2641,6 +2672,14 @@ pub(crate) fn effect_can_change_state(
         // state, so meaningful abilities are never suppressed.
         _ => true,
     }
+}
+
+/// Whether a chosen-enemy effect over `scope` has an enemy to choose: the bound
+/// one, or some enemy in the scope before its exemption (see the
+/// `DealDamageToEnemy` arm of [`effect_can_change_state`]).
+fn any_enemy_in_scope(state: &GameState, ctx: EvalContext, scope: &EnemyScope) -> bool {
+    ctx.chosen_enemy().is_some()
+        || !combat::enemies_in_scope_before_exemption(state, ctx.controller, scope).is_empty()
 }
 
 /// Whether *some* investigator `target` could resolve to is an eligible target
@@ -2729,7 +2768,7 @@ fn resolve_location_target(
     }
 }
 
-fn resolve_enemy_target(ctx: EvalContext, target: EnemyTarget) -> Result<EnemyId, &'static str> {
+fn resolve_enemy_target(ctx: EvalContext, target: &EnemyTarget) -> Result<EnemyId, &'static str> {
     match target {
         EnemyTarget::Chosen(_) => ctx.chosen_enemy().ok_or(
             "EnemyTarget::Chosen resolved before target-grounding bound it \

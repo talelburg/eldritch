@@ -338,14 +338,17 @@ fn check_play_designator<'a>(
 ///   rejected here; 2+ suspends to a `PickSingle` in the evaluator); an
 ///   **Investigate** needs a revealed location, so Flashlight 01087 cannot
 ///   spend its supply with nothing to investigate.
-/// - **`DealDamageToEnemy`:** needs ≥1 enemy in the chosen scope (e.g. "at your
-///   location"). ≥1 proceeds — 2+ suspends via the `Choose` resolver — so only
-///   the empty case rejects here; this is why the effect is typed, not `Native`
-///   (Beat Cop can't pay its discard-self cost for no legal target). `amount` is
+/// - **`DealDamageToEnemy` and `AutoEvade`:** need ≥1 enemy in the chosen
+///   scope (e.g. "at your location", and for Stray Cat 01076 not an Elite one,
+///   which is why the check holds the card registry). ≥1 proceeds — 2+ suspends
+///   via the `Choose` resolver — so only the empty case rejects here; this is
+///   why the effects are typed, not `Native` (Beat Cop and Stray Cat can't pay
+///   their discard-self cost for no legal target). `amount` is
 ///   not consulted (a degenerate `amount: 0` ability — none in scope — would
 ///   still require a target here even though its handler is a no-op).
 fn check_activation_target_available(
     state: &GameState,
+    cards: &CardRegistry,
     investigator: InvestigatorId,
     designator: Option<&ActionDesignator>,
     effect: &Effect,
@@ -357,12 +360,15 @@ fn check_activation_target_available(
     if let Effect::DealDamageToEnemy {
         target: EnemyTarget::Chosen(choose),
         ..
+    }
+    | Effect::AutoEvade {
+        target: EnemyTarget::Chosen(choose),
     } = effect
     {
-        if combat::enemies_in_scope(state, investigator, choose.scope).is_empty() {
+        if combat::enemies_in_scope(state, cards, investigator, &choose.scope).is_empty() {
             return Err(
-                "ActivateAbility: a 'deal damage to an enemy at your location' ability \
-                 needs at least one enemy at your location"
+                "ActivateAbility: the ability's chosen enemy needs at least one enemy in its \
+                 scope (at your location, and not one it excludes)"
                     .into(),
             );
         }
@@ -644,7 +650,7 @@ pub(crate) fn check_activate_ability(
     reject_source_costs_without_an_instance(source, &source_code, &costs)?;
     // Before the gate: a designated ability's change-state question is this
     // check's (`initiation::performs_an_action`).
-    check_activation_target_available(state, investigator, designator.as_ref(), &effect)?;
+    check_activation_target_available(state, cards, investigator, designator.as_ref(), &effect)?;
     let candidate = ResolutionCandidate::new(
         source_code,
         investigator,
