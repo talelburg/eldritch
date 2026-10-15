@@ -94,7 +94,8 @@ use crate::scenario::{ResolutionId, ScenarioEnding};
 use crate::state::{
     AbilitySource, AdvanceTrigger, CardCode, CardInstanceId, Continuation, DamageSource,
     DifficultyBasis, EffectFrame, EmitStep, EnemyId, GameState, InvestigatorId, Lifetime,
-    LocationId, Owner, PlayFromHandFrame, RecordedModifier, SkillTestFollowUp, Status,
+    LocationId, Owner, PlayFromHandFrame, RecordedModifier, ResolvedTest, SkillTestFollowUp,
+    Status,
 };
 
 /// Margin of the just-resolved skill test, bound only while running one of its
@@ -430,6 +431,16 @@ impl EvalContext {
     /// Bind the skill-test success margin (see [`Self::succeeded_by`]).
     pub fn set_succeeded_by(&mut self, margin: u8) {
         self.skill_test = Some(SkillTestBinding::Succeeded { by: margin });
+    }
+    /// Bind a resolved test's margin for its RR ST.7 results: the success
+    /// margin on a pass, the failure margin on a failure.
+    pub fn bind_resolved(&mut self, resolved: &ResolvedTest) {
+        self.skill_test = Some(match (resolved.succeeded_by(), resolved.failed_by()) {
+            (Some(by), _) => SkillTestBinding::Succeeded { by },
+            (None, by) => SkillTestBinding::Failed {
+                by: by.unwrap_or(0),
+            },
+        });
     }
     /// Bind the discovery's clue count (see [`Self::clue_discovery_count`]).
     pub fn set_clue_discovery_count(&mut self, count: u8) {
@@ -1533,6 +1544,13 @@ fn eval_quantity(state: &GameState, eval_ctx: &EvalContext, q: Quantity) -> i8 {
             .get(&controller)
             .map_or(0, |inv| usize::from(inv.horror())),
         Quantity::EngagedEnemies => state.enemies_engaged_with(controller).count(),
+        // On the other outcome (and outside a test) the margin reads 0. That
+        // is right for every "by N or more" reader, since the clause cannot
+        // fire, but wrong for "by exactly 0" and "by N or less": Book of Verse
+        // 11005's *"If you succeed by exactly 0"* and Chemistry Set 10040's
+        // *"succeed by exactly 0"* would fire on a failure. The exact-margin
+        // cards (those two, Katana 10021, Correlate All Its Contents 11040) are
+        // all outside the core corpus; #1084 tracks reading the outcome too.
         Quantity::SkillTestFailedBy => usize::from(eval_ctx.failed_by().unwrap_or(0)),
         Quantity::SkillTestSucceededBy => usize::from(eval_ctx.succeeded_by().unwrap_or(0)),
     };

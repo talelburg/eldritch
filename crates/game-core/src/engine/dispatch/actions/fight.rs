@@ -233,16 +233,14 @@ pub(in crate::engine::dispatch) fn after_test(
     enemy_id: EnemyId,
     extra_damage: Option<&IntExpr>,
 ) -> Result<(), EngineOutcome> {
-    let (bonus, source, margin) = cx.state.current_skill_test().map_or((0, None, 0), |t| {
-        (
-            t.bonus_attack_damage,
-            t.source,
-            t.resolved.map_or(0, |r| r.margin),
-        )
+    let (bonus, source, resolved) = cx.state.current_skill_test().map_or((0, None, None), |t| {
+        (t.bonus_attack_damage, t.source, t.resolved)
     });
     let mut ctx = EvalContext::for_controller_with_optional_source(investigator, source);
     ctx.set_chosen_enemy(enemy_id);
-    ctx.set_succeeded_by(u8::try_from(margin).unwrap_or(0));
+    if let Some(resolved) = resolved {
+        ctx.bind_resolved(&resolved);
+    }
     let extra = match extra_damage {
         Some(expr) => {
             evaluator::eval_int_expr(cx.state, cx.cards, &ctx, expr).map_err(|reason| {

@@ -1404,15 +1404,12 @@ pub struct ResolvedTest {
     /// Whether the test passed: the test's determination where it has one,
     /// and `total >= difficulty` otherwise.
     pub succeeded: bool,
-    /// Failure margin (`difficulty - total`, clamped ≥ 0); `0` on success.
-    /// Read by `IntExpr::Count(Quantity::SkillTestFailedBy)` in an `on_fail`
-    /// effect (Grasping Hands 01162, Rotting Remains 01163).
-    pub failed_by: u8,
-    /// Success margin (`total - difficulty`, ≥ 0 on success); supplied to the
-    /// logged [`SkillTestSucceeded`](crate::event::Event::SkillTestSucceeded) at the
-    /// `DetermineOutcome` step, and read back at ST.7 as a passed test's
-    /// `IntExpr::Count(Quantity::SkillTestSucceededBy)` (Switchblade 01044).
-    /// Negative on failure (unused there).
+    /// The signed margin `total - difficulty`: ≥ 0 on success, ≤ 0 on failure.
+    /// Supplied to the logged
+    /// [`SkillTestSucceeded`](crate::event::Event::SkillTestSucceeded) at the
+    /// `DetermineOutcome` step; read back at ST.7 through
+    /// [`succeeded_by`](Self::succeeded_by) and [`failed_by`](Self::failed_by),
+    /// which split it by outcome.
     ///
     /// Reading it back is not a stale snapshot: "succeed by" is the ST.6
     /// comparison's own result, fixed once the verdict is, and the ST.5 sum it
@@ -1431,6 +1428,25 @@ pub struct ResolvedTest {
     /// re-reads it rather than this field. ADR 0007
     /// retired a stored token resolution for the same reason.
     pub total: i8,
+}
+
+impl ResolvedTest {
+    /// Points the test was failed by (`difficulty - total`, ≥ 0), or `None` if
+    /// it succeeded. Read by `IntExpr::Count(Quantity::SkillTestFailedBy)` in an
+    /// `on_fail` effect (Grasping Hands 01162, Rotting Remains 01163).
+    #[must_use]
+    pub fn failed_by(&self) -> Option<u8> {
+        (!self.succeeded).then(|| u8::try_from(-i16::from(self.margin)).unwrap_or(0))
+    }
+
+    /// Points the test was succeeded by (`total - difficulty`, ≥ 0), or `None`
+    /// if it failed. Read by `IntExpr::Count(Quantity::SkillTestSucceededBy)`
+    /// (Switchblade 01044).
+    #[must_use]
+    pub fn succeeded_by(&self) -> Option<u8> {
+        self.succeeded
+            .then(|| u8::try_from(self.margin).unwrap_or(0))
+    }
 }
 
 /// Where the skill-test resolution driver should resume on the next
@@ -1464,7 +1480,7 @@ pub struct ResolvedTest {
 /// triggering condition's impact has resolved" clause: the reaction
 /// fires between steps 2 and 3, not after the entire action ends.
 ///
-/// The test outcome (`succeeded`/`failed_by`/`margin`/`fail_reason`) is
+/// The test outcome (`succeeded`/`margin`/`fail_reason`) is
 /// determined once at [`DetermineOutcome`](Self::DetermineOutcome) (ST.5–ST.6)
 /// and stored on [`InFlightSkillTest::resolved`]; every subsequent step reads it
 /// from there rather than carrying it in the cursor. `resolved.is_some()` is the
@@ -1639,7 +1655,7 @@ pub enum SkillTestStep {
     /// the list, advances to [`PostRetaliate`](Self::PostRetaliate). Replaces
     /// the former single-shot `PostFollowUp` step. (Slice D #423.)
     ///
-    /// The test outcome (`succeeded`/`failed_by`) is read off
+    /// The test outcome (`succeeded`/`margin`) is read off
     /// [`InFlightSkillTest::resolved`] rather than carried in the cursor — `next`
     /// is the only step-specific state this variant needs.
     ///

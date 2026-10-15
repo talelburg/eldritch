@@ -916,21 +916,16 @@ fn determine_outcome_step(
         Some(Determination::AutomaticSuccess) => (true, FailureReason::Total),
         None => (margin >= 0, FailureReason::Total),
     };
-    let failed_by = if succeeded {
-        0
-    } else {
-        u8::try_from(difficulty.saturating_sub(total)).unwrap_or(0)
+    let resolved_test = ResolvedTest {
+        succeeded,
+        margin,
+        fail_reason,
+        total,
     };
     cx.state
         .current_skill_test_mut()
         .expect("the SkillTest frame was present immediately above")
-        .resolved = Some(ResolvedTest {
-        succeeded,
-        failed_by,
-        margin,
-        fail_reason,
-        total,
-    });
+        .resolved = Some(resolved_test);
 
     // ST.6 logged events — emitted here, so they follow the ST.4 immediate
     // symbol effects in the event log.
@@ -945,10 +940,10 @@ fn determine_outcome_step(
             investigator,
             skill,
             reason: fail_reason,
-            // `failed_by` is a non-negative margin stored as `u8`; the event
-            // field is `i8`. Realistic margins are tiny, so the conversion
-            // never saturates.
-            by: i8::try_from(failed_by).unwrap_or(i8::MAX),
+            // `failed_by` is a non-negative margin as a `u8`; the event field
+            // is `i8`. Realistic margins are tiny, so the conversion never
+            // saturates.
+            by: i8::try_from(resolved_test.failed_by().unwrap_or(0)).unwrap_or(i8::MAX),
         });
     }
     cx.state
@@ -978,12 +973,7 @@ fn determine_outcome_step(
 /// suspending effect resumes past this step. The push (if any) makes an Effect
 /// frame the new top → the `advance` loop yields to drive it.
 fn apply_result_effect_step(cx: &mut Cx, investigator: InvestigatorId) {
-    let ResolvedTest {
-        succeeded,
-        failed_by,
-        margin,
-        ..
-    } = resolved(cx);
+    let resolved_test = resolved(cx);
     let (on_success, on_fail, source) = {
         let t = cx
             .state
@@ -1000,18 +990,17 @@ fn apply_result_effect_step(cx: &mut Cx, investigator: InvestigatorId) {
     // branch keeps the anchor the activation gave it (#834).
     let card_ctx =
         |inv: InvestigatorId| EvalContext::for_controller_with_optional_source(inv, source);
-    if succeeded {
-        if let Some(effect) = &on_success {
-            // The success margin, for `Quantity::SkillTestSucceededBy`.
-            let mut ctx = card_ctx(investigator);
-            ctx.set_succeeded_by(u8::try_from(margin).unwrap_or(0));
-            evaluator::push_effect(cx, effect, ctx);
-        }
-    } else if let Some(effect) = &on_fail {
-        // Thread the failure margin so `IntExpr::Count(Quantity::SkillTestFailedBy)`
-        // (Grasping Hands 01162, Rotting Remains 01163) can scale.
+    // The margin is bound either way: `Quantity::SkillTestSucceededBy` on a
+    // pass, `Quantity::SkillTestFailedBy` on a failure (Grasping Hands 01162,
+    // Rotting Remains 01163 scale by it).
+    let effect = if resolved_test.succeeded {
+        &on_success
+    } else {
+        &on_fail
+    };
+    if let Some(effect) = effect {
         let mut ctx = card_ctx(investigator);
-        ctx.set_failed_by(failed_by);
+        ctx.bind_resolved(&resolved_test);
         evaluator::push_effect(cx, effect, ctx);
     }
 }
@@ -1037,12 +1026,7 @@ fn apply_result_effect_step(cx: &mut Cx, investigator: InvestigatorId) {
 /// a suspending effect (a sanity-soak on an `Effect::Deal`) resumes past this
 /// step. The fixed position after the card result is #642's divergence.
 fn apply_token_result_step(cx: &mut Cx, investigator: InvestigatorId) {
-    let ResolvedTest {
-        succeeded,
-        failed_by,
-        margin,
-        ..
-    } = resolved(cx);
+    let resolved_test = resolved(cx);
     let token = cx
         .state
         .current_skill_test()
@@ -1060,13 +1044,13 @@ fn apply_token_result_step(cx: &mut Cx, investigator: InvestigatorId) {
     let Some(outcome) = outcome else {
         return;
     };
-    if succeeded {
-        if let Some(effect) = &outcome.on_success {
-            ctx.set_succeeded_by(u8::try_from(margin).unwrap_or(0));
-            evaluator::push_effect(cx, effect, ctx);
-        }
-    } else if let Some(effect) = &outcome.on_fail {
-        ctx.set_failed_by(failed_by);
+    let effect = if resolved_test.succeeded {
+        &outcome.on_success
+    } else {
+        &outcome.on_fail
+    };
+    if let Some(effect) = effect {
+        ctx.bind_resolved(&resolved_test);
         evaluator::push_effect(cx, effect, ctx);
     }
 }
@@ -1089,13 +1073,8 @@ fn fire_on_resolution_step(
     committed: &[CommittedCard],
     next: u32,
 ) {
-    let ResolvedTest {
-        succeeded,
-        failed_by,
-        margin,
-        ..
-    } = resolved(cx);
-    let effects = collect_on_skill_test_resolution(cx.cards, committed, succeeded);
+    let resolved_test = resolved(cx);
+    let effects = collect_on_skill_test_resolution(cx.cards, committed, resolved_test.succeeded);
     let idx = next as usize;
     if let Some((card_index, effect)) = effects.get(idx) {
         cx.state
@@ -1106,11 +1085,7 @@ fn fire_on_resolution_step(
         };
         let mut ctx = EvalContext::for_controller(investigator);
         ctx.set_committed_card(*card_index);
-        if succeeded {
-            ctx.set_succeeded_by(u8::try_from(margin).unwrap_or(0));
-        } else {
-            ctx.set_failed_by(failed_by);
-        }
+        ctx.bind_resolved(&resolved_test);
         evaluator::push_effect(cx, effect, ctx);
     } else {
         cx.state
