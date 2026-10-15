@@ -72,6 +72,9 @@ pub(super) mod skill_test;
 // pub(super): slot-capacity table + deficit math for asset slot enforcement (#498).
 pub(super) mod slots;
 pub(crate) mod threat_area;
+// pub(super): `NativeCx::move_horror` (The Necronomicon 01009's effect)
+// forwards to it, and engine/mod.rs re-exports `MoveHorrorError`.
+pub(super) mod tokens;
 // pub(super): `NativeCx::spend_uses` and `NativeCx::move_uses_to_resource_pool`
 // (Forbidden Knowledge 01058's effect, #1050) forward to it, and engine/mod.rs
 // re-exports `SpendUsesError` and `MoveUsesError`.

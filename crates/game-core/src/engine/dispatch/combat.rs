@@ -289,7 +289,7 @@ fn defeat_overflowed_assets(cx: &mut Cx, investigator: InvestigatorId) {
 /// Whether `card` is an **asset** whose accumulated damage or horror has
 /// reached its printed health or sanity. `false` for a card whose metadata
 /// can't be resolved, a non-asset, and a stat the asset does not print.
-pub(in crate::engine) fn asset_overflowed(reg: &CardRegistry, card: &CardInPlay) -> bool {
+pub(super) fn asset_overflowed(reg: &CardRegistry, card: &CardInPlay) -> bool {
     let Some(meta) = (reg.metadata_for)(&card.code) else {
         return false;
     };
@@ -303,7 +303,7 @@ pub(in crate::engine) fn asset_overflowed(reg: &CardRegistry, card: &CardInPlay)
 
 /// Defeat the asset instance `inst`: it leaves play through
 /// [`board::discard_from_play`] to its owner's discard pile.
-pub(in crate::engine) fn defeat_asset(cx: &mut Cx, inst: CardInstanceId) {
+pub(super) fn defeat_asset(cx: &mut Cx, inst: CardInstanceId) {
     // RR p.7: a defeated asset goes to its owner's discard pile.
     //
     // The rules do not settle a defeated asset that cannot leave play.
@@ -490,7 +490,7 @@ pub(super) fn apply_horror_numeric(cx: &mut Cx, investigator: InvestigatorId, am
 /// [`Status::Active`]: one already out of the game is not defeated again.
 /// Defeat application is the caller's, through
 /// [`super::elimination::apply_investigator_elimination`].
-pub(in crate::engine) fn sanity_reached(inv: &Investigator, cards: &CardRegistry) -> bool {
+pub(super) fn sanity_reached(inv: &Investigator, cards: &CardRegistry) -> bool {
     inv.status == Status::Active && inv.horror() >= inv.max_sanity(cards)
 }
 

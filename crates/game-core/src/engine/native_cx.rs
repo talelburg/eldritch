@@ -5,10 +5,9 @@ use card_dsl::card_data::CardMetadata;
 use card_dsl::dsl::Restriction;
 
 use crate::card_registry::CardRegistry;
-use crate::engine::board::{
-    self, LeavingCard, MoveHorrorError, MoveResourcesError, NotLeft, Placement,
-};
+use crate::engine::board::{self, LeavingCard, MoveResourcesError, NotLeft, Placement};
 use crate::engine::dispatch::actions::{r#move, take};
+use crate::engine::dispatch::tokens::{self, MoveHorrorError};
 use crate::engine::dispatch::{
     act_agenda, cards, combat, elimination, encounter, hunters, placement, reveal, set_aside,
     skill_test, threat_area,
@@ -347,7 +346,7 @@ impl<'a> NativeCx<'a> {
         to: CardInstanceId,
         amount: u8,
     ) -> Result<(), MoveHorrorError> {
-        board::move_horror(self.write_access(), from, to, amount)
+        tokens::move_horror(self.write_access(), from, to, amount)
     }
 
     // --- Leaving play ---
