@@ -28,7 +28,7 @@ pub const CODE: &str = "01008";
 pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
 /// The bag's one printed ability: *"You have 2 additional hand slots, which
-/// can only be used to hold [[Tome]] assets."*
+/// can only be used to hold \[\[Tome\]\] assets."*
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![dsl::constant(Effect::AdditionalSlots {

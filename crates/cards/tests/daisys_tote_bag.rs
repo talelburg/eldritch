@@ -1,5 +1,5 @@
 //! Daisy's Tote Bag 01008 against the real corpus: *"You have 2 additional
-//! hand slots, which can only be used to hold [[Tome]] assets."* Plus the
+//! hand slots, which can only be used to hold \[\[Tome\]\] assets."* Plus the
 //! threat-area half of `glossary/Slots.md`: *"Each asset in an investigator's
 //! play area or threat area with a slot symbol is held in a slot of that
 //! type."*

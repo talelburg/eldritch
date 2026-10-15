@@ -74,7 +74,7 @@ struct SlotClaim {
 /// The [`Effect::AdditionalSlots`] grants on the cards `investigator`
 /// controls — their investigator card, play area and threat area, through
 /// [`abilities_in_effect::constants_of`]. Daisy's Tote Bag 01008: *"You have 2
-/// additional hand slots, which can only be used to hold [[Tome]] assets."*
+/// additional hand slots, which can only be used to hold \[\[Tome\]\] assets."*
 ///
 /// An investigator's slot capacity is [`default_slot_capacity`] for each type
 /// plus these pools. **A layout is checked by counting** ([`shortfall`]): it
@@ -403,8 +403,7 @@ pub(super) fn resume_slot_discard(cx: &mut Cx, response: &InputResponse) -> Engi
         };
     };
     let deficit = slot_deficit(cx.state, cx.cards, investigator, &card.code);
-    let candidates =
-        make_room_candidates(cx.state, cx.cards, investigator, &card.code, &deficit);
+    let candidates = make_room_candidates(cx.state, cx.cards, investigator, &card.code, &deficit);
     let Some(&(inst, _)) = candidates.get(*i as usize) else {
         return EngineOutcome::Rejected {
             reason: format!(

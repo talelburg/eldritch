@@ -2179,7 +2179,7 @@ pub enum Effect {
     },
     /// **Additional slots for as long as the source card is in play**:
     /// Daisy's Tote Bag 01008's *"You have 2 additional hand slots, which can
-    /// only be used to hold [[Tome]] assets."* A constant marker like
+    /// only be used to hold \[\[Tome\]\] assets."* A constant marker like
     /// [`AdditionalActionWhileInPlay`](Self::AdditionalActionWhileInPlay),
     /// under a [`Trigger::Constant`]: **inspected, not executed** — the engine
     /// reads it off the investigator's cards each time it works out their slot
