@@ -38,14 +38,20 @@
 //! reveal reads the auto-fail, so Daisy's own `[elder_sign]` ability never
 //! initiates while this is in play.
 //!
-//! # Module gap
-//!
-//! Still missing, with its own ticket under #779: the `[action]` that moves 1
-//! horror to Daisy Walker and discards the card once it is empty (#1095).
-//! Until it lands, the card's 3 horror never moves, so it stays in play for the
-//! rest of the game.
+//! *"[action]: Move 1 horror from The Necronomicon to Daisy Walker. Then, if
+//! The Necronomicon has no horror on it, discard it."* is a native on
+//! [`NativeCx::move_horror`]: a move, not a deal, so nothing keyed on harm
+//! fires. The ruling (<https://arkhamdb.com/card/01009>): *"Moving damage or
+//! horror is different from 'dealing' or 'taking' damage or horror, so does
+//! not trigger effects or allow the player controlling Daisy Walker to
+//! reassign the horror."* Daisy is the investigator whose threat area holds
+//! it, the card's only bearer (it is her signature weakness). It is a Tome
+//! `[action]` ability, so her Tome-only additional action can pay for it.
 
 use card_dsl::dsl::{self, Ability, ChaosSymbol, CmpOp, Condition, Quantity, Restriction};
+use game_core::engine::board::{self, NotLeft};
+use game_core::engine::evaluator::EvalContext;
+use game_core::engine::{EngineOutcome, NativeCx};
 
 use crate::impls::CardRecord;
 
@@ -53,7 +59,11 @@ use crate::impls::CardRecord;
 pub const CODE: &str = "01009";
 
 /// This card's registration, listed in [`ALL`](super::ALL).
-pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
+pub const CARD: CardRecord =
+    CardRecord::new(CODE, abilities).effects(&[(MOVE_HORROR_TAG, move_horror_to_daisy)]);
+
+/// Native tag: move 1 horror to Daisy, then discard the card if it is empty.
+const MOVE_HORROR_TAG: &str = "01009:move-horror";
 
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
@@ -70,5 +80,45 @@ pub fn abilities() -> Vec<Ability> {
             ChaosSymbol::ElderSign,
             ChaosSymbol::AutoFail,
         )),
+        dsl::activated(1, vec![], dsl::native(MOVE_HORROR_TAG)),
     ]
+}
+
+/// *"Move 1 horror from The Necronomicon to Daisy Walker. Then, if The
+/// Necronomicon has no horror on it, discard it."*
+///
+/// A move that defeats Daisy eliminates her, which removes this card from the
+/// game, so there is nothing left to discard.
+fn move_horror_to_daisy(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
+    let Some(source) = ctx.source_instance() else {
+        return EngineOutcome::Rejected {
+            reason: "the_necronomicon: no source instance".into(),
+        };
+    };
+    // Daisy is the investigator whose threat area holds it.
+    let Some(daisy) = board::find_instance(cx.state(), source)
+        .and_then(|(_, placement)| placement.investigator())
+        .and_then(|bearer| cx.state().investigators.get(&bearer))
+        .map(|inv| inv.investigator_card.instance_id)
+    else {
+        return EngineOutcome::Done;
+    };
+    if let Err(err) = cx.move_horror(source, daisy, 1) {
+        return EngineOutcome::Rejected {
+            reason: format!("the_necronomicon: moving horror failed: {err:?}").into(),
+        };
+    }
+    let empty = board::find_instance(cx.state(), source)
+        .is_some_and(|(card, _)| card.accumulated_horror == 0);
+    if empty {
+        match cx.discard_from_play(source) {
+            Ok(_) | Err(NotLeft::NotInPlay) => {}
+            Err(NotLeft::Refused) => {
+                return EngineOutcome::Rejected {
+                    reason: "the_necronomicon: refused to leave play with no horror".into(),
+                };
+            }
+        }
+    }
+    EngineOutcome::Done
 }

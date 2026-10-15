@@ -462,6 +462,89 @@ pub(super) fn apply_horror_numeric(cx: &mut Cx, investigator: InvestigatorId, am
     lethal
 }
 
+/// Why [`NativeCx::move_horror`](crate::engine::NativeCx::move_horror) moved
+/// nothing. In every case nothing changed and no event was emitted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MoveHorrorError {
+    /// The source or the destination instance is not on the board.
+    NotInPlay,
+    /// The destination has no sanity value. The official FAQ: *"An effect
+    /// that can “move” damage/horror from one card to another—such as Wrong
+    /// Place, Right Time ([fhvp] 115)—must move that damage/horror to a card
+    /// that has a health or sanity value, respectively."*
+    NoSanity,
+}
+
+/// Move up to `amount` horror from the card instance `from` onto the card
+/// instance `to`, wherever each sits on the board (the
+/// [`board::find_instance`] walk), and emit [`Event::HorrorMoved`] with the
+/// number moved. A source with no horror moves none, which changes nothing and
+/// announces nothing.
+///
+/// A move, not a deal: no [`Event::HorrorTaken`] and no
+/// [`TimingEvent::DamagePlaced`] window, so nothing keyed on harm sees it
+/// (ADR 0009; the 01009 ruling, *"Moving damage or horror is different from
+/// 'dealing' or 'taking' damage or horror, so does not trigger effects"*).
+///
+/// The destination is defeated as horror placed any other way would defeat it
+/// (`glossary/Sanity_and_Horror.md`): an investigator card reaching its
+/// sanity is *"defeated"* and eliminated with [`EliminationCause::Horror`],
+/// and an asset reaching its sanity *"is defeated and placed on its owner's
+/// discard pile"*. The Necronomicon 01009, the one corpus caller, only ever
+/// moves onto Daisy Walker's investigator card; the asset branch is the rule
+/// for a general exit, not a card's need.
+pub(crate) fn move_horror(
+    cx: &mut Cx,
+    from: CardInstanceId,
+    to: CardInstanceId,
+    amount: u8,
+) -> Result<(), MoveHorrorError> {
+    let (source, _) = board::find_instance(cx.state, from).ok_or(MoveHorrorError::NotInPlay)?;
+    let available = source.accumulated_horror;
+    let (dest, placement) =
+        board::find_instance(cx.state, to).ok_or(MoveHorrorError::NotInPlay)?;
+    let sanity = match placement {
+        board::Placement::InvestigatorCard(id) => {
+            Some(cx.state.investigators[&id].max_sanity(cx.cards))
+        }
+        _ => match (cx.cards.metadata_for)(&dest.code).map(|meta| &meta.kind) {
+            Some(CardKind::Asset { sanity, .. }) => *sanity,
+            _ => None,
+        },
+    }
+    .ok_or(MoveHorrorError::NoSanity)?;
+
+    let moved = amount.min(available);
+    if moved == 0 {
+        return Ok(());
+    }
+    let (source, _) = board::find_instance_mut(cx.state, from).expect("source checked at entry");
+    source.accumulated_horror -= moved;
+    let (dest, _) = board::find_instance_mut(cx.state, to).expect("destination checked at entry");
+    dest.accumulated_horror = dest.accumulated_horror.saturating_add(moved);
+    let defeated = dest.accumulated_horror >= sanity;
+    cx.events.push(Event::HorrorMoved {
+        from,
+        to,
+        amount: moved,
+    });
+
+    if defeated {
+        if let board::Placement::InvestigatorCard(id) = placement {
+            elimination::apply_investigator_elimination(cx, id, EliminationCause::Horror);
+        } else {
+            // An asset that cannot leave play stays, defeated, where it is
+            // (`glossary/Cannot.md`), as in `defeat_overflowed_assets`.
+            let left = board::discard_from_play(cx, to);
+            debug_assert!(
+                left != Err(NotLeft::NotInPlay),
+                "move_horror: the defeated asset {to:?} is in play",
+            );
+        }
+    }
+    Ok(())
+}
+
 /// Begin one deal of `damage` + `horror` to `investigator`: push the
 /// [`Continuation::DealDamage`] frame at its first step and return `Done`, which
 /// hands the `drive` loop a frame it dispatches on sight.
