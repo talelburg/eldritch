@@ -38,7 +38,7 @@ pub use dispatch::tokens::MoveHorrorError;
 pub use dispatch::uses::{MoveUsesError, SpendUsesError};
 // `pub(crate)`: `test_support`'s session deals damage outside any attack.
 pub(crate) use dispatch::combat::deal_harm;
-pub use enumerate::{legal_actions, TurnAction};
+pub use enumerate::{legal_actions, PlaySource, TurnAction};
 pub use evaluator::{location_id_by_code, EvalContext};
 pub use modified_value::{
     modified_value, Contribution, ContributionSource, ModifiedQuantity, ModifierBreakdown,

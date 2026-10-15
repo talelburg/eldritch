@@ -23,7 +23,7 @@
 //! Runs against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
-use game_core::engine::enumerate::TurnAction;
+use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::state::{Agenda, CardCode, EnemyId, GameStateBuilder, InvestigatorId, LocationId};
 use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
@@ -76,7 +76,7 @@ fn board(investigator: Seat) -> TestSession {
 
 const PLAY_FIRST: TurnAction = TurnAction::PlayCard {
     investigator: INV,
-    hand_index: 0,
+    source: PlaySource::Hand(0),
 };
 
 fn heirloom(session: &TestSession, holder: InvestigatorId) -> OptionTarget {

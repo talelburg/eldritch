@@ -28,7 +28,7 @@
 
 use cards::TEST_REGISTRIES;
 use game_core::assert_no_event;
-use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::enumerate::{self, PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{CardCode, Enemy, GameStateBuilder, InvestigatorId, LocationId, Status};
@@ -49,7 +49,7 @@ const HERE: LocationId = LocationId(101);
 /// Play the first card in hand.
 const PLAY_FIRST: TurnAction = TurnAction::PlayCard {
     investigator: INV,
-    hand_index: 0,
+    source: PlaySource::Hand(0),
 };
 
 /// A ready enemy dealing `damage` / 0 horror, with `max_health`. Engage it

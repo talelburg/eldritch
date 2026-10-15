@@ -67,7 +67,7 @@ fn target_maps_each_variant() {
     assert_eq!(
         TurnAction::PlayCard {
             investigator: inv,
-            hand_index: 2
+            source: PlaySource::Hand(2)
         }
         .target(&state),
         Some(OptionTarget::HandCard {

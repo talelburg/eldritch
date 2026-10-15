@@ -13,7 +13,7 @@
 
 use card_dsl::card_data::CardKind;
 use cards::TEST_REGISTRIES;
-use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::enumerate::{self, PlaySource, TurnAction};
 use game_core::engine::{self, EngineOutcome, OptionTarget};
 use game_core::state::{
     AbilityAddress, AbilitySource, Agenda, CardCode, CardInstanceId, Enemy, GameState,
@@ -38,7 +38,7 @@ const HERE: LocationId = LocationId(10);
 const RESOURCE: TurnAction = TurnAction::Resource { investigator: INV };
 const PLAY: TurnAction = TurnAction::PlayCard {
     investigator: INV,
-    hand_index: 0,
+    source: PlaySource::Hand(0),
 };
 
 /// An investigator at `HERE` with Leo in play.

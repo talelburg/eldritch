@@ -51,7 +51,7 @@
 
 use card_dsl::dsl::UsagePeriod;
 use cards::TEST_REGISTRIES;
-use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::enumerate::{self, PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
@@ -461,7 +461,7 @@ fn lita_leaving_play_while_controlled_is_removed_from_the_game() {
     let result = controlled
         .take(&TurnAction::PlayCard {
             investigator: INV,
-            hand_index,
+            source: PlaySource::Hand(hand_index),
         })
         .finish();
 

@@ -13,7 +13,7 @@
 use cards::TEST_REGISTRIES;
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::assert_event;
-use game_core::engine::enumerate::TurnAction;
+use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::{OptionId, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId};
@@ -45,7 +45,7 @@ fn board(deck: &[&str]) -> TestSession {
 fn play(session: TestSession) -> TestSession {
     session.take(&TurnAction::PlayCard {
         investigator: INV,
-        hand_index: 0,
+        source: PlaySource::Hand(0),
     })
 }
 

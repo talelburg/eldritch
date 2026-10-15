@@ -15,7 +15,7 @@ const CARD: &str = "01059";
 fn play(hand_index: u8) -> TurnAction {
     TurnAction::PlayCard {
         investigator: INV,
-        hand_index,
+        source: PlaySource::Hand(hand_index),
     }
 }
 

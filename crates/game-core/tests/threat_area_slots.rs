@@ -17,7 +17,7 @@
 use std::sync::LazyLock;
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Slot};
-use game_core::engine::enumerate::TurnAction;
+use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::{OptionTarget, Registries};
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId};
@@ -90,7 +90,7 @@ fn torch_into_full_hands() -> TestSession {
         .session();
     session.take(&TurnAction::PlayCard {
         investigator: INV,
-        hand_index: 0,
+        source: PlaySource::Hand(0),
     })
 }
 

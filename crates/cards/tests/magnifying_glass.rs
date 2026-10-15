@@ -8,7 +8,7 @@
 
 use cards::TEST_REGISTRIES;
 use game_core::assert_event;
-use game_core::engine::enumerate::TurnAction;
+use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
@@ -23,7 +23,7 @@ const HERE: LocationId = LocationId(101);
 
 const PLAY_MAGNIFYING_GLASS: TurnAction = TurnAction::PlayCard {
     investigator: INV,
-    hand_index: 0,
+    source: PlaySource::Hand(0),
 };
 
 /// A session at the controller's turn menu, with Magnifying Glass in hand,

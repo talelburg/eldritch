@@ -19,7 +19,7 @@
 //! >   effect makes you discard your whole hand.
 
 use cards::TEST_REGISTRIES;
-use game_core::engine::enumerate::TurnAction;
+use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::{InputKind, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{Agenda, CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId};
@@ -75,7 +75,7 @@ fn turn_to_play_it(doom: u8) -> TestSession {
 
 const PLAY_IT: TurnAction = TurnAction::PlayCard {
     investigator: INV,
-    hand_index: 0,
+    source: PlaySource::Hand(0),
 };
 
 #[test]
