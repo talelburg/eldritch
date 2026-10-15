@@ -68,7 +68,7 @@ pub(crate) fn queue_forced_triggers(
     // The one firing path (#964): the lone hit resolves, binds from `event`
     // and records its use exactly as it would had a sibling triggered alongside
     // it and sent both to the lead's ordered run.
-    let effect = match initiation::initiate(cx, hit, event) {
+    let effect = match initiation::initiate(cx, hit, event, initiation::InitiationKind::Forced) {
         Ok(effect) => effect,
         Err(refusal) => {
             return EngineOutcome::Rejected {

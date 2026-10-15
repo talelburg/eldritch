@@ -1,11 +1,13 @@
 //! The Evade basic action, its candidates, the evade perform entry and its
 //! after-test step: an Agility test against an enemy engaged with the
-//! investigator, which on success disengages and exhausts it.
+//! investigator, which on success evades it — and [`evade_enemy`], the one
+//! evade exit every way of evading reaches.
 
 use card_dsl::dsl::{Effect, RevealClause, SkillTestKind};
 
 use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
-use crate::engine::dispatch::skill_test;
+use crate::engine::dispatch::emit::{self, TimingEvent};
+use crate::engine::dispatch::{combat, skill_test};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::event::Event;
@@ -151,30 +153,89 @@ pub(crate) fn perform(
     )
 }
 
-/// An evade's after-test step (RR ST.7), run on success only: disengage
-/// `enemy_id` from `investigator` and exhaust it. `glossary/Evade_Action.md`:
-/// *"Any time an enemy is evaded (whether by an evade action, or by card
-/// ability), the enemy is exhausted (if it was ready) and the engagement is
-/// broken."*
+/// An evade's after-test step (RR ST.7), run on success only: the
+/// investigator evades the enemy ([`evade_enemy`]).
 ///
 /// The enemy is still in play: one that left play before ST.6 abandons the
 /// test, so a missing enemy here is a state-corruption invariant violation.
+///
+/// The evasion is emitted in tail position and resolves on the coordinator
+/// above the test's frame, whose cursor is already past this step, so the test
+/// resumes at its result effect (Blinding Light 01066's *"If you succeed, deal
+/// 1 damage to the enemy just evaded"*) once the evasion and every ability it
+/// queued have resolved.
 pub(in crate::engine::dispatch) fn after_test(
     cx: &mut Cx,
     investigator: InvestigatorId,
     enemy_id: EnemyId,
 ) {
-    let enemy = cx.state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
-        unreachable!(
-            "Evade follow-up: enemy {enemy_id:?} vanished while test was in flight; \
-             this is a state-corruption invariant violation"
-        )
-    });
-    enemy.engaged_with = None;
-    enemy.exhausted = true;
-    cx.events.push(Event::EnemyDisengaged {
+    assert!(
+        cx.state.enemies.contains_key(&enemy_id),
+        "Evade follow-up: enemy {enemy_id:?} vanished while test was in flight; \
+         this is a state-corruption invariant violation"
+    );
+    // The test's step loop owns the suspension channel: it yields to the
+    // coordinator this pushes, as it does to the Investigate follow-up's
+    // discovery, and `queue_event` itself never suspends.
+    let _ = evade_enemy(cx, investigator, enemy_id);
+}
+
+/// **`investigator` evades `enemy_id`**: the one evade exit, which every way
+/// of evading reaches — the Evade action's and a designated **Evade**'s success
+/// ([`after_test`]), and an automatic evade (#780). Pickpocketing 01046's
+/// ruling is why it is one exit rather than the Evade action's own step
+/// (<https://arkhamdb.com/card/01046>): *"the auto-evade effect from Breaking
+/// and Entering can trigger the reaction on Pickpocketing (0)"*.
+///
+/// Emits [`TimingEvent::EnemyEvaded`], whose resolve step is the evasion
+/// itself ([`resolve_evasion`]), so a `when` ability resolves before the
+/// enemy is evaded and an `after` one (Pickpocketing) once it has. **Queues;
+/// does not resolve** (ADR 0003): a caller with work after the evasion puts it
+/// on a frame beneath this one.
+pub(crate) fn evade_enemy(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    enemy_id: EnemyId,
+) -> EngineOutcome {
+    emit::queue_event(
+        cx,
+        &TimingEvent::EnemyEvaded {
+            investigator,
+            enemy: enemy_id,
+        },
+    )
+}
+
+/// The evasion's own impact, the resolve step of [`TimingEvent::EnemyEvaded`]:
+/// log it, break the engagement and exhaust the enemy.
+/// `glossary/Evade_Action.md`: *"Any time an enemy is evaded (whether by an
+/// evade action, or by card ability), the enemy is exhausted (if it was ready)
+/// and the engagement is broken."* So an already-exhausted enemy logs no
+/// second exhaust, and an unengaged one (an automatic evade, #780) no
+/// disengage.
+///
+/// An enemy a `when` ability took out of play has nothing left to evade, and
+/// the step does nothing.
+pub(in crate::engine::dispatch) fn resolve_evasion(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    enemy_id: EnemyId,
+) {
+    if !cx.state.enemies.contains_key(&enemy_id) {
+        return;
+    }
+    cx.events.push(Event::EnemyEvaded {
         enemy: enemy_id,
         investigator,
     });
-    cx.events.push(Event::EnemyExhausted { enemy: enemy_id });
+    combat::disengage(cx, enemy_id);
+    let enemy = cx
+        .state
+        .enemies
+        .get_mut(&enemy_id)
+        .expect("presence checked immediately above");
+    if !enemy.exhausted {
+        enemy.exhausted = true;
+        cx.events.push(Event::EnemyExhausted { enemy: enemy_id });
+    }
 }

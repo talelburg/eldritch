@@ -698,10 +698,16 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
         .remove(pending_idx);
 
     // The one firing path a lone forced hit shares (#964): resolve, bind from
-    // the window's timing event, record the use, push. The window frame beneath
-    // stays with its remaining candidates, and `advance_resolution`
-    // re-dispatches it once the effect (and any nested skill test) pops.
-    if let Err(refusal) = initiation::initiate(cx, &trigger, &event) {
+    // the window's timing event, record the use, pay a reaction's costs, push.
+    // The window frame beneath stays with its remaining candidates, and
+    // `advance_resolution` re-dispatches it once the effect (and any nested
+    // skill test) pops. The gate above has just confirmed the costs payable.
+    let kind = if forced {
+        InitiationKind::Forced
+    } else {
+        InitiationKind::Reaction
+    };
+    if let Err(refusal) = initiation::initiate(cx, &trigger, &event, kind) {
         unreachable!(
             "fire_pending_trigger: {code} resolved at {address:?} above and nothing has changed \
              since, yet initiate refused it ({refusal:?})",

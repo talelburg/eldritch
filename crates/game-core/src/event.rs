@@ -296,6 +296,16 @@ pub enum Event {
         /// Destination location.
         to: LocationId,
     },
+    /// An investigator evaded an enemy — by an Evade action, a designated
+    /// **Evade**, or an automatic evade. Logged as the evasion resolves,
+    /// before the [`EnemyDisengaged`](Self::EnemyDisengaged) and
+    /// [`EnemyExhausted`](Self::EnemyExhausted) it brings about.
+    EnemyEvaded {
+        /// The evaded enemy.
+        enemy: EnemyId,
+        /// The investigator who evaded it.
+        investigator: InvestigatorId,
+    },
     /// An enemy disengaged from an investigator (e.g. via a
     /// successful Evade).
     EnemyDisengaged {
