@@ -24,7 +24,7 @@
 use card_dsl::card_data::{CardMetadata, CardType};
 use card_dsl::dsl::{
     self, AbilityZone, AttackerScope, EventPattern, EventTiming, HarmKind, HarmPlacedScope,
-    TargetScope, TestedLocationScope, Trigger, TriggerKind,
+    TargetScope, TestOutcome, TestedLocationScope, Trigger, TriggerKind,
 };
 
 use crate::card_registry::CardRegistry;
@@ -643,6 +643,7 @@ fn scope_matches(
         // says so.
         TimingEvent::SkillTestResolved { .. } => {
             let EventPattern::SkillTestResolved {
+                outcome,
                 tested_location,
                 margin,
                 ..
@@ -661,10 +662,15 @@ fn scope_matches(
                 TestedLocationScope::Any => true,
             };
             // Read live off the stored result, so a re-total that moves only
-            // the margin is what the match sees.
+            // the margin is what the match sees — and read in the pattern's
+            // direction, so a stored result a re-total has flipped the other
+            // way matches no margin bound at all.
             let margin_ok = margin.is_none_or(|bound| {
                 test.and_then(|test| test.resolved)
-                    .and_then(|resolved| resolved.succeeded_by().or(resolved.failed_by()))
+                    .and_then(|resolved| match outcome {
+                        TestOutcome::Success => resolved.succeeded_by(),
+                        TestOutcome::Failure => resolved.failed_by(),
+                    })
                     .is_some_and(|by| bound.admits(by))
             });
             location_ok && margin_ok
