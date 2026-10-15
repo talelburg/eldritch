@@ -17,7 +17,7 @@
 //! action lost is Blinding Light's.
 
 use cards::TEST_REGISTRIES;
-use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::enumerate::{self, PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
@@ -38,7 +38,7 @@ const OTHER: EnemyId = EnemyId(101);
 
 const PLAY: TurnAction = TurnAction::PlayCard {
     investigator: INV,
-    hand_index: 0,
+    source: PlaySource::Hand(0),
 };
 
 /// An evade-3, health-3 enemy coded `id`.

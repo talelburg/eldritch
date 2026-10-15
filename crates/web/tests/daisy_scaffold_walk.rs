@@ -29,7 +29,7 @@ use std::collections::BTreeMap;
 
 use game_core::action::RosterEntry;
 use game_core::assert_event;
-use game_core::engine::enumerate::TurnAction;
+use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::{self, OptionTarget, Registries};
 use game_core::event::Event;
 use game_core::scenario::{ResolutionId, ScenarioEnding};
@@ -222,7 +222,7 @@ fn daisy_with_her_scaffold_deck_plays_the_gathering_to_a_resolution() {
     let knife = hand_index(&investigation, KNIFE);
     let armed = investigation.take(&TurnAction::PlayCard {
         investigator: INV,
-        hand_index: knife,
+        source: PlaySource::Hand(knife),
     });
     armed.assert_at_turn_menu(INV);
     let knife = armed.state().in_play(INV, KNIFE);

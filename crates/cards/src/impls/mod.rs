@@ -94,17 +94,20 @@ pub mod attic;
 pub mod automatic_45;
 pub mod backstab;
 pub mod barricade;
+pub mod baseball_bat;
 pub mod beat_cop;
 pub mod blinding_light;
 pub mod burglary;
 pub mod cellar;
 pub mod cover_up;
 pub mod crypt_chill;
+pub mod cunning_distraction;
 pub mod daisy_walker;
 pub mod daisys_tote_bag;
 pub mod dark_memory;
 pub mod deduction;
 pub mod derringer_41;
+pub mod dig_deep;
 pub mod dissonant_voices;
 pub mod dodge;
 pub mod dr_milan_christopher;
@@ -127,8 +130,11 @@ pub mod holy_rosary;
 pub mod hospital_debts;
 pub mod hyperawareness;
 pub mod knife;
+pub mod leather_coat;
 pub mod leo_de_luca;
 pub mod lita_chantler;
+pub mod look_what_i_found;
+pub mod lucky;
 pub mod machete;
 pub mod magnifying_glass;
 pub mod manual_dexterity;
@@ -143,16 +149,20 @@ pub mod parlor;
 pub mod perception;
 pub mod physical_training;
 pub mod pickpocketing;
+pub mod rabbits_foot;
 pub mod research_librarian;
 pub mod rise_of_the_ghouls;
 pub mod roland_38_special;
 pub mod roland_banks;
 pub mod rotting_remains;
+pub mod scavenging;
 pub mod scrying;
 pub mod shrivelling;
 pub mod silver_twilight_acolyte;
 pub mod skids_otoole;
 pub mod sneak_attack;
+pub mod stray_cat;
+pub mod survival_instinct;
 pub mod switchblade;
 pub mod the_barrier;
 pub mod the_necronomicon;
@@ -161,6 +171,8 @@ pub mod trapped;
 pub mod unexpected_courage;
 pub mod vicious_blow;
 pub mod ward_of_protection;
+pub mod wendy_adams;
+pub mod wendys_amulet;
 pub mod what_have_you_done;
 pub mod whats_going_on;
 pub mod working_a_hunch;
@@ -246,17 +258,20 @@ pub const ALL: &[CardRecord] = &[
     automatic_45::CARD,
     backstab::CARD,
     barricade::CARD,
+    baseball_bat::CARD,
     beat_cop::CARD,
     blinding_light::CARD,
     burglary::CARD,
     cellar::CARD,
     cover_up::CARD,
     crypt_chill::CARD,
+    cunning_distraction::CARD,
     daisy_walker::CARD,
     daisys_tote_bag::CARD,
     dark_memory::CARD,
     deduction::CARD,
     derringer_41::CARD,
+    dig_deep::CARD,
     dissonant_voices::CARD,
     dodge::CARD,
     dr_milan_christopher::CARD,
@@ -279,8 +294,11 @@ pub const ALL: &[CardRecord] = &[
     holy_rosary::CARD,
     hyperawareness::CARD,
     knife::CARD,
+    leather_coat::CARD,
     leo_de_luca::CARD,
     lita_chantler::CARD,
+    look_what_i_found::CARD,
+    lucky::CARD,
     machete::CARD,
     magnifying_glass::CARD,
     manual_dexterity::CARD,
@@ -295,16 +313,20 @@ pub const ALL: &[CardRecord] = &[
     perception::CARD,
     physical_training::CARD,
     pickpocketing::CARD,
+    rabbits_foot::CARD,
     research_librarian::CARD,
     rise_of_the_ghouls::CARD,
     roland_38_special::CARD,
     roland_banks::CARD,
     rotting_remains::CARD,
+    scavenging::CARD,
     scrying::CARD,
     shrivelling::CARD,
     silver_twilight_acolyte::CARD,
     skids_otoole::CARD,
     sneak_attack::CARD,
+    stray_cat::CARD,
+    survival_instinct::CARD,
     switchblade::CARD,
     the_barrier::CARD,
     the_necronomicon::CARD,
@@ -313,6 +335,8 @@ pub const ALL: &[CardRecord] = &[
     unexpected_courage::CARD,
     vicious_blow::CARD,
     ward_of_protection::CARD,
+    wendy_adams::CARD,
+    wendys_amulet::CARD,
     what_have_you_done::CARD,
     whats_going_on::CARD,
     working_a_hunch::CARD,

@@ -77,11 +77,12 @@
 //! # One event per card
 //!
 //! Every card that leaves emits exactly one event: [`Event::CardDiscarded`]
-//! naming the pile it landed in, [`Event::CardRemovedFromGame`], or
-//! [`Event::EnteredVictoryDisplay`]. The leaving card's event comes first, then
-//! one per attachment in attachment order (for a location, then one per card
-//! put into play at it). A discard or a removal names the [`Zone`] the card
-//! left.
+//! naming the pile it landed in, [`Event::CardRemovedFromGame`],
+//! [`Event::EnteredVictoryDisplay`], or [`Event::CardPlacedOnBottomOfDeck`] for
+//! a discarded event its owner's cards redirect (Wendy's Amulet 01014). The
+//! leaving card's event comes first, then one per attachment in attachment
+//! order (for a location, then one per card put into play at it). A discard or
+//! a removal names the [`Zone`] the card left.
 //!
 //! # Adding an exit
 //!
@@ -93,11 +94,14 @@
 //! `discard_attachments`. There is deliberately no public destination enum: a
 //! caller always knows which exit it means.
 
+use card_dsl::card_data::{CardMetadata, CardType};
+
 use crate::engine::board::{self, Placement};
 use crate::engine::{abilities_in_effect, Cx};
 use crate::event::Event;
 use crate::state::{
-    CardCode, CardInPlay, CardInstanceId, DiscardPile, EnemyId, LocationId, Owner, Zone,
+    CardCode, CardInPlay, CardInstanceId, DiscardPile, EnemyId, InvestigatorId, LocationId, Owner,
+    Zone,
 };
 
 /// A card that can leave play: a card instance, wherever it sits on the board,
@@ -353,7 +357,21 @@ fn discard_attachments(cx: &mut Cx, attachments: Vec<CardInPlay>, from: Zone) {
 
 /// File `code`, just taken out of `from`, through `exit` by its `owner`, and
 /// emit its one event.
+///
+/// An event an investigator owns is discarded to the bottom of their deck
+/// instead while their cards redirect it
+/// ([`events_go_to_bottom_of_deck`](abilities_in_effect::events_go_to_bottom_of_deck)):
+/// Wendy's Amulet 01014's *"discard an event from play: Place it on the bottom
+/// of your deck instead of in your discard pile"*. An eliminated investigator's
+/// sweep never reaches it: step 1 has already taken the Amulet out of play.
 fn file(cx: &mut Cx, code: CardCode, owner: Owner, from: Zone, exit: Exit) {
+    if let (Exit::Discard, Owner::Investigator(id)) = (&exit, owner) {
+        if (cx.cards.metadata_for)(&code).map(CardMetadata::card_type) == Some(CardType::Event)
+            && redirect_event_to_bottom_of_deck(cx, id, &code)
+        {
+            return;
+        }
+    }
     let state = &mut *cx.state;
     let owning_investigator = match owner {
         Owner::Investigator(id) => state.investigators.get_mut(&id).map(|inv| (id, inv)),
@@ -393,6 +411,50 @@ fn file(cx: &mut Cx, code: CardCode, owner: Owner, from: Zone, exit: Exit) {
         }
     };
     cx.events.push(event);
+}
+
+/// Place the event `code`, which `investigator` owns and which would go to
+/// their discard pile, on the bottom of their deck instead, if their cards
+/// redirect it
+/// ([`events_go_to_bottom_of_deck`](abilities_in_effect::events_go_to_bottom_of_deck),
+/// Wendy's Amulet 01014), emitting [`Event::CardPlacedOnBottomOfDeck`]. Returns
+/// whether it did; on `false` nothing has moved and the caller discards the
+/// card as usual. The caller has already established that `code` is an event.
+///
+/// Shared by the two ways an event reaches the discard pile: a played event
+/// placed in step 4 of its play (`cards::place_played_event`), and an event
+/// discarded from play (Barricade 01038, through [`file`]). For the played
+/// event the Official FAQ puts the redirect inside step 4: *"An event card is
+/// placed on top of its owner’s discard pile during step 4 of the
+/// play/initiation sequence, so any effect that modifies where the event goes
+/// (such as Parallel Agnes Baker or Crystallizer of Dreams) must occur during
+/// that step. An effect that triggers “after you play” an event but does not
+/// modify where the event goes (such as Heirloom of Hyberborea’s ability) would
+/// naturally trigger just after step 4."* The Amulet is the corpus's only such
+/// effect, so the redirect is one constant read here rather than a step-4
+/// replacement window; a second card that changes where an event goes is the
+/// trigger for #366's general machinery. Pushing onto the deck's bottom also
+/// makes an empty deck the event itself, as the Amulet's ruling has it
+/// (<https://arkhamdb.com/card/01014>): *"If your deck is empty, and Wendy’s
+/// Amulet would have you place an event “on the bottom of your deck,” that
+/// event becomes your new deck."*
+pub(crate) fn redirect_event_to_bottom_of_deck(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    code: &CardCode,
+) -> bool {
+    if !abilities_in_effect::events_go_to_bottom_of_deck(cx.state, cx.cards, investigator) {
+        return false;
+    }
+    let Some(inv) = cx.state.investigators.get_mut(&investigator) else {
+        return false;
+    };
+    inv.deck.push(code.clone());
+    cx.events.push(Event::CardPlacedOnBottomOfDeck {
+        investigator,
+        code: code.clone(),
+    });
+    true
 }
 
 /// The [`Zone`] an event names for a card that left `placement`.

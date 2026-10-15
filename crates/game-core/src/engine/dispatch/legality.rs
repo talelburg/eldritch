@@ -1,4 +1,4 @@
-//! Whether a card may be played from hand ([`check_play_card`]) or an
+//! Whether a card may be played from where it is ([`check_play_card`]) or an
 //! activated ability activated ([`check_activate_ability`]) right now: the pure
 //! validators the `play_card` / `activate_ability` handlers, the open-turn menu
 //! and the Fast-window enumeration all ask, so none of them can offer what the
@@ -23,11 +23,12 @@ use crate::engine::dispatch::abilities::{self, ActivatedAbility};
 use crate::engine::dispatch::actions::take::{self, ActionDescription};
 use crate::engine::dispatch::initiation::{self, InitiationKind, Refusal};
 use crate::engine::dispatch::{cards, combat, slots};
+use crate::engine::enumerate::PlaySource;
 use crate::engine::outcome::EngineOutcome;
-use crate::engine::{ability_source, designator};
+use crate::engine::{abilities_in_effect, ability_source, designator};
 use crate::state::{
-    AbilityAddress, AbilitySource, CandidateSource, CardCode, GameState, InvestigatorId, Phase,
-    ResolutionCandidate,
+    AbilityAddress, AbilitySource, CandidateSource, CardCode, GameState, Investigator,
+    InvestigatorId, Phase, ResolutionCandidate,
 };
 
 /// Validated payload returned by [`check_play_card`] on success.
@@ -109,6 +110,68 @@ fn check_play_slot_satisfiable(
     Ok(())
 }
 
+/// Every source `investigator` may try to play a card from, in menu order:
+/// each hand position, then the top of their discard pile if a card they
+/// control lets them play from there (Wendy's Amulet 01014). Positional, as
+/// [`PlaySource::card`] is — [`check_play_card`] asks the rest, the turn menu
+/// and the Fast window each asking it of every source listed here.
+pub(crate) fn play_sources(
+    state: &GameState,
+    cards: &CardRegistry,
+    investigator: InvestigatorId,
+) -> Vec<PlaySource> {
+    let Some(inv) = state.investigators.get(&investigator) else {
+        return Vec::new();
+    };
+    let hand = (0..inv.hand.len())
+        .map_while(|index| u8::try_from(index).ok())
+        .map(PlaySource::Hand);
+    let discard = abilities_in_effect::discard_play_permission(state, cards, investigator)
+        .map(|permission| PlaySource::TopOfDiscardPile { permission });
+    hand.chain(discard).collect()
+}
+
+/// The card `investigator` may play from `source`, or `None` when there is
+/// none there or nothing lets them play it from there: **the one zone check
+/// every play path asks** — [`check_play_card`] for the turn menu and the Fast
+/// window, and the trigger scan's board walk and the reaction window's lapse
+/// probe for a Fast event played in a reaction window. ADR 0017 keeps the
+/// zone a card is played from with the play paths, out of the initiation gate.
+///
+/// A hand position holds its card. The top of the discard pile is playable
+/// while `permission` still carries an in-effect
+/// [`Effect::PlayTopmostEventInDiscardPile`] for `investigator`
+/// ([`abilities_in_effect::discard_play_permission`]) and the card is an
+/// event — Wendy's Amulet 01014: *"You may play the topmost event in your
+/// discard pile as if it were in your hand."* The pile's top is its **last**
+/// element ([`Investigator::discard`](crate::state::Investigator::discard)), so
+/// an event beneath another card is not reached.
+///
+/// Only plays ask this; no commit path does, which is the ruling
+/// (<https://arkhamdb.com/card/01014>): *"Wendy's Amulet allows you to 'play'
+/// the topmost event card in your discard pile, but it does not allow you to
+/// 'commit' it to a skill test."*
+pub(crate) fn play_source_available<'a>(
+    state: &'a GameState,
+    cards: &CardRegistry,
+    investigator: InvestigatorId,
+    source: PlaySource,
+) -> Option<&'a CardCode> {
+    let inv = state.investigators.get(&investigator)?;
+    let card = source.card(inv)?;
+    match source {
+        PlaySource::Hand(_) => Some(card),
+        PlaySource::TopOfDiscardPile { permission } => {
+            let permitted =
+                abilities_in_effect::discard_play_permission(state, cards, investigator)
+                    == Some(permission);
+            let event =
+                (cards.metadata_for)(card).is_some_and(|meta| meta.card_type() == CardType::Event);
+            (permitted && event).then_some(card)
+        }
+    }
+}
+
 /// Pure-validation peer to [`play_card`](cards::play_card). Returns `Ok` if the named
 /// card is currently playable by `investigator`, `Err(reason)` if
 /// not.
@@ -116,7 +179,7 @@ fn check_play_slot_satisfiable(
 /// *Whether* the card may be played is the initiation gate's answer, asked as
 /// a play ([`initiation::check_play`]); this validator owns only the *when* and
 /// the rest of what a play from the turn menu or a player window needs — the
-/// hand index, reaction events, slots and the turn/Fast timing matrix (ADR
+/// play source, reaction events, slots and the turn/Fast timing matrix (ADR
 /// 0017). A non-fast play's action point is the step's answer
 /// ([`take::check`]).
 ///
@@ -127,20 +190,14 @@ pub(crate) fn check_play_card(
     state: &GameState,
     cards: &CardRegistry,
     investigator: InvestigatorId,
-    hand_index: u8,
+    source: PlaySource,
 ) -> Result<PlayCheckResult, Cow<'static, str>> {
     let Some(inv) = state.investigators.get(&investigator) else {
         return Err(format!("PlayCard: investigator {investigator:?} is not in state").into());
     };
-    let idx = usize::from(hand_index);
-    if idx >= inv.hand.len() {
-        return Err(format!(
-            "PlayCard: hand_index {hand_index} out of bounds (hand size {})",
-            inv.hand.len(),
-        )
-        .into());
-    }
-    let code: CardCode = inv.hand[idx].clone();
+    let Some(code) = play_source_available(state, cards, investigator, source).cloned() else {
+        return Err(source_refusal(inv, source));
+    };
     // Resolve card type and abilities (also yields is_fast + card_type) before
     // applying the phase/active-investigator gate so the gate can branch on
     // is_fast AND card_type per the Rules Reference (p. 11).
@@ -305,6 +362,21 @@ pub(crate) fn check_play_card(
     })
 }
 
+/// Why [`play_source_available`] found nothing to play at `source`.
+fn source_refusal(inv: &Investigator, source: PlaySource) -> Cow<'static, str> {
+    match source {
+        PlaySource::Hand(_) => format!(
+            "PlayCard: {source} out of bounds (hand size {})",
+            inv.hand.len(),
+        ),
+        PlaySource::TopOfDiscardPile { .. } => format!(
+            "PlayCard: nothing is playable from {source} — the pile is empty, its top card is \
+             not an event, or that card no longer permits the play (Wendy's Amulet 01014)",
+        ),
+    }
+    .into()
+}
+
 /// The bold designator the card's `OnPlay` ability prints, if any, once it is
 /// known the investigator can perform its action — refused otherwise. A
 /// designated event's change-state question is its action's
@@ -338,14 +410,17 @@ fn check_play_designator<'a>(
 ///   rejected here; 2+ suspends to a `PickSingle` in the evaluator); an
 ///   **Investigate** needs a revealed location, so Flashlight 01087 cannot
 ///   spend its supply with nothing to investigate.
-/// - **`DealDamageToEnemy`:** needs ≥1 enemy in the chosen scope (e.g. "at your
-///   location"). ≥1 proceeds — 2+ suspends via the `Choose` resolver — so only
-///   the empty case rejects here; this is why the effect is typed, not `Native`
-///   (Beat Cop can't pay its discard-self cost for no legal target). `amount` is
+/// - **`DealDamageToEnemy` and `AutoEvade`:** need ≥1 enemy in the chosen
+///   scope (e.g. "at your location", and for Stray Cat 01076 not an Elite one,
+///   which is why the check holds the card registry). ≥1 proceeds — 2+ suspends
+///   via the `Choose` resolver — so only the empty case rejects here; this is
+///   why the effects are typed, not `Native` (Beat Cop and Stray Cat can't pay
+///   their discard-self cost for no legal target). `amount` is
 ///   not consulted (a degenerate `amount: 0` ability — none in scope — would
 ///   still require a target here even though its handler is a no-op).
 fn check_activation_target_available(
     state: &GameState,
+    cards: &CardRegistry,
     investigator: InvestigatorId,
     designator: Option<&ActionDesignator>,
     effect: &Effect,
@@ -357,12 +432,15 @@ fn check_activation_target_available(
     if let Effect::DealDamageToEnemy {
         target: EnemyTarget::Chosen(choose),
         ..
+    }
+    | Effect::AutoEvade {
+        target: EnemyTarget::Chosen(choose),
     } = effect
     {
-        if combat::enemies_in_scope(state, investigator, choose.scope).is_empty() {
+        if combat::enemies_in_scope(state, cards, investigator, &choose.scope).is_empty() {
             return Err(
-                "ActivateAbility: a 'deal damage to an enemy at your location' ability \
-                 needs at least one enemy at your location"
+                "ActivateAbility: the ability's chosen enemy needs at least one enemy in its \
+                 scope (at your location, and not one it excludes)"
                     .into(),
             );
         }
@@ -394,10 +472,23 @@ fn activation_refusal(refusal: Refusal, code: &CardCode) -> Cow<'static, str> {
 
 /// Reject an ability mixing [`Cost::DiscardSelf`](card_dsl::dsl::Cost::DiscardSelf)
 /// with another source-referencing cost: `DiscardSelf` removes the source, so it
-/// must be the sole such cost (Beat Cop / Knife list only it). Deliberately
-/// unlifted until a card needs the combo — no tracking issue on purpose (YAGNI);
-/// whoever hits this rejection files one.
+/// must be the sole such cost (Beat Cop / Knife list only it). Likewise an
+/// ability mixing [`Cost::DiscardCardFromHand`](card_dsl::dsl::Cost::DiscardCardFromHand)
+/// with [`Cost::TakeHarm`](card_dsl::dsl::Cost::TakeHarm): each parks above the
+/// effect, and a harm that eliminates the controller would leave the discard's
+/// choice put to an eliminated investigator. Deliberately unlifted until a card
+/// needs either combo — no tracking issue on purpose (YAGNI); whoever hits this
+/// rejection files one.
 fn reject_incompatible_costs(costs: &[Cost]) -> Result<(), Cow<'static, str>> {
+    if costs.iter().any(|c| matches!(c, Cost::DiscardCardFromHand))
+        && costs.iter().any(|c| matches!(c, Cost::TakeHarm { .. }))
+    {
+        return Err(
+            "ActivateAbility: Cost::DiscardCardFromHand cannot combine with Cost::TakeHarm on \
+             the same ability (both park above the effect); lift if a card ever needs the combo"
+                .into(),
+        );
+    }
     if costs.iter().any(|c| matches!(c, Cost::DiscardSelf))
         && costs
             .iter()
@@ -412,24 +503,42 @@ fn reject_incompatible_costs(costs: &[Cost]) -> Result<(), Cow<'static, str>> {
     Ok(())
 }
 
-/// Reject a [`Cost::TakeHarm`](card_dsl::dsl::Cost::TakeHarm) on an `[action]`
-/// ability (#1029). On the action path the harm would have to resolve before
-/// the attacks of opportunity — Appendix I step 2, *"Upon completion of this
-/// step, attacks of opportunity, if applicable, resolve"* — and the
-/// take-an-action step's hook pays its costs inline and parks the effect behind
-/// the attacks, with no place for a deal frame between the two. Core and
-/// Dunwich print no such card, so it is deliberately unlifted (YAGNI, as with
+/// Reject a cost the take-an-action step has no place to pay on an `[action]`
+/// ability: a [`Cost::TakeHarm`](card_dsl::dsl::Cost::TakeHarm) (#1029) or a
+/// [`Cost::DiscardCardFromHand`](card_dsl::dsl::Cost::DiscardCardFromHand)
+/// (#1107). Both share one blocker. On the action path the harm would have to
+/// resolve, and the discard's choice be made, before the attacks of
+/// opportunity — Appendix I step 2, *"Upon completion of this step, attacks of
+/// opportunity, if applicable, resolve"* — and the take-an-action step's hook
+/// pays its costs inline and parks the effect behind the attacks, with no place
+/// for a deal frame or a choice between the two. Core and Dunwich print no such
+/// player card, so it is deliberately unlifted (YAGNI, as with
 /// `reject_incompatible_costs`); the first card to print one lifts it (#1031).
-fn reject_harm_cost_on_an_action(
+/// The Core enemy Herman Collins 01138 prints the discard — *"[action] Choose
+/// and discard 4 cards from your hand: **Parley.**"* — and needs a count
+/// besides.
+fn reject_costs_unpayable_on_an_action(
     code: &CardCode,
     action_cost: u8,
     costs: &[Cost],
 ) -> Result<(), Cow<'static, str>> {
-    if action_cost > 0 && costs.iter().any(|c| matches!(c, Cost::TakeHarm { .. })) {
+    if action_cost == 0 {
+        return Ok(());
+    }
+    for cost in costs {
+        let (cost, needs, supported) = match cost {
+            Cost::TakeHarm { .. } => ("Cost::TakeHarm", "its harm resolved", "a [fast] ability"),
+            Cost::DiscardCardFromHand => (
+                "Cost::DiscardCardFromHand",
+                "its choice made",
+                "a [fast] ability and a triggered one",
+            ),
+            _ => continue,
+        };
         return Err(format!(
-            "TODO(#1031): ActivateAbility: {code}'s Cost::TakeHarm on an [action] ability needs \
-             its harm resolved before the attacks of opportunity (lands with #1031); it is \
-             supported only on a [fast] ability"
+            "TODO(#1031): ActivateAbility: {code}'s {cost} on an [action] ability needs {needs} \
+             before the attacks of opportunity (lands with #1031); it is supported only on \
+             {supported}"
         )
         .into());
     }
@@ -621,11 +730,11 @@ pub(crate) fn check_activate_ability(
     }
 
     reject_incompatible_costs(&costs)?;
-    reject_harm_cost_on_an_action(&source_code, action_cost, &costs)?;
+    reject_costs_unpayable_on_an_action(&source_code, action_cost, &costs)?;
     reject_source_costs_without_an_instance(source, &source_code, &costs)?;
     // Before the gate: a designated ability's change-state question is this
     // check's (`initiation::performs_an_action`).
-    check_activation_target_available(state, investigator, designator.as_ref(), &effect)?;
+    check_activation_target_available(state, cards, investigator, designator.as_ref(), &effect)?;
     let candidate = ResolutionCandidate::new(
         source_code,
         investigator,

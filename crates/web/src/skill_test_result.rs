@@ -80,6 +80,32 @@ pub fn summarize(state: &ClientState) -> Option<SkillTestSummary> {
     }
 }
 
+/// The in-flight test's **provisional** verdict, for a prompt that arrives
+/// before the verdict is logged: `"Failing by 2"`, `"Succeeding by 1"`. `None`
+/// once the store holds the logged result, and while no verdict has been
+/// worked out yet.
+///
+/// Since #1111 the `SkillTestSucceeded`/`SkillTestFailed` line is logged at
+/// `SkillTestResolved`'s resolve step, *after* its `when` cell, because Lucky!
+/// 01080 (*"Play when you would fail a skill test"*) can change the verdict
+/// there. A player deciding whether to play it needs to see that, and by how
+/// much, they are failing — so this reads the live test frame, which the
+/// engine keeps current while that cell is open. Pure.
+#[must_use]
+pub fn provisional_verdict(state: &ClientState) -> Option<String> {
+    if state.last_skill_test_result.is_some() {
+        return None;
+    }
+    let resolved = state.game.as_ref()?.current_skill_test()?.resolved?;
+    Some(if resolved.succeeded {
+        format!("Succeeding by {}", resolved.margin)
+    } else if matches!(resolved.fail_reason, FailureReason::AutoFail) {
+        "Failing (auto-fail)".to_string()
+    } else {
+        format!("Failing by {}", resolved.failed_by().unwrap_or(0))
+    })
+}
+
 /// A short display string for the drawn token and how it resolved (e.g.
 /// `"+1"`, `"Skull (-2)"`, `"AutoFail (auto-fail)"`).
 fn token_display(token: ChaosToken, resolution: TokenResolution) -> String {

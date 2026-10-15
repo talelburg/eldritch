@@ -59,12 +59,11 @@
 //! caller-owned until #773, so its `when` cell was not walked and an ability
 //! declaring interrupt timing on it was *rejected* — and `standards.md` is
 //! explicit that migrating the condition is the fix rather than retagging the
-//! card. So the condition migrated, as a **bare milestone**: RR ST.6 is
-//! *"Determine success/failure of skill test"*, and a determination mutates
-//! nothing — the verdict is stashed on the in-flight test and logged, and no
-//! card, enemy, location or investigator moves. The impact is ST.7, *"Apply
-//! skill test results"*, which the `SkillTest` frame runs on its own resume
-//! after the whole sequence has drained.
+//! card. So the condition migrated: RR ST.6 is *"Determine success/failure of
+//! skill test"*, and no card, enemy, location or investigator moves as it
+//! resolves — its resolve step only re-totals the test and logs the verdict
+//! (#1111). ST.7, *"Apply skill test results"*, is the `SkillTest` frame's,
+//! run on its own resume after the whole sequence has drained.
 //!
 //! That is exactly the ordering this ability needs: the boost is written before
 //! `ApplyFollowUp` deals the attack's damage, which is *"before its impact upon
@@ -186,6 +185,7 @@ pub fn abilities() -> Vec<Ability> {
                     kind: Some(SkillTestKind::Fight),
                     by_controller: false,
                     tested_location: TestedLocationScope::Any,
+                    margin: None,
                 },
                 EventTiming::When,
                 dsl::boost_attack_damage(1),
@@ -318,6 +318,7 @@ mod tests {
                     kind: Some(SkillTestKind::Fight),
                     by_controller: false,
                     tested_location: TestedLocationScope::Any,
+                    margin: None,
                 },
                 timing: EventTiming::When,
                 kind: TriggerKind::Reaction,

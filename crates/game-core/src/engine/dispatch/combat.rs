@@ -32,17 +32,46 @@ pub(crate) fn fight_target_scope() -> EnemyScope {
 }
 
 /// Enemies matching an [`EnemyScope`](card_dsl::dsl::EnemyScope), in `BTreeMap`
-/// (id) order so the `OptionId` index replays deterministically. Honours both
-/// the location set and the `exhausted` filter (Sneak Attack 01052's *"an
-/// exhausted enemy at your location"*). Shared by the evaluator's
-/// choice-grounding and change-state check and the activation pre-cost target
-/// check, so a narrowed scope narrows playability and the prompt alike.
+/// (id) order so the `OptionId` index replays deterministically. Honours the
+/// location set, the `exhausted` filter (Sneak Attack 01052's *"an exhausted
+/// enemy at your location"*) and the `exempt` filter (Stray Cat 01076's *"a
+/// non-\[\[Elite\]\] enemy"*), which is matched against the enemy's card
+/// metadata. Shared by the evaluator's choice-grounding and the activation
+/// pre-cost target check, so a narrowed scope narrows the activation and the
+/// prompt alike.
 pub(crate) fn enemies_in_scope(
     state: &GameState,
+    cards: &CardRegistry,
     controller: InvestigatorId,
-    scope: EnemyScope,
+    scope: &EnemyScope,
 ) -> Vec<EnemyId> {
-    let EnemyScope { at, exhausted } = scope;
+    let mut enemies = enemies_in_scope_before_exemption(state, controller, scope);
+    if let Some(exempt) = &scope.exempt {
+        enemies.retain(|id| {
+            !state
+                .enemies
+                .get(id)
+                .is_some_and(|e| card_registry::card_matches(cards, &e.code, exempt))
+        });
+    }
+    enemies
+}
+
+/// [`enemies_in_scope`] without its `exempt` filter, for the readers that hold
+/// no card registry: a **superset** of the scope's enemies. The evaluator's
+/// change-state check reads it, which its conservative contract allows (it may
+/// admit an ability that then has no target, never refuse one that has), and
+/// the Fight scope, which exempts nothing.
+pub(crate) fn enemies_in_scope_before_exemption(
+    state: &GameState,
+    controller: InvestigatorId,
+    scope: &EnemyScope,
+) -> Vec<EnemyId> {
+    let EnemyScope {
+        at,
+        exhausted,
+        exempt: _,
+    } = *scope;
     let here = match at {
         LocationSet::Anywhere => None,
         LocationSet::Here => match state

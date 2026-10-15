@@ -214,6 +214,7 @@ fn registries() -> Registries {
                         kind: Some(SkillTestKind::Investigate),
                         by_controller: true,
                         tested_location: TestedLocationScope::Any,
+                        margin: None,
                     },
                     EventTiming::After,
                     1,

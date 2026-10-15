@@ -27,6 +27,27 @@
   {
     "TimingPointWindow": {
       "event": "RoundEnded",
+      "bucket": "After",
+      "mode": "Reaction",
+      "candidates": [
+        {
+          "code": "01079",
+          "controller": 1,
+          "address": {
+            "Printed": 0
+          },
+          "source": {
+            "TopOfDiscardPile": {
+              "permission": 7
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "TimingPointWindow": {
+      "event": "RoundEnded",
       "bucket": "When",
       "mode": "Forced",
       "candidates": [
@@ -117,7 +138,8 @@
       "bonus_clues_discovered": 0,
       "resolved": null,
       "revealed": null,
-      "reveal_clause": null
+      "reveal_clause": null,
+      "discard_after": null
     }
   },
   {
@@ -130,6 +152,12 @@
       "investigator": 1,
       "card": null,
       "entry": "PlayedFromHand"
+    }
+  },
+  {
+    "HandDiscardCost": {
+      "investigator": 1,
+      "code": "01005"
     }
   },
   {
@@ -297,6 +325,24 @@
     "EmitEvent": {
       "event": "RoundEnded",
       "step": "After",
+      "prevented": false
+    }
+  },
+  {
+    "EmitEvent": {
+      "event": {
+        "ChaosTokenRevealed": {
+          "investigator": 1,
+          "token": {
+            "token": "Skull",
+            "counts_as": "Skull",
+            "resolution": {
+              "Modifier": -1
+            }
+          }
+        }
+      },
+      "step": "When",
       "prevented": false
     }
   },

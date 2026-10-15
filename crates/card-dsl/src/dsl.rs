@@ -287,6 +287,21 @@ pub enum ActionDesignator {
     /// **Resign.**"* rides the ability's eligibility. Both hang off the
     /// [`Ability`], not off the designator.
     Resign,
+    /// **Evade**, made automatically: Cunning Distraction 01078's *"**Evade.**
+    /// Automatically evade all enemies at your location."* It **is** an Evade
+    /// for every rule keyed on the kind (no attack of opportunity, Frozen in
+    /// Fear 01164's surcharge), but no skill test is made and no engaged enemy
+    /// is needed. The 01076 ruling (<https://arkhamdb.com/card/01076>): *"if an
+    /// ability automatically evades 1 or more enemies, no skill test is made
+    /// for the evasion attempt whatsoever. Consequentially, because no skill
+    /// test is made, it is not considered a “successful” evasion."*
+    ///
+    /// Performs nothing, as [`Parley`](Self::Parley) does: which enemies are
+    /// evaded is the ability's residual effect ([`Effect::AutoEvade`]), and
+    /// the engine asks that effect whether the ability can change the game
+    /// state, so the card is not playable with no enemy at your location.
+    /// [`Evade`](Self::Evade) stays the test-backed action.
+    AutomaticEvade,
 }
 
 impl ActionDesignator {
@@ -314,7 +329,7 @@ impl ActionDesignator {
     pub fn action_class(&self) -> Option<ActionClass> {
         match self {
             Self::Fight { .. } => Some(ActionClass::Fight),
-            Self::Evade { .. } => Some(ActionClass::Evade),
+            Self::Evade { .. } | Self::AutomaticEvade => Some(ActionClass::Evade),
             Self::Move => Some(ActionClass::Move),
             Self::Investigate { .. } | Self::Parley | Self::Resign => None,
         }
@@ -856,6 +871,16 @@ pub enum EventPattern {
         /// board (ADR 0018), so the word *"attached"* has to be on the
         /// declaration for the scan to read it.
         tested_location: TestedLocationScope,
+        /// How far the test passed or failed by, or `None` for any margin —
+        /// Scavenging 01073's *"After you successfully investigate **by 2 or
+        /// more**"* and "Look what I found!" 01079's *"after you fail a skill
+        /// test **by 2 or less**"*. See [`MarginScope`] for what the amount is
+        /// measured against.
+        ///
+        /// Trigger scope rather than an eligibility predicate, which is how
+        /// Lita Chantler 01117 narrows her own condition (#1006): with two
+        /// consumers the narrowing belongs on the declaration.
+        margin: Option<MarginScope>,
     },
     /// An investigator discovers one or more clues — the **one** triggering
     /// condition for clue discovery, in all three cells (#703). Which cell an
@@ -1032,6 +1057,30 @@ pub enum EventPattern {
     /// skills."* and Jenny Barnes 90084's *"\[reaction\] After your turn begins:
     /// Play a \[\[Talent\]\] asset, reducing its cost by 1."*
     TurnBegan,
+    /// **You** revealed a chaos token — Wendy Adams 01005's *"\[reaction\]
+    /// When you reveal a chaos token, choose and discard 1 card from your hand:
+    /// Cancel that chaos token and return it to the bag. Reveal a new chaos
+    /// token."* Scoped to the ability's controller: the engine's matcher hears
+    /// it only for the investigator performing the test.
+    ///
+    /// The condition's own resolution is everything Skill Test Timing step 3
+    /// does with the token once it is out — its modifier row (or its automatic
+    /// failure), the frame's revealed token, step 4's chaos symbol effect and
+    /// the initiating card's reveal clause — so a `when` ability that cancels
+    /// it leaves the test as if the token had never been revealed, Wendy's
+    /// ruling (<https://arkhamdb.com/card/01005>): *"treat it as if you've
+    /// never revealed that token, for purposes of effects that trigger if a
+    /// specific symbol is revealed"*. A test whose result is known before step
+    /// 3 reveals no token, so it never announces this.
+    ///
+    /// Two consumers: Wendy in its `when` cell, and Ritual Candles 02029
+    /// (Dunwich) in its `after` cell, *"\[reaction\] After a `[skull]`,
+    /// `[cultist]`, `[tablet]`, or `[elder_thing]` symbol is revealed during
+    /// a test you are performing: You get +1 skill value for this test."* The
+    /// symbol narrowing arrives with the Candles. Wendy is its only corpus
+    /// consumer, so it is a spec-approved exception to `standards.md`'s
+    /// DSL-primitive threshold (#780).
+    ChaosTokenRevealed,
 }
 
 impl EventPattern {
@@ -1070,6 +1119,7 @@ impl EventPattern {
             EventPattern::EncounterCardDrawn { .. } => TriggeringCondition::EncounterCardDrawn,
             EventPattern::EnemyEvaded => TriggeringCondition::EnemyEvaded,
             EventPattern::TurnBegan => TriggeringCondition::TurnBegan,
+            EventPattern::ChaosTokenRevealed => TriggeringCondition::ChaosTokenRevealed,
         }
     }
 
@@ -1101,7 +1151,8 @@ impl EventPattern {
             | EventPattern::EnteredPlay
             | EventPattern::LeftLocation
             | EventPattern::EnemyEvaded
-            | EventPattern::TurnBegan => None,
+            | EventPattern::TurnBegan
+            | EventPattern::ChaosTokenRevealed => None,
         }
     }
 }
@@ -1153,6 +1204,60 @@ pub enum TestedLocationScope {
     /// to — Obscuring Fog 01168's *"After attached location is successfully
     /// investigated"*.
     Attached,
+}
+
+/// The margin an [`EventPattern::SkillTestResolved`] ability listens to: the
+/// test's margin compared under `op` against `amount`.
+///
+/// The margin is measured **in the direction of the outcome**, as the printed
+/// text reads it: on a success it is how far the test succeeded by, on a
+/// failure how far it failed by, never negative either way. So *"by 2 or
+/// more"* on a success is `{ op: Ge, amount: 2 }` and *"by 2 or less"* on a
+/// failure is `{ op: Le, amount: 2 }`.
+///
+/// It is read from the result the test stores when its outcome is
+/// determined, at the moment the scan runs, so a later re-total that moves
+/// only the margin is seen by the match.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct MarginScope {
+    /// How the margin compares against `amount`.
+    pub op: CmpOp,
+    /// The printed amount.
+    pub amount: u8,
+}
+
+impl MarginScope {
+    /// *"by `amount` or more"*.
+    #[must_use]
+    pub const fn at_least(amount: u8) -> Self {
+        Self {
+            op: CmpOp::Ge,
+            amount,
+        }
+    }
+
+    /// *"by `amount` or less"*.
+    #[must_use]
+    pub const fn at_most(amount: u8) -> Self {
+        Self {
+            op: CmpOp::Le,
+            amount,
+        }
+    }
+
+    /// Whether a margin of `margin` (measured in the outcome's direction)
+    /// satisfies this scope.
+    #[must_use]
+    pub fn admits(self, margin: u8) -> bool {
+        match self.op {
+            CmpOp::Eq => margin == self.amount,
+            CmpOp::Ne => margin != self.amount,
+            CmpOp::Lt => margin < self.amount,
+            CmpOp::Le => margin <= self.amount,
+            CmpOp::Gt => margin > self.amount,
+            CmpOp::Ge => margin >= self.amount,
+        }
+    }
 }
 
 /// A **triggering condition**: the one game occurrence an [`EventPattern`]
@@ -1214,6 +1319,10 @@ pub enum TriggeringCondition {
     EnemyEvaded,
     /// An investigator's turn began (Appendix II step 2.2).
     TurnBegan,
+    /// An investigator performing a skill test revealed a chaos token (Skill
+    /// Test Timing step 3); what the token does to the test is the
+    /// condition's resolution.
+    ChaosTokenRevealed,
 }
 
 /// The four game phases, mirrored in `card-dsl` so [`EventPattern`] can
@@ -1278,7 +1387,13 @@ pub enum EventTiming {
     ///
     /// `glossary/Instead.md` gives this cell an internal sub-order the engine
     /// does not implement — *"'When X would occur' resolves before 'When X
-    /// occurs.'"* — because no corpus card puts both on one condition.
+    /// occurs.'"* No Core card puts both on one condition. Science Building
+    /// 02056 (Dunwich) is the card that will: its *"**Forced** - When you
+    /// fail a \[willpower\] test in the Science Building: Take 1 damage."*
+    /// shares `SkillTestResolved`'s failure with Lucky! 01080's *"Play when
+    /// you would fail a skill test"*, and as a plain `when` it must resolve
+    /// after Lucky!, so a test Lucky! turns into a success deals no damage.
+    /// Unmodelled, the Forced resolves first, forced-before-reaction.
     ///
     /// Rejected on a condition whose resolve step has not been migrated; see
     /// the enum's own docs.
@@ -1322,12 +1437,15 @@ pub enum Cost {
     /// (Most activated abilities self-exhaust per the rulebook; cards
     /// with a `[fast] no exhaust` ability simply don't list this cost.)
     Exhaust,
-    /// Discard a card from the controller's hand. Requires a target
-    /// selection via `AwaitingInput` (the `game_core::engine::EngineOutcome` variant)
-    /// and a `ResolveInput` dispatch. No card uses this cost yet, so
-    /// the engine consumer hasn't landed; activations with this cost
-    /// reject with a TODO. Test-side seam is
-    /// `ChoiceResolver` (in `game_core::test_support`).
+    /// Choose and discard 1 card from the controller's hand (Wendy Adams
+    /// 01005). Payable only while the hand holds a card that is not a
+    /// weakness — Dark Memory 01013's ruling: *"You cannot choose to discard a
+    /// Weakness card from your hand, neither for exceeding the max number of
+    /// cards in hand, nor for card effects that make you 'choose and
+    /// discard'."* (<https://arkhamdb.com/card/01013>). Paid through a choice
+    /// of hand card before the effect resolves, on a triggered ability or a
+    /// `[fast]` activated one; an `[action]` ability with the cost is refused
+    /// (TODO(#1031)).
     DiscardCardFromHand,
     /// Spend `count` tokens of the named [`UseKind`]
     /// from the source asset's runtime uses-pool (".38 Special": "Spend 1
@@ -1409,8 +1527,9 @@ pub struct UsageLimit {
 /// The period a [`UsageLimit`] is measured over.
 ///
 /// `Round` (Roland's "Limit once per round"), `Phase` (Agnes Baker's
-/// "Limit once per phase") and `Turn` ("Skids" O'Toole's "Limit once per
-/// turn"). `Game` ("limit once per game" — group or player) lands when the
+/// "Limit once per phase"), `Turn` ("Skids" O'Toole's "Limit once per
+/// turn") and `SkillTest` (Wendy Adams's "Limit once per test/ability").
+/// `Game` ("limit once per game" — group or player) lands when the
 /// first consumer appears.
 ///
 /// The period decides when a counter resets, and nothing else: the engine's
@@ -1435,6 +1554,16 @@ pub enum UsagePeriod {
     /// Investigation phase there is no turn, and the period is the rest of the
     /// phase.
     Turn,
+    /// A skill test. Counter resets as each test starts: the engine's usage
+    /// record notes the in-flight test's identity, and a new test has a new
+    /// one.
+    ///
+    /// Wendy Adams 01005 prints *"(Limit once per test/ability.)"*: a chaos
+    /// token revealed by an ability outside any skill test is the
+    /// *"/ability"* half. No corpus card reveals a token outside a test, so
+    /// that half is unreachable and not modelled; outside a test every reveal
+    /// would fall in the one period.
+    SkillTest,
 }
 
 // ---- abilities -------------------------------------------------
@@ -1597,8 +1726,12 @@ impl Ability {
         }
         match &self.designator {
             None
-            | Some(ActionDesignator::Move | ActionDesignator::Parley | ActionDesignator::Resign) => {
-            }
+            | Some(
+                ActionDesignator::Move
+                | ActionDesignator::Parley
+                | ActionDesignator::Resign
+                | ActionDesignator::AutomaticEvade,
+            ) => {}
             Some(ActionDesignator::Evade {
                 skill_override: _,
                 reveal_clause,
@@ -1740,6 +1873,7 @@ impl Effect {
             | Effect::DiscoverClue { .. }
             | Effect::DealDamageToEnemy { .. }
             | Effect::Disengage { .. }
+            | Effect::AutoEvade { .. }
             | Effect::Heal { .. }
             | Effect::Modify { .. }
             | Effect::AutoResolve { .. }
@@ -1747,6 +1881,7 @@ impl Effect {
             | Effect::ReachResolution(_)
             | Effect::DiscardSelf
             | Effect::Cancel
+            | Effect::RevealChaosToken
             | Effect::PutIntoThreatArea { .. }
             | Effect::BoostAttackDamage(_)
             | Effect::DiscoverAdditionalClues(_)
@@ -1763,7 +1898,9 @@ impl Effect {
             | Effect::GainAdditionalAction { .. }
             | Effect::AdditionalActionWhileInPlay { .. }
             | Effect::AdditionalSlots { .. }
-            | Effect::TreatRevealedToken { .. } => {}
+            | Effect::TreatRevealedToken { .. }
+            | Effect::PlaceEventsOnBottomOfDeck
+            | Effect::PlayTopmostEventInDiscardPile => {}
         }
     }
 }
@@ -1850,6 +1987,21 @@ pub enum Effect {
     /// an enemy not engaged with the controller — unengaged, or engaged with
     /// another investigator.
     Disengage { target: EnemyTarget },
+    /// **Automatically evade** the resolved enemy `target` (`GLOSSARY.md`,
+    /// "Automatic evasion"): no skill test, so not a *successful* evasion,
+    /// but an evasion all the same. `glossary/Evade_Action.md`: *"If an
+    /// ability "automatically" evades 1 or more enemies, no skill test is made
+    /// for the evasion attempt."* and *"Any time an enemy is evaded (whether by
+    /// an evade action, or by card ability), the enemy is exhausted (if it was
+    /// ready) and the engagement is broken."* The enemy need not be engaged
+    /// with the evader (the 01076 ruling, <https://arkhamdb.com/card/01076>),
+    /// and "after you evade" reactions still see it (Pickpocketing 01046's
+    /// ruling, <https://arkhamdb.com/card/01046>).
+    ///
+    /// Stray Cat 01076 (a chosen non-Elite enemy at your location) and
+    /// Cunning Distraction 01078 (each enemy at your location). Typed, not
+    /// `Native`, so Stray Cat's target is checked before its cost is paid.
+    AutoEvade { target: EnemyTarget },
     /// Heal `count` of `kind` (damage or horror) from the resolved target
     /// investigator — the inverse of [`Effect::Deal`] (no defeat
     /// interaction). Heals at most the current amount (saturating at 0).
@@ -2106,6 +2258,19 @@ pub enum Effect {
     /// replacement whose condition still resolves, and whose later cells
     /// therefore presumably still run.
     Cancel,
+    /// Reveal a new chaos token for the skill test in flight — Wendy Adams
+    /// 01005's *"Cancel that chaos token and return it to the bag. Reveal a
+    /// new chaos token."*, declared as `Seq[Cancel, RevealChaosToken]` in the
+    /// `when` cell of [`EventPattern::ChaosTokenRevealed`].
+    ///
+    /// It sets the test back to its draw step, so once the cancelled reveal's
+    /// sequence is abandoned the test draws again and announces the new token
+    /// in a fresh `when` cell. *"Return it to the bag"* needs nothing: a drawn
+    /// token never leaves the bag, so the redraw can draw the same token.
+    /// Rejected with no test in flight. Wendy is its only consumer, a
+    /// spec-approved exception to `standards.md`'s DSL-primitive threshold
+    /// (#780).
+    RevealChaosToken,
     /// Put the card with this printed `code` into the controller's threat
     /// area as a fresh in-play instance. The Revelation of persistent
     /// threat-area treacheries (Frozen in Fear 01164, Dissonant Voices
@@ -2224,6 +2389,25 @@ pub enum Effect {
         /// The symbol it counts as.
         to: ChaosSymbol,
     },
+    /// **An event goes to the bottom of its owner's deck instead of their
+    /// discard pile**, after they play it or when it is discarded from play:
+    /// Wendy's Amulet 01014's *"**Forced** - After you play an event or discard
+    /// an event from play: Place it on the bottom of your deck instead of in
+    /// your discard pile."* A constant marker like
+    /// [`AdditionalSlots`](Self::AdditionalSlots), under a
+    /// [`Trigger::Constant`]: **inspected, not executed** — the engine reads it
+    /// off the owner's cards where it places the event, so it is a routing rule
+    /// rather than an ability with a window of its own. Resolving it rejects.
+    PlaceEventsOnBottomOfDeck,
+    /// **Its controller may play the topmost card of their discard pile, if it
+    /// is an event, as if it were in their hand**: Wendy's Amulet 01014's *"You
+    /// may play the topmost event in your discard pile as if it were in your
+    /// hand."* A play permission, under a [`Trigger::Constant`]: **inspected,
+    /// not executed** — the play paths read it off the controller's cards when
+    /// they list where a card may be played from. It reaches plays only, never
+    /// a commit (<https://arkhamdb.com/card/01014>: *"'Play' and 'Commit' are
+    /// two different game terms."*). Resolving it rejects.
+    PlayTopmostEventInDiscardPile,
     /// Search a region of an investigator's deck for one card matching
     /// `filter`, move it to that investigator's hand, then shuffle the deck.
     /// Old Book of Lore 01031 (top 3, any card, chosen investigator) and
@@ -2533,6 +2717,18 @@ pub enum Stat {
     /// An enemy's evade value (Cold Spring Glen 02244: *"Each enemy in
     /// Cold Spring Glen gets -1 evade."*).
     Evade,
+    /// "Your skill value for that test" — whichever skill the in-flight
+    /// test is against. Lucky! 01080: *"Get +2 to your skill value for
+    /// that test."*; Ritual Candles 02029: *"You get +1 skill value for
+    /// this test."*
+    ///
+    /// Meaningful only under [`ModifierScope::ThisSkillTest`], where the
+    /// evaluator resolves it to the test's own skill as it records the
+    /// row. A constant modifier has no test to name, so the sweep never
+    /// matches it. Lucky! is its only corpus consumer, so it is a
+    /// spec-approved exception to `standards.md`'s DSL-primitive threshold
+    /// (#780).
+    TestedSkill,
 }
 
 /// Who an [`Effect::Modify`] applies to, read off the printed text's
@@ -2805,16 +3001,17 @@ pub enum LocationSet {
 }
 
 /// An enemy-choice filter: a conjunction of constraints a candidate enemy must
-/// meet. A card that narrows the choice further (Stray Cat's trait exclusion,
-/// #780) adds a field here rather than an arm, so the constraints compose —
-/// *"an exhausted enemy at your location"* is one scope with two fields set. A
-/// new field is optional, so [`EnemyScope::at`] keeps reading as "no further
-/// constraint", touching neither [`LocationSet`] nor location-picks.
+/// meet. A card that narrows the choice further (Stray Cat 01076's trait
+/// exclusion, [`exempt`](Self::exempt)) adds a field here rather than an arm,
+/// so the constraints compose — *"an exhausted enemy at your location"* is one
+/// scope with two fields set. A new field is optional, so [`EnemyScope::at`]
+/// keeps reading as "no further constraint", touching neither [`LocationSet`]
+/// nor location-picks.
 ///
 /// Enemy choices only: an investigator choice is scoped by a bare
 /// [`LocationSet`] (see [`InvestigatorTarget::Chosen`]), since an investigator
 /// has no exhausted state for a filter to read.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct EnemyScope {
     /// The enemy's location must be in this [`LocationSet`].
     pub at: LocationSet,
@@ -2822,6 +3019,13 @@ pub struct EnemyScope {
     /// ones, `None` either (Sneak Attack 01052, *"an exhausted enemy at your
     /// location"*).
     pub exhausted: Option<bool>,
+    /// Enemies whose printed card passes this filter are **not** candidates
+    /// (Stray Cat 01076's *"a non-\[\[Elite\]\] enemy"*); `None` excludes
+    /// none. The same shape as
+    /// [`CannotAttack`](Restriction::CannotAttack)'s `exempt`, matched
+    /// against the enemy's card metadata, so reading it needs the card
+    /// registry.
+    pub exempt: Option<CardFilter>,
 }
 
 impl EnemyScope {
@@ -2831,6 +3035,17 @@ impl EnemyScope {
         EnemyScope {
             at: set,
             exhausted: None,
+            exempt: None,
+        }
+    }
+
+    /// This scope, additionally excluding enemies whose printed card passes
+    /// `exempt`.
+    #[must_use]
+    pub fn except(self, exempt: CardFilter) -> Self {
+        EnemyScope {
+            exempt: Some(exempt),
+            ..self
         }
     }
 }
@@ -2897,6 +3112,10 @@ pub enum EnemySet {
     /// Each enemy engaged with the controller — Elusive 01050's *"each enemy
     /// engaged with you"*.
     EngagedWithYou,
+    /// Each enemy at the controller's location, engaged with anyone or no one
+    /// — Cunning Distraction 01078's *"all enemies at your location"*. Empty
+    /// when the controller is between locations.
+    AtYourLocation,
 }
 
 /// What an [`Effect::ForEach`] fans out over: one arm per kind of entity, so
@@ -2976,7 +3195,7 @@ impl LocationTarget {
 
 /// Single-enemy target spec. Another non-chosen form (`Engaged`, a specific
 /// spawned enemy) lands with its first consumer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum EnemyTarget {
     /// The chooser picks one enemy from the [`Choose`]'s scope. Bound by
     /// `ground_chosen_targets` before the handler runs.
@@ -3565,6 +3784,12 @@ pub fn deal_damage_to_enemy(target: EnemyTarget, amount: u8) -> Effect {
 #[must_use]
 pub fn disengage(target: EnemyTarget) -> Effect {
     Effect::Disengage { target }
+}
+
+/// Build an [`Effect::AutoEvade`].
+#[must_use]
+pub fn auto_evade(target: EnemyTarget) -> Effect {
+    Effect::AutoEvade { target }
 }
 
 /// Build an [`Effect::BoostAttackDamage`] adding `amount` to the

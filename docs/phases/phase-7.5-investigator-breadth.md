@@ -3,7 +3,8 @@
 ## Status
 
 🟡 **in progress** (opened 2026-08-23). #776, #777 (Agnes Baker), #778
-("Skids" O'Toole) and #779 (Daisy Walker) are closed. #780 is next.
+("Skids" O'Toole), #779 (Daisy Walker) and #780 (Wendy Adams) are closed. #781
+is next.
 
 This milestone was **Slice 2** in `phase-7-the-gathering.md`'s Future slices, an
 unfiled intent. It became a milestone on 2026-08-23 (`/grill-with-docs`) when
@@ -29,15 +30,16 @@ Level-0 core player cards, against `crates/cards/src/impls/`:
 |---|---|---|
 | Guardian | 10 | **0** |
 | Seeker | 10 | **0** |
-| Mystic | 10 | 9 |
-| Rogue | 10 | 10 |
-| Survivor | 10 | 10 |
-| Neutral (signatures + weaknesses) | 26 | 15 |
-| Investigator cards | 5 | 4 |
+| Mystic | 10 | **0** |
+| Rogue | 10 | **0** |
+| Survivor | 10 | **0** |
+| Neutral (signatures + weaknesses) | 26 | 8 |
+| Investigator cards | 5 | **0** |
 
 Counting real titles: `01000 "Random Basic Weakness"` is a deckbuilder placeholder
-meaning *"draw one of the seven"*, not a card, so it is excluded from the neutral row
-and lives in #781.
+meaning *"draw one of the eight"*, not a card, so it is excluded from the neutral row
+and lives in #781. The eight neutral cards left are Abandoned and Alone 01015 and
+the seven basic weaknesses still unimplemented (01102 is), all of them #781's.
 
 Roland's two classes are already complete, which is exactly why breadth costs what
 it costs: every card the gate needed was a Guardian, a Seeker or a neutral skill.
@@ -50,9 +52,7 @@ ship untested by anything but a unit test.
 
 | Issue | Work |
 |---|---|
-| #366 | Replacement effects beyond cancel — Wendy's blocker, re-milestoned here |
-| #780 | Slice 4 — Wendy Adams 01005 + Amulet / Abandoned and Alone + Survivor level 0 |
-| #781 | The seven basic weaknesses + the random-basic-weakness draw |
+| #781 | Abandoned and Alone 01015 + the seven basic weaknesses + the random-basic-weakness draw |
 | #782 | Five legal starter decks + a real investigator picker |
 | #1059 | A designated Move — the `TODO(#1059)`s #777 left at every Move site |
 | #1099 | Mind over Matter 01036: `SkillTestStarted` announces Combat after the player chose Intellect (found during #779) |
@@ -66,13 +66,14 @@ ship untested by anything but a unit test.
 | #777 | Slice 1 — Agnes Baker 01004 + Heirloom / Dark Memory + Mystic level 0: #1045–#1056, closed by #1058 (Agnes plays The Gathering to a resolution with the picker's scaffold deck) |
 | #778 | Slice 2 — "Skids" O'Toole 01003 + On the Lam / Hospital Debts + Rogue level 0: #1064–#1078, closed by #1079 ("Skids" plays The Gathering to a resolution with the picker's scaffold deck); closes #576 (`is_fast` after prefix lines) through #1065 |
 | #779 | Slice 3 — Daisy Walker 01002 + Tote Bag / Necronomicon + the Tome-restricted extra action, plus the trait-counting `Quantity` (decided in #1000): #1089–#1095, #1097, #1098, landed as PR #1096 |
+| #780 | Slice 4 — Wendy Adams 01005 + Wendy's Amulet + Survivor level 0: #1102–#1113, landed as PR #1114 |
 
 #783 (the deckbuilding validator) was filed alongside #782 but milestoned to
 **phase 9**, where its real consumer is.
 
 ## Ordering
 
-**#1025 ✅ PR #1030 → #776 ✅ PR #1044 → #777 ✅ PR #1057 → #778 ✅ PR #1080 → (#366) → #779 ✅ PR #1096 → #780 → #781 → #782.**
+**#1025 ✅ PR #1030 → #776 ✅ PR #1044 → #777 ✅ PR #1057 → #778 ✅ PR #1080 → #779 ✅ PR #1096 → #780 ✅ PR #1114 → #781 → #782.**
 
 **Vertical slices, one investigator at a time** — investigator card, signature
 pair, and that investigator's class pool, each slice ending in someone playable.
@@ -87,8 +88,9 @@ would make one investigator's PR the home for everyone's foundation.
 card that needs it. Agnes' elder sign fits the existing modifier-only shape once
 #776 adds a horror `Quantity`, and her ability is a reaction on herself — Roland's
 shape. Skids is the simplest consumer of the *on-success effect*, so that field
-gets exercised before Daisy's trait-counting leans on it. Wendy is last because she
-is blocked on a `needs-design` issue.
+gets exercised before Daisy's trait-counting leans on it. Wendy is last because her
+reaction and her Amulet need the most engine: a chaos-token reveal that is a timing
+moment, and a play from the discard pile.
 
 ## What the elder signs force
 
@@ -101,7 +103,7 @@ This is where the stress test bites. Verbatim from
 | Agnes 01004 | `+1 for each horror on Agnes Baker.` | a horror `Quantity` |
 | "Skids" 01003 | `+2. If you succeed, gain 2 resources.` | a success-conditional **effect** |
 | Daisy 01002 | `+0. If you succeed, draw 1 card for each [[Tome]] you control.` | that, plus trait-counting |
-| Wendy 01005 | `+0. If Wendy's Amulet is in play, you automatically succeed instead.` | an `immediate` automatic success, plus a "card is in play" condition (#780) |
+| Wendy 01005 | `+0. If Wendy's Amulet is in play, you automatically succeed instead.` | an `immediate` automatic success, plus a `ControlStatus` condition on the Amulet (#780) |
 
 `Trigger::ElderSign` carries a `TokenOutcome` — the shape a scenario's symbol table
 returns too: a modifier, an `immediate` part, and `on_success` / `on_fail` parts.
@@ -111,7 +113,8 @@ skill test results and run at ST.7, after the action's own result (the clue an
 investigation discovers). All three run with the investigator card as source.
 
 **Wendy's automatic success is an elder-sign effect, not an outcome override**:
-`immediate: If(<Amulet in play>, AutoResolve(AutomaticSuccess))`, a test-scoped
+`immediate: If(ControlStatus(<Amulet>, ByAPlayer), AutoResolve(AutomaticSuccess))`,
+a test-scoped
 determination that ST.6 reads (ADR 0007). The token is already revealed, so
 `data/rules-reference/rules/glossary/Automatic_Failure_Success.md` skips nothing:
 *"If a chaos token effect causes an investigator to automatically succeed or fail at
@@ -156,7 +159,9 @@ None.
 Phase 7's gate, closed. Nothing here should start while a rules defect in the gate is
 open — that is the whole reason for the ordering.
 
-#366 (replacement effects beyond cancel) is `needs-design` and blocks #780 alone.
+#366 (replacement effects beyond cancel) blocks nothing here: Wendy's reaction is a
+cancel followed by her own effect, and the Amulet's Forced is a routing rule. Its
+general machinery is unmilestoned.
 
 ## What "done" looks like
 

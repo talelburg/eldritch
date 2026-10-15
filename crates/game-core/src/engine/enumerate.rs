@@ -3,15 +3,17 @@
 //! (2b) — this module shares the handlers' legality predicates so the
 //! enumeration matches handler-acceptance by construction.
 
+use std::fmt;
+
 use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
 use crate::engine::dispatch::actions::{engage, evade, fight, investigate, r#move};
 use crate::engine::dispatch::{act_agenda, legality};
 use crate::engine::outcome::OptionTarget;
-use crate::engine::{abilities_in_effect, ability_source};
+use crate::engine::{abilities_in_effect, ability_source, board};
 use crate::state::{
-    AbilityAddress, AbilitySource, EnemyId, GameState, InvestigatorId, InvestigatorTurnFrame,
-    LocationId,
+    AbilityAddress, AbilitySource, CardCode, CardInstanceId, EnemyId, GameState, Investigator,
+    InvestigatorId, InvestigatorTurnFrame, LocationId,
 };
 
 /// The enumerated open-turn actions for the active investigator.
@@ -67,12 +69,12 @@ pub enum TurnAction {
         /// The enemy to engage.
         enemy: EnemyId,
     },
-    /// Play a card from the investigator's hand.
+    /// Play a card from one of the investigator's zones.
     PlayCard {
         /// Investigator playing the card.
         investigator: InvestigatorId,
-        /// Zero-based position in the investigator's hand.
-        hand_index: u8,
+        /// The zone the card is played from, and where in it.
+        source: PlaySource,
     },
     /// Activate a `Trigger::Activated` ability on an ability source the
     /// investigator can reach (#707).
@@ -95,10 +97,63 @@ pub enum TurnAction {
     },
 }
 
+/// Where a [`TurnAction::PlayCard`] takes its card from: the zone the card
+/// leaves when it "commences being played" (RR Appendix I step 3), and its
+/// position there.
+///
+/// This names a **zone**, not an [`AbilitySource`]: a card being played is
+/// not a source of triggered abilities (see **Ability source** in
+/// `GLOSSARY.md`). Whether the source may be played from at all is
+/// `legality::play_source_available`'s answer, which the turn menu, the Fast
+/// window and the reaction scan all ask.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlaySource {
+    /// Zero-based position in the investigator's hand.
+    Hand(u8),
+    /// The topmost card of the investigator's discard pile, under the play
+    /// permission on the card instance `permission`: Wendy's Amulet 01014,
+    /// *"You may play the topmost event in your discard pile as if it were in
+    /// your hand."* The permission is named so the option can anchor on the
+    /// card that grants it — the client renders no discard pile (#1101).
+    TopOfDiscardPile {
+        /// The in-play card whose permission the play is made under.
+        permission: CardInstanceId,
+    },
+}
+
+impl PlaySource {
+    /// The card at this source in `investigator`'s zones, or `None` when the
+    /// position is out of bounds or the discard pile is empty. Positional
+    /// only: whether the permission still holds is not asked here.
+    #[must_use]
+    pub fn card(self, investigator: &Investigator) -> Option<&CardCode> {
+        match self {
+            PlaySource::Hand(index) => investigator.hand.get(usize::from(index)),
+            PlaySource::TopOfDiscardPile { .. } => investigator.discard.last(),
+        }
+    }
+}
+
+impl fmt::Display for PlaySource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PlaySource::Hand(index) => write!(f, "hand index {index}"),
+            PlaySource::TopOfDiscardPile { permission } => {
+                write!(f, "the top of the discard pile (under {permission:?})")
+            }
+        }
+    }
+}
+
 impl TurnAction {
     /// Plain human-readable menu label. Rich/structured rendering is #205.
+    ///
+    /// A play from the discard pile names the event and the card whose
+    /// permission it is played under — *"Play Emergency Cache (Wendy's
+    /// Amulet)"* — because it is anchored on that card, not on the event
+    /// (#1112); `cards` supplies both names.
     #[must_use]
-    pub fn label(&self, state: &GameState) -> String {
+    pub fn label(&self, state: &GameState, cards: &CardRegistry) -> String {
         let loc_name = |id: LocationId| {
             state
                 .locations
@@ -122,13 +177,23 @@ impl TurnAction {
             TurnAction::Engage { enemy, .. } => format!("Engage {}", enemy_name(*enemy)),
             TurnAction::PlayCard {
                 investigator,
-                hand_index,
+                source: source @ PlaySource::TopOfDiscardPile { permission },
+            } => {
+                let event = state
+                    .investigators
+                    .get(investigator)
+                    .and_then(|inv| source.card(inv));
+                play_under_permission_label(state, cards, event, *permission)
+            }
+            TurnAction::PlayCard {
+                investigator,
+                source,
             } => {
                 let code = state
                     .investigators
                     .get(investigator)
-                    .and_then(|inv| inv.hand.get(*hand_index as usize))
-                    .map_or_else(|| format!("card {hand_index}"), ToString::to_string);
+                    .and_then(|inv| source.card(inv))
+                    .map_or_else(|| format!("card at {source}"), ToString::to_string);
                 format!("Play {code}")
             }
             // Structured / rich rendering is #205; until then a granted
@@ -167,11 +232,17 @@ impl TurnAction {
             | TurnAction::Engage { enemy, .. } => OptionTarget::Enemy(*enemy),
             TurnAction::PlayCard {
                 investigator,
-                hand_index,
+                source: PlaySource::Hand(hand_index),
             } => OptionTarget::HandCard {
                 investigator: *investigator,
                 hand_index: *hand_index,
             },
+            // On the permission's card: the client renders no discard pile
+            // (#1101), and ADR 0011 needs a surface it does render.
+            TurnAction::PlayCard {
+                source: PlaySource::TopOfDiscardPile { permission },
+                ..
+            } => OptionTarget::CardInstance(*permission),
             // One map from a source to an anchor, shared with the forced /
             // reaction candidates' `candidate_anchor` (#735): the two carried a
             // copy each and the copies had drifted. The exhaustive `match` that
@@ -182,6 +253,30 @@ impl TurnAction {
             TurnAction::AdvanceAct { .. } => OptionTarget::Act,
         })
     }
+}
+
+/// The label of a play made under the permission on the in-play card
+/// `permission`, naming the card played and the permission's card — *"Play
+/// Emergency Cache (Wendy's Amulet)"*. Shared by the turn menu and the
+/// reaction window, the two places such a play is offered. A code the registry
+/// does not know is printed as the code.
+pub(crate) fn play_under_permission_label(
+    state: &GameState,
+    cards: &CardRegistry,
+    card: Option<&CardCode>,
+    permission: CardInstanceId,
+) -> String {
+    let name = |code: Option<&CardCode>| {
+        code.map_or_else(
+            || "?".to_owned(),
+            |code| {
+                (cards.metadata_for)(code)
+                    .map_or_else(|| code.to_string(), |meta| meta.name.clone())
+            },
+        )
+    };
+    let granter = board::find_instance(state, permission).map(|(granter, _)| &granter.code);
+    format!("Play {} ({})", name(card), name(granter))
 }
 
 /// The investigator whose turn is open, or `None` when no
@@ -244,20 +339,15 @@ fn push_card_actions(
     investigator: InvestigatorId,
     out: &mut Vec<TurnAction>,
 ) {
-    let Some(inv) = state.investigators.get(&investigator) else {
-        return;
-    };
-
-    // PlayCard: one option per hand card the handler would accept —
-    // `check_play_card` is the whole predicate, constant play-bans included
-    // (Dissonant Voices 01165).
-    let hand_len = inv.hand.len();
-    for idx in 0..hand_len {
-        let hand_index = u8::try_from(idx).unwrap_or(u8::MAX);
-        if legality::check_play_card(state, cards, investigator, hand_index).is_ok() {
+    // PlayCard: one option per play source the handler would accept — each
+    // hand card, and the top of the discard pile under a permission (Wendy's
+    // Amulet 01014). `check_play_card` is the whole predicate, constant
+    // play-bans included (Dissonant Voices 01165).
+    for source in legality::play_sources(state, cards, investigator) {
+        if legality::check_play_card(state, cards, investigator, source).is_ok() {
             out.push(TurnAction::PlayCard {
                 investigator,
-                hand_index,
+                source,
             });
         }
     }

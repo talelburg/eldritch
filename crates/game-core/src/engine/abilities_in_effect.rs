@@ -160,10 +160,11 @@ pub(crate) fn for_source(
     Some(out)
 }
 
-/// [`for_source`] for a [`CandidateSource`]. A [`Hand`](CandidateSource::Hand)
-/// candidate is a card being *played*, never a board card with two faces, so
-/// it reads the front — and nothing grants to a card in hand, which is not in
-/// play, so every address it yields is [`AbilityAddress::Printed`].
+/// [`for_source`] for a [`CandidateSource`]. A play source — a card in hand or
+/// on top of the discard pile ([`CandidateSource::is_play`]) — is a card being
+/// *played*, never a board card with two faces, so it reads the front — and
+/// nothing grants to a card out of play, so every address it yields is
+/// [`AbilityAddress::Printed`].
 #[must_use]
 pub(crate) fn for_candidate_source(
     state: &GameState,
@@ -171,9 +172,9 @@ pub(crate) fn for_candidate_source(
     source: CandidateSource,
     code: &CardCode,
 ) -> Option<Vec<(AbilityAddress, Ability)>> {
-    match source {
-        CandidateSource::Ability(source) => for_source(state, reg, source, code),
-        CandidateSource::Hand => Some(addressed_as_printed((reg.abilities_for)(code)?)),
+    match source.ability() {
+        Some(source) => for_source(state, reg, source, code),
+        None => Some(addressed_as_printed((reg.abilities_for)(code)?)),
     }
 }
 
@@ -188,6 +189,8 @@ pub(crate) fn for_candidate_source(
 /// the additional-action sweep (`Effect::AdditionalActionWhileInPlay`), the
 /// skill test's token substitution (`Effect::TreatRevealedToken`),
 /// `slots::slot_grants` (`Effect::AdditionalSlots`),
+/// [`events_go_to_bottom_of_deck`] (`Effect::PlaceEventsOnBottomOfDeck`),
+/// [`discard_play_permission`] (`Effect::PlayTopmostEventInDiscardPile`),
 /// `evaluator::pending_action_surcharge` (`Restriction::ExtraActionCost`) and
 /// `evaluator::play_is_prohibited` (`Restriction::CannotPlay`). Empty for an
 /// investigator not in state.
@@ -241,6 +244,53 @@ pub(crate) fn cannot_leave_play(state: &GameState, reg: &CardRegistry, id: CardI
             }
             _ => false,
         })
+}
+
+/// Whether an event `owner` owns goes to the bottom of their deck rather than
+/// their discard pile: an in-effect [`Effect::PlaceEventsOnBottomOfDeck`] on a
+/// card `owner` controls. Wendy's Amulet 01014: *"**Forced** - After you play an
+/// event or discard an event from play: Place it on the bottom of your deck
+/// instead of in your discard pile."*
+///
+/// Read by owner, not by who played or discarded it: the pile an event goes to
+/// is its owner's (`glossary/Ownership_and_Control.md`: *"If a card would enter
+/// an out-of-play area that does not belong to the card's owner, the card is
+/// physically placed in its owner's equivalent out-of-play area instead."*),
+/// so *"your deck"* is the owner's. No ruling settles another player's event;
+/// in solo the readings coincide.
+///
+/// The two placements that read it are a played event's, at RR Appendix I
+/// step 4 (`cards::dispose_play_from_hand`), and an event's leaving play
+/// (`leave_play`'s owner filing). A second card that changes where an event
+/// goes is the trigger for #366's general machinery.
+#[must_use]
+pub(crate) fn events_go_to_bottom_of_deck(
+    state: &GameState,
+    reg: &CardRegistry,
+    owner: InvestigatorId,
+) -> bool {
+    constants_of(state, reg, owner)
+        .iter()
+        .any(|(_, ability)| ability.effect == Effect::PlaceEventsOnBottomOfDeck)
+}
+
+/// The card instance whose in-effect [`Effect::PlayTopmostEventInDiscardPile`]
+/// lets `investigator` play the topmost event of their discard pile, if they
+/// control one: Wendy's Amulet 01014's *"You may play the topmost event in
+/// your discard pile as if it were in your hand."* The first in sweep order
+/// when several would (no corpus deck can hold two: the Amulet is a signature
+/// card). Whether the top card is an event is the play paths' question
+/// (`legality::play_source_available`), not this reader's.
+#[must_use]
+pub(crate) fn discard_play_permission(
+    state: &GameState,
+    reg: &CardRegistry,
+    investigator: InvestigatorId,
+) -> Option<CardInstanceId> {
+    constants_of(state, reg, investigator)
+        .into_iter()
+        .find(|(_, ability)| ability.effect == Effect::PlayTopmostEventInDiscardPile)
+        .map(|(instance, _)| instance)
 }
 
 /// Pair each of a card's printed abilities with the address that names it.

@@ -35,6 +35,7 @@ pub fn abilities() -> Vec<Ability> {
             scope: EnemyScope {
                 at: LocationSet::Here,
                 exhausted: Some(true),
+                exempt: None,
             },
         }),
         2,

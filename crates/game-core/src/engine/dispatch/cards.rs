@@ -14,9 +14,10 @@ use crate::engine::dispatch::legality::PlayCheckResult;
 use crate::engine::dispatch::{
     combat, emit, encounter, legality, phases, slots, threat_area, PlayDestination,
 };
+use crate::engine::enumerate::PlaySource;
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
-use crate::engine::Cx;
+use crate::engine::{board, Cx};
 use crate::event::Event;
 use crate::state::{
     ActionResume, AssetEntry, CardCode, CardInPlay, Deck, DiscardPile, InvestigatorId,
@@ -31,8 +32,10 @@ pub(super) const INITIAL_HAND_SIZE: u8 = 5;
 /// code has no metadata — so the engine's unit tests, whose test registry knows
 /// no real card, behave as if no card is a weakness.
 ///
-/// Two consumers: the opening-hand set-aside below, and the upkeep hand-size
-/// discard, which may not choose a weakness (`phases::hand_size_discard_count`).
+/// Three consumers: the opening-hand set-aside below, and the two discards that
+/// may not choose a weakness — the upkeep hand-size discard
+/// (`phases::hand_size_discard_count`) and the hand-discard cost
+/// (`hand_discard_cost::candidates`).
 /// Where a card goes when it leaves play is its owner's question, not this
 /// one's (#976).
 pub(super) fn is_weakness_code(cards: &CardRegistry, code: &CardCode) -> bool {
@@ -439,19 +442,35 @@ pub fn discard_random_from_hand(cx: &mut Cx, investigator: InvestigatorId) -> Op
             .hand
             .len(),
     );
+    Some(discard_from_hand(cx, investigator, idx))
+}
+
+/// Discard the card at `hand_index` in `investigator`'s hand to their discard
+/// pile, emitting [`Event::CardDiscarded`] (`from: Zone::Hand`), and return
+/// its code.
+///
+/// # Panics
+///
+/// Panics if `investigator` is not in the state or `hand_index` is past the
+/// end of their hand: every caller has just read the index from that hand.
+pub(super) fn discard_from_hand(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    hand_index: usize,
+) -> CardCode {
     let inv = cx
         .state
         .investigators
         .get_mut(&investigator)
-        .expect("present");
-    let card = inv.hand.remove(idx);
+        .expect("discard_from_hand: the investigator is in the state");
+    let card = inv.hand.remove(hand_index);
     inv.discard.push(card.clone());
     cx.events.push(Event::CardDiscarded {
         code: card.clone(),
         from: Zone::Hand,
         to: DiscardPile::Investigator(investigator),
     });
-    Some(card)
+    card
 }
 
 /// Move the card `from` cards below the top of `deck` to `to` cards below the
@@ -485,6 +504,28 @@ pub(crate) fn move_card_in_deck(cx: &mut Cx, deck: Deck, from: usize, to: usize)
         }
     }
     true
+}
+
+/// Move the card at `index` of `investigator`'s discard pile to their hand,
+/// returning it, and emit [`Event::CardAddedToHandFromDiscard`] (Scavenging
+/// 01073). `None`, and nothing moves, for an index past the pile's end or a
+/// missing investigator.
+pub(crate) fn add_discarded_card_to_hand(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    index: usize,
+) -> Option<CardCode> {
+    let inv = cx.state.investigators.get_mut(&investigator)?;
+    if index >= inv.discard.len() {
+        return None;
+    }
+    let card = inv.discard.remove(index);
+    inv.hand.push(card.clone());
+    cx.events.push(Event::CardAddedToHandFromDiscard {
+        investigator,
+        code: card.clone(),
+    });
+    Some(card)
 }
 
 /// Grant `amount` resources to `investigator`: saturating-add to the
@@ -984,7 +1025,9 @@ pub(super) fn resolve_play_target(
 /// [`PlayFromHand`](crate::state::Continuation::PlayFromHand) frame
 /// (Slice D #423) that holds the card; when that effect pops, the frame's
 /// disposal places it — into `cards_in_play` for assets, or into `discard`
-/// (with an emitted [`Event::CardDiscarded`]) for events. Only then, at step 4,
+/// (with an emitted [`Event::CardDiscarded`]) for events, or the deck's bottom
+/// when the owner's cards redirect it ([`Event::CardPlacedOnBottomOfDeck`],
+/// Wendy's Amulet 01014). Only then, at step 4,
 /// is the completed play announced to the timing system as
 /// `TimingEvent::CardPlayed` (Heirloom of Hyperborea 01012); the step-3
 /// [`Event::CardPlayed`] is the log entry, not that announcement.
@@ -998,26 +1041,27 @@ pub(super) fn resolve_play_target(
 pub(super) fn play_card(
     cx: &mut Cx,
     investigator: InvestigatorId,
-    hand_index: u8,
+    source: PlaySource,
 ) -> EngineOutcome {
     let PlayCheckResult {
         abilities,
         is_fast,
         card_type: _,
-    } = match legality::check_play_card(cx.state, cx.cards, investigator, hand_index) {
+    } = match legality::check_play_card(cx.state, cx.cards, investigator, source) {
         Ok(r) => r,
         Err(reason) => return EngineOutcome::Rejected { reason },
     };
     // The code is re-read from state here so we don't pass it through
     // the result (avoiding the lifetime question). The validator already
-    // confirmed the hand_index is in bounds and the investigator exists.
-    let idx = usize::from(hand_index);
-    let code: CardCode = cx
-        .state
-        .investigators
-        .get(&investigator)
+    // confirmed the source holds a card and the investigator exists.
+    let code: CardCode = source
+        .card(
+            cx.state
+                .investigators
+                .get(&investigator)
+                .expect("checked in validator"),
+        )
         .expect("checked in validator")
-        .hand[idx]
         .clone();
 
     // Mutate. A fast play is not an action (`glossary/Fast.md`: *"A fast card
@@ -1025,7 +1069,7 @@ pub(super) fn play_card(
     // action."*), so it pays its resource cost, commences and resolves at once.
     if is_fast {
         pay_play_cost(cx, investigator, &code);
-        let card = commence_play(cx, investigator, idx);
+        let card = commence_play(cx, investigator, source);
         return complete_play(cx, investigator, card);
     }
     // A non-fast play is taken as an action: the step pays its one action, and
@@ -1037,7 +1081,7 @@ pub(super) fn play_card(
     let description = ActionDescription::play(code.clone(), play_designator(&abilities).cloned());
     take::take(cx, investigator, &description, |cx| {
         pay_play_cost(cx, investigator, &code);
-        let card = commence_play(cx, investigator, idx);
+        let card = commence_play(cx, investigator, source);
         Ok(ActionResume::PlayCard { card: Some(card) })
     })
 }
@@ -1093,7 +1137,8 @@ pub(in crate::engine) fn enter_asset_into_play(
 /// Appendix I step 4, where the card "is regarded as played (and placed in play,
 /// or in its owner's discard pile if it's an event)". Pops the frame first (which
 /// takes the card off it), then places the card by destination: an **event** goes
-/// to its owner's discard pile, an **asset** is minted into play and announced via
+/// to its owner's discard pile, or the bottom of their deck under Wendy's Amulet
+/// 01014 ([`place_played_event`]), an **asset** is minted into play and announced via
 /// `EnteredPlay`. Either way the completed play is then announced via
 /// `CardPlayed` (Heirloom of Hyperborea 01012). Because the frame is popped
 /// *before* `queue_event`, a reaction window the latter queues (Research
@@ -1122,7 +1167,7 @@ pub(super) fn dispose_play_from_hand(cx: &mut Cx) -> EngineOutcome {
 
     match destination {
         PlayDestination::Discard => {
-            discard_played_card(cx, investigator, card.clone());
+            place_played_event(cx, investigator, card.clone());
             // The play is complete (Appendix I step 4): announced in tail
             // position (ADR 0003).
             emit::queue_event(
@@ -1243,9 +1288,9 @@ pub(super) fn resume_play_card(
     complete_play(cx, investigator, card)
 }
 
-/// Commence playing the card at `hand_index` in `investigator`'s hand (RR
+/// Commence playing the card at `source` among `investigator`'s zones (RR
 /// Appendix I, step 3: "The card commences being played"): emit
-/// [`Event::CardPlayed`], remove the card from hand, and hand it back to the
+/// [`Event::CardPlayed`], remove the card from its zone, and hand it back to the
 /// caller, which parks it on the frame driving the play. Between here and
 /// step 4 the card is in no zone at all — see
 /// [`Continuation::play_in_progress`](crate::state::Continuation::play_in_progress).
@@ -1258,19 +1303,25 @@ pub(super) fn resume_play_card(
 /// Shared by [`play_card`] and the Axis-C reaction-event play
 /// (`reaction_windows::play_fast_event`). Both callers pay the resource cost
 /// before calling and run the card's effect(s) after. The caller guarantees
-/// `investigator` exists and `hand_index` is in bounds.
+/// `investigator` exists and `source` holds a card.
 pub(super) fn commence_play(
     cx: &mut Cx,
     investigator: InvestigatorId,
-    hand_index: usize,
+    source: PlaySource,
 ) -> CardCode {
-    let card = cx
+    let inv = cx
         .state
         .investigators
         .get_mut(&investigator)
-        .expect("commence_play: caller guarantees investigator exists")
-        .hand
-        .remove(hand_index);
+        .expect("commence_play: caller guarantees investigator exists");
+    let card = match source {
+        PlaySource::Hand(index) => inv.hand.remove(usize::from(index)),
+        // The pile's top is its last element.
+        PlaySource::TopOfDiscardPile { .. } => inv
+            .discard
+            .pop()
+            .expect("commence_play: caller guarantees the discard pile holds a card"),
+    };
     cx.events.push(Event::CardPlayed {
         investigator,
         code: card.clone(),
@@ -1283,10 +1334,27 @@ pub(super) fn commence_play(
 /// [`Event::CardDiscarded`] with `from: Zone::Hand` — hand is the zone the card
 /// left when it commenced being played, and it has been in none since.
 ///
+/// **Unless the owner's cards redirect it** to the bottom of their deck
+/// (Wendy's Amulet 01014), through
+/// [`board::redirect_event_to_bottom_of_deck`], which emits
+/// [`Event::CardPlacedOnBottomOfDeck`] in place of the discard. The redirect is
+/// checked here, inside step 4, because the Official FAQ puts it there; the
+/// helper's doc quotes it.
+///
+/// An event played from the discard pile (Wendy's Amulet 01014, #1112) is
+/// placed by the same redirect: the Amulet that let it be played also sends it
+/// to the deck's bottom. Only if the Amulet left play mid-resolution would one
+/// reach the discard branch, where the event still says `from: Zone::Hand` —
+/// the frame does not carry the zone the play started from. Nothing in the
+/// corpus discards an Amulet while an event resolves.
+///
 /// The only caller is [`dispose_play_from_hand`], reached exactly once per play
-/// that resolves, so an event is placed in discard exactly once —
-/// "simultaneously with the completion" of its effect.
-fn discard_played_card(cx: &mut Cx, investigator: InvestigatorId, card: CardCode) {
+/// that resolves, so an event is placed exactly once — "simultaneously with the
+/// completion" of its effect.
+fn place_played_event(cx: &mut Cx, investigator: InvestigatorId, card: CardCode) {
+    if board::redirect_event_to_bottom_of_deck(cx, investigator, &card) {
+        return;
+    }
     if let Some(inv) = cx.state.investigators.get_mut(&investigator) {
         inv.discard.push(card.clone());
     }

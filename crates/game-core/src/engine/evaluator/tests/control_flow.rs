@@ -24,6 +24,7 @@ fn state_with_in_flight_kind(kind: SkillTestKind) -> GameState {
             resolved: None,
             revealed: None,
             reveal_clause: None,
+            discard_after: None,
         }));
     state
 }

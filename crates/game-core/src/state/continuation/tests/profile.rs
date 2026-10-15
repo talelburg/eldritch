@@ -1,4 +1,5 @@
 use super::*;
+use crate::state::{ChaosToken, TokenResolution};
 use crate::test_support;
 
 fn candidate() -> ResolutionCandidate {
@@ -248,6 +249,19 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             timing_point_window(vec![candidate()]),
             profile(PROMPT, CANCEL),
         ),
+        // A Fast event played from the top of the discard pile under a
+        // permission (Wendy's Amulet 01014, #1112).
+        (
+            timing_point_window(vec![ResolutionCandidate::new(
+                CardCode::new("01079"),
+                InvestigatorId(1),
+                AbilityAddress::Printed(0),
+                CandidateSource::TopOfDiscardPile {
+                    permission: CardInstanceId(7),
+                },
+            )]),
+            profile(PROMPT, CANCEL),
+        ),
         (
             Continuation::TimingPointWindow(TimingPointWindowFrame {
                 event: TimingEvent::RoundEnded,
@@ -297,6 +311,13 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
                 investigator: InvestigatorId(1),
                 card: None,
                 entry: AssetEntry::PlayedFromHand,
+            }),
+            profile(PROMPT, COMPLETE),
+        ),
+        (
+            Continuation::HandDiscardCost(HandDiscardCostFrame {
+                investigator: InvestigatorId(1),
+                code: CardCode::new("01005"),
             }),
             profile(PROMPT, COMPLETE),
         ),
@@ -388,6 +409,22 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             Continuation::EmitEvent(EmitEventFrame {
                 event: TimingEvent::RoundEnded,
                 step: EmitStep::After,
+                prevented: false,
+            }),
+            profile(DRIVEN, COMPLETE),
+        ),
+        // A condition carrying a payload: the revealed token rides the event.
+        (
+            Continuation::EmitEvent(EmitEventFrame {
+                event: TimingEvent::ChaosTokenRevealed {
+                    investigator: InvestigatorId(1),
+                    token: RevealedToken {
+                        token: ChaosToken::Skull,
+                        counts_as: ChaosToken::Skull,
+                        resolution: TokenResolution::Modifier(-1),
+                    },
+                },
+                step: EmitStep::When,
                 prevented: false,
             }),
             profile(DRIVEN, COMPLETE),

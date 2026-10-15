@@ -15,9 +15,9 @@ use crate::action::InputResponse;
 use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::emit::{ConditionResolution, TimingEvent};
 use crate::engine::dispatch::initiation::{self, InitiationKind, Refusal};
-use crate::engine::dispatch::legality::{check_activate_ability, check_play_card};
+use crate::engine::dispatch::legality::{self, check_activate_ability, check_play_card};
 use crate::engine::dispatch::{cards, coordinator, cursor, phases, skill_test, trigger_scan};
-use crate::engine::enumerate::TurnAction;
+use crate::engine::enumerate::{self, PlaySource, TurnAction};
 use crate::engine::evaluator::EvalContext;
 use crate::engine::outcome::{
     ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
@@ -116,7 +116,9 @@ pub(super) fn open_forced_resolution(
 }
 
 /// The board anchor for a resolution candidate's source: a Fast hand event by
-/// code — every copy (#539); everything else through the one
+/// code — every copy (#539); a Fast event on top of the discard pile on the
+/// card whose permission it is played under, since the client renders no
+/// discard pile (#1101); everything else through the one
 /// [`AbilitySource`] → [`OptionTarget`] map, which the turn menu
 /// (`TurnAction::target`) shares (#735).
 ///
@@ -134,6 +136,7 @@ pub(super) fn candidate_anchor(cand: &ResolutionCandidate) -> OptionTarget {
             investigator: cand.controller,
             code: cand.code.clone(),
         },
+        CandidateSource::TopOfDiscardPile { permission } => OptionTarget::CardInstance(permission),
         CandidateSource::Ability(source) => source.into(),
     }
 }
@@ -144,8 +147,15 @@ pub(super) fn candidate_anchor(cand: &ResolutionCandidate) -> OptionTarget {
 /// shared with [`super::choice`]. The label distinguishes a hand Fast-event
 /// play ([`CandidateSource::Hand`] in a reaction window) from an in-play
 /// reaction, and from a `forced` run's ability on a card in hand, which fires
-/// without being played (Dark Memory 01013, #1046).
-fn build_resolution_options(candidates: &[ResolutionCandidate], forced: bool) -> Vec<ChoiceOption> {
+/// without being played (Dark Memory 01013, #1046). A play from the top of the
+/// discard pile names the event and the permission's card, as the turn menu
+/// does (`enumerate::play_under_permission_label`).
+fn build_resolution_options(
+    state: &GameState,
+    cards: &CardRegistry,
+    candidates: &[ResolutionCandidate],
+    forced: bool,
+) -> Vec<ChoiceOption> {
     candidates
         .iter()
         .enumerate()
@@ -156,6 +166,14 @@ fn build_resolution_options(candidates: &[ResolutionCandidate], forced: bool) ->
             let label = match cand.source {
                 CandidateSource::Hand if forced => format!("Resolve {} in hand", cand.code),
                 CandidateSource::Hand => format!("Play {} from hand", cand.code),
+                CandidateSource::TopOfDiscardPile { permission } => {
+                    enumerate::play_under_permission_label(
+                        state,
+                        cards,
+                        Some(&cand.code),
+                        permission,
+                    )
+                }
                 CandidateSource::Ability(_) => format!("Resolve reaction: {}", cand.code),
             };
             ChoiceOption::new(id, label).at(candidate_anchor(cand))
@@ -234,6 +252,7 @@ fn withdraw_lapsed_candidates(cx: &mut Cx) -> usize {
         return 0;
     };
     let (event, bucket, mode) = (event.clone(), bucket, mode.clone());
+    refresh_provisional_verdict(cx, &event, bucket);
     let stored = cx
         .state
         .continuations
@@ -273,6 +292,21 @@ fn withdraw_lapsed_candidates(cx: &mut Cx) -> usize {
         .top_mut::<TimingPointWindowFrame>()
         .candidates = kept;
     lapsed.len()
+}
+
+/// Keep a skill test's stored verdict live while its `when` cell is open: a
+/// modifier played there (Lucky! 01080) changes the total before the resolve
+/// step re-totals, and the client shows the player the stored verdict while
+/// they decide whether to play another (#1111). Written before every re-offer,
+/// so the window's own re-scan and the client read the same result.
+fn refresh_provisional_verdict(cx: &mut Cx, event: &TimingEvent, bucket: EventTiming) {
+    if bucket != EventTiming::When || !matches!(event, TimingEvent::SkillTestResolved { .. }) {
+        return;
+    }
+    let fresh = skill_test::verdict(cx.state, cx.cards);
+    if let Some(test) = cx.state.current_skill_test_mut() {
+        test.resolved = Some(fresh);
+    }
 }
 
 /// Withdraw **every** remaining candidate from an open `when`-cell window whose
@@ -359,6 +393,7 @@ fn open_window_cell(state: &GameState) -> Option<(&TimingEvent, EventTiming, &Ti
 
 /// The scan that filled a window of `mode`, re-run at its recorded cell: the
 /// reaction scan for a reaction window, the forced collector for a forced run.
+/// The condition is re-asked as it [now stands](condition_as_it_now_stands).
 fn rescan(
     state: &GameState,
     cards: &CardRegistry,
@@ -366,9 +401,48 @@ fn rescan(
     bucket: EventTiming,
     mode: &TimingMode,
 ) -> Vec<ResolutionCandidate> {
+    let event = condition_as_it_now_stands(state, cards, event, bucket);
     match mode {
-        TimingMode::Reaction => trigger_scan::collect_reactions(state, cards, event, bucket),
-        TimingMode::Forced => trigger_scan::collect_forced(state, cards, event, bucket),
+        TimingMode::Reaction => trigger_scan::collect_reactions(state, cards, &event, bucket),
+        TimingMode::Forced => trigger_scan::collect_forced(state, cards, &event, bucket),
+    }
+}
+
+/// The condition a scan of `bucket` asks about. Every condition is the one that
+/// was announced, except a skill test's verdict in its `when` cell: that
+/// verdict is provisional until the resolve step re-totals (#1111), so the scan
+/// re-totals too, and asks about the verdict the test would now resolve with.
+///
+/// Every scan of a cell asks through here — the coordinator's per-cell check,
+/// the cell's forced and reaction scans, and an open window's re-scan — so
+/// they agree on the question. A forced `when` ability that flips the verdict
+/// mid-run leaves the cell's reaction scan asking about the new verdict, the
+/// one the window's lapse check will re-ask; asked against the announced one,
+/// it would offer a *"would fail"* reaction only for that check to withdraw it.
+///
+/// So once one Lucky! 01080 has turned a failure into a success, a second is
+/// withdrawn: *"Play when you would fail a skill test"* no longer holds, and
+/// `glossary/Triggering_Condition.md` lets only an **eligible** instance be used
+/// — *"Each eligible ability that triggers in reference to a specified timing
+/// point may be used once each time that timing point occurs."* While the test
+/// still fails, both stay offered. An ability matching either verdict is
+/// unaffected, and the intersection in [`withdraw_lapsed_candidates`] never
+/// adds the other verdict's abilities: those wait for the fresh sequence.
+pub(super) fn condition_as_it_now_stands(
+    state: &GameState,
+    cards: &CardRegistry,
+    event: &TimingEvent,
+    bucket: EventTiming,
+) -> TimingEvent {
+    match event {
+        TimingEvent::SkillTestResolved {
+            investigator, kind, ..
+        } if bucket == EventTiming::When => TimingEvent::SkillTestResolved {
+            investigator: *investigator,
+            kind: *kind,
+            outcome: skill_test::outcome_of(skill_test::verdict(state, cards)),
+        },
+        _ => event.clone(),
     }
 }
 
@@ -390,13 +464,13 @@ fn lapse_reason(
     candidate: &ResolutionCandidate,
     mode: &TimingMode,
 ) -> LapseReason {
-    if !candidate_source_present(state, candidate) {
+    if !candidate_source_present(state, cards, candidate) {
         return LapseReason::SourceGone;
     }
-    let kind = match (mode, candidate.source) {
-        (TimingMode::Forced, _) => InitiationKind::Forced,
-        (TimingMode::Reaction, CandidateSource::Hand) => InitiationKind::Play,
-        (TimingMode::Reaction, CandidateSource::Ability(_)) => InitiationKind::Reaction,
+    let kind = match mode {
+        TimingMode::Forced => InitiationKind::Forced,
+        TimingMode::Reaction if candidate.source.is_play() => InitiationKind::Play,
+        TimingMode::Reaction => InitiationKind::Reaction,
     };
     match initiation::check(state, cards, candidate, kind) {
         Ok(()) => LapseReason::OutOfScope,
@@ -423,18 +497,33 @@ fn lapse_reason_for(refusal: &Refusal) -> LapseReason {
 /// [`LapseReason::SourceGone`] probe.
 ///
 /// A hand candidate is present while its code is still in the controller's
-/// hand. Every other candidate names an [`AbilitySource`], and is present while
+/// hand. A discard-pile candidate is present while the same card is still
+/// playable from the top of the pile under the same permission — the zone
+/// check the play paths share, `legality::play_source_available`, so a card
+/// discarded on top of it, or the permission leaving play, withdraws it. Every
+/// other candidate names an [`AbilitySource`], and is present while
 /// that source still names **the same card** the scan minted the candidate from
 /// — `ability_source::source_card` walks the board, and the code comparison is
 /// what makes an *advanced* act's queued ability lapse: `AbilitySource::Act`
 /// names *the current* act, so the source has not vanished, it has become a
 /// different card.
-fn candidate_source_present(state: &GameState, candidate: &ResolutionCandidate) -> bool {
+fn candidate_source_present(
+    state: &GameState,
+    cards: &CardRegistry,
+    candidate: &ResolutionCandidate,
+) -> bool {
     match candidate.source {
         CandidateSource::Hand => state
             .investigators
             .get(&candidate.controller)
             .is_some_and(|inv| inv.hand.contains(&candidate.code)),
+        CandidateSource::TopOfDiscardPile { permission } => legality::play_source_available(
+            state,
+            cards,
+            candidate.controller,
+            PlaySource::TopOfDiscardPile { permission },
+        )
+        .is_some_and(|code| *code == candidate.code),
         CandidateSource::Ability(source) => ability_source::source_card(state, source)
             .is_some_and(|card| *card.code() == candidate.code),
     }
@@ -494,6 +583,8 @@ pub(crate) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
         ", or InputResponse::Skip to close"
     };
     let options = build_resolution_options(
+        cx.state,
+        cx.cards,
         window
             .pending_candidates()
             .expect("open_queued_reaction_window: top window has candidates"),
@@ -641,7 +732,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // forced run is a forced ability working from hand (Dark Memory 01013,
     // #1046): it fires in place like any other forced hit, and the card stays
     // in hand.
-    if trigger.source == CandidateSource::Hand && !forced {
+    if trigger.source.is_play() && !forced {
         cx.state
             .continuations
             .top_frame_mut()
@@ -746,22 +837,33 @@ fn play_fast_event(
     event: &TimingEvent,
 ) -> EngineOutcome {
     let controller = candidate.controller;
-    // Find the event in the controller's hand by code (first match — copies
-    // are fungible; resolving by code avoids stale indices after a prior play).
-    // A miss is unreachable behind the fire-time gate, but it rejects rather than
-    // panicking: nothing has been paid or moved yet, so the reject is clean, and
-    // a panic here would take the whole session down over one bad option id
-    // (#568).
-    let Some(hand_idx) = cx
-        .state
-        .investigators
-        .get(&controller)
-        .and_then(|inv| inv.hand.iter().position(|c| *c == candidate.code))
-    else {
+    // Find the event where the candidate says it is: in the controller's hand
+    // by code (first match — copies are fungible; resolving by code avoids
+    // stale indices after a prior play), or still on top of their discard pile
+    // under the same permission. A miss is unreachable behind the fire-time
+    // gate, but it rejects rather than panicking: nothing has been paid or
+    // moved yet, so the reject is clean, and a panic here would take the whole
+    // session down over one bad option id (#568).
+    let source = match candidate.source {
+        CandidateSource::TopOfDiscardPile { permission } => {
+            let source = PlaySource::TopOfDiscardPile { permission };
+            legality::play_source_available(cx.state, cx.cards, controller, source)
+                .filter(|code| **code == candidate.code)
+                .map(|_| source)
+        }
+        _ => cx
+            .state
+            .investigators
+            .get(&controller)
+            .and_then(|inv| inv.hand.iter().position(|c| *c == candidate.code))
+            .and_then(|index| u8::try_from(index).ok())
+            .map(PlaySource::Hand),
+    };
+    let Some(source) = source else {
         return EngineOutcome::Rejected {
             reason: format!(
-                "ResolveInput: {code} is no longer in {controller:?}'s hand and cannot be played \
-                 from this window",
+                "ResolveInput: {code} is no longer where {controller:?} could play it from and \
+                 cannot be played from this window",
                 code = candidate.code,
             )
             .into(),
@@ -771,7 +873,7 @@ fn play_fast_event(
     // skip the action cost, not the resource cost. Affordability was re-checked
     // at fire time (#501, #568).
     cards::pay_play_cost(cx, controller, &candidate.code);
-    let card = cards::commence_play(cx, controller, hand_idx);
+    let card = cards::commence_play(cx, controller, source);
 
     // Look up the matched OnEvent ability's effect from the registry.
     let abilities = (cx.cards.abilities_for)(&candidate.code).unwrap_or_else(|| {
@@ -850,7 +952,7 @@ pub(super) fn advance_resolution(cx: &mut Cx) -> EngineOutcome {
     } else {
         ", or InputResponse::Skip to close"
     };
-    let options = build_resolution_options(candidates, window.is_forced());
+    let options = build_resolution_options(cx.state, cx.cards, candidates, window.is_forced());
     let mut request = InputRequest::pick_single(
         format!(
             "Resolution window: {} option(s). \
@@ -1067,7 +1169,7 @@ pub(super) fn drive_fast_window(cx: &mut Cx) -> EngineOutcome {
         .map(|(i, a)| {
             ChoiceOption::new(
                 OptionId(u32::try_from(i).unwrap_or(u32::MAX)),
-                a.label(cx.state),
+                a.label(cx.state, cx.cards),
             )
             .maybe_at(a.target(cx.state))
         })
@@ -1091,17 +1193,15 @@ pub(super) fn drive_fast_window(cx: &mut Cx) -> EngineOutcome {
 /// that dispatch path verbatim.
 pub(super) fn enumerate_fast_plays(state: &GameState, cards: &CardRegistry) -> Vec<TurnAction> {
     let mut out = Vec::new();
-    for (&inv_id, inv) in &state.investigators {
-        // Fast events / Fast assets in hand.
-        for hand_idx_usize in 0..inv.hand.len() {
-            let Ok(hand_index) = u8::try_from(hand_idx_usize) else {
-                break;
-            };
-            if let Ok(result) = check_play_card(state, cards, inv_id, hand_index) {
+    for &inv_id in state.investigators.keys() {
+        // Fast events / Fast assets in hand, and a Fast event on top of the
+        // discard pile under a permission (Wendy's Amulet 01014).
+        for source in legality::play_sources(state, cards, inv_id) {
+            if let Ok(result) = check_play_card(state, cards, inv_id, source) {
                 if result.is_fast {
                     out.push(TurnAction::PlayCard {
                         investigator: inv_id,
-                        hand_index,
+                        source,
                     });
                 }
             }

@@ -38,9 +38,10 @@
 //! the trigger scan's board walk reaches a card in the investigator's threat
 //! area for forced and reaction abilities alike, so one synthetic card there is
 //! the whole fixture.
-//! Since #773 it is **coordinator-owned** — a bare milestone, since a
-//! determination mutates nothing and ST.7 applies the results on the re-exposed
-//! `SkillTest` frame — so all three of its cells are walked here. The
+//! Since #773 it is **coordinator-owned** — ST.7 applies the results on the
+//! re-exposed `SkillTest` frame, and since #1111 the condition's own resolve
+//! step re-totals the test and logs the verdict — so all three of its cells are
+//! walked here. The
 //! caller-owned `when`-cell *reject* moved with it, and lives on a condition
 //! that has not migrated (`PhaseEnded { Upkeep }`, in
 //! `game-core/tests/timing_resolve_step.rs`).
@@ -79,6 +80,7 @@ fn succeeded() -> EventPattern {
         kind: None,
         by_controller: true,
         tested_location: TestedLocationScope::Any,
+        margin: None,
     }
 }
 
@@ -134,14 +136,14 @@ fn gains(events: &[Event]) -> Vec<u8> {
 }
 
 /// Whether the test's determination — RR ST.6, logged as `SkillTestSucceeded`
-/// — precedes the first ability the sequence fired. True of every cell,
-/// including `when`: the verdict is stashed and logged *before* the condition
-/// is emitted at all, which is why a `when` ability on this condition reads a
-/// resolved test.
+/// — precedes the first ability the sequence fired. True of the `at` and
+/// `after` cells: the verdict is logged by the condition's resolve step, which
+/// re-totals the test after the `when` cell (#1111), so a `when` ability fires
+/// before the line is logged, against a verdict that is still provisional.
 ///
-/// This is therefore not the *impact* ordering. The condition's impact is ST.7
-/// — *"Apply skill test results"* — which a bare plain test has none of, so the
-/// `when`-before-impact claim is pinned where it is observable: Lita Chantler
+/// The ST.7 application — *"Apply skill test results"* — comes later still,
+/// on the `SkillTest` frame's resume, and a bare plain test has none of it, so
+/// the `when`-before-ST.7 claim is pinned where it is observable: Lita Chantler
 /// 01117's `crates/cards/tests/lita_chantler.rs`, where the `when` cell raises
 /// an attack's damage before ST.7 deals it.
 fn resolved_before_first_gain(events: &[Event]) -> bool {

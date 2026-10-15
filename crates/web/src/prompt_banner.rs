@@ -63,6 +63,13 @@ pub fn PromptBanner() -> impl IntoView {
                     Some(OptionTarget::TurnControl(_))
                 );
             let prompt = (!suppress_text).then(|| request.prompt.clone());
+            // A prompt inside a skill test's verdict, before the verdict is
+            // logged — Lucky! 01080's `when` cell — says how the test stands,
+            // since the result modal comes only after it (#1111).
+            let verdict = prompt
+                .is_some()
+                .then(|| skill_test_result::provisional_verdict(&state))
+                .flatten();
 
             // Option buttons — the live prompt's **un-anchored** options only;
             // an anchored option renders on its board card and must not render
@@ -136,6 +143,7 @@ pub fn PromptBanner() -> impl IntoView {
             view! {
                 <div class="prompt-banner">
                     {prompt.map(|p| view! { <span class="prompt">{p}</span> })}
+                    {verdict.map(|v| view! { <span class="provisional-verdict">{v}</span> })}
                     {option_btns}
                     {confirm_btn}
                     {confirm_fallback}

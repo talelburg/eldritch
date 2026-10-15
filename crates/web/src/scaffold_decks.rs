@@ -2,7 +2,8 @@
 //! decklist import (#782) retires them all. Host-compiled, unlike the wasm-only
 //! `picker` that seats them, so a host test can play a scenario with
 //! the exact deck the picker sends (`tests/agnes_scaffold_walk.rs`,
-//! `tests/daisy_scaffold_walk.rs`, `tests/skids_scaffold_walk.rs`).
+//! `tests/daisy_scaffold_walk.rs`, `tests/skids_scaffold_walk.rs`,
+//! `tests/wendy_scaffold_walk.rs`).
 
 /// Placeholder default deck for Roland (01001) until Phase 9 decklist import.
 /// Implemented Guardian/Seeker/neutral cards only, so the opening hand is
@@ -125,4 +126,45 @@ pub const SKIDS_DEFAULT_DECK: &[&str] = &[
     "01092", "01092", // Manual Dexterity
     "01093", "01093", // Unexpected Courage
     "01011", // Hospital Debts (signature weakness)
+];
+
+/// Placeholder default deck for Wendy Adams (01005) until decklist import
+/// (#782) retires the scaffolds. Implemented cards she may take only, so every
+/// card in it is playable: Wendy's Amulet at one copy, two of each Survivor
+/// level-0 card, two of each Rogue level-0 card (her *"Rogue cards
+/// (\[rogue\]) level 0-2"*) and two of each neutral. The Rogue events give
+/// the Amulet something to play from the discard pile. Her signature
+/// weakness, Abandoned and Alone 01015, is left out: it is unimplemented
+/// until #781. NOT a legal deck — a scaffold for UI testing, like
+/// [`ROLAND_DEFAULT_DECK`].
+pub const WENDY_DEFAULT_DECK: &[&str] = &[
+    "01014", // Wendy's Amulet (signature)
+    "01072", "01072", // Leather Coat
+    "01073", "01073", // Scavenging
+    "01074", "01074", // Baseball Bat
+    "01075", "01075", // Rabbit's Foot
+    "01076", "01076", // Stray Cat
+    "01077", "01077", // Dig Deep
+    "01078", "01078", // Cunning Distraction
+    "01079", "01079", // "Look what I found!"
+    "01080", "01080", // Lucky!
+    "01081", "01081", // Survival Instinct
+    "01044", "01044", // Switchblade
+    "01045", "01045", // Burglary
+    "01046", "01046", // Pickpocketing
+    "01047", "01047", // .41 Derringer
+    "01048", "01048", // Leo De Luca
+    "01049", "01049", // Hard Knocks
+    "01050", "01050", // Elusive
+    "01051", "01051", // Backstab
+    "01052", "01052", // Sneak Attack
+    "01053", "01053", // Opportunist
+    "01086", "01086", // Knife
+    "01087", "01087", // Flashlight
+    "01088", "01088", // Emergency Cache
+    "01089", "01089", // Guts
+    "01090", "01090", // Perception
+    "01091", "01091", // Overpower
+    "01092", "01092", // Manual Dexterity
+    "01093", "01093", // Unexpected Courage
 ];

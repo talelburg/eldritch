@@ -102,3 +102,18 @@ async fn selecting_the_agnes_radio_sends_agnes_roster() {
         "Agnes is seated with her scaffold deck (Holy Rosary 01059 in it)"
     );
 }
+
+#[wasm_bindgen_test]
+async fn selecting_the_wendy_radio_sends_wendy_roster() {
+    let mut rx = mount_picker();
+    click_last("input[name=inv][value='01005']");
+    click_last(".create-game");
+
+    let req = rx.next().await.expect("a CreateGameRequest was sent");
+    assert_eq!(req.roster.len(), 1);
+    assert_eq!(req.roster[0].investigator.as_str(), "01005");
+    assert!(
+        req.roster[0].deck.iter().any(|c| c.as_str() == "01014"),
+        "Wendy is seated with her scaffold deck (Wendy's Amulet 01014 in it)"
+    );
+}
