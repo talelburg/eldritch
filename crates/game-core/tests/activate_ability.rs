@@ -44,8 +44,9 @@ const ACTION_EXHAUST_GAIN: &str = "MOCK2";
 /// Activated trigger" rejection.
 const CONSTANT_ONLY: &str = "MOCK3";
 
-/// Mock card code: activated ability whose ONLY cost is the
-/// `DiscardCardFromHand` stub. Used to test the TODO-reject path.
+/// Mock card code: `[fast] Choose and discard 1 card from your hand: gain 1
+/// resource.` Its payment is `hand_discard_cost.rs`'s subject; here it is
+/// refused with nothing in hand to pay with.
 const DISCARD_COST_ABILITY: &str = "MOCK4";
 
 /// Mock card code: Hyperawareness-shaped `[fast] Spend 1 resource:
@@ -318,8 +319,9 @@ fn ability_index_out_of_bounds_rejects() {
 }
 
 #[test]
-fn discard_card_from_hand_cost_rejects_with_todo() {
+fn discard_card_from_hand_cost_with_an_empty_hand_rejects() {
     let (state, id, instance_id) = state_with_in_play(DISCARD_COST_ABILITY);
+    assert!(state.investigators[&id].hand.is_empty());
 
     // No partial mutation: source still ready, no events fired.
     let after = refused_off_menu(

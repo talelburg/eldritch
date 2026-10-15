@@ -31,8 +31,10 @@ pub(super) const INITIAL_HAND_SIZE: u8 = 5;
 /// code has no metadata — so the engine's unit tests, whose test registry knows
 /// no real card, behave as if no card is a weakness.
 ///
-/// Two consumers: the opening-hand set-aside below, and the upkeep hand-size
-/// discard, which may not choose a weakness (`phases::hand_size_discard_count`).
+/// Three consumers: the opening-hand set-aside below, and the two discards that
+/// may not choose a weakness — the upkeep hand-size discard
+/// (`phases::hand_size_discard_count`) and the hand-discard cost
+/// (`hand_discard_cost::candidates`).
 /// Where a card goes when it leaves play is its owner's question, not this
 /// one's (#976).
 pub(super) fn is_weakness_code(cards: &CardRegistry, code: &CardCode) -> bool {
@@ -439,19 +441,35 @@ pub fn discard_random_from_hand(cx: &mut Cx, investigator: InvestigatorId) -> Op
             .hand
             .len(),
     );
+    Some(discard_from_hand(cx, investigator, idx))
+}
+
+/// Discard the card at `hand_index` in `investigator`'s hand to their discard
+/// pile, emitting [`Event::CardDiscarded`] (`from: Zone::Hand`), and return
+/// its code.
+///
+/// # Panics
+///
+/// Panics if `investigator` is not in the state or `hand_index` is past the
+/// end of their hand: every caller has just read the index from that hand.
+pub(super) fn discard_from_hand(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    hand_index: usize,
+) -> CardCode {
     let inv = cx
         .state
         .investigators
         .get_mut(&investigator)
-        .expect("present");
-    let card = inv.hand.remove(idx);
+        .expect("discard_from_hand: the investigator is in the state");
+    let card = inv.hand.remove(hand_index);
     inv.discard.push(card.clone());
     cx.events.push(Event::CardDiscarded {
         code: card.clone(),
         from: Zone::Hand,
         to: DiscardPile::Investigator(investigator),
     });
-    Some(card)
+    card
 }
 
 /// Move the card `from` cards below the top of `deck` to `to` cards below the
