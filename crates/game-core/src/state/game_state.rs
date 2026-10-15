@@ -809,7 +809,7 @@ impl GameState {
     /// "until the end of the phase" lasting effect expires before an "at the
     /// end of the phase" ability or delayed effect may initiate."*). No event
     /// announces the expiry.
-    pub(crate) fn expire_lasting_effects(&mut self, ending: Lifetime) {
+    pub fn expire_lasting_effects(&mut self, ending: Lifetime) {
         self.lasting_effects.retain(|e| e.lifetime != ending);
         self.recorded_modifiers.retain(|m| m.lifetime != ending);
     }
