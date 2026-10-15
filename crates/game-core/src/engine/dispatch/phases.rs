@@ -18,8 +18,9 @@ use crate::event::Event;
 use crate::state::{
     CardCode, CardInPlay, Continuation, DiscardPile, EncounterDrawFrame, EnemyId, EnemyPhaseFrame,
     EnemyResume, FastWindowKind, GameState, HandSizeDiscard, InvestigationPhaseFrame,
-    InvestigationResume, Investigator, InvestigatorId, InvestigatorTurnFrame, MythosPhaseFrame,
-    MythosResume, Owner, Phase, PhaseStep, Skills, Status, UpkeepPhaseFrame, UpkeepResume, Zone,
+    InvestigationResume, Investigator, InvestigatorId, InvestigatorTurnFrame, Lifetime,
+    MythosPhaseFrame, MythosResume, Owner, Phase, PhaseStep, Skills, Status, UpkeepPhaseFrame,
+    UpkeepResume, Zone,
 };
 
 /// Action points granted to an investigator at the start of their
@@ -107,6 +108,8 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
                 threat_area: Vec::new(),
                 removed_from_game: Vec::new(),
                 action_surcharge_spent_this_round: BTreeSet::new(),
+                additional_actions_this_turn: Vec::new(),
+                grants_spent_this_turn: BTreeSet::new(),
                 investigator_card,
             },
         );
@@ -190,7 +193,12 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
             )
         });
 
-    // Drain remaining actions and announce the turn ended.
+    // Drain remaining actions, standard and additional, and announce the turn
+    // ended. FAQ 1.31 (`glossary/Action.md`): "Any unused actions are forfeited
+    // at the end of an investigator's turn". A grant from a card in play is
+    // never stored, so arming the turn frame's `ending` flag below is what ends
+    // it (`cursor::turn_open`).
+    active.additional_actions_this_turn.clear();
     if active.actions_remaining != 0 {
         active.actions_remaining = 0;
         cx.events.push(Event::ActionsRemainingChanged {
@@ -261,8 +269,7 @@ pub(super) fn resume_end_turn(cx: &mut Cx, active_id: InvestigatorId) -> EngineO
     // investigators (Rules Reference p.10) — the same shared helper the
     // Enemy phase uses.
     if let Some(next_id) = cursor::next_active_investigator_after(cx.state, active_id) {
-        begin_investigator_turn(cx, next_id);
-        EngineOutcome::Done
+        begin_investigator_turn(cx, next_id)
     } else {
         cx.state.active_investigator = None;
         // 2.3 → Enemy. The cascade may suspend on a hunter-movement tie
@@ -344,20 +351,42 @@ fn set_investigation_resume(cx: &mut Cx, resume: InvestigationResume) {
 }
 
 /// 2.2 Next investigator's turn begins. Rotates the active cursor to
-/// `who` (the chosen/default investigator) and opens the post-2.2
-/// player window. Called from the `InvestigationBegins` continuation
-/// (first turn of the phase) and from `end_turn` (each subsequent turn,
-/// the rules' "return to 2.2"). Step
+/// `who` (the chosen/default investigator) and announces
+/// [`TimingEvent::TurnBegan`], whose `after` cell is where On the Lam 01010's
+/// *"Play after your turn begins."* is played; the post-2.2 player window opens
+/// once that sequence has resolved ([`investigation_after_turn_began`]). Called
+/// from the `InvestigationBegins` continuation (first turn of the phase) and
+/// from `end_turn` (each subsequent turn, the rules' "return to 2.2"). Step
 /// 2.2.1 (the active investigator's actions) follows as player-driven
 /// inputs while `InvestigatorTurnBegins` is the "previous player window."
 ///
+/// **Emits in tail position** (ADR 0003): the anchor is parked at
+/// [`AfterTurnBegan`](crate::state::InvestigationResume::AfterTurnBegan) before
+/// the emit, so the window cannot be pushed above what the emit queues.
+///
 /// `who` must be an `Active` investigator in `turn_order`; callers
 /// resolve it via `first_active_investigator` / `next_active_investigator_after`.
-pub(super) fn begin_investigator_turn(cx: &mut Cx, who: InvestigatorId) {
+pub(super) fn begin_investigator_turn(cx: &mut Cx, who: InvestigatorId) -> EngineOutcome {
     rotate_to_active(cx, who);
-    // Advance the Investigation anchor to `TurnBegins` so the closing
-    // InvestigatorTurnBegins window routes to the right on_child_pop arm
-    // (slice 1a, #393).
+    // A new turn: every card in play grants its additional action again (Leo
+    // De Luca 01048). Cleared ahead of the turn-begins window, which is already
+    // part of the turn.
+    if let Some(inv) = cx.state.investigators.get_mut(&who) {
+        inv.grants_spent_this_turn.clear();
+    }
+    set_investigation_resume(cx, InvestigationResume::AfterTurnBegan);
+    emit::queue_event(cx, &TimingEvent::TurnBegan { investigator: who })
+}
+
+/// Reached via the Investigation anchor's
+/// [`AfterTurnBegan`](crate::state::InvestigationResume::AfterTurnBegan) resume
+/// once step 2.2's `TurnBegan` sequence has resolved: open the post-2.2 player
+/// window.
+///
+/// The anchor advances to `TurnBegins` first, so the closing
+/// `InvestigatorTurnBegins` window routes to the right `on_child_pop` arm
+/// (slice 1a, #393).
+fn investigation_after_turn_began(cx: &mut Cx) -> EngineOutcome {
     set_investigation_resume(cx, InvestigationResume::TurnBegins);
     let outcome = reaction_windows::open_fast_window(
         cx,
@@ -368,6 +397,7 @@ pub(super) fn begin_investigator_turn(cx: &mut Cx, who: InvestigatorId) {
         EngineOutcome::Done,
         "open_fast_window(InvestigatorTurnBegins) unexpectedly suspended; this window has no suspending continuation",
     );
+    outcome
 }
 
 /// 2.3 Investigation phase ends. Owns the `PhaseEnded(Investigation)` emit and
@@ -980,14 +1010,19 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
             // Post-2.1 window closed; start the first investigator's turn
             // (step 2.2). No skill-test-in-flight guard: runs at phase start
             // (no test in flight) and does not transition phase.
-            if let Some(id) = cursor::first_active_investigator(cx.state) {
-                begin_investigator_turn(cx, id);
-            }
             // None branch: no active investigator can take a turn — the
             // cascade-breaker park (the loss already resolved at the defeat
             // site). See the former anchor_on_child_pop arm.
-            EngineOutcome::Done
+            match cursor::first_active_investigator(cx.state) {
+                Some(id) => begin_investigator_turn(cx, id),
+                None => EngineOutcome::Done,
+            }
         }
+        // Step 2.2's queued `TurnBegan` sequence has resolved, re-exposing this
+        // anchor: open the post-2.2 window.
+        Some(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+            resume: InvestigationResume::AfterTurnBegan,
+        })) => investigation_after_turn_began(cx),
         Some(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
         })) => {
@@ -1177,6 +1212,15 @@ pub(crate) fn upkeep_phase_end(cx: &mut Cx) -> EngineOutcome {
 /// resume once step 4.6's queued `PhaseEnded { Upkeep }` forced abilities have
 /// resolved.
 ///
+/// First, "until the end of the round" lasting effects expire (#643). Appendix
+/// II step 4.6: *"Any active "until the end of the round" lasting effects
+/// expire at this time."* They expire before `RoundEnded` is emitted, so no
+/// round-end ability sees them: `glossary/Lasting_Effects.md`, *"an "until the
+/// end of the phase" lasting effect expires before an "at the end of the phase"
+/// ability or delayed effect may initiate."* Abilities "at the end of the
+/// upkeep phase" have already resolved by now, inside the round, so they do
+/// see them.
+///
 /// The `when the round ends` act advance (act 01109) and the `at the end of the
 /// round` doom (agenda 01107, Dissonant Voices 01165) resolve as the `RoundEnded`
 /// `EmitEvent` coordinator's `When`/`At` cells (#434) — structural ordering, no
@@ -1185,6 +1229,7 @@ pub(crate) fn upkeep_phase_end(cx: &mut Cx) -> EngineOutcome {
 /// and returns `Done`; the global loop drives the bucket walk (suspending at the
 /// `when` window) and re-exposes this anchor at `AfterRoundEnd` on completion.
 fn upkeep_round_end(cx: &mut Cx) -> EngineOutcome {
+    cx.state.expire_lasting_effects(Lifetime::Round);
     set_upkeep_resume(cx, UpkeepResume::AfterRoundEnd);
     emit::queue_event(cx, &TimingEvent::RoundEnded)
 }
@@ -1205,11 +1250,9 @@ fn set_upkeep_resume(cx: &mut Cx, resume: UpkeepResume) {
 /// Teardown after the round-end `EmitEvent` coordinator pops — reached via the
 /// Upkeep anchor's [`AfterRoundEnd`](crate::state::UpkeepResume::AfterRoundEnd)
 /// resume (#434, subsuming the former `ForcedContinuation::UpkeepAfterRoundEnded`):
-/// expire active "until the end of the round" lasting effects (Mind over Matter
-/// 01036's substitution — RR p.24, "after the round-end forced abilities have
-/// resolved"), then transition Upkeep → Mythos.
+/// transition Upkeep → Mythos. Round-lifetime lasting effects have already
+/// expired, ahead of the emit in [`upkeep_round_end`].
 pub(super) fn upkeep_round_end_teardown(cx: &mut Cx) -> EngineOutcome {
-    cx.state.skill_substitutions.clear();
     // Pop the Upkeep anchor (slice 1a, #393): this is the single Upkeep→Mythos
     // exit, reached after the whole round-end sequence (act window, doom) has
     // resolved, so the anchor is the top frame here.

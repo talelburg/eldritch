@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use card_dsl::card_data::{CardKind, CardMetadata, SkillKind};
-use card_dsl::dsl::{Determination, IntExpr, Stat};
+use card_dsl::dsl::{Determination, IntExpr, Restriction, Stat};
 use serde::{Deserialize, Serialize};
 
 use crate::rng::RngState;
@@ -189,11 +189,19 @@ pub struct GameState {
     // plays nest: a Fast event played to cancel the attack of opportunity
     // provoked by a non-fast event overwrote the slot and erased the first card
     // from the game. See `docs/adr/0002-in-progress-play-lives-on-its-frame.md`.
-    /// Active round-scoped skill substitutions (Mind over Matter 01036).
-    /// While present, the owning investigator may make a `for_skills` test as
-    /// a `use_skill` test instead (offered at test initiation). Cleared at the
-    /// round boundary ("until the end of the round"). Required on the wire (#453).
-    pub skill_substitutions: Vec<SkillSubstitution>,
+    /// Active lasting effects that are not modifiers: each one a
+    /// [`LastingEffectKind`] and the [`Lifetime`] that ends it.
+    ///
+    /// `glossary/Lasting_Effects.md`: *"A lasting effect persists beyond the
+    /// resolution of the ability that created it, for the duration specified
+    /// by the effect."* Modifiers with a lasting duration live in
+    /// [`recorded_modifiers`](Self::recorded_modifiers) instead, because the
+    /// modified-value fold reads them; everything else a lasting effect does
+    /// (Mind over Matter 01036's skill substitution, On the Lam 01010's
+    /// attack restriction) lives here. Dropped by
+    /// [`expire_lasting_effects`](Self::expire_lasting_effects) when the
+    /// boundary its lifetime names is reached. Required on the wire (#453).
+    pub lasting_effects: Vec<LastingEffect>,
     /// Shared encounter deck (top = front). Built at scenario setup
     /// from encounter-set codes; drawn from during Mythos. When the
     /// deck runs out, `draw_encounter_top` (in `engine::dispatch`)
@@ -333,10 +341,42 @@ pub struct Act {
     pub clue_threshold: u8,
 }
 
-/// An active "use X in place of Y" skill substitution (Mind over Matter
-/// 01036). Round-scoped: cleared at the round boundary. While present, the
-/// owning `investigator` may make a `for_skills` test as a `use_skill` test
-/// instead — the choice is offered at test initiation.
+/// One active lasting effect that is not a modifier: what it does, and when
+/// it stops. Held in [`GameState::lasting_effects`].
+///
+/// Built only by the engine, at the exit that registers the effect, which is
+/// also where its lifetime is stamped.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct LastingEffect {
+    /// When the effect stops applying.
+    pub lifetime: Lifetime,
+    /// What the effect does while it lasts.
+    pub kind: LastingEffectKind,
+}
+
+/// What a [`LastingEffect`] does while it lasts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum LastingEffectKind {
+    /// "Use X in place of Y" (Mind over Matter 01036), read at skill-test
+    /// initiation.
+    SkillSubstitution(SkillSubstitution),
+    /// A restriction protecting `investigator` while it lasts (On the Lam
+    /// 01010's [`Restriction::CannotAttack`], read where enemies are chosen
+    /// to attack).
+    Restriction {
+        /// Whom the restriction protects.
+        investigator: InvestigatorId,
+        /// What it forbids.
+        restriction: Restriction,
+    },
+}
+
+/// A "use X in place of Y" skill substitution (Mind over Matter 01036).
+/// While it lasts, the owning `investigator` may make a `for_skills` test as
+/// a `use_skill` test instead — the choice is offered at test initiation. It
+/// lasts as a [`LastingEffect`] with [`Lifetime::Round`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SkillSubstitution {
     /// Whose tests this substitution applies to.
@@ -501,8 +541,8 @@ pub enum DifficultyBasis {
     Evade(EnemyId),
 }
 
-/// When a [`RecordedModifier`] stops applying, with the boundary already
-/// resolved to a concrete identity.
+/// When a lasting effect — a [`RecordedModifier`] or a [`LastingEffect`] —
+/// stops applying, with the boundary already resolved to a concrete identity.
 ///
 /// The card author's vocabulary is [`ModifierScope`] over in `card-dsl` —
 /// "this skill test", "this turn". `Lifetime` is the engine's counterpart,
@@ -517,33 +557,46 @@ pub enum DifficultyBasis {
 pub enum Lifetime {
     /// Until the skill test with this id finishes tearing down. Inert
     /// while any other test is in flight, and outside a test entirely.
+    SkillTest(SkillTestId),
+    /// "Until the end of the round": expires at Upkeep step 4.6, before
+    /// `RoundEnded` is emitted, so no "at the end of the round" ability sees
+    /// it (`glossary/Lasting_Effects.md`: *"A lasting effect expires as soon
+    /// as the timing point specified by its duration is reached."*). There is
+    /// one round boundary, so the lifetime needs no identity.
     ///
-    /// The remaining lifetimes ADR 0005 names — until end of turn
+    /// Stamped today only by the engine exits that register a
+    /// [`LastingEffect`]. The evaluator's `Modify` arm still refuses every
+    /// scope but `ThisSkillTest`, so no [`RecordedModifier`] carries it yet;
+    /// the remaining lifetimes ADR 0005 names — until end of turn
     /// ([`ModifierScope::ThisTurn`], #572), until end of phase (Encyclopedia
-    /// 01042) — arrive with the effects that record them; the evaluator
-    /// still refuses those scopes, so there is no way to write one down.
+    /// 01042) — arrive with the effects that record them.
     ///
     /// [`ModifierScope::ThisTurn`]: card_dsl::dsl::ModifierScope::ThisTurn
-    SkillTest(SkillTestId),
+    Round,
 }
 
 impl Lifetime {
     /// Whether a row with this lifetime is active while the test identified
-    /// by `in_flight` is running.
+    /// by `in_flight` is running. A [`Round`](Self::Round) row is active in
+    /// every test until the round ends.
     #[must_use]
     pub fn applies_during_test(self, in_flight: SkillTestId) -> bool {
         match self {
             Self::SkillTest(id) => id == in_flight,
+            Self::Round => true,
         }
     }
 
     /// Whether this lifetime ends with the teardown of the test identified
     /// by `ending`. Drives the expiry sweep at ST.8 and at the abandonment
-    /// of a test whose tester was eliminated.
+    /// of a test whose tester was eliminated. A [`Round`](Self::Round) row
+    /// outlives every test; the round end sweeps it
+    /// ([`GameState::expire_lasting_effects`]).
     #[must_use]
     pub fn ends_with_test(self, ending: SkillTestId) -> bool {
         match self {
             Self::SkillTest(id) => id == ending,
+            Self::Round => false,
         }
     }
 }
@@ -755,6 +808,20 @@ impl GameState {
     pub fn expire_modifiers_for_test(&mut self, ending: SkillTestId) {
         self.recorded_modifiers
             .retain(|m| !m.lifetime.ends_with_test(ending));
+    }
+
+    /// Expire every lasting effect whose [`Lifetime`] is `ending` — both the
+    /// [`lasting_effects`](Self::lasting_effects) and the
+    /// [`recorded_modifiers`](Self::recorded_modifiers) carrying it.
+    ///
+    /// Called as the timing point the lifetime names is reached, ahead of any
+    /// ability that point lets initiate (`glossary/Lasting_Effects.md`: *"an
+    /// "until the end of the phase" lasting effect expires before an "at the
+    /// end of the phase" ability or delayed effect may initiate."*). No event
+    /// announces the expiry.
+    pub fn expire_lasting_effects(&mut self, ending: Lifetime) {
+        self.lasting_effects.retain(|e| e.lifetime != ending);
+        self.recorded_modifiers.retain(|m| m.lifetime != ending);
     }
 
     /// The investigator currently prompted to mulligan, if a setup mulligan is

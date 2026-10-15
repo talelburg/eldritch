@@ -34,20 +34,36 @@ fn conditional_branches_box_the_inner_effects() {
     assert!(matches!(with_else, Effect::If { else_: Some(_), .. }));
 }
 
-/// `for_each` boxes its body and accepts a target-set spec.
+/// `for_each` boxes its body and takes an investigator set as an investigator
+/// fan-out.
 #[test]
 fn for_each_runs_body_per_target() {
     let effect = for_each(
         InvestigatorTargetSet::All,
-        gain_resources(InvestigatorTarget::Active, 1),
+        gain_resources(InvestigatorTarget::Each, 1),
     );
     assert!(matches!(
         effect,
         Effect::ForEach {
-            targets: InvestigatorTargetSet::All,
+            targets: ForEachTargets::Investigators(InvestigatorTargetSet::All),
             ..
         }
     ));
+}
+
+/// `for_each` takes an enemy set as an enemy fan-out (Elusive 01050).
+#[test]
+fn for_each_over_an_enemy_set_is_an_enemy_fan_out() {
+    let effect = for_each(EnemySet::EngagedWithYou, disengage(EnemyTarget::Each));
+    assert_eq!(
+        effect,
+        Effect::ForEach {
+            targets: ForEachTargets::Enemies(EnemySet::EngagedWithYou),
+            body: Box::new(Effect::Disengage {
+                target: EnemyTarget::Each
+            }),
+        }
+    );
 }
 
 /// `choose_one` accepts an iterable like `seq`.
@@ -172,7 +188,7 @@ fn choose_surface_serde_round_trips() {
     let inv = InvestigatorTarget::chosen_anywhere();
     let loc = LocationTarget::chosen_anywhere();
     let here = InvestigatorTarget::Chosen(Choose {
-        scope: EntityScope::At(LocationSet::Here),
+        scope: LocationSet::Here,
     });
     for t in [inv, here] {
         let json = serde_json::to_string(&t).unwrap();
@@ -237,7 +253,7 @@ fn deal_damage_to_enemy_serde_round_trips() {
         e,
         Effect::DealDamageToEnemy {
             target: EnemyTarget::Chosen(Choose {
-                scope: EntityScope::At(LocationSet::Here)
+                scope: EnemyScope::at(LocationSet::Here)
             }),
             amount: 1,
         }

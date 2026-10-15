@@ -93,7 +93,8 @@ use crate::card_registry::CardRegistry;
 use crate::engine::board;
 use crate::engine::evaluator::{self, EvalContext};
 use crate::state::{
-    AbilityAddress, AbilitySource, CandidateSource, CardCode, GameState, InvestigatorId, LocationId,
+    AbilityAddress, AbilitySource, CandidateSource, CardCode, CardInstanceId, GameState,
+    InvestigatorId, LocationId,
 };
 
 /// The abilities in effect on the location `id`: its back's while it is
@@ -174,6 +175,41 @@ pub(crate) fn for_candidate_source(
         CandidateSource::Ability(source) => for_source(state, reg, source, code),
         CandidateSource::Hand => Some(addressed_as_printed((reg.abilities_for)(code)?)),
     }
+}
+
+/// Every in-effect [`Trigger::Constant`] ability on the cards `investigator`
+/// controls (their investigator card, their play area, their threat area),
+/// each paired with the instance it is on. Read through [`for_source`], so a
+/// constant the board grants one of those cards counts as one printed on it.
+///
+/// The one constant sweep over an investigator's own cards. Its readers each
+/// match their own [`Effect`] shape: the additional-action sweep
+/// (`Effect::AdditionalActionWhileInPlay`), `evaluator::pending_action_surcharge`
+/// (`Restriction::ExtraActionCost`) and `evaluator::play_is_prohibited`
+/// (`Restriction::CannotPlay`). Empty for an investigator not in state.
+#[must_use]
+pub(crate) fn constants_of(
+    state: &GameState,
+    reg: &CardRegistry,
+    investigator: InvestigatorId,
+) -> Vec<(CardInstanceId, Ability)> {
+    let Some(inv) = state.investigators.get(&investigator) else {
+        return Vec::new();
+    };
+    inv.controlled_card_instances()
+        .flat_map(|card| {
+            for_source(
+                state,
+                reg,
+                AbilitySource::InPlay(card.instance_id),
+                &card.code,
+            )
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|(_, ability)| ability.trigger == Trigger::Constant)
+            .map(move |(_, ability)| (card.instance_id, ability))
+        })
+        .collect()
 }
 
 /// Pair each of a card's printed abilities with the address that names it.

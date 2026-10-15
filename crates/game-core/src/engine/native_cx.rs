@@ -2,10 +2,11 @@
 //! change the game only through the engine's exits.
 
 use card_dsl::card_data::CardMetadata;
+use card_dsl::dsl::Restriction;
 
 use crate::card_registry::CardRegistry;
-use crate::engine::board::{self, LeavingCard, Placement};
-use crate::engine::dispatch::actions::take;
+use crate::engine::board::{self, LeavingCard, MoveResourcesError, Placement};
+use crate::engine::dispatch::actions::{r#move, take};
 use crate::engine::dispatch::{
     act_agenda, cards, combat, elimination, encounter, hunters, placement, reveal, set_aside,
     skill_test, threat_area,
@@ -188,6 +189,40 @@ impl<'a> NativeCx<'a> {
         placement::place_investigator(self.write_access(), investigator, location);
     }
 
+    /// Move `investigator` to `destination` by a card effect: a move, not a
+    /// placement, so it fires the same leave and enter timing as the Move
+    /// action — the left location's *"when … leaves"* and the entered one's
+    /// *"after you enter"* abilities, the reveal, and engagement on entering.
+    /// The destination need not connect; the native has already chosen it by
+    /// its own card's rule. No attack of opportunity: that is the Move
+    /// action's, not the move's.
+    ///
+    /// `Rejected`, changing nothing, when the investigator is not active at a
+    /// location, `destination` is where they already are or not in play, or a
+    /// rule forbids moving there
+    /// ([`investigator_can_enter_location`](crate::engine::investigator_can_enter_location)).
+    ///
+    /// **Return its outcome.** The move runs on frames above everything the
+    /// native leaves beneath it, so work written after this call would run
+    /// before the move lands (ADR 0003).
+    #[must_use = "move_investigator only queues the move: return its outcome (ADR 0003)"]
+    pub fn move_investigator(
+        &mut self,
+        investigator: InvestigatorId,
+        destination: LocationId,
+    ) -> EngineOutcome {
+        r#move::move_by_effect(self.write_access(), investigator, destination)
+    }
+
+    /// Apply the engagement rule: each ready, unengaged enemy at a location
+    /// with an investigator engages one there (`glossary/Enemy_Engagement.md`:
+    /// *"Any time a ready unengaged enemy is at the same location as an
+    /// investigator, it engages that investigator, …"*). For an effect that leaves
+    /// enemies ready and unengaged beside an investigator, once it has resolved.
+    pub fn engage_ready_enemies(&mut self) {
+        hunters::engage_ready_enemies(self.write_access());
+    }
+
     // --- Tokens ---
 
     /// Place `count` doom on the current agenda. A no-op on an empty agenda
@@ -256,6 +291,29 @@ impl<'a> NativeCx<'a> {
         amount: u8,
     ) -> Result<(), MoveUsesError> {
         uses::move_uses_to_resource_pool(self.write_access(), investigator, instance, kind, amount)
+    }
+
+    /// Move up to `amount` resources out of `investigator`'s resource pool onto
+    /// the card instance `instance`, wherever it is on the board (Hospital
+    /// Debts 01011), emitting
+    /// [`Event::ResourcesMovedToCard`](crate::event::Event::ResourcesMovedToCard)
+    /// with the number moved. A move, neither a payment nor a gain, so
+    /// [`Event::ResourcesPaid`](crate::event::Event::ResourcesPaid) and
+    /// [`Event::ResourcesGained`](crate::event::Event::ResourcesGained) stay
+    /// silent. An empty pool moves nothing and announces nothing.
+    ///
+    /// # Errors
+    ///
+    /// [`MoveResourcesError::NotInPlay`] when `instance` is not on the board;
+    /// [`MoveResourcesError::NoSuchInvestigator`] when `investigator` is not in
+    /// the game.
+    pub fn move_resources_to_card(
+        &mut self,
+        investigator: InvestigatorId,
+        instance: CardInstanceId,
+        amount: u8,
+    ) -> Result<(), MoveResourcesError> {
+        board::move_resources_to_card(self.write_access(), investigator, instance, amount)
     }
 
     // --- Leaving play ---
@@ -359,7 +417,29 @@ impl<'a> NativeCx<'a> {
 
     /// Register `substitution` for the rest of the round. No event announces
     /// it.
-    pub fn add_skill_substitution(&mut self, substitution: SkillSubstitution) {
-        skill_test::add_skill_substitution(self.write_access(), substitution);
+    pub fn substitute_skill_until_end_of_round(&mut self, substitution: SkillSubstitution) {
+        skill_test::substitute_skill_until_end_of_round(self.write_access(), substitution);
+    }
+
+    /// Register `restriction` protecting `investigator` for the rest of the
+    /// round (On the Lam 01010's [`Restriction::CannotAttack`]). No event
+    /// announces it.
+    pub fn restrict_until_end_of_round(
+        &mut self,
+        investigator: InvestigatorId,
+        restriction: Restriction,
+    ) {
+        combat::restrict_until_end_of_round(self.write_access(), investigator, restriction);
+    }
+
+    /// Return the committed card at `index` — the one an
+    /// `OnSkillTestResolution` effect is printed on, read from
+    /// [`EvalContext::committed_card`](crate::engine::evaluator::EvalContext::committed_card)
+    /// — to its investigator's hand when the test ends, instead of discarding
+    /// it. Emits
+    /// [`Event::CommittedCardReturnedToHand`](crate::event::Event::CommittedCardReturnedToHand)
+    /// at RR ST.8, in place of the discard.
+    pub fn return_committed_card_to_hand(&mut self, index: u8) {
+        skill_test::return_committed_card_to_hand(self.write_access(), index);
     }
 }

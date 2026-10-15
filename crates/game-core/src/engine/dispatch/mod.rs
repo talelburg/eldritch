@@ -42,7 +42,7 @@ pub(super) mod emit;
 pub(crate) mod combat;
 mod control;
 pub(super) mod coordinator;
-mod cursor;
+pub(super) mod cursor;
 // pub(super): native_cx reaches defeat_investigator via the full path
 // crate::engine::dispatch::elimination (a sibling of dispatch).
 pub(super) mod elimination;

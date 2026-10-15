@@ -6,10 +6,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::{iter, mem};
 
 use card_dsl::card_data::SkillKind;
-use card_dsl::dsl::{ActionDesignator, Effect, EventTiming, RevealClause, SkillTestKind};
+use card_dsl::dsl::{ActionDesignator, Effect, EventTiming, IntExpr, RevealClause, SkillTestKind};
 use serde::{Deserialize, Serialize};
 
-use crate::engine::evaluator::EvalContext;
+use crate::engine::evaluator::{EachBinding, EvalContext};
 use crate::engine::TimingEvent;
 use crate::event::FailureReason;
 use crate::state::ability_source::{AbilityAddress, AbilitySource};
@@ -388,6 +388,37 @@ pub enum EffectFrame {
         /// Index of the next child to run.
         next: usize,
         /// The evaluation context for this sequence.
+        ctx: EvalContext,
+    },
+    /// A `ForEach` in progress: the **walking** fan-out (#1067). Its target list
+    /// is snapshotted when the walk starts, and `next` is the cursor into it.
+    /// Each step re-checks `targets[next]` and skips one that has left the game
+    /// in the meantime (an investigator no longer `Active`), so an investigator
+    /// eliminated partway through is not reached. Otherwise it re-pushes itself
+    /// with the cursor advanced and pushes `body` above, with that target bound
+    /// as `ctx`'s [`EachBinding`]. The
+    /// walk advances when the body's frames have all popped, and pops itself
+    /// once the cursor runs off the end.
+    ///
+    /// **Correct only for a body whose intermediate state nobody can observe.**
+    /// The rules resolve a "for each" on all its targets at once
+    /// (`glossary/Priority_of_Simultaneous_Resolution.md`: *"Once all necessary
+    /// choices have been made, the effect resolves simultaneously upon all
+    /// affected entities."*). The walk resolves them one after another instead, so
+    /// anything that triggers on or reads a target's result sees the earlier
+    /// targets resolved and the later ones not. The simultaneous form is #1026.
+    ///
+    /// Generic over the kind of target: the list holds [`EachBinding`]s, and
+    /// the arm that makes a binding is the only per-kind code.
+    ForEach {
+        /// The targets, resolved and ordered when the walk started.
+        targets: Vec<EachBinding>,
+        /// Index of the next target to run the body for.
+        next: usize,
+        /// The effect run once per target.
+        body: Box<Effect>,
+        /// The evaluation context the walk began in. Each body run gets a
+        /// copy with its own target bound.
         ctx: EvalContext,
     },
     /// A single effect node to evaluate. A terminal effect runs and pops;
@@ -831,7 +862,9 @@ impl Continuation {
     /// Take `investigator`'s cards-committed-to-a-skill-test off this frame,
     /// leaving the in-flight test holding none. Returns an empty `Vec` when the
     /// frame is not a [`SkillTest`](Self::SkillTest), belongs to someone else,
-    /// or has already been emptied.
+    /// or has already been emptied. A card's [destination](CommittedCard::destination)
+    /// is dropped: elimination removes it from the game wherever ST.8 would
+    /// have sent it.
     ///
     /// The sibling of [`take_play_in_progress`](Self::take_play_in_progress),
     /// for the other card state that is in **no zone**: a card committed to a
@@ -845,6 +878,9 @@ impl Continuation {
         match self {
             Continuation::SkillTest(t) if t.investigator == investigator => {
                 mem::take(&mut t.committed_by_active)
+                    .into_iter()
+                    .map(|c| c.code)
+                    .collect()
             }
             _ => Vec::new(),
         }
@@ -972,6 +1008,11 @@ pub enum InvestigationResume {
     AfterPhaseStartForced,
     /// Post-2.1 window closed; begin the first investigator's turn.
     Begins,
+    /// Step 2.2's `TurnBegan` sequence is *queued* above this anchor — its
+    /// `after` cell, where On the Lam 01010 is played. On re-exposure, open
+    /// the post-2.2 player window and re-park at [`TurnBegins`](Self::TurnBegins).
+    /// Set by `begin_investigator_turn` before it emits, per ADR 0003.
+    AfterTurnBegan,
     /// Post-2.2 turn-begins window closed; the investigator now acts (no
     /// continuation work — slice 2 makes this an `InvestigatorTurn` frame).
     TurnBegins,
@@ -1036,14 +1077,14 @@ pub enum UpkeepResume {
     /// (`GameStateBuilder::ending_upkeep_phase`).
     AfterDraw,
     /// Step 4.6's `PhaseEnded { Upkeep }` forced abilities are *queued* above
-    /// this anchor. On re-exposure — once those frames have resolved — emit
-    /// `RoundEnded` (the mirror of [`EnemyResume::AfterPhaseEndForced`], #569).
+    /// this anchor. On re-exposure — once those frames have resolved — expire
+    /// round-lifetime lasting effects, then emit `RoundEnded` (the mirror of
+    /// [`EnemyResume::AfterPhaseEndForced`], #569).
     /// The round-end emit lives in this arm rather than inline after the
     /// phase-end emit precisely because the latter queues rather than resolves.
     AfterPhaseEndForced,
     /// The round-end `EmitEvent` coordinator (the `when` act advance + the `at`
-    /// doom) popped; run `upkeep_round_end_teardown` (expire until-end-of-round
-    /// effects, Upkeep → Mythos). Set before the coordinator is queued
+    /// doom) popped; run `upkeep_round_end_teardown` (Upkeep → Mythos). Set before the coordinator is queued
     /// (#434 — subsumes `ForcedContinuation::UpkeepAfterRoundEnded`).
     AfterRoundEnd,
 }
@@ -1140,6 +1181,42 @@ pub enum TimingSub {
     Done,
 }
 
+/// A card committed to an in-flight skill test, held in limbo on
+/// [`InFlightSkillTest::committed_by_active`] until RR ST.8 sends it on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommittedCard {
+    /// The committed card.
+    pub code: CardCode,
+    /// Where ST.8 sends it.
+    pub destination: CommittedCardDestination,
+}
+
+impl CommittedCard {
+    /// A freshly committed card, bound for the discard pile as RR ST.8 says:
+    /// *"Discard all cards that were committed to this skill test."*
+    #[must_use]
+    pub fn new(code: CardCode) -> Self {
+        Self {
+            code,
+            destination: CommittedCardDestination::Discard,
+        }
+    }
+}
+
+/// Where RR ST.8 sends a [`CommittedCard`].
+///
+/// A card's own success effect overrides the discard: Opportunist 01053's
+/// *"return Opportunist to your hand after this test instead of discarding
+/// it."* That replacement is the card's own, so it is a field here rather than
+/// a general replacement effect (#366).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CommittedCardDestination {
+    /// Its owner's discard pile — the default.
+    Discard,
+    /// Back to the hand it was committed from.
+    Hand,
+}
+
 /// A skill test paused mid-resolution at the commit window.
 ///
 /// Pushed by the skill-test initiator (a plain skill test, `Investigate`,
@@ -1189,7 +1266,7 @@ pub struct InFlightSkillTest {
     ///
     /// Populated on the [`ResolveInput`](crate::action::PlayerAction::ResolveInput)
     /// dispatch, which removes the named cards from the hand and moves them
-    /// here; the ST.8 teardown moves them on to the discard pile. **Load-
+    /// here; the ST.8 teardown moves them on to the discard pile (or back to hand). **Load-
     /// bearing for resolution**: the frame-driven steps read the committed
     /// codes off this field (e.g. `collect_on_skill_test_resolution` /
     /// `discard_committed_cards` via `in_flight.committed_by_active`), so it
@@ -1201,10 +1278,14 @@ pub struct InFlightSkillTest {
     /// resolved inside that window mutates the hand, and any parked hand
     /// index would then denote a different card (or none at all).
     ///
+    /// Each entry carries where ST.8 sends the card
+    /// ([`CommittedCard::destination`]), which a committed card's own success
+    /// effect may change (Opportunist 01053).
+    ///
     /// Multi-investigator commits (the rule "any investigator at the
     /// same location may commit") are a separate downstream issue; for
     /// now only the active investigator's commits live here.
-    pub committed_by_active: Vec<CardCode>,
+    pub committed_by_active: Vec<CommittedCard>,
     /// The location the test is associated with, snapshotted at
     /// skill-test start (`engine::dispatch::start_skill_test`) from
     /// the investigator's current location. Used by
@@ -1328,13 +1409,16 @@ pub struct ResolvedTest {
     /// Whether the test passed: the test's determination where it has one,
     /// and `total >= difficulty` otherwise.
     pub succeeded: bool,
-    /// Failure margin (`difficulty - total`, clamped ≥ 0); `0` on success.
-    /// Read by `IntExpr::Count(Quantity::SkillTestFailedBy)` in an `on_fail`
-    /// effect (Grasping Hands 01162, Rotting Remains 01163).
-    pub failed_by: u8,
-    /// Success margin (`total - difficulty`, ≥ 0 on success); supplied to the
-    /// logged [`SkillTestSucceeded`](crate::event::Event::SkillTestSucceeded) at the
-    /// `DetermineOutcome` step. Negative on failure (unused there).
+    /// The signed margin `total - difficulty`: ≥ 0 on success, ≤ 0 on failure.
+    /// Supplied to the logged
+    /// [`SkillTestSucceeded`](crate::event::Event::SkillTestSucceeded) at the
+    /// `DetermineOutcome` step; read back at ST.7 through
+    /// [`succeeded_by`](Self::succeeded_by) and [`failed_by`](Self::failed_by),
+    /// which split it by outcome.
+    ///
+    /// Reading it back is not a stale snapshot: "succeed by" is the ST.6
+    /// comparison's own result, fixed once the verdict is, and the ST.5 sum it
+    /// came from already counted every modifier added during the test.
     pub margin: i8,
     /// Why the test failed (meaningful only when `!succeeded`); supplied to the
     /// logged [`SkillTestFailed`](crate::event::Event::SkillTestFailed).
@@ -1343,12 +1427,31 @@ pub struct ResolvedTest {
     /// token's contribution and the substitution included (an automatic
     /// failure makes it 0).
     ///
-    /// A display record for the client, written once here after the verdict
-    /// like [`margin`](Self::margin), which the engine never reads back: ADR
-    /// 0005 makes every modified quantity a read over live state, so a later
-    /// step that needs the total re-reads it rather than this field. ADR 0007
+    /// A display record for the client, written once here after the verdict,
+    /// which the engine never reads back: ADR 0005 makes every modified
+    /// quantity a read over live state, so a later step that needs the total
+    /// re-reads it rather than this field. ADR 0007
     /// retired a stored token resolution for the same reason.
     pub total: i8,
+}
+
+impl ResolvedTest {
+    /// Points the test was failed by (`difficulty - total`, ≥ 0), or `None` if
+    /// it succeeded. Read by `IntExpr::Count(Quantity::SkillTestFailedBy)` in an
+    /// `on_fail` effect (Grasping Hands 01162, Rotting Remains 01163).
+    #[must_use]
+    pub fn failed_by(&self) -> Option<u8> {
+        (!self.succeeded).then(|| u8::try_from(-i16::from(self.margin)).unwrap_or(0))
+    }
+
+    /// Points the test was succeeded by (`total - difficulty`, ≥ 0), or `None`
+    /// if it failed. Read by `IntExpr::Count(Quantity::SkillTestSucceededBy)`
+    /// (Switchblade 01044).
+    #[must_use]
+    pub fn succeeded_by(&self) -> Option<u8> {
+        self.succeeded
+            .then(|| u8::try_from(self.margin).unwrap_or(0))
+    }
 }
 
 /// Where the skill-test resolution driver should resume on the next
@@ -1382,7 +1485,7 @@ pub struct ResolvedTest {
 /// triggering condition's impact has resolved" clause: the reaction
 /// fires between steps 2 and 3, not after the entire action ends.
 ///
-/// The test outcome (`succeeded`/`failed_by`/`margin`/`fail_reason`) is
+/// The test outcome (`succeeded`/`margin`/`fail_reason`) is
 /// determined once at [`DetermineOutcome`](Self::DetermineOutcome) (ST.5–ST.6)
 /// and stored on [`InFlightSkillTest::resolved`]; every subsequent step reads it
 /// from there rather than carrying it in the cursor. `resolved.is_some()` is the
@@ -1557,7 +1660,7 @@ pub enum SkillTestStep {
     /// the list, advances to [`PostRetaliate`](Self::PostRetaliate). Replaces
     /// the former single-shot `PostFollowUp` step. (Slice D #423.)
     ///
-    /// The test outcome (`succeeded`/`failed_by`) is read off
+    /// The test outcome (`succeeded`/`margin`) is read off
     /// [`InFlightSkillTest::resolved`] rather than carried in the cursor — `next`
     /// is the only step-specific state this variant needs.
     ///
@@ -1586,12 +1689,18 @@ pub enum SkillTestStep {
 /// on-success effects only fire when the test succeeds; the bare
 /// `PerformSkillTest` has no follow-up either way). The success-path
 /// effect is what each variant captures.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+///
+/// Not `Copy`: the Fight follow-up carries its damage bonus as an unevaluated
+/// [`IntExpr`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum SkillTestFollowUp {
     /// No action-specific follow-up. Used by a bare plain skill test (the
     /// [`TestSession::test_skill`](crate::test_support::TestSession::test_skill)
-    /// synthetic entry point).
+    /// synthetic entry point), and by an investigation whose card replaces its
+    /// discovery (Burglary 01045): the discovery is
+    /// [`Investigate`](Self::Investigate)'s whole content, and the replacement
+    /// rides the test's `on_success` instead.
     None,
     /// On success, make **one** discovery of
     /// `1 + `[`bonus_clues_discovered`](InFlightSkillTest::bonus_clues_discovered)
@@ -1608,8 +1717,11 @@ pub enum SkillTestFollowUp {
     Fight {
         /// The enemy the Fight action targeted.
         enemy: EnemyId,
-        /// Bonus damage beyond the base 1 (weapons). `0` for a basic Fight.
-        extra_damage: u8,
+        /// Bonus damage beyond the base 1 (weapons), `None` for a basic
+        /// Fight, which contributes nothing. Unevaluated until the follow-up
+        /// runs at RR ST.7, against the test's success margin and the board
+        /// the damage lands on (Switchblade 01044, Machete 01020).
+        extra_damage: Option<IntExpr>,
     },
     /// On success, disengage the named enemy from the investigator and
     /// exhaust it. Used by `Evade`.

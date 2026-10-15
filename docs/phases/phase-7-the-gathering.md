@@ -823,7 +823,8 @@ can complete around it, and doing it properly needs a design call (client-side f
 vs. eligible indices on the `InputRequest`) that has to leave room for the
 conditional-eligibility cards `skill_icons` cannot express — Opportunist 01053's
 *"Commit only to a skill test you are performing"*, Take Heart 04201's *"You may
-commit Take Heart to any type of test"*. None of those are implemented yet.
+commit Take Heart to any type of test"*. Opportunist's restriction is implemented
+(#1073); Take Heart is not.
 
 **Pulled into the gate by the 2026-08-23 recharter:** the whole of #258 — the
 optional content this doc had filed under *Future slices* — plus #769 (the
@@ -1051,7 +1052,7 @@ no `DecisionCursor`. DSL targets bind through `ground_chosen_targets`
 (#988 superseded this split: evaluator arms and natives alike now resolve a board pick
 through `engine::resolve_grounded_choice`, and `resolve_choice_count` is crate-private.)
 Spatial targets use `Choose<S> { scope }` (`LocationSet { Here, Anywhere }` /
-`EntityScope`). Before-timing cancellation is a Before window the caller suspends on
+`EnemyScope`). Before-timing cancellation is a Before window the caller suspends on
 + an `Effect::Cancel` leaf setting `pending_cancellation` (a `bool` suffices —
 Before-windows don't nest in scope, #367), honored on window close. One bool for
 both suppressing arms (cancel, nature-changing replacement); the non-suppressing

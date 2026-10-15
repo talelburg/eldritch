@@ -8,7 +8,9 @@ use crate::engine::dispatch::{emit, hunters, movement, reveal};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::event::Event;
-use crate::state::{ActionResume, EnemyId, GameState, InvestigatorId, LocationId, MoveEnterFrame};
+use crate::state::{
+    ActionResume, EnemyId, GameState, InvestigatorId, LocationId, MoveEnterFrame, Status,
+};
 
 /// The destinations a Move may take `investigator` to, in the order their
 /// current location lists its connections. `glossary/Move_Action.md`: *"move
@@ -170,7 +172,68 @@ pub(in crate::engine::dispatch) fn perform(
     if !candidates(cx.state, cx.cards, investigator).contains(&destination) {
         return EngineOutcome::Done; // precondition lapsed: suppress
     }
+    begin_move(cx, investigator, from, destination)
+}
 
+/// Move `investigator` to `destination` by a card effect
+/// ([`NativeCx::move_investigator`](crate::engine::NativeCx::move_investigator),
+/// first consumer Elusive 01050): the rule for a move that is not the Move
+/// action. The destination need not connect, since the effect chose it by its
+/// own card's rule; what still holds is that the investigator is active at a
+/// location, `destination` is in play and is not where they already are, and
+/// no rule forbids entering it
+/// ([`investigator_can_enter_location`](movement::investigator_can_enter_location)).
+/// `Rejected`, changing nothing, when any of that fails.
+///
+/// **Tail position**, as [`begin_move`].
+pub(crate) fn move_by_effect(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    destination: LocationId,
+) -> EngineOutcome {
+    let from = cx
+        .state
+        .investigators
+        .get(&investigator)
+        .filter(|i| i.status == Status::Active)
+        .and_then(|i| i.current_location);
+    let Some(from) = from else {
+        return EngineOutcome::Rejected {
+            reason: format!("move_investigator: {investigator:?} is not active at a location")
+                .into(),
+        };
+    };
+    if from == destination
+        || !cx.state.locations.contains_key(&destination)
+        || !movement::investigator_can_enter_location(cx.state, cx.cards, destination)
+    {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "move_investigator: {investigator:?} cannot move from {from:?} to \
+                 {destination:?}"
+            )
+            .into(),
+        };
+    }
+    begin_move(cx, investigator, from, destination)
+}
+
+/// Move `investigator` from `from` to `destination` with the timing of a move:
+/// the shared tail of the Move action ([`perform`]) and of a card effect's move
+/// ([`move_by_effect`]). The caller has already decided the move is legal —
+/// the Move action that `destination` connects, an effect that it is one the
+/// effect allows — so this checks nothing. No attack of opportunity: that
+/// belongs to the Move *action*'s initiation, not to moving.
+///
+/// **Tail position** (ADR 0003): it pushes the arrival frame and queues the
+/// `LeftLocation` timing, so the caller returns its outcome and does nothing
+/// after it.
+fn begin_move(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    from: LocationId,
+    destination: LocationId,
+) -> EngineOutcome {
     // Park the entered-location half on its own frame, then emit in tail
     // position (ADR 0003) with nothing of the departure done yet: since #721
     // `LeftLocation` is coordinator-owned, so the coordinator runs
@@ -318,9 +381,11 @@ pub(in crate::engine::dispatch) fn resume_move_enter(cx: &mut Cx) -> EngineOutco
     // investigator has to have arrived to have entered, and since #721 the
     // arrival happens at the departure's resolve step, further down the stack.
     reveal::reveal_location(cx, destination);
-    // Framework engagement on entering (RR engagement rules): "Each time an
-    // investigator enters a location, each ready enemy at that location
-    // automatically engages that investigator." Runs after the move is applied
+    // Framework engagement on entering (`glossary/Enemy_Engagement.md`): "Any
+    // time a ready unengaged enemy is at the same location as an investigator,
+    // it engages that investigator, and is placed in that investigator's threat
+    // area.", for its example "An investigator moves into the same location as
+    // it." Runs after the move is applied
     // and before the entered-location forced window, so an "after you enter"
     // forced ability sees the engagement already established (#496).
     engage_ready_enemies_on_enter(cx, investigator, destination);
@@ -340,8 +405,10 @@ pub(in crate::engine::dispatch) fn resume_move_enter(cx: &mut Cx) -> EngineOutco
 
 /// Auto-engage on entering: every ready (`!exhausted`), currently-unengaged
 /// enemy at `location` engages `investigator`, in deterministic `EnemyId` order
-/// (RR engagement rules: "Each time an investigator enters a location, each
-/// ready enemy at that location automatically engages that investigator.").
+/// (`glossary/Enemy_Engagement.md`: *"Any time a ready unengaged enemy is at
+/// the same location as an investigator, it engages that investigator, and is
+/// placed in that investigator's threat area."*, for its example *"An
+/// investigator moves into the same location as it."*).
 ///
 /// An enemy already engaged with another investigator keeps its current
 /// engagement (an enemy engages only one investigator); an enemy that moved here

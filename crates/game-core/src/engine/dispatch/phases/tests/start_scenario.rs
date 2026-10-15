@@ -2,7 +2,9 @@ use card_dsl::card_data::SkillKind;
 
 use super::*;
 use crate::action::RosterEntry;
-use crate::state::{CardCode, GameStateBuilder, SkillSubstitution};
+use crate::state::{
+    CardCode, GameStateBuilder, LastingEffect, LastingEffectKind, Lifetime, SkillSubstitution,
+};
 use crate::test_support::{TestSession, TEST_INV, TEST_REGISTRIES};
 use crate::{engine, test_support};
 
@@ -16,10 +18,11 @@ fn start_scenario_rejects_when_roster_would_seat_zero_investigators() {
 }
 
 #[test]
-fn round_end_clears_round_scoped_skill_substitutions() {
-    // RR p.24 step 4.6: "until the end of the round" effects expire as the
-    // round ends — in upkeep_round_end_teardown (after the round-end forced
-    // abilities), not the next Mythos step.
+fn round_end_clears_round_lifetime_lasting_effects() {
+    // Appendix II step 4.6: "until the end of the round" lasting effects
+    // expire as the round ends — in upkeep_round_end, before `RoundEnded` is
+    // emitted, not at the next Mythos step. That they expire ahead of the
+    // round-end abilities is `tests/round_lifetime.rs`'s.
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -28,10 +31,13 @@ fn round_end_clears_round_scoped_skill_substitutions() {
         .with_round(1)
         .ending_upkeep_phase()
         .build();
-    state.skill_substitutions.push(SkillSubstitution {
-        investigator: id,
-        use_skill: SkillKind::Intellect,
-        for_skills: vec![SkillKind::Combat, SkillKind::Agility],
+    state.lasting_effects.push(LastingEffect {
+        lifetime: Lifetime::Round,
+        kind: LastingEffectKind::SkillSubstitution(SkillSubstitution {
+            investigator: id,
+            use_skill: SkillKind::Intellect,
+            for_skills: vec![SkillKind::Combat, SkillKind::Agility],
+        }),
     });
 
     // Settling runs the round end; play goes on to round 2's Mythos phase.
@@ -44,7 +50,7 @@ fn round_end_clears_round_scoped_skill_substitutions() {
     );
     assert_eq!(session.state().round, 2, "the round ended");
     assert!(
-        session.state().skill_substitutions.is_empty(),
+        session.state().lasting_effects.is_empty(),
         "round end (step 4.6) clears round-scoped substitutions",
     );
 }

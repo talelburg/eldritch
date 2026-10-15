@@ -92,19 +92,23 @@ pub mod arcane_initiate;
 pub mod arcane_studies;
 pub mod attic;
 pub mod automatic_45;
+pub mod backstab;
 pub mod barricade;
 pub mod beat_cop;
 pub mod blinding_light;
+pub mod burglary;
 pub mod cellar;
 pub mod cover_up;
 pub mod crypt_chill;
 pub mod dark_memory;
 pub mod deduction;
+pub mod derringer_41;
 pub mod dissonant_voices;
 pub mod dodge;
 pub mod dr_milan_christopher;
 pub mod drawn_to_the_flame;
 pub mod dynamite_blast;
+pub mod elusive;
 pub mod emergency_cache;
 pub mod evidence;
 pub mod fearless;
@@ -115,10 +119,13 @@ pub mod frozen_in_fear;
 pub mod grasping_hands;
 pub mod guard_dog;
 pub mod guts;
+pub mod hard_knocks;
 pub mod heirloom_of_hyperborea;
 pub mod holy_rosary;
+pub mod hospital_debts;
 pub mod hyperawareness;
 pub mod knife;
+pub mod leo_de_luca;
 pub mod lita_chantler;
 pub mod machete;
 pub mod magnifying_glass;
@@ -127,10 +134,13 @@ pub mod medical_texts;
 pub mod mind_over_matter;
 pub mod obscuring_fog;
 pub mod old_book_of_lore;
+pub mod on_the_lam;
+pub mod opportunist;
 pub mod overpower;
 pub mod parlor;
 pub mod perception;
 pub mod physical_training;
+pub mod pickpocketing;
 pub mod research_librarian;
 pub mod rise_of_the_ghouls;
 pub mod roland_38_special;
@@ -139,6 +149,9 @@ pub mod rotting_remains;
 pub mod scrying;
 pub mod shrivelling;
 pub mod silver_twilight_acolyte;
+pub mod skids_otoole;
+pub mod sneak_attack;
+pub mod switchblade;
 pub mod the_barrier;
 pub mod theyre_getting_out;
 pub mod trapped;
@@ -228,19 +241,23 @@ pub const ALL: &[CardRecord] = &[
     arcane_studies::CARD,
     attic::CARD,
     automatic_45::CARD,
+    backstab::CARD,
     barricade::CARD,
     beat_cop::CARD,
     blinding_light::CARD,
+    burglary::CARD,
     cellar::CARD,
     cover_up::CARD,
     crypt_chill::CARD,
     dark_memory::CARD,
     deduction::CARD,
+    derringer_41::CARD,
     dissonant_voices::CARD,
     dodge::CARD,
     dr_milan_christopher::CARD,
     drawn_to_the_flame::CARD,
     dynamite_blast::CARD,
+    elusive::CARD,
     emergency_cache::CARD,
     evidence::CARD,
     fearless::CARD,
@@ -251,10 +268,13 @@ pub const ALL: &[CardRecord] = &[
     grasping_hands::CARD,
     guard_dog::CARD,
     guts::CARD,
+    hard_knocks::CARD,
     heirloom_of_hyperborea::CARD,
+    hospital_debts::CARD,
     holy_rosary::CARD,
     hyperawareness::CARD,
     knife::CARD,
+    leo_de_luca::CARD,
     lita_chantler::CARD,
     machete::CARD,
     magnifying_glass::CARD,
@@ -263,10 +283,13 @@ pub const ALL: &[CardRecord] = &[
     mind_over_matter::CARD,
     obscuring_fog::CARD,
     old_book_of_lore::CARD,
+    on_the_lam::CARD,
+    opportunist::CARD,
     overpower::CARD,
     parlor::CARD,
     perception::CARD,
     physical_training::CARD,
+    pickpocketing::CARD,
     research_librarian::CARD,
     rise_of_the_ghouls::CARD,
     roland_38_special::CARD,
@@ -275,6 +298,9 @@ pub const ALL: &[CardRecord] = &[
     scrying::CARD,
     shrivelling::CARD,
     silver_twilight_acolyte::CARD,
+    skids_otoole::CARD,
+    sneak_attack::CARD,
+    switchblade::CARD,
     the_barrier::CARD,
     theyre_getting_out::CARD,
     trapped::CARD,

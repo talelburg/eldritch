@@ -173,7 +173,12 @@ pub enum ActionDesignator {
         /// expression that counts something on the board answers from
         /// the board as it stands.
         combat_modifier: IntExpr,
-        /// Bonus damage beyond the base 1 (.38 Special: +1).
+        /// Bonus damage beyond the base 1 (.38 Special: +1). Evaluated once,
+        /// at RR ST.7 when the attack's damage is determined, not at
+        /// initiation: Switchblade 01044's *"If you succeed by 2 or more"*
+        /// reads a margin that exists only then
+        /// ([`Quantity::SkillTestSucceededBy`]), and Machete 01020's
+        /// sole-engaged check reads the board the damage lands on.
         extra_damage: IntExpr,
         /// The skill the attack tests in place of `[combat]`, or `None` for
         /// combat. Shrivelling 01060: *"This attack uses \[willpower\] instead
@@ -213,8 +218,8 @@ pub enum ActionDesignator {
         /// (Blinding Light's *"If you succeed, deal 1 damage to the enemy just
         /// evaded."*). It resolves inside the test, at Skill Test Timing step
         /// 7, where the evaded enemy is still the test's; the ability's
-        /// residual effect runs only after the test has ended. Boxed, as
-        /// [`RevealClause::effect`] is.
+        /// residual effect runs only after the test has ended. Boxed so the
+        /// designator (carried on every [`Ability`]) stays small.
         on_success: Option<Box<Effect>>,
     },
     /// **Move** — performs a move action. **No corpus card prints it**, though
@@ -235,13 +240,30 @@ pub enum ActionDesignator {
     /// contribution among however many the location carries (Obscuring Fog
     /// 01168's +2 is another), so the composed shroud clamps at 0 once, after
     /// all of them. The investigation reuses the base Investigate skill-test
-    /// follow-up, so on success it discovers a clue like the action does.
+    /// follow-up, so on success it discovers a clue like the action does,
+    /// unless the card prints something that replaces the discovery
+    /// ([`instead_of_discovery`](Self::Investigate::instead_of_discovery)).
     Investigate {
         /// Shroud-difficulty modifier for this investigation
         /// (Flashlight: `-2`). Evaluated at every read while the
         /// investigation runs, like [`Fight`](Self::Fight)'s combat
         /// modifier.
         shroud_modifier: IntExpr,
+        /// What a success does **in place of** discovering clues, or `None`
+        /// for the investigation's own discovery. Burglary 01045: *"If you
+        /// succeed, instead of discovering clues, gain 3 resources."*
+        ///
+        /// A self-replacement the card prints on its own investigation, not a
+        /// general replacement effect (#366): the test is still a successful
+        /// investigation in every other respect, so "after you successfully
+        /// investigate" (Dr. Milan Christopher 01033) still fires at ST.6. Only
+        /// the ST.7 discovery is gone, and with it anything that raises its
+        /// count, which is why Deduction 01039 does not stack with Burglary
+        /// (its ruling). The effect resolves at Skill Test Timing step 7 with
+        /// the test's performer as controller, as
+        /// [`Evade`](Self::Evade)'s `on_success` does. Boxed so the designator
+        /// (carried on every [`Ability`]) stays small.
+        instead_of_discovery: Option<Box<Effect>>,
     },
     /// **Parley** — `glossary/Parley.md` in full: *"Some abilities are
     /// identified with a **Parley** action designator. Such abilities are
@@ -335,6 +357,27 @@ impl ActionDesignator {
                 *reveal_clause = Some(clause);
             }
             other => panic!("{other:?} carries no reveal clause"),
+        }
+        self
+    }
+
+    /// This designator's investigation, resolving `effect` on success **instead
+    /// of** discovering clues (Burglary 01045's *"If you succeed, instead of
+    /// discovering clues, gain 3 resources."*). See
+    /// [`Investigate::instead_of_discovery`](Self::Investigate::instead_of_discovery).
+    ///
+    /// # Panics
+    ///
+    /// On a designator other than [`Investigate`](Self::Investigate), as
+    /// [`testing`](Self::testing) does.
+    #[must_use]
+    pub fn instead_of_discovery(mut self, effect: Effect) -> Self {
+        match &mut self {
+            Self::Investigate {
+                instead_of_discovery,
+                ..
+            } => *instead_of_discovery = Some(Box::new(effect)),
+            other => panic!("{other:?} carries no discovery to replace"),
         }
         self
     }
@@ -951,6 +994,44 @@ pub enum EventPattern {
         /// Which drawn cards the ability listens to.
         filter: CardFilter,
     },
+    /// **You** evaded an enemy — Pickpocketing 01046's *"\[reaction\] After
+    /// you evade an enemy, exhaust Pickpocketing: Draw 1 card."* Scoped to
+    /// evasions by the ability's controller.
+    ///
+    /// One evasion, however it came about: the Evade action, a designated
+    /// **Evade** (Blinding Light 01066), and an automatic evade (#780) all
+    /// announce it, which Pickpocketing's ruling needs
+    /// (<https://arkhamdb.com/card/01046>): *"the auto-evade effect from
+    /// Breaking and Entering can trigger the reaction on Pickpocketing (0)"*.
+    /// The condition's own resolution is the disengage and the exhaust, so an
+    /// `after` ability sees the enemy already evaded.
+    ///
+    /// One hand-written consumer in this slice, below `standards.md`'s
+    /// threshold for a new pattern; a trigger has no card-local alternative,
+    /// and Earl Sawyer 02218 (Dunwich) prints the same condition: *"\[reaction\]
+    /// After you evade an enemy, exhaust Earl Sawyer: Draw 1 card."*
+    EnemyEvaded,
+    /// **Your** turn began (Appendix II step 2.2, *"Next investigator's turn
+    /// begins."*). Scoped to the ability's controller: the engine's matcher
+    /// hears it only for the investigator whose turn it is. Its `after` cell is
+    /// the first opening of the post-2.2 player window, not the re-openings
+    /// step 2.2.1 returns to after each action.
+    ///
+    /// On the Lam 01010's *"Fast. Play after your turn begins."* is the timing
+    /// point read as a triggering condition — `glossary/Fast.md`: *"If the
+    /// instructions specify when/after a timing point, the card may be played
+    /// as if the described timing point were a triggering condition for playing
+    /// the card."* — so it is played from hand in this cell, as Dodge 01023 is
+    /// in an attack's.
+    ///
+    /// One Core consumer, below `standards.md`'s threshold for a new pattern; a
+    /// play timing has no card-local alternative, and three cards outside the
+    /// Core print the same condition: Leo Anderson 04001's *"\[reaction\] After
+    /// your turn begins: Play an \[\[Ally\]\] asset, reducing its cost by 1."*,
+    /// Tristan Botley 07194's *"\[reaction\] After your turn begins: Choose two
+    /// skills."* and Jenny Barnes 90084's *"\[reaction\] After your turn begins:
+    /// Play a \[\[Talent\]\] asset, reducing its cost by 1."*
+    TurnBegan,
 }
 
 impl EventPattern {
@@ -987,6 +1068,8 @@ impl EventPattern {
             EventPattern::LeftLocation => TriggeringCondition::LeftLocation,
             EventPattern::CardPlayed { .. } => TriggeringCondition::CardPlayed,
             EventPattern::EncounterCardDrawn { .. } => TriggeringCondition::EncounterCardDrawn,
+            EventPattern::EnemyEvaded => TriggeringCondition::EnemyEvaded,
+            EventPattern::TurnBegan => TriggeringCondition::TurnBegan,
         }
     }
 
@@ -1016,7 +1099,9 @@ impl EventPattern {
             | EventPattern::HarmPlaced { .. }
             | EventPattern::EnemyAttacks { .. }
             | EventPattern::EnteredPlay
-            | EventPattern::LeftLocation => None,
+            | EventPattern::LeftLocation
+            | EventPattern::EnemyEvaded
+            | EventPattern::TurnBegan => None,
         }
     }
 }
@@ -1124,6 +1209,11 @@ pub enum TriggeringCondition {
     /// An investigator drew an encounter card (framework step 1.4, or a card
     /// effect's draw); its revelation is the condition's resolution.
     EncounterCardDrawn,
+    /// An investigator evaded an enemy; the disengage and the exhaust are the
+    /// condition's resolution.
+    EnemyEvaded,
+    /// An investigator's turn began (Appendix II step 2.2).
+    TurnBegan,
 }
 
 /// The four game phases, mirrored in `card-dsl` so [`EventPattern`] can
@@ -1292,7 +1382,11 @@ pub enum Cost {
 /// such a limit may be initiated X times during the designated period.
 /// If a card leaves play and re-enters play during the same period,
 /// the card is considered to be bringing a new instance of the ability
-/// to the game."*
+/// to the game."* The same entry adds *"Unless stated otherwise, limits are
+/// player specific."*, so the count is kept per instance **and** per
+/// triggering investigator: each investigator who can reach the ability gets
+/// their own X (The Stranger 03047a's ruling,
+/// <https://arkhamdb.com/card/03047a>).
 ///
 /// Canonical motivating card: Roland Banks (01001) —
 /// `[reaction] After you defeat an enemy: Discover 1 clue at your
@@ -1301,7 +1395,7 @@ pub enum Cost {
 ///
 /// Storage of the per-instance counter lives on
 /// `CardInPlay` (in `game_core::state`): see
-/// `ability_usage` (its per-instance counter map). When a
+/// `ability_usage` (its per-instance, per-investigator counter map). When a
 /// card leaves play, its `CardInPlay` is dropped, so a re-entering
 /// instance starts fresh as the rules require.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -1314,14 +1408,15 @@ pub struct UsageLimit {
 
 /// The period a [`UsageLimit`] is measured over.
 ///
-/// `Round` (Roland's "Limit once per round") and `Phase` (Agnes Baker's
-/// "Limit once per phase"). `Turn` ("limit once per turn") and `Game`
-/// ("limit once per game" — group or player) land when the first consumer
-/// appears.
+/// `Round` (Roland's "Limit once per round"), `Phase` (Agnes Baker's
+/// "Limit once per phase") and `Turn` ("Skids" O'Toole's "Limit once per
+/// turn"). `Game` ("limit once per game" — group or player) lands when the
+/// first consumer appears.
 ///
 /// The period decides when a counter resets, and nothing else: the engine's
-/// usage record notes the round **and** phase of its last fire either way, and
-/// each period compares the part of that clock it is measured over.
+/// usage record notes the round, the phase **and** the turn of its last fire
+/// either way, and each period compares the part of that clock it is measured
+/// over.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum UsagePeriod {
     /// A game round, as defined by the framework: begins at 1.1 Mythos,
@@ -1334,6 +1429,12 @@ pub enum UsagePeriod {
     /// Investigation phase of one round is a different period from the
     /// Investigation phase of the next.
     Phase,
+    /// An investigator's turn. Counter resets when the round, the phase or
+    /// the active investigator changes: each investigator takes one turn per
+    /// Investigation phase, so those three name the turn. Outside the
+    /// Investigation phase there is no turn, and the period is the rest of the
+    /// phase.
+    Turn,
 }
 
 // ---- abilities -------------------------------------------------
@@ -1368,7 +1469,9 @@ pub struct Ability {
     /// implicitly optional on the wire, like `usage_limit`.
     pub designator: Option<ActionDesignator>,
     /// Payment costs (besides action cost). Empty for abilities with no
-    /// non-action payment. Required on the wire (#453).
+    /// non-action payment. Paid when an activated or a reaction ability
+    /// initiates; a forced ability's are neither checked nor paid. Required on
+    /// the wire (#453).
     pub costs: Vec<Cost>,
     pub effect: Effect,
     /// "Limit X per \[period\]" cap. `None` for abilities with no
@@ -1442,6 +1545,16 @@ impl Ability {
         self
     }
 
+    /// Attach the costs paid to initiate this ability (see [`Self::costs`]),
+    /// for a triggered ability: the activated constructors take theirs as an
+    /// argument. Builder-style sugar, chainable off the `on_event(...)`
+    /// constructors — Pickpocketing 01046's *"exhaust Pickpocketing"*.
+    #[must_use]
+    pub fn with_costs(mut self, costs: Vec<Cost>) -> Self {
+        self.costs = costs;
+        self
+    }
+
     /// Attach an eligibility condition (see [`Self::eligibility`]).
     /// Builder-style sugar, chainable off the `on_event(...)` constructors.
     #[must_use]
@@ -1510,8 +1623,14 @@ impl Ability {
                     clause.effect.collect_native_refs(refs);
                 }
             }
-            Some(ActionDesignator::Investigate { shroud_modifier }) => {
+            Some(ActionDesignator::Investigate {
+                shroud_modifier,
+                instead_of_discovery,
+            }) => {
                 shroud_modifier.collect_native_refs(refs);
+                if let Some(effect) = instead_of_discovery {
+                    effect.collect_native_refs(refs);
+                }
             }
         }
         match &self.trigger {
@@ -1615,6 +1734,7 @@ impl Effect {
             Effect::GainResources { .. }
             | Effect::DiscoverClue { .. }
             | Effect::DealDamageToEnemy { .. }
+            | Effect::Disengage { .. }
             | Effect::Heal { .. }
             | Effect::Modify { .. }
             | Effect::AutoResolve { .. }
@@ -1629,7 +1749,9 @@ impl Effect {
             | Effect::Restrict(_)
             | Effect::SearchDeck { .. }
             | Effect::AttachSelfToLocation
-            | Effect::TakeControl { .. } => {}
+            | Effect::TakeControl { .. }
+            | Effect::GainAdditionalAction { .. }
+            | Effect::AdditionalActionWhileInPlay { .. } => {}
         }
     }
 }
@@ -1710,6 +1832,12 @@ pub enum Effect {
     /// `Native`) so the activation pre-cost check can verify ≥1 candidate
     /// before any cost is paid. `amount == 0` is a no-op.
     DealDamageToEnemy { target: EnemyTarget, amount: u8 },
+    /// Disengage the controller from the resolved enemy `target`. It stays
+    /// where it is, and stays ready: Elusive 01050's ruling, *"Disengaging does
+    /// not exhaust an enemy."* (<https://arkhamdb.com/card/01050>). A no-op on
+    /// an enemy not engaged with the controller — unengaged, or engaged with
+    /// another investigator.
+    Disengage { target: EnemyTarget },
     /// Heal `count` of `kind` (damage or horror) from the resolved target
     /// investigator — the inverse of [`Effect::Deal`] (no defeat
     /// interaction). Heals at most the current amount (saturating at 0).
@@ -1792,9 +1920,9 @@ pub enum Effect {
     },
     /// Resolve `targets` and run `body` once per resolved target.
     /// Each iteration binds the target into the evaluator's scope so
-    /// the body can refer to it.
+    /// the body can refer to it (as [`InvestigatorTarget::Each`]).
     ForEach {
-        targets: InvestigatorTargetSet,
+        targets: ForEachTargets,
         body: Box<Effect>,
     },
     /// Present alternatives to the controller. Resolves to the chosen
@@ -2025,6 +2153,23 @@ pub enum Effect {
     /// for `CannotPlay`, `pending_action_surcharge` for `ExtraActionCost`);
     /// resolving it as an effect is a misuse and rejects.
     Restrict(Restriction),
+    /// **An additional action for as long as the source card is in play**,
+    /// once during each of its controller's turns (see **Standard action /
+    /// additional action** in `GLOSSARY.md`): Leo De Luca 01048's *"You may
+    /// take an additional action during your turn."* A constant marker like
+    /// [`Restrict`](Self::Restrict), under a [`Trigger::Constant`]:
+    /// **inspected, not executed** — the engine reads it off the card in play
+    /// each time it works out the investigator's actions, so the grant is gone
+    /// the moment the card leaves play. Resolving it rejects.
+    ///
+    /// The executed form, a grant an ability resolves, is
+    /// [`GainAdditionalAction`](Self::GainAdditionalAction). That a
+    /// constant-only marker is an `Effect` at all, which the evaluator must
+    /// refuse if executed, is #1085.
+    AdditionalActionWhileInPlay {
+        /// What the additional action may be used for. `None` is any action.
+        restriction: Option<AdditionalActionRestriction>,
+    },
     /// Search a region of an investigator's deck for one card matching
     /// `filter`, move it to that investigator's hand, then shuffle the deck.
     /// Old Book of Lore 01031 (top 3, any card, chosen investigator) and
@@ -2146,7 +2291,40 @@ pub enum Effect {
         /// Printed `ArkhamDB` code of the card to take control of.
         code: String,
     },
+    /// **Grant an additional action this turn** (see **Standard action /
+    /// additional action** in `GLOSSARY.md`): one more action the investigator
+    /// may take this turn, on top of the three standard ones.
+    /// `glossary/Action.md` (FAQ 1.10): *"Some card abilities grant
+    /// investigators "additional actions.""*
+    ///
+    /// **Executed**, by an ability that resolves: "Skids" O'Toole 01003's
+    /// *"spend 2 resources: You may take an additional action this turn."* The
+    /// grant is pushed onto the controller and lasts until it is used or the
+    /// turn ends (FAQ 1.31: *"Any unused actions are forfeited at the end of an
+    /// investigator's turn"*). A card in play that grants one each turn is the
+    /// constant marker
+    /// [`AdditionalActionWhileInPlay`](Self::AdditionalActionWhileInPlay)
+    /// instead.
+    ///
+    /// The engine never stores a count of additional actions. It works the list
+    /// out each time it's needed, so a grant from a card in play is gone the
+    /// moment the card leaves play.
+    GainAdditionalAction {
+        /// What the additional action may be used for. `None` is any action.
+        restriction: Option<AdditionalActionRestriction>,
+    },
 }
+
+/// What an additional action ([`Effect::GainAdditionalAction`],
+/// [`Effect::AdditionalActionWhileInPlay`]) may be spent on — Daisy Walker
+/// 01002's *"You may take an additional action during your turn, which can
+/// only be used on \[\[Tome\]\] \[action\] abilities."*
+///
+/// TODO(#779): uninhabited until Daisy defines the first restriction, so every
+/// grant built today is unrestricted (`None`) and nothing on the wire can carry
+/// one. #779 adds the variants; no stored state needs migrating.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum AdditionalActionRestriction {}
 
 /// Which card an [`Effect::Grant`] gives its abilities to.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -2390,8 +2568,10 @@ pub enum Determination {
     AutomaticSuccess,
 }
 
-/// A constant restriction a card imposes while in play, carried by a
-/// [`Trigger::Constant`] [`Effect::Restrict`]. The engine inspects these
+/// A restriction a card imposes: a constant one while the card is in play,
+/// carried by a [`Trigger::Constant`] [`Effect::Restrict`], or a lasting one
+/// a card-local native registers for a duration
+/// ([`CannotAttack`](Restriction::CannotAttack)). The engine inspects these
 /// at decision points rather than executing them.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Restriction {
@@ -2456,6 +2636,27 @@ pub enum Restriction {
     /// text names no investigator characteristic, so this variant carries
     /// none.
     InvestigatorMovementBlocked,
+    /// Enemies cannot attack the investigator this restriction protects,
+    /// unless their printed card passes `exempt` (On the Lam 01010: *"Until
+    /// the end of the round, non-\[\[Elite\]\] enemies cannot attack you."*).
+    /// **Inspected, not executed** — the three places an enemy attacks (an
+    /// attack of opportunity, the Enemy phase's step 3.3, a Retaliate) leave
+    /// a covered enemy out of the attack, so it neither attacks nor exhausts.
+    ///
+    /// **Lasting only.** The engine reads it from the lasting effects a
+    /// card-local native registers through
+    /// `NativeCx::restrict_until_end_of_round` (over in `game-core`), which names
+    /// the protected investigator. A constant `CannotAttack` on a card in
+    /// play has no reader, so declaring one is a silent no-op.
+    ///
+    /// The exemption is the declaring card's own, as with
+    /// [`EnemyMovementBlocked`](Restriction::EnemyMovementBlocked): On the
+    /// Lam supplies a "has the Elite trait" filter.
+    CannotAttack {
+        /// Enemies whose printed card passes this filter may still attack.
+        /// `None` stops every enemy.
+        exempt: Option<CardFilter>,
+    },
 }
 
 /// One action kind an [`Restriction::ExtraActionCost`] can surcharge.
@@ -2504,7 +2705,7 @@ pub enum SkillTestKind {
 /// forced-dispatch `controller = lead` binding. The wrapper reserves its home.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Choose<S> {
-    /// The candidate filter (an [`EntityScope`] or [`LocationSet`]).
+    /// The candidate filter (an [`EnemyScope`] or a [`LocationSet`]).
     pub scope: S,
 }
 
@@ -2521,14 +2722,35 @@ pub enum LocationSet {
     // `YourOrConnecting` is added by PR-8 (#306) with the adjacency model.
 }
 
-/// An entity-choice filter. Locational today; non-spatial arms (`Engaged`,
-/// `WithTrait`, …) accrete here when a card needs them — additively, touching
-/// neither [`LocationSet`] nor location-picks. (The `UsagePeriod`
-/// minimal-enum-with-a-growth-path idiom.)
+/// An enemy-choice filter: a conjunction of constraints a candidate enemy must
+/// meet. A card that narrows the choice further (Stray Cat's trait exclusion,
+/// #780) adds a field here rather than an arm, so the constraints compose —
+/// *"an exhausted enemy at your location"* is one scope with two fields set. A
+/// new field is optional, so [`EnemyScope::at`] keeps reading as "no further
+/// constraint", touching neither [`LocationSet`] nor location-picks.
+///
+/// Enemy choices only: an investigator choice is scoped by a bare
+/// [`LocationSet`] (see [`InvestigatorTarget::Chosen`]), since an investigator
+/// has no exhausted state for a filter to read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum EntityScope {
-    /// An entity whose location is in the given [`LocationSet`].
-    At(LocationSet),
+pub struct EnemyScope {
+    /// The enemy's location must be in this [`LocationSet`].
+    pub at: LocationSet,
+    /// `Some(true)` admits only exhausted enemies, `Some(false)` only ready
+    /// ones, `None` either (Sneak Attack 01052, *"an exhausted enemy at your
+    /// location"*).
+    pub exhausted: Option<bool>,
+}
+
+impl EnemyScope {
+    /// An enemy at `set`, with no further constraint.
+    #[must_use]
+    pub const fn at(set: LocationSet) -> Self {
+        EnemyScope {
+            at: set,
+            exhausted: None,
+        }
+    }
 }
 
 /// Single-investigator target spec.
@@ -2542,9 +2764,16 @@ pub enum InvestigatorTarget {
     /// The active investigator at evaluation time. May or may not be
     /// "you"; matters during reactions across turns.
     Active,
-    /// The chooser picks one investigator from the [`Choose`]'s scope. Bound by
-    /// the evaluator's `ground_chosen_targets` before the effect's handler runs.
-    Chosen(Choose<EntityScope>),
+    /// The chooser picks one investigator at a location in the [`Choose`]'s
+    /// [`LocationSet`]. Bound by the evaluator's `ground_chosen_targets` before
+    /// the effect's handler runs.
+    Chosen(Choose<LocationSet>),
+    /// The investigator an enclosing [`Effect::ForEach`] is currently applying
+    /// its body to — *"each investigator … discards"*. Bound per iteration by
+    /// the evaluator's walking frame, separately from [`You`](Self::You), so a
+    /// body can name both the card's controller and the iterated investigator.
+    /// Resolving it outside a `ForEach` body over investigators is a rejection.
+    Each,
 }
 
 impl InvestigatorTarget {
@@ -2553,7 +2782,7 @@ impl InvestigatorTarget {
     #[must_use]
     pub fn chosen_anywhere() -> Self {
         InvestigatorTarget::Chosen(Choose {
-            scope: EntityScope::At(LocationSet::Anywhere),
+            scope: LocationSet::Anywhere,
         })
     }
 
@@ -2561,18 +2790,58 @@ impl InvestigatorTarget {
     #[must_use]
     pub fn chosen_at_your_location() -> Self {
         InvestigatorTarget::Chosen(Choose {
-            scope: EntityScope::At(LocationSet::Here),
+            scope: LocationSet::Here,
         })
     }
 }
 
 /// Set-of-investigators target spec for [`Effect::ForEach`].
+///
+/// Either set holds only investigators still in the game (`Active`): one who
+/// has resigned or been defeated is no longer an investigator the card can
+/// reach. Both are walked in turn order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum InvestigatorTargetSet {
     /// All investigators currently in the scenario, in turn order.
     All,
     /// All investigators at the controller's location.
     AtControllerLocation,
+}
+
+/// Set-of-enemies target spec for [`Effect::ForEach`], walked in enemy-id
+/// order. The body names the current one as [`EnemyTarget::Each`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum EnemySet {
+    /// Each enemy engaged with the controller — Elusive 01050's *"each enemy
+    /// engaged with you"*.
+    EngagedWithYou,
+}
+
+/// What an [`Effect::ForEach`] fans out over: one arm per kind of entity, so
+/// the walk is the same whatever it walks. The body reads the current one
+/// through that kind's `Each` target ([`InvestigatorTarget::Each`],
+/// [`EnemyTarget::Each`]).
+///
+/// [`for_each`] takes anything that converts into this, so a call site names
+/// the set alone: `for_each(InvestigatorTargetSet::All, body)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ForEachTargets {
+    /// A set of investigators.
+    Investigators(InvestigatorTargetSet),
+    /// A set of enemies.
+    Enemies(EnemySet),
+}
+
+impl From<InvestigatorTargetSet> for ForEachTargets {
+    fn from(set: InvestigatorTargetSet) -> Self {
+        ForEachTargets::Investigators(set)
+    }
+}
+
+impl From<EnemySet> for ForEachTargets {
+    fn from(set: EnemySet) -> Self {
+        ForEachTargets::Enemies(set)
+    }
 }
 
 /// Single-location target spec.
@@ -2623,13 +2892,16 @@ impl LocationTarget {
     }
 }
 
-/// Single-enemy target spec. One variant today (`Chosen`); a non-chosen form
-/// (`Engaged`, a specific spawned enemy) lands with its first consumer.
+/// Single-enemy target spec. Another non-chosen form (`Engaged`, a specific
+/// spawned enemy) lands with its first consumer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum EnemyTarget {
     /// The chooser picks one enemy from the [`Choose`]'s scope. Bound by
     /// `ground_chosen_targets` before the handler runs.
-    Chosen(Choose<EntityScope>),
+    Chosen(Choose<EnemyScope>),
+    /// The enemy the enclosing [`Effect::ForEach`] over an [`EnemySet`] is
+    /// currently running its body for. Valid only inside such a body.
+    Each,
 }
 
 impl EnemyTarget {
@@ -2637,7 +2909,7 @@ impl EnemyTarget {
     #[must_use]
     pub fn chosen_at_your_location() -> Self {
         EnemyTarget::Chosen(Choose {
-            scope: EntityScope::At(LocationSet::Here),
+            scope: EnemyScope::at(LocationSet::Here),
         })
     }
 }
@@ -2695,6 +2967,8 @@ pub enum Condition {
     ///   stands in for a change-state check its opaque [`Effect::Native`] hides.
     /// - **Lita Chantler 01117**, as eligibility — a trigger narrowing, and a
     ///   misfit there (see [`Ability::eligibility`]).
+    /// - **"Skids" O'Toole 01003**, as eligibility — *"During your turn"* on a
+    ///   `[fast]` ability, a play restriction no declarative condition names.
     ///
     /// `TODO(#609)`: this is an escape hatch, not a pattern. Lita's *"an
     /// investigator at your location successfully attacks a \[\[Monster\]\]
@@ -2793,6 +3067,12 @@ pub enum Quantity {
     EngagedEnemies,
     /// Failure margin of the resolving skill test (0 outside one).
     SkillTestFailedBy,
+    /// Success margin of the resolving skill test: its modified skill value
+    /// minus its difficulty, read off the test's ST.6 verdict, so every
+    /// modifier added during the test counts. `0` outside a passed test's ST.7
+    /// results. Switchblade 01044 and .41 Derringer 01047's *"If you succeed by
+    /// 2 or more, this attack deals +1 damage."*
+    SkillTestSucceededBy,
 }
 
 /// Comparison operator for [`Condition::Compare`].
@@ -2947,8 +3227,8 @@ pub fn on_skill_test_resolution(outcome: TestOutcome, effect: Effect) -> Ability
 }
 
 /// Construct a [`Trigger::OnEvent`] ability for the given pattern
-/// and timing. Costs are empty — reactive triggers fire from the
-/// engine's reaction-window plumbing, not via player activation.
+/// and timing. Costs are empty; a reaction that prints one (Pickpocketing
+/// 01046's *"exhaust Pickpocketing"*) chains [`Ability::with_costs`].
 #[must_use]
 pub fn on_event(
     pattern: EventPattern,
@@ -3094,6 +3374,20 @@ pub fn gain_resources(target: InvestigatorTarget, amount: u8) -> Effect {
     Effect::GainResources { target, amount }
 }
 
+/// Build an unrestricted [`Effect::GainAdditionalAction`]: an additional action
+/// this turn.
+#[must_use]
+pub fn gain_additional_action() -> Effect {
+    Effect::GainAdditionalAction { restriction: None }
+}
+
+/// Build an unrestricted [`Effect::AdditionalActionWhileInPlay`], the constant
+/// marker; wrap it in [`constant`].
+#[must_use]
+pub fn additional_action_while_in_play() -> Effect {
+    Effect::AdditionalActionWhileInPlay { restriction: None }
+}
+
 /// Build an [`Effect::DiscoverClue`].
 #[must_use]
 pub fn discover_clue(from: LocationTarget, count: u8) -> Effect {
@@ -3156,6 +3450,12 @@ pub fn deal_horror(target: InvestigatorTarget, amount: impl Into<IntExpr>) -> Ef
 #[must_use]
 pub fn deal_damage_to_enemy(target: EnemyTarget, amount: u8) -> Effect {
     Effect::DealDamageToEnemy { target, amount }
+}
+
+/// Build an [`Effect::Disengage`].
+#[must_use]
+pub fn disengage(target: EnemyTarget) -> Effect {
+    Effect::Disengage { target }
 }
 
 /// Build an [`Effect::BoostAttackDamage`] adding `amount` to the
@@ -3258,11 +3558,12 @@ pub fn if_else(condition: Condition, then: Effect, else_: Effect) -> Effect {
     }
 }
 
-/// Build an [`Effect::ForEach`].
+/// Build an [`Effect::ForEach`] over `targets` — any set that converts into a
+/// [`ForEachTargets`], such as an [`InvestigatorTargetSet`] or an [`EnemySet`].
 #[must_use]
-pub fn for_each(targets: InvestigatorTargetSet, body: Effect) -> Effect {
+pub fn for_each(targets: impl Into<ForEachTargets>, body: Effect) -> Effect {
     Effect::ForEach {
-        targets,
+        targets: targets.into(),
         body: Box::new(body),
     }
 }
@@ -3330,6 +3631,19 @@ pub fn place_doom_that_can_advance_the_agenda(count: impl Into<IntExpr>) -> Effe
 #[must_use]
 pub fn native(tag: impl Into<String>) -> Effect {
     Effect::Native { tag: tag.into() }
+}
+
+/// *"If you succeed by `n` or more"*: [`Quantity::SkillTestSucceededBy`] at
+/// least `n`. Switchblade 01044 and .41 Derringer 01047 (*"If you succeed by 2
+/// or more, this attack deals +1 damage."*), Opportunist 01053 (*"If you
+/// succeed by 3 or more"*).
+#[must_use]
+pub fn succeeded_by(n: i8) -> Condition {
+    Condition::Compare {
+        quantity: Quantity::SkillTestSucceededBy,
+        op: CmpOp::Ge,
+        value: n,
+    }
 }
 
 /// Build a [`Condition::Native`] referencing a host-registered Rust predicate
@@ -3400,11 +3714,14 @@ pub fn evade() -> ActionDesignator {
 
 /// Build an [`ActionDesignator::Investigate`] applying `shroud_modifier` to the
 /// controller's location difficulty for this investigation (Flashlight 01087:
-/// `investigate(-2i8)`).
+/// `investigate(-2i8)`). A success discovers clues as the action does; chain
+/// [`ActionDesignator::instead_of_discovery`] for a card that replaces that
+/// (Burglary 01045).
 #[must_use]
 pub fn investigate(shroud_modifier: impl Into<IntExpr>) -> ActionDesignator {
     ActionDesignator::Investigate {
         shroud_modifier: shroud_modifier.into(),
+        instead_of_discovery: None,
     }
 }
 

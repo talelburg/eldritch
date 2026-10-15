@@ -316,6 +316,15 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             profile(PROMPT, COMPLETE),
         ),
         (
+            Continuation::Effect(EffectFrame::ForEach {
+                targets: vec![],
+                next: 0,
+                body: Box::new(Effect::Seq(vec![])),
+                ctx,
+            }),
+            profile(PROMPT, COMPLETE),
+        ),
+        (
             deal_damage(DealDamageStep::Distribute {
                 remaining_damage: 0,
                 remaining_horror: 1,

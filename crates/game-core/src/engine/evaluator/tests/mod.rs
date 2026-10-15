@@ -22,6 +22,7 @@ mod deal_and_heal;
 mod discard_self;
 mod discover_clue;
 mod eval_context;
+mod for_each;
 mod gain_resources;
 mod leaf_effects;
 mod modify;

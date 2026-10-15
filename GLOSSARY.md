@@ -21,6 +21,10 @@ A second mechanic shares the word. ArkhamDB's card text writes the **free trigge
 
 _Avoid_: Reading a `[fast]` token in ArkhamDB card text as the keyword — it is the ability icon, and only a bare `Fast.` line is the keyword. Say "zero-action ability" (or the Rules Reference's "free triggered ability") for the second sense, never "fast ability".
 
+**Standard action / additional action**:
+An investigator's three per-turn actions are **standard**. A card can grant an **additional** one, either for as long as its source is in play (Leo De Luca 01048: *"You may take an additional action during your turn"*) or once, for the rest of this turn ("Skids" O'Toole 01003: *"You may take an additional action this turn"*). Some are restricted to one kind of action (Daisy Walker 01002's Tome-only action). The rule is `glossary/Action.md` (FAQ 1.10). The first action that *can* qualify as an additional action **automatically uses it up**, so additional actions are spent before standard ones, never saved for later. When actions are lost, standard actions go first. Once an additional action is used up it stays used up, even if its source leaves play: Leo's ruling is *"the first action you spend each turn takes up the 'additional' designation. If Leo De Luca is discarded mid-turn, you do not lose 1 action from your total pool of actions for the turn"* (https://arkhamdb.com/card/01048).
+_Avoid_: "Extra action", which reads as a count bump and hides two things: which kind of action used the grant up, and that a grant from a card in play is lost if that card leaves play before the grant is used. Avoid "bonus action" too.
+
 **Horror soak**:
 Our informal term for assigning horror to an asset that has sanity, rather than to the investigator. The word does not appear in the Rules Reference, which says only that an asset "must have sanity in order to be assigned horror."
 _Avoid_: Max sanity, sanity boost, sanity modifier. An asset's sanity is a capacity to absorb horror, never a change to the investigator's own sanity.
@@ -34,7 +38,7 @@ Two scopes for the same deal, and card text picks one or the other on purpose. H
 _Avoid_: Reading "you take" as "on your investigator card", or "placed on [investigator]" as including their assets. The two differ exactly when a soaker absorbs some of the harm, which is the case a test has to cover.
 
 **Commit**:
-What a player does with a skill card to add it to an in-progress skill test. Skill cards are committed, never played. Committing at ST.2 takes the card **out of hand** into **limbo** (below), where it stays until ST.8 discards it.
+What a player does with a skill card to add it to an in-progress skill test. Skill cards are committed, never played. Committing at ST.2 takes the card **out of hand** into **limbo** (below), where it stays until ST.8 discards it — or, when its own success effect says so, returns it to hand instead (Opportunist 01053's *"return Opportunist to your hand after this test instead of discarding it"*).
 _Avoid_: Play, use (for skill cards specifically). Also avoid describing a committed card as still in hand — that was #631.
 
 **Play**:
@@ -42,7 +46,7 @@ What a player does with an Asset or Event from hand. Those are the only two card
 _Avoid_: Using "play" for committing a skill, or for revealing encounter cards
 
 **Limbo**:
-The Rules Reference's name (glossary, added in FAQ 1.23) for a card that is in **no zone at all** — "neither in play, in the discard pile, nor … in an investigator's hand". Two states in the engine are limbo, and both ride the continuation frame driving them rather than any zone: an **in-progress play** (below) and a **committed card**, which "enters limbo as it is committed to a skill test" at ST.2 and leaves it when ST.8 discards it. Limbo is the umbrella; name the specific state when you mean one of them. A limbo card "is technically not in play, and does not count as being in play for the purposes of other card effects" — so it is invisible to in-play queries while its effects still alter the game state.
+The Rules Reference's name (glossary, added in FAQ 1.23) for a card that is in **no zone at all** — "neither in play, in the discard pile, nor … in an investigator's hand". Two states in the engine are limbo, and both ride the continuation frame driving them rather than any zone: an **in-progress play** (below) and a **committed card**, which "enters limbo as it is committed to a skill test" at ST.2 and leaves it when ST.8 discards it (or returns it to hand — see **Commit**). Limbo is the umbrella; name the specific state when you mean one of them. A limbo card "is technically not in play, and does not count as being in play for the purposes of other card effects" — so it is invisible to in-play queries while its effects still alter the game state.
 _Avoid_: Calling it a zone, or a "pending" pile — it is "not a physical game area". Also avoid reaching for it where the specific term is clearer: a reader who sees "limbo" has to work out which of the two you meant.
 
 **In-progress play**:

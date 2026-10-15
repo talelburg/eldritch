@@ -81,7 +81,7 @@ fn dig(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
 }
 
 fn substitute(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
-    cx.add_skill_substitution(SkillSubstitution {
+    cx.substitute_skill_until_end_of_round(SkillSubstitution {
         investigator: ctx.controller,
         use_skill: SkillKind::Intellect,
         for_skills: vec![SkillKind::Combat],
@@ -329,7 +329,7 @@ fn start_combat_test(session: TestSession) -> TestSession {
 
 /// Commit nothing to the test `session` is in and let it resolve: the margin
 /// it succeeded by. Combat is 3 and Intellect 5 (see
-/// `add_skill_substitution_is_offered_at_the_next_skill_test`), so the
+/// `substitute_skill_until_end_of_round_is_offered_at_the_next_skill_test`), so the
 /// margin says which skill the test was made with: 2 for Combat, 4 for
 /// Intellect.
 fn success_margin(session: TestSession) -> i8 {
@@ -349,7 +349,7 @@ fn success_margin(session: TestSession) -> i8 {
 /// The `PhaseEnded { Enemy }` timing point is fired on its own over the lead's
 /// open turn instead, and the session comes back to that turn's menu.
 #[test]
-fn add_skill_substitution_is_offered_at_the_next_skill_test() {
+fn substitute_skill_until_end_of_round_is_offered_at_the_next_skill_test() {
     const BY_COMBAT: i8 = 2;
     const BY_INTELLECT: i8 = 4;
     let board = || {

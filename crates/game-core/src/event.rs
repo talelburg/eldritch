@@ -58,11 +58,13 @@ pub enum Event {
         /// Whose turn it was.
         investigator: InvestigatorId,
     },
-    /// An investigator's action point count changed.
+    /// An investigator's count of **standard** actions changed. Additional
+    /// actions are not announced: gaining, using or losing one emits nothing,
+    /// so a client reads the total from state (`engine::actions_available`).
     ActionsRemainingChanged {
         /// Whose action count changed.
         investigator: InvestigatorId,
-        /// New count.
+        /// New standard count (`Investigator::actions_remaining`).
         new_count: u8,
     },
     /// An investigator moved between locations.
@@ -175,6 +177,23 @@ pub enum Event {
         /// Which uses-kind moved.
         kind: UseKind,
         /// How many moved: no more than the card had.
+        amount: u8,
+    },
+    /// Resources moved out of an investigator's resource pool onto a card
+    /// (Hospital Debts 01011: *"Move 1 resource from your resource pool to
+    /// Hospital Debts."*), through
+    /// [`NativeCx::move_resources_to_card`](crate::engine::NativeCx::move_resources_to_card).
+    ///
+    /// Deliberately neither [`Event::ResourcesPaid`] nor a gain: the move is
+    /// the ability's effect, not its cost, and the official FAQ (Stylish Coat)
+    /// sets a move of resources apart from gaining them. The count lands on
+    /// [`CardInPlay::resources`](crate::state::CardInPlay::resources).
+    ResourcesMovedToCard {
+        /// Whose resource pool they left.
+        investigator: InvestigatorId,
+        /// The card instance they now sit on.
+        instance_id: CardInstanceId,
+        /// How many moved: no more than the pool held.
         amount: u8,
     },
     /// A skill test was declared and resolution has begun.
@@ -294,6 +313,16 @@ pub enum Event {
         /// Destination location.
         to: LocationId,
     },
+    /// An investigator evaded an enemy — by an Evade action, a designated
+    /// **Evade**, or an automatic evade. Logged as the evasion resolves,
+    /// before the [`EnemyDisengaged`](Self::EnemyDisengaged) and
+    /// [`EnemyExhausted`](Self::EnemyExhausted) it brings about.
+    EnemyEvaded {
+        /// The evaded enemy.
+        enemy: EnemyId,
+        /// The investigator who evaded it.
+        investigator: InvestigatorId,
+    },
     /// An enemy disengaged from an investigator (e.g. via a
     /// successful Evade).
     EnemyDisengaged {
@@ -382,6 +411,18 @@ pub enum Event {
         /// The investigator who searched and now holds the card.
         investigator: InvestigatorId,
         /// The card moved to hand.
+        code: CardCode,
+    },
+    /// A card committed to a skill test went back to its investigator's hand
+    /// at RR ST.8, instead of being discarded: Opportunist 01053's *"If you
+    /// succeed by 3 or more, return Opportunist to your hand after this test
+    /// instead of discarding it."* Emitted in place of the
+    /// [`CardDiscarded`](Self::CardDiscarded) the card would otherwise get,
+    /// before [`SkillTestEnded`](Self::SkillTestEnded).
+    CommittedCardReturnedToHand {
+        /// Whose hand the card returned to.
+        investigator: InvestigatorId,
+        /// The card returned to hand.
         code: CardCode,
     },
     /// A shuffle of the shared encounter deck occurred. Emitted by

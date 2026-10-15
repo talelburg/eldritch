@@ -3,7 +3,7 @@
 //! These are pure lookup functions with no side effects; they call only into
 //! `crate::state` / `card_dsl::dsl` and are called by multiple dispatch handlers.
 
-use crate::state::{GameState, InvestigatorId, InvestigatorTurnFrame, LocationId, Status};
+use crate::state::{GameState, InvestigatorId, InvestigatorTurnFrame, LocationId, Phase, Status};
 
 /// Investigators (Active, on the map) at `loc`, in `turn_order` order
 /// so prey ties carry a deterministic, lead-first candidate list.
@@ -95,6 +95,31 @@ pub(super) fn next_active_investigator_after(
                     .is_some_and(|inv| inv.status == Status::Active)
             })
         })
+}
+
+/// Whether it is `investigator`'s turn and the turn is not yet ending: the
+/// Investigation phase, with them the active investigator, and their
+/// [`InvestigatorTurn`](crate::state::Continuation::InvestigatorTurn) frame not
+/// armed to end.
+///
+/// The turn starts before its frame does. Rules Reference Appendix II step 2.2
+/// begins the turn and opens a player window, and the frame is pushed when that
+/// window closes, for step 2.2.1's actions. An additional action bought in that
+/// window is bought during the turn, so this answers `true` there.
+///
+/// The turn's end forfeits the unused actions and arms the frame's `ending`
+/// flag in one step, so from the `EndOfTurn` window on this is `false`: no
+/// action is left to take. "Skids" O'Toole 01003's *"During your turn"* reads
+/// it for the same reason: an additional action bought once the turn is ending
+/// would be forfeited at once.
+#[must_use]
+pub fn turn_open(state: &GameState, investigator: InvestigatorId) -> bool {
+    state.phase == Phase::Investigation
+        && state.active_investigator == Some(investigator)
+        && !state
+            .continuations
+            .topmost_of::<InvestigatorTurnFrame>()
+            .is_some_and(|turn| turn.investigator == investigator && turn.ending)
 }
 
 /// Mutable access to the `ending` flag on `investigator`'s open

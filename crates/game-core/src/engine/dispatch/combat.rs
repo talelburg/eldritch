@@ -1,10 +1,10 @@
 //! Combat helpers: enemy damage, investigator damage/horror, attacks.
 
 use card_dsl::card_data::CardKind;
-use card_dsl::dsl::{EntityScope, LocationSet};
+use card_dsl::dsl::{EnemyScope, LocationSet, Restriction};
 
 use crate::action::InputResponse;
-use crate::card_registry::CardRegistry;
+use crate::card_registry::{self, CardRegistry};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{choice, elimination, emit, reaction_windows};
 use crate::engine::outcome::{
@@ -14,46 +14,104 @@ use crate::engine::{board, Cx};
 use crate::event::Event;
 use crate::state::{
     Assignment, AttackLoopFrame, AttackLoopStage, CardInPlay, CardInstanceId, DamageSource,
-    DealDamageFrame, DealDamageStep, EliminationCause, EnemyAttackSource, EnemyId, GameState,
-    InvestigatorId, Status,
+    DealDamageFrame, DealDamageStep, EliminationCause, Enemy, EnemyAttackSource, EnemyId,
+    GameState, InvestigatorId, LastingEffect, LastingEffectKind, Lifetime, Status,
 };
 
 /// The scope of enemies a Fight (basic action or designated **Fight** ability)
 /// may target: any enemy *at your location*. Per RR you choose an enemy at your
 /// location to attack and need not already be engaged, so this is co-located
-/// (`At(Here)`), not engaged-only (#451). Its only reader is the Fight action's
+/// (`EnemyScope::at(Here)`), not engaged-only (#451). Its only reader is the Fight action's
 /// [`candidates`](crate::engine::dispatch::actions::fight::candidates), which
 /// is what the basic action's target validation, the turn menu, the activation
 /// pre-cost gate (`designator::can_perform`) and the evaluator's target
 /// grounding (`ground_designated_enemy`) all read in turn.
-pub(crate) fn fight_target_scope() -> EntityScope {
-    EntityScope::At(LocationSet::Here)
+pub(crate) fn fight_target_scope() -> EnemyScope {
+    EnemyScope::at(LocationSet::Here)
 }
 
-/// Enemies matching an [`EntityScope`](card_dsl::dsl::EntityScope), in `BTreeMap`
-/// (id) order so the `OptionId` index replays deterministically. Shared by the
-/// evaluator's choice-grounding and the activation pre-cost target check.
+/// Enemies matching an [`EnemyScope`](card_dsl::dsl::EnemyScope), in `BTreeMap`
+/// (id) order so the `OptionId` index replays deterministically. Honours both
+/// the location set and the `exhausted` filter (Sneak Attack 01052's *"an
+/// exhausted enemy at your location"*). Shared by the evaluator's
+/// choice-grounding and change-state check and the activation pre-cost target
+/// check, so a narrowed scope narrows playability and the prompt alike.
 pub(crate) fn enemies_in_scope(
     state: &GameState,
     controller: InvestigatorId,
-    scope: EntityScope,
+    scope: EnemyScope,
 ) -> Vec<EnemyId> {
-    let EntityScope::At(set) = scope;
-    match set {
-        LocationSet::Anywhere => state.enemies.keys().copied().collect(),
+    let EnemyScope { at, exhausted } = scope;
+    let here = match at {
+        LocationSet::Anywhere => None,
         LocationSet::Here => match state
             .investigators
             .get(&controller)
             .and_then(|i| i.current_location)
         {
-            Some(here) => state
-                .enemies
-                .iter()
-                .filter(|(_, e)| e.current_location == Some(here))
-                .map(|(id, _)| *id)
-                .collect(),
-            None => Vec::new(),
+            Some(here) => Some(here),
+            None => return Vec::new(),
         },
+    };
+    state
+        .enemies
+        .iter()
+        .filter(|(_, e)| here.is_none_or(|here| e.current_location == Some(here)))
+        .filter(|(_, e)| exhausted.is_none_or(|want| e.exhausted == want))
+        .map(|(id, _)| *id)
+        .collect()
+}
+
+/// Break `enemy_id`'s engagement, whoever it is engaged with, logging
+/// [`EnemyDisengaged`](Event::EnemyDisengaged) with the investigator it was
+/// engaged with. An unengaged enemy is left as it is, and nothing is logged.
+///
+/// The evasion's step (`glossary/Evade_Action.md`: *"the enemy is exhausted
+/// (if it was ready) and the engagement is broken"*). Only the enemy's
+/// engagement changes; where it stands, and whether it is ready, are the
+/// caller's business. A card that disengages *you* from an enemy is
+/// [`disengage_from`].
+///
+/// The enemy is in state: callers name one they have just found there, so a
+/// missing enemy is a state-corruption invariant violation.
+pub(crate) fn disengage(cx: &mut Cx, enemy_id: EnemyId) {
+    let enemy = cx.state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
+        unreachable!(
+            "disengage: enemy {enemy_id:?} is not in state.enemies; \
+             this is a state-corruption invariant violation"
+        )
+    });
+    if let Some(investigator) = enemy.engaged_with.take() {
+        cx.events.push(Event::EnemyDisengaged {
+            enemy: enemy_id,
+            investigator,
+        });
+    }
+}
+
+/// Disengage `investigator` from `enemy_id`: [`disengage`], but only if the
+/// enemy is engaged with `investigator`. An enemy engaged with someone else, or
+/// with nobody, is left as it is, and nothing is logged.
+///
+/// The step [`Effect::Disengage`](card_dsl::dsl::Effect::Disengage) runs for
+/// its controller: Elusive 01050's *"Disengage from each enemy engaged with
+/// you"* (#1076) breaks your engagements, not another investigator's.
+///
+/// The enemy is in state, as for [`disengage`].
+pub(crate) fn disengage_from(cx: &mut Cx, enemy_id: EnemyId, investigator: InvestigatorId) {
+    let engaged_with = cx
+        .state
+        .enemies
+        .get(&enemy_id)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "disengage_from: enemy {enemy_id:?} is not in state.enemies; \
+                 this is a state-corruption invariant violation"
+            )
+        })
+        .engaged_with;
+    if engaged_with == Some(investigator) {
+        disengage(cx, enemy_id);
     }
 }
 
@@ -493,13 +551,7 @@ fn build_soakers(
 /// never exhaust (RR p.7) — honored by
 /// [`EnemyAttackSource::AttackOfOpportunity`].
 pub(super) fn drive_aoo(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
-    let attackers: Vec<EnemyId> = cx
-        .state
-        .enemies
-        .iter()
-        .filter(|(_, e)| e.engaged_with == Some(investigator) && !e.exhausted)
-        .map(|(id, _)| *id)
-        .collect();
+    let attackers = ready_engaged_attackers(cx.state, cx.cards, investigator);
     drive_attack_loop(
         cx,
         investigator,
@@ -547,16 +599,87 @@ pub(super) fn resolve_attacks_for_investigator(
     cx: &mut Cx,
     investigator: InvestigatorId,
 ) -> EngineOutcome {
-    // Snapshot ready engaged attackers in deterministic EnemyId order.
-    // BTreeMap iteration is already key-sorted.
-    let attackers: Vec<EnemyId> = cx
-        .state
+    let attackers = ready_engaged_attackers(cx.state, cx.cards, investigator);
+    drive_attack_loop(cx, investigator, attackers, EnemyAttackSource::EnemyPhase)
+}
+
+/// The ready enemies engaged with `investigator` that may attack them, in
+/// deterministic `EnemyId` order (`BTreeMap` iteration is already key-sorted).
+/// The attacker snapshot of an attack of opportunity and of the Enemy phase's
+/// step 3.3 alike.
+fn ready_engaged_attackers(
+    state: &GameState,
+    cards: &CardRegistry,
+    investigator: InvestigatorId,
+) -> Vec<EnemyId> {
+    state
         .enemies
         .iter()
         .filter(|(_, e)| e.engaged_with == Some(investigator) && !e.exhausted)
+        .filter(|(_, e)| enemy_may_attack(state, cards, e, investigator))
         .map(|(id, _)| *id)
-        .collect();
-    drive_attack_loop(cx, investigator, attackers, EnemyAttackSource::EnemyPhase)
+        .collect()
+}
+
+/// Whether `enemy` may attack `investigator`: false while a lasting
+/// [`Restriction::CannotAttack`] protects the investigator and the enemy's
+/// printed card does not pass its exemption. On the Lam 01010 supplies its
+/// own *"non-\[\[Elite\]\]"* as that exemption, checked by code through
+/// [`card_registry::card_matches`], so a code `cards` doesn't know fails
+/// closed and the enemy may not attack.
+///
+/// Read at all three places an enemy attacks — an attack of opportunity, the
+/// Enemy phase's step 3.3 and a Retaliate — each of which leaves a covered
+/// enemy out of the attack. Left out, it is never exhausted:
+/// `Appendix_II_Timing_and_Gameplay.md` 3.3 exhausts an enemy only *"Upon
+/// completion of dealing the attack"*.
+///
+/// Reads the lasting effects alone; a constant `CannotAttack` has no reader.
+pub(super) fn enemy_may_attack(
+    state: &GameState,
+    cards: &CardRegistry,
+    enemy: &Enemy,
+    investigator: InvestigatorId,
+) -> bool {
+    !state.lasting_effects.iter().any(|e| match &e.kind {
+        LastingEffectKind::Restriction {
+            investigator: protected,
+            restriction: Restriction::CannotAttack { exempt },
+        } => {
+            *protected == investigator
+                && !exempt
+                    .as_ref()
+                    .is_some_and(|f| card_registry::card_matches(cards, &enemy.code, f))
+        }
+        _ => false,
+    })
+}
+
+/// Register `restriction` protecting `investigator` for the rest of the round,
+/// as a [`LastingEffect`] stamped [`Lifetime::Round`]. A card-local native
+/// (On the Lam 01010) reaches it as
+/// [`NativeCx::restrict_until_end_of_round`](crate::engine::NativeCx::restrict_until_end_of_round).
+/// Round is the only lifetime in scope: On the Lam's protection lasts *"Until
+/// the end of the round"*. No event announces it.
+///
+/// [`Restriction::CannotAttack`] is the one restriction with a lasting reader
+/// ([`enemy_may_attack`]); registering any other would be a silent no-op.
+pub fn restrict_until_end_of_round(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    restriction: Restriction,
+) {
+    debug_assert!(
+        matches!(restriction, Restriction::CannotAttack { .. }),
+        "restrict_until_end_of_round: {restriction:?} has no lasting reader",
+    );
+    cx.state.lasting_effects.push(LastingEffect {
+        lifetime: Lifetime::Round,
+        kind: LastingEffectKind::Restriction {
+            investigator,
+            restriction,
+        },
+    });
 }
 
 /// Exhaust the attacker that has just completed its attack sequence — the enemy

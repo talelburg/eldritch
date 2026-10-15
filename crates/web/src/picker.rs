@@ -8,7 +8,7 @@ use game_core::state::CardCode;
 use leptos::prelude::*;
 use protocol::CreateGameRequest;
 
-use crate::scaffold_decks::{AGNES_DEFAULT_DECK, ROLAND_DEFAULT_DECK};
+use crate::scaffold_decks::{AGNES_DEFAULT_DECK, ROLAND_DEFAULT_DECK, SKIDS_DEFAULT_DECK};
 use crate::store::{self, ConnStatus};
 
 /// Channel the picker uses to hand a chosen `CreateGameRequest` to the
@@ -19,6 +19,7 @@ pub type CreateTx = UnboundedSender<CreateGameRequest>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Pick {
     Roland,
+    Skids,
     Agnes,
 }
 
@@ -26,6 +27,7 @@ impl Pick {
     fn roster(self) -> Vec<RosterEntry> {
         match self {
             Pick::Roland => roland_roster(),
+            Pick::Skids => skids_roster(),
             Pick::Agnes => agnes_roster(),
         }
     }
@@ -42,6 +44,11 @@ fn roster(investigator: &str, deck: &[&str]) -> Vec<RosterEntry> {
 /// Build the default Roland roster: investigator 01001 + the placeholder deck.
 pub fn roland_roster() -> Vec<RosterEntry> {
     roster("01001", ROLAND_DEFAULT_DECK)
+}
+
+/// Build the default Skids roster: investigator 01003 + the placeholder deck.
+pub fn skids_roster() -> Vec<RosterEntry> {
+    roster("01003", SKIDS_DEFAULT_DECK)
 }
 
 /// Build the default Agnes roster: investigator 01004 + the placeholder deck.
@@ -84,6 +91,16 @@ pub fn PickerView() -> impl IntoView {
                                 on:change=move |_| picked.set(Pick::Roland)
                             />
                             " Roland Banks (01001)"
+                        </label>
+                        <label>
+                            <input
+                                type="radio"
+                                name="inv"
+                                value="01003"
+                                prop:checked=move || picked.get() == Pick::Skids
+                                on:change=move |_| picked.set(Pick::Skids)
+                            />
+                            " \"Skids\" O'Toole (01003)"
                         </label>
                         <label>
                             <input

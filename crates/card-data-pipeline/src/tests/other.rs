@@ -68,6 +68,19 @@ fn parse_commit_limit_reads_max_committed_clause() {
 }
 
 #[test]
+fn commit_only_to_own_test_reads_opportunists_clause() {
+    // Opportunist 01053's printed text.
+    assert!(is_commit_only_to_own_test(
+        "Commit only to a skill test you are performing.\nIf you succeed by 3 or more, \
+         return Opportunist to your hand after this test instead of discarding it."
+    ));
+    // Guts 01089's printed text: a commit limit, not a restriction.
+    assert!(!is_commit_only_to_own_test(
+        "Max 1 committed per skill test.\nIf this test is successful, draw 1 card."
+    ));
+}
+
+#[test]
 fn parse_spawn_name_extracts_location_name() {
     assert_eq!(
         parse_spawn_name("<b>Spawn</b> - Attic."),

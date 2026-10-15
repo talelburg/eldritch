@@ -277,3 +277,36 @@ fn put_into_threat_area_outside_a_revelation_rejects() {
         .threat_area
         .is_empty());
 }
+
+/// `Effect::Disengage` disengages the enemy from the effect's controller only:
+/// an enemy engaged with someone else stays engaged with them (Elusive 01050's
+/// *"Disengage from each enemy engaged with you"* is the controller's).
+#[test]
+fn disengage_leaves_an_enemy_engaged_with_another_investigator_engaged() {
+    let mut enemy = test_support::test_enemy(100, "Ghoul");
+    enemy.current_location = Some(HERE);
+    let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_seat(seat(1).at(HERE))
+        .with_seat(seat(2).at(HERE))
+        .with_enemy_engaged(enemy, InvestigatorId(2))
+        .build();
+    let mut events = Vec::new();
+    let mut bound = ctx(1);
+    bound.set_each(EachBinding::Enemy(EnemyId(100)));
+
+    let outcome = run(
+        &mut Cx::for_test(&mut state, &mut events),
+        &dsl::disengage(EnemyTarget::Each),
+        bound,
+    );
+
+    assert_eq!(outcome, EngineOutcome::Done);
+    assert_eq!(
+        state.enemies[&EnemyId(100)].engaged_with,
+        Some(InvestigatorId(2)),
+        "still engaged with investigator 2",
+    );
+    assert_no_event!(events, Event::EnemyDisengaged { .. });
+}

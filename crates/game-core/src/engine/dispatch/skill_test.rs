@@ -27,8 +27,9 @@ use crate::engine::Cx;
 use crate::event::{Event, FailureReason};
 use crate::scenario;
 use crate::state::{
-    self, AbilitySource, CardCode, CardInstanceId, ChaosToken, Continuation, DifficultyBasis,
-    DiscardPile, FastWindowKind, GameState, InFlightSkillTest, InvestigatorId, Lifetime,
+    self, AbilitySource, CardCode, CardInstanceId, ChaosToken, CommittedCard,
+    CommittedCardDestination, Continuation, DifficultyBasis, DiscardPile, FastWindowKind,
+    GameState, InFlightSkillTest, InvestigatorId, LastingEffect, LastingEffectKind, Lifetime,
     RecordedModifier, ResolvedTest, SkillKind, SkillSubstitution, SkillTestFollowUp, SkillTestStep,
     Status, SubstitutionPromptFrame, TokenResolution, Zone,
 };
@@ -238,20 +239,50 @@ pub(in crate::engine) fn start_skill_test(
 /// its `for_skills` by its investigator offers the "use X in place of Y?"
 /// choice at initiation. A card-local native (Mind over Matter 01036) reaches
 /// it as
-/// [`NativeCx::add_skill_substitution`](crate::engine::NativeCx::add_skill_substitution).
-/// Round-scoped because the
-/// round-end teardown is what clears the list; no event announces it.
-pub fn add_skill_substitution(cx: &mut Cx, substitution: SkillSubstitution) {
-    cx.state.skill_substitutions.push(substitution);
+/// [`NativeCx::substitute_skill_until_end_of_round`](crate::engine::NativeCx::substitute_skill_until_end_of_round).
+/// Stamped [`Lifetime::Round`]: Mind over Matter's is the only substitution in
+/// scope, and it lasts *"Until the end of the round"*. No event announces it.
+pub fn substitute_skill_until_end_of_round(cx: &mut Cx, substitution: SkillSubstitution) {
+    cx.state.lasting_effects.push(LastingEffect {
+        lifetime: Lifetime::Round,
+        kind: LastingEffectKind::SkillSubstitution(substitution),
+    });
 }
 
-/// Whether `investigator` has an active round-scoped substitution covering a
-/// `skill` test (Mind over Matter 01036: Intellect for Combat/Agility).
+/// Send the in-flight test's committed card at `index` back to hand at RR ST.8
+/// instead of the discard pile, by setting its
+/// [destination](CommittedCard::destination). A card-local native reaches it
+/// as
+/// [`NativeCx::return_committed_card_to_hand`](crate::engine::NativeCx::return_committed_card_to_hand),
+/// with the index its effect was bound to
+/// ([`EvalContext::committed_card`]). Nothing moves until ST.8, which announces
+/// it.
+///
+/// A missing test or card is a caller bug: `debug_assert!`, and nothing
+/// changes in release.
+pub fn return_committed_card_to_hand(cx: &mut Cx, index: u8) {
+    let card = cx
+        .state
+        .current_skill_test_mut()
+        .and_then(|t| t.committed_by_active.get_mut(usize::from(index)));
+    debug_assert!(
+        card.is_some(),
+        "return_committed_card_to_hand: no committed card at {index} on an in-flight test",
+    );
+    if let Some(card) = card {
+        card.destination = CommittedCardDestination::Hand;
+    }
+}
+
+/// Whether `investigator` has an active substitution covering a `skill` test
+/// (Mind over Matter 01036: Intellect for Combat/Agility).
 fn substitution_covers(state: &GameState, investigator: InvestigatorId, skill: SkillKind) -> bool {
-    state
-        .skill_substitutions
-        .iter()
-        .any(|s| s.investigator == investigator && s.for_skills.contains(&skill))
+    state.lasting_effects.iter().any(|e| match &e.kind {
+        LastingEffectKind::SkillSubstitution(s) => {
+            s.investigator == investigator && s.for_skills.contains(&skill)
+        }
+        _ => false,
+    })
 }
 
 /// Resume the Mind over Matter substitution prompt (#322): `PickSingle(0)`
@@ -339,8 +370,19 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
     // Validate the commit indices against the resolving
     // investigator's hand. On Err, state is untouched and the engine
     // stays paused so the client can retry.
-    let indices_u8 = match validate_commit_indices(cx.state, cx.cards, investigator, skill, indices)
-    {
+    //
+    // The committer is the investigator performing the test: only they commit
+    // today (#65).
+    let indices_u8 = match validate_commit_indices(
+        cx.state,
+        cx.cards,
+        CommitBy {
+            committer: investigator,
+            performer: investigator,
+        },
+        skill,
+        indices,
+    ) {
         Ok(v) => v,
         Err(rejected) => return rejected,
     };
@@ -363,9 +405,9 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
         .investigators
         .get_mut(&investigator)
         .expect("validate_commit_indices proved the investigator exists");
-    let committed: Vec<CardCode> = indices_u8
+    let committed: Vec<CommittedCard> = indices_u8
         .iter()
-        .map(|&i| inv.hand[usize::from(i)].clone())
+        .map(|&i| CommittedCard::new(inv.hand[usize::from(i)].clone()))
         .collect();
     let mut descending = indices_u8;
     descending.sort_unstable_by(|a, b| b.cmp(a));
@@ -716,7 +758,7 @@ fn resolved(cx: &Cx) -> ResolvedTest {
 /// Both in-scope effects are non-suspending stat boosts, so the loop drives the
 /// `Seq` and re-dispatches this `SkillTest` at `ApplyFollowUp`, which reads the
 /// now-populated accumulators.
-fn fire_on_commit_step(cx: &mut Cx, investigator: InvestigatorId, committed: &[CardCode]) {
+fn fire_on_commit_step(cx: &mut Cx, investigator: InvestigatorId, committed: &[CommittedCard]) {
     let effects = collect_on_commit(cx.cards, committed);
     cx.state
         .current_skill_test_mut()
@@ -731,26 +773,33 @@ fn fire_on_commit_step(cx: &mut Cx, investigator: InvestigatorId, committed: &[C
 /// RR ST.7 part 1 — apply the action-specific [`SkillTestFollowUp`].
 ///
 /// On **success** the follow-up runs: the Investigate follow-up pushes its
-/// `discover_clue` effect (yielding to the drive loop), while Fight / Evade /
-/// None mutate synchronously. On **failure** the follow-up is skipped entirely
-/// (every variant is success-only). The cursor is pre-advanced to
+/// `discover_clue` effect and the Evade follow-up its `EnemyEvaded` timing
+/// event (each yielding to the drive loop), while Fight / None mutate
+/// synchronously. On **failure** the follow-up is skipped entirely (every
+/// variant is success-only). The cursor is pre-advanced to
 /// [`ApplyResultEffect`](SkillTestStep::ApplyResultEffect) **before** any push,
-/// so a suspending discovery (Cover Up 01007's before-discover interrupt)
-/// resumes at `ApplyResultEffect` rather than re-running the follow-up. (The
+/// so a suspending discovery (Cover Up 01007's before-discover interrupt) or
+/// evasion (Pickpocketing 01046's after-evade reaction window) resumes at
+/// `ApplyResultEffect` rather than re-running the follow-up. (The
 /// "after you successfully investigate" timing point already fired at the
 /// preceding [`DetermineOutcome`](SkillTestStep::DetermineOutcome) step,
 /// before this discovery — RR ST.6 success precedes the ST.7 consequence.)
 ///
-/// When the Investigate follow-up pushes `discover_clue` the `advance` loop's
-/// top-frame check yields on the next iteration (the Effect frame is now
-/// `last()`); Fight/Evade/None push nothing and the loop `continue`s on this
-/// frame straight into `ApplyResultEffect`.
-fn apply_follow_up_step(cx: &mut Cx, investigator: InvestigatorId) {
+/// When the Investigate or Evade follow-up pushes its frame the `advance`
+/// loop's top-frame check yields on the next iteration (that frame is now
+/// `last()`); Fight/None push nothing and the loop `continue`s on this frame
+/// straight into `ApplyResultEffect`.
+///
+/// The Fight follow-up evaluates its `extra_damage` here, and an expression
+/// the evaluator can't answer comes back as the `Err` rejection the driver
+/// returns, rolling the apply back.
+fn apply_follow_up_step(cx: &mut Cx, investigator: InvestigatorId) -> Result<(), EngineOutcome> {
     let follow_up = cx
         .state
         .current_skill_test()
         .expect("apply_follow_up_step: the SkillTest frame must exist")
-        .follow_up;
+        .follow_up
+        .clone();
 
     // Pre-advance BEFORE any push, so a suspending discovery resumes past here.
     cx.state
@@ -759,7 +808,7 @@ fn apply_follow_up_step(cx: &mut Cx, investigator: InvestigatorId) {
         .continuation = SkillTestStep::ApplyResultEffect;
 
     if !resolved(cx).succeeded {
-        return;
+        return Ok(());
     }
     // Each basic action owns its after-test step; the test procedure only
     // dispatches by kind.
@@ -769,9 +818,10 @@ fn apply_follow_up_step(cx: &mut Cx, investigator: InvestigatorId) {
         SkillTestFollowUp::Fight {
             enemy,
             extra_damage,
-        } => fight::after_test(cx, investigator, enemy, extra_damage),
+        } => fight::after_test(cx, investigator, enemy, extra_damage.as_ref())?,
         SkillTestFollowUp::Evade { enemy } => evade::after_test(cx, investigator, enemy),
     }
+    Ok(())
 }
 
 /// RR ST.5–ST.7 — the [`DetermineOutcome`](SkillTestStep::DetermineOutcome)
@@ -803,7 +853,7 @@ fn apply_follow_up_step(cx: &mut Cx, investigator: InvestigatorId) {
 fn determine_outcome_step(
     cx: &mut Cx,
     investigator: InvestigatorId,
-    committed: &[CardCode],
+    committed: &[CommittedCard],
 ) -> EngineOutcome {
     let (skill, kind) = {
         let t = cx
@@ -866,21 +916,16 @@ fn determine_outcome_step(
         Some(Determination::AutomaticSuccess) => (true, FailureReason::Total),
         None => (margin >= 0, FailureReason::Total),
     };
-    let failed_by = if succeeded {
-        0
-    } else {
-        u8::try_from(difficulty.saturating_sub(total)).unwrap_or(0)
+    let resolved_test = ResolvedTest {
+        succeeded,
+        margin,
+        fail_reason,
+        total,
     };
     cx.state
         .current_skill_test_mut()
         .expect("the SkillTest frame was present immediately above")
-        .resolved = Some(ResolvedTest {
-        succeeded,
-        failed_by,
-        margin,
-        fail_reason,
-        total,
-    });
+        .resolved = Some(resolved_test);
 
     // ST.6 logged events — emitted here, so they follow the ST.4 immediate
     // symbol effects in the event log.
@@ -895,10 +940,10 @@ fn determine_outcome_step(
             investigator,
             skill,
             reason: fail_reason,
-            // `failed_by` is a non-negative margin stored as `u8`; the event
-            // field is `i8`. Realistic margins are tiny, so the conversion
-            // never saturates.
-            by: i8::try_from(failed_by).unwrap_or(i8::MAX),
+            // `failed_by` is a non-negative margin as a `u8`; the event field
+            // is `i8`. Realistic margins are tiny, so the conversion never
+            // saturates.
+            by: i8::try_from(resolved_test.failed_by().unwrap_or(0)).unwrap_or(i8::MAX),
         });
     }
     cx.state
@@ -928,11 +973,7 @@ fn determine_outcome_step(
 /// suspending effect resumes past this step. The push (if any) makes an Effect
 /// frame the new top → the `advance` loop yields to drive it.
 fn apply_result_effect_step(cx: &mut Cx, investigator: InvestigatorId) {
-    let ResolvedTest {
-        succeeded,
-        failed_by,
-        ..
-    } = resolved(cx);
+    let resolved_test = resolved(cx);
     let (on_success, on_fail, source) = {
         let t = cx
             .state
@@ -949,15 +990,17 @@ fn apply_result_effect_step(cx: &mut Cx, investigator: InvestigatorId) {
     // branch keeps the anchor the activation gave it (#834).
     let card_ctx =
         |inv: InvestigatorId| EvalContext::for_controller_with_optional_source(inv, source);
-    if succeeded {
-        if let Some(effect) = &on_success {
-            evaluator::push_effect(cx, effect, card_ctx(investigator));
-        }
-    } else if let Some(effect) = &on_fail {
-        // Thread the failure margin so `IntExpr::Count(Quantity::SkillTestFailedBy)`
-        // (Grasping Hands 01162, Rotting Remains 01163) can scale.
+    // The margin is bound either way: `Quantity::SkillTestSucceededBy` on a
+    // pass, `Quantity::SkillTestFailedBy` on a failure (Grasping Hands 01162,
+    // Rotting Remains 01163 scale by it).
+    let effect = if resolved_test.succeeded {
+        &on_success
+    } else {
+        &on_fail
+    };
+    if let Some(effect) = effect {
         let mut ctx = card_ctx(investigator);
-        ctx.set_failed_by(failed_by);
+        ctx.bind_resolved(&resolved_test);
         evaluator::push_effect(cx, effect, ctx);
     }
 }
@@ -982,14 +1025,8 @@ fn apply_result_effect_step(cx: &mut Cx, investigator: InvestigatorId) {
 /// [`FireOnResolution`](SkillTestStep::FireOnResolution) **before** the push, so
 /// a suspending effect (a sanity-soak on an `Effect::Deal`) resumes past this
 /// step. The fixed position after the card result is #642's divergence.
-// TODO(#778): the investigator-card-sourced ST.7 parts (an elder sign's
-// "If you succeed") get their first test with Skids.
 fn apply_token_result_step(cx: &mut Cx, investigator: InvestigatorId) {
-    let ResolvedTest {
-        succeeded,
-        failed_by,
-        ..
-    } = resolved(cx);
+    let resolved_test = resolved(cx);
     let token = cx
         .state
         .current_skill_test()
@@ -1007,12 +1044,13 @@ fn apply_token_result_step(cx: &mut Cx, investigator: InvestigatorId) {
     let Some(outcome) = outcome else {
         return;
     };
-    if succeeded {
-        if let Some(effect) = &outcome.on_success {
-            evaluator::push_effect(cx, effect, ctx);
-        }
-    } else if let Some(effect) = &outcome.on_fail {
-        ctx.set_failed_by(failed_by);
+    let effect = if resolved_test.succeeded {
+        &outcome.on_success
+    } else {
+        &outcome.on_fail
+    };
+    if let Some(effect) = effect {
+        ctx.bind_resolved(&resolved_test);
         evaluator::push_effect(cx, effect, ctx);
     }
 }
@@ -1023,23 +1061,32 @@ fn apply_token_result_step(cx: &mut Cx, investigator: InvestigatorId) {
 /// `next`th (pre-advancing `next` first), and yield (the pushed Effect frame is
 /// the new top); when `next` runs past the list, advance to
 /// [`PostRetaliate`](SkillTestStep::PostRetaliate).
+///
+/// Each effect runs with the test's margin bound, as every ST.7 result does —
+/// [`Quantity::SkillTestSucceededBy`](card_dsl::dsl::Quantity::SkillTestSucceededBy)
+/// on a success, the failure margin on a failure — and with the position of the
+/// committed card it is printed on, so the effect can name its own card
+/// (Opportunist 01053 returns itself to hand).
 fn fire_on_resolution_step(
     cx: &mut Cx,
     investigator: InvestigatorId,
-    committed: &[CardCode],
+    committed: &[CommittedCard],
     next: u32,
 ) {
-    let succeeded = resolved(cx).succeeded;
-    let effects = collect_on_skill_test_resolution(cx.cards, committed, succeeded);
+    let resolved_test = resolved(cx);
+    let effects = collect_on_skill_test_resolution(cx.cards, committed, resolved_test.succeeded);
     let idx = next as usize;
-    if idx < effects.len() {
+    if let Some((card_index, effect)) = effects.get(idx) {
         cx.state
             .current_skill_test_mut()
             .expect("the SkillTest frame must persist across driver steps")
             .continuation = SkillTestStep::FireOnResolution {
             next: next.saturating_add(1),
         };
-        evaluator::push_effect(cx, &effects[idx], EvalContext::for_controller(investigator));
+        let mut ctx = EvalContext::for_controller(investigator);
+        ctx.set_committed_card(*card_index);
+        ctx.bind_resolved(&resolved_test);
+        evaluator::push_effect(cx, effect, ctx);
     } else {
         cx.state
             .current_skill_test_mut()
@@ -1280,12 +1327,15 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
             SkillTestStep::ApplyFollowUp => {
                 // RR ST.7 part 1. Pre-advances the cursor to ApplyResultEffect,
                 // then applies the action follow-up (success-only). The
-                // Investigate follow-up pushes discover_clue → the loop check at
-                // the top of the next iteration sees the Effect frame on top and
-                // yields; Fight/Evade/None mutate synchronously (a Fight that
+                // Investigate follow-up pushes discover_clue and the Evade one
+                // its EnemyEvaded coordinator → the loop check at the top of the
+                // next iteration sees that frame on top and yields; Fight/None
+                // mutate synchronously (a Fight that
                 // defeats an enemy queues a reaction window — also a non-SkillTest
                 // top frame, also yields).
-                apply_follow_up_step(cx, investigator);
+                if let Err(rejection) = apply_follow_up_step(cx, investigator) {
+                    return rejection;
+                }
             }
             SkillTestStep::ApplyResultEffect => {
                 apply_result_effect_step(cx, investigator);
@@ -1422,7 +1472,7 @@ fn difficulty_target_left_play(state: &GameState, basis: DifficultyBasis) -> boo
 fn abandon_test(
     cx: &mut Cx,
     investigator: InvestigatorId,
-    committed: Option<&[CardCode]>,
+    committed: Option<&[CommittedCard]>,
 ) -> EngineOutcome {
     if let Some(cards) = committed {
         discard_committed_cards(cx, investigator, cards);
@@ -1441,17 +1491,28 @@ fn abandon_test(
     EngineOutcome::Done
 }
 
+/// Who is committing, to whose test: the two differ once another investigator
+/// at the same location may commit (#65).
+#[derive(Debug, Clone, Copy)]
+struct CommitBy {
+    /// The investigator whose hand the cards come from.
+    committer: InvestigatorId,
+    /// The investigator performing the test.
+    performer: InvestigatorId,
+}
+
 /// Validate that every entry in `indices` is a unique in-bounds hand
-/// index for `investigator` whose card may legally be committed to a test of
+/// index for the committer whose card may legally be committed to a test of
 /// `skill`, and return them downcast to `u8` (the width hand indices use
 /// elsewhere in state).
 fn validate_commit_indices(
     state: &GameState,
     cards: &CardRegistry,
-    investigator: InvestigatorId,
+    by: CommitBy,
     skill: SkillKind,
     indices: &[u32],
 ) -> Result<Vec<u8>, EngineOutcome> {
+    let investigator = by.committer;
     let inv = state.investigators.get(&investigator).unwrap_or_else(|| {
         unreachable!(
             "validate_commit_indices: investigator {investigator:?} disappeared while test \
@@ -1512,6 +1573,26 @@ fn validate_commit_indices(
                 reason: format!(
                     "skill-test commit: {code} prints no {skill:?} icon and no wild icon, \
                      so it may not be committed to this {skill:?} test (RR ST.2)"
+                )
+                .into(),
+            });
+        }
+        // Opportunist 01053: *"Commit only to a skill test you are
+        // performing."*
+        // TODO(#65): unreachable through `apply` until another investigator
+        // can commit; test it then.
+        if matches!(
+            meta.kind,
+            CardKind::Skill {
+                commit_only_to_own_test: true,
+                ..
+            }
+        ) && by.committer != by.performer
+        {
+            return Err(EngineOutcome::Rejected {
+                reason: format!(
+                    "skill-test commit: {code} may be committed only to a skill test its \
+                     committer is performing"
                 )
                 .into(),
             });
@@ -1591,7 +1672,7 @@ fn sum_skill_value(
     investigator: InvestigatorId,
     skill: SkillKind,
     kind: SkillTestKind,
-    committed: &[CardCode],
+    committed: &[CommittedCard],
 ) -> i8 {
     assert!(
         state.investigators.contains_key(&investigator),
@@ -1629,10 +1710,10 @@ fn sum_skill_value(
 fn push_committed_icons(
     cards: &CardRegistry,
     out: &mut ModifierBreakdown,
-    committed: &[CardCode],
+    committed: &[CommittedCard],
     skill: SkillKind,
 ) {
-    for code in committed {
+    for CommittedCard { code, .. } in committed {
         let Some(meta) = (cards.metadata_for)(code) else {
             continue;
         };
@@ -1655,12 +1736,18 @@ fn push_committed_icons(
 /// [`Event::SkillTestEnded`] docs, these discards precede the
 /// `SkillTestEnded` cleanup marker.
 ///
+/// A card whose own success effect overrode its
+/// [destination](CommittedCard::destination) goes back to hand instead,
+/// emitting [`Event::CommittedCardReturnedToHand`] in place of the discard
+/// (Opportunist 01053: *"return Opportunist to your hand after this test
+/// instead of discarding it."*). Each card goes in commit order.
+///
 /// The cards come off the in-flight record, not out of the hand — the commit
 /// hop already removed them (#631), so nothing here can index a hand position
 /// that a Fast play in the ST.2→ST.3 window has since shifted. The emitted
 /// `from` is still [`Zone::Hand`]: limbo is not a zone the event vocabulary
 /// models, and the hand is where the cards came from.
-fn discard_committed_cards(cx: &mut Cx, investigator: InvestigatorId, committed: &[CardCode]) {
+fn discard_committed_cards(cx: &mut Cx, investigator: InvestigatorId, committed: &[CommittedCard]) {
     if committed.is_empty() {
         return;
     }
@@ -1677,13 +1764,24 @@ fn discard_committed_cards(cx: &mut Cx, investigator: InvestigatorId, committed:
         );
         return;
     };
-    inv.discard.extend(committed.iter().cloned());
-    for code in committed {
-        cx.events.push(Event::CardDiscarded {
-            code: code.clone(),
-            from: Zone::Hand,
-            to: DiscardPile::Investigator(investigator),
-        });
+    for CommittedCard { code, destination } in committed {
+        match destination {
+            CommittedCardDestination::Discard => {
+                inv.discard.push(code.clone());
+                cx.events.push(Event::CardDiscarded {
+                    code: code.clone(),
+                    from: Zone::Hand,
+                    to: DiscardPile::Investigator(investigator),
+                });
+            }
+            CommittedCardDestination::Hand => {
+                inv.hand.push(code.clone());
+                cx.events.push(Event::CommittedCardReturnedToHand {
+                    investigator,
+                    code: code.clone(),
+                });
+            }
+        }
     }
 }
 
@@ -1698,15 +1796,18 @@ fn discard_committed_cards(cx: &mut Cx, investigator: InvestigatorId, committed:
 /// still holds the tested location, so [`LocationTarget::TestedLocation`]
 /// resolves cleanly.
 ///
+/// Each effect comes paired with its card's position in `committed`, which
+/// the driver step binds for the effect to name its own card.
+///
 /// No abilities for the codes → empty list:
 /// engine-only tests that don't touch card data never reach
 /// `OnSkillTestResolution`. Silent skip mirrors `constant_skill_modifier`'s
 /// behavior.
 fn collect_on_skill_test_resolution(
     cards: &CardRegistry,
-    committed: &[CardCode],
+    committed: &[CommittedCard],
     succeeded: bool,
-) -> Vec<Effect> {
+) -> Vec<(u8, Effect)> {
     let outcome_now = if succeeded {
         TestOutcome::Success
     } else {
@@ -1714,7 +1815,10 @@ fn collect_on_skill_test_resolution(
     };
 
     let mut effects = Vec::new();
-    for code in committed {
+    for (index, CommittedCard { code, .. }) in committed.iter().enumerate() {
+        // Committed cards come out of a hand, which `validate_commit_indices`
+        // already indexes by `u8`.
+        let index = u8::try_from(index).expect("committed cards are hand-indexed by u8");
         let Some(abilities) = (cards.abilities_for)(code) else {
             continue;
         };
@@ -1725,7 +1829,7 @@ fn collect_on_skill_test_resolution(
             if outcome != outcome_now {
                 continue;
             }
-            effects.push(ability.effect);
+            effects.push((index, ability.effect));
         }
     }
     effects
@@ -1748,9 +1852,9 @@ fn collect_on_skill_test_resolution(
 /// No abilities for the codes → empty list:
 /// engine-only tests that don't touch card data never commit real cards. Silent
 /// skip mirrors `constant_skill_modifier`'s behavior.
-fn collect_on_commit(cards: &CardRegistry, committed: &[CardCode]) -> Vec<Effect> {
+fn collect_on_commit(cards: &CardRegistry, committed: &[CommittedCard]) -> Vec<Effect> {
     let mut effects = Vec::new();
-    for code in committed {
+    for CommittedCard { code, .. } in committed {
         let Some(abilities) = (cards.abilities_for)(code) else {
             continue;
         };

@@ -56,7 +56,8 @@ use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameStateBuilder, InvestigatorId, LocationId, Owner, Phase, SkillKind, Status, Zone,
+    GameStateBuilder, InvestigatorId, LocationId, Owner, Phase, SkillKind, Status, UsageClock,
+    Zone,
 };
 use game_core::test_support::{self, seat, Seat, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -273,7 +274,12 @@ fn taking_control_preserves_her_instance() {
     let mut lita = lita_at_the_parlor();
     lita.accumulated_damage = 2;
     lita.accumulated_horror = 1;
-    lita.bump_ability_usage(0, UsagePeriod::Round, 0, Phase::Investigation);
+    lita.bump_ability_usage(
+        0,
+        INV,
+        UsagePeriod::Round,
+        UsageClock::new(0, Phase::Investigation, None),
+    );
 
     let result = parley_on(board_with(
         sharp().at(PARLOR_ID),

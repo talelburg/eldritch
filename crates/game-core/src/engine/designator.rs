@@ -122,6 +122,7 @@ mod tests {
     fn investigate() -> ActionDesignator {
         ActionDesignator::Investigate {
             shroud_modifier: IntExpr::Lit(-2),
+            instead_of_discovery: None,
         }
     }
 

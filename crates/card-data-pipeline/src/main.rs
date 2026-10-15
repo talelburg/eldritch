@@ -508,6 +508,11 @@ fn run() -> Result<(), String> {
         }
     }
 
+    // Warn on a turn-only play restriction without Fast (#576).
+    for warning in all.values().filter_map(fast_timing_inconsistency) {
+        eprintln!("{warning}");
+    }
+
     // Render both files before writing either, so a trait the naming
     // rule refuses leaves the checked-in output untouched.
     let output = render(&all);
@@ -650,6 +655,8 @@ struct NormalizedCard {
     /// "Max N committed per skill test" cap, parsed from text. `None` when
     /// uncapped. Skill-only in scope.
     commit_limit: Option<u8>,
+    /// "Commit only to a skill test you are performing." Skill-only in scope.
+    commit_only_to_own_test: bool,
     // Encounter-card stats. `clues` is a location's starting clues AND an
     // act's advance threshold (same JSON field); consumer interprets by kind.
     shroud: Option<u8>,
@@ -686,11 +693,14 @@ fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
         })
         .transpose()?;
 
-    let is_fast = raw
-        .text
-        .as_deref()
-        .is_some_and(|t| t.starts_with("Fast.") || t.starts_with("Fast "));
+    let is_fast = raw.text.as_deref().is_some_and(is_fast_text);
 
+    // A period, not a timing point: On the Lam 01010's "Play after your turn
+    // begins" names a timing point, which `glossary/Fast.md` reads as a
+    // triggering condition ("If the instructions specify when/after a timing
+    // point, the card may be played as if the described timing point were a
+    // triggering condition for playing the card."), so the card's module
+    // declares it and this flag stays clear.
     let play_only_during_turn = raw
         .text
         .as_deref()
@@ -710,6 +720,7 @@ fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
     let spawn_name = raw.text.as_deref().and_then(parse_spawn_name);
     let uses = raw.text.as_deref().and_then(parse_uses);
     let commit_limit = raw.text.as_deref().and_then(parse_commit_limit);
+    let commit_only_to_own_test = raw.text.as_deref().is_some_and(is_commit_only_to_own_test);
 
     let weakness = matches!(
         raw.subtype_code.as_deref(),
@@ -742,6 +753,7 @@ fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
         play_only_during_turn,
         uses,
         commit_limit,
+        commit_only_to_own_test,
         shroud: raw.shroud,
         clues: raw.clues,
         clues_fixed: raw.clues_fixed.unwrap_or(false),
@@ -1013,12 +1025,13 @@ fn render_kind(c: &NormalizedCard) -> String {
         ),
         "Skill" => format!(
             "CardKind::Skill {{ class: Class::{}, xp: {}, skill_icons: {}, deck_limit: {}, \
-             commit_limit: {} }}",
+             commit_limit: {}, commit_only_to_own_test: {} }}",
             c.class,
             opt_u8(c.xp),
             icons,
             c.deck_limit,
             opt_u8(c.commit_limit),
+            c.commit_only_to_own_test,
         ),
         "Enemy" => format!(
             "CardKind::Enemy {{ fight: {}, evade: {}, damage: {}, horror: {}, \
@@ -1115,6 +1128,35 @@ fn strip_html_bold(s: &str) -> String {
     s.replace("<b>", "").replace("</b>", "")
 }
 
+/// Whether printed text carries the `Fast` keyword: `Fast.` starting the
+/// text, a line, or a sentence on a line (#576). Keyword prefixes come
+/// before it on the same line (Ace in the Hole 02266, `Exceptional. Fast.`)
+/// or on lines of their own (On the Lam 01010, `"Skids" O'Toole deck
+/// only.\nFast.`), so a text-start check alone misses both. A `[fast]`
+/// ability icon is a different thing and never matches.
+fn is_fast_text(text: &str) -> bool {
+    text.starts_with("Fast ")
+        || text.lines().any(|line| {
+            std::iter::once(0)
+                .chain(line.match_indices(". ").map(|(i, sep)| i + sep.len()))
+                .any(|start| line[start..].starts_with("Fast."))
+        })
+}
+
+/// A card printing "Play only during your turn" but not read as Fast is
+/// almost certainly a Fast keyword `is_fast_text` failed to find: a non-Fast
+/// card can only be played as an action during its owner's turn already, so
+/// the restriction would add nothing. Returns the warning to print.
+fn fast_timing_inconsistency(card: &NormalizedCard) -> Option<String> {
+    (card.play_only_during_turn && !card.is_fast).then(|| {
+        format!(
+            "card-data-pipeline: {} ({}): play_only_during_turn is set but is_fast is not \
+             — check the text for a Fast keyword the parser missed",
+            card.code, card.name
+        )
+    })
+}
+
 /// True if `text` contains the standalone keyword token `"<kw>."`
 /// (e.g. `"Hunter."`). Bold tags are stripped first.
 fn has_keyword(text: &str, keyword: &str) -> bool {
@@ -1164,6 +1206,12 @@ fn parse_commit_limit(text: &str) -> Option<u8> {
     let inner = &plain[start..];
     let end = inner.find(" committed per skill test")?;
     inner[..end].trim().parse().ok()
+}
+
+/// Whether `text` prints *"Commit only to a skill test you are performing."*
+/// (Opportunist 01053). The phrase is fixed, so a literal scan suffices.
+fn is_commit_only_to_own_test(text: &str) -> bool {
+    strip_html_bold(text).contains("Commit only to a skill test you are performing")
 }
 
 /// Parsed Prey line. `None` = no printed prey (emit `Prey::Default`);

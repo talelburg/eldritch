@@ -37,15 +37,16 @@
 //! [`GameState::recorded_modifiers`]: crate::state::GameState::recorded_modifiers
 //! - [`Effect::If`] evaluates [`Condition::SkillTestKind`] against
 //!   the in-flight test's `kind`. [`SkillTest`](card_dsl::dsl::Condition::SkillTest)
-//!   isn't yet wired — inside an [`Trigger::OnSkillTestResolution`] effect
+//!   isn't yet wired — inside an
+//!   [`Trigger::OnSkillTestResolution`](card_dsl::dsl::Trigger::OnSkillTestResolution) effect
 //!   the trigger itself gates outcome, so the condition is redundant there,
 //!   and no other trigger has yet needed it (the outcome *is* on
 //!   [`InFlightSkillTest::resolved`](crate::state::InFlightSkillTest::resolved)
 //!   from ST.6 on, so this is unwired, not unknowable).
-//! - [`Effect::ForEach`] dispatches but the
-//!   [`InvestigatorTargetSet`](card_dsl::dsl::InvestigatorTargetSet)
-//!   resolver ("at controller location", "all investigators")
-//!   relies on per-target context that's not yet wired through.
+//! - [`Effect::ForEach`] resolves its target set once (investigators in turn
+//!   order, enemies in id order) and walks it on an [`EffectFrame::ForEach`], running the body once per target with
+//!   that target bound as [`EvalContext::each`] (#1067). The walk is
+//!   sequential, not simultaneous; the frame's docs say when that matters.
 //! - [`Effect::ChooseOne`] and the `*::Chosen` targets resolve
 //!   interactively via the frame-driven choice machinery (`step_choose_one` /
 //!   `ground_chosen_targets`): each auto-binds 0/1 options and suspends on 2+ by
@@ -53,7 +54,7 @@
 //!   on the stack as the prompt; resume sets `chosen_option` and re-steps it (no
 //!   replay — #422). A `Chosen` target
 //!   honors its scope: `Anywhere` offers all investigators / locations,
-//!   `EntityScope::At(Here)` / `LocationSet::Here` filters to the chooser's
+//!   `LocationSet::Here` filters to the chooser's
 //!   location (#349). The enemy variety and `YourOrConnecting` are deferred to
 //!   their consuming PRs (#301 / #306).
 //!
@@ -70,16 +71,18 @@
 use card_dsl::card_data::{CardType, SkillKind};
 use card_dsl::dsl::{
     ActionClass, ActionDesignator, CardFilter, ChoiceBranch, CmpOp, Condition, ControlStatus,
-    Determination, Effect, EnemyTarget, EntityScope, HarmKind, IntExpr, InvestigatorTarget,
-    LocationSet, LocationTarget, ModifierAudience, ModifierScope, Quantity, Restriction,
-    RevealClause, SearchScope, SkillTestKind, Stat, Trigger,
+    Determination, Effect, EnemyScope, EnemySet, EnemyTarget, ForEachTargets, HarmKind, IntExpr,
+    InvestigatorTarget, InvestigatorTargetSet, LocationSet, LocationTarget, ModifierAudience,
+    ModifierScope, Quantity, Restriction, RevealClause, SearchScope, SkillTestKind, Stat,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::card_registry::{self, CardRegistry};
+use crate::engine::abilities_in_effect;
 use crate::engine::board::{self, Placement};
 use crate::engine::dispatch::actions::evade::EvadeModification;
 use crate::engine::dispatch::actions::fight::FightModification;
+use crate::engine::dispatch::actions::take;
 use crate::engine::dispatch::choice::{ChoiceResolution, Grounded};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{
@@ -92,17 +95,28 @@ use crate::scenario::{ResolutionId, ScenarioEnding};
 use crate::state::{
     AbilitySource, AdvanceTrigger, CardCode, CardInstanceId, Continuation, DamageSource,
     DifficultyBasis, EffectFrame, EmitStep, EnemyId, GameState, InvestigatorId, Lifetime,
-    LocationId, Owner, PlayFromHandFrame, RecordedModifier, SkillTestFollowUp,
+    LocationId, Owner, PlayFromHandFrame, RecordedModifier, ResolvedTest, SkillTestFollowUp,
+    Status,
 };
 
-/// Failure margin of the just-resolved skill test (bound only while running an
-/// `on_fail` effect). Innermost-only: same-kind test nesting is carried by the
-/// per-frame snapshot stack, not multiple slots here (corpus-verified moot — no
-/// card reads a non-innermost margin; see the §1 cleanup spec §D).
+/// Margin of the just-resolved skill test, bound only while running one of its
+/// RR ST.7 results: the failure margin for an `on_fail` effect, the success
+/// margin for the attack's damage and an `on_success` effect. Innermost-only:
+/// same-kind test nesting is carried by the per-frame snapshot stack, not
+/// multiple slots here (corpus-verified moot — no card reads a non-innermost
+/// margin; see the §1 cleanup spec §D).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SkillTestBinding {
-    /// Points the test was failed by.
-    pub failed_by: u8,
+pub enum SkillTestBinding {
+    /// The test failed, by this many points.
+    Failed {
+        /// Points the test was failed by.
+        by: u8,
+    },
+    /// The test succeeded, by this many points.
+    Succeeded {
+        /// Points the test was succeeded by.
+        by: u8,
+    },
 }
 
 /// The clue count of the discovery an ability is responding to (bound only
@@ -125,6 +139,16 @@ pub struct DiscoveryBinding {
 pub struct RevelationBinding {
     /// Who owns the revealed card.
     pub revealed_card_owner: Owner,
+}
+
+/// The committed card an `OnSkillTestResolution` effect is printed on (bound
+/// only while resolving one, at RR ST.7). The effect names its own card through
+/// it: Opportunist 01053 returns itself to hand.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommittedCardBinding {
+    /// The card's position among the in-flight test's committed cards
+    /// ([`InFlightSkillTest::committed_by_active`](crate::state::InFlightSkillTest::committed_by_active)).
+    pub index: u8,
 }
 
 /// Attacking enemy bound while resolving a `DamageAssigned` reaction whose
@@ -150,13 +174,25 @@ pub struct ChoiceBinding {
     pub option: Option<OptionId>,
 }
 
+/// The target an [`Effect::ForEach`] body is currently running for, bound per
+/// iteration by the walking frame ([`EffectFrame::ForEach`]). One arm per kind
+/// of entity a fan-out can walk; the body names it through that kind's `Each`
+/// target ([`InvestigatorTarget::Each`], [`EnemyTarget::Each`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EachBinding {
+    /// An investigator, from an
+    /// [`InvestigatorTargetSet`].
+    Investigator(InvestigatorId),
+    /// An enemy, from an [`EnemySet`].
+    Enemy(EnemyId),
+}
+
 /// Per-evaluation context the effect needs to resolve targets and
 /// reference in-flight game state (current skill test, etc.).
 ///
 /// Phase-3 minimal. Grows fields as effects demand them — current
 /// skill test (for [`SkillTest`](card_dsl::dsl::Condition::SkillTest)
-/// condition), current target (for [`Effect::ForEach`] body),
-/// reaction-window context (for `OnEvent` triggers), etc. Keep the
+/// condition), reaction-window context (for `OnEvent` triggers), etc. Keep the
 /// surface narrow and add fields only when an effect's evaluator
 /// actually reads them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -166,8 +202,9 @@ pub struct EvalContext {
     /// "you" in card text. Resolves [`InvestigatorTarget::You`]
     /// and [`LocationTarget::YourLocation`].
     pub controller: InvestigatorId,
-    /// Skill-test margin binding, bound only while running an `on_fail` effect.
-    /// Read via [`Self::failed_by`]. `None` outside that window.
+    /// Skill-test margin binding, bound only while running an ST.7 result.
+    /// Read via [`Self::failed_by`] and [`Self::succeeded_by`]. `None` outside
+    /// that window.
     pub skill_test: Option<SkillTestBinding>,
     /// Clue-discovery binding, bound only while resolving a `DiscoverClues`
     /// ability's effect (any cell). Read via [`Self::clue_discovery_count`].
@@ -180,6 +217,10 @@ pub struct EvalContext {
     /// Revealed-card binding, bound only while resolving a Revelation. Read via
     /// [`Self::revealed_card_owner`]. `None` outside that window.
     pub revelation: Option<RevelationBinding>,
+    /// Committed-card binding, bound only while resolving a committed card's
+    /// `OnSkillTestResolution` effect. Read via [`Self::committed_card`].
+    /// `None` outside that window.
+    pub committed_card: Option<CommittedCardBinding>,
     /// Grounded `*::Chosen` picks, bound during a grounded-choice evaluation
     /// (Axis A #334). Read via [`Self::chosen_investigator`] /
     /// [`Self::chosen_location`] / [`Self::chosen_enemy`] /
@@ -205,6 +246,11 @@ pub struct EvalContext {
     /// a `hand_index` and neither [`AbilitySource`]
     /// nor `CandidateSource` carries one.
     pub ability_source: Option<AbilitySource>,
+    /// The target the enclosing [`Effect::ForEach`] body is running for, bound
+    /// only inside that body. Read via [`Self::each_investigator`]. Kept apart
+    /// from [`controller`](Self::controller) so "you" still means the card's
+    /// controller inside a fan-out.
+    pub each: Option<EachBinding>,
 }
 
 impl EvalContext {
@@ -219,8 +265,10 @@ impl EvalContext {
             discovery: None,
             enemy_attack: None,
             revelation: None,
+            committed_card: None,
             choice: None,
             ability_source: None,
+            each: None,
         }
     }
 
@@ -289,7 +337,20 @@ impl EvalContext {
     /// `on_fail` effect). Consumed by `IntExpr::Count(Quantity::SkillTestFailedBy)`.
     #[must_use]
     pub fn failed_by(&self) -> Option<u8> {
-        self.skill_test.map(|b| b.failed_by)
+        match self.skill_test {
+            Some(SkillTestBinding::Failed { by }) => Some(by),
+            _ => None,
+        }
+    }
+    /// Just-resolved skill test's success margin (bound only while running a
+    /// passed test's ST.7 results). Consumed by
+    /// `IntExpr::Count(Quantity::SkillTestSucceededBy)`.
+    #[must_use]
+    pub fn succeeded_by(&self) -> Option<u8> {
+        match self.skill_test {
+            Some(SkillTestBinding::Succeeded { by }) => Some(by),
+            _ => None,
+        }
     }
     /// The clue count of the discovery this ability is responding to — what a
     /// `when` replacement is replacing (Cover Up 01007's "that many"). Bound
@@ -303,6 +364,12 @@ impl EvalContext {
     #[must_use]
     pub fn revealed_card_owner(&self) -> Option<Owner> {
         self.revelation.map(|b| b.revealed_card_owner)
+    }
+    /// Position, among the in-flight test's committed cards, of the card whose
+    /// `OnSkillTestResolution` effect is resolving.
+    #[must_use]
+    pub fn committed_card(&self) -> Option<u8> {
+        self.committed_card.map(|b| b.index)
     }
     /// Attacking enemy bound while resolving an enemy-attack `DamageAssigned`
     /// reaction (Guard Dog 01021's retaliate).
@@ -330,16 +397,62 @@ impl EvalContext {
     pub fn chosen_option(&self) -> Option<OptionId> {
         self.choice.and_then(|c| c.option)
     }
+    /// The investigator an enclosing [`Effect::ForEach`] body is running for —
+    /// what [`InvestigatorTarget::Each`] resolves to, and what a card-local
+    /// native body reads to know whom it acts on. `None` outside such a body.
+    #[must_use]
+    pub fn each_investigator(&self) -> Option<InvestigatorId> {
+        match self.each? {
+            EachBinding::Investigator(id) => Some(id),
+            EachBinding::Enemy(_) => None,
+        }
+    }
+
+    /// The enemy an enclosing [`Effect::ForEach`] body is running for — what
+    /// [`EnemyTarget::Each`] resolves to. `None` outside such a body.
+    #[must_use]
+    pub fn each_enemy(&self) -> Option<EnemyId> {
+        match self.each? {
+            EachBinding::Enemy(id) => Some(id),
+            EachBinding::Investigator(_) => None,
+        }
+    }
+
+    /// Bind the target a [`Effect::ForEach`] body runs for (see
+    /// [`Self::each_investigator`]). The walking frame binds it; a unit test
+    /// calling a per-target native directly binds it by hand.
+    pub fn set_each(&mut self, target: EachBinding) {
+        self.each = Some(target);
+    }
 
     /// Bind the skill-test failure margin (see [`Self::failed_by`]).
     pub fn set_failed_by(&mut self, margin: u8) {
-        self.skill_test = Some(SkillTestBinding { failed_by: margin });
+        self.skill_test = Some(SkillTestBinding::Failed { by: margin });
+    }
+    /// Bind the skill-test success margin (see [`Self::succeeded_by`]).
+    pub fn set_succeeded_by(&mut self, margin: u8) {
+        self.skill_test = Some(SkillTestBinding::Succeeded { by: margin });
+    }
+    /// Bind a resolved test's margin for its RR ST.7 results: the success
+    /// margin on a pass, the failure margin on a failure.
+    pub fn bind_resolved(&mut self, resolved: &ResolvedTest) {
+        self.skill_test = Some(match (resolved.succeeded_by(), resolved.failed_by()) {
+            (Some(by), _) => SkillTestBinding::Succeeded { by },
+            (None, by) => SkillTestBinding::Failed {
+                by: by.unwrap_or(0),
+            },
+        });
     }
     /// Bind the discovery's clue count (see [`Self::clue_discovery_count`]).
     pub fn set_clue_discovery_count(&mut self, count: u8) {
         self.discovery = Some(DiscoveryBinding {
             clue_discovery_count: count,
         });
+    }
+    /// Bind the committed card an effect is printed on (see
+    /// [`Self::committed_card`]).
+    pub fn set_committed_card(&mut self, index: u8) {
+        self.committed_card = Some(CommittedCardBinding { index });
     }
     /// Bind the attacking enemy (see [`Self::attacking_enemy`]).
     pub fn set_attacking_enemy(&mut self, enemy: EnemyId) {
@@ -393,6 +506,8 @@ pub(crate) fn push_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) {
 /// Build the [`EffectFrame`](crate::state::EffectFrame) for an effect node:
 /// control nodes get their own stateful frame; everything else (leaves, `If`,
 /// `ChooseOne`, `SearchDeck`, `Native`) is a `Leaf` evaluated by [`step_leaf`].
+/// A `ForEach` starts as a `Leaf` too: its target list is read off the board
+/// when it is stepped, not when it is pushed, and this builder has no board.
 fn frame_of(effect: &Effect, ctx: EvalContext) -> EffectFrame {
     match effect {
         Effect::Seq(effects) => EffectFrame::Seq {
@@ -429,8 +544,110 @@ pub(crate) fn step_effect_frame(cx: &mut Cx) -> EngineOutcome {
             }
             EngineOutcome::Done
         }
+        EffectFrame::ForEach {
+            targets,
+            next,
+            body,
+            ctx,
+        } => {
+            // Skip past whoever has left the game since the walk began; pop
+            // (push nothing) once the cursor runs off the end.
+            let Some(at) = (next..targets.len()).find(|&i| still_targetable(cx.state, targets[i]))
+            else {
+                return EngineOutcome::Done;
+            };
+            let mut body_ctx = ctx;
+            body_ctx.set_each(targets[at]);
+            let child = frame_of(&body, body_ctx);
+            cx.state
+                .continuations
+                .push(Continuation::Effect(EffectFrame::ForEach {
+                    targets,
+                    next: at + 1,
+                    body,
+                    ctx,
+                }));
+            cx.state.continuations.push(Continuation::Effect(child));
+            EngineOutcome::Done
+        }
         EffectFrame::Leaf { effect, ctx } => step_leaf(cx, &effect, ctx),
         EffectFrame::Designated { designator, ctx } => step_designated(cx, &designator, ctx),
+    }
+}
+
+/// Start an [`Effect::ForEach`]'s walk: resolve `targets` against the board as
+/// it stands ([`for_each_targets`]) and push the [`EffectFrame::ForEach`] that
+/// runs `body` once per target. The snapshot is the walk's list; each step only
+/// re-checks it ([`still_targetable`]), never re-resolves it, so the body
+/// cannot add a target to the walk it is part of.
+fn start_for_each(cx: &mut Cx, targets: ForEachTargets, body: &Effect, ctx: EvalContext) {
+    let targets = for_each_targets(cx.state, ctx, targets);
+    cx.state
+        .continuations
+        .push(Continuation::Effect(EffectFrame::ForEach {
+            targets,
+            next: 0,
+            body: Box::new(body.clone()),
+            ctx,
+        }));
+}
+
+/// The targets an [`Effect::ForEach`] over `targets` walks, read off the board
+/// as it stands, in walk order. Read-only, so the change-state gate
+/// ([`effect_can_change_state`]) and the walk agree on the set.
+///
+/// **Investigators walk in turn order**, the engine's player order — the same
+/// proxy the upkeep, mulligan and hand-size steps walk (`GLOSSARY.md`, *Lead
+/// investigator*). **Enemies walk in id order**: no card in the corpus orders
+/// an enemy fan-out, and id order is deterministic for replay.
+fn for_each_targets(
+    state: &GameState,
+    ctx: EvalContext,
+    targets: ForEachTargets,
+) -> Vec<EachBinding> {
+    match targets {
+        ForEachTargets::Investigators(set) => {
+            let here = state
+                .investigators
+                .get(&ctx.controller)
+                .and_then(|i| i.current_location);
+            state
+                .turn_order
+                .iter()
+                .filter(|id| {
+                    state.investigators.get(id).is_some_and(|i| {
+                        i.status == Status::Active
+                            && match set {
+                                InvestigatorTargetSet::All => true,
+                                InvestigatorTargetSet::AtControllerLocation => {
+                                    here.is_some() && i.current_location == here
+                                }
+                            }
+                    })
+                })
+                .map(|&id| EachBinding::Investigator(id))
+                .collect()
+        }
+        ForEachTargets::Enemies(EnemySet::EngagedWithYou) => state
+            .enemies
+            .iter()
+            .filter(|(_, e)| e.engaged_with == Some(ctx.controller))
+            .map(|(&id, _)| EachBinding::Enemy(id))
+            .collect(),
+    }
+}
+
+/// Whether a [`ForEach`](EffectFrame::ForEach) walk still reaches `target`
+/// when its turn comes: an investigator must still be `Active`, so one
+/// eliminated by an earlier target's body is skipped, and an enemy must still
+/// be in play, so one an earlier body defeated is skipped.
+fn still_targetable(state: &GameState, target: EachBinding) -> bool {
+    match target {
+        EachBinding::Investigator(id) => state
+            .investigators
+            .get(&id)
+            .is_some_and(|i| i.status == Status::Active),
+        EachBinding::Enemy(id) => state.enemies.contains_key(&id),
     }
 }
 
@@ -525,7 +742,10 @@ fn perform_designated(
             *skill_override,
             reveal_clause.as_ref(),
         ),
-        ActionDesignator::Investigate { shroud_modifier } => {
+        ActionDesignator::Investigate {
+            shroud_modifier,
+            instead_of_discovery,
+        } => {
             // Reject rather than reach `perform`'s lapse suppression: a board
             // that changed underneath the activation is a rejection here.
             if actions::investigate::candidates(cx.state, eval_ctx.controller).is_none() {
@@ -537,6 +757,7 @@ fn perform_designated(
                 cx,
                 eval_ctx.controller,
                 Some(shroud_modifier.clone()),
+                instead_of_discovery.as_deref().cloned(),
                 eval_ctx.ability_source,
             )
         }
@@ -584,17 +805,15 @@ fn perform_designated(
     }
 }
 
-/// The **Fight** arm of [`perform_designated`]: evaluate `extra_damage` against
-/// the live board, then run the shared Fight primary against the grounded
-/// target, testing `skill_override` if the card prints one and carrying its
-/// `reveal_clause` onto the test.
+/// The **Fight** arm of [`perform_designated`]: run the shared Fight primary
+/// against the grounded target, testing `skill_override` if the card prints one
+/// and carrying its `reveal_clause` onto the test.
 ///
-/// `extra_damage` is evaluated here because the Fight follow-up consumes it as a
-/// `u8`; `combat_modifier` is **not**, travelling into the test as an
-/// unevaluated [`IntExpr`] so the row it becomes is recalculated at every read
-/// (ADR 0005). Machete 01020's conditional `+1` is why the evaluation happens
-/// on this context: `sole_engaged_target` reads the chosen enemy the step above
-/// just bound.
+/// Neither expression is evaluated here. `combat_modifier` travels into the
+/// test as an unevaluated [`IntExpr`] so the row it becomes is recalculated at
+/// every read (ADR 0005); `extra_damage` rides the Fight follow-up to RR ST.7,
+/// where the attack's damage is determined against the test's success margin
+/// (Switchblade 01044) and the board as it then stands (Machete 01020).
 fn perform_designated_fight(
     cx: &mut Cx,
     eval_ctx: &EvalContext,
@@ -603,14 +822,6 @@ fn perform_designated_fight(
     skill_override: Option<SkillKind>,
     reveal_clause: Option<&RevealClause>,
 ) -> EngineOutcome {
-    let extra_damage_n = match eval_int_expr(cx.state, cx.cards, eval_ctx, extra_damage) {
-        Ok(v) => u8::try_from(v.max(0)).unwrap_or(u8::MAX),
-        Err(reason) => {
-            return EngineOutcome::Rejected {
-                reason: reason.into(),
-            }
-        }
-    };
     // Bound by `step_designated` before this runs, and `can_perform` rejected
     // an empty candidate list pre-cost, so `None` is a state-shape violation.
     let Some(enemy_id) = eval_ctx.chosen_enemy() else {
@@ -630,7 +841,7 @@ fn perform_designated_fight(
         enemy_id,
         FightModification {
             combat_modifier: Some(combat_modifier.clone()),
-            extra_damage: extra_damage_n,
+            extra_damage: Some(extra_damage.clone()),
             skill_override,
             reveal_clause: reveal_clause.cloned(),
         },
@@ -693,6 +904,15 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
         Effect::DealDamageToEnemy { target, amount } => {
             deal_damage_to_enemy_effect(cx, eval_ctx, *target, *amount)
         }
+        Effect::Disengage { target } => match resolve_enemy_target(eval_ctx, *target) {
+            Ok(enemy) => {
+                combat::disengage_from(cx, enemy, eval_ctx.controller);
+                EngineOutcome::Done
+            }
+            Err(reason) => EngineOutcome::Rejected {
+                reason: reason.into(),
+            },
+        },
         Effect::Heal {
             kind,
             target,
@@ -735,7 +955,10 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
             }
             EngineOutcome::Done
         }
-        Effect::ForEach { .. } => awaiting_input_stub("ForEach"),
+        Effect::ForEach { targets, body } => {
+            start_for_each(cx, *targets, body, eval_ctx);
+            EngineOutcome::Done
+        }
         Effect::ChooseOne(branches) => step_choose_one(cx, branches, eval_ctx, effect),
         Effect::AdvanceCurrentAct => apply_advance_current_act(cx),
         Effect::ReachResolution(n) => apply_reach_resolution(cx, *n),
@@ -800,6 +1023,15 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
                 .into(),
         },
         Effect::TakeControl { code } => dispatch::take_control(cx, eval_ctx.controller, code),
+        Effect::GainAdditionalAction { restriction } => {
+            take::gain_additional_action(cx, eval_ctx.controller, *restriction);
+            EngineOutcome::Done
+        }
+        Effect::AdditionalActionWhileInPlay { .. } => EngineOutcome::Rejected {
+            reason: "Effect::AdditionalActionWhileInPlay is a constant marker — read off the \
+                     card in play when actions are counted, never executed"
+                .into(),
+        },
         Effect::BoostAttackDamage(amount) => boost_attack_damage_effect(cx, *amount),
         Effect::DiscoverAdditionalClues(amount) => discover_additional_clues_effect(cx, *amount),
         Effect::DrawCards { target, count } => draw_cards_effect(cx, eval_ctx, *target, *count),
@@ -1307,7 +1539,15 @@ fn eval_quantity(state: &GameState, eval_ctx: &EvalContext, q: Quantity) -> i8 {
             .get(&controller)
             .map_or(0, |inv| usize::from(inv.horror())),
         Quantity::EngagedEnemies => state.enemies_engaged_with(controller).count(),
+        // On the other outcome (and outside a test) the margin reads 0. That
+        // is right for every "by N or more" reader, since the clause cannot
+        // fire, but wrong for "by exactly 0" and "by N or less": Book of Verse
+        // 11005's *"If you succeed by exactly 0"* and Chemistry Set 10040's
+        // *"succeed by exactly 0"* would fire on a failure. The exact-margin
+        // cards (those two, Katana 10021, Correlate All Its Contents 11040) are
+        // all outside the core corpus; #1084 tracks reading the outcome too.
         Quantity::SkillTestFailedBy => usize::from(eval_ctx.failed_by().unwrap_or(0)),
+        Quantity::SkillTestSucceededBy => usize::from(eval_ctx.succeeded_by().unwrap_or(0)),
     };
     i8::try_from(n).unwrap_or(i8::MAX)
 }
@@ -1317,7 +1557,7 @@ fn eval_quantity(state: &GameState, eval_ctx: &EvalContext, q: Quantity) -> i8 {
 /// [`IntExpr::Cond`] evaluates its [`Condition`] (reusing
 /// [`eval_condition`]); an unexpressible condition propagates as `Err`,
 /// which the caller turns into [`EngineOutcome::Rejected`].
-pub(super) fn eval_int_expr(
+pub(crate) fn eval_int_expr(
     state: &GameState,
     cards: &CardRegistry,
     eval_ctx: &EvalContext,
@@ -1506,20 +1746,6 @@ fn auto_resolve(cx: &mut Cx, eval_ctx: EvalContext, determination: Determination
         source: eval_ctx.source_instance(),
     });
     EngineOutcome::Done
-}
-
-/// Standard rejection message for effect variants whose evaluator
-/// needs `AwaitingInput` plumbing (engine-side producer + `ResolveInput`
-/// resume). Centralizes the message so the un-stub path is one grep.
-/// Test-side seam is [`ChoiceResolver`](crate::test_support::ChoiceResolver).
-fn awaiting_input_stub(name: &'static str) -> EngineOutcome {
-    EngineOutcome::Rejected {
-        reason: format!(
-            "TODO: {name} evaluator needs AwaitingInput + ResolveInput resume; \
-             no engine consumer has landed yet."
-        )
-        .into(),
-    }
 }
 
 // ---- leaf-effect implementations ------------------------------
@@ -1930,7 +2156,7 @@ fn apply_place_doom_on_current_agenda(
 ///
 /// **Candidate scope:** the [`Choose`](card_dsl::dsl::Choose) scope is forwarded
 /// to a per-variety enumerator. `Anywhere` offers all investigators / locations;
-/// `EntityScope::At(Here)` filters to investigators co-located with the
+/// `LocationSet::Here` on an investigator choice filters to investigators co-located with the
 /// controller and `LocationSet::Here` to the controller's own location (empty —
 /// hence a reject — when the controller is between locations). The enemy variety
 /// and `LocationSet::YourOrConnecting` land with their consuming PRs (#301 /
@@ -1967,6 +2193,9 @@ fn ground_chosen_targets(
     if let Effect::DealDamageToEnemy {
         target: EnemyTarget::Chosen(choose),
         ..
+    }
+    | Effect::Disengage {
+        target: EnemyTarget::Chosen(choose),
     } = effect
     {
         if eval_ctx.chosen_enemy().is_none() {
@@ -1993,7 +2222,7 @@ fn picked_or_reject<T>(
     }
 }
 
-/// Ground an `InvestigatorTarget::Chosen` against its [`EntityScope`]:
+/// Ground an `InvestigatorTarget::Chosen` against its [`LocationSet`]:
 /// candidates are the matching investigators in sorted `BTreeMap` order (so the
 /// `OptionId` index re-derives deterministically). Binds `chosen_investigator`,
 /// or suspends in place.
@@ -2018,7 +2247,7 @@ fn picked_or_reject<T>(
 fn ground_investigator_choice(
     cx: &mut Cx,
     eval_ctx: EvalContext,
-    scope: EntityScope,
+    scope: LocationSet,
     effect: &Effect,
 ) -> Result<EvalContext, EngineOutcome> {
     let in_scope = investigator_candidates(cx.state, eval_ctx.controller, scope);
@@ -2073,12 +2302,12 @@ fn ground_location_choice(
     Ok(ctx)
 }
 
-/// Ground an `EnemyTarget::Chosen` against its [`EntityScope`]: candidates from
+/// Ground an `EnemyTarget::Chosen` against its [`EnemyScope`]: candidates from
 /// `combat::enemies_in_scope`. Binds `chosen_enemy`, or suspends in place.
 fn ground_enemy_choice(
     cx: &mut Cx,
     eval_ctx: EvalContext,
-    scope: EntityScope,
+    scope: EnemyScope,
 ) -> Result<EvalContext, EngineOutcome> {
     let candidates = combat::enemies_in_scope(cx.state, eval_ctx.controller, scope);
     let id = picked_or_reject(
@@ -2153,15 +2382,14 @@ fn ground_designated_enemy(
     Ok(ctx)
 }
 
-/// Investigators matching an [`EntityScope`](card_dsl::dsl::EntityScope), in
-/// `BTreeMap` (id) order so the `OptionId` index replays deterministically.
+/// Investigators at a location in a [`LocationSet`](card_dsl::dsl::LocationSet),
+/// in `BTreeMap` (id) order so the `OptionId` index replays deterministically.
 fn investigator_candidates(
     state: &GameState,
     controller: InvestigatorId,
-    scope: EntityScope,
+    at: LocationSet,
 ) -> Vec<InvestigatorId> {
-    let EntityScope::At(set) = scope;
-    match set {
+    match at {
         LocationSet::Anywhere => state.investigators.keys().copied().collect(),
         LocationSet::Here => match state
             .investigators
@@ -2224,6 +2452,9 @@ fn resolve_investigator_target(
             "InvestigatorTarget::Chosen resolved before target-grounding bound it \
              (ground_chosen_targets should run first)",
         ),
+        InvestigatorTarget::Each => ctx
+            .each_investigator()
+            .ok_or("InvestigatorTarget::Each outside a ForEach body over investigators"),
     }
 }
 
@@ -2312,6 +2543,25 @@ pub(crate) fn effect_can_change_state(
                 && (ctx.chosen_enemy().is_some()
                     || !combat::enemies_in_scope(state, ctx.controller, choose.scope).is_empty())
         }
+        // Disengaging changes state iff the enemy is engaged with the
+        // controller. Only the fan-out's bound enemy is provable; a `Chosen`
+        // one is not grounded yet.
+        Effect::Disengage {
+            target: EnemyTarget::Each,
+        } => ctx
+            .each_enemy()
+            .and_then(|id| state.enemies.get(&id))
+            .is_none_or(|e| e.engaged_with == Some(ctx.controller)),
+        // A fan-out changes state iff its body can for some target it would
+        // walk: over an empty set it is inert (Elusive 01050 with no enemy
+        // engaged with you disengages nothing).
+        Effect::ForEach { targets, body } => for_each_targets(state, ctx, *targets)
+            .into_iter()
+            .any(|target| {
+                let mut body_ctx = ctx;
+                body_ctx.set_each(target);
+                effect_can_change_state(state, body_ctx, body)
+            }),
         // A sequence changes state iff any step can (an empty `Seq` is inert).
         Effect::Seq(steps) => steps
             .iter()
@@ -2418,6 +2668,9 @@ fn resolve_enemy_target(ctx: EvalContext, target: EnemyTarget) -> Result<EnemyId
             "EnemyTarget::Chosen resolved before target-grounding bound it \
              (ground_chosen_targets should run first)",
         ),
+        EnemyTarget::Each => ctx
+            .each_enemy()
+            .ok_or("EnemyTarget::Each outside a ForEach body over enemies"),
     }
 }
 
@@ -2425,6 +2678,9 @@ fn resolve_enemy_target(ctx: EvalContext, target: EnemyTarget) -> Result<EnemyId
 /// `card_type` by an active `Restriction::CannotPlay` constant ability on
 /// any of their controlled instances (Dissonant Voices 01165: assets and
 /// events). Checked in `play_card` validation.
+///
+/// Read through `abilities_in_effect::constants_of`, so a `CannotPlay` the
+/// board grants one of those cards prohibits too. No corpus card grants one.
 #[must_use]
 pub fn play_is_prohibited(
     state: &GameState,
@@ -2432,21 +2688,14 @@ pub fn play_is_prohibited(
     investigator: InvestigatorId,
     card_type: CardType,
 ) -> bool {
-    let Some(inv) = state.investigators.get(&investigator) else {
-        return false;
-    };
-    inv.controlled_card_instances().any(|c| {
-        (registry.abilities_for)(&c.code)
-            .into_iter()
-            .flatten()
-            .any(|a| {
-                a.trigger == Trigger::Constant
-                    && matches!(
-                        &a.effect,
-                        Effect::Restrict(Restriction::CannotPlay(t)) if *t == card_type
-                    )
-            })
-    })
+    abilities_in_effect::constants_of(state, registry, investigator)
+        .iter()
+        .any(|(_, a)| {
+            matches!(
+                a.effect,
+                Effect::Restrict(Restriction::CannotPlay(t)) if t == card_type
+            )
+        })
 }
 
 /// The extra action cost `investigator` pays to perform `action_class`,
@@ -2474,6 +2723,9 @@ pub fn play_is_prohibited(
 /// Core or Dunwich prints such an ability, so the count is not modelled —
 /// whoever adds one must give the surcharge a *performed* count to read rather
 /// than inferring it from the action cost paid.
+///
+/// Read through `abilities_in_effect::constants_of`, so a surcharge the
+/// board grants one of those cards counts too. No corpus card grants one.
 #[must_use]
 pub fn pending_action_surcharge(
     state: &GameState,
@@ -2486,35 +2738,24 @@ pub fn pending_action_surcharge(
     };
     let mut extra: u8 = 0;
     let mut to_mark = Vec::new();
-    for card in inv.controlled_card_instances() {
-        let Some(abilities) = (registry.abilities_for)(&card.code) else {
+    for (instance, a) in abilities_in_effect::constants_of(state, registry, investigator) {
+        let Effect::Restrict(Restriction::ExtraActionCost {
+            actions,
+            first_each_round,
+        }) = &a.effect
+        else {
             continue;
         };
-        for a in &abilities {
-            if a.trigger != Trigger::Constant {
-                continue;
-            }
-            let Effect::Restrict(Restriction::ExtraActionCost {
-                actions,
-                first_each_round,
-            }) = &a.effect
-            else {
-                continue;
-            };
-            if !actions.contains(&action_class) {
-                continue;
-            }
-            if *first_each_round {
-                if inv
-                    .action_surcharge_spent_this_round
-                    .contains(&card.instance_id)
-                {
-                    continue;
-                }
-                to_mark.push(card.instance_id);
-            }
-            extra = extra.saturating_add(1);
+        if !actions.contains(&action_class) {
+            continue;
         }
+        if *first_each_round {
+            if inv.action_surcharge_spent_this_round.contains(&instance) {
+                continue;
+            }
+            to_mark.push(instance);
+        }
+        extra = extra.saturating_add(1);
     }
     (extra, to_mark)
 }

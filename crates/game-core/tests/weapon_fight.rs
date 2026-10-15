@@ -126,7 +126,7 @@ fn registries() -> Registries {
 
 /// The single location the controller and its enemies share. Co-location is
 /// load-bearing: a weapon Fight targets any enemy *at your location*
-/// (`EntityScope::At(Here)`), so the board must place everyone there.
+/// (`EnemyScope::at(Here)`), so the board must place everyone there.
 const HERE: LocationId = LocationId(1);
 
 /// A location the controller is not at.
@@ -282,7 +282,7 @@ fn weapon_fight_targets_a_co_located_unengaged_enemy() {
 
 #[test]
 fn weapon_fight_rejects_an_enemy_at_a_different_location() {
-    // The scope is co-located (`At(Here)`), NOT global: an enemy elsewhere is
+    // The scope is co-located (`EnemyScope::at(Here)`), NOT global: an enemy elsewhere is
     // no target, even though it exists. Guards against widening past the basic
     // Fight action (#451). The menu already leaves the activation out, so it
     // is submitted off the menu, as a client could send it, to prove the

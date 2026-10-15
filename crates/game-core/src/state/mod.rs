@@ -20,23 +20,23 @@ pub mod phase;
 pub use ability_source::{AbilityAddress, AbilitySource};
 pub use builder::GameStateBuilder;
 pub use card::{
-    AbilityUsageRecord, CardCode, CardInPlay, CardInstanceId, Deck, DiscardPile, Owner, UseKind,
-    Zone,
+    AbilityUsageRecord, CardCode, CardInPlay, CardInstanceId, Deck, DiscardPile, Owner, UsageClock,
+    UseKind, Zone,
 };
 pub use card_dsl::card_data::{SkillKind, Skills};
 pub use chaos_bag::{resolve_token, ChaosBag, ChaosToken, TokenModifiers, TokenResolution};
 pub use continuation::{
     AcknowledgeForcedFrame, ActionResolutionFrame, ActionResume, AdvanceDeck, AdvanceReverseFrame,
     AdvanceStep, AdvanceTrigger, AssetEntry, Assignment, AttackLoopFrame, AttackLoopStage,
-    CandidateSource, Continuation, ContinuationStack, DamageSource, DealDamageFrame,
-    DealDamageStep, EffectFrame, EliminationFrame, EliminationStep, EmitEventFrame, EmitStep,
-    EncounterCardFrame, EncounterDisposition, EncounterDrawFrame, EnemyAttackSource,
-    EnemyPhaseFrame, EnemyResume, FastActorScope, FastWindowFrame, FastWindowKind, Frame,
-    FrameActivity, FrameProfile, HandSizeDiscard, HunterChoice, InFlightSkillTest,
-    InvestigationPhaseFrame, InvestigationResume, InvestigatorTurnFrame, MoveEnterFrame,
-    MulliganFrame, MythosPhaseFrame, MythosResume, PhaseStep, PlayFromHandFrame, PlayerDrawFrame,
-    ResolutionCandidate, ResolvedTest, ScenarioEndDisposition, ScenarioEndFrame, ScenarioEndStep,
-    SkillTestFollowUp, SkillTestStep, SlotDiscardFrame, SpawnEngagePending,
+    CandidateSource, CommittedCard, CommittedCardDestination, Continuation, ContinuationStack,
+    DamageSource, DealDamageFrame, DealDamageStep, EffectFrame, EliminationFrame, EliminationStep,
+    EmitEventFrame, EmitStep, EncounterCardFrame, EncounterDisposition, EncounterDrawFrame,
+    EnemyAttackSource, EnemyPhaseFrame, EnemyResume, FastActorScope, FastWindowFrame,
+    FastWindowKind, Frame, FrameActivity, FrameProfile, HandSizeDiscard, HunterChoice,
+    InFlightSkillTest, InvestigationPhaseFrame, InvestigationResume, InvestigatorTurnFrame,
+    MoveEnterFrame, MulliganFrame, MythosPhaseFrame, MythosResume, PhaseStep, PlayFromHandFrame,
+    PlayerDrawFrame, ResolutionCandidate, ResolvedTest, ScenarioEndDisposition, ScenarioEndFrame,
+    ScenarioEndStep, SkillTestFollowUp, SkillTestStep, SlotDiscardFrame, SpawnEngagePending,
     SubstitutionPromptFrame, TimingMode, TimingPointFrame, TimingPointWindowFrame, TimingSub,
     UpkeepPhaseFrame, UpkeepResume,
 };
@@ -45,9 +45,11 @@ pub use counter::Counter;
 pub(crate) use counter::define_id;
 pub use enemy::{Enemy, EnemyId};
 pub use game_state::{
-    Act, Agenda, DifficultyBasis, GameState, Lifetime, ModifierTarget, RecordedModifier,
-    RecordedModifierKind, SkillSubstitution, SkillTestId,
+    Act, Agenda, DifficultyBasis, GameState, LastingEffect, LastingEffectKind, Lifetime,
+    ModifierTarget, RecordedModifier, RecordedModifierKind, SkillSubstitution, SkillTestId,
 };
-pub use investigator::{EliminationCause, Investigator, InvestigatorId, Status};
+pub use investigator::{
+    AdditionalActionGrant, EliminationCause, Investigator, InvestigatorId, Status,
+};
 pub use location::{Location, LocationId};
 pub use phase::Phase;
