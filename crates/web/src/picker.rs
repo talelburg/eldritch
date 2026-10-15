@@ -8,13 +8,12 @@ use game_core::state::CardCode;
 use leptos::prelude::*;
 use protocol::CreateGameRequest;
 
+use crate::scaffold_decks::{AGNES_DEFAULT_DECK, ROLAND_DEFAULT_DECK};
 use crate::store::{self, ConnStatus};
 
 /// Channel the picker uses to hand a chosen `CreateGameRequest` to the
 /// transport's creation loop. Provided into context by `transport::start`.
 pub type CreateTx = UnboundedSender<CreateGameRequest>;
-
-pub use crate::scaffold_decks::{AGNES_DEFAULT_DECK, ROLAND_DEFAULT_DECK};
 
 /// The investigators the picker offers, each with its placeholder deck.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
