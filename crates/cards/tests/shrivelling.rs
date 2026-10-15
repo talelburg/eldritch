@@ -18,7 +18,7 @@
 //! horror taken is Shrivelling's.
 
 use cards::TEST_REGISTRIES;
-use game_core::engine::enumerate::TurnAction;
+use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder,
@@ -170,7 +170,7 @@ fn it_enters_play_with_four_charges() {
         .build();
     let session = TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::PlayCard {
         investigator: INV,
-        hand_index: 0,
+        source: PlaySource::Hand(0),
     });
     session.assert_at_turn_menu(INV);
     assert_eq!(charges(session.state()), 4);

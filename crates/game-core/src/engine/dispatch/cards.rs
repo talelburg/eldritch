@@ -16,7 +16,7 @@ use crate::engine::dispatch::{
 };
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
-use crate::engine::{abilities_in_effect, Cx};
+use crate::engine::{abilities_in_effect, Cx, PlaySource};
 use crate::event::Event;
 use crate::state::{
     ActionResume, AssetEntry, CardCode, CardInPlay, Deck, DiscardPile, InvestigatorId,
@@ -485,6 +485,28 @@ pub(crate) fn move_card_in_deck(cx: &mut Cx, deck: Deck, from: usize, to: usize)
         }
     }
     true
+}
+
+/// Move the card at `index` of `investigator`'s discard pile to their hand,
+/// returning it, and emit [`Event::CardAddedToHandFromDiscard`] (Scavenging
+/// 01073). `None`, and nothing moves, for an index past the pile's end or a
+/// missing investigator.
+pub(crate) fn add_discarded_card_to_hand(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    index: usize,
+) -> Option<CardCode> {
+    let inv = cx.state.investigators.get_mut(&investigator)?;
+    if index >= inv.discard.len() {
+        return None;
+    }
+    let card = inv.discard.remove(index);
+    inv.hand.push(card.clone());
+    cx.events.push(Event::CardAddedToHandFromDiscard {
+        investigator,
+        code: card.clone(),
+    });
+    Some(card)
 }
 
 /// Grant `amount` resources to `investigator`: saturating-add to the
@@ -1000,26 +1022,27 @@ pub(super) fn resolve_play_target(
 pub(super) fn play_card(
     cx: &mut Cx,
     investigator: InvestigatorId,
-    hand_index: u8,
+    source: PlaySource,
 ) -> EngineOutcome {
     let PlayCheckResult {
         abilities,
         is_fast,
         card_type: _,
-    } = match legality::check_play_card(cx.state, cx.cards, investigator, hand_index) {
+    } = match legality::check_play_card(cx.state, cx.cards, investigator, source) {
         Ok(r) => r,
         Err(reason) => return EngineOutcome::Rejected { reason },
     };
     // The code is re-read from state here so we don't pass it through
     // the result (avoiding the lifetime question). The validator already
-    // confirmed the hand_index is in bounds and the investigator exists.
-    let idx = usize::from(hand_index);
-    let code: CardCode = cx
-        .state
-        .investigators
-        .get(&investigator)
+    // confirmed the source holds a card and the investigator exists.
+    let code: CardCode = source
+        .card(
+            cx.state
+                .investigators
+                .get(&investigator)
+                .expect("checked in validator"),
+        )
         .expect("checked in validator")
-        .hand[idx]
         .clone();
 
     // Mutate. A fast play is not an action (`glossary/Fast.md`: *"A fast card
@@ -1027,7 +1050,7 @@ pub(super) fn play_card(
     // action."*), so it pays its resource cost, commences and resolves at once.
     if is_fast {
         pay_play_cost(cx, investigator, &code);
-        let card = commence_play(cx, investigator, idx);
+        let card = commence_play(cx, investigator, source);
         return complete_play(cx, investigator, card);
     }
     // A non-fast play is taken as an action: the step pays its one action, and
@@ -1039,7 +1062,7 @@ pub(super) fn play_card(
     let description = ActionDescription::play(code.clone(), play_designator(&abilities).cloned());
     take::take(cx, investigator, &description, |cx| {
         pay_play_cost(cx, investigator, &code);
-        let card = commence_play(cx, investigator, idx);
+        let card = commence_play(cx, investigator, source);
         Ok(ActionResume::PlayCard { card: Some(card) })
     })
 }
@@ -1246,9 +1269,9 @@ pub(super) fn resume_play_card(
     complete_play(cx, investigator, card)
 }
 
-/// Commence playing the card at `hand_index` in `investigator`'s hand (RR
+/// Commence playing the card at `source` among `investigator`'s zones (RR
 /// Appendix I, step 3: "The card commences being played"): emit
-/// [`Event::CardPlayed`], remove the card from hand, and hand it back to the
+/// [`Event::CardPlayed`], remove the card from its zone, and hand it back to the
 /// caller, which parks it on the frame driving the play. Between here and
 /// step 4 the card is in no zone at all — see
 /// [`Continuation::play_in_progress`](crate::state::Continuation::play_in_progress).
@@ -1261,19 +1284,20 @@ pub(super) fn resume_play_card(
 /// Shared by [`play_card`] and the Axis-C reaction-event play
 /// (`reaction_windows::play_fast_event`). Both callers pay the resource cost
 /// before calling and run the card's effect(s) after. The caller guarantees
-/// `investigator` exists and `hand_index` is in bounds.
+/// `investigator` exists and `source` holds a card.
 pub(super) fn commence_play(
     cx: &mut Cx,
     investigator: InvestigatorId,
-    hand_index: usize,
+    source: PlaySource,
 ) -> CardCode {
-    let card = cx
+    let inv = cx
         .state
         .investigators
         .get_mut(&investigator)
-        .expect("commence_play: caller guarantees investigator exists")
-        .hand
-        .remove(hand_index);
+        .expect("commence_play: caller guarantees investigator exists");
+    let card = match source {
+        PlaySource::Hand(index) => inv.hand.remove(usize::from(index)),
+    };
     cx.events.push(Event::CardPlayed {
         investigator,
         code: card.clone(),

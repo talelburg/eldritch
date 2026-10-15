@@ -60,7 +60,7 @@
 
 use cards::TEST_REGISTRIES;
 use game_core::assert_event;
-use game_core::engine::enumerate::TurnAction;
+use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::modified_value::{self, ModifiedQuantity, ReadContext};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
@@ -441,7 +441,7 @@ fn a_non_attack_damage_effect_gets_nothing() {
     let result = TestSession::new(state, TEST_REGISTRIES)
         .take(&TurnAction::PlayCard {
             investigator: KEEPER,
-            hand_index: 0,
+            source: PlaySource::Hand(0),
         })
         .pick(keeper.clone())
         .pick(keeper.clone())

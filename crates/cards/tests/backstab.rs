@@ -11,7 +11,7 @@
 //! > against the enemy's Fight value (not its Evade value).
 
 use cards::TEST_REGISTRIES;
-use game_core::engine::enumerate::TurnAction;
+use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId,
@@ -27,7 +27,7 @@ const ENEMY: EnemyId = EnemyId(100);
 
 const PLAY: TurnAction = TurnAction::PlayCard {
     investigator: INV,
-    hand_index: 0,
+    source: PlaySource::Hand(0),
 };
 
 /// Backstab in hand with the resources to play it, the investigator at

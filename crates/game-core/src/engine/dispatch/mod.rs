@@ -108,8 +108,8 @@ pub(crate) fn dispatch_turn_action(cx: &mut Cx, action: &TurnAction) -> EngineOu
         } => actions::engage::handle(cx, *investigator, *enemy),
         TurnAction::PlayCard {
             investigator,
-            hand_index,
-        } => cards::play_card(cx, *investigator, *hand_index),
+            source,
+        } => cards::play_card(cx, *investigator, *source),
         TurnAction::ActivateAbility {
             investigator,
             source,

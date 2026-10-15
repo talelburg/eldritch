@@ -8,7 +8,7 @@
 //! turn with plenty of resources and actions.
 
 use cards::TEST_REGISTRIES;
-use game_core::engine::enumerate::TurnAction;
+use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId};
 use game_core::test_support::{self, horror, seat, Seat, SeatLookup as _, TestSession};
@@ -39,7 +39,7 @@ fn session_with(seat: Seat) -> TestSession {
 fn play(session: TestSession) -> TestSession {
     session.take(&TurnAction::PlayCard {
         investigator: INV,
-        hand_index: 0,
+        source: PlaySource::Hand(0),
     })
 }
 

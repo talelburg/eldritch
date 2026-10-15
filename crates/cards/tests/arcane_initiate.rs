@@ -20,7 +20,7 @@
 use cards::TEST_REGISTRIES;
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::assert_event;
-use game_core::engine::enumerate::TurnAction;
+use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::{board, OptionId, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
@@ -126,7 +126,7 @@ fn take_searched(position: u32) -> Action {
 fn entering_play_places_one_doom_on_it() {
     let s = turn(seat(1).hand([INITIATE]).resources(5)).take(&TurnAction::PlayCard {
         investigator: INV,
-        hand_index: 0,
+        source: PlaySource::Hand(0),
     });
     s.assert_at_turn_menu(INV);
     assert_eq!(initiate_doom(&s), Some(1), "the forced placed 1 doom on it");
@@ -142,7 +142,7 @@ fn entering_play_places_one_doom_on_it() {
 fn held_in_hand_it_stays_inert_when_another_asset_enters_play() {
     let s = turn(seat(1).hand([SHRIVELLING, INITIATE]).resources(3)).take(&TurnAction::PlayCard {
         investigator: INV,
-        hand_index: 0,
+        source: PlaySource::Hand(0),
     });
     s.assert_at_turn_menu(INV);
     let inv = &s.state().investigators[&INV];

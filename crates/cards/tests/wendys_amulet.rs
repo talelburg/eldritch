@@ -17,7 +17,7 @@
 //! Runs against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
-use game_core::engine::enumerate::TurnAction;
+use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::event::Event;
 use game_core::state::{Agenda, CardCode, GameStateBuilder, InvestigatorId, Location, LocationId};
 use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
@@ -41,7 +41,7 @@ const THERE: LocationId = LocationId(11);
 
 const PLAY_FIRST: TurnAction = TurnAction::PlayCard {
     investigator: INV,
-    hand_index: 0,
+    source: PlaySource::Hand(0),
 };
 
 /// `investigator`'s open turn at `HERE`, solo, with The Gathering's first

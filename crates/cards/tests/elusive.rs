@@ -17,7 +17,7 @@
 //! >   there is no legal place to move to or a rule effect forbids movement.
 
 use cards::TEST_REGISTRIES;
-use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::enumerate::{self, PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
@@ -50,7 +50,7 @@ const ATTIC: &str = "01113";
 
 const PLAY: TurnAction = TurnAction::PlayCard {
     investigator: INV,
-    hand_index: 0,
+    source: PlaySource::Hand(0),
 };
 
 /// A ready enemy whose attack deals 1 damage, so an attack of opportunity
