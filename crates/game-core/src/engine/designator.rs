@@ -60,6 +60,11 @@ use crate::state::{GameState, InvestigatorId};
 ///   gate asks separately.
 /// - **Resign** — eliminating the controller is always available to an
 ///   investigator who reached the ability at all.
+/// - **`AutomaticEvade`** — performs nothing, as Parley does: no test, and no
+///   engaged enemy needed (Cunning Distraction 01078's ruling,
+///   <https://arkhamdb.com/card/01078>: *"even those that you're not engaged
+///   with"*). Whether there is an enemy to evade is its residual effect's
+///   question.
 /// - **Move** — rejected, with the reason
 ///   [`actions::designated_unimplemented_move`] gives (`TODO(#1059)`). The
 ///   variant carries no modification because no corpus card prints a bold
@@ -86,7 +91,9 @@ pub(crate) fn can_perform(
             }
             Ok(())
         }
-        ActionDesignator::Parley | ActionDesignator::Resign => Ok(()),
+        ActionDesignator::Parley | ActionDesignator::Resign | ActionDesignator::AutomaticEvade => {
+            Ok(())
+        }
         ActionDesignator::Evade { .. } => {
             if evade::candidates(state, investigator).is_empty() {
                 return Err(

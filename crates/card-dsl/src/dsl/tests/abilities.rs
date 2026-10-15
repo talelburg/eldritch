@@ -1,11 +1,16 @@
 use super::*;
 
-/// The three designators `ActionClass` names map onto it; the three it
+/// The designators `ActionClass` names map onto it; the three it
 /// doesn't name map to `None` (#754).
 #[test]
 fn a_designator_maps_onto_the_action_class_it_performs() {
     assert_eq!(fight(0u8, 0u8).action_class(), Some(ActionClass::Fight));
     assert_eq!(evade().action_class(), Some(ActionClass::Evade));
+    // Cunning Distraction 01078's test-free Evade is an Evade all the same.
+    assert_eq!(
+        ActionDesignator::AutomaticEvade.action_class(),
+        Some(ActionClass::Evade)
+    );
     assert_eq!(
         ActionDesignator::Move.action_class(),
         Some(ActionClass::Move)
