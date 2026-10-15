@@ -5,7 +5,7 @@
 //! rather than in `game-core`'s registry-less unit tests.
 
 use cards::TEST_REGISTRIES;
-use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::enumerate::{self, PlaySource, TurnAction};
 use game_core::state::{
     AbilityAddress, AbilitySource, Act, Agenda, CardCode, ChaosBag, ChaosToken, EnemyId, GameState,
     GameStateBuilder, InvestigatorId, LocationId, UseKind,
@@ -48,7 +48,7 @@ fn play_card_offered_for_a_playable_hand_card() {
     assert!(
         enumerate::legal_actions(&state, TEST_REGISTRIES.cards).contains(&TurnAction::PlayCard {
             investigator: INV,
-            hand_index: 0,
+            source: PlaySource::Hand(0),
         })
     );
 }

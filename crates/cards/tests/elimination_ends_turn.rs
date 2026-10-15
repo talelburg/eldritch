@@ -27,7 +27,7 @@
 
 use cards::TEST_REGISTRIES;
 use game_core::assert_event;
-use game_core::engine::enumerate::TurnAction;
+use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::{EngineOutcome, OptionTarget};
 use game_core::event::Event;
 use game_core::scenario::ScenarioEnding;
@@ -79,7 +79,7 @@ fn board(turn_order: &[InvestigatorId]) -> GameStateBuilder {
 fn play_into_the_lethal_aoo(board: GameStateBuilder) -> TestSession {
     board.session().take(&TurnAction::PlayCard {
         investigator: DYING,
-        hand_index: 0,
+        source: PlaySource::Hand(0),
     })
 }
 

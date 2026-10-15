@@ -9,7 +9,7 @@
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use card_dsl::dsl::{self, InvestigatorTarget, ModifierScope, Stat};
-use game_core::engine::enumerate::TurnAction;
+use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::Registries;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{GameStateBuilder, InvestigatorId, LocationId};
@@ -82,7 +82,7 @@ fn mid_resolution_reject_leaves_state_and_events_untouched() {
 
     let session = session.take(&TurnAction::PlayCard {
         investigator: id,
-        hand_index: 0,
+        source: PlaySource::Hand(0),
     });
 
     let reason = session.expect_rejected();

@@ -10,7 +10,7 @@
 
 use cards::TEST_REGISTRIES;
 use game_core::assert_event;
-use game_core::engine::enumerate::TurnAction;
+use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, SkillKind, TokenModifiers,
@@ -42,7 +42,7 @@ fn rosary_in_hand() -> TestSession {
 fn rosary_in_play() -> TestSession {
     let session = rosary_in_hand().take(&TurnAction::PlayCard {
         investigator: INV,
-        hand_index: 0,
+        source: PlaySource::Hand(0),
     });
     session.assert_at_turn_menu(INV);
     session

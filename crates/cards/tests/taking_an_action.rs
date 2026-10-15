@@ -38,7 +38,7 @@
 use card_dsl::dsl::{self, Ability, InvestigatorTarget};
 use cards::TEST_REGISTRY;
 use game_core::card_registry::CardRegistry;
-use game_core::engine::enumerate::TurnAction;
+use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::Registries;
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
@@ -245,7 +245,7 @@ fn basic_action_rows() -> Vec<Row> {
 /// Playing the one card in [`INV`]'s hand.
 const PLAY_FROM_HAND: Take = Take::Action(TurnAction::PlayCard {
     investigator: INV,
-    hand_index: 0,
+    source: PlaySource::Hand(0),
 });
 
 /// Playing a card, taken through the same step as the basic actions. A fast

@@ -19,7 +19,7 @@
 //! dealing the attack"*.
 
 use cards::TEST_REGISTRIES;
-use game_core::engine::enumerate::TurnAction;
+use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
@@ -216,7 +216,7 @@ fn not_playable_after_an_action() {
     session.assert_at_turn_menu(INV);
     let play = TurnAction::PlayCard {
         investigator: INV,
-        hand_index: 0,
+        source: PlaySource::Hand(0),
     };
     let _ = session.assert_rejects(|s| s.submit_off_menu(&play));
 }
@@ -232,7 +232,7 @@ fn not_playable_in_another_investigators_turn() {
     );
     let play = TurnAction::PlayCard {
         investigator: OTHER,
-        hand_index: 0,
+        source: PlaySource::Hand(0),
     };
     let _ = window.assert_rejects(|s| s.submit_off_menu(&play));
 }
@@ -257,7 +257,7 @@ fn not_playable_in_the_enemy_phase() {
     );
     let play = TurnAction::PlayCard {
         investigator: INV,
-        hand_index: 0,
+        source: PlaySource::Hand(0),
     };
     let _ = paused.assert_rejects(|s| s.submit_off_menu(&play));
 }

@@ -17,7 +17,7 @@ use crate::engine::dispatch::emit::{ConditionResolution, TimingEvent};
 use crate::engine::dispatch::initiation::{self, InitiationKind, Refusal};
 use crate::engine::dispatch::legality::{check_activate_ability, check_play_card};
 use crate::engine::dispatch::{cards, coordinator, cursor, phases, skill_test, trigger_scan};
-use crate::engine::enumerate::TurnAction;
+use crate::engine::enumerate::{PlaySource, TurnAction};
 use crate::engine::evaluator::EvalContext;
 use crate::engine::outcome::{
     ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
@@ -752,11 +752,13 @@ fn play_fast_event(
     // panicking: nothing has been paid or moved yet, so the reject is clean, and
     // a panic here would take the whole session down over one bad option id
     // (#568).
-    let Some(hand_idx) = cx
+    let Some(source) = cx
         .state
         .investigators
         .get(&controller)
         .and_then(|inv| inv.hand.iter().position(|c| *c == candidate.code))
+        .and_then(|index| u8::try_from(index).ok())
+        .map(PlaySource::Hand)
     else {
         return EngineOutcome::Rejected {
             reason: format!(
@@ -771,7 +773,7 @@ fn play_fast_event(
     // skip the action cost, not the resource cost. Affordability was re-checked
     // at fire time (#501, #568).
     cards::pay_play_cost(cx, controller, &candidate.code);
-    let card = cards::commence_play(cx, controller, hand_idx);
+    let card = cards::commence_play(cx, controller, source);
 
     // Look up the matched OnEvent ability's effect from the registry.
     let abilities = (cx.cards.abilities_for)(&candidate.code).unwrap_or_else(|| {
@@ -1097,11 +1099,12 @@ pub(super) fn enumerate_fast_plays(state: &GameState, cards: &CardRegistry) -> V
             let Ok(hand_index) = u8::try_from(hand_idx_usize) else {
                 break;
             };
-            if let Ok(result) = check_play_card(state, cards, inv_id, hand_index) {
+            let source = PlaySource::Hand(hand_index);
+            if let Ok(result) = check_play_card(state, cards, inv_id, source) {
                 if result.is_fast {
                     out.push(TurnAction::PlayCard {
                         investigator: inv_id,
-                        hand_index,
+                        source,
                     });
                 }
             }
