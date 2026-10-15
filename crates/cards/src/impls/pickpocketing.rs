@@ -16,6 +16,8 @@
 //! *"exhaust Pickpocketing"* is the ability's cost, paid as it initiates; an
 //! exhausted Pickpocketing cannot pay it, so is not offered.
 //!
+//! # Module gap
+//!
 //! TODO(#1082): the other ruling — *"If you use this to draw a card with the
 //! same triggering condition (e.g. Close Call), you can play that card during
 //! the same reaction window."* — is not honoured: a reaction window never adds

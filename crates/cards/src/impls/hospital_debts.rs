@@ -33,10 +33,14 @@
 //! investigator holding at least 1 resource, Cover Up 01007's `HAS_CLUES_TAG`
 //! pattern.
 //!
-//! TODO(#1062): the Forced experience clause, with campaign experience. Its
-//! second ruling — *"If "Skids" is eliminated (by being defeated or taking a
-//! **resign** action) while Hospital Debts is in play, Hospital Debts'
-//! **Forced** effect triggers"* — follows Cover Up's elimination path.
+//! # Module gap
+//!
+//! TODO(#1062): the Forced experience clause, *"When the game ends, if
+//! Hospital Debts has fewer than 6 resources on it: You earn 2 fewer experience
+//! for this scenario."*, waits on campaign experience. Its second ruling — *"If
+//! "Skids" is eliminated (by being defeated or taking a **resign** action)
+//! while Hospital Debts is in play, Hospital Debts' **Forced** effect triggers,
+//! …"* — will follow Cover Up 01007's elimination path when it lands.
 
 use card_dsl::dsl::{self, Ability, UsageLimit, UsagePeriod};
 use game_core::engine::board::MoveResourcesError;
@@ -59,6 +63,12 @@ const MOVE_TAG: &str = "01011:move-resource";
 /// Native-condition tag: the triggering investigator has a resource to move.
 const HAS_RESOURCE_TAG: &str = "01011:has-resource";
 
+/// Hospital Debts' printed abilities, the Forced clause aside (see the module
+/// gap):
+///
+/// - *"Revelation - Put Hospital Debts into play in your threat area."*
+/// - `[fast]` *"Move 1 resource from your resource pool to Hospital Debts.
+///   (Limit twice per round.)"*
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![
