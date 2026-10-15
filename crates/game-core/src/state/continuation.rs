@@ -277,6 +277,8 @@ pub enum Continuation {
     SlotDiscard(SlotDiscardFrame),
     /// See [`AdditionalActionChoiceFrame`].
     AdditionalActionChoice(AdditionalActionChoiceFrame),
+    /// See [`HandDiscardCostFrame`].
+    HandDiscardCost(HandDiscardCostFrame),
     /// See [`MythosPhaseFrame`].
     MythosPhase(MythosPhaseFrame),
     /// See [`InvestigationPhaseFrame`].
@@ -330,6 +332,7 @@ impl_frame!(PlayFromHand, PlayFromHandFrame);
 impl_frame!(MoveEnter, MoveEnterFrame);
 impl_frame!(SlotDiscard, SlotDiscardFrame);
 impl_frame!(AdditionalActionChoice, AdditionalActionChoiceFrame);
+impl_frame!(HandDiscardCost, HandDiscardCostFrame);
 impl_frame!(MythosPhase, MythosPhaseFrame);
 impl_frame!(InvestigationPhase, InvestigationPhaseFrame);
 impl_frame!(EnemyPhase, EnemyPhaseFrame);
@@ -638,6 +641,9 @@ impl Continuation {
             | Continuation::SkillTest(_)
             | Continuation::SubstitutionPrompt(_)
             | Continuation::Effect(_)
+            // A cost being paid: the ability is initiated, its use recorded and
+            // its other costs paid, with its effect parked beneath — under way.
+            | Continuation::HandDiscardCost(_)
             // Holds the asset mid-entry, in no zone (ADR 0002): discarding the
             // frame would leak the card out of every zone.
             | Continuation::SlotDiscard(_) => (
@@ -2666,6 +2672,27 @@ pub struct AdditionalActionChoiceFrame {
     pub source: AbilitySource,
     /// Which of the source's abilities.
     pub address: AbilityAddress,
+}
+
+/// A [`Cost::DiscardCardFromHand`](card_dsl::dsl::Cost::DiscardCardFromHand)
+/// being paid (#1107): Wendy Adams 01005's *"choose and discard 1 card from
+/// your hand"*. Pushed **above** the ability's effect, which is parked beneath
+/// it with its event bindings already in its context, so the cost is paid
+/// before the effect resolves — Appendix I step 2, *"Pay the cost(s)"*, ahead
+/// of the effect at step 4. A triggered ability and a `[fast]` activated one
+/// both park this way.
+///
+/// The `drive` loop meets it on top and offers the investigator's hand cards
+/// that are not weaknesses, or discards the lone one with no prompt
+/// (`hand_discard_cost::drive`); a `PickSingle(OptionId)` naming one of the
+/// offered cards resumes it. A [Prompt](FrameActivity::Prompt); not a phase
+/// anchor.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HandDiscardCostFrame {
+    /// The investigator paying the cost: the ability's controller.
+    pub investigator: InvestigatorId,
+    /// The card whose ability the cost is for, which the prompt names.
+    pub code: CardCode,
 }
 
 #[cfg(test)]
