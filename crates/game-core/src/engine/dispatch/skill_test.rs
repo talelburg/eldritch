@@ -500,8 +500,9 @@ pub(super) fn acknowledge_outcome(cx: &mut Cx) -> EngineOutcome {
 }
 
 /// Run the token half of a skill test (RR ST.3–ST.4): reveal the chaos token
-/// (ST.3) and push the revealed symbol's unconditional
-/// [`immediate`](card_dsl::dsl::TokenOutcome::immediate) effect (ST.4).
+/// (ST.3), whose resolve step ([`resolve_reveal`]) pushes the revealed
+/// symbol's unconditional [`immediate`](card_dsl::dsl::TokenOutcome::immediate)
+/// effect (ST.4).
 ///
 /// **No total, margin, or verdict is computed here.** ST.5 (*"all active card
 /// abilities that are modifying the investigator's skill value"* — active *at
@@ -539,28 +540,32 @@ pub(super) fn acknowledge_outcome(cx: &mut Cx) -> EngineOutcome {
 /// `EngineRecord` for a chaos draw, so a skip that is a pure function of game
 /// state replays identically.
 ///
-/// The token is drawn exactly once here; a soak window suspending inside the
-/// ST.4 effects resumes at `DetermineOutcome` and re-draws nothing. As it
-/// comes out it is substituted, once, by any
-/// [`Effect::TreatRevealedToken`] on the performer's cards ([`counted_token`]):
-/// The Necronomicon 01009 counts an `[elder_sign]` as an `[auto_fail]`. Every
-/// later read — the resolution, the chaos symbol effect at ST.4 and ST.7, and
-/// the reveal clause — takes the counted token, so a substituted elder sign
-/// never initiates the investigator's elder-sign ability.
-/// [`ChaosTokenRevealed`](Event::ChaosTokenRevealed) names the token drawn
-/// with the counted token's resolution. The drawn token, the counted one and
-/// that resolution are kept on [`revealed`](InFlightSkillTest::revealed); the
-/// skip above leaves it `None`.
-/// The outcome's result-conditional parts (Cultist 01104's `on_fail` horror)
-/// are not kept: the ST.7 [`ApplyTokenResult`](SkillTestStep::ApplyTokenResult)
-/// step looks the outcome up again from the counted token and picks one part by the
-/// (by then known) result. Pre-advances to `DetermineOutcome` **before**
-/// pushing the immediate effect (the suspend/resume invariant).
+/// **This is the draw step; the token's effect on the test is a step of its
+/// own.** The token is drawn and announced here, and then the
+/// [`ChaosTokenRevealed`](TimingEvent::ChaosTokenRevealed) condition is
+/// emitted in tail position. Its resolve step, [`resolve_reveal`], does the
+/// rest of ST.3 and pushes ST.4 — after its `when` cell, where a cancel (Wendy
+/// Adams 01005) skips it and [`Effect::RevealChaosToken`] sets the cursor back
+/// here for a fresh draw. A test whose determination is known skips before the
+/// draw, so it opens no `when` cell.
 ///
-/// The initiating card's [`reveal_clause`](InFlightSkillTest::reveal_clause)
-/// fires here as well when the token's symbol is in its set, pushed after the
-/// immediate effect so it resolves first: the clause is ST.3, the symbol
-/// effect ST.4.
+/// The token is drawn once per pass; the cursor is pre-advanced to
+/// `DetermineOutcome` before the emit, so a soak window suspending inside the
+/// ST.4 effects resumes there and re-draws nothing. As it comes out it is
+/// substituted, once, by any [`Effect::TreatRevealedToken`] on the performer's
+/// cards ([`counted_token`]): The Necronomicon 01009 counts an `[elder_sign]`
+/// as an `[auto_fail]`. Every later read — the resolution, the chaos symbol
+/// effect at ST.4 and ST.7, and the reveal clause — takes the counted token, so
+/// a substituted elder sign never initiates the investigator's elder-sign
+/// ability. [`ChaosTokenRevealed`](Event::ChaosTokenRevealed) names the token
+/// drawn with the counted token's resolution; the drawn token, the counted one
+/// and that resolution ride the timing event to the resolve step, which keeps
+/// them on [`revealed`](InFlightSkillTest::revealed). The skip above, and a
+/// cancelled token, leave it `None`. The outcome's result-conditional parts
+/// (Cultist 01104's `on_fail` horror) are not kept: the ST.7
+/// [`ApplyTokenResult`](SkillTestStep::ApplyTokenResult) step looks the outcome
+/// up again from the counted token and picks one part by the (by then known)
+/// result.
 ///
 /// A scenario symbol's modifier is an [`IntExpr`]. The recorded row keeps it
 /// unevaluated, so ST.5 reads it live; the `i8` that
@@ -584,7 +589,7 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
     }
 
     // ST.3 reveal the chaos token, and look up the chaos symbol effect it
-    // initiates.
+    // initiates for the announcement.
     let token_idx = cx.state.rng.next_index(cx.state.chaos_bag.tokens.len());
     let token = cx.state.chaos_bag.tokens[token_idx];
     // From here on the test reads the token it counts as, never the drawn one.
@@ -604,6 +609,59 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
     };
     cx.events
         .push(Event::ChaosTokenRevealed { token, resolution });
+
+    // Pre-advance to DetermineOutcome BEFORE emitting, so the test resumes
+    // there once the reveal's sequence has drained (ADR 0003) and never
+    // re-draws the token. A `when`-cell redraw sets it back to `Resolving`.
+    cx.state
+        .current_skill_test_mut()
+        .expect("run_resolution: the SkillTest frame must exist")
+        .continuation = SkillTestStep::DetermineOutcome;
+    // Queued in tail position: the driver's loop sees the coordinator on top
+    // and yields to it, so the outcome (always a queued `Done`) has nothing
+    // to carry.
+    let _ = emit::queue_event(
+        cx,
+        &TimingEvent::ChaosTokenRevealed {
+            investigator,
+            token: RevealedToken {
+                token,
+                counts_as,
+                resolution,
+            },
+        },
+    );
+}
+
+/// The resolve step of the [`ChaosTokenRevealed`](TimingEvent::ChaosTokenRevealed)
+/// condition: what Skill Test Timing step 3 does with a token once it is out,
+/// and step 4's symbol effect. Reached only when no `when`-cell ability
+/// cancelled the token, so a cancelled token writes nothing and every symbol
+/// trigger misses it — Wendy Adams 01005's ruling
+/// (<https://arkhamdb.com/card/01005>): *"treat it as if you've never revealed
+/// that token, for purposes of effects that trigger if a specific symbol is
+/// revealed"*.
+///
+/// In order: the token's contribution becomes a recorded row (or the
+/// automatic failure an `[auto_fail]` latches), the frame records the token
+/// as [`revealed`](InFlightSkillTest::revealed), the ST.4 immediate effect is
+/// pushed, and the initiating card's reveal clause is pushed last so it
+/// resolves first. The chaos symbol effect is looked up again here from the
+/// counted token, off the board as the `when` cell left it. Nothing else is
+/// stashed: the outcome's result-conditional parts (Cultist horror, an elder
+/// sign's "If you succeed") are looked up again from `revealed` at ST.7, once
+/// the result that picks between them is known.
+///
+/// The test's cursor is already at `DetermineOutcome`, and the pushed effects
+/// sit above the coordinator, so a soak suspend inside them resumes into the
+/// reveal's `at` cell and then the test's ST.5, never re-drawing the token.
+pub(super) fn resolve_reveal(cx: &mut Cx, investigator: InvestigatorId, revealed: RevealedToken) {
+    let RevealedToken {
+        counts_as,
+        resolution,
+        ..
+    } = revealed;
+    let (outcome, ctx) = chaos_symbol_effect(cx, counts_as, investigator);
     record_token_contribution(
         cx,
         investigator,
@@ -611,27 +669,10 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
         outcome.as_ref(),
         ctx.source_instance(),
     );
-
-    // Record the token and pre-advance to DetermineOutcome BEFORE pushing the
-    // ST.4 immediate effect, so a soak suspend resumes at DetermineOutcome
-    // and never re-draws the token. Nothing else is stashed: the token's own
-    // contribution is already a recorded row (and so is the determination an
-    // `[auto_fail]` latches), and the outcome's result-conditional parts
-    // (Cultist horror, an elder sign's "If you succeed") are looked up again
-    // from `revealed` at ST.7, once the result that picks between them is
-    // known.
-    {
-        let t = cx
-            .state
-            .current_skill_test_mut()
-            .expect("run_resolution: the SkillTest frame must exist");
-        t.revealed = Some(RevealedToken {
-            token,
-            counts_as,
-            resolution,
-        });
-        t.continuation = SkillTestStep::DetermineOutcome;
-    }
+    cx.state
+        .current_skill_test_mut()
+        .expect("resolve_reveal: the SkillTest frame must exist")
+        .revealed = Some(revealed);
 
     // ST.4 push the outcome's immediate part (Tablet damage when Ghouls are
     // present; an `Effect::Deal` routes through the interactive soak and may
@@ -648,7 +689,7 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
     let t = cx
         .state
         .current_skill_test()
-        .expect("run_resolution: the SkillTest frame must exist");
+        .expect("resolve_reveal: the SkillTest frame must exist");
     if let (Some(clause), Some(symbol)) = (&t.reveal_clause, counts_as.symbol()) {
         if clause.fires_on(symbol) {
             let effect = clause.effect.clone();
@@ -656,6 +697,32 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
             evaluator::push_effect(cx, &effect, ctx);
         }
     }
+}
+
+/// [`Effect::RevealChaosToken`]: set the skill test in flight back to its draw
+/// step, so once the cancelled reveal's sequence is abandoned the driver draws
+/// a new token and opens a fresh `when` cell for it — Wendy Adams 01005's
+/// *"Reveal a new chaos token."* The cancelled token needs no returning: a draw
+/// indexes the bag and never removes from it.
+///
+/// Rejected with no test in flight. A redraw after the token has already
+/// resolved is a malformed card, not a game state: the effect belongs in the
+/// reveal's `when` cell, before [`resolve_reveal`] runs.
+pub(in crate::engine) fn reveal_new_token(cx: &mut Cx) -> EngineOutcome {
+    let Some(test) = cx.state.current_skill_test_mut() else {
+        return EngineOutcome::Rejected {
+            reason: "RevealChaosToken resolved with no skill test in flight: there is no test \
+                     to reveal a chaos token for."
+                .into(),
+        };
+    };
+    debug_assert!(
+        test.revealed.is_none(),
+        "Effect::RevealChaosToken after the token resolved — a card revealing a new token \
+         outside the reveal's `when` cell"
+    );
+    test.continuation = SkillTestStep::Resolving;
+    EngineOutcome::Done
 }
 
 /// The token a `drawn` chaos token counts as when `investigator` reveals it:
@@ -1353,14 +1420,14 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 return open_skill_test_player_window(cx, SkillTestStep::Resolving, true);
             }
             SkillTestStep::Resolving => {
-                // RR ST.3 (reveal the chaos token) + ST.4 (immediate symbol
-                // effects pushed as Effect::Deal) — both skipped outright when
-                // the test's determination is already known (#687). Stashes
-                // the token's resolution on the frame — no total, margin or
-                // verdict — and pre-advances to DetermineOutcome; if an
-                // immediate effect was pushed it is the new top frame and the
-                // loop yields (may suspend on a soak window), resuming at
-                // DetermineOutcome.
+                // RR ST.3 (reveal the chaos token) — skipped outright, with
+                // ST.4, when the test's determination is already known (#687).
+                // Draws and announces the token, pre-advances to
+                // DetermineOutcome and queues the `ChaosTokenRevealed`
+                // condition, whose resolve step records the token and pushes
+                // the ST.4 symbol effect: the loop yields to it, resuming at
+                // DetermineOutcome — or back here, if a `when`-cell ability
+                // cancelled the token and revealed a new one.
                 run_resolution(cx, investigator);
             }
             SkillTestStep::DetermineOutcome => {
@@ -1369,6 +1436,23 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 // logged success/failure events and the general SkillTestResolved
                 // timing point (every test/outcome) — BEFORE the ST.7 consequences.
                 // Pre-advances to FireOnCommit; yields if a 2+ forced run suspends.
+                //
+                // A token was revealed and resolved, or the result was known
+                // before ST.3. Neither means a `when`-cell cancel left the test
+                // with no token and nothing set the cursor back to draw again —
+                // a malformed card (a cancel with no `RevealChaosToken`).
+                debug_assert!(
+                    cx.state
+                        .current_skill_test()
+                        .is_some_and(|t| t.revealed.is_some())
+                        || modified_value::test_determination(
+                            cx.state,
+                            ReadContext::from_state(cx.state)
+                        )
+                        .is_some(),
+                    "a skill test reached ST.5 with its chaos token cancelled and no new token \
+                     revealed"
+                );
                 let outcome = determine_outcome_step(cx, investigator, &committed);
                 if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
                     return outcome;

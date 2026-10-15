@@ -35,12 +35,13 @@ pub use continuation::{
     EliminationFrame, EliminationStep, EmitEventFrame, EmitStep, EncounterCardFrame,
     EncounterDisposition, EncounterDrawFrame, EnemyAttackSource, EnemyPhaseFrame, EnemyResume,
     FastActorScope, FastWindowFrame, FastWindowKind, Frame, FrameActivity, FrameProfile,
-    HandSizeDiscard, HunterChoice, InFlightSkillTest, InvestigationPhaseFrame, InvestigationResume,
-    InvestigatorTurnFrame, MoveEnterFrame, MulliganFrame, MythosPhaseFrame, MythosResume,
-    PhaseStep, PlayFromHandFrame, PlayerDrawFrame, ResolutionCandidate, ResolvedTest,
-    ScenarioEndDisposition, ScenarioEndFrame, ScenarioEndStep, SkillTestFollowUp, SkillTestStep,
-    SlotDiscardFrame, SpawnEngagePending, SubstitutionPromptFrame, TimingMode, TimingPointFrame,
-    TimingPointWindowFrame, TimingSub, UpkeepPhaseFrame, UpkeepResume,
+    HandDiscardCostFrame, HandSizeDiscard, HunterChoice, InFlightSkillTest,
+    InvestigationPhaseFrame, InvestigationResume, InvestigatorTurnFrame, MoveEnterFrame,
+    MulliganFrame, MythosPhaseFrame, MythosResume, PhaseStep, PlayFromHandFrame, PlayerDrawFrame,
+    ResolutionCandidate, ResolvedTest, ScenarioEndDisposition, ScenarioEndFrame, ScenarioEndStep,
+    SkillTestFollowUp, SkillTestStep, SlotDiscardFrame, SpawnEngagePending,
+    SubstitutionPromptFrame, TimingMode, TimingPointFrame, TimingPointWindowFrame, TimingSub,
+    UpkeepPhaseFrame, UpkeepResume,
 };
 pub use counter::Counter;
 // `define_id!` is used by the id submodules; kept crate-internal.

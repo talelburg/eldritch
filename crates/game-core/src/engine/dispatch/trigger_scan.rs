@@ -481,14 +481,16 @@ pub(super) fn trigger_matches(
         // card" (Heirloom of Hyperborea 01012) and "Play when **you** draw a
         // non-weakness treachery card" (Ward of Protection 01065). The last
         // two's card filters read metadata, in [`scope_matches`]. And "After
-        // **you** evade an enemy" (Pickpocketing 01046), and "Play after
-        // **your** turn begins" (On the Lam 01010).
+        // **you** evade an enemy" (Pickpocketing 01046), "Play after
+        // **your** turn begins" (On the Lam 01010), and "When **you** reveal
+        // a chaos token" (Wendy Adams 01005).
         TimingEvent::EndOfTurn { investigator }
         | TimingEvent::DiscoverClues { investigator, .. }
         | TimingEvent::CardPlayed { investigator, .. }
         | TimingEvent::EncounterCardDrawn { investigator, .. }
         | TimingEvent::EnemyEvaded { investigator, .. }
-        | TimingEvent::TurnBegan { investigator } => *investigator == controller,
+        | TimingEvent::TurnBegan { investigator }
+        | TimingEvent::ChaosTokenRevealed { investigator, .. } => *investigator == controller,
         // "**When an enemy attack** deals damage to Guard Dog" (01021). The
         // self-binding half is the source's, in [`scope_matches`]; this half is
         // the card's narrowing to an enemy attack, which `Effect::Deal` harm
@@ -717,7 +719,8 @@ fn scope_matches(
         | TimingEvent::GameEnd
         | TimingEvent::DamagePlaced { .. }
         | TimingEvent::EnemyEvaded { .. }
-        | TimingEvent::TurnBegan { .. } => true,
+        | TimingEvent::TurnBegan { .. }
+        | TimingEvent::ChaosTokenRevealed { .. } => true,
     }
 }
 
