@@ -22,7 +22,7 @@ use std::sync::LazyLock;
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Slot};
 use card_dsl::dsl::{self, CmpOp, Condition, Quantity, Restriction};
 use game_core::engine::board::{NotLeft, Placement};
-use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::enumerate::{self, PlaySource, TurnAction};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{EngineOutcome, NativeCx, Registries};
 use game_core::event::Event;
@@ -197,7 +197,7 @@ fn elimination_removes_a_card_that_cannot_leave_play() {
 fn a_two_handed_asset_is_unplayable_beside_a_pinned_hand_slot_card() {
     let play = TurnAction::PlayCard {
         investigator: INV,
-        hand_index: 0,
+        source: PlaySource::Hand(0),
     };
     let pinned = board(1);
     assert!(

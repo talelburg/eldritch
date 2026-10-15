@@ -10,8 +10,8 @@ use crate::engine::dispatch::{act_agenda, legality};
 use crate::engine::outcome::OptionTarget;
 use crate::engine::{abilities_in_effect, ability_source};
 use crate::state::{
-    AbilityAddress, AbilitySource, EnemyId, GameState, InvestigatorId, InvestigatorTurnFrame,
-    LocationId,
+    AbilityAddress, AbilitySource, CardCode, EnemyId, GameState, Investigator, InvestigatorId,
+    InvestigatorTurnFrame, LocationId,
 };
 
 /// The enumerated open-turn actions for the active investigator.
@@ -67,12 +67,12 @@ pub enum TurnAction {
         /// The enemy to engage.
         enemy: EnemyId,
     },
-    /// Play a card from the investigator's hand.
+    /// Play a card from one of the investigator's zones.
     PlayCard {
         /// Investigator playing the card.
         investigator: InvestigatorId,
-        /// Zero-based position in the investigator's hand.
-        hand_index: u8,
+        /// The zone the card is played from, and where in it.
+        source: PlaySource,
     },
     /// Activate a `Trigger::Activated` ability on an ability source the
     /// investigator can reach (#707).
@@ -93,6 +93,41 @@ pub enum TurnAction {
         /// The investigator initiating the spend.
         investigator: InvestigatorId,
     },
+}
+
+/// Where a [`TurnAction::PlayCard`] takes its card from: the zone the card
+/// leaves when it "commences being played" (RR Appendix I step 3), and its
+/// position there.
+///
+/// This names a **zone**, not an [`AbilitySource`]: a card being played is
+/// not a source of triggered abilities (see **Ability source** in
+/// `GLOSSARY.md`). The hand is the only zone so far. Wendy's Amulet 01014
+/// will add the top of the discard pile — *"You may play the topmost event in
+/// your discard pile as if it were in your hand."* — which is why the zone is
+/// named rather than implied by a bare hand index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlaySource {
+    /// Zero-based position in the investigator's hand.
+    Hand(u8),
+}
+
+impl PlaySource {
+    /// The card at this source in `investigator`'s zones, or `None` when the
+    /// position is out of bounds.
+    #[must_use]
+    pub fn card(self, investigator: &Investigator) -> Option<&CardCode> {
+        match self {
+            PlaySource::Hand(index) => investigator.hand.get(usize::from(index)),
+        }
+    }
+}
+
+impl std::fmt::Display for PlaySource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PlaySource::Hand(index) => write!(f, "hand index {index}"),
+        }
+    }
 }
 
 impl TurnAction {
@@ -122,13 +157,13 @@ impl TurnAction {
             TurnAction::Engage { enemy, .. } => format!("Engage {}", enemy_name(*enemy)),
             TurnAction::PlayCard {
                 investigator,
-                hand_index,
+                source,
             } => {
                 let code = state
                     .investigators
                     .get(investigator)
-                    .and_then(|inv| inv.hand.get(*hand_index as usize))
-                    .map_or_else(|| format!("card {hand_index}"), ToString::to_string);
+                    .and_then(|inv| source.card(inv))
+                    .map_or_else(|| format!("card at {source}"), ToString::to_string);
                 format!("Play {code}")
             }
             // Structured / rich rendering is #205; until then a granted
@@ -167,7 +202,7 @@ impl TurnAction {
             | TurnAction::Engage { enemy, .. } => OptionTarget::Enemy(*enemy),
             TurnAction::PlayCard {
                 investigator,
-                hand_index,
+                source: PlaySource::Hand(hand_index),
             } => OptionTarget::HandCard {
                 investigator: *investigator,
                 hand_index: *hand_index,
@@ -254,10 +289,11 @@ fn push_card_actions(
     let hand_len = inv.hand.len();
     for idx in 0..hand_len {
         let hand_index = u8::try_from(idx).unwrap_or(u8::MAX);
-        if legality::check_play_card(state, cards, investigator, hand_index).is_ok() {
+        let source = PlaySource::Hand(hand_index);
+        if legality::check_play_card(state, cards, investigator, source).is_ok() {
             out.push(TurnAction::PlayCard {
                 investigator,
-                hand_index,
+                source,
             });
         }
     }
