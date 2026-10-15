@@ -287,6 +287,23 @@ pub enum TimingEvent {
         /// narrows on.
         code: CardCode,
     },
+    /// An investigator **evaded** an enemy — announced by the one evade exit,
+    /// `evade::evade_enemy`, which the Evade action's and a designated
+    /// **Evade**'s success reach, and an automatic evade will (#780).
+    ///
+    /// **Coordinator-owned**, born so (#1075): its resolve step is the
+    /// evasion's impact, `glossary/Evade_Action.md`'s *"the enemy is exhausted
+    /// (if it was ready) and the engagement is broken."* So an `after` ability
+    /// sees the enemy already evaded — Pickpocketing 01046's *"\[reaction\]
+    /// After you evade an enemy, exhaust Pickpocketing: Draw 1 card."* — and a
+    /// `when` one would resolve before it. No Core or Dunwich card listens in
+    /// the `when` cell.
+    EnemyEvaded {
+        /// The investigator who evaded.
+        investigator: InvestigatorId,
+        /// The evaded enemy.
+        enemy: EnemyId,
+    },
 }
 
 impl TimingEvent {
@@ -313,7 +330,8 @@ impl TimingEvent {
             | TimingEvent::DiscoverClues { investigator, .. }
             | TimingEvent::LeftLocation { investigator, .. }
             | TimingEvent::CardPlayed { investigator, .. }
-            | TimingEvent::EncounterCardDrawn { investigator, .. } => Some(*investigator),
+            | TimingEvent::EncounterCardDrawn { investigator, .. }
+            | TimingEvent::EnemyEvaded { investigator, .. } => Some(*investigator),
             TimingEvent::EnteredPlay { controller, .. } => Some(*controller),
             TimingEvent::EnemyDefeated { by, .. } => *by,
             TimingEvent::PhaseStarted { .. }
@@ -355,6 +373,7 @@ impl TimingEvent {
             TimingEvent::LeftLocation { .. } => TriggeringCondition::LeftLocation,
             TimingEvent::CardPlayed { .. } => TriggeringCondition::CardPlayed,
             TimingEvent::EncounterCardDrawn { .. } => TriggeringCondition::EncounterCardDrawn,
+            TimingEvent::EnemyEvaded { .. } => TriggeringCondition::EnemyEvaded,
         }
     }
 
@@ -504,6 +523,12 @@ impl TimingEvent {
             // to not happen: it is the condition's resolve step.
             TimingEvent::EncounterCardDrawn { .. } => {
                 ConditionResolution::Coordinator(resolve_encounter_draw)
+            }
+            // Born coordinator-owned (#1075). Evading is not a bare milestone:
+            // it disengages and exhausts the enemy, so that is the resolve step,
+            // and Pickpocketing 01046's after-evade reaction sees it done.
+            TimingEvent::EnemyEvaded { .. } => {
+                ConditionResolution::Coordinator(resolve_enemy_evaded)
             }
             // Every other condition is still caller-owned: the emitting call site
             // mutates the board and *then* emits. Each flips to a coordinator-
@@ -714,6 +739,23 @@ fn resolve_encounter_draw(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
         unreachable!("resolve_encounter_draw: not an EncounterCardDrawn event: {event:?}");
     };
     encounter::resolve_revelation(cx, *investigator, code);
+    EngineOutcome::Done
+}
+
+/// The resolve step of [`TimingEvent::EnemyEvaded`]: the evasion lands
+/// (#1075) — the enemy disengages and, if it was ready, exhausts
+/// (`evade::resolve_evasion`). After the `when` cell, before the `at` and
+/// `after` cells, so Pickpocketing 01046's *"After you evade an enemy"* sees it
+/// done.
+fn resolve_enemy_evaded(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
+    let TimingEvent::EnemyEvaded {
+        investigator,
+        enemy,
+    } = event
+    else {
+        unreachable!("resolve_enemy_evaded: not an EnemyEvaded event: {event:?}");
+    };
+    actions::evade::resolve_evasion(cx, *investigator, *enemy);
     EngineOutcome::Done
 }
 
