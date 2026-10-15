@@ -20,7 +20,7 @@ use cards::TEST_REGISTRIES;
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::assert_no_event;
 use game_core::engine::enumerate::{self, TurnAction};
-use game_core::engine::{self, EngineOutcome, OptionId};
+use game_core::engine::{self, EngineOutcome, OptionId, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, ChaosBag, ChaosToken, GameState, GameStateBuilder,
@@ -216,16 +216,85 @@ fn losing_two_actions_leaves_one_standard_and_hers() {
     assert_eq!(standard_actions(session.state()), 1, "hers paid for it");
 }
 
-/// G11: with Leo De Luca also in play, a Tome activation qualifies as both his
+/// Daisy's investigator card and Leo De Luca, the anchors of the two
+/// additional actions a Tome activation qualifies as.
+fn anchors(state: &GameState) -> (OptionTarget, OptionTarget) {
+    (
+        OptionTarget::CardInstance(state.investigators[&INV].investigator_card.instance_id),
+        OptionTarget::CardInstance(state.in_play(INV, LEO_DE_LUCA)),
+    )
+}
+
+/// With Leo De Luca also in play, a Tome activation qualifies as both his
 /// unrestricted additional action and her restricted one. FAQ 1.10
 /// (`glossary/Action.md`): *"If an action qualifies as more than one of an
-/// investigator's additional actions, he or she may choose which additional
-/// action is used."* That choice is not built (#1098), so the engine asserts
-/// rather than pick for the player.
+/// investigator’s additional actions, he or she may choose which additional
+/// action is used."* She is asked, before anything is paid.
 #[test]
-#[cfg(debug_assertions)]
-#[should_panic(expected = "FAQ 1.10 choice between them is not built")]
-fn a_tome_activation_with_leo_in_play_asks_for_the_unbuilt_choice() {
-    let session = board(daisy().in_play([LEO_DE_LUCA, OLD_BOOK_OF_LORE]));
-    let _ = activate(session, OLD_BOOK_OF_LORE);
+fn a_tome_activation_with_leo_in_play_asks_which_additional_action_to_use() {
+    let session = activate(
+        board(daisy().in_play([LEO_DE_LUCA, OLD_BOOK_OF_LORE])),
+        OLD_BOOK_OF_LORE,
+    );
+    let (hers, leos) = anchors(session.state());
+    assert_eq!(session.offered_at(&hers), 1);
+    assert_eq!(session.offered_at(&leos), 1);
+    assert_eq!(session.prompt().options.len(), 2);
+    assert_no_event!(session.events(), Event::AbilityActivated { .. });
+    assert_eq!(actions(session.state()), 5, "nothing is paid yet");
+}
+
+/// Choosing hers pays for the Tome, and Leo's is left for an action hers
+/// could not pay for: a basic action costs no standard action.
+#[test]
+fn choosing_hers_keeps_leos_for_a_non_tome_action() {
+    let session = activate(
+        board(daisy().in_play([LEO_DE_LUCA, OLD_BOOK_OF_LORE])),
+        OLD_BOOK_OF_LORE,
+    );
+    let (hers, _) = anchors(session.state());
+    let session = take_first_searched(session.pick(hers));
+    session.assert_at_turn_menu(INV);
+    assert_eq!(standard_actions(session.state()), 3);
+    assert_eq!(actions(session.state()), 4);
+
+    let session = session.take(&RESOURCE);
+    assert_eq!(standard_actions(session.state()), 3, "Leo's paid for it");
+    assert_eq!(actions(session.state()), 3);
+}
+
+/// Choosing Leo's pays for the Tome, and hers is left for a second Tome
+/// activation this turn.
+#[test]
+fn choosing_leos_keeps_hers_for_a_second_tome_activation() {
+    let session = activate(
+        board(daisy().in_play([LEO_DE_LUCA, OLD_BOOK_OF_LORE, MEDICAL_TEXTS])),
+        OLD_BOOK_OF_LORE,
+    );
+    let (_, leos) = anchors(session.state());
+    let session = take_first_searched(session.pick(leos));
+    session.assert_at_turn_menu(INV);
+    assert_eq!(standard_actions(session.state()), 3);
+    assert_eq!(actions(session.state()), 4);
+
+    let session = activate(session, MEDICAL_TEXTS);
+    assert_eq!(standard_actions(session.state()), 3, "hers paid for it");
+}
+
+/// A basic action qualifies only as Leo's: it uses his without asking, and
+/// hers is left for a Tome.
+#[test]
+fn a_non_tome_action_with_leo_in_play_uses_his_without_asking() {
+    let session = board(daisy().in_play([LEO_DE_LUCA, OLD_BOOK_OF_LORE])).take(&RESOURCE);
+    session.assert_at_turn_menu(INV);
+    assert_eq!(standard_actions(session.state()), 3);
+    assert_eq!(actions(session.state()), 4);
+
+    let session = take_first_searched(activate(session, OLD_BOOK_OF_LORE));
+    session.assert_at_turn_menu(INV);
+    assert_eq!(
+        standard_actions(session.state()),
+        3,
+        "hers paid for the Tome"
+    );
 }

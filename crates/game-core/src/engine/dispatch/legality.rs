@@ -610,7 +610,8 @@ pub(crate) fn check_activate_ability(
     // takes no action and never asks: the same ruling taxes *fast* designated
     // abilities too, which no corpus card can reach (#759).
     if action_cost > 0 {
-        let description = ActionDescription::activate(source, action_cost, designator.clone());
+        let description =
+            ActionDescription::activate(source, address.clone(), action_cost, designator.clone());
         take::check(state, cards, investigator, &description)
             .map_err(|why| Cow::from(format!("ActivateAbility: {why}")))?;
     }
