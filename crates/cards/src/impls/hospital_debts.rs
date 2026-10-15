@@ -18,8 +18,8 @@
 //! **Anyone standing with "Skids" may trigger it.** Ruling
 //! (<https://arkhamdb.com/card/01011>): *"Any investigator at the same location
 //! as "Skids" O'Toole with Hospital Debts in his threat area may trigger the
-//! [lighting] to add resources to Hospital Debts, as per the FAQ [V1.0, section
-//! 2.1]."* The reachability predicate already reaches a co-located threat-area
+//! \[lighting\] to add resources to Hospital Debts, as per the FAQ \[V1.0, section
+//! 2.1\]."* The reachability predicate already reaches a co-located threat-area
 //! treachery, and "your resource pool" is the triggering investigator's: the
 //! ability's controller is its activator.
 //!
@@ -29,7 +29,7 @@
 //! card instance and triggering investigator.
 //!
 //! **An empty pool offers nothing.** The native is opaque to the change-state
-//! check, so [`HAS_RESOURCE_TAG`] gates the ability on the triggering
+//! check, so `HAS_RESOURCE_TAG` gates the ability on the triggering
 //! investigator holding at least 1 resource, Cover Up 01007's `HAS_CLUES_TAG`
 //! pattern.
 //!

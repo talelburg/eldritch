@@ -151,9 +151,10 @@ fn revelation_puts_it_into_the_drawers_threat_area() {
 
 /// *"[fast]: Move 1 resource from your resource pool to Hospital Debts."* One
 /// resource leaves Skids' pool and sits on the card, for no action — announced
-/// as a move, neither a gain nor a payment (FAQ, Stylish Coat: abilities that
-/// *"'move' resources from one card to another or from one card to your
-/// resource pool"* do not gain them).
+/// as a move, neither a gain nor a payment. The official FAQ sets moving apart
+/// from gaining: abilities that *"“move” resources from one card to another or
+/// from one card to your resource pool … do not trigger Stylish Coat’s
+/// ability"*, which answers only an effect that says "gain".
 #[test]
 fn triggering_it_moves_one_resource_from_your_pool_onto_it() {
     let session = pay_in(board(HERE, SKIDS), SKIDS);
