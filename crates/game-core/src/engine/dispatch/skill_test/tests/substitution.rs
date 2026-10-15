@@ -19,10 +19,13 @@ fn substitution_turn(inv: InvestigatorId) -> TestSession {
         .open_turn(inv)
         .build();
     state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
-    state.skill_substitutions.push(SkillSubstitution {
-        investigator: inv,
-        use_skill: SkillKind::Intellect,
-        for_skills: vec![SkillKind::Combat, SkillKind::Agility],
+    state.lasting_effects.push(LastingEffect {
+        lifetime: Lifetime::Round,
+        kind: LastingEffectKind::SkillSubstitution(SkillSubstitution {
+            investigator: inv,
+            use_skill: SkillKind::Intellect,
+            for_skills: vec![SkillKind::Combat, SkillKind::Agility],
+        }),
     });
     TestSession::new(state, TEST_REGISTRIES)
 }
@@ -34,10 +37,13 @@ fn substitution_state(inv: InvestigatorId) -> GameState {
         .with_active_investigator(inv)
         .build();
     state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
-    state.skill_substitutions.push(SkillSubstitution {
-        investigator: inv,
-        use_skill: SkillKind::Intellect,
-        for_skills: vec![SkillKind::Combat, SkillKind::Agility],
+    state.lasting_effects.push(LastingEffect {
+        lifetime: Lifetime::Round,
+        kind: LastingEffectKind::SkillSubstitution(SkillSubstitution {
+            investigator: inv,
+            use_skill: SkillKind::Intellect,
+            for_skills: vec![SkillKind::Combat, SkillKind::Agility],
+        }),
     });
     state
 }
@@ -261,7 +267,7 @@ fn resume_substitution_choice_parks_for_the_loop() {
 fn no_active_substitution_opens_commit_window_directly() {
     let inv = InvestigatorId(1);
     let mut state = substitution_turn(inv).state().clone();
-    state.skill_substitutions.clear();
+    state.lasting_effects.clear();
     let session = TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::Fight {
         investigator: inv,
         enemy: GHOUL,
