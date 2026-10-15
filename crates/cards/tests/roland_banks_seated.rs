@@ -93,10 +93,11 @@ fn seated_roland_reaction_fires_with_no_in_play_injection() {
     let inv = &session.state().investigators[&INV];
     assert_eq!(
         inv.investigator_card.ability_usage.get(&0),
-        Some(&AbilityUsageRecord::new(
+        Some(&vec![AbilityUsageRecord::new(
+            INV,
             UsageClock::new(0, Phase::Investigation, Some(INV)),
             1
-        )),
+        )]),
         "seated Roland's reaction recorded one fire on investigator_card.ability_usage",
     );
 }
@@ -113,6 +114,7 @@ fn seated_roland_reaction_capped_once_per_round() {
         .investigator_card
         .bump_ability_usage(
             0,
+            INV,
             UsagePeriod::Round,
             UsageClock::new(0, Phase::Investigation, None),
         );

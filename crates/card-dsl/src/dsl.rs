@@ -1357,7 +1357,11 @@ pub enum Cost {
 /// such a limit may be initiated X times during the designated period.
 /// If a card leaves play and re-enters play during the same period,
 /// the card is considered to be bringing a new instance of the ability
-/// to the game."*
+/// to the game."* The same entry adds *"Unless stated otherwise, limits are
+/// player specific."*, so the count is kept per instance **and** per
+/// triggering investigator: each investigator who can reach the ability gets
+/// their own X (The Stranger 03047a's ruling,
+/// <https://arkhamdb.com/card/03047a>).
 ///
 /// Canonical motivating card: Roland Banks (01001) —
 /// `[reaction] After you defeat an enemy: Discover 1 clue at your
@@ -1366,7 +1370,7 @@ pub enum Cost {
 ///
 /// Storage of the per-instance counter lives on
 /// `CardInPlay` (in `game_core::state`): see
-/// `ability_usage` (its per-instance counter map). When a
+/// `ability_usage` (its per-instance, per-investigator counter map). When a
 /// card leaves play, its `CardInPlay` is dropped, so a re-entering
 /// instance starts fresh as the rules require.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -1883,9 +1887,9 @@ pub enum Effect {
     },
     /// Resolve `targets` and run `body` once per resolved target.
     /// Each iteration binds the target into the evaluator's scope so
-    /// the body can refer to it.
+    /// the body can refer to it (as [`InvestigatorTarget::Each`]).
     ForEach {
-        targets: InvestigatorTargetSet,
+        targets: ForEachTargets,
         body: Box<Effect>,
     },
     /// Present alternatives to the controller. Resolves to the chosen
@@ -2534,8 +2538,10 @@ pub enum Determination {
     AutomaticSuccess,
 }
 
-/// A constant restriction a card imposes while in play, carried by a
-/// [`Trigger::Constant`] [`Effect::Restrict`]. The engine inspects these
+/// A restriction a card imposes: a constant one while the card is in play,
+/// carried by a [`Trigger::Constant`] [`Effect::Restrict`], or a lasting one
+/// a card-local native registers for a duration
+/// ([`CannotAttack`](Restriction::CannotAttack)). The engine inspects these
 /// at decision points rather than executing them.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Restriction {
@@ -2600,6 +2606,27 @@ pub enum Restriction {
     /// text names no investigator characteristic, so this variant carries
     /// none.
     InvestigatorMovementBlocked,
+    /// Enemies cannot attack the investigator this restriction protects,
+    /// unless their printed card passes `exempt` (On the Lam 01010: *"Until
+    /// the end of the round, non-\[\[Elite\]\] enemies cannot attack you."*).
+    /// **Inspected, not executed** — the three places an enemy attacks (an
+    /// attack of opportunity, the Enemy phase's step 3.3, a Retaliate) leave
+    /// a covered enemy out of the attack, so it neither attacks nor exhausts.
+    ///
+    /// **Lasting only.** The engine reads it from the lasting effects a
+    /// card-local native registers through
+    /// `NativeCx::add_lasting_restriction` (over in `game-core`), which names
+    /// the protected investigator. A constant `CannotAttack` on a card in
+    /// play has no reader, so declaring one is a silent no-op.
+    ///
+    /// The exemption is the declaring card's own, as with
+    /// [`EnemyMovementBlocked`](Restriction::EnemyMovementBlocked): On the
+    /// Lam supplies a "has the Elite trait" filter.
+    CannotAttack {
+        /// Enemies whose printed card passes this filter may still attack.
+        /// `None` stops every enemy.
+        exempt: Option<CardFilter>,
+    },
 }
 
 /// One action kind an [`Restriction::ExtraActionCost`] can surcharge.
@@ -2707,6 +2734,12 @@ pub enum InvestigatorTarget {
     /// The chooser picks one investigator from the [`Choose`]'s scope. Bound by
     /// the evaluator's `ground_chosen_targets` before the effect's handler runs.
     Chosen(Choose<EntityScope>),
+    /// The investigator an enclosing [`Effect::ForEach`] is currently applying
+    /// its body to — *"each investigator … discards"*. Bound per iteration by
+    /// the evaluator's walking frame, separately from [`You`](Self::You), so a
+    /// body can name both the card's controller and the iterated investigator.
+    /// Resolving it outside a `ForEach` body over investigators is a rejection.
+    Each,
 }
 
 impl InvestigatorTarget {
@@ -2729,12 +2762,34 @@ impl InvestigatorTarget {
 }
 
 /// Set-of-investigators target spec for [`Effect::ForEach`].
+///
+/// Either set holds only investigators still in the game (`Active`): one who
+/// has resigned or been defeated is no longer an investigator the card can
+/// reach. Both are walked in turn order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum InvestigatorTargetSet {
     /// All investigators currently in the scenario, in turn order.
     All,
     /// All investigators at the controller's location.
     AtControllerLocation,
+}
+
+/// What an [`Effect::ForEach`] fans out over: one arm per kind of entity, so
+/// the walk is the same whatever it walks. The body reads the current one
+/// through that kind's `Each` target ([`InvestigatorTarget::Each`]).
+///
+/// [`for_each`] takes anything that converts into this, so a call site names
+/// the set alone: `for_each(InvestigatorTargetSet::All, body)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ForEachTargets {
+    /// A set of investigators.
+    Investigators(InvestigatorTargetSet),
+}
+
+impl From<InvestigatorTargetSet> for ForEachTargets {
+    fn from(set: InvestigatorTargetSet) -> Self {
+        ForEachTargets::Investigators(set)
+    }
 }
 
 /// Single-location target spec.
@@ -3437,11 +3492,12 @@ pub fn if_else(condition: Condition, then: Effect, else_: Effect) -> Effect {
     }
 }
 
-/// Build an [`Effect::ForEach`].
+/// Build an [`Effect::ForEach`] over `targets` — any set that converts into a
+/// [`ForEachTargets`], such as an [`InvestigatorTargetSet`].
 #[must_use]
-pub fn for_each(targets: InvestigatorTargetSet, body: Effect) -> Effect {
+pub fn for_each(targets: impl Into<ForEachTargets>, body: Effect) -> Effect {
     Effect::ForEach {
-        targets,
+        targets: targets.into(),
         body: Box::new(body),
     }
 }

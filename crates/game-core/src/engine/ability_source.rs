@@ -142,7 +142,12 @@ fn reaches(
         // "all encounter cards in the threat area of any investigator at that
         // location" — *any*, so this is other people's threat areas too
         // (Haunted 01098's ruling), but only their **encounter** cards (#975):
-        // a player card there is its bearer's alone.
+        // a player card there is its bearer's alone. "Encounter" is read off
+        // the card type, so a player-owned **treachery** weakness counts, as
+        // Hospital Debts 01011's ruling needs (<https://arkhamdb.com/card/01011>):
+        // *"Any investigator at the same location as "Skids" O'Toole with
+        // Hospital Debts in his threat area may trigger the [lighting] to add
+        // resources to Hospital Debts"*.
         Placement::ThreatArea(_) => {
             here.is_some()
                 && card.placement.location(state) == here

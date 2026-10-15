@@ -121,6 +121,7 @@ pub mod guts;
 pub mod hard_knocks;
 pub mod heirloom_of_hyperborea;
 pub mod holy_rosary;
+pub mod hospital_debts;
 pub mod hyperawareness;
 pub mod knife;
 pub mod lita_chantler;
@@ -131,6 +132,7 @@ pub mod medical_texts;
 pub mod mind_over_matter;
 pub mod obscuring_fog;
 pub mod old_book_of_lore;
+pub mod on_the_lam;
 pub mod overpower;
 pub mod parlor;
 pub mod perception;
@@ -264,6 +266,7 @@ pub const ALL: &[CardRecord] = &[
     guts::CARD,
     hard_knocks::CARD,
     heirloom_of_hyperborea::CARD,
+    hospital_debts::CARD,
     holy_rosary::CARD,
     hyperawareness::CARD,
     knife::CARD,
@@ -275,6 +278,7 @@ pub const ALL: &[CardRecord] = &[
     mind_over_matter::CARD,
     obscuring_fog::CARD,
     old_book_of_lore::CARD,
+    on_the_lam::CARD,
     overpower::CARD,
     parlor::CARD,
     perception::CARD,

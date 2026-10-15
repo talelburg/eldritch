@@ -178,7 +178,7 @@ fn marks(session: &TestSession) -> Vec<(InvestigatorId, u8)> {
 }
 
 /// How many uses of `instance`'s printed ability `ability` are recorded this
-/// round.
+/// round, by any investigator.
 fn recorded_uses(state: &GameState, instance: CardInstanceId, ability: u8) -> u8 {
     let card = state.investigators[&INV]
         .threat_area
@@ -187,8 +187,11 @@ fn recorded_uses(state: &GameState, instance: CardInstanceId, ability: u8) -> u8
         .expect("the card is still in the threat area");
     card.ability_usage
         .get(&ability)
+        .into_iter()
+        .flatten()
         .filter(|record| record.clock.round == state.round)
-        .map_or(0, |record| record.count)
+        .map(|record| record.count)
+        .sum()
 }
 
 /// An enemy attack by [`ATTACKER`] dealing 1 damage to each of `cards`.

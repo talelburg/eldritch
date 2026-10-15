@@ -2,9 +2,10 @@
 //! change the game only through the engine's exits.
 
 use card_dsl::card_data::CardMetadata;
+use card_dsl::dsl::Restriction;
 
 use crate::card_registry::CardRegistry;
-use crate::engine::board::{self, LeavingCard, Placement};
+use crate::engine::board::{self, LeavingCard, MoveResourcesError, Placement};
 use crate::engine::dispatch::actions::take;
 use crate::engine::dispatch::{
     act_agenda, cards, combat, elimination, encounter, hunters, placement, reveal, set_aside,
@@ -258,6 +259,29 @@ impl<'a> NativeCx<'a> {
         uses::move_uses_to_resource_pool(self.write_access(), investigator, instance, kind, amount)
     }
 
+    /// Move up to `amount` resources out of `investigator`'s resource pool onto
+    /// the card instance `instance`, wherever it is on the board (Hospital
+    /// Debts 01011), emitting
+    /// [`Event::ResourcesMovedToCard`](crate::event::Event::ResourcesMovedToCard)
+    /// with the number moved. A move, neither a payment nor a gain, so
+    /// [`Event::ResourcesPaid`](crate::event::Event::ResourcesPaid) and
+    /// [`Event::ResourcesGained`](crate::event::Event::ResourcesGained) stay
+    /// silent. An empty pool moves nothing and announces nothing.
+    ///
+    /// # Errors
+    ///
+    /// [`MoveResourcesError::NotInPlay`] when `instance` is not on the board;
+    /// [`MoveResourcesError::NoSuchInvestigator`] when `investigator` is not in
+    /// the game.
+    pub fn move_resources_to_card(
+        &mut self,
+        investigator: InvestigatorId,
+        instance: CardInstanceId,
+        amount: u8,
+    ) -> Result<(), MoveResourcesError> {
+        board::move_resources_to_card(self.write_access(), investigator, instance, amount)
+    }
+
     // --- Leaving play ---
 
     /// Discard `card` from play to its owner's pile, with its leave-play
@@ -361,5 +385,16 @@ impl<'a> NativeCx<'a> {
     /// it.
     pub fn add_skill_substitution(&mut self, substitution: SkillSubstitution) {
         skill_test::add_skill_substitution(self.write_access(), substitution);
+    }
+
+    /// Register `restriction` protecting `investigator` for the rest of the
+    /// round (On the Lam 01010's [`Restriction::CannotAttack`]). No event
+    /// announces it.
+    pub fn add_lasting_restriction(
+        &mut self,
+        investigator: InvestigatorId,
+        restriction: Restriction,
+    ) {
+        combat::add_lasting_restriction(self.write_access(), investigator, restriction);
     }
 }

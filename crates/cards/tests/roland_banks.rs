@@ -93,6 +93,7 @@ fn fired_in_round_0(mut state: GameState) -> GameState {
         .unwrap()
         .bump_ability_usage(
             0,
+            INV,
             UsagePeriod::Round,
             UsageClock::new(0, Phase::Investigation, None),
         );
@@ -136,10 +137,11 @@ fn reaction_fires_after_roland_defeats_enemy_and_discovers_clue() {
     // Counter bumped on Roland's investigator card: 1 fire this round.
     assert_eq!(
         roland_card(state).ability_usage.get(&0),
-        Some(&AbilityUsageRecord::new(
+        Some(&vec![AbilityUsageRecord::new(
+            INV,
             UsageClock::new(0, Phase::Investigation, Some(INV)),
             1
-        )),
+        )]),
         "Roland's reaction (ability index 0) should have recorded one fire \
          in round 0",
     );
@@ -188,10 +190,11 @@ fn lazy_round_reset_re_enables_reaction_in_a_later_round() {
     // was overwritten in place by the lazy reset.
     assert_eq!(
         roland_card(session.state()).ability_usage.get(&0),
-        Some(&AbilityUsageRecord::new(
+        Some(&vec![AbilityUsageRecord::new(
+            INV,
             UsageClock::new(1, Phase::Investigation, Some(INV)),
             1
-        )),
+        )]),
     );
 }
 

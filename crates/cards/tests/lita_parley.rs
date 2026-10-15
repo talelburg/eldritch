@@ -276,6 +276,7 @@ fn taking_control_preserves_her_instance() {
     lita.accumulated_horror = 1;
     lita.bump_ability_usage(
         0,
+        INV,
         UsagePeriod::Round,
         UsageClock::new(0, Phase::Investigation, None),
     );

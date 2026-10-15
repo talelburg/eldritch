@@ -354,7 +354,7 @@ fn rolands_reaction_lapses_as_usage_limit_reached_once_its_limit_is_used() {
         .get_mut(&INV)
         .expect("seated")
         .investigator_card
-        .bump_ability_usage(0, UsagePeriod::Round, now);
+        .bump_ability_usage(0, INV, UsagePeriod::Round, now);
 
     let resurfaced = TestSession::new(state, TEST_REGISTRIES);
 

@@ -255,6 +255,7 @@ fn substitution_covers(state: &GameState, investigator: InvestigatorId, skill: S
         LastingEffectKind::SkillSubstitution(s) => {
             s.investigator == investigator && s.for_skills.contains(&skill)
         }
+        _ => false,
     })
 }
 

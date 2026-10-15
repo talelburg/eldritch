@@ -18,12 +18,12 @@
 //!
 //! # Native, not a typed fan-out — on purpose
 //!
-//! A corpus audit found the only in-scope fan-out / area consumers are this card
-//! and agenda 01105 — two *different* shapes, with every other consumer in
-//! future Dunwich content. So a general `Effect::ForEach` / `EntityTarget`
-//! would be speculative today; both stay card-local natives until Dunwich's
-//! fan-out cards justify the abstraction. The deferred (and **not-yet-accepted**)
-//! design is captured in #363.
+//! Agendas 01105 and 01107 fan out over every investigator on the walking
+//! `Effect::ForEach` (#1067). This card stays native: the enemies one blast
+//! defeats are defeated simultaneously (official FAQ pair 145, which names
+//! Dynamite Blast), and the walk resolves its targets one after another. It
+//! moves onto the simultaneous form in #1026; the wider `EntityTarget` design
+//! is captured in #363.
 //!
 //! Suspending from an `OnPlay` event relies on the played event being discarded
 //! on *completion* (RR Appendix I step 4: the card is placed in discard

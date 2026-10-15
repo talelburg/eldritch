@@ -42,10 +42,10 @@
 //!   and no other trigger has yet needed it (the outcome *is* on
 //!   [`InFlightSkillTest::resolved`](crate::state::InFlightSkillTest::resolved)
 //!   from ST.6 on, so this is unwired, not unknowable).
-//! - [`Effect::ForEach`] dispatches but the
-//!   [`InvestigatorTargetSet`](card_dsl::dsl::InvestigatorTargetSet)
-//!   resolver ("at controller location", "all investigators")
-//!   relies on per-target context that's not yet wired through.
+//! - [`Effect::ForEach`] resolves its target set once, in turn order, and walks
+//!   it on an [`EffectFrame::ForEach`], running the body once per target with
+//!   that target bound as [`EvalContext::each`] (#1067). The walk is
+//!   sequential, not simultaneous; the frame's docs say when that matters.
 //! - [`Effect::ChooseOne`] and the `*::Chosen` targets resolve
 //!   interactively via the frame-driven choice machinery (`step_choose_one` /
 //!   `ground_chosen_targets`): each auto-binds 0/1 options and suspends on 2+ by
@@ -70,9 +70,10 @@
 use card_dsl::card_data::{CardType, SkillKind};
 use card_dsl::dsl::{
     ActionClass, ActionDesignator, AdditionalActionScope, CardFilter, ChoiceBranch, CmpOp,
-    Condition, ControlStatus, Determination, Effect, EnemyTarget, EntityScope, HarmKind, IntExpr,
-    InvestigatorTarget, LocationSet, LocationTarget, ModifierAudience, ModifierScope, Quantity,
-    Restriction, RevealClause, SearchScope, SkillTestKind, Stat, Trigger,
+    Condition, ControlStatus, Determination, Effect, EnemyTarget, EntityScope, ForEachTargets,
+    HarmKind, IntExpr, InvestigatorTarget, InvestigatorTargetSet, LocationSet, LocationTarget,
+    ModifierAudience, ModifierScope, Quantity, Restriction, RevealClause, SearchScope,
+    SkillTestKind, Stat, Trigger,
 };
 use serde::{Deserialize, Serialize};
 
@@ -93,7 +94,7 @@ use crate::scenario::{ResolutionId, ScenarioEnding};
 use crate::state::{
     AbilitySource, AdvanceTrigger, CardCode, CardInstanceId, Continuation, DamageSource,
     DifficultyBasis, EffectFrame, EmitStep, EnemyId, GameState, InvestigatorId, Lifetime,
-    LocationId, Owner, PlayFromHandFrame, RecordedModifier, SkillTestFollowUp,
+    LocationId, Owner, PlayFromHandFrame, RecordedModifier, SkillTestFollowUp, Status,
 };
 
 /// Margin of the just-resolved skill test, bound only while running one of its
@@ -161,13 +162,23 @@ pub struct ChoiceBinding {
     pub option: Option<OptionId>,
 }
 
+/// The target an [`Effect::ForEach`] body is currently running for, bound per
+/// iteration by the walking frame ([`EffectFrame::ForEach`]). One arm per kind
+/// of entity a fan-out can walk; the body names it through that kind's `Each`
+/// target ([`InvestigatorTarget::Each`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EachBinding {
+    /// An investigator, from an
+    /// [`InvestigatorTargetSet`].
+    Investigator(InvestigatorId),
+}
+
 /// Per-evaluation context the effect needs to resolve targets and
 /// reference in-flight game state (current skill test, etc.).
 ///
 /// Phase-3 minimal. Grows fields as effects demand them — current
 /// skill test (for [`SkillTest`](card_dsl::dsl::Condition::SkillTest)
-/// condition), current target (for [`Effect::ForEach`] body),
-/// reaction-window context (for `OnEvent` triggers), etc. Keep the
+/// condition), reaction-window context (for `OnEvent` triggers), etc. Keep the
 /// surface narrow and add fields only when an effect's evaluator
 /// actually reads them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -217,6 +228,11 @@ pub struct EvalContext {
     /// a `hand_index` and neither [`AbilitySource`]
     /// nor `CandidateSource` carries one.
     pub ability_source: Option<AbilitySource>,
+    /// The target the enclosing [`Effect::ForEach`] body is running for, bound
+    /// only inside that body. Read via [`Self::each_investigator`]. Kept apart
+    /// from [`controller`](Self::controller) so "you" still means the card's
+    /// controller inside a fan-out.
+    pub each: Option<EachBinding>,
 }
 
 impl EvalContext {
@@ -233,6 +249,7 @@ impl EvalContext {
             revelation: None,
             choice: None,
             ability_source: None,
+            each: None,
         }
     }
 
@@ -355,6 +372,20 @@ impl EvalContext {
     pub fn chosen_option(&self) -> Option<OptionId> {
         self.choice.and_then(|c| c.option)
     }
+    /// The investigator an enclosing [`Effect::ForEach`] body is running for —
+    /// what [`InvestigatorTarget::Each`] resolves to, and what a card-local
+    /// native body reads to know whom it acts on. `None` outside such a body.
+    #[must_use]
+    pub fn each_investigator(&self) -> Option<InvestigatorId> {
+        self.each.map(|EachBinding::Investigator(id)| id)
+    }
+
+    /// Bind the target a [`Effect::ForEach`] body runs for (see
+    /// [`Self::each_investigator`]). The walking frame binds it; a unit test
+    /// calling a per-target native directly binds it by hand.
+    pub fn set_each(&mut self, target: EachBinding) {
+        self.each = Some(target);
+    }
 
     /// Bind the skill-test failure margin (see [`Self::failed_by`]).
     pub fn set_failed_by(&mut self, margin: u8) {
@@ -422,6 +453,8 @@ pub(crate) fn push_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) {
 /// Build the [`EffectFrame`](crate::state::EffectFrame) for an effect node:
 /// control nodes get their own stateful frame; everything else (leaves, `If`,
 /// `ChooseOne`, `SearchDeck`, `Native`) is a `Leaf` evaluated by [`step_leaf`].
+/// A `ForEach` starts as a `Leaf` too: its target list is read off the board
+/// when it is stepped, not when it is pushed, and this builder has no board.
 fn frame_of(effect: &Effect, ctx: EvalContext) -> EffectFrame {
     match effect {
         Effect::Seq(effects) => EffectFrame::Seq {
@@ -458,8 +491,90 @@ pub(crate) fn step_effect_frame(cx: &mut Cx) -> EngineOutcome {
             }
             EngineOutcome::Done
         }
+        EffectFrame::ForEach {
+            targets,
+            next,
+            body,
+            ctx,
+        } => {
+            // Skip past whoever has left the game since the walk began; pop
+            // (push nothing) once the cursor runs off the end.
+            let Some(at) = (next..targets.len()).find(|&i| still_targetable(cx.state, targets[i]))
+            else {
+                return EngineOutcome::Done;
+            };
+            let mut body_ctx = ctx;
+            body_ctx.set_each(targets[at]);
+            let child = frame_of(&body, body_ctx);
+            cx.state
+                .continuations
+                .push(Continuation::Effect(EffectFrame::ForEach {
+                    targets,
+                    next: at + 1,
+                    body,
+                    ctx,
+                }));
+            cx.state.continuations.push(Continuation::Effect(child));
+            EngineOutcome::Done
+        }
         EffectFrame::Leaf { effect, ctx } => step_leaf(cx, &effect, ctx),
         EffectFrame::Designated { designator, ctx } => step_designated(cx, &designator, ctx),
+    }
+}
+
+/// Start an [`Effect::ForEach`]'s walk: resolve `targets` against the board as
+/// it stands, in turn order, and push the [`EffectFrame::ForEach`] that runs
+/// `body` once per target. The snapshot is the walk's list; each step only
+/// re-checks it ([`still_targetable`]), never re-resolves it, so the body
+/// cannot add a target to the walk it is part of.
+///
+/// **Turn order is the engine's player order** — the same proxy the upkeep,
+/// mulligan and hand-size steps walk (`GLOSSARY.md`, *Lead investigator*).
+fn start_for_each(cx: &mut Cx, targets: ForEachTargets, body: &Effect, ctx: EvalContext) {
+    let targets: Vec<EachBinding> = match targets {
+        ForEachTargets::Investigators(set) => {
+            let here = cx
+                .state
+                .investigators
+                .get(&ctx.controller)
+                .and_then(|i| i.current_location);
+            cx.state
+                .turn_order
+                .iter()
+                .filter(|id| {
+                    cx.state.investigators.get(id).is_some_and(|i| {
+                        i.status == Status::Active
+                            && match set {
+                                InvestigatorTargetSet::All => true,
+                                InvestigatorTargetSet::AtControllerLocation => {
+                                    here.is_some() && i.current_location == here
+                                }
+                            }
+                    })
+                })
+                .map(|&id| EachBinding::Investigator(id))
+                .collect()
+        }
+    };
+    cx.state
+        .continuations
+        .push(Continuation::Effect(EffectFrame::ForEach {
+            targets,
+            next: 0,
+            body: Box::new(body.clone()),
+            ctx,
+        }));
+}
+
+/// Whether a [`ForEach`](EffectFrame::ForEach) walk still reaches `target`
+/// when its turn comes: an investigator must still be `Active`, so one
+/// eliminated by an earlier target's body is skipped.
+fn still_targetable(state: &GameState, target: EachBinding) -> bool {
+    match target {
+        EachBinding::Investigator(id) => state
+            .investigators
+            .get(&id)
+            .is_some_and(|i| i.status == Status::Active),
     }
 }
 
@@ -758,7 +873,10 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
             }
             EngineOutcome::Done
         }
-        Effect::ForEach { .. } => awaiting_input_stub("ForEach"),
+        Effect::ForEach { targets, body } => {
+            start_for_each(cx, *targets, body, eval_ctx);
+            EngineOutcome::Done
+        }
         Effect::ChooseOne(branches) => step_choose_one(cx, branches, eval_ctx, effect),
         Effect::AdvanceCurrentAct => apply_advance_current_act(cx),
         Effect::ReachResolution(n) => apply_reach_resolution(cx, *n),
@@ -1547,20 +1665,6 @@ fn auto_resolve(cx: &mut Cx, eval_ctx: EvalContext, determination: Determination
     EngineOutcome::Done
 }
 
-/// Standard rejection message for effect variants whose evaluator
-/// needs `AwaitingInput` plumbing (engine-side producer + `ResolveInput`
-/// resume). Centralizes the message so the un-stub path is one grep.
-/// Test-side seam is [`ChoiceResolver`](crate::test_support::ChoiceResolver).
-fn awaiting_input_stub(name: &'static str) -> EngineOutcome {
-    EngineOutcome::Rejected {
-        reason: format!(
-            "TODO: {name} evaluator needs AwaitingInput + ResolveInput resume; \
-             no engine consumer has landed yet."
-        )
-        .into(),
-    }
-}
-
 // ---- leaf-effect implementations ------------------------------
 
 fn gain_resources(
@@ -2269,6 +2373,9 @@ fn resolve_investigator_target(
             "InvestigatorTarget::Chosen resolved before target-grounding bound it \
              (ground_chosen_targets should run first)",
         ),
+        InvestigatorTarget::Each => ctx
+            .each_investigator()
+            .ok_or("InvestigatorTarget::Each outside a ForEach body over investigators"),
     }
 }
 
