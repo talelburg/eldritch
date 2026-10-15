@@ -2477,8 +2477,10 @@ pub enum Determination {
     AutomaticSuccess,
 }
 
-/// A constant restriction a card imposes while in play, carried by a
-/// [`Trigger::Constant`] [`Effect::Restrict`]. The engine inspects these
+/// A restriction a card imposes: a constant one while the card is in play,
+/// carried by a [`Trigger::Constant`] [`Effect::Restrict`], or a lasting one
+/// a card-local native registers for a duration
+/// ([`CannotAttack`](Restriction::CannotAttack)). The engine inspects these
 /// at decision points rather than executing them.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Restriction {
@@ -2543,6 +2545,27 @@ pub enum Restriction {
     /// text names no investigator characteristic, so this variant carries
     /// none.
     InvestigatorMovementBlocked,
+    /// Enemies cannot attack the investigator this restriction protects,
+    /// unless their printed card passes `exempt` (On the Lam 01010: *"Until
+    /// the end of the round, non-\[\[Elite\]\] enemies cannot attack you."*).
+    /// **Inspected, not executed** — the three places an enemy attacks (an
+    /// attack of opportunity, the Enemy phase's step 3.3, a Retaliate) leave
+    /// a covered enemy out of the attack, so it neither attacks nor exhausts.
+    ///
+    /// **Lasting only.** The engine reads it from the lasting effects a
+    /// card-local native registers through
+    /// `NativeCx::add_lasting_restriction` (over in `game-core`), which names
+    /// the protected investigator. A constant `CannotAttack` on a card in
+    /// play has no reader, so declaring one is a silent no-op.
+    ///
+    /// The exemption is the declaring card's own, as with
+    /// [`EnemyMovementBlocked`](Restriction::EnemyMovementBlocked): On the
+    /// Lam supplies a "has the Elite trait" filter.
+    CannotAttack {
+        /// Enemies whose printed card passes this filter may still attack.
+        /// `None` stops every enemy.
+        exempt: Option<CardFilter>,
+    },
 }
 
 /// One action kind an [`Restriction::ExtraActionCost`] can surcharge.

@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use card_dsl::card_data::{CardKind, CardMetadata, SkillKind};
-use card_dsl::dsl::{Determination, IntExpr, Stat};
+use card_dsl::dsl::{Determination, IntExpr, Restriction, Stat};
 use serde::{Deserialize, Serialize};
 
 use crate::rng::RngState;
@@ -197,7 +197,8 @@ pub struct GameState {
     /// by the effect."* Modifiers with a lasting duration live in
     /// [`recorded_modifiers`](Self::recorded_modifiers) instead, because the
     /// modified-value fold reads them; everything else a lasting effect does
-    /// (Mind over Matter 01036's skill substitution) lives here. Dropped by
+    /// (Mind over Matter 01036's skill substitution, On the Lam 01010's
+    /// attack restriction) lives here. Dropped by
     /// [`expire_lasting_effects`](Self::expire_lasting_effects) when the
     /// boundary its lifetime names is reached. Required on the wire (#453).
     pub lasting_effects: Vec<LastingEffect>,
@@ -361,6 +362,15 @@ pub enum LastingEffectKind {
     /// "Use X in place of Y" (Mind over Matter 01036), read at skill-test
     /// initiation.
     SkillSubstitution(SkillSubstitution),
+    /// A restriction protecting `investigator` while it lasts (On the Lam
+    /// 01010's [`Restriction::CannotAttack`], read where enemies are chosen
+    /// to attack).
+    Restriction {
+        /// Whom the restriction protects.
+        investigator: InvestigatorId,
+        /// What it forbids.
+        restriction: Restriction,
+    },
 }
 
 /// A "use X in place of Y" skill substitution (Mind over Matter 01036).

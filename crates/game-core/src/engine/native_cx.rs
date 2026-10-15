@@ -2,6 +2,7 @@
 //! change the game only through the engine's exits.
 
 use card_dsl::card_data::CardMetadata;
+use card_dsl::dsl::Restriction;
 
 use crate::card_registry::CardRegistry;
 use crate::engine::board::{self, LeavingCard, MoveResourcesError, Placement};
@@ -384,5 +385,16 @@ impl<'a> NativeCx<'a> {
     /// it.
     pub fn add_skill_substitution(&mut self, substitution: SkillSubstitution) {
         skill_test::add_skill_substitution(self.write_access(), substitution);
+    }
+
+    /// Register `restriction` protecting `investigator` for the rest of the
+    /// round (On the Lam 01010's [`Restriction::CannotAttack`]). No event
+    /// announces it.
+    pub fn add_lasting_restriction(
+        &mut self,
+        investigator: InvestigatorId,
+        restriction: Restriction,
+    ) {
+        combat::add_lasting_restriction(self.write_access(), investigator, restriction);
     }
 }

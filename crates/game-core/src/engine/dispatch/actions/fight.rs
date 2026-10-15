@@ -309,11 +309,11 @@ pub(in crate::engine::dispatch) fn fire_retaliate_if_any(
         return EngineOutcome::Done;
     };
     let enemy = *enemy;
-    let retaliates = cx
-        .state
-        .enemies
-        .get(&enemy)
-        .is_some_and(|e| e.retaliate && !e.exhausted);
+    // A covered enemy (On the Lam 01010) may not attack, so it does not
+    // retaliate either.
+    let retaliates = cx.state.enemies.get(&enemy).is_some_and(|e| {
+        e.retaliate && !e.exhausted && combat::enemy_may_attack(cx.state, cx.cards, e, investigator)
+    });
     if retaliates {
         // Route through the attack loop (#379) so the retaliate opens its cancel
         // (Dodge) and soak (Guard Dog) windows; non-exhausting.
