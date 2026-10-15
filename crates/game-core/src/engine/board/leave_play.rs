@@ -100,7 +100,8 @@ use crate::engine::board::{self, Placement};
 use crate::engine::{abilities_in_effect, Cx};
 use crate::event::Event;
 use crate::state::{
-    CardCode, CardInPlay, CardInstanceId, DiscardPile, EnemyId, LocationId, Owner, Zone,
+    CardCode, CardInPlay, CardInstanceId, DiscardPile, EnemyId, InvestigatorId, LocationId, Owner,
+    Zone,
 };
 
 /// A card that can leave play: a card instance, wherever it sits on the board,
@@ -364,13 +365,13 @@ fn discard_attachments(cx: &mut Cx, attachments: Vec<CardInPlay>, from: Zone) {
 /// of your deck instead of in your discard pile"*. An eliminated investigator's
 /// sweep never reaches it: step 1 has already taken the Amulet out of play.
 fn file(cx: &mut Cx, code: CardCode, owner: Owner, from: Zone, exit: Exit) {
-    let to_bottom_of_deck = match (&exit, owner) {
-        (Exit::Discard, Owner::Investigator(id)) => {
-            (cx.cards.metadata_for)(&code).map(CardMetadata::card_type) == Some(CardType::Event)
-                && abilities_in_effect::events_go_to_bottom_of_deck(cx.state, cx.cards, id)
+    if let (Exit::Discard, Owner::Investigator(id)) = (&exit, owner) {
+        if (cx.cards.metadata_for)(&code).map(CardMetadata::card_type) == Some(CardType::Event)
+            && redirect_event_to_bottom_of_deck(cx, id, &code)
+        {
+            return;
         }
-        _ => false,
-    };
+    }
     let state = &mut *cx.state;
     let owning_investigator = match owner {
         Owner::Investigator(id) => state.investigators.get_mut(&id).map(|inv| (id, inv)),
@@ -381,10 +382,6 @@ fn file(cx: &mut Cx, code: CardCode, owner: Owner, from: Zone, exit: Exit) {
         (Exit::VictoryDisplay { victory }, _, _) => {
             state.victory_display.push(code.clone());
             Event::EnteredVictoryDisplay { code, victory }
-        }
-        (Exit::Discard, Owner::Investigator(_), Some((investigator, inv))) if to_bottom_of_deck => {
-            inv.deck.push(code.clone());
-            Event::CardPlacedOnBottomOfDeck { investigator, code }
         }
         (Exit::Discard, Owner::Investigator(_), Some((id, inv))) => {
             inv.discard.push(code.clone());
@@ -414,6 +411,50 @@ fn file(cx: &mut Cx, code: CardCode, owner: Owner, from: Zone, exit: Exit) {
         }
     };
     cx.events.push(event);
+}
+
+/// Place the event `code`, which `investigator` owns and which would go to
+/// their discard pile, on the bottom of their deck instead, if their cards
+/// redirect it
+/// ([`events_go_to_bottom_of_deck`](abilities_in_effect::events_go_to_bottom_of_deck),
+/// Wendy's Amulet 01014), emitting [`Event::CardPlacedOnBottomOfDeck`]. Returns
+/// whether it did; on `false` nothing has moved and the caller discards the
+/// card as usual. The caller has already established that `code` is an event.
+///
+/// Shared by the two ways an event reaches the discard pile: a played event
+/// placed in step 4 of its play (`cards::place_played_event`), and an event
+/// discarded from play (Barricade 01038, through [`file`]). For the played
+/// event the Official FAQ puts the redirect inside step 4: *"An event card is
+/// placed on top of its owner’s discard pile during step 4 of the
+/// play/initiation sequence, so any effect that modifies where the event goes
+/// (such as Parallel Agnes Baker or Crystallizer of Dreams) must occur during
+/// that step. An effect that triggers “after you play” an event but does not
+/// modify where the event goes (such as Heirloom of Hyberborea’s ability) would
+/// naturally trigger just after step 4."* The Amulet is the corpus's only such
+/// effect, so the redirect is one constant read here rather than a step-4
+/// replacement window; a second card that changes where an event goes is the
+/// trigger for #366's general machinery. Pushing onto the deck's bottom also
+/// makes an empty deck the event itself, as the Amulet's ruling has it
+/// (<https://arkhamdb.com/card/01014>): *"If your deck is empty, and Wendy’s
+/// Amulet would have you place an event “on the bottom of your deck,” that
+/// event becomes your new deck."*
+pub(crate) fn redirect_event_to_bottom_of_deck(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    code: &CardCode,
+) -> bool {
+    if !abilities_in_effect::events_go_to_bottom_of_deck(cx.state, cx.cards, investigator) {
+        return false;
+    }
+    let Some(inv) = cx.state.investigators.get_mut(&investigator) else {
+        return false;
+    };
+    inv.deck.push(code.clone());
+    cx.events.push(Event::CardPlacedOnBottomOfDeck {
+        investigator,
+        code: code.clone(),
+    });
+    true
 }
 
 /// The [`Zone`] an event names for a card that left `placement`.

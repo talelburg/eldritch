@@ -22,9 +22,10 @@ use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::abilities::{self, ActivatedAbility};
 use crate::engine::dispatch::actions::take::{self, ActionDescription};
 use crate::engine::dispatch::initiation::{self, InitiationKind, Refusal};
-use crate::engine::dispatch::{cards, combat, hand_discard_cost, slots};
+use crate::engine::dispatch::{cards, combat, slots};
+use crate::engine::enumerate::PlaySource;
 use crate::engine::outcome::EngineOutcome;
-use crate::engine::{abilities_in_effect, ability_source, designator, PlaySource};
+use crate::engine::{abilities_in_effect, ability_source, designator};
 use crate::state::{
     AbilityAddress, AbilitySource, CandidateSource, CardCode, GameState, Investigator,
     InvestigatorId, Phase, ResolutionCandidate,
@@ -502,27 +503,42 @@ fn reject_incompatible_costs(costs: &[Cost]) -> Result<(), Cow<'static, str>> {
     Ok(())
 }
 
-/// Reject a [`Cost::TakeHarm`](card_dsl::dsl::Cost::TakeHarm) on an `[action]`
-/// ability (#1029). A
-/// [`Cost::DiscardCardFromHand`](card_dsl::dsl::Cost::DiscardCardFromHand) there
-/// is refused for the same reason (`hand_discard_cost::refused_on_an_action`,
-/// #1107). On the action path the harm would have to resolve before
-/// the attacks of opportunity — Appendix I step 2, *"Upon completion of this
-/// step, attacks of opportunity, if applicable, resolve"* — and the
-/// take-an-action step's hook pays its costs inline and parks the effect behind
-/// the attacks, with no place for a deal frame between the two. Core and
-/// Dunwich print no such card, so it is deliberately unlifted (YAGNI, as with
+/// Reject a cost the take-an-action step has no place to pay on an `[action]`
+/// ability: a [`Cost::TakeHarm`](card_dsl::dsl::Cost::TakeHarm) (#1029) or a
+/// [`Cost::DiscardCardFromHand`](card_dsl::dsl::Cost::DiscardCardFromHand)
+/// (#1107). Both share one blocker. On the action path the harm would have to
+/// resolve, and the discard's choice be made, before the attacks of
+/// opportunity — Appendix I step 2, *"Upon completion of this step, attacks of
+/// opportunity, if applicable, resolve"* — and the take-an-action step's hook
+/// pays its costs inline and parks the effect behind the attacks, with no place
+/// for a deal frame or a choice between the two. Core and Dunwich print no such
+/// player card, so it is deliberately unlifted (YAGNI, as with
 /// `reject_incompatible_costs`); the first card to print one lifts it (#1031).
-fn reject_harm_cost_on_an_action(
+/// The Core enemy Herman Collins 01138 prints the discard — *"[action] Choose
+/// and discard 4 cards from your hand: **Parley.**"* — and needs a count
+/// besides.
+fn reject_costs_unpayable_on_an_action(
     code: &CardCode,
     action_cost: u8,
     costs: &[Cost],
 ) -> Result<(), Cow<'static, str>> {
-    if action_cost > 0 && costs.iter().any(|c| matches!(c, Cost::TakeHarm { .. })) {
+    if action_cost == 0 {
+        return Ok(());
+    }
+    for cost in costs {
+        let (cost, needs, supported) = match cost {
+            Cost::TakeHarm { .. } => ("Cost::TakeHarm", "its harm resolved", "a [fast] ability"),
+            Cost::DiscardCardFromHand => (
+                "Cost::DiscardCardFromHand",
+                "its choice made",
+                "a [fast] ability and a triggered one",
+            ),
+            _ => continue,
+        };
         return Err(format!(
-            "TODO(#1031): ActivateAbility: {code}'s Cost::TakeHarm on an [action] ability needs \
-             its harm resolved before the attacks of opportunity (lands with #1031); it is \
-             supported only on a [fast] ability"
+            "TODO(#1031): ActivateAbility: {code}'s {cost} on an [action] ability needs {needs} \
+             before the attacks of opportunity (lands with #1031); it is supported only on \
+             {supported}"
         )
         .into());
     }
@@ -714,10 +730,7 @@ pub(crate) fn check_activate_ability(
     }
 
     reject_incompatible_costs(&costs)?;
-    reject_harm_cost_on_an_action(&source_code, action_cost, &costs)?;
-    if action_cost > 0 && costs.iter().any(|c| matches!(c, Cost::DiscardCardFromHand)) {
-        return Err(hand_discard_cost::refused_on_an_action(&source_code));
-    }
+    reject_costs_unpayable_on_an_action(&source_code, action_cost, &costs)?;
     reject_source_costs_without_an_instance(source, &source_code, &costs)?;
     // Before the gate: a designated ability's change-state question is this
     // check's (`initiation::performs_an_action`).

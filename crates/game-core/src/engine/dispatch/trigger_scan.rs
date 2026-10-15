@@ -231,10 +231,10 @@ pub(super) fn collect_forced(
     let mut hits = Vec::new();
     for walked in board_walk(state, cards, event, TriggerKind::Forced) {
         // A hand card's controller is the investigator holding it.
-        let bound = walked.controller.or(match walked.source {
-            CandidateSource::Hand | CandidateSource::TopOfDiscardPile { .. } => None,
-            CandidateSource::Ability(AbilitySource::Act | AbilitySource::Agenda) => lead,
-            CandidateSource::Ability(
+        let bound = walked.controller.or(match walked.source.ability() {
+            None => None,
+            Some(AbilitySource::Act | AbilitySource::Agenda) => lead,
+            Some(
                 AbilitySource::InPlay(_) | AbilitySource::Location(_) | AbilitySource::Enemy(_),
             ) => event.subject().or(lead),
         });
@@ -328,15 +328,15 @@ pub(super) fn collect_reactions(
         if reactions.is_empty() {
             continue;
         }
-        let (reachers, kind) = match walked.source {
-            CandidateSource::Hand | CandidateSource::TopOfDiscardPile { .. } => (
+        let (reachers, kind) = match walked.source.ability() {
+            None => (
                 walked.controller.into_iter().collect(),
                 InitiationKind::Play,
             ),
-            CandidateSource::Ability(AbilitySource::Act | AbilitySource::Agenda) => {
+            Some(AbilitySource::Act | AbilitySource::Agenda) => {
                 (lead.into_iter().collect(), InitiationKind::Reaction)
             }
-            CandidateSource::Ability(source) => {
+            Some(source) => {
                 let reach = reach.get_or_insert_with(|| {
                     board::investigator_order(state)
                         .into_iter()
@@ -774,10 +774,7 @@ fn scope_matches(
 /// So a Fast event declaring the pattern is played in that condition's window
 /// unscoped by it, as `trigger_initiation.rs` relies on (#964).
 fn self_scoped(source: CandidateSource, is_self: impl Fn(CardInstanceId) -> bool) -> bool {
-    match source {
-        CandidateSource::Ability(source) => source.instance().is_some_and(is_self),
-        CandidateSource::Hand | CandidateSource::TopOfDiscardPile { .. } => true,
-    }
+    source.is_play() || source.instance().is_some_and(is_self)
 }
 
 /// Whether `source` is a card instance attached to `location`.

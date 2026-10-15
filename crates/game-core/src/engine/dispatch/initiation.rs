@@ -651,8 +651,8 @@ pub(super) fn record_initiation(
         return;
     };
     let now = UsageClock::of(state);
-    match candidate.source {
-        CandidateSource::Ability(AbilitySource::InPlay(instance_id)) => {
+    match candidate.source.ability() {
+        Some(AbilitySource::InPlay(instance_id)) => {
             let (card, _) = board::find_instance_mut(state, instance_id).unwrap_or_else(|| {
                 unreachable!(
                     "record_initiation: instance {instance_id:?} vanished from play while \
@@ -667,14 +667,13 @@ pub(super) fn record_initiation(
         // Listed kind by kind rather than wildcarded: a sixth `AbilitySource`
         // kind *that carries an instance* must break this build rather than
         // reach a panic at runtime.
-        CandidateSource::Ability(
+        Some(
             AbilitySource::Location(_)
             | AbilitySource::Enemy(_)
             | AbilitySource::Act
             | AbilitySource::Agenda,
         )
-        | CandidateSource::Hand
-        | CandidateSource::TopOfDiscardPile { .. } => {
+        | None => {
             unreachable!(
                 "record_initiation: a usage-limited candidate must be an in-play instance \
                  (a played card, and an ability source with no card instance behind it — a \

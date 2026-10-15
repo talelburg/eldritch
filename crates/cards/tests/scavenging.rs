@@ -72,6 +72,12 @@ fn investigate(session: TestSession, commit: &[&str]) -> TestSession {
         .commit(commit)
 }
 
+/// Take the `index`th Item offered from the discard pile.
+///
+/// Exempt from the anchor-pick rule, and sent raw: the choice's options are
+/// cards **in a discard pile**, with no board anchor and neither of ADR 0015's
+/// natures, which that ADR knowingly excludes and defers. No session step can
+/// name one, so the pick is positional.
 fn pick(index: u32) -> Action {
     Action::Player(PlayerAction::ResolveInput {
         response: InputResponse::PickSingle(OptionId(index)),

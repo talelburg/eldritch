@@ -172,11 +172,9 @@ pub(crate) fn for_candidate_source(
     source: CandidateSource,
     code: &CardCode,
 ) -> Option<Vec<(AbilityAddress, Ability)>> {
-    match source {
-        CandidateSource::Ability(source) => for_source(state, reg, source, code),
-        CandidateSource::Hand | CandidateSource::TopOfDiscardPile { .. } => {
-            Some(addressed_as_printed((reg.abilities_for)(code)?))
-        }
+    match source.ability() {
+        Some(source) => for_source(state, reg, source, code),
+        None => Some(addressed_as_printed((reg.abilities_for)(code)?)),
     }
 }
 

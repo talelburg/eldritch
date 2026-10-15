@@ -153,14 +153,8 @@ fn it_cannot_target_an_elite_enemy() {
         "not offered with only an Elite enemy at your location",
     );
 
-    let s = s.submit_off_menu(&action);
-    s.expect_rejected();
-    assert_eq!(
-        s.state().investigators[&INV].cards_in_play.len(),
-        1,
-        "the target check runs before the discard is paid",
-    );
-    assert!(!s.state().enemies[&PRIEST].exhausted);
+    // The target check runs before the discard is paid: nothing moves.
+    s.assert_rejects(|s| s.submit_off_menu(&action));
 }
 
 #[test]

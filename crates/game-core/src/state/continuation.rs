@@ -2061,10 +2061,7 @@ impl CandidateSource {
     /// [`EvalContext::for_controller_with_optional_source`](crate::engine::EvalContext::for_controller_with_optional_source).
     #[must_use]
     pub fn instance(self) -> Option<CardInstanceId> {
-        match self {
-            CandidateSource::Ability(source) => source.instance(),
-            CandidateSource::Hand | CandidateSource::TopOfDiscardPile { .. } => None,
-        }
+        self.ability().and_then(AbilitySource::instance)
     }
 
     /// The [`AbilitySource`] this candidate fires from — `None` only for the
@@ -2089,10 +2086,7 @@ impl CandidateSource {
     /// the run's mode decides that, not the source.)
     #[must_use]
     pub fn is_play(self) -> bool {
-        match self {
-            CandidateSource::Hand | CandidateSource::TopOfDiscardPile { .. } => true,
-            CandidateSource::Ability(_) => false,
-        }
+        self.ability().is_none()
     }
 }
 

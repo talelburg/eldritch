@@ -24,7 +24,7 @@
 
 use cards::TEST_REGISTRIES;
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::engine::enumerate::{PlaySource, TurnAction};
+use game_core::engine::enumerate::{self, PlaySource, TurnAction};
 use game_core::engine::OptionId;
 use game_core::event::Event;
 use game_core::state::{
@@ -307,13 +307,16 @@ fn a_non_event_top_card_is_not_offered() {
 #[test]
 fn without_the_amulet_the_discard_pile_offers_nothing() {
     let s = board(seat(1).at(HERE).discard([EMERGENCY_CACHE]));
+    let legal = enumerate::legal_actions(s.state(), TEST_REGISTRIES.cards);
     assert!(
-        !s.prompt()
-            .options
-            .iter()
-            .any(|o| o.label.contains("Emergency Cache")),
-        "{:?}",
-        s.prompt(),
+        !legal.iter().any(|action| matches!(
+            action,
+            TurnAction::PlayCard {
+                source: PlaySource::TopOfDiscardPile { .. },
+                ..
+            }
+        )),
+        "{legal:?}",
     );
 }
 

@@ -9,7 +9,7 @@
 //! an ability activated is [`legality`]'s, which the Fast-window enumeration
 //! asks.
 
-use card_dsl::dsl::{EventTiming, TestOutcome, Trigger};
+use card_dsl::dsl::{EventTiming, Trigger};
 
 use crate::action::InputResponse;
 use crate::card_registry::CardRegistry;
@@ -434,11 +434,7 @@ fn condition_as_it_now_stands(
         } if bucket == EventTiming::When => TimingEvent::SkillTestResolved {
             investigator: *investigator,
             kind: *kind,
-            outcome: if skill_test::verdict(state, cards).succeeded {
-                TestOutcome::Success
-            } else {
-                TestOutcome::Failure
-            },
+            outcome: skill_test::outcome_of(skill_test::verdict(state, cards)),
         },
         _ => event.clone(),
     }
@@ -465,13 +461,10 @@ fn lapse_reason(
     if !candidate_source_present(state, cards, candidate) {
         return LapseReason::SourceGone;
     }
-    let kind = match (mode, candidate.source) {
-        (TimingMode::Forced, _) => InitiationKind::Forced,
-        (
-            TimingMode::Reaction,
-            CandidateSource::Hand | CandidateSource::TopOfDiscardPile { .. },
-        ) => InitiationKind::Play,
-        (TimingMode::Reaction, CandidateSource::Ability(_)) => InitiationKind::Reaction,
+    let kind = match mode {
+        TimingMode::Forced => InitiationKind::Forced,
+        TimingMode::Reaction if candidate.source.is_play() => InitiationKind::Play,
+        TimingMode::Reaction => InitiationKind::Reaction,
     };
     match initiation::check(state, cards, candidate, kind) {
         Ok(()) => LapseReason::OutOfScope,

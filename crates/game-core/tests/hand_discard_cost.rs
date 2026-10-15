@@ -302,12 +302,8 @@ fn a_fast_ability_with_the_cost_is_not_offered_without_a_non_weakness_card() {
             !enumerate::legal_actions(session.state(), registries().cards).contains(&action),
             "not offered holding {hand:?}",
         );
-        let refused = session.submit_off_menu(&action);
-        assert!(
-            refused.expect_rejected().contains("not a weakness"),
-            "{}",
-            refused.expect_rejected(),
-        );
+        let reason = session.assert_rejects(|s| s.submit_off_menu(&action));
+        assert!(reason.contains("not a weakness"), "{reason}");
     }
 }
 
@@ -348,12 +344,7 @@ fn an_action_ability_with_the_cost_is_refused_with_a_todo() {
     let action = activate(&session, ACTION_GAIN);
     assert!(!enumerate::legal_actions(session.state(), registries().cards).contains(&action));
 
-    let refused = session.submit_off_menu(&action);
+    let reason = session.assert_rejects(|s| s.submit_off_menu(&action));
 
-    assert!(
-        refused.expect_rejected().contains("TODO(#1031)"),
-        "{}",
-        refused.expect_rejected(),
-    );
-    assert_eq!(hand(&refused), [CardCode::new(CARD_A)]);
+    assert!(reason.contains("TODO(#1031)"), "{reason}");
 }

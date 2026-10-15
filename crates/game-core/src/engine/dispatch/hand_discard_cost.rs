@@ -18,8 +18,6 @@
 //! while the hand holds a card that is not one ([`payable`]), and only such
 //! cards are offered ([`candidates`]).
 
-use std::borrow::Cow;
-
 use card_dsl::dsl::Cost;
 
 use crate::action::InputResponse;
@@ -170,22 +168,4 @@ fn hand_card(investigator: InvestigatorId, hand_index: u8) -> OptionTarget {
         investigator,
         hand_index,
     }
-}
-
-/// The refusal a hand-discard cost on an `[action]` ability gets.
-///
-/// The take-an-action step's hook pays an action's costs inline and then
-/// resolves its attacks of opportunity (Appendix I step 2: *"Upon completion of
-/// this step, attacks of opportunity, if applicable, resolve"*), so it has no
-/// place for the cost's choice before them — the same gap as a harm cost there
-/// (#1031). No Core player card prints one. The Core enemy Herman Collins 01138
-/// does — *"[action] Choose and discard 4 cards from your hand: **Parley.**"* —
-/// and needs a count besides.
-pub(super) fn refused_on_an_action(code: &CardCode) -> Cow<'static, str> {
-    format!(
-        "TODO(#1031): ActivateAbility: {code}'s Cost::DiscardCardFromHand on an [action] ability \
-         needs its choice made before the attacks of opportunity (lands with #1031); it is \
-         supported only on a [fast] ability and a triggered one"
-    )
-    .into()
 }

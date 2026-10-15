@@ -140,11 +140,7 @@ fn with_no_enemy_at_your_location_it_cannot_be_played() {
         "not offered with nothing to evade",
     );
 
-    let s = s.submit_off_menu(&play());
-    s.expect_rejected();
-    let me = &s.state().investigators[&INV];
-    assert_eq!(me.hand, [CardCode::new(CUNNING_DISTRACTION)]);
-    assert_eq!(me.resources, 5);
+    s.assert_rejects(|s| s.submit_off_menu(&play()));
 }
 
 #[test]

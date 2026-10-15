@@ -504,20 +504,20 @@ impl TimingEvent {
             | TimingEvent::CardPlayed { .. } => {
                 ConditionResolution::Coordinator(resolve_bare_milestone)
             }
-            // Migrated by #773 as a bare milestone, for Lita Chantler 01117's
-            // *"[reaction] **When** an investigator at your location
-            // successfully attacks a [[Monster]] enemy: That investigator deals
-            // +1 damage."* — a `when` whose point is to raise the damage before
-            // ST.7 applies it. ST.7 itself still belongs to the `SkillTest`
-            // frame, which advances its cursor to `AcknowledgeOutcome` before
-            // emitting and applies the results once the whole sequence drains.
+            // Coordinator-owned for Lita Chantler 01117's *"[reaction] **When**
+            // an investigator at your location successfully attacks a
+            // [[Monster]] enemy: That investigator deals +1 damage."* — a
+            // `when` whose point is to raise the damage before ST.7 applies it.
+            // ST.7 itself belongs to the `SkillTest` frame, which advances its
+            // cursor to `AcknowledgeOutcome` before emitting and applies the
+            // results once the whole sequence drains.
             //
-            // No longer bare since #1111. Lucky! 01080 prints *"Fast. Play when
-            // you would fail a skill test. Get +2 to your skill value for that
-            // test."*, so the verdict announced is provisional until the `when`
-            // cell is done: the resolve step re-totals, logs the
-            // `SkillTestSucceeded`/`SkillTestFailed`, and voids the rest of the
-            // sequence when the verdict has flipped.
+            // The resolve step is not a bare milestone. Lucky! 01080 prints
+            // *"Fast. Play when you would fail a skill test. Get +2 to your
+            // skill value for that test."*, so the verdict announced is
+            // provisional until the `when` cell is done: the resolve step
+            // re-totals, logs the `SkillTestSucceeded`/`SkillTestFailed`, and
+            // voids the rest of the sequence when the verdict has flipped.
             TimingEvent::SkillTestResolved { .. } => {
                 ConditionResolution::Coordinator(resolve_skill_test_resolved)
             }

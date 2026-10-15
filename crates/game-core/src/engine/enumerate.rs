@@ -3,6 +3,8 @@
 //! (2b) — this module shares the handlers' legality predicates so the
 //! enumeration matches handler-acceptance by construction.
 
+use std::fmt;
+
 use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
 use crate::engine::dispatch::actions::{engage, evade, fight, investigate, r#move};
@@ -132,8 +134,8 @@ impl PlaySource {
     }
 }
 
-impl std::fmt::Display for PlaySource {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for PlaySource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             PlaySource::Hand(index) => write!(f, "hand index {index}"),
             PlaySource::TopOfDiscardPile { permission } => {

@@ -1102,7 +1102,7 @@ pub(crate) fn verdict(state: &GameState, cards: &CardRegistry) -> ResolvedTest {
 }
 
 /// The [`TestOutcome`] a verdict announces.
-fn outcome_of(resolved: ResolvedTest) -> TestOutcome {
+pub(crate) fn outcome_of(resolved: ResolvedTest) -> TestOutcome {
     if resolved.succeeded {
         TestOutcome::Success
     } else {

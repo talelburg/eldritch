@@ -14,9 +14,10 @@ use crate::engine::dispatch::legality::PlayCheckResult;
 use crate::engine::dispatch::{
     combat, emit, encounter, legality, phases, slots, threat_area, PlayDestination,
 };
+use crate::engine::enumerate::PlaySource;
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
-use crate::engine::{abilities_in_effect, Cx, PlaySource};
+use crate::engine::{board, Cx};
 use crate::event::Event;
 use crate::state::{
     ActionResume, AssetEntry, CardCode, CardInPlay, Deck, DiscardPile, InvestigatorId,
@@ -1334,22 +1335,11 @@ pub(super) fn commence_play(
 /// left when it commenced being played, and it has been in none since.
 ///
 /// **Unless the owner's cards redirect it** to the bottom of their deck
-/// ([`events_go_to_bottom_of_deck`](abilities_in_effect::events_go_to_bottom_of_deck),
-/// Wendy's Amulet 01014), which emits [`Event::CardPlacedOnBottomOfDeck`] in
-/// place of the discard. The redirect is checked here, inside step 4, because
-/// the Official FAQ puts it there: *"An event card is placed on top of its
-/// owner’s discard pile during step 4 of the play/initiation sequence, so any
-/// effect that modifies where the event goes (such as Parallel Agnes Baker or
-/// Crystallizer of Dreams) must occur during that step. An effect that
-/// triggers “after you play” an event but does not modify where the event goes
-/// (such as Heirloom of Hyberborea’s ability) would naturally trigger just after
-/// step 4."* The Amulet is the corpus's only such effect, so the redirect is one
-/// constant read here rather than a step-4 replacement window; a second card
-/// that changes where an event goes is the trigger for #366's general
-/// machinery. Pushing onto the deck's bottom also makes an empty deck the event
-/// itself, as the Amulet's ruling has it (<https://arkhamdb.com/card/01014>):
-/// *"If your deck is empty, and Wendy’s Amulet would have you place an event
-/// “on the bottom of your deck,” that event becomes your new deck."*
+/// (Wendy's Amulet 01014), through
+/// [`board::redirect_event_to_bottom_of_deck`], which emits
+/// [`Event::CardPlacedOnBottomOfDeck`] in place of the discard. The redirect is
+/// checked here, inside step 4, because the Official FAQ puts it there; the
+/// helper's doc quotes it.
 ///
 /// An event played from the discard pile (Wendy's Amulet 01014, #1112) is
 /// placed by the same redirect: the Amulet that let it be played also sends it
@@ -1362,26 +1352,16 @@ pub(super) fn commence_play(
 /// that resolves, so an event is placed exactly once — "simultaneously with the
 /// completion" of its effect.
 fn place_played_event(cx: &mut Cx, investigator: InvestigatorId, card: CardCode) {
-    let to_bottom_of_deck =
-        abilities_in_effect::events_go_to_bottom_of_deck(cx.state, cx.cards, investigator);
-    if let Some(inv) = cx.state.investigators.get_mut(&investigator) {
-        if to_bottom_of_deck {
-            inv.deck.push(card.clone());
-        } else {
-            inv.discard.push(card.clone());
-        }
+    if board::redirect_event_to_bottom_of_deck(cx, investigator, &card) {
+        return;
     }
-    cx.events.push(if to_bottom_of_deck {
-        Event::CardPlacedOnBottomOfDeck {
-            investigator,
-            code: card,
-        }
-    } else {
-        Event::CardDiscarded {
-            code: card,
-            from: Zone::Hand,
-            to: DiscardPile::Investigator(investigator),
-        }
+    if let Some(inv) = cx.state.investigators.get_mut(&investigator) {
+        inv.discard.push(card.clone());
+    }
+    cx.events.push(Event::CardDiscarded {
+        code: card,
+        from: Zone::Hand,
+        to: DiscardPile::Investigator(investigator),
     });
 }
 
