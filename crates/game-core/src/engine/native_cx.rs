@@ -2,6 +2,7 @@
 //! change the game only through the engine's exits.
 
 use card_dsl::card_data::CardMetadata;
+use card_dsl::dsl::Restriction;
 
 use crate::card_registry::CardRegistry;
 use crate::engine::board::{self, LeavingCard, MoveResourcesError, Placement};
@@ -442,5 +443,27 @@ impl<'a> NativeCx<'a> {
     /// it.
     pub fn add_skill_substitution(&mut self, substitution: SkillSubstitution) {
         skill_test::add_skill_substitution(self.write_access(), substitution);
+    }
+
+    /// Register `restriction` protecting `investigator` for the rest of the
+    /// round (On the Lam 01010's [`Restriction::CannotAttack`]). No event
+    /// announces it.
+    pub fn add_lasting_restriction(
+        &mut self,
+        investigator: InvestigatorId,
+        restriction: Restriction,
+    ) {
+        combat::add_lasting_restriction(self.write_access(), investigator, restriction);
+    }
+
+    /// Return the committed card at `index` — the one an
+    /// `OnSkillTestResolution` effect is printed on, read from
+    /// [`EvalContext::committed_card`](crate::engine::evaluator::EvalContext::committed_card)
+    /// — to its investigator's hand when the test ends, instead of discarding
+    /// it. Emits
+    /// [`Event::CommittedCardReturnedToHand`](crate::event::Event::CommittedCardReturnedToHand)
+    /// at RR ST.8, in place of the discard.
+    pub fn return_committed_card_to_hand(&mut self, index: u8) {
+        skill_test::return_committed_card_to_hand(self.write_access(), index);
     }
 }

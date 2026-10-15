@@ -137,6 +137,16 @@ pub struct RevelationBinding {
     pub revealed_card_owner: Owner,
 }
 
+/// The committed card an `OnSkillTestResolution` effect is printed on (bound
+/// only while resolving one, at RR ST.7). The effect names its own card through
+/// it: Opportunist 01053 returns itself to hand.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommittedCardBinding {
+    /// The card's position among the in-flight test's committed cards
+    /// ([`InFlightSkillTest::committed_by_active`](crate::state::InFlightSkillTest::committed_by_active)).
+    pub index: u8,
+}
+
 /// Attacking enemy bound while resolving a `DamageAssigned` reaction whose
 /// source is an enemy attack (Guard Dog 01021's retaliate).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -203,6 +213,10 @@ pub struct EvalContext {
     /// Revealed-card binding, bound only while resolving a Revelation. Read via
     /// [`Self::revealed_card_owner`]. `None` outside that window.
     pub revelation: Option<RevelationBinding>,
+    /// Committed-card binding, bound only while resolving a committed card's
+    /// `OnSkillTestResolution` effect. Read via [`Self::committed_card`].
+    /// `None` outside that window.
+    pub committed_card: Option<CommittedCardBinding>,
     /// Grounded `*::Chosen` picks, bound during a grounded-choice evaluation
     /// (Axis A #334). Read via [`Self::chosen_investigator`] /
     /// [`Self::chosen_location`] / [`Self::chosen_enemy`] /
@@ -247,6 +261,7 @@ impl EvalContext {
             discovery: None,
             enemy_attack: None,
             revelation: None,
+            committed_card: None,
             choice: None,
             ability_source: None,
             each: None,
@@ -346,6 +361,12 @@ impl EvalContext {
     pub fn revealed_card_owner(&self) -> Option<Owner> {
         self.revelation.map(|b| b.revealed_card_owner)
     }
+    /// Position, among the in-flight test's committed cards, of the card whose
+    /// `OnSkillTestResolution` effect is resolving.
+    #[must_use]
+    pub fn committed_card(&self) -> Option<u8> {
+        self.committed_card.map(|b| b.index)
+    }
     /// Attacking enemy bound while resolving an enemy-attack `DamageAssigned`
     /// reaction (Guard Dog 01021's retaliate).
     #[must_use]
@@ -413,6 +434,11 @@ impl EvalContext {
         self.discovery = Some(DiscoveryBinding {
             clue_discovery_count: count,
         });
+    }
+    /// Bind the committed card an effect is printed on (see
+    /// [`Self::committed_card`]).
+    pub fn set_committed_card(&mut self, index: u8) {
+        self.committed_card = Some(CommittedCardBinding { index });
     }
     /// Bind the attacking enemy (see [`Self::attacking_enemy`]).
     pub fn set_attacking_enemy(&mut self, enemy: EnemyId) {

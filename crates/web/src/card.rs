@@ -629,6 +629,7 @@ mod tests {
             },
             deck_limit: 2,
             commit_limit: Some(1),
+            commit_only_to_own_test: false,
         };
         let face = card_face(&kind).expect("skill has a face");
         assert_eq!(face.cost_corner, None);

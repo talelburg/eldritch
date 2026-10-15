@@ -38,7 +38,7 @@ Two scopes for the same deal, and card text picks one or the other on purpose. H
 _Avoid_: Reading "you take" as "on your investigator card", or "placed on [investigator]" as including their assets. The two differ exactly when a soaker absorbs some of the harm, which is the case a test has to cover.
 
 **Commit**:
-What a player does with a skill card to add it to an in-progress skill test. Skill cards are committed, never played. Committing at ST.2 takes the card **out of hand** into **limbo** (below), where it stays until ST.8 discards it.
+What a player does with a skill card to add it to an in-progress skill test. Skill cards are committed, never played. Committing at ST.2 takes the card **out of hand** into **limbo** (below), where it stays until ST.8 discards it — or, when its own success effect says so, returns it to hand instead (Opportunist 01053's *"return Opportunist to your hand after this test instead of discarding it"*).
 _Avoid_: Play, use (for skill cards specifically). Also avoid describing a committed card as still in hand — that was #631.
 
 **Play**:
@@ -46,7 +46,7 @@ What a player does with an Asset or Event from hand. Those are the only two card
 _Avoid_: Using "play" for committing a skill, or for revealing encounter cards
 
 **Limbo**:
-The Rules Reference's name (glossary, added in FAQ 1.23) for a card that is in **no zone at all** — "neither in play, in the discard pile, nor … in an investigator's hand". Two states in the engine are limbo, and both ride the continuation frame driving them rather than any zone: an **in-progress play** (below) and a **committed card**, which "enters limbo as it is committed to a skill test" at ST.2 and leaves it when ST.8 discards it. Limbo is the umbrella; name the specific state when you mean one of them. A limbo card "is technically not in play, and does not count as being in play for the purposes of other card effects" — so it is invisible to in-play queries while its effects still alter the game state.
+The Rules Reference's name (glossary, added in FAQ 1.23) for a card that is in **no zone at all** — "neither in play, in the discard pile, nor … in an investigator's hand". Two states in the engine are limbo, and both ride the continuation frame driving them rather than any zone: an **in-progress play** (below) and a **committed card**, which "enters limbo as it is committed to a skill test" at ST.2 and leaves it when ST.8 discards it (or returns it to hand — see **Commit**). Limbo is the umbrella; name the specific state when you mean one of them. A limbo card "is technically not in play, and does not count as being in play for the purposes of other card effects" — so it is invisible to in-play queries while its effects still alter the game state.
 _Avoid_: Calling it a zone, or a "pending" pile — it is "not a physical game area". Also avoid reaching for it where the specific term is clearer: a reader who sees "limbo" has to work out which of the two you meant.
 
 **In-progress play**:

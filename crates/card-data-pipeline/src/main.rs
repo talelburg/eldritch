@@ -655,6 +655,8 @@ struct NormalizedCard {
     /// "Max N committed per skill test" cap, parsed from text. `None` when
     /// uncapped. Skill-only in scope.
     commit_limit: Option<u8>,
+    /// "Commit only to a skill test you are performing." Skill-only in scope.
+    commit_only_to_own_test: bool,
     // Encounter-card stats. `clues` is a location's starting clues AND an
     // act's advance threshold (same JSON field); consumer interprets by kind.
     shroud: Option<u8>,
@@ -713,6 +715,7 @@ fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
     let spawn_name = raw.text.as_deref().and_then(parse_spawn_name);
     let uses = raw.text.as_deref().and_then(parse_uses);
     let commit_limit = raw.text.as_deref().and_then(parse_commit_limit);
+    let commit_only_to_own_test = raw.text.as_deref().is_some_and(is_commit_only_to_own_test);
 
     let weakness = matches!(
         raw.subtype_code.as_deref(),
@@ -745,6 +748,7 @@ fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
         play_only_during_turn,
         uses,
         commit_limit,
+        commit_only_to_own_test,
         shroud: raw.shroud,
         clues: raw.clues,
         clues_fixed: raw.clues_fixed.unwrap_or(false),
@@ -1016,12 +1020,13 @@ fn render_kind(c: &NormalizedCard) -> String {
         ),
         "Skill" => format!(
             "CardKind::Skill {{ class: Class::{}, xp: {}, skill_icons: {}, deck_limit: {}, \
-             commit_limit: {} }}",
+             commit_limit: {}, commit_only_to_own_test: {} }}",
             c.class,
             opt_u8(c.xp),
             icons,
             c.deck_limit,
             opt_u8(c.commit_limit),
+            c.commit_only_to_own_test,
         ),
         "Enemy" => format!(
             "CardKind::Enemy {{ fight: {}, evade: {}, damage: {}, horror: {}, \
@@ -1196,6 +1201,12 @@ fn parse_commit_limit(text: &str) -> Option<u8> {
     let inner = &plain[start..];
     let end = inner.find(" committed per skill test")?;
     inner[..end].trim().parse().ok()
+}
+
+/// Whether `text` prints *"Commit only to a skill test you are performing."*
+/// (Opportunist 01053). The phrase is fixed, so a literal scan suffices.
+fn is_commit_only_to_own_test(text: &str) -> bool {
+    strip_html_bold(text).contains("Commit only to a skill test you are performing")
 }
 
 /// Parsed Prey line. `None` = no printed prey (emit `Prey::Default`);
