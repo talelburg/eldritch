@@ -1123,8 +1123,6 @@ fn strip_html_bold(s: &str) -> String {
     s.replace("<b>", "").replace("</b>", "")
 }
 
-/// True if `text` contains the standalone keyword token `"<kw>."`
-/// (e.g. `"Hunter."`). Bold tags are stripped first.
 /// Whether printed text carries the `Fast` keyword: `Fast.` starting the
 /// text, a line, or a sentence on a line (#576). Keyword prefixes come
 /// before it on the same line (Ace in the Hole 02266, `Exceptional. Fast.`)
@@ -1154,6 +1152,8 @@ fn fast_timing_inconsistency(card: &NormalizedCard) -> Option<String> {
     })
 }
 
+/// True if `text` contains the standalone keyword token `"<kw>."`
+/// (e.g. `"Hunter."`). Bold tags are stripped first.
 fn has_keyword(text: &str, keyword: &str) -> bool {
     strip_html_bold(text).contains(&format!("{keyword}."))
 }
