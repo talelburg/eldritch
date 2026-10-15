@@ -104,7 +104,7 @@ fn omitting_any_required_field_is_rejected() {
     serde_json::from_value::<GameState>(full.clone()).expect("full object deserializes");
     for field in [
         "continuations",
-        "skill_substitutions",
+        "lasting_effects",
         // #676's two: a defaulted `skill_test_ids` would re-mint ids a
         // live row already names, and a defaulted `recorded_modifiers`
         // would silently drop every test-scoped buff in flight.

@@ -173,7 +173,12 @@ pub enum ActionDesignator {
         /// expression that counts something on the board answers from
         /// the board as it stands.
         combat_modifier: IntExpr,
-        /// Bonus damage beyond the base 1 (.38 Special: +1).
+        /// Bonus damage beyond the base 1 (.38 Special: +1). Evaluated once,
+        /// at RR ST.7 when the attack's damage is determined, not at
+        /// initiation: Switchblade 01044's *"If you succeed by 2 or more"*
+        /// reads a margin that exists only then
+        /// ([`Quantity::SkillTestSucceededBy`]), and Machete 01020's
+        /// sole-engaged check reads the board the damage lands on.
         extra_damage: IntExpr,
         /// The skill the attack tests in place of `[combat]`, or `None` for
         /// combat. Shrivelling 01060: *"This attack uses \[willpower\] instead
@@ -2918,6 +2923,12 @@ pub enum Quantity {
     EngagedEnemies,
     /// Failure margin of the resolving skill test (0 outside one).
     SkillTestFailedBy,
+    /// Success margin of the resolving skill test: its modified skill value
+    /// minus its difficulty, read off the test's ST.6 verdict, so every
+    /// modifier added during the test counts. `0` outside a passed test's ST.7
+    /// results. Switchblade 01044 and .41 Derringer 01047's *"If you succeed by
+    /// 2 or more, this attack deals +1 damage."*
+    SkillTestSucceededBy,
 }
 
 /// Comparison operator for [`Condition::Compare`].

@@ -373,10 +373,11 @@ impl TimingEvent {
             // like the impact runs after the whole sequence, on a frame the
             // `drive` loop re-exposes once the sequence has drained:
             //
-            // - `RoundEnded` — expiring "until the end of the round" effects and
-            //   Upkeep → Mythos run on the Upkeep anchor's `AfterRoundEnd`
-            //   resume, which is why act 01109 The Barrier's *"When the round
-            //   ends"* objective has resolved in the `when` cell all along.
+            // - `RoundEnded` — Upkeep → Mythos runs on the Upkeep anchor's
+            //   `AfterRoundEnd` resume, which is why act 01109 The Barrier's
+            //   *"When the round ends"* objective has resolved in the `when`
+            //   cell all along. "Until the end of the round" lasting effects
+            //   expire just ahead of the emit, so no cell sees them (#643).
             // - `GameEnd` — the victory-display scan and `apply_resolution` run
             //   at the apply boundary, once the `ScenarioEnd` frame is re-exposed
             //   at `ScenarioEndStep::Finalize` (#720). The frame advances its own
