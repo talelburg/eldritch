@@ -260,3 +260,22 @@ fn a_bonus_that_leaves_the_test_failing_narrows_the_margin_after_cells_read() {
     let done = after.pick(in_hand(LOOK_WHAT_I_FOUND));
     assert_eq!(done.state().investigators[&INV].clues, 2);
 }
+
+#[test]
+fn it_is_not_offered_after_the_test_has_failed() {
+    // Declined in the `when` cell, Lucky! is not offered again in the `after`
+    // cell, where Rabbit's Foot is: "you cannot play Lucky! after you use
+    // Rabbit’s Foot".
+    let window = investigate(board(3, &[LUCKY], ChaosToken::Numeric(0)));
+    assert_eq!(window.offered_at(&in_hand(LUCKY)), 1, "{:?}", window.prompt());
+
+    let after = window.skip();
+    assert_event!(after.events(), Event::SkillTestFailed { by: 1, .. });
+    let foot = after.state().card(INV, RABBITS_FOOT);
+    assert_eq!(after.offered_at(&foot), 1, "{:?}", after.prompt());
+    assert_eq!(after.offered_at(&in_hand(LUCKY)), 0, "{:?}", after.prompt());
+
+    let done = after.pick(foot);
+    done.assert_at_turn_menu(INV);
+    assert_eq!(copies_in_hand(&done, LUCKY), 1, "never played");
+}

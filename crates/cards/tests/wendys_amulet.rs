@@ -28,11 +28,11 @@ use game_core::engine::enumerate::{self, PlaySource, TurnAction};
 use game_core::engine::OptionId;
 use game_core::event::Event;
 use game_core::state::{
-    Agenda, CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, Location, LocationId,
-    SkillKind, TokenModifiers,
+    Agenda, CardCode, ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId, Location,
+    LocationId, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
-use game_core::{assert_event, assert_no_event};
+use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 const AMULET: &str = "01014";
 /// Event. `Supply.` Gain 3 resources.
@@ -53,6 +53,7 @@ const INV: InvestigatorId = InvestigatorId(1);
 const INV2: InvestigatorId = InvestigatorId(2);
 const HERE: LocationId = LocationId(10);
 const THERE: LocationId = LocationId(11);
+const ATTACKER: EnemyId = EnemyId(7);
 
 const PLAY_FIRST: TurnAction = TurnAction::PlayCard {
     investigator: INV,
@@ -289,6 +290,49 @@ fn in_her_turn_she_plays_the_top_event_of_her_discard_pile() {
     assert_event!(
         s.events(),
         Event::CardPlayed { investigator: INV, code } if code == &CardCode::new(EMERGENCY_CACHE)
+    );
+}
+
+/// A play from the discard pile is a play like one from hand, so a non-Fast
+/// event played while engaged with a ready enemy provokes an attack of
+/// opportunity, before the event resolves (`glossary/Attack_of_Opportunity.md`:
+/// *"An attack of opportunity is made immediately after all costs of initiating
+/// the action that provoked the attack have been paid, but before the
+/// application of that action's effect upon the game state."*).
+#[test]
+fn playing_from_the_discard_pile_while_engaged_provokes_an_attack_of_opportunity() {
+    let mut attacker = test_support::test_enemy(ATTACKER.0, "Attacker");
+    attacker.attack_damage = 1;
+    attacker.attack_horror = 0;
+    let s = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_seat(
+            seat(1)
+                .at(HERE)
+                .in_play([AMULET])
+                .discard([EMERGENCY_CACHE])
+                .deck([GUTS]),
+        )
+        .open_turn(INV)
+        .with_enemy_engaged(attacker, INV)
+        .session();
+    let resources = s.state().investigators[&INV].resources;
+
+    let permission = s.state().in_play(INV, AMULET);
+    let s = s.take(&TurnAction::PlayCard {
+        investigator: INV,
+        source: PlaySource::TopOfDiscardPile { permission },
+    });
+
+    s.assert_at_turn_menu(INV);
+    let inv = &s.state().investigators[&INV];
+    assert_eq!(inv.damage(), 1, "the engaged enemy attacked");
+    assert_eq!(inv.resources, resources + 3, "Emergency Cache resolved");
+    assert_event_sequence!(
+        s.events(),
+        Event::DamageTaken { investigator: INV, amount: 1 },
+        Event::ResourcesGained { investigator: INV, amount: 3 },
     );
 }
 

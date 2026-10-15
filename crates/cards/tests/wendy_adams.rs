@@ -98,6 +98,42 @@ fn hand_card(hand_index: u8) -> OptionTarget {
 
 // ---- the reaction ----------------------------------------------------------
 
+/// *"Cancel that chaos token and return it to the bag. Reveal a new chaos
+/// token."*: the cancelled token is back in the bag before the redraw, so the
+/// redraw can draw the same token. With only the `[auto_fail]` in the bag it
+/// is revealed again, and the test fails; the limit keeps the reaction from
+/// being offered a second time.
+#[test]
+fn the_redraw_can_draw_the_same_token() {
+    let session = willpower_test(
+        wendy().hand([EMERGENCY_CACHE]),
+        [ChaosToken::AutoFail],
+        4,
+        &[],
+    );
+    let reaction = wendys_card(&session);
+
+    // A lone non-weakness card pays the cost with no prompt.
+    let session = session.pick(reaction);
+
+    session.assert_at_turn_menu(INV);
+    assert_event_sequence!(
+        session.events(),
+        Event::ChaosTokenRevealed {
+            token: ChaosToken::AutoFail,
+            ..
+        },
+        Event::CardDiscarded { code, from: Zone::Hand, .. }
+            if *code == CardCode::new(EMERGENCY_CACHE),
+        Event::ChaosTokenRevealed {
+            token: ChaosToken::AutoFail,
+            ..
+        },
+        Event::SkillTestFailed { .. },
+    );
+    assert_no_event!(session.events(), Event::SkillTestSucceeded { .. });
+}
+
 /// Willpower 4 against 4. The `[auto_fail]` would fail it; cancelled, it
 /// contributes nothing, and the `0` revealed in its place passes the test. The
 /// cost discards the hand card she chose, and the new token's `when` cell
