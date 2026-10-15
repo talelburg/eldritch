@@ -451,11 +451,10 @@ mod ability_usage_tests {
         assert!(card.is_usage_exhausted(0, ME, limit, at(5, Phase::Investigation)));
         assert_eq!(
             card.ability_usage.get(&0),
-            Some(&vec![AbilityUsageRecord::new(
+            Some(&std::collections::BTreeMap::from([(
                 ME,
-                at(5, Phase::Investigation),
-                1
-            )])
+                AbilityUsageRecord::new(at(5, Phase::Investigation), 1)
+            )]))
         );
         // A later phase of the same round is the same round: still exhausted.
         assert!(card.is_usage_exhausted(0, ME, limit, at(5, Phase::Enemy)));
@@ -478,7 +477,7 @@ mod ability_usage_tests {
         card.bump_ability_usage(0, ME, UsagePeriod::Round, at(3, Phase::Investigation));
         card.bump_ability_usage(0, ME, UsagePeriod::Round, at(3, Phase::Enemy));
         assert!(card.is_usage_exhausted(0, ME, limit, at(3, Phase::Upkeep)));
-        assert_eq!(card.ability_usage[&0][0].count, 2);
+        assert_eq!(card.ability_usage[&0][&ME].count, 2);
     }
 
     #[test]
@@ -499,7 +498,10 @@ mod ability_usage_tests {
         card.bump_ability_usage(0, ME, UsagePeriod::Phase, at(3, Phase::Enemy));
         assert_eq!(
             card.ability_usage.get(&0),
-            Some(&vec![AbilityUsageRecord::new(ME, at(3, Phase::Enemy), 1)])
+            Some(&std::collections::BTreeMap::from([(
+                ME,
+                AbilityUsageRecord::new(at(3, Phase::Enemy), 1)
+            )]))
         );
     }
 

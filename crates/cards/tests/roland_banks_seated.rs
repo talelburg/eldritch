@@ -93,11 +93,10 @@ fn seated_roland_reaction_fires_with_no_in_play_injection() {
     let inv = &session.state().investigators[&INV];
     assert_eq!(
         inv.investigator_card.ability_usage.get(&0),
-        Some(&vec![AbilityUsageRecord::new(
+        Some(&std::collections::BTreeMap::from([(
             INV,
-            UsageClock::new(0, Phase::Investigation, Some(INV)),
-            1
-        )]),
+            AbilityUsageRecord::new(UsageClock::new(0, Phase::Investigation, Some(INV)), 1)
+        )])),
         "seated Roland's reaction recorded one fire on investigator_card.ability_usage",
     );
 }

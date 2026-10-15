@@ -213,10 +213,10 @@ pub struct CardInPlay {
     /// with the card. Required on the wire (#453).
     pub resources: u8,
     /// Per-ability usage counter for "Limit X per \[period\]" caps. Key
-    /// is the ability index within the card's `abilities()`; value holds one
-    /// [`AbilityUsageRecord`] per investigator who has triggered it, each
-    /// recording the [`UsageClock`] reading (round, phase and turn) that
-    /// investigator last fired it at and how many times.
+    /// is the ability index within the card's `abilities()`; value maps each
+    /// investigator who has triggered it to their [`AbilityUsageRecord`], the
+    /// [`UsageClock`] reading (round, phase and turn) that investigator last
+    /// fired it at and how many times.
     ///
     /// **Counted per instance and per triggering investigator.**
     /// `glossary/Limits_and_Maximums.md`: *"Each instance of an ability with
@@ -241,7 +241,7 @@ pub struct CardInPlay {
     /// wire (#453).
     ///
     /// [`UsageLimit`]: card_dsl::dsl::UsageLimit
-    pub ability_usage: BTreeMap<u8, Vec<AbilityUsageRecord>>,
+    pub ability_usage: BTreeMap<u8, BTreeMap<InvestigatorId, AbilityUsageRecord>>,
     /// **Who owns this card**, as distinct from who controls it — one of the
     /// three owners `GLOSSARY.md`'s **Owner / Controller** entry names.
     ///
@@ -340,15 +340,16 @@ impl UsageClock {
 /// One investigator's firing record of one ability, for "Limit X per
 /// \[period\]" tracking.
 ///
-/// `investigator` is who triggered it: limits are player specific (see
-/// [`CardInPlay::ability_usage`]), so each triggering investigator has a
-/// record of their own. `clock` is the [`UsageClock`] reading at last fire —
+/// Limits are player specific (see [`CardInPlay::ability_usage`]), so each
+/// triggering investigator has a record of their own, keyed by their id in
+/// that map. `clock` is the [`UsageClock`] reading at last fire —
 /// the clock every [`UsagePeriod`] reads its part of. `count` is the number of
 /// fires during the period that clock reading falls in (compared against the
 /// ability's [`UsageLimit::count`](card_dsl::dsl::UsageLimit::count) to gate
 /// further fires).
 ///
-/// The two keys are separate. Whose record it is answers *who triggered it*;
+/// The two keys are separate. Whose record it is (the map key) answers *who
+/// triggered it*;
 /// the clock's `turn` answers *whose turn it was*, which is what tells one
 /// [`UsagePeriod::Turn`] from the next. They differ when an investigator
 /// triggers an ability during someone else's turn.
@@ -363,7 +364,6 @@ impl UsageClock {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct AbilityUsageRecord {
-    pub investigator: InvestigatorId,
     pub clock: UsageClock,
     pub count: u8,
 }
@@ -373,12 +373,8 @@ impl AbilityUsageRecord {
     /// is `#[non_exhaustive]` so downstream code (tests, future
     /// scenario modules) must go through this constructor.
     #[must_use]
-    pub fn new(investigator: InvestigatorId, clock: UsageClock, count: u8) -> Self {
-        Self {
-            investigator,
-            clock,
-            count,
-        }
+    pub fn new(clock: UsageClock, count: u8) -> Self {
+        Self { clock, count }
     }
 }
 
@@ -392,7 +388,7 @@ impl AbilityUsageRecord {
 /// `false`.
 #[must_use]
 pub fn usage_exhausted(
-    usage: &BTreeMap<u8, Vec<AbilityUsageRecord>>,
+    usage: &BTreeMap<u8, BTreeMap<InvestigatorId, AbilityUsageRecord>>,
     ability_index: u8,
     investigator: InvestigatorId,
     limit: Option<UsageLimit>,
@@ -403,10 +399,10 @@ pub fn usage_exhausted(
     };
     usage
         .get(&ability_index)
-        .into_iter()
-        .flatten()
-        .filter(|record| record.investigator == investigator)
-        .any(|record| record.clock.same_period(limit.period, now) && record.count >= limit.count)
+        .and_then(|records| records.get(&investigator))
+        .is_some_and(|record| {
+            record.clock.same_period(limit.period, now) && record.count >= limit.count
+        })
 }
 
 /// Record one firing of the ability at `ability_index` by `investigator`
@@ -414,21 +410,17 @@ pub fn usage_exhausted(
 /// in `usage` (lazy reset when the stored record is for a stale period).
 /// Shared by [`CardInPlay`] and [`Investigator`](crate::state::Investigator).
 pub fn bump_usage(
-    usage: &mut BTreeMap<u8, Vec<AbilityUsageRecord>>,
+    usage: &mut BTreeMap<u8, BTreeMap<InvestigatorId, AbilityUsageRecord>>,
     ability_index: u8,
     investigator: InvestigatorId,
     period: UsagePeriod,
     now: UsageClock,
 ) {
-    let records = usage.entry(ability_index).or_default();
-    let at = records
-        .iter()
-        .position(|record| record.investigator == investigator)
-        .unwrap_or_else(|| {
-            records.push(AbilityUsageRecord::new(investigator, now, 0));
-            records.len() - 1
-        });
-    let record = &mut records[at];
+    let record = usage
+        .entry(ability_index)
+        .or_default()
+        .entry(investigator)
+        .or_insert(AbilityUsageRecord::new(now, 0));
     if !record.clock.same_period(period, now) {
         record.count = 0;
     }
