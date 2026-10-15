@@ -53,7 +53,7 @@ use crate::state::{LocationId, Phase};
 ///   only such caller today and gates on [`Status`] for exactly this reason.
 ///
 /// [`Status`]: crate::state::Status
-pub(super) fn apply_investigator_elimination(
+pub(in crate::engine) fn apply_investigator_elimination(
     cx: &mut Cx,
     investigator: InvestigatorId,
     cause: EliminationCause,

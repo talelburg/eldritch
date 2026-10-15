@@ -201,9 +201,20 @@ impl Investigator {
     /// drain, discard-all, soak `build_soakers`) keep iterating
     /// `cards_in_play` directly and never touch it.
     pub fn controlled_card_instances(&self) -> impl Iterator<Item = &CardInPlay> {
-        iter::once(&self.investigator_card)
-            .chain(self.cards_in_play.iter())
-            .chain(self.threat_area.iter())
+        iter::once(&self.investigator_card).chain(self.play_and_threat_area())
+    }
+
+    /// The cards in the investigator's play area, then those in their threat
+    /// area: [`controlled_card_instances`](Self::controlled_card_instances)
+    /// without the investigator card. The order is load-bearing for slot
+    /// make-room, whose discard options follow it.
+    ///
+    /// The threat area's encounter cards are in it too, the conflation
+    /// `controlled_card_instances` describes. Its readers are the
+    /// `Quantity::ControlledCards` count (Daisy Walker 01002's *"for each
+    /// \[\[Tome\]\] you control"*) and the slot occupants.
+    pub fn play_and_threat_area(&self) -> impl Iterator<Item = &CardInPlay> {
+        self.cards_in_play.iter().chain(self.threat_area.iter())
     }
 
     /// Physical damage currently on the investigator — reads

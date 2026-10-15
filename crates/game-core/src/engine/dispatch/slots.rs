@@ -11,7 +11,7 @@
 //! held in a slot of that type."* The Necronomicon 01009 in a threat area takes
 //! a hand slot.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use card_dsl::card_data::Slot;
 use card_dsl::dsl::{CardFilter, Effect};
@@ -135,7 +135,7 @@ fn claim_of(reg: &CardRegistry, grants: &[SlotGrant], code: &CardCode) -> SlotCl
 /// a packing two overlapping filters would allow. No card in scope grants a
 /// second restricted pool.
 fn shortfall(grants: &[SlotGrant], claims: &[SlotClaim]) -> SlotCounts {
-    let slot_types: std::collections::BTreeSet<Slot> = claims
+    let slot_types: BTreeSet<Slot> = claims
         .iter()
         .flat_map(|claim| claim.units.keys().copied())
         .collect();
@@ -216,9 +216,7 @@ fn occupants(state: &GameState, investigator: InvestigatorId) -> Vec<(CardInstan
     let Some(inv) = state.investigators.get(&investigator) else {
         return Vec::new();
     };
-    inv.cards_in_play
-        .iter()
-        .chain(inv.threat_area.iter())
+    inv.play_and_threat_area()
         .map(|card| (card.instance_id, card.code.clone()))
         .collect()
 }

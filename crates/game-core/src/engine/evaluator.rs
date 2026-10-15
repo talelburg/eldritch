@@ -1602,9 +1602,7 @@ fn eval_quantity(
         // control" card means to count.
         Quantity::ControlledCards(filter) => {
             state.investigators.get(&controller).map_or(0, |inv| {
-                inv.cards_in_play
-                    .iter()
-                    .chain(&inv.threat_area)
+                inv.play_and_threat_area()
                     .filter(|card| card_registry::card_matches(cards, &card.code, filter))
                     .count()
             })

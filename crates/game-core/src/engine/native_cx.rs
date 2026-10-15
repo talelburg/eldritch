@@ -5,9 +5,10 @@ use card_dsl::card_data::CardMetadata;
 use card_dsl::dsl::Restriction;
 
 use crate::card_registry::CardRegistry;
-use crate::engine::board::{self, LeavingCard, MoveResourcesError, NotLeft, Placement};
+use crate::engine::board::{
+    self, LeavingCard, MoveHorrorError, MoveResourcesError, NotLeft, Placement,
+};
 use crate::engine::dispatch::actions::{r#move, take};
-use crate::engine::dispatch::combat::MoveHorrorError;
 use crate::engine::dispatch::{
     act_agenda, cards, combat, elimination, encounter, hunters, placement, reveal, set_aside,
     skill_test, threat_area,
@@ -165,6 +166,13 @@ impl<'a> NativeCx<'a> {
 
     /// Put `code` into `investigator`'s threat area under `owner`, returning
     /// its new instance id, or `None` when the investigator is not in the game.
+    ///
+    /// **Makes no room.** A card with a slot symbol lands even when its slot is
+    /// full, and no occupier is discarded. [`Effect::PutIntoThreatArea`] is the
+    /// entry that makes room first, and can suspend on the make-room prompt
+    /// (#1097). Use this one only for a card that holds no slot.
+    ///
+    /// [`Effect::PutIntoThreatArea`]: card_dsl::dsl::Effect::PutIntoThreatArea
     pub fn place_in_threat_area(
         &mut self,
         investigator: InvestigatorId,
@@ -339,7 +347,7 @@ impl<'a> NativeCx<'a> {
         to: CardInstanceId,
         amount: u8,
     ) -> Result<(), MoveHorrorError> {
-        combat::move_horror(self.write_access(), from, to, amount)
+        board::move_horror(self.write_access(), from, to, amount)
     }
 
     // --- Leaving play ---
