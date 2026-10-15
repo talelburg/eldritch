@@ -109,7 +109,7 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
                 removed_from_game: Vec::new(),
                 action_surcharge_spent_this_round: BTreeSet::new(),
                 additional_actions_this_turn: Vec::new(),
-                additional_actions_used_this_turn: BTreeSet::new(),
+                grants_spent_this_turn: BTreeSet::new(),
                 investigator_card,
             },
         );
@@ -367,7 +367,7 @@ pub(super) fn begin_investigator_turn(cx: &mut Cx, who: InvestigatorId) {
     // De Luca 01048). Cleared ahead of the turn-begins window, which is already
     // part of the turn.
     if let Some(inv) = cx.state.investigators.get_mut(&who) {
-        inv.additional_actions_used_this_turn.clear();
+        inv.grants_spent_this_turn.clear();
     }
     // Advance the Investigation anchor to `TurnBegins` so the closing
     // InvestigatorTurnBegins window routes to the right on_child_pop arm

@@ -227,7 +227,7 @@ enum AdditionalActionOrigin {
     /// An [`AdditionalActionWhileInPlay`](card_dsl::dsl::Effect::AdditionalActionWhileInPlay)
     /// grant on this card in play (Leo De Luca 01048). Using it marks the
     /// instance in
-    /// [`Investigator::additional_actions_used_this_turn`](crate::state::Investigator::additional_actions_used_this_turn).
+    /// [`Investigator::grants_spent_this_turn`](crate::state::Investigator::grants_spent_this_turn).
     /// Declared ahead of `Effect`, so it sorts first.
     InPlay(CardInstanceId),
     /// The `index`th entry of
@@ -271,10 +271,7 @@ fn additional_actions(
     // the moment the card leaves play.
     let mut pool: Vec<AdditionalAction> = Vec::new();
     for card in inv.controlled_card_instances() {
-        if inv
-            .additional_actions_used_this_turn
-            .contains(&card.instance_id)
-        {
+        if inv.grants_spent_this_turn.contains(&card.instance_id) {
             continue;
         }
         let Some(abilities) = (cards.abilities_for)(&card.code) else {
@@ -342,7 +339,7 @@ fn use_additional_actions(
     for origin in origins {
         match origin {
             AdditionalActionOrigin::InPlay(instance) => {
-                inv.additional_actions_used_this_turn.insert(*instance);
+                inv.grants_spent_this_turn.insert(*instance);
             }
             AdditionalActionOrigin::Effect { index } => effect_indices.push(*index),
         }

@@ -69,7 +69,7 @@ pub fn test_investigator(id: u32) -> Investigator {
         removed_from_game: Vec::new(),
         action_surcharge_spent_this_round: BTreeSet::new(),
         additional_actions_this_turn: Vec::new(),
-        additional_actions_used_this_turn: BTreeSet::new(),
+        grants_spent_this_turn: BTreeSet::new(),
         investigator_card,
     }
 }
