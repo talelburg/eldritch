@@ -92,6 +92,7 @@ pub mod arcane_initiate;
 pub mod arcane_studies;
 pub mod attic;
 pub mod automatic_45;
+pub mod backstab;
 pub mod barricade;
 pub mod beat_cop;
 pub mod blinding_light;
@@ -229,6 +230,7 @@ pub const ALL: &[CardRecord] = &[
     arcane_studies::CARD,
     attic::CARD,
     automatic_45::CARD,
+    backstab::CARD,
     barricade::CARD,
     beat_cop::CARD,
     blinding_light::CARD,
