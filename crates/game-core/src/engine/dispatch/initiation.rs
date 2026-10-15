@@ -669,7 +669,7 @@ pub(super) fn record_initiation(
 /// **Fire** the triggered ability `candidate` names, at the timing point
 /// `event` — the one firing path for every forced and reaction ability: a lone
 /// forced hit, an ability the lead picks from an ordered forced run, and a
-/// reaction a player picks from a window. Four steps, in Appendix I's order:
+/// reaction a player picks from a window. Four steps:
 ///
 /// 1. resolve the ability at its address through the side-in-effect / grant
 ///    funnel ([`abilities_in_effect::resolve`]);
@@ -677,10 +677,12 @@ pub(super) fn record_initiation(
 ///    the effect is pushed, so a use whose effects are cancelled still counts);
 /// 3. pay its costs, where `kind` is one [`applies`] the cost check to —
 ///    every kind but Forced, which is neither checked nor paid. Appendix I
-///    step 4: *"Pay the cost(s)."* Paid through the payer activations use
-///    (`abilities::pay_activation_costs`), after the use is recorded as an
-///    activation pays them, so Pickpocketing 01046's *"exhaust
-///    Pickpocketing"* is the same exhaust as Burglary 01045's;
+///    step 2: *"Pay the cost(s)."* Paid through the payer activations use
+///    (`abilities::pay_activation_costs`), so Pickpocketing 01046's *"exhaust
+///    Pickpocketing"* is the same exhaust as Burglary 01045's. Paid after the
+///    use is recorded rather than before, as an activation pays them: a cost
+///    that takes the source out of play takes its use counter with it, and
+///    within one `apply` nothing reads the counter in between;
 /// 4. bind what `event` supplies and push the effect for the `drive` loop
 ///    ([`push_bound_effect`]).
 ///
