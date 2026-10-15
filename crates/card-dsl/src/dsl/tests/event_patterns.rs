@@ -55,6 +55,7 @@ fn skill_test_resolved_round_trips() {
         kind: Some(SkillTestKind::Investigate),
         by_controller: true,
         tested_location: TestedLocationScope::Any,
+        margin: None,
     };
     let json = serde_json::to_string(&p).expect("serialize");
     let back: EventPattern = serde_json::from_str(&json).expect("deserialize");
@@ -72,6 +73,7 @@ fn skill_test_resolved_unqualified_round_trips() {
         kind: Some(SkillTestKind::Fight),
         by_controller: false,
         tested_location: TestedLocationScope::Any,
+        margin: None,
     };
     let json = serde_json::to_string(&p).expect("serialize");
     let back: EventPattern = serde_json::from_str(&json).expect("deserialize");
@@ -83,6 +85,7 @@ fn skill_test_resolved_unqualified_round_trips() {
             kind: Some(SkillTestKind::Fight),
             by_controller: true,
             tested_location: TestedLocationScope::Any,
+            margin: None,
         }
     );
 }

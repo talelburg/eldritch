@@ -514,6 +514,7 @@ pub(super) fn trigger_matches(
                 kind: p_kind,
                 by_controller,
                 tested_location: _,
+                margin: _,
             } = pattern
             else {
                 unreachable!(
@@ -601,17 +602,37 @@ fn scope_matches(
         // "When an investigator leaves **attached location**" (Barricade 01038).
         TimingEvent::LeftLocation { location, .. } => attached_to(state, source, *location),
         // "After **attached location** is successfully investigated"
-        // (Obscuring Fog 01168), when the pattern says so.
-        TimingEvent::SkillTestResolved { .. } => match pattern {
-            EventPattern::SkillTestResolved {
-                tested_location: TestedLocationScope::Attached,
+        // (Obscuring Fog 01168), and "by 2 or more" / "by 2 or less"
+        // (Scavenging 01073, "Look what I found!" 01079), when the pattern
+        // says so.
+        TimingEvent::SkillTestResolved { .. } => {
+            let EventPattern::SkillTestResolved {
+                tested_location,
+                margin,
                 ..
-            } => state
-                .current_skill_test()
-                .and_then(|test| test.tested_location)
-                .is_some_and(|tested| attached_to(state, source, tested)),
-            _ => true,
-        },
+            } = pattern
+            else {
+                unreachable!(
+                    "scope_matches: trigger_matches paired {pattern:?} with SkillTestResolved, \
+                     but only EventPattern::SkillTestResolved has that condition"
+                )
+            };
+            let test = state.current_skill_test();
+            let location_ok = match tested_location {
+                TestedLocationScope::Attached => test
+                    .and_then(|test| test.tested_location)
+                    .is_some_and(|tested| attached_to(state, source, tested)),
+                TestedLocationScope::Any => true,
+            };
+            // Read live off the stored result, so a re-total that moves only
+            // the margin is what the match sees.
+            let margin_ok = margin.is_none_or(|bound| {
+                test.and_then(|test| test.resolved)
+                    .and_then(|resolved| resolved.succeeded_by().or(resolved.failed_by()))
+                    .is_some_and(|by| bound.admits(by))
+            });
+            location_ok && margin_ok
+        }
         // "After **Silver Twilight Acolyte** attacks" (01102) and "an enemy
         // attacks **an investigator at your location**" (Dodge 01023).
         TimingEvent::EnemyAttacks {

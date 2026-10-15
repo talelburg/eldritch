@@ -79,6 +79,7 @@ fn succeeded() -> EventPattern {
         kind: None,
         by_controller: true,
         tested_location: TestedLocationScope::Any,
+        margin: None,
     }
 }
 
