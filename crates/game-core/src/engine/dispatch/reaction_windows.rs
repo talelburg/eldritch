@@ -408,11 +408,17 @@ fn rescan(
     }
 }
 
-/// The condition an open window's re-scan asks about. Every condition is the
-/// one the window was opened for, except a skill test's verdict in its `when`
-/// cell: that verdict is provisional until the resolve step re-totals (#1111),
-/// so the re-scan re-totals too, and asks about the verdict the test would now
-/// resolve with.
+/// The condition a scan of `bucket` asks about. Every condition is the one that
+/// was announced, except a skill test's verdict in its `when` cell: that
+/// verdict is provisional until the resolve step re-totals (#1111), so the scan
+/// re-totals too, and asks about the verdict the test would now resolve with.
+///
+/// Every scan of a cell asks through here — the coordinator's per-cell check,
+/// the cell's forced and reaction scans, and an open window's re-scan — so
+/// they agree on the question. A forced `when` ability that flips the verdict
+/// mid-run leaves the cell's reaction scan asking about the new verdict, the
+/// one the window's lapse check will re-ask; asked against the announced one,
+/// it would offer a *"would fail"* reaction only for that check to withdraw it.
 ///
 /// So once one Lucky! 01080 has turned a failure into a success, a second is
 /// withdrawn: *"Play when you would fail a skill test"* no longer holds, and
@@ -422,7 +428,7 @@ fn rescan(
 /// still fails, both stay offered. An ability matching either verdict is
 /// unaffected, and the intersection in [`withdraw_lapsed_candidates`] never
 /// adds the other verdict's abilities: those wait for the fresh sequence.
-fn condition_as_it_now_stands(
+pub(super) fn condition_as_it_now_stands(
     state: &GameState,
     cards: &CardRegistry,
     event: &TimingEvent,

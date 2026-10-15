@@ -102,9 +102,10 @@ pub(in crate::engine) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
     };
     let caller_owned = matches!(resolution, ConditionResolution::Caller);
     // Per-cell re-scan (#434): the prior cell may have changed board state.
-    let has_forced = !trigger_scan::collect_forced(cx.state, cx.cards, &event, bucket).is_empty();
+    let asked = reaction_windows::condition_as_it_now_stands(cx.state, cx.cards, &event, bucket);
+    let has_forced = !trigger_scan::collect_forced(cx.state, cx.cards, &asked, bucket).is_empty();
     let has_reaction =
-        !trigger_scan::collect_reactions(cx.state, cx.cards, &event, bucket).is_empty();
+        !trigger_scan::collect_reactions(cx.state, cx.cards, &asked, bucket).is_empty();
     if caller_owned && step == EmitStep::When {
         if has_forced || has_reaction {
             return EngineOutcome::Rejected {
@@ -171,6 +172,10 @@ pub(in crate::engine) fn dispatch_timing_point(cx: &mut Cx) -> EngineOutcome {
         finish_timing_point(cx);
         return EngineOutcome::Done;
     }
+    // Both sub-steps ask about the condition as it now stands: a forced `when`
+    // ability resolved in the `Forced` step can have flipped a skill test's
+    // verdict before the `Reaction` step scans (#780).
+    let event = reaction_windows::condition_as_it_now_stands(cx.state, cx.cards, &event, bucket);
     match sub {
         TimingSub::Forced => {
             // Advance our own cursor first (see the `Reaction`-resumes-correctly

@@ -56,6 +56,8 @@ const SPARE_ON_SUCCESS: &str = "MOCK-MARGIN-SPARE-SUCCESS";
 const REACT_FAIL_BY_TWO_OR_LESS: &str = "MOCK-MARGIN-REACT-FAILURE-LE2";
 /// Reaction, when you would succeed at a test by 1 or more: 1 horror.
 const REACT_SUCCEED_BY_ONE_OR_MORE: &str = "MOCK-MARGIN-REACT-SUCCESS-GE1";
+/// Reaction, when you would fail a test (no margin): 1 horror.
+const REACT_ON_FAILURE: &str = "MOCK-MARGIN-REACT-FAILURE";
 
 fn would(outcome: TestOutcome, margin: Option<MarginScope>) -> EventPattern {
     EventPattern::SkillTestResolved {
@@ -114,6 +116,13 @@ fn registries() -> Registries {
             .with_abilities(REACT_SUCCEED_BY_ONE_OR_MORE, || {
                 vec![dsl::reaction_on_event(
                     would(TestOutcome::Success, Some(MarginScope::at_least(1))),
+                    EventTiming::When,
+                    dsl::deal_horror(InvestigatorTarget::You, 1u8),
+                )]
+            })
+            .with_abilities(REACT_ON_FAILURE, || {
+                vec![dsl::reaction_on_event(
+                    would(TestOutcome::Failure, None),
                     EventTiming::When,
                     dsl::deal_horror(InvestigatorTarget::You, 1u8),
                 )]
@@ -232,6 +241,17 @@ fn a_success_margin_does_not_read_a_stored_failure() {
         REACT_SUCCEED_BY_ONE_OR_MORE,
         1,
     );
+    session.assert_at_turn_menu(INV);
+    assert_eq!(session.state().investigators[&INV].horror(), 0);
+}
+
+#[test]
+fn a_flipped_verdict_withholds_the_stale_verdicts_reaction() {
+    // 3 against 5 fails; the +3 makes it a success by 1 before the `when`
+    // cell's reaction scan runs. "When you would fail" no longer holds, so the
+    // scan never offers it, rather than offering it against the announced
+    // failure for the window's lapse check to withdraw.
+    let session = session_after_flip(FLIP_TO_SUCCESS, SPARE_ON_FAILURE, REACT_ON_FAILURE, 5);
     session.assert_at_turn_menu(INV);
     assert_eq!(session.state().investigators[&INV].horror(), 0);
 }
