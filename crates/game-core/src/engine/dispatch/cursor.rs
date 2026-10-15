@@ -107,10 +107,13 @@ pub(super) fn next_active_investigator_after(
 /// window closes, for step 2.2.1's actions. An additional action bought in that
 /// window is bought during the turn, so this answers `true` there.
 ///
-/// [`end_turn`](super::phases::end_turn) forfeits the unused actions and arms
-/// the frame's `ending` flag in one step, so from the `EndOfTurn` window on this
-/// is `false`: no action is left to take.
-pub(super) fn turn_open(state: &GameState, investigator: InvestigatorId) -> bool {
+/// The turn's end forfeits the unused actions and arms the frame's `ending`
+/// flag in one step, so from the `EndOfTurn` window on this is `false`: no
+/// action is left to take. "Skids" O'Toole 01003's *"During your turn"* reads
+/// it for the same reason: an additional action bought once the turn is ending
+/// would be forfeited at once.
+#[must_use]
+pub fn turn_open(state: &GameState, investigator: InvestigatorId) -> bool {
     state.phase == Phase::Investigation
         && state.active_investigator == Some(investigator)
         && !state

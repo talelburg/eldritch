@@ -28,7 +28,9 @@
 //! the slot for a play restriction the engine cannot derive, and the only card
 //! that needs this one is Skids. ADR 0017 keeps *timing* out of the initiation
 //! gate, but this clause is a restriction printed on the ability rather than
-//! the timing of a path, which is what the eligibility slot holds.
+//! the timing of a path, which is what the eligibility slot holds. It asks the
+//! engine's own [`engine::turn_open`], the check the additional-action list
+//! reads, so it is not offered once his turn is ending.
 //!
 //! The elder sign is [`dsl::elder_sign_with`] a +2 modifier and an `on_success`
 //! arm, which resolves at Skill Test Timing step 7, after the action's own
@@ -40,8 +42,8 @@
 use card_dsl::dsl::{
     self, Ability, Cost, IntExpr, InvestigatorTarget, TokenOutcome, UsageLimit, UsagePeriod,
 };
-use game_core::engine::evaluator::EvalContext;
-use game_core::state::{GameState, Phase};
+use game_core::engine::{self, evaluator::EvalContext};
+use game_core::state::GameState;
 
 use crate::impls::CardRecord;
 
@@ -77,14 +79,14 @@ pub fn abilities() -> Vec<Ability> {
     ]
 }
 
-/// True during the controller's turn: the Investigation phase, with them the
-/// active investigator. The end of the turn is still part of it, as the
-/// play-side "play only during your turn" gate argues from the official FAQ's
-/// Agatha Crane answer (`data/official-faq/Frequently_Asked_Questions.md`):
-/// *"You resolve Agatha Crane’s ability at the end of your turn, which is still
-/// during your turn."*
+/// True while the controller's turn is open and not ending
+/// ([`engine::turn_open`]), the window the additional action can be used in.
+/// The end of the turn is still part of the turn, but the action bought there
+/// would be forfeited at once (FAQ 1.31, `glossary/Action.md`: *"Any unused
+/// actions are forfeited at the end of an investigator's turn"*), so the
+/// ability is not offered there.
 fn during_your_turn(state: &GameState, ctx: &EvalContext) -> bool {
-    state.phase == Phase::Investigation && state.active_investigator == Some(ctx.controller)
+    engine::turn_open(state, ctx.controller)
 }
 
 #[cfg(test)]

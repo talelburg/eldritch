@@ -36,6 +36,11 @@ const ANCIENT_EVILS: &str = "01166";
 const RISE_OF_THE_GHOULS: &str = "01106";
 /// Filler for Upkeep's draw.
 const EMERGENCY_CACHE: &str = "01088";
+/// Beat Cop (01018): its `[fast]` ability keeps the Enemy phase's player
+/// window standing.
+const BEAT_COP: &str = "01018";
+/// Ghoul Minion (01160), for Beat Cop to have a target.
+const GHOUL_MINION: &str = "01160";
 
 const INV: InvestigatorId = InvestigatorId(1);
 const OTHER: InvestigatorId = InvestigatorId(2);
@@ -173,9 +178,7 @@ fn the_ability_is_not_offered_a_second_time_that_turn() {
     assert!(resources(session.state()) >= 2, "he could still pay");
     assert!(!menu(&session).contains(&buy), "not offered again");
 
-    let refused = session.submit_off_menu(&buy);
-    assert!(refused.rejection().is_some(), "and refused if sent anyway");
-    assert_eq!(actions(refused.state()), 4);
+    let _ = session.assert_rejects(|s| s.submit_off_menu(&buy));
 }
 
 /// *"During your turn"*: during another investigator's turn he may not buy it.
@@ -191,9 +194,55 @@ fn the_ability_is_refused_outside_his_turn() {
     let buy = buy(session.state());
     assert!(!menu(&session).contains(&buy));
 
-    let refused = session.submit_off_menu(&buy);
-    assert!(refused.rejection().is_some());
-    assert_eq!(resources(refused.state()), 5, "nothing paid");
+    let _ = session.assert_rejects(|s| s.submit_off_menu(&buy));
+}
+
+/// *"During your turn"*: the Enemy phase is no one's turn. Beat Cop 01018's
+/// `[fast]` ability keeps the phase's player window standing, so the window
+/// would offer his if it could.
+#[test]
+fn the_ability_is_not_offered_in_the_enemy_phase() {
+    let mut ghoul = test_support::test_enemy(7, GHOUL_MINION);
+    ghoul.code = CardCode::new(GHOUL_MINION);
+    let paused = staged(skids().in_play([BEAT_COP]).deck([EMERGENCY_CACHE]))
+        .with_enemy_engaged(ghoul, INV)
+        .session()
+        .take(&TurnAction::EndTurn);
+    assert_eq!(paused.state().phase, Phase::Enemy);
+    let card = paused.state().investigators[&INV].card_anchor();
+    assert_eq!(
+        paused.offered_at(&card),
+        0,
+        "the Enemy phase window does not offer it: {:?}",
+        paused.prompt(),
+    );
+}
+
+/// Once his turn is ending the ability is not offered: the action it buys would
+/// be forfeited at once (FAQ 1.31, `glossary/Action.md`: *"Any unused actions
+/// are forfeited at the end of an investigator's turn"*). Frozen in Fear
+/// 01164's *"**Forced** - At the end of your turn: Test \[willpower\] (3)."*
+/// opens a skill test there, whose player windows his `[fast]` would otherwise
+/// keep standing.
+#[test]
+fn the_ability_is_not_offered_once_his_turn_is_ending() {
+    let session = staged(skids().threat_area([FROZEN_IN_FEAR]))
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .with_token_modifiers(TokenModifiers::default())
+        .session()
+        .take(&TurnAction::EndTurn);
+    assert!(
+        session.state().current_skill_test().is_some(),
+        "the end-of-turn test is in flight: {:?}",
+        session.prompt(),
+    );
+    let card = session.state().investigators[&INV].card_anchor();
+    assert_eq!(
+        session.offered_at(&card),
+        0,
+        "not offered in the end-of-turn window: {:?}",
+        session.prompt(),
+    );
 }
 
 /// FAQ 1.10: *"the investigator’s three standard actions are the ones that are
