@@ -147,10 +147,7 @@ repo and cannot be trusted.
 
 ## Open questions
 
-- **What is a restriction on an additional action, and how does the turn menu test
-  an action against it?** Daisy's additional action is spendable only on `[[Tome]]`
-  `[action]` abilities, so the enumerator has to know which options it can pay for.
-  #779 owns this.
+None.
 
 ## Dependencies
 

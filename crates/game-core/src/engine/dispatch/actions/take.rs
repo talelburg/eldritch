@@ -276,8 +276,10 @@ enum AdditionalActionOrigin {
 /// one could not take. Spending a card-in-play one first protects the action
 /// from the card leaving play. While every entry that qualifies carries the
 /// same restriction, nothing the player could choose would change the outcome.
-/// [`quote`] asserts that in debug builds. The first card that breaks it fails
-/// its own test, rather than having the engine silently pick for the player.
+/// [`quote`] asserts that in debug builds, rather than having the engine
+/// silently pick for the player. Daisy Walker 01002 with Leo De Luca 01048
+/// breaks it: a Tome activation qualifies as both her restricted action and
+/// his unrestricted one, and the choice between them is #1098.
 fn additional_actions(
     state: &GameState,
     cards: &CardRegistry,
