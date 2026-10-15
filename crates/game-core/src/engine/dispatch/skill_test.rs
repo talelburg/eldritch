@@ -29,9 +29,9 @@ use crate::scenario;
 use crate::state::{
     self, AbilitySource, CardCode, CardInstanceId, ChaosToken, CommittedCard,
     CommittedCardDestination, Continuation, DifficultyBasis, DiscardPile, FastWindowKind,
-    GameState, InFlightSkillTest, InvestigatorId, Lifetime, RecordedModifier, ResolvedTest,
-    SkillKind, SkillSubstitution, SkillTestFollowUp, SkillTestStep, Status,
-    SubstitutionPromptFrame, TokenResolution, Zone,
+    GameState, InFlightSkillTest, InvestigatorId, LastingEffect, LastingEffectKind, Lifetime,
+    RecordedModifier, ResolvedTest, SkillKind, SkillSubstitution, SkillTestFollowUp, SkillTestStep,
+    Status, SubstitutionPromptFrame, TokenResolution, Zone,
 };
 
 /// The one-shot modifier an initiator grants the test it starts: a weapon's
@@ -240,10 +240,13 @@ pub(in crate::engine) fn start_skill_test(
 /// choice at initiation. A card-local native (Mind over Matter 01036) reaches
 /// it as
 /// [`NativeCx::add_skill_substitution`](crate::engine::NativeCx::add_skill_substitution).
-/// Round-scoped because the
-/// round-end teardown is what clears the list; no event announces it.
+/// Stamped [`Lifetime::Round`]: Mind over Matter's is the only substitution in
+/// scope, and it lasts *"Until the end of the round"*. No event announces it.
 pub fn add_skill_substitution(cx: &mut Cx, substitution: SkillSubstitution) {
-    cx.state.skill_substitutions.push(substitution);
+    cx.state.lasting_effects.push(LastingEffect {
+        lifetime: Lifetime::Round,
+        kind: LastingEffectKind::SkillSubstitution(substitution),
+    });
 }
 
 /// Send the in-flight test's committed card at `index` back to hand at RR ST.8
@@ -271,13 +274,14 @@ pub fn return_committed_card_to_hand(cx: &mut Cx, index: u8) {
     }
 }
 
-/// Whether `investigator` has an active round-scoped substitution covering a
-/// `skill` test (Mind over Matter 01036: Intellect for Combat/Agility).
+/// Whether `investigator` has an active substitution covering a `skill` test
+/// (Mind over Matter 01036: Intellect for Combat/Agility).
 fn substitution_covers(state: &GameState, investigator: InvestigatorId, skill: SkillKind) -> bool {
-    state
-        .skill_substitutions
-        .iter()
-        .any(|s| s.investigator == investigator && s.for_skills.contains(&skill))
+    state.lasting_effects.iter().any(|e| match &e.kind {
+        LastingEffectKind::SkillSubstitution(s) => {
+            s.investigator == investigator && s.for_skills.contains(&skill)
+        }
+    })
 }
 
 /// Resume the Mind over Matter substitution prompt (#322): `PickSingle(0)`
@@ -768,20 +772,22 @@ fn fire_on_commit_step(cx: &mut Cx, investigator: InvestigatorId, committed: &[C
 /// RR ST.7 part 1 — apply the action-specific [`SkillTestFollowUp`].
 ///
 /// On **success** the follow-up runs: the Investigate follow-up pushes its
-/// `discover_clue` effect (yielding to the drive loop), while Fight / Evade /
-/// None mutate synchronously. On **failure** the follow-up is skipped entirely
-/// (every variant is success-only). The cursor is pre-advanced to
+/// `discover_clue` effect and the Evade follow-up its `EnemyEvaded` timing
+/// event (each yielding to the drive loop), while Fight / None mutate
+/// synchronously. On **failure** the follow-up is skipped entirely (every
+/// variant is success-only). The cursor is pre-advanced to
 /// [`ApplyResultEffect`](SkillTestStep::ApplyResultEffect) **before** any push,
-/// so a suspending discovery (Cover Up 01007's before-discover interrupt)
-/// resumes at `ApplyResultEffect` rather than re-running the follow-up. (The
+/// so a suspending discovery (Cover Up 01007's before-discover interrupt) or
+/// evasion (Pickpocketing 01046's after-evade reaction window) resumes at
+/// `ApplyResultEffect` rather than re-running the follow-up. (The
 /// "after you successfully investigate" timing point already fired at the
 /// preceding [`DetermineOutcome`](SkillTestStep::DetermineOutcome) step,
 /// before this discovery — RR ST.6 success precedes the ST.7 consequence.)
 ///
-/// When the Investigate follow-up pushes `discover_clue` the `advance` loop's
-/// top-frame check yields on the next iteration (the Effect frame is now
-/// `last()`); Fight/Evade/None push nothing and the loop `continue`s on this
-/// frame straight into `ApplyResultEffect`.
+/// When the Investigate or Evade follow-up pushes its frame the `advance`
+/// loop's top-frame check yields on the next iteration (that frame is now
+/// `last()`); Fight/None push nothing and the loop `continue`s on this frame
+/// straight into `ApplyResultEffect`.
 ///
 /// The Fight follow-up evaluates its `extra_damage` here, and an expression
 /// the evaluator can't answer comes back as the `Err` rejection the driver
@@ -1347,9 +1353,10 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
             SkillTestStep::ApplyFollowUp => {
                 // RR ST.7 part 1. Pre-advances the cursor to ApplyResultEffect,
                 // then applies the action follow-up (success-only). The
-                // Investigate follow-up pushes discover_clue → the loop check at
-                // the top of the next iteration sees the Effect frame on top and
-                // yields; Fight/Evade/None mutate synchronously (a Fight that
+                // Investigate follow-up pushes discover_clue and the Evade one
+                // its EnemyEvaded coordinator → the loop check at the top of the
+                // next iteration sees that frame on top and yields; Fight/None
+                // mutate synchronously (a Fight that
                 // defeats an enemy queues a reaction window — also a non-SkillTest
                 // top frame, also yields).
                 if let Err(rejection) = apply_follow_up_step(cx, investigator) {

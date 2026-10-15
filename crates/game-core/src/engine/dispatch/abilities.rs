@@ -263,8 +263,9 @@ pub(super) fn resume_activate_ability(
 }
 
 /// Pay every payment cost of an activated ability beyond its actions, which
-/// the step pays ([`take::take`]). Mutates state in place and pushes the
-/// matching events.
+/// the step pays ([`take::take`]) — and every cost of a reaction ability, which
+/// `initiation::initiate` pays through here too (#1075). Mutates state in
+/// place and pushes the matching events.
 /// Caller has already validated that every cost was payable *at validation
 /// time*; a cost can still fail here by outliving its own source, which is
 /// what the `Err` return carries.
@@ -281,7 +282,7 @@ pub(super) fn resume_activate_ability(
 /// a later source-referencing cost returns `Err` and the whole activation is
 /// rejected. `apply_via` snapshot-restores state, events and the RNG position on
 /// rejection (#161), so a mid-payment `Err` leaves the board untouched.
-fn pay_activation_costs(
+pub(super) fn pay_activation_costs(
     cx: &mut Cx,
     investigator: InvestigatorId,
     source: AbilitySource,
@@ -353,7 +354,9 @@ fn pay_activation_costs(
             }
             // The harm is not paid inline: it is dealt through the deal frame
             // once every other cost is paid and the ability announced, by
-            // `activate_ability` (`harm_cost`).
+            // `activate_ability` (`harm_cost`). A triggered ability carrying
+            // one is refused at the initiation gate, so never reaches here
+            // (TODO(#1081)).
             Cost::TakeHarm { .. } => {}
         }
     }

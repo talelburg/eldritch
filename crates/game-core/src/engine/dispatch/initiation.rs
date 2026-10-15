@@ -28,7 +28,7 @@
 use std::borrow::Cow;
 
 use card_dsl::card_data::{CardMetadata, CardType};
-use card_dsl::dsl::{Ability, ActionDesignator, Effect, Trigger, UsageLimit};
+use card_dsl::dsl::{Ability, ActionDesignator, Cost, Effect, Trigger, UsageLimit};
 
 use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::abilities;
@@ -159,7 +159,9 @@ enum Check {
 ///   point."* A played card has no ability whose limit the gate could count.
 /// - **Play-ban.** Play only. A ban on playing a card type says nothing about
 ///   an in-play card's abilities.
-/// - **Cost.** Every kind but Forced, which is not paid for.
+/// - **Cost.** Every kind but Forced, which is not paid for. Where the check
+///   applies, [`initiate`] pays: a cost that is checked is paid, and one that
+///   is not is not.
 const fn applies(check: Check, kind: InitiationKind) -> bool {
     use InitiationKind::{Activated, Forced, Play, Reaction};
     match check {
@@ -256,6 +258,9 @@ pub(super) fn check(
             if kind == InitiationKind::Play {
                 play_cost_payable(reg, inv, &candidate.code)
             } else {
+                if kind == InitiationKind::Reaction {
+                    triggered_harm_cost(&candidate.code, ability)?;
+                }
                 ability_cost_payable(state, inv, ability, candidate.source)
             }
         },
@@ -452,7 +457,9 @@ fn performs_an_action(ability: &Ability) -> bool {
 }
 
 /// Whether the ability `candidate` names has used up its printed limit this
-/// period. Only a printed ability on an in-play card instance carries a
+/// period **for `candidate`'s controller** — the triggering investigator, since
+/// limits are player specific (`CardInPlay::ability_usage` cites the rule and
+/// The Stranger 03047a's ruling). Only a printed ability on an in-play card instance carries a
 /// counter: a granted ability has no printed index to key one by (#829), and a
 /// location, enemy, act or agenda has no instance to hold one (#699). Neither
 /// is counted out here, and the activation validator refuses either one that
@@ -470,8 +477,15 @@ fn usage_exhausted(
     };
     ability_source::source_card(state, source)
         .and_then(|card| {
-            card.instance()
-                .map(|instance| instance.is_usage_exhausted(index, limit, state.round, state.phase))
+            card.instance().map(|instance| {
+                instance.is_usage_exhausted(
+                    index,
+                    candidate.controller,
+                    limit,
+                    state.round,
+                    state.phase,
+                )
+            })
         })
         .unwrap_or(false)
 }
@@ -494,6 +508,29 @@ fn ability_cost_payable(
     let uses = source.map(|card| card.uses()).unwrap_or_default();
     for cost in &ability.costs {
         abilities::check_cost_payable(cost, inv, exhausted, &uses)?;
+    }
+    Ok(())
+}
+
+/// Refuse a triggered ability whose costs include
+/// [`Cost::TakeHarm`](card_dsl::dsl::Cost::TakeHarm). [`initiate`] pays a
+/// triggered ability's costs through the activation payer, whose `TakeHarm`
+/// arm pays nothing: an activation deals the harm through the deal frame once
+/// its other costs are paid, a step that would lose a trigger's event
+/// bindings. No Core or Dunwich triggered ability prints one, so it is
+/// refused rather than built (#1081).
+fn triggered_harm_cost(code: &CardCode, ability: &Ability) -> Result<(), Cow<'static, str>> {
+    if ability
+        .costs
+        .iter()
+        .any(|cost| matches!(cost, Cost::TakeHarm { .. }))
+    {
+        return Err(format!(
+            "TODO(#1081): {code}'s Cost::TakeHarm on a triggered ability needs its harm dealt \
+             through the deal frame with the trigger's bindings kept; it is supported only on \
+             an activated ability"
+        )
+        .into());
     }
     Ok(())
 }
@@ -581,8 +618,9 @@ fn payable_play_cost(play_cost: Option<i8>, code: &CardCode) -> Result<u8, Cow<'
 /// `None` for `usage_limit` (no printed *"Limit X per \[period\]"*) records
 /// nothing.
 ///
-/// The counter is `CardInPlay::ability_usage`, per instance and keyed by
-/// printed index, so this resolves the instance **wherever it sits on the
+/// The counter is `CardInPlay::ability_usage`, per instance, keyed by printed
+/// index and recorded against `candidate.controller` (limits are player
+/// specific), so this resolves the instance **wherever it sits on the
 /// board** — the same lookup `usage_exhausted` reads through
 /// (`ability_source::source_card`, over [`board::find_instance`]). That covers
 /// the controller's investigator card (Roland Banks 01001's seated `[reaction]`), cards in play and threat
@@ -615,7 +653,13 @@ pub(super) fn record_initiation(
                 )
             });
             if let Some(index) = candidate.address.printed_index() {
-                card.bump_ability_usage(index, usage_limit.period, current_round, current_phase);
+                card.bump_ability_usage(
+                    index,
+                    candidate.controller,
+                    usage_limit.period,
+                    current_round,
+                    current_phase,
+                );
             }
         }
         // Listed kind by kind rather than wildcarded: a sixth `AbilitySource`
@@ -641,14 +685,25 @@ pub(super) fn record_initiation(
 /// **Fire** the triggered ability `candidate` names, at the timing point
 /// `event` — the one firing path for every forced and reaction ability: a lone
 /// forced hit, an ability the lead picks from an ordered forced run, and a
-/// reaction a player picks from a window. Three steps, in Appendix I's order:
+/// reaction a player picks from a window. Four steps:
 ///
 /// 1. resolve the ability at its address through the side-in-effect / grant
 ///    funnel ([`abilities_in_effect::resolve`]);
 /// 2. record the initiation ([`record_initiation`], Appendix I step 3 — before
 ///    the effect is pushed, so a use whose effects are cancelled still counts);
-/// 3. bind what `event` supplies and push the effect for the `drive` loop
+/// 3. pay its costs, where `kind` is one [`applies`] the cost check to —
+///    every kind but Forced, which is neither checked nor paid. Appendix I
+///    step 2: *"Pay the cost(s)."* Paid through the payer activations use
+///    (`abilities::pay_activation_costs`), so Pickpocketing 01046's *"exhaust
+///    Pickpocketing"* is the same exhaust as Burglary 01045's. Paid after the
+///    use is recorded rather than before, as an activation pays them: a cost
+///    that takes the source out of play takes its use counter with it, and
+///    within one `apply` nothing reads the counter in between;
+/// 4. bind what `event` supplies and push the effect for the `drive` loop
 ///    ([`push_bound_effect`]).
+///
+/// A [`Cost::TakeHarm`](card_dsl::dsl::Cost::TakeHarm) is never paid here:
+/// the gate refuses a triggered ability carrying one (`triggered_harm_cost`).
 ///
 /// Step 2 applies to forced abilities exactly as to reactions.
 /// `glossary/Limits_and_Maximums.md`: *"Each instance of an ability with such
@@ -659,7 +714,10 @@ pub(super) fn record_initiation(
 ///
 /// Returns the pushed effect, so the lone forced path can decide whether it
 /// warrants a #466 acknowledge. Refuses with [`Refusal::SideNotInEffect`],
-/// having changed nothing, when no ability resolves at the address.
+/// having changed nothing, when no ability resolves at the address, and with
+/// [`Refusal::CostUnpayable`] when a cost cannot be paid after all — which the
+/// gate the caller asked first rules out, so the apply's rollback (#161) is
+/// what undoes the use recorded before it.
 ///
 /// **Not the activation path.** An activated ability runs the effect it
 /// snapshotted before paying its costs (a cost may discard the source), has no
@@ -670,6 +728,7 @@ pub(super) fn initiate(
     cx: &mut Cx,
     candidate: &ResolutionCandidate,
     event: &TimingEvent,
+    kind: InitiationKind,
 ) -> Result<Effect, Refusal> {
     let ability = abilities_in_effect::resolve(
         cx.state,
@@ -688,6 +747,22 @@ pub(super) fn initiate(
         candidate.source.ability(),
     );
     record_initiation(cx.state, candidate, ability.usage_limit);
+    if applies(Check::Cost, kind) && !ability.costs.is_empty() {
+        let source = candidate.source.ability().unwrap_or_else(|| {
+            unreachable!(
+                "initiate: {kind:?} pays costs, and only a hand candidate has no ability \
+                 source — which is played, or fired as a forced ability (candidate {candidate:?})"
+            )
+        });
+        abilities::pay_activation_costs(
+            cx,
+            candidate.controller,
+            source,
+            &candidate.code,
+            &ability.costs,
+        )
+        .map_err(Refusal::CostUnpayable)?;
+    }
     push_bound_effect(cx, &ability.effect, ctx, event);
     Ok(ability.effect)
 }

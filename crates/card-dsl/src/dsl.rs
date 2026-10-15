@@ -994,6 +994,23 @@ pub enum EventPattern {
         /// Which drawn cards the ability listens to.
         filter: CardFilter,
     },
+    /// **You** evaded an enemy — Pickpocketing 01046's *"\[reaction\] After
+    /// you evade an enemy, exhaust Pickpocketing: Draw 1 card."* Scoped to
+    /// evasions by the ability's controller.
+    ///
+    /// One evasion, however it came about: the Evade action, a designated
+    /// **Evade** (Blinding Light 01066), and an automatic evade (#780) all
+    /// announce it, which Pickpocketing's ruling needs
+    /// (<https://arkhamdb.com/card/01046>): *"the auto-evade effect from
+    /// Breaking and Entering can trigger the reaction on Pickpocketing (0)"*.
+    /// The condition's own resolution is the disengage and the exhaust, so an
+    /// `after` ability sees the enemy already evaded.
+    ///
+    /// One hand-written consumer in this slice, below `standards.md`'s
+    /// threshold for a new pattern; a trigger has no card-local alternative,
+    /// and Earl Sawyer 02218 (Dunwich) prints the same condition: *"\[reaction\]
+    /// After you evade an enemy, exhaust Earl Sawyer: Draw 1 card."*
+    EnemyEvaded,
 }
 
 impl EventPattern {
@@ -1030,6 +1047,7 @@ impl EventPattern {
             EventPattern::LeftLocation => TriggeringCondition::LeftLocation,
             EventPattern::CardPlayed { .. } => TriggeringCondition::CardPlayed,
             EventPattern::EncounterCardDrawn { .. } => TriggeringCondition::EncounterCardDrawn,
+            EventPattern::EnemyEvaded => TriggeringCondition::EnemyEvaded,
         }
     }
 
@@ -1059,7 +1077,8 @@ impl EventPattern {
             | EventPattern::HarmPlaced { .. }
             | EventPattern::EnemyAttacks { .. }
             | EventPattern::EnteredPlay
-            | EventPattern::LeftLocation => None,
+            | EventPattern::LeftLocation
+            | EventPattern::EnemyEvaded => None,
         }
     }
 }
@@ -1167,6 +1186,9 @@ pub enum TriggeringCondition {
     /// An investigator drew an encounter card (framework step 1.4, or a card
     /// effect's draw); its revelation is the condition's resolution.
     EncounterCardDrawn,
+    /// An investigator evaded an enemy; the disengage and the exhaust are the
+    /// condition's resolution.
+    EnemyEvaded,
 }
 
 /// The four game phases, mirrored in `card-dsl` so [`EventPattern`] can
@@ -1335,7 +1357,11 @@ pub enum Cost {
 /// such a limit may be initiated X times during the designated period.
 /// If a card leaves play and re-enters play during the same period,
 /// the card is considered to be bringing a new instance of the ability
-/// to the game."*
+/// to the game."* The same entry adds *"Unless stated otherwise, limits are
+/// player specific."*, so the count is kept per instance **and** per
+/// triggering investigator: each investigator who can reach the ability gets
+/// their own X (The Stranger 03047a's ruling,
+/// <https://arkhamdb.com/card/03047a>).
 ///
 /// Canonical motivating card: Roland Banks (01001) —
 /// `[reaction] After you defeat an enemy: Discover 1 clue at your
@@ -1344,7 +1370,7 @@ pub enum Cost {
 ///
 /// Storage of the per-instance counter lives on
 /// `CardInPlay` (in `game_core::state`): see
-/// `ability_usage` (its per-instance counter map). When a
+/// `ability_usage` (its per-instance, per-investigator counter map). When a
 /// card leaves play, its `CardInPlay` is dropped, so a re-entering
 /// instance starts fresh as the rules require.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -1411,7 +1437,9 @@ pub struct Ability {
     /// implicitly optional on the wire, like `usage_limit`.
     pub designator: Option<ActionDesignator>,
     /// Payment costs (besides action cost). Empty for abilities with no
-    /// non-action payment. Required on the wire (#453).
+    /// non-action payment. Paid when an activated or a reaction ability
+    /// initiates; a forced ability's are neither checked nor paid. Required on
+    /// the wire (#453).
     pub costs: Vec<Cost>,
     pub effect: Effect,
     /// "Limit X per \[period\]" cap. `None` for abilities with no
@@ -1482,6 +1510,16 @@ impl Ability {
     #[must_use]
     pub fn with_usage_limit(mut self, limit: UsageLimit) -> Self {
         self.usage_limit = Some(limit);
+        self
+    }
+
+    /// Attach the costs paid to initiate this ability (see [`Self::costs`]),
+    /// for a triggered ability: the activated constructors take theirs as an
+    /// argument. Builder-style sugar, chainable off the `on_event(...)`
+    /// constructors — Pickpocketing 01046's *"exhaust Pickpocketing"*.
+    #[must_use]
+    pub fn with_costs(mut self, costs: Vec<Cost>) -> Self {
+        self.costs = costs;
         self
     }
 
@@ -3020,8 +3058,8 @@ pub fn on_skill_test_resolution(outcome: TestOutcome, effect: Effect) -> Ability
 }
 
 /// Construct a [`Trigger::OnEvent`] ability for the given pattern
-/// and timing. Costs are empty — reactive triggers fire from the
-/// engine's reaction-window plumbing, not via player activation.
+/// and timing. Costs are empty; a reaction that prints one (Pickpocketing
+/// 01046's *"exhaust Pickpocketing"*) chains [`Ability::with_costs`].
 #[must_use]
 pub fn on_event(
     pattern: EventPattern,

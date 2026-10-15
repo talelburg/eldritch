@@ -72,6 +72,7 @@ pub(crate) use leave_play::{
 use std::collections::BTreeMap;
 
 use crate::engine::Cx;
+use crate::event::Event;
 use crate::state::{
     AbilitySource, Act, Agenda, CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameState,
     InvestigatorId, Location, LocationId, Status, UseKind,
@@ -408,6 +409,56 @@ pub(crate) fn place_doom(cx: &mut Cx, instance_id: CardInstanceId, count: u8) {
     if let Some((card, _)) = find_instance_mut(cx.state, instance_id) {
         card.doom = card.doom.saturating_add(count);
     }
+}
+
+/// Why [`NativeCx::move_resources_to_card`](crate::engine::NativeCx::move_resources_to_card)
+/// moved nothing. In both cases nothing changed and no event was emitted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MoveResourcesError {
+    /// The receiving instance is not on the board.
+    NotInPlay,
+    /// The paying investigator is not in the game.
+    NoSuchInvestigator,
+}
+
+/// Move up to `amount` resources out of `investigator`'s resource pool onto the
+/// card instance `instance_id`, wherever it sits on the board (the
+/// [`find_instance`] walk), and emit [`Event::ResourcesMovedToCard`] with the
+/// number moved. An empty pool moves none, which changes nothing and announces
+/// nothing.
+///
+/// The exit a card-local native takes to put resources on a card (Hospital
+/// Debts 01011's *"Move 1 resource from your resource pool to Hospital
+/// Debts."*). A move, so neither [`Event::ResourcesPaid`] nor
+/// [`Event::ResourcesGained`].
+pub(crate) fn move_resources_to_card(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    instance_id: CardInstanceId,
+    amount: u8,
+) -> Result<(), MoveResourcesError> {
+    let pool = cx
+        .state
+        .investigators
+        .get(&investigator)
+        .ok_or(MoveResourcesError::NoSuchInvestigator)?
+        .resources;
+    let (card, _) =
+        find_instance_mut(cx.state, instance_id).ok_or(MoveResourcesError::NotInPlay)?;
+    let moved = amount.min(pool);
+    if moved == 0 {
+        return Ok(());
+    }
+    card.resources = card.resources.saturating_add(moved);
+    if let Some(payer) = cx.state.investigators.get_mut(&investigator) {
+        payer.resources -= moved;
+    }
+    cx.events.push(Event::ResourcesMovedToCard {
+        investigator,
+        instance_id,
+        amount: moved,
+    });
+    Ok(())
 }
 
 /// **The doom in play**: the doom on the current agenda plus the doom on

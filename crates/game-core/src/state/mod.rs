@@ -45,8 +45,8 @@ pub use counter::Counter;
 pub(crate) use counter::define_id;
 pub use enemy::{Enemy, EnemyId};
 pub use game_state::{
-    Act, Agenda, DifficultyBasis, GameState, Lifetime, ModifierTarget, RecordedModifier,
-    RecordedModifierKind, SkillSubstitution, SkillTestId,
+    Act, Agenda, DifficultyBasis, GameState, LastingEffect, LastingEffectKind, Lifetime,
+    ModifierTarget, RecordedModifier, RecordedModifierKind, SkillSubstitution, SkillTestId,
 };
 pub use investigator::{EliminationCause, Investigator, InvestigatorId, Status};
 pub use location::{Location, LocationId};

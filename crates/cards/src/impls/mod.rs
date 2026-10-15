@@ -121,6 +121,7 @@ pub mod guts;
 pub mod hard_knocks;
 pub mod heirloom_of_hyperborea;
 pub mod holy_rosary;
+pub mod hospital_debts;
 pub mod hyperawareness;
 pub mod knife;
 pub mod lita_chantler;
@@ -136,6 +137,7 @@ pub mod overpower;
 pub mod parlor;
 pub mod perception;
 pub mod physical_training;
+pub mod pickpocketing;
 pub mod research_librarian;
 pub mod rise_of_the_ghouls;
 pub mod roland_38_special;
@@ -263,6 +265,7 @@ pub const ALL: &[CardRecord] = &[
     guts::CARD,
     hard_knocks::CARD,
     heirloom_of_hyperborea::CARD,
+    hospital_debts::CARD,
     holy_rosary::CARD,
     hyperawareness::CARD,
     knife::CARD,
@@ -279,6 +282,7 @@ pub const ALL: &[CardRecord] = &[
     parlor::CARD,
     perception::CARD,
     physical_training::CARD,
+    pickpocketing::CARD,
     research_librarian::CARD,
     rise_of_the_ghouls::CARD,
     roland_38_special::CARD,
