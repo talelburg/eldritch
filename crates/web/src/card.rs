@@ -290,7 +290,7 @@ fn use_kind_label(kind: UseKind) -> &'static str {
 
 /// Live per-instance state of an in-play card as chip strings: uses pools first
 /// (`"2 ammo"`), then soak (`"dmg 1/2"` / `"hor 0/2"`) for an `Asset` that has
-/// that capacity, then clues and doom on the card when non-zero. Empty for a
+/// that capacity, then clues, doom and resources on the card when non-zero. Empty for a
 /// plain asset with no uses, no soak capacity and no tokens.
 #[must_use]
 pub fn live_state_chips(inst: &CardInPlay, kind: &CardKind) -> Vec<String> {
@@ -311,6 +311,9 @@ pub fn live_state_chips(inst: &CardInPlay, kind: &CardKind) -> Vec<String> {
     }
     if inst.doom > 0 {
         chips.push(format!("doom {}", inst.doom));
+    }
+    if inst.resources > 0 {
+        chips.push(format!("resources {}", inst.resources));
     }
     chips
 }
@@ -743,6 +746,22 @@ mod tests {
                 "hor 0/2".to_string(),
                 "doom 1".to_string(),
             ]
+        );
+    }
+
+    #[test]
+    fn live_state_chips_includes_resources_on_card() {
+        // Hospital Debts in the threat area, with 4 resources moved onto it.
+        let meta = cards::by_code("01011").expect("Hospital Debts in corpus");
+        let mut inst = TestCardInPlay::enter_play(
+            CardCode::new("01011"),
+            CardInstanceId(0),
+            CardOwner::Investigator(InvestigatorId(1)),
+        );
+        inst.resources = 4;
+        assert_eq!(
+            live_state_chips(&inst, &meta.kind),
+            vec!["resources 4".to_string()]
         );
     }
 

@@ -389,8 +389,11 @@ mod threat_area_tests {
 mod ability_usage_tests {
     use card_dsl::dsl::{UsageLimit, UsagePeriod};
 
-    use crate::state::{AbilityUsageRecord, Phase};
+    use crate::state::{AbilityUsageRecord, InvestigatorId, Phase};
     use crate::test_support;
+
+    /// The investigator triggering the ability in these tests.
+    const ME: InvestigatorId = InvestigatorId(1);
 
     #[test]
     fn new_investigator_card_has_empty_ability_usage() {
@@ -407,20 +410,25 @@ mod ability_usage_tests {
         });
         let card = &mut inv.investigator_card;
         // Ability 0, round 5: not yet fired → not exhausted.
-        assert!(!card.is_usage_exhausted(0, limit, 5, Phase::Investigation));
+        assert!(!card.is_usage_exhausted(0, ME, limit, 5, Phase::Investigation));
         // Fire once in round 5 → now exhausted in round 5.
-        card.bump_ability_usage(0, UsagePeriod::Round, 5, Phase::Investigation);
-        assert!(card.is_usage_exhausted(0, limit, 5, Phase::Investigation));
+        card.bump_ability_usage(0, ME, UsagePeriod::Round, 5, Phase::Investigation);
+        assert!(card.is_usage_exhausted(0, ME, limit, 5, Phase::Investigation));
         assert_eq!(
             card.ability_usage.get(&0),
-            Some(&AbilityUsageRecord::new(5, Phase::Investigation, 1))
+            Some(&vec![AbilityUsageRecord::new(
+                ME,
+                5,
+                Phase::Investigation,
+                1
+            )])
         );
         // A later phase of the same round is the same round: still exhausted.
-        assert!(card.is_usage_exhausted(0, limit, 5, Phase::Enemy));
+        assert!(card.is_usage_exhausted(0, ME, limit, 5, Phase::Enemy));
         // Round 6: lazy reset → not exhausted (stored record is stale).
-        assert!(!card.is_usage_exhausted(0, limit, 6, Phase::Investigation));
+        assert!(!card.is_usage_exhausted(0, ME, limit, 6, Phase::Investigation));
         // No limit (None) is never exhausted.
-        assert!(!card.is_usage_exhausted(0, None, 5, Phase::Investigation));
+        assert!(!card.is_usage_exhausted(0, ME, None, 5, Phase::Investigation));
     }
 
     /// A round limit with a count above 1 keeps counting across a phase change
@@ -433,10 +441,10 @@ mod ability_usage_tests {
             period: UsagePeriod::Round,
         });
         let card = &mut inv.investigator_card;
-        card.bump_ability_usage(0, UsagePeriod::Round, 3, Phase::Investigation);
-        card.bump_ability_usage(0, UsagePeriod::Round, 3, Phase::Enemy);
-        assert!(card.is_usage_exhausted(0, limit, 3, Phase::Upkeep));
-        assert_eq!(card.ability_usage[&0].count, 2);
+        card.bump_ability_usage(0, ME, UsagePeriod::Round, 3, Phase::Investigation);
+        card.bump_ability_usage(0, ME, UsagePeriod::Round, 3, Phase::Enemy);
+        assert!(card.is_usage_exhausted(0, ME, limit, 3, Phase::Upkeep));
+        assert_eq!(card.ability_usage[&0][0].count, 2);
     }
 
     #[test]
@@ -447,17 +455,17 @@ mod ability_usage_tests {
             period: UsagePeriod::Phase,
         });
         let card = &mut inv.investigator_card;
-        card.bump_ability_usage(0, UsagePeriod::Phase, 3, Phase::Investigation);
-        assert!(card.is_usage_exhausted(0, limit, 3, Phase::Investigation));
+        card.bump_ability_usage(0, ME, UsagePeriod::Phase, 3, Phase::Investigation);
+        assert!(card.is_usage_exhausted(0, ME, limit, 3, Phase::Investigation));
         // A later phase of the same round is a new period.
-        assert!(!card.is_usage_exhausted(0, limit, 3, Phase::Enemy));
+        assert!(!card.is_usage_exhausted(0, ME, limit, 3, Phase::Enemy));
         // So is the same phase of the next round.
-        assert!(!card.is_usage_exhausted(0, limit, 4, Phase::Investigation));
+        assert!(!card.is_usage_exhausted(0, ME, limit, 4, Phase::Investigation));
         // Firing in the new phase restarts the count there.
-        card.bump_ability_usage(0, UsagePeriod::Phase, 3, Phase::Enemy);
+        card.bump_ability_usage(0, ME, UsagePeriod::Phase, 3, Phase::Enemy);
         assert_eq!(
             card.ability_usage.get(&0),
-            Some(&AbilityUsageRecord::new(3, Phase::Enemy, 1))
+            Some(&vec![AbilityUsageRecord::new(ME, 3, Phase::Enemy, 1)])
         );
     }
 }

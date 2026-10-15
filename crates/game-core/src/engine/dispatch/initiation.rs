@@ -452,7 +452,9 @@ fn performs_an_action(ability: &Ability) -> bool {
 }
 
 /// Whether the ability `candidate` names has used up its printed limit this
-/// period. Only a printed ability on an in-play card instance carries a
+/// period **for `candidate`'s controller** — the triggering investigator, since
+/// limits are player specific (`CardInPlay::ability_usage` cites the rule and
+/// The Stranger 03047a's ruling). Only a printed ability on an in-play card instance carries a
 /// counter: a granted ability has no printed index to key one by (#829), and a
 /// location, enemy, act or agenda has no instance to hold one (#699). Neither
 /// is counted out here, and the activation validator refuses either one that
@@ -470,8 +472,15 @@ fn usage_exhausted(
     };
     ability_source::source_card(state, source)
         .and_then(|card| {
-            card.instance()
-                .map(|instance| instance.is_usage_exhausted(index, limit, state.round, state.phase))
+            card.instance().map(|instance| {
+                instance.is_usage_exhausted(
+                    index,
+                    candidate.controller,
+                    limit,
+                    state.round,
+                    state.phase,
+                )
+            })
         })
         .unwrap_or(false)
 }
@@ -581,8 +590,9 @@ fn payable_play_cost(play_cost: Option<i8>, code: &CardCode) -> Result<u8, Cow<'
 /// `None` for `usage_limit` (no printed *"Limit X per \[period\]"*) records
 /// nothing.
 ///
-/// The counter is `CardInPlay::ability_usage`, per instance and keyed by
-/// printed index, so this resolves the instance **wherever it sits on the
+/// The counter is `CardInPlay::ability_usage`, per instance, keyed by printed
+/// index and recorded against `candidate.controller` (limits are player
+/// specific), so this resolves the instance **wherever it sits on the
 /// board** — the same lookup `usage_exhausted` reads through
 /// (`ability_source::source_card`, over [`board::find_instance`]). That covers
 /// the controller's investigator card (Roland Banks 01001's seated `[reaction]`), cards in play and threat
@@ -615,7 +625,13 @@ pub(super) fn record_initiation(
                 )
             });
             if let Some(index) = candidate.address.printed_index() {
-                card.bump_ability_usage(index, usage_limit.period, current_round, current_phase);
+                card.bump_ability_usage(
+                    index,
+                    candidate.controller,
+                    usage_limit.period,
+                    current_round,
+                    current_phase,
+                );
             }
         }
         // Listed kind by kind rather than wildcarded: a sixth `AbilitySource`

@@ -201,10 +201,33 @@ pub struct CardInPlay {
     /// play."* — through [`board::doom_in_play`](crate::engine::board::doom_in_play),
     /// and it leaves play with the card. Required on the wire (#453).
     pub doom: u8,
+    /// Resources sitting on this card instance (Hospital Debts 01011: *"Move 1
+    /// resource from your resource pool to Hospital Debts."*). A plain count,
+    /// like [`clues`](Self::clues) and [`doom`](Self::doom), and **not** a
+    /// [`UseKind`]: these resources are placed and moved, never spent as uses.
+    /// The official FAQ keeps moving apart from gaining: Stylish Coat's
+    /// reaction answers an effect that instructs you to "gain" resources, and
+    /// abilities that *"“move” resources from one card to another or from one
+    /// card to your resource pool … do not trigger Stylish Coat’s ability"*
+    /// (`data/official-faq/Frequently_Asked_Questions.md`). They leave play
+    /// with the card. Required on the wire (#453).
+    pub resources: u8,
     /// Per-ability usage counter for "Limit X per \[period\]" caps. Key
-    /// is the ability index within the card's `abilities()`; value
-    /// records the round and phase the ability last fired in and how many
-    /// times.
+    /// is the ability index within the card's `abilities()`; value holds one
+    /// [`AbilityUsageRecord`] per investigator who has triggered it, each
+    /// recording the round and phase that investigator last fired it in and
+    /// how many times.
+    ///
+    /// **Counted per instance and per triggering investigator.**
+    /// `glossary/Limits_and_Maximums.md`: *"Each instance of an ability with
+    /// such a limit may be initiated X times during the designated period."*
+    /// and *"Unless stated otherwise, limits are player specific."* The
+    /// Stranger's ruling (<https://arkhamdb.com/card/03047a>) applies the
+    /// second to a period limit: *"Limit once per round is player-specific, so
+    /// another investigator will trigger the ability even if you have already
+    /// triggered it this round."* So a co-located friend triggering Hospital
+    /// Debts 01011 gets their own two a round, beside its bearer's. A "group
+    /// limit" (shared by every investigator) is not modelled yet (#699).
     ///
     /// Reset is **lazy** — when a query needs the count for the current
     /// period, it reads the record; if the stored clock is outside the
@@ -218,7 +241,7 @@ pub struct CardInPlay {
     /// wire (#453).
     ///
     /// [`UsageLimit`]: card_dsl::dsl::UsageLimit
-    pub ability_usage: BTreeMap<u8, AbilityUsageRecord>,
+    pub ability_usage: BTreeMap<u8, Vec<AbilityUsageRecord>>,
     /// **Who owns this card**, as distinct from who controls it — one of the
     /// three owners `GLOSSARY.md`'s **Owner / Controller** entry names.
     ///
@@ -271,9 +294,12 @@ pub enum Owner {
     Scenario,
 }
 
-/// One ability's firing record for "Limit X per \[period\]" tracking.
+/// One investigator's firing record of one ability, for "Limit X per
+/// \[period\]" tracking.
 ///
-/// `round` and `phase` are the values of
+/// `investigator` is who triggered it: limits are player specific (see
+/// [`CardInPlay::ability_usage`]), so each triggering investigator has a
+/// record of their own. `round` and `phase` are the values of
 /// [`GameState::round`](crate::state::GameState::round) and
 /// [`GameState::phase`](crate::state::GameState::phase) at last fire —
 /// the clock every [`UsagePeriod`] reads its part of. `count` is the number
@@ -291,6 +317,7 @@ pub enum Owner {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct AbilityUsageRecord {
+    pub investigator: InvestigatorId,
     pub round: u32,
     pub phase: Phase,
     pub count: u8,
@@ -301,8 +328,9 @@ impl AbilityUsageRecord {
     /// is `#[non_exhaustive]` so downstream code (tests, future
     /// scenario modules) must go through this constructor.
     #[must_use]
-    pub fn new(round: u32, phase: Phase, count: u8) -> Self {
+    pub fn new(investigator: InvestigatorId, round: u32, phase: Phase, count: u8) -> Self {
         Self {
+            investigator,
             round,
             phase,
             count,
@@ -321,17 +349,19 @@ impl AbilityUsageRecord {
     }
 }
 
-/// Whether the ability at `ability_index` has reached its
+/// Whether `investigator` has used the ability at `ability_index` up to its
 /// [`UsageLimit::count`] for the period containing the clock reading
-/// `(current_round, current_phase)`, reading the firing record out of
-/// `usage`. Shared by [`CardInPlay`] and
+/// `(current_round, current_phase)`, reading their firing record out of
+/// `usage`. Another investigator's uses do not count (limits are player
+/// specific; see [`CardInPlay::ability_usage`]). Shared by [`CardInPlay`] and
 /// [`Investigator`](crate::state::Investigator) so both usage-bearing
 /// sources apply the same lazy-reset semantics (see the field docs on
 /// [`CardInPlay::ability_usage`]). `None` limit ⇒ no cap ⇒ `false`.
 #[must_use]
 pub fn usage_exhausted(
-    usage: &BTreeMap<u8, AbilityUsageRecord>,
+    usage: &BTreeMap<u8, Vec<AbilityUsageRecord>>,
     ability_index: u8,
+    investigator: InvestigatorId,
     limit: Option<UsageLimit>,
     current_round: u32,
     current_phase: Phase,
@@ -339,25 +369,44 @@ pub fn usage_exhausted(
     let Some(limit) = limit else {
         return false;
     };
-    usage.get(&ability_index).is_some_and(|record| {
-        record.in_period(limit.period, current_round, current_phase) && record.count >= limit.count
-    })
+    usage
+        .get(&ability_index)
+        .into_iter()
+        .flatten()
+        .filter(|record| record.investigator == investigator)
+        .any(|record| {
+            record.in_period(limit.period, current_round, current_phase)
+                && record.count >= limit.count
+        })
 }
 
-/// Record one firing of the ability at `ability_index` against the
-/// `period` containing the clock reading `(current_round, current_phase)`,
-/// into `usage` (lazy reset when the stored record is for a stale period).
+/// Record one firing of the ability at `ability_index` by `investigator`
+/// against the `period` containing the clock reading `(current_round,
+/// current_phase)`, into their record in `usage` (lazy reset when the stored
+/// record is for a stale period).
 /// Shared by [`CardInPlay`] and [`Investigator`](crate::state::Investigator).
 pub fn bump_usage(
-    usage: &mut BTreeMap<u8, AbilityUsageRecord>,
+    usage: &mut BTreeMap<u8, Vec<AbilityUsageRecord>>,
     ability_index: u8,
+    investigator: InvestigatorId,
     period: UsagePeriod,
     current_round: u32,
     current_phase: Phase,
 ) {
-    let record = usage
-        .entry(ability_index)
-        .or_insert(AbilityUsageRecord::new(current_round, current_phase, 0));
+    let records = usage.entry(ability_index).or_default();
+    let at = records
+        .iter()
+        .position(|record| record.investigator == investigator)
+        .unwrap_or_else(|| {
+            records.push(AbilityUsageRecord::new(
+                investigator,
+                current_round,
+                current_phase,
+                0,
+            ));
+            records.len() - 1
+        });
+    let record = &mut records[at];
     if !record.in_period(period, current_round, current_phase) {
         record.count = 0;
     }
@@ -386,13 +435,14 @@ impl CardInPlay {
             accumulated_horror: 0,
             clues: 0,
             doom: 0,
+            resources: 0,
             ability_usage: BTreeMap::new(),
             owner,
         }
     }
 
-    /// Returns `true` if the ability at `ability_index` has already
-    /// reached its [`UsageLimit::count`] for the current period.
+    /// Returns `true` if `investigator` has already triggered the ability at
+    /// `ability_index` up to its [`UsageLimit::count`] for the current period.
     ///
     /// `None` for `limit` (the ability has no printed "Limit X per …"
     /// clause) always returns `false` — that ability has no per-period
@@ -403,6 +453,7 @@ impl CardInPlay {
     pub fn is_usage_exhausted(
         &self,
         ability_index: u8,
+        investigator: InvestigatorId,
         limit: Option<UsageLimit>,
         current_round: u32,
         current_phase: Phase,
@@ -410,19 +461,21 @@ impl CardInPlay {
         usage_exhausted(
             &self.ability_usage,
             ability_index,
+            investigator,
             limit,
             current_round,
             current_phase,
         )
     }
 
-    /// Record one firing of the ability at `ability_index` against the
-    /// current `period`. Resets the counter if the stored record is for
+    /// Record one firing of the ability at `ability_index` by `investigator`
+    /// against the current `period`. Resets the counter if the stored record is for
     /// a stale period (lazy reset — see the field-level docs on
     /// [`ability_usage`](Self::ability_usage)).
     pub fn bump_ability_usage(
         &mut self,
         ability_index: u8,
+        investigator: InvestigatorId,
         period: UsagePeriod,
         current_round: u32,
         current_phase: Phase,
@@ -430,6 +483,7 @@ impl CardInPlay {
         bump_usage(
             &mut self.ability_usage,
             ability_index,
+            investigator,
             period,
             current_round,
             current_phase,
@@ -466,13 +520,13 @@ mod tests {
 
     #[test]
     fn omitting_any_required_field_is_rejected() {
-        // `clues`, `doom`, `ability_usage` and `owner` are required on the
+        // `clues`, `doom`, `resources`, `ability_usage` and `owner` are required on the
         // wire (#453): a payload missing one fails loudly rather than
         // silently defaulting.
         let c = CardInPlay::enter_play(CardCode("_x".into()), CardInstanceId(1), Owner::Scenario);
         let full = serde_json::to_value(&c).expect("serialize");
         serde_json::from_value::<CardInPlay>(full.clone()).expect("full object deserializes");
-        for field in ["clues", "doom", "ability_usage", "owner"] {
+        for field in ["clues", "doom", "resources", "ability_usage", "owner"] {
             let mut v = full.clone();
             v.as_object_mut()
                 .expect("card serializes to a JSON object")
