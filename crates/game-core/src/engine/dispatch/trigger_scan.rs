@@ -481,14 +481,16 @@ pub(super) fn trigger_matches(
         // card" (Heirloom of Hyperborea 01012) and "Play when **you** draw a
         // non-weakness treachery card" (Ward of Protection 01065). The last
         // two's card filters read metadata, in [`scope_matches`]. And "After
-        // **you** evade an enemy" (Pickpocketing 01046), and "Play after
-        // **your** turn begins" (On the Lam 01010).
+        // **you** evade an enemy" (Pickpocketing 01046), "Play after
+        // **your** turn begins" (On the Lam 01010), and "When **you** reveal
+        // a chaos token" (Wendy Adams 01005).
         TimingEvent::EndOfTurn { investigator }
         | TimingEvent::DiscoverClues { investigator, .. }
         | TimingEvent::CardPlayed { investigator, .. }
         | TimingEvent::EncounterCardDrawn { investigator, .. }
         | TimingEvent::EnemyEvaded { investigator, .. }
-        | TimingEvent::TurnBegan { investigator } => *investigator == controller,
+        | TimingEvent::TurnBegan { investigator }
+        | TimingEvent::ChaosTokenRevealed { investigator, .. } => *investigator == controller,
         // "**When an enemy attack** deals damage to Guard Dog" (01021). The
         // self-binding half is the source's, in [`scope_matches`]; this half is
         // the card's narrowing to an enemy attack, which `Effect::Deal` harm
@@ -514,6 +516,7 @@ pub(super) fn trigger_matches(
                 kind: p_kind,
                 by_controller,
                 tested_location: _,
+                margin: _,
             } = pattern
             else {
                 unreachable!(
@@ -601,17 +604,37 @@ fn scope_matches(
         // "When an investigator leaves **attached location**" (Barricade 01038).
         TimingEvent::LeftLocation { location, .. } => attached_to(state, source, *location),
         // "After **attached location** is successfully investigated"
-        // (Obscuring Fog 01168), when the pattern says so.
-        TimingEvent::SkillTestResolved { .. } => match pattern {
-            EventPattern::SkillTestResolved {
-                tested_location: TestedLocationScope::Attached,
+        // (Obscuring Fog 01168), and "by 2 or more" / "by 2 or less"
+        // (Scavenging 01073, "Look what I found!" 01079), when the pattern
+        // says so.
+        TimingEvent::SkillTestResolved { .. } => {
+            let EventPattern::SkillTestResolved {
+                tested_location,
+                margin,
                 ..
-            } => state
-                .current_skill_test()
-                .and_then(|test| test.tested_location)
-                .is_some_and(|tested| attached_to(state, source, tested)),
-            _ => true,
-        },
+            } = pattern
+            else {
+                unreachable!(
+                    "scope_matches: trigger_matches paired {pattern:?} with SkillTestResolved, \
+                     but only EventPattern::SkillTestResolved has that condition"
+                )
+            };
+            let test = state.current_skill_test();
+            let location_ok = match tested_location {
+                TestedLocationScope::Attached => test
+                    .and_then(|test| test.tested_location)
+                    .is_some_and(|tested| attached_to(state, source, tested)),
+                TestedLocationScope::Any => true,
+            };
+            // Read live off the stored result, so a re-total that moves only
+            // the margin is what the match sees.
+            let margin_ok = margin.is_none_or(|bound| {
+                test.and_then(|test| test.resolved)
+                    .and_then(|resolved| resolved.succeeded_by().or(resolved.failed_by()))
+                    .is_some_and(|by| bound.admits(by))
+            });
+            location_ok && margin_ok
+        }
         // "After **Silver Twilight Acolyte** attacks" (01102) and "an enemy
         // attacks **an investigator at your location**" (Dodge 01023).
         TimingEvent::EnemyAttacks {
@@ -696,7 +719,8 @@ fn scope_matches(
         | TimingEvent::GameEnd
         | TimingEvent::DamagePlaced { .. }
         | TimingEvent::EnemyEvaded { .. }
-        | TimingEvent::TurnBegan { .. } => true,
+        | TimingEvent::TurnBegan { .. }
+        | TimingEvent::ChaosTokenRevealed { .. } => true,
     }
 }
 

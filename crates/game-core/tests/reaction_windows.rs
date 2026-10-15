@@ -73,6 +73,7 @@ fn investigated(by_controller: bool) -> EventPattern {
         kind: Some(SkillTestKind::Investigate),
         by_controller,
         tested_location: TestedLocationScope::Any,
+        margin: None,
     }
 }
 

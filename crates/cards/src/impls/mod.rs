@@ -131,6 +131,7 @@ pub mod hyperawareness;
 pub mod knife;
 pub mod leo_de_luca;
 pub mod lita_chantler;
+pub mod look_what_i_found;
 pub mod machete;
 pub mod magnifying_glass;
 pub mod manual_dexterity;
@@ -150,6 +151,7 @@ pub mod rise_of_the_ghouls;
 pub mod roland_38_special;
 pub mod roland_banks;
 pub mod rotting_remains;
+pub mod scavenging;
 pub mod scrying;
 pub mod shrivelling;
 pub mod silver_twilight_acolyte;
@@ -287,6 +289,7 @@ pub const ALL: &[CardRecord] = &[
     knife::CARD,
     leo_de_luca::CARD,
     lita_chantler::CARD,
+    look_what_i_found::CARD,
     machete::CARD,
     magnifying_glass::CARD,
     manual_dexterity::CARD,
@@ -306,6 +309,7 @@ pub const ALL: &[CardRecord] = &[
     roland_38_special::CARD,
     roland_banks::CARD,
     rotting_remains::CARD,
+    scavenging::CARD,
     scrying::CARD,
     shrivelling::CARD,
     silver_twilight_acolyte::CARD,

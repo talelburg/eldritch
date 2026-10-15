@@ -1015,6 +1015,7 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
         ),
         Effect::DiscardSelf => discard_self(cx, &eval_ctx),
         Effect::Cancel => cancel_current_impact(cx),
+        Effect::RevealChaosToken => skill_test::reveal_new_token(cx),
         Effect::PutIntoThreatArea {
             code,
             clues,
@@ -2613,12 +2614,14 @@ pub(crate) fn effect_can_change_state(
         //
         // `AutoResolve` shares the arm for the same reason on the same gate: a
         // determination latched with no test in flight has no identity to stamp
-        // either, so `auto_resolve` refuses it and nothing changes.
+        // either, so `auto_resolve` refuses it and nothing changes. So does
+        // `RevealChaosToken`: with no test there is no draw step to return to.
         Effect::Modify {
             scope: ModifierScope::ThisSkillTest,
             ..
         }
-        | Effect::AutoResolve { .. } => state.current_skill_test().is_some(),
+        | Effect::AutoResolve { .. }
+        | Effect::RevealChaosToken => state.current_skill_test().is_some(),
         // Dealing damage to, or automatically evading, a chosen enemy needs an
         // enemy to choose: with none in the scope grounding would find no
         // candidate and reject, so the ability is provably inert. Agnes Baker

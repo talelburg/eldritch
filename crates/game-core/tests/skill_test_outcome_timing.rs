@@ -39,6 +39,7 @@ fn registries() -> Registries {
                         kind: None,
                         by_controller: true,
                         tested_location: TestedLocationScope::Any,
+                        margin: None,
                     },
                     EventTiming::After,
                     dsl::deal_horror(InvestigatorTarget::You, 1u8),

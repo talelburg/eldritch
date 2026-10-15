@@ -146,6 +146,7 @@ fn registries() -> Registries {
                     kind: Some(SkillTestKind::Investigate),
                     by_controller: false,
                     tested_location: TestedLocationScope::Attached,
+                    margin: None,
                 })
             })
             .with_abilities(ON_THIS_ATTACKS, || {

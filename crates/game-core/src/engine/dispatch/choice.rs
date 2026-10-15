@@ -101,10 +101,11 @@ pub fn resolve_grounded_choice<T: Clone>(
     }
 }
 
-/// Offer the controller a choice among cards **in a deck** (#1047): the one way
-/// an evaluator arm or a card-local native picks a card that has no board
-/// surface to anchor on, such as a searched card or a card looked at on top of
-/// a deck. It hands back the picked card's index into `codes`.
+/// Offer the controller a choice among cards **in a deck** (#1047) or a discard
+/// pile: the one way an evaluator arm or a card-local native picks a card that
+/// has no board surface to anchor on, such as a searched card, a card looked at
+/// on top of a deck, or Scavenging 01073's Item in the discard pile. It hands
+/// back the picked card's index into `codes`.
 ///
 /// The rule is [`resolve_grounded_choice`]'s, so a threaded pick is checked
 /// first and a lone card is prompted only under

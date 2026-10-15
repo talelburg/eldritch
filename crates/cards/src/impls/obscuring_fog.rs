@@ -64,6 +64,7 @@ pub fn abilities() -> Vec<Ability> {
                 kind: Some(SkillTestKind::Investigate),
                 by_controller: true,
                 tested_location: TestedLocationScope::Attached,
+                margin: None,
             },
             EventTiming::After,
             dsl::discard_self(),
@@ -145,6 +146,7 @@ mod tests {
                     kind: Some(SkillTestKind::Investigate),
                     by_controller: true,
                     tested_location: TestedLocationScope::Attached,
+                    margin: None,
                 },
                 timing: EventTiming::After,
                 ..

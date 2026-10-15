@@ -22,7 +22,7 @@ use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::abilities::{self, ActivatedAbility};
 use crate::engine::dispatch::actions::take::{self, ActionDescription};
 use crate::engine::dispatch::initiation::{self, InitiationKind, Refusal};
-use crate::engine::dispatch::{cards, combat, slots};
+use crate::engine::dispatch::{cards, combat, hand_discard_cost, slots};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::{ability_source, designator, PlaySource};
 use crate::state::{
@@ -400,10 +400,23 @@ fn activation_refusal(refusal: Refusal, code: &CardCode) -> Cow<'static, str> {
 
 /// Reject an ability mixing [`Cost::DiscardSelf`](card_dsl::dsl::Cost::DiscardSelf)
 /// with another source-referencing cost: `DiscardSelf` removes the source, so it
-/// must be the sole such cost (Beat Cop / Knife list only it). Deliberately
-/// unlifted until a card needs the combo — no tracking issue on purpose (YAGNI);
-/// whoever hits this rejection files one.
+/// must be the sole such cost (Beat Cop / Knife list only it). Likewise an
+/// ability mixing [`Cost::DiscardCardFromHand`](card_dsl::dsl::Cost::DiscardCardFromHand)
+/// with [`Cost::TakeHarm`](card_dsl::dsl::Cost::TakeHarm): each parks above the
+/// effect, and a harm that eliminates the controller would leave the discard's
+/// choice put to an eliminated investigator. Deliberately unlifted until a card
+/// needs either combo — no tracking issue on purpose (YAGNI); whoever hits this
+/// rejection files one.
 fn reject_incompatible_costs(costs: &[Cost]) -> Result<(), Cow<'static, str>> {
+    if costs.iter().any(|c| matches!(c, Cost::DiscardCardFromHand))
+        && costs.iter().any(|c| matches!(c, Cost::TakeHarm { .. }))
+    {
+        return Err(
+            "ActivateAbility: Cost::DiscardCardFromHand cannot combine with Cost::TakeHarm on \
+             the same ability (both park above the effect); lift if a card ever needs the combo"
+                .into(),
+        );
+    }
     if costs.iter().any(|c| matches!(c, Cost::DiscardSelf))
         && costs
             .iter()
@@ -419,7 +432,10 @@ fn reject_incompatible_costs(costs: &[Cost]) -> Result<(), Cow<'static, str>> {
 }
 
 /// Reject a [`Cost::TakeHarm`](card_dsl::dsl::Cost::TakeHarm) on an `[action]`
-/// ability (#1029). On the action path the harm would have to resolve before
+/// ability (#1029). A
+/// [`Cost::DiscardCardFromHand`](card_dsl::dsl::Cost::DiscardCardFromHand) there
+/// is refused for the same reason (`hand_discard_cost::refused_on_an_action`,
+/// #1107). On the action path the harm would have to resolve before
 /// the attacks of opportunity — Appendix I step 2, *"Upon completion of this
 /// step, attacks of opportunity, if applicable, resolve"* — and the
 /// take-an-action step's hook pays its costs inline and parks the effect behind
@@ -628,6 +644,9 @@ pub(crate) fn check_activate_ability(
 
     reject_incompatible_costs(&costs)?;
     reject_harm_cost_on_an_action(&source_code, action_cost, &costs)?;
+    if action_cost > 0 && costs.iter().any(|c| matches!(c, Cost::DiscardCardFromHand)) {
+        return Err(hand_discard_cost::refused_on_an_action(&source_code));
+    }
     reject_source_costs_without_an_instance(source, &source_code, &costs)?;
     // Before the gate: a designated ability's change-state question is this
     // check's (`initiation::performs_an_action`).
