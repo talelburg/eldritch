@@ -138,24 +138,20 @@ fn seated_daisy() -> GameState {
     session.finish().state
 }
 
-/// The labels of the fast window `session` rests at.
-fn offered(session: &TestSession) -> Vec<&str> {
-    session
-        .prompt()
-        .options
-        .iter()
-        .map(|option| option.label.as_str())
-        .collect()
-}
-
 /// The deck's shuffle deals Working a Hunch 01037, a Fast event, into her
 /// opening hand, so her turn opens on the start-of-turn fast window (Appendix
-/// II 2.2) offering it. The walk passes it, keeping her actions for the acts.
+/// II 2.2) offering it and nothing else. The walk passes it, keeping her
+/// actions for the acts.
 fn pass_start_of_turn_window(session: TestSession) -> TestSession {
+    let hunch = OptionTarget::HandCard {
+        investigator: INV,
+        hand_index: hand_index(&session, WORKING_A_HUNCH),
+    };
     assert_eq!(
-        offered(&session),
-        [format!("Play {WORKING_A_HUNCH}")],
-        "her turn opens offering Working a Hunch",
+        (session.prompt().options.len(), session.offered_at(&hunch)),
+        (1, 1),
+        "her turn opens offering Working a Hunch alone, got {:?}",
+        session.prompt(),
     );
     session.skip()
 }

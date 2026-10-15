@@ -2,6 +2,9 @@
 //! weakness, 01009.
 //!
 //! ```text
+//! The Necronomicon. John Dee Translation.
+//! Item. Tome.
+//!
 //! Revelation - Put The Necronomicon into play in your threat area, with 3
 //!   horror on it. It cannot leave play while it has 1 or more horror on it.
 //! Treat each [elder_sign] you reveal on a chaos token as a [auto_fail].
@@ -65,6 +68,15 @@ pub const CARD: CardRecord =
 /// Native tag: move 1 horror to Daisy, then discard the card if it is empty.
 const MOVE_HORROR_TAG: &str = "01009:move-horror";
 
+/// The Necronomicon's printed abilities:
+///
+/// - *"Revelation - Put The Necronomicon into play in your threat area, with 3
+///   horror on it. It cannot leave play while it has 1 or more horror on it."*
+///   The Revelation and the constant restriction, two abilities here.
+/// - *"Treat each `[elder_sign]` you reveal on a chaos token as a
+///   `[auto_fail]`."*
+/// - *"`[action]`: Move 1 horror from The Necronomicon to Daisy Walker. Then,
+///   if The Necronomicon has no horror on it, discard it."*
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![
@@ -101,7 +113,11 @@ fn move_horror_to_daisy(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
         .and_then(|bearer| cx.state().investigators.get(&bearer))
         .map(|inv| inv.investigator_card.instance_id)
     else {
-        return EngineOutcome::Done;
+        return EngineOutcome::Rejected {
+            reason: "the_necronomicon: the card is in no investigator's area, so there is \
+                     no Daisy Walker to move horror to"
+                .into(),
+        };
     };
     if let Err(err) = cx.move_horror(source, daisy, 1) {
         return EngineOutcome::Rejected {

@@ -5,7 +5,7 @@ use card_dsl::dsl::{EnemyScope, LocationSet, Restriction};
 
 use crate::action::InputResponse;
 use crate::card_registry::{self, CardRegistry};
-use crate::engine::board::{self, NotLeft};
+use crate::engine::board;
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{choice, elimination, emit, reaction_windows};
 use crate::engine::outcome::{
@@ -16,7 +16,7 @@ use crate::event::Event;
 use crate::state::{
     Assignment, AttackLoopFrame, AttackLoopStage, CardInPlay, CardInstanceId, DamageSource,
     DealDamageFrame, DealDamageStep, EliminationCause, Enemy, EnemyAttackSource, EnemyId,
-    GameState, InvestigatorId, LastingEffect, LastingEffectKind, Lifetime, Status,
+    GameState, Investigator, InvestigatorId, LastingEffect, LastingEffectKind, Lifetime, Status,
 };
 
 /// The scope of enemies a Fight (basic action or designated **Fight** ability)
@@ -277,29 +277,52 @@ fn defeat_overflowed_assets(cx: &mut Cx, investigator: InvestigatorId) {
     let defeated: Vec<CardInstanceId> = inv
         .cards_in_play
         .iter()
-        .filter_map(|card| {
-            let meta = (reg.metadata_for)(&card.code)?;
-            let CardKind::Asset { health, sanity, .. } = meta.kind else {
-                return None;
-            };
-            let dmg_defeated = health.is_some_and(|h| card.accumulated_damage >= h);
-            let hor_defeated = sanity.is_some_and(|s| card.accumulated_horror >= s);
-            (dmg_defeated || hor_defeated).then_some(card.instance_id)
-        })
+        .filter(|card| asset_overflowed(reg, card))
+        .map(|card| card.instance_id)
         .collect();
 
     for inst in defeated {
-        // RR p.7: a defeated asset goes to its owner's discard pile. One that
-        // cannot leave play stays, defeated, where it is (`glossary/Cannot.md`:
-        // *"The word "cannot" is absolute, and cannot be countermanded by other
-        // abilities."*). The only corpus card that cannot leave play, The
-        // Necronomicon 01009, has no health or sanity to be defeated through.
-        let left = board::discard_from_play(cx, inst);
-        debug_assert!(
-            left != Err(NotLeft::NotInPlay),
-            "soak defeat: the defeated asset {inst:?} is in play",
-        );
+        defeat_asset(cx, inst);
     }
+}
+
+/// Whether `card` is an **asset** whose accumulated damage or horror has
+/// reached its printed health or sanity. `false` for a card whose metadata
+/// can't be resolved, a non-asset, and a stat the asset does not print.
+pub(super) fn asset_overflowed(reg: &CardRegistry, card: &CardInPlay) -> bool {
+    let Some(meta) = (reg.metadata_for)(&card.code) else {
+        return false;
+    };
+    let CardKind::Asset { health, sanity, .. } = meta.kind else {
+        return false;
+    };
+    let dmg_defeated = health.is_some_and(|h| card.accumulated_damage >= h);
+    let hor_defeated = sanity.is_some_and(|s| card.accumulated_horror >= s);
+    dmg_defeated || hor_defeated
+}
+
+/// Defeat the asset instance `inst`: it leaves play through
+/// [`board::discard_from_play`] to its owner's discard pile.
+pub(super) fn defeat_asset(cx: &mut Cx, inst: CardInstanceId) {
+    // RR p.7: a defeated asset goes to its owner's discard pile.
+    //
+    // The rules do not settle a defeated asset that cannot leave play.
+    // `glossary/Cannot.md` reads *"The word "cannot" is absolute, and cannot
+    // be countermanded by other abilities."*, which keeps it in play.
+    // `glossary/Partner.md` reads *"A partner asset cannot leave play unless
+    // it is defeated"*, but only for its own keyword, so it is no general
+    // rule that defeat overrides "cannot". The only corpus card that cannot
+    // leave play, The Necronomicon 01009, has no health or sanity to be
+    // defeated through, so nothing reaches this case yet. The first card
+    // that does must decide it, and until then the assertion below fails
+    // its test rather than leaving the card silently in play.
+    let left = board::discard_from_play(cx, inst);
+    debug_assert!(
+        left.is_ok(),
+        "asset defeat: the defeated asset {inst:?} did not leave play ({left:?}); \
+         a refusal means an asset that cannot leave play was defeated, which no \
+         rule settles yet",
+    );
 }
 
 /// Place a computed [`Assignment`] simultaneously, then defeat overflowed
@@ -454,7 +477,7 @@ pub(super) fn apply_horror_numeric(cx: &mut Cx, investigator: InvestigatorId, am
         .investigator_card
         .accumulated_horror
         .saturating_add(amount);
-    let lethal = inv.horror() >= inv.max_sanity(cx.cards);
+    let lethal = sanity_reached(inv, cx.cards);
     cx.events.push(Event::HorrorTaken {
         investigator,
         amount,
@@ -462,86 +485,13 @@ pub(super) fn apply_horror_numeric(cx: &mut Cx, investigator: InvestigatorId, am
     lethal
 }
 
-/// Why [`NativeCx::move_horror`](crate::engine::NativeCx::move_horror) moved
-/// nothing. In every case nothing changed and no event was emitted.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MoveHorrorError {
-    /// The source or the destination instance is not on the board.
-    NotInPlay,
-    /// The destination has no sanity value. The official FAQ: *"An effect
-    /// that can “move” damage/horror from one card to another—such as Wrong
-    /// Place, Right Time (\[fhvp\] 115)—must move that damage/horror to a card
-    /// that has a health or sanity value, respectively."*
-    NoSanity,
-}
-
-/// Move up to `amount` horror from the card instance `from` onto the card
-/// instance `to`, wherever each sits on the board (the
-/// [`board::find_instance`] walk), and emit [`Event::HorrorMoved`] with the
-/// number moved. A source with no horror moves none, which changes nothing and
-/// announces nothing.
-///
-/// A move, not a deal: no [`Event::HorrorTaken`] and no
-/// [`TimingEvent::DamagePlaced`] window, so nothing keyed on harm sees it
-/// (ADR 0009; the 01009 ruling, *"Moving damage or horror is different from
-/// 'dealing' or 'taking' damage or horror, so does not trigger effects"*).
-///
-/// The destination is defeated as horror placed any other way would defeat it
-/// (`glossary/Sanity_and_Horror.md`): an investigator card reaching its
-/// sanity is *"defeated"* and eliminated with [`EliminationCause::Horror`],
-/// and an asset reaching its sanity *"is defeated and placed on its owner's
-/// discard pile"*. The Necronomicon 01009, the one corpus caller, only ever
-/// moves onto Daisy Walker's investigator card; the asset branch is the rule
-/// for a general exit, not a card's need.
-pub(crate) fn move_horror(
-    cx: &mut Cx,
-    from: CardInstanceId,
-    to: CardInstanceId,
-    amount: u8,
-) -> Result<(), MoveHorrorError> {
-    let (source, _) = board::find_instance(cx.state, from).ok_or(MoveHorrorError::NotInPlay)?;
-    let available = source.accumulated_horror;
-    let (dest, placement) = board::find_instance(cx.state, to).ok_or(MoveHorrorError::NotInPlay)?;
-    let sanity = match placement {
-        board::Placement::InvestigatorCard(id) => {
-            Some(cx.state.investigators[&id].max_sanity(cx.cards))
-        }
-        _ => match (cx.cards.metadata_for)(&dest.code).map(|meta| &meta.kind) {
-            Some(CardKind::Asset { sanity, .. }) => *sanity,
-            _ => None,
-        },
-    }
-    .ok_or(MoveHorrorError::NoSanity)?;
-
-    let moved = amount.min(available);
-    if moved == 0 {
-        return Ok(());
-    }
-    let (source, _) = board::find_instance_mut(cx.state, from).expect("source checked at entry");
-    source.accumulated_horror -= moved;
-    let (dest, _) = board::find_instance_mut(cx.state, to).expect("destination checked at entry");
-    dest.accumulated_horror = dest.accumulated_horror.saturating_add(moved);
-    let defeated = dest.accumulated_horror >= sanity;
-    cx.events.push(Event::HorrorMoved {
-        from,
-        to,
-        amount: moved,
-    });
-
-    if defeated {
-        if let board::Placement::InvestigatorCard(id) = placement {
-            elimination::apply_investigator_elimination(cx, id, EliminationCause::Horror);
-        } else {
-            // An asset that cannot leave play stays, defeated, where it is
-            // (`glossary/Cannot.md`), as in `defeat_overflowed_assets`.
-            let left = board::discard_from_play(cx, to);
-            debug_assert!(
-                left != Err(NotLeft::NotInPlay),
-                "move_horror: the defeated asset {to:?} is in play",
-            );
-        }
-    }
-    Ok(())
+/// Whether `inv`'s horror has reached their sanity, so they are defeated by
+/// it (`glossary/Sanity_and_Horror.md`). `false` for an investigator no longer
+/// [`Status::Active`]: one already out of the game is not defeated again.
+/// Defeat application is the caller's, through
+/// [`super::elimination::apply_investigator_elimination`].
+pub(super) fn sanity_reached(inv: &Investigator, cards: &CardRegistry) -> bool {
+    inv.status == Status::Active && inv.horror() >= inv.max_sanity(cards)
 }
 
 /// Begin one deal of `damage` + `horror` to `investigator`: push the

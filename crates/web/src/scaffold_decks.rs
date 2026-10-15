@@ -1,5 +1,5 @@
 //! The picker's placeholder decks, one per investigator it offers, until
-//! decklist import (#782) retires both. Host-compiled, unlike the wasm-only
+//! decklist import (#782) retires them all. Host-compiled, unlike the wasm-only
 //! `picker` that seats them, so a host test can play a scenario with
 //! the exact deck the picker sends (`tests/agnes_scaffold_walk.rs`,
 //! `tests/daisy_scaffold_walk.rs`, `tests/skids_scaffold_walk.rs`).
