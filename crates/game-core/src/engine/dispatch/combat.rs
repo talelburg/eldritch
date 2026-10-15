@@ -632,20 +632,20 @@ pub(super) fn enemy_may_attack(
 /// Register `restriction` protecting `investigator` for the rest of the round,
 /// as a [`LastingEffect`] stamped [`Lifetime::Round`]. A card-local native
 /// (On the Lam 01010) reaches it as
-/// [`NativeCx::add_lasting_restriction`](crate::engine::NativeCx::add_lasting_restriction).
+/// [`NativeCx::restrict_until_end_of_round`](crate::engine::NativeCx::restrict_until_end_of_round).
 /// Round is the only lifetime in scope: On the Lam's protection lasts *"Until
 /// the end of the round"*. No event announces it.
 ///
 /// [`Restriction::CannotAttack`] is the one restriction with a lasting reader
 /// ([`enemy_may_attack`]); registering any other would be a silent no-op.
-pub fn add_lasting_restriction(
+pub fn restrict_until_end_of_round(
     cx: &mut Cx,
     investigator: InvestigatorId,
     restriction: Restriction,
 ) {
     debug_assert!(
         matches!(restriction, Restriction::CannotAttack { .. }),
-        "add_lasting_restriction: {restriction:?} has no lasting reader",
+        "restrict_until_end_of_round: {restriction:?} has no lasting reader",
     );
     cx.state.lasting_effects.push(LastingEffect {
         lifetime: Lifetime::Round,

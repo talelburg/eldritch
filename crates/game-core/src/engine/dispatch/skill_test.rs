@@ -239,10 +239,10 @@ pub(in crate::engine) fn start_skill_test(
 /// its `for_skills` by its investigator offers the "use X in place of Y?"
 /// choice at initiation. A card-local native (Mind over Matter 01036) reaches
 /// it as
-/// [`NativeCx::add_skill_substitution`](crate::engine::NativeCx::add_skill_substitution).
+/// [`NativeCx::substitute_skill_until_end_of_round`](crate::engine::NativeCx::substitute_skill_until_end_of_round).
 /// Stamped [`Lifetime::Round`]: Mind over Matter's is the only substitution in
 /// scope, and it lasts *"Until the end of the round"*. No event announces it.
-pub fn add_skill_substitution(cx: &mut Cx, substitution: SkillSubstitution) {
+pub fn substitute_skill_until_end_of_round(cx: &mut Cx, substitution: SkillSubstitution) {
     cx.state.lasting_effects.push(LastingEffect {
         lifetime: Lifetime::Round,
         kind: LastingEffectKind::SkillSubstitution(substitution),

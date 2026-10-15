@@ -40,7 +40,7 @@ pub fn abilities() -> Vec<Ability> {
 
 /// Register the round-scoped substitution for the controller.
 fn substitute(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
-    cx.add_skill_substitution(SkillSubstitution {
+    cx.substitute_skill_until_end_of_round(SkillSubstitution {
         investigator: ctx.controller,
         use_skill: SkillKind::Intellect,
         for_skills: vec![SkillKind::Combat, SkillKind::Agility],

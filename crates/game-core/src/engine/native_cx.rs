@@ -441,19 +441,19 @@ impl<'a> NativeCx<'a> {
 
     /// Register `substitution` for the rest of the round. No event announces
     /// it.
-    pub fn add_skill_substitution(&mut self, substitution: SkillSubstitution) {
-        skill_test::add_skill_substitution(self.write_access(), substitution);
+    pub fn substitute_skill_until_end_of_round(&mut self, substitution: SkillSubstitution) {
+        skill_test::substitute_skill_until_end_of_round(self.write_access(), substitution);
     }
 
     /// Register `restriction` protecting `investigator` for the rest of the
     /// round (On the Lam 01010's [`Restriction::CannotAttack`]). No event
     /// announces it.
-    pub fn add_lasting_restriction(
+    pub fn restrict_until_end_of_round(
         &mut self,
         investigator: InvestigatorId,
         restriction: Restriction,
     ) {
-        combat::add_lasting_restriction(self.write_access(), investigator, restriction);
+        combat::restrict_until_end_of_round(self.write_access(), investigator, restriction);
     }
 
     /// Return the committed card at `index` — the one an

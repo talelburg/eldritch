@@ -50,7 +50,7 @@ const BY_COMBAT: i8 = 2;
 const BY_INTELLECT: i8 = 4;
 
 fn substitute(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
-    cx.add_skill_substitution(SkillSubstitution {
+    cx.substitute_skill_until_end_of_round(SkillSubstitution {
         investigator: ctx.controller,
         use_skill: SkillKind::Intellect,
         for_skills: vec![SkillKind::Combat],

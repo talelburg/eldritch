@@ -49,7 +49,7 @@ pub fn abilities() -> Vec<Ability> {
 
 /// Register the round-scoped non-Elite attack restriction for the controller.
 fn protect(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
-    cx.add_lasting_restriction(
+    cx.restrict_until_end_of_round(
         ctx.controller,
         Restriction::CannotAttack {
             exempt: Some(CardFilter::with_trait(ELITE)),

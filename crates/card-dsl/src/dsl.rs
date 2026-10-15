@@ -2619,7 +2619,7 @@ pub enum Restriction {
     ///
     /// **Lasting only.** The engine reads it from the lasting effects a
     /// card-local native registers through
-    /// `NativeCx::add_lasting_restriction` (over in `game-core`), which names
+    /// `NativeCx::restrict_until_end_of_round` (over in `game-core`), which names
     /// the protected investigator. A constant `CannotAttack` on a card in
     /// play has no reader, so declaring one is a silent no-op.
     ///
