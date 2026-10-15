@@ -1,7 +1,7 @@
 //! [`NativeCx::discard_after_this_test`]: a native marks the in-flight test
 //! with a card in play, and the test's teardown discards it.
 //!
-//! Baseball Bat 01074 is the corpus consumer (*"If a \[skull\] or \[auto_fail\]
+//! Baseball Bat 01074 is the corpus consumer (*"If a `[skull]` or `[auto_fail]`
 //! symbol is revealed during this attack, discard Baseball Bat after the
 //! attack resolves."*, `data/arkhamdb-snapshot/pack/core/core.json`), tested
 //! against the real registry in `crates/cards/tests/baseball_bat.rs`. This
