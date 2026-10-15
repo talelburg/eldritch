@@ -408,7 +408,8 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             Continuation::SubstitutionPrompt(_)
             | Continuation::HunterMove(_)
             | Continuation::SpawnEngage(_)
-            | Continuation::SlotDiscard(_) => return EngineOutcome::Done,
+            | Continuation::SlotDiscard(_)
+            | Continuation::AdditionalActionChoice(_) => return EngineOutcome::Done,
         };
         // A stepped frame: `Done` means it advanced (child pushed, frame
         // popped, cursor moved) and the loop re-dispatches the new top; any
@@ -681,6 +682,10 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         Continuation::DealDamage(_) => combat::resume_damage_distribution(cx, response),
         // The interactive slot make-room choice (#498).
         Continuation::SlotDiscard(_) => slots::resume_slot_discard(cx, response),
+        // The FAQ 1.10 choice of which additional action pays (#1098).
+        Continuation::AdditionalActionChoice(_) => {
+            actions::take::resume_additional_action_choice(cx, response)
+        }
         // Open-turn OptionId dispatch (slice 2b, #447): `ResolveInput(PickSingle(OptionId))`
         // at the open turn re-enumerates `legal_actions`, indexes by the submitted
         // `OptionId`, and forwards to `dispatch_turn_action`.

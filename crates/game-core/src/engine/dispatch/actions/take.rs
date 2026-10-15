@@ -32,24 +32,31 @@
 //! being taken, and [`take`] spends those before any standard action.
 //! [`ActionDescription`] is what an entry's restriction is tested against:
 //! Daisy Walker 01002's additional action pays only for a Tome's `[action]`
-//! ability.
+//! ability. The same entry: *"If an action qualifies as more than one of an
+//! investigator’s additional actions, he or she may choose which additional
+//! action is used."* Where the choice changes anything, [`take`] asks before it
+//! pays.
 
 use std::borrow::Cow;
 use std::fmt;
 
 use card_dsl::dsl::{ActionClass, ActionDesignator, AdditionalActionRestriction, Effect};
 
+use crate::action::InputResponse;
 use crate::card_registry::{self, CardRegistry};
 use crate::engine::dispatch::actions::evade::EvadeModification;
 use crate::engine::dispatch::actions::fight::FightModification;
 use crate::engine::dispatch::actions::{draw, engage, evade, fight, investigate, r#move, resource};
-use crate::engine::dispatch::{abilities, cards, combat, cursor};
-use crate::engine::outcome::EngineOutcome;
+use crate::engine::dispatch::{abilities, cards, choice, combat, cursor};
+use crate::engine::outcome::{
+    ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
+};
 use crate::engine::{abilities_in_effect, board, evaluator, Cx};
 use crate::event::Event;
 use crate::state::{
-    AbilitySource, ActionResolutionFrame, ActionResume, AdditionalActionGrant, CardCode,
-    CardInstanceId, GameState, InvestigatorId, Phase, Status,
+    AbilityAddress, AbilitySource, ActionResolutionFrame, ActionResume,
+    AdditionalActionChoiceFrame, AdditionalActionGrant, CardCode, CardInstanceId, GameState,
+    InvestigatorId, Phase, Status,
 };
 
 /// What kind of action is being taken: one of the seven basic actions
@@ -58,7 +65,9 @@ use crate::state::{
 /// and **Evade**."*), a **Play** of the card `code`, or an **Activate** of an
 /// ability on `source`. The last two carry their source so a rule that applies
 /// to some actions by what they are taken from can be tested against the
-/// description (Daisy Walker 01002's Tome-only additional action).
+/// description (Daisy Walker 01002's Tome-only additional action). An
+/// activation also names which of the source's abilities it is, so it can be
+/// taken again once the player has chosen which additional action pays.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ActionKind {
     Draw,
@@ -68,8 +77,13 @@ pub(crate) enum ActionKind {
     Fight,
     Engage,
     Evade,
-    Play { code: CardCode },
-    Activate { source: AbilitySource },
+    Play {
+        code: CardCode,
+    },
+    Activate {
+        source: AbilitySource,
+        address: AbilityAddress,
+    },
 }
 
 impl ActionKind {
@@ -103,7 +117,7 @@ impl fmt::Display for ActionKind {
             Self::Engage => f.write_str("Engage"),
             Self::Evade => f.write_str("Evade"),
             Self::Play { code } => write!(f, "Play {code}"),
-            Self::Activate { source } => write!(f, "Activate {source:?}"),
+            Self::Activate { source, .. } => write!(f, "Activate {source:?}"),
         }
     }
 }
@@ -116,6 +130,10 @@ pub(crate) struct ActionDescription {
     kind: ActionKind,
     action_cost: u8,
     designator: Option<ActionDesignator>,
+    /// The player's answer to the FAQ 1.10 choice, once asked: the index of
+    /// the chosen option among [`additional_action_options`]. `None` until
+    /// the player has been asked.
+    chosen_additional_action: Option<usize>,
 }
 
 impl ActionDescription {
@@ -125,6 +143,7 @@ impl ActionDescription {
             kind,
             action_cost: 1,
             designator: None,
+            chosen_additional_action: None,
         }
     }
 
@@ -142,21 +161,32 @@ impl ActionDescription {
             kind: ActionKind::Play { code },
             action_cost: 1,
             designator,
+            chosen_additional_action: None,
         }
     }
 
-    /// An activation of an ability on `source` printing `action_cost` actions
-    /// (at least one; a fast ability is not taken) and `designator`.
+    /// An activation of the ability at `address` on `source`, printing
+    /// `action_cost` actions (at least one; a fast ability is not taken) and
+    /// `designator`.
     pub(crate) fn activate(
         source: AbilitySource,
+        address: AbilityAddress,
         action_cost: u8,
         designator: Option<ActionDesignator>,
     ) -> Self {
         Self {
-            kind: ActionKind::Activate { source },
+            kind: ActionKind::Activate { source, address },
             action_cost,
             designator,
+            chosen_additional_action: None,
         }
+    }
+
+    /// This action, paid for with the additional action the player chose: the
+    /// `index`th option of the prompt [`take`] put to them.
+    pub(crate) fn paid_with_chosen_additional_action(mut self, index: usize) -> Self {
+        self.chosen_additional_action = Some(index);
+        self
     }
 
     /// The class a surcharge keys on: the designator's if it prints one,
@@ -230,6 +260,7 @@ impl AdditionalAction {
             Some(AdditionalActionRestriction::ActivatedAbilityOn(filter)) => {
                 let ActionKind::Activate {
                     source: AbilitySource::InPlay(instance),
+                    ..
                 } = description.kind
                 else {
                     return false;
@@ -266,20 +297,21 @@ enum AdditionalActionOrigin {
 /// forfeited at the end of an investigator's turn"*.
 ///
 /// Sorted restricted before unrestricted, then a grant from a card in play
-/// before one an effect granted. Spending takes entries from the front, and
-/// that order stands in for a choice the rules give the player. FAQ 1.10:
-/// *"If an action qualifies as more than one of an investigator's additional
-/// actions, he or she may choose which additional action is used."* Leo De
-/// Luca 01048's ruling says the same of Leo and Quick Thinking (*"you may
-/// choose which additional action you are actually using"*). Spending a
-/// restricted one first keeps the unrestricted ones for actions the restricted
-/// one could not take. Spending a card-in-play one first protects the action
-/// from the card leaving play. While every entry that qualifies carries the
-/// same restriction, nothing the player could choose would change the outcome.
-/// [`quote`] asserts that in debug builds, rather than having the engine
-/// silently pick for the player. Daisy Walker 01002 with Leo De Luca 01048
-/// breaks it: a Tome activation qualifies as both her restricted action and
-/// his unrestricted one, and the choice between them is #1098.
+/// before one an effect granted. Spending takes entries from the front, which
+/// settles the choice the rules give the player wherever it changes nothing.
+/// FAQ 1.10: *"If an action qualifies as more than one of an investigator’s
+/// additional actions, he or she may choose which additional action is used."*
+/// Leo De Luca 01048's ruling says the same of Leo and Quick Thinking (*"you
+/// may choose which additional action you are actually using"*).
+///
+/// Among entries with the same restriction the order dominates any choice:
+/// they buy the same actions, and spending a card-in-play one first protects
+/// the action from the card leaving play. Between entries with different
+/// restrictions it does not. Spending Daisy Walker 01002's Tome-only action
+/// first keeps Leo De Luca 01048's for anything, but Leo can leave play and
+/// take his action with him, and hers cannot. So where an action qualifies as
+/// entries with more than one restriction, [`take`] asks the player
+/// ([`additional_action_options`]), and the sort only orders the options.
 fn additional_actions(
     state: &GameState,
     cards: &CardRegistry,
@@ -409,6 +441,29 @@ struct Quote {
     /// `total` less the additional actions: what the standard actions pay.
     from_standard: u8,
     surcharge_sources: Vec<CardInstanceId>,
+    /// The additional actions the player must choose between before the
+    /// action is paid for, or empty when there is no choice to put
+    /// ([`additional_action_options`]). The cost is the same whichever is
+    /// chosen, so `additional` is the unchosen order's.
+    choice: Vec<AdditionalActionOrigin>,
+}
+
+/// The FAQ 1.10 choice among `qualifying`, the additional actions an action
+/// qualifies as, in [`additional_actions`] order: the first entry of each
+/// distinct restriction, as indices into `qualifying`. A choice exists only
+/// when there are two or more. Within one restriction the sort's front entry
+/// dominates the rest (see [`additional_actions`]), so it stands for them.
+fn additional_action_options(qualifying: &[AdditionalAction]) -> Vec<usize> {
+    let mut options: Vec<usize> = Vec::new();
+    for (index, action) in qualifying.iter().enumerate() {
+        if !options
+            .iter()
+            .any(|&seen| qualifying[seen].restriction == action.restriction)
+        {
+            options.push(index);
+        }
+    }
+    options
 }
 
 /// Whether `investigator` may take the action `description` describes, and if so
@@ -473,20 +528,33 @@ fn quote(
         None => (0, Vec::new()),
     };
     let total = description.action_cost.saturating_add(extra);
-    let qualifying: Vec<AdditionalAction> = additional_actions(state, cards, investigator)
+    let mut qualifying: Vec<AdditionalAction> = additional_actions(state, cards, investigator)
         .into_iter()
         .filter(|action| action.admits(state, cards, description))
         .collect();
-    // TODO(#1098): offer the FAQ 1.10 choice between differently restricted
-    // additional actions. Daisy Walker 01002 and Leo De Luca 01048 activating
-    // a Tome trips this today.
-    debug_assert!(
-        qualifying
-            .windows(2)
-            .all(|pair| pair[0].restriction == pair[1].restriction),
-        "{name}: qualifies as additional actions with different restrictions, and the \
-         player's FAQ 1.10 choice between them is not built ({qualifying:?})"
-    );
+    // FAQ 1.10's choice, where the qualifying entries carry more than one
+    // restriction. Unanswered, the quote names the options for [`take`] to
+    // ask. Answered, the chosen entry is spent first and the rest keep the
+    // sort's order.
+    let options = additional_action_options(&qualifying);
+    let mut choice = Vec::new();
+    match description.chosen_additional_action {
+        None if options.len() > 1 => {
+            choice = options.iter().map(|&i| qualifying[i].origin).collect();
+        }
+        None => {}
+        Some(chosen) => {
+            let offered = if options.len() > 1 { options.len() } else { 0 };
+            let Some(&index) = options.get(chosen).filter(|_| offered > 0) else {
+                return Err(format!(
+                    "{name}: additional action option {chosen} out of range (0..{offered})"
+                )
+                .into());
+            };
+            let chosen = qualifying.remove(index);
+            qualifying.insert(0, chosen);
+        }
+    }
     // An action costing more than one spends one additional action per action
     // point, then standard actions for the rest. The vendored rules say nothing
     // on it directly. The FAQ's Discipline (Balance of Body) answer treats a
@@ -507,6 +575,7 @@ fn quote(
             .collect(),
         from_standard,
         surcharge_sources,
+        choice,
     })
 }
 
@@ -515,7 +584,12 @@ fn quote(
 /// park the action behind its attacks of opportunity or perform it now.
 ///
 /// The actions are paid from the additional actions that admit the action
-/// first, then from the standard ones (FAQ 1.10, see the module doc).
+/// first, then from the standard ones (FAQ 1.10, see the module doc). Where the
+/// action qualifies as additional actions with different restrictions, nothing
+/// is paid yet: an
+/// [`AdditionalActionChoice`](crate::state::Continuation::AdditionalActionChoice)
+/// frame asks the player which to use, and the answer takes the action again
+/// ([`resume_additional_action_choice`]).
 ///
 /// `before_attacks` pays the caller's own costs and returns the rest of the
 /// action as an [`ActionResume`]. A basic action has no other cost, so its hook
@@ -541,11 +615,15 @@ pub(crate) fn take(
         additional,
         from_standard,
         surcharge_sources,
+        choice,
         ..
     } = match quote(cx.state, cx.cards, investigator, description) {
         Ok(quote) => quote,
         Err(reason) => return EngineOutcome::Rejected { reason },
     };
+    if !choice.is_empty() {
+        return ask_additional_action_choice(cx, investigator, description, &choice);
+    }
     use_additional_actions(cx.state, investigator, &additional);
     let inv = cx
         .state
@@ -591,6 +669,91 @@ pub(crate) fn take(
     }
 }
 
+/// Pause the action `description` describes, before anything is paid, for
+/// `investigator` to choose which of the additional actions `offered` names pays
+/// for it. Option `i` is `offered[i]`, anchored to the card granting it; an
+/// effect's grant has no card, so it is offered un-anchored.
+fn ask_additional_action_choice(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    description: &ActionDescription,
+    offered: &[AdditionalActionOrigin],
+) -> EngineOutcome {
+    // Only an activation reaches here: the one restriction,
+    // `ActivatedAbilityOn`, admits nothing else (see `AdditionalAction::admits`),
+    // and an action only unrestricted entries admit has one option.
+    let ActionKind::Activate { source, address } = &description.kind else {
+        unreachable!(
+            "take: only an activation qualifies as differently restricted additional \
+             actions, got {}",
+            description.kind
+        );
+    };
+    cx.state.continuations.push(AdditionalActionChoiceFrame {
+        investigator,
+        source: *source,
+        address: address.clone(),
+    });
+    let options = offered
+        .iter()
+        .enumerate()
+        .map(|(i, origin)| {
+            let id = OptionId(u32::try_from(i).expect("offered option count fits in u32"));
+            match origin {
+                AdditionalActionOrigin::InPlay(instance) => {
+                    let label = board::find_instance(cx.state, *instance).map_or_else(
+                        || "Additional action".to_owned(),
+                        |(card, _)| choice::card_name(cx.cards, &card.code),
+                    );
+                    ChoiceOption::new(id, label).at(OptionTarget::CardInstance(*instance))
+                }
+                AdditionalActionOrigin::Effect { .. } => {
+                    ChoiceOption::new(id, "Additional action gained this turn")
+                }
+            }
+        })
+        .collect();
+    EngineOutcome::AwaitingInput {
+        request: InputRequest::pick_single(
+            format!(
+                "Investigator {investigator:?}: choose which additional action to use for \
+                 this action."
+            ),
+            options,
+        ),
+        resume_token: ResumeToken(0),
+    }
+}
+
+/// Resume the FAQ 1.10 choice: take the paused activation again, paid for with
+/// the chosen additional action. The state is as it was when the choice was
+/// put (the prompt refuses every other action), so the activation re-validates
+/// and re-quotes to the same options, and the quote checks the pick. An invalid
+/// pick rejects, and the `apply` boundary's rollback restores the frame.
+pub(in crate::engine::dispatch) fn resume_additional_action_choice(
+    cx: &mut Cx,
+    response: &InputResponse,
+) -> EngineOutcome {
+    let InputResponse::PickSingle(OptionId(chosen)) = response else {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput: the additional-action choice expects PickSingle, got {response:?}"
+            )
+            .into(),
+        };
+    };
+    let AdditionalActionChoiceFrame {
+        investigator,
+        source,
+        address,
+    } = cx
+        .state
+        .continuations
+        .pop_expect::<AdditionalActionChoiceFrame>();
+    let chosen = usize::try_from(*chosen).unwrap_or(usize::MAX);
+    abilities::activate_ability_paid_with(cx, investigator, source, &address, chosen)
+}
+
 /// `investigator` loses `count` actions, saturating at none left.
 /// `glossary/Action.md` (FAQ 1.10): *"If an effect causes an investigator to
 /// lose one or more actions, that investigator has that many fewer standard
@@ -601,7 +764,7 @@ pub(crate) fn take(
 ///
 /// So the standard actions go first, then the additional ones in the order
 /// [`additional_actions`] sorts them. That order stands in for the
-/// investigator's choice, as it does for spending.
+/// investigator's choice: unlike spending, losing does not ask.
 ///
 /// Announces the new standard count only when it changed.
 ///
