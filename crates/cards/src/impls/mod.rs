@@ -92,6 +92,7 @@ pub mod arcane_initiate;
 pub mod arcane_studies;
 pub mod attic;
 pub mod automatic_45;
+pub mod backstab;
 pub mod barricade;
 pub mod beat_cop;
 pub mod blinding_light;
@@ -115,6 +116,7 @@ pub mod frozen_in_fear;
 pub mod grasping_hands;
 pub mod guard_dog;
 pub mod guts;
+pub mod hard_knocks;
 pub mod heirloom_of_hyperborea;
 pub mod holy_rosary;
 pub mod hyperawareness;
@@ -228,6 +230,7 @@ pub const ALL: &[CardRecord] = &[
     arcane_studies::CARD,
     attic::CARD,
     automatic_45::CARD,
+    backstab::CARD,
     barricade::CARD,
     beat_cop::CARD,
     blinding_light::CARD,
@@ -251,6 +254,7 @@ pub const ALL: &[CardRecord] = &[
     grasping_hands::CARD,
     guard_dog::CARD,
     guts::CARD,
+    hard_knocks::CARD,
     heirloom_of_hyperborea::CARD,
     holy_rosary::CARD,
     hyperawareness::CARD,
