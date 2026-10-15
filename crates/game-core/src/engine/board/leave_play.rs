@@ -77,11 +77,12 @@
 //! # One event per card
 //!
 //! Every card that leaves emits exactly one event: [`Event::CardDiscarded`]
-//! naming the pile it landed in, [`Event::CardRemovedFromGame`], or
-//! [`Event::EnteredVictoryDisplay`]. The leaving card's event comes first, then
-//! one per attachment in attachment order (for a location, then one per card
-//! put into play at it). A discard or a removal names the [`Zone`] the card
-//! left.
+//! naming the pile it landed in, [`Event::CardRemovedFromGame`],
+//! [`Event::EnteredVictoryDisplay`], or [`Event::CardPlacedOnBottomOfDeck`] for
+//! a discarded event its owner's cards redirect (Wendy's Amulet 01014). The
+//! leaving card's event comes first, then one per attachment in attachment
+//! order (for a location, then one per card put into play at it). A discard or
+//! a removal names the [`Zone`] the card left.
 //!
 //! # Adding an exit
 //!
@@ -92,6 +93,8 @@
 //! takes its attachments and the cards put into play at it through
 //! `discard_attachments`. There is deliberately no public destination enum: a
 //! caller always knows which exit it means.
+
+use card_dsl::card_data::{CardMetadata, CardType};
 
 use crate::engine::board::{self, Placement};
 use crate::engine::{abilities_in_effect, Cx};
@@ -353,7 +356,21 @@ fn discard_attachments(cx: &mut Cx, attachments: Vec<CardInPlay>, from: Zone) {
 
 /// File `code`, just taken out of `from`, through `exit` by its `owner`, and
 /// emit its one event.
+///
+/// An event an investigator owns is discarded to the bottom of their deck
+/// instead while their cards redirect it
+/// ([`events_go_to_bottom_of_deck`](abilities_in_effect::events_go_to_bottom_of_deck)):
+/// Wendy's Amulet 01014's *"discard an event from play: Place it on the bottom
+/// of your deck instead of in your discard pile"*. An eliminated investigator's
+/// sweep never reaches it: step 1 has already taken the Amulet out of play.
 fn file(cx: &mut Cx, code: CardCode, owner: Owner, from: Zone, exit: Exit) {
+    let to_bottom_of_deck = match (&exit, owner) {
+        (Exit::Discard, Owner::Investigator(id)) => {
+            (cx.cards.metadata_for)(&code).map(CardMetadata::card_type) == Some(CardType::Event)
+                && abilities_in_effect::events_go_to_bottom_of_deck(cx.state, cx.cards, id)
+        }
+        _ => false,
+    };
     let state = &mut *cx.state;
     let owning_investigator = match owner {
         Owner::Investigator(id) => state.investigators.get_mut(&id).map(|inv| (id, inv)),
@@ -364,6 +381,10 @@ fn file(cx: &mut Cx, code: CardCode, owner: Owner, from: Zone, exit: Exit) {
         (Exit::VictoryDisplay { victory }, _, _) => {
             state.victory_display.push(code.clone());
             Event::EnteredVictoryDisplay { code, victory }
+        }
+        (Exit::Discard, Owner::Investigator(_), Some((investigator, inv))) if to_bottom_of_deck => {
+            inv.deck.push(code.clone());
+            Event::CardPlacedOnBottomOfDeck { investigator, code }
         }
         (Exit::Discard, Owner::Investigator(_), Some((id, inv))) => {
             inv.discard.push(code.clone());
