@@ -234,6 +234,7 @@ fn withdraw_lapsed_candidates(cx: &mut Cx) -> usize {
         return 0;
     };
     let (event, bucket, mode) = (event.clone(), bucket, mode.clone());
+    refresh_provisional_verdict(cx, &event, bucket);
     let stored = cx
         .state
         .continuations
@@ -273,6 +274,21 @@ fn withdraw_lapsed_candidates(cx: &mut Cx) -> usize {
         .top_mut::<TimingPointWindowFrame>()
         .candidates = kept;
     lapsed.len()
+}
+
+/// Keep a skill test's stored verdict live while its `when` cell is open: a
+/// modifier played there (Lucky! 01080) changes the total before the resolve
+/// step re-totals, and the client shows the player the stored verdict while
+/// they decide whether to play another (#1111). Written before every re-offer,
+/// so the window's own re-scan and the client read the same result.
+fn refresh_provisional_verdict(cx: &mut Cx, event: &TimingEvent, bucket: EventTiming) {
+    if bucket != EventTiming::When || !matches!(event, TimingEvent::SkillTestResolved { .. }) {
+        return;
+    }
+    let fresh = skill_test::verdict(cx.state, cx.cards);
+    if let Some(test) = cx.state.current_skill_test_mut() {
+        test.resolved = Some(fresh);
+    }
 }
 
 /// Withdraw **every** remaining candidate from an open `when`-cell window whose
