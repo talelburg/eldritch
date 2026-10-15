@@ -267,7 +267,12 @@ fn it_is_not_offered_after_the_test_has_failed() {
     // cell, where Rabbit's Foot is: "you cannot play Lucky! after you use
     // Rabbit’s Foot".
     let window = investigate(board(3, &[LUCKY], ChaosToken::Numeric(0)));
-    assert_eq!(window.offered_at(&in_hand(LUCKY)), 1, "{:?}", window.prompt());
+    assert_eq!(
+        window.offered_at(&in_hand(LUCKY)),
+        1,
+        "{:?}",
+        window.prompt()
+    );
 
     let after = window.skip();
     assert_event!(after.events(), Event::SkillTestFailed { by: 1, .. });

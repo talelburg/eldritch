@@ -331,8 +331,14 @@ fn playing_from_the_discard_pile_while_engaged_provokes_an_attack_of_opportunity
     assert_eq!(inv.resources, resources + 3, "Emergency Cache resolved");
     assert_event_sequence!(
         s.events(),
-        Event::DamageTaken { investigator: INV, amount: 1 },
-        Event::ResourcesGained { investigator: INV, amount: 3 },
+        Event::DamageTaken {
+            investigator: INV,
+            amount: 1
+        },
+        Event::ResourcesGained {
+            investigator: INV,
+            amount: 3
+        },
     );
 }
 
