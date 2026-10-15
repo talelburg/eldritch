@@ -177,6 +177,23 @@ pub enum Event {
         /// How many moved: no more than the card had.
         amount: u8,
     },
+    /// Resources moved out of an investigator's resource pool onto a card
+    /// (Hospital Debts 01011: *"Move 1 resource from your resource pool to
+    /// Hospital Debts."*), through
+    /// [`NativeCx::move_resources_to_card`](crate::engine::NativeCx::move_resources_to_card).
+    ///
+    /// Deliberately neither [`Event::ResourcesPaid`] nor a gain: the move is
+    /// the ability's effect, not its cost, and the official FAQ (Stylish Coat)
+    /// sets a move of resources apart from gaining them. The count lands on
+    /// [`CardInPlay::resources`](crate::state::CardInPlay::resources).
+    ResourcesMovedToCard {
+        /// Whose resource pool they left.
+        investigator: InvestigatorId,
+        /// The card instance they now sit on.
+        instance_id: CardInstanceId,
+        /// How many moved: no more than the pool held.
+        amount: u8,
+    },
     /// A skill test was declared and resolution has begun.
     SkillTestStarted {
         /// Investigator taking the test.

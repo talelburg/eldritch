@@ -273,7 +273,7 @@ fn taking_control_preserves_her_instance() {
     let mut lita = lita_at_the_parlor();
     lita.accumulated_damage = 2;
     lita.accumulated_horror = 1;
-    lita.bump_ability_usage(0, UsagePeriod::Round, 0, Phase::Investigation);
+    lita.bump_ability_usage(0, INV, UsagePeriod::Round, 0, Phase::Investigation);
 
     let result = parley_on(board_with(
         sharp().at(PARLOR_ID),

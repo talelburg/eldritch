@@ -1357,7 +1357,11 @@ pub enum Cost {
 /// such a limit may be initiated X times during the designated period.
 /// If a card leaves play and re-enters play during the same period,
 /// the card is considered to be bringing a new instance of the ability
-/// to the game."*
+/// to the game."* The same entry adds *"Unless stated otherwise, limits are
+/// player specific."*, so the count is kept per instance **and** per
+/// triggering investigator: each investigator who can reach the ability gets
+/// their own X (The Stranger 03047a's ruling,
+/// <https://arkhamdb.com/card/03047a>).
 ///
 /// Canonical motivating card: Roland Banks (01001) —
 /// `[reaction] After you defeat an enemy: Discover 1 clue at your
@@ -1366,7 +1370,7 @@ pub enum Cost {
 ///
 /// Storage of the per-instance counter lives on
 /// `CardInPlay` (in `game_core::state`): see
-/// `ability_usage` (its per-instance counter map). When a
+/// `ability_usage` (its per-instance, per-investigator counter map). When a
 /// card leaves play, its `CardInPlay` is dropped, so a re-entering
 /// instance starts fresh as the rules require.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
