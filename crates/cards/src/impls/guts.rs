@@ -29,13 +29,13 @@ pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 pub fn abilities() -> Vec<Ability> {
     vec![dsl::on_skill_test_resolution(
         TestOutcome::Success,
-        dsl::draw_cards(InvestigatorTarget::You, 1),
+        dsl::draw_cards(InvestigatorTarget::You, 1u8),
     )]
 }
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::{Effect, InvestigatorTarget, TestOutcome, Trigger};
+    use card_dsl::dsl::{Effect, IntExpr, InvestigatorTarget, TestOutcome, Trigger};
 
     #[test]
     fn abilities_are_one_on_success_draw_one() {
@@ -51,7 +51,7 @@ mod tests {
             abilities[0].effect,
             Effect::DrawCards {
                 target: InvestigatorTarget::You,
-                count: 1,
+                count: IntExpr::Lit(1),
             },
         );
     }

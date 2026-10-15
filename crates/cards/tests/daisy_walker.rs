@@ -1,5 +1,5 @@
 //! Daisy Walker 01002: the additional action only a Tome's `[action]` ability
-//! can use.
+//! can use, and the elder sign's one draw per Tome.
 //!
 //! Card text (`data/arkhamdb-snapshot/pack/core/core.json`, 01002):
 //! > You may take an additional action during your turn, which can only be
@@ -18,15 +18,15 @@
 
 use cards::TEST_REGISTRIES;
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::assert_no_event;
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, ChaosBag, ChaosToken, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, UseKind,
+    InvestigatorId, LocationId, SkillKind, TokenModifiers, UseKind,
 };
-use game_core::test_support::{self, seat, uses, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, seat, uses, CardSetup, Seat, SeatLookup as _, TestSession};
+use game_core::{assert_event, assert_no_event};
 
 const DAISY: &str = "01002";
 /// *"Item. Tome."* `[action] Exhaust Old Book of Lore: …`
@@ -228,4 +228,81 @@ fn losing_two_actions_leaves_one_standard_and_hers() {
 fn a_tome_activation_with_leo_in_play_asks_for_the_unbuilt_choice() {
     let session = board(daisy().in_play([LEO_DE_LUCA, OLD_BOOK_OF_LORE]));
     let _ = activate(session, OLD_BOOK_OF_LORE);
+}
+
+/// Daisy's Willpower 3 test against `difficulty`, with only the elder sign in
+/// the bag, committing nothing. Returns once the test has resolved.
+fn willpower_test_on_the_elder_sign(daisy: Seat, difficulty: i8) -> TestSession {
+    let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_chaos_bag(ChaosBag::new([ChaosToken::ElderSign]))
+        .with_token_modifiers(TokenModifiers::default())
+        .with_location(test_support::test_location(HERE.0, "Library"))
+        .with_seat(daisy)
+        .open_turn(INV)
+        .session()
+        .test_skill(INV, SkillKind::Willpower, difficulty)
+        .commit(&[]);
+    session.assert_at_turn_menu(INV);
+    session
+}
+
+fn hand_size(state: &GameState) -> usize {
+    state.investigators[&INV].hand.len()
+}
+
+/// *"+0. If you succeed, draw 1 card for each \[\[Tome\]\] you control."* Two
+/// Tomes in play: Willpower 3 + 0 against 3 succeeds, and she draws two.
+#[test]
+fn the_elder_sign_draws_one_card_per_tome_in_play() {
+    let session =
+        willpower_test_on_the_elder_sign(daisy().in_play([OLD_BOOK_OF_LORE, MEDICAL_TEXTS]), 3);
+    assert_event!(
+        session.events(),
+        Event::SkillTestSucceeded { margin: 0, .. }
+    );
+    assert_event!(
+        session.events(),
+        Event::CardsDrawn { investigator, count: 2 } if *investigator == INV
+    );
+    assert_eq!(hand_size(session.state()), 2);
+}
+
+/// A non-Tome in play is not counted: one Tome, one draw.
+#[test]
+fn the_elder_sign_counts_only_tomes() {
+    let session = willpower_test_on_the_elder_sign(
+        daisy().in_play([
+            (OLD_BOOK_OF_LORE, CardSetup::default()),
+            (FLASHLIGHT, uses(UseKind::Supplies, 3)),
+        ]),
+        3,
+    );
+    assert_event!(
+        session.events(),
+        Event::CardsDrawn { investigator, count: 1 } if *investigator == INV
+    );
+    assert_eq!(hand_size(session.state()), 1);
+}
+
+/// *"If you succeed"*: a failed test draws nothing, Tomes or not.
+#[test]
+fn the_elder_sign_draws_nothing_when_the_test_fails() {
+    let session =
+        willpower_test_on_the_elder_sign(daisy().in_play([OLD_BOOK_OF_LORE, MEDICAL_TEXTS]), 4);
+    assert_event!(session.events(), Event::SkillTestFailed { by: 1, .. });
+    assert_no_event!(session.events(), Event::CardsDrawn { .. });
+    assert_eq!(hand_size(session.state()), 0);
+}
+
+/// With no Tome, *"1 card for each"* is zero cards: the success draws nothing.
+#[test]
+fn the_elder_sign_draws_nothing_without_a_tome() {
+    let session = willpower_test_on_the_elder_sign(daisy(), 3);
+    assert_event!(
+        session.events(),
+        Event::SkillTestSucceeded { margin: 0, .. }
+    );
+    assert_no_event!(session.events(), Event::CardsDrawn { .. });
+    assert_eq!(hand_size(session.state()), 0);
 }

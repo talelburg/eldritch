@@ -266,12 +266,12 @@ fn deal_damage_to_enemy_serde_round_trips() {
 /// through serde, and the builder constructs the variant.
 #[test]
 fn draw_cards_round_trips_through_serde_json() {
-    let effect = draw_cards(InvestigatorTarget::You, 1);
+    let effect = draw_cards(InvestigatorTarget::You, 1u8);
     assert_eq!(
         effect,
         Effect::DrawCards {
             target: InvestigatorTarget::You,
-            count: 1,
+            count: IntExpr::Lit(1),
         },
     );
     let json = serde_json::to_string(&effect).expect("serialize");

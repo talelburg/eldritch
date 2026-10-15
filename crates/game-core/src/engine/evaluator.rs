@@ -1042,7 +1042,7 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
         },
         Effect::BoostAttackDamage(amount) => boost_attack_damage_effect(cx, *amount),
         Effect::DiscoverAdditionalClues(amount) => discover_additional_clues_effect(cx, *amount),
-        Effect::DrawCards { target, count } => draw_cards_effect(cx, eval_ctx, *target, *count),
+        Effect::DrawCards { target, count } => draw_cards_effect(cx, eval_ctx, *target, count),
         Effect::SearchDeck {
             target,
             scope,
@@ -1202,14 +1202,23 @@ fn step_native(cx: &mut Cx, tag: &str, eval_ctx: EvalContext, node: &Effect) -> 
 /// target investigator via the engine's `draw_with_deckout` helper —
 /// the same empty-deck path the Draw action and Upkeep step 4.4 use, so
 /// a card-effect draw on an empty deck reshuffles the discard, completes
-/// the draw, and takes 1 horror on completion (#636). `count == 0`
-/// is a clean no-op (no target resolution, no event).
+/// the draw, and takes 1 horror on completion (#636). `count` is evaluated
+/// as the effect resolves; one of 0 or below is a clean no-op (no target
+/// resolution, no event).
 fn draw_cards_effect(
     cx: &mut Cx,
     eval_ctx: EvalContext,
     target: InvestigatorTarget,
-    count: u8,
+    count: &IntExpr,
 ) -> EngineOutcome {
+    let count = match eval_int_expr(cx.state, cx.cards, &eval_ctx, count) {
+        Ok(v) => u8::try_from(v.max(0)).unwrap_or(u8::MAX),
+        Err(reason) => {
+            return EngineOutcome::Rejected {
+                reason: reason.into(),
+            }
+        }
+    };
     if count == 0 {
         return EngineOutcome::Done;
     }
@@ -1494,7 +1503,7 @@ pub(crate) fn eval_condition(
             op,
             value,
         } => {
-            let lhs = eval_quantity(state, eval_ctx, *quantity);
+            let lhs = eval_quantity(state, reg, eval_ctx, quantity);
             let rhs = *value;
             Ok(match op {
                 CmpOp::Eq => lhs == rhs,
@@ -1531,8 +1540,14 @@ pub(crate) fn eval_condition(
 
 /// Resolve a [`Quantity`] against current state for the controller.
 /// Always non-negative; returned as `i8` to compose in [`IntExpr`].
-/// Used by [`IntExpr::Count`] and [`Condition::Compare`].
-fn eval_quantity(state: &GameState, eval_ctx: &EvalContext, q: Quantity) -> i8 {
+/// Used by [`IntExpr::Count`] and [`Condition::Compare`]. `cards` answers a
+/// [`CardFilter`]'s trait and kind questions.
+fn eval_quantity(
+    state: &GameState,
+    cards: &CardRegistry,
+    eval_ctx: &EvalContext,
+    q: &Quantity,
+) -> i8 {
     let controller = eval_ctx.controller;
     let n: usize = match q {
         // Only the location's own `clues` count. Clues sitting on a *card* at
@@ -1566,6 +1581,18 @@ fn eval_quantity(state: &GameState, eval_ctx: &EvalContext, q: Quantity) -> i8 {
         // all outside the core corpus; #1084 tracks reading the outcome too.
         Quantity::SkillTestFailedBy => usize::from(eval_ctx.failed_by().unwrap_or(0)),
         Quantity::SkillTestSucceededBy => usize::from(eval_ctx.succeeded_by().unwrap_or(0)),
+        // Play area and threat area only. `controlled_card_instances` would
+        // also yield the investigator card, which no "for each <trait> you
+        // control" card means to count.
+        Quantity::ControlledCards(filter) => {
+            state.investigators.get(&controller).map_or(0, |inv| {
+                inv.cards_in_play
+                    .iter()
+                    .chain(&inv.threat_area)
+                    .filter(|card| card_registry::card_matches(cards, &card.code, filter))
+                    .count()
+            })
+        }
     };
     i8::try_from(n).unwrap_or(i8::MAX)
 }
@@ -1592,7 +1619,7 @@ pub(crate) fn eval_int_expr(
         } else {
             *otherwise
         }),
-        IntExpr::Count(q) => Ok(eval_quantity(state, eval_ctx, *q)),
+        IntExpr::Count(q) => Ok(eval_quantity(state, cards, eval_ctx, q)),
     }
 }
 

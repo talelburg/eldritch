@@ -519,7 +519,7 @@ pub(super) fn acknowledge_outcome(cx: &mut Cx) -> EngineOutcome {
 /// [`ChaosTokenRevealed`](Event::ChaosTokenRevealed) announces is the same
 /// expression evaluated once, here, at reveal — a display value, as
 /// `SkillTestStarted`'s announced difficulty is. The two agree for every
-/// `IntExpr::Lit` a scenario returns today; a live one (the `[skull]`, #779)
+/// `IntExpr::Lit` a scenario returns today; a live one (The Gathering's `[skull]`, #921)
 /// can drift between reveal and ST.5, and the ST.5 read is the one the test
 /// resolves against.
 fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
