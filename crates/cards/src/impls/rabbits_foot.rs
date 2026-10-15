@@ -43,6 +43,7 @@ pub fn abilities() -> Vec<Ability> {
             kind: None,
             by_controller: true,
             tested_location: TestedLocationScope::Any,
+            margin: None,
         },
         EventTiming::After,
         dsl::draw_cards(InvestigatorTarget::You, 1u8),

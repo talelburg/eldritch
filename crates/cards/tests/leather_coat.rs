@@ -10,7 +10,7 @@
 //! horror.
 
 use cards::TEST_REGISTRIES;
-use game_core::engine::enumerate::TurnAction;
+use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{CardCode, DiscardPile, GameStateBuilder, InvestigatorId, LocationId, Zone};
@@ -42,7 +42,7 @@ fn board(hand: &[&str], coat_in_play: bool) -> TestSession {
 fn play_first(session: TestSession) -> TestSession {
     session.take(&TurnAction::PlayCard {
         investigator: INV,
-        hand_index: 0,
+        source: PlaySource::Hand(0),
     })
 }
 
