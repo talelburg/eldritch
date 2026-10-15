@@ -37,7 +37,8 @@
 //! [`GameState::recorded_modifiers`]: crate::state::GameState::recorded_modifiers
 //! - [`Effect::If`] evaluates [`Condition::SkillTestKind`] against
 //!   the in-flight test's `kind`. [`SkillTest`](card_dsl::dsl::Condition::SkillTest)
-//!   isn't yet wired — inside an [`Trigger::OnSkillTestResolution`] effect
+//!   isn't yet wired — inside an
+//!   [`Trigger::OnSkillTestResolution`](card_dsl::dsl::Trigger::OnSkillTestResolution) effect
 //!   the trigger itself gates outcome, so the condition is redundant there,
 //!   and no other trigger has yet needed it (the outcome *is* on
 //!   [`InFlightSkillTest::resolved`](crate::state::InFlightSkillTest::resolved)
@@ -72,11 +73,12 @@ use card_dsl::dsl::{
     ActionClass, ActionDesignator, CardFilter, ChoiceBranch, CmpOp, Condition, ControlStatus,
     Determination, Effect, EnemyScope, EnemySet, EnemyTarget, ForEachTargets, HarmKind, IntExpr,
     InvestigatorTarget, InvestigatorTargetSet, LocationSet, LocationTarget, ModifierAudience,
-    ModifierScope, Quantity, Restriction, RevealClause, SearchScope, SkillTestKind, Stat, Trigger,
+    ModifierScope, Quantity, Restriction, RevealClause, SearchScope, SkillTestKind, Stat,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::card_registry::{self, CardRegistry};
+use crate::engine::abilities_in_effect;
 use crate::engine::board::{self, Placement};
 use crate::engine::dispatch::actions::evade::EvadeModification;
 use crate::engine::dispatch::actions::fight::FightModification;
@@ -2675,6 +2677,9 @@ fn resolve_enemy_target(ctx: EvalContext, target: EnemyTarget) -> Result<EnemyId
 /// `card_type` by an active `Restriction::CannotPlay` constant ability on
 /// any of their controlled instances (Dissonant Voices 01165: assets and
 /// events). Checked in `play_card` validation.
+///
+/// Read through `abilities_in_effect::constants_of`, so a `CannotPlay` the
+/// board grants one of those cards prohibits too. No corpus card grants one.
 #[must_use]
 pub fn play_is_prohibited(
     state: &GameState,
@@ -2682,21 +2687,14 @@ pub fn play_is_prohibited(
     investigator: InvestigatorId,
     card_type: CardType,
 ) -> bool {
-    let Some(inv) = state.investigators.get(&investigator) else {
-        return false;
-    };
-    inv.controlled_card_instances().any(|c| {
-        (registry.abilities_for)(&c.code)
-            .into_iter()
-            .flatten()
-            .any(|a| {
-                a.trigger == Trigger::Constant
-                    && matches!(
-                        &a.effect,
-                        Effect::Restrict(Restriction::CannotPlay(t)) if *t == card_type
-                    )
-            })
-    })
+    abilities_in_effect::constants_of(state, registry, investigator)
+        .iter()
+        .any(|(_, a)| {
+            matches!(
+                a.effect,
+                Effect::Restrict(Restriction::CannotPlay(t)) if t == card_type
+            )
+        })
 }
 
 /// The extra action cost `investigator` pays to perform `action_class`,
@@ -2724,6 +2722,9 @@ pub fn play_is_prohibited(
 /// Core or Dunwich prints such an ability, so the count is not modelled —
 /// whoever adds one must give the surcharge a *performed* count to read rather
 /// than inferring it from the action cost paid.
+///
+/// Read through `abilities_in_effect::constants_of`, so a surcharge the
+/// board grants one of those cards counts too. No corpus card grants one.
 #[must_use]
 pub fn pending_action_surcharge(
     state: &GameState,
@@ -2736,35 +2737,24 @@ pub fn pending_action_surcharge(
     };
     let mut extra: u8 = 0;
     let mut to_mark = Vec::new();
-    for card in inv.controlled_card_instances() {
-        let Some(abilities) = (registry.abilities_for)(&card.code) else {
+    for (instance, a) in abilities_in_effect::constants_of(state, registry, investigator) {
+        let Effect::Restrict(Restriction::ExtraActionCost {
+            actions,
+            first_each_round,
+        }) = &a.effect
+        else {
             continue;
         };
-        for a in &abilities {
-            if a.trigger != Trigger::Constant {
-                continue;
-            }
-            let Effect::Restrict(Restriction::ExtraActionCost {
-                actions,
-                first_each_round,
-            }) = &a.effect
-            else {
-                continue;
-            };
-            if !actions.contains(&action_class) {
-                continue;
-            }
-            if *first_each_round {
-                if inv
-                    .action_surcharge_spent_this_round
-                    .contains(&card.instance_id)
-                {
-                    continue;
-                }
-                to_mark.push(card.instance_id);
-            }
-            extra = extra.saturating_add(1);
+        if !actions.contains(&action_class) {
+            continue;
         }
+        if *first_each_round {
+            if inv.action_surcharge_spent_this_round.contains(&instance) {
+                continue;
+            }
+            to_mark.push(instance);
+        }
+        extra = extra.saturating_add(1);
     }
     (extra, to_mark)
 }

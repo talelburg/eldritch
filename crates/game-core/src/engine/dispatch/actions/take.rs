@@ -36,7 +36,7 @@
 use std::borrow::Cow;
 use std::fmt;
 
-use card_dsl::dsl::{ActionClass, ActionDesignator, AdditionalActionRestriction, Effect, Trigger};
+use card_dsl::dsl::{ActionClass, ActionDesignator, AdditionalActionRestriction, Effect};
 
 use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::actions::evade::EvadeModification;
@@ -44,7 +44,7 @@ use crate::engine::dispatch::actions::fight::FightModification;
 use crate::engine::dispatch::actions::{draw, engage, evade, fight, investigate, r#move, resource};
 use crate::engine::dispatch::{abilities, cards, combat, cursor};
 use crate::engine::outcome::EngineOutcome;
-use crate::engine::{evaluator, Cx};
+use crate::engine::{abilities_in_effect, evaluator, Cx};
 use crate::event::Event;
 use crate::state::{
     AbilitySource, ActionResolutionFrame, ActionResume, AdditionalActionGrant, CardCode,
@@ -266,29 +266,23 @@ fn additional_actions(
     if !cursor::turn_open(state, investigator) {
         return Vec::new();
     }
-    // The constant sweep: each card in play whose while-in-play grant has not
-    // been used this turn. Read off the card every time, so the grant is gone
-    // the moment the card leaves play.
-    let mut pool: Vec<AdditionalAction> = Vec::new();
-    for card in inv.controlled_card_instances() {
-        if inv.grants_spent_this_turn.contains(&card.instance_id) {
-            continue;
-        }
-        let Some(abilities) = (cards.abilities_for)(&card.code) else {
-            continue;
-        };
-        pool.extend(abilities.iter().filter_map(|ability| {
-            match (&ability.trigger, &ability.effect) {
-                (Trigger::Constant, Effect::AdditionalActionWhileInPlay { restriction }) => {
-                    Some(AdditionalAction {
-                        restriction: *restriction,
-                        origin: AdditionalActionOrigin::InPlay(card.instance_id),
-                    })
-                }
+    // The constant sweep: each card whose while-in-play grant has not been
+    // used this turn. Read off the card every time, so the grant is gone the
+    // moment the card leaves play. Through the ADR 0014 funnel, so a grant the
+    // board gives one of the investigator's cards counts too (no corpus card
+    // grants one).
+    let mut pool: Vec<AdditionalAction> =
+        abilities_in_effect::constants_of(state, cards, investigator)
+            .into_iter()
+            .filter(|(instance, _)| !inv.grants_spent_this_turn.contains(instance))
+            .filter_map(|(instance, ability)| match ability.effect {
+                Effect::AdditionalActionWhileInPlay { restriction } => Some(AdditionalAction {
+                    restriction,
+                    origin: AdditionalActionOrigin::InPlay(instance),
+                }),
                 _ => None,
-            }
-        }));
-    }
+            })
+            .collect();
     pool.extend(
         inv.additional_actions_this_turn
             .iter()
