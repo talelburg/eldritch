@@ -150,14 +150,7 @@ repo and cannot be trusted.
 - **What is a restriction on an additional action, and how does the turn menu test
   an action against it?** Daisy's additional action is spendable only on `[[Tome]]`
   `[action]` abilities, so the enumerator has to know which options it can pay for.
-  #779 owns this. #778 settled the unrestricted shape it extends: an investigator's
-  `actions_remaining` counts their standard actions only, and their additional
-  actions are a list derived while their turn is open — one entry per card in play
-  granting one (Leo De Luca 01048), unless that instance's per-turn mark is set,
-  plus the grants an effect pushed this turn ("Skids" O'Toole 01003). Each entry
-  carries an `Option<AdditionalActionRestriction>`, an uninhabited enum until #779
-  adds its first variant, and taking an action spends an admitting additional
-  action before a standard one.
+  #779 owns this.
 
 ## Dependencies
 
