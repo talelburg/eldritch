@@ -17,9 +17,9 @@
 //! ruling (<https://arkhamdb.com/card/01009>) is *"If you add this to your hand
 //! without drawing (e.g. via Research Librarian), the **Revelation** ability
 //! still triggers."* Both paths run through the engine's drawn-weakness
-//! resolution; this module only declares the Revelation. The 3 horror is
-//! placed as the card enters (`Effect::PutIntoThreatArea`'s `horror`), not
-//! dealt, so no harm event fires for it.
+//! resolution, and this module only declares the Revelation they resolve. The
+//! 3 horror is placed as the card enters (`Effect::PutIntoThreatArea`'s
+//! `horror`), not dealt, so no harm event fires for it.
 //!
 //! *"It cannot leave play while it has 1 or more horror on it."* is a constant
 //! `Restriction::CannotLeavePlay` whose condition reads the card's own horror
