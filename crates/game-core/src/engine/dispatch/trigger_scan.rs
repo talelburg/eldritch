@@ -480,11 +480,13 @@ pub(super) fn trigger_matches(
         // the board, in [`scope_matches`]), "After **you** play a [[Spell]]
         // card" (Heirloom of Hyperborea 01012) and "Play when **you** draw a
         // non-weakness treachery card" (Ward of Protection 01065). The last
-        // two's card filters read metadata, in [`scope_matches`].
+        // two's card filters read metadata, in [`scope_matches`]. And "After
+        // **you** evade an enemy" (Pickpocketing 01046).
         TimingEvent::EndOfTurn { investigator }
         | TimingEvent::DiscoverClues { investigator, .. }
         | TimingEvent::CardPlayed { investigator, .. }
-        | TimingEvent::EncounterCardDrawn { investigator, .. } => *investigator == controller,
+        | TimingEvent::EncounterCardDrawn { investigator, .. }
+        | TimingEvent::EnemyEvaded { investigator, .. } => *investigator == controller,
         // "**When an enemy attack** deals damage to Guard Dog" (01021). The
         // self-binding half is the source's, in [`scope_matches`]; this half is
         // the card's narrowing to an enemy attack, which `Effect::Deal` harm
@@ -690,7 +692,8 @@ fn scope_matches(
         | TimingEvent::RoundEnded
         | TimingEvent::EndOfTurn { .. }
         | TimingEvent::GameEnd
-        | TimingEvent::DamagePlaced { .. } => true,
+        | TimingEvent::DamagePlaced { .. }
+        | TimingEvent::EnemyEvaded { .. } => true,
     }
 }
 

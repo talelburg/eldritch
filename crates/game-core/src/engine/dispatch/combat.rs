@@ -62,6 +62,33 @@ pub(crate) fn enemies_in_scope(
         .collect()
 }
 
+/// Break `enemy_id`'s engagement, logging
+/// [`EnemyDisengaged`](Event::EnemyDisengaged) with the investigator it was
+/// engaged with. An unengaged enemy is left as it is, and nothing is logged.
+///
+/// The one disengage step a rule or a card asks for by name: an evasion
+/// (`glossary/Evade_Action.md`: *"the enemy is exhausted (if it was ready) and
+/// the engagement is broken"*), and Elusive 01050's *"Disengage from each enemy
+/// engaged with you"* (#1076). Only the enemy's engagement changes; where it
+/// stands, and whether it is ready, are the caller's business.
+///
+/// The enemy is in state: callers name one they have just found there, so a
+/// missing enemy is a state-corruption invariant violation.
+pub(crate) fn disengage(cx: &mut Cx, enemy_id: EnemyId) {
+    let enemy = cx.state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
+        unreachable!(
+            "disengage: enemy {enemy_id:?} is not in state.enemies; \
+             this is a state-corruption invariant violation"
+        )
+    });
+    if let Some(investigator) = enemy.engaged_with.take() {
+        cx.events.push(Event::EnemyDisengaged {
+            enemy: enemy_id,
+            investigator,
+        });
+    }
+}
+
 /// The entry point for card effects to deal damage to an enemy.
 ///
 /// A thin wrapper over `damage_enemy` that a card-local native reaches as

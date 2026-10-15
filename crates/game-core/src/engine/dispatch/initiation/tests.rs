@@ -104,8 +104,9 @@ const ACTIVATED_EXHAUST_COST: u8 = 16;
 const ACTIVATED_DESIGNATED_INERT: u8 = 17;
 const ACTIVATED_PARLEY_INERT: u8 = 18;
 const REACTION_CLUES_HERE: u8 = 19;
+const REACTION_HARM_COST: u8 = 20;
 /// One past the last printed index: an address nothing resolves to.
-const NOT_PRINTED: u8 = 20;
+const NOT_PRINTED: u8 = 21;
 
 fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
     match code.as_str() {
@@ -130,6 +131,10 @@ fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             dsl::activated_as(dsl::evade(), 1, vec![], inert()),
             dsl::activated_as(ActionDesignator::Parley, 1, vec![], inert()),
             reaction(live()).with_eligibility(clues_here()),
+            reaction(live()).with_costs(vec![Cost::TakeHarm {
+                damage: 1,
+                horror: 0,
+            }]),
         ]),
         COSTED_EVENT => Some(vec![reaction(live())]),
         PLAYED_LIVE => Some(vec![dsl::on_play(live())]),
@@ -595,6 +600,22 @@ fn reaction_whose_cost_cannot_be_paid_is_refused() {
         ),
         Err(Refusal::CostUnpayable(_)),
     ));
+}
+
+/// A reaction whose cost is harm to its controller is refused outright: the
+/// payer a triggered ability shares with activations pays no harm itself
+/// (TODO(#1081)).
+#[test]
+fn reaction_with_a_harm_cost_is_refused() {
+    let refusal = gate(
+        &state(),
+        &in_play(REACTION_HARM_COST),
+        InitiationKind::Reaction,
+    );
+    assert!(
+        matches!(&refusal, Err(Refusal::CostUnpayable(reason)) if reason.contains("#1081")),
+        "{refusal:?}",
+    );
 }
 
 /// A forced ability is not paid for, so the gate skips the cost half for it.
