@@ -14,7 +14,7 @@ use crate::engine::TimingEvent;
 use crate::event::FailureReason;
 use crate::state::ability_source::{AbilityAddress, AbilitySource};
 use crate::state::card::{CardCode, CardInPlay, CardInstanceId, Owner};
-use crate::state::chaos_bag::{ChaosToken, TokenResolution};
+use crate::state::chaos_bag::RevealedToken;
 use crate::state::continuation::frame::impl_frame;
 use crate::state::enemy::EnemyId;
 use crate::state::game_state::{DifficultyBasis, SkillTestId};
@@ -189,24 +189,34 @@ pub enum AdvanceTrigger {
     Deliberate,
 }
 
-/// **Why an asset instance is entering an investigator's play area** — which
-/// decides whether the arrival is announced as *entering play* (#772).
+/// **Why an asset instance is entering one of an investigator's areas** —
+/// which decides the area it lands in and whether the arrival is announced as
+/// *entering play* (#772).
 ///
-/// The two paths share the slot make-room machinery, because
-/// `glossary/Slots.md` writes them into one sentence — *"If playing **or
-/// gaining control** of an asset would put an investigator above his or her slot
-/// limit …"* — but only one of them is a card entering play. A card whose
-/// control changes was already in play and does not enter it again, so
-/// announcing it would fire every after-enters-play reaction a second time.
+/// The paths share the slot make-room machinery, because
+/// `glossary/Slots.md` writes playing and taking control into one sentence —
+/// *"If playing **or gaining control** of an asset would put an investigator
+/// above his or her slot limit …"* — and `glossary/Put_into_Play.md` holds a
+/// card put into play to the same standard: *"cards that enter play in this
+/// manner must do so in a play area that satisfies the standard game rules
+/// associated with playing or drawing (for encounter cards) that card."* Only
+/// a play from hand is announced as entering play. A card whose control
+/// changes was already in play and does not enter it again, so announcing it
+/// would fire every after-enters-play reaction a second time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AssetEntry {
-    /// Played from hand (RR Appendix I step 4, *"placed in play"*). Announced
-    /// via the `EnteredPlay` timing event.
+    /// Played from hand (RR Appendix I step 4, *"placed in play"*). Lands in
+    /// the play area, announced via the `EnteredPlay` timing event.
     PlayedFromHand,
     /// Control of an already-in-play card was taken
-    /// ([`Effect::TakeControl`]). Not
+    /// ([`Effect::TakeControl`]). Lands in the play area, not
     /// announced: the card never left play, so it does not re-enter it.
     ControlTaken,
+    /// Put into play in the investigator's **threat area**
+    /// ([`Effect::PutIntoThreatArea`], #1097): The Necronomicon 01009's
+    /// Revelation. Announced as every threat-area entry is, by
+    /// [`Event::CardEnteredThreatArea`](crate::event::Event::CardEnteredThreatArea).
+    PutIntoThreatArea,
 }
 
 /// A frame on the [`GameState::continuations`](crate::state::game_state::GameState::continuations) suspend/resume stack
@@ -1373,27 +1383,27 @@ pub struct InFlightSkillTest {
     /// moved from `Resolving` to `DetermineOutcome` by #674, so the ST.5 sum
     /// sees the board the ST.4 chaos-symbol effects left behind.)
     pub resolved: Option<ResolvedTest>,
-    /// The chaos token revealed at ST.3 and its resolution, as the
+    /// The chaos token revealed at ST.3, the token it counts as, and its
+    /// resolution, as the
     /// [`ChaosTokenRevealed`](crate::event::Event::ChaosTokenRevealed) event
     /// announced them — for a scenario symbol, the modifier evaluated once at
     /// reveal. Set whenever a token is drawn, whether or not it has effects;
     /// `None` until then, and for the whole test when a determination known
     /// before ST.3 skips the draw.
     ///
-    /// The token is engine-read: it identifies the chaos symbol effect whose
+    /// The counted token ([`counts_as`](RevealedToken::counts_as)) is
+    /// engine-read: it identifies the chaos symbol effect whose
     /// result-conditional parts the
     /// [`ApplyTokenResult`](SkillTestStep::ApplyTokenResult) step (RR ST.7)
     /// looks up again — the investigator card's `[elder_sign]` ability, or the
-    /// scenario's symbol hook. Which token came out of the bag is a fixed fact
-    /// of this test, not a snapshot of a live value, so ADR 0005's ban on
-    /// re-reading a stored value in place of live state does not reach it; the
-    /// parts it names are read live at ST.7. The resolution half is display
-    /// only for the client: ADR 0007 retired `token_resolution` because the
-    /// total computation reads the token's recorded row instead.
-    ///
-    /// TODO(#921): make the tuple a named struct when the client half of
-    /// item 19 reads it.
-    pub revealed: Option<(ChaosToken, TokenResolution)>,
+    /// scenario's symbol hook. Which token came out of the bag, and what it
+    /// counted as when it did, are fixed facts of this test, not snapshots of
+    /// a live value, so ADR 0005's ban on re-reading a stored value in place
+    /// of live state does not reach them; the parts they name are read live
+    /// at ST.7. The drawn token and the resolution are display only for the
+    /// client: ADR 0007 retired `token_resolution` because the total
+    /// computation reads the token's recorded row instead.
+    pub revealed: Option<RevealedToken>,
     /// The initiating card's *"If a \<symbol\> is revealed during this test"*
     /// clause (Shrivelling 01060), set when the test starts and fired at ST.3
     /// against the token on [`revealed`](Self::revealed).
@@ -2604,16 +2614,20 @@ pub struct PlayFromHandFrame {
     pub card: Option<CardCode>,
 }
 
-/// A slot-conflicting asset play paused for the player to choose which
+/// A slot-conflicting asset entry paused for the player to choose which
 /// occupying asset to discard to make room (RR p.19, #498). Pushed by
 /// `slots::enter_asset_making_room` when 2+ co-controlled assets occupy a
-/// slot type the new asset needs; the asset stays mid-play, riding this
-/// frame until the deficit is cleared, then enters play. Resumed by
+/// slot type the new asset needs; the asset stays mid-entry, riding this
+/// frame until the deficit is cleared, then enters the area its
+/// [`entry`](Self::entry) names. Pushed from a play, from a take-control, or
+/// from inside a Revelation putting the card into the threat area (#1097);
+/// the frames below it resume once it pops. Resumed by
 /// `slots::resume_slot_discard` via a `PickSingle(OptionId)` indexing the
 /// candidate list. A [Prompt](FrameActivity::Prompt); not a phase anchor.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SlotDiscardFrame {
-    /// The investigator playing the asset, or taking control of it.
+    /// The investigator playing the asset, taking control of it, or having it
+    /// put into their threat area.
     pub investigator: InvestigatorId,
     /// The asset mid-entry — see [`Continuation::play_in_progress`].
     ///
@@ -2625,8 +2639,8 @@ pub struct SlotDiscardFrame {
     /// accumulated damage and horror, her uses and her usage counters, and
     /// a code would drop all four.
     pub card: Option<CardInPlay>,
-    /// Why the asset is entering the play area — which decides whether it
-    /// is announced as *entering play* once the deficit clears.
+    /// Why the asset is entering — which decides the area it lands in and
+    /// whether it is announced as *entering play* once the deficit clears.
     pub entry: AssetEntry,
 }
 

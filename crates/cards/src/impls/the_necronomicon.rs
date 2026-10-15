@@ -32,20 +32,20 @@
 //! play'."* Elimination removes it all the same (`glossary/Elimination.md` step
 //! 0, *"remove those weaknesses from the game"*).
 //!
+//! *"Treat each `[elder_sign]` you reveal on a chaos token as a
+//! `[auto_fail]`."* is a constant `Effect::TreatRevealedToken`, read off the
+//! threat area of the investigator revealing (#1094). Everything after the
+//! reveal reads the auto-fail, so Daisy's own `[elder_sign]` ability never
+//! initiates while this is in play.
+//!
 //! # Module gap
 //!
-//! The Revelation (#1090) and the prohibition on leaving play (#1093) are
-//! implemented. Still missing, each with its own ticket under #779:
-//!
-//! - *"Treat each `[elder_sign]` you reveal on a chaos token as a `[auto_fail]`."*
-//!   (#1094)
-//! - The `[action]` that moves 1 horror to Daisy Walker and discards the card
-//!   once it is empty (#1095).
-//!
-//! Until they land, an elder sign resolves normally, and the card's 3 horror
-//! never moves, so it stays in play for the rest of the game.
+//! Still missing, with its own ticket under #779: the `[action]` that moves 1
+//! horror to Daisy Walker and discards the card once it is empty (#1095).
+//! Until it lands, the card's 3 horror never moves, so it stays in play for the
+//! rest of the game.
 
-use card_dsl::dsl::{self, Ability, CmpOp, Condition, Quantity, Restriction};
+use card_dsl::dsl::{self, Ability, ChaosSymbol, CmpOp, Condition, Quantity, Restriction};
 
 use crate::impls::CardRecord;
 
@@ -66,5 +66,9 @@ pub fn abilities() -> Vec<Ability> {
                 value: 1,
             },
         })),
+        dsl::constant(dsl::treat_revealed_token(
+            ChaosSymbol::ElderSign,
+            ChaosSymbol::AutoFail,
+        )),
     ]
 }

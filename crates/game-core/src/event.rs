@@ -78,10 +78,14 @@ pub enum Event {
     },
     /// A chaos token was revealed during a skill test.
     ChaosTokenRevealed {
-        /// The token revealed.
+        /// The token revealed, as drawn from the bag.
         token: ChaosToken,
         /// How the token resolves against the scenario's modifier table:
-        /// a numeric modifier, [`AutoFail`], or [`ElderSign`].
+        /// a numeric modifier, [`AutoFail`], or [`ElderSign`]. When a
+        /// [`TreatRevealedToken`](card_dsl::dsl::Effect::TreatRevealedToken)
+        /// substitutes it, this is the resolution of the token it counts as
+        /// (The Necronomicon 01009: a drawn `ElderSign` resolving as
+        /// [`AutoFail`]).
         ///
         /// [`AutoFail`]: TokenResolution::AutoFail
         /// [`ElderSign`]: TokenResolution::ElderSign

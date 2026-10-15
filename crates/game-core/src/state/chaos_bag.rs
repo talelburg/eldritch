@@ -114,6 +114,41 @@ pub enum TokenResolution {
     ElderSign,
 }
 
+/// The chaos token a skill test revealed at ST.3: the one that came out of the
+/// bag, the token it counts as, and the resolution announced for it.
+///
+/// `token` and `counts_as` differ only when an
+/// [`Effect::TreatRevealedToken`](card_dsl::dsl::Effect::TreatRevealedToken)
+/// on the performer's cards substitutes the drawn symbol (The Necronomicon
+/// 01009: *"Treat each `[elder_sign]` you reveal on a chaos token as a
+/// `[auto_fail]`."*). Everything downstream of the reveal reads `counts_as`;
+/// `token` is the record of what was drawn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RevealedToken {
+    /// The token drawn from the bag.
+    pub token: ChaosToken,
+    /// The token it counts as: `token` itself unless a substitution applied.
+    pub counts_as: ChaosToken,
+    /// How `counts_as` resolved, as
+    /// [`ChaosTokenRevealed`](crate::event::Event::ChaosTokenRevealed)
+    /// announced it.
+    pub resolution: TokenResolution,
+}
+
+impl From<ChaosSymbol> for ChaosToken {
+    /// The token showing `symbol`: the inverse of [`ChaosToken::symbol`].
+    fn from(symbol: ChaosSymbol) -> Self {
+        match symbol {
+            ChaosSymbol::Skull => Self::Skull,
+            ChaosSymbol::Cultist => Self::Cultist,
+            ChaosSymbol::Tablet => Self::Tablet,
+            ChaosSymbol::ElderThing => Self::ElderThing,
+            ChaosSymbol::AutoFail => Self::AutoFail,
+            ChaosSymbol::ElderSign => Self::ElderSign,
+        }
+    }
+}
+
 /// Resolve a drawn chaos token to its [`TokenResolution`] given the
 /// scenario's symbol-token modifiers.
 #[must_use]

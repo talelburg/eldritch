@@ -184,7 +184,8 @@ pub(crate) fn for_candidate_source(
 ///
 /// The one constant sweep over an investigator's own cards. Its readers each
 /// match their own [`Effect`] shape: the additional-action sweep
-/// (`Effect::AdditionalActionWhileInPlay`), `evaluator::pending_action_surcharge`
+/// (`Effect::AdditionalActionWhileInPlay`), the skill test's token substitution
+/// (`Effect::TreatRevealedToken`), `evaluator::pending_action_surcharge`
 /// (`Restriction::ExtraActionCost`) and `evaluator::play_is_prohibited`
 /// (`Restriction::CannotPlay`). Empty for an investigator not in state.
 #[must_use]
