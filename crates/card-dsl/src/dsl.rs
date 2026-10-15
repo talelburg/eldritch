@@ -1049,8 +1049,8 @@ pub enum EventPattern {
     /// 3 reveals no token, so it never announces this.
     ///
     /// Two consumers: Wendy in its `when` cell, and Ritual Candles 02029
-    /// (Dunwich) in its `after` cell, *"\[reaction\] After a \[skull\],
-    /// \[cultist\], \[tablet\], or \[elder_thing\] symbol is revealed during
+    /// (Dunwich) in its `after` cell, *"\[reaction\] After a `[skull]`,
+    /// `[cultist]`, `[tablet]`, or `[elder_thing]` symbol is revealed during
     /// a test you are performing: You get +1 skill value for this test."* The
     /// symbol narrowing arrives with the Candles.
     ChaosTokenRevealed,

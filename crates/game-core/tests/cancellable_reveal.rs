@@ -72,7 +72,7 @@ fn registries() -> Registries {
             .with_abilities(TEST_INV, || {
                 vec![dsl::elder_sign_with(TokenOutcome {
                     immediate: Some(dsl::gain_resources(InvestigatorTarget::You, 1)),
-                    ..TokenOutcome::modifier(IntExpr::Lit(ELDER_SIGN_MODIFIER.into()))
+                    ..TokenOutcome::modifier(IntExpr::Lit(ELDER_SIGN_MODIFIER))
                 })]
             })
             .with_abilities(CANCEL_AND_REDRAW, || {

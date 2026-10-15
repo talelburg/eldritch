@@ -1571,7 +1571,7 @@ pub enum SkillTestStep {
     ///
     /// **A cancelled token comes back here.** A `when`-cell cancel skips the
     /// resolve step, so the token writes nothing, and
-    /// [`Effect::RevealChaosToken`](card_dsl::dsl::Effect::RevealChaosToken)
+    /// [`Effect::RevealChaosToken`]
     /// sets the cursor back to this step to draw again (Wendy Adams 01005).
     ///
     /// **The reveal is conditional (#687).** A determination already latched
