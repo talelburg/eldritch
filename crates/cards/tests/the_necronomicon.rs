@@ -5,11 +5,14 @@
 //! Revelation - Put The Necronomicon into play in your threat area, with 3
 //!   horror on it. It cannot leave play while it has 1 or more horror on it.
 //! Treat each [elder_sign] you reveal on a chaos token as a [auto_fail].
+//! [action]: Move 1 horror from The Necronomicon to Daisy Walker. Then, if The
+//!   Necronomicon has no horror on it, discard it.
 //! ```
 //!
 //! This file covers the Revelation reaching the board (#1090), making room in
 //! the hand slots as it does (#1097), the elder sign counted as an auto-fail
-//! (#1094), and the card holding there while it has horror (#1093).
+//! (#1094), the card holding there while it has horror (#1093), and its
+//! `[action]` moving that horror to Daisy (#1095).
 //! `glossary/Weakness.md`:
 //!
 //! > When an investigator draws a weakness with a player cardtype *(for
