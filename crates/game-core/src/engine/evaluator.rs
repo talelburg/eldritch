@@ -88,6 +88,7 @@ use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{
     self, act_agenda, actions, cards, choice, combat, elimination, emit, skill_test, threat_area,
 };
+use crate::engine::modified_value;
 use crate::engine::outcome::{EngineOutcome, OptionId, OptionTarget};
 use crate::engine::{Cx, NativeCx};
 use crate::event::Event;
@@ -1716,6 +1717,14 @@ fn modify(
                 };
             };
             let lifetime = Lifetime::SkillTest(test.id);
+            // "Your skill value for that test" names the test's skill, which
+            // is fixed for the test, so it is resolved once, here (Lucky!
+            // 01080).
+            let stat = if stat == Stat::TestedSkill {
+                modified_value::stat_for_skill(test.skill)
+            } else {
+                stat
+            };
             cx.state.recorded_modifiers.push(RecordedModifier::new(
                 eval_ctx.controller,
                 stat,

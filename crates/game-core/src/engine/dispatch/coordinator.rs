@@ -248,6 +248,31 @@ fn abandon_emit(cx: &mut Cx) {
     cx.state.continuations.pop_expect::<EmitEventFrame>();
 }
 
+/// A resolve step voids the rest of **its own** sequence: the `at` and `after`
+/// cells of the condition being resolved never run (#1111). Until then only a
+/// `when`-cell cancel could end a sequence early; this is the same exit taken
+/// from inside step 2.
+///
+/// `SkillTestResolved` is the one caller. Its resolve step re-totals the test
+/// and, when a `when`-cell modifier (Lucky! 01080) has turned the announced
+/// verdict into the other one, the stale verdict's remaining cells must not see
+/// it — the fresh verdict is announced in a sequence of its own.
+///
+/// Callable only from a resolve step that has pushed nothing yet: the
+/// coordinator advanced its own frame to `At` just before calling it, so that
+/// frame is the one on top, and the checked pop enforces it.
+pub(super) fn void_remaining_sequence(cx: &mut Cx) {
+    debug_assert!(
+        cx.state
+            .continuations
+            .top_of::<EmitEventFrame>()
+            .map(|frame| frame.step)
+            == Some(EmitStep::At),
+        "void_remaining_sequence: called outside a resolve step, or after it pushed a frame"
+    );
+    abandon_emit(cx);
+}
+
 /// Set the top [`Continuation::TimingPoint`](crate::state::Continuation::TimingPoint)'s `sub` cursor.
 fn set_timing_sub(cx: &mut Cx, sub: TimingSub) {
     cx.state.continuations.top_mut::<TimingPointFrame>().sub = sub;
