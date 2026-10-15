@@ -28,14 +28,18 @@
 //! losing “additional” actions, of your choice."* The engine already loses
 //! standard actions first.
 //!
-//! # Module gap
-//!
-//! The elder sign is registered as its `+0` only. *"If you succeed, draw 1 card
-//! for each \[\[Tome\]\] you control"* is #1091.
+//! The elder sign is [`dsl::elder_sign_with`] a `+0` modifier and an
+//! `on_success` [`Effect::DrawCards`] whose count is
+//! [`Quantity::ControlledCards`] of the Tome trait, evaluated at ST.7 as the
+//! draw resolves: her play area and her threat area.
 //!
 //! [`Effect::AdditionalActionWhileInPlay`]: card_dsl::dsl::Effect::AdditionalActionWhileInPlay
+//! [`Effect::DrawCards`]: card_dsl::dsl::Effect::DrawCards
 
-use card_dsl::dsl::{self, Ability, AdditionalActionRestriction, CardFilter, IntExpr};
+use card_dsl::dsl::{
+    self, Ability, AdditionalActionRestriction, CardFilter, IntExpr, InvestigatorTarget, Quantity,
+    TokenOutcome,
+};
 
 use crate::generated::traits::TOME;
 use crate::impls::CardRecord;
@@ -50,14 +54,24 @@ pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 ///
 /// - "You may take an additional action during your turn, which can only be
 ///   used on \[\[Tome\]\] \[action\] abilities."
-/// - `[elder_sign]` effect: "+0." (the draw is #1091)
+/// - `[elder_sign]` effect: "+0. If you succeed, draw 1 card for each
+///   \[\[Tome\]\] you control."
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![
         dsl::constant(dsl::restricted_additional_action_while_in_play(
             AdditionalActionRestriction::ActivatedAbilityOn(CardFilter::with_trait(TOME)),
         )),
-        dsl::elder_sign(IntExpr::Lit(0)),
+        dsl::elder_sign_with(TokenOutcome {
+            modifier: IntExpr::Lit(0),
+            on_success: Some(dsl::draw_cards(
+                InvestigatorTarget::You,
+                IntExpr::Count(Quantity::ControlledCards(Box::new(CardFilter::with_trait(
+                    TOME,
+                )))),
+            )),
+            ..TokenOutcome::default()
+        }),
     ]
 }
 
