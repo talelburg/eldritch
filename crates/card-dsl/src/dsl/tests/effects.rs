@@ -51,6 +51,21 @@ fn for_each_runs_body_per_target() {
     ));
 }
 
+/// `for_each` takes an enemy set as an enemy fan-out (Elusive 01050).
+#[test]
+fn for_each_over_an_enemy_set_is_an_enemy_fan_out() {
+    let effect = for_each(EnemySet::EngagedWithYou, disengage(EnemyTarget::Each));
+    assert_eq!(
+        effect,
+        Effect::ForEach {
+            targets: ForEachTargets::Enemies(EnemySet::EngagedWithYou),
+            body: Box::new(Effect::Disengage {
+                target: EnemyTarget::Each
+            }),
+        }
+    );
+}
+
 /// `choose_one` accepts an iterable like `seq`.
 #[test]
 fn choose_one_collects_alternatives() {

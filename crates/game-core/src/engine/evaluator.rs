@@ -42,8 +42,8 @@
 //!   and no other trigger has yet needed it (the outcome *is* on
 //!   [`InFlightSkillTest::resolved`](crate::state::InFlightSkillTest::resolved)
 //!   from ST.6 on, so this is unwired, not unknowable).
-//! - [`Effect::ForEach`] resolves its target set once, in turn order, and walks
-//!   it on an [`EffectFrame::ForEach`], running the body once per target with
+//! - [`Effect::ForEach`] resolves its target set once (investigators in turn
+//!   order, enemies in id order) and walks it on an [`EffectFrame::ForEach`], running the body once per target with
 //!   that target bound as [`EvalContext::each`] (#1067). The walk is
 //!   sequential, not simultaneous; the frame's docs say when that matters.
 //! - [`Effect::ChooseOne`] and the `*::Chosen` targets resolve
@@ -70,10 +70,10 @@
 use card_dsl::card_data::{CardType, SkillKind};
 use card_dsl::dsl::{
     ActionClass, ActionDesignator, AdditionalActionScope, CardFilter, ChoiceBranch, CmpOp,
-    Condition, ControlStatus, Determination, Effect, EnemyTarget, EntityScope, ForEachTargets,
-    HarmKind, IntExpr, InvestigatorTarget, InvestigatorTargetSet, LocationSet, LocationTarget,
-    ModifierAudience, ModifierScope, Quantity, Restriction, RevealClause, SearchScope,
-    SkillTestKind, Stat, Trigger,
+    Condition, ControlStatus, Determination, Effect, EnemySet, EnemyTarget, EntityScope,
+    ForEachTargets, HarmKind, IntExpr, InvestigatorTarget, InvestigatorTargetSet, LocationSet,
+    LocationTarget, ModifierAudience, ModifierScope, Quantity, Restriction, RevealClause,
+    SearchScope, SkillTestKind, Stat, Trigger,
 };
 use serde::{Deserialize, Serialize};
 
@@ -175,12 +175,14 @@ pub struct ChoiceBinding {
 /// The target an [`Effect::ForEach`] body is currently running for, bound per
 /// iteration by the walking frame ([`EffectFrame::ForEach`]). One arm per kind
 /// of entity a fan-out can walk; the body names it through that kind's `Each`
-/// target ([`InvestigatorTarget::Each`]).
+/// target ([`InvestigatorTarget::Each`], [`EnemyTarget::Each`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EachBinding {
     /// An investigator, from an
     /// [`InvestigatorTargetSet`].
     Investigator(InvestigatorId),
+    /// An enemy, from an [`EnemySet`].
+    Enemy(EnemyId),
 }
 
 /// Per-evaluation context the effect needs to resolve targets and
@@ -398,7 +400,20 @@ impl EvalContext {
     /// native body reads to know whom it acts on. `None` outside such a body.
     #[must_use]
     pub fn each_investigator(&self) -> Option<InvestigatorId> {
-        self.each.map(|EachBinding::Investigator(id)| id)
+        match self.each? {
+            EachBinding::Investigator(id) => Some(id),
+            EachBinding::Enemy(_) => None,
+        }
+    }
+
+    /// The enemy an enclosing [`Effect::ForEach`] body is running for — what
+    /// [`EnemyTarget::Each`] resolves to. `None` outside such a body.
+    #[must_use]
+    pub fn each_enemy(&self) -> Option<EnemyId> {
+        match self.each? {
+            EachBinding::Enemy(id) => Some(id),
+            EachBinding::Investigator(_) => None,
+        }
     }
 
     /// Bind the target a [`Effect::ForEach`] body runs for (see
@@ -549,26 +564,46 @@ pub(crate) fn step_effect_frame(cx: &mut Cx) -> EngineOutcome {
 }
 
 /// Start an [`Effect::ForEach`]'s walk: resolve `targets` against the board as
-/// it stands, in turn order, and push the [`EffectFrame::ForEach`] that runs
-/// `body` once per target. The snapshot is the walk's list; each step only
+/// it stands ([`for_each_targets`]) and push the [`EffectFrame::ForEach`] that
+/// runs `body` once per target. The snapshot is the walk's list; each step only
 /// re-checks it ([`still_targetable`]), never re-resolves it, so the body
 /// cannot add a target to the walk it is part of.
-///
-/// **Turn order is the engine's player order** — the same proxy the upkeep,
-/// mulligan and hand-size steps walk (`GLOSSARY.md`, *Lead investigator*).
 fn start_for_each(cx: &mut Cx, targets: ForEachTargets, body: &Effect, ctx: EvalContext) {
-    let targets: Vec<EachBinding> = match targets {
+    let targets = for_each_targets(cx.state, ctx, targets);
+    cx.state
+        .continuations
+        .push(Continuation::Effect(EffectFrame::ForEach {
+            targets,
+            next: 0,
+            body: Box::new(body.clone()),
+            ctx,
+        }));
+}
+
+/// The targets an [`Effect::ForEach`] over `targets` walks, read off the board
+/// as it stands, in walk order. Read-only, so the change-state gate
+/// ([`effect_can_change_state`]) and the walk agree on the set.
+///
+/// **Investigators walk in turn order**, the engine's player order — the same
+/// proxy the upkeep, mulligan and hand-size steps walk (`GLOSSARY.md`, *Lead
+/// investigator*). **Enemies walk in id order**: no card in the corpus orders
+/// an enemy fan-out, and id order is deterministic for replay.
+fn for_each_targets(
+    state: &GameState,
+    ctx: EvalContext,
+    targets: ForEachTargets,
+) -> Vec<EachBinding> {
+    match targets {
         ForEachTargets::Investigators(set) => {
-            let here = cx
-                .state
+            let here = state
                 .investigators
                 .get(&ctx.controller)
                 .and_then(|i| i.current_location);
-            cx.state
+            state
                 .turn_order
                 .iter()
                 .filter(|id| {
-                    cx.state.investigators.get(id).is_some_and(|i| {
+                    state.investigators.get(id).is_some_and(|i| {
                         i.status == Status::Active
                             && match set {
                                 InvestigatorTargetSet::All => true,
@@ -581,26 +616,26 @@ fn start_for_each(cx: &mut Cx, targets: ForEachTargets, body: &Effect, ctx: Eval
                 .map(|&id| EachBinding::Investigator(id))
                 .collect()
         }
-    };
-    cx.state
-        .continuations
-        .push(Continuation::Effect(EffectFrame::ForEach {
-            targets,
-            next: 0,
-            body: Box::new(body.clone()),
-            ctx,
-        }));
+        ForEachTargets::Enemies(EnemySet::EngagedWithYou) => state
+            .enemies
+            .iter()
+            .filter(|(_, e)| e.engaged_with == Some(ctx.controller))
+            .map(|(&id, _)| EachBinding::Enemy(id))
+            .collect(),
+    }
 }
 
 /// Whether a [`ForEach`](EffectFrame::ForEach) walk still reaches `target`
 /// when its turn comes: an investigator must still be `Active`, so one
-/// eliminated by an earlier target's body is skipped.
+/// eliminated by an earlier target's body is skipped, and an enemy must still
+/// be in play, so one an earlier body defeated is skipped.
 fn still_targetable(state: &GameState, target: EachBinding) -> bool {
     match target {
         EachBinding::Investigator(id) => state
             .investigators
             .get(&id)
             .is_some_and(|i| i.status == Status::Active),
+        EachBinding::Enemy(id) => state.enemies.contains_key(&id),
     }
 }
 
@@ -857,6 +892,15 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
         Effect::DealDamageToEnemy { target, amount } => {
             deal_damage_to_enemy_effect(cx, eval_ctx, *target, *amount)
         }
+        Effect::Disengage { target } => match resolve_enemy_target(eval_ctx, *target) {
+            Ok(enemy) => {
+                combat::disengage(cx, enemy);
+                EngineOutcome::Done
+            }
+            Err(reason) => EngineOutcome::Rejected {
+                reason: reason.into(),
+            },
+        },
         Effect::Heal {
             kind,
             target,
@@ -2136,6 +2180,9 @@ fn ground_chosen_targets(
     if let Effect::DealDamageToEnemy {
         target: EnemyTarget::Chosen(choose),
         ..
+    }
+    | Effect::Disengage {
+        target: EnemyTarget::Chosen(choose),
     } = effect
     {
         if eval_ctx.chosen_enemy().is_none() {
@@ -2490,6 +2537,24 @@ pub(crate) fn effect_can_change_state(
                 && (ctx.chosen_enemy().is_some()
                     || !combat::enemies_in_scope(state, ctx.controller, choose.scope).is_empty())
         }
+        // Disengaging changes state iff the enemy is engaged. Only the
+        // fan-out's bound enemy is provable; a `Chosen` one is not grounded yet.
+        Effect::Disengage {
+            target: EnemyTarget::Each,
+        } => ctx
+            .each_enemy()
+            .and_then(|id| state.enemies.get(&id))
+            .is_none_or(|e| e.engaged_with.is_some()),
+        // A fan-out changes state iff its body can for some target it would
+        // walk: over an empty set it is inert (Elusive 01050 with no enemy
+        // engaged with you disengages nothing).
+        Effect::ForEach { targets, body } => for_each_targets(state, ctx, *targets)
+            .into_iter()
+            .any(|target| {
+                let mut body_ctx = ctx;
+                body_ctx.set_each(target);
+                effect_can_change_state(state, body_ctx, body)
+            }),
         // A sequence changes state iff any step can (an empty `Seq` is inert).
         Effect::Seq(steps) => steps
             .iter()
@@ -2596,6 +2661,9 @@ fn resolve_enemy_target(ctx: EvalContext, target: EnemyTarget) -> Result<EnemyId
             "EnemyTarget::Chosen resolved before target-grounding bound it \
              (ground_chosen_targets should run first)",
         ),
+        EnemyTarget::Each => ctx
+            .each_enemy()
+            .ok_or("EnemyTarget::Each outside a ForEach body over enemies"),
     }
 }
 
