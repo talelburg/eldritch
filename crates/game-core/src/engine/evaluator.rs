@@ -525,7 +525,10 @@ fn perform_designated(
             *skill_override,
             reveal_clause.as_ref(),
         ),
-        ActionDesignator::Investigate { shroud_modifier } => {
+        ActionDesignator::Investigate {
+            shroud_modifier,
+            instead_of_discovery,
+        } => {
             // Reject rather than reach `perform`'s lapse suppression: a board
             // that changed underneath the activation is a rejection here.
             if actions::investigate::candidates(cx.state, eval_ctx.controller).is_none() {
@@ -537,6 +540,7 @@ fn perform_designated(
                 cx,
                 eval_ctx.controller,
                 Some(shroud_modifier.clone()),
+                instead_of_discovery.as_deref().cloned(),
                 eval_ctx.ability_source,
             )
         }
