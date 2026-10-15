@@ -145,6 +145,7 @@ pub mod parlor;
 pub mod perception;
 pub mod physical_training;
 pub mod pickpocketing;
+pub mod rabbits_foot;
 pub mod research_librarian;
 pub mod rise_of_the_ghouls;
 pub mod roland_38_special;
@@ -299,6 +300,7 @@ pub const ALL: &[CardRecord] = &[
     perception::CARD,
     physical_training::CARD,
     pickpocketing::CARD,
+    rabbits_foot::CARD,
     research_librarian::CARD,
     rise_of_the_ghouls::CARD,
     roland_38_special::CARD,
