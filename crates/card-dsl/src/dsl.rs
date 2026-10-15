@@ -1322,12 +1322,15 @@ pub enum Cost {
     /// (Most activated abilities self-exhaust per the rulebook; cards
     /// with a `[fast] no exhaust` ability simply don't list this cost.)
     Exhaust,
-    /// Discard a card from the controller's hand. Requires a target
-    /// selection via `AwaitingInput` (the `game_core::engine::EngineOutcome` variant)
-    /// and a `ResolveInput` dispatch. No card uses this cost yet, so
-    /// the engine consumer hasn't landed; activations with this cost
-    /// reject with a TODO. Test-side seam is
-    /// `ChoiceResolver` (in `game_core::test_support`).
+    /// Choose and discard 1 card from the controller's hand (Wendy Adams
+    /// 01005). Payable only while the hand holds a card that is not a
+    /// weakness — Dark Memory 01013's ruling: *"You cannot choose to discard a
+    /// Weakness card from your hand, neither for exceeding the max number of
+    /// cards in hand, nor for card effects that make you 'choose and
+    /// discard'."* (<https://arkhamdb.com/card/01013>). Paid through a choice
+    /// of hand card before the effect resolves, on a triggered ability or a
+    /// `[fast]` activated one; an `[action]` ability with the cost is refused
+    /// (TODO(#1031)).
     DiscardCardFromHand,
     /// Spend `count` tokens of the named [`UseKind`]
     /// from the source asset's runtime uses-pool (".38 Special": "Spend 1

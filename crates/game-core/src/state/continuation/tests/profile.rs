@@ -301,6 +301,13 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             profile(PROMPT, COMPLETE),
         ),
         (
+            Continuation::HandDiscardCost(HandDiscardCostFrame {
+                investigator: InvestigatorId(1),
+                code: CardCode::new("01005"),
+            }),
+            profile(PROMPT, COMPLETE),
+        ),
+        (
             Continuation::Effect(EffectFrame::Leaf {
                 effect: Box::new(Effect::Seq(vec![])),
                 ctx,

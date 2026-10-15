@@ -133,6 +133,12 @@
     }
   },
   {
+    "HandDiscardCost": {
+      "investigator": 1,
+      "code": "01005"
+    }
+  },
+  {
     "Effect": {
       "Leaf": {
         "effect": {
