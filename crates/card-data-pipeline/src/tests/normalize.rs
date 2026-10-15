@@ -248,3 +248,65 @@ fn normalize_other_subtype_sets_weakness_false() {
         "unrecognized subtype_code should leave weakness=false"
     );
 }
+
+#[test]
+fn fast_leading_a_line_after_a_deck_only_line_is_fast() {
+    // On the Lam 01010, printed text verbatim from the snapshot (#576).
+    let mut raw = raw_card("01010");
+    raw.text = Some(
+        "\"Skids\" O'Toole deck only.\nFast. Play after your turn begins.\n\
+         Until the end of the round, non-[[Elite]] enemies cannot attack you."
+            .to_owned(),
+    );
+    let n = normalize(raw).expect("normalize");
+    assert!(n.is_fast, "`Fast.` starts the second line");
+    assert!(
+        n.play_only_during_turn,
+        "\"Play after your turn begins\" limits play to your turn"
+    );
+}
+
+#[test]
+fn fast_starting_a_sentence_after_a_prefix_on_the_same_line_is_fast() {
+    // Ace in the Hole 02266, printed text verbatim from the snapshot (#576).
+    let mut raw = raw_card("02266");
+    raw.text = Some(
+        "Exceptional. Fast. Play only during your turn.\n\
+         You may take an additional 3 actions this turn."
+            .to_owned(),
+    );
+    let n = normalize(raw).expect("normalize");
+    assert!(n.is_fast, "`Fast.` starts the line's second sentence");
+}
+
+#[test]
+fn turn_restriction_without_fast_is_flagged() {
+    // Synthetic: a turn-only play restriction on a card the pipeline
+    // didn't read as Fast — the #576 shape of bug.
+    let mut raw = raw_card("TEST03");
+    raw.name = Some("Test Event".to_owned());
+    raw.text = Some("Mystery. Play only during your turn.".to_owned());
+    let n = normalize(raw).expect("normalize");
+    let warning = fast_timing_inconsistency(&n).expect("inconsistency is reported");
+    assert!(warning.contains("TEST03"), "names the card: {warning}");
+}
+
+#[test]
+fn turn_restriction_on_a_fast_card_is_not_flagged() {
+    let mut raw = raw_card("02266");
+    raw.text = Some("Exceptional. Fast. Play only during your turn.".to_owned());
+    let n = normalize(raw).expect("normalize");
+    assert_eq!(fast_timing_inconsistency(&n), None);
+}
+
+#[test]
+fn fast_inside_a_sentence_is_not_the_keyword() {
+    // Synthetic: "Fast." ends a sentence rather than starting one.
+    let mut raw = raw_card("TEST02");
+    raw.text = Some("Your next move is Fast. Draw 1 card.".to_owned());
+    let n = normalize(raw).expect("normalize");
+    assert!(
+        !n.is_fast,
+        "`Fast.` that doesn't start a sentence is not the keyword"
+    );
+}
