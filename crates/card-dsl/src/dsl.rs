@@ -218,8 +218,8 @@ pub enum ActionDesignator {
         /// (Blinding Light's *"If you succeed, deal 1 damage to the enemy just
         /// evaded."*). It resolves inside the test, at Skill Test Timing step
         /// 7, where the evaded enemy is still the test's; the ability's
-        /// residual effect runs only after the test has ended. Boxed, as
-        /// [`RevealClause::effect`] is.
+        /// residual effect runs only after the test has ended. Boxed so the
+        /// designator (carried on every [`Ability`]) stays small.
         on_success: Option<Box<Effect>>,
     },
     /// **Move** — performs a move action. **No corpus card prints it**, though
@@ -261,8 +261,8 @@ pub enum ActionDesignator {
         /// count, which is why Deduction 01039 does not stack with Burglary
         /// (its ruling). The effect resolves at Skill Test Timing step 7 with
         /// the test's performer as controller, as
-        /// [`Evade`](Self::Evade)'s `on_success` does. Boxed for the same
-        /// reason.
+        /// [`Evade`](Self::Evade)'s `on_success` does. Boxed so the designator
+        /// (carried on every [`Ability`]) stays small.
         instead_of_discovery: Option<Box<Effect>>,
     },
     /// **Parley** — `glossary/Parley.md` in full: *"Some abilities are
