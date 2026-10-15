@@ -30,9 +30,9 @@ pub const ROLAND_DEFAULT_DECK: &[&str] = &[
 
 /// Placeholder default deck for Daisy Walker (01002) until decklist import
 /// (#782) retires the scaffolds. Implemented cards she may take only, so every
-/// card in it is playable: Daisy's Tote Bag 01008 at one copy, then two of each
-/// Seeker level-0 card and of the neutrals. The Necronomicon 01009, her
-/// signature weakness, joins with #1095. NOT a legal deck — a scaffold for UI
+/// card in it is playable: her two signatures at one copy each (Daisy's Tote
+/// Bag 01008 and The Necronomicon 01009 weakness), then two of each Seeker
+/// level-0 card and of the neutrals. NOT a legal deck — a scaffold for UI
 /// testing, like [`ROLAND_DEFAULT_DECK`].
 pub const DAISY_DEFAULT_DECK: &[&str] = &[
     "01008", // Daisy's Tote Bag (signature)
@@ -54,6 +54,7 @@ pub const DAISY_DEFAULT_DECK: &[&str] = &[
     "01091", "01091", // Overpower
     "01092", "01092", // Manual Dexterity
     "01093", "01093", // Unexpected Courage
+    "01009", // The Necronomicon (signature weakness)
 ];
 
 /// Placeholder default deck for Agnes Baker (01004) until decklist import

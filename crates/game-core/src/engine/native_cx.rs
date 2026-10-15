@@ -7,6 +7,7 @@ use card_dsl::dsl::Restriction;
 use crate::card_registry::CardRegistry;
 use crate::engine::board::{self, LeavingCard, MoveResourcesError, NotLeft, Placement};
 use crate::engine::dispatch::actions::{r#move, take};
+use crate::engine::dispatch::combat::MoveHorrorError;
 use crate::engine::dispatch::{
     act_agenda, cards, combat, elimination, encounter, hunters, placement, reveal, set_aside,
     skill_test, threat_area,
@@ -314,6 +315,31 @@ impl<'a> NativeCx<'a> {
         amount: u8,
     ) -> Result<(), MoveResourcesError> {
         board::move_resources_to_card(self.write_access(), investigator, instance, amount)
+    }
+
+    /// Move up to `amount` horror from the card instance `from` onto the card
+    /// instance `to`, wherever each is on the board (The Necronomicon 01009),
+    /// emitting [`Event::HorrorMoved`](crate::event::Event::HorrorMoved) with
+    /// the number moved. A move, neither a deal nor a heal, so
+    /// [`Event::HorrorTaken`](crate::event::Event::HorrorTaken) stays silent
+    /// and no harm window opens. A source with no horror moves nothing and
+    /// announces nothing.
+    ///
+    /// A destination the horror defeats is defeated: an investigator card is
+    /// eliminated, an asset discarded. So `to`'s card may be out of play when
+    /// this returns.
+    ///
+    /// # Errors
+    ///
+    /// [`MoveHorrorError::NotInPlay`] when `from` or `to` is not on the board;
+    /// [`MoveHorrorError::NoSanity`] when `to` has no sanity value.
+    pub fn move_horror(
+        &mut self,
+        from: CardInstanceId,
+        to: CardInstanceId,
+        amount: u8,
+    ) -> Result<(), MoveHorrorError> {
+        combat::move_horror(self.write_access(), from, to, amount)
     }
 
     // --- Leaving play ---

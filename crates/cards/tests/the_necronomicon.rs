@@ -5,11 +5,14 @@
 //! Revelation - Put The Necronomicon into play in your threat area, with 3
 //!   horror on it. It cannot leave play while it has 1 or more horror on it.
 //! Treat each [elder_sign] you reveal on a chaos token as a [auto_fail].
+//! [action]: Move 1 horror from The Necronomicon to Daisy Walker. Then, if The
+//!   Necronomicon has no horror on it, discard it.
 //! ```
 //!
 //! This file covers the Revelation reaching the board (#1090), making room in
 //! the hand slots as it does (#1097), the elder sign counted as an auto-fail
-//! (#1094), and the card holding there while it has horror (#1093).
+//! (#1094), the card holding there while it has horror (#1093), and its
+//! `[action]` moving that horror to Daisy (#1095).
 //! `glossary/Weakness.md`:
 //!
 //! > When an investigator draws a weakness with a player cardtype *(for
@@ -43,9 +46,9 @@ use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{EngineOutcome, OptionId, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, TokenModifiers,
-    TokenResolution, UseKind, Zone,
+    AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, DiscardPile, EliminationCause,
+    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind,
+    TokenModifiers, TokenResolution, UseKind, Zone,
 };
 use game_core::test_support::{self, horror, seat, uses, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
@@ -553,4 +556,129 @@ fn eliminating_daisy_removes_it_while_it_has_horror() {
         Event::CardRemovedFromGame { code, from: Zone::ThreatArea }
             if code.as_str() == NECRONOMICON
     );
+}
+
+// ---- Its [action] moves horror to Daisy (#1095) ----
+
+/// Activate The Necronomicon's `[action]`, its fourth printed ability (after
+/// the Revelation, the cannot-leave-play constant and the token substitution),
+/// and check the engine took it.
+fn move_one_horror(session: TestSession) -> TestSession {
+    let action = TurnAction::ActivateAbility {
+        investigator: INV,
+        source: AbilitySource::InPlay(session.state().in_play(INV, NECRONOMICON)),
+        address: AbilityAddress::Printed(3),
+    };
+    let session = session.take(&action);
+    assert_eq!(session.rejection(), None, "activating The Necronomicon");
+    session
+}
+
+fn horror_on_the_necronomicon(state: &GameState) -> u8 {
+    let necronomicon = state.in_play(INV, NECRONOMICON);
+    state.investigators[&INV]
+        .threat_area
+        .iter()
+        .find(|c| c.instance_id == necronomicon)
+        .expect("The Necronomicon is in the threat area")
+        .accumulated_horror
+}
+
+/// *"[action]: Move 1 horror from The Necronomicon to Daisy Walker."* A move,
+/// so no harm event fires. The ruling (<https://arkhamdb.com/card/01009>):
+/// *"Moving damage or horror is different from 'dealing' or 'taking' damage or
+/// horror, so does not trigger effects or allow the player controlling Daisy
+/// Walker to reassign the horror."* Daisy's restricted additional action pays
+/// for it, since it is a Tome `[action]` ability, so her three standard actions
+/// are untouched.
+#[test]
+fn its_action_moves_one_horror_to_daisy() {
+    let session = board(
+        seat(1)
+            .as_card(DAISY)
+            .at(HERE)
+            .threat_area([(NECRONOMICON, horror(3))]),
+    );
+    let necronomicon = session.state().in_play(INV, NECRONOMICON);
+    let daisy = session.state().investigators[&INV]
+        .investigator_card
+        .instance_id;
+
+    let session = move_one_horror(session);
+
+    session.assert_at_turn_menu(INV);
+    assert_eq!(horror_on_the_necronomicon(session.state()), 2);
+    assert_eq!(session.state().investigators[&INV].horror(), 1);
+    assert_event!(
+        session.events(),
+        Event::HorrorMoved { from, to, amount: 1 } if *from == necronomicon && *to == daisy
+    );
+    assert_no_event!(session.events(), Event::HorrorTaken { .. });
+    assert_no_event!(session.events(), Event::DamageTaken { .. });
+    assert_eq!(
+        session.state().investigators[&INV].actions_remaining,
+        3,
+        "her Tome-only additional action paid for it",
+    );
+    assert_no_event!(session.events(), Event::ActionsRemainingChanged { .. });
+}
+
+/// *"Then, if The Necronomicon has no horror on it, discard it."* The third
+/// use empties it, and with no horror left it can leave play.
+#[test]
+fn the_third_use_discards_it() {
+    let session = board(
+        seat(1)
+            .as_card(DAISY)
+            .at(HERE)
+            .threat_area([(NECRONOMICON, horror(3))]),
+    );
+
+    let session = move_one_horror(move_one_horror(session));
+    assert_eq!(horror_on_the_necronomicon(session.state()), 1);
+    assert_no_event!(session.events(), Event::CardDiscarded { .. });
+
+    let session = move_one_horror(session);
+
+    session.assert_at_turn_menu(INV);
+    let inv = &session.state().investigators[&INV];
+    assert!(inv.threat_area.is_empty(), "it left her threat area");
+    assert_eq!(inv.discard, vec![CardCode::new(NECRONOMICON)]);
+    assert_eq!(inv.horror(), 3, "all three horror moved to Daisy");
+    assert_event!(
+        session.events(),
+        Event::CardDiscarded { code, from: Zone::ThreatArea, to: DiscardPile::Investigator(INV) }
+            if code.as_str() == NECRONOMICON
+    );
+    assert_eq!(
+        inv.actions_remaining, 1,
+        "her additional action paid for the first use, standard actions for the other two",
+    );
+}
+
+/// Daisy has 9 sanity. With 8 horror on her, the moved horror reaches it:
+/// `glossary/Sanity_and_Horror.md`, *"If an investigator has horror on him or
+/// her equal to or greater than his or her sanity, that investigator is
+/// defeated."*
+#[test]
+fn a_move_that_reaches_her_sanity_defeats_her() {
+    let session = board(
+        seat(1)
+            .as_card(DAISY)
+            .at(HERE)
+            .harm(0, 8)
+            .threat_area([(NECRONOMICON, horror(3))]),
+    );
+
+    let session = move_one_horror(session);
+
+    assert_eq!(session.state().investigators[&INV].horror(), 9);
+    assert_event!(
+        session.events(),
+        Event::InvestigatorEliminated {
+            investigator: INV,
+            cause: EliminationCause::Horror
+        }
+    );
+    assert_no_event!(session.events(), Event::HorrorTaken { .. });
 }

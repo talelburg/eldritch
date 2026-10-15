@@ -200,6 +200,26 @@ pub enum Event {
         /// How many moved: no more than the pool held.
         amount: u8,
     },
+    /// Horror moved from one card to another (The Necronomicon 01009:
+    /// *"Move 1 horror from The Necronomicon to Daisy Walker."*), through
+    /// [`NativeCx::move_horror`](crate::engine::NativeCx::move_horror).
+    ///
+    /// Deliberately neither [`Event::HorrorTaken`] nor a
+    /// [`TimingEvent::DamagePlaced`](crate::engine::TimingEvent::DamagePlaced)
+    /// window: the 01009 ruling (<https://arkhamdb.com/card/01009>) reads
+    /// *"Moving damage or horror is different from 'dealing' or 'taking'
+    /// damage or horror, so does not trigger effects"*, and the official FAQ
+    /// adds *"Moving tokens does not count as healing for the purpose of card
+    /// effects."* Nothing keyed on harm or on healing sees it (ADR 0009).
+    HorrorMoved {
+        /// The card instance the horror left.
+        from: CardInstanceId,
+        /// The card instance it now sits on: an investigator card or an
+        /// asset with a sanity value.
+        to: CardInstanceId,
+        /// How many moved: no more than `from` held.
+        amount: u8,
+    },
     /// A skill test was declared and resolution has begun.
     SkillTestStarted {
         /// Investigator taking the test.

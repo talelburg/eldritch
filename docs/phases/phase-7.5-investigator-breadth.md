@@ -3,7 +3,9 @@
 ## Status
 
 🟡 **in progress** (opened 2026-08-23). #776, #777 (Agnes Baker) and #778
-("Skids" O'Toole) are closed; #779 is next.
+("Skids" O'Toole) are closed. #779 (Daisy Walker) is built: The Necronomicon's
+`[action]` (#1095) was its last ticket, and it closes when its integration
+branch merges (2026-10-15). #780 is next.
 
 This milestone was **Slice 2** in `phase-7-the-gathering.md`'s Future slices, an
 unfiled intent. It became a milestone on 2026-08-23 (`/grill-with-docs`) when
