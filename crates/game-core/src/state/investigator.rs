@@ -76,6 +76,13 @@ pub struct Investigator {
     /// from a card in play is never stored here: it is read off the card.
     /// Required on the wire.
     pub additional_actions_this_turn: Vec<AdditionalActionGrant>,
+    /// Instances in play whose additional action this investigator has used
+    /// this turn — Leo De Luca 01048's *"You may take an additional action
+    /// during your turn."* Keyed by instance, so a second copy entering play
+    /// grants again (his ruling: *"If you then play a second copy of the card,
+    /// you gain a further additional action."*). Cleared as the turn begins.
+    /// Required on the wire.
+    pub additional_actions_used_this_turn: BTreeSet<CardInstanceId>,
     /// Active / Killed / Insane / Resigned. See [`Status`].
     pub status: Status,
     /// Player deck. Cards are listed top-to-bottom; the engine draws
@@ -370,6 +377,7 @@ mod threat_area_tests {
             "removed_from_game",
             "action_surcharge_spent_this_round",
             "additional_actions_this_turn",
+            "additional_actions_used_this_turn",
         ] {
             let mut v = full.clone();
             v.as_object_mut()

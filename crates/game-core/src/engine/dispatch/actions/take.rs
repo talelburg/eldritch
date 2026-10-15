@@ -23,7 +23,8 @@
 //! plus their **additional** actions (see **Standard action / additional
 //! action** in `GLOSSARY.md`). The additional ones are never stored as a count:
 //! [`additional_actions`] works the list out each time it is needed, from the
-//! grants effects pushed this turn ("Skids" O'Toole 01003). FAQ 1.10
+//! cards in play whose grant has not been used this turn (Leo De Luca 01048)
+//! and the grants effects pushed this turn ("Skids" O'Toole 01003). FAQ 1.10
 //! (`glossary/Action.md`): *"If an investigator has one or more additional
 //! actions during his or her turn, the first action he or she takes that is
 //! able to qualify as that additional action automatically uses that
@@ -35,7 +36,10 @@
 use std::borrow::Cow;
 use std::fmt;
 
-use card_dsl::dsl::{ActionClass, ActionDesignator, AdditionalActionRestriction};
+use card_dsl::dsl::{
+    ActionClass, ActionDesignator, AdditionalActionRestriction, AdditionalActionScope, Effect,
+    Trigger,
+};
 
 use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::actions::evade::EvadeModification;
@@ -223,9 +227,12 @@ impl AdditionalAction {
 /// changes. Ordered as [`additional_actions`] sorts the entries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum AdditionalActionOrigin {
-    // TODO(#1069): `InPlay(CardInstanceId)`, a `WhileInPlay` grant read from the
-    // constant sweep (Leo De Luca 01048). Declared ahead of `Effect`, so it
-    // sorts first; using one marks its source instance used for the turn.
+    /// A [`WhileInPlay`](card_dsl::dsl::AdditionalActionScope::WhileInPlay)
+    /// grant on this card in play (Leo De Luca 01048). Using it marks the
+    /// instance in
+    /// [`Investigator::additional_actions_used_this_turn`](crate::state::Investigator::additional_actions_used_this_turn).
+    /// Declared ahead of `Effect`, so it sorts first.
+    InPlay(CardInstanceId),
     /// The `index`th entry of
     /// [`Investigator::additional_actions_this_turn`](crate::state::Investigator::additional_actions_this_turn).
     /// Using it removes the entry.
@@ -253,8 +260,7 @@ enum AdditionalActionOrigin {
 /// its own test, rather than having the engine silently pick for the player.
 fn additional_actions(
     state: &GameState,
-    // TODO(#1069): the constant sweep reads the cards' abilities from here.
-    _cards: &CardRegistry,
+    cards: &CardRegistry,
     investigator: InvestigatorId,
 ) -> Vec<AdditionalAction> {
     let Some(inv) = state.investigators.get(&investigator) else {
@@ -263,15 +269,45 @@ fn additional_actions(
     if !cursor::turn_open(state, investigator) {
         return Vec::new();
     }
-    let mut pool: Vec<AdditionalAction> = inv
-        .additional_actions_this_turn
-        .iter()
-        .enumerate()
-        .map(|(index, grant)| AdditionalAction {
-            restriction: grant.restriction,
-            origin: AdditionalActionOrigin::Effect { index },
-        })
-        .collect();
+    // The constant sweep: each card in play whose `WhileInPlay` grant has not
+    // been used this turn. Read off the card every time, so the grant is gone
+    // the moment the card leaves play.
+    let mut pool: Vec<AdditionalAction> = Vec::new();
+    for card in inv.controlled_card_instances() {
+        if inv
+            .additional_actions_used_this_turn
+            .contains(&card.instance_id)
+        {
+            continue;
+        }
+        let Some(abilities) = (cards.abilities_for)(&card.code) else {
+            continue;
+        };
+        pool.extend(abilities.iter().filter_map(|ability| {
+            match (&ability.trigger, &ability.effect) {
+                (
+                    Trigger::Constant,
+                    Effect::GainAdditionalAction {
+                        restriction,
+                        scope: AdditionalActionScope::WhileInPlay,
+                    },
+                ) => Some(AdditionalAction {
+                    restriction: *restriction,
+                    origin: AdditionalActionOrigin::InPlay(card.instance_id),
+                }),
+                _ => None,
+            }
+        }));
+    }
+    pool.extend(
+        inv.additional_actions_this_turn
+            .iter()
+            .enumerate()
+            .map(|(index, grant)| AdditionalAction {
+                restriction: grant.restriction,
+                origin: AdditionalActionOrigin::Effect { index },
+            }),
+    );
     pool.sort_by_key(|action| (action.restriction.is_none(), action.origin));
     pool
 }
@@ -299,7 +335,8 @@ pub fn actions_available(
 }
 
 /// Use the additional actions `origins` names for `investigator`: remove each
-/// effect grant. `origins` comes from [`additional_actions`] on the same state.
+/// effect grant, and mark each card in play used for the turn. `origins` comes
+/// from [`additional_actions`] on the same state.
 fn use_additional_actions(
     state: &mut GameState,
     investigator: InvestigatorId,
@@ -308,12 +345,15 @@ fn use_additional_actions(
     let Some(inv) = state.investigators.get_mut(&investigator) else {
         return;
     };
-    let mut effect_indices: Vec<usize> = origins
-        .iter()
-        .map(|origin| match origin {
-            AdditionalActionOrigin::Effect { index } => *index,
-        })
-        .collect();
+    let mut effect_indices: Vec<usize> = Vec::new();
+    for origin in origins {
+        match origin {
+            AdditionalActionOrigin::InPlay(instance) => {
+                inv.additional_actions_used_this_turn.insert(*instance);
+            }
+            AdditionalActionOrigin::Effect { index } => effect_indices.push(*index),
+        }
+    }
     // Highest index first, so each removal leaves the lower indices in place.
     effect_indices.sort_unstable_by(|a, b| b.cmp(a));
     for index in effect_indices {
@@ -428,6 +468,8 @@ fn quote(
         .into_iter()
         .filter(|action| action.admits(description))
         .collect();
+    // TODO(#779): add the #[should_panic] test once a restriction can be
+    // constructed. Until then every grant is unrestricted, so this never trips.
     debug_assert!(
         qualifying
             .windows(2)
