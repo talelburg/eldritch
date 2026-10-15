@@ -26,7 +26,7 @@ use std::collections::BTreeMap;
 
 use game_core::action::RosterEntry;
 use game_core::assert_event;
-use game_core::engine::enumerate::TurnAction;
+use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::{self, OptionTarget, Registries};
 use game_core::event::Event;
 use game_core::scenario::{ResolutionId, ScenarioEnding};
@@ -213,7 +213,7 @@ fn skids_with_his_scaffold_deck_plays_the_gathering_to_a_resolution() {
     let defeated = investigation
         .take(&TurnAction::PlayCard {
             investigator: INV,
-            hand_index: 0,
+            source: PlaySource::Hand(0),
         })
         .skip()
         .commit(&[])

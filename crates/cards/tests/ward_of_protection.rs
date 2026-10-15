@@ -25,7 +25,7 @@
 //! Runs against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
-use game_core::engine::enumerate::TurnAction;
+use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
@@ -287,7 +287,7 @@ fn ward_cancels_the_treachery_drawn_by_drawn_to_the_flame() {
 
     let drawn = TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::PlayCard {
         investigator: INV,
-        hand_index: 0,
+        source: PlaySource::Hand(0),
     });
     assert_eq!(drawn.offered_at(&ward(INV)), 1, "Ward is offered");
     let s = drawn.pick(ward(INV));

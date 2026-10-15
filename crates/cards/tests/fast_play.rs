@@ -36,7 +36,7 @@
 //! cannot reach by crate-dependency direction.
 
 use cards::TEST_REGISTRIES;
-use game_core::engine::enumerate::TurnAction;
+use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::{InputKind, OptionTarget};
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, EnemyId, FastActorScope,
@@ -176,7 +176,7 @@ fn fast_asset_rejected_by_non_owner_even_with_permissive_window() {
     assert_window_offers_as_glass(&window);
     let session = window.submit_off_menu(&TurnAction::PlayCard {
         investigator: B,
-        hand_index: 0,
+        source: PlaySource::Hand(0),
     });
     let reason = session.expect_rejected();
     assert!(
@@ -194,7 +194,7 @@ fn non_fast_asset_still_rejected_when_not_active_investigator() {
     assert_window_offers_as_glass(&window);
     let session = window.submit_off_menu(&TurnAction::PlayCard {
         investigator: B,
-        hand_index: 0,
+        source: PlaySource::Hand(0),
     });
     let reason = session.expect_rejected();
     // Make sure the rejection cites the timing-window gate,
@@ -217,7 +217,7 @@ fn fast_asset_still_playable_by_active_investigator_during_investigation() {
         .session()
         .take(&TurnAction::PlayCard {
             investigator: A,
-            hand_index: 0,
+            source: PlaySource::Hand(0),
         });
     // Magnifying Glass plays normally for the active investigator (Phase-3
     // behavior preserved), and the turn goes on.
@@ -341,7 +341,7 @@ fn fast_event_play_only_during_turn_rejected_outside_investigation() {
     );
     let session = window.submit_off_menu(&TurnAction::PlayCard {
         investigator: A,
-        hand_index: 0,
+        source: PlaySource::Hand(0),
     });
     let _ = session.expect_rejected();
     // Unchanged: still in hand, clue not taken.
@@ -367,7 +367,7 @@ fn fast_event_play_only_during_turn_rejected_for_non_owner() {
     assert_window_offers_as_glass(&window);
     let session = window.submit_off_menu(&TurnAction::PlayCard {
         investigator: B,
-        hand_index: 0,
+        source: PlaySource::Hand(0),
     });
     let _ = session.expect_rejected();
 }
@@ -391,7 +391,7 @@ fn fast_asset_rejected_by_owner_outside_investigation_with_no_window() {
     drawing.assert_at_encounter_draw();
     let session = drawing.submit_off_menu(&TurnAction::PlayCard {
         investigator: A,
-        hand_index: 0,
+        source: PlaySource::Hand(0),
     });
     let reason = session.expect_rejected();
     assert!(

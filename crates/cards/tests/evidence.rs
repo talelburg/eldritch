@@ -10,7 +10,7 @@
 //! `cards::TEST_REGISTRIES`, which `game-core` cannot reach by crate direction.
 
 use cards::TEST_REGISTRIES;
-use game_core::engine::enumerate::TurnAction;
+use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::{InputKind, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
@@ -156,7 +156,7 @@ fn evidence_cannot_be_played_as_a_standalone_action() {
 
     let session = session.submit_off_menu(&TurnAction::PlayCard {
         investigator: INV,
-        hand_index: 0,
+        source: PlaySource::Hand(0),
     });
 
     let _ = session.expect_rejected();

@@ -8,7 +8,7 @@
 use card_dsl::card_data::UseKind;
 use cards::TEST_REGISTRIES;
 use game_core::assert_event;
-use game_core::engine::enumerate::TurnAction;
+use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::{InputKind, OptionTarget, PromptNature};
 use game_core::event::Event;
 use game_core::state::{
@@ -58,7 +58,7 @@ fn board(investigator: Seat) -> TestSession {
 fn play_card(session: TestSession, hand_index: u8) -> TestSession {
     session.take(&TurnAction::PlayCard {
         investigator: INV,
-        hand_index,
+        source: PlaySource::Hand(hand_index),
     })
 }
 
@@ -185,7 +185,7 @@ fn mind_over_matter_rejected_outside_your_turn() {
 
     let s = window.submit_off_menu(&TurnAction::PlayCard {
         investigator: INV,
-        hand_index: 0,
+        source: PlaySource::Hand(0),
     });
     let reason = s.expect_rejected();
     assert!(

@@ -17,7 +17,7 @@
 //! (`glossary/Uses.md`), not as [`Event::UsesSpent`] either.
 
 use cards::TEST_REGISTRIES;
-use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::enumerate::{self, PlaySource, TurnAction};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, DiscardPile, EnemyId, GameState, GameStateBuilder,
@@ -74,7 +74,7 @@ fn secrets(session: &TestSession) -> Option<u8> {
 fn played_from_hand_it_enters_with_four_secrets() {
     let session = board(seat(1).hand([FORBIDDEN_KNOWLEDGE])).take(&TurnAction::PlayCard {
         investigator: INV,
-        hand_index: 0,
+        source: PlaySource::Hand(0),
     });
     session.assert_at_turn_menu(INV);
     assert_eq!(secrets(&session), Some(4));
