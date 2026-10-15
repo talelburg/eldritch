@@ -21,6 +21,10 @@ A second mechanic shares the word. ArkhamDB's card text writes the **free trigge
 
 _Avoid_: Reading a `[fast]` token in ArkhamDB card text as the keyword — it is the ability icon, and only a bare `Fast.` line is the keyword. Say "zero-action ability" (or the Rules Reference's "free triggered ability") for the second sense, never "fast ability".
 
+**Standard action / additional action**:
+An investigator's three per-turn actions are **standard**. A card can grant an **additional** one, either for as long as its source is in play (Leo De Luca 01048: *"You may take an additional action during your turn"*) or once, for the rest of this turn ("Skids" O'Toole 01003: *"You may take an additional action this turn"*). Some are restricted to one kind of action (Daisy Walker 01002's Tome-only action). The rule is `glossary/Action.md` (FAQ 1.10). The first action that *can* qualify as an additional action **automatically uses it up**, so additional actions are spent before standard ones, never saved for later. When actions are lost, standard actions go first. Once an additional action is used up it stays used up, even if its source leaves play: Leo's ruling is *"the first action you spend each turn takes up the 'additional' designation. If Leo De Luca is discarded mid-turn, you do not lose 1 action from your total pool of actions for the turn"* (https://arkhamdb.com/card/01048).
+_Avoid_: "Extra action", which reads as a count bump and hides two things: which kind of action used the grant up, and that a grant from a card in play is lost if that card leaves play before the grant is used. Avoid "bonus action" too.
+
 **Horror soak**:
 Our informal term for assigning horror to an asset that has sanity, rather than to the investigator. The word does not appear in the Rules Reference, which says only that an asset "must have sanity in order to be assigned horror."
 _Avoid_: Max sanity, sanity boost, sanity modifier. An asset's sanity is a capacity to absorb horror, never a change to the investigator's own sanity.
