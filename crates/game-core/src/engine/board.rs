@@ -450,9 +450,11 @@ pub(crate) fn move_resources_to_card(
         return Ok(());
     }
     card.resources = card.resources.saturating_add(moved);
-    if let Some(payer) = cx.state.investigators.get_mut(&investigator) {
-        payer.resources -= moved;
-    }
+    cx.state
+        .investigators
+        .get_mut(&investigator)
+        .expect("payer checked at entry")
+        .resources -= moved;
     cx.events.push(Event::ResourcesMovedToCard {
         investigator,
         instance_id,

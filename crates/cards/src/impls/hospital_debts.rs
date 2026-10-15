@@ -39,8 +39,9 @@
 //! **Forced** effect triggers"* — follows Cover Up's elimination path.
 
 use card_dsl::dsl::{self, Ability, UsageLimit, UsagePeriod};
+use game_core::engine::board::MoveResourcesError;
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{EngineOutcome, MoveResourcesError, NativeCx};
+use game_core::engine::{EngineOutcome, NativeCx};
 use game_core::state::GameState;
 
 use crate::impls::CardRecord;
