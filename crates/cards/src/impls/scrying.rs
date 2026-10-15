@@ -16,8 +16,7 @@
 //! encounter deck"*, because the later picks must know it and a native cannot
 //! hand a pick to the next one: the effect tree holds it instead. Solo, *"any
 //! investigator's deck"* is your own; another investigator's deck waits for
-//! phase 8's multiplayer work (the #65 family; no issue tracks this choice
-//! yet).
+//! multiplayer (#1061).
 //!
 //! **The order** is built one card at a time, one native per pick, since a
 //! native sees one pick and must make it before it writes. Pick `k` offers the
