@@ -170,7 +170,26 @@ pub(in crate::engine::dispatch) fn perform(
     if !candidates(cx.state, cx.cards, investigator).contains(&destination) {
         return EngineOutcome::Done; // precondition lapsed: suppress
     }
+    begin_move(cx, investigator, from, destination)
+}
 
+/// Move `investigator` from `from` to `destination` with the timing of a move:
+/// the shared tail of the Move action ([`perform`]) and of a card effect's move
+/// ([`NativeCx::move_investigator`](crate::engine::NativeCx::move_investigator),
+/// first consumer Elusive 01050). The caller has already decided the move is
+/// legal — the Move action that `destination` connects, an effect that it is
+/// one the effect allows — so this checks nothing. No attack of opportunity:
+/// that belongs to the Move *action*'s initiation, not to moving.
+///
+/// **Tail position** (ADR 0003): it pushes the arrival frame and queues the
+/// `LeftLocation` timing, so the caller returns its outcome and does nothing
+/// after it.
+pub(crate) fn begin_move(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    from: LocationId,
+    destination: LocationId,
+) -> EngineOutcome {
     // Park the entered-location half on its own frame, then emit in tail
     // position (ADR 0003) with nothing of the departure done yet: since #721
     // `LeftLocation` is coordinator-owned, so the coordinator runs

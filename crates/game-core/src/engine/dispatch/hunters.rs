@@ -369,6 +369,30 @@ pub(super) fn reengage_at_location(cx: &mut Cx, enemy_id: EnemyId) {
     }
 }
 
+/// Apply the engagement rule to the whole board: every ready, unengaged enemy
+/// at a location with an investigator engages one there, in enemy-id order,
+/// through [`reengage_at_location`] (so its prey picks among several).
+///
+/// `glossary/Enemy_Engagement.md`: *"Any time a ready unengaged enemy is at the
+/// same location as an investigator, it engages that investigator."* The engine
+/// applies that rule at its triggers (entering, spawning, readying,
+/// elimination); this is the trigger for a card effect that leaves enemies
+/// ready and unengaged beside an investigator. First consumer: Elusive 01050,
+/// which disengages the enemies engaged with you and then moves you — if it
+/// cannot move you, they engage you again once it has resolved.
+pub(crate) fn engage_ready_enemies(cx: &mut Cx) {
+    let unengaged: Vec<EnemyId> = cx
+        .state
+        .enemies
+        .iter()
+        .filter(|(_, e)| !e.exhausted && e.engaged_with.is_none() && e.current_location.is_some())
+        .map(|(id, _)| *id)
+        .collect();
+    for enemy_id in unengaged {
+        reengage_at_location(cx, enemy_id);
+    }
+}
+
 /// Process a single hunter (movement + engage-on-arrival). Returns
 /// `Some(HunterChoice)` if a tie suspends, else `None` (fully resolved).
 fn process_one_hunter(cx: &mut Cx, enemy_id: EnemyId) -> Option<HunterChoice> {

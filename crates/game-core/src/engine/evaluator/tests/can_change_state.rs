@@ -167,3 +167,53 @@ fn search_deck_is_inert_only_against_an_empty_deck() {
         &search,
     ));
 }
+
+/// Investigator 1 on [`HERE`] with an enemy there, engaged with them or not.
+fn state_with_enemy(engaged: bool) -> GameState {
+    let mut enemy = test_support::test_enemy(100, "Ghoul");
+    enemy.current_location = Some(HERE);
+    let builder = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_seat(seat(1).at(HERE));
+    if engaged {
+        builder.with_enemy_engaged(enemy, InvestigatorId(1))
+    } else {
+        builder.with_enemy(enemy)
+    }
+    .build()
+}
+
+#[test]
+fn a_fan_out_over_an_empty_set_cannot_change_state() {
+    // Elusive 01050's disengage half: with no enemy engaged with you there is
+    // nothing to walk, so the fan-out is inert; with one, its body is live.
+    let disengage_each = dsl::for_each(EnemySet::EngagedWithYou, dsl::disengage(EnemyTarget::Each));
+    assert!(effect_can_change_state(
+        &state_with_enemy(true),
+        ctx(1),
+        &disengage_each
+    ));
+    assert!(!effect_can_change_state(
+        &state_with_enemy(false),
+        ctx(1),
+        &disengage_each
+    ));
+}
+
+#[test]
+fn disengaging_the_bound_enemy_changes_state_only_while_it_is_engaged() {
+    let disengage = dsl::disengage(EnemyTarget::Each);
+    let mut bound = ctx(1);
+    bound.set_each(EachBinding::Enemy(EnemyId(100)));
+    assert!(effect_can_change_state(
+        &state_with_enemy(true),
+        bound,
+        &disengage
+    ));
+    assert!(!effect_can_change_state(
+        &state_with_enemy(false),
+        bound,
+        &disengage
+    ));
+}

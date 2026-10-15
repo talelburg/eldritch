@@ -108,6 +108,7 @@ pub mod dodge;
 pub mod dr_milan_christopher;
 pub mod drawn_to_the_flame;
 pub mod dynamite_blast;
+pub mod elusive;
 pub mod emergency_cache;
 pub mod evidence;
 pub mod fearless;
@@ -256,6 +257,7 @@ pub const ALL: &[CardRecord] = &[
     dr_milan_christopher::CARD,
     drawn_to_the_flame::CARD,
     dynamite_blast::CARD,
+    elusive::CARD,
     emergency_cache::CARD,
     evidence::CARD,
     fearless::CARD,
