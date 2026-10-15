@@ -1370,7 +1370,13 @@ pub enum EventTiming {
     ///
     /// `glossary/Instead.md` gives this cell an internal sub-order the engine
     /// does not implement — *"'When X would occur' resolves before 'When X
-    /// occurs.'"* — because no corpus card puts both on one condition.
+    /// occurs.'"* No Core card puts both on one condition. Science Building
+    /// 02056 (Dunwich) is the card that will: its *"**Forced** - When you
+    /// fail a \[willpower\] test in the Science Building: Take 1 damage."*
+    /// shares `SkillTestResolved`'s failure with Lucky! 01080's *"Play when
+    /// you would fail a skill test"*, and as a plain `when` it must resolve
+    /// after Lucky!, so a test Lucky! turns into a success deals no damage.
+    /// Unmodelled, the Forced resolves first, forced-before-reaction.
     ///
     /// Rejected on a condition whose resolve step has not been migrated; see
     /// the enum's own docs.
