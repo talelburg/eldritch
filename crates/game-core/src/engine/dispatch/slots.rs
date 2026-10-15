@@ -183,8 +183,12 @@ pub(super) fn card_slot_need(cards: &CardRegistry, code: &CardCode) -> SlotCount
 /// The slot type `code` needs more of than `investigator` has capacity for
 /// (default plus [`slot_grants`]), or `None` if it can fit (possibly after
 /// discarding occupiers). Empty-need cards (slot-less, non-asset, unknown)
-/// always return `None`. Unreachable in the current corpus (max need is
-/// `Hand×2` = default cap 2); exists for no-silent-approximation.
+/// always return `None`.
+///
+/// An occupier that [cannot leave play](abilities_in_effect::cannot_leave_play)
+/// is fixed, since make-room may not discard it, so `code` must fit beside
+/// those. The Necronomicon 01009 holding a hand slot leaves one for a new
+/// asset, so a two-handed one cannot be played until its horror is gone.
 pub(super) fn unsatisfiable_slot(
     state: &GameState,
     cards: &CardRegistry,
@@ -192,9 +196,15 @@ pub(super) fn unsatisfiable_slot(
     code: &CardCode,
 ) -> Option<Slot> {
     let grants = slot_grants(state, cards, investigator);
-    let alone = claim_of(cards, &grants, code);
-    let need = alone.units.clone();
-    shortfall(&grants, &[alone])
+    let mut claims: Vec<SlotClaim> = occupants(state, investigator)
+        .iter()
+        .filter(|(inst, _)| abilities_in_effect::cannot_leave_play(state, cards, *inst))
+        .map(|(_, fixed)| claim_of(cards, &grants, fixed))
+        .collect();
+    let entering = claim_of(cards, &grants, code);
+    let need = entering.units.clone();
+    claims.push(entering);
+    shortfall(&grants, &claims)
         .into_keys()
         .find(|slot| need.contains_key(slot))
 }
@@ -261,6 +271,11 @@ pub(super) fn slot_deficit(
 /// new asset could not use. With no grants in play this is every asset
 /// occupying a deficit slot type.
 ///
+/// A card that [cannot leave play](abilities_in_effect::cannot_leave_play) is
+/// never a candidate: Crypt Chill 01167's ruling reads a chosen discard that
+/// way (<https://arkhamdb.com/card/01167>), *"You cannot choose and discard The
+/// Necronomicon or Baron Samedi because they 'cannot leave play'."*
+///
 /// Returned in play-area order, then threat-area order, so an `OptionId` index
 /// is stable between the prompt and its resume.
 pub(super) fn make_room_candidates(
@@ -272,6 +287,7 @@ pub(super) fn make_room_candidates(
 ) -> Vec<(CardInstanceId, CardCode)> {
     occupants(state, investigator)
         .into_iter()
+        .filter(|(inst, _)| !abilities_in_effect::cannot_leave_play(state, reg, *inst))
         .filter(|(inst, _)| {
             let after = shortfall_without(state, reg, investigator, code, Some(*inst));
             deficit

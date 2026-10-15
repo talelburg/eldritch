@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use card_dsl::dsl::{ActionDesignator, Cost, Effect, Trigger, UsageLimit};
 
 use crate::card_registry::CardRegistry;
+use crate::engine::board::{self, NotLeft};
 use crate::engine::dispatch::{
     actions::take::{self, ActionDescription},
     combat, initiation,
@@ -14,7 +15,7 @@ use crate::engine::dispatch::{
 };
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::EngineOutcome;
-use crate::engine::{abilities_in_effect, ability_source, board, Cx};
+use crate::engine::{abilities_in_effect, ability_source, Cx};
 use crate::event::Event;
 use crate::state::{
     AbilityAddress, AbilitySource, ActionResolutionFrame, ActionResume, CandidateSource, CardCode,
@@ -428,15 +429,24 @@ fn require_source_reachable<'a>(
 /// exit leaves it in place, so it rejects. Deliberately unlifted with no
 /// tracking issue (YAGNI, as with `reject_incompatible_costs`); whoever prints
 /// such a card files one.
+///
+/// A source that cannot leave play right now cannot pay the cost either
+/// (`glossary/Cannot.md`: *"The word "cannot" is absolute, and cannot be
+/// countermanded by other abilities."*). No corpus card prints both.
 fn discard_source(
     cx: &mut Cx,
     investigator: InvestigatorId,
     instance_id: CardInstanceId,
 ) -> Result<(), Cow<'static, str>> {
-    if board::discard_from_play(cx, instance_id).is_some() {
-        return Ok(());
+    match board::discard_from_play(cx, instance_id) {
+        Ok(_) => Ok(()),
+        Err(NotLeft::NotInPlay) => Err(undiscardable_source(investigator, instance_id)),
+        Err(NotLeft::Refused) => Err(format!(
+            "ActivateAbility: {investigator:?}'s source {instance_id:?} cannot leave play, \
+             so it cannot be discarded as a cost",
+        )
+        .into()),
     }
-    Err(undiscardable_source(investigator, instance_id))
 }
 
 /// The rejection for a cost that must discard its source when the source is

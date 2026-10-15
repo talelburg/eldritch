@@ -39,7 +39,7 @@ fn when_remove_x(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
         .map(|c| c.instance_id)
         .collect();
     for x in xs {
-        cx.remove_from_game(x);
+        cx.remove_from_game(x).expect("TESTX is in play");
     }
     EngineOutcome::Done
 }

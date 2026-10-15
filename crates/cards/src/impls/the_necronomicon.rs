@@ -17,9 +17,20 @@
 //! ruling (<https://arkhamdb.com/card/01009>) is *"If you add this to your hand
 //! without drawing (e.g. via Research Librarian), the **Revelation** ability
 //! still triggers."* Both paths run through the engine's drawn-weakness
-//! resolution; this module only declares the Revelation. The 3 horror is
-//! placed as the card enters (`Effect::PutIntoThreatArea`'s `horror`), not
-//! dealt, so no harm event fires for it.
+//! resolution, and this module only declares the Revelation they resolve. The
+//! 3 horror is placed as the card enters (`Effect::PutIntoThreatArea`'s
+//! `horror`), not dealt, so no harm event fires for it.
+//!
+//! *"It cannot leave play while it has 1 or more horror on it."* is a constant
+//! `Restriction::CannotLeavePlay` whose condition reads the card's own horror
+//! (`Quantity::HorrorOnSource`). The engine's leave-play router refuses every
+//! exit while it holds, since `glossary/Cannot.md` reads *"The word "cannot" is
+//! absolute, and cannot be countermanded by other abilities."*, and a slot
+//! make-room never offers it. Crypt Chill 01167's ruling
+//! (<https://arkhamdb.com/card/01167>) names this card: *"You cannot choose and
+//! discard The Necronomicon or Baron Samedi because they 'cannot leave
+//! play'."* Elimination removes it all the same (`glossary/Elimination.md` step
+//! 0, *"remove those weaknesses from the game"*).
 //!
 //! *"Treat each `[elder_sign]` you reveal on a chaos token as a
 //! `[auto_fail]`."* is a constant `Effect::TreatRevealedToken`, read off the
@@ -29,16 +40,12 @@
 //!
 //! # Module gap
 //!
-//! Still missing, each with its own ticket under #779:
-//!
-//! - *"It cannot leave play while it has 1 or more horror on it."* (#1093)
-//! - The `[action]` that moves 1 horror to Daisy Walker and discards the card
-//!   once it is empty (#1095).
-//!
-//! Until they land, a Necronomicon in play can be discarded, and its 3 horror
-//! never moves.
+//! Still missing, with its own ticket under #779: the `[action]` that moves 1
+//! horror to Daisy Walker and discards the card once it is empty (#1095).
+//! Until it lands, the card's 3 horror never moves, so it stays in play for the
+//! rest of the game.
 
-use card_dsl::dsl::{self, Ability, ChaosSymbol};
+use card_dsl::dsl::{self, Ability, ChaosSymbol, CmpOp, Condition, Quantity, Restriction};
 
 use crate::impls::CardRecord;
 
@@ -52,6 +59,13 @@ pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 pub fn abilities() -> Vec<Ability> {
     vec![
         dsl::revelation(dsl::put_into_threat_area_with_horror(CODE, 3)),
+        dsl::constant(dsl::restrict(Restriction::CannotLeavePlay {
+            while_: Condition::Compare {
+                quantity: Quantity::HorrorOnSource,
+                op: CmpOp::Ge,
+                value: 1,
+            },
+        })),
         dsl::constant(dsl::treat_revealed_token(
             ChaosSymbol::ElderSign,
             ChaosSymbol::AutoFail,

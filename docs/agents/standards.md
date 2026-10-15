@@ -32,7 +32,7 @@ A new `Effect` (or `EventPattern`) variant waits until **two or more hand-writte
 
 **Why:** a variant added for one card fixes the DSL's shape around a sample of one, and the kernel then has to keep resolving it. One consumer is a card-local detail; two is a pattern.
 
-**The threshold covers executed effects, where a native is the cheap alternative.** A constant the engine *reads* has no such alternative: `Condition::Native` is the only read-only native kind, so no card-local tag can tell the engine what an additional action may pay for. Such a constant gets the smallest declarative variant at its first consumer. The variants under this clause: `AdditionalActionRestriction::ActivatedAbilityOn` (Daisy Walker 01002), `Effect::AdditionalSlots` (Daisy's Tote Bag 01008), `Effect::TreatRevealedToken` (The Necronomicon 01009).
+**The threshold covers executed effects, where a native is the cheap alternative.** A constant the engine *reads* has no such alternative: `Condition::Native` is the only read-only native kind, so no card-local tag can tell the engine what an additional action may pay for. Such a constant gets the smallest declarative variant at its first consumer. The variants under this clause: `AdditionalActionRestriction::ActivatedAbilityOn` (Daisy Walker 01002), `Effect::AdditionalSlots` (Daisy's Tote Bag 01008), `Effect::TreatRevealedToken` and `Restriction::CannotLeavePlay` (both The Necronomicon 01009).
 
 ### A native changes the game only through an engine exit
 
