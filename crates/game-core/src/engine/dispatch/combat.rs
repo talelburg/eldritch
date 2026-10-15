@@ -5,12 +5,13 @@ use card_dsl::dsl::{EnemyScope, LocationSet, Restriction};
 
 use crate::action::InputResponse;
 use crate::card_registry::{self, CardRegistry};
+use crate::engine::board::{self, NotLeft};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{choice, elimination, emit, reaction_windows};
 use crate::engine::outcome::{
     ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
 };
-use crate::engine::{board, Cx};
+use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
     Assignment, AttackLoopFrame, AttackLoopStage, CardInPlay, CardInstanceId, DamageSource,
@@ -172,11 +173,14 @@ pub(super) fn damage_enemy(cx: &mut Cx, enemy_id: EnemyId, amount: u8, by: Optio
         // `glossary/Victory_Display_Victory_Points.md`, *"As a victory point
         // enemy is defeated, place the card in the victory display instead of
         // in the discard pile."*
-        if let Some(victory) = defeated_victory.filter(|v| *v > 0) {
-            board::place_in_victory_display(cx, enemy_id, victory);
+        //
+        // The router refuses only a card instance that cannot leave play, never
+        // an enemy, so the exit's answer carries nothing to act on here.
+        let _left = if let Some(victory) = defeated_victory.filter(|v| *v > 0) {
+            board::place_in_victory_display(cx, enemy_id, victory)
         } else {
-            board::discard_from_play(cx, enemy_id);
-        }
+            board::discard_from_play(cx, enemy_id)
+        };
         // Enemy defeated: dispatch the timing point through the unified
         // chokepoint (Axis-B T5a). `queue_event` queues the after-defeat
         // reaction window (Roland 01001) and the forced act objectives (act 3's
@@ -285,8 +289,16 @@ fn defeat_overflowed_assets(cx: &mut Cx, investigator: InvestigatorId) {
         .collect();
 
     for inst in defeated {
-        // RR p.7: a defeated asset goes to its owner's discard pile.
-        board::discard_from_play(cx, inst).expect("soak defeat: the defeated asset is in play");
+        // RR p.7: a defeated asset goes to its owner's discard pile. One that
+        // cannot leave play stays, defeated, where it is (`glossary/Cannot.md`:
+        // *"The word "cannot" is absolute, and cannot be countermanded by other
+        // abilities."*). The only corpus card that cannot leave play, The
+        // Necronomicon 01009, has no health or sanity to be defeated through.
+        let left = board::discard_from_play(cx, inst);
+        debug_assert!(
+            left != Err(NotLeft::NotInPlay),
+            "soak defeat: the defeated asset {inst:?} is in play",
+        );
     }
 }
 

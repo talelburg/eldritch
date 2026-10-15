@@ -2,7 +2,7 @@
 //! steps, horror application, and no-remaining-players detection.
 
 use crate::card_registry::CardRegistry;
-use crate::engine::board::{self, Placement};
+use crate::engine::board::{self, NotLeft, Placement};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{act_agenda, cursor, emit, hunters, trigger_scan};
 use crate::engine::outcome::EngineOutcome;
@@ -294,7 +294,7 @@ fn remove_cards_in_play(cx: &mut Cx, investigator: InvestigatorId) {
         })
         .unwrap_or_default();
     drain(cx, leaving, "step 1", |cx, id| {
-        board::remove_from_game(cx, id)
+        board::remove_from_game_on_elimination(cx, id)
     });
 }
 
@@ -302,16 +302,21 @@ fn remove_cards_in_play(cx: &mut Cx, investigator: InvestigatorId) {
 /// collected before the first card leaves, so the drain never reads a zone it
 /// is emptying; `step` names the elimination step in the assertion that each
 /// card was still there when its turn came.
+///
+/// Both drains take an elimination exit, which overrides a card's *"cannot
+/// leave play"*: step 0, *"the game has ended for the eliminated investigator
+/// … Then, remove those weaknesses from the game"*, so The Necronomicon 01009
+/// leaves with its horror still on it.
 fn drain(
     cx: &mut Cx,
     leaving: Vec<CardInstanceId>,
     step: &str,
-    exit: fn(&mut Cx, CardInstanceId) -> Option<Placement>,
+    exit: fn(&mut Cx, CardInstanceId) -> Result<Placement, NotLeft>,
 ) {
     for instance_id in leaving {
         let left = exit(cx, instance_id);
         debug_assert!(
-            left.is_some(),
+            left.is_ok(),
             "elimination {step}: instance {instance_id:?} vanished mid-drain",
         );
     }
@@ -455,7 +460,7 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
         .map(|inv| inv.threat_area.iter().map(|c| c.instance_id).collect())
         .unwrap_or_default();
     drain(cx, remaining, "step 4", |cx, id| {
-        board::discard_from_play(cx, id)
+        board::discard_from_play_on_elimination(cx, id)
     });
 
     // Step 5: lead-investigator transfer. No-op by construction: there

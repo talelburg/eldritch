@@ -34,7 +34,8 @@
 //! the damage is dealt.
 //!
 //! The elder sign is a modifier-only [`Trigger::ElderSign`] reading
-//! [`Quantity::HorrorOnController`].
+//! [`Quantity::HorrorOnSource`]. The elder sign is sourced to her investigator
+//! card, so it counts the horror on her and not the horror on her assets.
 //!
 //! [`Trigger::OnEvent`]: card_dsl::dsl::Trigger::OnEvent
 //! [`Trigger::ElderSign`]: card_dsl::dsl::Trigger::ElderSign
@@ -42,7 +43,7 @@
 //! [`EventTiming::After`]: card_dsl::dsl::EventTiming::After
 //! [`UsageLimit`]: card_dsl::dsl::UsageLimit
 //! [`UsagePeriod::Phase`]: card_dsl::dsl::UsagePeriod::Phase
-//! [`Quantity::HorrorOnController`]: card_dsl::dsl::Quantity::HorrorOnController
+//! [`Quantity::HorrorOnSource`]: card_dsl::dsl::Quantity::HorrorOnSource
 
 use card_dsl::dsl::{
     self, Ability, EnemyTarget, EventPattern, EventTiming, HarmKind, HarmPlacedScope, IntExpr,
@@ -77,7 +78,7 @@ pub fn abilities() -> Vec<Ability> {
             count: 1,
             period: UsagePeriod::Phase,
         }),
-        dsl::elder_sign(IntExpr::Count(Quantity::HorrorOnController)),
+        dsl::elder_sign(IntExpr::Count(Quantity::HorrorOnSource)),
     ]
 }
 

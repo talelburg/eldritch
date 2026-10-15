@@ -79,7 +79,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::card_registry::{self, CardRegistry};
 use crate::engine::abilities_in_effect;
-use crate::engine::board::{self, Placement};
+use crate::engine::board::{self, NotLeft, Placement};
 use crate::engine::dispatch::actions::evade::EvadeModification;
 use crate::engine::dispatch::actions::fight::FightModification;
 use crate::engine::dispatch::actions::take;
@@ -1425,18 +1425,26 @@ fn discover_additional_clues_effect(cx: &mut Cx, amount: u8) -> EngineOutcome {
 /// play through [`board::discard_from_play`], wherever it sits, which files it
 /// by its **owner** — Barricade 01038 to the player who played it, whoever's
 /// leaving fired it (#371), and Obscuring Fog 01168 to the encounter discard.
-/// Rejects loudly if there is no source or the instance is not in play.
+/// Rejects loudly if there is no source, the instance is not in play, or it
+/// cannot leave play right now (`glossary/Cannot.md`: *"The word "cannot" is
+/// absolute, and cannot be countermanded by other abilities."*).
 fn discard_self(cx: &mut Cx, eval_ctx: &EvalContext) -> EngineOutcome {
     let Some(source) = eval_ctx.source_instance() else {
         return EngineOutcome::Rejected {
             reason: "DiscardSelf: no source instance in context".into(),
         };
     };
-    if board::discard_from_play(cx, source).is_some() {
-        return EngineOutcome::Done;
-    }
+    let reason = match board::discard_from_play(cx, source) {
+        Ok(_) => return EngineOutcome::Done,
+        Err(NotLeft::NotInPlay) => {
+            format!("DiscardSelf: source instance {source:?} is not in play")
+        }
+        Err(NotLeft::Refused) => {
+            format!("DiscardSelf: source instance {source:?} cannot leave play")
+        }
+    };
     EngineOutcome::Rejected {
-        reason: format!("DiscardSelf: source instance {source:?} is not in play").into(),
+        reason: reason.into(),
     }
 }
 
@@ -1572,10 +1580,12 @@ fn eval_quantity(
             .and_then(|inv| inv.current_location)
             .and_then(|loc| state.locations.get(&loc))
             .map_or(0, |l| usize::from(l.clues)),
-        Quantity::HorrorOnController => state
-            .investigators
-            .get(&controller)
-            .map_or(0, |inv| usize::from(inv.horror())),
+        // `find_instance` reaches an investigator card too, so an elder sign
+        // (sourced to the investigator card) reads the investigator's horror.
+        Quantity::HorrorOnSource => eval_ctx
+            .source_instance()
+            .and_then(|id| board::find_instance(state, id))
+            .map_or(0, |(card, _)| usize::from(card.accumulated_horror)),
         Quantity::EngagedEnemies => state.enemies_engaged_with(controller).count(),
         // On the other outcome (and outside a test) the margin reads 0. That
         // is right for every "by N or more" reader, since the clause cannot

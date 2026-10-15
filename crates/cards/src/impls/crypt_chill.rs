@@ -17,6 +17,7 @@
 
 use card_dsl::card_data::{CardKind, SkillKind};
 use card_dsl::dsl::{self, Ability};
+use game_core::engine::board::NotLeft;
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, EngineOutcome, Grounded, NativeCx, OptionTarget};
 use game_core::state::{CardInstanceId, GameState, InvestigatorId};
@@ -83,11 +84,20 @@ fn crypt_chill_fail(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
 /// Discard the chosen asset through the engine's discard-from-play exit, which
 /// files it by its **owner** — so a Parleyed Lita Chantler 01117 is removed
 /// from the game rather than discarded (#918, <https://arkhamdb.com/card/01117>).
+///
+/// Its ruling (<https://arkhamdb.com/card/01167>): *"You cannot choose and
+/// discard The Necronomicon or Baron Samedi because they 'cannot leave
+/// play'."* The candidates are the play-area assets, and the one corpus card
+/// that cannot leave play, The Necronomicon 01009, sits in a threat area, so a
+/// refusal here means a candidate set that missed one.
 fn discard_asset_instance(cx: &mut NativeCx, instance: CardInstanceId) -> EngineOutcome {
     match cx.discard_from_play(instance) {
-        Some(_) => EngineOutcome::Done,
-        None => EngineOutcome::Rejected {
+        Ok(_) => EngineOutcome::Done,
+        Err(NotLeft::NotInPlay) => EngineOutcome::Rejected {
             reason: "01167 crypt-chill-fail: chosen asset no longer in play".into(),
+        },
+        Err(NotLeft::Refused) => EngineOutcome::Rejected {
+            reason: "01167 crypt-chill-fail: chosen asset cannot leave play".into(),
         },
     }
 }

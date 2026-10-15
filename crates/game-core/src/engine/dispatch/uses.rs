@@ -166,7 +166,8 @@ pub fn move_uses_to_resource_pool(
 /// The depletion discard: `instance`'s pool of `kind` has just emptied, so
 /// discard it **immediately** through [`board::discard_from_play`] if its
 /// printed uses are `discard_when_empty` of that `kind`. Returns `false` only
-/// when the card should go but no discard can take it.
+/// when the card should go but no discard can take it: it is not in play, or it
+/// cannot leave play right now (no corpus card with uses can be held there).
 fn discard_if_printed(
     cx: &mut Cx,
     instance: CardInstanceId,
@@ -179,5 +180,5 @@ fn discard_if_printed(
             _ => None,
         })
         .is_some_and(|u| u.discard_when_empty && u.kind == kind);
-    !discards_when_empty || board::discard_from_play(cx, instance).is_some()
+    !discards_when_empty || board::discard_from_play(cx, instance).is_ok()
 }

@@ -61,7 +61,7 @@ ship untested by anything but a unit test.
 
 | Issue | Work |
 |---|---|
-| #776 | Elder signs and scenario symbols share one token outcome — the prefactor: #1040 (one `TokenOutcome`), #1041 (elder-sign effects), #1042 (`HorrorOnController`), #1043 (`revealed` / `total`) |
+| #776 | Elder signs and scenario symbols share one token outcome — the prefactor: #1040 (one `TokenOutcome`), #1041 (elder-sign effects), #1042 (the horror-count quantity, now `HorrorOnSource`), #1043 (`revealed` / `total`) |
 | #777 | Slice 1 — Agnes Baker 01004 + Heirloom / Dark Memory + Mystic level 0: #1045–#1056, closed by #1058 (Agnes plays The Gathering to a resolution with the picker's scaffold deck) |
 | #778 | Slice 2 — "Skids" O'Toole 01003 + On the Lam / Hospital Debts + Rogue level 0: #1064–#1078, closed by #1079 ("Skids" plays The Gathering to a resolution with the picker's scaffold deck); closes #576 (`is_fast` after prefix lines) through #1065 |
 

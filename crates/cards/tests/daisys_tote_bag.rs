@@ -11,7 +11,7 @@ use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
+use game_core::test_support::{self, horror, seat, Seat, SeatLookup as _, TestSession};
 
 const TOTE_BAG: &str = "01008"; // slot-less; the grant
 const NECRONOMICON: &str = "01009"; // Tome, single Hand, a weakness
@@ -167,5 +167,41 @@ fn the_necronomicon_in_the_threat_area_counts_against_hand_capacity() {
             .map(|c| c.code.as_str())
             .collect::<Vec<_>>(),
         vec![NECRONOMICON]
+    );
+}
+
+/// With horror on it, The Necronomicon is never a make-room candidate: *"It
+/// cannot leave play while it has 1 or more horror on it."*, and
+/// `glossary/Cannot.md`: *"The word "cannot" is absolute, and cannot be
+/// countermanded by other abilities."* Crypt Chill 01167's ruling applies the
+/// same reading to a discard the player chooses
+/// (<https://arkhamdb.com/card/01167>): *"You cannot choose and discard The
+/// Necronomicon or Baron Samedi because they 'cannot leave play'."*
+///
+/// Two hand assets beside it already over-fill the two hand slots, a layout
+/// the engine never checks until the next asset enters. Playing a third
+/// offers only the two play-area assets.
+#[test]
+fn make_room_never_offers_the_necronomicon_while_it_has_horror() {
+    let session = session_with(
+        seat(1)
+            .in_play([KNIFE, FLASHLIGHT])
+            .threat_area([(NECRONOMICON, horror(3))])
+            .hand([MAGNIFYING_GLASS]),
+    );
+    let knife = session.state().in_play(INV, KNIFE);
+    let flashlight = session.state().in_play(INV, FLASHLIGHT);
+    let necronomicon = session.state().in_play(INV, NECRONOMICON);
+
+    let session = play(session);
+    assert_eq!(
+        (
+            session.offered_at(&OptionTarget::CardInstance(knife)),
+            session.offered_at(&OptionTarget::CardInstance(flashlight)),
+            session.offered_at(&OptionTarget::CardInstance(necronomicon)),
+        ),
+        (1, 1, 0),
+        "only the assets that can leave play are candidates: {:?}",
+        session.prompt()
     );
 }

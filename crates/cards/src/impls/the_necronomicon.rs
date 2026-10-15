@@ -21,22 +21,31 @@
 //! placed as the card enters (`Effect::PutIntoThreatArea`'s `horror`), not
 //! dealt, so no harm event fires for it.
 //!
+//! *"It cannot leave play while it has 1 or more horror on it."* is a constant
+//! `Restriction::CannotLeavePlay` whose condition reads the card's own horror
+//! (`Quantity::HorrorOnSource`). The engine's leave-play router refuses every
+//! exit while it holds, since `glossary/Cannot.md` reads *"The word "cannot" is
+//! absolute, and cannot be countermanded by other abilities."*, and a slot
+//! make-room never offers it. Crypt Chill 01167's ruling
+//! (<https://arkhamdb.com/card/01167>) names this card: *"You cannot choose and
+//! discard The Necronomicon or Baron Samedi because they 'cannot leave
+//! play'."* Elimination removes it all the same (`glossary/Elimination.md` step
+//! 0, *"remove those weaknesses from the game"*).
+//!
 //! # Module gap
 //!
-//! Only the Revelation's first sentence is implemented (#1090). Still missing,
-//! each with its own ticket under #779:
+//! The Revelation (#1090) and the prohibition on leaving play (#1093) are
+//! implemented. Still missing, each with its own ticket under #779:
 //!
-//! - *"It cannot leave play while it has 1 or more horror on it."* (#1093)
 //! - *"Treat each `[elder_sign]` you reveal on a chaos token as a `[auto_fail]`."*
 //!   (#1094)
 //! - The `[action]` that moves 1 horror to Daisy Walker and discards the card
 //!   once it is empty (#1095).
 //!
-//! Until they land, a Necronomicon in play has none of these effects: it
-//! can be discarded, an elder sign resolves normally, and its 3 horror never
-//! moves.
+//! Until they land, an elder sign resolves normally, and the card's 3 horror
+//! never moves, so it stays in play for the rest of the game.
 
-use card_dsl::dsl::{self, Ability};
+use card_dsl::dsl::{self, Ability, CmpOp, Condition, Quantity, Restriction};
 
 use crate::impls::CardRecord;
 
@@ -48,7 +57,14 @@ pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![dsl::revelation(dsl::put_into_threat_area_with_horror(
-        CODE, 3,
-    ))]
+    vec![
+        dsl::revelation(dsl::put_into_threat_area_with_horror(CODE, 3)),
+        dsl::constant(dsl::restrict(Restriction::CannotLeavePlay {
+            while_: Condition::Compare {
+                quantity: Quantity::HorrorOnSource,
+                op: CmpOp::Ge,
+                value: 1,
+            },
+        })),
+    ]
 }

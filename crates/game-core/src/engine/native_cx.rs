@@ -5,7 +5,7 @@ use card_dsl::card_data::CardMetadata;
 use card_dsl::dsl::Restriction;
 
 use crate::card_registry::CardRegistry;
-use crate::engine::board::{self, LeavingCard, MoveResourcesError, Placement};
+use crate::engine::board::{self, LeavingCard, MoveResourcesError, NotLeft, Placement};
 use crate::engine::dispatch::actions::{r#move, take};
 use crate::engine::dispatch::{
     act_agenda, cards, combat, elimination, encounter, hunters, placement, reveal, set_aside,
@@ -319,14 +319,27 @@ impl<'a> NativeCx<'a> {
     // --- Leaving play ---
 
     /// Discard `card` from play to its owner's pile, with its leave-play
-    /// consequences. Returns where it was, or `None` if it was not in play.
-    pub fn discard_from_play(&mut self, card: impl Into<LeavingCard>) -> Option<Placement> {
+    /// consequences. Returns where it was.
+    ///
+    /// # Errors
+    ///
+    /// [`NotLeft::NotInPlay`] if it was not in play, and [`NotLeft::Refused`]
+    /// if it cannot leave play right now (The Necronomicon 01009 while it has
+    /// horror); nothing changes either way.
+    pub fn discard_from_play(
+        &mut self,
+        card: impl Into<LeavingCard>,
+    ) -> Result<Placement, NotLeft> {
         board::discard_from_play(self.write_access(), card)
     }
 
     /// Remove `card` from the game, with its leave-play consequences. Returns
-    /// where it was, or `None` if it was not in play.
-    pub fn remove_from_game(&mut self, card: impl Into<LeavingCard>) -> Option<Placement> {
+    /// where it was.
+    ///
+    /// # Errors
+    ///
+    /// [`NotLeft`], as for [`discard_from_play`](Self::discard_from_play).
+    pub fn remove_from_game(&mut self, card: impl Into<LeavingCard>) -> Result<Placement, NotLeft> {
         board::remove_from_game(self.write_access(), card)
     }
 

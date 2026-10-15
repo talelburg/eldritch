@@ -1733,6 +1733,9 @@ impl Effect {
                     ability.collect_native_refs(refs);
                 }
             }
+            Effect::Restrict(Restriction::CannotLeavePlay { while_ }) => {
+                while_.collect_native_refs(refs);
+            }
             Effect::GainResources { .. }
             | Effect::DiscoverClue { .. }
             | Effect::DealDamageToEnemy { .. }
@@ -1747,7 +1750,13 @@ impl Effect {
             | Effect::PutIntoThreatArea { .. }
             | Effect::BoostAttackDamage(_)
             | Effect::DiscoverAdditionalClues(_)
-            | Effect::Restrict(_)
+            | Effect::Restrict(
+                Restriction::CannotPlay(_)
+                | Restriction::ExtraActionCost { .. }
+                | Restriction::EnemyMovementBlocked { .. }
+                | Restriction::InvestigatorMovementBlocked
+                | Restriction::CannotAttack { .. },
+            )
             | Effect::SearchDeck { .. }
             | Effect::AttachSelfToLocation
             | Effect::TakeControl { .. }
@@ -2697,6 +2706,21 @@ pub enum Restriction {
         /// `None` stops every enemy.
         exempt: Option<CardFilter>,
     },
+    /// The card this restriction is printed on cannot leave play while
+    /// `while_` holds (The Necronomicon 01009: *"It cannot leave play while it
+    /// has 1 or more horror on it."*). `while_` is evaluated with the card as
+    /// its source, so [`Quantity::HorrorOnSource`] reads the card's own horror.
+    ///
+    /// **Inspected, not executed** — the leave-play router in `game-core`
+    /// reads it and refuses every exit while it holds, since
+    /// `glossary/Cannot.md` makes no exception: *"The word "cannot" is
+    /// absolute, and cannot be countermanded by other abilities."* A slot
+    /// make-room never offers the card. Elimination is the one override: its
+    /// step 0 removes the eliminated investigator's weaknesses from the game.
+    CannotLeavePlay {
+        /// While this holds, the card stays in play.
+        while_: Condition,
+    },
 }
 
 /// One action kind an [`Restriction::ExtraActionCost`] can surcharge.
@@ -3098,11 +3122,12 @@ pub enum ControlStatus {
 pub enum Quantity {
     /// Clues on the controller's current location.
     CluesAtControllerLocation,
-    /// Horror on the controller's investigator card — Agnes Baker 01004's
-    /// `[elder_sign]` effect: *"+1 for each horror on Agnes Baker."* Horror on
-    /// the controller's assets is not on the investigator, so it does not
-    /// count.
-    HorrorOnController,
+    /// Horror on the card the evaluation is sourced to, wherever it sits; `0`
+    /// with no source card. Agnes Baker 01004's `[elder_sign]` effect, *"+1 for
+    /// each horror on Agnes Baker."*, is sourced to her investigator card, so it
+    /// reads her own horror and not the horror on her assets. The Necronomicon
+    /// 01009's *"while it has 1 or more horror on it"* reads the card's own.
+    HorrorOnSource,
     /// Enemies engaged with the controller.
     EngagedEnemies,
     /// Failure margin of the resolving skill test (0 outside one).
