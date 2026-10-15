@@ -156,6 +156,7 @@ pub mod shrivelling;
 pub mod silver_twilight_acolyte;
 pub mod skids_otoole;
 pub mod sneak_attack;
+pub mod survival_instinct;
 pub mod switchblade;
 pub mod the_barrier;
 pub mod the_necronomicon;
@@ -311,6 +312,7 @@ pub const ALL: &[CardRecord] = &[
     silver_twilight_acolyte::CARD,
     skids_otoole::CARD,
     sneak_attack::CARD,
+    survival_instinct::CARD,
     switchblade::CARD,
     the_barrier::CARD,
     the_necronomicon::CARD,
