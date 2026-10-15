@@ -505,6 +505,28 @@ pub(crate) fn move_card_in_deck(cx: &mut Cx, deck: Deck, from: usize, to: usize)
     true
 }
 
+/// Move the card at `index` of `investigator`'s discard pile to their hand,
+/// returning it, and emit [`Event::CardAddedToHandFromDiscard`] (Scavenging
+/// 01073). `None`, and nothing moves, for an index past the pile's end or a
+/// missing investigator.
+pub(crate) fn add_discarded_card_to_hand(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    index: usize,
+) -> Option<CardCode> {
+    let inv = cx.state.investigators.get_mut(&investigator)?;
+    if index >= inv.discard.len() {
+        return None;
+    }
+    let card = inv.discard.remove(index);
+    inv.hand.push(card.clone());
+    cx.events.push(Event::CardAddedToHandFromDiscard {
+        investigator,
+        code: card.clone(),
+    });
+    Some(card)
+}
+
 /// Grant `amount` resources to `investigator`: saturating-add to the
 /// wallet and emit [`Event::ResourcesGained`]. The resource-grant core
 /// shared by the DSL `gain_resources` (called after target resolution)

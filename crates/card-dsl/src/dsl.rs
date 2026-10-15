@@ -856,6 +856,16 @@ pub enum EventPattern {
         /// board (ADR 0018), so the word *"attached"* has to be on the
         /// declaration for the scan to read it.
         tested_location: TestedLocationScope,
+        /// How far the test passed or failed by, or `None` for any margin —
+        /// Scavenging 01073's *"After you successfully investigate **by 2 or
+        /// more**"* and "Look what I found!" 01079's *"after you fail a skill
+        /// test **by 2 or less**"*. See [`MarginScope`] for what the amount is
+        /// measured against.
+        ///
+        /// Trigger scope rather than an eligibility predicate, which is how
+        /// Lita Chantler 01117 narrows her own condition (#1006): with two
+        /// consumers the narrowing belongs on the declaration.
+        margin: Option<MarginScope>,
     },
     /// An investigator discovers one or more clues — the **one** triggering
     /// condition for clue discovery, in all three cells (#703). Which cell an
@@ -1153,6 +1163,60 @@ pub enum TestedLocationScope {
     /// to — Obscuring Fog 01168's *"After attached location is successfully
     /// investigated"*.
     Attached,
+}
+
+/// The margin an [`EventPattern::SkillTestResolved`] ability listens to: the
+/// test's margin compared under `op` against `amount`.
+///
+/// The margin is measured **in the direction of the outcome**, as the printed
+/// text reads it: on a success it is how far the test succeeded by, on a
+/// failure how far it failed by, never negative either way. So *"by 2 or
+/// more"* on a success is `{ op: Ge, amount: 2 }` and *"by 2 or less"* on a
+/// failure is `{ op: Le, amount: 2 }`.
+///
+/// It is read from the result the test stores when its outcome is
+/// determined, at the moment the scan runs, so a later re-total that moves
+/// only the margin is seen by the match.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct MarginScope {
+    /// How the margin compares against `amount`.
+    pub op: CmpOp,
+    /// The printed amount.
+    pub amount: u8,
+}
+
+impl MarginScope {
+    /// *"by `amount` or more"*.
+    #[must_use]
+    pub const fn at_least(amount: u8) -> Self {
+        Self {
+            op: CmpOp::Ge,
+            amount,
+        }
+    }
+
+    /// *"by `amount` or less"*.
+    #[must_use]
+    pub const fn at_most(amount: u8) -> Self {
+        Self {
+            op: CmpOp::Le,
+            amount,
+        }
+    }
+
+    /// Whether a margin of `margin` (measured in the outcome's direction)
+    /// satisfies this scope.
+    #[must_use]
+    pub fn admits(self, margin: u8) -> bool {
+        match self.op {
+            CmpOp::Eq => margin == self.amount,
+            CmpOp::Ne => margin != self.amount,
+            CmpOp::Lt => margin < self.amount,
+            CmpOp::Le => margin <= self.amount,
+            CmpOp::Gt => margin > self.amount,
+            CmpOp::Ge => margin >= self.amount,
+        }
+    }
 }
 
 /// A **triggering condition**: the one game occurrence an [`EventPattern`]
