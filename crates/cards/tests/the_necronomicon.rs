@@ -22,6 +22,7 @@
 //!
 //! Runs against `cards::TEST_REGISTRIES`.
 
+use card_dsl::card_data::CardType;
 use cards::TEST_REGISTRIES;
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
@@ -115,9 +116,11 @@ fn drawing_it_puts_it_into_the_threat_area_with_three_horror() {
 
     session.assert_at_turn_menu(INV);
     assert_entered_with_three_horror(&session);
+    // The reveal announces the card's own type: an asset, not a treachery.
     assert_event!(
         session.events(),
-        Event::CardRevealed { code, .. } if code.as_str() == NECRONOMICON
+        Event::CardRevealed { code, card_type: CardType::Asset, .. }
+            if code.as_str() == NECRONOMICON
     );
 }
 

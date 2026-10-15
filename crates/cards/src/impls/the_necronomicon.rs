@@ -27,7 +27,7 @@
 //! each with its own ticket under #779:
 //!
 //! - *"It cannot leave play while it has 1 or more horror on it."* (#1093)
-//! - *"Treat each [elder_sign] you reveal on a chaos token as a [auto_fail]."*
+//! - *"Treat each `[elder_sign]` you reveal on a chaos token as a `[auto_fail]`."*
 //!   (#1094)
 //! - The `[action]` that moves 1 horror to Daisy Walker and discards the card
 //!   once it is empty (#1095).
