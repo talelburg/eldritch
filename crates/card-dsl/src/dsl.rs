@@ -1803,7 +1803,8 @@ impl Effect {
             | Effect::GainAdditionalAction { .. }
             | Effect::AdditionalActionWhileInPlay { .. }
             | Effect::AdditionalSlots { .. }
-            | Effect::TreatRevealedToken { .. } => {}
+            | Effect::TreatRevealedToken { .. }
+            | Effect::PlaceEventsOnBottomOfDeck => {}
         }
     }
 }
@@ -2275,6 +2276,16 @@ pub enum Effect {
         /// The symbol it counts as.
         to: ChaosSymbol,
     },
+    /// **An event goes to the bottom of its owner's deck instead of their
+    /// discard pile**, after they play it or when it is discarded from play:
+    /// Wendy's Amulet 01014's *"**Forced** - After you play an event or discard
+    /// an event from play: Place it on the bottom of your deck instead of in
+    /// your discard pile."* A constant marker like
+    /// [`AdditionalSlots`](Self::AdditionalSlots), under a
+    /// [`Trigger::Constant`]: **inspected, not executed** — the engine reads it
+    /// off the owner's cards where it places the event, so it is a routing rule
+    /// rather than an ability with a window of its own. Resolving it rejects.
+    PlaceEventsOnBottomOfDeck,
     /// Search a region of an investigator's deck for one card matching
     /// `filter`, move it to that investigator's hand, then shuffle the deck.
     /// Old Book of Lore 01031 (top 3, any card, chosen investigator) and
