@@ -94,6 +94,7 @@ pub mod attic;
 pub mod automatic_45;
 pub mod backstab;
 pub mod barricade;
+pub mod baseball_bat;
 pub mod beat_cop;
 pub mod blinding_light;
 pub mod burglary;
@@ -247,6 +248,7 @@ pub const ALL: &[CardRecord] = &[
     automatic_45::CARD,
     backstab::CARD,
     barricade::CARD,
+    baseball_bat::CARD,
     beat_cop::CARD,
     blinding_light::CARD,
     burglary::CARD,
