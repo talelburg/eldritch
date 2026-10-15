@@ -24,7 +24,9 @@ pub use card::{
     UseKind, Zone,
 };
 pub use card_dsl::card_data::{SkillKind, Skills};
-pub use chaos_bag::{resolve_token, ChaosBag, ChaosToken, TokenModifiers, TokenResolution};
+pub use chaos_bag::{
+    resolve_token, ChaosBag, ChaosToken, RevealedToken, TokenModifiers, TokenResolution,
+};
 pub use continuation::{
     AcknowledgeForcedFrame, ActionResolutionFrame, ActionResume, AdditionalActionChoiceFrame,
     AdvanceDeck, AdvanceReverseFrame, AdvanceStep, AdvanceTrigger, AssetEntry, Assignment,

@@ -21,22 +21,24 @@
 //! placed as the card enters (`Effect::PutIntoThreatArea`'s `horror`), not
 //! dealt, so no harm event fires for it.
 //!
+//! *"Treat each `[elder_sign]` you reveal on a chaos token as a
+//! `[auto_fail]`."* is a constant `Effect::TreatRevealedToken`, read off the
+//! threat area of the investigator revealing (#1094). Everything after the
+//! reveal reads the auto-fail, so Daisy's own `[elder_sign]` ability never
+//! initiates while this is in play.
+//!
 //! # Module gap
 //!
-//! Only the Revelation's first sentence is implemented (#1090). Still missing,
-//! each with its own ticket under #779:
+//! Still missing, each with its own ticket under #779:
 //!
 //! - *"It cannot leave play while it has 1 or more horror on it."* (#1093)
-//! - *"Treat each `[elder_sign]` you reveal on a chaos token as a `[auto_fail]`."*
-//!   (#1094)
 //! - The `[action]` that moves 1 horror to Daisy Walker and discards the card
 //!   once it is empty (#1095).
 //!
-//! Until they land, a Necronomicon in play has none of these effects: it
-//! can be discarded, an elder sign resolves normally, and its 3 horror never
-//! moves.
+//! Until they land, a Necronomicon in play can be discarded, and its 3 horror
+//! never moves.
 
-use card_dsl::dsl::{self, Ability};
+use card_dsl::dsl::{self, Ability, ChaosSymbol};
 
 use crate::impls::CardRecord;
 
@@ -48,7 +50,11 @@ pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![dsl::revelation(dsl::put_into_threat_area_with_horror(
-        CODE, 3,
-    ))]
+    vec![
+        dsl::revelation(dsl::put_into_threat_area_with_horror(CODE, 3)),
+        dsl::constant(dsl::treat_revealed_token(
+            ChaosSymbol::ElderSign,
+            ChaosSymbol::AutoFail,
+        )),
+    ]
 }
