@@ -1600,7 +1600,10 @@ pub enum SkillTestStep {
 pub enum SkillTestFollowUp {
     /// No action-specific follow-up. Used by a bare plain skill test (the
     /// [`TestSession::test_skill`](crate::test_support::TestSession::test_skill)
-    /// synthetic entry point).
+    /// synthetic entry point), and by an investigation whose card replaces its
+    /// discovery (Burglary 01045): the discovery is
+    /// [`Investigate`](Self::Investigate)'s whole content, and the replacement
+    /// rides the test's `on_success` instead.
     None,
     /// On success, make **one** discovery of
     /// `1 + `[`bonus_clues_discovered`](InFlightSkillTest::bonus_clues_discovered)

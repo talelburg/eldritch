@@ -1,7 +1,7 @@
 //! The Investigate basic action, its candidates, the investigate perform
 //! shared with the designated Investigate, and its after-test clue discovery.
 
-use card_dsl::dsl::{self, IntExpr, LocationTarget, SkillTestKind, Stat};
+use card_dsl::dsl::{self, Effect, IntExpr, LocationTarget, SkillTestKind, Stat};
 
 use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
 use crate::engine::dispatch::skill_test;
@@ -128,6 +128,19 @@ pub(in crate::engine::dispatch) fn handle(
 /// never be reduced below 0). It travels into the test unevaluated so the row
 /// it becomes is recalculated at every read (ADR 0005).
 ///
+/// `instead_of_discovery` is the other modification a designator can carry:
+/// what a success does **in place of** the discovery (Burglary 01045's *"If
+/// you succeed, instead of discovering clues, gain 3 resources."*). With one,
+/// the test carries no follow-up at all — the discovery *is* the Investigate
+/// follow-up, so there is nothing left of it to run — and the replacement
+/// rides the test's `on_success`, resolving at ST.7 with the source's context
+/// as Blinding Light 01066's evasion clause does. The test stays an
+/// [`SkillTestKind::Investigate`] test, so ST.6's "after you successfully
+/// investigate" timing point (Dr. Milan Christopher 01033) fires as for any
+/// investigation. Deduction 01039's `bonus_clues_discovered` only ever raises
+/// the discovery's count, so with the discovery gone it raises nothing, which
+/// is its ruling: *"does not stack with Burglary"*.
+///
 /// The location is re-read here through [`candidates`] — the §D precondition
 /// re-check after the basic action's attacks of opportunity. If the
 /// investigator is locationless or their location is gone or no longer
@@ -142,6 +155,7 @@ pub(crate) fn perform(
     cx: &mut Cx,
     investigator: InvestigatorId,
     shroud_modifier: Option<IntExpr>,
+    instead_of_discovery: Option<Effect>,
     source: Option<AbilitySource>,
 ) -> EngineOutcome {
     assert!(
@@ -152,14 +166,19 @@ pub(crate) fn perform(
     let Some(location_id) = candidates(cx.state, investigator) else {
         return EngineOutcome::Done;
     };
+    let follow_up = if instead_of_discovery.is_some() {
+        SkillTestFollowUp::None
+    } else {
+        SkillTestFollowUp::Investigate
+    };
     skill_test::start_skill_test(
         cx,
         investigator,
         SkillKind::Intellect,
         SkillTestKind::Investigate,
         DifficultyBasis::Shroud(location_id),
-        SkillTestFollowUp::Investigate,
-        None,
+        follow_up,
+        instead_of_discovery,
         None,
         source,
         // "Your location gets -2 shroud for this investigation" — a row over
@@ -194,7 +213,8 @@ pub(crate) fn perform(
 /// `TestedLocation` — the test's start-of-test location snapshot — is the
 /// **default** target, not an invariant: several cards replace or redirect
 /// this discovery. Burglary 01045 (Core): "If you succeed, instead of
-/// discovering clues, gain 3 resources." Seeking Answers 02023 (Dunwich)
+/// discovering clues, gain 3 resources." (that one never reaches this step;
+/// see [`perform`]'s `instead_of_discovery`). Seeking Answers 02023 (Dunwich)
 /// discovers at a *connecting* location instead. It differs from
 /// `YourLocation` only if the investigator moves mid-test — no in-corpus path
 /// does today, but the snapshot is what "at that location" means for every

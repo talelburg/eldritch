@@ -74,7 +74,10 @@ mod tests {
             abilities[1].effect,
             Effect::DealDamageToEnemy {
                 target: EnemyTarget::Chosen(Choose {
-                    scope: EntityScope::At(LocationSet::Here),
+                    scope: EntityScope {
+                        at: LocationSet::Here,
+                        exhausted: None,
+                    },
                 }),
                 amount: 1,
             }

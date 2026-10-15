@@ -53,7 +53,7 @@
 //!   on the stack as the prompt; resume sets `chosen_option` and re-steps it (no
 //!   replay — #422). A `Chosen` target
 //!   honors its scope: `Anywhere` offers all investigators / locations,
-//!   `EntityScope::At(Here)` / `LocationSet::Here` filters to the chooser's
+//!   `EntityScope::at(Here)` / `LocationSet::Here` filters to the chooser's
 //!   location (#349). The enemy variety and `YourOrConnecting` are deferred to
 //!   their consuming PRs (#301 / #306).
 //!
@@ -553,7 +553,10 @@ fn perform_designated(
             *skill_override,
             reveal_clause.as_ref(),
         ),
-        ActionDesignator::Investigate { shroud_modifier } => {
+        ActionDesignator::Investigate {
+            shroud_modifier,
+            instead_of_discovery,
+        } => {
             // Reject rather than reach `perform`'s lapse suppression: a board
             // that changed underneath the activation is a rejection here.
             if actions::investigate::candidates(cx.state, eval_ctx.controller).is_none() {
@@ -565,6 +568,7 @@ fn perform_designated(
                 cx,
                 eval_ctx.controller,
                 Some(shroud_modifier.clone()),
+                instead_of_discovery.as_deref().cloned(),
                 eval_ctx.ability_source,
             )
         }
@@ -1949,7 +1953,7 @@ fn apply_place_doom_on_current_agenda(
 ///
 /// **Candidate scope:** the [`Choose`](card_dsl::dsl::Choose) scope is forwarded
 /// to a per-variety enumerator. `Anywhere` offers all investigators / locations;
-/// `EntityScope::At(Here)` filters to investigators co-located with the
+/// `EntityScope::at(Here)` filters to investigators co-located with the
 /// controller and `LocationSet::Here` to the controller's own location (empty —
 /// hence a reject — when the controller is between locations). The enemy variety
 /// and `LocationSet::YourOrConnecting` land with their consuming PRs (#301 /
@@ -2174,13 +2178,19 @@ fn ground_designated_enemy(
 
 /// Investigators matching an [`EntityScope`](card_dsl::dsl::EntityScope), in
 /// `BTreeMap` (id) order so the `OptionId` index replays deterministically.
+/// Reads only the location set: investigators have no exhausted state, so the
+/// scope's `exhausted` filter is meaningless here and must be `None`.
 fn investigator_candidates(
     state: &GameState,
     controller: InvestigatorId,
     scope: EntityScope,
 ) -> Vec<InvestigatorId> {
-    let EntityScope::At(set) = scope;
-    match set {
+    let EntityScope { at, exhausted } = scope;
+    debug_assert!(
+        exhausted.is_none(),
+        "investigators have no exhausted state; an investigator scope leaves `exhausted` None"
+    );
+    match at {
         LocationSet::Anywhere => state.investigators.keys().copied().collect(),
         LocationSet::Here => match state
             .investigators

@@ -240,13 +240,30 @@ pub enum ActionDesignator {
     /// contribution among however many the location carries (Obscuring Fog
     /// 01168's +2 is another), so the composed shroud clamps at 0 once, after
     /// all of them. The investigation reuses the base Investigate skill-test
-    /// follow-up, so on success it discovers a clue like the action does.
+    /// follow-up, so on success it discovers a clue like the action does,
+    /// unless the card prints something that replaces the discovery
+    /// ([`instead_of_discovery`](Self::Investigate::instead_of_discovery)).
     Investigate {
         /// Shroud-difficulty modifier for this investigation
         /// (Flashlight: `-2`). Evaluated at every read while the
         /// investigation runs, like [`Fight`](Self::Fight)'s combat
         /// modifier.
         shroud_modifier: IntExpr,
+        /// What a success does **in place of** discovering clues, or `None`
+        /// for the investigation's own discovery. Burglary 01045: *"If you
+        /// succeed, instead of discovering clues, gain 3 resources."*
+        ///
+        /// A self-replacement the card prints on its own investigation, not a
+        /// general replacement effect (#366): the test is still a successful
+        /// investigation in every other respect, so "after you successfully
+        /// investigate" (Dr. Milan Christopher 01033) still fires at ST.6. Only
+        /// the ST.7 discovery is gone, and with it anything that raises its
+        /// count, which is why Deduction 01039 does not stack with Burglary
+        /// (its ruling). The effect resolves at Skill Test Timing step 7 with
+        /// the test's performer as controller, as
+        /// [`Evade`](Self::Evade)'s `on_success` does. Boxed for the same
+        /// reason.
+        instead_of_discovery: Option<Box<Effect>>,
     },
     /// **Parley** — `glossary/Parley.md` in full: *"Some abilities are
     /// identified with a **Parley** action designator. Such abilities are
@@ -340,6 +357,27 @@ impl ActionDesignator {
                 *reveal_clause = Some(clause);
             }
             other => panic!("{other:?} carries no reveal clause"),
+        }
+        self
+    }
+
+    /// This designator's investigation, resolving `effect` on success **instead
+    /// of** discovering clues (Burglary 01045's *"If you succeed, instead of
+    /// discovering clues, gain 3 resources."*). See
+    /// [`Investigate::instead_of_discovery`](Self::Investigate::instead_of_discovery).
+    ///
+    /// # Panics
+    ///
+    /// On a designator other than [`Investigate`](Self::Investigate), as
+    /// [`testing`](Self::testing) does.
+    #[must_use]
+    pub fn instead_of_discovery(mut self, effect: Effect) -> Self {
+        match &mut self {
+            Self::Investigate {
+                instead_of_discovery,
+                ..
+            } => *instead_of_discovery = Some(Box::new(effect)),
+            other => panic!("{other:?} carries no discovery to replace"),
         }
         self
     }
@@ -1515,8 +1553,14 @@ impl Ability {
                     clause.effect.collect_native_refs(refs);
                 }
             }
-            Some(ActionDesignator::Investigate { shroud_modifier }) => {
+            Some(ActionDesignator::Investigate {
+                shroud_modifier,
+                instead_of_discovery,
+            }) => {
                 shroud_modifier.collect_native_refs(refs);
+                if let Some(effect) = instead_of_discovery {
+                    effect.collect_native_refs(refs);
+                }
             }
         }
         match &self.trigger {
@@ -2526,14 +2570,32 @@ pub enum LocationSet {
     // `YourOrConnecting` is added by PR-8 (#306) with the adjacency model.
 }
 
-/// An entity-choice filter. Locational today; non-spatial arms (`Engaged`,
-/// `WithTrait`, …) accrete here when a card needs them — additively, touching
-/// neither [`LocationSet`] nor location-picks. (The `UsagePeriod`
-/// minimal-enum-with-a-growth-path idiom.)
+/// An entity-choice filter: a conjunction of constraints a candidate must meet.
+/// A card that narrows the choice further (Stray Cat's trait exclusion, #780)
+/// adds a field here rather than an arm, so the constraints compose — *"an
+/// exhausted enemy at your location"* is one scope with two fields set. A new
+/// field is optional, so [`EntityScope::at`] keeps reading as "no further
+/// constraint", touching neither [`LocationSet`] nor location-picks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum EntityScope {
-    /// An entity whose location is in the given [`LocationSet`].
-    At(LocationSet),
+pub struct EntityScope {
+    /// The entity's location must be in this [`LocationSet`].
+    pub at: LocationSet,
+    /// `Some(true)` admits only exhausted entities, `Some(false)` only ready
+    /// ones, `None` either. Enemies only: investigators have no exhausted
+    /// state, so an investigator scope leaves this `None` (Sneak Attack 01052,
+    /// *"an exhausted enemy at your location"*).
+    pub exhausted: Option<bool>,
+}
+
+impl EntityScope {
+    /// An entity at `set`, with no further constraint.
+    #[must_use]
+    pub const fn at(set: LocationSet) -> Self {
+        EntityScope {
+            at: set,
+            exhausted: None,
+        }
+    }
 }
 
 /// Single-investigator target spec.
@@ -2558,7 +2620,7 @@ impl InvestigatorTarget {
     #[must_use]
     pub fn chosen_anywhere() -> Self {
         InvestigatorTarget::Chosen(Choose {
-            scope: EntityScope::At(LocationSet::Anywhere),
+            scope: EntityScope::at(LocationSet::Anywhere),
         })
     }
 
@@ -2566,7 +2628,7 @@ impl InvestigatorTarget {
     #[must_use]
     pub fn chosen_at_your_location() -> Self {
         InvestigatorTarget::Chosen(Choose {
-            scope: EntityScope::At(LocationSet::Here),
+            scope: EntityScope::at(LocationSet::Here),
         })
     }
 }
@@ -2642,7 +2704,7 @@ impl EnemyTarget {
     #[must_use]
     pub fn chosen_at_your_location() -> Self {
         EnemyTarget::Chosen(Choose {
-            scope: EntityScope::At(LocationSet::Here),
+            scope: EntityScope::at(LocationSet::Here),
         })
     }
 }
@@ -3411,11 +3473,14 @@ pub fn evade() -> ActionDesignator {
 
 /// Build an [`ActionDesignator::Investigate`] applying `shroud_modifier` to the
 /// controller's location difficulty for this investigation (Flashlight 01087:
-/// `investigate(-2i8)`).
+/// `investigate(-2i8)`). A success discovers clues as the action does; chain
+/// [`ActionDesignator::instead_of_discovery`] for a card that replaces that
+/// (Burglary 01045).
 #[must_use]
 pub fn investigate(shroud_modifier: impl Into<IntExpr>) -> ActionDesignator {
     ActionDesignator::Investigate {
         shroud_modifier: shroud_modifier.into(),
+        instead_of_discovery: None,
     }
 }
 

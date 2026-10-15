@@ -374,7 +374,7 @@ pub(in crate::engine::dispatch) fn perform(
         ActionResume::Move { destination } => r#move::perform(cx, investigator, destination),
         // A basic investigation carries no modification. A designated one
         // (Flashlight 01087) reaches the same perform with its shroud modifier.
-        ActionResume::Investigate => investigate::perform(cx, investigator, None, None),
+        ActionResume::Investigate => investigate::perform(cx, investigator, None, None, None),
         ActionResume::Resource => resource::perform(cx, investigator),
         ActionResume::Engage { enemy } => engage::perform(cx, investigator, enemy),
         ActionResume::Draw => draw::perform(cx, investigator),
