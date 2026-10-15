@@ -25,8 +25,11 @@
 //!    you left them. Once the card has resolved, the engagement rule applies to
 //!    them (`glossary/Enemy_Engagement.md`: *"Any time a ready unengaged enemy
 //!    is at the same location as an investigator, it engages that
-//!    investigator."*): with no destination they engage you again; after a
-//!    move, any investigator still at the location you left.
+//!    investigator, …"*): with no destination they engage you again; after a
+//!    move, any investigator still at the location you left. The rule is a
+//!    standing one, and the engine applies it at named points rather than as a
+//!    check after every change, so this step applies it by hand; #1087 makes it
+//!    a settle check.
 //!
 //! Ruling: *"You can play Elusive to move to another location even if you're
 //! not engaged with any enemies."* So the card is offered while it can do
@@ -147,6 +150,9 @@ fn move_to_destination(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     }
 }
 
+/// Step 3: the engagement rule, applied by hand once the card has resolved.
+/// The engine has no standing engagement check to catch the disengaged enemies
+/// up (#1087).
 fn engage_ready_enemies(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
     cx.engage_ready_enemies();
     EngineOutcome::Done

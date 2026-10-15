@@ -179,9 +179,11 @@ fn move_into_enemy_scenario() -> (InvestigatorId, LocationId, EnemyId, GameState
 
 #[test]
 fn entering_a_location_engages_a_ready_enemy_there() {
-    // RR engagement: "Each time an investigator enters a location, each ready
-    // enemy at that location automatically engages that investigator." (Icy
-    // Ghoul 01119 waiting at the Cellar — no Aloof keyword.)
+    // `glossary/Enemy_Engagement.md`: "Any time a ready unengaged enemy is at
+    // the same location as an investigator, it engages that investigator, and
+    // is placed in that investigator's threat area." — for its example "An
+    // investigator moves into the same location as it." (Icy Ghoul 01119
+    // waiting at the Cellar — no Aloof keyword.)
     let (inv_id, l2, enemy_id, state) = move_into_enemy_scenario();
 
     let session = TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::Move {

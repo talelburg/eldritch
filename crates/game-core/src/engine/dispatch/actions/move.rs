@@ -337,9 +337,11 @@ pub(in crate::engine::dispatch) fn resume_move_enter(cx: &mut Cx) -> EngineOutco
     // investigator has to have arrived to have entered, and since #721 the
     // arrival happens at the departure's resolve step, further down the stack.
     reveal::reveal_location(cx, destination);
-    // Framework engagement on entering (RR engagement rules): "Each time an
-    // investigator enters a location, each ready enemy at that location
-    // automatically engages that investigator." Runs after the move is applied
+    // Framework engagement on entering (`glossary/Enemy_Engagement.md`): "Any
+    // time a ready unengaged enemy is at the same location as an investigator,
+    // it engages that investigator, and is placed in that investigator's threat
+    // area.", for its example "An investigator moves into the same location as
+    // it." Runs after the move is applied
     // and before the entered-location forced window, so an "after you enter"
     // forced ability sees the engagement already established (#496).
     engage_ready_enemies_on_enter(cx, investigator, destination);
@@ -359,8 +361,10 @@ pub(in crate::engine::dispatch) fn resume_move_enter(cx: &mut Cx) -> EngineOutco
 
 /// Auto-engage on entering: every ready (`!exhausted`), currently-unengaged
 /// enemy at `location` engages `investigator`, in deterministic `EnemyId` order
-/// (RR engagement rules: "Each time an investigator enters a location, each
-/// ready enemy at that location automatically engages that investigator.").
+/// (`glossary/Enemy_Engagement.md`: *"Any time a ready unengaged enemy is at
+/// the same location as an investigator, it engages that investigator, and is
+/// placed in that investigator's threat area."*, for its example *"An
+/// investigator moves into the same location as it."*).
 ///
 /// An enemy already engaged with another investigator keeps its current
 /// engagement (an enemy engages only one investigator); an enemy that moved here

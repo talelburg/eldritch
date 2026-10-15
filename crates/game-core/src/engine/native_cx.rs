@@ -241,7 +241,7 @@ impl<'a> NativeCx<'a> {
     /// Apply the engagement rule: each ready, unengaged enemy at a location
     /// with an investigator engages one there (`glossary/Enemy_Engagement.md`:
     /// *"Any time a ready unengaged enemy is at the same location as an
-    /// investigator, it engages that investigator."*). For an effect that leaves
+    /// investigator, it engages that investigator, …"*). For an effect that leaves
     /// enemies ready and unengaged beside an investigator, once it has resolved.
     pub fn engage_ready_enemies(&mut self) {
         hunters::engage_ready_enemies(self.write_access());
