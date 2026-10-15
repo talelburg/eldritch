@@ -106,6 +106,7 @@ pub mod daisys_tote_bag;
 pub mod dark_memory;
 pub mod deduction;
 pub mod derringer_41;
+pub mod dig_deep;
 pub mod dissonant_voices;
 pub mod dodge;
 pub mod dr_milan_christopher;
@@ -128,6 +129,7 @@ pub mod holy_rosary;
 pub mod hospital_debts;
 pub mod hyperawareness;
 pub mod knife;
+pub mod leather_coat;
 pub mod leo_de_luca;
 pub mod lita_chantler;
 pub mod look_what_i_found;
@@ -145,6 +147,7 @@ pub mod parlor;
 pub mod perception;
 pub mod physical_training;
 pub mod pickpocketing;
+pub mod rabbits_foot;
 pub mod research_librarian;
 pub mod rise_of_the_ghouls;
 pub mod roland_38_special;
@@ -156,6 +159,7 @@ pub mod shrivelling;
 pub mod silver_twilight_acolyte;
 pub mod skids_otoole;
 pub mod sneak_attack;
+pub mod survival_instinct;
 pub mod switchblade;
 pub mod the_barrier;
 pub mod the_necronomicon;
@@ -262,6 +266,7 @@ pub const ALL: &[CardRecord] = &[
     dark_memory::CARD,
     deduction::CARD,
     derringer_41::CARD,
+    dig_deep::CARD,
     dissonant_voices::CARD,
     dodge::CARD,
     dr_milan_christopher::CARD,
@@ -284,6 +289,7 @@ pub const ALL: &[CardRecord] = &[
     holy_rosary::CARD,
     hyperawareness::CARD,
     knife::CARD,
+    leather_coat::CARD,
     leo_de_luca::CARD,
     lita_chantler::CARD,
     look_what_i_found::CARD,
@@ -301,6 +307,7 @@ pub const ALL: &[CardRecord] = &[
     perception::CARD,
     physical_training::CARD,
     pickpocketing::CARD,
+    rabbits_foot::CARD,
     research_librarian::CARD,
     rise_of_the_ghouls::CARD,
     roland_38_special::CARD,
@@ -312,6 +319,7 @@ pub const ALL: &[CardRecord] = &[
     silver_twilight_acolyte::CARD,
     skids_otoole::CARD,
     sneak_attack::CARD,
+    survival_instinct::CARD,
     switchblade::CARD,
     the_barrier::CARD,
     the_necronomicon::CARD,
