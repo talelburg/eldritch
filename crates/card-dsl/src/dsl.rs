@@ -2730,8 +2730,11 @@ pub enum Restriction {
     /// reads it and refuses every exit while it holds, since
     /// `glossary/Cannot.md` makes no exception: *"The word "cannot" is
     /// absolute, and cannot be countermanded by other abilities."* A slot
-    /// make-room never offers the card. Elimination is the one override: its
-    /// step 0 removes the eliminated investigator's weaknesses from the game.
+    /// make-room never offers the card. Elimination is the one override. The
+    /// rule is its step 0, which ends the game for the eliminated investigator
+    /// and removes their weaknesses from the game. The code bypasses the check
+    /// in steps 1 and 4, whose drains remove what the investigator controls and
+    /// discard what is left in their threat area.
     CannotLeavePlay {
         /// While this holds, the card stays in play.
         while_: Condition,

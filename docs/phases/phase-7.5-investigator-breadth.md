@@ -2,10 +2,8 @@
 
 ## Status
 
-🟡 **in progress** (opened 2026-08-23). #776, #777 (Agnes Baker) and #778
-("Skids" O'Toole) are closed. #779 (Daisy Walker) is built: The Necronomicon's
-`[action]` (#1095) was its last ticket, and it closes when its integration
-branch merges (2026-10-15). #780 is next.
+🟡 **in progress** (opened 2026-08-23). #776, #777 (Agnes Baker), #778
+("Skids" O'Toole) and #779 (Daisy Walker) are closed. #780 is next.
 
 This milestone was **Slice 2** in `phase-7-the-gathering.md`'s Future slices, an
 unfiled intent. It became a milestone on 2026-08-23 (`/grill-with-docs`) when
@@ -53,11 +51,12 @@ ship untested by anything but a unit test.
 | Issue | Work |
 |---|---|
 | #366 | Replacement effects beyond cancel — Wendy's blocker, re-milestoned here |
-| #779 | Slice 3 — Daisy Walker 01002 + Tote Bag / Necronomicon + the Tome-restricted extra action, plus the trait-counting `Quantity` (decided in #1000) |
 | #780 | Slice 4 — Wendy Adams 01005 + Amulet / Abandoned and Alone + Survivor level 0 |
 | #781 | The seven basic weaknesses + the random-basic-weakness draw |
 | #782 | Five legal starter decks + a real investigator picker |
 | #1059 | A designated Move — the `TODO(#1059)`s #777 left at every Move site |
+| #1099 | Mind over Matter 01036: `SkillTestStarted` announces Combat after the player chose Intellect (found during #779) |
+| #1100 | Losing actions: the investigator chooses which additional actions are lost (FAQ 1.10) — the `TODO(#1100)` #779 left in `lose_actions` |
 
 ### Closed
 
@@ -66,13 +65,14 @@ ship untested by anything but a unit test.
 | #776 | Elder signs and scenario symbols share one token outcome — the prefactor: #1040 (one `TokenOutcome`), #1041 (elder-sign effects), #1042 (the horror-count quantity, now `HorrorOnSource`), #1043 (`revealed` / `total`) |
 | #777 | Slice 1 — Agnes Baker 01004 + Heirloom / Dark Memory + Mystic level 0: #1045–#1056, closed by #1058 (Agnes plays The Gathering to a resolution with the picker's scaffold deck) |
 | #778 | Slice 2 — "Skids" O'Toole 01003 + On the Lam / Hospital Debts + Rogue level 0: #1064–#1078, closed by #1079 ("Skids" plays The Gathering to a resolution with the picker's scaffold deck); closes #576 (`is_fast` after prefix lines) through #1065 |
+| #779 | Slice 3 — Daisy Walker 01002 + Tote Bag / Necronomicon + the Tome-restricted extra action, plus the trait-counting `Quantity` (decided in #1000): #1089–#1095, #1097, #1098, landed as PR #1096 |
 
 #783 (the deckbuilding validator) was filed alongside #782 but milestoned to
 **phase 9**, where its real consumer is.
 
 ## Ordering
 
-**#1025 ✅ PR #1030 → #776 ✅ PR #1044 → #777 ✅ PR #1057 → #778 ✅ PR #1080 → (#366) → #779 → #780 → #781 → #782.**
+**#1025 ✅ PR #1030 → #776 ✅ PR #1044 → #777 ✅ PR #1057 → #778 ✅ PR #1080 → (#366) → #779 ✅ PR #1096 → #780 → #781 → #782.**
 
 **Vertical slices, one investigator at a time** — investigator card, signature
 pair, and that investigator's class pool, each slice ending in someone playable.

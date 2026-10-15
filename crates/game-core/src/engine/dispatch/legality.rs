@@ -209,9 +209,11 @@ pub(crate) fn check_play_card(
     initiation::check_play(state, cards, investigator, &code)?;
     // RR p.19 slots (#498): reject only when the card needs more of a slot type
     // than the investigator has capacity for — unsatisfiable even after discarding
-    // every occupying asset. A merely-full slot is NOT rejected here; the play
-    // proceeds and discards occupiers to make room at enter-play time. Unreachable
-    // in the current corpus (max need is Hand×2 = cap 2); no silent no-op.
+    // every occupying asset that may leave play. A merely-full slot is NOT
+    // rejected here; the play proceeds and discards occupiers to make room at
+    // enter-play time. An occupier that cannot leave play stays fixed, so a
+    // two-handed asset beside a Necronomicon 01009 that still has horror is
+    // refused here (`slots::unsatisfiable_slot`; `tests/cannot_leave_play.rs`).
     check_play_slot_satisfiable(state, cards, investigator, card_type, &code)?;
     // Timing gate — see play_card doc-comment "# Timing gate" section.
     let active_during_investigation =

@@ -33,6 +33,13 @@
 //! [`Quantity::ControlledCards`] of the Tome trait, evaluated at ST.7 as the
 //! draw resolves: her play area and her threat area.
 //!
+//! # Module gap
+//!
+//! TODO(#1100): once her standard actions are gone, the ruling's additional
+//! actions are lost *"of your choice"*, but the engine's `lose_actions` loses
+//! them in its own sort order and never asks. Next to Leo De Luca 01048 the
+//! order decides whether a Tome action or an unrestricted one survives.
+//!
 //! [`Effect::AdditionalActionWhileInPlay`]: card_dsl::dsl::Effect::AdditionalActionWhileInPlay
 //! [`Effect::DrawCards`]: card_dsl::dsl::Effect::DrawCards
 

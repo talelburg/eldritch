@@ -182,12 +182,15 @@ pub(crate) fn for_candidate_source(
 /// each paired with the instance it is on. Read through [`for_source`], so a
 /// constant the board grants one of those cards counts as one printed on it.
 ///
-/// The one constant sweep over an investigator's own cards. Its readers each
-/// match their own [`Effect`] shape: the additional-action sweep
-/// (`Effect::AdditionalActionWhileInPlay`), the skill test's token substitution
-/// (`Effect::TreatRevealedToken`), `evaluator::pending_action_surcharge`
-/// (`Restriction::ExtraActionCost`) and `evaluator::play_is_prohibited`
-/// (`Restriction::CannotPlay`). Empty for an investigator not in state.
+/// The constant sweep over everything an investigator controls. The other
+/// constant read, [`cannot_leave_play`], asks one card rather than an
+/// investigator. This sweep's readers each match their own [`Effect`] shape:
+/// the additional-action sweep (`Effect::AdditionalActionWhileInPlay`), the
+/// skill test's token substitution (`Effect::TreatRevealedToken`),
+/// `slots::slot_grants` (`Effect::AdditionalSlots`),
+/// `evaluator::pending_action_surcharge` (`Restriction::ExtraActionCost`) and
+/// `evaluator::play_is_prohibited` (`Restriction::CannotPlay`). Empty for an
+/// investigator not in state.
 #[must_use]
 pub(crate) fn constants_of(
     state: &GameState,
