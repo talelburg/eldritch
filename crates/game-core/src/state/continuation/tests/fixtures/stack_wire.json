@@ -185,6 +185,7 @@
           "discovery": null,
           "enemy_attack": null,
           "revelation": null,
+          "committed_card": null,
           "choice": null,
           "ability_source": null,
           "each": null
