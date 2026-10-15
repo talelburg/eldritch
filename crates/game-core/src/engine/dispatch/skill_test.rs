@@ -735,20 +735,22 @@ fn fire_on_commit_step(cx: &mut Cx, investigator: InvestigatorId, committed: &[C
 /// RR ST.7 part 1 — apply the action-specific [`SkillTestFollowUp`].
 ///
 /// On **success** the follow-up runs: the Investigate follow-up pushes its
-/// `discover_clue` effect (yielding to the drive loop), while Fight / Evade /
-/// None mutate synchronously. On **failure** the follow-up is skipped entirely
-/// (every variant is success-only). The cursor is pre-advanced to
+/// `discover_clue` effect and the Evade follow-up its `EnemyEvaded` timing
+/// event (each yielding to the drive loop), while Fight / None mutate
+/// synchronously. On **failure** the follow-up is skipped entirely (every
+/// variant is success-only). The cursor is pre-advanced to
 /// [`ApplyResultEffect`](SkillTestStep::ApplyResultEffect) **before** any push,
-/// so a suspending discovery (Cover Up 01007's before-discover interrupt)
-/// resumes at `ApplyResultEffect` rather than re-running the follow-up. (The
+/// so a suspending discovery (Cover Up 01007's before-discover interrupt) or
+/// evasion (Pickpocketing 01046's after-evade reaction window) resumes at
+/// `ApplyResultEffect` rather than re-running the follow-up. (The
 /// "after you successfully investigate" timing point already fired at the
 /// preceding [`DetermineOutcome`](SkillTestStep::DetermineOutcome) step,
 /// before this discovery — RR ST.6 success precedes the ST.7 consequence.)
 ///
-/// When the Investigate follow-up pushes `discover_clue` the `advance` loop's
-/// top-frame check yields on the next iteration (the Effect frame is now
-/// `last()`); Fight/Evade/None push nothing and the loop `continue`s on this
-/// frame straight into `ApplyResultEffect`.
+/// When the Investigate or Evade follow-up pushes its frame the `advance`
+/// loop's top-frame check yields on the next iteration (that frame is now
+/// `last()`); Fight/None push nothing and the loop `continue`s on this frame
+/// straight into `ApplyResultEffect`.
 ///
 /// The Fight follow-up evaluates its `extra_damage` here, and an expression
 /// the evaluator can't answer comes back as the `Err` rejection the driver
@@ -1296,9 +1298,10 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
             SkillTestStep::ApplyFollowUp => {
                 // RR ST.7 part 1. Pre-advances the cursor to ApplyResultEffect,
                 // then applies the action follow-up (success-only). The
-                // Investigate follow-up pushes discover_clue → the loop check at
-                // the top of the next iteration sees the Effect frame on top and
-                // yields; Fight/Evade/None mutate synchronously (a Fight that
+                // Investigate follow-up pushes discover_clue and the Evade one
+                // its EnemyEvaded coordinator → the loop check at the top of the
+                // next iteration sees that frame on top and yields; Fight/None
+                // mutate synchronously (a Fight that
                 // defeats an enemy queues a reaction window — also a non-SkillTest
                 // top frame, also yields).
                 if let Err(rejection) = apply_follow_up_step(cx, investigator) {
