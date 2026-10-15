@@ -101,6 +101,7 @@ pub mod burglary;
 pub mod cellar;
 pub mod cover_up;
 pub mod crypt_chill;
+pub mod cunning_distraction;
 pub mod daisy_walker;
 pub mod daisys_tote_bag;
 pub mod dark_memory;
@@ -160,6 +161,7 @@ pub mod shrivelling;
 pub mod silver_twilight_acolyte;
 pub mod skids_otoole;
 pub mod sneak_attack;
+pub mod stray_cat;
 pub mod survival_instinct;
 pub mod switchblade;
 pub mod the_barrier;
@@ -169,6 +171,7 @@ pub mod trapped;
 pub mod unexpected_courage;
 pub mod vicious_blow;
 pub mod ward_of_protection;
+pub mod wendy_adams;
 pub mod wendys_amulet;
 pub mod what_have_you_done;
 pub mod whats_going_on;
@@ -262,6 +265,7 @@ pub const ALL: &[CardRecord] = &[
     cellar::CARD,
     cover_up::CARD,
     crypt_chill::CARD,
+    cunning_distraction::CARD,
     daisy_walker::CARD,
     daisys_tote_bag::CARD,
     dark_memory::CARD,
@@ -321,6 +325,7 @@ pub const ALL: &[CardRecord] = &[
     silver_twilight_acolyte::CARD,
     skids_otoole::CARD,
     sneak_attack::CARD,
+    stray_cat::CARD,
     survival_instinct::CARD,
     switchblade::CARD,
     the_barrier::CARD,
@@ -330,6 +335,7 @@ pub const ALL: &[CardRecord] = &[
     unexpected_courage::CARD,
     vicious_blow::CARD,
     ward_of_protection::CARD,
+    wendy_adams::CARD,
     wendys_amulet::CARD,
     what_have_you_done::CARD,
     whats_going_on::CARD,

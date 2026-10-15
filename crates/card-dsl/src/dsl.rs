@@ -287,6 +287,21 @@ pub enum ActionDesignator {
     /// **Resign.**"* rides the ability's eligibility. Both hang off the
     /// [`Ability`], not off the designator.
     Resign,
+    /// **Evade**, made automatically: Cunning Distraction 01078's *"**Evade.**
+    /// Automatically evade all enemies at your location."* It **is** an Evade
+    /// for every rule keyed on the kind (no attack of opportunity, Frozen in
+    /// Fear 01164's surcharge), but no skill test is made and no engaged enemy
+    /// is needed. The 01076 ruling (<https://arkhamdb.com/card/01076>): *"if an
+    /// ability automatically evades 1 or more enemies, no skill test is made
+    /// for the evasion attempt whatsoever. Consequentially, because no skill
+    /// test is made, it is not considered a "successful" evasion."*
+    ///
+    /// Performs nothing, as [`Parley`](Self::Parley) does: which enemies are
+    /// evaded is the ability's residual effect ([`Effect::AutoEvade`]), and
+    /// the engine asks that effect whether the ability can change the game
+    /// state, so the card is not playable with no enemy at your location.
+    /// [`Evade`](Self::Evade) stays the test-backed action.
+    AutomaticEvade,
 }
 
 impl ActionDesignator {
@@ -314,7 +329,7 @@ impl ActionDesignator {
     pub fn action_class(&self) -> Option<ActionClass> {
         match self {
             Self::Fight { .. } => Some(ActionClass::Fight),
-            Self::Evade { .. } => Some(ActionClass::Evade),
+            Self::Evade { .. } | Self::AutomaticEvade => Some(ActionClass::Evade),
             Self::Move => Some(ActionClass::Move),
             Self::Investigate { .. } | Self::Parley | Self::Resign => None,
         }
@@ -1709,8 +1724,12 @@ impl Ability {
         }
         match &self.designator {
             None
-            | Some(ActionDesignator::Move | ActionDesignator::Parley | ActionDesignator::Resign) => {
-            }
+            | Some(
+                ActionDesignator::Move
+                | ActionDesignator::Parley
+                | ActionDesignator::Resign
+                | ActionDesignator::AutomaticEvade,
+            ) => {}
             Some(ActionDesignator::Evade {
                 skill_override: _,
                 reveal_clause,
@@ -1852,6 +1871,7 @@ impl Effect {
             | Effect::DiscoverClue { .. }
             | Effect::DealDamageToEnemy { .. }
             | Effect::Disengage { .. }
+            | Effect::AutoEvade { .. }
             | Effect::Heal { .. }
             | Effect::Modify { .. }
             | Effect::AutoResolve { .. }
@@ -1964,6 +1984,21 @@ pub enum Effect {
     /// an enemy not engaged with the controller — unengaged, or engaged with
     /// another investigator.
     Disengage { target: EnemyTarget },
+    /// **Automatically evade** the resolved enemy `target` (`GLOSSARY.md`,
+    /// "Automatic evasion"): no skill test, so not a *successful* evasion,
+    /// but an evasion all the same. `glossary/Evade_Action.md`: *"If an
+    /// ability "automatically" evades 1 or more enemies, no skill test is made
+    /// for the evasion attempt."* and *"Any time an enemy is evaded (whether by
+    /// an evade action, or by card ability), the enemy is exhausted (if it was
+    /// ready) and the engagement is broken."* The enemy need not be engaged
+    /// with the evader (the 01076 ruling, <https://arkhamdb.com/card/01076>),
+    /// and "after you evade" reactions still see it (Pickpocketing 01046's
+    /// ruling, <https://arkhamdb.com/card/01046>).
+    ///
+    /// Stray Cat 01076 (a chosen non-Elite enemy at your location) and
+    /// Cunning Distraction 01078 (each enemy at your location). Typed, not
+    /// `Native`, so Stray Cat's target is checked before its cost is paid.
+    AutoEvade { target: EnemyTarget },
     /// Heal `count` of `kind` (damage or horror) from the resolved target
     /// investigator — the inverse of [`Effect::Deal`] (no defeat
     /// interaction). Heals at most the current amount (saturating at 0).
@@ -2950,16 +2985,17 @@ pub enum LocationSet {
 }
 
 /// An enemy-choice filter: a conjunction of constraints a candidate enemy must
-/// meet. A card that narrows the choice further (Stray Cat's trait exclusion,
-/// #780) adds a field here rather than an arm, so the constraints compose —
-/// *"an exhausted enemy at your location"* is one scope with two fields set. A
-/// new field is optional, so [`EnemyScope::at`] keeps reading as "no further
-/// constraint", touching neither [`LocationSet`] nor location-picks.
+/// meet. A card that narrows the choice further (Stray Cat 01076's trait
+/// exclusion, [`exempt`](Self::exempt)) adds a field here rather than an arm,
+/// so the constraints compose — *"an exhausted enemy at your location"* is one
+/// scope with two fields set. A new field is optional, so [`EnemyScope::at`]
+/// keeps reading as "no further constraint", touching neither [`LocationSet`]
+/// nor location-picks.
 ///
 /// Enemy choices only: an investigator choice is scoped by a bare
 /// [`LocationSet`] (see [`InvestigatorTarget::Chosen`]), since an investigator
 /// has no exhausted state for a filter to read.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct EnemyScope {
     /// The enemy's location must be in this [`LocationSet`].
     pub at: LocationSet,
@@ -2967,6 +3003,13 @@ pub struct EnemyScope {
     /// ones, `None` either (Sneak Attack 01052, *"an exhausted enemy at your
     /// location"*).
     pub exhausted: Option<bool>,
+    /// Enemies whose printed card passes this filter are **not** candidates
+    /// (Stray Cat 01076's *"a non-\[\[Elite\]\] enemy"*); `None` excludes
+    /// none. The same shape as
+    /// [`CannotAttack`](Restriction::CannotAttack)'s `exempt`, matched
+    /// against the enemy's card metadata, so reading it needs the card
+    /// registry.
+    pub exempt: Option<CardFilter>,
 }
 
 impl EnemyScope {
@@ -2976,6 +3019,17 @@ impl EnemyScope {
         EnemyScope {
             at: set,
             exhausted: None,
+            exempt: None,
+        }
+    }
+
+    /// This scope, additionally excluding enemies whose printed card passes
+    /// `exempt`.
+    #[must_use]
+    pub fn except(self, exempt: CardFilter) -> Self {
+        EnemyScope {
+            exempt: Some(exempt),
+            ..self
         }
     }
 }
@@ -3042,6 +3096,10 @@ pub enum EnemySet {
     /// Each enemy engaged with the controller — Elusive 01050's *"each enemy
     /// engaged with you"*.
     EngagedWithYou,
+    /// Each enemy at the controller's location, engaged with anyone or no one
+    /// — Cunning Distraction 01078's *"all enemies at your location"*. Empty
+    /// when the controller is between locations.
+    AtYourLocation,
 }
 
 /// What an [`Effect::ForEach`] fans out over: one arm per kind of entity, so
@@ -3121,7 +3179,7 @@ impl LocationTarget {
 
 /// Single-enemy target spec. Another non-chosen form (`Engaged`, a specific
 /// spawned enemy) lands with its first consumer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum EnemyTarget {
     /// The chooser picks one enemy from the [`Choose`]'s scope. Bound by
     /// `ground_chosen_targets` before the handler runs.
@@ -3710,6 +3768,12 @@ pub fn deal_damage_to_enemy(target: EnemyTarget, amount: u8) -> Effect {
 #[must_use]
 pub fn disengage(target: EnemyTarget) -> Effect {
     Effect::Disengage { target }
+}
+
+/// Build an [`Effect::AutoEvade`].
+#[must_use]
+pub fn auto_evade(target: EnemyTarget) -> Effect {
+    Effect::AutoEvade { target }
 }
 
 /// Build an [`Effect::BoostAttackDamage`] adding `amount` to the
