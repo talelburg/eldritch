@@ -31,10 +31,10 @@
 //! Ruling: *"You can play Elusive to move to another location even if you're
 //! not engaged with any enemies."* So the card is offered while it can do
 //! either half — engaged with an enemy, or with a destination to move to — and
-//! not when it can do neither ([`CAN_RESOLVE`]), since an effect with no
+//! not when it can do neither (its eligibility condition), since an effect with no
 //! potential to change the game state cannot be initiated.
 //!
-//! The destination rule is a parameter of [`destinations`]: the printed card
+//! The destination rule is a parameter of the candidate fn: the printed card
 //! reaches any revealed location, and the taboo list's version (#1063) only
 //! connecting ones.
 //!

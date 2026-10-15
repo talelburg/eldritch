@@ -400,7 +400,7 @@ impl EvalContext {
     pub fn each_investigator(&self) -> Option<InvestigatorId> {
         match self.each? {
             EachBinding::Investigator(id) => Some(id),
-            _ => None,
+            EachBinding::Enemy(_) => None,
         }
     }
 
