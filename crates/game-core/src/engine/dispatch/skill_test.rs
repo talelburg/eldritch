@@ -1131,7 +1131,7 @@ fn outcome_of(resolved: ResolvedTest) -> TestOutcome {
 ///   [`DetermineOutcome`](SkillTestStep::DetermineOutcome), which announces the
 ///   fresh verdict in a sequence of its own. The revealed token and its recorded
 ///   row stay, so ST.3 and ST.4 do not run again (the 01080 ruling's *"If you
-///   reveal an \[auto_fail\] auto-fail token, your total skill value is
+///   reveal an `[auto_fail]` auto-fail token, your total skill value is
 ///   considered to be 0, overriding any modifiers"* holds on the re-total for the
 ///   same reason, <https://arkhamdb.com/card/01080>).
 ///

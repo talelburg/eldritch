@@ -64,7 +64,10 @@ fn lucky_s_window_shows_the_provisional_verdict_and_keeps_it_current() {
         .commit(&[]);
     assert_eq!(window.offered_at(&lucky()), 2, "{:?}", window.prompt());
     let shown = client(&window);
-    assert!(skill_test_result::summarize(&shown).is_none(), "nothing logged yet");
+    assert!(
+        skill_test_result::summarize(&shown).is_none(),
+        "nothing logged yet"
+    );
     assert_eq!(
         skill_test_result::provisional_verdict(&shown).as_deref(),
         Some("Failing by 3")

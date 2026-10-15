@@ -22,7 +22,7 @@
 //!
 //! *"+2 to your skill value for that test"* is a [`Stat::TestedSkill`] row for
 //! this test, folded with the other modifiers before the clamp at zero. The
-//! other ruling — *"If you reveal an \[auto_fail\] auto-fail token, your total
+//! other ruling — *"If you reveal an `[auto_fail]` auto-fail token, your total
 //! skill value is considered to be 0, overriding any modifiers."* — holds
 //! because the determination substitutes the total after the fold: Lucky! is
 //! still playable after an automatic failure, and changes nothing.
@@ -36,8 +36,7 @@
 //! The Fast/cost metadata comes from the generated corpus.
 
 use card_dsl::dsl::{
-    self, Ability, EventPattern, EventTiming, ModifierScope, Stat, TestOutcome,
-    TestedLocationScope,
+    self, Ability, EventPattern, EventTiming, ModifierScope, Stat, TestOutcome, TestedLocationScope,
 };
 
 use crate::impls::CardRecord;

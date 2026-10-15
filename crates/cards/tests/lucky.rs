@@ -92,9 +92,18 @@ fn turning_a_failure_into_a_success_means_no_after_failure_card_sees_it() {
         &[LUCKY, LOOK_WHAT_I_FOUND],
         ChaosToken::Numeric(0),
     ));
-    assert_eq!(window.offered_at(&in_hand(LUCKY)), 1, "{:?}", window.prompt());
+    assert_eq!(
+        window.offered_at(&in_hand(LUCKY)),
+        1,
+        "{:?}",
+        window.prompt()
+    );
     let foot = window.state().card(INV, RABBITS_FOOT);
-    assert_eq!(window.offered_at(&foot), 0, "Rabbit's Foot is an after-cell card");
+    assert_eq!(
+        window.offered_at(&foot),
+        0,
+        "Rabbit's Foot is an after-cell card"
+    );
 
     let done = window.pick(in_hand(LUCKY));
     done.assert_at_turn_menu(INV);
@@ -103,30 +112,51 @@ fn turning_a_failure_into_a_success_means_no_after_failure_card_sees_it() {
         done.events(),
         Event::SkillTestSucceeded { investigator, margin: 1, .. } if *investigator == INV
     );
-    assert_eq!(done.state().investigators[&INV].clues, 1, "the investigation succeeded");
+    assert_eq!(
+        done.state().investigators[&INV].clues,
+        1,
+        "the investigation succeeded"
+    );
     assert_eq!(copies_in_hand(&done, LOOK_WHAT_I_FOUND), 1, "never offered");
     assert!(
         done.state().investigators[&INV].hand.len() == 1,
         "Rabbit's Foot drew nothing: {:?}",
         done.state().investigators[&INV].hand
     );
-    assert_eq!(done.state().investigators[&INV].resources, 4, "Lucky! cost 1");
+    assert_eq!(
+        done.state().investigators[&INV].resources,
+        4,
+        "Lucky! cost 1"
+    );
 }
 
 #[test]
 fn after_an_automatic_failure_it_changes_nothing() {
     let window = investigate(board(3, &[LUCKY], ChaosToken::AutoFail));
-    assert_eq!(window.offered_at(&in_hand(LUCKY)), 1, "{:?}", window.prompt());
+    assert_eq!(
+        window.offered_at(&in_hand(LUCKY)),
+        1,
+        "{:?}",
+        window.prompt()
+    );
 
     let after = window.pick(in_hand(LUCKY));
     assert_no_event!(after.events(), Event::SkillTestSucceeded { .. });
     assert_event!(
         after.events(),
-        Event::SkillTestFailed { reason: FailureReason::AutoFail, by: 4, .. }
+        Event::SkillTestFailed {
+            reason: FailureReason::AutoFail,
+            by: 4,
+            ..
+        }
     );
     assert_eq!(copies_in_hand(&after, LUCKY), 0, "Lucky! was played");
     let foot = after.state().card(INV, RABBITS_FOOT);
-    assert_eq!(after.offered_at(&foot), 1, "the failure stands for the after cell");
+    assert_eq!(
+        after.offered_at(&foot),
+        1,
+        "the failure stands for the after cell"
+    );
 }
 
 #[test]
@@ -141,7 +171,11 @@ fn its_bonus_is_folded_before_the_clamp_at_zero() {
     assert_no_event!(after.events(), Event::SkillTestSucceeded { .. });
     assert_event!(
         after.events(),
-        Event::SkillTestFailed { reason: FailureReason::Total, by: 2, .. }
+        Event::SkillTestFailed {
+            reason: FailureReason::Total,
+            by: 2,
+            ..
+        }
     );
 }
 
@@ -152,10 +186,20 @@ fn two_can_be_played_while_the_test_still_fails() {
     let window = board(3, &[LUCKY, LUCKY], ChaosToken::Numeric(0))
         .test_skill(INV, SkillKind::Intellect, 6)
         .commit(&[]);
-    assert_eq!(window.offered_at(&in_hand(LUCKY)), 2, "{:?}", window.prompt());
+    assert_eq!(
+        window.offered_at(&in_hand(LUCKY)),
+        2,
+        "{:?}",
+        window.prompt()
+    );
 
     let window = window.pick_nth_at(in_hand(LUCKY), 0);
-    assert_eq!(window.offered_at(&in_hand(LUCKY)), 1, "{:?}", window.prompt());
+    assert_eq!(
+        window.offered_at(&in_hand(LUCKY)),
+        1,
+        "{:?}",
+        window.prompt()
+    );
 
     let done = window.pick(in_hand(LUCKY));
     done.assert_at_turn_menu(INV);
@@ -171,7 +215,12 @@ fn a_second_is_withdrawn_once_the_first_has_made_the_test_succeed() {
     let window = board(3, &[LUCKY, LUCKY], ChaosToken::Numeric(0))
         .test_skill(INV, SkillKind::Intellect, 4)
         .commit(&[]);
-    assert_eq!(window.offered_at(&in_hand(LUCKY)), 2, "{:?}", window.prompt());
+    assert_eq!(
+        window.offered_at(&in_hand(LUCKY)),
+        2,
+        "{:?}",
+        window.prompt()
+    );
 
     let done = window.pick_nth_at(in_hand(LUCKY), 0);
     done.assert_at_turn_menu(INV);
@@ -181,7 +230,11 @@ fn a_second_is_withdrawn_once_the_first_has_made_the_test_succeed() {
         Event::ReactionOptionLapsed { code, .. } if *code == CardCode::new(LUCKY)
     );
     assert_eq!(copies_in_hand(&done, LUCKY), 1, "the second stays in hand");
-    assert_eq!(done.state().investigators[&INV].resources, 4, "one paid for");
+    assert_eq!(
+        done.state().investigators[&INV].resources,
+        4,
+        "one paid for"
+    );
 }
 
 #[test]
