@@ -96,6 +96,7 @@ pub mod backstab;
 pub mod barricade;
 pub mod beat_cop;
 pub mod blinding_light;
+pub mod burglary;
 pub mod cellar;
 pub mod cover_up;
 pub mod crypt_chill;
@@ -234,6 +235,7 @@ pub const ALL: &[CardRecord] = &[
     barricade::CARD,
     beat_cop::CARD,
     blinding_light::CARD,
+    burglary::CARD,
     cellar::CARD,
     cover_up::CARD,
     crypt_chill::CARD,
