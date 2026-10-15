@@ -50,8 +50,8 @@ pub(super) fn count_slots(slots: &[Slot]) -> SlotCounts {
     counts
 }
 
-/// One [`Effect::AdditionalSlots`] grant in effect: its own pool of `count`
-/// slots of type `slot`, holding only what `only` admits.
+/// One [`Effect::AdditionalSlots`] grant in effect: `count` more slots of type
+/// `slot`, holding only what `only` admits ([`SlotPools`]).
 #[derive(Debug, Clone)]
 struct SlotGrant {
     /// The card the grant is printed on, so a make-room discard of that card
@@ -60,15 +60,6 @@ struct SlotGrant {
     slot: Slot,
     count: u8,
     only: Option<CardFilter>,
-}
-
-/// One asset's claim on slots: the units it takes of each type and, for each
-/// grant (index-aligned with the grants it was built against), whether that
-/// grant's pool may hold it.
-#[derive(Debug, Clone)]
-struct SlotClaim {
-    units: SlotCounts,
-    admitted: Vec<bool>,
 }
 
 /// The [`Effect::AdditionalSlots`] grants on the cards `investigator`
@@ -107,69 +98,94 @@ fn slot_grants(
         .collect()
 }
 
-/// `code`'s claim on slots against `grants`. Empty units when the code is
-/// unknown, or it is a non-asset / slot-less asset.
-fn claim_of(reg: &CardRegistry, grants: &[SlotGrant], code: &CardCode) -> SlotClaim {
-    SlotClaim {
-        units: card_slot_need(reg, code),
-        admitted: grants
-            .iter()
-            .map(|grant| {
-                grant
-                    .only
-                    .as_ref()
-                    .is_none_or(|filter| card_registry::card_matches(reg, code, filter))
-            })
-            .collect(),
+/// The slots of one type an investigator has (`glossary/Slots.md`): a general
+/// pool any asset may take, and one restricted pool per restricted grant.
+struct SlotPools<'g> {
+    /// Default capacity plus every unrestricted grant: holds any asset.
+    general: u8,
+    /// One per restricted grant: holds only what its filter admits.
+    restricted: Vec<RestrictedPool<'g>>,
+}
+
+/// A restricted grant's pool: `room` slots left, holding only what `only`
+/// admits.
+struct RestrictedPool<'g> {
+    room: u8,
+    only: &'g CardFilter,
+}
+
+impl<'g> SlotPools<'g> {
+    /// The pools of type `slot`: [`default_slot_capacity`] plus `grants`.
+    fn of(slot: Slot, grants: &'g [SlotGrant]) -> Self {
+        let mut pools = SlotPools {
+            general: default_slot_capacity(slot),
+            restricted: Vec::new(),
+        };
+        for grant in grants.iter().filter(|grant| grant.slot == slot) {
+            match &grant.only {
+                None => pools.general = pools.general.saturating_add(grant.count),
+                Some(only) => pools.restricted.push(RestrictedPool {
+                    room: grant.count,
+                    only,
+                }),
+            }
+        }
+        pools
+    }
+
+    /// Place `units` of `code`'s claim, restricted pools that admit it first
+    /// (in grant order), then the general pool. Returns the units no pool
+    /// could hold.
+    ///
+    /// With at most one restricted pool per slot type this packing is exact.
+    /// With several, a unit goes to the first pool that admits it, which can
+    /// miss a packing two overlapping filters would allow. No card in scope
+    /// grants a second restricted pool.
+    fn place(&mut self, reg: &CardRegistry, code: &CardCode, units: u8) -> u8 {
+        let mut left = units;
+        for pool in &mut self.restricted {
+            if card_registry::card_matches(reg, code, pool.only) {
+                left = fill(&mut pool.room, left);
+            }
+        }
+        fill(&mut self.general, left)
     }
 }
 
-/// For each slot type: how many slot units `claims` hold beyond what the
+/// Put as many of `units` into `room` as fit; return the rest.
+fn fill(room: &mut u8, units: u8) -> u8 {
+    let held = units.min(*room);
+    *room -= held;
+    units - held
+}
+
+/// For each slot type: how many slot units `assets` hold beyond what the
 /// default slots plus `grants` can pack. Only types with a positive shortfall
 /// are present.
 ///
-/// The packing is greedy: each restricted pool (in grant order) fills with the
-/// units it admits, then the default slots and the unrestricted pools take
-/// the rest. With at most one restricted pool per slot type that is exact. With
-/// several, a unit is placed in the first pool that admits it, which can miss
-/// a packing two overlapping filters would allow. No card in scope grants a
-/// second restricted pool.
-fn shortfall(grants: &[SlotGrant], claims: &[SlotClaim]) -> SlotCounts {
-    let slot_types: BTreeSet<Slot> = claims
+/// Each asset is placed in turn ([`SlotPools::place`]); the units nothing
+/// could hold are the overflow, summed per slot type.
+fn shortfall(reg: &CardRegistry, grants: &[SlotGrant], assets: &[CardCode]) -> SlotCounts {
+    let needs: Vec<(&CardCode, SlotCounts)> = assets
         .iter()
-        .flat_map(|claim| claim.units.keys().copied())
+        .map(|code| (code, card_slot_need(reg, code)))
         .collect();
-    let mut short = SlotCounts::new();
-    for slot in slot_types {
-        let mut remaining: Vec<u8> = claims
-            .iter()
-            .map(|claim| claim.units.get(&slot).copied().unwrap_or(0))
-            .collect();
-        let mut open = default_slot_capacity(slot);
-        for (g, grant) in grants.iter().enumerate() {
-            if grant.slot != slot {
-                continue;
-            }
-            if grant.only.is_none() {
-                open = open.saturating_add(grant.count);
-                continue;
-            }
-            let mut room = grant.count;
-            for (claim, left) in claims.iter().zip(remaining.iter_mut()) {
-                if claim.admitted[g] {
-                    let take = room.min(*left);
-                    room -= take;
-                    *left -= take;
-                }
-            }
-        }
-        let held = remaining.iter().fold(0u8, |sum, &n| sum.saturating_add(n));
-        let over = held.saturating_sub(open);
-        if over > 0 {
-            short.insert(slot, over);
-        }
-    }
-    short
+    let slot_types: BTreeSet<Slot> = needs
+        .iter()
+        .flat_map(|(_, need)| need.keys().copied())
+        .collect();
+    slot_types
+        .into_iter()
+        .filter_map(|slot| {
+            let mut pools = SlotPools::of(slot, grants);
+            let overflow = needs
+                .iter()
+                .filter_map(|(code, need)| need.get(&slot).map(|&units| (code, units)))
+                .map(|(code, units)| pools.place(reg, code, units))
+                .fold(0u8, u8::saturating_add);
+            (overflow > 0).then_some((slot, overflow))
+        })
+        .collect()
 }
 
 /// The slot multiset `code` needs to enter play, read from `cards`. Empty
@@ -196,15 +212,14 @@ pub(super) fn unsatisfiable_slot(
     code: &CardCode,
 ) -> Option<Slot> {
     let grants = slot_grants(state, cards, investigator);
-    let mut claims: Vec<SlotClaim> = occupants(state, investigator)
-        .iter()
+    let mut assets: Vec<CardCode> = occupants(state, investigator)
+        .into_iter()
         .filter(|(inst, _)| abilities_in_effect::cannot_leave_play(state, cards, *inst))
-        .map(|(_, fixed)| claim_of(cards, &grants, fixed))
+        .map(|(_, fixed)| fixed)
         .collect();
-    let entering = claim_of(cards, &grants, code);
-    let need = entering.units.clone();
-    claims.push(entering);
-    shortfall(&grants, &claims)
+    assets.push(code.clone());
+    let need = card_slot_need(cards, code);
+    shortfall(cards, &grants, &assets)
         .into_keys()
         .find(|slot| need.contains_key(slot))
 }
@@ -239,13 +254,13 @@ fn shortfall_without(
         .into_iter()
         .filter(|grant| Some(grant.source) != removed)
         .collect();
-    let mut claims: Vec<SlotClaim> = occupants(state, investigator)
-        .iter()
+    let mut assets: Vec<CardCode> = occupants(state, investigator)
+        .into_iter()
         .filter(|(inst, _)| Some(*inst) != removed)
-        .map(|(_, occupant)| claim_of(cards, &grants, occupant))
+        .map(|(_, occupant)| occupant)
         .collect();
-    claims.push(claim_of(cards, &grants, code));
-    shortfall(&grants, &claims)
+    assets.push(code.clone());
+    shortfall(cards, &grants, &assets)
         .into_iter()
         .filter(|(slot, _)| need.contains_key(slot))
         .collect()
@@ -451,14 +466,85 @@ pub(super) fn resume_slot_discard(cx: &mut Cx, response: &InputResponse) -> Engi
 
 #[cfg(test)]
 mod tests {
+    use std::sync::LazyLock;
+
+    use card_dsl::card_data::{CardKind, CardMetadata, CardType, Class, SkillIcons};
+
     use super::*;
 
-    /// A claim on `slots` that the grants admit per `admitted`.
-    fn claim(slots: &[Slot], admitted: &[bool]) -> SlotClaim {
-        SlotClaim {
-            units: count_slots(slots),
-            admitted: admitted.to_vec(),
+    /// A synthetic trait the restricted-pool probes filter on.
+    const PROBE_TRAIT: &str = "_SlotProbe";
+    /// One hand, no traits.
+    const HAND: &str = "_slot_hand";
+    /// Two hands, no traits.
+    const TWO_HANDED: &str = "_slot_two_handed";
+    /// One ally slot.
+    const ALLY: &str = "_slot_ally";
+    /// Two ally slots: needs more than an investigator has on its own.
+    const TWO_ALLY: &str = "_slot_two_ally";
+    /// One hand, carrying [`PROBE_TRAIT`].
+    const TRAITED_HAND: &str = "_slot_traited_hand";
+
+    fn asset(code: &str, slots: &[Slot], traits: &[&str]) -> CardMetadata {
+        CardMetadata {
+            code: code.to_owned(),
+            name: code.to_owned(),
+            traits: traits.iter().map(|t| (*t).to_owned()).collect(),
+            text: None,
+            back_name: None,
+            back_text: None,
+            pack_code: "_test".to_owned(),
+            weakness: false,
+            kind: CardKind::Asset {
+                class: Class::Neutral,
+                cost: Some(0),
+                xp: None,
+                slots: slots.to_vec(),
+                health: None,
+                sanity: None,
+                skill_icons: SkillIcons::default(),
+                is_fast: false,
+                deck_limit: 2,
+                uses: None,
+                play_only_during_turn: false,
+            },
         }
+    }
+
+    fn probe_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
+        static PROBES: LazyLock<Vec<CardMetadata>> = LazyLock::new(|| {
+            vec![
+                asset(HAND, &[Slot::Hand], &[]),
+                asset(TWO_HANDED, &[Slot::Hand, Slot::Hand], &[]),
+                asset(ALLY, &[Slot::Ally], &[]),
+                asset(TWO_ALLY, &[Slot::Ally, Slot::Ally], &[]),
+                asset(TRAITED_HAND, &[Slot::Hand], &[PROBE_TRAIT]),
+            ]
+        });
+        PROBES.iter().find(|meta| meta.code == code.as_str())
+    }
+
+    const PROBES: CardRegistry = CardRegistry {
+        metadata_for: probe_metadata_for,
+        ..CardRegistry::EMPTY
+    };
+
+    fn codes(codes: &[&str]) -> Vec<CardCode> {
+        codes.iter().copied().map(CardCode::new).collect()
+    }
+
+    /// `count` extra hand slots, holding only what `only` admits.
+    fn hand_grant(count: u8, only: Option<CardFilter>) -> SlotGrant {
+        SlotGrant {
+            source: CardInstanceId(1),
+            slot: Slot::Hand,
+            count,
+            only,
+        }
+    }
+
+    fn probe_only() -> CardFilter {
+        CardFilter::with_trait(PROBE_TRAIT).and_kind(CardType::Asset)
     }
 
     #[test]
@@ -484,36 +570,68 @@ mod tests {
     #[test]
     fn no_shortfall_when_room_exists() {
         // Ally cap 1, one Ally → fits.
-        assert!(shortfall(&[], &[claim(&[Slot::Ally], &[])]).is_empty());
+        assert!(shortfall(&PROBES, &[], &codes(&[ALLY])).is_empty());
         // Hand cap 2, two single-Hand assets → fits.
-        let hands = [claim(&[Slot::Hand], &[]), claim(&[Slot::Hand], &[])];
-        assert!(shortfall(&[], &hands).is_empty());
+        assert!(shortfall(&PROBES, &[], &codes(&[HAND, HAND])).is_empty());
     }
 
     #[test]
     fn shortfall_one_when_cap_one_slot_full() {
-        let allies = [claim(&[Slot::Ally], &[]), claim(&[Slot::Ally], &[])];
-        assert_eq!(shortfall(&[], &allies).get(&Slot::Ally), Some(&1));
+        let short = shortfall(&PROBES, &[], &codes(&[ALLY, ALLY]));
+        assert_eq!(short.get(&Slot::Ally), Some(&1));
     }
 
     #[test]
     fn shortfall_for_two_handed_over_full_hands() {
-        let one_hand = claim(&[Slot::Hand], &[]);
-        let two_handed = claim(&[Slot::Hand, Slot::Hand], &[]);
-        let claims = [one_hand.clone(), one_hand.clone(), two_handed];
-        assert_eq!(shortfall(&[], &claims).get(&Slot::Hand), Some(&2));
-        let claims = [one_hand.clone(), one_hand.clone(), one_hand];
-        assert_eq!(shortfall(&[], &claims).get(&Slot::Hand), Some(&1));
+        let short = shortfall(&PROBES, &[], &codes(&[HAND, HAND, TWO_HANDED]));
+        assert_eq!(short.get(&Slot::Hand), Some(&2));
+        let short = shortfall(&PROBES, &[], &codes(&[HAND, HAND, HAND]));
+        assert_eq!(short.get(&Slot::Hand), Some(&1));
     }
 
     #[test]
     fn a_lone_need_over_capacity_is_short() {
         // need Hand:2 == cap 2 on its own → satisfiable.
-        assert!(shortfall(&[], &[claim(&[Slot::Hand, Slot::Hand], &[])]).is_empty());
+        assert!(shortfall(&PROBES, &[], &codes(&[TWO_HANDED])).is_empty());
         // need Ally:2 > cap 1 on its own → unsatisfiable.
-        assert_eq!(
-            shortfall(&[], &[claim(&[Slot::Ally, Slot::Ally], &[])]).get(&Slot::Ally),
-            Some(&1)
-        );
+        let short = shortfall(&PROBES, &[], &codes(&[TWO_ALLY]));
+        assert_eq!(short.get(&Slot::Ally), Some(&1));
+    }
+
+    #[test]
+    fn a_restricted_pool_holds_what_it_admits() {
+        let grants = [hand_grant(2, Some(probe_only()))];
+        // Two traited hands in the restricted pool, two plain in the defaults.
+        let assets = codes(&[HAND, HAND, TRAITED_HAND, TRAITED_HAND]);
+        assert!(shortfall(&PROBES, &grants, &assets).is_empty());
+        // A third traited hand spills into the general pool, which is full.
+        let assets = codes(&[HAND, HAND, TRAITED_HAND, TRAITED_HAND, TRAITED_HAND]);
+        let short = shortfall(&PROBES, &grants, &assets);
+        assert_eq!(short.get(&Slot::Hand), Some(&1));
+    }
+
+    #[test]
+    fn a_restricted_pool_refuses_what_it_does_not_admit() {
+        let grants = [hand_grant(2, Some(probe_only()))];
+        let short = shortfall(&PROBES, &grants, &codes(&[HAND, HAND, HAND]));
+        assert_eq!(short.get(&Slot::Hand), Some(&1));
+    }
+
+    #[test]
+    fn an_unrestricted_grant_widens_the_general_pool() {
+        let grants = [hand_grant(1, None)];
+        assert!(shortfall(&PROBES, &grants, &codes(&[HAND, HAND, HAND])).is_empty());
+        let short = shortfall(&PROBES, &grants, &codes(&[HAND, HAND, TWO_HANDED]));
+        assert_eq!(short.get(&Slot::Hand), Some(&1));
+    }
+
+    #[test]
+    fn place_fills_restricted_pools_first_and_returns_the_overflow() {
+        let grants = [hand_grant(1, Some(probe_only()))];
+        let mut pools = SlotPools::of(Slot::Hand, &grants);
+        // One unit to the restricted pool, two to the general pool.
+        assert_eq!(pools.place(&PROBES, &CardCode::new(TRAITED_HAND), 3), 0);
+        // Everything is full: a plain hand overflows.
+        assert_eq!(pools.place(&PROBES, &CardCode::new(HAND), 1), 1);
     }
 }
