@@ -432,7 +432,7 @@ mod threat_area_tests {
 mod ability_usage_tests {
     use card_dsl::dsl::{UsageLimit, UsagePeriod};
 
-    use crate::state::{AbilityUsageRecord, InvestigatorId, Phase, UsageClock};
+    use crate::state::{AbilityUsageRecord, InvestigatorId, Phase, SkillTestId, UsageClock};
     use crate::test_support;
 
     /// The investigator triggering the ability in these tests.
@@ -532,6 +532,24 @@ mod ability_usage_tests {
         card.bump_ability_usage(0, ME, UsagePeriod::Turn, turn(1));
         assert!(card.is_usage_exhausted(0, ME, limit, turn(1)));
         assert!(!card.is_usage_exhausted(0, ME, limit, turn(2)));
+    }
+
+    /// The clock reads the skill test in flight, and only a test limit is
+    /// measured on it: a turn limit used during one test stays used in the
+    /// next, while a test limit resets.
+    #[test]
+    fn a_new_skill_test_resets_a_test_limit_and_no_turn_limit() {
+        let mut inv = test_support::test_investigator(1);
+        let limit = |period| Some(UsageLimit { count: 1, period });
+        let during = |test| {
+            UsageClock::new(3, Phase::Investigation, Some(ME)).during_test(SkillTestId(test))
+        };
+        let card = &mut inv.investigator_card;
+        card.bump_ability_usage(0, ME, UsagePeriod::Turn, during(0));
+        card.bump_ability_usage(1, ME, UsagePeriod::SkillTest, during(0));
+        assert!(card.is_usage_exhausted(0, ME, limit(UsagePeriod::Turn), during(1)));
+        assert!(card.is_usage_exhausted(1, ME, limit(UsagePeriod::SkillTest), during(0)));
+        assert!(!card.is_usage_exhausted(1, ME, limit(UsagePeriod::SkillTest), during(1)));
     }
 }
 

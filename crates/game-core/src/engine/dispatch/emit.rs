@@ -31,12 +31,12 @@
 use card_dsl::dsl::{SkillTestKind, TestOutcome, TriggeringCondition};
 use serde::{Deserialize, Serialize};
 
-use crate::engine::dispatch::{actions, combat, encounter};
+use crate::engine::dispatch::{actions, combat, encounter, skill_test};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::{evaluator, Cx};
 use crate::state::{
     Assignment, CardCode, CardInstanceId, DamageSource, EmitEventFrame, EmitStep, EnemyId,
-    InvestigatorId, LocationId, Phase,
+    InvestigatorId, LocationId, Phase, RevealedToken,
 };
 
 /// A game/framework timing point at which forced and/or reaction triggers
@@ -320,6 +320,26 @@ pub enum TimingEvent {
         /// The investigator whose turn began.
         investigator: InvestigatorId,
     },
+    /// An investigator performing a skill test revealed a chaos token — Skill
+    /// Test Timing step 3, announced by the test's draw step once the token is
+    /// out and logged.
+    ///
+    /// **Coordinator-owned**, born so (#1106): its resolve step is what the
+    /// token does to the test — its modifier row or automatic failure, the
+    /// frame's revealed token, step 4's chaos symbol effect and the initiating
+    /// card's reveal clause. So a `when` ability that cancels the token leaves
+    /// the test as if it had never been revealed — Wendy Adams 01005's
+    /// *"\[reaction\] When you reveal a chaos token, choose and discard 1 card
+    /// from your hand: Cancel that chaos token and return it to the bag. Reveal
+    /// a new chaos token."* — and an `after` one sees it resolved.
+    ChaosTokenRevealed {
+        /// The investigator performing the test.
+        investigator: InvestigatorId,
+        /// The token drawn, the token it counts as, and the resolution
+        /// announced — everything the resolve step needs, carried here rather
+        /// than parked on the test's frame before the `when` cell can cancel it.
+        token: RevealedToken,
+    },
 }
 
 impl TimingEvent {
@@ -348,7 +368,8 @@ impl TimingEvent {
             | TimingEvent::CardPlayed { investigator, .. }
             | TimingEvent::EncounterCardDrawn { investigator, .. }
             | TimingEvent::EnemyEvaded { investigator, .. }
-            | TimingEvent::TurnBegan { investigator } => Some(*investigator),
+            | TimingEvent::TurnBegan { investigator }
+            | TimingEvent::ChaosTokenRevealed { investigator, .. } => Some(*investigator),
             TimingEvent::EnteredPlay { controller, .. } => Some(*controller),
             TimingEvent::EnemyDefeated { by, .. } => *by,
             TimingEvent::PhaseStarted { .. }
@@ -392,6 +413,7 @@ impl TimingEvent {
             TimingEvent::EncounterCardDrawn { .. } => TriggeringCondition::EncounterCardDrawn,
             TimingEvent::EnemyEvaded { .. } => TriggeringCondition::EnemyEvaded,
             TimingEvent::TurnBegan { .. } => TriggeringCondition::TurnBegan,
+            TimingEvent::ChaosTokenRevealed { .. } => TriggeringCondition::ChaosTokenRevealed,
         }
     }
 
@@ -554,6 +576,12 @@ impl TimingEvent {
             // and Pickpocketing 01046's after-evade reaction sees it done.
             TimingEvent::EnemyEvaded { .. } => {
                 ConditionResolution::Coordinator(resolve_enemy_evaded)
+            }
+            // Born coordinator-owned (#1106). Wendy Adams 01005 cancels a
+            // revealed chaos token in the `when` cell, so what the token does to
+            // the test has to be able to not happen: it is the resolve step.
+            TimingEvent::ChaosTokenRevealed { .. } => {
+                ConditionResolution::Coordinator(resolve_chaos_token_revealed)
             }
             // Every other condition is still caller-owned: the emitting call site
             // mutates the board and *then* emits. Each flips to a coordinator-
@@ -781,6 +809,24 @@ fn resolve_enemy_evaded(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
         unreachable!("resolve_enemy_evaded: not an EnemyEvaded event: {event:?}");
     };
     actions::evade::resolve_evasion(cx, *investigator, *enemy);
+    EngineOutcome::Done
+}
+
+/// The resolve step of [`TimingEvent::ChaosTokenRevealed`]: the token takes
+/// effect on the test (#1106, `skill_test::resolve_reveal`) — its row, the
+/// frame's revealed token, the ST.4 symbol effect and the reveal clause. After
+/// the `when` cell, so a cancelled token (Wendy Adams 01005) never gets here.
+/// The pushed effects sit above the coordinator, already at `At`, so one that
+/// suspends (a soak) resumes into the `at` cell rather than resolving twice.
+fn resolve_chaos_token_revealed(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
+    let TimingEvent::ChaosTokenRevealed {
+        investigator,
+        token,
+    } = event
+    else {
+        unreachable!("resolve_chaos_token_revealed: not a ChaosTokenRevealed event: {event:?}");
+    };
+    skill_test::resolve_reveal(cx, *investigator, *token);
     EngineOutcome::Done
 }
 

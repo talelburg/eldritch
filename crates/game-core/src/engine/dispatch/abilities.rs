@@ -9,7 +9,7 @@ use crate::card_registry::CardRegistry;
 use crate::engine::board::{self, NotLeft};
 use crate::engine::dispatch::{
     actions::take::{self, ActionDescription},
-    combat, initiation,
+    combat, hand_discard_cost, initiation,
     legality::{self, ActivateCheckResult},
     uses::{self, SpendUsesError},
 };
@@ -95,10 +95,10 @@ use crate::state::{
 ///   not already exhausted, flips `exhausted` on the source instance,
 ///   emits [`Event::CardExhausted`].
 /// - [`Cost::DiscardCardFromHand`](card_dsl::dsl::Cost::DiscardCardFromHand):
-///   rejects with a TODO — target-card selection needs an engine
-///   `AwaitingInput` producer + `ResolveInput` dispatch. No card on
-///   the roadmap uses this cost yet, so the consumer hasn't landed.
-///   Test-side seam is [`ChoiceResolver`](crate::test_support::ChoiceResolver).
+///   validates a non-weakness card in hand, then is paid through a choice
+///   frame parked above the effect, once the other costs are paid and the
+///   ability announced (`hand_discard_cost`, #1107). Fast abilities only: an
+///   action-cost ability with the cost is refused at validation (#1031).
 ///
 /// # State-mutation contract
 ///
@@ -189,6 +189,10 @@ fn activate(
         let Some((damage, horror)) = harm_cost(&costs) else {
             let eval_ctx = EvalContext::for_controller_with_source(investigator, source);
             push_activation_resolution(cx, designator.as_ref(), &effect, eval_ctx);
+            // A hand-discard cost's choice goes above the effect, so it is paid
+            // first. Validation refuses it beside a harm cost, so it is only
+            // ever parked here.
+            hand_discard_cost::park(cx, investigator, &candidate.code, &costs);
             return EngineOutcome::Done;
         };
         cx.state.continuations.push(ActionResolutionFrame {
@@ -378,15 +382,14 @@ pub(super) fn pay_activation_costs(
                         .instance_id;
                 discard_source(cx, investigator, instance_id)?;
             }
-            Cost::DiscardCardFromHand => {
-                unreachable!("DiscardCardFromHand rejected earlier in check_cost_payable")
-            }
-            // The harm is not paid inline: it is dealt through the deal frame
-            // once every other cost is paid and the ability announced, by
-            // `activate_ability` (`harm_cost`). A triggered ability carrying
-            // one is refused at the initiation gate, so never reaches here
-            // (TODO(#1081)).
-            Cost::TakeHarm { .. } => {}
+            // Neither is paid inline. A hand-discard is paid through a choice:
+            // the caller parks its frame above the effect once every other cost
+            // is paid (`hand_discard_cost::park`). The harm is dealt through the
+            // deal frame once every other cost is paid and the ability
+            // announced, by `activate_ability` (`harm_cost`); a triggered
+            // ability carrying one is refused at the initiation gate, so never
+            // reaches here (TODO(#1081)).
+            Cost::DiscardCardFromHand | Cost::TakeHarm { .. } => {}
         }
     }
     Ok(())
@@ -554,8 +557,10 @@ pub(super) fn resolve_activated_ability(
 /// Validate a single [`Cost`] is currently payable against `inv` /
 /// `source_exhausted`. Returns the reject reason on failure. Does
 /// NOT mutate; the caller does the actual deduction after all costs
-/// are checked.
+/// are checked. `cards` tells a weakness in hand, which a hand-discard cost
+/// may not choose.
 pub(super) fn check_cost_payable(
+    cards: &CardRegistry,
     cost: &Cost,
     inv: &Investigator,
     source_exhausted: bool,
@@ -594,11 +599,7 @@ pub(super) fn check_cost_payable(
         // precondition (check_activate_ability located it in cards_in_play).
         // `TakeHarm`: you can always take harm, even lethal harm.
         Cost::DiscardSelf | Cost::TakeHarm { .. } => Ok(()),
-        Cost::DiscardCardFromHand => Err(
-            "TODO: Cost::DiscardCardFromHand requires AwaitingInput + ResolveInput \
-             dispatch; no card uses this cost yet so the engine consumer hasn't landed."
-                .to_string(),
-        ),
+        Cost::DiscardCardFromHand => hand_discard_cost::payable(cards, inv),
     }
 }
 
@@ -617,11 +618,17 @@ mod tests {
             count: 1,
         };
         // Enough of the right kind → payable.
-        assert!(check_cost_payable(&cost, &inv, false, &ammo4).is_ok());
+        assert!(
+            check_cost_payable(&test_support::TEST_REGISTRY, &cost, &inv, false, &ammo4).is_ok()
+        );
         // No ammo at all → reject.
-        assert!(check_cost_payable(&cost, &inv, false, &empty).is_err());
+        assert!(
+            check_cost_payable(&test_support::TEST_REGISTRY, &cost, &inv, false, &empty).is_err()
+        );
         // Wrong kind present, no ammo → reject.
         let charges: BTreeMap<UseKind, u8> = [(UseKind::Charges, 4)].into_iter().collect();
-        assert!(check_cost_payable(&cost, &inv, false, &charges).is_err());
+        assert!(
+            check_cost_payable(&test_support::TEST_REGISTRY, &cost, &inv, false, &charges).is_err()
+        );
     }
 }

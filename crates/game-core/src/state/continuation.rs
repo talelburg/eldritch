@@ -277,6 +277,8 @@ pub enum Continuation {
     SlotDiscard(SlotDiscardFrame),
     /// See [`AdditionalActionChoiceFrame`].
     AdditionalActionChoice(AdditionalActionChoiceFrame),
+    /// See [`HandDiscardCostFrame`].
+    HandDiscardCost(HandDiscardCostFrame),
     /// See [`MythosPhaseFrame`].
     MythosPhase(MythosPhaseFrame),
     /// See [`InvestigationPhaseFrame`].
@@ -330,6 +332,7 @@ impl_frame!(PlayFromHand, PlayFromHandFrame);
 impl_frame!(MoveEnter, MoveEnterFrame);
 impl_frame!(SlotDiscard, SlotDiscardFrame);
 impl_frame!(AdditionalActionChoice, AdditionalActionChoiceFrame);
+impl_frame!(HandDiscardCost, HandDiscardCostFrame);
 impl_frame!(MythosPhase, MythosPhaseFrame);
 impl_frame!(InvestigationPhase, InvestigationPhaseFrame);
 impl_frame!(EnemyPhase, EnemyPhaseFrame);
@@ -638,6 +641,9 @@ impl Continuation {
             | Continuation::SkillTest(_)
             | Continuation::SubstitutionPrompt(_)
             | Continuation::Effect(_)
+            // A cost being paid: the ability is initiated, its use recorded and
+            // its other costs paid, with its effect parked beneath — under way.
+            | Continuation::HandDiscardCost(_)
             // Holds the asset mid-entry, in no zone (ADR 0002): discarding the
             // frame would leak the card out of every zone.
             | Continuation::SlotDiscard(_) => (
@@ -1387,9 +1393,10 @@ pub struct InFlightSkillTest {
     /// resolution, as the
     /// [`ChaosTokenRevealed`](crate::event::Event::ChaosTokenRevealed) event
     /// announced them — for a scenario symbol, the modifier evaluated once at
-    /// reveal. Set whenever a token is drawn, whether or not it has effects;
-    /// `None` until then, and for the whole test when a determination known
-    /// before ST.3 skips the draw.
+    /// reveal. Set by the resolve step of the `ChaosTokenRevealed` condition,
+    /// whether or not the token has effects; `None` until then, while a
+    /// cancelled token is redrawn (Wendy Adams 01005), and for the whole test
+    /// when a determination known before ST.3 skips the draw.
     ///
     /// The counted token ([`counts_as`](RevealedToken::counts_as)) is
     /// engine-read: it identifies the chaos symbol effect whose
@@ -1533,10 +1540,11 @@ impl ResolvedTest {
 /// - [`PreTokenWindow`](Self::PreTokenWindow) — set after the commit; `advance`
 ///   opens the ST.2→ST.3 player window, then pre-advances to `Resolving`.
 /// - [`Resolving`](Self::Resolving) — set by `finish_skill_test` once the
-///   commit is validated and stored. The next driver iteration runs the
-///   computation body (`run_resolution`: ST.3–ST.6, pushing the ST.4 immediate
-///   symbol effects) and pre-advances to
-///   [`DetermineOutcome`](Self::DetermineOutcome).
+///   commit is validated and stored. The next driver iteration draws the chaos
+///   token (`run_resolution`, ST.3), pre-advances to
+///   [`DetermineOutcome`](Self::DetermineOutcome) and queues the
+///   `ChaosTokenRevealed` condition, whose resolve step records the token and
+///   pushes the ST.4 symbol effects. A `when`-cell redraw sets it back here.
 /// - [`DetermineOutcome`](Self::DetermineOutcome) — the ST.6→ST.7 boundary:
 ///   emit the logged success/failure events, then the `SkillTestResolved`
 ///   timing point, **before** any ST.7 consequence resolves.
@@ -1564,19 +1572,26 @@ pub enum SkillTestStep {
     /// `advance` opens the window here, pre-advancing to
     /// [`Resolving`](Self::Resolving). (#374.)
     PreTokenWindow,
-    /// Commit submitted: the next driver iteration reveals the chaos token
-    /// (RR ST.3) and pushes its outcome's `immediate` part — a scenario
-    /// symbol's or the elder sign's (RR ST.4), then pre-advances to
-    /// [`DetermineOutcome`](Self::DetermineOutcome). It records
-    /// the token's modifier (or the elder sign's expression) as a
+    /// Commit submitted: the next driver iteration draws and announces the
+    /// chaos token (RR ST.3), pre-advances to
+    /// [`DetermineOutcome`](Self::DetermineOutcome), and queues the
+    /// `ChaosTokenRevealed` condition (#1106). Its resolve step, after the
+    /// `when` cell, records the token's modifier (or the elder sign's
+    /// expression) as a
     /// [`RecordedModifier`](crate::state::game_state::RecordedModifier) scoped to this test — an `[auto_fail]` records a
-    /// [`Determination`](card_dsl::dsl::Determination) instead — and computes
-    /// **no** total, margin, or verdict: those are ST.5/ST.6 and belong after
-    /// the symbol effects have resolved (#674, #684, #685). The outcome's
-    /// result-conditional parts are not kept either: the token goes on
-    /// [`InFlightSkillTest::revealed`], and
+    /// [`Determination`](card_dsl::dsl::Determination) instead — and pushes the
+    /// outcome's `immediate` part, a scenario symbol's or the elder sign's (RR
+    /// ST.4). Nothing computes a total, margin, or verdict: those are ST.5/ST.6
+    /// and belong after the symbol effects have resolved (#674, #684, #685).
+    /// The outcome's result-conditional parts are not kept either: the token
+    /// goes on [`InFlightSkillTest::revealed`], and
     /// [`ApplyTokenResult`](Self::ApplyTokenResult) looks its outcome up again
     /// at ST.7.
+    ///
+    /// **A cancelled token comes back here.** A `when`-cell cancel skips the
+    /// resolve step, so the token writes nothing, and
+    /// [`Effect::RevealChaosToken`]
+    /// sets the cursor back to this step to draw again (Wendy Adams 01005).
     ///
     /// **The reveal is conditional (#687).** A determination already latched
     /// when the driver arrives here skips ST.3 and ST.4 outright — *"No chaos
@@ -2710,6 +2725,27 @@ pub struct AdditionalActionChoiceFrame {
     pub source: AbilitySource,
     /// Which of the source's abilities.
     pub address: AbilityAddress,
+}
+
+/// A [`Cost::DiscardCardFromHand`](card_dsl::dsl::Cost::DiscardCardFromHand)
+/// being paid (#1107): Wendy Adams 01005's *"choose and discard 1 card from
+/// your hand"*. Pushed **above** the ability's effect, which is parked beneath
+/// it with its event bindings already in its context, so the cost is paid
+/// before the effect resolves — Appendix I step 2, *"Pay the cost(s)"*, ahead
+/// of the effect at step 4. A triggered ability and a `[fast]` activated one
+/// both park this way.
+///
+/// The `drive` loop meets it on top and offers the investigator's hand cards
+/// that are not weaknesses, or discards the lone one with no prompt
+/// (`hand_discard_cost::drive`); a `PickSingle(OptionId)` naming one of the
+/// offered cards resumes it. A [Prompt](FrameActivity::Prompt); not a phase
+/// anchor.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HandDiscardCostFrame {
+    /// The investigator paying the cost: the ability's controller.
+    pub investigator: InvestigatorId,
+    /// The card whose ability the cost is for, which the prompt names.
+    pub code: CardCode,
 }
 
 #[cfg(test)]

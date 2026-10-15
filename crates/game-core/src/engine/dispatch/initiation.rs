@@ -31,8 +31,8 @@ use card_dsl::card_data::{CardMetadata, CardType};
 use card_dsl::dsl::{Ability, ActionDesignator, Cost, Effect, Trigger, UsageLimit};
 
 use crate::card_registry::CardRegistry;
-use crate::engine::dispatch::abilities;
 use crate::engine::dispatch::emit::TimingEvent;
+use crate::engine::dispatch::{abilities, hand_discard_cost};
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::{abilities_in_effect, ability_source, board, Cx};
 use crate::state::{
@@ -261,7 +261,7 @@ pub(super) fn check(
                 if kind == InitiationKind::Reaction {
                     triggered_harm_cost(&candidate.code, ability)?;
                 }
-                ability_cost_payable(state, inv, ability, candidate.source)
+                ability_cost_payable(state, reg, inv, ability, candidate.source)
             }
         },
     )
@@ -442,7 +442,9 @@ fn restrictions_met(
 /// location, no Investigate. That is a designator-target check, which ADR 0017
 /// leaves with the activation path: `check_activate_ability` asks it before it
 /// asks this gate. A Parley ability falls through to the residual, which is all
-/// it has to change the game state with.
+/// it has to change the game state with, and so does an **`AutomaticEvade`**
+/// (Cunning Distraction 01078), whose residual is the evasion itself: with no
+/// enemy at your location it has nothing to evade, and is not playable.
 ///
 /// The designator is the ability's, whichever trigger reached it (see
 /// [`ActionDesignator`]), so an event's designated `OnPlay` ability skips the
@@ -453,7 +455,10 @@ fn restrictions_met(
 fn performs_an_action(ability: &Ability) -> bool {
     matches!(
         &ability.designator,
-        Some(designator) if !matches!(designator, ActionDesignator::Parley)
+        Some(designator) if !matches!(
+            designator,
+            ActionDesignator::Parley | ActionDesignator::AutomaticEvade
+        )
     )
 }
 
@@ -494,6 +499,7 @@ fn usage_exhausted(
 /// `source` in full.
 fn ability_cost_payable(
     state: &GameState,
+    reg: &CardRegistry,
     inv: &Investigator,
     ability: &Ability,
     source: CandidateSource,
@@ -507,7 +513,7 @@ fn ability_cost_payable(
     let exhausted = source.is_some_and(|card| card.exhausted());
     let uses = source.map(|card| card.uses()).unwrap_or_default();
     for cost in &ability.costs {
-        abilities::check_cost_payable(cost, inv, exhausted, &uses)?;
+        abilities::check_cost_payable(reg, cost, inv, exhausted, &uses)?;
     }
     Ok(())
 }
@@ -516,9 +522,11 @@ fn ability_cost_payable(
 /// [`Cost::TakeHarm`](card_dsl::dsl::Cost::TakeHarm). [`initiate`] pays a
 /// triggered ability's costs through the activation payer, whose `TakeHarm`
 /// arm pays nothing: an activation deals the harm through the deal frame once
-/// its other costs are paid, a step that would lose a trigger's event
-/// bindings. No Core or Dunwich triggered ability prints one, so it is
-/// refused rather than built (#1081).
+/// its other costs are paid, beneath which it parks a resolution that keeps no
+/// trigger's event bindings. No Core or Dunwich triggered ability prints one,
+/// so it is refused rather than built (#1081). The park it needs is the
+/// hand-discard cost's — the bound effect pushed first, the cost on top
+/// ([`initiate`], `hand_discard_cost::park`).
 fn triggered_harm_cost(code: &CardCode, ability: &Ability) -> Result<(), Cow<'static, str>> {
     if ability
         .costs
@@ -697,6 +705,12 @@ pub(super) fn record_initiation(
 /// 4. bind what `event` supplies and push the effect for the `drive` loop
 ///    ([`push_bound_effect`]).
 ///
+/// A [`Cost::DiscardCardFromHand`](card_dsl::dsl::Cost::DiscardCardFromHand)
+/// needs a choice, so step 3 cannot pay it inline: once step 4 has pushed the
+/// bound effect, its choice frame is parked on top (`hand_discard_cost::park`,
+/// #1107). The stack is LIFO, so the cost is still paid before the effect
+/// resolves, and the effect resolves with the bindings it was pushed with.
+///
 /// A [`Cost::TakeHarm`](card_dsl::dsl::Cost::TakeHarm) is never paid here:
 /// the gate refuses a triggered ability carrying one (`triggered_harm_cost`).
 ///
@@ -759,6 +773,9 @@ pub(super) fn initiate(
         .map_err(Refusal::CostUnpayable)?;
     }
     push_bound_effect(cx, &ability.effect, ctx, event);
+    if applies(Check::Cost, kind) {
+        hand_discard_cost::park(cx, candidate.controller, &candidate.code, &ability.costs);
+    }
     Ok(ability.effect)
 }
 

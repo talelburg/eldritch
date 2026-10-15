@@ -48,6 +48,9 @@ pub(super) mod cursor;
 pub(super) mod elimination;
 pub(super) mod encounter;
 pub(super) mod forced_triggers;
+// The hand-discard cost's choice frame (#1107), which activated and triggered
+// abilities both park their effect beneath.
+mod hand_discard_cost;
 pub(crate) mod hunters;
 // Play and activate legality: the validators the handlers, the turn menu and
 // the Fast-window enumeration ask.
@@ -406,6 +409,9 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             Continuation::Mulligan(_) => return cards::mulligan_prompt(),
             Continuation::EncounterDraw(_) => return encounter::prompt_encounter_draw(cx),
             Continuation::HandSizeDiscard(_) => return phases::hand_size_discard_prompt(cx),
+            // A hand-discard cost being paid (#1107): prompt for the card, or
+            // discard a lone candidate and pop, exposing the parked effect.
+            Continuation::HandDiscardCost(_) => hand_discard_cost::drive(cx),
             // Prompts whose handler surfaced `AwaitingInput` when it pushed
             // them: nothing to drive until `resolve_input` answers.
             Continuation::SubstitutionPrompt(_)
@@ -664,6 +670,7 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         Continuation::HunterMove(_) => hunters::resume_hunter_choice(cx, response),
         Continuation::SpawnEngage(_) => hunters::resume_spawn_engage(cx, response),
         Continuation::HandSizeDiscard(_) => phases::resume_hand_size_discard(cx, response),
+        Continuation::HandDiscardCost(_) => hand_discard_cost::resume(cx, response),
         Continuation::Mulligan(_) => cards::resume_mulligan(cx, response),
         Continuation::EncounterDraw(_) => encounter::resume_encounter_draw(cx, response),
         Continuation::SkillTest(_) => resume_skill_test_commit(cx, response),
