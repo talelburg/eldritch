@@ -396,7 +396,7 @@ pub enum EffectFrame {
     /// in the meantime (an investigator no longer `Active`), so an investigator
     /// eliminated partway through is not reached. Otherwise it re-pushes itself
     /// with the cursor advanced and pushes `body` above, with that target bound
-    /// as `ctx`'s [`EachBinding`](crate::engine::evaluator::EachBinding). The
+    /// as `ctx`'s [`EachBinding`]. The
     /// walk advances when the body's frames have all popped, and pops itself
     /// once the cursor runs off the end.
     ///
@@ -410,8 +410,6 @@ pub enum EffectFrame {
     ///
     /// Generic over the kind of target: the list holds [`EachBinding`]s, and
     /// the arm that makes a binding is the only per-kind code.
-    ///
-    /// [`EachBinding`]: crate::engine::evaluator::EachBinding
     ForEach {
         /// The targets, resolved and ordered when the walk started.
         targets: Vec<EachBinding>,

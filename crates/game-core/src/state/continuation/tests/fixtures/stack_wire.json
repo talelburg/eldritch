@@ -145,7 +145,8 @@
           "enemy_attack": null,
           "revelation": null,
           "choice": null,
-          "ability_source": null
+          "ability_source": null,
+          "each": null
         }
       }
     }
@@ -162,7 +163,29 @@
           "enemy_attack": null,
           "revelation": null,
           "choice": null,
-          "ability_source": null
+          "ability_source": null,
+          "each": null
+        }
+      }
+    }
+  },
+  {
+    "Effect": {
+      "ForEach": {
+        "targets": [],
+        "next": 0,
+        "body": {
+          "Seq": []
+        },
+        "ctx": {
+          "controller": 1,
+          "skill_test": null,
+          "discovery": null,
+          "enemy_attack": null,
+          "revelation": null,
+          "choice": null,
+          "ability_source": null,
+          "each": null
         }
       }
     }

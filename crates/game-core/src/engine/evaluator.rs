@@ -157,7 +157,7 @@ pub struct ChoiceBinding {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EachBinding {
     /// An investigator, from an
-    /// [`InvestigatorTargetSet`](card_dsl::dsl::InvestigatorTargetSet).
+    /// [`InvestigatorTargetSet`].
     Investigator(InvestigatorId),
 }
 
@@ -351,10 +351,7 @@ impl EvalContext {
     /// native body reads to know whom it acts on. `None` outside such a body.
     #[must_use]
     pub fn each_investigator(&self) -> Option<InvestigatorId> {
-        match self.each {
-            Some(EachBinding::Investigator(id)) => Some(id),
-            None => None,
-        }
+        self.each.map(|EachBinding::Investigator(id)| id)
     }
 
     /// Bind the target a [`Effect::ForEach`] body runs for (see
