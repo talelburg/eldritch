@@ -376,11 +376,13 @@ pub(crate) fn gain_additional_action(
 }
 
 /// What taking an action costs: the total actions, the additional actions that
-/// pay for part of it, and the surcharge sources to mark spent once they are
-/// paid. The rest of `total` comes from the standard actions.
+/// pay for part of it, the standard actions that pay the rest, and the
+/// surcharge sources to mark spent once they are paid.
 struct Quote {
     total: u8,
     additional: Vec<AdditionalActionOrigin>,
+    /// `total` less the additional actions: what the standard actions pay.
+    from_standard: u8,
     surcharge_sources: Vec<CardInstanceId>,
 }
 
@@ -477,6 +479,7 @@ fn quote(
             .iter()
             .map(|action| action.origin)
             .collect(),
+        from_standard,
         surcharge_sources,
     })
 }
@@ -509,15 +512,15 @@ pub(crate) fn take(
     before_attacks: impl FnOnce(&mut Cx) -> Result<ActionResume, Cow<'static, str>>,
 ) -> EngineOutcome {
     let Quote {
-        total,
         additional,
+        from_standard,
         surcharge_sources,
+        ..
     } = match quote(cx.state, cx.cards, investigator, description) {
         Ok(quote) => quote,
         Err(reason) => return EngineOutcome::Rejected { reason },
     };
     use_additional_actions(cx.state, investigator, &additional);
-    let from_standard = total - u8::try_from(additional.len()).unwrap_or(total);
     let inv = cx
         .state
         .investigators
