@@ -18,7 +18,7 @@ use card_dsl::dsl::{CardFilter, Effect};
 
 use crate::action::InputResponse;
 use crate::card_registry::{self, CardRegistry};
-use crate::engine::dispatch::{cards, choice};
+use crate::engine::dispatch::{cards, choice, threat_area};
 use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken};
 use crate::engine::{abilities_in_effect, board, Cx};
 use crate::state::{
@@ -282,17 +282,22 @@ pub(super) fn make_room_candidates(
 }
 
 /// Bring the asset **instance** `card` (held by the caller, in no zone) into
-/// `investigator`'s play area, discarding occupying assets to make room per RR
-/// p.19 (#498).
+/// the area of `investigator`'s that `entry` names, discarding occupying
+/// assets to make room per RR p.19 (#498).
 ///
-/// **Two entry paths, one prompt** (#772). A play from hand mints the instance
-/// and hands it over at RR Appendix I step 3; a
+/// **Three entry paths, one prompt** (#772, #1097). A play from hand mints the
+/// instance and hands it over at RR Appendix I step 3; a
 /// [`TakeControl`](card_dsl::dsl::Effect::TakeControl) lifts the instance already
 /// on the board. Slot pressure applies to both, and `glossary/Slots.md` says so
 /// in one breath: *"If playing **or gaining control** of an asset would put an
 /// investigator above his or her slot limit for that type of asset, the
 /// investigator must choose and discard other assets under his or her control
-/// simultaneously with the new asset entering the slot."*
+/// simultaneously with the new asset entering the slot."* The third is a
+/// [`PutIntoThreatArea`](card_dsl::dsl::Effect::PutIntoThreatArea) of a card
+/// with a slot symbol (The Necronomicon 01009), which lands in the threat
+/// area: `glossary/Put_into_Play.md` holds a card put into play to *"the
+/// standard game rules associated with playing or drawing (for encounter
+/// cards) that card."*
 ///
 /// Recursive:
 ///
@@ -307,9 +312,13 @@ pub(super) fn make_room_candidates(
 /// the entry rejects rather than discarding something that frees nothing, and
 /// the apply's snapshot rollback undoes the half-made room.
 ///
-/// Nothing here is particular to the play area's entry beyond the final
-/// [`enter_asset_into_play`](cards::enter_asset_into_play): the shortfall and
-/// candidates are asked of the investigator and the entering card's code.
+/// Nothing here is particular to either area beyond the final landing,
+/// [`enter_asset_into_play`](cards::enter_asset_into_play) or
+/// [`enter_threat_area`](threat_area::enter_threat_area): the shortfall and
+/// candidates are asked of the investigator and the entering card's code. The
+/// prompt's frame sits above whatever is driving the entry — a play's frames,
+/// or the effect walk of a Revelation under a draw or a deck search — and
+/// those resume once it pops.
 pub(in crate::engine) fn enter_asset_making_room(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -318,7 +327,14 @@ pub(in crate::engine) fn enter_asset_making_room(
 ) -> EngineOutcome {
     let deficit = slot_deficit(cx.state, cx.cards, investigator, &card.code);
     if deficit.is_empty() {
-        cards::enter_asset_into_play(cx, investigator, card, entry);
+        match entry {
+            AssetEntry::PlayedFromHand | AssetEntry::ControlTaken => {
+                cards::enter_asset_into_play(cx, investigator, card, entry);
+            }
+            AssetEntry::PutIntoThreatArea => {
+                threat_area::enter_threat_area(cx, investigator, card);
+            }
+        }
         return EngineOutcome::Done;
     }
     let candidates = make_room_candidates(cx.state, cx.cards, investigator, &card.code, &deficit);

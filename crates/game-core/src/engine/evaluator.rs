@@ -1005,20 +1005,16 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
                     .into(),
                 };
             };
-            let inst = threat_area::place_in_threat_area(
+            // A card with a slot symbol makes room first, which can suspend on
+            // the make-room prompt (#1097).
+            threat_area::put_into_threat_area(
                 cx,
                 eval_ctx.controller,
                 CardCode::new(code.clone()),
                 owner,
-            );
-            if let Some((card, _)) = inst.and_then(|id| board::find_instance_mut(cx.state, id)) {
-                card.clues = *clues;
-                // Placed as the card enters play ("with 3 horror on it"), not
-                // dealt: no `DealDamage` frame, so no harm event or
-                // `DamagePlaced` timing point fires for it.
-                card.accumulated_horror = *horror;
-            }
-            EngineOutcome::Done
+                *clues,
+                *horror,
+            )
         }
         Effect::Restrict(_) => EngineOutcome::Rejected {
             reason: "Effect::Restrict is a constant marker — inspected at decision points, \

@@ -7,9 +7,13 @@
 
 use card_dsl::card_data::CardKind;
 
+use crate::engine::dispatch::slots;
+use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::event::Event;
-use crate::state::{CardCode, CardInPlay, CardInstanceId, InvestigatorId, LocationId, Owner};
+use crate::state::{
+    AssetEntry, CardCode, CardInPlay, CardInstanceId, InvestigatorId, LocationId, Owner,
+};
 
 /// Mint a fresh in-play instance of `code`: allocate its id, build the
 /// `CardInPlay`, and seed the named-uses pool ("ammo") from the asset's
@@ -53,11 +57,7 @@ pub(super) fn new_in_play_instance(cx: &mut Cx, code: CardCode, owner: Owner) ->
 /// in dispatch have already validated the investigator exists, but the
 /// helper stays total so a misuse can't panic.
 ///
-/// # Panics
-///
-/// Does not panic in practice: the `get_mut` re-fetches the investigator just
-/// confirmed present, with no intervening mutation, so the `expect` is a
-/// state-corruption invariant guard.
+/// Makes no room: [`put_into_threat_area`] is the card-effect entry that does.
 pub fn place_in_threat_area(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -67,20 +67,79 @@ pub fn place_in_threat_area(
     if !cx.state.investigators.contains_key(&investigator) {
         return None;
     }
-    let card = new_in_play_instance(cx, code.clone(), owner);
+    let card = new_in_play_instance(cx, code, owner);
     let instance_id = card.instance_id;
-    let inv = cx
-        .state
-        .investigators
-        .get_mut(&investigator)
-        .expect("existence checked above");
+    enter_threat_area(cx, investigator, card);
+    Some(instance_id)
+}
+
+/// Resolve [`Effect::PutIntoThreatArea`](card_dsl::dsl::Effect::PutIntoThreatArea):
+/// put `code`, owned by `owner`, into `investigator`'s threat area with
+/// `clues` and `horror` on it. Both are placed as the card enters play
+/// (Cover Up 01007's *"with 3 clues on it"*, The Necronomicon 01009's *"with 3
+/// horror on it"*), not dealt: no `DealDamage` frame, so no harm event or
+/// `DamagePlaced` timing point fires for the horror.
+///
+/// **A card with a slot symbol makes room as it enters** (#1097).
+/// `glossary/Put_into_Play.md`: *"Unless otherwise stated by the put into play
+/// ability, cards that enter play in this manner must do so in a play area
+/// that satisfies the standard game rules associated with playing or drawing
+/// (for encounter cards) that card."* A threat-area asset holds its slot
+/// (`glossary/Slots.md`), so it goes through
+/// [`slots::enter_asset_making_room`], which can suspend on the make-room
+/// prompt — hence the outcome. The prompt's frame sits above whatever is
+/// resolving the Revelation, which resumes once the card has entered. A card
+/// with no slot symbol (Cover Up, Frozen in Fear 01164, …) enters directly.
+///
+/// A no-op `Done` if the investigator isn't in state, as for
+/// [`place_in_threat_area`].
+pub(crate) fn put_into_threat_area(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    code: CardCode,
+    owner: Owner,
+    clues: u8,
+    horror: u8,
+) -> EngineOutcome {
+    if !cx.state.investigators.contains_key(&investigator) {
+        return EngineOutcome::Done;
+    }
+    let needs_a_slot = !slots::card_slot_need(cx.cards, &code).is_empty();
+    let mut card = new_in_play_instance(cx, code, owner);
+    card.clues = clues;
+    card.accumulated_horror = horror;
+    if needs_a_slot {
+        return slots::enter_asset_making_room(
+            cx,
+            investigator,
+            card,
+            AssetEntry::PutIntoThreatArea,
+        );
+    }
+    enter_threat_area(cx, investigator, card);
+    EngineOutcome::Done
+}
+
+/// Push the instance `card` into `investigator`'s threat area and emit
+/// [`Event::CardEnteredThreatArea`]. The single landing point for a threat-area
+/// entry, whether it made room first or not. A no-op if the investigator isn't
+/// in state.
+pub(in crate::engine) fn enter_threat_area(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    card: CardInPlay,
+) {
+    let Some(inv) = cx.state.investigators.get_mut(&investigator) else {
+        return;
+    };
+    let code = card.code.clone();
+    let instance_id = card.instance_id;
     inv.threat_area.push(card);
     cx.events.push(Event::CardEnteredThreatArea {
         investigator,
         code,
         instance_id,
     });
-    Some(instance_id)
 }
 
 /// Attach `code`, owned by `owner`, to `location` as a fresh in-play instance,
