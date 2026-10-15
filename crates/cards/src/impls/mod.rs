@@ -102,6 +102,7 @@ pub mod cover_up;
 pub mod crypt_chill;
 pub mod dark_memory;
 pub mod deduction;
+pub mod derringer_41;
 pub mod dissonant_voices;
 pub mod dodge;
 pub mod dr_milan_christopher;
@@ -143,6 +144,8 @@ pub mod rotting_remains;
 pub mod scrying;
 pub mod shrivelling;
 pub mod silver_twilight_acolyte;
+pub mod sneak_attack;
+pub mod switchblade;
 pub mod the_barrier;
 pub mod theyre_getting_out;
 pub mod trapped;
@@ -242,6 +245,7 @@ pub const ALL: &[CardRecord] = &[
     crypt_chill::CARD,
     dark_memory::CARD,
     deduction::CARD,
+    derringer_41::CARD,
     dissonant_voices::CARD,
     dodge::CARD,
     dr_milan_christopher::CARD,
@@ -283,6 +287,8 @@ pub const ALL: &[CardRecord] = &[
     scrying::CARD,
     shrivelling::CARD,
     silver_twilight_acolyte::CARD,
+    sneak_attack::CARD,
+    switchblade::CARD,
     the_barrier::CARD,
     theyre_getting_out::CARD,
     trapped::CARD,
