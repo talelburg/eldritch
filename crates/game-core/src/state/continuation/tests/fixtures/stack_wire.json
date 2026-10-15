@@ -329,6 +329,24 @@
     }
   },
   {
+    "EmitEvent": {
+      "event": {
+        "ChaosTokenRevealed": {
+          "investigator": 1,
+          "token": {
+            "token": "Skull",
+            "counts_as": "Skull",
+            "resolution": {
+              "Modifier": -1
+            }
+          }
+        }
+      },
+      "step": "When",
+      "prevented": false
+    }
+  },
+  {
     "TimingPoint": {
       "event": "RoundEnded",
       "bucket": "After",

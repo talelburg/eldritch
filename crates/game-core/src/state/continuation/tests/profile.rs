@@ -1,4 +1,5 @@
 use super::*;
+use crate::state::{ChaosToken, TokenResolution};
 use crate::test_support;
 
 fn candidate() -> ResolutionCandidate {
@@ -408,6 +409,22 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             Continuation::EmitEvent(EmitEventFrame {
                 event: TimingEvent::RoundEnded,
                 step: EmitStep::After,
+                prevented: false,
+            }),
+            profile(DRIVEN, COMPLETE),
+        ),
+        // A condition carrying a payload: the revealed token rides the event.
+        (
+            Continuation::EmitEvent(EmitEventFrame {
+                event: TimingEvent::ChaosTokenRevealed {
+                    investigator: InvestigatorId(1),
+                    token: RevealedToken {
+                        token: ChaosToken::Skull,
+                        counts_as: ChaosToken::Skull,
+                        resolution: TokenResolution::Modifier(-1),
+                    },
+                },
+                step: EmitStep::When,
                 prevented: false,
             }),
             profile(DRIVEN, COMPLETE),
