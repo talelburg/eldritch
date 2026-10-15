@@ -2203,7 +2203,7 @@ pub enum Effect {
     },
     /// **Treat one revealed chaos symbol as another**, for each token the
     /// source card's controller reveals: The Necronomicon 01009's *"Treat each
-    /// \[elder_sign\] you reveal on a chaos token as a \[auto_fail\]."* A
+    /// `[elder_sign]` you reveal on a chaos token as a `[auto_fail]`."* A
     /// constant marker like [`Restrict`](Self::Restrict), under a
     /// [`Trigger::Constant`]: **inspected, not executed** — the skill test
     /// reads it off the performer's cards as the token comes out of the bag,

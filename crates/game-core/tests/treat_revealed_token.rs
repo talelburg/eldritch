@@ -1,8 +1,8 @@
 //! [`Effect::TreatRevealedToken`]: a constant that makes a chaos token its
 //! controller reveals count as another symbol.
 //!
-//! The Necronomicon 01009 is the corpus consumer (*"Treat each [elder_sign]
-//! you reveal on a chaos token as a [auto_fail]."*,
+//! The Necronomicon 01009 is the corpus consumer (*"Treat each `[elder_sign]`
+//! you reveal on a chaos token as a `[auto_fail]`."*,
 //! `data/arkhamdb-snapshot/pack/core/core.json`), tested against the real
 //! registry in `crates/cards/tests/the_necronomicon.rs`. This binary pins the
 //! primitive with two other pairs, so the substitution is not the one pair

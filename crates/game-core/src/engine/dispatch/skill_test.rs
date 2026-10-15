@@ -623,8 +623,8 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
 /// [`Effect::TreatRevealedToken`] on `investigator`'s own cards whose `from`
 /// is the drawn symbol, or `drawn` itself when none applies.
 ///
-/// The Necronomicon 01009: *"Treat each \[elder_sign\] you reveal on a chaos
-/// token as a \[auto_fail\]."* — *"you reveal"*, so the constant is read off
+/// The Necronomicon 01009: *"Treat each `[elder_sign]` you reveal on a chaos
+/// token as a `[auto_fail]`."* — *"you reveal"*, so the constant is read off
 /// the performer's cards ([`constants_of`](abilities_in_effect::constants_of):
 /// investigator card, play area, threat area) and no one else's. A numeric
 /// token shows no symbol, so nothing substitutes it. One substitution, not a
