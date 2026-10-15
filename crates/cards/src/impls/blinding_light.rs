@@ -45,6 +45,9 @@ const DAMAGE_EVADED: &str = "01066:damage-evaded";
 /// *"… lose 1 action this turn."*
 const LOSE_ACTION: &str = "01066:lose-action";
 
+/// On play, an Evade testing `[willpower]` in place of `[agility]`: 1 damage
+/// to the evaded enemy on success, and 1 action lost if a non-elder-sign symbol
+/// is revealed.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![dsl::on_play_as(

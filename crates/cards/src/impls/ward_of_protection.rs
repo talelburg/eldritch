@@ -8,9 +8,9 @@
 //!
 //! No rulings (`data/arkhamdb-faq/no-rulings.txt`).
 //!
-//! A Fast event played from hand in the `when` cell of the
-//! `EncounterCardDrawn` condition, filtered to a non-weakness treachery drawn
-//! by the controller — `glossary/Fast.md`: *"If the instructions specify
+//! **Cell: the `when` cell of the `EncounterCardDrawn` condition**, the
+//! printed *"Play when"*. A Fast event played from hand there, filtered to a
+//! non-weakness treachery drawn by the controller — `glossary/Fast.md`: *"If the instructions specify
 //! when/after a timing point, the card may be played as if the described
 //! timing point were a triggering condition for playing the card."* The
 //! condition's resolve step is the drawn card's revelation, so
@@ -26,7 +26,9 @@
 //! [`Effect::Cancel`]: card_dsl::dsl::Effect::Cancel
 
 use card_dsl::card_data::CardType;
-use card_dsl::dsl::{self, Ability, CardFilter, Effect, EventPattern, EventTiming};
+use card_dsl::dsl::{
+    self, Ability, CardFilter, Effect, EventPattern, EventTiming, InvestigatorTarget,
+};
 
 use crate::impls::CardRecord;
 
@@ -47,7 +49,7 @@ pub fn abilities() -> Vec<Ability> {
         EventTiming::When,
         Effect::Seq(vec![
             Effect::Cancel,
-            dsl::deal_horror(dsl::InvestigatorTarget::You, 1u8),
+            dsl::deal_horror(InvestigatorTarget::You, 1u8),
         ]),
     )]
 }

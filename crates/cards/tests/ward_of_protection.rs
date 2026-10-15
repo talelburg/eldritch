@@ -29,8 +29,8 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    Agenda, CardCode, EnemyId, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame,
-    MythosResume, Phase,
+    Agenda, CardCode, Enemy, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
+    MythosPhaseFrame, MythosResume, Phase,
 };
 use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -101,7 +101,7 @@ fn mythos_draw(seats: Vec<Seat>, encounter: &[&str]) -> TestSession {
 
 /// The agenda and the top of the encounter deck, which the builder does not
 /// stage.
-fn stage(state: &mut game_core::state::GameState, encounter: &[&str]) {
+fn stage(state: &mut GameState, encounter: &[&str]) {
     state.agenda_deck = vec![Agenda {
         code: CardCode::new("01105"),
         doom_threshold: 3,
@@ -120,7 +120,7 @@ fn ward(investigator: InvestigatorId) -> OptionTarget {
 }
 
 /// A 3-health enemy, so Agnes's 1 damage does not defeat it.
-fn enemy() -> game_core::state::Enemy {
+fn enemy() -> Enemy {
     let mut enemy = test_support::test_enemy(ENEMY.0, "Mock Whisperer");
     enemy.max_health = 3;
     enemy

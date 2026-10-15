@@ -21,13 +21,16 @@ use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId,
+    CardCode, ChaosBag, ChaosToken, Enemy, EnemyId, GameState, GameStateBuilder, InvestigatorId,
     LocationId, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{self, seat, TestSession};
+use game_core::test_support::{self, seat, Seat, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 const BLINDING_LIGHT: &str = "01066";
+/// Frozen in Fear — *"The first time you perform one of the following actions
+/// (move, fight, or evade) each round, it costs 1 additional action."*
+const FROZEN_IN_FEAR: &str = "01164";
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
 const ENEMY: EnemyId = EnemyId(100);
@@ -39,29 +42,33 @@ const PLAY: TurnAction = TurnAction::PlayCard {
 };
 
 /// An evade-3, health-3 enemy coded `id`.
-fn enemy(id: EnemyId) -> game_core::state::Enemy {
+fn enemy(id: EnemyId) -> Enemy {
     let mut enemy = test_support::test_enemy(id.0, "Ghoul");
     enemy.evade = 3;
     enemy.max_health = 3;
     enemy
 }
 
-/// Board: Blinding Light in hand with the resources to play it, the active
-/// investigator at willpower **5** and agility **1** with 3 actions, engaged
-/// with `engaged` evade-3 enemies, and a chaos bag holding only `token`.
-/// Against evade 3 the two skills land on opposite sides (5 evades, 1 does
-/// not), so the test's outcome says which skill the evasion used.
-fn board(token: ChaosToken, engaged: &[EnemyId]) -> GameState {
+/// The investigator: Blinding Light in hand with the resources to play it, at
+/// willpower **5** and agility **1** with 3 actions. Against evade 3 the two
+/// skills land on opposite sides (5 evades, 1 does not), so the test's outcome
+/// says which skill the evasion used.
+fn caster() -> Seat {
+    seat(1)
+        .at(HERE)
+        .skill(SkillKind::Willpower, 5)
+        .skill(SkillKind::Agility, 1)
+        .hand([BLINDING_LIGHT])
+        .resources(2)
+        .actions(3)
+}
+
+/// `investigator`'s turn, engaged with `engaged` evade-3 enemies, and a chaos
+/// bag holding only `token`.
+fn staged(investigator: Seat, token: ChaosToken, engaged: &[EnemyId]) -> GameStateBuilder {
     let mut builder = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_seat(
-            seat(1)
-                .at(HERE)
-                .skill(SkillKind::Willpower, 5)
-                .skill(SkillKind::Agility, 1)
-                .hand([BLINDING_LIGHT])
-                .resources(2),
-        )
+        .with_seat(investigator)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([token]))
@@ -69,7 +76,12 @@ fn board(token: ChaosToken, engaged: &[EnemyId]) -> GameState {
     for &id in engaged {
         builder = builder.with_enemy_engaged(enemy(id), INV);
     }
-    builder.build()
+    builder
+}
+
+/// The [`caster`]'s turn: see [`staged`].
+fn board(token: ChaosToken, engaged: &[EnemyId]) -> GameState {
+    staged(caster(), token, engaged).build()
 }
 
 /// Play Blinding Light against the one engaged [`ENEMY`], committing nothing,
@@ -173,6 +185,19 @@ fn each_listed_symbol_loses_one_action_at_reveal() {
     }
 }
 
+/// Step 3 of Skill Test Timing comes before the result is determined, so the
+/// action is lost before the test fails — `[auto_fail]` fails the evasion.
+#[test]
+fn the_action_is_lost_before_the_result_is_determined() {
+    let session = play(ChaosToken::AutoFail);
+    assert_event_sequence!(
+        session.events(),
+        Event::ActionsRemainingChanged { new_count: 1, .. },
+        Event::SkillTestFailed { .. },
+    );
+    assert_no_event!(session.events(), Event::EnemyDamaged { .. });
+}
+
 #[test]
 fn any_other_token_loses_no_action() {
     for token in [ChaosToken::Numeric(0), ChaosToken::ElderSign] {
@@ -188,12 +213,36 @@ fn any_other_token_loses_no_action() {
 #[test]
 fn the_lost_action_saturates_at_zero() {
     // With the play as the last action, there is nothing left to lose.
-    let mut state = board(ChaosToken::Skull, &[ENEMY]);
-    state.investigators.get_mut(&INV).unwrap().actions_remaining = 1;
-    let session = TestSession::new(state, TEST_REGISTRIES)
+    let session = staged(caster().actions(1), ChaosToken::Skull, &[ENEMY])
+        .session()
         .take(&PLAY)
         .commit(&[]);
     assert_eq!(actions(session.state()), 0);
+}
+
+/// Playing it performs an evade action, so Frozen in Fear's surcharge on
+/// *"the first time you perform one of the following actions (move, fight, or
+/// evade) each round"* reaches it. Its ruling (<https://arkhamdb.com/card/01164>)
+/// names the designators: *"Also applies to \[action\] card abilities with
+/// action designators (**Move**, **Fight**, **Evade**)."* The play costs its 1
+/// action and 1 more.
+#[test]
+fn under_frozen_in_fear_the_play_is_surcharged_as_an_evade_action() {
+    let session = staged(
+        caster().threat_area([FROZEN_IN_FEAR]),
+        ChaosToken::Numeric(0),
+        &[ENEMY],
+    )
+    .session()
+    .take(&PLAY)
+    .commit(&[]);
+    session.assert_at_turn_menu(INV);
+    assert_event!(session.events(), Event::SkillTestSucceeded { .. });
+    assert_eq!(
+        actions(session.state()),
+        1,
+        "3 actions, 2 spent on the play"
+    );
 }
 
 /// An evade action can only be performed against an enemy engaged with you
@@ -202,11 +251,12 @@ fn the_lost_action_saturates_at_zero() {
 /// Blinding Light is neither offered nor playable, and nothing is paid.
 #[test]
 fn it_cannot_be_played_without_an_engaged_enemy() {
-    let mut state = board(ChaosToken::Numeric(0), &[]);
     // An unengaged enemy at the location is no evade target.
     let mut bystander = enemy(ENEMY);
     bystander.current_location = Some(HERE);
-    state.enemies.insert(ENEMY, bystander);
+    let state = staged(caster(), ChaosToken::Numeric(0), &[])
+        .with_enemy(bystander)
+        .build();
     assert!(
         !enumerate::legal_actions(&state, TEST_REGISTRIES.cards).contains(&PLAY),
         "Blinding Light is not offered with no engaged enemy"

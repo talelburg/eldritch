@@ -35,6 +35,8 @@ pub const CODE: &str = "01060";
 /// This card's registration, listed in [`ALL`](super::ALL).
 pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
+/// The `[action]` Fight for 1 charge: `[willpower]` in place of `[combat]`, +1
+/// damage, and 1 horror if a non-elder-sign symbol is revealed.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![dsl::activated_as(

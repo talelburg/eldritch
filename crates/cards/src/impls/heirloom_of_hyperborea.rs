@@ -6,9 +6,10 @@
 //! [reaction] After you play a [[Spell]] card: Draw 1 card.
 //! ```
 //!
-//! One reaction in the `after` cell of the `CardPlayed` condition, filtered to
-//! Spell cards played by the controller. The ruling
-//! (<https://arkhamdb.com/card/01012>) fixes when: *"This trigger occurs after
+//! **Cell: the `after` cell of the `CardPlayed` condition**, for the one
+//! reaction, filtered to Spell cards played by the controller. The printed word
+//! is *"After"*, and the ruling (<https://arkhamdb.com/card/01012>) fixes
+//! when: *"This trigger occurs after
 //! the Spell card has resolved in full."* — a Spell event once it is in the
 //! discard pile, a Spell asset once it is in play.
 //!

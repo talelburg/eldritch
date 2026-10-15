@@ -16,7 +16,8 @@
 //! encounter deck"*, because the later picks must know it and a native cannot
 //! hand a pick to the next one: the effect tree holds it instead. Solo, *"any
 //! investigator's deck"* is your own; another investigator's deck waits for
-//! multiplayer (#777).
+//! phase 8's multiplayer work (the #65 family; no issue tracks this choice
+//! yet).
 //!
 //! **The order** is built one card at a time, one native per pick, since a
 //! native sees one pick and must make it before it writes. Pick `k` offers the
@@ -27,6 +28,15 @@
 //! cards, none for 0 or 1. The cards are offered by name through
 //! [`resolve_card_choice`](engine::resolve_card_choice), the deck search's
 //! choice, which is how they are looked at.
+//!
+//! **The deck itself carries the order between picks.** Looking at a card does
+//! not move it, so the three stay in the deck, and there is no zone to hold
+//! them aside while the order is built: a holding slot would be the global
+//! side-channel ADR 0002 retired for an in-progress play, and a native cannot
+//! hand its pick to the next one. So each pick writes straight into the deck,
+//! and the next reads where the last left off. **A placed card is never
+//! re-offered**: pick `k` offers only positions `k..`, so once a card is
+//! placed, its place is final.
 
 use card_dsl::card_data::UseKind;
 use card_dsl::dsl::{self, Ability, Cost};

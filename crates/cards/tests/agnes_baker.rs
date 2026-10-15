@@ -17,8 +17,8 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind,
-    TokenModifiers,
+    ChaosBag, ChaosToken, Enemy, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase,
+    SkillKind, TokenModifiers,
 };
 use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -38,7 +38,7 @@ fn agnes() -> Seat {
 
 /// A 3-health enemy whose attack deals 1 horror and no damage, so its
 /// attack is itself a horror placement and survives Agnes's 1 damage.
-fn horror_enemy() -> game_core::state::Enemy {
+fn horror_enemy() -> Enemy {
     let mut enemy = test_support::test_enemy(ENEMY.0, "Mock Whisperer");
     enemy.max_health = 3;
     enemy.attack_damage = 0;
@@ -46,16 +46,21 @@ fn horror_enemy() -> game_core::state::Enemy {
     enemy
 }
 
-/// `agnes` at her turn menu with [`horror_enemy`] engaged with her (so it is
-/// at her location), plus a second location to move the enemy to.
-fn board(agnes: Seat) -> TestSession {
+/// `agnes`'s turn at `HERE`, with a second location, `THERE`, and no enemy.
+fn staged(agnes: Seat) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(agnes)
         .with_location(test_support::test_location(HERE.0, "Here"))
         .with_location(test_support::test_location(THERE.0, "There"))
-        .with_enemy_engaged(horror_enemy(), INV)
         .open_turn(INV)
+}
+
+/// `agnes` at her turn menu with [`horror_enemy`] engaged with her (so it is
+/// at her location).
+fn board(agnes: Seat) -> TestSession {
+    staged(agnes)
+        .with_enemy_engaged(horror_enemy(), INV)
         .session()
 }
 
@@ -113,12 +118,11 @@ fn horror_partly_soaked_still_offers_her_reaction() {
 
 #[test]
 fn no_enemy_at_her_location_means_no_offer() {
-    let session = board(agnes())
-        .edit_state(|state| {
-            let enemy = state.enemies.get_mut(&ENEMY).unwrap();
-            enemy.engaged_with = None;
-            enemy.current_location = Some(THERE);
-        })
+    let mut away = horror_enemy();
+    away.current_location = Some(THERE);
+    let session = staged(agnes())
+        .with_enemy(away)
+        .session()
         .take_horror(INV, 1);
 
     session.assert_at_turn_menu(INV);

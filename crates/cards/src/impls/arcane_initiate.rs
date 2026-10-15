@@ -7,10 +7,10 @@
 //!   [[Spell]] card and draw it. Shuffle your deck.
 //! ```
 //!
-//! **The forced** rides the self-referential `EnteredPlay` pattern in its
-//! `after` cell (the printed *"After"*), and places the doom through a
-//! card-local native on the firing instance — one consumer, so no DSL
-//! primitive. The doom lives on the instance, so it counts toward the agenda's
+//! **Cell: the `after` cell of the `EnteredPlay` condition**, for the forced:
+//! the printed word is *"After"*, and the self-referential pattern hears only
+//! this instance entering play. It places the doom through a card-local native
+//! on the firing instance — one consumer, so no DSL primitive. The doom lives on the instance, so it counts toward the agenda's
 //! threshold while the Initiate is in play and leaves play with it
 //! (`glossary/Doom.md`: *"Doom on cards other than the agenda (such as enemies,
 //! allies, locations, etc.) counts towards the amount of doom in play."*).
@@ -18,11 +18,14 @@
 //! **The search** is [`Effect::SearchDeck`](card_dsl::dsl::Effect::SearchDeck)
 //! over the top 3 with a Spell filter. "Draw it" is modeled as the search's
 //! move to hand, as for Old Book of Lore 01031. The primitive already holds the
-//! ruling (<https://arkhamdb.com/card/01063>): *"if there is a **Spell** among
-//! them, you must draw it, even if it is Dark Memory. You cannot choose to fail
-//! to find what you're searching for if it's there."* — one eligible card is
-//! taken outright, two or more prompt a pick with no decline, and the deck is
-//! shuffled either way.
+//! ruling (<https://arkhamdb.com/card/01063>):
+//!
+//! > … if there is a ***Spell*** among them, you must draw it, even if it is
+//! > [Dark Memory](https://arkhamdb.com/card/01013). You cannot choose to fail
+//! > to find what you're searching for if it's there.
+//!
+//! One eligible card is taken outright, two or more prompt a pick with no
+//! decline, and the deck is shuffled either way.
 //!
 //! Ally soak (health 1, sanity 2) rides on metadata.
 
