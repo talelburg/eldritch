@@ -92,7 +92,9 @@ pub struct Investigator {
     pub deck: Vec<CardCode>,
     /// Cards currently in hand.
     pub hand: Vec<CardCode>,
-    /// Player discard pile.
+    /// Player discard pile, bottom first: a discarded card is pushed, so the
+    /// **last element is the top** — the "topmost" card Wendy's Amulet 01014
+    /// lets its controller play.
     pub discard: Vec<CardCode>,
     /// Cards currently in play under this investigator's control.
     ///

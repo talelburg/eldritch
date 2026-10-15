@@ -1,5 +1,5 @@
-//! Wendy's Amulet 01014's Forced, end to end against the real card registry
-//! (#1109). Card text (verbatim, `data/arkhamdb-snapshot/pack/core/core.json`):
+//! Wendy's Amulet 01014 end to end against the real card registry (#1109,
+//! #1112). Card text (verbatim, `data/arkhamdb-snapshot/pack/core/core.json`):
 //!
 //! > Wendy Adams deck only.
 //! > You may play the topmost event in your discard pile as if it were in your hand.
@@ -10,16 +10,27 @@
 //! > If your deck is empty, and Wendy’s Amulet would have you place an event
 //! > “on the bottom of your deck,” that event becomes your new deck.
 //!
-//! The play permission is #1112's; these tests cover the redirect only, at
-//! both of its sites: a played event's step-4 placement, and an event leaving
-//! play (Barricade 01038, which stays in play attached to a location).
+//! > 'Play' and 'Commit' are two different game terms. Wendy's Amulet allows
+//! > you to 'play' the topmost event card in your discard pile, but it does not
+//! > allow you to 'commit' it to a skill test.
+//!
+//! The redirect is tested at both of its sites: a played event's step-4
+//! placement, and an event leaving play (Barricade 01038, which stays in play
+//! attached to a location). The play permission is tested from the turn menu
+//! and from a reaction window ("Look what I found!" 01079), each option
+//! anchored on the Amulet.
 //!
 //! Runs against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
+use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{PlaySource, TurnAction};
+use game_core::engine::OptionId;
 use game_core::event::Event;
-use game_core::state::{Agenda, CardCode, GameStateBuilder, InvestigatorId, Location, LocationId};
+use game_core::state::{
+    Agenda, CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, Location, LocationId,
+    SkillKind, TokenModifiers,
+};
 use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
 
@@ -31,8 +42,12 @@ const DARK_MEMORY: &str = "01013";
 const HEIRLOOM: &str = "01012";
 /// Event that stays in play, attached to the location.
 const BARRICADE: &str = "01038";
-/// Deck filler.
+/// Deck filler, and a non-event discard card.
 const GUTS: &str = "01089";
+/// Fast event. *"Play after you fail a skill test by 2 or less while
+/// investigating."* Two intellect icons, so it could be committed if a
+/// discard-pile card could be.
+const LOOK_WHAT_I_FOUND: &str = "01079";
 
 const INV: InvestigatorId = InvestigatorId(1);
 const INV2: InvestigatorId = InvestigatorId(2);
@@ -217,4 +232,156 @@ fn an_event_discarded_from_play_goes_to_the_bottom_of_the_deck() {
         Event::CardPlacedOnBottomOfDeck { investigator: INV, code } if code == &CardCode::new(BARRICADE)
     );
     assert_no_event!(s.events(), Event::CardDiscarded { .. });
+}
+
+// --- Playing the topmost event in the discard pile (#1112) -----------------
+
+/// The labels of the options anchored on the Amulet.
+fn labels_at_amulet(s: &TestSession) -> Vec<String> {
+    let amulet = s.state().card(INV, AMULET);
+    s.prompt()
+        .options
+        .iter()
+        .filter(|o| o.target.as_ref() == Some(&amulet))
+        .map(|o| o.label.clone())
+        .collect()
+}
+
+#[test]
+fn in_her_turn_she_plays_the_top_event_of_her_discard_pile() {
+    let s = board(
+        seat(1)
+            .at(HERE)
+            .in_play([AMULET])
+            .discard([GUTS, EMERGENCY_CACHE])
+            .deck([GUTS]),
+    );
+    assert_eq!(
+        labels_at_amulet(&s),
+        ["Play Emergency Cache (Wendy's Amulet)"],
+        "offered on the Amulet, naming the event",
+    );
+    let (resources, actions) = {
+        let inv = &s.state().investigators[&INV];
+        (inv.resources, inv.actions_remaining)
+    };
+
+    let permission = s.state().in_play(INV, AMULET);
+    let s = s.take(&TurnAction::PlayCard {
+        investigator: INV,
+        source: PlaySource::TopOfDiscardPile { permission },
+    });
+
+    s.assert_at_turn_menu(INV);
+    let inv = &s.state().investigators[&INV];
+    assert_eq!(inv.resources, resources + 3, "Emergency Cache resolved");
+    assert_eq!(inv.discard, codes(&[GUTS]), "it left the discard pile");
+    assert_eq!(
+        inv.deck,
+        codes(&[GUTS, EMERGENCY_CACHE]),
+        "and the Forced placed it on the bottom of the deck",
+    );
+    assert_eq!(
+        inv.actions_remaining,
+        actions - 1,
+        "a play from the menu is an action"
+    );
+    assert_event!(
+        s.events(),
+        Event::CardPlayed { investigator: INV, code } if code == &CardCode::new(EMERGENCY_CACHE)
+    );
+}
+
+#[test]
+fn a_non_event_top_card_is_not_offered() {
+    // Emergency Cache is an event, but it is below the top.
+    let s = board(
+        seat(1)
+            .at(HERE)
+            .in_play([AMULET])
+            .discard([EMERGENCY_CACHE, GUTS]),
+    );
+    assert!(labels_at_amulet(&s).is_empty(), "{:?}", s.prompt());
+}
+
+#[test]
+fn without_the_amulet_the_discard_pile_offers_nothing() {
+    let s = board(seat(1).at(HERE).discard([EMERGENCY_CACHE]));
+    assert!(
+        !s.prompt()
+            .options
+            .iter()
+            .any(|o| o.label.contains("Emergency Cache")),
+        "{:?}",
+        s.prompt(),
+    );
+}
+
+/// A shroud-4 Study with 3 clues, intellect 2, 5 resources and an empty hand:
+/// an Investigate fails by 2.
+fn failed_investigation_board(investigator: Seat) -> TestSession {
+    let mut study = test_support::test_location(HERE.0, "Study");
+    study.shroud = 4;
+    study.clues = 3;
+    GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(investigator)
+        .with_location(study)
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .with_token_modifiers(TokenModifiers::default())
+        .open_turn(INV)
+        .session()
+}
+
+#[test]
+fn look_what_i_found_on_top_of_the_discard_pile_is_offered_in_its_window() {
+    let s = failed_investigation_board(
+        seat(1)
+            .at(HERE)
+            .skill(SkillKind::Intellect, 2)
+            .resources(5)
+            .in_play([AMULET])
+            .discard([LOOK_WHAT_I_FOUND]),
+    )
+    .take(&TurnAction::Investigate { investigator: INV })
+    .commit(&[]);
+    assert_eq!(
+        labels_at_amulet(&s),
+        ["Play \"Look what I found!\" (Wendy's Amulet)"],
+    );
+
+    let amulet = s.state().card(INV, AMULET);
+    let s = s.pick(amulet);
+
+    s.assert_at_turn_menu(INV);
+    let inv = &s.state().investigators[&INV];
+    assert_eq!(inv.clues, 2, "discovered 2 clues");
+    assert_eq!(inv.resources, 3, "its cost of 2 was paid");
+    assert!(inv.discard.is_empty());
+    assert_eq!(
+        inv.deck,
+        codes(&[LOOK_WHAT_I_FOUND]),
+        "then went to the deck"
+    );
+}
+
+#[test]
+fn a_discard_pile_card_cannot_be_committed() {
+    // The commit window's choices are hand positions: with an empty hand there
+    // is no position for "Look what I found!" to be chosen at.
+    let s = board(
+        seat(1)
+            .at(HERE)
+            .in_play([AMULET])
+            .discard([LOOK_WHAT_I_FOUND]),
+    )
+    .test_skill(INV, SkillKind::Intellect, 2);
+
+    s.assert_rejects(|s| {
+        s.apply(Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickMultiple {
+                selected: vec![OptionId(0)],
+            },
+        }))
+    });
 }

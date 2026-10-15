@@ -27,6 +27,27 @@
   {
     "TimingPointWindow": {
       "event": "RoundEnded",
+      "bucket": "After",
+      "mode": "Reaction",
+      "candidates": [
+        {
+          "code": "01079",
+          "controller": 1,
+          "address": {
+            "Printed": 0
+          },
+          "source": {
+            "TopOfDiscardPile": {
+              "permission": 7
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "TimingPointWindow": {
+      "event": "RoundEnded",
       "bucket": "When",
       "mode": "Forced",
       "candidates": [

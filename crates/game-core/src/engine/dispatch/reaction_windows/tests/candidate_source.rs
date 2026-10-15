@@ -2,7 +2,10 @@ use super::*;
 use crate::state::{
     Act, Agenda, CardInPlay, CardInstanceId, EnemyId, GameStateBuilder, LocationId, Owner,
 };
-use crate::test_support::{self, SeatLookup as _, TEST_REGISTRIES};
+use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
+use card_dsl::dsl::{self, Effect};
+
+use crate::test_support::{self, MockRegistry, SeatLookup as _, TEST_REGISTRIES};
 
 const INV: InvestigatorId = InvestigatorId(1);
 /// Deliberately resolved by no registry — the test registry knows none.
@@ -28,6 +31,7 @@ fn a_hand_candidate_is_present_only_while_the_code_is_in_hand() {
         .build();
     assert!(candidate_source_present(
         &state,
+        TEST_REGISTRIES.cards,
         &candidate(CandidateSource::Hand)
     ));
 
@@ -35,6 +39,7 @@ fn a_hand_candidate_is_present_only_while_the_code_is_in_hand() {
     drained.investigators.get_mut(&INV).unwrap().hand.clear();
     assert!(!candidate_source_present(
         &drained,
+        TEST_REGISTRIES.cards,
         &candidate(CandidateSource::Hand)
     ));
 }
@@ -48,11 +53,13 @@ fn an_in_play_candidate_is_present_only_while_its_instance_is() {
     let instance = state.in_play(INV, SOME_CODE);
     assert!(candidate_source_present(
         &state,
+        TEST_REGISTRIES.cards,
         &candidate(CandidateSource::Ability(AbilitySource::InPlay(instance)))
     ));
     // A different instance of the same code is a different candidate.
     assert!(!candidate_source_present(
         &state,
+        TEST_REGISTRIES.cards,
         &candidate(CandidateSource::Ability(AbilitySource::InPlay(
             CardInstanceId(instance.0 + 1)
         )))
@@ -82,6 +89,7 @@ fn an_attachment_candidate_is_present_though_no_investigator_controls_it() {
         .build();
     assert!(candidate_source_present(
         &state,
+        TEST_REGISTRIES.cards,
         &candidate(CandidateSource::Ability(AbilitySource::InPlay(instance)))
     ));
 }
@@ -104,21 +112,33 @@ fn an_act_candidate_is_present_only_while_that_act_is_the_current_one() {
         AbilityAddress::Printed(0),
         CandidateSource::Ability(AbilitySource::Act),
     );
-    assert!(candidate_source_present(&state, &cand));
+    assert!(candidate_source_present(
+        &state,
+        TEST_REGISTRIES.cards,
+        &cand
+    ));
 
     // The act advanced: the source did not leave the board, it became a
     // different card — and a candidate minted from the old one is gone all
     // the same, which is the question the code comparison asks (#735).
     let mut advanced = state.clone();
     advanced.act_index = 1;
-    assert!(!candidate_source_present(&advanced, &cand));
+    assert!(!candidate_source_present(
+        &advanced,
+        TEST_REGISTRIES.cards,
+        &cand
+    ));
 
     // No act deck at all: nothing for `AbilitySource::Act` to name.
     let empty = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .build();
-    assert!(!candidate_source_present(&empty, &cand));
+    assert!(!candidate_source_present(
+        &empty,
+        TEST_REGISTRIES.cards,
+        &cand
+    ));
 }
 
 #[test]
@@ -138,11 +158,19 @@ fn an_agenda_candidate_is_present_only_while_that_agenda_is_the_current_one() {
         AbilityAddress::Printed(0),
         CandidateSource::Ability(AbilitySource::Agenda),
     );
-    assert!(candidate_source_present(&state, &cand));
+    assert!(candidate_source_present(
+        &state,
+        TEST_REGISTRIES.cards,
+        &cand
+    ));
 
     let mut past_the_end = state.clone();
     past_the_end.agenda_index = 1;
-    assert!(!candidate_source_present(&past_the_end, &cand));
+    assert!(!candidate_source_present(
+        &past_the_end,
+        TEST_REGISTRIES.cards,
+        &cand
+    ));
 }
 
 /// Silver Twilight Acolyte 01102's forced doom: the attacking enemy is the
@@ -166,12 +194,24 @@ fn an_enemy_candidate_tracks_its_enemy() {
             CandidateSource::Ability(AbilitySource::Enemy(id)),
         )
     };
-    assert!(candidate_source_present(&state, &cand(EnemyId(4))));
-    assert!(!candidate_source_present(&state, &cand(EnemyId(5))));
+    assert!(candidate_source_present(
+        &state,
+        TEST_REGISTRIES.cards,
+        &cand(EnemyId(4))
+    ));
+    assert!(!candidate_source_present(
+        &state,
+        TEST_REGISTRIES.cards,
+        &cand(EnemyId(5))
+    ));
 
     let mut defeated = state.clone();
     defeated.enemies.remove(&EnemyId(4));
-    assert!(!candidate_source_present(&defeated, &cand(EnemyId(4))));
+    assert!(!candidate_source_present(
+        &defeated,
+        TEST_REGISTRIES.cards,
+        &cand(EnemyId(4))
+    ));
 }
 
 #[test]
@@ -189,14 +229,108 @@ fn a_location_candidate_tracks_its_location() {
         .build();
     assert!(candidate_source_present(
         &state,
+        TEST_REGISTRIES.cards,
         &candidate(CandidateSource::Ability(AbilitySource::Location(loc)))
     ));
     assert!(!candidate_source_present(
         &state,
+        TEST_REGISTRIES.cards,
         &candidate(CandidateSource::Ability(AbilitySource::Location(
             LocationId(11)
         )))
     ));
+}
+
+/// A registry of two synthetic cards (ADR 0016): an event, and an asset
+/// carrying the discard-pile play permission.
+fn permission_registry() -> &'static CardRegistry {
+    let metadata = |code: &str, kind| CardMetadata {
+        code: code.to_string(),
+        name: code.to_string(),
+        text: None,
+        traits: vec![],
+        back_name: None,
+        back_text: None,
+        pack_code: "test".to_string(),
+        weakness: false,
+        kind,
+    };
+    MockRegistry::new()
+        .with_card(metadata(
+            SOME_CODE,
+            CardKind::Event {
+                class: Class::Neutral,
+                cost: Some(0),
+                xp: None,
+                skill_icons: SkillIcons::default(),
+                is_fast: true,
+                deck_limit: 2,
+                play_only_during_turn: false,
+            },
+        ))
+        .with_card(metadata(
+            PERMITTER,
+            CardKind::Asset {
+                class: Class::Neutral,
+                cost: Some(0),
+                xp: None,
+                slots: vec![],
+                health: None,
+                sanity: None,
+                skill_icons: SkillIcons::default(),
+                is_fast: false,
+                deck_limit: 2,
+                uses: None,
+                play_only_during_turn: false,
+            },
+        ))
+        .with_abilities(SOME_CODE, Vec::new)
+        .with_abilities(PERMITTER, || {
+            vec![dsl::constant(Effect::PlayTopmostEventInDiscardPile)]
+        })
+        .build()
+}
+
+/// An asset carrying `Effect::PlayTopmostEventInDiscardPile`.
+const PERMITTER: &str = "_rw_permitter";
+
+/// The discard-pile candidate is present while the zone check the play paths
+/// share still yields its card: the same card on top, under the same
+/// permission.
+#[test]
+fn a_discard_pile_candidate_is_present_only_while_its_card_is_the_playable_top() {
+    let cards = permission_registry();
+    let state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(
+            test_support::seat(1)
+                .in_play([PERMITTER])
+                .discard([SOME_CODE]),
+        )
+        .build();
+    let permission = state.in_play(INV, PERMITTER);
+    let on_top = candidate(CandidateSource::TopOfDiscardPile { permission });
+    assert!(candidate_source_present(&state, cards, &on_top));
+
+    let mut buried = state.clone();
+    buried
+        .investigators
+        .get_mut(&INV)
+        .unwrap()
+        .discard
+        .push(CardCode::new(PERMITTER));
+    assert!(
+        !candidate_source_present(&buried, cards, &on_top),
+        "a card discarded on top of it"
+    );
+
+    let elsewhere = candidate(CandidateSource::TopOfDiscardPile {
+        permission: CardInstanceId(permission.0 + 1),
+    });
+    assert!(
+        !candidate_source_present(&state, cards, &elsewhere),
+        "an instance that grants no permission"
+    );
 }
 
 #[test]
@@ -221,7 +355,10 @@ fn resolution_options_anchor_by_candidate_source() {
             source: CandidateSource::Ability(AbilitySource::Act),
         },
     ];
-    let opts = build_resolution_options(&cands, false);
+    let state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
+        .build();
+    let opts = build_resolution_options(&state, TEST_REGISTRIES.cards, &cands, false);
     assert_eq!(
         opts[0].target,
         Some(OptionTarget::CardInstance(CardInstanceId(9)))
@@ -286,6 +423,13 @@ fn candidate_anchor_maps_each_source() {
     assert_eq!(
         anchor_of(CandidateSource::Ability(AbilitySource::Agenda)),
         OptionTarget::Agenda,
+    );
+    // A play from the discard pile anchors to the card granting it (#1112).
+    assert_eq!(
+        anchor_of(CandidateSource::TopOfDiscardPile {
+            permission: CardInstanceId(6)
+        }),
+        OptionTarget::CardInstance(CardInstanceId(6)),
     );
     assert_eq!(
         anchor_of(CandidateSource::Hand),

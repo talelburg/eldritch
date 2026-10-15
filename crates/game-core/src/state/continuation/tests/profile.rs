@@ -248,6 +248,19 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             timing_point_window(vec![candidate()]),
             profile(PROMPT, CANCEL),
         ),
+        // A Fast event played from the top of the discard pile under a
+        // permission (Wendy's Amulet 01014, #1112).
+        (
+            timing_point_window(vec![ResolutionCandidate::new(
+                CardCode::new("01079"),
+                InvestigatorId(1),
+                AbilityAddress::Printed(0),
+                CandidateSource::TopOfDiscardPile {
+                    permission: CardInstanceId(7),
+                },
+            )]),
+            profile(PROMPT, CANCEL),
+        ),
         (
             Continuation::TimingPointWindow(TimingPointWindowFrame {
                 event: TimingEvent::RoundEnded,
