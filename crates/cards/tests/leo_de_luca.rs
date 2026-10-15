@@ -261,6 +261,17 @@ fn leo_grants_again_on_his_controllers_next_turn() {
     assert_eq!(actions(session.state()), 4, "three standard and Leo's");
 }
 
+/// Horror soaks onto Leo too: his 2 sanity takes 2 horror, which defeats him,
+/// and none reaches his controller.
+#[test]
+fn horror_soaks_onto_leo() {
+    let session = staged(with_leo()).session();
+    let leo = session.state().in_play(INV, LEO);
+    let session = soak_onto(session.take_horror(INV, 2), leo);
+    assert!(!leo_in_play(session.state()), "2 horror defeated Leo");
+    assert_eq!(session.state().investigators[&INV].horror(), 0);
+}
+
 /// Leo is an Ally: he takes the Ally slot from the ally there before him. (An
 /// attack's damage assigned to his 2 health is the defeat in
 /// `leo_defeated_after_the_first_action_costs_no_action`.)

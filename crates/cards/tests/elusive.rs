@@ -21,8 +21,9 @@ use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameStateBuilder, InvestigatorId,
-    Location, LocationId, Owner,
+    CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, FastActorScope, FastWindowKind,
+    GameStateBuilder, InvestigationPhaseFrame, InvestigationResume, InvestigatorId, Location,
+    LocationId, Owner, Phase, PhaseStep,
 };
 use game_core::test_support::{self, seat, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
@@ -40,6 +41,11 @@ const UNREVEALED: LocationId = LocationId(13);
 const OCCUPIED: LocationId = LocationId(14);
 
 const BARRICADE: &str = "01038";
+/// Beat Cop (01018): its `[fast]` ability keeps the Enemy phase's player
+/// window standing.
+const BEAT_COP: &str = "01018";
+/// Magnifying Glass (01030): a Fast asset, so its owner's window offers it.
+const MAGNIFYING_GLASS: &str = "01030";
 const ATTIC: &str = "01113";
 
 const PLAY: TurnAction = TurnAction::PlayCard {
@@ -227,6 +233,74 @@ fn not_playable_when_it_can_neither_disengage_nor_move() {
         !is_playable(&session),
         "Elusive must not be on the turn menu"
     );
+}
+
+/// The option playing investigator 1's Elusive in a Fast window.
+const ELUSIVE_IN_HAND: OptionTarget = OptionTarget::HandCard {
+    investigator: INV,
+    hand_index: 0,
+};
+
+/// *"Play only during your turn"*: in investigator 2's turn-begins window,
+/// standing on their Magnifying Glass 01030 (a Fast asset), Elusive is not
+/// offered to investigator 1 even with a destination to move to.
+#[test]
+fn not_playable_in_another_investigators_turn() {
+    let other = InvestigatorId(2);
+    let window = board([location(THERE, "There")], [])
+        .with_seat(seat(2).at(HERE).hand([MAGNIFYING_GLASS]).resources(1))
+        .with_turn_order([INV, other])
+        .with_phase(Phase::Investigation)
+        .with_active_investigator(other)
+        .with_phase_anchor(InvestigationPhaseFrame {
+            resume: InvestigationResume::TurnBegins,
+        })
+        .with_open_window(
+            FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
+            FastActorScope::Any,
+        )
+        .session();
+    let glass = OptionTarget::HandCard {
+        investigator: other,
+        hand_index: 0,
+    };
+    assert_eq!(window.offered_at(&glass), 1, "the window stands");
+    assert_eq!(
+        window.offered_at(&ELUSIVE_IN_HAND),
+        0,
+        "it is not investigator 1's turn: {:?}",
+        window.prompt(),
+    );
+    let _ = window.assert_rejects(|s| s.submit_off_menu(&PLAY));
+}
+
+/// *"Play only during your turn"*: the Enemy phase is no one's turn. Beat Cop
+/// 01018's `[fast]` ability keeps the phase's player window standing.
+#[test]
+fn not_playable_in_the_enemy_phase() {
+    let paused = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(
+            seat(1)
+                .at(HERE)
+                .hand([ELUSIVE])
+                .resources(2)
+                .in_play([BEAT_COP]),
+        )
+        .with_location(location(HERE, "Here"))
+        .with_location(location(THERE, "There"))
+        .with_enemy_engaged(enemy(100), INV)
+        .open_turn(INV)
+        .session()
+        .take(&TurnAction::EndTurn);
+    assert_eq!(paused.state().phase, Phase::Enemy);
+    assert_eq!(
+        paused.offered_at(&ELUSIVE_IN_HAND),
+        0,
+        "the Enemy phase window does not offer Elusive: {:?}",
+        paused.prompt(),
+    );
+    let _ = paused.assert_rejects(|s| s.submit_off_menu(&PLAY));
 }
 
 #[test]
