@@ -16,7 +16,7 @@ use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
     AbilityUsageRecord, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId,
-    LocationId, Phase, TokenModifiers, UsageClock,
+    LocationId, Phase, SkillTestId, TokenModifiers, UsageClock,
 };
 use game_core::test_support::{self, seat, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -95,7 +95,12 @@ fn seated_roland_reaction_fires_with_no_in_play_injection() {
         inv.investigator_card.ability_usage.get(&0),
         Some(&std::collections::BTreeMap::from([(
             INV,
-            AbilityUsageRecord::new(UsageClock::new(0, Phase::Investigation, Some(INV)), 1)
+            // The defeat lands at the Fight's ST.7, so the clock also reads
+            // the test in flight — the first one minted.
+            AbilityUsageRecord::new(
+                UsageClock::new(0, Phase::Investigation, Some(INV)).during_test(SkillTestId(0)),
+                1
+            )
         )])),
         "seated Roland's reaction recorded one fire on investigator_card.ability_usage",
     );
