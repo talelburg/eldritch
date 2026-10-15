@@ -989,7 +989,11 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
         ),
         Effect::DiscardSelf => discard_self(cx, &eval_ctx),
         Effect::Cancel => cancel_current_impact(cx),
-        Effect::PutIntoThreatArea { code, clues } => {
+        Effect::PutIntoThreatArea {
+            code,
+            clues,
+            horror,
+        } => {
             // The card going into play is the one being revealed, so its owner
             // is whoever owns the revealed card.
             let Some(owner) = eval_ctx.revealed_card_owner() else {
@@ -1009,6 +1013,10 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
             );
             if let Some((card, _)) = inst.and_then(|id| board::find_instance_mut(cx.state, id)) {
                 card.clues = *clues;
+                // Placed as the card enters play ("with 3 horror on it"), not
+                // dealt: no `DealDamage` frame, so no harm event or
+                // `DamagePlaced` timing point fires for it.
+                card.accumulated_horror = *horror;
             }
             EngineOutcome::Done
         }
@@ -1227,7 +1235,8 @@ fn draw_cards_effect(
 /// the deck. The select is a pick among cards in a deck, so it goes through
 /// [`choice::resolve_card_choice`], as a native's would. A `Chosen` target is
 /// already bound by [`ground_chosen_targets`]; the take + shuffle are the only
-/// mutations and run after the pick resolves.
+/// mutations and run after the pick resolves. A weakness taken then resolves
+/// as if drawn ([`cards::resolve_weakness_entering_hand`]), last.
 fn apply_search_deck(
     cx: &mut Cx,
     eval_ctx: EvalContext,
@@ -1289,7 +1298,7 @@ fn apply_search_deck(
     };
 
     // 4. Take chosen → hand.
-    if let Some(idx) = chosen_deck_index {
+    let taken_hand_index = chosen_deck_index.map(|idx| {
         let inv = cx.state.investigators.get_mut(&who).expect("checked above");
         let code = inv.deck.remove(idx);
         inv.hand.push(code.clone());
@@ -1297,11 +1306,20 @@ fn apply_search_deck(
             investigator: who,
             code,
         });
-    }
+        inv.hand.len() - 1
+    });
 
     // 5. Shuffle (RR p.18 entire-deck mandatory; Old Book "shuffle the
     //    remaining cards into the deck"). RNG-replayable; no-op on <2 cards.
     cards::shuffle_player_deck(cx, who);
+
+    // 6. A weakness that entered hand resolves as if just drawn
+    //    (`glossary/Weakness.md`; The Necronomicon 01009's ruling). Tail
+    //    position: its Revelation is pushed last, so it resolves after the
+    //    search has finished shuffling.
+    if let Some(hand_index) = taken_hand_index {
+        cards::resolve_weakness_entering_hand(cx, who, hand_index);
+    }
     EngineOutcome::Done
 }
 

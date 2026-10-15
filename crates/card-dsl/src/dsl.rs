@@ -2097,7 +2097,8 @@ pub enum Effect {
     /// Put the card with this printed `code` into the controller's threat
     /// area as a fresh in-play instance. The Revelation of persistent
     /// threat-area treacheries (Frozen in Fear 01164, Dissonant Voices
-    /// 01165) — the card names its own `CODE`. (Attaching to a *location*
+    /// 01165) and of asset weaknesses that enter play there (The
+    /// Necronomicon 01009) — the card names its own `CODE`. (Attaching to a *location*
     /// stays card-local because of per-card rules like Obscuring Fog's
     /// "Limit 1 per location".)
     ///
@@ -2114,6 +2115,11 @@ pub enum Effect {
         /// Clues to seed on the placed instance ("with 3 clues on it",
         /// Cover Up 01007). `0` for cards that enter clue-less.
         clues: u8,
+        /// Horror to seed on the placed instance ("with 3 horror on it",
+        /// The Necronomicon 01009). `0` for cards that enter without horror.
+        /// The horror is *placed* as the card enters play, not dealt, so no
+        /// harm event fires for it.
+        horror: u8,
     },
     /// Draw `count` cards for the resolved target investigator —
     /// "draw 1 card" (Guts 01089, Perception 01090, Overpower 01091,
@@ -2180,8 +2186,13 @@ pub enum Effect {
     /// ⇒ find nothing, 1 ⇒ auto-take, 2+ ⇒ the controller picks. An entire-deck
     /// search must shuffle on completion; top-N shuffles too (Old Book
     /// "shuffles the remaining cards into the deck"). Both "draws it" (Old
-    /// Book) and "add to your hand" (Librarian) are modeled as a move to hand —
-    /// the only rules difference (on-draw triggers) has no Core consumer.
+    /// Book) and "add to your hand" (Librarian) are modeled as a move to hand.
+    /// Either way a weakness taken resolves as if drawn: `glossary/Weakness.md`,
+    /// *"If a weakness enters an investigator's hand in a manner that did not
+    /// involve drawing the card, that investigator must resolve the card
+    /// (including any Revelation abilities) as if he or she had just drawn
+    /// it"* (The Necronomicon 01009). Its Revelation resolves after the
+    /// shuffle.
     SearchDeck {
         /// Whose deck is searched.
         target: InvestigatorTarget,
@@ -3681,6 +3692,7 @@ pub fn put_into_threat_area(code: impl Into<String>) -> Effect {
     Effect::PutIntoThreatArea {
         code: code.into(),
         clues: 0,
+        horror: 0,
     }
 }
 
@@ -3692,6 +3704,19 @@ pub fn put_into_threat_area_with_clues(code: impl Into<String>, clues: u8) -> Ef
     Effect::PutIntoThreatArea {
         code: code.into(),
         clues,
+        horror: 0,
+    }
+}
+
+/// Build an [`Effect::PutIntoThreatArea`] seeding `horror` on the placed
+/// instance (The Necronomicon 01009: "Put The Necronomicon into play in your
+/// threat area, with 3 horror on it").
+#[must_use]
+pub fn put_into_threat_area_with_horror(code: impl Into<String>, horror: u8) -> Effect {
+    Effect::PutIntoThreatArea {
+        code: code.into(),
+        clues: 0,
+        horror,
     }
 }
 

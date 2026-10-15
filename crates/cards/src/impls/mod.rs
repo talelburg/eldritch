@@ -154,6 +154,7 @@ pub mod skids_otoole;
 pub mod sneak_attack;
 pub mod switchblade;
 pub mod the_barrier;
+pub mod the_necronomicon;
 pub mod theyre_getting_out;
 pub mod trapped;
 pub mod unexpected_courage;
@@ -304,6 +305,7 @@ pub const ALL: &[CardRecord] = &[
     sneak_attack::CARD,
     switchblade::CARD,
     the_barrier::CARD,
+    the_necronomicon::CARD,
     theyre_getting_out::CARD,
     trapped::CARD,
     unexpected_courage::CARD,
