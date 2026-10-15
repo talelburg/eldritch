@@ -1036,14 +1036,14 @@ pub enum UpkeepResume {
     /// (`GameStateBuilder::ending_upkeep_phase`).
     AfterDraw,
     /// Step 4.6's `PhaseEnded { Upkeep }` forced abilities are *queued* above
-    /// this anchor. On re-exposure — once those frames have resolved — emit
-    /// `RoundEnded` (the mirror of [`EnemyResume::AfterPhaseEndForced`], #569).
+    /// this anchor. On re-exposure — once those frames have resolved — expire
+    /// round-lifetime lasting effects, then emit `RoundEnded` (the mirror of
+    /// [`EnemyResume::AfterPhaseEndForced`], #569).
     /// The round-end emit lives in this arm rather than inline after the
     /// phase-end emit precisely because the latter queues rather than resolves.
     AfterPhaseEndForced,
     /// The round-end `EmitEvent` coordinator (the `when` act advance + the `at`
-    /// doom) popped; run `upkeep_round_end_teardown` (expire until-end-of-round
-    /// effects, Upkeep → Mythos). Set before the coordinator is queued
+    /// doom) popped; run `upkeep_round_end_teardown` (Upkeep → Mythos). Set before the coordinator is queued
     /// (#434 — subsumes `ForcedContinuation::UpkeepAfterRoundEnded`).
     AfterRoundEnd,
 }

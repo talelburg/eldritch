@@ -57,9 +57,10 @@
 //! number of clues to advance."* — and `glossary/When.md` puts that
 //! *"immediately after the specified timing point or triggering condition
 //! initiates, but before its impact upon the game state resolves."* The round's
-//! ending is a **bare milestone** — expiring "until the end of the round"
-//! effects and the Upkeep → Mythos handoff run after the whole sequence, on the
-//! Upkeep anchor's resume — so this is the first cell of a sequence that changes
+//! ending is a **bare milestone** — "until the end of the round" lasting
+//! effects have expired just before it, and the Upkeep → Mythos handoff runs
+//! after the whole sequence, on the Upkeep anchor's resume (ADR 0008) — so this
+//! is the first cell of a sequence that changes
 //! nothing as it resolves, and the clue-spend happens with the board exactly as
 //! the round's end found it. Agenda 01107's `at`-cell round-end doom follows it,
 //! in that card's own ruling: *""At the end of the round" effects trigger after

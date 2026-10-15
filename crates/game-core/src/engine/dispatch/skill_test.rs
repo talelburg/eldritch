@@ -28,9 +28,9 @@ use crate::event::{Event, FailureReason};
 use crate::scenario;
 use crate::state::{
     self, AbilitySource, CardCode, CardInstanceId, ChaosToken, Continuation, DifficultyBasis,
-    DiscardPile, FastWindowKind, GameState, InFlightSkillTest, InvestigatorId, Lifetime,
-    RecordedModifier, ResolvedTest, SkillKind, SkillSubstitution, SkillTestFollowUp, SkillTestStep,
-    Status, SubstitutionPromptFrame, TokenResolution, Zone,
+    DiscardPile, FastWindowKind, GameState, InFlightSkillTest, InvestigatorId, LastingEffect,
+    LastingEffectKind, Lifetime, RecordedModifier, ResolvedTest, SkillKind, SkillSubstitution,
+    SkillTestFollowUp, SkillTestStep, Status, SubstitutionPromptFrame, TokenResolution, Zone,
 };
 
 /// The one-shot modifier an initiator grants the test it starts: a weapon's
@@ -239,19 +239,23 @@ pub(in crate::engine) fn start_skill_test(
 /// choice at initiation. A card-local native (Mind over Matter 01036) reaches
 /// it as
 /// [`NativeCx::add_skill_substitution`](crate::engine::NativeCx::add_skill_substitution).
-/// Round-scoped because the
-/// round-end teardown is what clears the list; no event announces it.
+/// Stamped [`Lifetime::Round`]: Mind over Matter's is the only substitution in
+/// scope, and it lasts *"Until the end of the round"*. No event announces it.
 pub fn add_skill_substitution(cx: &mut Cx, substitution: SkillSubstitution) {
-    cx.state.skill_substitutions.push(substitution);
+    cx.state.lasting_effects.push(LastingEffect {
+        lifetime: Lifetime::Round,
+        kind: LastingEffectKind::SkillSubstitution(substitution),
+    });
 }
 
-/// Whether `investigator` has an active round-scoped substitution covering a
-/// `skill` test (Mind over Matter 01036: Intellect for Combat/Agility).
+/// Whether `investigator` has an active substitution covering a `skill` test
+/// (Mind over Matter 01036: Intellect for Combat/Agility).
 fn substitution_covers(state: &GameState, investigator: InvestigatorId, skill: SkillKind) -> bool {
-    state
-        .skill_substitutions
-        .iter()
-        .any(|s| s.investigator == investigator && s.for_skills.contains(&skill))
+    state.lasting_effects.iter().any(|e| match &e.kind {
+        LastingEffectKind::SkillSubstitution(s) => {
+            s.investigator == investigator && s.for_skills.contains(&skill)
+        }
+    })
 }
 
 /// Resume the Mind over Matter substitution prompt (#322): `PickSingle(0)`
