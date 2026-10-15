@@ -29,6 +29,7 @@ fn normalized(code: &str, name: &str, card_type: &'static str) -> NormalizedCard
         play_only_during_turn: false,
         uses: None,
         commit_limit: None,
+        commit_only_to_own_test: false,
         shroud: None,
         clues: None,
         clues_fixed: false,

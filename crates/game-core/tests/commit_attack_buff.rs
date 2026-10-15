@@ -49,6 +49,7 @@ fn skill_metadata() -> CardMetadata {
             },
             deck_limit: 2,
             commit_limit: None,
+            commit_only_to_own_test: false,
         },
     }
 }

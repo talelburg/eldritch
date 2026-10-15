@@ -299,7 +299,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "core".to_owned(),
             weakness: false,
-            kind: CardKind::Skill { class: Class::Guardian, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: None },
+            kind: CardKind::Skill { class: Class::Guardian, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: false },
         },
         CardMetadata {
             code: "01026".to_owned(),
@@ -453,7 +453,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "core".to_owned(),
             weakness: false,
-            kind: CardKind::Skill { class: Class::Seeker, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: None },
+            kind: CardKind::Skill { class: Class::Seeker, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: false },
         },
         CardMetadata {
             code: "01040".to_owned(),
@@ -607,7 +607,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "core".to_owned(),
             weakness: false,
-            kind: CardKind::Skill { class: Class::Rogue, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: None },
+            kind: CardKind::Skill { class: Class::Rogue, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: true },
         },
         CardMetadata {
             code: "01054".to_owned(),
@@ -761,7 +761,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "core".to_owned(),
             weakness: false,
-            kind: CardKind::Skill { class: Class::Mystic, xp: Some(0), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: None },
+            kind: CardKind::Skill { class: Class::Mystic, xp: Some(0), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: false },
         },
         CardMetadata {
             code: "01068".to_owned(),
@@ -915,7 +915,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "core".to_owned(),
             weakness: false,
-            kind: CardKind::Skill { class: Class::Survivor, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, deck_limit: 2, commit_limit: None },
+            kind: CardKind::Skill { class: Class::Survivor, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: false },
         },
         CardMetadata {
             code: "01082".to_owned(),
@@ -1003,7 +1003,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "core".to_owned(),
             weakness: false,
-            kind: CardKind::Skill { class: Class::Neutral, xp: Some(0), skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: Some(1) },
+            kind: CardKind::Skill { class: Class::Neutral, xp: Some(0), skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: Some(1), commit_only_to_own_test: false },
         },
         CardMetadata {
             code: "01090".to_owned(),
@@ -1014,7 +1014,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "core".to_owned(),
             weakness: false,
-            kind: CardKind::Skill { class: Class::Neutral, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 2, combat: 0, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: Some(1) },
+            kind: CardKind::Skill { class: Class::Neutral, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 2, combat: 0, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: Some(1), commit_only_to_own_test: false },
         },
         CardMetadata {
             code: "01091".to_owned(),
@@ -1025,7 +1025,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "core".to_owned(),
             weakness: false,
-            kind: CardKind::Skill { class: Class::Neutral, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: Some(1) },
+            kind: CardKind::Skill { class: Class::Neutral, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: Some(1), commit_only_to_own_test: false },
         },
         CardMetadata {
             code: "01092".to_owned(),
@@ -1036,7 +1036,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "core".to_owned(),
             weakness: false,
-            kind: CardKind::Skill { class: Class::Neutral, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 2, wild: 0 }, deck_limit: 2, commit_limit: Some(1) },
+            kind: CardKind::Skill { class: Class::Neutral, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 2, wild: 0 }, deck_limit: 2, commit_limit: Some(1), commit_only_to_own_test: false },
         },
         CardMetadata {
             code: "01093".to_owned(),
@@ -1047,7 +1047,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "core".to_owned(),
             weakness: false,
-            kind: CardKind::Skill { class: Class::Neutral, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 2 }, deck_limit: 2, commit_limit: Some(1) },
+            kind: CardKind::Skill { class: Class::Neutral, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 2 }, deck_limit: 2, commit_limit: Some(1), commit_only_to_own_test: false },
         },
         CardMetadata {
             code: "01094".to_owned(),
@@ -2290,7 +2290,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "dwl".to_owned(),
             weakness: false,
-            kind: CardKind::Skill { class: Class::Rogue, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: Some(1) },
+            kind: CardKind::Skill { class: Class::Rogue, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: Some(1), commit_only_to_own_test: false },
         },
         CardMetadata {
             code: "02027".to_owned(),
@@ -3621,7 +3621,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "tece".to_owned(),
             weakness: false,
-            kind: CardKind::Skill { class: Class::Seeker, xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 2, combat: 0, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: None },
+            kind: CardKind::Skill { class: Class::Seeker, xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 2, combat: 0, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: false },
         },
         CardMetadata {
             code: "02151".to_owned(),
@@ -4050,7 +4050,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "bota".to_owned(),
             weakness: false,
-            kind: CardKind::Skill { class: Class::Mystic, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: None },
+            kind: CardKind::Skill { class: Class::Mystic, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: false },
         },
         CardMetadata {
             code: "02191".to_owned(),
@@ -4072,7 +4072,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "bota".to_owned(),
             weakness: false,
-            kind: CardKind::Skill { class: Class::Survivor, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 3 }, deck_limit: 2, commit_limit: None },
+            kind: CardKind::Skill { class: Class::Survivor, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 3 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: true },
         },
         CardMetadata {
             code: "02193".to_owned(),
@@ -4446,7 +4446,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "uau".to_owned(),
             weakness: false,
-            kind: CardKind::Skill { class: Class::Seeker, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 3 }, deck_limit: 2, commit_limit: None },
+            kind: CardKind::Skill { class: Class::Seeker, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 3 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: false },
         },
         CardMetadata {
             code: "02228".to_owned(),
@@ -4468,7 +4468,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "uau".to_owned(),
             weakness: false,
-            kind: CardKind::Skill { class: Class::Rogue, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: None },
+            kind: CardKind::Skill { class: Class::Rogue, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: false },
         },
         CardMetadata {
             code: "02230".to_owned(),
@@ -4490,7 +4490,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "uau".to_owned(),
             weakness: false,
-            kind: CardKind::Skill { class: Class::Rogue, xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: None },
+            kind: CardKind::Skill { class: Class::Rogue, xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: true },
         },
         CardMetadata {
             code: "02232".to_owned(),
@@ -4534,7 +4534,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "uau".to_owned(),
             weakness: false,
-            kind: CardKind::Skill { class: Class::Survivor, xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 2, wild: 0 }, deck_limit: 2, commit_limit: None },
+            kind: CardKind::Skill { class: Class::Survivor, xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 2, wild: 0 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: false },
         },
         CardMetadata {
             code: "02237".to_owned(),
@@ -4798,7 +4798,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "wda".to_owned(),
             weakness: false,
-            kind: CardKind::Skill { class: Class::Guardian, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: None },
+            kind: CardKind::Skill { class: Class::Guardian, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: false },
         },
         CardMetadata {
             code: "02261".to_owned(),
@@ -4886,7 +4886,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "wda".to_owned(),
             weakness: false,
-            kind: CardKind::Skill { class: Class::Mystic, xp: Some(2), skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: None },
+            kind: CardKind::Skill { class: Class::Mystic, xp: Some(2), skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: false },
         },
         CardMetadata {
             code: "02269".to_owned(),
@@ -4919,7 +4919,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "wda".to_owned(),
             weakness: false,
-            kind: CardKind::Skill { class: Class::Survivor, xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: None },
+            kind: CardKind::Skill { class: Class::Survivor, xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: true },
         },
         CardMetadata {
             code: "02272".to_owned(),
@@ -5216,7 +5216,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "litas".to_owned(),
             weakness: false,
-            kind: CardKind::Skill { class: Class::Guardian, xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: None },
+            kind: CardKind::Skill { class: Class::Guardian, xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: false },
         },
         CardMetadata {
             code: "02300".to_owned(),

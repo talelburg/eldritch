@@ -464,6 +464,14 @@ pub enum CardKind {
         /// "Max N committed per skill test" cap (Guts/Perception/… are `1`);
         /// `None` when uncapped. Enforced at the commit window.
         commit_limit: Option<u8>,
+        /// Whether the card prints *"Commit only to a skill test you are
+        /// performing."* (Opportunist 01053): only the investigator performing
+        /// a test may commit it. Pipeline-parsed; enforced at the commit
+        /// window. Rise to the Occasion 02192 prints the clause with a
+        /// further condition (*"and only if the difficulty of that test is at
+        /// least 2 higher than your base skill value"*), which this flag does
+        /// not carry.
+        commit_only_to_own_test: bool,
     },
     /// Enemy — an encounter (or weakness) creature.
     Enemy {

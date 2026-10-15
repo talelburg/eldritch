@@ -397,4 +397,15 @@ impl<'a> NativeCx<'a> {
     ) {
         combat::add_lasting_restriction(self.write_access(), investigator, restriction);
     }
+
+    /// Return the committed card at `index` — the one an
+    /// `OnSkillTestResolution` effect is printed on, read from
+    /// [`EvalContext::committed_card`](crate::engine::evaluator::EvalContext::committed_card)
+    /// — to its investigator's hand when the test ends, instead of discarding
+    /// it. Emits
+    /// [`Event::CommittedCardReturnedToHand`](crate::event::Event::CommittedCardReturnedToHand)
+    /// at RR ST.8, in place of the discard.
+    pub fn return_committed_card_to_hand(&mut self, index: u8) {
+        skill_test::return_committed_card_to_hand(self.write_access(), index);
+    }
 }
