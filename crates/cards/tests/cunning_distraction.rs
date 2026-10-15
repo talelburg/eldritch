@@ -19,7 +19,7 @@
 //! Runs against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
-use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::enumerate::{self, PlaySource, TurnAction};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, Enemy, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Zone,
@@ -83,7 +83,7 @@ fn board(first: Seat, include: &[EnemyId]) -> TestSession {
 fn play() -> TurnAction {
     TurnAction::PlayCard {
         investigator: INV,
-        hand_index: 0,
+        source: PlaySource::Hand(0),
     }
 }
 
