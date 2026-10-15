@@ -2521,14 +2521,32 @@ pub enum LocationSet {
     // `YourOrConnecting` is added by PR-8 (#306) with the adjacency model.
 }
 
-/// An entity-choice filter. Locational today; non-spatial arms (`Engaged`,
-/// `WithTrait`, …) accrete here when a card needs them — additively, touching
-/// neither [`LocationSet`] nor location-picks. (The `UsagePeriod`
-/// minimal-enum-with-a-growth-path idiom.)
+/// An entity-choice filter: a conjunction of constraints a candidate must meet.
+/// A card that narrows the choice further (Stray Cat's trait exclusion, #780)
+/// adds a field here rather than an arm, so the constraints compose — *"an
+/// exhausted enemy at your location"* is one scope with two fields set. A new
+/// field is optional, so [`EntityScope::at`] keeps reading as "no further
+/// constraint", touching neither [`LocationSet`] nor location-picks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum EntityScope {
-    /// An entity whose location is in the given [`LocationSet`].
-    At(LocationSet),
+pub struct EntityScope {
+    /// The entity's location must be in this [`LocationSet`].
+    pub at: LocationSet,
+    /// `Some(true)` admits only exhausted entities, `Some(false)` only ready
+    /// ones, `None` either. Enemies only: investigators have no exhausted
+    /// state, so an investigator scope leaves this `None` (Sneak Attack 01052,
+    /// *"an exhausted enemy at your location"*).
+    pub exhausted: Option<bool>,
+}
+
+impl EntityScope {
+    /// An entity at `set`, with no further constraint.
+    #[must_use]
+    pub const fn at(set: LocationSet) -> Self {
+        EntityScope {
+            at: set,
+            exhausted: None,
+        }
+    }
 }
 
 /// Single-investigator target spec.
@@ -2553,7 +2571,7 @@ impl InvestigatorTarget {
     #[must_use]
     pub fn chosen_anywhere() -> Self {
         InvestigatorTarget::Chosen(Choose {
-            scope: EntityScope::At(LocationSet::Anywhere),
+            scope: EntityScope::at(LocationSet::Anywhere),
         })
     }
 
@@ -2561,7 +2579,7 @@ impl InvestigatorTarget {
     #[must_use]
     pub fn chosen_at_your_location() -> Self {
         InvestigatorTarget::Chosen(Choose {
-            scope: EntityScope::At(LocationSet::Here),
+            scope: EntityScope::at(LocationSet::Here),
         })
     }
 }
@@ -2637,7 +2655,7 @@ impl EnemyTarget {
     #[must_use]
     pub fn chosen_at_your_location() -> Self {
         EnemyTarget::Chosen(Choose {
-            scope: EntityScope::At(LocationSet::Here),
+            scope: EntityScope::at(LocationSet::Here),
         })
     }
 }
