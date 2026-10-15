@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::{iter, mem};
 
 use card_dsl::card_data::SkillKind;
-use card_dsl::dsl::{ActionDesignator, Effect, EventTiming, RevealClause, SkillTestKind};
+use card_dsl::dsl::{ActionDesignator, Effect, EventTiming, IntExpr, RevealClause, SkillTestKind};
 use serde::{Deserialize, Serialize};
 
 use crate::engine::evaluator::EvalContext;
@@ -1334,7 +1334,13 @@ pub struct ResolvedTest {
     pub failed_by: u8,
     /// Success margin (`total - difficulty`, ≥ 0 on success); supplied to the
     /// logged [`SkillTestSucceeded`](crate::event::Event::SkillTestSucceeded) at the
-    /// `DetermineOutcome` step. Negative on failure (unused there).
+    /// `DetermineOutcome` step, and read back at ST.7 as a passed test's
+    /// `IntExpr::Count(Quantity::SkillTestSucceededBy)` (Switchblade 01044).
+    /// Negative on failure (unused there).
+    ///
+    /// Reading it back is not a stale snapshot: "succeed by" is the ST.6
+    /// comparison's own result, fixed once the verdict is, and the ST.5 sum it
+    /// came from already counted every modifier added during the test.
     pub margin: i8,
     /// Why the test failed (meaningful only when `!succeeded`); supplied to the
     /// logged [`SkillTestFailed`](crate::event::Event::SkillTestFailed).
@@ -1343,10 +1349,10 @@ pub struct ResolvedTest {
     /// token's contribution and the substitution included (an automatic
     /// failure makes it 0).
     ///
-    /// A display record for the client, written once here after the verdict
-    /// like [`margin`](Self::margin), which the engine never reads back: ADR
-    /// 0005 makes every modified quantity a read over live state, so a later
-    /// step that needs the total re-reads it rather than this field. ADR 0007
+    /// A display record for the client, written once here after the verdict,
+    /// which the engine never reads back: ADR 0005 makes every modified
+    /// quantity a read over live state, so a later step that needs the total
+    /// re-reads it rather than this field. ADR 0007
     /// retired a stored token resolution for the same reason.
     pub total: i8,
 }
@@ -1586,7 +1592,10 @@ pub enum SkillTestStep {
 /// on-success effects only fire when the test succeeds; the bare
 /// `PerformSkillTest` has no follow-up either way). The success-path
 /// effect is what each variant captures.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+///
+/// Not `Copy`: the Fight follow-up carries its damage bonus as an unevaluated
+/// [`IntExpr`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum SkillTestFollowUp {
     /// No action-specific follow-up. Used by a bare plain skill test (the
@@ -1611,8 +1620,11 @@ pub enum SkillTestFollowUp {
     Fight {
         /// The enemy the Fight action targeted.
         enemy: EnemyId,
-        /// Bonus damage beyond the base 1 (weapons). `0` for a basic Fight.
-        extra_damage: u8,
+        /// Bonus damage beyond the base 1 (weapons), `Lit(0)` for a basic
+        /// Fight. Unevaluated until the follow-up runs at RR ST.7, against
+        /// the test's success margin and the board the damage lands on
+        /// (Switchblade 01044, Machete 01020).
+        extra_damage: IntExpr,
     },
     /// On success, disengage the named enemy from the investigator and
     /// exhaust it. Used by `Evade`.

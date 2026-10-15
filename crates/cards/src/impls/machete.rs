@@ -72,9 +72,10 @@ pub fn abilities() -> Vec<Ability> {
 /// "If the attacked enemy is the only enemy engaged with you" — true iff the
 /// enemies engaged with the controller are exactly the one being attacked.
 ///
-/// Reads the Fight target from [`EvalContext::chosen_enemy`], which the
-/// designated-action frame binds before the Fight's `extra_damage` is
-/// evaluated.
+/// Reads the Fight target from [`EvalContext::chosen_enemy`], which the Fight
+/// follow-up binds when it evaluates `extra_damage` at RR ST.7, so the
+/// engagement read is the board's as the attack's damage is determined, not
+/// as the attack began.
 /// An unbound target (no Fight in flight) is `false`: no attacked enemy, no
 /// bonus. Both FAQ exclusions fall out of the set equality — an enemy engaged
 /// with nobody or with another investigator is not in the controller's engaged

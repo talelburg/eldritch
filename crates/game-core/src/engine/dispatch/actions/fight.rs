@@ -7,6 +7,7 @@ use card_dsl::dsl::{IntExpr, RevealClause, SkillTestKind};
 use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
 use crate::engine::dispatch::skill_test::InitiatorModifier;
 use crate::engine::dispatch::{combat, skill_test};
+use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::modified_value;
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
@@ -122,20 +123,32 @@ pub(in crate::engine::dispatch) fn handle(
 /// How an attack differs from a basic Fight: the modification a **Fight**
 /// designator carries (`glossary/Ability.md`: *"performs the designated action
 /// as described in the rules, but modified in the manner described by the
-/// ability"*), with `extra_damage` already evaluated. [`Default`] is the basic
-/// Fight action's: a combat test, no modifier, no extra damage, no clause.
-#[derive(Debug, Clone, Default)]
+/// ability"*). [`Default`] is the basic Fight action's: a combat test, no
+/// modifier, no extra damage, no clause.
+#[derive(Debug, Clone)]
 pub(crate) struct FightModification {
     /// *"+N \[combat\] for this attack"*, applied to whichever skill the
     /// attack tests.
     pub combat_modifier: Option<IntExpr>,
-    /// Damage beyond the base 1 (.38 Special: +1).
-    pub extra_damage: u8,
+    /// Damage beyond the base 1 (.38 Special: +1), unevaluated until
+    /// [`after_test`] determines the attack's damage at RR ST.7.
+    pub extra_damage: IntExpr,
     /// The skill tested instead of `[combat]` (Shrivelling 01060's
     /// `[willpower]`).
     pub skill_override: Option<SkillKind>,
     /// The card's *"If a \<symbol\> is revealed during this attack"*.
     pub reveal_clause: Option<RevealClause>,
+}
+
+impl Default for FightModification {
+    fn default() -> Self {
+        Self {
+            combat_modifier: None,
+            extra_damage: IntExpr::Lit(0),
+            skill_override: None,
+            reveal_clause: None,
+        }
+    }
 }
 
 /// Perform a **fight** against `enemy_id`: a Combat test (or the skill
@@ -155,8 +168,8 @@ pub(crate) struct FightModification {
 /// added to a snapshotted total. It travels unevaluated so the row answers from
 /// the board at every read (ADR 0005), which is what makes Esoteric Formula
 /// 02254's *"+2 \[willpower\] for this attack for each clue on the attacked
-/// enemy"* expressible without a second mechanism. `extra_damage` is already a
-/// number here: the Fight follow-up consumes it as a `u8`.
+/// enemy"* expressible without a second mechanism. `extra_damage` travels
+/// unevaluated too, on the Fight follow-up, to [`after_test`].
 ///
 /// Callers validate the target; this takes the id as given.
 pub(crate) fn perform(
@@ -198,6 +211,17 @@ pub(crate) fn perform(
 /// A fight's after-test step (RR ST.7), run on success only: deal
 /// `1 + extra_damage + bonus_attack_damage` to `enemy_id`.
 ///
+/// `extra_damage` is evaluated here, when the attack's damage is determined,
+/// not when the attack began. Its context is the ability's (`source`), with the
+/// attacked enemy bound as the chosen enemy (Machete 01020's *"If the attacked
+/// enemy is the only enemy engaged with you"*) and the test's success margin
+/// bound (Switchblade 01044's *"If you succeed by 2 or more"*), so a card
+/// committed after initiation counts towards it. A negative value deals no
+/// less than the base. An expression the evaluator can't answer (an
+/// unregistered native tag) is returned as the rejection the caller
+/// propagates, so the apply rolls back as it did when the same error surfaced
+/// at initiation.
+///
 /// The attacked enemy is still here. An enemy that left play *before* ST.6
 /// abandons the test outright (#682, the skill-test driver's preamble), which is
 /// what keeps `damage_enemy`'s enemy-missing panic loud rather than reachable.
@@ -209,24 +233,38 @@ pub(crate) fn perform(
 /// A weapon's bonus damage (.38 Special's +1) rides on `extra_damage`; a
 /// committed skill's bonus (Vicious Blow's +1) accumulates on the in-flight
 /// record at commit time (#307). The in-flight test is still present here —
-/// it's torn down only at the end of resolution — so the accumulator is
-/// readable.
+/// it's torn down only at the end of resolution — so the accumulator, the
+/// ability's source and the verdict are all readable.
 pub(in crate::engine::dispatch) fn after_test(
     cx: &mut Cx,
     investigator: InvestigatorId,
     enemy_id: EnemyId,
-    extra_damage: u8,
-) {
-    let bonus = cx
-        .state
-        .current_skill_test()
-        .map_or(0, |t| t.bonus_attack_damage);
+    extra_damage: &IntExpr,
+) -> Result<(), EngineOutcome> {
+    let (bonus, source, margin) = cx.state.current_skill_test().map_or((0, None, 0), |t| {
+        (
+            t.bonus_attack_damage,
+            t.source,
+            t.resolved.map_or(0, |r| r.margin),
+        )
+    });
+    let mut ctx = EvalContext::for_controller_with_optional_source(investigator, source);
+    ctx.set_chosen_enemy(enemy_id);
+    ctx.set_succeeded_by(u8::try_from(margin).unwrap_or(0));
+    let extra =
+        evaluator::eval_int_expr(cx.state, cx.cards, &ctx, extra_damage).map_err(|reason| {
+            EngineOutcome::Rejected {
+                reason: reason.into(),
+            }
+        })?;
     combat::damage_enemy(
         cx,
         enemy_id,
-        1u8.saturating_add(extra_damage).saturating_add(bonus),
+        1u8.saturating_add(u8::try_from(extra).unwrap_or(0))
+            .saturating_add(bonus),
         Some(investigator),
     );
+    Ok(())
 }
 
 /// Fire a Retaliate attack if the just-resolved test was a *failed Fight*
@@ -265,10 +303,12 @@ pub(in crate::engine::dispatch) fn fire_retaliate_if_any(
     if succeeded {
         return EngineOutcome::Done;
     }
-    let follow_up = cx.state.current_skill_test().map(|t| t.follow_up);
-    let Some(SkillTestFollowUp::Fight { enemy, .. }) = follow_up else {
+    let Some(SkillTestFollowUp::Fight { enemy, .. }) =
+        cx.state.current_skill_test().map(|t| &t.follow_up)
+    else {
         return EngineOutcome::Done;
     };
+    let enemy = *enemy;
     let retaliates = cx
         .state
         .enemies
@@ -308,7 +348,7 @@ mod tests {
             .push(Continuation::SkillTest(InFlightSkillTest {
                 follow_up: SkillTestFollowUp::Fight {
                     enemy: EnemyId(7),
-                    extra_damage: 1,
+                    extra_damage: IntExpr::Lit(1),
                 },
                 bonus_attack_damage: 2,
                 ..test_support::test_skill_test(
@@ -322,7 +362,7 @@ mod tests {
         let mut events = Vec::new();
         let mut cx = Cx::for_test(&mut state, &mut events);
 
-        after_test(&mut cx, inv, EnemyId(7), 1);
+        after_test(&mut cx, inv, EnemyId(7), &IntExpr::Lit(1)).expect("a literal evaluates");
 
         assert_eq!(
             state.enemies[&EnemyId(7)].damage,
