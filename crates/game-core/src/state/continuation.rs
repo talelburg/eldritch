@@ -831,7 +831,9 @@ impl Continuation {
     /// Take `investigator`'s cards-committed-to-a-skill-test off this frame,
     /// leaving the in-flight test holding none. Returns an empty `Vec` when the
     /// frame is not a [`SkillTest`](Self::SkillTest), belongs to someone else,
-    /// or has already been emptied.
+    /// or has already been emptied. A card's [destination](CommittedCard::destination)
+    /// is dropped: elimination removes it from the game wherever ST.8 would
+    /// have sent it.
     ///
     /// The sibling of [`take_play_in_progress`](Self::take_play_in_progress),
     /// for the other card state that is in **no zone**: a card committed to a
@@ -845,6 +847,9 @@ impl Continuation {
         match self {
             Continuation::SkillTest(t) if t.investigator == investigator => {
                 mem::take(&mut t.committed_by_active)
+                    .into_iter()
+                    .map(|c| c.code)
+                    .collect()
             }
             _ => Vec::new(),
         }
@@ -1140,6 +1145,42 @@ pub enum TimingSub {
     Done,
 }
 
+/// A card committed to an in-flight skill test, held in limbo on
+/// [`InFlightSkillTest::committed_by_active`] until RR ST.8 sends it on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommittedCard {
+    /// The committed card.
+    pub code: CardCode,
+    /// Where ST.8 sends it.
+    pub destination: CommittedCardDestination,
+}
+
+impl CommittedCard {
+    /// A freshly committed card, bound for the discard pile as RR ST.8 says:
+    /// *"Discard all cards that were committed to this skill test."*
+    #[must_use]
+    pub fn new(code: CardCode) -> Self {
+        Self {
+            code,
+            destination: CommittedCardDestination::Discard,
+        }
+    }
+}
+
+/// Where RR ST.8 sends a [`CommittedCard`].
+///
+/// A card's own success effect overrides the discard: Opportunist 01053's
+/// *"return Opportunist to your hand after this test instead of discarding
+/// it."* That replacement is the card's own, so it is a field here rather than
+/// a general replacement effect (#366).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CommittedCardDestination {
+    /// Its owner's discard pile — the default.
+    Discard,
+    /// Back to the hand it was committed from.
+    Hand,
+}
+
 /// A skill test paused mid-resolution at the commit window.
 ///
 /// Pushed by the skill-test initiator (a plain skill test, `Investigate`,
@@ -1189,7 +1230,7 @@ pub struct InFlightSkillTest {
     ///
     /// Populated on the [`ResolveInput`](crate::action::PlayerAction::ResolveInput)
     /// dispatch, which removes the named cards from the hand and moves them
-    /// here; the ST.8 teardown moves them on to the discard pile. **Load-
+    /// here; the ST.8 teardown moves them on to the discard pile (or back to hand). **Load-
     /// bearing for resolution**: the frame-driven steps read the committed
     /// codes off this field (e.g. `collect_on_skill_test_resolution` /
     /// `discard_committed_cards` via `in_flight.committed_by_active`), so it
@@ -1201,10 +1242,14 @@ pub struct InFlightSkillTest {
     /// resolved inside that window mutates the hand, and any parked hand
     /// index would then denote a different card (or none at all).
     ///
+    /// Each entry carries where ST.8 sends the card
+    /// ([`CommittedCard::destination`]), which a committed card's own success
+    /// effect may change (Opportunist 01053).
+    ///
     /// Multi-investigator commits (the rule "any investigator at the
     /// same location may commit") are a separate downstream issue; for
     /// now only the active investigator's commits live here.
-    pub committed_by_active: Vec<CardCode>,
+    pub committed_by_active: Vec<CommittedCard>,
     /// The location the test is associated with, snapshotted at
     /// skill-test start (`engine::dispatch::start_skill_test`) from
     /// the investigator's current location. Used by

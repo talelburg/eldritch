@@ -123,6 +123,7 @@ fn play_cost_reads_asset_and_event_cost_and_none_elsewhere() {
             skill_icons: SkillIcons::default(),
             deck_limit: 2,
             commit_limit: None,
+            commit_only_to_own_test: false,
         },
     };
     assert_eq!(skill.play_cost(), None);
@@ -187,6 +188,7 @@ fn card_type_is_derived_from_kind() {
             skill_icons: SkillIcons::default(),
             deck_limit: 2,
             commit_limit: None,
+            commit_only_to_own_test: false,
         },
     };
     assert_eq!(m.card_type(), CardType::Skill);
