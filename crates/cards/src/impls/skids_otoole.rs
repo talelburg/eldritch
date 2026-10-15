@@ -19,7 +19,7 @@
 //!
 //! The `[fast]` ability is a zero-action activated ability costing
 //! [`Cost::Resources`]`(2)`, whose effect is an unrestricted
-//! [`Effect::GainAdditionalAction`] scoped [`AdditionalActionScope::ThisTurn`].
+//! [`Effect::GainAdditionalAction`], an additional action this turn.
 //! *"(Limit once per turn.)"* is a [`UsageLimit`] with [`UsagePeriod::Turn`].
 //!
 //! *"During your turn"* is the ability's
@@ -38,8 +38,7 @@
 //! [`Effect::GainAdditionalAction`]: card_dsl::dsl::Effect::GainAdditionalAction
 
 use card_dsl::dsl::{
-    self, Ability, AdditionalActionScope, Cost, IntExpr, InvestigatorTarget, TokenOutcome,
-    UsageLimit, UsagePeriod,
+    self, Ability, Cost, IntExpr, InvestigatorTarget, TokenOutcome, UsageLimit, UsagePeriod,
 };
 use game_core::engine::evaluator::EvalContext;
 use game_core::state::{GameState, Phase};
@@ -64,16 +63,12 @@ const DURING_YOUR_TURN_TAG: &str = "01003:during-your-turn";
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![
-        dsl::activated(
-            0,
-            vec![Cost::Resources(2)],
-            dsl::gain_additional_action(AdditionalActionScope::ThisTurn),
-        )
-        .with_usage_limit(UsageLimit {
-            count: 1,
-            period: UsagePeriod::Turn,
-        })
-        .with_eligibility(dsl::native_condition(DURING_YOUR_TURN_TAG)),
+        dsl::activated(0, vec![Cost::Resources(2)], dsl::gain_additional_action())
+            .with_usage_limit(UsageLimit {
+                count: 1,
+                period: UsagePeriod::Turn,
+            })
+            .with_eligibility(dsl::native_condition(DURING_YOUR_TURN_TAG)),
         dsl::elder_sign_with(TokenOutcome {
             modifier: IntExpr::Lit(2),
             on_success: Some(dsl::gain_resources(InvestigatorTarget::You, 2)),

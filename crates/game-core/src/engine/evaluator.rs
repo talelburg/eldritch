@@ -69,11 +69,10 @@
 
 use card_dsl::card_data::{CardType, SkillKind};
 use card_dsl::dsl::{
-    ActionClass, ActionDesignator, AdditionalActionScope, CardFilter, ChoiceBranch, CmpOp,
-    Condition, ControlStatus, Determination, Effect, EnemyScope, EnemySet, EnemyTarget,
-    ForEachTargets, HarmKind, IntExpr, InvestigatorTarget, InvestigatorTargetSet, LocationSet,
-    LocationTarget, ModifierAudience, ModifierScope, Quantity, Restriction, RevealClause,
-    SearchScope, SkillTestKind, Stat, Trigger,
+    ActionClass, ActionDesignator, CardFilter, ChoiceBranch, CmpOp, Condition, ControlStatus,
+    Determination, Effect, EnemyScope, EnemySet, EnemyTarget, ForEachTargets, HarmKind, IntExpr,
+    InvestigatorTarget, InvestigatorTargetSet, LocationSet, LocationTarget, ModifierAudience,
+    ModifierScope, Quantity, Restriction, RevealClause, SearchScope, SkillTestKind, Stat, Trigger,
 };
 use serde::{Deserialize, Serialize};
 
@@ -1022,19 +1021,13 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
                 .into(),
         },
         Effect::TakeControl { code } => dispatch::take_control(cx, eval_ctx.controller, code),
-        Effect::GainAdditionalAction {
-            restriction,
-            scope: AdditionalActionScope::ThisTurn,
-        } => {
+        Effect::GainAdditionalAction { restriction } => {
             take::gain_additional_action(cx, eval_ctx.controller, *restriction);
             EngineOutcome::Done
         }
-        Effect::GainAdditionalAction {
-            scope: AdditionalActionScope::WhileInPlay,
-            ..
-        } => EngineOutcome::Rejected {
-            reason: "Effect::GainAdditionalAction { WhileInPlay } is a constant marker — read \
-                     off the card in play when actions are counted, never executed"
+        Effect::AdditionalActionWhileInPlay { .. } => EngineOutcome::Rejected {
+            reason: "Effect::AdditionalActionWhileInPlay is a constant marker — read off the \
+                     card in play when actions are counted, never executed"
                 .into(),
         },
         Effect::BoostAttackDamage(amount) => boost_attack_damage_effect(cx, *amount),

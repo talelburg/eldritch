@@ -6,8 +6,8 @@
 //! You may take an additional action during your turn.
 //! ```
 //!
-//! One constant: an unrestricted [`Effect::GainAdditionalAction`] scoped
-//! [`AdditionalActionScope::WhileInPlay`]. The engine reads it off the card
+//! One constant: an unrestricted [`Effect::AdditionalActionWhileInPlay`]
+//! marker. The engine reads it off the card
 //! each time it works out the investigator's actions, so the grant is gone the
 //! moment Leo leaves play, and a second copy is a fresh instance that grants
 //! again. His ruling (<https://arkhamdb.com/card/01048>): *"the first action you
@@ -19,9 +19,9 @@
 //! The Ally slot and the `health: 2, sanity: 2` soak are corpus metadata, which
 //! the engine models without anything declared here.
 //!
-//! [`Effect::GainAdditionalAction`]: card_dsl::dsl::Effect::GainAdditionalAction
+//! [`Effect::AdditionalActionWhileInPlay`]: card_dsl::dsl::Effect::AdditionalActionWhileInPlay
 
-use card_dsl::dsl::{self, Ability, AdditionalActionScope};
+use card_dsl::dsl::{self, Ability};
 
 use crate::impls::CardRecord;
 
@@ -35,9 +35,7 @@ pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 /// turn."*
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![dsl::constant(dsl::gain_additional_action(
-        AdditionalActionScope::WhileInPlay,
-    ))]
+    vec![dsl::constant(dsl::additional_action_while_in_play())]
 }
 
 #[cfg(test)]

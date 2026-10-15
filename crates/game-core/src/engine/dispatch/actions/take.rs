@@ -36,10 +36,7 @@
 use std::borrow::Cow;
 use std::fmt;
 
-use card_dsl::dsl::{
-    ActionClass, ActionDesignator, AdditionalActionRestriction, AdditionalActionScope, Effect,
-    Trigger,
-};
+use card_dsl::dsl::{ActionClass, ActionDesignator, AdditionalActionRestriction, Effect, Trigger};
 
 use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::actions::evade::EvadeModification;
@@ -227,7 +224,7 @@ impl AdditionalAction {
 /// changes. Ordered as [`additional_actions`] sorts the entries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum AdditionalActionOrigin {
-    /// A [`WhileInPlay`](card_dsl::dsl::AdditionalActionScope::WhileInPlay)
+    /// An [`AdditionalActionWhileInPlay`](card_dsl::dsl::Effect::AdditionalActionWhileInPlay)
     /// grant on this card in play (Leo De Luca 01048). Using it marks the
     /// instance in
     /// [`Investigator::additional_actions_used_this_turn`](crate::state::Investigator::additional_actions_used_this_turn).
@@ -269,7 +266,7 @@ fn additional_actions(
     if !cursor::turn_open(state, investigator) {
         return Vec::new();
     }
-    // The constant sweep: each card in play whose `WhileInPlay` grant has not
+    // The constant sweep: each card in play whose while-in-play grant has not
     // been used this turn. Read off the card every time, so the grant is gone
     // the moment the card leaves play.
     let mut pool: Vec<AdditionalAction> = Vec::new();
@@ -285,16 +282,12 @@ fn additional_actions(
         };
         pool.extend(abilities.iter().filter_map(|ability| {
             match (&ability.trigger, &ability.effect) {
-                (
-                    Trigger::Constant,
-                    Effect::GainAdditionalAction {
-                        restriction,
-                        scope: AdditionalActionScope::WhileInPlay,
-                    },
-                ) => Some(AdditionalAction {
-                    restriction: *restriction,
-                    origin: AdditionalActionOrigin::InPlay(card.instance_id),
-                }),
+                (Trigger::Constant, Effect::AdditionalActionWhileInPlay { restriction }) => {
+                    Some(AdditionalAction {
+                        restriction: *restriction,
+                        origin: AdditionalActionOrigin::InPlay(card.instance_id),
+                    })
+                }
                 _ => None,
             }
         }));
@@ -362,8 +355,7 @@ fn use_additional_actions(
 }
 
 /// `investigator` gains an additional action for this turn, which `restriction`
-/// limits to the actions it admits ([`Effect::GainAdditionalAction`] with
-/// [`AdditionalActionScope::ThisTurn`]).
+/// limits to the actions it admits ([`Effect::GainAdditionalAction`]).
 ///
 /// A no-op unless their turn is open and not ending. Outside their turn the
 /// grant has nothing to be used on, and stored it would outlive the turn it was
@@ -373,7 +365,6 @@ fn use_additional_actions(
 /// actions were forfeited, and there it is forfeited at once.
 ///
 /// [`Effect::GainAdditionalAction`]: card_dsl::dsl::Effect::GainAdditionalAction
-/// [`AdditionalActionScope::ThisTurn`]: card_dsl::dsl::AdditionalActionScope::ThisTurn
 pub(crate) fn gain_additional_action(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -382,7 +373,7 @@ pub(crate) fn gain_additional_action(
     debug_assert_eq!(
         cx.state.active_investigator,
         Some(investigator),
-        "gain_additional_action: a `ThisTurn` grant outside {investigator:?}'s turn"
+        "gain_additional_action: a this-turn grant outside {investigator:?}'s turn"
     );
     if !cursor::turn_open(cx.state, investigator) {
         return;

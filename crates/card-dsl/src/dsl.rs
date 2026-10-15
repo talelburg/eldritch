@@ -1725,7 +1725,8 @@ impl Effect {
             | Effect::SearchDeck { .. }
             | Effect::AttachSelfToLocation
             | Effect::TakeControl { .. }
-            | Effect::GainAdditionalAction { .. } => {}
+            | Effect::GainAdditionalAction { .. }
+            | Effect::AdditionalActionWhileInPlay { .. } => {}
         }
     }
 }
@@ -2126,6 +2127,23 @@ pub enum Effect {
     /// for `CannotPlay`, `pending_action_surcharge` for `ExtraActionCost`);
     /// resolving it as an effect is a misuse and rejects.
     Restrict(Restriction),
+    /// **An additional action for as long as the source card is in play**,
+    /// once during each of its controller's turns (see **Standard action /
+    /// additional action** in `GLOSSARY.md`): Leo De Luca 01048's *"You may
+    /// take an additional action during your turn."* A constant marker like
+    /// [`Restrict`](Self::Restrict), under a [`Trigger::Constant`]:
+    /// **inspected, not executed** — the engine reads it off the card in play
+    /// each time it works out the investigator's actions, so the grant is gone
+    /// the moment the card leaves play. Resolving it rejects.
+    ///
+    /// The executed form, a grant an ability resolves, is
+    /// [`GainAdditionalAction`](Self::GainAdditionalAction). That a
+    /// constant-only marker is an `Effect` at all, which the evaluator must
+    /// refuse if executed, is #1085.
+    AdditionalActionWhileInPlay {
+        /// What the additional action may be used for. `None` is any action.
+        restriction: Option<AdditionalActionRestriction>,
+    },
     /// Search a region of an investigator's deck for one card matching
     /// `filter`, move it to that investigator's hand, then shuffle the deck.
     /// Old Book of Lore 01031 (top 3, any card, chosen investigator) and
@@ -2247,23 +2265,20 @@ pub enum Effect {
         /// Printed `ArkhamDB` code of the card to take control of.
         code: String,
     },
-    /// **Grant an additional action** (see **Standard action / additional
-    /// action** in `GLOSSARY.md`): one more action the investigator may take
-    /// this turn, on top of the three standard ones. `glossary/Action.md`:
-    /// *"Some card abilities may grant an investigator additional actions to
-    /// take during his or her turn."*
+    /// **Grant an additional action this turn** (see **Standard action /
+    /// additional action** in `GLOSSARY.md`): one more action the investigator
+    /// may take this turn, on top of the three standard ones.
+    /// `glossary/Action.md` (FAQ 1.10): *"Some card abilities grant
+    /// investigators "additional actions.""*
     ///
-    /// The `scope` says where the grant comes from, and so how the engine reads
-    /// it:
-    ///
-    /// - [`ThisTurn`](AdditionalActionScope::ThisTurn) is **executed**, by an
-    ///   ability that resolves: "Skids" O'Toole 01003's *"spend 2 resources:
-    ///   You may take an additional action this turn."* The grant is pushed
-    ///   onto the controller and lasts until it is used or the turn ends.
-    /// - [`WhileInPlay`](AdditionalActionScope::WhileInPlay) is **inspected**,
-    ///   under a [`Trigger::Constant`], like [`Restrict`](Self::Restrict):
-    ///   Leo De Luca 01048's *"You may take an additional action during your
-    ///   turn."* Resolving one rejects.
+    /// **Executed**, by an ability that resolves: "Skids" O'Toole 01003's
+    /// *"spend 2 resources: You may take an additional action this turn."* The
+    /// grant is pushed onto the controller and lasts until it is used or the
+    /// turn ends (FAQ 1.31: *"Any unused actions are forfeited at the end of an
+    /// investigator's turn"*). A card in play that grants one each turn is the
+    /// constant marker
+    /// [`AdditionalActionWhileInPlay`](Self::AdditionalActionWhileInPlay)
+    /// instead.
     ///
     /// The engine never stores a count of additional actions. It works the list
     /// out each time it's needed, so a grant from a card in play is gone the
@@ -2271,12 +2286,11 @@ pub enum Effect {
     GainAdditionalAction {
         /// What the additional action may be used for. `None` is any action.
         restriction: Option<AdditionalActionRestriction>,
-        /// Where the grant comes from and how long it lasts.
-        scope: AdditionalActionScope,
     },
 }
 
-/// What an [`Effect::GainAdditionalAction`] may be spent on — Daisy Walker
+/// What an additional action ([`Effect::GainAdditionalAction`],
+/// [`Effect::AdditionalActionWhileInPlay`]) may be spent on — Daisy Walker
 /// 01002's *"You may take an additional action during your turn, which can
 /// only be used on \[\[Tome\]\] \[action\] abilities."*
 ///
@@ -2285,22 +2299,6 @@ pub enum Effect {
 /// one. #779 adds the variants; no stored state needs migrating.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum AdditionalActionRestriction {}
-
-/// Where an [`Effect::GainAdditionalAction`] comes from, and how long it lasts.
-///
-/// Its own type rather than [`ModifierScope`], whose `WhileInPlayDuring` and
-/// `ThisSkillTest` mean nothing for a grant.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum AdditionalActionScope {
-    /// For as long as the source card is in play, during each of its
-    /// controller's turns, once per turn per card (Leo De Luca 01048). Read
-    /// under a [`Trigger::Constant`], never executed.
-    WhileInPlay,
-    /// Until used, or until the end of the current turn ("Skids" O'Toole
-    /// 01003). FAQ 1.31: *"Any unused actions are forfeited at the end of an
-    /// investigator's turn."*
-    ThisTurn,
-}
 
 /// Which card an [`Effect::Grant`] gives its abilities to.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -3350,13 +3348,18 @@ pub fn gain_resources(target: InvestigatorTarget, amount: u8) -> Effect {
     Effect::GainResources { target, amount }
 }
 
-/// Build an unrestricted [`Effect::GainAdditionalAction`] of `scope`.
+/// Build an unrestricted [`Effect::GainAdditionalAction`]: an additional action
+/// this turn.
 #[must_use]
-pub fn gain_additional_action(scope: AdditionalActionScope) -> Effect {
-    Effect::GainAdditionalAction {
-        restriction: None,
-        scope,
-    }
+pub fn gain_additional_action() -> Effect {
+    Effect::GainAdditionalAction { restriction: None }
+}
+
+/// Build an unrestricted [`Effect::AdditionalActionWhileInPlay`], the constant
+/// marker; wrap it in [`constant`].
+#[must_use]
+pub fn additional_action_while_in_play() -> Effect {
+    Effect::AdditionalActionWhileInPlay { restriction: None }
 }
 
 /// Build an [`Effect::DiscoverClue`].
