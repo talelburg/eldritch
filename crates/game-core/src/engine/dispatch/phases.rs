@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 use card_dsl::card_data::CardKind;
 
 use crate::action::{InputResponse, RosterEntry};
+use crate::card_registry::CardRegistry;
 #[cfg(test)] // only `drive_phase` / `push_anchor_and_drive`, the cfg(test) helpers below
 use crate::engine::dispatch;
 use crate::engine::dispatch::emit::TimingEvent;
@@ -27,6 +28,27 @@ use crate::state::{
 /// turn during the Investigation phase. Per the Arkham Horror LCG
 /// rulebook.
 pub(super) const ACTIONS_PER_TURN: u8 = 3;
+
+/// The playable gate: the rejection reason for a roster whose investigator or
+/// deck holds a code `reg` refuses as unplayable, naming each offending code
+/// once, in first-seen order. `None` when every code is playable.
+fn unplayable_roster_cards(reg: &CardRegistry, roster: &[RosterEntry]) -> Option<String> {
+    let mut unplayable: Vec<&str> = Vec::new();
+    for code in roster
+        .iter()
+        .flat_map(|entry| std::iter::once(&entry.investigator).chain(&entry.deck))
+    {
+        if !(reg.is_playable)(code) && !unplayable.contains(&code.as_str()) {
+            unplayable.push(code.as_str());
+        }
+    }
+    (!unplayable.is_empty()).then(|| {
+        format!(
+            "the roster holds cards with no implementation: {}",
+            unplayable.join(", ")
+        )
+    })
+}
 
 /// Internal scenario setup: seat the roster, shuffle decks, push the initial
 /// phase anchors. Called by [`super::seat_and_open`] (the non-logged engine
@@ -70,25 +92,9 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
         ));
     }
 
-    // The playable gate: refuse any investigator or deck code with no
-    // implementation, naming each offending code once, in first-seen order.
-    let mut unplayable: Vec<&CardCode> = Vec::new();
-    for code in roster
-        .iter()
-        .flat_map(|entry| std::iter::once(&entry.investigator).chain(&entry.deck))
-    {
-        if !(reg.is_playable)(code) && !unplayable.contains(&code) {
-            unplayable.push(code);
-        }
-    }
-    if !unplayable.is_empty() {
-        let codes: Vec<&str> = unplayable.iter().map(|code| code.as_str()).collect();
+    if let Some(reason) = unplayable_roster_cards(reg, roster) {
         return EngineOutcome::Rejected {
-            reason: format!(
-                "the roster holds cards with no implementation: {}",
-                codes.join(", ")
-            )
-            .into(),
+            reason: reason.into(),
         };
     }
 
