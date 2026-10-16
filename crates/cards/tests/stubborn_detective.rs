@@ -22,9 +22,9 @@
 //! `glossary/Blank.md`: *"Text and/or icons gained from another source are not
 //! blanked."*
 //!
-//! Roland Banks 01001 is the investigator under test: *"[reaction] After you
+//! Roland Banks 01001 is the investigator under test: *"\[reaction\] After you
 //! defeat an enemy: Discover 1 clue at your location. (Limit once per round.)
-//! / [elder_sign] effect: +1 for each clue on your location."*
+//! / \[`elder_sign`\] effect: +1 for each clue on your location."*
 
 use card_dsl::card_data::CardKind;
 use card_dsl::dsl::{self, Ability, GrantTarget, InvestigatorTarget, SkillTestKind};
