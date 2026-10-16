@@ -38,8 +38,8 @@
 //!
 //! The enemies are built as fixtures rather than spawned from the corpus, each
 //! with the owner it would enter play with: the encounter deck for Ghoul Minion
-//! and Ghoul Priest, and its bearer for Mob Enforcer (`glossary/Weakness.md`). No
-//! engine path spawns a weakness enemy from a draw yet (#514).
+//! and Ghoul Priest, and its bearer for Mob Enforcer (`glossary/Weakness.md`) —
+//! the owner a weakness enemy drawn from its bearer's deck spawns with (#1121).
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;

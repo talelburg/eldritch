@@ -136,8 +136,9 @@ pub struct Investigator {
     /// Mostly elimination's (Rules Reference p.10, "Elimination," step 1):
     /// when this investigator is eliminated, every card they control in play
     /// (`cards_in_play`) and every card they own in an out-of-play area
-    /// (`hand`, `deck`, `discard`) is drained into this pile and removed from
-    /// the game. A card of theirs that
+    /// (`hand`, `deck`, `discard`) or in limbo — a card mid-play, committed to
+    /// a skill test, or a drawn weakness resolving as an encounter card — is
+    /// drained into this pile and removed from the game. A card of theirs that
     /// [`NativeCx::remove_from_game`](crate::engine::NativeCx::remove_from_game)
     /// takes out of play lands here too, by its owner, wherever it was.
     /// Required on the wire (#453).

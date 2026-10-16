@@ -63,7 +63,8 @@ fn investigator_turn(ending: bool) -> Continuation {
 #[test]
 fn an_encounter_card_disposal_does_not_await_input() {
     let f = Continuation::EncounterCard(EncounterCardFrame {
-        card: CardCode::new("01163"),
+        card: Some(CardCode::new("01163")),
+        owner: Owner::EncounterDeck,
         disposition: EncounterDisposition::Discard,
         revelation_resolved: false,
     });
@@ -435,7 +436,8 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
         ),
         (
             Continuation::EncounterCard(EncounterCardFrame {
-                card: CardCode::new("01116"),
+                card: Some(CardCode::new("01116")),
+                owner: Owner::EncounterDeck,
                 disposition: EncounterDisposition::Spawn {
                     investigator: InvestigatorId(1),
                 },

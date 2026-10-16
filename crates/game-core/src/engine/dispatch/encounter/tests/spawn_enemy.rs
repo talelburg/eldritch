@@ -135,6 +135,7 @@ fn spawn_enemy_reads_combat_stats_and_keywords_from_metadata() {
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
+        Owner::EncounterDeck,
     );
 
     let enemy = state.enemies.values().next().expect("enemy spawned");
@@ -177,6 +178,7 @@ fn spawn_enemy_scales_per_investigator_health_by_investigator_count() {
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
+        Owner::EncounterDeck,
     );
 
     let enemy = state.enemies.values().next().expect("enemy spawned");
@@ -212,6 +214,7 @@ fn spawn_enemy_reads_victory_from_metadata() {
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
+        Owner::EncounterDeck,
     );
 
     let enemy = state.enemies.values().next().expect("enemy spawned");
@@ -240,6 +243,7 @@ fn spawn_at_specific_location_with_one_investigator_engages_them() {
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
+        Owner::EncounterDeck,
     );
 
     assert!(matches!(outcome, EngineOutcome::Done), "{outcome:?}");
@@ -280,6 +284,7 @@ fn spawn_at_specific_location_with_no_investigators_leaves_unengaged() {
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
+        Owner::EncounterDeck,
     );
 
     assert!(matches!(outcome, EngineOutcome::Done), "{outcome:?}");
@@ -309,6 +314,7 @@ fn spawn_at_specific_location_discards_when_location_not_in_play() {
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
+        Owner::EncounterDeck,
     );
     assert_eq!(outcome, EngineOutcome::Done, "discard is not a rejection");
     assert!(state.enemies.is_empty(), "the enemy does not spawn");
@@ -345,6 +351,7 @@ fn spawn_with_unrepresented_instruction_rejects_without_mutating() {
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
+        Owner::EncounterDeck,
     );
 
     let EngineOutcome::Rejected { reason } = &outcome else {
@@ -383,6 +390,7 @@ fn spawn_with_no_instruction_places_at_drawing_investigators_location() {
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
+        Owner::EncounterDeck,
     );
 
     assert!(matches!(outcome, EngineOutcome::Done), "{outcome:?}");
@@ -411,6 +419,7 @@ fn spawn_with_no_instruction_rejects_when_drawing_investigator_has_no_location()
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
+        Owner::EncounterDeck,
     );
     match outcome {
         EngineOutcome::Rejected { reason } => {
@@ -443,6 +452,7 @@ fn spawn_engages_sole_colocated_investigator() {
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
+        Owner::EncounterDeck,
     );
     assert_eq!(outcome, EngineOutcome::Done);
     let spawned = state.enemies.values().next().expect("one enemy");
@@ -469,6 +479,7 @@ fn spawn_tie_suspends_for_lead_pick() {
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
+        Owner::EncounterDeck,
     );
     assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
     assert!(matches!(
@@ -502,6 +513,7 @@ fn resume_spawn_engage_rejects_bad_pick_and_preserves_pending() {
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
+        Owner::EncounterDeck,
     );
     assert!(matches!(
         state.continuations.top(),
@@ -549,12 +561,14 @@ fn spawn_mints_distinct_enemy_ids() {
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
+        Owner::EncounterDeck,
     );
     let _ = spawn_enemy(
         &mut Cx::for_test(&mut state, &mut events),
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
+        Owner::EncounterDeck,
     );
     assert_eq!(
         state.enemies.len(),

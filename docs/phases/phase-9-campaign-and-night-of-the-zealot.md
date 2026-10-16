@@ -5,8 +5,7 @@
 📐 Architecture only; not yet ordered. Issues milestoned here are deferrals
 whose first consumer is Midnight Masks / Devourer content or the deck-import gate
 (the [milestone query](https://github.com/talelburg/eldritch/milestone/10) is
-authoritative): #75 (campaign log), #138/#139 (Surge / Peril), #514 (drawn
-weakness reveal beyond persistent treacheries), #575/#578 (spawn-clause and
+authoritative): #75 (campaign log), #138/#139 (Surge / Peril), #575/#578 (spawn-clause and
 location-index pipeline bugs, p1 — Ruth Turner 01141 is refused on a parser
 bug), #670 (the non-`Specific` spawn shapes and the spawning investigator's
 choice among valid locations — first consumers Acolyte 01169, Wizard of the Order

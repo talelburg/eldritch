@@ -6,6 +6,7 @@ use card_dsl::card_data::{CardKind, CardMetadata, CardType, HealthValue, Spawn, 
 use card_dsl::dsl::{Ability, Effect, Trigger};
 
 use crate::action::InputResponse;
+use crate::engine::board;
 use crate::engine::dispatch::emit::{self, TimingEvent};
 use crate::engine::dispatch::hunters::PreyResolution;
 use crate::engine::dispatch::{choice, cursor, hunters, reaction_windows, skill_test};
@@ -16,7 +17,7 @@ use crate::event::Event;
 use crate::state::{
     CardCode, Continuation, EncounterCardFrame, EncounterDisposition, EncounterDrawFrame, Enemy,
     FastWindowKind, InvestigatorId, LocationId, Owner, PhaseStep, PlayerDrawFrame,
-    SpawnEngagePending, Status,
+    SpawnEngagePending, Status, Zone,
 };
 
 /// Hard cap on a single Mythos draw chain. Real scenarios surge ≤2
@@ -80,7 +81,7 @@ pub(super) fn encounter_card_revealed(cx: &mut Cx, investigator: InvestigatorId)
             reason: format!("EncounterCardRevealed: unknown card code: {code:?}").into(),
         };
     };
-    resolve_encounter_card(cx, investigator, code, metadata)
+    resolve_encounter_card(cx, investigator, code, metadata, Owner::EncounterDeck)
 }
 
 /// A treachery is **persistent** (stays in play after its Revelation,
@@ -128,21 +129,46 @@ pub(crate) fn treachery_is_persistent(abilities: &[Ability]) -> bool {
 /// resolve the drawn card through here, as
 /// [`NativeCx::resolve_encounter_card`](crate::engine::NativeCx::resolve_encounter_card)
 /// — agenda 01106's reverse draws the dug-up `Ghoul` enemy this way.
+///
+/// # The owner
+///
+/// `owner` is the card's [`Owner`]: [`Owner::EncounterDeck`] for every card
+/// drawn from the encounter deck, and the bearer for an encounter-cardtype
+/// weakness drawn from a player deck (#1121) — `glossary/Weakness.md`: *"When an
+/// investigator draws a weakness with an encounter cardtype (for example, an
+/// enemy or a treachery weakness), resolve that card as if it were just drawn
+/// from the encounter deck."* It rides the frame to the three readers that
+/// need it: the Revelation's binding, the spawned enemy, and a one-shot's
+/// discard pile. The `EncounterCardDrawn` timing point doesn't carry it: no
+/// trigger reads it, and Ward of Protection 01065's *"non-weakness"* filter
+/// reads the card itself.
 pub fn resolve_encounter_card(
     cx: &mut Cx,
     investigator: InvestigatorId,
     code: CardCode,
     metadata: &CardMetadata,
+    owner: Owner,
 ) -> EngineOutcome {
-    let card_type = metadata.card_type();
-
     // Emit BEFORE Revelation resolves — see caveat in encounter_card_revealed.
     cx.events.push(Event::CardRevealed {
         investigator,
         code: code.clone(),
-        card_type,
+        card_type: metadata.card_type(),
     });
+    begin_encounter_card(cx, investigator, code, metadata.card_type(), owner)
+}
 
+/// [`resolve_encounter_card`] after its [`Event::CardRevealed`]: push the
+/// card's disposition frame and announce the draw. Split out for a player
+/// draw of several weaknesses, which reveals every card before resolving the
+/// first (see `cards::resolve_drawn_weaknesses`).
+pub(super) fn begin_encounter_card(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    code: CardCode,
+    card_type: CardType,
+    owner: Owner,
+) -> EngineOutcome {
     // Treachery and enemy both: push the disposition frame BEFORE the draw
     // condition whose resolve step is the Revelation (#423, #1056). The
     // framework disposes of the card via `dispose_encounter_card_if_top` once
@@ -165,7 +191,8 @@ pub fn resolve_encounter_card(
     };
 
     cx.state.continuations.push(EncounterCardFrame {
-        card: code.clone(),
+        card: Some(code.clone()),
+        owner,
         disposition,
         revelation_resolved: false,
     });
@@ -188,18 +215,27 @@ pub fn resolve_encounter_card(
 /// on the drawn card." then "4. If the card is an enemy, spawn it following
 /// any spawn instruction the card bears." The spawn happens at disposal, after
 /// the condition's sequence has drained. The drawing investigator controls the
-/// Revelation; the card is the encounter deck's.
+/// Revelation; the card is the frame's `owner`'s — the encounter deck's, or the
+/// bearer's for a drawn weakness (#1121).
+///
+/// Nothing resolves for a weakness elimination has already taken off the frame
+/// and removed from the game (its bearer's deck-out horror defeated them
+/// before its Revelation came round): the game has ended for its bearer.
 pub(super) fn resolve_revelation(cx: &mut Cx, investigator: InvestigatorId, code: &CardCode) {
     let frame = cx
         .state
         .continuations
         .topmost_of_mut::<EncounterCardFrame>()
         .expect("resolve_revelation: the draw condition sits above its EncounterCard frame");
+    let Some(card) = &frame.card else {
+        return;
+    };
     debug_assert_eq!(
-        &frame.card, code,
+        card, code,
         "resolve_revelation: the topmost EncounterCard frame is not the drawn card's"
     );
     frame.revelation_resolved = true;
+    let owner = frame.owner;
 
     let revelation_effects: Vec<Effect> = (cx.cards.abilities_for)(code)
         .unwrap_or_default()
@@ -208,7 +244,7 @@ pub(super) fn resolve_revelation(cx: &mut Cx, investigator: InvestigatorId, code
         .map(|a| a.effect)
         .collect();
     if !revelation_effects.is_empty() {
-        let eval_ctx = EvalContext::for_revelation(investigator, Owner::EncounterDeck);
+        let eval_ctx = EvalContext::for_revelation(investigator, owner);
         evaluator::push_effect(cx, &Effect::Seq(revelation_effects), eval_ctx);
     }
 }
@@ -275,7 +311,7 @@ pub(super) fn resolve_revelation(cx: &mut Cx, investigator: InvestigatorId, code
 /// Spawn-location resolution is checked before any mutation. It has four
 /// outcomes: (1) a legal location → mint + engage (below); (2) a `Specific`
 /// location not in play → the enemy does **not** spawn and its card is placed
-/// in `encounter_discard`, returning `Done` (RR p.24 / Flesh-Eater 01118 FAQ,
+/// in its owner's discard pile, returning `Done` (RR p.24 / Flesh-Eater 01118 FAQ,
 /// #517) — this is the only mutating non-spawn path; (3) a
 /// [`SpawnLocation::Unrepresented`] clause → `Rejected` with `state`/`events`
 /// unchanged, because the enemy prints a spawn instruction we cannot model and
@@ -312,6 +348,7 @@ fn spawn_enemy(
     investigator: InvestigatorId,
     code: CardCode,
     metadata: &CardMetadata,
+    owner: Owner,
 ) -> EngineOutcome {
     // Resolve the spawn location (validate-first). Only the card's `spawn`
     // rule is read here; the full stat read + mint happens in
@@ -341,10 +378,10 @@ fn spawn_enemy(
                 // and is discarded instead." Flesh-Eater 01118 FAQ: "place that
                 // enemy card into the encounter discard pile without any further
                 // effects." So the draw resolves (`Done`) rather than rejecting:
-                // the enemy never enters play and its card goes to the encounter
-                // discard. Silent, matching the treachery `Discard` disposal
-                // arm. (#517.)
-                cx.state.encounter_discard.push(code);
+                // the enemy never enters play and its card goes to its owner's
+                // discard pile, with its event, like a one-shot treachery's
+                // disposal. (#517, #1121.)
+                board::discard_drawn_card(cx, code, owner, drawn_from(owner));
                 return EngineOutcome::Done;
             }
         }
@@ -385,7 +422,19 @@ fn spawn_enemy(
             }
         },
     };
-    spawn_enemy_at(cx, code, metadata, location_id, Owner::EncounterDeck)
+    spawn_enemy_at(cx, code, metadata, location_id, owner)
+}
+
+/// The deck a drawn card of `owner`'s came from, named as the `from` of its
+/// [`Event::CardDiscarded`] once it is disposed of: a card resolving in limbo
+/// is in no zone of its own (GLOSSARY **Limbo**), so the event names where it
+/// was drawn from. The encounter deck for its own cards, and the bearer's deck
+/// for a drawn weakness (#1121).
+fn drawn_from(owner: Owner) -> Zone {
+    match owner {
+        Owner::Investigator(_) => Zone::Deck,
+        Owner::EncounterDeck | Owner::Scenario => Zone::EncounterDeck,
+    }
 }
 
 /// Mint an enemy from `metadata` at an explicit `location_id`, resolving
@@ -788,7 +837,7 @@ fn draw_encounter_card_into_frame(cx: &mut Cx, investigator: InvestigatorId) -> 
 
     // Step 3 + 4: Push the disposition + Revelation frames; the `drive` loop
     // resolves them, then disposes of the card.
-    resolve_encounter_card(cx, investigator, code, metadata)
+    resolve_encounter_card(cx, investigator, code, metadata, Owner::EncounterDeck)
 }
 
 /// Advance the encounter-draw loop after a completed chain (#348, replacing the
@@ -857,18 +906,24 @@ pub(super) fn advance_encounter_draw(cx: &mut Cx) -> EngineOutcome {
 /// Disposal:
 ///
 /// - `Discard` (treachery, Rules Reference p.18 default): a one-shot treachery
-///   is discarded to `encounter_discard`; a **persistent** treachery (one
+///   is discarded to its owner's discard pile — the encounter discard, or a
+///   drawn weakness's bearer's (#1121) — emitting [`Event::CardDiscarded`]
+///   `from` the deck it was drawn from; a **persistent** treachery (one
 ///   carrying a non-`Revelation` ability) placed itself during its Revelation
 ///   and owns its own disposition, so it is skipped. Persistence is re-derived
 ///   from the registry by card code — the frame stays payload-minimal (#380).
-///   The discard is eventless.
 /// - `Spawn` (enemy, RR p.24 step 4): re-derive the enemy metadata from the
-///   registry and [`spawn_enemy`] at the drawer's location. The spawn may
+///   registry and [`spawn_enemy`] at the drawer's location, owned by the
+///   frame's owner. The spawn may
 ///   suspend on an engagement tie ([`EngineOutcome::AwaitingInput`]) or reject;
 ///   either is returned immediately (the loop does not continue). It may also
 ///   return `Done` *without* minting an enemy — a `Specific` spawn location not
-///   in play discards the card to `encounter_discard` (RR p.24, #517) — in which
+///   in play discards the card to its owner's pile (RR p.24, #517) — in which
 ///   case the loop continues past the (already-popped) frame as usual.
+///
+/// A frame whose card elimination has taken (a drawn weakness whose bearer was
+/// defeated mid-resolution, [`Continuation::take_resolving_weakness`]) is
+/// popped with nothing disposed of: the card is already removed from the game.
 ///
 /// After disposal the frame is gone and the loop re-dispatches whatever is
 /// beneath: a [`PlayerDraw`](Continuation::PlayerDraw) frame (Mythos chain →
@@ -887,9 +942,15 @@ pub(super) fn dispose_encounter_card_if_top(cx: &mut Cx) -> EngineOutcome {
     {
         let EncounterCardFrame {
             card,
+            owner,
             disposition,
             revelation_resolved,
         } = cx.state.continuations.pop_expect::<EncounterCardFrame>();
+        // Elimination took a bearer's weakness off the frame and removed it
+        // from the game (ADR 0002): there is nothing left to dispose of.
+        let Some(card) = card else {
+            continue;
+        };
 
         match disposition {
             EncounterDisposition::Discard => {
@@ -904,7 +965,7 @@ pub(super) fn dispose_encounter_card_if_top(cx: &mut Cx) -> EngineOutcome {
                     && (cx.cards.abilities_for)(&card)
                         .is_some_and(|abilities| treachery_is_persistent(&abilities));
                 if !placed_itself {
-                    cx.state.encounter_discard.push(card.clone());
+                    board::discard_drawn_card(cx, card, owner, drawn_from(owner));
                 }
             }
             EncounterDisposition::Spawn { investigator } => {
@@ -914,7 +975,7 @@ pub(super) fn dispose_encounter_card_if_top(cx: &mut Cx) -> EngineOutcome {
                             .into(),
                     };
                 };
-                match spawn_enemy(cx, investigator, card.clone(), metadata) {
+                match spawn_enemy(cx, investigator, card, metadata, owner) {
                     EngineOutcome::Done => {}
                     // An engagement tie suspended (or a reject): propagate
                     // immediately rather than continue the loop. A mid-Mythos
