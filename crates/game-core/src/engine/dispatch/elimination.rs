@@ -4,7 +4,7 @@
 use crate::card_registry::CardRegistry;
 use crate::engine::board::{self, NotLeft, Placement};
 use crate::engine::dispatch::emit::TimingEvent;
-use crate::engine::dispatch::{act_agenda, cursor, emit, hunters, trigger_scan};
+use crate::engine::dispatch::{act_agenda, cursor, emit, engagement, trigger_scan};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::event::{Event, TraumaKind};
@@ -439,17 +439,10 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
         .map(|(id, _)| *id)
         .collect();
     for &eid in &affected {
-        let enemy = cx.state.enemies.get_mut(&eid).unwrap_or_else(|| {
-            unreachable!("run_elimination_steps: enemy {eid:?} vanished; state corruption")
-        });
-        enemy.engaged_with = None;
-        cx.events.push(Event::EnemyDisengaged {
-            enemy: eid,
-            investigator,
-        });
+        engagement::disengage(cx, eid);
     }
     for &eid in &affected {
-        hunters::reengage_at_location(cx, eid);
+        engagement::reengage_at_location(cx, eid);
     }
 
     // Step 4: "All other cards in the eliminated investigator's threat area are

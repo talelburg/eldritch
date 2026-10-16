@@ -9,7 +9,7 @@ use crate::action::InputResponse;
 use crate::engine::board;
 use crate::engine::dispatch::emit::{self, TimingEvent};
 use crate::engine::dispatch::hunters::PreyResolution;
-use crate::engine::dispatch::{choice, cursor, hunters, reaction_windows, skill_test};
+use crate::engine::dispatch::{choice, engagement, hunters, reaction_windows, skill_test};
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::{EngineOutcome, InputRequest, OptionTarget, ResumeToken};
 use crate::engine::Cx;
@@ -284,10 +284,14 @@ pub(super) fn resolve_revelation(cx: &mut Cx, investigator: InvestigatorId, code
 /// > enemy's prey instructions to determine which investigator is
 /// > engaged.
 ///
-/// All cases route through the shared [`resolve_prey`] resolver
+/// An enemy with no Spawn instruction engages its drawer outright, without
+/// consulting its prey (`glossary/Spawn.md`: *"If the enemy does not have a
+/// "Spawn –" instruction, the investigator drawing the enemy spawns it engaged
+/// with him/her, unless it is aloof."*, #650).
+///
+/// A `Specific` spawn routes through the shared [`resolve_prey`] resolver
 /// (#128, option A): the co-located set is narrowed by the enemy's
-/// prey (always `Prey::Default` in current scope, so a 2+ set always
-/// ties). `None`/`One` resolve inline (no engagement, or engage the
+/// prey. `None`/`One` resolve inline (no engagement, or engage the
 /// sole/best candidate); `Tie` suspends via
 /// [`SpawnEngagePending`](crate::state::SpawnEngagePending) and returns
 /// [`EngineOutcome::AwaitingInput`] for the lead investigator's
@@ -360,7 +364,7 @@ fn spawn_enemy(
             reason: format!("spawn_enemy: card {code} is not an enemy").into(),
         };
     };
-    let location_id = match spawn {
+    let (location_id, engages) = match spawn {
         Some(Spawn {
             location: SpawnLocation::Specific(loc_code),
         }) => {
@@ -370,7 +374,7 @@ fn spawn_enemy(
                 .iter()
                 .find(|(_, loc)| loc.code.as_str() == loc_code.as_str())
             {
-                *id
+                (*id, SpawnEngagement::Prey)
             } else {
                 // Rules Reference p.24: "If an enemy has no legal location to
                 // spawn at (for example, if its spawn instruction directs it to
@@ -404,13 +408,19 @@ fn spawn_enemy(
                 .into(),
             };
         }
+        // `glossary/Spawn.md`: *"If the enemy does not have a "Spawn –"
+        // instruction, the investigator drawing the enemy spawns it engaged
+        // with him/her, unless it is aloof."* The drawer is named outright, so
+        // the enemy's prey is not consulted and two investigators at the
+        // drawer's location do not tie (#650). TODO(#653): an aloof enemy
+        // spawns unengaged instead.
         None => match cx
             .state
             .investigators
             .get(&investigator)
             .and_then(|inv| inv.current_location)
         {
-            Some(loc) => loc,
+            Some(loc) => (loc, SpawnEngagement::Drawer(investigator)),
             None => {
                 return EngineOutcome::Rejected {
                     reason: format!(
@@ -422,7 +432,17 @@ fn spawn_enemy(
             }
         },
     };
-    spawn_enemy_at(cx, code, metadata, location_id, owner)
+    spawn_enemy_engaging(cx, code, metadata, location_id, owner, engages)
+}
+
+/// How a spawning enemy finds the investigator it engages.
+#[derive(Clone, Copy)]
+enum SpawnEngagement {
+    /// The investigator who drew it: an enemy with no Spawn instruction.
+    Drawer(InvestigatorId),
+    /// The engagement rule among the investigators at its location, narrowed
+    /// by its prey: an enemy spawned *at* a location.
+    Prey,
 }
 
 /// The deck a drawn card of `owner`'s came from, named as the `from` of its
@@ -447,13 +467,34 @@ fn drawn_from(owner: Owner) -> Zone {
 ///
 /// `owner` is the enemy's [`Owner`], stated by the caller: the encounter deck
 /// for an enemy drawn from it, and whichever owner a set-aside enemy has.
-#[allow(clippy::too_many_lines)]
 pub(super) fn spawn_enemy_at(
     cx: &mut Cx,
     code: CardCode,
     metadata: &CardMetadata,
     location_id: LocationId,
     owner: Owner,
+) -> EngineOutcome {
+    spawn_enemy_engaging(
+        cx,
+        code,
+        metadata,
+        location_id,
+        owner,
+        SpawnEngagement::Prey,
+    )
+}
+
+/// Mint an enemy from `metadata` at `location_id` and engage it as
+/// `engages` says: with its drawer, or by prey among the investigators
+/// there. The body of [`spawn_enemy`] and [`spawn_enemy_at`].
+#[allow(clippy::too_many_lines)]
+fn spawn_enemy_engaging(
+    cx: &mut Cx,
+    code: CardCode,
+    metadata: &CardMetadata,
+    location_id: LocationId,
+    owner: Owner,
+    engages: SpawnEngagement,
 ) -> EngineOutcome {
     // spawn_enemy_at is only reached for Enemy cards; pull the
     // enemy-specific stats out of the kind.
@@ -488,16 +529,9 @@ pub(super) fn spawn_enemy_at(
         None => 1,
     };
 
-    // 2. Resolve engagement-on-spawn (validate-first). The co-located
-    //    set is narrowed by the enemy's `prey`; with `Prey::Default` a 2+
-    //    set ties and suspends for the lead investigator's
-    //    `PickSingle` (option A).
-    let candidates = cursor::active_investigators_at(cx.state, location_id);
-
-    // 3. Mint and place (mutate-second). The enemy is inserted unengaged;
-    //    the `One` and (post-resume) `Tie` cases set `engaged_with` via
-    //    `engage_enemy_with` so the `EnemyEngaged` event always pairs with
-    //    the mutation.
+    // Mint and place. The enemy is inserted unengaged; the engagement
+    // below goes through `engagement::engage`, so the `EnemyEngaged` event
+    // always pairs with the mutation.
     let enemy_id = cx.state.enemy_ids.mint();
 
     let enemy = Enemy {
@@ -522,7 +556,18 @@ pub(super) fn spawn_enemy_at(
     };
     cx.state.enemies.insert(enemy_id, enemy);
 
-    match hunters::resolve_prey(cx.state, cx.cards, prey, &candidates) {
+    // Resolve engagement-on-spawn. A drawer is engaged outright. Otherwise the
+    // co-located set is narrowed by the enemy's `prey`; with `Prey::Default` a
+    // 2+ set ties and suspends for the lead investigator's `PickSingle`
+    // (option A).
+    let resolution = match engages {
+        SpawnEngagement::Drawer(drawer) => PreyResolution::One(drawer),
+        SpawnEngagement::Prey => {
+            let candidates = engagement::candidates(cx.state, enemy_id);
+            hunters::resolve_prey(cx.state, cx.cards, prey, &candidates)
+        }
+    };
+    match resolution {
         PreyResolution::None => {
             cx.events.push(Event::EnemySpawned {
                 enemy: enemy_id,
@@ -539,7 +584,7 @@ pub(super) fn spawn_enemy_at(
                 location: location_id,
                 engaged_with: Some(target),
             });
-            hunters::engage_enemy_with(cx, enemy_id, target);
+            engagement::engage(cx, enemy_id, target);
             EngineOutcome::Done
         }
         PreyResolution::Tie(tied) => {

@@ -7,7 +7,7 @@ use card_dsl::dsl::{Effect, RevealClause, SkillTestKind};
 
 use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
 use crate::engine::dispatch::emit::{self, TimingEvent};
-use crate::engine::dispatch::{combat, skill_test};
+use crate::engine::dispatch::{engagement, skill_test};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::event::Event;
@@ -228,7 +228,7 @@ pub(in crate::engine::dispatch) fn resolve_evasion(
         enemy: enemy_id,
         investigator,
     });
-    combat::disengage(cx, enemy_id);
+    engagement::disengage(cx, enemy_id);
     let enemy = cx
         .state
         .enemies

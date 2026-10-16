@@ -2,9 +2,9 @@
 //! investigator's location.
 
 use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
+use crate::engine::dispatch::engagement;
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
-use crate::event::Event;
 use crate::state::{ActionResume, EnemyId, GameState, InvestigatorId};
 
 /// The enemies an Engage may target: every enemy at `investigator`'s location
@@ -115,11 +115,8 @@ pub(in crate::engine::dispatch) fn perform(
     if !candidates(cx.state, investigator).contains(&enemy_id) {
         return EngineOutcome::Done;
     }
-    let enemy_mut = cx.state.enemies.get_mut(&enemy_id).expect("checked above");
-    enemy_mut.engaged_with = Some(investigator);
-    cx.events.push(Event::EnemyEngaged {
-        enemy: enemy_id,
-        investigator,
-    });
+    // An enemy engaged with another investigator is taken from them:
+    // `engage` logs their disengagement before this one's engagement.
+    engagement::engage(cx, enemy_id, investigator);
     EngineOutcome::Done
 }

@@ -9,8 +9,8 @@ use crate::engine::board::{self, LeavingCard, MoveResourcesError, NotLeft, Place
 use crate::engine::dispatch::actions::{r#move, take};
 use crate::engine::dispatch::tokens::{self, MoveHorrorError};
 use crate::engine::dispatch::{
-    act_agenda, cards, combat, elimination, encounter, hunters, placement, reveal, set_aside,
-    skill_test, threat_area,
+    act_agenda, cards, combat, elimination, encounter, engagement, hunters, placement, reveal,
+    set_aside, skill_test, threat_area,
     uses::{self, MoveUsesError, SpendUsesError},
 };
 use crate::engine::outcome::EngineOutcome;
@@ -229,7 +229,7 @@ impl<'a> NativeCx<'a> {
     /// investigator, it engages that investigator, …"*). For an effect that leaves
     /// enemies ready and unengaged beside an investigator, once it has resolved.
     pub fn engage_ready_enemies(&mut self) {
-        hunters::engage_ready_enemies(self.write_access());
+        engagement::engage_ready_enemies(self.write_access());
     }
 
     // --- Tokens ---
