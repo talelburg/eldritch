@@ -145,6 +145,16 @@ pub enum Event {
         /// Amount paid.
         amount: u8,
     },
+    /// An investigator discarded resources from their resource pool: Paranoia
+    /// 01097's *"Discard all your resources."* Neither a payment nor a move, so
+    /// [`Event::ResourcesPaid`] stays silent and a trigger on spending or paying
+    /// resources does not see it. A discard from an empty pool emits nothing.
+    ResourcesDiscarded {
+        /// Whose pool the resources left.
+        investigator: InvestigatorId,
+        /// How many were discarded.
+        amount: u8,
+    },
     /// Tokens were spent from a card's runtime uses-pool, to pay a
     /// `Cost::SpendUses` (".38 Special": "Spend 1 ammo") or by an effect that
     /// spends them. Every spend emits it, through the engine's one
@@ -295,14 +305,17 @@ pub enum Event {
         /// Investigator the test was for.
         investigator: InvestigatorId,
     },
-    /// An enemy entered play at a location from the encounter deck.
+    /// An enemy entered play at a location: drawn (from the encounter deck,
+    /// or as a weakness from its bearer's deck), or put into play by an
+    /// effect.
     ///
-    /// Emitted by `spawn_enemy` (in `engine::dispatch`) when an
-    /// encounter card resolved as an enemy lands in
-    /// [`GameState::enemies`](crate::state::GameState::enemies).
-    /// `engaged_with` is `Some(investigator)` when the spawn caused
-    /// engagement-on-spawn (Rules Reference p.10) and `None` when the
-    /// enemy spawned at an empty location.
+    /// Emitted by the spawn path (in `engine::dispatch`) when the enemy
+    /// lands in [`GameState::enemies`](crate::state::GameState::enemies).
+    /// `engaged_with` is `Some(investigator)` when the spawn engaged
+    /// someone: the drawer of an enemy with no Spawn instruction, or the
+    /// investigator its prey picked at its location (Rules Reference
+    /// p.10). It is `None` when the enemy spawned at an empty location, or
+    /// when a prey tie there waits on the lead investigator's pick.
     ///
     /// When `engaged_with == Some(_)`, the spawn handler also emits
     /// [`EnemyEngaged`](Self::EnemyEngaged) immediately after this
@@ -316,12 +329,15 @@ pub enum Event {
         code: CardCode,
         /// Where the enemy spawned on the location map.
         location: LocationId,
-        /// If the spawn engaged an investigator on arrival, who.
-        /// `None` if the enemy spawned at a location with no
-        /// investigators.
+        /// If the spawn engaged an investigator on arrival, who. `None` if
+        /// it engaged no one, or not yet.
         engaged_with: Option<InvestigatorId>,
     },
     /// An enemy became engaged with an investigator.
+    ///
+    /// An enemy taken from another investigator (the Engage action) logs
+    /// that investigator's [`EnemyDisengaged`](Self::EnemyDisengaged)
+    /// immediately before this event.
     EnemyEngaged {
         /// The engaged enemy.
         enemy: EnemyId,
@@ -471,6 +487,18 @@ pub enum Event {
         investigator: InvestigatorId,
         /// The card moved.
         code: CardCode,
+    },
+    /// An investigator's whole discard pile was removed from the game, into
+    /// their own removed-from-game pile: Abandoned and Alone 01015's *"remove
+    /// all cards in your discard pile from the game."* One event for the pile,
+    /// not a [`CardRemovedFromGame`](Self::CardRemovedFromGame) per card. An
+    /// empty pile emits nothing.
+    DiscardPileRemovedFromGame {
+        /// Whose discard pile it was, and whose removed-from-game pile the
+        /// cards joined: a discard pile holds only its investigator's cards.
+        investigator: InvestigatorId,
+        /// The cards removed, in pile order (bottom first).
+        cards: Vec<CardCode>,
     },
     /// A shuffle of the shared encounter deck occurred. Emitted by
     /// `shuffle_encounter_deck` (in `engine::dispatch`) iff the deck

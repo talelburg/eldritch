@@ -14,8 +14,8 @@ use crate::engine::{
 };
 use crate::event::Event;
 use crate::state::{
-    Continuation, EmitEventFrame, EmitStep, GameState, GameStateBuilder, HandSizeDiscard,
-    InvestigatorId, MulliganFrame, SkillKind,
+    Continuation, DealDamageFrame, DealDamageStep, EmitEventFrame, EmitStep, GameState,
+    GameStateBuilder, HandSizeDiscard, InvestigatorId, MulliganFrame, SkillKind,
 };
 
 /// Step-wise test driver: drive the real engine one step at a time, reading the
@@ -280,8 +280,30 @@ impl TestSession {
     ///
     /// When the sequence completes, the frame it was fired above is exposed
     /// again: at the turn menu the session comes back to the menu.
+    ///
+    /// [`DamageDealt`](TimingEvent::DamageDealt) is only ever announced by a
+    /// deal in progress, and its resolve step re-reads the assignment from that
+    /// deal's frame (ADR 0009). So firing it parks the frame beneath first, at
+    /// `Finish` and holding the event's own assignment, as the deal's `Announce`
+    /// step leaves it. An assignment no distribution would make — to a
+    /// threat-area card, say — places nothing on that card, since placement
+    /// reaches only the dealt investigator's controlled assets.
     pub fn fire_at(self, event: TimingEvent) -> Self {
         self.framework_step(|cx| {
+            if let TimingEvent::DamageDealt {
+                source,
+                investigator,
+                assignment,
+            } = &event
+            {
+                cx.state.continuations.push(DealDamageFrame {
+                    investigator: *investigator,
+                    source: *source,
+                    direct: false,
+                    assignment: assignment.clone(),
+                    step: DealDamageStep::Finish,
+                });
+            }
             cx.state.continuations.push(EmitEventFrame {
                 event,
                 step: EmitStep::When,

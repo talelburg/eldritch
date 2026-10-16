@@ -41,6 +41,7 @@ fn deal_damage(step: DealDamageStep) -> Continuation {
     Continuation::DealDamage(DealDamageFrame {
         investigator: InvestigatorId(1),
         source: DamageSource::Effect,
+        direct: false,
         assignment: Assignment::default(),
         step,
     })
@@ -63,7 +64,8 @@ fn investigator_turn(ending: bool) -> Continuation {
 #[test]
 fn an_encounter_card_disposal_does_not_await_input() {
     let f = Continuation::EncounterCard(EncounterCardFrame {
-        card: CardCode::new("01163"),
+        card: Some(CardCode::new("01163")),
+        owner: Owner::EncounterDeck,
         disposition: EncounterDisposition::Discard,
         revelation_resolved: false,
     });
@@ -178,11 +180,7 @@ fn a_deal_of_damage_is_a_prompt_only_while_distributing() {
         remaining_horror: 0,
     };
     assert_eq!(deal_damage(distribute).profile().activity, PROMPT);
-    for step in [
-        DealDamageStep::Announce,
-        DealDamageStep::Place,
-        DealDamageStep::Finish,
-    ] {
+    for step in [DealDamageStep::Announce, DealDamageStep::Finish] {
         assert_eq!(
             deal_damage(step.clone()).profile().activity,
             DRIVEN,
@@ -439,7 +437,8 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
         ),
         (
             Continuation::EncounterCard(EncounterCardFrame {
-                card: CardCode::new("01116"),
+                card: Some(CardCode::new("01116")),
+                owner: Owner::EncounterDeck,
                 disposition: EncounterDisposition::Spawn {
                     investigator: InvestigatorId(1),
                 },
@@ -469,7 +468,7 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             profile(DRIVEN, COMPLETE),
         ),
         (
-            deal_damage(DealDamageStep::Place),
+            deal_damage(DealDamageStep::Announce),
             profile(DRIVEN, COMPLETE),
         ),
         (

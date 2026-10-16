@@ -795,7 +795,7 @@ pub(super) fn push_bound_effect(
     event: &TimingEvent,
 ) {
     match event {
-        TimingEvent::DamageAssigned {
+        TimingEvent::DamageDealt {
             source: DamageSource::EnemyAttack { enemy },
             ..
         } => ctx.set_attacking_enemy(*enemy),

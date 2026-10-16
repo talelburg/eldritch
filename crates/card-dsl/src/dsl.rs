@@ -508,24 +508,27 @@ pub enum Trigger {
     /// of player cards with commit-time effects (e.g. Deduction's
     /// "if your skill test is successful while investigating, …").
     OnCommit,
-    /// Fires when the owning card is revealed from the encounter deck.
+    /// Fires when the owning card is drawn: from the encounter deck, or — a
+    /// weakness — from its bearer's deck.
     ///
     /// Consumers are the real encounter treacheries in
     /// `cards::impls` — Ancient Evils 01166, Rotting Remains 01163,
-    /// Crypt Chill 01167 and the rest. (The synthetic treachery that
-    /// was this trigger's first consumer is gone; #878 retired the
-    /// toy-scenario fixture it lived in.)
+    /// Crypt Chill 01167 and the rest — and the weaknesses that print one:
+    /// Cover Up 01007, Hospital Debts 01011, The Necronomicon 01009. (The
+    /// synthetic treachery that was this trigger's first consumer is gone;
+    /// #878 retired the toy-scenario fixture it lived in.)
     ///
-    /// Distinct from [`OnPlay`](Self::OnPlay) — Revelation fires for engine-driven
-    /// encounter draws (Mythos phase, scenario forced effects), not
-    /// for cards played from a player's hand. Treacheries are never
-    /// in a player's hand; they're encounter-bag content.
+    /// Distinct from [`OnPlay`](Self::OnPlay) — Revelation fires when a card is
+    /// drawn, not when it is played from hand. A treachery or enemy weakness
+    /// drawn from a player deck never stays in hand: it resolves as if just
+    /// drawn from the encounter deck (`glossary/Weakness.md`, #1121), and an
+    /// asset weakness's Revelation resolves as it is drawn.
     ///
-    /// The engine's on-draw resolution path (`encounter_card_revealed`
-    /// in `game-core`'s `engine::dispatch`) runs every
-    /// `Trigger::Revelation` ability on the drawn card through the DSL
-    /// evaluator, then discards the treachery (or hands off to the
-    /// spawn handler for enemies — landing in #127).
+    /// The engine's encounter-card path (`resolve_encounter_card` in
+    /// `game-core`'s `engine::dispatch`) runs every `Trigger::Revelation`
+    /// ability on the drawn card through the DSL evaluator as the resolve step
+    /// of its draw condition, then disposes of the card: discarding a one-shot
+    /// treachery to its owner's discard pile, or spawning an enemy.
     Revelation,
     /// Fires when the controller activates the ability via
     /// `PlayerAction::ActivateAbility` (in `game_core::action`).
@@ -916,8 +919,9 @@ pub enum EventPattern {
     /// [`EnteredLocation`](Self::EnteredLocation) / [`EndOfTurn`](Self::EndOfTurn)
     /// bind theirs, and binds the attacking enemy into the `EvalContext`.
     ///
-    /// Pairs with the engine's `DamageAssigned` condition — Rules Reference step
-    /// 1 of dealing damage, before anything is on any card — narrowed by this
+    /// Pairs with the engine's `DamageDealt` condition — announced once Rules
+    /// Reference step 1's assignment exists, before anything is on any card,
+    /// with the placement as its resolve step — narrowed by this
     /// pattern to an enemy *attack* (non-attack `Effect::Deal` harm does not
     /// match). The `when` cell is therefore the window the rules name *between*
     /// assigning and placing, which is what its one consumer prints: Guard Dog
@@ -934,6 +938,30 @@ pub enum EventPattern {
     /// what the *card* declares, which is the narrower thing: an enemy
     /// **attack** dealing damage to self. The generalization waits for the card
     /// that contests it.
+    ///
+    /// **Where the generalization will come from.** The second consumer is
+    /// outside the phase plan: Survival Knife 04017, *"After an enemy attack
+    /// deals damage to you during the enemy phase"*. The snapshot's other
+    /// source-filtered harm triggers name:
+    ///
+    /// - an enemy attack, harming you: Flesh Ward 60106 (*"When you are dealt
+    ///   damage and/or horror from an enemy attack"*), Lesson Learned 60124
+    ///   (*"after you take damage from an enemy attack"*);
+    /// - both kinds on this card: Guard Dog 09034 (*"When an enemy attack deals
+    ///   damage and/or horror to Guard Dog"*);
+    /// - a trait-filtered attacker: Desiderio Delgado Álvarez 09607b (*"When an
+    ///   attack from a \[\[Monster\]\] enemy deals damage to Desiderio Delgado
+    ///   Álvarez"*);
+    /// - harm to an enemy, by source: Crustacean Hybrid 10584a and Otherworldly
+    ///   Meddler 84029 (*"would take damage from an attack"*), Neith 83013 (*"is
+    ///   dealt any amount of damage from an attack"*), Mimetic Nemesis 09715
+    ///   (*"from an attack or player card"*), Ishimaru Haruko 03067b (*"by an
+    ///   effect other than an attack"*), Screeching Banshee 54074 (*"except from
+    ///   a \[\[Spell\]\] or \[\[Relic\]\]"*).
+    ///
+    /// The likely shape is [`HarmTaken`](Self::HarmTaken) plus a source-filter
+    /// enum, a scope that can name a single card or an enemy, and a `kind` that
+    /// can be both.
     EnemyAttackDamagedSelf,
     /// At least 1 of `kind` was **placed** on the card `scope` names — step 2
     /// of dealing damage, once the assignment has settled (ADR 0009). Agnes
@@ -946,12 +974,37 @@ pub enum EventPattern {
     /// named card, so horror the controller assigns to a soaking asset does not
     /// count. Her ruling (<https://arkhamdb.com/card/01004>): *"You cannot use
     /// Agnes' ability if you assign horror to an asset."* The "taken by you"
-    /// scope, which counts assets too (`glossary/You_Your.md`), is #781's.
+    /// scope, which counts assets too, is [`HarmTaken`](Self::HarmTaken).
     HarmPlaced {
         /// Which harm must have been placed, at least 1 of it.
         kind: HarmKind,
         /// Which card it must have been placed on.
         scope: HarmPlacedScope,
+    },
+    /// At least 1 of `kind` was **taken by** the investigator `scope` names —
+    /// the whole deal, dealt and placed (ADR 0009). Psychosis 01099:
+    /// *"**Forced** - After you take 1 or more horror: Take 1 direct damage."*
+    /// is `{ Horror, You }` in the `after` cell.
+    ///
+    /// Pairs with the engine's `DamageDealt` condition, the outer of the two:
+    /// its `after` cell runs once the nested placement has fully resolved
+    /// (`glossary/After.md`), and its `when` cell is the window between
+    /// assigning and placing, where harm is about to be taken but has not been.
+    /// No 7.5 card listens there; Psychopomp's Song 02221 (phase 10) will.
+    ///
+    /// **Taken by, not placed on** (`GLOSSARY.md`, "Taken by you / placed on
+    /// your investigator"): "you" counts the controller's investigator card
+    /// **and every asset they control**. `glossary/You_Your.md` (FAQ 2.12):
+    /// *"When an ability refers to "you" in response to taking damage/horror or
+    /// being dealt damage/horror, it also includes any assets you control."*
+    /// Psychosis's ruling (<https://arkhamdb.com/card/01099>): *"Triggers even
+    /// if you assign horror to an asset you control (you're still taking
+    /// horror, even if you reassign it)."*
+    HarmTaken {
+        /// Which harm must have been taken, at least 1 of it.
+        kind: HarmKind,
+        /// Who must have taken it.
+        scope: HarmTakenScope,
     },
     /// An enemy attacks an investigator (RR p.25 step 3.3) — one triggering
     /// condition in all three cells since #704, so a card declares this pattern
@@ -1110,7 +1163,12 @@ impl EventPattern {
             // "When an enemy attack deals damage to Guard Dog" (01021) is the
             // card's narrowing of the damage *assignment*, not a condition of
             // its own (ADR 0009).
-            EventPattern::EnemyAttackDamagedSelf => TriggeringCondition::DamageAssigned,
+            //
+            // "After you take" (Psychosis 01099) waits for the whole deal,
+            // placement included: the outer condition's `after` cell.
+            EventPattern::EnemyAttackDamagedSelf | EventPattern::HarmTaken { .. } => {
+                TriggeringCondition::DamageDealt
+            }
             EventPattern::HarmPlaced { .. } => TriggeringCondition::DamagePlaced,
             EventPattern::EnemyAttacks { .. } => TriggeringCondition::EnemyAttacks,
             EventPattern::EnteredPlay => TriggeringCondition::EnteredPlay,
@@ -1147,6 +1205,7 @@ impl EventPattern {
             | EventPattern::GameEnd
             | EventPattern::EnemyAttackDamagedSelf
             | EventPattern::HarmPlaced { .. }
+            | EventPattern::HarmTaken { .. }
             | EventPattern::EnemyAttacks { .. }
             | EventPattern::EnteredPlay
             | EventPattern::LeftLocation
@@ -1166,6 +1225,16 @@ pub enum HarmPlacedScope {
     /// on Agnes Baker"*, printed on her investigator card. Assets the
     /// controller soaks with are not part of it.
     YourInvestigator,
+}
+
+/// Who an [`EventPattern::HarmTaken`] ability reads the harm taken by. Only
+/// the scope a corpus card prints; scopes beyond "you" wait for their cards.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum HarmTakenScope {
+    /// The controller: their investigator card and every asset they control
+    /// (`glossary/You_Your.md`, FAQ 2.12). Psychosis 01099's and Hypochondria
+    /// 01100's *"After you take"*.
+    You,
 }
 
 /// Which attacking enemy an [`EventPattern::EnemyAttacks`] ability listens
@@ -1295,9 +1364,12 @@ pub enum TriggeringCondition {
     /// The game ended, for everyone or for one eliminated investigator's
     /// weaknesses (a weakness prints one *"when the game ends"*).
     GameEnd,
-    /// Damage and/or horror was assigned (step 1 of dealing it, ADR 0009).
-    DamageAssigned,
-    /// Assigned damage and/or horror was placed (step 2, ADR 0009).
+    /// Damage and/or horror was dealt: announced once it is assigned (step 1
+    /// of dealing it), with the placement as its resolve step (ADR 0009). Its
+    /// `after` cell is "after you take" ([`EventPattern::HarmTaken`]).
+    DamageDealt,
+    /// Assigned damage and/or horror was placed (step 2), nested inside
+    /// [`DamageDealt`](Self::DamageDealt)'s resolve step (ADR 0009).
     DamagePlaced,
     /// A skill test's success or failure was determined (RR ST.6).
     SkillTestResolved,
@@ -1900,7 +1972,8 @@ impl Effect {
             | Effect::AdditionalSlots { .. }
             | Effect::TreatRevealedToken { .. }
             | Effect::PlaceEventsOnBottomOfDeck
-            | Effect::PlayTopmostEventInDiscardPile => {}
+            | Effect::PlayTopmostEventInDiscardPile
+            | Effect::BlankText { .. } => {}
         }
     }
 }
@@ -1970,11 +2043,18 @@ pub enum Effect {
     /// Deal `amount` of `kind` (damage or horror) to the resolved target
     /// investigator, applying defeat if the new total reaches their max health
     /// (damage) or max sanity (horror). `amount == 0` is a no-op (no event, no
-    /// target resolution). Built via the [`deal_damage`] / [`deal_horror`] sugar.
+    /// target resolution). Built via the [`deal_damage`] / [`deal_horror`] sugar,
+    /// or [`deal_direct_damage`] / [`deal_direct_horror`] for direct harm.
     Deal {
         kind: HarmKind,
         target: InvestigatorTarget,
         amount: IntExpr,
+        /// **Direct** harm: no asset is offered the soak, so every point lands
+        /// on the investigator card. `glossary/Direct_Damage_Direct_Horror.md`:
+        /// *"that damage or horror must be assigned directly to the specified
+        /// card, and cannot be assigned or re-assigned elsewhere."* The deal
+        /// still walks both of its triggering conditions.
+        direct: bool,
     },
     /// Deal `amount` direct (non-test) damage to the resolved enemy
     /// `target`, applying the defeat cascade (Beat Cop 01018). Typed (not
@@ -2232,7 +2312,9 @@ pub enum Effect {
     /// treachery to the encounter discard, a played Barricade 01038 to its
     /// player's. Used by persistent treacheries' `Forced` self-discard
     /// abilities (Frozen in Fear 01164, Dissonant Voices 01165, Obscuring Fog
-    /// 01168). Rejects if there is no source or the instance isn't in play.
+    /// 01168). An enemy source discards the enemy itself, by its owner and
+    /// without defeating it (Mob Enforcer 01101's *"Discard Mob Enforcer."*).
+    /// Rejects if there is no source or it isn't in play.
     DiscardSelf,
     /// Cancel the current cancellable game impact — the subject of the
     /// `when`-cell window this effect resolves inside. Flags that triggering
@@ -2408,6 +2490,21 @@ pub enum Effect {
     /// a commit (<https://arkhamdb.com/card/01014>: *"'Play' and 'Commit' are
     /// two different game terms."*). Resolving it rejects.
     PlayTopmostEventInDiscardPile,
+    /// **Treat each investigator `target` names as if their printed text box
+    /// were blank, except for traits**: Stubborn Detective 01103's *"While
+    /// Stubborn Detective is at your location, treat your investigator as if
+    /// his or her printed text box were blank (except for \[\[Traits\]\])."* A
+    /// constant marker like [`Grant`](Self::Grant), under a
+    /// [`Trigger::Constant`]: **inspected, not executed** — the engine's
+    /// ability lookup reads it off the board each time it is asked what is
+    /// printed on an investigator card, and answers *nothing* for a blanked
+    /// one. Gained text survives (`glossary/Blank.md`: *"Text and/or icons
+    /// gained from another source are not blanked."*), and skills, health,
+    /// sanity and traits are not text-box content. Resolving it rejects.
+    BlankText {
+        /// Whose investigator card is blanked.
+        target: BlankTarget,
+    },
     /// Search a region of an investigator's deck for one card matching
     /// `filter`, move it to that investigator's hand, then shuffle the deck.
     /// Old Book of Lore 01031 (top 3, any card, chosen investigator) and
@@ -2572,6 +2669,16 @@ pub enum AdditionalActionRestriction {
     /// action, and an ability on a location, enemy, act or agenda never
     /// qualify. Daisy Walker 01002 filters on the Tome trait.
     ActivatedAbilityOn(CardFilter),
+}
+
+/// Whose investigator card an [`Effect::BlankText`] blanks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum BlankTarget {
+    /// Each investigator at the blanking card's location. Stubborn Detective
+    /// 01103's *"While Stubborn Detective is at your location"*, where
+    /// `glossary/You_Your.md` reads the "you": *"This clause identifies "you"
+    /// as any investigator at his location."*
+    InvestigatorsAtThisLocation,
 }
 
 /// Which card an [`Effect::Grant`] gives its abilities to.
@@ -3729,6 +3836,7 @@ pub fn deal_damage(target: InvestigatorTarget, amount: impl Into<IntExpr>) -> Ef
         kind: HarmKind::Damage,
         target,
         amount: amount.into(),
+        direct: false,
     }
 }
 
@@ -3771,6 +3879,31 @@ pub fn deal_horror(target: InvestigatorTarget, amount: impl Into<IntExpr>) -> Ef
         kind: HarmKind::Horror,
         target,
         amount: amount.into(),
+        direct: false,
+    }
+}
+
+/// Build an [`Effect::Deal`] dealing `amount` **direct** damage to `target`:
+/// no asset may soak it.
+#[must_use]
+pub fn deal_direct_damage(target: InvestigatorTarget, amount: impl Into<IntExpr>) -> Effect {
+    Effect::Deal {
+        kind: HarmKind::Damage,
+        target,
+        amount: amount.into(),
+        direct: true,
+    }
+}
+
+/// Build an [`Effect::Deal`] dealing `amount` **direct** horror to `target`:
+/// no asset may soak it.
+#[must_use]
+pub fn deal_direct_horror(target: InvestigatorTarget, amount: impl Into<IntExpr>) -> Effect {
+    Effect::Deal {
+        kind: HarmKind::Horror,
+        target,
+        amount: amount.into(),
+        direct: true,
     }
 }
 

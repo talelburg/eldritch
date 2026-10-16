@@ -1,4 +1,4 @@
-use card_dsl::dsl::{self, Ability, ControlStatus, GrantTarget, IntExpr, Quantity};
+use card_dsl::dsl::{self, Ability, BlankTarget, ControlStatus, GrantTarget, IntExpr, Quantity};
 
 use super::*;
 use crate::state::{
@@ -7,6 +7,7 @@ use crate::state::{
 };
 use crate::test_support::{self, seat, SeatLookup as _, TEST_REGISTRIES};
 
+mod blank;
 mod determination;
 mod difficulty;
 mod fold;
@@ -91,6 +92,19 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
         ))]),
         "elder-sign-clues-here" => Some(vec![dsl::elder_sign(IntExpr::Count(
             Quantity::CluesAtControllerLocation,
+        ))]),
+        // Stubborn Detective 01103's shape: "While Stubborn Detective is at
+        // your location, treat your investigator as if his or her printed
+        // text box were blank (except for [[Traits]])."
+        "blanks-investigators-here" => Some(vec![dsl::constant(Effect::BlankText {
+            target: BlankTarget::InvestigatorsAtThisLocation,
+        })]),
+        // Grants `elder-sign-clues-here` a second elder sign, `+5`, so a
+        // granted elder sign can be told from the printed one.
+        "grants-elder-sign" => Some(vec![dsl::constant(dsl::grant(
+            GrantTarget::Card("elder-sign-clues-here".to_owned()),
+            None,
+            vec![dsl::elder_sign(IntExpr::Lit(5))],
         ))]),
         // Lita Chantler 01117's exact shape (#773): the card prints no
         // modifier of its own and **grants itself** one, gated on being

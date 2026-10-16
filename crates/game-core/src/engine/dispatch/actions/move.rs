@@ -4,7 +4,7 @@
 use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
 use crate::engine::dispatch::emit::TimingEvent;
-use crate::engine::dispatch::{emit, hunters, movement, reveal};
+use crate::engine::dispatch::{emit, engagement, movement, reveal};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::event::Event;
@@ -339,19 +339,14 @@ pub(in crate::engine::dispatch) fn resolve_departure(
             )
         });
         let follows = movement::enemy_can_enter_location(cx.state, cx.cards, enemy, destination);
-        let enemy = cx
-            .state
-            .enemies
-            .get_mut(&enemy_id)
-            .expect("presence checked immediately above");
         if follows {
-            enemy.current_location = Some(destination);
+            cx.state
+                .enemies
+                .get_mut(&enemy_id)
+                .expect("presence checked immediately above")
+                .current_location = Some(destination);
         } else {
-            enemy.engaged_with = None;
-            cx.events.push(Event::EnemyDisengaged {
-                enemy: enemy_id,
-                investigator,
-            });
+            engagement::disengage(cx, enemy_id);
         }
     }
     cx.state
@@ -388,7 +383,7 @@ pub(in crate::engine::dispatch) fn resume_move_enter(cx: &mut Cx) -> EngineOutco
     // it." Runs after the move is applied
     // and before the entered-location forced window, so an "after you enter"
     // forced ability sees the engagement already established (#496).
-    engage_ready_enemies_on_enter(cx, investigator, destination);
+    engagement::engage_ready_enemies_on_enter(cx, investigator, destination);
     // Terminal step: the entered location's Forced on-enter abilities are queued,
     // and that outcome becomes the move's outcome. This runs *after* the move is
     // applied, so if it returns Rejected, `apply`'s structural rollback restores
@@ -401,42 +396,4 @@ pub(in crate::engine::dispatch) fn resume_move_enter(cx: &mut Cx) -> EngineOutco
             location: destination,
         },
     )
-}
-
-/// Auto-engage on entering: every ready (`!exhausted`), currently-unengaged
-/// enemy at `location` engages `investigator`, in deterministic `EnemyId` order
-/// (`glossary/Enemy_Engagement.md`: *"Any time a ready unengaged enemy is at
-/// the same location as an investigator, it engages that investigator, and is
-/// placed in that investigator's threat area."*, for its example *"An
-/// investigator moves into the same location as it."*).
-///
-/// An enemy already engaged with another investigator keeps its current
-/// engagement (an enemy engages only one investigator); an enemy that moved here
-/// engaged with the entering investigator is skipped (already engaged). No
-/// player choice is involved — every qualifying enemy engages the one investigator
-/// who entered — so this stays synchronous.
-///
-/// The **Aloof** carve-out (an Aloof enemy does not automatically engage) is not
-/// yet modeled — consistent with the spawn, Hunter, and Upkeep-reengage paths,
-/// which also don't gate on Aloof (shared deferral, #144/#150). No Aloof enemy
-/// appears in a currently-implemented scenario.
-///
-/// Scope: this handles the *enter* trigger only. The broader continuous rule
-/// (a ready, unengaged enemy co-located with an investigator for any other
-/// reason — readied, disengaged, or relocated onto the investigator — engages)
-/// is covered for its existing triggers by the Upkeep-readied (#150) and
-/// elimination-reengage paths; no other enter-like trigger exists yet.
-fn engage_ready_enemies_on_enter(cx: &mut Cx, investigator: InvestigatorId, location: LocationId) {
-    let to_engage: Vec<EnemyId> = cx
-        .state
-        .enemies
-        .iter()
-        .filter(|(_, e)| {
-            e.current_location == Some(location) && !e.exhausted && e.engaged_with.is_none()
-        })
-        .map(|(id, _)| *id)
-        .collect();
-    for enemy_id in to_engage {
-        hunters::engage_enemy_with(cx, enemy_id, investigator);
-    }
 }

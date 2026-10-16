@@ -136,11 +136,14 @@ pub struct Investigator {
     /// Mostly elimination's (Rules Reference p.10, "Elimination," step 1):
     /// when this investigator is eliminated, every card they control in play
     /// (`cards_in_play`) and every card they own in an out-of-play area
-    /// (`hand`, `deck`, `discard`) is drained into this pile and removed from
-    /// the game. A card of theirs that
+    /// (`hand`, `deck`, `discard`) or in limbo — a card mid-play, committed to
+    /// a skill test, or a drawn weakness resolving as an encounter card — is
+    /// drained into this pile and removed from the game. A card of theirs that
     /// [`NativeCx::remove_from_game`](crate::engine::NativeCx::remove_from_game)
-    /// takes out of play lands here too, by its owner, wherever it was.
-    /// Required on the wire (#453).
+    /// takes out of play lands here too, by its owner, wherever it was, and so
+    /// does their whole discard pile under
+    /// [`NativeCx::remove_discard_pile_from_game`](crate::engine::NativeCx::remove_discard_pile_from_game)
+    /// (Abandoned and Alone 01015). Required on the wire (#453).
     pub removed_from_game: Vec<CardCode>,
     /// Source instances whose [`ExtraActionCost`](card_dsl::dsl::Restriction::ExtraActionCost)
     /// with `first_each_round` has already surcharged an action this round

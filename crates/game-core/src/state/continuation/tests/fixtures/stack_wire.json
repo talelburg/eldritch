@@ -225,6 +225,7 @@
     "DealDamage": {
       "investigator": 1,
       "source": "Effect",
+      "direct": false,
       "assignment": {
         "investigator_damage": 0,
         "investigator_horror": 0,
@@ -356,6 +357,7 @@
   {
     "EncounterCard": {
       "card": "01116",
+      "owner": "EncounterDeck",
       "disposition": {
         "Spawn": {
           "investigator": 1
@@ -386,13 +388,14 @@
     "DealDamage": {
       "investigator": 1,
       "source": "Effect",
+      "direct": false,
       "assignment": {
         "investigator_damage": 0,
         "investigator_horror": 0,
         "asset_damage": {},
         "asset_horror": {}
       },
-      "step": "Place"
+      "step": "Announce"
     }
   },
   {

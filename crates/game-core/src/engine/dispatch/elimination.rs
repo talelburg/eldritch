@@ -4,7 +4,7 @@
 use crate::card_registry::CardRegistry;
 use crate::engine::board::{self, NotLeft, Placement};
 use crate::engine::dispatch::emit::TimingEvent;
-use crate::engine::dispatch::{act_agenda, cursor, emit, hunters, trigger_scan};
+use crate::engine::dispatch::{act_agenda, cursor, emit, engagement, trigger_scan};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::event::{Event, TraumaKind};
@@ -266,6 +266,7 @@ fn take_limbo_cards(cx: &mut Cx, investigator: InvestigatorId) -> (Vec<CardCode>
             }
         }
         theirs.extend(frame.take_committed_cards(investigator));
+        theirs.extend(frame.take_resolving_weakness(investigator));
     }
     (theirs, scenarios)
 }
@@ -332,8 +333,8 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
         .and_then(|inv| inv.current_location);
 
     // Step 1, part one: a card in **limbo** is in none of the zones the drains
-    // below cover. Two kinds ride a continuation frame rather than a zone, and
-    // this walk takes both off their frames:
+    // below cover. Three kinds ride a continuation frame rather than a zone, and
+    // this walk takes each off its frame:
     //
     // - a card **mid-play** — it left hand when it commenced being played and
     //   has not been placed yet (RR Appendix I step 3 → 4) — #604;
@@ -341,6 +342,11 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     //   "A skill card enters limbo as it is committed to a skill test. … It is
     //   no longer considered to be in any investigator's hand, but it has not
     //   yet been placed in any discard pile." (#631.)
+    // - an **encounter-cardtype weakness of theirs resolving** as an encounter
+    //   card — RR glossary "Limbo": "A treachery card enters limbo after it is
+    //   drawn, while its revelation ability is being resolved." Only their own:
+    //   a card from the encounter deck is the scenario's, and its frame's
+    //   disposal still files it (#1121).
     //
     // Taking rather than copying is what makes the step order-independent: the
     // frame's own disposal, whenever it runs, finds nothing left to place
@@ -433,17 +439,10 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
         .map(|(id, _)| *id)
         .collect();
     for &eid in &affected {
-        let enemy = cx.state.enemies.get_mut(&eid).unwrap_or_else(|| {
-            unreachable!("run_elimination_steps: enemy {eid:?} vanished; state corruption")
-        });
-        enemy.engaged_with = None;
-        cx.events.push(Event::EnemyDisengaged {
-            enemy: eid,
-            investigator,
-        });
+        engagement::disengage(cx, eid);
     }
     for &eid in &affected {
-        hunters::reengage_at_location(cx, eid);
+        engagement::reengage_at_location(cx, eid);
     }
 
     // Step 4: "All other cards in the eliminated investigator's threat area are

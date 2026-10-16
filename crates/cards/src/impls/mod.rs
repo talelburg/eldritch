@@ -86,7 +86,9 @@
 use card_dsl::dsl::Ability;
 use game_core::card_registry::{NativeConditionFn, NativeEffectFn};
 
+pub mod abandoned_and_alone;
 pub mod agnes_baker;
+pub mod amnesia;
 pub mod ancient_evils;
 pub mod arcane_initiate;
 pub mod arcane_studies;
@@ -125,10 +127,12 @@ pub mod grasping_hands;
 pub mod guard_dog;
 pub mod guts;
 pub mod hard_knocks;
+pub mod haunted;
 pub mod heirloom_of_hyperborea;
 pub mod holy_rosary;
 pub mod hospital_debts;
 pub mod hyperawareness;
+pub mod hypochondria;
 pub mod knife;
 pub mod leather_coat;
 pub mod leo_de_luca;
@@ -140,15 +144,18 @@ pub mod magnifying_glass;
 pub mod manual_dexterity;
 pub mod medical_texts;
 pub mod mind_over_matter;
+pub mod mob_enforcer;
 pub mod obscuring_fog;
 pub mod old_book_of_lore;
 pub mod on_the_lam;
 pub mod opportunist;
 pub mod overpower;
+pub mod paranoia;
 pub mod parlor;
 pub mod perception;
 pub mod physical_training;
 pub mod pickpocketing;
+pub mod psychosis;
 pub mod rabbits_foot;
 pub mod research_librarian;
 pub mod rise_of_the_ghouls;
@@ -162,6 +169,7 @@ pub mod silver_twilight_acolyte;
 pub mod skids_otoole;
 pub mod sneak_attack;
 pub mod stray_cat;
+pub mod stubborn_detective;
 pub mod survival_instinct;
 pub mod switchblade;
 pub mod the_barrier;
@@ -250,7 +258,9 @@ impl CardRecord {
 /// Every implemented card's registration, one entry per card module. A card
 /// is playable iff it is listed here.
 pub const ALL: &[CardRecord] = &[
+    abandoned_and_alone::CARD,
     agnes_baker::CARD,
+    amnesia::CARD,
     ancient_evils::CARD,
     arcane_initiate::CARD,
     arcane_studies::CARD,
@@ -288,10 +298,12 @@ pub const ALL: &[CardRecord] = &[
     grasping_hands::CARD,
     guard_dog::CARD,
     guts::CARD,
+    haunted::CARD,
     hard_knocks::CARD,
     heirloom_of_hyperborea::CARD,
     hospital_debts::CARD,
     holy_rosary::CARD,
+    hypochondria::CARD,
     hyperawareness::CARD,
     knife::CARD,
     leather_coat::CARD,
@@ -304,15 +316,18 @@ pub const ALL: &[CardRecord] = &[
     manual_dexterity::CARD,
     medical_texts::CARD,
     mind_over_matter::CARD,
+    mob_enforcer::CARD,
     obscuring_fog::CARD,
     old_book_of_lore::CARD,
     on_the_lam::CARD,
     opportunist::CARD,
     overpower::CARD,
+    paranoia::CARD,
     parlor::CARD,
     perception::CARD,
     physical_training::CARD,
     pickpocketing::CARD,
+    psychosis::CARD,
     rabbits_foot::CARD,
     research_librarian::CARD,
     rise_of_the_ghouls::CARD,
@@ -326,6 +341,7 @@ pub const ALL: &[CardRecord] = &[
     skids_otoole::CARD,
     sneak_attack::CARD,
     stray_cat::CARD,
+    stubborn_detective::CARD,
     survival_instinct::CARD,
     switchblade::CARD,
     the_barrier::CARD,

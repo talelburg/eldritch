@@ -50,6 +50,7 @@ fn registries() -> Registries {
                         kind: HarmKind::Horror,
                         target: InvestigatorTarget::You,
                         amount: IntExpr::Lit(2),
+                        direct: false,
                     }),
                     ..TokenOutcome::modifier(IntExpr::Count(Quantity::HorrorOnSource))
                 })]

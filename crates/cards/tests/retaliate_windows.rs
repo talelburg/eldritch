@@ -147,7 +147,7 @@ fn guard_dog_retaliates_against_retaliate_and_skill_test_ends() {
 
     // Initiate Fight → empty commit → fails → fire_retaliate_if_any → drive_retaliate
     // → Guard Dog has no cancel reaction so the attack's `when` cell auto-skips →
-    // its damage is assigned to Guard Dog → the `DamageAssigned` window opens →
+    // its damage is assigned to Guard Dog → the `DamageDealt` window opens →
     // suspend, before anything is placed.
     // The retaliate's damage prompts the soak distribution (#44/K5b): assign it
     // onto Guard Dog → soak window opens.

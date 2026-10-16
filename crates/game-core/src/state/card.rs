@@ -75,11 +75,17 @@ pub enum Zone {
     /// A player's hand.
     Hand,
     /// A player's deck (top or bottom — events that need the
-    /// distinction can record it separately).
+    /// distinction can record it separately). Also the `from` zone of a drawn
+    /// treachery weakness discarded once its Revelation resolves, or of an enemy
+    /// weakness that could not spawn (#1121); see [`EncounterDeck`](Self::EncounterDeck).
     Deck,
     /// The encounter deck. Used as the `from` zone when a card taken off the
     /// encounter deck is discarded without being drawn (Rise of the Ghouls
-    /// 01106's *"Discard cards from the top of the encounter deck"*).
+    /// 01106's *"Discard cards from the top of the encounter deck"*), and when
+    /// a drawn encounter card is discarded after resolving — a one-shot
+    /// treachery after its Revelation, or an enemy that could not spawn (#1121).
+    /// A card resolving is in limbo, in no zone of its own, so the event names
+    /// the deck it was drawn from.
     EncounterDeck,
     /// Cards currently in play under an investigator's control.
     InPlay,

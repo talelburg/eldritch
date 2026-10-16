@@ -116,15 +116,10 @@ mod tests {
     /// instead.
     #[test]
     fn every_pool_card_is_playable() {
-        // TODO(#781): the basic weaknesses #781 implements. Delete this list
-        // when it lands; every pool card must then pass.
-        const NOT_YET_IMPLEMENTED: [&str; 7] = [
-            "01096", "01097", "01098", "01099", "01100", "01101", "01103",
-        ];
         let unplayable: Vec<&str> = weakness_pool()
             .iter()
             .map(CardCode::as_str)
-            .filter(|code| !crate::is_playable(code) && !NOT_YET_IMPLEMENTED.contains(code))
+            .filter(|code| !crate::is_playable(code))
             .collect();
         assert!(
             unplayable.is_empty(),

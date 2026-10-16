@@ -9,8 +9,8 @@ use crate::engine::board::{self, LeavingCard, MoveResourcesError, NotLeft, Place
 use crate::engine::dispatch::actions::{r#move, take};
 use crate::engine::dispatch::tokens::{self, MoveHorrorError};
 use crate::engine::dispatch::{
-    act_agenda, cards, combat, elimination, encounter, hunters, placement, reveal, set_aside,
-    skill_test, threat_area,
+    act_agenda, cards, combat, elimination, encounter, engagement, hunters, placement, reveal,
+    set_aside, skill_test, threat_area,
     uses::{self, MoveUsesError, SpendUsesError},
 };
 use crate::engine::outcome::EngineOutcome;
@@ -98,8 +98,9 @@ impl<'a> NativeCx<'a> {
 
     /// Deal `damage` + `horror` to `investigator`: the one way a native deals
     /// harm to an investigator. It is dealt the way an enemy attack's is — the
-    /// player is offered the soak, and both `DamageAssigned` and `DamagePlaced`
-    /// are announced — so nothing is placed when this returns.
+    /// player is offered the soak, and `DamageDealt` is announced with
+    /// `DamagePlaced` nested in its resolve step — so nothing is placed when
+    /// this returns.
     ///
     /// **Return its outcome.** The deal runs on a frame above everything the
     /// native leaves beneath it, so work written after this call would run
@@ -228,7 +229,7 @@ impl<'a> NativeCx<'a> {
     /// investigator, it engages that investigator, …"*). For an effect that leaves
     /// enemies ready and unengaged beside an investigator, once it has resolved.
     pub fn engage_ready_enemies(&mut self) {
-        hunters::engage_ready_enemies(self.write_access());
+        engagement::engage_ready_enemies(self.write_access());
     }
 
     // --- Tokens ---
@@ -324,6 +325,16 @@ impl<'a> NativeCx<'a> {
         board::move_resources_to_card(self.write_access(), investigator, instance, amount)
     }
 
+    /// Discard every resource in `investigator`'s resource pool (Paranoia
+    /// 01097), emitting
+    /// [`Event::ResourcesDiscarded`](crate::event::Event::ResourcesDiscarded)
+    /// with the number discarded. A discard, not a payment, so
+    /// [`Event::ResourcesPaid`](crate::event::Event::ResourcesPaid) stays
+    /// silent. An empty pool discards nothing and announces nothing.
+    pub fn discard_all_resources(&mut self, investigator: InvestigatorId) {
+        cards::discard_all_resources(self.write_access(), investigator);
+    }
+
     /// Move up to `amount` horror from the card instance `from` onto the card
     /// instance `to`, wherever each is on the board (The Necronomicon 01009),
     /// emitting [`Event::HorrorMoved`](crate::event::Event::HorrorMoved) with
@@ -387,13 +398,42 @@ impl<'a> NativeCx<'a> {
     /// [`Event::CardDiscarded`](crate::event::Event::CardDiscarded) naming
     /// `from`.
     pub fn discard_encounter_card(&mut self, code: CardCode, from: Zone) {
-        board::discard_encounter_card(self.write_access(), code, from);
+        board::discard_drawn_card(self.write_access(), code, Owner::EncounterDeck, from);
     }
 
     /// Discard a random card from `investigator`'s hand, returning it, or
     /// `None` for an empty hand.
     pub fn discard_random_from_hand(&mut self, investigator: InvestigatorId) -> Option<CardCode> {
         cards::discard_random_from_hand(self.write_access(), investigator)
+    }
+
+    /// Discard the card at `hand_index` of `investigator`'s hand to their
+    /// discard pile. Nothing moves for an index past the hand's end or a
+    /// missing investigator. Emits
+    /// [`Event::CardDiscarded`](crate::event::Event::CardDiscarded) from
+    /// [`Zone::Hand`].
+    ///
+    /// Each discard shifts the cards above it down one, so a native discarding
+    /// several goes from the highest index to the lowest. Whether a weakness may
+    /// be chosen is the caller's rule: `glossary/Weakness.md`, *"A player may
+    /// not optionally choose to discard a weakness card from hand."*
+    pub fn discard_from_hand(&mut self, investigator: InvestigatorId, hand_index: usize) {
+        let in_hand = self
+            .state()
+            .investigators
+            .get(&investigator)
+            .is_some_and(|inv| hand_index < inv.hand.len());
+        if in_hand {
+            cards::discard_from_hand(self.write_access(), investigator, hand_index);
+        }
+    }
+
+    /// Remove every card in `investigator`'s discard pile from the game, into
+    /// their removed-from-game pile, emitting one
+    /// [`Event::DiscardPileRemovedFromGame`](crate::event::Event::DiscardPileRemovedFromGame).
+    /// An empty pile changes nothing and emits nothing.
+    pub fn remove_discard_pile_from_game(&mut self, investigator: InvestigatorId) {
+        cards::remove_discard_pile_from_game(self.write_access(), investigator);
     }
 
     /// Move the card at `index` of `investigator`'s discard pile to their
@@ -444,13 +484,22 @@ impl<'a> NativeCx<'a> {
     /// a `when` ability may cancel — and the card's disposal (discard or spawn)
     /// are pushed as frames for the drive loop to step. `Rejected` for a
     /// cardtype that cannot be drawn this way.
+    ///
+    /// The card is the encounter deck's: both callers draw from it. A weakness
+    /// drawn from a player deck takes the engine's own draw path instead.
     pub fn resolve_encounter_card(
         &mut self,
         investigator: InvestigatorId,
         code: CardCode,
         metadata: &CardMetadata,
     ) -> EngineOutcome {
-        encounter::resolve_encounter_card(self.write_access(), investigator, code, metadata)
+        encounter::resolve_encounter_card(
+            self.write_access(),
+            investigator,
+            code,
+            metadata,
+            Owner::EncounterDeck,
+        )
     }
 
     // --- Actions ---

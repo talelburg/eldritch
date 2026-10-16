@@ -6,7 +6,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::{iter, mem};
 
 use card_dsl::card_data::SkillKind;
-use card_dsl::dsl::{ActionDesignator, Effect, EventTiming, IntExpr, RevealClause, SkillTestKind};
+use card_dsl::dsl::{
+    ActionDesignator, Effect, EventTiming, HarmKind, IntExpr, RevealClause, SkillTestKind,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::engine::evaluator::{EachBinding, EvalContext};
@@ -86,6 +88,19 @@ pub struct Assignment {
     pub asset_horror: BTreeMap<CardInstanceId, u8>,
 }
 
+impl Assignment {
+    /// All the harm of `kind` in this assignment: the investigator's share plus
+    /// every asset's.
+    #[must_use]
+    pub fn total(&self, kind: HarmKind) -> u32 {
+        let (investigator, assets) = match kind {
+            HarmKind::Damage => (self.investigator_damage, &self.asset_damage),
+            HarmKind::Horror => (self.investigator_horror, &self.asset_horror),
+        };
+        u32::from(investigator) + assets.values().map(|n| u32::from(*n)).sum::<u32>()
+    }
+}
+
 /// What is dealing the damage/horror a [`Continuation::DealDamage`] frame is
 /// walking — carried on the frame and snapshotted into both of its triggering
 /// conditions, and read at
@@ -118,8 +133,10 @@ pub enum DamageSource {
 /// and hand back to the caller.
 ///
 /// The two steps are two triggering conditions with a named window between
-/// them, and ADR 0003 forbids emitting both synchronously from one call — so the
-/// cursor is not organisation, it is the only legal way to sequence them. See
+/// them, the second nested in the first's resolve step. ADR 0003 forbids
+/// emitting from the middle of a call, so the cursor is not organisation: the
+/// assignment must exist before `DamageDealt` is announced, and the frame must
+/// outlive that announcement's sequence to hand back to its caller. See
 /// `docs/adr/0009-damage-is-assigned-then-placed.md`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DealDamageStep {
@@ -134,16 +151,14 @@ pub enum DealDamageStep {
         /// Horror points still to assign.
         remaining_horror: u8,
     },
-    /// Emit [`DamageAssigned`](crate::engine::TimingEvent::DamageAssigned) — a
-    /// bare milestone, so its whole sequence is the three cells around a no-op
-    /// resolve step. Advances the cursor before emitting (tail position).
+    /// Emit [`DamageDealt`](crate::engine::TimingEvent::DamageDealt), whose
+    /// resolve step emits [`DamagePlaced`](crate::engine::TimingEvent::DamagePlaced)
+    /// — the placement nests inside the deal. Advances the cursor before
+    /// emitting (tail position), straight to `Finish`: a cancel in
+    /// `DamageDealt`'s `when` cell abandons that resolve step, and the frame
+    /// then only pops, so nothing is placed.
     Announce,
-    /// Emit [`DamagePlaced`](crate::engine::TimingEvent::DamagePlaced), whose
-    /// resolve step is the simultaneous placement and the defeat sweep. Re-reads
-    /// the frame's assignment, so it carries whatever `DamageAssigned`'s cells
-    /// made of it. Advances the cursor before emitting (tail position).
-    Place,
-    /// Both conditions have run: pop and resume by
+    /// The deal's sequence has run, or was cancelled: pop and resume by
     /// [`DamageSource`].
     Finish,
 }
@@ -379,8 +394,8 @@ pub enum ScenarioEndStep {
 /// carries it).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EncounterDisposition {
-    /// A treachery: discard to `encounter_discard` (or skip, if persistent — it
-    /// placed itself during its Revelation).
+    /// A treachery: discard to its owner's discard pile (or skip, if
+    /// persistent — it placed itself during its Revelation).
     Discard,
     /// An enemy: spawn it into play at disposal, engaging the drawer
     /// (`investigator`) per the card's spawn instruction.
@@ -658,9 +673,7 @@ impl Continuation {
             Continuation::DealDamage(DealDamageFrame { step, .. }) => (
                 match step {
                     DealDamageStep::Distribute { .. } => FrameActivity::Prompt,
-                    DealDamageStep::Announce | DealDamageStep::Place | DealDamageStep::Finish => {
-                        FrameActivity::Driven
-                    }
+                    DealDamageStep::Announce | DealDamageStep::Finish => FrameActivity::Driven,
                 },
                 ScenarioEndDisposition::Complete,
             ),
@@ -878,6 +891,30 @@ impl Continuation {
                 card,
                 ..
             }) if *owner == investigator => card.take().map(|c| (c.code, c.owner)),
+            _ => None,
+        }
+    }
+
+    /// Take the encounter-cardtype weakness `investigator` owns off this frame,
+    /// if it is an [`EncounterCard`](Self::EncounterCard) frame whose card is
+    /// theirs and still on it. `None` otherwise — in particular for every card
+    /// drawn from the encounter deck, which no investigator owns.
+    ///
+    /// The third sibling of [`take_play_in_progress`](Self::take_play_in_progress):
+    /// a drawn weakness resolving as an encounter card is in limbo, like a
+    /// treachery from the encounter deck (`glossary/Limbo.md`: *"A treachery
+    /// card enters limbo after it is drawn, while its revelation ability is
+    /// being resolved."*), but it is its bearer's card, so elimination removes
+    /// it from the game with the rest of theirs. Taking rather than copying
+    /// keeps the frame's own disposal from filing it into a discard pile that
+    /// elimination has already removed (ADR 0002).
+    pub fn take_resolving_weakness(&mut self, investigator: InvestigatorId) -> Option<CardCode> {
+        match self {
+            Continuation::EncounterCard(EncounterCardFrame { card, owner, .. })
+                if *owner == Owner::Investigator(investigator) =>
+            {
+                card.take()
+            }
             _ => None,
         }
     }
@@ -2312,12 +2349,13 @@ pub struct AttackLoopFrame {
 /// One deal of damage and/or horror, in progress — the Rules Reference's
 /// two numbered steps and the window between them
 /// (`glossary/Dealing_Damage_Horror.md`), walked by the
-/// [`step`](DealDamageStep) cursor `Distribute → Announce → Place → Finish`.
+/// [`step`](DealDamageStep) cursor `Distribute → Announce → Finish`.
 ///
-/// **This frame owns the live assignment**; each of the two emits snapshots
-/// it into its own event, so both events are true when emitted and there is
-/// no write-back protocol — `Place` simply re-reads the frame after
-/// `DamageAssigned`'s cells have had their chance to edit it. See
+/// **This frame owns the live assignment**; each of the two conditions
+/// snapshots it into its own event, so both events are true when emitted and
+/// there is no write-back protocol — `DamageDealt`'s resolve step simply
+/// re-reads this frame after `DamageDealt`'s `when` cell has had its chance to
+/// edit it, and emits `DamagePlaced` with what it finds. See
 /// `docs/adr/0009-damage-is-assigned-then-placed.md`.
 ///
 /// Awaits input only at [`Distribute`](DealDamageStep::Distribute), where it
@@ -2331,6 +2369,12 @@ pub struct DealDamageFrame {
     /// What is dealing it — the scoping both conditions carry, and how this
     /// frame resumes its caller at `Finish`.
     pub source: DamageSource,
+    /// **Direct** harm: `Distribute` offers no asset the soak, so every point
+    /// drains onto the investigator card with no prompt.
+    /// `glossary/Direct_Damage_Direct_Horror.md`: *"that damage or horror must
+    /// be assigned directly to the specified card, and cannot be assigned or
+    /// re-assigned elsewhere."*
+    pub direct: bool,
     /// The live assignment: accumulating at `Distribute`, settled from
     /// `Announce` on.
     pub assignment: Assignment,
@@ -2646,14 +2690,29 @@ pub struct PlayerDrawFrame {
 /// Revelation opens (a skill test, a choice, a nested effect). When that
 /// sequence completes and this frame is top again, the **framework**
 /// disposes of the card per its [`EncounterDisposition`] and pops:
-/// a treachery (`Discard`) goes to `encounter_discard` (or — if persistent and
-/// its Revelation ran — is skipped, having placed itself); an enemy
-/// (`Spawn`) is minted into play. Suspension-reason-agnostic. Never emits
-/// `AwaitingInput`.
+/// a treachery (`Discard`) goes to its owner's discard pile (or — if
+/// persistent and its Revelation ran — is skipped, having placed itself); an
+/// enemy (`Spawn`) is minted into play, owned by `owner`.
+/// Suspension-reason-agnostic. Never emits `AwaitingInput`.
+///
+/// The card is drawn from the encounter deck, or is an encounter-cardtype
+/// weakness drawn from its bearer's deck (`glossary/Weakness.md`: *"resolve
+/// that card as if it were just drawn from the encounter deck"*, #1121).
+/// While it rides this frame it is in **limbo**, in no zone, so elimination
+/// takes a bearer's weakness off it
+/// ([`take_resolving_weakness`](Continuation::take_resolving_weakness)).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EncounterCardFrame {
-    /// The drawn card's code, disposed of at teardown.
-    pub card: CardCode,
+    /// The drawn card's code, disposed of at teardown. `None` once
+    /// elimination has taken it off the frame and removed it from the game:
+    /// its Revelation, if still to come, does not resolve, and its disposal
+    /// does nothing.
+    pub card: Option<CardCode>,
+    /// The card's owner: [`Owner::EncounterDeck`] for a card drawn from the
+    /// encounter deck, and its bearer for a weakness drawn from a player deck.
+    /// It binds the Revelation's owner, owns a spawned enemy, and picks the
+    /// discard pile a one-shot treachery goes to.
+    pub owner: Owner,
     /// How the framework disposes of the card once its Revelation resolves.
     pub disposition: EncounterDisposition,
     /// Whether the card's Revelation ran — set by the draw condition's resolve

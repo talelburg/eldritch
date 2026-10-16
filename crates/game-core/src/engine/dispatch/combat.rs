@@ -92,59 +92,6 @@ pub(crate) fn enemies_in_scope_before_exemption(
         .collect()
 }
 
-/// Break `enemy_id`'s engagement, whoever it is engaged with, logging
-/// [`EnemyDisengaged`](Event::EnemyDisengaged) with the investigator it was
-/// engaged with. An unengaged enemy is left as it is, and nothing is logged.
-///
-/// The evasion's step (`glossary/Evade_Action.md`: *"the enemy is exhausted
-/// (if it was ready) and the engagement is broken"*). Only the enemy's
-/// engagement changes; where it stands, and whether it is ready, are the
-/// caller's business. A card that disengages *you* from an enemy is
-/// [`disengage_from`].
-///
-/// The enemy is in state: callers name one they have just found there, so a
-/// missing enemy is a state-corruption invariant violation.
-pub(crate) fn disengage(cx: &mut Cx, enemy_id: EnemyId) {
-    let enemy = cx.state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
-        unreachable!(
-            "disengage: enemy {enemy_id:?} is not in state.enemies; \
-             this is a state-corruption invariant violation"
-        )
-    });
-    if let Some(investigator) = enemy.engaged_with.take() {
-        cx.events.push(Event::EnemyDisengaged {
-            enemy: enemy_id,
-            investigator,
-        });
-    }
-}
-
-/// Disengage `investigator` from `enemy_id`: [`disengage`], but only if the
-/// enemy is engaged with `investigator`. An enemy engaged with someone else, or
-/// with nobody, is left as it is, and nothing is logged.
-///
-/// The step [`Effect::Disengage`](card_dsl::dsl::Effect::Disengage) runs for
-/// its controller: Elusive 01050's *"Disengage from each enemy engaged with
-/// you"* (#1076) breaks your engagements, not another investigator's.
-///
-/// The enemy is in state, as for [`disengage`].
-pub(crate) fn disengage_from(cx: &mut Cx, enemy_id: EnemyId, investigator: InvestigatorId) {
-    let engaged_with = cx
-        .state
-        .enemies
-        .get(&enemy_id)
-        .unwrap_or_else(|| {
-            unreachable!(
-                "disengage_from: enemy {enemy_id:?} is not in state.enemies; \
-                 this is a state-corruption invariant violation"
-            )
-        })
-        .engaged_with;
-    if engaged_with == Some(investigator) {
-        disengage(cx, enemy_id);
-    }
-}
-
 /// The entry point for card effects to deal damage to an enemy.
 ///
 /// A thin wrapper over `damage_enemy` that a card-local native reaches as
@@ -382,11 +329,12 @@ pub(super) fn defeat_asset(cx: &mut Cx, inst: CardInstanceId) {
 /// populated when this returns.
 ///
 /// Announces nothing and returns nothing: by the time this runs, both conditions
-/// around it have been emitted by the
-/// [`DealDamage`](crate::state::Continuation::DealDamage) frame, and this *is*
+/// around it have been emitted — `DamageDealt` by the
+/// [`DealDamage`](crate::state::Continuation::DealDamage) frame, and
+/// `DamagePlaced` by `DamageDealt`'s resolve step — and this *is*
 /// `DamagePlaced`'s resolve step. Which soakers survive it is therefore no
-/// question of this function's — an asset assigned lethal damage had its say one
-/// cursor step ago, which is what its ruling requires
+/// question of this function's — an asset assigned lethal damage had its say in
+/// `DamageDealt`'s `when` cell, which is what its ruling requires
 /// (`data/arkhamdb-faq/core/01021.md`: *"You can use Guard Dog's ability when you
 /// assign lethal damage/horror to it."*). See ADR 0009.
 pub(super) fn place_assignment(cx: &mut Cx, investigator: InvestigatorId, assignment: &Assignment) {
@@ -528,22 +476,28 @@ pub(super) fn sanity_reached(inv: &Investigator, cards: &CardRegistry) -> bool {
 /// hands the `drive` loop a frame it dispatches on sight.
 ///
 /// The whole of the Rules Reference's two-step procedure runs on that frame —
-/// distribution, then the `DamageAssigned` and `DamagePlaced` conditions, then
-/// the resume — so **this is a tail-position call** (ADR 0003) exactly like an
+/// distribution, then the `DamageDealt` condition with `DamagePlaced` nested in
+/// its resolve step, then the resume — so **this is a tail-position call** (ADR 0003) exactly like an
 /// emit: a caller with work to do afterwards puts it on a frame beneath, and the
 /// two that do (the enemy attack's coordinator, and `Effect::Deal`'s parked
 /// effect walk) already have one. See
 /// `docs/adr/0009-damage-is-assigned-then-placed.md`.
+///
+/// A `direct` deal offers no asset the soak: every point lands on the
+/// investigator card (`glossary/Direct_Damage_Direct_Horror.md`), with no
+/// prompt, and both conditions are still announced.
 pub(crate) fn begin_deal_damage(
     cx: &mut Cx,
     investigator: InvestigatorId,
     damage: u8,
     horror: u8,
     source: DamageSource,
+    direct: bool,
 ) -> EngineOutcome {
     cx.state.continuations.push(DealDamageFrame {
         investigator,
         source,
+        direct,
         assignment: Assignment::default(),
         step: DealDamageStep::Distribute {
             remaining_damage: damage,
@@ -556,8 +510,8 @@ pub(crate) fn begin_deal_damage(
 /// Deal `damage` + `horror` to `investigator` from anything that is not an enemy
 /// attack: the one harm adapter (#1025). It begins a deal with
 /// [`DamageSource::Effect`], so the harm is distributed through the interactive
-/// soak prompt and announces both `DamageAssigned` and `DamagePlaced`, exactly as
-/// an enemy attack's does.
+/// soak prompt and announces `DamageDealt` with `DamagePlaced` nested inside it,
+/// exactly as an enemy attack's does.
 ///
 /// **Tail position** (ADR 0003), like [`begin_deal_damage`]: nothing is placed
 /// when this returns. A caller with work to do afterwards parks it on a frame
@@ -572,7 +526,14 @@ pub(crate) fn deal_harm(
     if damage == 0 && horror == 0 {
         return EngineOutcome::Done;
     }
-    begin_deal_damage(cx, investigator, damage, horror, DamageSource::Effect)
+    begin_deal_damage(
+        cx,
+        investigator,
+        damage,
+        horror,
+        DamageSource::Effect,
+        false,
+    )
 }
 
 /// Build the eligible soakers for an enemy attack against `investigator`
@@ -1029,20 +990,23 @@ fn set_deal_damage(cx: &mut Cx, new_assignment: Assignment, new_step: DealDamage
 /// - `Distribute` — step 1's determination, interactive per point (#44/K5b). It
 ///   drains immediately when uncontested, so the cursor always starts at the
 ///   top; while a point is contested this frame *is* the prompt.
-/// - `Announce` — emit `DamageAssigned`, a bare milestone whose `when` cell is
-///   the window the rules put *between* the two steps.
-/// - `Place` — emit `DamagePlaced`, whose resolve step places the assignment
-///   simultaneously. It re-reads the frame, so what lands is whatever
-///   `DamageAssigned`'s cells made of it.
+/// - `Announce` — emit `DamageDealt`, whose `when` cell is the window the rules
+///   put *between* the two steps and whose resolve step emits `DamagePlaced`
+///   (`emit::resolve_damage_dealt`). That nested condition's resolve step
+///   places the assignment simultaneously, re-read from this frame, so what
+///   lands is whatever `DamageDealt`'s `when` cell made of it.
 /// - `Finish` — pop and resume by source.
 ///
-/// Both emits **advance the cursor before emitting**, so each is in tail
-/// position (ADR 0003): the coordinator they push lands above this frame and
-/// runs its whole sequence before the loop re-exposes this one.
+/// `Announce` **advances the cursor before emitting**, so the emit is in tail
+/// position (ADR 0003): the coordinator it pushes lands above this frame and
+/// runs its whole sequence — the placement included — before the loop
+/// re-exposes this one. A cancel in `DamageDealt`'s `when` cell abandons that
+/// sequence at its resolve step, so `Finish` is reached with nothing placed.
 pub(crate) fn drive_deal_damage(cx: &mut Cx) -> EngineOutcome {
     let DealDamageFrame {
         investigator,
         source,
+        direct,
         assignment,
         step,
     } = cx
@@ -1056,7 +1020,14 @@ pub(crate) fn drive_deal_damage(cx: &mut Cx) -> EngineOutcome {
             mut remaining_horror,
         } => {
             let mut assignment = assignment;
-            let soakers = build_soakers(cx.state, cx.cards, investigator);
+            // Direct harm *"cannot be assigned or re-assigned elsewhere"*: with
+            // no soaker, every point drains onto the investigator card and the
+            // prompt below is never reached.
+            let soakers = if direct {
+                Vec::new()
+            } else {
+                build_soakers(cx.state, cx.cards, investigator)
+            };
             if advance_distribution(
                 &soakers,
                 &mut remaining_damage,
@@ -1081,21 +1052,10 @@ pub(crate) fn drive_deal_damage(cx: &mut Cx) -> EngineOutcome {
             EngineOutcome::Done
         }
         DealDamageStep::Announce => {
-            set_deal_damage(cx, assignment.clone(), DealDamageStep::Place);
-            emit::queue_event(
-                cx,
-                &TimingEvent::DamageAssigned {
-                    source,
-                    investigator,
-                    assignment,
-                },
-            )
-        }
-        DealDamageStep::Place => {
             set_deal_damage(cx, assignment.clone(), DealDamageStep::Finish);
             emit::queue_event(
                 cx,
-                &TimingEvent::DamagePlaced {
+                &TimingEvent::DamageDealt {
                     source,
                     investigator,
                     assignment,
@@ -1127,8 +1087,8 @@ pub(crate) fn drive_deal_damage(cx: &mut Cx) -> EngineOutcome {
 /// [`begin_deal_damage`] with the attacker's printed values — and dealing them
 /// is itself the two-step procedure of ADR 0009, walked on the
 /// [`Continuation::DealDamage`] frame this pushes above the coordinator. So the
-/// attack's `at` and `after` cells run after *both* halves of the damage, and
-/// Guard Dog 01021's retaliate resolves in between, in `DamageAssigned`'s `when`
+/// attack's `at` and `after` cells run after the whole deal, placement included, and
+/// Guard Dog 01021's retaliate resolves in between, in `DamageDealt`'s `when`
 /// cell — which is the nesting `glossary/Nested_Sequences.md` works its example
 /// on.
 ///
@@ -1153,6 +1113,7 @@ pub(super) fn deal_enemy_attack(
         damage,
         horror,
         DamageSource::EnemyAttack { enemy: enemy_id },
+        false,
     )
 }
 

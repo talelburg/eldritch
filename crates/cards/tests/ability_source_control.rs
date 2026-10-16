@@ -13,10 +13,9 @@
 //! refused on submission.
 //!
 //! Own integration-test binary so it can build its own `MockRegistry`:
-//! no corpus card carries an activated ability on an investigator card or on a
-//! threat-area card, and none can be shipped to fake one (Haunted 01098's
-//! discard has nowhere to go until #708/#644). Prior art:
-//! `activation_cost_source.rs`.
+//! no corpus card carries an activated ability on an investigator card, and the
+//! threat-area case is modelled as a primitive rather than through Haunted
+//! 01098 (ADR 0016). Prior art: `activation_cost_source.rs`.
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use card_dsl::dsl::{self, Ability, Cost, InvestigatorTarget};

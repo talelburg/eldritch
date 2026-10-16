@@ -11,7 +11,8 @@ use crate::card_registry::CardRegistry;
 use crate::engine::dispatch;
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{
-    act_agenda, cards, combat, cursor, emit, encounter, hunters, reaction_windows, reveal,
+    act_agenda, cards, combat, cursor, emit, encounter, engagement, hunters, reaction_windows,
+    reveal,
 };
 use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
 use crate::engine::Cx;
@@ -1360,7 +1361,8 @@ pub(super) fn upkeep_round_end_teardown(cx: &mut Cx) -> EngineOutcome {
 /// nothing.
 ///
 /// After readying, each enemy that became ready while unengaged and
-/// co-located with an investigator engages it via [`reengage_at_location`]
+/// co-located with an investigator engages it via
+/// [`engagement::reengage_at_location`]
 /// (Rules Reference p.10: "if an exhausted enemy at the same location as an
 /// investigator becomes ready, it engages as soon as it is readied").
 fn ready_exhausted_cards(cx: &mut Cx) {
@@ -1397,7 +1399,7 @@ fn ready_exhausted_cards(cx: &mut Cx) {
     // newly_readied is in ascending EnemyId order (BTreeMap key order).
     for eid in newly_readied {
         if cx.state.enemies[&eid].engaged_with.is_none() {
-            hunters::reengage_at_location(cx, eid);
+            engagement::reengage_at_location(cx, eid);
         }
     }
 }

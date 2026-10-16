@@ -79,14 +79,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::card_registry::{self, CardRegistry};
 use crate::engine::abilities_in_effect;
-use crate::engine::board::{self, NotLeft, Placement};
+use crate::engine::board::{self, LeavingCard, NotLeft, Placement};
 use crate::engine::dispatch::actions::evade::EvadeModification;
 use crate::engine::dispatch::actions::fight::FightModification;
 use crate::engine::dispatch::actions::take;
 use crate::engine::dispatch::choice::{ChoiceResolution, Grounded};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{
-    self, act_agenda, actions, cards, choice, combat, elimination, emit, skill_test, threat_area,
+    self, act_agenda, actions, cards, choice, combat, elimination, emit, engagement, skill_test,
+    threat_area,
 };
 use crate::engine::modified_value;
 use crate::engine::outcome::{EngineOutcome, OptionId, OptionTarget};
@@ -152,7 +153,7 @@ pub struct CommittedCardBinding {
     pub index: u8,
 }
 
-/// Attacking enemy bound while resolving a `DamageAssigned` reaction whose
+/// Attacking enemy bound while resolving a `DamageDealt` reaction whose
 /// source is an enemy attack (Guard Dog 01021's retaliate).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EnemyAttackBinding {
@@ -212,7 +213,7 @@ pub struct EvalContext {
     /// `None` outside that window.
     pub discovery: Option<DiscoveryBinding>,
     /// Enemy-attack reaction binding, bound only while resolving an
-    /// enemy-attack `DamageAssigned` reaction. Read via [`Self::attacking_enemy`].
+    /// enemy-attack `DamageDealt` reaction. Read via [`Self::attacking_enemy`].
     /// `None` outside that window. (C5b #237.)
     pub enemy_attack: Option<EnemyAttackBinding>,
     /// Revealed-card binding, bound only while resolving a Revelation. Read via
@@ -372,7 +373,7 @@ impl EvalContext {
     pub fn committed_card(&self) -> Option<u8> {
         self.committed_card.map(|b| b.index)
     }
-    /// Attacking enemy bound while resolving an enemy-attack `DamageAssigned`
+    /// Attacking enemy bound while resolving an enemy-attack `DamageDealt`
     /// reaction (Guard Dog 01021's retaliate).
     #[must_use]
     pub fn attacking_enemy(&self) -> Option<EnemyId> {
@@ -909,6 +910,7 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
             kind,
             target,
             amount,
+            direct,
         } => {
             let n = match eval_int_expr(cx.state, cx.cards, &eval_ctx, amount) {
                 Ok(v) => u8::try_from(v.max(0)).unwrap_or(u8::MAX),
@@ -918,14 +920,14 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
                     }
                 }
             };
-            deal_effect(cx, eval_ctx, *kind, *target, n)
+            deal_effect(cx, eval_ctx, *kind, *target, n, *direct)
         }
         Effect::DealDamageToEnemy { target, amount } => {
             deal_damage_to_enemy_effect(cx, eval_ctx, target, *amount)
         }
         Effect::Disengage { target } => match resolve_enemy_target(eval_ctx, target) {
             Ok(enemy) => {
-                combat::disengage_from(cx, enemy, eval_ctx.controller);
+                engagement::disengage_from(cx, enemy, eval_ctx.controller);
                 EngineOutcome::Done
             }
             Err(reason) => EngineOutcome::Rejected {
@@ -1083,6 +1085,12 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
             reason: "Effect::PlayTopmostEventInDiscardPile is a constant marker — read off \
                      the controller's cards when the play paths list where a card may be \
                      played from, never executed"
+                .into(),
+        },
+        Effect::BlankText { .. } => EngineOutcome::Rejected {
+            reason: "Effect::BlankText is a constant marker — swept off the board by \
+                     engine::abilities_in_effect when an investigator card's printed \
+                     abilities are read, never executed"
                 .into(),
         },
         Effect::BoostAttackDamage(amount) => boost_attack_damage_effect(cx, *amount),
@@ -1371,10 +1379,10 @@ fn apply_search_deck(
     //    (`glossary/Weakness.md`; The Necronomicon 01009's ruling). Tail
     //    position: its Revelation is pushed last, so it resolves after the
     //    search has finished shuffling.
-    if let Some(hand_index) = taken_hand_index {
-        cards::resolve_weakness_entering_hand(cx, who, hand_index);
+    match taken_hand_index {
+        Some(hand_index) => cards::resolve_weakness_entering_hand(cx, who, hand_index),
+        None => EngineOutcome::Done,
     }
-    EngineOutcome::Done
 }
 
 /// Resolve [`Effect::AttachSelfToLocation`]: the currently-playing event
@@ -1461,26 +1469,34 @@ fn discover_additional_clues_effect(cx: &mut Cx, amount: u8) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-/// Resolve [`Effect::DiscardSelf`]: discard `eval_ctx.source_instance()` from
-/// play through [`board::discard_from_play`], wherever it sits, which files it
-/// by its **owner** — Barricade 01038 to the player who played it, whoever's
-/// leaving fired it (#371), and Obscuring Fog 01168 to the encounter discard.
-/// Rejects loudly if there is no source, the instance is not in play, or it
-/// cannot leave play right now (`glossary/Cannot.md`: *"The word "cannot" is
+/// Resolve [`Effect::DiscardSelf`]: discard the source from play through
+/// [`board::discard_from_play`], wherever it sits, which files it by its
+/// **owner** — Barricade 01038 to the player who played it, whoever's leaving
+/// fired it (#371), Obscuring Fog 01168 to the encounter discard, and Mob
+/// Enforcer 01101, an enemy, to its bearer's discard (#1125). The source is
+/// the in-play instance ([`EvalContext::source_instance`]) or an enemy
+/// ([`AbilitySource::Enemy`]); an enemy discarded this way is not defeated, so
+/// no [`Event::EnemyDefeated`](crate::event::Event::EnemyDefeated) is logged.
+/// Rejects loudly if there is no such source, it is not in play, or it cannot
+/// leave play right now (`glossary/Cannot.md`: *"The word "cannot" is
 /// absolute, and cannot be countermanded by other abilities."*).
 fn discard_self(cx: &mut Cx, eval_ctx: &EvalContext) -> EngineOutcome {
-    let Some(source) = eval_ctx.source_instance() else {
-        return EngineOutcome::Rejected {
-            reason: "DiscardSelf: no source instance in context".into(),
-        };
+    let source: LeavingCard = match (eval_ctx.source_instance(), eval_ctx.ability_source) {
+        (Some(instance), _) => instance.into(),
+        (None, Some(AbilitySource::Enemy(enemy))) => enemy.into(),
+        (None, _) => {
+            return EngineOutcome::Rejected {
+                reason: "DiscardSelf: no source instance or enemy in context".into(),
+            };
+        }
     };
     let reason = match board::discard_from_play(cx, source) {
         Ok(_) => return EngineOutcome::Done,
         Err(NotLeft::NotInPlay) => {
-            format!("DiscardSelf: source instance {source:?} is not in play")
+            format!("DiscardSelf: source {source:?} is not in play")
         }
         Err(NotLeft::Refused) => {
-            format!("DiscardSelf: source instance {source:?} cannot leave play")
+            format!("DiscardSelf: source {source:?} cannot leave play")
         }
     };
     EngineOutcome::Rejected {
@@ -2068,15 +2084,16 @@ pub(crate) fn perform_discovery(
     });
 }
 
-/// Resolve [`Effect::Deal`]: ground the target investigator and apply `amount`
-/// of `kind` (damage or horror) via the elimination helpers (which run the
-/// matching defeat check). `amount == 0` is a no-op.
+/// Resolve [`Effect::Deal`]: ground the target investigator and begin a deal
+/// of `amount` `kind` (damage or horror) to them, `direct` if no asset may soak
+/// it. `amount == 0` is a no-op.
 fn deal_effect(
     cx: &mut Cx,
     eval_ctx: EvalContext,
     kind: HarmKind,
     target: InvestigatorTarget,
     amount: u8,
+    direct: bool,
 ) -> EngineOutcome {
     if amount == 0 {
         return EngineOutcome::Done;
@@ -2096,14 +2113,14 @@ fn deal_effect(
     }
     // Dealing damage is the two-step procedure of ADR 0009, walked on a
     // `DealDamage` frame: distribution across soakers + self (#44/K5b-2, prompting
-    // per contested point), then the `DamageAssigned` and `DamagePlaced`
-    // conditions. This call is therefore **tail position** — the effect walk is
+    // per contested point), then the `DamageDealt` condition with
+    // `DamagePlaced` nested in its resolve step. This call is therefore **tail position** — the effect walk is
     // parked on its own frame beneath and `Finish` resumes it.
     let (damage, horror) = match kind {
         HarmKind::Damage => (amount, 0),
         HarmKind::Horror => (0, amount),
     };
-    combat::begin_deal_damage(cx, target_id, damage, horror, DamageSource::Effect)
+    combat::begin_deal_damage(cx, target_id, damage, horror, DamageSource::Effect, direct)
 }
 
 /// Resolve [`Effect::DealDamageToEnemy`]: ground the chosen enemy (already bound

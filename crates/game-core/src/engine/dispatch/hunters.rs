@@ -6,7 +6,7 @@ use card_dsl::card_data::{Prey, PreyDirection, PreyMeasure};
 
 use crate::action::InputResponse;
 use crate::card_registry::CardRegistry;
-use crate::engine::dispatch::{choice, cursor, movement, phases};
+use crate::engine::dispatch::{choice, cursor, engagement, movement, phases};
 use crate::engine::modified_value::{self, ModifiedQuantity, ModifierTarget, ReadContext};
 use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken};
 use crate::engine::{pathfinding, Cx};
@@ -74,7 +74,8 @@ fn measure_value(
 /// for `Highest`, min for `Lowest`). Returns `One` (single best), `Tie`
 /// (2+ best — lead decides), or `None` (empty candidate set). Caller
 /// supplies the candidate set (equidistant-nearest investigators for
-/// movement; co-located investigators for engagement).
+/// movement; co-located investigators for engagement), already narrowed by
+/// [`engagement::pursues`].
 pub(super) fn resolve_prey(
     state: &GameState,
     registry: &CardRegistry,
@@ -85,7 +86,9 @@ pub(super) fn resolve_prey(
         return PreyResolution::None;
     }
     let best: Vec<InvestigatorId> = match prey {
-        Prey::Default => candidates.to_vec(),
+        // `BearerOnly` has already ruled everyone but the bearer out of
+        // `candidates` (`engagement::pursues`); what is left is equal.
+        Prey::Default | Prey::BearerOnly => candidates.to_vec(),
         Prey::Ranked { direction, measure } => {
             let scored: Vec<(InvestigatorId, i32)> = candidates
                 .iter()
@@ -111,8 +114,8 @@ pub(super) fn resolve_prey(
         }
         // `Prey` is #[non_exhaustive]; new *comparative* measures are
         // added to `PreyMeasure` (compile-forced — exhaustive), so this
-        // arm only guards genuinely new non-`Ranked` shapes (e.g.
-        // "Bearer only"), which must be wired here when they land.
+        // arm only guards genuinely new non-`Ranked` shapes, which must be
+        // wired here when they land.
         _ => unreachable!(
             "resolve_prey: unrecognised Prey variant {prey:?} — \
              card-impl bug or new variant needs engine wiring"
@@ -179,7 +182,9 @@ fn hunter_destinations(
         let Some(inv) = state.investigators.get(id) else {
             continue;
         };
-        if inv.status != Status::Active {
+        // Before the distance, so a nearer non-bearer cannot hide a farther
+        // bearer from a bearer-only hunter (`engagement::pursues`).
+        if inv.status != Status::Active || !engagement::pursues(enemy, *id) {
             continue;
         }
         let Some(loc) = inv.current_location else {
@@ -289,21 +294,8 @@ fn place_enemy_at(cx: &mut Cx, enemy_id: EnemyId, to: LocationId) {
 pub fn relocate_enemy(cx: &mut Cx, enemy_id: EnemyId, to: LocationId) {
     place_enemy_at(cx, enemy_id, to);
     if cx.state.enemies[&enemy_id].engaged_with.is_none() {
-        reengage_at_location(cx, enemy_id);
+        engagement::reengage_at_location(cx, enemy_id);
     }
-}
-
-/// Set engagement on `enemy_id` → `target` and emit
-/// [`Event::EnemyEngaged`]. Shared by movement and spawn.
-pub(super) fn engage_enemy_with(cx: &mut Cx, enemy_id: EnemyId, target: InvestigatorId) {
-    let enemy = cx.state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
-        unreachable!("engage_enemy_with: enemy {enemy_id:?} vanished; state corruption")
-    });
-    enemy.engaged_with = Some(target);
-    cx.events.push(Event::EnemyEngaged {
-        enemy: enemy_id,
-        investigator: target,
-    });
 }
 
 /// Engage-on-arrival for a hunter now at its (possibly unchanged)
@@ -311,85 +303,23 @@ pub(super) fn engage_enemy_with(cx: &mut Cx, enemy_id: EnemyId, target: Investig
 /// set ties under prey (caller suspends); otherwise engages the resolved
 /// investigator (or no-one) and returns `None`.
 fn engage_on_arrival(cx: &mut Cx, enemy_id: EnemyId) -> Option<HunterChoice> {
-    let loc = cx.state.enemies[&enemy_id]
-        .current_location
-        .unwrap_or_else(|| {
-            unreachable!("engage_on_arrival: enemy {enemy_id:?} has no location; state corruption")
-        });
-    let prey = cx.state.enemies[&enemy_id].prey;
-    let candidates = cursor::active_investigators_at(cx.state, loc);
+    let enemy = &cx.state.enemies[&enemy_id];
+    assert!(
+        enemy.current_location.is_some(),
+        "engage_on_arrival: enemy {enemy_id:?} has no location; state corruption"
+    );
+    let prey = enemy.prey;
+    let candidates = engagement::candidates(cx.state, enemy_id);
     match resolve_prey(cx.state, cx.cards, prey, &candidates) {
         PreyResolution::None => None,
         PreyResolution::One(target) => {
-            engage_enemy_with(cx, enemy_id, target);
+            engagement::engage(cx, enemy_id, target);
             None
         }
         PreyResolution::Tie(v) => Some(HunterChoice::Engage {
             enemy: enemy_id,
             candidates: v,
         }),
-    }
-}
-
-/// Engage a now-unengaged enemy with a co-located investigator per the
-/// general engagement rule (Rules Reference p.10): "Any time a ready
-/// unengaged enemy is at the same location as an investigator, it
-/// engages that investigator … follow the enemy's prey instructions."
-///
-/// No-op when the enemy is exhausted (an exhausted unengaged enemy does
-/// not engage until readied) or has no location. On a prey `Tie` this
-/// engages the lead (`tied[0]`, which is `turn_order`-first because
-/// `active_investigators_at` is turn-order-ordered) rather than
-/// suspending for the lead's `PickSingle` — keeping every defeat
-/// caller synchronous. TODO(#151): make the multiplayer tie an
-/// interactive lead choice when multiplayer lands.
-///
-/// Shared primitive: the elimination flow's step-3 re-engagement is the
-/// first consumer; Upkeep-4.3 "engage on ready" (#150) will reuse it.
-///
-/// Precondition: `enemy.engaged_with` must be `None` on entry. This
-/// helper engages unconditionally on a `One`/`Tie` resolution and does
-/// not disengage a prior target or emit [`Event::EnemyDisengaged`];
-/// callers are responsible for clearing (and announcing) any existing
-/// engagement first.
-pub(super) fn reengage_at_location(cx: &mut Cx, enemy_id: EnemyId) {
-    let enemy = &cx.state.enemies[&enemy_id];
-    if enemy.exhausted {
-        return;
-    }
-    let Some(loc) = enemy.current_location else {
-        return;
-    };
-    let prey = enemy.prey;
-    let candidates = cursor::active_investigators_at(cx.state, loc);
-    match resolve_prey(cx.state, cx.cards, prey, &candidates) {
-        PreyResolution::None => {}
-        PreyResolution::One(target) => engage_enemy_with(cx, enemy_id, target),
-        PreyResolution::Tie(tied) => engage_enemy_with(cx, enemy_id, tied[0]),
-    }
-}
-
-/// Apply the engagement rule to the whole board: every ready, unengaged enemy
-/// at a location with an investigator engages one there, in enemy-id order,
-/// through [`reengage_at_location`] (so its prey picks among several).
-///
-/// `glossary/Enemy_Engagement.md`: *"Any time a ready unengaged enemy is at the
-/// same location as an investigator, it engages that investigator."* The engine
-/// applies that rule at its triggers (entering, spawning, readying,
-/// elimination); this is the trigger for a card effect that leaves enemies
-/// ready and unengaged beside an investigator. First consumer: Elusive 01050,
-/// which disengages the enemies engaged with you and then moves you — if it
-/// cannot move you, they engage you again once it has resolved.
-pub(crate) fn engage_ready_enemies(cx: &mut Cx) {
-    let unengaged: Vec<EnemyId> = cx
-        .state
-        .enemies
-        .iter()
-        .filter(|(_, e)| !e.exhausted && e.engaged_with.is_none() && e.current_location.is_some())
-        .map(|(id, _)| *id)
-        .collect();
-    for enemy_id in unengaged {
-        reengage_at_location(cx, enemy_id);
     }
 }
 
@@ -401,8 +331,16 @@ fn process_one_hunter(cx: &mut Cx, enemy_id: EnemyId) -> Option<HunterChoice> {
         .unwrap_or_else(|| {
             unreachable!("process_one_hunter: enemy {enemy_id:?} has no location; state corruption")
         });
-    let here = cursor::active_investigators_at(cx.state, from);
-    if here.is_empty() {
+    // `glossary/Hunter.md`: *"Enemies at a location with one or more
+    // investigators do not move."* For a bearer-only hunter only its bearer
+    // counts, so a non-bearer standing with it does not hold it in place. That
+    // is the user's reading (#1125), taken from `glossary/Prey.md`'s *"as if it
+    // were the only investigator in play"*; no ruling settles it.
+    let enemy = &cx.state.enemies[&enemy_id];
+    let pinned = cursor::active_investigators_at(cx.state, from)
+        .into_iter()
+        .any(|id| engagement::pursues(enemy, id));
+    if !pinned {
         let prey = cx.state.enemies[&enemy_id].prey;
         let dests =
             hunter_destinations(cx.state, cx.cards, from, prey, &cx.state.enemies[&enemy_id]);
@@ -527,7 +465,7 @@ pub(super) fn resume_hunter_choice(cx: &mut Cx, response: &InputResponse) -> Eng
                 };
             };
             cx.state.continuations.pop_expect::<HunterChoice>();
-            engage_enemy_with(cx, *enemy, who);
+            engagement::engage(cx, *enemy, who);
             *enemy
         }
     };
@@ -588,7 +526,7 @@ pub(super) fn resume_spawn_engage(cx: &mut Cx, response: &InputResponse) -> Engi
         };
     };
     cx.state.continuations.pop_expect::<SpawnEngagePending>();
-    engage_enemy_with(cx, pending.enemy, who);
+    engagement::engage(cx, pending.enemy, who);
     // The exposed `PlayerDraw` frame (if any) is driven by the `drive` loop;
     // nothing else to do here.
     EngineOutcome::Done
