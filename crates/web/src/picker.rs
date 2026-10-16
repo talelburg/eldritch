@@ -2,91 +2,49 @@
 //! submits a `CreateGameRequest` on the `CreateTx` channel; the transport
 //! creates the game (#459).
 
+use cards::decks::{self, DefaultDeck, WeaknessChoice};
 use futures::channel::mpsc::UnboundedSender;
 use game_core::action::RosterEntry;
-use game_core::state::CardCode;
 use leptos::prelude::*;
 use protocol::CreateGameRequest;
 
-use crate::scaffold_decks::{
-    AGNES_DEFAULT_DECK, DAISY_DEFAULT_DECK, ROLAND_DEFAULT_DECK, SKIDS_DEFAULT_DECK,
-    WENDY_DEFAULT_DECK,
-};
 use crate::store::{self, ConnStatus};
 
 /// Channel the picker uses to hand a chosen `CreateGameRequest` to the
 /// transport's creation loop. Provided into context by `transport::start`.
 pub type CreateTx = UnboundedSender<CreateGameRequest>;
 
-/// The investigators the picker offers, each with its placeholder deck.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Pick {
-    Roland,
-    Daisy,
-    Skids,
-    Agnes,
-    Wendy,
+/// A radio's label: the investigator's name and code.
+fn label(deck: &DefaultDeck) -> String {
+    let name = cards::by_code(deck.investigator).map_or("?", |meta| meta.name.as_str());
+    format!(" {name} ({})", deck.investigator)
 }
 
-impl Pick {
-    fn roster(self) -> Vec<RosterEntry> {
-        match self {
-            Pick::Roland => roland_roster(),
-            Pick::Daisy => daisy_roster(),
-            Pick::Skids => skids_roster(),
-            Pick::Agnes => agnes_roster(),
-            Pick::Wendy => wendy_roster(),
-        }
-    }
-}
-
-/// A one-investigator roster of `investigator` with `deck`.
-///
-/// It asks for no random basic weakness yet: the scaffold decks are not legal
-/// decks, and the count becomes 1 with the legal starter decks in #782.
-fn roster(investigator: &str, deck: &[&str]) -> Vec<RosterEntry> {
-    vec![RosterEntry {
-        investigator: CardCode::new(investigator),
-        deck: deck.iter().map(|c| CardCode::new(*c)).collect(),
-        random_basic_weaknesses: 0,
-    }]
-}
-
-/// Build the default Roland roster: investigator 01001 + the placeholder deck.
-pub fn roland_roster() -> Vec<RosterEntry> {
-    roster("01001", ROLAND_DEFAULT_DECK)
-}
-
-/// Build the default Daisy roster: investigator 01002 + the placeholder deck.
-pub fn daisy_roster() -> Vec<RosterEntry> {
-    roster("01002", DAISY_DEFAULT_DECK)
-}
-
-/// Build the default Skids roster: investigator 01003 + the placeholder deck.
-pub fn skids_roster() -> Vec<RosterEntry> {
-    roster("01003", SKIDS_DEFAULT_DECK)
-}
-
-/// Build the default Agnes roster: investigator 01004 + the placeholder deck.
-pub fn agnes_roster() -> Vec<RosterEntry> {
-    roster("01004", AGNES_DEFAULT_DECK)
-}
-
-/// Build the default Wendy roster: investigator 01005 + the placeholder deck.
-pub fn wendy_roster() -> Vec<RosterEntry> {
-    roster("01005", WENDY_DEFAULT_DECK)
+/// The roster entry for the deck at `picked`, with a random basic weakness in
+/// place of its fixed one when `random_weakness` is set.
+fn roster_entry(picked: usize, random_weakness: bool) -> RosterEntry {
+    let choice = if random_weakness {
+        WeaknessChoice::Random
+    } else {
+        WeaknessChoice::Fixed
+    };
+    decks::DEFAULT_DECKS[picked].roster_entry(choice)
 }
 
 /// Pre-game picker, rendered as a **full-viewport overlay**. Renders only while
 /// `status == AwaitingRoster` — i.e. only before there is a board — and submits a
-/// `CreateGameRequest` (The Gathering + the picked investigator) on click.
+/// `CreateGameRequest` (The Gathering + the picked investigator's
+/// [default deck](cards::decks::DefaultDeck)) on click. The deck brings its
+/// fixed weakness unless "Random basic weakness" is checked.
 #[component]
 pub fn PickerView() -> impl IntoView {
     let store = store::use_store();
     let create_tx = use_context::<CreateTx>();
     // Outside the render closure, so a store update that re-renders the
-    // overlay keeps the pick.
-    let picked = RwSignal::new(Pick::Roland);
+    // overlay keeps the pick and the checkbox. The pick is an index into
+    // `DEFAULT_DECKS`.
+    let picked = RwSignal::new(0_usize);
+    let random_weakness = RwSignal::new(false);
 
     view! {
         {move || {
@@ -103,64 +61,44 @@ pub fn PickerView() -> impl IntoView {
                     <label>"Scenario: " <select><option>"The Gathering"</option></select></label>
                     <fieldset>
                         <legend>"Investigator"</legend>
-                        <label>
-                            <input
-                                type="radio"
-                                name="inv"
-                                value="01001"
-                                prop:checked=move || picked.get() == Pick::Roland
-                                on:change=move |_| picked.set(Pick::Roland)
-                            />
-                            " Roland Banks (01001)"
-                        </label>
-                        <label>
-                            <input
-                                type="radio"
-                                name="inv"
-                                value="01002"
-                                prop:checked=move || picked.get() == Pick::Daisy
-                                on:change=move |_| picked.set(Pick::Daisy)
-                            />
-                            " Daisy Walker (01002)"
-                        </label>
-                        <label>
-                            <input
-                                type="radio"
-                                name="inv"
-                                value="01003"
-                                prop:checked=move || picked.get() == Pick::Skids
-                                on:change=move |_| picked.set(Pick::Skids)
-                            />
-                            " \"Skids\" O'Toole (01003)"
-                        </label>
-                        <label>
-                            <input
-                                type="radio"
-                                name="inv"
-                                value="01004"
-                                prop:checked=move || picked.get() == Pick::Agnes
-                                on:change=move |_| picked.set(Pick::Agnes)
-                            />
-                            " Agnes Baker (01004)"
-                        </label>
-                        <label>
-                            <input
-                                type="radio"
-                                name="inv"
-                                value="01005"
-                                prop:checked=move || picked.get() == Pick::Wendy
-                                on:change=move |_| picked.set(Pick::Wendy)
-                            />
-                            " Wendy Adams (01005)"
-                        </label>
+                        {decks::DEFAULT_DECKS
+                            .iter()
+                            .enumerate()
+                            .map(|(i, deck)| {
+                                view! {
+                                    <label>
+                                        <input
+                                            type="radio"
+                                            name="inv"
+                                            value=deck.investigator
+                                            prop:checked=move || picked.get() == i
+                                            on:change=move |_| picked.set(i)
+                                        />
+                                        {label(deck)}
+                                    </label>
+                                }
+                            })
+                            .collect_view()}
                     </fieldset>
+                    <label>
+                        <input
+                            type="checkbox"
+                            class="random-basic-weakness"
+                            prop:checked=move || random_weakness.get()
+                            on:change=move |_| random_weakness.update(|on| *on = !*on)
+                        />
+                        " Random basic weakness"
+                    </label>
                     <button
                         class="create-game"
                         on:click=move |_| {
                             if let Some(tx) = tx.clone() {
                                 let _ = tx.unbounded_send(CreateGameRequest {
                                     scenario_id: "the-gathering".to_string(),
-                                    roster: picked.get_untracked().roster(),
+                                    roster: vec![roster_entry(
+                                        picked.get_untracked(),
+                                        random_weakness.get_untracked(),
+                                    )],
                                 });
                             }
                         }

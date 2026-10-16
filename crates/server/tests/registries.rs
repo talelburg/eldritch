@@ -2,14 +2,17 @@
 //! (C7a): `POST /games` for The Gathering succeeds and real card codes
 //! resolve. This binary hands the server the *production* pairing,
 //! `server::REGISTRIES`, where the other test binaries pass the mock pairing
-//! from `common`.
+//! from `common`. It also creates a game from every roster the picker can send
+//! (#782): each default deck, with its fixed weakness and with a random one.
 
 mod common;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
+use cards::decks::{self, WeaknessChoice};
 use game_core::scenario::ScenarioId;
 use game_core::state::CardCode;
+use protocol::CreateGameRequest;
 use scenarios::the_gathering::ID as GATHERING_SCENARIO_ID;
 use server::AppState;
 use tower::ServiceExt as _;
@@ -57,4 +60,35 @@ async fn post_games_creates_the_gathering_against_the_production_registries() {
     let response = app.oneshot(request).await.unwrap();
 
     assert_eq!(response.status(), StatusCode::CREATED);
+}
+
+/// Every roster the picker sends seats a game: each of the five default decks,
+/// in both weakness modes, ten creates in all.
+#[tokio::test]
+async fn post_games_seats_every_default_deck_in_both_weakness_modes() {
+    let pool = common::memory_pool().await;
+    let app = server::app(AppState::new(pool, server::REGISTRIES));
+
+    for deck in decks::DEFAULT_DECKS {
+        for choice in [WeaknessChoice::Fixed, WeaknessChoice::Random] {
+            let body = CreateGameRequest {
+                scenario_id: GATHERING_SCENARIO_ID.to_string(),
+                roster: vec![deck.roster_entry(choice)],
+            };
+            let request = Request::builder()
+                .method("POST")
+                .uri("/games")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_string(&body).unwrap()))
+                .unwrap();
+            let response = app.clone().oneshot(request).await.unwrap();
+
+            assert_eq!(
+                response.status(),
+                StatusCode::CREATED,
+                "{} {choice:?}",
+                deck.investigator
+            );
+        }
+    }
 }

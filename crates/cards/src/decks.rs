@@ -479,9 +479,9 @@ mod tests {
     /// A player card's level, read off its kind.
     fn level(meta: &CardMetadata) -> Option<u8> {
         match meta.kind {
-            CardKind::Asset { xp, .. } | CardKind::Event { xp, .. } | CardKind::Skill { xp, .. } => {
-                xp
-            }
+            CardKind::Asset { xp, .. }
+            | CardKind::Event { xp, .. }
+            | CardKind::Skill { xp, .. } => xp,
             _ => None,
         }
     }
@@ -558,7 +558,12 @@ mod tests {
     fn each_fixed_weakness_is_a_core_basic_weakness() {
         for deck in DEFAULT_DECKS {
             let meta = meta(deck.weakness);
-            assert_eq!(meta.weakness, Some(WeaknessKind::Basic), "{}", deck.weakness);
+            assert_eq!(
+                meta.weakness,
+                Some(WeaknessKind::Basic),
+                "{}",
+                deck.weakness
+            );
             assert!(
                 weakness_pool().iter().any(|c| c.as_str() == deck.weakness),
                 "{} is not in the weakness pool",
