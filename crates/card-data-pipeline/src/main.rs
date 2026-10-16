@@ -679,7 +679,37 @@ struct NormalizedCard {
     /// in-corpus location — `spawn_lit` emits `SpawnLocation::Unrepresented`
     /// for that pair, never `spawn: None`.
     spawn_code: Option<String>,
-    weakness: bool,
+    weakness: Option<WeaknessKind>,
+}
+
+/// Mirrors `card_dsl::card_data::WeaknessKind`, which this crate does not
+/// depend on; [`render_weakness`] emits it by variant name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WeaknessKind {
+    /// `ArkhamDB` subtype `"basicweakness"`.
+    Basic,
+    /// `ArkhamDB` subtype `"weakness"`: signature, story and campaign
+    /// weaknesses alike, since the snapshot records nothing finer.
+    Other,
+}
+
+/// Map `ArkhamDB`'s `subtype_code` to a weakness kind; any other subtype
+/// (or none) is not a weakness.
+fn map_weakness(subtype_code: Option<&str>) -> Option<WeaknessKind> {
+    match subtype_code {
+        Some("basicweakness") => Some(WeaknessKind::Basic),
+        Some("weakness") => Some(WeaknessKind::Other),
+        _ => None,
+    }
+}
+
+/// Render a weakness kind as the `CardMetadata.weakness` field literal.
+fn render_weakness(weakness: Option<WeaknessKind>) -> &'static str {
+    match weakness {
+        None => "None",
+        Some(WeaknessKind::Basic) => "Some(WeaknessKind::Basic)",
+        Some(WeaknessKind::Other) => "Some(WeaknessKind::Other)",
+    }
 }
 
 fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
@@ -722,10 +752,7 @@ fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
     let commit_limit = raw.text.as_deref().and_then(parse_commit_limit);
     let commit_only_to_own_test = raw.text.as_deref().is_some_and(is_commit_only_to_own_test);
 
-    let weakness = matches!(
-        raw.subtype_code.as_deref(),
-        Some("weakness" | "basicweakness")
-    );
+    let weakness = map_weakness(raw.subtype_code.as_deref());
 
     Ok(NormalizedCard {
         code: raw.code,
@@ -859,7 +886,7 @@ fn render(all: &BTreeMap<String, NormalizedCard>) -> String {
     out.push_str(
         "use card_dsl::card_data::{\n    \
          CardKind, CardMetadata, Class, ClueValue, HealthValue, Prey, PreyDirection, PreyMeasure,\n    \
-         SkillIcons, SkillKind, Skills, Slot, Spawn, SpawnLocation, UseKind, Uses,\n};\n\n\
+         SkillIcons, SkillKind, Skills, Slot, Spawn, SpawnLocation, UseKind, Uses, WeaknessKind,\n};\n\n\
          /// Every card from the pinned snapshot, sorted by code.\n\
          #[must_use]\n\
          pub fn all_cards() -> Vec<CardMetadata> {\n    vec![\n",
@@ -968,7 +995,11 @@ fn render_card(out: &mut String, c: &NormalizedCard) {
         "            pack_code: {}.to_owned(),",
         str_lit(&c.pack_code)
     );
-    let _ = writeln!(out, "            weakness: {},", c.weakness);
+    let _ = writeln!(
+        out,
+        "            weakness: {},",
+        render_weakness(c.weakness)
+    );
     let _ = writeln!(out, "            kind: {},", render_kind(c));
     let _ = writeln!(out, "        }},");
 }

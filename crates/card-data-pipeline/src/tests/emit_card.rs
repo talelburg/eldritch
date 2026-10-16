@@ -45,7 +45,7 @@ fn normalized(code: &str, name: &str, card_type: &'static str) -> NormalizedCard
         prey: PreyParse::None,
         spawn_name: None,
         spawn_code: None,
-        weakness: false,
+        weakness: None,
     }
 }
 

@@ -18,7 +18,7 @@
 
 use std::sync::LazyLock;
 
-use card_dsl::card_data::{CardKind, CardMetadata};
+use card_dsl::card_data::{CardKind, CardMetadata, WeaknessKind};
 use card_dsl::dsl::{
     self, Cost, Effect, EventPattern, EventTiming, InvestigatorTarget, LocationTarget,
 };
@@ -76,7 +76,7 @@ fn weakness_metadata() -> CardMetadata {
         back_name: None,
         back_text: None,
         pack_code: "_mock".to_owned(),
-        weakness: true,
+        weakness: Some(WeaknessKind::Other),
         kind: CardKind::Treachery {
             surge: false,
             peril: false,

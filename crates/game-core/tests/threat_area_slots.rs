@@ -42,7 +42,7 @@ fn one_hand_asset(code: &str) -> CardMetadata {
         back_name: None,
         back_text: None,
         pack_code: "test".to_string(),
-        weakness: false,
+        weakness: None,
         kind: CardKind::Asset {
             class: Class::Neutral,
             cost: Some(0),

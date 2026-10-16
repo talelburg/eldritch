@@ -19,7 +19,7 @@
 
 use std::sync::LazyLock;
 
-use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Slot};
+use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Slot, WeaknessKind};
 use card_dsl::dsl::{self, CmpOp, Condition, Quantity, Restriction};
 use game_core::engine::board::{NotLeft, Placement};
 use game_core::engine::enumerate::{self, PlaySource, TurnAction};
@@ -50,7 +50,7 @@ fn hand_asset(code: &str, slots: Vec<Slot>, weakness: bool) -> CardMetadata {
         back_name: None,
         back_text: None,
         pack_code: "test".to_string(),
-        weakness,
+        weakness: weakness.then_some(WeaknessKind::Other),
         kind: CardKind::Asset {
             class: Class::Neutral,
             cost: Some(0),

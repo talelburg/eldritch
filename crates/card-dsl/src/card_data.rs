@@ -304,12 +304,28 @@ pub struct CardMetadata {
     pub back_text: Option<String>,
     /// Pack code this card belongs to (e.g. `"core"`, `"dwl"`).
     pub pack_code: String,
-    /// Whether this card is a weakness (`ArkhamDB` subtype `"weakness"` or
-    /// `"basicweakness"`). Orthogonal to card type — a weakness may be a
-    /// Treachery, Enemy, or Asset.
-    pub weakness: bool,
+    /// Which kind of weakness this card is, or `None` if it is not a
+    /// weakness. Mapped from `ArkhamDB`'s subtype: `"basicweakness"` is
+    /// [`WeaknessKind::Basic`], `"weakness"` is [`WeaknessKind::Other`].
+    /// Orthogonal to card type — a weakness may be a Treachery, Enemy, or
+    /// Asset.
+    pub weakness: Option<WeaknessKind>,
     /// Type-specific data.
     pub kind: CardKind,
+}
+
+/// The kind of a weakness card, as `ArkhamDB`'s subtype records it.
+///
+/// See **Basic weakness / weakness pool** in `GLOSSARY.md`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum WeaknessKind {
+    /// A basic weakness (`ArkhamDB` subtype `"basicweakness"`): one a
+    /// random basic weakness can be drawn as.
+    Basic,
+    /// Any other weakness (`ArkhamDB` subtype `"weakness"`). Signature,
+    /// story and campaign weaknesses all land here, because the snapshot
+    /// records nothing finer.
+    Other,
 }
 
 /// A location's printed clue value. `PerInvestigator(n)` places
@@ -702,11 +718,11 @@ impl CardMetadata {
         )
     }
 
-    /// Whether this card is a weakness. Mirrors the stored
-    /// [`weakness`](Self::weakness) field.
+    /// Whether this card is a weakness of any kind: the stored
+    /// [`weakness`](Self::weakness) field is `Some`.
     #[must_use]
     pub fn is_weakness(&self) -> bool {
-        self.weakness
+        self.weakness.is_some()
     }
 }
 

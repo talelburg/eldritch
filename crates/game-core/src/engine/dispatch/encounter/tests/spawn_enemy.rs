@@ -48,7 +48,7 @@ fn enemy_metadata(
         back_name: None,
         back_text: None,
         pack_code: "_synth".into(),
-        weakness: false,
+        weakness: None,
         kind: CardKind::Enemy {
             fight,
             evade,

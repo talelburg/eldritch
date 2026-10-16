@@ -91,7 +91,7 @@ fn metadata(code: &'static str, name: &'static str, kind: CardKind) -> CardMetad
         back_name: None,
         back_text: None,
         pack_code: "test".to_string(),
-        weakness: false,
+        weakness: None,
         kind,
     }
 }

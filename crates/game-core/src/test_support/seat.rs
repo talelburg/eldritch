@@ -324,7 +324,7 @@ fn owner(
 ) -> Owner {
     let player_card = || {
         (named(cards).metadata_for)(code).is_some_and(|meta| {
-            meta.weakness
+            meta.is_weakness()
                 || matches!(
                     meta.card_type(),
                     CardType::Investigator | CardType::Asset | CardType::Event | CardType::Skill

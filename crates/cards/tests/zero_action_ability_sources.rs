@@ -164,7 +164,7 @@ fn ward_metadata() -> CardMetadata {
         back_name: None,
         back_text: None,
         pack_code: "_test".to_owned(),
-        weakness: false,
+        weakness: None,
         kind: CardKind::Treachery {
             surge: false,
             peril: false,

@@ -19,7 +19,7 @@
 
 use std::sync::LazyLock;
 
-use card_dsl::card_data::{CardKind, CardMetadata};
+use card_dsl::card_data::{CardKind, CardMetadata, WeaknessKind};
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{ApplyResult, EngineOutcome, NativeCx, Registries};
@@ -37,7 +37,7 @@ use game_core::{assert_event, assert_no_event};
 /// ability — the Cover Up 01007 shape, reduced to what step 0 keys off.
 const WEAKNESS: &str = "test-weakness-game-end";
 
-/// The same card in every respect **except** `weakness: false`: same zone, same
+/// The same card in every respect **except** `weakness: None`: same zone, same
 /// controller, same `GameEnd` forced ability, same native tag. The control that
 /// makes the weakness filter falsifiable.
 const NOT_A_WEAKNESS: &str = "test-asset-game-end";
@@ -65,7 +65,7 @@ fn metadata(code: &'static str, weakness: bool) -> CardMetadata {
         back_name: None,
         back_text: None,
         pack_code: "_test".to_owned(),
-        weakness,
+        weakness: weakness.then_some(WeaknessKind::Other),
         kind: CardKind::Treachery {
             surge: false,
             peril: false,
@@ -190,7 +190,7 @@ fn elimination_fires_an_owned_weaknesss_game_end_ability_before_removing_it() {
 #[test]
 fn elimination_does_not_fire_a_non_weaknesss_game_end_ability() {
     // The acceptance criterion this file exists for. Identical card, identical
-    // ability, identical zone — only `weakness: false` differs, and that alone
+    // ability, identical zone — only `weakness: None` differs, and that alone
     // must keep it out of step 0's scan. The game has not ended for anyone else,
     // so a non-weakness card the eliminated investigator controls has no
     // game-end trigger point here.

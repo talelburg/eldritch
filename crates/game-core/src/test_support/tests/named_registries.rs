@@ -42,7 +42,7 @@ fn probe(code: &str, name: &str, kind: CardKind) -> CardMetadata {
         back_name: None,
         back_text: None,
         pack_code: "_test".to_owned(),
-        weakness: false,
+        weakness: None,
         kind,
     }
 }

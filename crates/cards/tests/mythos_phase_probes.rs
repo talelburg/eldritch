@@ -81,7 +81,7 @@ fn treachery_metadata(code: &str, name: &str, text: &str, surge: bool) -> CardMe
         back_name: None,
         back_text: None,
         pack_code: "_mpp".to_owned(),
-        weakness: false,
+        weakness: None,
         kind: CardKind::Treachery {
             surge,
             peril: false,
