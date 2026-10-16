@@ -919,8 +919,9 @@ pub enum EventPattern {
     /// [`EnteredLocation`](Self::EnteredLocation) / [`EndOfTurn`](Self::EndOfTurn)
     /// bind theirs, and binds the attacking enemy into the `EvalContext`.
     ///
-    /// Pairs with the engine's `DamageAssigned` condition — Rules Reference step
-    /// 1 of dealing damage, before anything is on any card — narrowed by this
+    /// Pairs with the engine's `DamageDealt` condition — announced once Rules
+    /// Reference step 1's assignment exists, before anything is on any card,
+    /// with the placement as its resolve step — narrowed by this
     /// pattern to an enemy *attack* (non-attack `Effect::Deal` harm does not
     /// match). The `when` cell is therefore the window the rules name *between*
     /// assigning and placing, which is what its one consumer prints: Guard Dog
@@ -1113,7 +1114,7 @@ impl EventPattern {
             // "When an enemy attack deals damage to Guard Dog" (01021) is the
             // card's narrowing of the damage *assignment*, not a condition of
             // its own (ADR 0009).
-            EventPattern::EnemyAttackDamagedSelf => TriggeringCondition::DamageAssigned,
+            EventPattern::EnemyAttackDamagedSelf => TriggeringCondition::DamageDealt,
             EventPattern::HarmPlaced { .. } => TriggeringCondition::DamagePlaced,
             EventPattern::EnemyAttacks { .. } => TriggeringCondition::EnemyAttacks,
             EventPattern::EnteredPlay => TriggeringCondition::EnteredPlay,
@@ -1298,9 +1299,11 @@ pub enum TriggeringCondition {
     /// The game ended, for everyone or for one eliminated investigator's
     /// weaknesses (a weakness prints one *"when the game ends"*).
     GameEnd,
-    /// Damage and/or horror was assigned (step 1 of dealing it, ADR 0009).
-    DamageAssigned,
-    /// Assigned damage and/or horror was placed (step 2, ADR 0009).
+    /// Damage and/or horror was dealt: announced once it is assigned (step 1
+    /// of dealing it), with the placement as its resolve step (ADR 0009).
+    DamageDealt,
+    /// Assigned damage and/or horror was placed (step 2), nested inside
+    /// [`DamageDealt`](Self::DamageDealt)'s resolve step (ADR 0009).
     DamagePlaced,
     /// A skill test's success or failure was determined (RR ST.6).
     SkillTestResolved,

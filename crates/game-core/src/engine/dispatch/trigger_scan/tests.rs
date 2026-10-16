@@ -72,7 +72,7 @@ fn round_ended_matches_its_own_pattern_board_scoped() {
 }
 
 /// An [`Assignment`](crate::state::Assignment) giving 1 damage to `inst` —
-/// the shape a `DamageAssigned` event carries when that card is a soaker.
+/// the shape a `DamageDealt` event carries when that card is a soaker.
 fn assignment_damaging(inst: CardInstanceId) -> Assignment {
     let mut assignment = Assignment::default();
     assignment.asset_damage.insert(inst, 1);
@@ -89,7 +89,7 @@ fn assignment_damaging(inst: CardInstanceId) -> Assignment {
 #[test]
 fn soak_event_matches_only_the_self_soak_pattern() {
     let controller = InvestigatorId(1);
-    let soak = TimingEvent::DamageAssigned {
+    let soak = TimingEvent::DamageDealt {
         source: DamageSource::EnemyAttack { enemy: EnemyId(1) },
         investigator: controller,
         assignment: assignment_damaging(CardInstanceId(7)),
@@ -102,7 +102,7 @@ fn soak_event_matches_only_the_self_soak_pattern() {
     ));
     // …but not the same condition from a non-attack source: Guard Dog
     // retaliates to an enemy *attack*, not to treachery harm.
-    let effect_harm = TimingEvent::DamageAssigned {
+    let effect_harm = TimingEvent::DamageDealt {
         source: DamageSource::Effect,
         investigator: controller,
         assignment: assignment_damaging(CardInstanceId(7)),

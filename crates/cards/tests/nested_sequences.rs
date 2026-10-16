@@ -29,7 +29,7 @@
 //! load-bearing one is *"Before resolving the damage dealt to the Guard Dog"*:
 //! the damage the Guard Dog reacted to is **assigned but not placed** for the
 //! whole of the nested sequence its reaction spawns. That is what
-//! `docs/adr/0009-damage-is-assigned-then-placed.md` splits `DamageAssigned`
+//! `docs/adr/0009-damage-is-assigned-then-placed.md` splits `DamageDealt`
 //! from `DamagePlaced` to model, and it is the whole of what this file asserts.
 //!
 //! **Two substitutions**, and neither is a convenience. Goat Spawn is in the

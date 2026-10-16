@@ -179,11 +179,7 @@ fn a_deal_of_damage_is_a_prompt_only_while_distributing() {
         remaining_horror: 0,
     };
     assert_eq!(deal_damage(distribute).profile().activity, PROMPT);
-    for step in [
-        DealDamageStep::Announce,
-        DealDamageStep::Place,
-        DealDamageStep::Finish,
-    ] {
+    for step in [DealDamageStep::Announce, DealDamageStep::Finish] {
         assert_eq!(
             deal_damage(step.clone()).profile().activity,
             DRIVEN,
@@ -471,7 +467,7 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             profile(DRIVEN, COMPLETE),
         ),
         (
-            deal_damage(DealDamageStep::Place),
+            deal_damage(DealDamageStep::Announce),
             profile(DRIVEN, COMPLETE),
         ),
         (

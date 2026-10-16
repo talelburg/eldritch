@@ -118,8 +118,10 @@ pub enum DamageSource {
 /// and hand back to the caller.
 ///
 /// The two steps are two triggering conditions with a named window between
-/// them, and ADR 0003 forbids emitting both synchronously from one call — so the
-/// cursor is not organisation, it is the only legal way to sequence them. See
+/// them, the second nested in the first's resolve step. ADR 0003 forbids
+/// emitting from the middle of a call, so the cursor is not organisation: the
+/// assignment must exist before `DamageDealt` is announced, and the frame must
+/// outlive that announcement's sequence to hand back to its caller. See
 /// `docs/adr/0009-damage-is-assigned-then-placed.md`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DealDamageStep {
@@ -134,16 +136,14 @@ pub enum DealDamageStep {
         /// Horror points still to assign.
         remaining_horror: u8,
     },
-    /// Emit [`DamageAssigned`](crate::engine::TimingEvent::DamageAssigned) — a
-    /// bare milestone, so its whole sequence is the three cells around a no-op
-    /// resolve step. Advances the cursor before emitting (tail position).
+    /// Emit [`DamageDealt`](crate::engine::TimingEvent::DamageDealt), whose
+    /// resolve step emits [`DamagePlaced`](crate::engine::TimingEvent::DamagePlaced)
+    /// — the placement nests inside the deal. Advances the cursor before
+    /// emitting (tail position), straight to `Finish`: a cancel in
+    /// `DamageDealt`'s `when` cell abandons that resolve step, and the frame
+    /// then only pops, so nothing is placed.
     Announce,
-    /// Emit [`DamagePlaced`](crate::engine::TimingEvent::DamagePlaced), whose
-    /// resolve step is the simultaneous placement and the defeat sweep. Re-reads
-    /// the frame's assignment, so it carries whatever `DamageAssigned`'s cells
-    /// made of it. Advances the cursor before emitting (tail position).
-    Place,
-    /// Both conditions have run: pop and resume by
+    /// The deal's sequence has run, or was cancelled: pop and resume by
     /// [`DamageSource`].
     Finish,
 }
@@ -658,9 +658,7 @@ impl Continuation {
             Continuation::DealDamage(DealDamageFrame { step, .. }) => (
                 match step {
                     DealDamageStep::Distribute { .. } => FrameActivity::Prompt,
-                    DealDamageStep::Announce | DealDamageStep::Place | DealDamageStep::Finish => {
-                        FrameActivity::Driven
-                    }
+                    DealDamageStep::Announce | DealDamageStep::Finish => FrameActivity::Driven,
                 },
                 ScenarioEndDisposition::Complete,
             ),
@@ -2336,12 +2334,13 @@ pub struct AttackLoopFrame {
 /// One deal of damage and/or horror, in progress — the Rules Reference's
 /// two numbered steps and the window between them
 /// (`glossary/Dealing_Damage_Horror.md`), walked by the
-/// [`step`](DealDamageStep) cursor `Distribute → Announce → Place → Finish`.
+/// [`step`](DealDamageStep) cursor `Distribute → Announce → Finish`.
 ///
-/// **This frame owns the live assignment**; each of the two emits snapshots
-/// it into its own event, so both events are true when emitted and there is
-/// no write-back protocol — `Place` simply re-reads the frame after
-/// `DamageAssigned`'s cells have had their chance to edit it. See
+/// **This frame owns the live assignment**; each of the two conditions
+/// snapshots it into its own event, so both events are true when emitted and
+/// there is no write-back protocol — `DamageDealt`'s resolve step simply
+/// re-reads this frame after `DamageDealt`'s `when` cell has had its chance to
+/// edit it, and emits `DamagePlaced` with what it finds. See
 /// `docs/adr/0009-damage-is-assigned-then-placed.md`.
 ///
 /// Awaits input only at [`Distribute`](DealDamageStep::Distribute), where it

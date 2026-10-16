@@ -75,16 +75,37 @@ fn resume_damage_distribution_rejects_invalid_pick_and_keeps_frame() {
     );
 }
 
-/// The cursor's whole walk (#727): `Distribute → Announce → Place → Finish`,
+/// Run the resolve step of the coordinator-owned `event`, as the coordinator
+/// does once its `when` cell has run.
+fn resolve_condition(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
+    let ConditionResolution::Coordinator(resolve) = event.condition_resolution() else {
+        panic!("{event:?} must be coordinator-owned");
+    };
+    resolve(cx, event)
+}
+
+/// The `TimingEvent` on the top `EmitEvent` frame, or a panic naming `what`.
+fn top_emitted(cx: &Cx, what: &str) -> TimingEvent {
+    let Some(Continuation::EmitEvent(EmitEventFrame { event, .. })) = cx.state.continuations.top()
+    else {
+        panic!(
+            "expected {what} on top; stack = {:?}",
+            cx.state.continuations
+        );
+    };
+    event.clone()
+}
+
+/// The cursor's whole walk (#727, #1123): `Distribute → Announce → Finish`,
 /// stepped one dispatch at a time with no soaker in play, so distribution
 /// drains immediately and the frame never prompts.
 ///
 /// What it pins is *where the placement is*: nothing is on the investigator
-/// until the `DamagePlaced` coordinator the `Place` step pushes has reached
-/// its own resolve step. The `when` cell between the two conditions is
-/// exactly the gap this walk opens (ADR 0009).
+/// until `DamageDealt`'s resolve step has emitted `DamagePlaced` and that
+/// condition has reached its own resolve step. The frame sits at `Finish`
+/// beneath both, so the placement nests inside the deal (ADR 0009).
 #[test]
-fn deal_damage_cursor_walks_distribute_announce_place_finish() {
+fn deal_damage_cursor_walks_distribute_announce_finish() {
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -121,58 +142,51 @@ fn deal_damage_cursor_walks_distribute_announce_place_finish() {
     assert_eq!(*step, DealDamageStep::Announce);
     assert_eq!(assignment.investigator_damage, 2);
 
-    // Announce: the cursor advances *before* the emit (tail position), and
-    // the coordinator it pushed is now on top.
+    // Announce: the cursor advances straight to `Finish` *before* the emit
+    // (tail position), and the `DamageDealt` coordinator is now on top.
     assert_eq!(drive_deal_damage(&mut cx), EngineOutcome::Done);
-    assert!(matches!(
-        cx.state.continuations.top(),
-        Some(Continuation::EmitEvent(EmitEventFrame {
-            event: TimingEvent::DamageAssigned { .. },
-            ..
-        }))
-    ));
+    let dealt = top_emitted(&cx, "DamageDealt");
+    assert!(
+        matches!(dealt, TimingEvent::DamageDealt { .. }),
+        "{dealt:?}"
+    );
+    assert_eq!(
+        cx.state
+            .continuations
+            .topmost_of::<DealDamageFrame>()
+            .map(|f| &f.step),
+        Some(&DealDamageStep::Finish),
+        "the frame waits beneath the whole sequence at Finish"
+    );
     assert_eq!(
         cx.state.investigators[&id].damage(),
         0,
         "an assignment is a proposal: nothing is placed at the announcement"
     );
-    // Drain that coordinator (a bare milestone with no takers here).
-    cx.state.continuations.pop();
 
-    // Place: same shape, and again nothing has landed until the coordinator
-    // reaches its resolve step.
-    assert_eq!(drive_deal_damage(&mut cx), EngineOutcome::Done);
-    let Some(Continuation::EmitEvent(EmitEventFrame {
-        event: placed @ TimingEvent::DamagePlaced { .. },
-        ..
-    })) = cx.state.continuations.top().cloned()
-    else {
-        panic!("Place must emit DamagePlaced");
-    };
+    // DamageDealt's resolve step: emit DamagePlaced above it, still placing
+    // nothing.
+    assert_eq!(resolve_condition(&mut cx, &dealt), EngineOutcome::Done);
+    let placed = top_emitted(&cx, "DamagePlaced");
+    assert!(
+        matches!(placed, TimingEvent::DamagePlaced { .. }),
+        "{placed:?}"
+    );
     assert_eq!(
         cx.state.investigators[&id].damage(),
         0,
         "still nothing placed until DamagePlaced resolves"
     );
+
+    // DamagePlaced's resolve step is where it lands.
     cx.state.continuations.pop();
-    // The resolve step is where it lands.
-    let resolution = placed.condition_resolution();
-    let ConditionResolution::Coordinator(resolve) = resolution else {
-        panic!("DamagePlaced must be coordinator-owned");
-    };
-    assert_eq!(resolve(&mut cx, &placed), EngineOutcome::Done);
+    assert_eq!(resolve_condition(&mut cx, &placed), EngineOutcome::Done);
     assert_eq!(cx.state.investigators[&id].damage(), 2, "placed at last");
-    assert!(
-        cx.events.iter().any(|e| matches!(
-            e,
-            Event::DamageTaken { investigator, amount: 2 } if *investigator == id
-        )),
-        "DamageTaken emitted at the placement: {:?}",
-        cx.events
-    );
+    assert_event!(cx.events, Event::DamageTaken { investigator, amount: 2 } if *investigator == id);
 
     // Finish: pop and hand back to the caller. An enemy attack's own
     // sequence continues on the frames beneath, so this is just `Done`.
+    cx.state.continuations.pop();
     assert_eq!(drive_deal_damage(&mut cx), EngineOutcome::Done);
     assert!(
         !cx.state
@@ -183,46 +197,88 @@ fn deal_damage_cursor_walks_distribute_announce_place_finish() {
     );
 }
 
-/// `DamageAssigned` is the **bare milestone** of the pair and `DamagePlaced`
-/// the one with an impact (ADR 0008's classification, ADR 0009's split).
-/// Asserted directly, because the whole `when`-cell licence Guard Dog needs
-/// rests on the first of those being true.
+/// The re-read ADR 0009 relies on: `DamageDealt`'s resolve step hands
+/// `DamagePlaced` the frame's **live** assignment, not the one `DamageDealt`
+/// announced. A `when`-cell edit — #366's partial prevention, the one thing
+/// the window exists for — therefore reaches the placement.
 #[test]
-fn the_two_damage_conditions_are_classified_as_the_adr_says() {
-    let assigned = TimingEvent::DamageAssigned {
-        source: DamageSource::EnemyAttack { enemy: EnemyId(1) },
-        investigator: InvestigatorId(1),
-        assignment: Assignment::default(),
-    };
-    let placed = TimingEvent::DamagePlaced {
-        source: DamageSource::EnemyAttack { enemy: EnemyId(1) },
-        investigator: InvestigatorId(1),
-        assignment: Assignment::default(),
-    };
-    // Both coordinator-owned, so both walk their `when` cell.
-    for event in [&assigned, &placed] {
-        assert!(
-            matches!(
-                event.condition_resolution(),
-                ConditionResolution::Coordinator(_)
-            ),
-            "{event:?} must be coordinator-owned"
-        );
-    }
-    // The milestone's resolve step changes nothing; the other's places.
+fn damage_dealt_places_the_live_assignment_not_the_announced_one() {
+    let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .build();
-    let before = state.clone();
     let mut events = Vec::new();
     let mut cx = Cx::for_test(&mut state, &mut events);
-    let ConditionResolution::Coordinator(resolve) = assigned.condition_resolution() else {
+    assert_eq!(deal_harm(&mut cx, id, 2, 0), EngineOutcome::Done);
+    assert_eq!(drive_deal_damage(&mut cx), EngineOutcome::Done);
+    assert_eq!(drive_deal_damage(&mut cx), EngineOutcome::Done);
+    let dealt = top_emitted(&cx, "DamageDealt");
+
+    // What a `when`-cell edit would do: shrink the frame's live share.
+    cx.state
+        .continuations
+        .topmost_of_mut::<DealDamageFrame>()
+        .expect("the deal is parked beneath")
+        .assignment
+        .investigator_damage = 1;
+
+    assert_eq!(resolve_condition(&mut cx, &dealt), EngineOutcome::Done);
+    let TimingEvent::DamagePlaced { assignment, .. } = top_emitted(&cx, "DamagePlaced") else {
         unreachable!()
     };
-    assert_eq!(resolve(&mut cx, &assigned), EngineOutcome::Done);
-    assert_eq!(*cx.state, before, "a bare milestone resolves to nothing");
-    assert!(events.is_empty());
+    assert_eq!(
+        assignment.investigator_damage, 1,
+        "DamagePlaced carries the edited assignment, not the announced 2"
+    );
+}
+
+/// Both conditions are coordinator-owned with an impact (ADR 0008's
+/// classification, ADR 0009's nesting): `DamageDealt`'s resolve step emits
+/// `DamagePlaced`, and `DamagePlaced`'s places. Neither is a bare milestone.
+#[test]
+fn the_two_damage_conditions_are_classified_as_the_adr_says() {
+    let source = DamageSource::EnemyAttack { enemy: EnemyId(1) };
+    let assignment = Assignment {
+        investigator_horror: 1,
+        ..Assignment::default()
+    };
+    let dealt = TimingEvent::DamageDealt {
+        source,
+        investigator: InvestigatorId(1),
+        assignment: assignment.clone(),
+    };
+    let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(test_support::seat(1))
+        .build();
+    state.continuations.push(DealDamageFrame {
+        investigator: InvestigatorId(1),
+        source,
+        assignment: assignment.clone(),
+        step: DealDamageStep::Finish,
+    });
+    let mut events = Vec::new();
+    let mut cx = Cx::for_test(&mut state, &mut events);
+
+    // The deal's impact is the placement's whole sequence: its resolve step
+    // emits `DamagePlaced` and places nothing itself.
+    assert_eq!(resolve_condition(&mut cx, &dealt), EngineOutcome::Done);
+    let placed = top_emitted(&cx, "DamagePlaced");
+    assert_eq!(
+        placed,
+        TimingEvent::DamagePlaced {
+            source,
+            investigator: InvestigatorId(1),
+            assignment,
+        }
+    );
+    assert_eq!(cx.state.investigators[&InvestigatorId(1)].horror(), 0);
+
+    // The placement's impact is the tokens landing.
+    cx.state.continuations.pop();
+    assert_eq!(resolve_condition(&mut cx, &placed), EngineOutcome::Done);
+    assert_eq!(cx.state.investigators[&InvestigatorId(1)].horror(), 1);
 }
 
 #[test]
@@ -248,11 +304,12 @@ fn soak_options_anchor_assets_to_card_instances() {
 
 /// The one harm adapter (#1027) deals through the same cursor an enemy attack
 /// does (#727): `deal_harm` parks a `DealDamage { source: Effect }` frame, and
-/// the walk announces `DamageAssigned` then `DamagePlaced` before anything
-/// lands. Walked once here on the kernel adapter; each caller (Crypt Chill, the
-/// deck-out penalty, Dynamite Blast) only asserts that it pushes this frame.
+/// the walk announces `DamageDealt`, whose resolve step announces
+/// `DamagePlaced`, before anything lands. Walked once here on the kernel
+/// adapter; each caller (Crypt Chill, the deck-out penalty, Dynamite Blast) only
+/// asserts that it pushes this frame.
 #[test]
-fn deal_harm_walks_distribute_announce_place_finish_from_an_effect() {
+fn deal_harm_walks_distribute_announce_finish_from_an_effect() {
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -264,41 +321,34 @@ fn deal_harm_walks_distribute_announce_place_finish_from_an_effect() {
     assert_eq!(deal_harm(&mut cx, id, 0, 1), EngineOutcome::Done);
     test_support::assert_effect_deal(cx.state.continuations.top(), id, 0, 1);
 
-    // Distribute drains (no soaker), then Announce emits DamageAssigned.
+    // Distribute drains (no soaker), then Announce emits DamageDealt.
     assert_eq!(drive_deal_damage(&mut cx), EngineOutcome::Done);
     assert_eq!(drive_deal_damage(&mut cx), EngineOutcome::Done);
-    assert!(matches!(
-        cx.state.continuations.top(),
-        Some(Continuation::EmitEvent(EmitEventFrame {
-            event: TimingEvent::DamageAssigned {
+    let dealt = top_emitted(&cx, "DamageDealt");
+    assert!(
+        matches!(
+            dealt,
+            TimingEvent::DamageDealt {
                 source: DamageSource::Effect,
                 ..
-            },
-            ..
-        }))
-    ));
+            }
+        ),
+        "{dealt:?}"
+    );
     assert_eq!(cx.state.investigators[&id].horror(), 0);
-    cx.state.continuations.pop();
 
-    // Place emits DamagePlaced; the horror lands at its resolve step.
-    assert_eq!(drive_deal_damage(&mut cx), EngineOutcome::Done);
-    let Some(Continuation::EmitEvent(EmitEventFrame {
-        event: placed @ TimingEvent::DamagePlaced { .. },
-        ..
-    })) = cx.state.continuations.top().cloned()
-    else {
-        panic!("Place must emit DamagePlaced");
-    };
+    // DamageDealt's resolve step emits DamagePlaced; the horror lands at that
+    // condition's own resolve step.
+    assert_eq!(resolve_condition(&mut cx, &dealt), EngineOutcome::Done);
+    let placed = top_emitted(&cx, "DamagePlaced");
     assert_eq!(cx.state.investigators[&id].horror(), 0);
     cx.state.continuations.pop();
-    let ConditionResolution::Coordinator(resolve) = placed.condition_resolution() else {
-        panic!("DamagePlaced must be coordinator-owned");
-    };
-    assert_eq!(resolve(&mut cx, &placed), EngineOutcome::Done);
+    assert_eq!(resolve_condition(&mut cx, &placed), EngineOutcome::Done);
     assert_eq!(cx.state.investigators[&id].horror(), 1, "placed at last");
     assert_event!(cx.events, Event::HorrorTaken { investigator, amount: 1 } if *investigator == id);
 
     // Finish pops the frame and hands back `Done`: nothing to resume.
+    cx.state.continuations.pop();
     assert_eq!(drive_deal_damage(&mut cx), EngineOutcome::Done);
     assert!(
         cx.state.continuations.top().is_none(),

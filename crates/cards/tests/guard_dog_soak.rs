@@ -6,7 +6,7 @@
 //! on `cards`):
 //!
 //! 1. Happy path: an enemy attack assigns damage to Guard Dog; the
-//!    `DamageAssigned` window opens **before anything is placed**; firing
+//!    `DamageDealt` window opens **before anything is placed**; firing
 //!    Guard Dog's reaction deals 1 damage to the attacker, and only then
 //!    does the damage land on the dog.
 //! 2. Asset defeat on overflow: damage reaching Guard Dog's printed
@@ -22,7 +22,7 @@
 //! Guard Dog 01021: "[reaction] When an enemy attack deals damage to Guard
 //! Dog: Deal 1 damage to the attacking enemy." Health 3, sanity 1, Ally.
 //!
-//! **The retaliate resolves in the `when` cell of `DamageAssigned`** (#722),
+//! **The retaliate resolves in the `when` cell of `DamageDealt`** (#722),
 //! which is why every case here reads the dog's `accumulated_damage` as 0 at
 //! the window and non-zero only after the reaction has resolved. That order is
 //! the Rules Reference's — `glossary/Nested_Sequences.md` runs its worked
@@ -141,7 +141,7 @@ fn distribute_onto(mut session: TestSession, inst: CardInstanceId) -> TestSessio
 }
 
 /// Fire Guard Dog's retaliate from its open reaction window. Since #727 the
-/// window is `DamageAssigned`'s `when` cell, so this is also what lets the deal
+/// window is `DamageDealt`'s `when` cell, so this is also what lets the deal
 /// proceed to its placement.
 fn fire_retaliate(session: TestSession, dog: CardInstanceId) -> TestSession {
     session.pick(OptionTarget::CardInstance(dog))
@@ -644,7 +644,7 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
 // The before-#293 behaviour was: `drive_aoo` dropped the survivor list so
 // Guard Dog's window was never queued. After #293 the AoO runs through
 // `drive_attack_loop` (which opens both the `EnemyAttacks` cancel window and
-// the `DamageAssigned` window inside the attack's damage), so the full
+// the `DamageDealt` window inside the attack's damage), so the full
 // suspend/resume cycle now applies to AoO attacks.
 // ---------------------------------------------------------------------
 
