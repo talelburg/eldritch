@@ -33,16 +33,16 @@ Level-0 core player cards, against `crates/cards/src/impls/`:
 | Mystic | 10 | **0** |
 | Rogue | 10 | **0** |
 | Survivor | 10 | **0** |
-| Neutral (signatures + weaknesses) | 26 | 3 |
+| Neutral (signatures + weaknesses) | 26 | **0** |
 | Investigator cards | 5 | **0** |
 
 Counting real titles: `01000 "Random Basic Weakness"` is a deckbuilder placeholder
 meaning *"draw one from the weakness pool"* (10 copies over 8 titles; see GLOSSARY.md),
 not a card, so it is excluded from the neutral row, and the draw it stands for is
-#1116's. The three neutral cards left are Abandoned and Alone 01015 and
-the two basic weaknesses still unimplemented (Haunted 01098, Psychosis 01099,
+#1116's. No neutral card is left: Abandoned and Alone 01015 and the seven basic
+weaknesses, Amnesia 01096, Paranoia 01097, Haunted 01098, Psychosis 01099,
 Hypochondria 01100, Mob Enforcer 01101, Silver Twilight Acolyte 01102 and
-Stubborn Detective 01103 are), all of them #781's.
+Stubborn Detective 01103, are implemented, all of them #781's.
 
 Roland's two classes are already complete, which is exactly why breadth costs what
 it costs: every card the gate needed was a Guardian, a Seeker or a neutral skill.

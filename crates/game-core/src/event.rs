@@ -145,6 +145,16 @@ pub enum Event {
         /// Amount paid.
         amount: u8,
     },
+    /// An investigator discarded resources from their resource pool: Paranoia
+    /// 01097's *"Discard all your resources."* Neither a payment nor a move, so
+    /// [`Event::ResourcesPaid`] stays silent and a trigger on spending or paying
+    /// resources does not see it. A discard from an empty pool emits nothing.
+    ResourcesDiscarded {
+        /// Whose pool the resources left.
+        investigator: InvestigatorId,
+        /// How many were discarded.
+        amount: u8,
+    },
     /// Tokens were spent from a card's runtime uses-pool, to pay a
     /// `Cost::SpendUses` (".38 Special": "Spend 1 ammo") or by an effect that
     /// spends them. Every spend emits it, through the engine's one
@@ -477,6 +487,18 @@ pub enum Event {
         investigator: InvestigatorId,
         /// The card moved.
         code: CardCode,
+    },
+    /// An investigator's whole discard pile was removed from the game, into
+    /// their own removed-from-game pile: Abandoned and Alone 01015's *"remove
+    /// all cards in your discard pile from the game."* One event for the pile,
+    /// not a [`CardRemovedFromGame`](Self::CardRemovedFromGame) per card. An
+    /// empty pile emits nothing.
+    DiscardPileRemovedFromGame {
+        /// Whose discard pile it was, and whose removed-from-game pile the
+        /// cards joined: a discard pile holds only its investigator's cards.
+        investigator: InvestigatorId,
+        /// The cards removed, in pile order (bottom first).
+        cards: Vec<CardCode>,
     },
     /// A shuffle of the shared encounter deck occurred. Emitted by
     /// `shuffle_encounter_deck` (in `engine::dispatch`) iff the deck
