@@ -1,7 +1,7 @@
 //! Phase-driver functions: start/end scenario, per-phase entrypoints,
 //! and the round-cycle stepping logic.
 
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, iter};
 
 use card_dsl::card_data::CardKind;
 
@@ -36,7 +36,7 @@ fn unplayable_roster_cards(reg: &CardRegistry, roster: &[RosterEntry]) -> Option
     let mut unplayable: Vec<&str> = Vec::new();
     for code in roster
         .iter()
-        .flat_map(|entry| std::iter::once(&entry.investigator).chain(&entry.deck))
+        .flat_map(|entry| iter::once(&entry.investigator).chain(&entry.deck))
     {
         if !(reg.is_playable)(code) && !unplayable.contains(&code.as_str()) {
             unplayable.push(code.as_str());

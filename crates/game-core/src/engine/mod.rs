@@ -158,8 +158,9 @@ pub fn apply(state: GameState, action: Action, registries: Registries) -> ApplyR
 /// replay never re-runs setup RNG. Validation mirrors a player action: an
 /// empty roster, an unknown/non-investigator code, an investigator or deck
 /// code the registry's [`is_playable`](crate::card_registry::CardRegistry::is_playable)
-/// refuses (the reason names every such code), or an already-started state
-/// rejects with state unchanged.
+/// refuses (the reason names every such code), a roster whose total
+/// `random_basic_weaknesses` exceeds the registry's weakness pool, or an
+/// already-started state rejects with state unchanged.
 pub fn seat_and_open(
     setup_state: GameState,
     roster: &[RosterEntry],

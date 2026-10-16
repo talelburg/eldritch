@@ -17,7 +17,8 @@ serde = { version = "1", features = ["derive"] }
 
 [features]
 # `TEST_REGISTRY` / `TEST_REGISTRIES`: the real corpus with game-core's
-# synthetic test cards composed in, for other crates' tests to name.
+# synthetic test cards composed in, for other crates' tests to name. Also
+# `REGISTRIES`, the production registry with no scenario modules.
 test-support = []
 
 [dev-dependencies]

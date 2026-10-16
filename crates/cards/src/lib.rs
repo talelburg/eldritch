@@ -144,9 +144,10 @@ pub const REGISTRY: CardRegistry = CardRegistry {
 /// plain [`test_investigator`](game_core::test_support::test_investigator)
 /// next to the corpus without borrowing a real investigator's code (#934).
 ///
-/// Its playable check accepts every code, so a test deck may hold synthetic
-/// probe cards, and its weakness pool is empty. A test of the playable gate or
-/// of the random basic weakness draw names [`REGISTRY`].
+/// Its playable check and weakness pool are [`CardRegistry::EMPTY`]'s: it
+/// accepts every code, so a test deck may hold synthetic probe cards, and its
+/// weakness pool is empty. A test of the playable gate or of the random basic
+/// weakness draw names [`REGISTRY`], through [`REGISTRIES`].
 ///
 /// The value a real-card test names. Pair it with a scenario registry in
 /// [`TEST_REGISTRIES`], or in `scenarios`' pairing for a scenario test.
@@ -154,8 +155,8 @@ pub const REGISTRY: CardRegistry = CardRegistry {
 pub const TEST_REGISTRY: CardRegistry = CardRegistry {
     metadata_for: test_registry_metadata_for,
     abilities_for: test_registry_abilities_for,
-    is_playable: |_| true,
-    weakness_pool: || &[],
+    is_playable: CardRegistry::EMPTY.is_playable,
+    weakness_pool: CardRegistry::EMPTY.weakness_pool,
     // `back_abilities_for` and the native slots stay the real ones: the
     // terminal cards have no reverse side and no natives to compose in.
     ..REGISTRY
@@ -166,6 +167,15 @@ pub const TEST_REGISTRY: CardRegistry = CardRegistry {
 #[cfg(feature = "test-support")]
 pub const TEST_REGISTRIES: Registries = Registries {
     cards: &TEST_REGISTRY,
+    scenarios: &ScenarioRegistry::EMPTY,
+};
+
+/// [`REGISTRY`] with no scenario modules: the registries a test of the
+/// playable gate or of the random basic weakness draw runs against, since
+/// [`TEST_REGISTRIES`] accepts every code and has an empty weakness pool.
+#[cfg(feature = "test-support")]
+pub const REGISTRIES: Registries = Registries {
+    cards: &REGISTRY,
     scenarios: &ScenarioRegistry::EMPTY,
 };
 

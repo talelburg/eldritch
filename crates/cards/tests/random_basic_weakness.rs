@@ -8,18 +8,12 @@
 //! random basic weakness is added to a player's deck at the end of the
 //! deckbuilding process."*
 
-use cards::decks;
+use cards::{decks, REGISTRIES};
 use game_core::action::RosterEntry;
 use game_core::card_registry::CardRegistry;
 use game_core::engine::{self, ApplyResult, EngineOutcome, Registries};
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{CardCode, GameState, GameStateBuilder, InvestigatorId};
-
-/// The production card registry, with no scenario module.
-const REAL_REGISTRIES: Registries = Registries {
-    cards: &cards::REGISTRY,
-    scenarios: &ScenarioRegistry::EMPTY,
-};
 
 const ROLAND: &str = "01001";
 const DAISY: &str = "01002";
@@ -47,7 +41,7 @@ fn setup(seed: u64, registries: Registries) -> GameState {
 }
 
 fn seat(seed: u64, roster: &[RosterEntry]) -> ApplyResult {
-    let result = engine::seat_and_open(setup(seed, REAL_REGISTRIES), roster, REAL_REGISTRIES);
+    let result = engine::seat_and_open(setup(seed, REGISTRIES), roster, REGISTRIES);
     assert!(
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
         "seating opens the mulligan prompt, got {:?}",
@@ -59,11 +53,8 @@ fn seat(seed: u64, roster: &[RosterEntry]) -> ApplyResult {
 /// Every card investigator `id` was seated with, sorted: after seating they
 /// are split across the deck, the opening hand, and the set-aside zone (a
 /// weakness dealt into the opening hand waits there until the mulligan ends).
-fn seated_cards(state: &GameState, id: u32) -> Vec<String> {
-    let inv = state
-        .investigators
-        .get(&InvestigatorId(id))
-        .expect("investigator seated");
+fn seated_cards(state: &GameState, id: InvestigatorId) -> Vec<String> {
+    let inv = state.investigators.get(&id).expect("investigator seated");
     let mut cards: Vec<String> = inv
         .deck
         .iter()
@@ -76,7 +67,7 @@ fn seated_cards(state: &GameState, id: u32) -> Vec<String> {
 }
 
 /// The cards investigator `id` was seated with beyond [`DECK`].
-fn drawn_weaknesses(state: &GameState, id: u32) -> Vec<String> {
+fn drawn_weaknesses(state: &GameState, id: InvestigatorId) -> Vec<String> {
     let mut extra = seated_cards(state, id);
     for code in DECK {
         let at = extra
@@ -103,8 +94,11 @@ fn pool_copies(code: &str) -> usize {
 fn a_count_of_one_seats_one_pool_card_more_than_the_roster_deck() {
     let result = seat(7, &[entry(ROLAND, 1)]);
 
-    assert_eq!(seated_cards(&result.state, 1).len(), DECK.len() + 1);
-    let drawn = drawn_weaknesses(&result.state, 1);
+    assert_eq!(
+        seated_cards(&result.state, InvestigatorId(1)).len(),
+        DECK.len() + 1
+    );
+    let drawn = drawn_weaknesses(&result.state, InvestigatorId(1));
     assert_eq!(drawn.len(), 1);
     assert!(in_pool(&drawn[0]), "{} is in the weakness pool", drawn[0]);
 }
@@ -115,9 +109,14 @@ fn two_seats_drawing_two_each_never_draw_more_copies_than_the_pool_holds() {
         let result = seat(seed, &[entry(ROLAND, 2), entry(DAISY, 2)]);
 
         let mut drawn: Vec<String> = Vec::new();
-        for id in [1, 2] {
+        for id in [InvestigatorId(1), InvestigatorId(2)] {
             let mine = drawn_weaknesses(&result.state, id);
-            assert_eq!(mine.len(), 2, "seed {seed}: investigator {id} draws two");
+            assert_eq!(
+                mine.len(),
+                2,
+                "seed {seed}: investigator {} draws two",
+                id.0
+            );
             drawn.extend(mine);
         }
         for code in &drawn {
@@ -153,22 +152,30 @@ fn a_count_of_zero_seats_exactly_as_with_no_pool() {
 
     assert_eq!(with_pool.state, without_pool.state);
     assert_eq!(with_pool.events, without_pool.events);
-    assert_eq!(seated_cards(&with_pool.state, 1).len(), DECK.len());
+    assert_eq!(
+        seated_cards(&with_pool.state, InvestigatorId(1)).len(),
+        DECK.len()
+    );
 }
 
 /// The pool holds ten cards, so a two-seat roster asking for six each is
 /// refused rather than short-drawn.
 #[test]
 fn a_roster_asking_for_more_weaknesses_than_the_pool_holds_is_refused() {
-    let state = setup(0, REAL_REGISTRIES);
+    let state = setup(0, REGISTRIES);
     let roster = [entry(ROLAND, 6), entry(DAISY, 6)];
 
-    let result = engine::seat_and_open(state.clone(), &roster, REAL_REGISTRIES);
+    let result = engine::seat_and_open(state.clone(), &roster, REGISTRIES);
 
+    let EngineOutcome::Rejected { reason } = &result.outcome else {
+        panic!(
+            "an over-large weakness count is refused, got {:?}",
+            result.outcome
+        );
+    };
     assert!(
-        matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "an over-large weakness count is refused, got {:?}",
-        result.outcome
+        reason.contains("random basic weaknesses, but the weakness pool holds"),
+        "the reason names the pool shortfall, got {reason:?}"
     );
     assert_eq!(
         result.state, state,

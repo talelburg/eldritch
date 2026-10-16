@@ -5,10 +5,9 @@
 //! production `cards::REGISTRY` instead, since `TEST_REGISTRIES` accepts every
 //! code.
 
-use cards::TEST_REGISTRIES;
+use cards::{REGISTRIES, TEST_REGISTRIES};
 use game_core::action::RosterEntry;
-use game_core::engine::{self, EngineOutcome, Registries};
-use game_core::scenario::ScenarioRegistry;
+use game_core::engine::{self, EngineOutcome};
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, Skills};
 
 #[test]
@@ -132,19 +131,11 @@ fn seated_investigator_carries_its_card_code() {
     assert_eq!(inv.investigator_card.code, CardCode::new("01001"));
 }
 
-/// The production card registry, with no scenario module: the playable gate
-/// reads `cards::is_playable` through it, where [`TEST_REGISTRIES`] accepts
-/// every code so synthetic test decks seat.
-const REAL_REGISTRIES: Registries = Registries {
-    cards: &cards::REGISTRY,
-    scenarios: &ScenarioRegistry::EMPTY,
-};
-
 /// Shotgun 01029 and Hot Streak 01057: core-set cards with no implementation.
 const SHOTGUN: &str = "01029";
 const HOT_STREAK: &str = "01057";
 
-/// Seat Roland 01001 with `deck` under [`REAL_REGISTRIES`], asserting the
+/// Seat Roland 01001 with `deck` under [`REGISTRIES`], asserting the
 /// seating is refused with state unchanged, and return the reason.
 fn refused_reason(deck: &[&str]) -> String {
     for code in [SHOTGUN, HOT_STREAK] {
@@ -158,10 +149,8 @@ fn refused_reason(deck: &[&str]) -> String {
         deck: deck.iter().map(|c| CardCode::new(*c)).collect(),
         random_basic_weaknesses: 0,
     }];
-    let state = GameStateBuilder::new()
-        .with_registries(REAL_REGISTRIES)
-        .build();
-    let result = engine::seat_and_open(state.clone(), &roster, REAL_REGISTRIES);
+    let state = GameStateBuilder::new().with_registries(REGISTRIES).build();
+    let result = engine::seat_and_open(state.clone(), &roster, REGISTRIES);
     let EngineOutcome::Rejected { reason } = result.outcome else {
         panic!(
             "a deck with unimplemented cards is refused, got {:?}",

@@ -1,7 +1,7 @@
 //! Deck-level card lists: the **weakness pool** a random basic weakness is
 //! drawn from. The starter decklists join it in #782.
 
-use std::sync::OnceLock;
+use std::{iter, sync::OnceLock};
 
 use card_dsl::card_data::{CardKind, CardMetadata, WeaknessKind};
 use game_core::state::CardCode;
@@ -58,7 +58,7 @@ fn build_weakness_pool(corpus: &[CardMetadata]) -> Vec<CardCode> {
                     meta.code, meta.name
                 );
             };
-            std::iter::repeat_n(CardCode::new(&meta.code), usize::from(quantity))
+            iter::repeat_n(CardCode::new(&meta.code), usize::from(quantity))
         })
         .collect()
 }
