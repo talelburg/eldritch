@@ -236,7 +236,22 @@ pub(super) fn resolve_revelation(cx: &mut Cx, investigator: InvestigatorId, code
     );
     frame.revelation_resolved = true;
     let owner = frame.owner;
+    push_revelation(cx, investigator, code, owner);
+}
 
+/// Push `code`'s [`Trigger::Revelation`] effects, combined into one `Seq`,
+/// controlled by `investigator` and owned by `owner`, for the global `drive`
+/// loop to step. Nothing is pushed when the card prints none.
+///
+/// The one place a Revelation's effects are collected: an encounter card's
+/// ([`resolve_revelation`]) and a player-cardtype weakness's, which resolves
+/// from its bearer's hand (`cards::resolve_drawn_weaknesses`).
+pub(super) fn push_revelation(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    code: &CardCode,
+    owner: Owner,
+) {
     let revelation_effects: Vec<Effect> = (cx.cards.abilities_for)(code)
         .unwrap_or_default()
         .into_iter()
@@ -694,7 +709,7 @@ pub fn draw_encounter_top(cx: &mut Cx) -> Option<CardCode> {
 /// empty deck: a deck search (Rise of the Ghouls 01106) discards what it takes,
 /// and a reshuffle would feed those discards back into the search. The caller
 /// owns the card it takes and must put it somewhere, as
-/// [`discard_encounter_card`](crate::engine::board::discard_encounter_card)
+/// [`discard_drawn_card`](crate::engine::board::discard_drawn_card)
 /// does for a miss.
 pub fn take_encounter_top(cx: &mut Cx) -> Option<CardCode> {
     cx.state.encounter_deck.pop_front()

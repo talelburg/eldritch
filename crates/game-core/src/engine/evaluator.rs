@@ -1379,10 +1379,10 @@ fn apply_search_deck(
     //    (`glossary/Weakness.md`; The Necronomicon 01009's ruling). Tail
     //    position: its Revelation is pushed last, so it resolves after the
     //    search has finished shuffling.
-    if let Some(hand_index) = taken_hand_index {
-        cards::resolve_weakness_entering_hand(cx, who, hand_index);
+    match taken_hand_index {
+        Some(hand_index) => cards::resolve_weakness_entering_hand(cx, who, hand_index),
+        None => EngineOutcome::Done,
     }
-    EngineOutcome::Done
 }
 
 /// Resolve [`Effect::AttachSelfToLocation`]: the currently-playing event

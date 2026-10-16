@@ -938,6 +938,30 @@ pub enum EventPattern {
     /// what the *card* declares, which is the narrower thing: an enemy
     /// **attack** dealing damage to self. The generalization waits for the card
     /// that contests it.
+    ///
+    /// **Where the generalization will come from.** The second consumer is
+    /// outside the phase plan: Survival Knife 04017, *"After an enemy attack
+    /// deals damage to you during the enemy phase"*. The snapshot's other
+    /// source-filtered harm triggers name:
+    ///
+    /// - an enemy attack, harming you: Flesh Ward 60106 (*"When you are dealt
+    ///   damage and/or horror from an enemy attack"*), Lesson Learned 60124
+    ///   (*"after you take damage from an enemy attack"*);
+    /// - both kinds on this card: Guard Dog 09034 (*"When an enemy attack deals
+    ///   damage and/or horror to Guard Dog"*);
+    /// - a trait-filtered attacker: Desiderio Delgado Álvarez 09607b (*"When an
+    ///   attack from a \[\[Monster\]\] enemy deals damage to Desiderio Delgado
+    ///   Álvarez"*);
+    /// - harm to an enemy, by source: Crustacean Hybrid 10584a and Otherworldly
+    ///   Meddler 84029 (*"would take damage from an attack"*), Neith 83013 (*"is
+    ///   dealt any amount of damage from an attack"*), Mimetic Nemesis 09715
+    ///   (*"from an attack or player card"*), Ishimaru Haruko 03067b (*"by an
+    ///   effect other than an attack"*), Screeching Banshee 54074 (*"except from
+    ///   a \[\[Spell\]\] or \[\[Relic\]\]"*).
+    ///
+    /// The likely shape is [`HarmTaken`](Self::HarmTaken) plus a source-filter
+    /// enum, a scope that can name a single card or an enemy, and a `kind` that
+    /// can be both.
     EnemyAttackDamagedSelf,
     /// At least 1 of `kind` was **placed** on the card `scope` names — step 2
     /// of dealing damage, once the assignment has settled (ADR 0009). Agnes

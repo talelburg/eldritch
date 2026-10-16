@@ -14,8 +14,9 @@
 //! \[action\]\[action\] to discard Psychosis, as per the FAQ [V1.0, section
 //! 2.1]."*
 //!
-//! The Forced is [`EventPattern::HarmTaken`] `{ Horror, You }` in the `after`
-//! cell. "You" counts horror soaked by the bearer's assets too, which is the
+//! **Cell: the `after` cell of the `DamageDealt` condition**, which is what
+//! "After you take" names: the Forced is [`EventPattern::HarmTaken`]
+//! `{ Horror, You }`. "You" counts horror soaked by the bearer's assets too, which is the
 //! other ruling: *"Triggers even if you assign horror to an asset you control
 //! (you're still taking horror, even if you reassign it)."* Its damage is
 //! direct, so no asset is offered it, and it is a deal like any other: with

@@ -128,3 +128,36 @@ fn reengage_at_location_enemy_without_location_is_noop() {
     assert_eq!(state.enemies[&EnemyId(1)].engaged_with, None);
     assert_no_event!(events, Event::EnemyEngaged { .. });
 }
+
+/// A `Prey::BearerOnly` enemy re-engaging (readying, relocation, elimination)
+/// skips the turn-order-first lead for its bearer (#1125). `glossary/Prey.md`:
+/// *"that enemy only moves towards and engages that investigator (as if it were
+/// the only investigator in play), and ignores all other investigators while
+/// moving and engaging."* That it engages no one beside only non-bearers is
+/// driven through `apply` by `crates/cards/tests/silver_twilight_acolyte.rs`.
+#[test]
+fn reengage_at_location_bearer_only_picks_the_bearer_over_the_lead() {
+    let loc = LocationId(1);
+    let lead = InvestigatorId(2);
+    let bearer = InvestigatorId(1);
+    let enemy = {
+        let mut e = test_support::test_enemy(1, "Weakness");
+        e.prey = Prey::BearerOnly;
+        e.owner = Owner::Investigator(bearer);
+        e.current_location = Some(loc);
+        e
+    };
+    let mut state = GameStateBuilder::default()
+        .with_registries(TEST_REGISTRIES)
+        .with_location(test_support::test_location(1, "Study"))
+        .with_seat(test_support::seat(lead.0).at(loc))
+        .with_seat(test_support::seat(bearer.0).at(loc))
+        .with_enemy(enemy)
+        .with_turn_order([lead, bearer])
+        .build();
+    let mut events = Vec::new();
+
+    reengage_at_location(&mut Cx::for_test(&mut state, &mut events), EnemyId(1));
+
+    assert_eq!(state.enemies[&EnemyId(1)].engaged_with, Some(bearer));
+}

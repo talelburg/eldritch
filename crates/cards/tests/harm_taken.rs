@@ -18,6 +18,8 @@
 //!
 //! Own integration-test binary so it can build its own `MockRegistry`.
 
+use std::sync::LazyLock;
+
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use card_dsl::dsl::{
     self, Ability, Effect, EventPattern, EventTiming, HarmKind, HarmPlacedScope, HarmTakenScope,
@@ -32,7 +34,6 @@ use game_core::state::{
     AbilityAddress, AbilitySource, GameStateBuilder, InvestigatorId, LocationId,
 };
 use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
-use std::sync::LazyLock;
 
 /// Psychosis 01099, printed: the real card's abilities and metadata.
 const PSYCHOSIS: &str = "01099";

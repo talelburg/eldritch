@@ -22,11 +22,13 @@
 //! removing the enemy, with no [`Event::EnemyDisengaged`]; that is the
 //! documented contract of the events that announce the removal.
 
+use card_dsl::card_data::Prey;
+
 use crate::engine::dispatch::cursor;
 use crate::engine::dispatch::hunters::{self, PreyResolution};
 use crate::engine::Cx;
 use crate::event::Event;
-use crate::state::{EnemyId, GameState, InvestigatorId, LocationId};
+use crate::state::{Enemy, EnemyId, GameState, InvestigatorId, LocationId, Owner};
 
 /// Engage `enemy_id` with `investigator`, logging [`Event::EnemyEngaged`].
 ///
@@ -89,9 +91,33 @@ pub(crate) fn disengage_from(cx: &mut Cx, enemy_id: EnemyId, investigator: Inves
     }
 }
 
+/// Whether `enemy`'s prey lets it move toward or engage `investigator` at all,
+/// before any ranking: false only for a [`Prey::BearerOnly`] enemy and an
+/// investigator other than its bearer.
+///
+/// `glossary/Prey.md`: *"If an enemy's prey instructions contain the word
+/// "only," that enemy only moves towards and engages that investigator (as if
+/// it were the only investigator in play), and ignores all other investigators
+/// while moving and engaging. Other investigators may use the engage action or
+/// card abilities to engage the enemy."* So the Engage action does not read
+/// this. The bearer is the enemy's owner (`GLOSSARY.md`, Owner / Controller);
+/// an enemy owned by no investigator has no bearer to single out and pursues
+/// everyone, as [`Prey::Default`] does.
+///
+/// It is a filter rather than a ranking because "as if it were the only
+/// investigator in play" rules the others out of *nearest* too, so a hunter
+/// applies it before the distance calculation, not inside
+/// [`hunters::resolve_prey`].
+pub(super) fn pursues(enemy: &Enemy, investigator: InvestigatorId) -> bool {
+    match (enemy.prey, enemy.owner) {
+        (Prey::BearerOnly, Owner::Investigator(bearer)) => investigator == bearer,
+        _ => true,
+    }
+}
+
 /// The investigators a ready, unengaged `enemy_id` may engage where it stands:
 /// the active investigators at its location that its prey pursues
-/// ([`hunters::pursues`]), in turn order. Empty for an enemy with no location.
+/// ([`pursues`]), in turn order. Empty for an enemy with no location.
 ///
 /// The set the enemy's prey then narrows. Every application of the engagement
 /// rule reads it, so a bearer-only enemy beside only investigators other than
@@ -106,7 +132,7 @@ pub(super) fn candidates(state: &GameState, enemy_id: EnemyId) -> Vec<Investigat
     };
     cursor::active_investigators_at(state, location)
         .into_iter()
-        .filter(|id| hunters::pursues(enemy, *id))
+        .filter(|id| pursues(enemy, *id))
         .collect()
 }
 
@@ -177,7 +203,7 @@ pub(crate) fn engage_ready_enemies(cx: &mut Cx) {
 /// engaged with the entering investigator is skipped (already engaged). No
 /// player choice is involved — every qualifying enemy engages the one investigator
 /// who entered — so this stays synchronous. A bearer-only enemy engages only
-/// its bearer ([`hunters::pursues`]): `glossary/Prey.md`, *"ignores all other
+/// its bearer ([`pursues`]): `glossary/Prey.md`, *"ignores all other
 /// investigators while moving and engaging"*.
 ///
 /// The **Aloof** carve-out (an Aloof enemy does not automatically engage) is not
@@ -197,7 +223,7 @@ pub(super) fn engage_ready_enemies_on_enter(
             e.current_location == Some(location)
                 && !e.exhausted
                 && e.engaged_with.is_none()
-                && hunters::pursues(e, investigator)
+                && pursues(e, investigator)
         })
         .map(|(id, _)| *id)
         .collect();
@@ -207,7 +233,7 @@ pub(super) fn engage_ready_enemies_on_enter(
 }
 
 /// `enemy_id`'s live entry, which the caller guarantees is in state.
-fn enemy_mut<'a>(cx: &'a mut Cx, enemy_id: EnemyId, caller: &str) -> &'a mut crate::state::Enemy {
+fn enemy_mut<'a>(cx: &'a mut Cx, enemy_id: EnemyId, caller: &str) -> &'a mut Enemy {
     cx.state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
         unreachable!(
             "{caller}: enemy {enemy_id:?} is not in state.enemies; \
