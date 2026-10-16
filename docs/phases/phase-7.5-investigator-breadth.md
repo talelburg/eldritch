@@ -3,8 +3,9 @@
 ## Status
 
 🟡 **in progress** (opened 2026-08-23). #776, #777 (Agnes Baker), #778
-("Skids" O'Toole), #779 (Daisy Walker), #780 (Wendy Adams) and #1116 (the random
-basic weakness draw) are closed. #781 is next.
+("Skids" O'Toole), #779 (Daisy Walker), #780 (Wendy Adams), #1116 (the random
+basic weakness draw) and #781 (the basic weaknesses and Abandoned and Alone) are
+closed. #782 is next.
 
 This milestone was **Slice 2** in `phase-7-the-gathering.md`'s Future slices, an
 unfiled intent. It became a milestone on 2026-08-23 (`/grill-with-docs`) when
@@ -55,7 +56,6 @@ ship untested by anything but a unit test.
 
 | Issue | Work |
 |---|---|
-| #781 | Abandoned and Alone 01015 + the seven basic weaknesses |
 | #782 | Five legal starter decks + a real investigator picker |
 | #1059 | A designated Move — the `TODO(#1059)`s #777 left at every Move site |
 | #1099 | Mind over Matter 01036: `SkillTestStarted` announces Combat after the player chose Intellect (found during #779) |
@@ -71,13 +71,14 @@ ship untested by anything but a unit test.
 | #779 | Slice 3 — Daisy Walker 01002 + Tote Bag / Necronomicon + the Tome-restricted extra action, plus the trait-counting `Quantity` (decided in #1000): #1089–#1095, #1097, #1098, landed as PR #1096 |
 | #780 | Slice 4 — Wendy Adams 01005 + Wendy's Amulet + Survivor level 0: #1102–#1113, landed as PR #1114 |
 | #1116 | The random basic weakness draw (roster count, weakness pool, seeded draw at scenario start) + the playable gate on roster codes + `WeaknessKind` in the corpus: #1117, #1118, #1119, landed as PR #1120 |
+| #781 | Abandoned and Alone 01015 + the seven basic weaknesses, with what they needed of the engine: drawn encounter-cardtype weaknesses resolve as encounter cards (closes #514), engagement exits and spawning engaged with the drawer (closes #650), `DamageDealt` around `DamagePlaced`, direct harm and `HarmTaken`, bearer-only prey (closes #654), the one-shot weaknesses, the text-box blank, and the pool test with no exclusions: #1121–#1128, landed as PR #1129 |
 
 #783 (the deckbuilding validator) was filed alongside #782 but milestoned to
 **phase 9**, where its real consumer is.
 
 ## Ordering
 
-**#1025 ✅ PR #1030 → #776 ✅ PR #1044 → #777 ✅ PR #1057 → #778 ✅ PR #1080 → #779 ✅ PR #1096 → #780 ✅ PR #1114 → #1116 ✅ PR #1120 → #781 → #782.**
+**#1025 ✅ PR #1030 → #776 ✅ PR #1044 → #777 ✅ PR #1057 → #778 ✅ PR #1080 → #779 ✅ PR #1096 → #780 ✅ PR #1114 → #1116 ✅ PR #1120 → #781 ✅ PR #1129 → #782.**
 
 **Vertical slices, one investigator at a time** — investigator card, signature
 pair, and that investigator's class pool, each slice ending in someone playable.

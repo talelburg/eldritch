@@ -134,8 +134,9 @@ pub const SKIDS_DEFAULT_DECK: &[&str] = &[
 /// level-0 card, two of each Rogue level-0 card (her *"Rogue cards
 /// (\[rogue\]) level 0-2"*) and two of each neutral. The Rogue events give
 /// the Amulet something to play from the discard pile. Her signature
-/// weakness, Abandoned and Alone 01015, is left out: it is unimplemented
-/// until #781. NOT a legal deck — a scaffold for UI testing, like
+/// weakness, Abandoned and Alone 01015, is left out: the scaffolds predate it,
+/// and #782's legal starter decks add it. NOT a legal deck — a scaffold for UI
+/// testing, like
 /// [`ROLAND_DEFAULT_DECK`].
 pub const WENDY_DEFAULT_DECK: &[&str] = &[
     "01014", // Wendy's Amulet (signature)
