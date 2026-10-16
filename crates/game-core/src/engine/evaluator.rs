@@ -86,7 +86,8 @@ use crate::engine::dispatch::actions::take;
 use crate::engine::dispatch::choice::{ChoiceResolution, Grounded};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{
-    self, act_agenda, actions, cards, choice, combat, elimination, emit, skill_test, threat_area,
+    self, act_agenda, actions, cards, choice, combat, elimination, emit, engagement, skill_test,
+    threat_area,
 };
 use crate::engine::modified_value;
 use crate::engine::outcome::{EngineOutcome, OptionId, OptionTarget};
@@ -925,7 +926,7 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
         }
         Effect::Disengage { target } => match resolve_enemy_target(eval_ctx, target) {
             Ok(enemy) => {
-                combat::disengage_from(cx, enemy, eval_ctx.controller);
+                engagement::disengage_from(cx, enemy, eval_ctx.controller);
                 EngineOutcome::Done
             }
             Err(reason) => EngineOutcome::Rejected {

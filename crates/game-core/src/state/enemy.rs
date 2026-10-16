@@ -60,6 +60,12 @@ pub struct Enemy {
     /// frames enemies as engaging investigators, not vice versa, and
     /// the lookup "which enemies is this investigator engaged with"
     /// is just a scan of `state.enemies`.
+    ///
+    /// Every production write goes through the engagement exits
+    /// (`engine::dispatch::engagement`, #1122), which log the paired
+    /// `EnemyEngaged` / `EnemyDisengaged` events; test fixtures may still set
+    /// it directly. TODO(#611): make the field private once reads (#611) and
+    /// writes (#1122) both funnel through the module.
     pub engaged_with: Option<InvestigatorId>,
     /// Whether this enemy has the Hunter keyword (Rules Reference p.12):
     /// a ready, unengaged hunter moves toward the nearest investigator

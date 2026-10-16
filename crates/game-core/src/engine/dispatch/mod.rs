@@ -47,6 +47,9 @@ pub(super) mod cursor;
 // crate::engine::dispatch::elimination (a sibling of dispatch).
 pub(super) mod elimination;
 pub(super) mod encounter;
+// pub(crate): the evaluator's `Effect::Disengage` and `NativeCx` reach the
+// engagement exits from engine/ (#1122).
+pub(crate) mod engagement;
 pub(super) mod forced_triggers;
 // The hand-discard cost's choice frame (#1107), which activated and triggered
 // abilities both park their effect beneath.
