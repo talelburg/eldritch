@@ -1,7 +1,11 @@
 //! Headless browser test for `PickerView` (#459): clicking "Create game"
-//! sends a `CreateGameRequest` with the picked investigator's roster on the
-//! `CreateTx` channel — Roland by default, Agnes once her radio is selected.
+//! sends a `CreateGameRequest` with the picked investigator's default-deck
+//! roster on the `CreateTx` channel (#782) — with the deck's fixed weakness by
+//! default, or a random basic weakness once the checkbox is checked. These are
+//! the rosters `crates/scenarios/tests/the_gathering_default_decks.rs` plays
+//! and the server's registries test creates.
 #![cfg(target_arch = "wasm32")]
+use cards::decks::{self, WeaknessChoice};
 use futures::channel::mpsc;
 use futures::StreamExt as _;
 use leptos::prelude::*;
@@ -14,9 +18,12 @@ use web_sys::HtmlElement;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-/// Mount a fresh picker awaiting a roster; returns the receiving end of its
-/// `CreateTx`.
-fn mount_picker() -> mpsc::UnboundedReceiver<CreateGameRequest> {
+/// Mount a fresh picker awaiting a roster; returns its store and the receiving
+/// end of its `CreateTx`.
+fn mount_picker() -> (
+    RwSignal<ClientState>,
+    mpsc::UnboundedReceiver<CreateGameRequest>,
+) {
     let store = RwSignal::new(ClientState {
         status: ConnStatus::AwaitingRoster,
         ..Default::default()
@@ -27,7 +34,7 @@ fn mount_picker() -> mpsc::UnboundedReceiver<CreateGameRequest> {
         provide_context::<CreateTx>(tx.clone());
         view! { <PickerView/> }
     });
-    rx
+    (store, rx)
 }
 
 /// Click the last element in the document matching `selector` (each test
@@ -43,77 +50,72 @@ fn click_last(selector: &str) {
         .click();
 }
 
-#[wasm_bindgen_test]
-async fn create_button_sends_a_roster() {
-    let mut rx = mount_picker();
-    click_last(".create-game");
+/// The checkbox choosing a random basic weakness over the fixed one.
+const RANDOM_WEAKNESS: &str = "input.random-basic-weakness";
 
-    let req = rx.next().await.expect("a CreateGameRequest was sent");
+/// Click "Create game" and receive the request it sends.
+async fn create(rx: &mut mpsc::UnboundedReceiver<CreateGameRequest>) -> CreateGameRequest {
+    click_last(".create-game");
+    rx.next().await.expect("a CreateGameRequest was sent")
+}
+
+#[wasm_bindgen_test]
+async fn create_button_sends_rolands_fixed_roster_by_default() {
+    let (_, mut rx) = mount_picker();
+    let req = create(&mut rx).await;
+
     assert_eq!(req.scenario_id, "the-gathering");
-    assert_eq!(req.roster.len(), 1);
-    assert_eq!(req.roster[0].investigator.as_str(), "01001");
-    assert!(
-        !req.roster[0].deck.is_empty(),
-        "Roland is seated with the default deck"
+    assert_eq!(
+        req.roster,
+        vec![decks::ROLAND.roster_entry(WeaknessChoice::Fixed)]
     );
 }
 
 #[wasm_bindgen_test]
-async fn selecting_the_daisy_radio_sends_daisy_roster() {
-    let mut rx = mount_picker();
-    click_last("input[name=inv][value='01002']");
-    click_last(".create-game");
-
-    let req = rx.next().await.expect("a CreateGameRequest was sent");
-    assert_eq!(req.roster.len(), 1);
-    assert_eq!(req.roster[0].investigator.as_str(), "01002");
-    assert!(
-        req.roster[0].deck.iter().any(|c| c.as_str() == "01035"),
-        "Daisy is seated with her scaffold deck (Medical Texts 01035 in it)"
-    );
+async fn each_radio_sends_its_investigators_fixed_roster() {
+    let (_, mut rx) = mount_picker();
+    for deck in decks::DEFAULT_DECKS {
+        click_last(&format!("input[name=inv][value='{}']", deck.investigator));
+        let req = create(&mut rx).await;
+        assert_eq!(
+            req.roster,
+            vec![deck.roster_entry(WeaknessChoice::Fixed)],
+            "{}",
+            deck.investigator
+        );
+    }
 }
 
+/// Checked, the box sends the random roster: the fixed weakness is gone from
+/// the deck, and seating is asked to draw one.
 #[wasm_bindgen_test]
-async fn selecting_the_skids_radio_sends_skids_roster() {
-    let mut rx = mount_picker();
+async fn checking_random_basic_weakness_sends_the_random_roster() {
+    let (_, mut rx) = mount_picker();
     click_last("input[name=inv][value='01003']");
-    click_last(".create-game");
+    click_last(RANDOM_WEAKNESS);
+    let req = create(&mut rx).await;
 
-    let req = rx.next().await.expect("a CreateGameRequest was sent");
-    assert_eq!(req.roster.len(), 1);
-    assert_eq!(req.roster[0].investigator.as_str(), "01003");
-    assert!(
-        req.roster[0].deck.iter().any(|c| c.as_str() == "01016"),
-        "Skids is seated with his scaffold deck (.45 Automatic 01016 in it)"
-    );
+    let entry = &req.roster[0];
+    assert_eq!(entry, &decks::SKIDS.roster_entry(WeaknessChoice::Random));
+    assert!(!entry
+        .deck
+        .iter()
+        .any(|c| c.as_str() == decks::SKIDS.weakness));
+    assert_eq!(entry.random_basic_weaknesses, 1);
 }
 
+/// A store update re-renders the overlay; the checkbox and the picked radio
+/// both survive it.
 #[wasm_bindgen_test]
-async fn selecting_the_agnes_radio_sends_agnes_roster() {
-    let mut rx = mount_picker();
+async fn the_checkbox_and_the_pick_survive_a_re_render() {
+    let (store, mut rx) = mount_picker();
     click_last("input[name=inv][value='01004']");
-    click_last(".create-game");
+    click_last(RANDOM_WEAKNESS);
+    store.update(|s| s.last_rejection = Some("re-render".to_string()));
 
-    let req = rx.next().await.expect("a CreateGameRequest was sent");
-    assert_eq!(req.roster.len(), 1);
-    assert_eq!(req.roster[0].investigator.as_str(), "01004");
-    assert!(
-        req.roster[0].deck.iter().any(|c| c.as_str() == "01059"),
-        "Agnes is seated with her scaffold deck (Holy Rosary 01059 in it)"
-    );
-}
-
-#[wasm_bindgen_test]
-async fn selecting_the_wendy_radio_sends_wendy_roster() {
-    let mut rx = mount_picker();
-    click_last("input[name=inv][value='01005']");
-    click_last(".create-game");
-
-    let req = rx.next().await.expect("a CreateGameRequest was sent");
-    assert_eq!(req.roster.len(), 1);
-    assert_eq!(req.roster[0].investigator.as_str(), "01005");
-    assert!(
-        req.roster[0].deck.iter().any(|c| c.as_str() == "01014"),
-        "Wendy is seated with her scaffold deck (Wendy's Amulet 01014 in it)"
+    let req = create(&mut rx).await;
+    assert_eq!(
+        req.roster,
+        vec![decks::AGNES.roster_entry(WeaknessChoice::Random)]
     );
 }

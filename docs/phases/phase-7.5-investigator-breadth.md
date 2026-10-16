@@ -4,8 +4,8 @@
 
 🟡 **in progress** (opened 2026-08-23). #776, #777 (Agnes Baker), #778
 ("Skids" O'Toole), #779 (Daisy Walker), #780 (Wendy Adams), #1116 (the random
-basic weakness draw) and #781 (the basic weaknesses and Abandoned and Alone) are
-closed. #782 is next.
+basic weakness draw), #781 (the basic weaknesses and Abandoned and Alone) and
+#782 (the default decks) are closed.
 
 This milestone was **Slice 2** in `phase-7-the-gathering.md`'s Future slices, an
 unfiled intent. It became a milestone on 2026-08-23 (`/grill-with-docs`) when
@@ -56,7 +56,6 @@ ship untested by anything but a unit test.
 
 | Issue | Work |
 |---|---|
-| #782 | Five legal starter decks + a real investigator picker |
 | #1059 | A designated Move — the `TODO(#1059)`s #777 left at every Move site |
 | #1099 | Mind over Matter 01036: `SkillTestStarted` announces Combat after the player chose Intellect (found during #779) |
 | #1100 | Losing actions: the investigator chooses which additional actions are lost (FAQ 1.10) — the `TODO(#1100)` #779 left in `lose_actions` |
@@ -72,13 +71,14 @@ ship untested by anything but a unit test.
 | #780 | Slice 4 — Wendy Adams 01005 + Wendy's Amulet + Survivor level 0: #1102–#1113, landed as PR #1114 |
 | #1116 | The random basic weakness draw (roster count, weakness pool, seeded draw at scenario start) + the playable gate on roster codes + `WeaknessKind` in the corpus: #1117, #1118, #1119, landed as PR #1120 |
 | #781 | Abandoned and Alone 01015 + the basic weaknesses (Amnesia 01096, Paranoia 01097, Haunted 01098, Psychosis 01099, Hypochondria 01100, Mob Enforcer 01101, Silver Twilight Acolyte 01102, Stubborn Detective 01103), with what they needed of the engine: drawn encounter-cardtype weaknesses resolve as encounter cards (closes #514), engagement exits and spawning engaged with the drawer (closes #650), `DamageDealt` around `DamagePlaced`, direct harm and `HarmTaken`, bearer-only prey (closes #654), the one-shot weaknesses, the text-box blank, and the pool test with no exclusions: #1121–#1128, landed as PR #1129 |
+| #782 | Five default decks in `cards::decks`, each with a fixed basic weakness, and the picker's "Random basic weakness" checkbox; the Learn to Play's starter-deck sidebar vendored in `data/learn-to-play/`; the scaffold decks retired, landed as PR #1134 |
 
 #783 (the deckbuilding validator) was filed alongside #782 but milestoned to
 **phase 9**, where its real consumer is.
 
 ## Ordering
 
-**#1025 ✅ PR #1030 → #776 ✅ PR #1044 → #777 ✅ PR #1057 → #778 ✅ PR #1080 → #779 ✅ PR #1096 → #780 ✅ PR #1114 → #1116 ✅ PR #1120 → #781 ✅ PR #1129 → #782.**
+**#1025 ✅ PR #1030 → #776 ✅ PR #1044 → #777 ✅ PR #1057 → #778 ✅ PR #1080 → #779 ✅ PR #1096 → #780 ✅ PR #1114 → #1116 ✅ PR #1120 → #781 ✅ PR #1129 → #782 ✅ PR #1134.**
 
 **Vertical slices, one investigator at a time** — investigator card, signature
 pair, and that investigator's class pool, each slice ending in someone playable.
@@ -135,25 +135,45 @@ conflated — 01076 is in Wendy's own slice.
 
 ## Decks are constructed, not transcribed
 
-The core box's suggested decklists are **not vendored** — not in
-`data/arkhamdb-snapshot/`, not in `data/official-faq/` — and per CLAUDE.md they must
-not be fetched. What *is* vendored is each investigator's deckbuilding requirements,
-printed on the card back and ingested as `back_text` (#558/PR #559). Agnes 01004,
-verbatim:
+Each investigator the picker offers seats a **default deck** (`GLOSSARY.md`), held
+in `cards::decks` so the picker, the server's tests and phase 9 read one list. All
+five are **inspired by** the 2016 Learn to Play's *"Investigator Starter Decks"*
+sidebar (p. 4), vendored with a verbatim transcription in
+`data/learn-to-play/starter_decks.md`. The sidebar gives only Roland's and Wendy's
+decks; Daisy, Skids and Agnes get the same structure, applied by us:
 
-> **Deck Size**: 30. **Deckbuilding Options**: Mystic cards ([mystic]) level 0-5, Survivor cards ([survivor]) level 0-2, Neutral cards level 0-5. **Deckbuilding Requirements** (do not count toward deck size): Heirloom of Hyperborea, Dark Memory, 1 random basic weakness.
+- one copy of each of the 10 primary-class level-0 titles,
+- one copy of each of the 10 secondary-class level-0 titles,
+- two each of Knife 01086, Flashlight 01087 and Emergency Cache 01088,
+- two each of two neutral skills, covering the investigator's weakest skills,
 
-A legal 30-card deck is constructible from the level-0 pool alone: each class has
-exactly 10 level-0 titles and deckbuilding permits 2 copies per title, so **10 class
-titles × 2 = 20, plus 5 neutral skills × 2 = 10 → 30**, with the signature pair and
-the basic weakness outside the count. That recipe works for all five.
+which is 10 + 10 + 6 + 4 = 30, with the signatures outside the count. Every card is
+level 0, as the sidebar's *"do not include these upgraded versions"* requires.
 
-#782 hardcodes those five, each with a comment naming the recipe it was built from,
-and retires `ROLAND_DEFAULT_DECK` — documented in place today as *"NOT a legal 30+1
-deck — a scaffold for UI testing."* The **validator** (#783) is separate on purpose:
-#782's decks are legal by construction, so a validator adds no correctness there, and
-its real consumer is phase 9's decklist import, where decks arrive from outside the
-repo and cannot be trusted.
+| Investigator | Neutral skills (×2) | Fixed weakness |
+|---|---|---|
+| Roland 01001 | Guts 01089, Manual Dexterity 01092 | Silver Twilight Acolyte 01102 |
+| Daisy 01002 | Overpower 01091, Manual Dexterity 01092 | Paranoia 01097 |
+| Skids 01003 | Guts 01089, Perception 01090 | Mob Enforcer 01101 |
+| Agnes 01004 | Perception 01090, Overpower 01091 | Haunted 01098 |
+| Wendy 01005 | Overpower 01091, Unexpected Courage 01093 | Amnesia 01096 |
+
+Roland's is the book's Roland deck with Silver Twilight Acolyte in place of
+Paranoia; Wendy's is the book's Wendy deck unchanged. Each deck's doc comment gives
+its source, how it differs, why it takes its skills, and its card back's
+requirements verbatim.
+
+**Every deck fixes its basic weakness in the list**, as the Learn to Play decks do,
+where the card back says *"1 random basic weakness"*. That is a deliberate
+deviation, and the picker's "Random basic weakness" checkbox (unchecked by default)
+restores the printed behaviour: `DefaultDeck::roster_entry` leaves the fixed
+weakness out and asks seating to draw one from the weakness pool.
+
+The decks are legal by construction, and `cards::decks`' tests check each against
+its card back in both modes. The **validator** (#783) is separate on purpose: its
+real consumer is phase 9's decklist import, where decks arrive from outside the repo
+and cannot be trusted. Import replaces the default decks only as the *default*; they
+stay as the picker's fallback.
 
 ## Open questions
 
@@ -171,7 +191,8 @@ general machinery is unmilestoned.
 ## What "done" looks like
 
 Five radios in the picker; picking any of the five seats that investigator with a
-legal deck and a random basic weakness, and plays The Gathering to a resolution.
+legal default deck, with its fixed weakness or, with the "Random basic weakness"
+box checked, a random one, and plays The Gathering to a resolution.
 Difficulty stays Standard and the player count stays 1 — those are #862 (phase 9)
 and #863 (phase 8) respectively, both spun out of phase-7's Future slices when that
 phase closed.
