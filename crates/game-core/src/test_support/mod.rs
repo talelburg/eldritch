@@ -49,7 +49,7 @@ fn test_inv_metadata() -> &'static CardMetadata {
         back_name: None,
         back_text: None,
         pack_code: "_test".to_owned(),
-        weakness: false,
+        weakness: None,
         kind: CardKind::Investigator {
             class: Class::Neutral,
             skills: Skills {
@@ -94,7 +94,7 @@ fn metadata_for_test_cardtypes(code: &CardCode) -> Option<&'static CardMetadata>
             back_name: None,
             back_text: None,
             pack_code: "_test".to_owned(),
-            weakness: false,
+            weakness: None,
             kind,
         }
     }

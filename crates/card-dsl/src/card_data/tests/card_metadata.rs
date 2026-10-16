@@ -11,7 +11,7 @@ fn metadata_serde_roundtrip_preserves_is_fast() {
         back_name: None,
         back_text: None,
         pack_code: "core".into(),
-        weakness: false,
+        weakness: None,
         kind: CardKind::Asset {
             class: Class::Seeker,
             cost: Some(1),
@@ -42,7 +42,7 @@ fn play_only_during_turn_reads_the_stored_flag() {
         back_name: None,
         back_text: None,
         pack_code: "core".into(),
-        weakness: false,
+        weakness: None,
         kind: CardKind::Event {
             class: Class::Seeker,
             cost: Some(1),
@@ -67,7 +67,7 @@ fn play_cost_reads_asset_and_event_cost_and_none_elsewhere() {
         back_name: None,
         back_text: None,
         pack_code: "core".into(),
-        weakness: false,
+        weakness: None,
         kind: CardKind::Asset {
             class: Class::Guardian,
             cost,
@@ -94,7 +94,7 @@ fn play_cost_reads_asset_and_event_cost_and_none_elsewhere() {
         back_name: None,
         back_text: None,
         pack_code: "core".into(),
-        weakness: false,
+        weakness: None,
         kind: CardKind::Event {
             class: Class::Neutral,
             cost: Some(0),
@@ -116,7 +116,7 @@ fn play_cost_reads_asset_and_event_cost_and_none_elsewhere() {
         back_name: None,
         back_text: None,
         pack_code: "core".into(),
-        weakness: false,
+        weakness: None,
         kind: CardKind::Skill {
             class: Class::Survivor,
             xp: None,
@@ -151,7 +151,7 @@ fn card_metadata_serde_roundtrip_preserves_surge_and_peril() {
         back_name: None,
         back_text: None,
         pack_code: "_synth".into(),
-        weakness: false,
+        weakness: None,
         kind: CardKind::Treachery {
             surge: true,
             peril: false,
@@ -181,7 +181,7 @@ fn card_type_is_derived_from_kind() {
         back_name: None,
         back_text: None,
         pack_code: "core".into(),
-        weakness: false,
+        weakness: None,
         kind: CardKind::Skill {
             class: Class::Seeker,
             xp: None,
@@ -205,7 +205,7 @@ fn encounter_cards_have_no_class() {
         back_name: None,
         back_text: None,
         pack_code: "core".into(),
-        weakness: false,
+        weakness: None,
         kind: CardKind::Treachery {
             surge: false,
             peril: false,
@@ -226,7 +226,7 @@ fn new_encounter_kinds_have_no_class_and_right_type() {
         back_name: None,
         back_text: None,
         pack_code: "core".into(),
-        weakness: false,
+        weakness: None,
         kind: CardKind::Location {
             shroud: 2,
             printed_clues: ClueValue::PerInvestigator(2),
@@ -244,7 +244,7 @@ fn new_encounter_kinds_have_no_class_and_right_type() {
         back_name: None,
         back_text: None,
         pack_code: "core".into(),
-        weakness: false,
+        weakness: None,
         kind: CardKind::Agenda { doom_threshold: 3 },
     };
     assert_eq!(agenda.card_type(), CardType::Agenda);
@@ -260,7 +260,7 @@ fn slots_reads_asset_slots_and_empty_elsewhere() {
         back_name: None,
         back_text: None,
         pack_code: "core".into(),
-        weakness: false,
+        weakness: None,
         kind: CardKind::Asset {
             class: Class::Guardian,
             cost: Some(5),
@@ -285,7 +285,7 @@ fn slots_reads_asset_slots_and_empty_elsewhere() {
         back_name: None,
         back_text: None,
         pack_code: "core".into(),
-        weakness: false,
+        weakness: None,
         kind: CardKind::Event {
             class: Class::Seeker,
             cost: Some(1),
@@ -308,7 +308,7 @@ fn make_treachery(weakness: bool) -> CardMetadata {
         back_name: None,
         back_text: None,
         pack_code: "_test".into(),
-        weakness,
+        weakness: weakness.then_some(WeaknessKind::Other),
         kind: CardKind::Treachery {
             surge: false,
             peril: false,
@@ -339,7 +339,7 @@ fn tome_asset() -> CardMetadata {
         back_name: None,
         back_text: None,
         pack_code: "_synth".into(),
-        weakness: false,
+        weakness: None,
         kind: CardKind::Asset {
             class: Class::Seeker,
             cost: Some(3),
@@ -453,7 +453,7 @@ fn treachery(weakness: bool) -> CardMetadata {
         code: "_synth_treachery".into(),
         name: "Synth Treachery".into(),
         traits: vec!["Terror".into()],
-        weakness,
+        weakness: weakness.then_some(WeaknessKind::Other),
         kind: CardKind::Treachery {
             surge: false,
             peril: false,

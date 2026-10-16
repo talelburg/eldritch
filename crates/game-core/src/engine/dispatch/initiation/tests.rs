@@ -163,7 +163,7 @@ fn event_metadata(
         back_name: None,
         back_text: None,
         pack_code: "_test".to_owned(),
-        weakness: false,
+        weakness: None,
         kind: CardKind::Event {
             class: Class::Neutral,
             cost: Some(cost),

@@ -496,7 +496,7 @@ mod tests {
             back_name: None,
             back_text: None,
             pack_code: "_test".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset {
                 class: Class::Neutral,
                 cost: Some(0),

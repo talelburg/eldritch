@@ -85,7 +85,7 @@ fn blank_treachery_metadata() -> CardMetadata {
         back_name: None,
         back_text: None,
         pack_code: "_synth".into(),
-        weakness: false,
+        weakness: None,
         kind: CardKind::Treachery {
             surge: false,
             peril: false,

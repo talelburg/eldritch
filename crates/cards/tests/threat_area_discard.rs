@@ -21,7 +21,7 @@
 //!
 //! Own integration-test binary so it can build its own `MockRegistry`.
 
-use card_dsl::card_data::{CardKind, CardMetadata};
+use card_dsl::card_data::{CardKind, CardMetadata, WeaknessKind};
 use card_dsl::dsl::{self, Ability, Cost, InvestigatorTarget};
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
@@ -72,7 +72,7 @@ fn probe_card(code: &str, weakness: bool) -> CardMetadata {
         back_name: None,
         back_text: None,
         pack_code: "test".to_string(),
-        weakness,
+        weakness: weakness.then_some(WeaknessKind::Other),
         kind: CardKind::Treachery {
             surge: false,
             peril: false,

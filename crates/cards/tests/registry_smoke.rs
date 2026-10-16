@@ -1,7 +1,7 @@
 //! End-to-end smoke tests for weakness metadata on the real corpus.
 //!
-//! Verifies that the pipeline correctly propagated `weakness: true/false`
-//! from the pinned snapshot into the generated corpus, and that the
+//! Verifies that the pipeline correctly propagated each card's weakness
+//! kind (or its absence) from the pinned snapshot into the generated corpus, and that the
 //! `is_weakness()` accessor round-trips through the registry.
 
 #[test]

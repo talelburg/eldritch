@@ -8,7 +8,7 @@
 
 use card_dsl::card_data::{
     CardKind, CardMetadata, Class, ClueValue, HealthValue, Prey, PreyDirection, PreyMeasure,
-    SkillIcons, SkillKind, Skills, Slot, Spawn, SpawnLocation, UseKind, Uses,
+    SkillIcons, SkillKind, Skills, Slot, Spawn, SpawnLocation, UseKind, Uses, WeaknessKind,
 };
 
 /// Every card from the pinned snapshot, sorted by code.
@@ -23,7 +23,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: true,
+            weakness: Some(WeaknessKind::Basic),
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 15 },
         },
         CardMetadata {
@@ -34,7 +34,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: Some("<b>Deck Size</b>: 30.\n<b>Deckbuilding Options</b>: Guardian cards ([guardian]) level 0-5, Seeker cards ([seeker]) level 0-2, Neutral cards level 0-5.\n<b>Deckbuilding Requirements</b> (do not count toward deck size): Roland's .38 Special, Cover Up, 1 random basic weakness.".to_owned()),
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Investigator { class: Class::Guardian, skills: Skills { willpower: 3, intellect: 3, combat: 4, agility: 2 }, health: 9, sanity: 5 },
         },
         CardMetadata {
@@ -45,7 +45,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: Some("<b>Deck Size</b>: 30.\n<b>Deckbuilding Options</b>: Seeker cards ([seeker]) level 0-5, Mystic cards ([mystic]) level 0-2, Neutral cards level 0-5.\n<b>Deckbuilding Requirements</b> (do not count toward deck size): Daisy’s Tote Bag, The Necronomicon (John Dee Translation), 1 random basic weakness.".to_owned()),
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Investigator { class: Class::Seeker, skills: Skills { willpower: 3, intellect: 5, combat: 2, agility: 2 }, health: 5, sanity: 9 },
         },
         CardMetadata {
@@ -56,7 +56,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: Some("<b>Deck Size</b>: 30.\n<b>Deckbuilding Options</b>: Rogue cards ([rogue]) level 0-5, Guardian cards ([guardian]) level 0-2, Neutral cards level 0-5.\n<b>Deckbuilding Requirements</b> (do not count toward deck size): On the Lam, Hospital Debts, 1 random basic weakness.".to_owned()),
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Investigator { class: Class::Rogue, skills: Skills { willpower: 2, intellect: 3, combat: 3, agility: 4 }, health: 8, sanity: 6 },
         },
         CardMetadata {
@@ -67,7 +67,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: Some("<b>Deck Size</b>: 30.\n<b>Deckbuilding Options</b>: Mystic cards ([mystic]) level 0-5, Survivor cards ([survivor]) level 0-2, Neutral cards level 0-5.\n<b>Deckbuilding Requirements</b> (do not count toward deck size): Heirloom of Hyperborea, Dark Memory, 1 random basic weakness.".to_owned()),
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Investigator { class: Class::Mystic, skills: Skills { willpower: 5, intellect: 2, combat: 2, agility: 3 }, health: 6, sanity: 8 },
         },
         CardMetadata {
@@ -78,7 +78,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: Some("<b>Deck Size</b>: 30.\n<b>Deckbuilding Options</b>: Survivor cards ([survivor]) level 0-5, Rogue cards ([rogue]) level 0-2, Neutral cards level 0-5.\n<b>Deckbuilding Requirements</b> (do not count toward deck size): Wendy's Amulet, Abandoned and Alone, 1 random basic weakness.".to_owned()),
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Investigator { class: Class::Survivor, skills: Skills { willpower: 4, intellect: 3, combat: 1, agility: 4 }, health: 7, sanity: 7 },
         },
         CardMetadata {
@@ -89,7 +89,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(3), xp: None, slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 1 }, is_fast: false, deck_limit: 1, uses: Some(Uses { kind: UseKind::Ammo, count: 4, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -100,7 +100,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: true,
+            weakness: Some(WeaknessKind::Other),
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 1 },
         },
         CardMetadata {
@@ -111,7 +111,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: None, slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 1, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -122,7 +122,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: true,
+            weakness: Some(WeaknessKind::Other),
             kind: CardKind::Asset { class: Class::Neutral, cost: None, xp: None, slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -133,7 +133,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Neutral, cost: Some(1), xp: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 1, wild: 2 }, is_fast: true, deck_limit: 1, play_only_during_turn: false },
         },
         CardMetadata {
@@ -144,7 +144,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: true,
+            weakness: Some(WeaknessKind::Other),
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 1 },
         },
         CardMetadata {
@@ -155,7 +155,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(3), xp: None, slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 1, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -166,7 +166,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: true,
+            weakness: Some(WeaknessKind::Other),
             kind: CardKind::Event { class: Class::Neutral, cost: Some(2), xp: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 1, play_only_during_turn: false },
         },
         CardMetadata {
@@ -177,7 +177,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: None, slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 2 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -188,7 +188,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: true,
+            weakness: Some(WeaknessKind::Other),
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 1 },
         },
         CardMetadata {
@@ -199,7 +199,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Guardian, cost: Some(4), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Ammo, count: 4, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -210,7 +210,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Guardian, cost: Some(2), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -221,7 +221,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Guardian, cost: Some(4), xp: Some(0), slots: vec![Slot::Ally], health: Some(2), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -232,7 +232,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Guardian, cost: Some(2), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 3, discard_when_empty: true }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -243,7 +243,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Guardian, cost: Some(3), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -254,7 +254,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Guardian, cost: Some(3), xp: Some(0), slots: vec![Slot::Ally], health: Some(3), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -265,7 +265,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Guardian, cost: Some(1), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 2, combat: 0, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -276,7 +276,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Guardian, cost: Some(1), xp: Some(0), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -287,7 +287,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Guardian, cost: Some(5), xp: Some(0), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -298,7 +298,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Skill { class: Class::Guardian, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: false },
         },
         CardMetadata {
@@ -309,7 +309,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Guardian, cost: Some(2), xp: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -320,7 +320,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Guardian, cost: Some(3), xp: Some(2), slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -331,7 +331,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Guardian, cost: Some(4), xp: Some(2), slots: vec![Slot::Ally], health: Some(3), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -342,7 +342,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Guardian, cost: Some(5), xp: Some(4), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Ammo, count: 2, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -353,7 +353,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(1), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -364,7 +364,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(3), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -375,7 +375,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(2), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -386,7 +386,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(4), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -397,7 +397,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(2), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -408,7 +408,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(2), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -419,7 +419,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Seeker, cost: Some(1), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: true },
         },
         CardMetadata {
@@ -430,7 +430,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Seeker, cost: Some(2), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 2, combat: 0, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: true },
         },
         CardMetadata {
@@ -441,7 +441,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Seeker, cost: Some(0), xp: Some(0), skill_icons: SkillIcons { willpower: 1, intellect: 1, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -452,7 +452,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Skill { class: Class::Seeker, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: false },
         },
         CardMetadata {
@@ -463,7 +463,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(0), xp: Some(1), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -474,7 +474,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(3), xp: Some(2), slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 1, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -485,7 +485,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(2), xp: Some(2), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -496,7 +496,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Seeker, cost: Some(0), xp: Some(4), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: true },
         },
         CardMetadata {
@@ -507,7 +507,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(1), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: true, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -518,7 +518,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -529,7 +529,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(2), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -540,7 +540,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(3), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Ammo, count: 3, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -551,7 +551,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(6), xp: Some(0), slots: vec![Slot::Ally], health: Some(2), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -562,7 +562,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(2), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -573,7 +573,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Rogue, cost: Some(2), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 1, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: true },
         },
         CardMetadata {
@@ -584,7 +584,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Rogue, cost: Some(3), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -595,7 +595,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Rogue, cost: Some(2), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -606,7 +606,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Skill { class: Class::Rogue, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: true },
         },
         CardMetadata {
@@ -617,7 +617,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(5), xp: Some(1), slots: vec![Slot::Ally], health: Some(2), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -628,7 +628,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(4), xp: Some(1), slots: vec![Slot::Ally], health: Some(2), sanity: Some(2), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -639,7 +639,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Rogue, cost: Some(2), xp: Some(3), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -650,7 +650,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Rogue, cost: Some(3), xp: Some(4), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -661,7 +661,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(0), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Secrets, count: 4, discard_when_empty: true }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -672,7 +672,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(2), xp: Some(0), slots: vec![Slot::Accessory], health: None, sanity: Some(2), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -683,7 +683,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(3), xp: Some(0), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 4, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -694,7 +694,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(1), xp: Some(0), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 3, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -705,7 +705,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(2), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -716,7 +716,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(1), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: Some(2), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -727,7 +727,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Mystic, cost: Some(0), xp: Some(0), skill_icons: SkillIcons { willpower: 1, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -738,7 +738,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Mystic, cost: Some(1), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -749,7 +749,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Mystic, cost: Some(2), xp: Some(0), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -760,7 +760,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Skill { class: Class::Mystic, xp: Some(0), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: false },
         },
         CardMetadata {
@@ -771,7 +771,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Mystic, cost: Some(1), xp: Some(1), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -782,7 +782,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Mystic, cost: Some(1), xp: Some(2), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -793,7 +793,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(4), xp: Some(3), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -804,7 +804,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(2), xp: Some(4), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 4, discard_when_empty: true }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -815,7 +815,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Survivor, cost: Some(0), xp: Some(0), slots: vec![Slot::Body], health: Some(2), sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -826,7 +826,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Survivor, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -837,7 +837,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Survivor, cost: Some(2), xp: Some(0), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -848,7 +848,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Survivor, cost: Some(1), xp: Some(0), slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -859,7 +859,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Survivor, cost: Some(1), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -870,7 +870,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Survivor, cost: Some(2), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -881,7 +881,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Survivor, cost: Some(5), xp: Some(0), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -892,7 +892,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Survivor, cost: Some(2), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 2, combat: 0, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -903,7 +903,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Survivor, cost: Some(1), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -914,7 +914,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Skill { class: Class::Survivor, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: false },
         },
         CardMetadata {
@@ -925,7 +925,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Survivor, cost: Some(5), xp: Some(1), slots: vec![Slot::Ally], health: Some(1), sanity: Some(4), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -936,7 +936,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Survivor, cost: Some(2), xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -947,7 +947,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Survivor, cost: Some(1), xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -958,7 +958,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Survivor, cost: Some(4), xp: Some(3), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 1 }, is_fast: true, deck_limit: 2, play_only_during_turn: true },
         },
         CardMetadata {
@@ -969,7 +969,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(1), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -980,7 +980,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 3, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -991,7 +991,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Neutral, cost: Some(0), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -1002,7 +1002,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Skill { class: Class::Neutral, xp: Some(0), skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: Some(1), commit_only_to_own_test: false },
         },
         CardMetadata {
@@ -1013,7 +1013,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Skill { class: Class::Neutral, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 2, combat: 0, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: Some(1), commit_only_to_own_test: false },
         },
         CardMetadata {
@@ -1024,7 +1024,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Skill { class: Class::Neutral, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: Some(1), commit_only_to_own_test: false },
         },
         CardMetadata {
@@ -1035,7 +1035,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Skill { class: Class::Neutral, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 2, wild: 0 }, deck_limit: 2, commit_limit: Some(1), commit_only_to_own_test: false },
         },
         CardMetadata {
@@ -1046,7 +1046,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Skill { class: Class::Neutral, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 2 }, deck_limit: 2, commit_limit: Some(1), commit_only_to_own_test: false },
         },
         CardMetadata {
@@ -1057,7 +1057,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: Some(3), slots: vec![Slot::Body], health: Some(4), sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -1068,7 +1068,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: Some(3), slots: vec![Slot::Accessory], health: None, sanity: Some(4), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -1079,7 +1079,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: true,
+            weakness: Some(WeaknessKind::Basic),
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -1090,7 +1090,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: true,
+            weakness: Some(WeaknessKind::Basic),
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -1101,7 +1101,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: true,
+            weakness: Some(WeaknessKind::Basic),
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 1 },
         },
         CardMetadata {
@@ -1112,7 +1112,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: true,
+            weakness: Some(WeaknessKind::Basic),
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 1 },
         },
         CardMetadata {
@@ -1123,7 +1123,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: true,
+            weakness: Some(WeaknessKind::Basic),
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 1 },
         },
         CardMetadata {
@@ -1134,7 +1134,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: true,
+            weakness: Some(WeaknessKind::Basic),
             kind: CardKind::Enemy { fight: 4, evade: 3, damage: 1, horror: 0, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -1145,7 +1145,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: true,
+            weakness: Some(WeaknessKind::Basic),
             kind: CardKind::Enemy { fight: 2, evade: 3, damage: 1, horror: 0, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -1156,7 +1156,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: true,
+            weakness: Some(WeaknessKind::Basic),
             kind: CardKind::Enemy { fight: 3, evade: 2, damage: 1, horror: 0, health: Some(HealthValue::Fixed(2)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -1167,7 +1167,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("A Lapse in Time".to_owned()),
             back_text: Some("The lead investigator must decide (choose one): Either each investigator discards 1 card at random from his or her hand, or the lead investigator takes 2 horror.".to_owned()),
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 3 },
         },
         CardMetadata {
@@ -1178,7 +1178,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("The Tunnels Below".to_owned()),
             back_text: Some("Shuffle the encounter discard pile into the encounter deck. Discard cards from the top of the encounter deck until a [[Ghoul]] enemy is discarded. The lead investigator draws that enemy.".to_owned()),
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 7 },
         },
         CardMetadata {
@@ -1189,7 +1189,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("The Ghouls Break Free".to_owned()),
             back_text: Some("- If the investigators are at Act 1 or 2, they are trapped inside the house as the ghouls tear them apart. <b>(→R3)</b>\n- If the investigators are at Act 3, they barely escape with their lives, allowing the ghouls to run rampant. Each investigator that has not resigned is defeated and suffers 1 physical trauma.".to_owned()),
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 10 },
         },
         CardMetadata {
@@ -1200,7 +1200,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("The Door on the Floor".to_owned()),
             back_text: Some("Put into play the set-aside Hallway, Cellar, Attic, and Parlor.\nDiscard each enemy in the Study.\nPlace each investigator in the Hallway.\nRemove the Study from the game.".to_owned()),
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: Some(2), victory: None },
         },
         CardMetadata {
@@ -1211,7 +1211,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Breaking the Barrier".to_owned()),
             back_text: Some("The barrier blocking passage into the parlor has vanished. Reveal the Parlor.\nPut the set-aside Lita Chantler into play in the Parlor.\nSpawn the set-aside Ghoul Priest in the Hallway.".to_owned()),
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: Some(3), victory: None },
         },
         CardMetadata {
@@ -1222,7 +1222,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Defending the Home".to_owned()),
             back_text: Some("The lead investigator must decide (choose one):\n- It was never much of a home. Burn it down! <b>(→R1)</b>\n- This hell-pit is my home! No way are we burning it! <b>(→R2)</b>".to_owned()),
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -1233,7 +1233,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
@@ -1244,7 +1244,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -1255,7 +1255,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
@@ -1266,7 +1266,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
@@ -1277,7 +1277,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: Some("The entrance to the Parlor is blocked by a darkly glowing unfathomable barrier. You cannot move into the Parlor.".to_owned()),
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -1288,7 +1288,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 4, evade: 4, damage: 2, horror: 2, health: Some(HealthValue::PerInvestigator(5)), victory: Some(2), spawn: None, surge: false, peril: false, hunter: true, retaliate: true, prey: Prey::Ranked { direction: PreyDirection::Highest, measure: PreyMeasure::Skill(SkillKind::Combat) }, quantity: 1 },
         },
         CardMetadata {
@@ -1299,7 +1299,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: vec![Slot::Ally], health: Some(3), sanity: Some(3), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -1310,7 +1310,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 4, evade: 1, damage: 1, horror: 2, health: Some(HealthValue::Fixed(4)), victory: Some(1), spawn: Some(Spawn { location: SpawnLocation::Specific("01113".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -1321,7 +1321,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 3, evade: 4, damage: 2, horror: 1, health: Some(HealthValue::Fixed(4)), victory: Some(1), spawn: Some(Spawn { location: SpawnLocation::Specific("01114".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -1332,7 +1332,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 6 },
         },
         CardMetadata {
@@ -1343,7 +1343,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 4, evade: 2, damage: 2, horror: 1, health: Some(HealthValue::Fixed(4)), victory: Some(2), spawn: Some(Spawn { location: SpawnLocation::Unrepresented("Engaged with Prey".to_owned()) }), surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -1354,7 +1354,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("The Clock Strikes Midnight".to_owned()),
             back_text: Some("<b>(→R2)</b>".to_owned()),
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 8 },
         },
         CardMetadata {
@@ -1365,7 +1365,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Secrets Unveiled".to_owned()),
             back_text: Some("<b>(→R1)</b>".to_owned()),
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -1376,7 +1376,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -1387,7 +1387,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -1398,7 +1398,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -1409,7 +1409,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -1420,7 +1420,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -1431,7 +1431,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
@@ -1442,7 +1442,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -1453,7 +1453,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
@@ -1464,7 +1464,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -1475,7 +1475,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
@@ -1486,7 +1486,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
@@ -1497,7 +1497,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -1508,7 +1508,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -1519,7 +1519,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 4, evade: 2, damage: 2, horror: 0, health: Some(HealthValue::Fixed(4)), victory: Some(1), spawn: Some(Spawn { location: SpawnLocation::Specific("01131".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -1530,7 +1530,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 3, evade: 4, damage: 1, horror: 1, health: Some(HealthValue::Fixed(4)), victory: Some(1), spawn: Some(Spawn { location: SpawnLocation::Specific("01133".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -1541,7 +1541,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 2, evade: 3, damage: 1, horror: 0, health: Some(HealthValue::Fixed(3)), victory: Some(1), spawn: Some(Spawn { location: SpawnLocation::Specific("01129".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -1552,7 +1552,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 3, evade: 2, damage: 1, horror: 0, health: Some(HealthValue::Fixed(3)), victory: Some(1), spawn: Some(Spawn { location: SpawnLocation::Specific("01134".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -1563,7 +1563,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 2, evade: 5, damage: 1, horror: 0, health: Some(HealthValue::Fixed(4)), victory: Some(1), spawn: Some(Spawn { location: SpawnLocation::Unrepresented("St".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -1574,7 +1574,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Death to the Intruders".to_owned()),
             back_text: Some("Shuffle the encounter discard pile into the encounter deck and discard cards from the top until a [[Monster]] enemy is discarded. Spawn that enemy in the Main Path. Then, place 1 doom on that enemy.".to_owned()),
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 4 },
         },
         CardMetadata {
@@ -1585,7 +1585,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("The Will of Umôrdhoth".to_owned()),
             back_text: Some("In player order, each investigator must test [willpower] (6). Each investigator who fails must search his or her collection for a random basic [[Madness]] weakness and add it to his or her hand.".to_owned()),
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 5 },
         },
         CardMetadata {
@@ -1596,7 +1596,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("The Devourer Below".to_owned()),
             back_text: Some("<b>Revelation</b> - Replace the current Act and Agenda with The Devourer Below. This card is both the current Act and the current Agenda.\n<b>Objective</b> - If Umôrdhoth is defeated, <b>(→R2)</b>".to_owned()),
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 5 },
         },
         CardMetadata {
@@ -1607,7 +1607,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Unveiling the Plan".to_owned()),
             back_text: Some("Put the set-aside Ritual Site into play if it is not already in play.\nSearch the collection for each enemy recorded in your Campaign Log under \"Cultists Who Got Away,\" and spawn those enemies at the Main Path.".to_owned()),
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: Some(3), victory: None },
         },
         CardMetadata {
@@ -1618,7 +1618,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Last Rites".to_owned()),
             back_text: Some("Shuffle the encounter discard pile into the encounter deck. Discard cards from the top of the encounter deck until 1 enemy is discarded (2 enemies instead if there are 3 or more players in the game). Spawn each discarded enemy at the Ritual Site.".to_owned()),
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -1629,7 +1629,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("The Ritual Is Broken".to_owned()),
             back_text: Some("<b>(→R1)</b>".to_owned()),
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -1640,7 +1640,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -1651,7 +1651,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -1662,7 +1662,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -1673,7 +1673,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -1684,7 +1684,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -1695,7 +1695,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -1706,7 +1706,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -1717,7 +1717,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
@@ -1728,7 +1728,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 5, evade: 6, damage: 3, horror: 3, health: Some(HealthValue::Fixed(6)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -1739,7 +1739,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -1750,7 +1750,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 1, evade: 3, damage: 1, horror: 0, health: Some(HealthValue::Fixed(1)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 3 },
         },
         CardMetadata {
@@ -1761,7 +1761,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 2, evade: 2, damage: 1, horror: 1, health: Some(HealthValue::Fixed(2)), victory: None, spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 3 },
         },
         CardMetadata {
@@ -1772,7 +1772,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 3, evade: 3, damage: 1, horror: 1, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Ranked { direction: PreyDirection::Lowest, measure: PreyMeasure::RemainingHealth }, quantity: 1 },
         },
         CardMetadata {
@@ -1783,7 +1783,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -1794,7 +1794,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -1805,7 +1805,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -1816,7 +1816,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -1827,7 +1827,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -1838,7 +1838,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -1849,7 +1849,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -1860,7 +1860,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 3, evade: 2, damage: 1, horror: 0, health: Some(HealthValue::Fixed(1)), victory: None, spawn: Some(Spawn { location: SpawnLocation::Unrepresented("Any empty location".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 3 },
         },
         CardMetadata {
@@ -1871,7 +1871,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 4, evade: 2, damage: 1, horror: 0, health: Some(HealthValue::Fixed(2)), victory: None, spawn: Some(Spawn { location: SpawnLocation::Unrepresented("Any empty location".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: true, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -1882,7 +1882,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -1893,7 +1893,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 3, evade: 1, damage: 1, horror: 1, health: Some(HealthValue::Fixed(4)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
@@ -1904,7 +1904,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -1915,7 +1915,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -1926,7 +1926,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 3, evade: 3, damage: 1, horror: 2, health: Some(HealthValue::Fixed(4)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
@@ -1937,7 +1937,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -1948,7 +1948,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 4, evade: 3, damage: 1, horror: 1, health: Some(HealthValue::Fixed(4)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
@@ -1959,7 +1959,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -1970,7 +1970,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 4, evade: 2, damage: 2, horror: 1, health: Some(HealthValue::Fixed(5)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -1981,7 +1981,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 3, evade: 2, damage: 1, horror: 0, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: true, prey: Prey::Default, quantity: 3 },
         },
         CardMetadata {
@@ -1992,7 +1992,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 3, evade: 3, damage: 1, horror: 1, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
@@ -2003,7 +2003,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "core".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -2014,7 +2014,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: Some("<b>Deck Size</b>: 30.\n<b>Deckbuilding Options</b>: Guardian cards ([guardian]) level 0-5, Neutral cards level 0-5, up to five other level 0 cards from any other class.\n<b>Deckbuilding Requirements</b> (do not count toward deck size): Zoey's Cross, Smite the Wicked, 1 random basic weakness.".to_owned()),
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Investigator { class: Class::Guardian, skills: Skills { willpower: 4, intellect: 2, combat: 4, agility: 2 }, health: 9, sanity: 6 },
         },
         CardMetadata {
@@ -2025,7 +2025,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: Some("<b>Deck Size</b>: 30.\n<b>Deckbuilding Options</b>: Seeker cards ([seeker]) level 0-5, Neutral cards level 0-5, up to five other level 0 cards from any other class.\n<b>Deckbuilding Requirements</b> (do not count toward deck size): Search for the Truth, Rex's Curse, 1 random basic weakness.\n<b>Deckbuilding Restrictions</b>: No [[Fortune]] cards.".to_owned()),
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Investigator { class: Class::Seeker, skills: Skills { willpower: 3, intellect: 4, combat: 2, agility: 3 }, health: 6, sanity: 9 },
         },
         CardMetadata {
@@ -2036,7 +2036,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: Some("<b>Deck Size</b>: 30.\n<b>Deckbuilding Options</b>: Rogue cards ([rogue]) level 0-5, Neutral cards level 0-5, up to five other level 0 cards from any other class.\n<b>Deckbuilding Requirements</b> (do not count toward deck size): Jenny's Twin .45s, Searching for Izzie, 1 random basic weakness.".to_owned()),
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Investigator { class: Class::Rogue, skills: Skills { willpower: 3, intellect: 3, combat: 3, agility: 3 }, health: 8, sanity: 7 },
         },
         CardMetadata {
@@ -2047,7 +2047,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: Some("<b>Deck Size</b>: 30.\n<b>Deckbuilding Options</b>: Mystic cards ([mystic]) level 0-5, Neutral cards level 0-5, up to five other level 0 cards from any other class.\n<b>Deckbuilding Requirements</b> (do not count toward deck size): Jim's Trumpet, Final Rhapsody, 1 random basic weakness.".to_owned()),
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Investigator { class: Class::Mystic, skills: Skills { willpower: 4, intellect: 3, combat: 3, agility: 2 }, health: 7, sanity: 8 },
         },
         CardMetadata {
@@ -2058,7 +2058,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: Some("<b>Deck Size</b>: 30.\n<b>Deckbuilding Options</b>: Survivor cards ([survivor]) level 0-5, Neutral cards level 0-5, up to five other level 0 cards from any other class.\n<b>Deckbuilding Requirements</b> (do not count toward deck size): Duke, Wracked by Nightmares, 1 random basic weakness.".to_owned()),
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Investigator { class: Class::Survivor, skills: Skills { willpower: 4, intellect: 2, combat: 2, agility: 3 }, health: 6, sanity: 5 },
         },
         CardMetadata {
@@ -2069,7 +2069,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(1), xp: None, slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2080,7 +2080,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: true,
+            weakness: Some(WeaknessKind::Other),
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 1 },
         },
         CardMetadata {
@@ -2091,7 +2091,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Neutral, cost: Some(1), xp: None, skill_icons: SkillIcons { willpower: 0, intellect: 2, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2102,7 +2102,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: true,
+            weakness: Some(WeaknessKind::Other),
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 1 },
         },
         CardMetadata {
@@ -2113,7 +2113,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(-2), xp: None, slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 2, wild: 1 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2124,7 +2124,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: true,
+            weakness: Some(WeaknessKind::Other),
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 1 },
         },
         CardMetadata {
@@ -2135,7 +2135,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: None, slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2146,7 +2146,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: true,
+            weakness: Some(WeaknessKind::Other),
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 1 },
         },
         CardMetadata {
@@ -2157,7 +2157,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: None, slots: Vec::new(), health: Some(2), sanity: Some(3), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2168,7 +2168,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: true,
+            weakness: Some(WeaknessKind::Other),
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 1 },
         },
         CardMetadata {
@@ -2179,7 +2179,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Guardian, cost: Some(1), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2190,7 +2190,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Guardian, cost: Some(1), xp: Some(0), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: true },
         },
         CardMetadata {
@@ -2201,7 +2201,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Guardian, cost: Some(0), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2212,7 +2212,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Guardian, cost: Some(1), xp: Some(2), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 1, agility: 1, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: true },
         },
         CardMetadata {
@@ -2223,7 +2223,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(2), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2234,7 +2234,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2245,7 +2245,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Seeker, cost: Some(0), xp: Some(0), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: true },
         },
         CardMetadata {
@@ -2256,7 +2256,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Seeker, cost: Some(1), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2267,7 +2267,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 4, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -2278,7 +2278,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Rogue, cost: Some(1), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 1, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2289,7 +2289,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Skill { class: Class::Rogue, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: Some(1), commit_only_to_own_test: false },
         },
         CardMetadata {
@@ -2300,7 +2300,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(1), xp: Some(1), slots: vec![Slot::Ally], health: Some(3), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2311,7 +2311,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(4), xp: Some(0), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 3, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -2322,7 +2322,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(1), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2333,7 +2333,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(2), xp: Some(0), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 3, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -2344,7 +2344,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Mystic, cost: Some(3), xp: Some(2), skill_icons: SkillIcons { willpower: 1, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2355,7 +2355,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Survivor, cost: Some(1), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2366,7 +2366,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Survivor, cost: Some(3), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: Some(2), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2377,7 +2377,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Survivor, cost: Some(1), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2388,7 +2388,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Survivor, cost: Some(3), xp: Some(2), slots: vec![Slot::Ally], health: Some(1), sanity: Some(3), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2399,7 +2399,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2410,7 +2410,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: true,
+            weakness: Some(WeaknessKind::Basic),
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -2421,7 +2421,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: true,
+            weakness: Some(WeaknessKind::Basic),
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -2432,7 +2432,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: true,
+            weakness: Some(WeaknessKind::Basic),
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -2443,7 +2443,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: None, slots: vec![Slot::Ally], health: Some(2), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 2 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2454,7 +2454,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Something Stirs".to_owned()),
             back_text: Some("Each investigator with 5 or more cards in his or her discard pile takes 1 horror. Each investigator with 10 or more cards in his or her discard pile takes 2 horror, instead.\nIf the players have completed The House Always Wins, advance directly to agenda 2b. If Extracurricular Activity is the first scenario in the campaign, advance to agenda 2a.".to_owned()),
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 7 },
         },
         CardMetadata {
@@ -2465,7 +2465,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("An Experiment Gone Wrong".to_owned()),
             back_text: Some("If the Dormitories location is not in play, put it into play.\nIf The Experiment is in play, move it 1 location toward the Dormitories.\nIf The Experiment is not in play, spawn it in the Science Building.".to_owned()),
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 3 },
         },
         CardMetadata {
@@ -2476,7 +2476,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Not Fast Enough".to_owned()),
             back_text: Some("Each investigator immediately takes 3 horror. Then, proceed to <b>(→R4)</b>.".to_owned()),
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 2 },
         },
         CardMetadata {
@@ -2487,7 +2487,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("The Head Janitor".to_owned()),
             back_text: Some("Shuffle the encounter discard pile and the set-aside \"Jazz\" Mulligan into the encounter deck.".to_owned()),
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: Some(3), victory: None },
         },
         CardMetadata {
@@ -2498,7 +2498,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("The Experiment Is Loose!".to_owned()),
             back_text: Some("If the Alchemy Labs location is not in play, put it into play. If you are at Agenda 1 or 2, spawn The Experiment in the Alchemy Labs.\nIf you have completed The House Always Wins, put the set-aside Alchemical Concoction into play underneath the Alchemy Labs. If Extracurricular Activity is the first scenario of the campaign, remove the set-aside Alchemical Concoction from the game, instead.".to_owned()),
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -2509,7 +2509,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("The Beast's Death".to_owned()),
             back_text: Some("<b>(→R3)</b>".to_owned()),
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -2520,7 +2520,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -2531,7 +2531,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
@@ -2542,7 +2542,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: Some(1) },
         },
         CardMetadata {
@@ -2553,7 +2553,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::Fixed(2), victory: None },
         },
         CardMetadata {
@@ -2564,7 +2564,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: Some("The door leading into the Dormitories is locked. You cannot move into the Dormitories.".to_owned()),
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(3), victory: Some(1) },
         },
         CardMetadata {
@@ -2575,7 +2575,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -2586,7 +2586,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: Some("The door leading into the Faculty Offices is locked. You cannot move into the Faculty Offices.".to_owned()),
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
@@ -2597,7 +2597,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: Some("The door leading into the Faculty Offices is locked. You cannot move into the Faculty Offices.".to_owned()),
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -2608,7 +2608,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -2619,7 +2619,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: Some("The door leading into the Alchemy Labs is locked. You cannot move into the Alchemy Labs.".to_owned()),
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 5, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -2630,7 +2630,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 4, evade: 2, damage: 2, horror: 2, health: Some(HealthValue::Fixed(7)), victory: Some(2), spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -2641,7 +2641,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2652,7 +2652,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: Some(2), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2663,7 +2663,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(3), xp: None, slots: vec![Slot::Ally], health: Some(2), sanity: Some(3), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2674,7 +2674,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("On the Right Track".to_owned()),
             back_text: Some("Shuffle the encounter discard pile into the encounter deck.\nIf the players have completed Extracurricular Activity, advance directly to agenda 2b. If The House Always Wins is the first scenario in the campaign, advance to agenda 2a.".to_owned()),
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 4 },
         },
         CardMetadata {
@@ -2685,7 +2685,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Sudden Chaos".to_owned()),
             back_text: Some("Spawn a random enemy from the set-aside <em>Hideous Abominations</em> encounter set in Clover Club Lounge. Shuffle the rest of that encounter set, the set-aside <em>Striking Fear</em> encounter set, and the encounter discard pile into the encounter deck.\nMove all investigators and unengaged enemies from La Bella Luna to the Clover Club Lounge. Remove La Bella Luna from the game.".to_owned()),
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 3 },
         },
         CardMetadata {
@@ -2696,7 +2696,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("The Building Collapses".to_owned()),
             back_text: Some("<b>(→R4)</b>".to_owned()),
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 7 },
         },
         CardMetadata {
@@ -2707,7 +2707,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("High Roller".to_owned()),
             back_text: Some("Put the set-aside Darkened Hall into play.\nIf it is Agenda 1, discard cards from the top of the encounter deck until a [[Criminal]] enemy is discarded, and spawn that enemy in the Darkened Hall.".to_owned()),
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: Some(4), victory: None },
         },
         CardMetadata {
@@ -2718,7 +2718,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Dr. Morgan's Fate".to_owned()),
             back_text: Some("<b>If the players have not yet completed Extracurricular Activity:</b><blockquote><i>You find Dr. Morgan gambling in one of the VIP rooms... but he appears to be playing cards with two unconscious bodies, his pupils dilated as though in a trance. He can't seem to stop laughing, smiling, and chatting with the other \"players.\"</i></blockquote>Put the set-aside Dr. Morgan into play in the VIP Area. Advance to Act 3a - \"All In.\"\n<hr><b>If the players have completed Extracurricular Activity:</b><blockquote><em>The VIP rooms are filled with the mangled and bloody bodies of unfortunate patrons. There doesn't appear to be any trace of Dr. Morgan. You hear screaming and gunfire from the main area of the club.</em></blockquote>Put the set-aside Peter Clover into play in the Clover Club Bar. Search the encounter deck (or out of play) for an [[Abomination]] enemy, and spawn it in the Clover Club Bar. Advance to Act 3a - \"Fold.\"".to_owned()),
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: Some(2), victory: None },
         },
         CardMetadata {
@@ -2729,7 +2729,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Safe... For Now".to_owned()),
             back_text: Some("- If an investigator resigned with Dr. Francis Morgan under his or her control, <b>(→R2)</b>\n- Otherwise, <b>(→R1)</b>".to_owned()),
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -2740,7 +2740,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Escaping the Club".to_owned()),
             back_text: Some("- If an investigator resigned with Peter Clover under his or her control, <b>(→R3)</b>\n- Otherwise, <b>(→R1)</b>".to_owned()),
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -2751,7 +2751,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -2762,7 +2762,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -2773,7 +2773,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -2784,7 +2784,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -2795,7 +2795,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -2806,7 +2806,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Back Hall Doorway".to_owned()),
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: Some(1) },
         },
         CardMetadata {
@@ -2817,7 +2817,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Back Hall Doorway".to_owned()),
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: Some(1) },
         },
         CardMetadata {
@@ -2828,7 +2828,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Back Hall Doorway".to_owned()),
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(1), victory: Some(1) },
         },
         CardMetadata {
@@ -2839,7 +2839,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 3, evade: 3, damage: 2, horror: 0, health: Some(HealthValue::Fixed(4)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Ranked { direction: PreyDirection::Highest, measure: PreyMeasure::Skill(SkillKind::Intellect) }, quantity: 1 },
         },
         CardMetadata {
@@ -2850,7 +2850,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: Some(3), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2861,7 +2861,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(3), xp: None, slots: vec![Slot::Ally], health: Some(4), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2872,7 +2872,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -2883,7 +2883,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -2894,7 +2894,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -2905,7 +2905,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -2916,7 +2916,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -2927,7 +2927,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 2, evade: 2, damage: 1, horror: 1, health: Some(HealthValue::Fixed(2)), victory: None, spawn: Some(Spawn { location: SpawnLocation::Unrepresented("Location with the most clues".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: true, prey: Prey::Default, quantity: 3 },
         },
         CardMetadata {
@@ -2938,7 +2938,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 4, evade: 3, damage: 1, horror: 2, health: Some(HealthValue::Fixed(3)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -2949,7 +2949,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -2960,7 +2960,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -2971,7 +2971,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 2, evade: 4, damage: 0, horror: 1, health: Some(HealthValue::Fixed(1)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 3 },
         },
         CardMetadata {
@@ -2982,7 +2982,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -2993,7 +2993,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -3004,7 +3004,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -3015,7 +3015,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 5, evade: 3, damage: 1, horror: 1, health: Some(HealthValue::Fixed(4)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
@@ -3026,7 +3026,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 4, evade: 4, damage: 1, horror: 1, health: Some(HealthValue::Fixed(3)), victory: None, spawn: Some(Spawn { location: SpawnLocation::Unrepresented("Farthest location from you".to_owned()) }), surge: false, peril: false, hunter: true, retaliate: true, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
@@ -3037,7 +3037,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -3048,7 +3048,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 4, evade: 2, damage: 2, horror: 0, health: Some(HealthValue::Fixed(2)), victory: None, spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
@@ -3059,7 +3059,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 2, evade: 2, damage: 1, horror: 0, health: Some(HealthValue::Fixed(2)), victory: None, spawn: None, surge: false, peril: false, hunter: false, retaliate: true, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
@@ -3070,7 +3070,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -3081,7 +3081,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -3092,7 +3092,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -3103,7 +3103,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -3114,7 +3114,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 1, evade: 4, damage: 1, horror: 1, health: Some(HealthValue::Fixed(6)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
@@ -3125,7 +3125,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "dwl".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 4, evade: 2, damage: 2, horror: 2, health: Some(HealthValue::Fixed(5)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -3136,7 +3136,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Guardian, cost: Some(2), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3147,7 +3147,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Guardian, cost: Some(5), xp: Some(1), slots: vec![Slot::Ally], health: Some(3), sanity: Some(3), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3158,7 +3158,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Seeker, cost: Some(3), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3169,7 +3169,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(3), xp: Some(1), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3180,7 +3180,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Rogue, cost: Some(4), xp: Some(0), skill_icons: SkillIcons { willpower: 1, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3191,7 +3191,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Rogue, cost: None, xp: Some(1), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3202,7 +3202,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Mystic, cost: Some(1), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3213,7 +3213,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(2), xp: Some(2), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 5, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -3224,7 +3224,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Survivor, cost: Some(2), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3235,7 +3235,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Survivor, cost: Some(2), xp: Some(1), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3246,7 +3246,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Survivor, cost: Some(2), xp: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3257,7 +3257,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 3, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -3268,7 +3268,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 3, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -3279,7 +3279,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("A Creature of the Void".to_owned()),
             back_text: Some("If Hunting Horror is in play, add 1 doom to it.\nIf Hunting Horror is not in play, search the encounter deck, discard pile, and the void for Hunting Horror and spawn it in Museum Halls, if able. Shuffle the encounter discard pile into the encounter deck.".to_owned()),
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 5 },
         },
         CardMetadata {
@@ -3290,7 +3290,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Hunted Down".to_owned()),
             back_text: Some("If Hunting Horror is in play, add 1 doom to it.\nIf Hunting Horror is not in play, search the encounter deck, discard pile, and the void for Hunting Horror and spawn it in Museum Halls, if able. Shuffle the encounter discard pile into the encounter deck.".to_owned()),
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 7 },
         },
         CardMetadata {
@@ -3301,7 +3301,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Driven Out".to_owned()),
             back_text: Some("Each investigator who has not resigned is defeated and suffers 1 physical trauma.".to_owned()),
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 7 },
         },
         CardMetadata {
@@ -3312,7 +3312,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Gaining Entrance".to_owned()),
             back_text: Some("<b>If you spent clues to advance:\n</b><blockquote><i>You find the window nearest to the guard and tap it loud enough to get his attention. He gives a startled jump, then shifts open the window. “What do you want?” he asks timidly. You explain the situation to him and tell him he is in grave danger. He warily opens the front door to the Museum, shaking his head. “I wasn’t even supposed to be here today...”</i></blockquote>Choose an investigator to take control of the set-aside Adam Lynch asset. Reveal the Museum Halls. Advance to Act 2a - \"Night at the Museum.\"\n<hr><b>If you successfully performed the [action] ability on the Museum Halls to advance:\n</b><blockquote><i>With great strength, you break down the door to the Museum, making considerable noise as you do. The security guard sees you enter, cries out in fear, and rushes toward the back of the museum.</i></blockquote>The door leading into the Museum Halls is broken. Reveal the Museum Halls. Advance to Act 2a - \"Breaking and Entering.\"".to_owned()),
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: Some(2), victory: None },
         },
         CardMetadata {
@@ -3323,7 +3323,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("The Curator's Fate".to_owned()),
             back_text: Some("Search the encounter deck, discard pile, the void, and all play areas for Hunting Horror, and place it in the Exhibit Hall (<i>Restricted Hall</i>), ready.\nAdvance to Act 3a.".to_owned()),
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -3334,7 +3334,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("The Guard's Fate".to_owned()),
             back_text: Some("Choose an investigator to take control of the set-aside Harold Walsted asset. \nSearch the encounter deck, discard pile, the void, and all play areas for Hunting Horror, and place it in the Exhibit Hall (<i>Restricted Hall</i>), ready.\nAdvance to Act 3a.".to_owned()),
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -3345,7 +3345,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("The Necronomicon".to_owned()),
             back_text: Some("The investigators must decide (choose one):\n- It's too dangerous to keep around. We must destroy it. <b>(→R1)</b>\n- It's too valuable to destroy. We must keep it safe.<b>(→R2)</b>".to_owned()),
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -3356,7 +3356,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::Fixed(2), victory: None },
         },
         CardMetadata {
@@ -3367,7 +3367,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: Some("The entrance to the Museum Halls is locked. You cannot move into the Museum Halls.\nMuseum Entrance gains: \"[action]: Test [combat] (5) to attempt to break down the door to the Museum. If you are successful, immediately advance to Act 1b.\"".to_owned()),
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -3378,7 +3378,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -3389,7 +3389,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
@@ -3400,7 +3400,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -3411,7 +3411,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
@@ -3422,7 +3422,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -3433,7 +3433,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: Some(1) },
         },
         CardMetadata {
@@ -3444,7 +3444,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(1), victory: Some(1) },
         },
         CardMetadata {
@@ -3455,7 +3455,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
@@ -3466,7 +3466,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
@@ -3477,7 +3477,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
@@ -3488,7 +3488,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: Some(1), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3499,7 +3499,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: Some(1), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3510,7 +3510,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: None, slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3521,7 +3521,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 2, evade: 2, damage: 1, horror: 1, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: true, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -3532,7 +3532,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 1 },
         },
         CardMetadata {
@@ -3543,7 +3543,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -3554,7 +3554,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -3565,7 +3565,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -3576,7 +3576,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tmm".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -3587,7 +3587,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Guardian, cost: Some(2), xp: Some(0), slots: vec![Slot::Body], health: Some(1), sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3598,7 +3598,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Guardian, cost: Some(0), xp: Some(3), skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3609,7 +3609,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(2), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3620,7 +3620,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Skill { class: Class::Seeker, xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 2, combat: 0, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: false },
         },
         CardMetadata {
@@ -3631,7 +3631,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Rogue, cost: Some(0), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 2, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3642,7 +3642,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(1), xp: Some(2), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 0 }, is_fast: true, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3653,7 +3653,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Mystic, cost: Some(3), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3664,7 +3664,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(3), xp: Some(3), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 4, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -3675,7 +3675,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Survivor, cost: Some(1), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3686,7 +3686,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Survivor, cost: Some(1), xp: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 2, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3697,7 +3697,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: None, xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3708,7 +3708,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: None, xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3719,7 +3719,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Keep Moving!".to_owned()),
             back_text: Some("Remove the leftmost location from the game (or place it in the victory display if it has Victory X and no clues on it). Each investigator at that location is defeated. Each enemy and asset at that location is discarded.\nDiscard all clues controlled by the investigators.".to_owned()),
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 4 },
         },
         CardMetadata {
@@ -3730,7 +3730,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Don't Stop!".to_owned()),
             back_text: Some("Remove the leftmost location from the game (or place it in the victory display if it has Victory X and no clues on it). Each investigator at that location is defeated. Each enemy and asset at that location is discarded.\nDiscard all clues controlled by the investigators.".to_owned()),
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 3 },
         },
         CardMetadata {
@@ -3741,7 +3741,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("It's Getting Faster!".to_owned()),
             back_text: Some("Remove each of the two leftmost locations from the game (or place it in the victory display if either one has Victory X and no clues on it). Each investigator at those locations is defeated. Each enemy and asset at those locations is discarded.\nDiscard all clues controlled by the investigators.".to_owned()),
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 4 },
         },
         CardMetadata {
@@ -3752,7 +3752,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Nowhere is Safe".to_owned()),
             back_text: Some("Remove each of the two leftmost locations from the game (or place it in the victory display if either one has Victory X and no clues on it). Each investigator at those locations is defeated. Each enemy and asset at those locations is discarded.\nDiscard all clues controlled by the investigators.".to_owned()),
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 3 },
         },
         CardMetadata {
@@ -3763,7 +3763,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Sucked In".to_owned()),
             back_text: Some("Each investigator is immediately defeated and takes 1 mental trauma. <b>(&rarr;R2)</b>".to_owned()),
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 3 },
         },
         CardMetadata {
@@ -3774,7 +3774,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Wings of Steam".to_owned()),
             back_text: Some("<b>The investigator entering the Engine Car reads the following (out loud):\n</b><blockquote><i>A tender car filled with coal blocks your way to the engine cab. Swallowing your fear, you climb out of the nearby window and clamber onto the roof of the train, making your way across the tender car. The steady backward motion of the train makes it difficult for you to keep your footing. As you get close, a winged creature swoops down from above, its body composed of piping hot steam.</i></blockquote>You must decide (choose one):\n- Test [agility] (3) to attempt to dodge the creature. If you fail, you leap too far and barely grip the side of the train, hanging on for dear life. Although you manage to pull yourself up, the experience is terrifying. You suffer 1 mental trauma.\n- Test [combat] (3) to attempt to endure the creature's extreme heat. If you fail, the creature flies through you and the heat burns you. You suffer 1 physical trauma.".to_owned()),
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -3785,7 +3785,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Forward Motion".to_owned()),
             back_text: Some("<b>(&rarr;R1)</b>".to_owned()),
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -3796,7 +3796,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Train Car".to_owned()),
             back_text: Some("Train Car is connected to the locations to the left and right of it.\nYou cannot enter Train Car unless all of the clues on the location to its left have been discovered.".to_owned()),
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(3), victory: None },
         },
         CardMetadata {
@@ -3807,7 +3807,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Train Car".to_owned()),
             back_text: Some("Train Car is connected to the locations to the left and right of it.\nYou cannot enter Train Car unless all of the clues on the location to its left have been discovered.".to_owned()),
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -3818,7 +3818,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Train Car".to_owned()),
             back_text: Some("Train Car is connected to the locations to the left and right of it.\nYou cannot enter Train Car unless all of the clues on the location to its left have been discovered.".to_owned()),
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
@@ -3829,7 +3829,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Train Car".to_owned()),
             back_text: Some("Train Car is connected to the locations to the left and right of it.\nYou cannot enter Train Car unless all of the clues on the location to its left have been discovered.".to_owned()),
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
@@ -3840,7 +3840,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Train Car".to_owned()),
             back_text: Some("Train Car is connected to the locations to the left and right of it.\nYou cannot enter Train Car unless all of the clues on the location to its left have been discovered.".to_owned()),
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -3851,7 +3851,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Train Car".to_owned()),
             back_text: Some("Train Car is connected to the locations to the left and right of it.\nYou cannot enter Train Car unless all of the clues on the location to its left have been discovered.".to_owned()),
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::Fixed(1), victory: None },
         },
         CardMetadata {
@@ -3862,7 +3862,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Train Car".to_owned()),
             back_text: Some("Train Car is connected to the locations to the left and right of it.\nYou cannot enter Train Car unless all of the clues on the location to its left have been discovered.".to_owned()),
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -3873,7 +3873,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Train Car".to_owned()),
             back_text: Some("Train Car is connected to the locations to the left and right of it.\nYou cannot enter Train Car unless all of the clues on the location to its left have been discovered.".to_owned()),
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: Some(1) },
         },
         CardMetadata {
@@ -3884,7 +3884,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: Some("Engine Car is connected to the location to the left of it.\nYou cannot enter Engine Car unless all of the clues on the location to its left have been discovered.".to_owned()),
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
@@ -3895,7 +3895,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: Some("Engine Car is connected to the location to the left of it.\nYou cannot enter Engine Car unless all of the clues on the location to its left have been discovered.".to_owned()),
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
@@ -3906,7 +3906,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: Some("Engine Car is connected to the location to the left of it.\nYou cannot enter Engine Car unless all of the clues on the location to its left have been discovered.".to_owned()),
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
@@ -3917,7 +3917,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tece".to_owned(),
-            weakness: true,
+            weakness: Some(WeaknessKind::Other),
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 4 },
         },
         CardMetadata {
@@ -3928,7 +3928,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: Some(1), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3939,7 +3939,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -3950,7 +3950,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -3961,7 +3961,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 3, evade: 2, damage: 1, horror: 1, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
@@ -3972,7 +3972,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "tece".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 4, evade: 3, damage: 2, horror: 2, health: Some(HealthValue::Fixed(5)), victory: Some(1), spawn: Some(Spawn { location: SpawnLocation::Unrepresented("The location to your right (or your location if there is no location to your right)".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
@@ -3983,7 +3983,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Guardian, cost: Some(1), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3994,7 +3994,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Guardian, cost: None, xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -4005,7 +4005,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Seeker, cost: Some(2), xp: Some(0), skill_icons: SkillIcons { willpower: 1, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -4016,7 +4016,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Seeker, cost: None, xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -4027,7 +4027,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -4038,7 +4038,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Rogue, cost: None, xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -4049,7 +4049,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Skill { class: Class::Mystic, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: false },
         },
         CardMetadata {
@@ -4060,7 +4060,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Mystic, cost: None, xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -4071,7 +4071,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Skill { class: Class::Survivor, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 3 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: true },
         },
         CardMetadata {
@@ -4082,7 +4082,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Survivor, cost: None, xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -4093,7 +4093,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Neutral, cost: Some(0), xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -4104,7 +4104,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("First Blood".to_owned()),
             back_text: Some("If there are 3 or more potential sacrifices, choose one of them at random and place it underneath the agenda deck, without looking at it.".to_owned()),
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 6 },
         },
         CardMetadata {
@@ -4115,7 +4115,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Abandoned Streets".to_owned()),
             back_text: Some("\nIf there are 2 or more potential sacrifices, choose one of them at random and place it underneath the agenda deck, without looking at it.".to_owned()),
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 6 },
         },
         CardMetadata {
@@ -4126,7 +4126,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Blood on the Altar".to_owned()),
             back_text: Some("Each investigator must immediately resign.".to_owned()),
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 7 },
         },
         CardMetadata {
@@ -4137,7 +4137,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("What Was Hidden".to_owned()),
             back_text: Some("Reveal each unrevealed location. \nMove all clues in play (including those on each investigator) to The Hidden Chamber.\nSpawn the set-aside Silas Bishop enemy in The Hidden Chamber.".to_owned()),
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -4148,7 +4148,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Banishing the Creature".to_owned()),
             back_text: Some("If The Necronomicon is in play: <b>(→R2)\n</b>Otherwise: <b>(→R3)</b>".to_owned()),
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -4159,7 +4159,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -4170,7 +4170,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::Fixed(2), victory: None },
         },
         CardMetadata {
@@ -4181,7 +4181,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::Fixed(2), victory: None },
         },
         CardMetadata {
@@ -4192,7 +4192,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::Fixed(3), victory: None },
         },
         CardMetadata {
@@ -4203,7 +4203,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::Fixed(3), victory: None },
         },
         CardMetadata {
@@ -4214,7 +4214,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -4225,7 +4225,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -4236,7 +4236,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -4247,7 +4247,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -4258,7 +4258,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -4269,7 +4269,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -4280,7 +4280,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::Fixed(1), victory: None },
         },
         CardMetadata {
@@ -4291,7 +4291,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::Fixed(1), victory: None },
         },
         CardMetadata {
@@ -4302,7 +4302,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(0), victory: Some(2) },
         },
         CardMetadata {
@@ -4313,7 +4313,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -4324,7 +4324,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 3, evade: 7, damage: 2, horror: 2, health: Some(HealthValue::PerInvestigator(6)), victory: Some(2), spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -4335,7 +4335,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(3), xp: None, slots: vec![Slot::Ally], health: Some(1), sanity: Some(4), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -4346,7 +4346,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(3), xp: None, slots: vec![Slot::Ally], health: Some(3), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 1 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -4357,7 +4357,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -4368,7 +4368,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -4379,7 +4379,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -4390,7 +4390,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -4401,7 +4401,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -4412,7 +4412,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "bota".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 3, evade: 1, damage: 2, horror: 0, health: Some(HealthValue::Fixed(2)), victory: None, spawn: Some(Spawn { location: SpawnLocation::Unrepresented("Any empty location".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: true, prey: Prey::Default, quantity: 3 },
         },
         CardMetadata {
@@ -4423,7 +4423,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Guardian, cost: Some(1), xp: Some(0), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -4434,7 +4434,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Guardian, cost: Some(4), xp: Some(4), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Ammo, count: 3, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -4445,7 +4445,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Skill { class: Class::Seeker, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 3 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: false },
         },
         CardMetadata {
@@ -4456,7 +4456,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Seeker, cost: Some(0), xp: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 2, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -4467,7 +4467,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Skill { class: Class::Rogue, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: false },
         },
         CardMetadata {
@@ -4478,7 +4478,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(2), xp: Some(2), slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -4489,7 +4489,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Skill { class: Class::Rogue, xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: true },
         },
         CardMetadata {
@@ -4500,7 +4500,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(4), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: Some(3), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -4511,7 +4511,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(5), xp: Some(4), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 2, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 3, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -4522,7 +4522,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Survivor, cost: Some(3), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -4533,7 +4533,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Skill { class: Class::Survivor, xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 2, wild: 0 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: false },
         },
         CardMetadata {
@@ -4544,7 +4544,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Calamity Strikes".to_owned()),
             back_text: Some("Shuffle the encounter discard pile into the encounter deck.\nSpawn 1 of the set-aside Brood of Yog-Sothoth enemies at a random location, if able.".to_owned()),
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 5 },
         },
         CardMetadata {
@@ -4555,7 +4555,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("No Place to Hide".to_owned()),
             back_text: Some("Shuffle the encounter discard pile into the encounter deck.\n<b><hr>If there is a set-aside Brood of Yog-Sothoth, the lead investigator reads the following (out loud):</b>\n<blockquote><i>Bleak storm clouds churn overhead and a blanket of rain pelts the countryside. As the downpour grows in intensity, you take refuge in a half-ruined shack nearby. There is a flash of lightning, and in the brief illumination, you spot the outline of something large in the rain. Without warning, the distant trees bend, though nothing seems to be bending them. Moments later, a force with the strength of a truck crashes into your refuge.</i></blockquote>\nSpawn 1 of the set-aside Brood of Yog-Sothoth enemies at the lead investigator's location, if able. Then, each investigator at that location tests [agility] (4). The newly spawned Brood of Yog-Sothoth makes an attack against each investigator who fails this skill test.".to_owned()),
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 6 },
         },
         CardMetadata {
@@ -4566,7 +4566,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Into the Hills".to_owned()),
             back_text: Some("<b>(→R1)</b>".to_owned()),
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 7 },
         },
         CardMetadata {
@@ -4577,7 +4577,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Obtaining the Formula".to_owned()),
             back_text: Some("<b>Check Campaign Log. If Dr. Armitage survived The Dunwich Legacy:</b><blockquote><i>\"There!\" Armitage sighs a breath of relief, jotting down the last phrases of the formula. \"I have translated the last of it.\" He shudders as he hands you the script, the words conjuring forth memories of his battle with the creature. \"I hope this is the last time I'll have to read it,\" he admits. \"But if we do nothing, the end result will be much, much worse.\"</i></blockquote>Each investigator puts into play 1 set-aside Esoteric Formula.\n<b>If Dr. Armitage is listed under \"Sacrificed to Yog-Sothoth\":</b><blockquote><i>Using the information contained within the ruins of the Whateley homestead, you are able to transcribe the remainder of the formula previously used by Dr. Armitage to destroy the beast that plagued Dunwich. However, the endeavor sets you back several hours.</i></blockquote>Each investigator puts into play 1 set-aside Esoteric Formula. Place 1 doom on the current agenda.".to_owned()),
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: Some(2), victory: None },
         },
         CardMetadata {
@@ -4588,7 +4588,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("The Brood is Ended".to_owned()),
             back_text: Some("<b>(→R2)</b>".to_owned()),
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -4599,7 +4599,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::Fixed(1), victory: None },
         },
         CardMetadata {
@@ -4610,7 +4610,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::Fixed(3), victory: None },
         },
         CardMetadata {
@@ -4621,7 +4621,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::Fixed(2), victory: None },
         },
         CardMetadata {
@@ -4632,7 +4632,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -4643,7 +4643,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::Fixed(1), victory: None },
         },
         CardMetadata {
@@ -4654,7 +4654,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::Fixed(3), victory: None },
         },
         CardMetadata {
@@ -4665,7 +4665,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::Fixed(3), victory: None },
         },
         CardMetadata {
@@ -4676,7 +4676,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::Fixed(2), victory: None },
         },
         CardMetadata {
@@ -4687,7 +4687,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
@@ -4698,7 +4698,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
@@ -4709,7 +4709,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::Fixed(2), victory: None },
         },
         CardMetadata {
@@ -4720,7 +4720,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -4731,7 +4731,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -4742,7 +4742,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 6, evade: 3, damage: 2, horror: 2, health: Some(HealthValue::Fixed(1)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 5 },
         },
         CardMetadata {
@@ -4753,7 +4753,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 4 },
         },
         CardMetadata {
@@ -4764,7 +4764,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -4775,7 +4775,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -4786,7 +4786,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "uau".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -4797,7 +4797,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Skill { class: Class::Guardian, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: false },
         },
         CardMetadata {
@@ -4808,7 +4808,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Guardian, cost: Some(0), xp: Some(4), skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -4819,7 +4819,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(1), xp: Some(4), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 4, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -4830,7 +4830,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(1), xp: Some(4), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 3, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -4841,7 +4841,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(1), xp: Some(4), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 2, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 4, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -4852,7 +4852,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(4), xp: Some(0), slots: vec![Slot::Ally], health: Some(3), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -4863,7 +4863,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Rogue, cost: Some(0), xp: Some(3), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: true, deck_limit: 1, play_only_during_turn: true },
         },
         CardMetadata {
@@ -4874,7 +4874,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Mystic, cost: Some(0), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -4885,7 +4885,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Skill { class: Class::Mystic, xp: Some(2), skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: false },
         },
         CardMetadata {
@@ -4896,7 +4896,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(3), xp: Some(3), slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -4907,7 +4907,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Survivor, cost: Some(1), xp: Some(0), skill_icons: SkillIcons { willpower: 1, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -4918,7 +4918,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Skill { class: Class::Survivor, xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: true },
         },
         CardMetadata {
@@ -4929,7 +4929,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(1), xp: Some(0), slots: vec![Slot::Body], health: Some(1), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -4940,7 +4940,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Neutral, cost: Some(3), xp: Some(3), skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -4951,7 +4951,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("The World is Altered".to_owned()),
             back_text: Some("Shuffle the encounter discard pile into the encounter deck.".to_owned()),
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 12 },
         },
         CardMetadata {
@@ -4962,7 +4962,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("The Reward for Servitude".to_owned()),
             back_text: Some("<b>(→R2)</b>".to_owned()),
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 10 },
         },
         CardMetadata {
@@ -4973,7 +4973,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("A Sacrifice Made".to_owned()),
             back_text: Some("Remove all clues from each location in play. The arcane presence masking the path further up the hill has faded. Reveal Ascending Path.".to_owned()),
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: Some(2), victory: None },
         },
         CardMetadata {
@@ -4984,7 +4984,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Trip the Pattern".to_owned()),
             back_text: Some("Remove the set-aside Seth Bishop enemy from the game.".to_owned()),
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -4995,7 +4995,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Turn the Key".to_owned()),
             back_text: Some("Put the set-aside Seth Bishop enemy into play at Sentinel Peak.".to_owned()),
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -5006,7 +5006,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Will the Change".to_owned()),
             back_text: Some("Put the set-aside Seth Bishop enemy into play at Sentinel Peak, with 1 [per_investigator] damage on him.".to_owned()),
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -5017,7 +5017,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Peer Into the Abyss".to_owned()),
             back_text: Some("<b>(→R1)</b>".to_owned()),
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: Some(2), victory: None },
         },
         CardMetadata {
@@ -5028,7 +5028,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -5039,7 +5039,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: Some("The path leading further up the hill is masked. You cannot move into Ascending Path.".to_owned()),
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -5050,7 +5050,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: Some("As an additional cost to move to Sentinel Peak, the investigators must spend 2 [per_investigator] clues, as a group".to_owned()),
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(2), victory: Some(2) },
         },
         CardMetadata {
@@ -5061,7 +5061,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Diverging Path".to_owned()),
             back_text: None,
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -5072,7 +5072,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Diverging Path".to_owned()),
             back_text: None,
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -5083,7 +5083,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Diverging Path".to_owned()),
             back_text: None,
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -5094,7 +5094,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Diverging Path".to_owned()),
             back_text: None,
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -5105,7 +5105,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Altered Path".to_owned()),
             back_text: None,
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -5116,7 +5116,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Altered Path".to_owned()),
             back_text: None,
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -5127,7 +5127,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Altered Path".to_owned()),
             back_text: None,
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -5138,7 +5138,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Altered Path".to_owned()),
             back_text: None,
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -5149,7 +5149,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 5, evade: 5, damage: 1, horror: 1, health: Some(HealthValue::PerInvestigator(3)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: false, retaliate: true, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -5160,7 +5160,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 3, evade: 3, damage: 1, horror: 1, health: Some(HealthValue::Fixed(3)), victory: None, spawn: Some(Spawn { location: SpawnLocation::Specific("02282".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
@@ -5171,7 +5171,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 3, evade: 4, damage: 2, horror: 2, health: Some(HealthValue::Fixed(6)), victory: Some(1), spawn: Some(Spawn { location: SpawnLocation::Unrepresented("Nearest [[Altered]] location".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -5182,7 +5182,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -5193,7 +5193,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -5204,7 +5204,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "wda".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -5215,7 +5215,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Skill { class: Class::Guardian, xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: None, commit_only_to_own_test: false },
         },
         CardMetadata {
@@ -5226,7 +5226,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Guardian, cost: Some(1), xp: Some(5), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -5237,7 +5237,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Guardian, cost: Some(6), xp: Some(5), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Ammo, count: 3, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -5248,7 +5248,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(1), xp: Some(0), slots: vec![Slot::Ally], health: Some(2), sanity: Some(2), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -5259,7 +5259,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Seeker, cost: Some(4), xp: Some(5), skill_icons: SkillIcons { willpower: 1, intellect: 2, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -5270,7 +5270,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(5), xp: Some(4), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Ammo, count: 4, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -5281,7 +5281,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(2), xp: Some(4), slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -5292,7 +5292,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(3), xp: Some(5), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 2, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 4, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -5303,7 +5303,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Event { class: Class::Mystic, cost: Some(1), xp: Some(5), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -5314,7 +5314,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Survivor, cost: Some(4), xp: Some(3), slots: vec![Slot::Ally], health: Some(1), sanity: Some(4), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -5325,7 +5325,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Survivor, cost: Some(2), xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -5336,7 +5336,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: Some(5), slots: vec![Slot::Ally], health: Some(4), sanity: Some(4), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: true, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -5347,7 +5347,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Familiar Echoes".to_owned()),
             back_text: Some("Shuffle the encounter discard pile into the encounter deck. Then, discard cards from the top until a location is discarded. The lead investigator resolves that location's 'revelation' effect.\n<b>Check Campaign Log. If the investigators failed to save the students, read the following:</b>\n\"A huge canine creature, alien to your eyes and yet familiar, appears before you. The creature rushes forward, and you prepare to fend it off, but to your surprise it runs through you, towards a building that wasn't behind you moments before: Derby Hall from the Miskatonic University. The creature bursts through the building's front door and you hear screams of panic from inside, followed by the crunch of snapping bones and cries of pain.\"\nEach investigator takes 1 horror, regardless of their location.".to_owned()),
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 4 },
         },
         CardMetadata {
@@ -5358,7 +5358,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("The Price of Failure".to_owned()),
             back_text: Some("Shuffle the encounter discard pile into the encounter deck. Then, discard cards from the top until a location is discarded. The lead investigator resolves that location's 'revelation' effect.\n<b>Check Campaign Log. If at least one name is recorded under \"Sacrificed to Yog-Sothoth,\" read the following:</b>\n\"You hear a familiar voice calling out to you, and you enter an impossibly shaped building of cracked stone. \"No… don't!\" the voice cries. You rush toward the voice, down a set of steep, narrow stairs. Upon reaching the bottom, you find yourself in the hidden chamber from Dunwich. Bound by shackles, you see those you failed to save, bloodied and maimed. A creature with a man's face feeds from a corpse on the ground. The head of the corpse turns to face you, and a sharp pain stabs your heart.\"\nEach investigator tests [willpower] (X), where X is the number of names recorded under \"Sacrificed to Yog-Sothoth.\" For each point an investigator fails by, that investigator takes 1 damage.".to_owned()),
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 4 },
         },
         CardMetadata {
@@ -5369,7 +5369,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("The Key and the Gate".to_owned()),
             back_text: Some("<b>Revelation</b> - Spawn the set-aside Yog-Sothoth enemy at The Edge of the Universe. If The Edge of the Universe is not in play, spawn it in Another Dimension, instead. Advance to agenda 4a.".to_owned()),
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 6 },
         },
         CardMetadata {
@@ -5380,7 +5380,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Yog-Sothoth Attacks!".to_owned()),
             back_text: Some("In player order, Yog-Sothoth attacks each investigator in play, regardless of Yog-Sothoth's current location. Then, flip this agenda back to its \"a\" side.".to_owned()),
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Agenda { doom_threshold: 2 },
         },
         CardMetadata {
@@ -5391,7 +5391,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("The Nexus of Dimensions".to_owned()),
             back_text: Some("Put the set-aside The Edge of the Universe location into play.".to_owned()),
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: Some(2), victory: None },
         },
         CardMetadata {
@@ -5402,7 +5402,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("The World's Edge".to_owned()),
             back_text: None,
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -5413,7 +5413,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Mending the Tear".to_owned()),
             back_text: Some("Remove the Edge of the Universe from the game.\nPut the set-aside Tear Through Time location into play.".to_owned()),
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: Some(3), victory: None },
         },
         CardMetadata {
@@ -5424,7 +5424,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: Some("Reality Beckons".to_owned()),
             back_text: Some("<b>(→R1)</b>".to_owned()),
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -5435,7 +5435,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 6, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -5446,7 +5446,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: Some("You must have at least 2 clues in order to move to The Edge of the Universe.".to_owned()),
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
@@ -5457,7 +5457,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
@@ -5468,7 +5468,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 4, evade: 0, damage: 1, horror: 5, health: Some(HealthValue::Fixed(4)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: true, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -5479,7 +5479,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::Fixed(1), victory: None },
         },
         CardMetadata {
@@ -5490,7 +5490,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::Fixed(3), victory: None },
         },
         CardMetadata {
@@ -5501,7 +5501,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::Fixed(2), victory: None },
         },
         CardMetadata {
@@ -5512,7 +5512,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -5523,7 +5523,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -5534,7 +5534,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 4, evade: 2, damage: 1, horror: 2, health: Some(HealthValue::Fixed(3)), victory: None, spawn: Some(Spawn { location: SpawnLocation::Unrepresented("Any [[Extradimensional]] location".to_owned()) }), surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 3 },
         },
         CardMetadata {
@@ -5545,7 +5545,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Enemy { fight: 3, evade: 5, damage: 2, horror: 1, health: Some(HealthValue::Fixed(4)), victory: None, spawn: Some(Spawn { location: SpawnLocation::Specific("02320".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: true, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
@@ -5556,7 +5556,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -5567,7 +5567,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -5578,7 +5578,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_name: None,
             back_text: None,
             pack_code: "litas".to_owned(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
     ]

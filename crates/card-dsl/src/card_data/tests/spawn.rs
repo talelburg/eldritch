@@ -31,7 +31,7 @@ fn card_metadata_serde_roundtrip_preserves_spawn_specific() {
         back_name: None,
         back_text: None,
         pack_code: "_synth".into(),
-        weakness: false,
+        weakness: None,
         kind: CardKind::Enemy {
             fight: 3,
             evade: 2,
@@ -65,7 +65,7 @@ fn card_metadata_serde_roundtrip_preserves_spawn_none() {
         back_name: None,
         back_text: None,
         pack_code: "core".into(),
-        weakness: false,
+        weakness: None,
         kind: CardKind::Treachery {
             surge: false,
             peril: false,
