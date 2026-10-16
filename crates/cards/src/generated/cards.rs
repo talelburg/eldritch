@@ -1135,7 +1135,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "core".to_owned(),
             weakness: Some(WeaknessKind::Basic),
-            kind: CardKind::Enemy { fight: 4, evade: 3, damage: 1, horror: 0, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 1 },
+            kind: CardKind::Enemy { fight: 4, evade: 3, damage: 1, horror: 0, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::BearerOnly, quantity: 1 },
         },
         CardMetadata {
             code: "01102".to_owned(),
@@ -1146,7 +1146,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "core".to_owned(),
             weakness: Some(WeaknessKind::Basic),
-            kind: CardKind::Enemy { fight: 2, evade: 3, damage: 1, horror: 0, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 1 },
+            kind: CardKind::Enemy { fight: 2, evade: 3, damage: 1, horror: 0, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::BearerOnly, quantity: 1 },
         },
         CardMetadata {
             code: "01103".to_owned(),
@@ -1157,7 +1157,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "core".to_owned(),
             weakness: Some(WeaknessKind::Basic),
-            kind: CardKind::Enemy { fight: 3, evade: 2, damage: 1, horror: 0, health: Some(HealthValue::Fixed(2)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 1 },
+            kind: CardKind::Enemy { fight: 3, evade: 2, damage: 1, horror: 0, health: Some(HealthValue::Fixed(2)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::BearerOnly, quantity: 1 },
         },
         CardMetadata {
             code: "01105".to_owned(),

@@ -90,19 +90,24 @@ pub(crate) fn disengage_from(cx: &mut Cx, enemy_id: EnemyId, investigator: Inves
 }
 
 /// The investigators a ready, unengaged `enemy_id` may engage where it stands:
-/// the active investigators at its location, in turn order. Empty for an enemy
-/// with no location.
+/// the active investigators at its location that its prey pursues
+/// ([`hunters::pursues`]), in turn order. Empty for an enemy with no location.
 ///
 /// The set the enemy's prey then narrows. Every application of the engagement
-/// rule reads it, so a prey that rules investigators out of engaging altogether
-/// filters here.
+/// rule reads it, so a bearer-only enemy beside only investigators other than
+/// its bearer engages no one (`glossary/Prey.md`: *"ignores all other
+/// investigators while moving and engaging"*).
 pub(super) fn candidates(state: &GameState, enemy_id: EnemyId) -> Vec<InvestigatorId> {
-    state
-        .enemies
-        .get(&enemy_id)
-        .and_then(|enemy| enemy.current_location)
-        .map(|location| cursor::active_investigators_at(state, location))
-        .unwrap_or_default()
+    let Some(enemy) = state.enemies.get(&enemy_id) else {
+        return Vec::new();
+    };
+    let Some(location) = enemy.current_location else {
+        return Vec::new();
+    };
+    cursor::active_investigators_at(state, location)
+        .into_iter()
+        .filter(|id| hunters::pursues(enemy, *id))
+        .collect()
 }
 
 /// Engage a now-unengaged enemy with a co-located investigator per the
@@ -171,7 +176,9 @@ pub(crate) fn engage_ready_enemies(cx: &mut Cx) {
 /// engagement (an enemy engages only one investigator); an enemy that moved here
 /// engaged with the entering investigator is skipped (already engaged). No
 /// player choice is involved — every qualifying enemy engages the one investigator
-/// who entered — so this stays synchronous.
+/// who entered — so this stays synchronous. A bearer-only enemy engages only
+/// its bearer ([`hunters::pursues`]): `glossary/Prey.md`, *"ignores all other
+/// investigators while moving and engaging"*.
 ///
 /// The **Aloof** carve-out (an Aloof enemy does not automatically engage) is not
 /// yet modeled — consistent with the spawn, Hunter, and Upkeep-reengage paths,
@@ -187,7 +194,10 @@ pub(super) fn engage_ready_enemies_on_enter(
         .enemies
         .iter()
         .filter(|(_, e)| {
-            e.current_location == Some(location) && !e.exhausted && e.engaged_with.is_none()
+            e.current_location == Some(location)
+                && !e.exhausted
+                && e.engaged_with.is_none()
+                && hunters::pursues(e, investigator)
         })
         .map(|(id, _)| *id)
         .collect();
