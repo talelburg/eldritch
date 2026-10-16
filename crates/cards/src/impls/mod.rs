@@ -140,6 +140,7 @@ pub mod magnifying_glass;
 pub mod manual_dexterity;
 pub mod medical_texts;
 pub mod mind_over_matter;
+pub mod mob_enforcer;
 pub mod obscuring_fog;
 pub mod old_book_of_lore;
 pub mod on_the_lam;
@@ -304,6 +305,7 @@ pub const ALL: &[CardRecord] = &[
     manual_dexterity::CARD,
     medical_texts::CARD,
     mind_over_matter::CARD,
+    mob_enforcer::CARD,
     obscuring_fog::CARD,
     old_book_of_lore::CARD,
     on_the_lam::CARD,
