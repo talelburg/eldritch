@@ -1,30 +1,29 @@
-//! A treachery weakness drawn from its bearer's deck resolves as an encounter
-//! card (#1121), against a mock registry. `glossary/Weakness.md`:
+//! Weaknesses drawn together from their bearer's deck resolve as encounter
+//! cards in draw order (#1121), against a mock registry. `glossary/Weakness.md`:
 //!
 //! > When an investigator draws a weakness with an encounter cardtype *(for
 //! > example, an enemy or a treachery weakness)*, resolve that card as if it
 //! > were just drawn from the encounter deck.
 //!
-//! Every corpus one-shot treachery weakness (Amnesia 01096, Paranoia 01097,
-//! Abandoned and Alone 01015) is still unimplemented, so two synthetic one-shot
-//! weakness treacheries model the primitive (ADR 0016). Transitional: #1126
-//! implements those cards, and their own tests in `crates/cards/tests` then
-//! cover the path end to end. Its own test binary: the mock registry is built
-//! once per process.
+//! The one-shot weakness treacheries themselves (Amnesia 01096, Paranoia 01097,
+//! Abandoned and Alone 01015) are tested from their printed cards in
+//! `crates/cards/tests` (#1126). What stays here is the ordering of several
+//! weaknesses drawn by one draw, which no core card can stage: none draws more
+//! than one card at once. So two synthetic one-shot weakness treacheries and a
+//! synthetic "draw 2" event model the primitive (ADR 0016). Its own test
+//! binary: the mock registry is built once per process.
 
 use std::sync::LazyLock;
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, WeaknessKind};
 use card_dsl::dsl::{self, InvestigatorTarget};
+use game_core::assert_event_sequence;
 use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::Registries;
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
-use game_core::state::{
-    CardCode, DiscardPile, GameStateBuilder, InvestigatorId, LocationId, Status, Zone,
-};
+use game_core::state::{GameStateBuilder, InvestigatorId, LocationId};
 use game_core::test_support::{self, seat, MockRegistry, Seat, TestSession};
-use game_core::{assert_event_sequence, assert_no_event};
 
 /// A one-shot weakness treachery whose Revelation gains its drawer 1 resource.
 const ONE_SHOT_A: &str = "TEST-DWR-ONE-SHOT-A";
@@ -32,8 +31,6 @@ const ONE_SHOT_A: &str = "TEST-DWR-ONE-SHOT-A";
 const ONE_SHOT_B: &str = "TEST-DWR-ONE-SHOT-B";
 /// A 0-cost event: *"Draw 2 cards."*
 const DRAW_TWO: &str = "TEST-DWR-DRAW-TWO";
-/// Deck filler the registry doesn't know: not a weakness.
-const FILLER: &str = "TEST-DWR-FILLER";
 
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
@@ -113,36 +110,6 @@ fn board(investigator: Seat) -> TestSession {
         .session()
 }
 
-fn draw(session: TestSession) -> TestSession {
-    session.take(&TurnAction::Draw { investigator: INV })
-}
-
-/// **A resolved one-shot weakness goes to its bearer's discard pile**, with an
-/// event naming the deck it was drawn from: it was in limbo while it resolved.
-/// `glossary/Discard_Piles.md`: *"Any time a card is discarded, it is placed
-/// faceup on top of its owner's discard pile."*
-#[test]
-fn a_drawn_one_shot_weakness_resolves_then_goes_to_its_bearers_discard() {
-    let session = draw(board(seat(1).deck([ONE_SHOT_A, FILLER])));
-
-    session.assert_at_turn_menu(INV);
-    let inv = &session.state().investigators[&INV];
-    assert!(inv.hand.is_empty(), "it does not stay in hand");
-    assert_eq!(inv.resources, 1, "its Revelation resolved");
-    assert_eq!(inv.discard, vec![CardCode::new(ONE_SHOT_A)]);
-    assert!(session.state().encounter_discard.is_empty());
-    assert_event_sequence!(
-        session.events(),
-        Event::CardRevealed { code, .. } if code.as_str() == ONE_SHOT_A,
-        Event::ResourcesGained { amount: 1, .. },
-        Event::CardDiscarded {
-            code,
-            from: Zone::Deck,
-            to: DiscardPile::Investigator(to),
-        } if code.as_str() == ONE_SHOT_A && *to == INV,
-    );
-}
-
 /// **Two weaknesses drawn together resolve in draw order** (#1121, Q2): both
 /// are revealed once the draw completes, then the first-drawn card resolves and
 /// is discarded before the second begins. The FAQ lets the player choose the
@@ -171,29 +138,4 @@ fn two_drawn_weaknesses_resolve_in_draw_order() {
         Event::ResourcesGained { amount: 2, .. },
         Event::CardDiscarded { code, .. } if code.as_str() == ONE_SHOT_B,
     );
-}
-
-/// **A bearer defeated mid-resolution takes their weakness with them** (#1121,
-/// ADR 0002). The drawer's deck is empty, so the draw reshuffles their discard
-/// — the weakness — back in, draws it, and then deals the deck-out horror
-/// first, which defeats them before the weakness's Revelation resolves.
-/// `glossary/Drawing_Cards.md`: *"that investigator shuffles his or her discard
-/// pile back into his or her deck, then draws the card, and upon completion of
-/// the entire draw takes one horror."*
-///
-/// The weakness is in limbo, so elimination step 1 removes it from the game
-/// with the rest of its bearer's cards; its Revelation never resolves, and its
-/// disposal does not file it into the discard pile step 1 has already removed.
-#[test]
-fn a_weakness_resolving_when_its_bearer_is_defeated_is_removed_from_the_game() {
-    // Sanity 8: 7 horror already, so the deck-out horror is the eighth.
-    let session = draw(board(seat(1).harm(0, 7).discard([ONE_SHOT_A])));
-
-    let inv = &session.state().investigators[&INV];
-    assert_eq!(inv.status, Status::Defeated);
-    assert_eq!(inv.removed_from_game, vec![CardCode::new(ONE_SHOT_A)]);
-    assert!(inv.discard.is_empty());
-    assert!(inv.hand.is_empty());
-    assert_no_event!(session.events(), Event::ResourcesGained { .. });
-    assert_no_event!(session.events(), Event::CardDiscarded { .. });
 }

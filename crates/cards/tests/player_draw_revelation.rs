@@ -1,15 +1,18 @@
 //! #509: drawing a persistent treachery weakness (Cover Up 01007) from the
 //! player deck during play reveals it and resolves its Revelation — Cover Up
 //! enters the controller's threat area with 3 clues instead of staying in hand.
+//! A drawn one-shot weakness (Paranoia 01097) whose bearer is defeated before
+//! it resolves leaves the game with them.
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
-use game_core::state::{GameStateBuilder, InvestigatorId, LocationId, Owner};
+use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId, Owner, Status};
 use game_core::test_support::{self, seat, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 const COVER_UP: &str = "01007";
+const PARANOIA: &str = "01097";
 const HOLY_ROSARY: &str = "01059"; // a non-weakness asset, for the negative case
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -92,4 +95,42 @@ fn drawing_a_non_weakness_leaves_it_in_hand() {
     assert!(inv.threat_area.is_empty(), "nothing enters the threat area");
     // No reveal for a non-weakness draw.
     assert_no_event!(session.events(), Event::CardRevealed { .. });
+}
+
+/// **A bearer defeated mid-resolution takes their weakness with them** (#1121,
+/// ADR 0002). The drawer's deck is empty, so the draw reshuffles their discard
+/// — Paranoia 01097 — back in, draws it, and then deals the deck-out horror
+/// first, which defeats them before Paranoia's Revelation resolves.
+/// `glossary/Drawing_Cards.md`: *"that investigator shuffles his or her discard
+/// pile back into his or her deck, then draws the card, and upon completion of
+/// the entire draw takes one horror."*
+///
+/// Paranoia is in limbo, so elimination step 1 removes it from the game with
+/// the rest of its bearer's cards; its Revelation never resolves, and its
+/// disposal does not file it into the discard pile step 1 has already removed.
+#[test]
+fn a_weakness_resolving_when_its_bearer_is_defeated_is_removed_from_the_game() {
+    // Sanity 8: 7 horror already, so the deck-out horror is the eighth.
+    let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_seat(
+            seat(1)
+                .at(HERE)
+                .actions(3)
+                .resources(5)
+                .harm(0, 7)
+                .discard([PARANOIA]),
+        )
+        .open_turn(INV)
+        .session()
+        .take(&TurnAction::Draw { investigator: INV });
+
+    let inv = &session.state().investigators[&INV];
+    assert_eq!(inv.status, Status::Defeated);
+    assert_eq!(inv.removed_from_game, vec![CardCode::new(PARANOIA)]);
+    assert!(inv.discard.is_empty());
+    assert!(inv.hand.is_empty());
+    assert_no_event!(session.events(), Event::ResourcesDiscarded { .. });
+    assert_no_event!(session.events(), Event::CardDiscarded { .. });
 }
