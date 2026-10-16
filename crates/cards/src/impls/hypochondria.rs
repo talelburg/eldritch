@@ -9,7 +9,7 @@
 //! The mirror of Psychosis 01099, with damage and horror swapped. Rulings
 //! (<https://arkhamdb.com/card/01100>): *"Any investigator at the same location
 //! as the investigator with Hypochondria in their threat area may trigger the
-//! [action][action] to discard Hypochondria, as per the FAQ [V1.0, section
+//! \[action\]\[action\] to discard Hypochondria, as per the FAQ [V1.0, section
 //! 2.1]."* and *"Triggers even if you assign damage to an asset you control
 //! (you're still taking damage, even if you reassign it)."*
 //!

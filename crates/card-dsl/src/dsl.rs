@@ -955,9 +955,9 @@ pub enum EventPattern {
         scope: HarmPlacedScope,
     },
     /// At least 1 of `kind` was **taken by** the investigator `scope` names —
-    /// the whole deal, dealt and placed (ADR 0009). Psychosis 01099: *"**Forced**
-    /// - After you take 1 or more horror: Take 1 direct damage."* is
-    /// `{ Horror, You }` in the `after` cell.
+    /// the whole deal, dealt and placed (ADR 0009). Psychosis 01099:
+    /// *"**Forced** - After you take 1 or more horror: Take 1 direct damage."*
+    /// is `{ Horror, You }` in the `after` cell.
     ///
     /// Pairs with the engine's `DamageDealt` condition, the outer of the two:
     /// its `after` cell runs once the nested placement has fully resolved
@@ -1136,11 +1136,13 @@ impl EventPattern {
             // "When an enemy attack deals damage to Guard Dog" (01021) is the
             // card's narrowing of the damage *assignment*, not a condition of
             // its own (ADR 0009).
-            EventPattern::EnemyAttackDamagedSelf => TriggeringCondition::DamageDealt,
+            //
+            // "After you take" (Psychosis 01099) waits for the whole deal,
+            // placement included: the outer condition's `after` cell.
+            EventPattern::EnemyAttackDamagedSelf | EventPattern::HarmTaken { .. } => {
+                TriggeringCondition::DamageDealt
+            }
             EventPattern::HarmPlaced { .. } => TriggeringCondition::DamagePlaced,
-            // "After you take" waits for the whole deal, placement included:
-            // the outer condition's `after` cell.
-            EventPattern::HarmTaken { .. } => TriggeringCondition::DamageDealt,
             EventPattern::EnemyAttacks { .. } => TriggeringCondition::EnemyAttacks,
             EventPattern::EnteredPlay => TriggeringCondition::EnteredPlay,
             EventPattern::LeftLocation => TriggeringCondition::LeftLocation,

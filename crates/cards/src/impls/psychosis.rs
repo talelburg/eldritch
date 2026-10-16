@@ -11,7 +11,7 @@
 //! investigator at the bearer's location. Ruling
 //! (<https://arkhamdb.com/card/01099>): *"Any investigator at the same location
 //! as the investigator with Psychosis in their threat area may trigger the
-//! [action][action] to discard Psychosis, as per the FAQ [V1.0, section
+//! \[action\]\[action\] to discard Psychosis, as per the FAQ [V1.0, section
 //! 2.1]."*
 //!
 //! The Forced is [`EventPattern::HarmTaken`] `{ Horror, You }` in the `after`

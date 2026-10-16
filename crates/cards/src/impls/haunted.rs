@@ -18,7 +18,7 @@
 //! The `[action] [action]` discard needs nothing card-local to reach a second
 //! investigator. Its ruling (<https://arkhamdb.com/card/01098>): *"Any
 //! investigator at the same location as the investigator with Haunted in their
-//! threat area may trigger the [action][action] to discard Haunted, as per the
+//! threat area may trigger the \[action\]\[action\] to discard Haunted, as per the
 //! FAQ [V1.0, section 2.1]."* The engine's ability-source reach already admits a
 //! co-located investigator's threat-area encounter-cardtype card, and the
 //! discard goes to the owner's pile (#981).
