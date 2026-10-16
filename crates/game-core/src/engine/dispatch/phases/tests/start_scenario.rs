@@ -83,6 +83,7 @@ fn start_scenario_shuffles_the_encounter_deck() {
     let roster = vec![RosterEntry {
         investigator: CardCode::new(TEST_INV),
         deck: vec![],
+        random_basic_weaknesses: 0,
     }];
 
     let result = engine::seat_and_open(state, &roster, TEST_REGISTRIES);
@@ -108,6 +109,7 @@ fn start_scenario_rejects_unresolvable_roster_entry() {
     let roster = vec![RosterEntry {
         investigator: CardCode::new("01001"),
         deck: vec![],
+        random_basic_weaknesses: 0,
     }];
     let result = engine::seat_and_open(state, &roster, TEST_REGISTRIES);
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));

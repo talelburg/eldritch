@@ -148,7 +148,9 @@ pub(super) fn replace_opening_hand_weaknesses(cx: &mut Cx, investigator: Investi
 /// - **asset weaknesses with a Revelation** (The Necronomicon 01009, #1090).
 ///
 /// Non-persistent treachery weaknesses and weakness enemies are left in hand
-/// untouched, deferred to #514 (none reachable in the corpus draw path).
+/// untouched, deferred to #514. They reach a deck only as random basic
+/// weaknesses (Amnesia 01096, Mob Enforcer 01101, ...), through a roster that
+/// asks for one, which no host does until #782.
 ///
 /// **Only the into-play shape of an asset weakness is handled.** Its
 /// Revelation is resolved and the card removed from hand on the assumption

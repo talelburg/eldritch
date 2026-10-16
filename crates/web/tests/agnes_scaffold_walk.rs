@@ -120,6 +120,7 @@ fn seated_agnes() -> GameState {
             .iter()
             .map(|c| CardCode::new(*c))
             .collect(),
+        random_basic_weaknesses: 0,
     }];
     let started = engine::seat_and_open(state, &roster, REGISTRIES);
     let session = TestSession::new(started.state, REGISTRIES).choose_from_hand(&[]);

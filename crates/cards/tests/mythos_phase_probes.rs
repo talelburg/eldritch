@@ -143,6 +143,7 @@ fn at_mythos_draw(seats: usize) -> TestSession {
         .map(|_| RosterEntry {
             investigator: CardCode::new(TEST_INV),
             deck: vec![],
+            random_basic_weaknesses: 0,
         })
         .collect();
     let session = TestSession::new(

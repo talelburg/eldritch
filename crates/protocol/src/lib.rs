@@ -222,6 +222,7 @@ mod tests {
             roster: vec![RosterEntry {
                 investigator: CardCode::new("01001"),
                 deck: vec![],
+                random_basic_weaknesses: 0,
             }],
         };
         let json = serde_json::to_string(&req).expect("serialize");

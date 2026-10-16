@@ -41,10 +41,15 @@ impl Pick {
 }
 
 /// A one-investigator roster of `investigator` with `deck`.
+///
+/// It asks for no random basic weakness yet: seven of the pool's weaknesses
+/// have no implementation until #781, and the count becomes 1 with the legal
+/// starter decks in #782.
 fn roster(investigator: &str, deck: &[&str]) -> Vec<RosterEntry> {
     vec![RosterEntry {
         investigator: CardCode::new(investigator),
         deck: deck.iter().map(|c| CardCode::new(*c)).collect(),
+        random_basic_weaknesses: 0,
     }]
 }
 

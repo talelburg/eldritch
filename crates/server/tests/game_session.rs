@@ -104,6 +104,7 @@ async fn create_rejects_bad_roster() {
     let bad_roster = vec![RosterEntry {
         investigator: CardCode::new("99999"),
         deck: vec![],
+        random_basic_weaknesses: 0,
     }];
 
     let result = GameSession::create(
