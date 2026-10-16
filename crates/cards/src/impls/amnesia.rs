@@ -28,7 +28,7 @@
 //! Two weaknesses in hand at once is not settled by the ruling, which keeps
 //! only one card, and is unreachable with the core set: Dark Memory 01013 is
 //! its only weakness that stays in hand. The native offers either to keep and
-//! discards the other.
+//! discards the other. #1133 tracks settling it.
 
 use card_dsl::dsl::{self, Ability};
 use game_core::engine::evaluator::EvalContext;

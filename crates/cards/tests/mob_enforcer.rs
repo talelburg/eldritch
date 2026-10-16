@@ -103,6 +103,32 @@ fn drawn_by_its_bearer_it_spawns_engaged_with_them() {
     assert_eq!(enforcer.owner, Owner::Investigator(BEARER));
 }
 
+/// **Drawn in the Upkeep phase's step-4.4 draw, it spawns engaged with its
+/// bearer too**, though another investigator stands with them and leads the
+/// turn order: the drawer, not the lead, is who it engages.
+#[test]
+fn drawn_in_upkeep_it_spawns_engaged_with_its_bearer() {
+    let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_location(test_support::test_location(A.0, "Study"))
+        .with_seat(seat(OTHER.0).at(A).deck([FILLER, FILLER]))
+        .with_seat(seat(BEARER.0).at(A).deck([MOB_ENFORCER, FILLER]))
+        .with_turn_order([OTHER, BEARER])
+        .ending_enemy_phase()
+        .session();
+
+    session.assert_at_encounter_draw();
+    let enforcer = the_enforcer(&session);
+    assert_eq!(enforcer.current_location, Some(A));
+    assert_eq!(enforcer.engaged_with, Some(BEARER));
+    assert_eq!(enforcer.owner, Owner::Investigator(BEARER));
+    assert_event!(
+        session.events(),
+        Event::EnemySpawned { code, engaged_with, .. }
+            if code.as_str() == MOB_ENFORCER && *engaged_with == Some(BEARER)
+    );
+}
+
 /// **The Parley spends 4 resources and discards it to its bearer's discard.**
 /// Discarding is not defeating (the ruling), so it logs no `EnemyDefeated` and
 /// Roland's *"After you defeat an enemy"* reaction is not offered: the session
