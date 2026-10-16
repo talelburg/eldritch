@@ -230,6 +230,7 @@ fn deal_builders_produce_the_kinded_effect_and_round_trip() {
             kind: HarmKind::Damage,
             target: InvestigatorTarget::You,
             amount: IntExpr::Lit(2),
+            direct: false,
         }
     );
     assert_eq!(
@@ -238,6 +239,7 @@ fn deal_builders_produce_the_kinded_effect_and_round_trip() {
             kind: HarmKind::Horror,
             target: InvestigatorTarget::You,
             amount: IntExpr::Lit(3),
+            direct: false,
         }
     );
     for e in [dmg, hor] {

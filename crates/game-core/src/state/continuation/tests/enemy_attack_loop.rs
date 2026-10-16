@@ -19,6 +19,7 @@ fn deal_damage_frame_round_trips_through_serde() {
     state.continuations.push(DealDamageFrame {
         investigator: InvestigatorId(1),
         source: DamageSource::EnemyAttack { enemy: EnemyId(5) },
+        direct: false,
         assignment: Assignment::default(),
         step: DealDamageStep::Distribute {
             remaining_damage: 2,

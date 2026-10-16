@@ -950,12 +950,37 @@ pub enum EventPattern {
     /// named card, so horror the controller assigns to a soaking asset does not
     /// count. Her ruling (<https://arkhamdb.com/card/01004>): *"You cannot use
     /// Agnes' ability if you assign horror to an asset."* The "taken by you"
-    /// scope, which counts assets too (`glossary/You_Your.md`), is #781's.
+    /// scope, which counts assets too, is [`HarmTaken`](Self::HarmTaken).
     HarmPlaced {
         /// Which harm must have been placed, at least 1 of it.
         kind: HarmKind,
         /// Which card it must have been placed on.
         scope: HarmPlacedScope,
+    },
+    /// At least 1 of `kind` was **taken by** the investigator `scope` names —
+    /// the whole deal, dealt and placed (ADR 0009). Psychosis 01099:
+    /// *"**Forced** - After you take 1 or more horror: Take 1 direct damage."*
+    /// is `{ Horror, You }` in the `after` cell.
+    ///
+    /// Pairs with the engine's `DamageDealt` condition, the outer of the two:
+    /// its `after` cell runs once the nested placement has fully resolved
+    /// (`glossary/After.md`), and its `when` cell is the window between
+    /// assigning and placing, where harm is about to be taken but has not been.
+    /// No 7.5 card listens there; Psychopomp's Song 02221 (phase 10) will.
+    ///
+    /// **Taken by, not placed on** (`GLOSSARY.md`, "Taken by you / placed on
+    /// your investigator"): "you" counts the controller's investigator card
+    /// **and every asset they control**. `glossary/You_Your.md` (FAQ 2.12):
+    /// *"When an ability refers to "you" in response to taking damage/horror or
+    /// being dealt damage/horror, it also includes any assets you control."*
+    /// Psychosis's ruling (<https://arkhamdb.com/card/01099>): *"Triggers even
+    /// if you assign horror to an asset you control (you're still taking
+    /// horror, even if you reassign it)."*
+    HarmTaken {
+        /// Which harm must have been taken, at least 1 of it.
+        kind: HarmKind,
+        /// Who must have taken it.
+        scope: HarmTakenScope,
     },
     /// An enemy attacks an investigator (RR p.25 step 3.3) — one triggering
     /// condition in all three cells since #704, so a card declares this pattern
@@ -1114,7 +1139,12 @@ impl EventPattern {
             // "When an enemy attack deals damage to Guard Dog" (01021) is the
             // card's narrowing of the damage *assignment*, not a condition of
             // its own (ADR 0009).
-            EventPattern::EnemyAttackDamagedSelf => TriggeringCondition::DamageDealt,
+            //
+            // "After you take" (Psychosis 01099) waits for the whole deal,
+            // placement included: the outer condition's `after` cell.
+            EventPattern::EnemyAttackDamagedSelf | EventPattern::HarmTaken { .. } => {
+                TriggeringCondition::DamageDealt
+            }
             EventPattern::HarmPlaced { .. } => TriggeringCondition::DamagePlaced,
             EventPattern::EnemyAttacks { .. } => TriggeringCondition::EnemyAttacks,
             EventPattern::EnteredPlay => TriggeringCondition::EnteredPlay,
@@ -1151,6 +1181,7 @@ impl EventPattern {
             | EventPattern::GameEnd
             | EventPattern::EnemyAttackDamagedSelf
             | EventPattern::HarmPlaced { .. }
+            | EventPattern::HarmTaken { .. }
             | EventPattern::EnemyAttacks { .. }
             | EventPattern::EnteredPlay
             | EventPattern::LeftLocation
@@ -1170,6 +1201,16 @@ pub enum HarmPlacedScope {
     /// on Agnes Baker"*, printed on her investigator card. Assets the
     /// controller soaks with are not part of it.
     YourInvestigator,
+}
+
+/// Who an [`EventPattern::HarmTaken`] ability reads the harm taken by. Only
+/// the scope a corpus card prints; scopes beyond "you" wait for their cards.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum HarmTakenScope {
+    /// The controller: their investigator card and every asset they control
+    /// (`glossary/You_Your.md`, FAQ 2.12). Psychosis 01099's and Hypochondria
+    /// 01100's *"After you take"*.
+    You,
 }
 
 /// Which attacking enemy an [`EventPattern::EnemyAttacks`] ability listens
@@ -1300,7 +1341,8 @@ pub enum TriggeringCondition {
     /// weaknesses (a weakness prints one *"when the game ends"*).
     GameEnd,
     /// Damage and/or horror was dealt: announced once it is assigned (step 1
-    /// of dealing it), with the placement as its resolve step (ADR 0009).
+    /// of dealing it), with the placement as its resolve step (ADR 0009). Its
+    /// `after` cell is "after you take" ([`EventPattern::HarmTaken`]).
     DamageDealt,
     /// Assigned damage and/or horror was placed (step 2), nested inside
     /// [`DamageDealt`](Self::DamageDealt)'s resolve step (ADR 0009).
@@ -1976,11 +2018,18 @@ pub enum Effect {
     /// Deal `amount` of `kind` (damage or horror) to the resolved target
     /// investigator, applying defeat if the new total reaches their max health
     /// (damage) or max sanity (horror). `amount == 0` is a no-op (no event, no
-    /// target resolution). Built via the [`deal_damage`] / [`deal_horror`] sugar.
+    /// target resolution). Built via the [`deal_damage`] / [`deal_horror`] sugar,
+    /// or [`deal_direct_damage`] / [`deal_direct_horror`] for direct harm.
     Deal {
         kind: HarmKind,
         target: InvestigatorTarget,
         amount: IntExpr,
+        /// **Direct** harm: no asset is offered the soak, so every point lands
+        /// on the investigator card. `glossary/Direct_Damage_Direct_Horror.md`:
+        /// *"that damage or horror must be assigned directly to the specified
+        /// card, and cannot be assigned or re-assigned elsewhere."* The deal
+        /// still walks both of its triggering conditions.
+        direct: bool,
     },
     /// Deal `amount` direct (non-test) damage to the resolved enemy
     /// `target`, applying the defeat cascade (Beat Cop 01018). Typed (not
@@ -3735,6 +3784,7 @@ pub fn deal_damage(target: InvestigatorTarget, amount: impl Into<IntExpr>) -> Ef
         kind: HarmKind::Damage,
         target,
         amount: amount.into(),
+        direct: false,
     }
 }
 
@@ -3777,6 +3827,31 @@ pub fn deal_horror(target: InvestigatorTarget, amount: impl Into<IntExpr>) -> Ef
         kind: HarmKind::Horror,
         target,
         amount: amount.into(),
+        direct: false,
+    }
+}
+
+/// Build an [`Effect::Deal`] dealing `amount` **direct** damage to `target`:
+/// no asset may soak it.
+#[must_use]
+pub fn deal_direct_damage(target: InvestigatorTarget, amount: impl Into<IntExpr>) -> Effect {
+    Effect::Deal {
+        kind: HarmKind::Damage,
+        target,
+        amount: amount.into(),
+        direct: true,
+    }
+}
+
+/// Build an [`Effect::Deal`] dealing `amount` **direct** horror to `target`:
+/// no asset may soak it.
+#[must_use]
+pub fn deal_direct_horror(target: InvestigatorTarget, amount: impl Into<IntExpr>) -> Effect {
+    Effect::Deal {
+        kind: HarmKind::Horror,
+        target,
+        amount: amount.into(),
+        direct: true,
     }
 }
 

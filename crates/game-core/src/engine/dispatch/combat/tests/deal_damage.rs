@@ -39,6 +39,7 @@ fn resume_damage_distribution_rejects_invalid_pick_and_keeps_frame() {
     state.continuations.push(DealDamageFrame {
         investigator: inv_id,
         source: DamageSource::EnemyAttack { enemy: EnemyId(7) },
+        direct: false,
         assignment: Assignment::default(),
         step: DealDamageStep::Distribute {
             remaining_damage: 2,
@@ -122,6 +123,7 @@ fn deal_damage_cursor_walks_distribute_announce_finish() {
         2,
         0,
         DamageSource::EnemyAttack { enemy: EnemyId(7) },
+        false,
     );
     assert_eq!(out, EngineOutcome::Done);
     assert!(matches!(
@@ -255,6 +257,7 @@ fn the_two_damage_conditions_are_classified_as_the_adr_says() {
     state.continuations.push(DealDamageFrame {
         investigator: InvestigatorId(1),
         source,
+        direct: false,
         assignment: assignment.clone(),
         step: DealDamageStep::Finish,
     });

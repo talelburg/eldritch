@@ -161,6 +161,7 @@ fn resolve_symbol(token: ChaosToken, cx: &SymbolCtx) -> TokenOutcome {
         kind,
         target: InvestigatorTarget::You,
         amount: IntExpr::Lit(1),
+        direct: false,
     };
     match token {
         // TODO(#921): the live-read candidate. X is frozen at reveal here; once

@@ -225,6 +225,7 @@
     "DealDamage": {
       "investigator": 1,
       "source": "Effect",
+      "direct": false,
       "assignment": {
         "investigator_damage": 0,
         "investigator_horror": 0,
@@ -387,6 +388,7 @@
     "DealDamage": {
       "investigator": 1,
       "source": "Effect",
+      "direct": false,
       "assignment": {
         "investigator_damage": 0,
         "investigator_horror": 0,

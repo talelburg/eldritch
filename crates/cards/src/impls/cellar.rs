@@ -63,6 +63,7 @@ mod tests {
                 kind: HarmKind::Damage,
                 target: InvestigatorTarget::You,
                 amount: IntExpr::Lit(1),
+                direct: false,
             }
         ));
     }

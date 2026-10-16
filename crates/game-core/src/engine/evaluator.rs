@@ -910,6 +910,7 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
             kind,
             target,
             amount,
+            direct,
         } => {
             let n = match eval_int_expr(cx.state, cx.cards, &eval_ctx, amount) {
                 Ok(v) => u8::try_from(v.max(0)).unwrap_or(u8::MAX),
@@ -919,7 +920,7 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
                     }
                 }
             };
-            deal_effect(cx, eval_ctx, *kind, *target, n)
+            deal_effect(cx, eval_ctx, *kind, *target, n, *direct)
         }
         Effect::DealDamageToEnemy { target, amount } => {
             deal_damage_to_enemy_effect(cx, eval_ctx, target, *amount)
@@ -2069,15 +2070,16 @@ pub(crate) fn perform_discovery(
     });
 }
 
-/// Resolve [`Effect::Deal`]: ground the target investigator and apply `amount`
-/// of `kind` (damage or horror) via the elimination helpers (which run the
-/// matching defeat check). `amount == 0` is a no-op.
+/// Resolve [`Effect::Deal`]: ground the target investigator and begin a deal
+/// of `amount` `kind` (damage or horror) to them, `direct` if no asset may soak
+/// it. `amount == 0` is a no-op.
 fn deal_effect(
     cx: &mut Cx,
     eval_ctx: EvalContext,
     kind: HarmKind,
     target: InvestigatorTarget,
     amount: u8,
+    direct: bool,
 ) -> EngineOutcome {
     if amount == 0 {
         return EngineOutcome::Done;
@@ -2104,7 +2106,7 @@ fn deal_effect(
         HarmKind::Damage => (amount, 0),
         HarmKind::Horror => (0, amount),
     };
-    combat::begin_deal_damage(cx, target_id, damage, horror, DamageSource::Effect)
+    combat::begin_deal_damage(cx, target_id, damage, horror, DamageSource::Effect, direct)
 }
 
 /// Resolve [`Effect::DealDamageToEnemy`]: ground the chosen enemy (already bound

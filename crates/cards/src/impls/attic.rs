@@ -65,6 +65,7 @@ mod tests {
                 kind: HarmKind::Horror,
                 target: InvestigatorTarget::You,
                 amount: IntExpr::Lit(1),
+                direct: false,
             }
         ));
     }
