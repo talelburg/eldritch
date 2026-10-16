@@ -19,7 +19,7 @@
 //! the card is still regarded as having been drawn, and it is still placed in
 //! the encounter discard pile."*).
 //!
-//! *"Then, take 1 horror"* is dealt through its own `DamageAssigned` and
+//! *"Then, take 1 horror"* is dealt through its own `DamageDealt` and
 //! `DamagePlaced` conditions, which resolve normally while the draw stays
 //! cancelled: the cancel is a flag on the draw condition's own frame (#1055).
 //!
