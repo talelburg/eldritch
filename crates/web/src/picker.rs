@@ -42,9 +42,8 @@ impl Pick {
 
 /// A one-investigator roster of `investigator` with `deck`.
 ///
-/// It asks for no random basic weakness yet: the pool's weaknesses are not all
-/// implemented until #781, and the count becomes 1 with the legal
-/// starter decks in #782.
+/// It asks for no random basic weakness yet: the scaffold decks are not legal
+/// decks, and the count becomes 1 with the legal starter decks in #782.
 fn roster(investigator: &str, deck: &[&str]) -> Vec<RosterEntry> {
     vec![RosterEntry {
         investigator: CardCode::new(investigator),

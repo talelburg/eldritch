@@ -63,7 +63,8 @@ const BACKSTAB: &str = "01051";
 
 /// Every player card #780 shipped, as printed in
 /// `data/arkhamdb-snapshot/pack/core/core.json`: Wendy's Amulet and the ten
-/// Survivor level-0 cards. Abandoned and Alone 01015 moved to #781.
+/// Survivor level-0 cards. Abandoned and Alone 01015 shipped later, in
+/// #781.
 const SLICE_CARDS: [&str; 11] = [
     "01014", // Wendy's Amulet (signature)
     "01072", // Leather Coat
@@ -98,8 +99,8 @@ fn the_scaffold_deck_holds_every_card_the_wendy_slice_shipped() {
 }
 
 /// Wendy's deckbuilding requirements name one copy of each signature:
-/// *"Wendy's Amulet, Abandoned and Alone, 1 random basic weakness."* Abandoned
-/// and Alone is unimplemented until #781, so the deck leaves it out.
+/// *"Wendy's Amulet, Abandoned and Alone, 1 random basic weakness."* The scaffold
+/// leaves Abandoned and Alone out; #782's legal starter deck adds it.
 #[test]
 fn the_scaffold_deck_holds_the_amulet_once_and_no_abandoned_and_alone() {
     let copies = copies();
