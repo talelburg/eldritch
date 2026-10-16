@@ -8,7 +8,7 @@
 //! resolves the card goes to its bearer's discard pile.
 //!
 //! The discard is a card-local native over
-//! [`NativeCx::discard_resources`], a single consumer of "discard resources"
+//! [`NativeCx::discard_all_resources`], a single consumer of "discard resources"
 //! (`docs/agents/standards.md`, the DSL-primitive threshold). It announces
 //! [`ResourcesDiscarded`](game_core::event::Event::ResourcesDiscarded), not a
 //! payment.
@@ -42,12 +42,7 @@ pub fn abilities() -> Vec<Ability> {
 }
 
 fn discard_resources(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
-    let all = cx
-        .state()
-        .investigators
-        .get(&ctx.controller)
-        .map_or(0, |inv| inv.resources);
-    cx.discard_resources(ctx.controller, all);
+    cx.discard_all_resources(ctx.controller);
     EngineOutcome::Done
 }
 

@@ -647,27 +647,7 @@ fn damage_dealt_matches(
         // harm its controller's: that is when the controller has to be
         // carried on the assignment.
         EventPattern::HarmTaken { kind, scope } => match scope {
-            HarmTakenScope::You => {
-                let taken: u32 = match kind {
-                    HarmKind::Damage => {
-                        u32::from(assignment.investigator_damage)
-                            + assignment
-                                .asset_damage
-                                .values()
-                                .map(|n| u32::from(*n))
-                                .sum::<u32>()
-                    }
-                    HarmKind::Horror => {
-                        u32::from(assignment.investigator_horror)
-                            + assignment
-                                .asset_horror
-                                .values()
-                                .map(|n| u32::from(*n))
-                                .sum::<u32>()
-                    }
-                };
-                investigator == controller && taken >= 1
-            }
+            HarmTakenScope::You => investigator == controller && assignment.total(*kind) >= 1,
         },
         _ => unreachable!(
             "trigger_matches: the condition check paired {pattern:?} with DamageDealt, but \

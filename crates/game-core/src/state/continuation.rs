@@ -6,7 +6,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::{iter, mem};
 
 use card_dsl::card_data::SkillKind;
-use card_dsl::dsl::{ActionDesignator, Effect, EventTiming, IntExpr, RevealClause, SkillTestKind};
+use card_dsl::dsl::{
+    ActionDesignator, Effect, EventTiming, HarmKind, IntExpr, RevealClause, SkillTestKind,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::engine::evaluator::{EachBinding, EvalContext};
@@ -84,6 +86,19 @@ pub struct Assignment {
     pub asset_damage: BTreeMap<CardInstanceId, u8>,
     /// instance → horror soaked onto that asset.
     pub asset_horror: BTreeMap<CardInstanceId, u8>,
+}
+
+impl Assignment {
+    /// All the harm of `kind` in this assignment: the investigator's share plus
+    /// every asset's.
+    #[must_use]
+    pub fn total(&self, kind: HarmKind) -> u32 {
+        let (investigator, assets) = match kind {
+            HarmKind::Damage => (self.investigator_damage, &self.asset_damage),
+            HarmKind::Horror => (self.investigator_horror, &self.asset_horror),
+        };
+        u32::from(investigator) + assets.values().map(|n| u32::from(*n)).sum::<u32>()
+    }
 }
 
 /// What is dealing the damage/horror a [`Continuation::DealDamage`] frame is

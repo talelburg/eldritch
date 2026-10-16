@@ -221,11 +221,11 @@ pub(in crate::engine) fn resolve_drawn_weaknesses(
     cx: &mut Cx,
     investigator: InvestigatorId,
     first_drawn: usize,
-) {
+) -> EngineOutcome {
     let reg = cx.cards;
     let matches: Vec<DrawnWeakness> = {
         let Some(inv) = cx.state.investigators.get(&investigator) else {
-            return;
+            return EngineOutcome::Done;
         };
         inv.hand
             .iter()
@@ -241,7 +241,7 @@ pub(in crate::engine) fn resolve_drawn_weaknesses(
             })
             .collect()
     };
-    resolve_weaknesses_from_hand(cx, investigator, &matches);
+    resolve_weaknesses_from_hand(cx, investigator, &matches)
 }
 
 /// A weakness that entered `investigator`'s hand at `hand_index` without
@@ -264,7 +264,7 @@ pub(in crate::engine) fn resolve_weakness_entering_hand(
     cx: &mut Cx,
     investigator: InvestigatorId,
     hand_index: usize,
-) {
+) -> EngineOutcome {
     let Some(code) = cx
         .state
         .investigators
@@ -272,10 +272,10 @@ pub(in crate::engine) fn resolve_weakness_entering_hand(
         .and_then(|inv| inv.hand.get(hand_index))
         .cloned()
     else {
-        return;
+        return EngineOutcome::Done;
     };
     let Some((resolution, card_type)) = weakness_resolution(cx.cards, &code) else {
-        return;
+        return EngineOutcome::Done;
     };
     resolve_weaknesses_from_hand(
         cx,
@@ -286,7 +286,7 @@ pub(in crate::engine) fn resolve_weakness_entering_hand(
             card_type,
             resolution,
         }],
-    );
+    )
 }
 
 /// One weakness in its bearer's hand that is about to resolve.
@@ -306,15 +306,18 @@ struct DrawnWeakness {
 /// [`Event::CardRevealed`] is emitted first, in draw order, because the cards
 /// are revealed together once the draw completes and resolved one after
 /// another.
+///
+/// Returns the first outcome other than [`EngineOutcome::Done`] that beginning
+/// an encounter card gives back, leaving the rest unpushed: a `Rejected` rolls
+/// the whole apply back.
 fn resolve_weaknesses_from_hand(
     cx: &mut Cx,
     investigator: InvestigatorId,
     matches: &[DrawnWeakness],
-) {
+) -> EngineOutcome {
     if matches.is_empty() {
-        return;
+        return EngineOutcome::Done;
     }
-    let reg = cx.cards;
     // Remove from hand high-index-to-low so earlier indices stay valid.
     {
         let inv = cx
@@ -346,27 +349,16 @@ fn resolve_weaknesses_from_hand(
                     weakness.card_type,
                     bearer,
                 );
-                debug_assert_eq!(
-                    outcome,
-                    EngineOutcome::Done,
-                    "a treachery or enemy weakness only pushes its encounter-card frames",
-                );
+                if outcome != EngineOutcome::Done {
+                    return outcome;
+                }
             }
             WeaknessResolution::Revelation => {
-                let effects: Vec<Effect> = (reg.abilities_for)(&weakness.code)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter(|a| a.trigger == Trigger::Revelation)
-                    .map(|a| a.effect)
-                    .collect();
-                evaluator::push_effect(
-                    cx,
-                    &Effect::Seq(effects),
-                    EvalContext::for_revelation(investigator, bearer),
-                );
+                encounter::push_revelation(cx, investigator, &weakness.code, bearer);
             }
         }
     }
+    EngineOutcome::Done
 }
 
 /// Handler for [`EngineRecord::DeckShuffled`].
@@ -619,20 +611,19 @@ pub(crate) fn remove_discard_pile_from_game(cx: &mut Cx, investigator: Investiga
     });
 }
 
-/// Discard up to `amount` resources from `investigator`'s resource pool and
-/// emit [`Event::ResourcesDiscarded`] with the number discarded (Paranoia
-/// 01097: *"Discard all your resources."*). A discard, neither a payment nor a
-/// move, so [`Event::ResourcesPaid`] stays silent. An empty pool, or a missing
+/// Discard every resource in `investigator`'s resource pool and emit
+/// [`Event::ResourcesDiscarded`] with the number discarded (Paranoia 01097:
+/// *"Discard all your resources."*). A discard, neither a payment nor a move,
+/// so [`Event::ResourcesPaid`] stays silent. An empty pool, or a missing
 /// investigator, discards nothing and emits nothing.
-pub(crate) fn discard_resources(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
+pub(crate) fn discard_all_resources(cx: &mut Cx, investigator: InvestigatorId) {
     let Some(inv) = cx.state.investigators.get_mut(&investigator) else {
         return;
     };
-    let discarded = amount.min(inv.resources);
+    let discarded = std::mem::take(&mut inv.resources);
     if discarded == 0 {
         return;
     }
-    inv.resources -= discarded;
     cx.events.push(Event::ResourcesDiscarded {
         investigator,
         amount: discarded,
@@ -816,7 +807,10 @@ pub(in crate::engine) fn draw_with_deckout(
     // state. Only the synchronous `CardRevealed` announcements precede the
     // horror; the Revelations resolve after it. If the horror defeats the
     // drawer, elimination takes a resolving weakness off its frame (ADR 0002).
-    resolve_drawn_weaknesses(cx, investigator, first_drawn);
+    let outcome = resolve_drawn_weaknesses(cx, investigator, first_drawn);
+    if outcome != EngineOutcome::Done {
+        return outcome;
+    }
     if deck_ran_out {
         return combat::deal_harm(cx, investigator, 0, 1);
     }
@@ -1527,11 +1521,10 @@ mod resource_pool_tests {
         assert!(events.is_empty());
     }
 
-    /// Discarding takes up to the amount from the pool and announces the
-    /// number actually discarded: a discard, not a payment, so
-    /// `ResourcesPaid` stays silent.
+    /// Discarding empties the pool and announces the number discarded: a
+    /// discard, not a payment, so `ResourcesPaid` stays silent.
     #[test]
-    fn discard_resources_empties_up_to_the_amount_and_announces_it() {
+    fn discard_all_resources_empties_the_pool_and_announces_it() {
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::default()
             .with_registries(TEST_REGISTRIES)
@@ -1539,7 +1532,7 @@ mod resource_pool_tests {
             .build();
         let mut events = Vec::new();
 
-        discard_resources(&mut Cx::for_test(&mut state, &mut events), id, 5);
+        discard_all_resources(&mut Cx::for_test(&mut state, &mut events), id);
 
         assert_eq!(state.investigators[&id].resources, 0);
         assert_eq!(
@@ -1552,7 +1545,7 @@ mod resource_pool_tests {
     }
 
     #[test]
-    fn discard_resources_from_an_empty_pool_is_silent() {
+    fn discard_all_resources_from_an_empty_pool_is_silent() {
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::default()
             .with_registries(TEST_REGISTRIES)
@@ -1560,7 +1553,7 @@ mod resource_pool_tests {
             .build();
         let mut events = Vec::new();
 
-        discard_resources(&mut Cx::for_test(&mut state, &mut events), id, 5);
+        discard_all_resources(&mut Cx::for_test(&mut state, &mut events), id);
 
         assert_eq!(state.investigators[&id].resources, 0);
         assert!(events.is_empty());

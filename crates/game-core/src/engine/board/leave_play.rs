@@ -262,31 +262,26 @@ pub fn remove_location_from_game(cx: &mut Cx, location: LocationId) -> bool {
     true
 }
 
-/// Discard `code`, an encounter card outside any zone of play, to the encounter
-/// discard, and emit its [`Event::CardDiscarded`] naming `from`.
+/// Discard `code`, a card outside any zone of play, to its `owner`'s discard
+/// pile, and emit its [`Event::CardDiscarded`] naming `from`. Filed through the
+/// same router as the leave-play exits.
 ///
 /// The card never entered play, so it takes no leave-play cascade: it has no
-/// tokens and no attachments. Two cases reach it: a revealed card that cannot
-/// enter play (Obscuring Fog 01168's limit-1 second copy, which the caller
-/// reports `from` [`Zone::LocationAttachment`]), and a card taken off the deck
-/// without being drawn (Rise of the Ghouls 01106's misses, `from`
-/// [`Zone::EncounterDeck`]). Filed through the same router as the leave-play
-/// exits, with the encounter deck as its owner.
-pub fn discard_encounter_card(cx: &mut Cx, code: CardCode, from: Zone) {
-    discard_drawn_card(cx, code, Owner::EncounterDeck, from);
-}
-
-/// Discard `code`, a drawn card outside any zone of play, to its `owner`'s
-/// discard pile, and emit its [`Event::CardDiscarded`] naming `from`.
+/// tokens and no attachments. `glossary/Discard_Piles.md`: *"Any time a card is
+/// discarded, it is placed faceup on top of its owner's discard pile. Encounter
+/// cards are owned by the encounter deck."* The cases that reach it:
 ///
-/// [`discard_encounter_card`] for a card whose owner may be an investigator:
-/// an encounter-cardtype weakness drawn from its bearer's deck resolves as an
-/// encounter card (#1121), and a resolved one-shot then goes to its owner's
-/// pile — `glossary/Discard_Piles.md`: *"Any time a card is discarded, it is
-/// placed faceup on top of its owner's discard pile. Encounter cards are owned
-/// by the encounter deck."* `from` is the
-/// deck the card was drawn from — [`Zone::EncounterDeck`] or [`Zone::Deck`] —
-/// since a card resolving in limbo is in no zone of its own.
+/// - A resolved one-shot, `from` the deck it was drawn from
+///   ([`Zone::EncounterDeck`] or [`Zone::Deck`]), since a card resolving in
+///   limbo is in no zone of its own. An encounter-cardtype weakness drawn from
+///   its bearer's deck resolves as an encounter card (#1121) and goes to its
+///   owner's pile.
+/// - An encounter card that cannot enter play (Obscuring Fog 01168's limit-1
+///   second copy, reported `from` [`Zone::LocationAttachment`]), or one taken
+///   off the deck without being drawn (Rise of the Ghouls 01106's misses, `from`
+///   [`Zone::EncounterDeck`]), both owned by the encounter deck. A native
+///   reaches these through
+///   [`NativeCx::discard_encounter_card`](crate::engine::NativeCx::discard_encounter_card).
 pub fn discard_drawn_card(cx: &mut Cx, code: CardCode, owner: Owner, from: Zone) {
     file(cx, code, owner, from, Exit::Discard);
 }
