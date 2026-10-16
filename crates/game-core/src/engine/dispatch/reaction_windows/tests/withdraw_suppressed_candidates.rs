@@ -157,7 +157,7 @@ fn a_forced_run_in_the_when_cell_empties_too() {
 /// board by the time any window opens, so a prevention flag in flight is
 /// not its to consume. The enemy attack used to be this fixture and #704
 /// migrated it; the soak condition stood in until #727 replaced it with the
-/// coordinator-owned `DamageAssigned`/`DamagePlaced` pair, so `EnteredPlay`
+/// coordinator-owned `DamageDealt`/`DamagePlaced` pair, so `EnteredPlay`
 /// (Research Librarian 01032's window) stands in now.
 #[test]
 fn a_caller_owned_conditions_window_is_untouched() {

@@ -98,8 +98,9 @@ impl<'a> NativeCx<'a> {
 
     /// Deal `damage` + `horror` to `investigator`: the one way a native deals
     /// harm to an investigator. It is dealt the way an enemy attack's is — the
-    /// player is offered the soak, and both `DamageAssigned` and `DamagePlaced`
-    /// are announced — so nothing is placed when this returns.
+    /// player is offered the soak, and `DamageDealt` is announced with
+    /// `DamagePlaced` nested in its resolve step — so nothing is placed when
+    /// this returns.
     ///
     /// **Return its outcome.** The deal runs on a frame above everything the
     /// native leaves beneath it, so work written after this call would run

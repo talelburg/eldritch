@@ -529,7 +529,7 @@ pub(super) fn trigger_matches(
         // self-binding half is the source's, in [`scope_matches`]; this half is
         // the card's narrowing to an enemy attack, which `Effect::Deal` harm
         // (Dynamite Blast, a treachery) does not satisfy.
-        TimingEvent::DamageAssigned { source, .. } => {
+        TimingEvent::DamageDealt { source, .. } => {
             matches!(source, DamageSource::EnemyAttack { .. })
         }
         // "after you succeed/fail a skill test" — narrowed by outcome,
@@ -721,7 +721,7 @@ fn scope_matches(
         // asset the assignment gives damage to. It reads the *event's*
         // assignment, which is what makes an edit in a `when` cell visible to
         // the cells after it (ADR 0009).
-        TimingEvent::DamageAssigned { assignment, .. } => self_scoped(source, |instance| {
+        TimingEvent::DamageDealt { assignment, .. } => self_scoped(source, |instance| {
             assignment.asset_damage.contains_key(&instance)
         }),
         // "After **Research Librarian** enters play" (01032): the entered

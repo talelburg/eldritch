@@ -10,7 +10,7 @@
 //! it before the controller (C5b's soak pipeline). The reaction below is
 //! the *other* half — when that soak sends damage its way, it bites back.
 //!
-//! **Cell: the `when` cell of the `DamageAssigned` condition**, which is the
+//! **Cell: the `when` cell of the `DamageDealt` condition**, which is the
 //! word it prints. Dealing damage is two Rules Reference steps with a named
 //! window between them (`glossary/Dealing_Damage_Horror.md`): damage is
 //! **assigned** — tokens set *"next to the cards that will be taking the
@@ -28,7 +28,7 @@
 //! The reaction is a card-local [`Effect::Native`](card_dsl::dsl::Effect::Native)
 //! handler rather than a shared `Effect` variant: it names the attacking
 //! enemy, which only exists in the firing window's context. It keys off
-//! `EventPattern::EnemyAttackDamagedSelf`, which pairs with `DamageAssigned`
+//! `EventPattern::EnemyAttackDamagedSelf`, which pairs with `DamageDealt`
 //! narrowed to an enemy *attack* and scoped to a card the assignment gives
 //! damage to, and reads the attacker from `EvalContext.attacking_enemy`, which
 //! the window binds. (C5b #237.)
@@ -57,7 +57,7 @@ pub fn abilities() -> Vec<Ability> {
 }
 
 /// "Deal 1 damage to the attacking enemy." The attacker is bound on
-/// `EvalContext.attacking_enemy` by the `DamageAssigned` window whose source is
+/// `EvalContext.attacking_enemy` by the `DamageDealt` window whose source is
 /// an enemy attack — the only context that fires this ability. If it is
 /// somehow absent we reject loudly (matching the card-effect error
 /// policy) rather than panic.
@@ -65,7 +65,7 @@ fn retaliate(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     let Some(enemy) = ctx.attacking_enemy() else {
         return EngineOutcome::Rejected {
             reason: "01021:retaliate fired without attacking_enemy bound — \
-                     only an enemy-attack DamageAssigned window fires this \
+                     only an enemy-attack DamageDealt window fires this \
                      ability"
                 .into(),
         };
@@ -87,7 +87,7 @@ mod tests {
     /// `docs/agents/standards.md` names: the module's verbatim text block above
     /// reads *"[reaction] **When** an enemy attack deals damage to Guard Dog"*,
     /// and `GLOSSARY.md`'s **Timing cell** entry puts *"when"* in the interrupt
-    /// cell — so `EventTiming::When`, on the `DamageAssigned` condition (#722).
+    /// cell — so `EventTiming::When`, on the `DamageDealt` condition (#722).
     #[test]
     fn ability_is_one_when_reaction_native() {
         let abilities = abilities();

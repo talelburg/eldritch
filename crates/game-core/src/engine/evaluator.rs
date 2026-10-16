@@ -152,7 +152,7 @@ pub struct CommittedCardBinding {
     pub index: u8,
 }
 
-/// Attacking enemy bound while resolving a `DamageAssigned` reaction whose
+/// Attacking enemy bound while resolving a `DamageDealt` reaction whose
 /// source is an enemy attack (Guard Dog 01021's retaliate).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EnemyAttackBinding {
@@ -212,7 +212,7 @@ pub struct EvalContext {
     /// `None` outside that window.
     pub discovery: Option<DiscoveryBinding>,
     /// Enemy-attack reaction binding, bound only while resolving an
-    /// enemy-attack `DamageAssigned` reaction. Read via [`Self::attacking_enemy`].
+    /// enemy-attack `DamageDealt` reaction. Read via [`Self::attacking_enemy`].
     /// `None` outside that window. (C5b #237.)
     pub enemy_attack: Option<EnemyAttackBinding>,
     /// Revealed-card binding, bound only while resolving a Revelation. Read via
@@ -372,7 +372,7 @@ impl EvalContext {
     pub fn committed_card(&self) -> Option<u8> {
         self.committed_card.map(|b| b.index)
     }
-    /// Attacking enemy bound while resolving an enemy-attack `DamageAssigned`
+    /// Attacking enemy bound while resolving an enemy-attack `DamageDealt`
     /// reaction (Guard Dog 01021's retaliate).
     #[must_use]
     pub fn attacking_enemy(&self) -> Option<EnemyId> {
@@ -2096,8 +2096,8 @@ fn deal_effect(
     }
     // Dealing damage is the two-step procedure of ADR 0009, walked on a
     // `DealDamage` frame: distribution across soakers + self (#44/K5b-2, prompting
-    // per contested point), then the `DamageAssigned` and `DamagePlaced`
-    // conditions. This call is therefore **tail position** — the effect walk is
+    // per contested point), then the `DamageDealt` condition with
+    // `DamagePlaced` nested in its resolve step. This call is therefore **tail position** — the effect walk is
     // parked on its own frame beneath and `Finish` resumes it.
     let (damage, horror) = match kind {
         HarmKind::Damage => (amount, 0),

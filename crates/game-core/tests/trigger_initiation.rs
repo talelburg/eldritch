@@ -196,7 +196,7 @@ fn recorded_uses(state: &GameState, instance: CardInstanceId, ability: u8) -> u8
 
 /// An enemy attack by [`ATTACKER`] dealing 1 damage to each of `cards`.
 fn enemy_7_damages(cards: &[CardInstanceId]) -> TimingEvent {
-    TimingEvent::DamageAssigned {
+    TimingEvent::DamageDealt {
         source: DamageSource::EnemyAttack { enemy: ATTACKER },
         investigator: INV,
         assignment: Assignment {
