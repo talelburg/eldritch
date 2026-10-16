@@ -152,7 +152,8 @@ mod tests {
                 Effect::Deal {
                     kind: HarmKind::Horror,
                     target: InvestigatorTarget::You,
-                    amount: IntExpr::Lit(2)
+                    amount: IntExpr::Lit(2),
+                    direct: false,
                 }
             ),
             "branch B is the lead taking 2 horror",

@@ -41,6 +41,7 @@ fn deal_damage(step: DealDamageStep) -> Continuation {
     Continuation::DealDamage(DealDamageFrame {
         investigator: InvestigatorId(1),
         source: DamageSource::Effect,
+        direct: false,
         assignment: Assignment::default(),
         step,
     })

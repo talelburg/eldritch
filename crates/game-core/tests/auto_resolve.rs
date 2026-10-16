@@ -138,6 +138,7 @@ fn mock_resolve_symbol(token: ChaosToken, _ctx: &SymbolCtx) -> TokenOutcome {
                 kind: HarmKind::Damage,
                 target: InvestigatorTarget::You,
                 amount: IntExpr::Lit(1),
+                direct: false,
             }),
             ..TokenOutcome::modifier(IntExpr::Lit(0))
         },

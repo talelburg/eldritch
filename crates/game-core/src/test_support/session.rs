@@ -299,6 +299,7 @@ impl TestSession {
                 cx.state.continuations.push(DealDamageFrame {
                     investigator: *investigator,
                     source: *source,
+                    direct: false,
                     assignment: assignment.clone(),
                     step: DealDamageStep::Finish,
                 });

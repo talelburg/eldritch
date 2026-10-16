@@ -52,6 +52,7 @@ fn mock_resolve_symbol(token: ChaosToken, _ctx: &SymbolCtx) -> TokenOutcome {
                 kind: HarmKind::Horror,
                 target: InvestigatorTarget::You,
                 amount: IntExpr::Count(Quantity::SkillTestFailedBy),
+                direct: false,
             }),
             ..TokenOutcome::default()
         },
