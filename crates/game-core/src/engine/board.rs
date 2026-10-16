@@ -68,9 +68,9 @@
 mod leave_play;
 
 pub(crate) use leave_play::{
-    discard_drawn_card, discard_from_play,
-    discard_from_play_on_elimination, place_in_victory_display, redirect_event_to_bottom_of_deck,
-    remove_from_game, remove_from_game_on_elimination, remove_location_from_game,
+    discard_drawn_card, discard_from_play, discard_from_play_on_elimination,
+    place_in_victory_display, redirect_event_to_bottom_of_deck, remove_from_game,
+    remove_from_game_on_elimination, remove_location_from_game,
 };
 pub use leave_play::{LeavingCard, NotLeft};
 

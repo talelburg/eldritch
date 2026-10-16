@@ -417,11 +417,7 @@ impl<'a> NativeCx<'a> {
     /// several goes from the highest index to the lowest. Whether a weakness may
     /// be chosen is the caller's rule: `glossary/Weakness.md`, *"A player may
     /// not optionally choose to discard a weakness card from hand."*
-    pub fn discard_from_hand(
-        &mut self,
-        investigator: InvestigatorId,
-        hand_index: usize,
-    ) {
+    pub fn discard_from_hand(&mut self, investigator: InvestigatorId, hand_index: usize) {
         let in_hand = self
             .state()
             .investigators
