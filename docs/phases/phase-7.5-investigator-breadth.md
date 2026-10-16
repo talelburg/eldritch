@@ -40,7 +40,7 @@ Level-0 core player cards, against `crates/cards/src/impls/`:
 Counting real titles: `01000 "Random Basic Weakness"` is a deckbuilder placeholder
 meaning *"draw one from the weakness pool"* (10 copies over 8 titles; see GLOSSARY.md),
 not a card, so it is excluded from the neutral row, and the draw it stands for is
-#1116's. No neutral card is left: Abandoned and Alone 01015 and the seven basic
+#1116's. No neutral card is left: Abandoned and Alone 01015 and the basic
 weaknesses, Amnesia 01096, Paranoia 01097, Haunted 01098, Psychosis 01099,
 Hypochondria 01100, Mob Enforcer 01101, Silver Twilight Acolyte 01102 and
 Stubborn Detective 01103, are implemented, all of them #781's.
@@ -71,7 +71,7 @@ ship untested by anything but a unit test.
 | #779 | Slice 3 — Daisy Walker 01002 + Tote Bag / Necronomicon + the Tome-restricted extra action, plus the trait-counting `Quantity` (decided in #1000): #1089–#1095, #1097, #1098, landed as PR #1096 |
 | #780 | Slice 4 — Wendy Adams 01005 + Wendy's Amulet + Survivor level 0: #1102–#1113, landed as PR #1114 |
 | #1116 | The random basic weakness draw (roster count, weakness pool, seeded draw at scenario start) + the playable gate on roster codes + `WeaknessKind` in the corpus: #1117, #1118, #1119, landed as PR #1120 |
-| #781 | Abandoned and Alone 01015 + the seven basic weaknesses, with what they needed of the engine: drawn encounter-cardtype weaknesses resolve as encounter cards (closes #514), engagement exits and spawning engaged with the drawer (closes #650), `DamageDealt` around `DamagePlaced`, direct harm and `HarmTaken`, bearer-only prey (closes #654), the one-shot weaknesses, the text-box blank, and the pool test with no exclusions: #1121–#1128, landed as PR #1129 |
+| #781 | Abandoned and Alone 01015 + the basic weaknesses (Amnesia 01096, Paranoia 01097, Haunted 01098, Psychosis 01099, Hypochondria 01100, Mob Enforcer 01101, Silver Twilight Acolyte 01102, Stubborn Detective 01103), with what they needed of the engine: drawn encounter-cardtype weaknesses resolve as encounter cards (closes #514), engagement exits and spawning engaged with the drawer (closes #650), `DamageDealt` around `DamagePlaced`, direct harm and `HarmTaken`, bearer-only prey (closes #654), the one-shot weaknesses, the text-box blank, and the pool test with no exclusions: #1121–#1128, landed as PR #1129 |
 
 #783 (the deckbuilding validator) was filed alongside #782 but milestoned to
 **phase 9**, where its real consumer is.

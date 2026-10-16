@@ -13,8 +13,15 @@
 //! 2.1]."* and *"Triggers even if you assign damage to an asset you control
 //! (you're still taking damage, even if you reassign it)."*
 //!
-//! The Forced is [`EventPattern::HarmTaken`] `{ Damage, You }` in the `after`
-//! cell, and its horror is direct.
+//! The "assets count" half is restated on another card's page
+//! (<https://arkhamdb.com/card/02261>): *"This does mean that, if you activated
+//! the ability on [Beat Cop](https://arkhamdb.com/card/01028) while you had
+//! [Hypochondria](https://arkhamdb.com/card/01100) in your threat area, “you”
+//! would have been dealt damage, and you must then take 1 direct horror."*
+//!
+//! **Cell: the `after` cell of the `DamageDealt` condition**, which is what
+//! "After you take" names: the Forced is [`EventPattern::HarmTaken`]
+//! `{ Damage, You }`, and its horror is direct.
 
 use card_dsl::dsl::{
     self, Ability, EventPattern, EventTiming, HarmKind, HarmTakenScope, IntExpr, InvestigatorTarget,
