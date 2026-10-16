@@ -508,24 +508,27 @@ pub enum Trigger {
     /// of player cards with commit-time effects (e.g. Deduction's
     /// "if your skill test is successful while investigating, …").
     OnCommit,
-    /// Fires when the owning card is revealed from the encounter deck.
+    /// Fires when the owning card is drawn: from the encounter deck, or — a
+    /// weakness — from its bearer's deck.
     ///
     /// Consumers are the real encounter treacheries in
     /// `cards::impls` — Ancient Evils 01166, Rotting Remains 01163,
-    /// Crypt Chill 01167 and the rest. (The synthetic treachery that
-    /// was this trigger's first consumer is gone; #878 retired the
-    /// toy-scenario fixture it lived in.)
+    /// Crypt Chill 01167 and the rest — and the weaknesses that print one:
+    /// Cover Up 01007, Hospital Debts 01011, The Necronomicon 01009. (The
+    /// synthetic treachery that was this trigger's first consumer is gone;
+    /// #878 retired the toy-scenario fixture it lived in.)
     ///
-    /// Distinct from [`OnPlay`](Self::OnPlay) — Revelation fires for engine-driven
-    /// encounter draws (Mythos phase, scenario forced effects), not
-    /// for cards played from a player's hand. Treacheries are never
-    /// in a player's hand; they're encounter-bag content.
+    /// Distinct from [`OnPlay`](Self::OnPlay) — Revelation fires when a card is
+    /// drawn, not when it is played from hand. A treachery or enemy weakness
+    /// drawn from a player deck never stays in hand: it resolves as if just
+    /// drawn from the encounter deck (`glossary/Weakness.md`, #1121), and an
+    /// asset weakness's Revelation resolves as it is drawn.
     ///
-    /// The engine's on-draw resolution path (`encounter_card_revealed`
-    /// in `game-core`'s `engine::dispatch`) runs every
-    /// `Trigger::Revelation` ability on the drawn card through the DSL
-    /// evaluator, then discards the treachery (or hands off to the
-    /// spawn handler for enemies — landing in #127).
+    /// The engine's encounter-card path (`resolve_encounter_card` in
+    /// `game-core`'s `engine::dispatch`) runs every `Trigger::Revelation`
+    /// ability on the drawn card through the DSL evaluator as the resolve step
+    /// of its draw condition, then disposes of the card: discarding a one-shot
+    /// treachery to its owner's discard pile, or spawning an enemy.
     Revelation,
     /// Fires when the controller activates the ability via
     /// `PlayerAction::ActivateAbility` (in `game_core::action`).

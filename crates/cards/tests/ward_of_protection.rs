@@ -18,9 +18,10 @@
 //!   your threat area. …"*
 //! - Swarm of Rats 01159, an enemy: *"Hunter."*
 //!
-//! Ward's narrowing to a non-weakness card is not reached here: a weakness
-//! treachery comes from the player deck, which reaches the draw condition only
-//! under #514. The narrowing is covered by `CardFilter::matches`'s unit tests.
+//! Ward's narrowing to a non-weakness card is reached by a weakness treachery
+//! drawn from the player deck, which resolves through the same draw condition
+//! (#1121): Cover Up 01007, *"**Revelation** - Put Cover Up into play in your
+//! threat area, with 3 clues on it. …"*
 //!
 //! Runs against `cards::TEST_REGISTRIES`.
 
@@ -48,6 +49,7 @@ const DRAWN_TO_THE_FLAME: &str = "01064";
 const ANCIENT_EVILS: &str = "01166";
 const FROZEN_IN_FEAR: &str = "01164";
 const SWARM_OF_RATS: &str = "01159";
+const COVER_UP: &str = "01007";
 /// Deck filler, for Heirloom's draw.
 const GUTS: &str = "01089";
 
@@ -192,6 +194,30 @@ fn drawing_an_enemy_does_not_offer_ward() {
         "Ward was never played",
     );
     assert_eq!(s.state().enemies.len(), 1, "the enemy spawned");
+}
+
+/// *"…a **non-weakness** treachery card"*: Cover Up 01007, a treachery
+/// weakness drawn from the player deck, opens the same draw condition as an
+/// encounter-deck treachery (#1121), and Ward's filter turns it away. Cover Up's
+/// *"**Revelation** - Put Cover Up into play in your threat area, with 3 clues
+/// on it."* resolves uncancelled.
+#[test]
+fn drawing_a_weakness_treachery_does_not_offer_ward() {
+    let s = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_location(test_support::test_location(HERE.0, "Here"))
+        .with_seat(warded(1).actions(3).deck([COVER_UP, GUTS]))
+        .open_turn(INV)
+        .session()
+        .take(&TurnAction::Draw { investigator: INV });
+
+    s.assert_at_turn_menu(INV);
+    let inv = &s.state().investigators[&INV];
+    assert_eq!(inv.hand, vec![CardCode::new(WARD)], "Ward was never played");
+    assert!(
+        inv.threat_area.iter().any(|c| c.code.as_str() == COVER_UP),
+        "its Revelation resolved",
+    );
 }
 
 /// *"…when **you** draw"*: another investigator's draw does not offer it.

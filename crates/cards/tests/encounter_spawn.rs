@@ -16,7 +16,8 @@
 //!   resolves.
 //!
 //! Default-spawn and location-not-in-play coverage lives in
-//! `enemy_spawn_no_location.rs` and `enemy_spawn_unrepresented.rs`.
+//! `spawn_engaged_with_drawer.rs`, `enemy_spawn_no_location.rs` and
+//! `enemy_spawn_unrepresented.rs`.
 //!
 //! Lives in `crates/cards/tests/` (ADR 0016) because it runs against
 //! `cards::TEST_REGISTRIES`: `game-core` cannot reach the corpus by crate

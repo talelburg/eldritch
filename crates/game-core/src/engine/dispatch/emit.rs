@@ -263,7 +263,11 @@ pub enum TimingEvent {
     /// (`Appendix_II_Timing_and_Gameplay.md`), a card effect's draw (Drawn to
     /// the Flame 01064), or a scenario's (Rise of the Ghouls 01106's *"The lead
     /// investigator draws that enemy."*). Every one of them resolves the card
-    /// through `encounter::resolve_encounter_card`, which announces this.
+    /// through `encounter::resolve_encounter_card`, which announces this. So
+    /// does a treachery or enemy weakness drawn from its bearer's deck, which
+    /// resolves *"as if it were just drawn from the encounter deck"*
+    /// (`glossary/Weakness.md`, #1121); a trigger that must not see it filters
+    /// on *"non-weakness"*, as Ward of Protection does.
     ///
     /// **Coordinator-owned**, born so (#1056): its resolve step is the drawn
     /// card's revelation, step 3 of 1.4's *"3. Resolve the revelation ability

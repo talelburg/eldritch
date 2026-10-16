@@ -135,6 +135,7 @@ fn spawn_enemy_reads_combat_stats_and_keywords_from_metadata() {
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
+        Owner::EncounterDeck,
     );
 
     let enemy = state.enemies.values().next().expect("enemy spawned");
@@ -177,6 +178,7 @@ fn spawn_enemy_scales_per_investigator_health_by_investigator_count() {
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
+        Owner::EncounterDeck,
     );
 
     let enemy = state.enemies.values().next().expect("enemy spawned");
@@ -212,6 +214,7 @@ fn spawn_enemy_reads_victory_from_metadata() {
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
+        Owner::EncounterDeck,
     );
 
     let enemy = state.enemies.values().next().expect("enemy spawned");
@@ -240,6 +243,7 @@ fn spawn_at_specific_location_with_one_investigator_engages_them() {
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
+        Owner::EncounterDeck,
     );
 
     assert!(matches!(outcome, EngineOutcome::Done), "{outcome:?}");
@@ -280,6 +284,7 @@ fn spawn_at_specific_location_with_no_investigators_leaves_unengaged() {
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
+        Owner::EncounterDeck,
     );
 
     assert!(matches!(outcome, EngineOutcome::Done), "{outcome:?}");
@@ -309,6 +314,7 @@ fn spawn_at_specific_location_discards_when_location_not_in_play() {
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
+        Owner::EncounterDeck,
     );
     assert_eq!(outcome, EngineOutcome::Done, "discard is not a rejection");
     assert!(state.enemies.is_empty(), "the enemy does not spawn");
@@ -345,6 +351,7 @@ fn spawn_with_unrepresented_instruction_rejects_without_mutating() {
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
+        Owner::EncounterDeck,
     );
 
     let EngineOutcome::Rejected { reason } = &outcome else {
@@ -383,6 +390,7 @@ fn spawn_with_no_instruction_places_at_drawing_investigators_location() {
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
+        Owner::EncounterDeck,
     );
 
     assert!(matches!(outcome, EngineOutcome::Done), "{outcome:?}");
@@ -411,6 +419,7 @@ fn spawn_with_no_instruction_rejects_when_drawing_investigator_has_no_location()
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
+        Owner::EncounterDeck,
     );
     match outcome {
         EngineOutcome::Rejected { reason } => {
@@ -443,10 +452,57 @@ fn spawn_engages_sole_colocated_investigator() {
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
+        Owner::EncounterDeck,
     );
     assert_eq!(outcome, EngineOutcome::Done);
     let spawned = state.enemies.values().next().expect("one enemy");
     assert_eq!(spawned.engaged_with, Some(InvestigatorId(1)));
+}
+
+#[test]
+fn no_instruction_spawn_engages_the_drawer_without_resolving_prey() {
+    // `glossary/Spawn.md`: "If the enemy does not have a "Spawn –"
+    // instruction, the investigator drawing the enemy spawns it engaged with
+    // him/her". Two investigators share the location and the drawer is not the
+    // lead, so a prey resolution would tie and prompt the lead (#650).
+    let mut loc = test_support::test_location(HALL.0, "Hall");
+    loc.code = CardCode("_loc".into());
+    let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_phase(Phase::Mythos)
+        .with_location(loc)
+        .with_seat(test_support::seat(1).at(HALL))
+        .with_seat(test_support::seat(2).at(HALL))
+        .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+        .with_mythos_draw_remaining([InvestigatorId(2)])
+        .build();
+    let metadata = synth_enemy_metadata(None);
+    let mut events = Vec::new();
+
+    let outcome = spawn_enemy(
+        &mut Cx::for_test(&mut state, &mut events),
+        InvestigatorId(2),
+        CardCode("_synth_enemy".into()),
+        &metadata,
+        Owner::EncounterDeck,
+    );
+
+    assert_eq!(outcome, EngineOutcome::Done, "no prompt for the lead");
+    assert!(
+        !matches!(
+            state.continuations.top(),
+            Some(Continuation::SpawnEngage(_))
+        ),
+        "no spawn-engage pick is pending",
+    );
+    let spawned = state.enemies.values().next().expect("one enemy");
+    assert_eq!(spawned.current_location, Some(HALL));
+    assert_eq!(spawned.engaged_with, Some(InvestigatorId(2)));
+    assert_event_sequence!(
+        events,
+        Event::EnemySpawned { engaged_with, .. } if *engaged_with == Some(InvestigatorId(2)),
+        Event::EnemyEngaged { investigator, .. } if *investigator == InvestigatorId(2),
+    );
 }
 
 #[test]
@@ -462,13 +518,18 @@ fn spawn_tie_suspends_for_lead_pick() {
         .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
         .with_mythos_draw_remaining([InvestigatorId(1)])
         .build();
-    let metadata = synth_enemy_metadata(None);
+    // A `Specific` spawn: only an enemy that spawns *at a location* resolves
+    // prey among the investigators there (#650).
+    let metadata = synth_enemy_metadata(Some(Spawn {
+        location: SpawnLocation::Specific("_loc".into()),
+    }));
     let mut events = Vec::new();
     let outcome = spawn_enemy(
         &mut Cx::for_test(&mut state, &mut events),
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
+        Owner::EncounterDeck,
     );
     assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
     assert!(matches!(
@@ -495,13 +556,18 @@ fn resume_spawn_engage_rejects_bad_pick_and_preserves_pending() {
         .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
         .with_mythos_draw_remaining([InvestigatorId(1)])
         .build();
-    let metadata = synth_enemy_metadata(None);
+    // A `Specific` spawn: only an enemy that spawns *at a location* resolves
+    // prey among the investigators there (#650).
+    let metadata = synth_enemy_metadata(Some(Spawn {
+        location: SpawnLocation::Specific("_loc".into()),
+    }));
     let mut events = Vec::new();
     let _ = spawn_enemy(
         &mut Cx::for_test(&mut state, &mut events),
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
+        Owner::EncounterDeck,
     );
     assert!(matches!(
         state.continuations.top(),
@@ -549,12 +615,14 @@ fn spawn_mints_distinct_enemy_ids() {
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
+        Owner::EncounterDeck,
     );
     let _ = spawn_enemy(
         &mut Cx::for_test(&mut state, &mut events),
         InvestigatorId(1),
         CardCode("_synth_enemy".into()),
         &metadata,
+        Owner::EncounterDeck,
     );
     assert_eq!(
         state.enemies.len(),

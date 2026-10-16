@@ -357,6 +357,7 @@
   {
     "EncounterCard": {
       "card": "01116",
+      "owner": "EncounterDeck",
       "disposition": {
         "Spawn": {
           "investigator": 1

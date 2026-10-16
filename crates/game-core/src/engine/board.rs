@@ -58,7 +58,9 @@
 //!
 //! `place_in_victory_display` is the victory display's exit, which a defeated
 //! Victory enemy takes. `discard_encounter_card` files an encounter card that
-//! never entered play through the same router.
+//! never entered play through the same router, and `discard_drawn_card` does
+//! the same for a drawn card whose owner may be an investigator (a resolved
+//! one-shot weakness, #1121).
 //!
 //! The exits are crate-private. A card-local native takes them as methods on
 //! [`NativeCx`](crate::engine::NativeCx), such as
@@ -67,9 +69,9 @@
 mod leave_play;
 
 pub(crate) use leave_play::{
-    discard_encounter_card, discard_from_play, discard_from_play_on_elimination,
-    place_in_victory_display, redirect_event_to_bottom_of_deck, remove_from_game,
-    remove_from_game_on_elimination, remove_location_from_game,
+    discard_drawn_card, discard_encounter_card, discard_from_play,
+    discard_from_play_on_elimination, place_in_victory_display, redirect_event_to_bottom_of_deck,
+    remove_from_game, remove_from_game_on_elimination, remove_location_from_game,
 };
 pub use leave_play::{LeavingCard, NotLeft};
 

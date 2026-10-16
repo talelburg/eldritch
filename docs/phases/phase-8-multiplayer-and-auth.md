@@ -2,16 +2,16 @@
 
 ## Status
 
-📐 Architecture only; not yet ordered. Twelve issues are milestoned here as
+📐 Architecture only; not yet ordered. Eleven issues are milestoned here as
 **deferrals** — behaviour that is a no-op or unobservable with one investigator
 (the [milestone query](https://github.com/talelburg/eldritch/milestone/9) is
 authoritative): #65 (other-investigator commits), #146 (turn-order choice),
 #151 (lead-investigator prey tie), #153 (clue allocation on advance), #359
 (Medical Texts target ordering), #381 (reaction windows scoped to the
 controller), #409 (failed Fight redirects damage), #573
-(acts drop `clues_fixed`), #581 (no seat/identity on the wire), #650 (no-Spawn
-enemy prey-resolves), #654 (*Prey – Bearer only*), #662 (barricade-stranded
-enemy re-engagement). A thirteenth is not a deferral but the design ticket that
+(acts drop `clues_fixed`), #581 (no seat/identity on the wire), #654 (*Prey –
+Bearer only*), #662 (barricade-stranded enemy re-engagement). A twelfth is not a
+deferral but the design ticket that
 unblocks several of them — #863, solo-with-2 UX, filed when Phase 7 closed.
 **Scoping proper is now due**: Phase 7 closed 2026-09-03.
 

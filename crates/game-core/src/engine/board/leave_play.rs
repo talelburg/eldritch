@@ -273,7 +273,22 @@ pub fn remove_location_from_game(cx: &mut Cx, location: LocationId) -> bool {
 /// [`Zone::EncounterDeck`]). Filed through the same router as the leave-play
 /// exits, with the encounter deck as its owner.
 pub fn discard_encounter_card(cx: &mut Cx, code: CardCode, from: Zone) {
-    file(cx, code, Owner::EncounterDeck, from, Exit::Discard);
+    discard_drawn_card(cx, code, Owner::EncounterDeck, from);
+}
+
+/// Discard `code`, a drawn card outside any zone of play, to its `owner`'s
+/// discard pile, and emit its [`Event::CardDiscarded`] naming `from`.
+///
+/// [`discard_encounter_card`] for a card whose owner may be an investigator:
+/// an encounter-cardtype weakness drawn from its bearer's deck resolves as an
+/// encounter card (#1121), and a resolved one-shot then goes to its owner's
+/// pile — `glossary/Discard_Piles.md`: *"Any time a card is discarded, it is
+/// placed faceup on top of its owner's discard pile. Encounter cards are owned
+/// by the encounter deck."* `from` is the
+/// deck the card was drawn from — [`Zone::EncounterDeck`] or [`Zone::Deck`] —
+/// since a card resolving in limbo is in no zone of its own.
+pub fn discard_drawn_card(cx: &mut Cx, code: CardCode, owner: Owner, from: Zone) {
+    file(cx, code, owner, from, Exit::Discard);
 }
 
 /// Why a card an exit was asked to take did not leave play. Nothing changed

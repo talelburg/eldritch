@@ -48,6 +48,29 @@ fn engage_action_engages_unengaged_enemy_at_location() {
 }
 
 #[test]
+fn engage_action_takes_an_enemy_from_another_investigator_disengaging_them_first() {
+    // `glossary/Engage_Action.md`: "The enemy simultaneously disengages from
+    // the previous investigator and engages the investigator performing the
+    // action." Both halves are announced, the disengagement first (#656).
+    let other = InvestigatorId(2);
+    let session = engage_board(seat(1).at(HERE))
+        .with_seat(seat(2).at(HERE))
+        .with_enemy_engaged(test_support::test_enemy(TARGET.0, "Engaged Ghoul"), other)
+        .session()
+        .take(&ENGAGE);
+
+    session.assert_at_turn_menu(INV);
+    assert_eq!(session.state().enemies[&TARGET].engaged_with, Some(INV));
+    assert_event_sequence!(
+        session.events(),
+        Event::EnemyDisengaged { enemy, investigator }
+            if *enemy == TARGET && *investigator == other,
+        Event::EnemyEngaged { enemy, investigator }
+            if *enemy == TARGET && *investigator == INV,
+    );
+}
+
+#[test]
 fn engage_action_provokes_aoo_from_other_engaged_enemy_not_the_target() {
     let session = engage_board(seat(1).at(HERE))
         // Not engaged yet.
