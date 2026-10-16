@@ -2287,7 +2287,9 @@ pub enum Effect {
     /// treachery to the encounter discard, a played Barricade 01038 to its
     /// player's. Used by persistent treacheries' `Forced` self-discard
     /// abilities (Frozen in Fear 01164, Dissonant Voices 01165, Obscuring Fog
-    /// 01168). Rejects if there is no source or the instance isn't in play.
+    /// 01168). An enemy source discards the enemy itself, by its owner and
+    /// without defeating it (Mob Enforcer 01101's *"Discard Mob Enforcer."*).
+    /// Rejects if there is no source or it isn't in play.
     DiscardSelf,
     /// Cancel the current cancellable game impact — the subject of the
     /// `when`-cell window this effect resolves inside. Flags that triggering

@@ -224,8 +224,9 @@ pub struct Spawn {
 /// covers every *comparative* prey line as a `{ direction, measure }`
 /// pair: Ghoul Priest's `Highest [combat]` (`Highest` +
 /// `Skill(Combat)`) and Ravenous Ghoul's "Lowest remaining health"
-/// (`Lowest` + `RemainingHealth`). `#[non_exhaustive]` leaves room for
-/// genuinely non-comparative future shapes (e.g. "Bearer only").
+/// (`Lowest` + `RemainingHealth`). [`BearerOnly`](Self::BearerOnly) is the
+/// one non-comparative shape: it rules investigators out rather than ranking
+/// them. `#[non_exhaustive]` leaves room for more such shapes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum Prey {
@@ -241,6 +242,14 @@ pub enum Prey {
         /// The quantity investigators are ranked by.
         measure: PreyMeasure,
     },
+    /// "Prey - Bearer only." (Mob Enforcer 01101, Silver Twilight Acolyte
+    /// 01102, Stubborn Detective 01103). `glossary/Prey.md`: *"If an enemy's
+    /// prey instructions contain the word "only," that enemy only moves
+    /// towards and engages that investigator (as if it were the only
+    /// investigator in play), and ignores all other investigators while
+    /// moving and engaging."* The bearer is the enemy's owner, so the engine
+    /// reads it from the enemy rather than from this variant.
+    BearerOnly,
 }
 
 /// Whether a [`Prey::Ranked`] instruction prefers the highest or lowest

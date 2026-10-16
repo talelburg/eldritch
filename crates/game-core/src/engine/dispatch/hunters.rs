@@ -13,7 +13,7 @@ use crate::engine::{pathfinding, Cx};
 use crate::event::Event;
 use crate::state::{
     Continuation, Enemy, EnemyId, GameState, HunterChoice, Investigator, InvestigatorId,
-    LocationId, SpawnEngagePending, Status,
+    LocationId, Owner, SpawnEngagePending, Status,
 };
 
 /// Result of narrowing a candidate investigator set by a prey
@@ -69,12 +69,36 @@ fn measure_value(
     (value - damage).max(0)
 }
 
+/// Whether `enemy`'s prey lets it move toward or engage `investigator` at all,
+/// before any ranking: false only for a [`Prey::BearerOnly`] enemy and an
+/// investigator other than its bearer.
+///
+/// `glossary/Prey.md`: *"If an enemy's prey instructions contain the word
+/// "only," that enemy only moves towards and engages that investigator (as if
+/// it were the only investigator in play), and ignores all other investigators
+/// while moving and engaging. Other investigators may use the engage action or
+/// card abilities to engage the enemy."* So the Engage action does not read
+/// this. The bearer is the enemy's owner (`GLOSSARY.md`, Owner / Controller);
+/// an enemy owned by no investigator has no bearer to single out and pursues
+/// everyone, as [`Prey::Default`] does.
+///
+/// It is a filter rather than a ranking because "as if it were the only
+/// investigator in play" rules the others out of *nearest* too, so it runs
+/// before the distance calculation, not inside [`resolve_prey`].
+pub(super) fn pursues(enemy: &Enemy, investigator: InvestigatorId) -> bool {
+    match (enemy.prey, enemy.owner) {
+        (Prey::BearerOnly, Owner::Investigator(bearer)) => investigator == bearer,
+        _ => true,
+    }
+}
+
 /// Narrow `candidates` by `prey`. `Default` treats all candidates as
 /// equal; `Ranked` keeps those with the most extreme measure value (max
 /// for `Highest`, min for `Lowest`). Returns `One` (single best), `Tie`
 /// (2+ best — lead decides), or `None` (empty candidate set). Caller
 /// supplies the candidate set (equidistant-nearest investigators for
-/// movement; co-located investigators for engagement).
+/// movement; co-located investigators for engagement), already narrowed by
+/// [`pursues`].
 pub(super) fn resolve_prey(
     state: &GameState,
     registry: &CardRegistry,
@@ -85,7 +109,9 @@ pub(super) fn resolve_prey(
         return PreyResolution::None;
     }
     let best: Vec<InvestigatorId> = match prey {
-        Prey::Default => candidates.to_vec(),
+        // `BearerOnly` has already ruled everyone but the bearer out of
+        // `candidates` (`pursues`); what is left is equal.
+        Prey::Default | Prey::BearerOnly => candidates.to_vec(),
         Prey::Ranked { direction, measure } => {
             let scored: Vec<(InvestigatorId, i32)> = candidates
                 .iter()
@@ -111,8 +137,8 @@ pub(super) fn resolve_prey(
         }
         // `Prey` is #[non_exhaustive]; new *comparative* measures are
         // added to `PreyMeasure` (compile-forced — exhaustive), so this
-        // arm only guards genuinely new non-`Ranked` shapes (e.g.
-        // "Bearer only"), which must be wired here when they land.
+        // arm only guards genuinely new non-`Ranked` shapes, which must be
+        // wired here when they land.
         _ => unreachable!(
             "resolve_prey: unrecognised Prey variant {prey:?} — \
              card-impl bug or new variant needs engine wiring"
@@ -179,7 +205,9 @@ fn hunter_destinations(
         let Some(inv) = state.investigators.get(id) else {
             continue;
         };
-        if inv.status != Status::Active {
+        // Before the distance, so a nearer non-bearer cannot hide a farther
+        // bearer from a bearer-only hunter (`pursues`).
+        if inv.status != Status::Active || !pursues(enemy, *id) {
             continue;
         }
         let Some(loc) = inv.current_location else {
@@ -326,8 +354,16 @@ fn process_one_hunter(cx: &mut Cx, enemy_id: EnemyId) -> Option<HunterChoice> {
         .unwrap_or_else(|| {
             unreachable!("process_one_hunter: enemy {enemy_id:?} has no location; state corruption")
         });
-    let here = cursor::active_investigators_at(cx.state, from);
-    if here.is_empty() {
+    // `glossary/Hunter.md`: *"Enemies at a location with one or more
+    // investigators do not move."* For a bearer-only hunter only its bearer
+    // counts, so a non-bearer standing with it does not hold it in place. That
+    // is the user's reading (#1125), taken from `glossary/Prey.md`'s *"as if it
+    // were the only investigator in play"*; no ruling settles it.
+    let enemy = &cx.state.enemies[&enemy_id];
+    let pinned = cursor::active_investigators_at(cx.state, from)
+        .into_iter()
+        .any(|id| pursues(enemy, id));
+    if !pinned {
         let prey = cx.state.enemies[&enemy_id].prey;
         let dests =
             hunter_destinations(cx.state, cx.cards, from, prey, &cx.state.enemies[&enemy_id]);

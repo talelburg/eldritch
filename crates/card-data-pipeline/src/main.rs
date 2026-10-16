@@ -1255,6 +1255,8 @@ enum PreyParse {
     HighestSkill(&'static str),
     /// `Prey - Lowest remaining health`.
     LowestRemainingHealth,
+    /// `Prey - Bearer only` (the basic weaknesses 01101–01103).
+    BearerOnly,
     /// A "Prey - …" clause not yet modeled (the clause text, trimmed).
     Unrecognized(String),
 }
@@ -1273,6 +1275,7 @@ fn parse_prey(text: &str) -> PreyParse {
         "Highest [combat]" => PreyParse::HighestSkill("Combat"),
         "Highest [agility]" => PreyParse::HighestSkill("Agility"),
         "Lowest remaining health" => PreyParse::LowestRemainingHealth,
+        "Bearer only" => PreyParse::BearerOnly,
         other => PreyParse::Unrecognized(other.to_owned()),
     }
 }
@@ -1280,6 +1283,7 @@ fn parse_prey(text: &str) -> PreyParse {
 /// Emit the `Prey` literal for a parsed prey line.
 fn prey_lit(p: &PreyParse) -> String {
     match p {
+        // TODO(#1131): an unrecognised clause should not ingest as `Default`.
         PreyParse::None | PreyParse::Unrecognized(_) => "Prey::Default".to_owned(),
         PreyParse::HighestSkill(skill) => format!(
             "Prey::Ranked {{ direction: PreyDirection::Highest, \
@@ -1288,6 +1292,7 @@ fn prey_lit(p: &PreyParse) -> String {
         PreyParse::LowestRemainingHealth => "Prey::Ranked { direction: PreyDirection::Lowest, \
              measure: PreyMeasure::RemainingHealth }"
             .to_owned(),
+        PreyParse::BearerOnly => "Prey::BearerOnly".to_owned(),
     }
 }
 
