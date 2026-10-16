@@ -129,9 +129,8 @@ pub(super) fn replace_opening_hand_weaknesses(cx: &mut Cx, investigator: Investi
     }
 }
 
-/// Whether the weakness `code`, entering its bearer's hand, resolves there, and if so
-/// the card type its reveal announces. `glossary/Weakness.md` gives the rule
-/// for each cardtype:
+/// How a weakness entering its bearer's hand resolves. `glossary/Weakness.md`
+/// gives the rule for each cardtype:
 ///
 /// > When an investigator draws a weakness with an encounter cardtype *(for
 /// > example, an enemy or a treachery weakness)*, resolve that card as if it
@@ -140,56 +139,71 @@ pub(super) fn replace_opening_hand_weaknesses(cx: &mut Cx, investigator: Investi
 /// > When an investigator draws a weakness with a player cardtype *(for
 /// > example, an asset, an event, or a skill weakness)*, resolve any Revelation
 /// > effects on the card, and add it to that investigator's hand.
-///
-/// Two shapes resolve today:
-///
-/// - **persistent treachery weaknesses** (Cover Up 01007, Hospital Debts
-///   01011), whose Revelation places them in the threat area;
-/// - **asset weaknesses with a Revelation** (The Necronomicon 01009, #1090).
-///
-/// Non-persistent treachery weaknesses and weakness enemies are left in hand
-/// untouched, deferred to #514. They reach a deck only as random basic
-/// weaknesses (Amnesia 01096, Mob Enforcer 01101, ...), through a roster that
-/// asks for one, which no host does until #782.
-///
-/// **Only the into-play shape of an asset weakness is handled.** Its
-/// Revelation is resolved and the card removed from hand on the assumption
-/// that the Revelation puts it into play, which is the only shape in the
-/// corpus (The Necronomicon is the only asset weakness). An asset weakness
-/// whose Revelation leaves it in hand would need to stay there, and since
-/// [`resolve_drawn_weaknesses`] scans the whole hand, it would also need a
-/// record that its Revelation already resolved so a later draw doesn't
-/// resolve it again. Both belong with #514.
-///
-/// `None` for codes the registry doesn't know.
-fn weakness_resolving_on_entering_hand(cards: &CardRegistry, code: &CardCode) -> Option<CardType> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WeaknessResolution {
+    /// A treachery or enemy weakness: it leaves the hand and resolves through
+    /// the encounter-card path ([`encounter::begin_encounter_card`]), owned by
+    /// its bearer — the same frame, `EncounterCardDrawn` timing point and
+    /// disposal as an encounter-deck draw (#1121). A one-shot treachery ends in
+    /// the bearer's discard pile, a persistent one in their threat area, and an
+    /// enemy spawns.
+    EncounterCard,
+    /// An asset weakness with a Revelation (The Necronomicon 01009, #1090): its
+    /// Revelation is pushed on its own, with no frame and no timing point.
+    ///
+    /// **Only the into-play shape is handled.** The card is removed from hand
+    /// on the assumption that its Revelation puts it into play, which is the
+    /// only shape in the corpus (The Necronomicon is the only asset weakness).
+    /// An asset weakness whose Revelation leaves it in hand would need to stay
+    /// there.
+    Revelation,
+}
+
+/// Whether the weakness `code`, entering its bearer's hand, resolves, and how
+/// ([`WeaknessResolution`]), with the card type its reveal announces. `None`
+/// for a card that is not a weakness, for an event or skill weakness (Dark
+/// Memory 01013 stays in hand to be played), for an asset weakness without a
+/// Revelation, and for codes the registry doesn't know.
+fn weakness_resolution(
+    cards: &CardRegistry,
+    code: &CardCode,
+) -> Option<(WeaknessResolution, CardType)> {
     let meta = (cards.metadata_for)(code)?;
     if !meta.is_weakness() {
         return None;
     }
-    let abilities = (cards.abilities_for)(code).unwrap_or_default();
-    let resolves = match meta.card_type() {
-        CardType::Treachery => encounter::treachery_is_persistent(&abilities),
-        CardType::Asset => abilities.iter().any(|a| a.trigger == Trigger::Revelation),
-        _ => false,
+    let card_type = meta.card_type();
+    let resolution = match card_type {
+        CardType::Treachery | CardType::Enemy => WeaknessResolution::EncounterCard,
+        CardType::Asset
+            if (cards.abilities_for)(code)
+                .unwrap_or_default()
+                .iter()
+                .any(|a| a.trigger == Trigger::Revelation) =>
+        {
+            WeaknessResolution::Revelation
+        }
+        _ => return None,
     };
-    resolves.then(|| meta.card_type())
+    Some((resolution, card_type))
 }
 
-/// Reveal-on-draw for the weaknesses drawn from the player deck during play
-/// (RR Weakness keyword: a drawn weakness resolves its Revelation immediately
-/// rather than staying a normal hand card). Which weaknesses resolve is
-/// [`weakness_resolving_on_entering_hand`]'s question. Each matching card is
-/// removed from `investigator`'s hand, a [`Event::CardRevealed`] is emitted,
-/// and its `Trigger::Revelation` effects are pushed for the drive loop (the
-/// card's `PutIntoThreatArea` then places it in the threat area).
+/// Reveal-on-draw for the weaknesses drawn from the player deck during play:
+/// each card of `investigator`'s hand from `first_drawn` on — the cards this
+/// draw added — that [`weakness_resolution`] says resolves is removed from the
+/// hand, revealed, and resolved.
 ///
-/// Removal precedes the push deliberately: `PutIntoThreatArea` spawns a fresh
-/// instance by code, so a copy left in hand would duplicate the card.
+/// Only the cards just drawn are scanned. A weakness already in hand has had
+/// its chance, and one a later draw found there would otherwise resolve twice.
+///
+/// Removal precedes the resolution deliberately: an encounter-cardtype weakness
+/// is in limbo while it resolves, and an asset's `PutIntoThreatArea`-style
+/// Revelation spawns a fresh instance by code, so a copy left in hand would
+/// duplicate the card.
 ///
 /// **The shape — draw everything, then resolve every Revelation — is the rule,
 /// not a convenience.** This function is called once the whole draw has landed
-/// in hand, and it collects *all* matching cards before resolving any.
+/// in hand, and it reveals *all* matching cards before resolving any.
 /// `data/official-faq/Frequently_Asked_Questions.md`:
 ///
 /// > Anytime you draw one or more cards, the card draw occurs simultaneously
@@ -197,28 +211,33 @@ fn weakness_resolving_on_entering_hand(cards: &CardRegistry, code: &CardCode) ->
 /// > cards have been drawn, you must resolve all Revelation abilities on those
 /// > cards (in an order of your choosing).
 ///
-/// Resolving each card's Revelation as it was drawn would be wrong for a draw
-/// of two, because the second card is already in hand when the first one's
-/// Revelation resolves. One narrowing is deliberate and recorded: the FAQ gives
-/// the player *"an order of your choosing"* over the Revelations, and this
-/// resolves them in draw order instead. Unobservable while at most one weakness
-/// is reachable per draw in the corpus; the choice belongs with #514, which
-/// widens which weaknesses resolve here at all.
+/// **Kept narrowing: draw order, not the player's.** The FAQ gives the player
+/// *"an order of your choosing"* over the Revelations; this resolves them in
+/// draw order instead (#1130 tracks the choice).
 ///
 /// MUST NOT be called from the setup opening-hand / mulligan path — those *set
 /// aside* weaknesses (#508), they do not resolve them.
-pub(in crate::engine) fn resolve_drawn_weaknesses(cx: &mut Cx, investigator: InvestigatorId) {
+pub(in crate::engine) fn resolve_drawn_weaknesses(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    first_drawn: usize,
+) {
     let reg = cx.cards;
-    // Collect the drawn weaknesses that resolve, in hand order.
-    let matches: Vec<(usize, CardCode, CardType)> = {
+    let matches: Vec<DrawnWeakness> = {
         let Some(inv) = cx.state.investigators.get(&investigator) else {
             return;
         };
         inv.hand
             .iter()
             .enumerate()
-            .filter_map(|(i, code)| {
-                weakness_resolving_on_entering_hand(reg, code).map(|ty| (i, code.clone(), ty))
+            .skip(first_drawn)
+            .filter_map(|(hand_index, code)| {
+                weakness_resolution(reg, code).map(|(resolution, card_type)| DrawnWeakness {
+                    hand_index,
+                    code: code.clone(),
+                    card_type,
+                    resolution,
+                })
             })
             .collect()
     };
@@ -237,9 +256,9 @@ pub(in crate::engine) fn resolve_drawn_weaknesses(cx: &mut Cx, investigator: Inv
 ///
 /// Only the one card is considered: the rest of the hand has already had its
 /// chance. A no-op when that card is not a weakness that resolves
-/// ([`weakness_resolving_on_entering_hand`]).
+/// ([`weakness_resolution`]).
 ///
-/// **Tail position** (ADR 0003): the Revelation is pushed for the drive loop,
+/// **Tail position** (ADR 0003): the resolution is pushed for the drive loop,
 /// so a caller returns after this and puts no work after the call.
 pub(in crate::engine) fn resolve_weakness_entering_hand(
     cx: &mut Cx,
@@ -255,18 +274,42 @@ pub(in crate::engine) fn resolve_weakness_entering_hand(
     else {
         return;
     };
-    let Some(card_type) = weakness_resolving_on_entering_hand(cx.cards, &code) else {
+    let Some((resolution, card_type)) = weakness_resolution(cx.cards, &code) else {
         return;
     };
-    resolve_weaknesses_from_hand(cx, investigator, &[(hand_index, code, card_type)]);
+    resolve_weaknesses_from_hand(
+        cx,
+        investigator,
+        &[DrawnWeakness {
+            hand_index,
+            code,
+            card_type,
+            resolution,
+        }],
+    );
 }
 
-/// Remove each `(hand index, code, card type)` from `investigator`'s hand,
-/// then reveal it and push its Revelation, in the order given.
+/// One weakness in its bearer's hand that is about to resolve.
+struct DrawnWeakness {
+    hand_index: usize,
+    code: CardCode,
+    card_type: CardType,
+    resolution: WeaknessResolution,
+}
+
+/// Remove each of `matches` (in hand order) from `investigator`'s hand, reveal
+/// them all in that order, then push their resolutions so that they resolve in
+/// that order too.
+///
+/// The stack is last-in-first-out, so the resolutions are pushed in
+/// **reverse**: the first-drawn card's frames end up on top. Every
+/// [`Event::CardRevealed`] is emitted first, in draw order, because the cards
+/// are revealed together once the draw completes and resolved one after
+/// another.
 fn resolve_weaknesses_from_hand(
     cx: &mut Cx,
     investigator: InvestigatorId,
-    matches: &[(usize, CardCode, CardType)],
+    matches: &[DrawnWeakness],
 ) {
     if matches.is_empty() {
         return;
@@ -279,31 +322,49 @@ fn resolve_weaknesses_from_hand(
             .investigators
             .get_mut(&investigator)
             .expect("resolve_weaknesses_from_hand: investigator exists");
-        for (i, _, _) in matches.iter().rev() {
-            inv.hand.remove(*i);
+        for weakness in matches.iter().rev() {
+            inv.hand.remove(weakness.hand_index);
         }
     }
-    // Reveal + push each Revelation, in original hand order.
-    for (_, code, card_type) in matches {
+    for weakness in matches {
         cx.events.push(Event::CardRevealed {
             investigator,
-            code: code.clone(),
-            card_type: *card_type,
+            code: weakness.code.clone(),
+            card_type: weakness.card_type,
         });
-        let effects: Vec<Effect> = (reg.abilities_for)(code)
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|a| a.trigger == Trigger::Revelation)
-            .map(|a| a.effect)
-            .collect();
-        if !effects.is_empty() {
-            // A weakness from `investigator`'s deck is theirs: they are its
-            // bearer (`glossary/Weakness.md`).
-            evaluator::push_effect(
-                cx,
-                &Effect::Seq(effects),
-                EvalContext::for_revelation(investigator, Owner::Investigator(investigator)),
-            );
+    }
+    // A weakness from `investigator`'s deck is theirs: they are its bearer
+    // (`glossary/Weakness.md`).
+    let bearer = Owner::Investigator(investigator);
+    for weakness in matches.iter().rev() {
+        match weakness.resolution {
+            WeaknessResolution::EncounterCard => {
+                let outcome = encounter::begin_encounter_card(
+                    cx,
+                    investigator,
+                    weakness.code.clone(),
+                    weakness.card_type,
+                    bearer,
+                );
+                debug_assert_eq!(
+                    outcome,
+                    EngineOutcome::Done,
+                    "a treachery or enemy weakness only pushes its encounter-card frames",
+                );
+            }
+            WeaknessResolution::Revelation => {
+                let effects: Vec<Effect> = (reg.abilities_for)(&weakness.code)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|a| a.trigger == Trigger::Revelation)
+                    .map(|a| a.effect)
+                    .collect();
+                evaluator::push_effect(
+                    cx,
+                    &Effect::Seq(effects),
+                    EvalContext::for_revelation(investigator, bearer),
+                );
+            }
         }
     }
 }
@@ -658,6 +719,14 @@ pub(in crate::engine) fn draw_with_deckout(
 ) -> EngineOutcome {
     let mut drawn: u8 = 0;
     let mut deck_ran_out = false;
+    // The draw appends to the hand, so the cards it adds start here.
+    let first_drawn = cx
+        .state
+        .investigators
+        .get(&investigator)
+        .expect("draw_with_deckout: caller guarantees investigator exists")
+        .hand
+        .len();
     while drawn < count {
         let inv = cx
             .state
@@ -688,16 +757,18 @@ pub(in crate::engine) fn draw_with_deckout(
         investigator,
         count: drawn,
     });
-    // RR Weakness keyword: a weakness drawn during play reveals + resolves its
-    // Revelation (#509). Setup's opening-hand draw uses `draw_cards` directly,
-    // so it is unaffected (it sets aside instead, #508).
+    // RR Weakness keyword: a weakness drawn during play reveals + resolves
+    // (#509, #1121). Setup's opening-hand draw uses `draw_cards` directly, so
+    // it is unaffected (it sets aside instead, #508).
     //
-    // The Revelation frames go on the stack *before* the deck-out horror's deal
-    // frame, so the deal sits on top and resolves first: the horror is part of
-    // "completion of the entire draw", and a Revelation that follows it sees the
-    // post-horror state. Only the Revelation's synchronous `CardRevealed`
-    // announcement precedes the horror; its effects resolve after it.
-    resolve_drawn_weaknesses(cx, investigator);
+    // **Kept narrowing: the deck-out horror comes first.** The weaknesses'
+    // frames go on the stack *before* the deck-out horror's deal frame, so the
+    // deal sits on top and resolves first: the horror is part of "completion of
+    // the entire draw", and a Revelation that follows it sees the post-horror
+    // state. Only the synchronous `CardRevealed` announcements precede the
+    // horror; the Revelations resolve after it. If the horror defeats the
+    // drawer, elimination takes a resolving weakness off its frame (ADR 0002).
+    resolve_drawn_weaknesses(cx, investigator, first_drawn);
     if deck_ran_out {
         return combat::deal_harm(cx, investigator, 0, 1);
     }

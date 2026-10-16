@@ -379,8 +379,8 @@ pub enum ScenarioEndStep {
 /// carries it).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EncounterDisposition {
-    /// A treachery: discard to `encounter_discard` (or skip, if persistent — it
-    /// placed itself during its Revelation).
+    /// A treachery: discard to its owner's discard pile (or skip, if
+    /// persistent — it placed itself during its Revelation).
     Discard,
     /// An enemy: spawn it into play at disposal, engaging the drawer
     /// (`investigator`) per the card's spawn instruction.
@@ -878,6 +878,30 @@ impl Continuation {
                 card,
                 ..
             }) if *owner == investigator => card.take().map(|c| (c.code, c.owner)),
+            _ => None,
+        }
+    }
+
+    /// Take the encounter-cardtype weakness `investigator` owns off this frame,
+    /// if it is an [`EncounterCard`](Self::EncounterCard) frame whose card is
+    /// theirs and still on it. `None` otherwise — in particular for every card
+    /// drawn from the encounter deck, which no investigator owns.
+    ///
+    /// The third sibling of [`take_play_in_progress`](Self::take_play_in_progress):
+    /// a drawn weakness resolving as an encounter card is in limbo, like a
+    /// treachery from the encounter deck (`glossary/Limbo.md`: *"A treachery
+    /// card enters limbo after it is drawn, while its revelation ability is
+    /// being resolved."*), but it is its bearer's card, so elimination removes
+    /// it from the game with the rest of theirs. Taking rather than copying
+    /// keeps the frame's own disposal from filing it into a discard pile that
+    /// elimination has already removed (ADR 0002).
+    pub fn take_resolving_weakness(&mut self, investigator: InvestigatorId) -> Option<CardCode> {
+        match self {
+            Continuation::EncounterCard(EncounterCardFrame { card, owner, .. })
+                if *owner == Owner::Investigator(investigator) =>
+            {
+                card.take()
+            }
             _ => None,
         }
     }
@@ -2646,14 +2670,29 @@ pub struct PlayerDrawFrame {
 /// Revelation opens (a skill test, a choice, a nested effect). When that
 /// sequence completes and this frame is top again, the **framework**
 /// disposes of the card per its [`EncounterDisposition`] and pops:
-/// a treachery (`Discard`) goes to `encounter_discard` (or — if persistent and
-/// its Revelation ran — is skipped, having placed itself); an enemy
-/// (`Spawn`) is minted into play. Suspension-reason-agnostic. Never emits
-/// `AwaitingInput`.
+/// a treachery (`Discard`) goes to its owner's discard pile (or — if
+/// persistent and its Revelation ran — is skipped, having placed itself); an
+/// enemy (`Spawn`) is minted into play, owned by `owner`.
+/// Suspension-reason-agnostic. Never emits `AwaitingInput`.
+///
+/// The card is drawn from the encounter deck, or is an encounter-cardtype
+/// weakness drawn from its bearer's deck (`glossary/Weakness.md`: *"resolve
+/// that card as if it were just drawn from the encounter deck"*, #1121).
+/// While it rides this frame it is in **limbo**, in no zone, so elimination
+/// takes a bearer's weakness off it
+/// ([`take_resolving_weakness`](Continuation::take_resolving_weakness)).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EncounterCardFrame {
-    /// The drawn card's code, disposed of at teardown.
-    pub card: CardCode,
+    /// The drawn card's code, disposed of at teardown. `None` once
+    /// elimination has taken it off the frame and removed it from the game:
+    /// its Revelation, if still to come, does not resolve, and its disposal
+    /// does nothing.
+    pub card: Option<CardCode>,
+    /// The card's owner: [`Owner::EncounterDeck`] for a card drawn from the
+    /// encounter deck, and its bearer for a weakness drawn from a player deck.
+    /// It binds the Revelation's owner, owns a spawned enemy, and picks the
+    /// discard pile a one-shot treachery goes to.
+    pub owner: Owner,
     /// How the framework disposes of the card once its Revelation resolves.
     pub disposition: EncounterDisposition,
     /// Whether the card's Revelation ran — set by the draw condition's resolve

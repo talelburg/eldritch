@@ -1,4 +1,4 @@
-//! Silver Twilight Acolyte (The Gathering enemy, 01102).
+//! Silver Twilight Acolyte (basic weakness enemy, 01102).
 //!
 //! ```text
 //! Prey - Bearer only.

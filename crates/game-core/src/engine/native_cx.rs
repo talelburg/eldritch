@@ -444,13 +444,22 @@ impl<'a> NativeCx<'a> {
     /// a `when` ability may cancel — and the card's disposal (discard or spawn)
     /// are pushed as frames for the drive loop to step. `Rejected` for a
     /// cardtype that cannot be drawn this way.
+    ///
+    /// The card is the encounter deck's: both callers draw from it. A weakness
+    /// drawn from a player deck takes the engine's own draw path instead.
     pub fn resolve_encounter_card(
         &mut self,
         investigator: InvestigatorId,
         code: CardCode,
         metadata: &CardMetadata,
     ) -> EngineOutcome {
-        encounter::resolve_encounter_card(self.write_access(), investigator, code, metadata)
+        encounter::resolve_encounter_card(
+            self.write_access(),
+            investigator,
+            code,
+            metadata,
+            Owner::EncounterDeck,
+        )
     }
 
     // --- Actions ---

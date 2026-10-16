@@ -114,6 +114,28 @@ fn rotting_remains_fail_by_two_is_single_deal_of_two_horror() {
     );
 }
 
+/// **A resolved one-shot is discarded with an event** (#1121): Rotting Remains
+/// lands in the encounter discard pile, its owner's, and the client is told
+/// where it went. The card was in limbo while it resolved, so the event names
+/// the deck it was drawn from.
+#[test]
+fn rotting_remains_is_discarded_to_the_encounter_discard_with_an_event() {
+    let session = reveal_committing_nothing(board_with("01163", ChaosToken::Numeric(0)));
+    assert_eq!(
+        session.state().encounter_discard,
+        vec![CardCode::new("01163")]
+    );
+    assert_event_count!(
+        session.events(),
+        1,
+        Event::CardDiscarded {
+            code,
+            from: Zone::EncounterDeck,
+            to: DiscardPile::Encounter,
+        } if code.as_str() == "01163"
+    );
+}
+
 #[test]
 fn crypt_chill_with_no_asset_takes_two_damage_then_discards() {
     // Willpower 3 + Numeric(0) = 3 vs difficulty 4 → fail; no asset in
