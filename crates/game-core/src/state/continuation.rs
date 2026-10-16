@@ -2354,6 +2354,12 @@ pub struct DealDamageFrame {
     /// What is dealing it — the scoping both conditions carry, and how this
     /// frame resumes its caller at `Finish`.
     pub source: DamageSource,
+    /// **Direct** harm: `Distribute` offers no asset the soak, so every point
+    /// drains onto the investigator card with no prompt.
+    /// `glossary/Direct_Damage_Direct_Horror.md`: *"that damage or horror must
+    /// be assigned directly to the specified card, and cannot be assigned or
+    /// re-assigned elsewhere."*
+    pub direct: bool,
     /// The live assignment: accumulating at `Distribute`, settled from
     /// `Announce` on.
     pub assignment: Assignment,

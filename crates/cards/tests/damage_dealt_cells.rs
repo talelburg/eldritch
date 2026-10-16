@@ -18,10 +18,10 @@
 //! `enemy_attack_cells.rs`: each synthetic ability gains a distinct number of
 //! resources, and `HorrorTaken` marks the placement.
 //!
-//! No card yet listens to `DamageDealt`'s `after` cell through a pattern of its
-//! own (`HarmTaken` is #1124's), so the `DamageDealt` probes declare
-//! [`EventPattern::EnemyAttackDamagedSelf`] — Guard Dog's — on a soaking asset,
-//! and the attack assigns its damage there.
+//! The `DamageDealt` probes declare [`EventPattern::EnemyAttackDamagedSelf`] —
+//! Guard Dog's — on a soaking asset, and the attack assigns its damage there.
+//! `HarmTaken` (Psychosis 01099's *"After you take"*) listens to the same
+//! condition; `harm_taken.rs` covers it.
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use card_dsl::dsl::{

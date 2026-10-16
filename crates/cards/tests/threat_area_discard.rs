@@ -9,9 +9,10 @@
 //! investigator trigger (<https://arkhamdb.com/card/01098>): *"Any investigator
 //! at the same location as the investigator with Haunted in their threat area
 //! may trigger the [action][action] to discard Haunted, as per the FAQ [V1.0,
-//! section 2.1]."* Haunted is not implemented, so the probe here models the
-//! primitive — a threat-area card with an activated self-discard — rather than
-//! impersonating it (ADR 0016).
+//! section 2.1]."* Haunted itself is pinned in `haunted.rs`. The probe here
+//! models the primitive — a threat-area card with an activated self-discard —
+//! rather than impersonating it (ADR 0016), so it can be printed both as an
+//! encounter card and as a weakness.
 //!
 //! Both ways an activation discards its own source are covered: the discard as
 //! the ability's effect (`DiscardSelf`), and the discard as its cost

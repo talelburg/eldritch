@@ -125,10 +125,12 @@ pub mod grasping_hands;
 pub mod guard_dog;
 pub mod guts;
 pub mod hard_knocks;
+pub mod haunted;
 pub mod heirloom_of_hyperborea;
 pub mod holy_rosary;
 pub mod hospital_debts;
 pub mod hyperawareness;
+pub mod hypochondria;
 pub mod knife;
 pub mod leather_coat;
 pub mod leo_de_luca;
@@ -150,6 +152,7 @@ pub mod parlor;
 pub mod perception;
 pub mod physical_training;
 pub mod pickpocketing;
+pub mod psychosis;
 pub mod rabbits_foot;
 pub mod research_librarian;
 pub mod rise_of_the_ghouls;
@@ -289,10 +292,12 @@ pub const ALL: &[CardRecord] = &[
     grasping_hands::CARD,
     guard_dog::CARD,
     guts::CARD,
+    haunted::CARD,
     hard_knocks::CARD,
     heirloom_of_hyperborea::CARD,
     hospital_debts::CARD,
     holy_rosary::CARD,
+    hypochondria::CARD,
     hyperawareness::CARD,
     knife::CARD,
     leather_coat::CARD,
@@ -315,6 +320,7 @@ pub const ALL: &[CardRecord] = &[
     perception::CARD,
     physical_training::CARD,
     pickpocketing::CARD,
+    psychosis::CARD,
     rabbits_foot::CARD,
     research_librarian::CARD,
     rise_of_the_ghouls::CARD,

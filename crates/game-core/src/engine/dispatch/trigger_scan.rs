@@ -24,7 +24,7 @@
 use card_dsl::card_data::{CardMetadata, CardType};
 use card_dsl::dsl::{
     self, AbilityZone, AttackerScope, EventPattern, EventTiming, HarmKind, HarmPlacedScope,
-    TargetScope, TestOutcome, TestedLocationScope, Trigger, TriggerKind,
+    HarmTakenScope, TargetScope, TestOutcome, TestedLocationScope, Trigger, TriggerKind,
 };
 
 use crate::card_registry::CardRegistry;
@@ -35,8 +35,8 @@ use crate::engine::dispatch::{cursor, legality};
 use crate::engine::enumerate::PlaySource;
 use crate::engine::{abilities_in_effect, ability_source};
 use crate::state::{
-    self, AbilityAddress, AbilitySource, CandidateSource, CardCode, CardInstanceId, DamageSource,
-    GameState, InvestigatorId, LocationId, ResolutionCandidate, Status,
+    self, AbilityAddress, AbilitySource, Assignment, CandidateSource, CardCode, CardInstanceId,
+    DamageSource, GameState, InvestigatorId, LocationId, ResolutionCandidate, Status,
 };
 
 /// One card the walk visits: where its abilities are, its code, and the
@@ -525,13 +525,13 @@ pub(super) fn trigger_matches(
         | TimingEvent::EnemyEvaded { investigator, .. }
         | TimingEvent::TurnBegan { investigator }
         | TimingEvent::ChaosTokenRevealed { investigator, .. } => *investigator == controller,
-        // "**When an enemy attack** deals damage to Guard Dog" (01021). The
-        // self-binding half is the source's, in [`scope_matches`]; this half is
-        // the card's narrowing to an enemy attack, which `Effect::Deal` harm
-        // (Dynamite Blast, a treachery) does not satisfy.
-        TimingEvent::DamageDealt { source, .. } => {
-            matches!(source, DamageSource::EnemyAttack { .. })
-        }
+        // Two patterns share the deal's condition, so each reads its own
+        // narrowing, in [`damage_dealt_matches`].
+        TimingEvent::DamageDealt {
+            source,
+            investigator,
+            assignment,
+        } => damage_dealt_matches(pattern, *source, *investigator, assignment, controller),
         // "after you succeed/fail a skill test" — narrowed by outcome,
         // (optionally) test kind, and whether the card says *"**you**"*. Dr.
         // Milan 01033 is `{ Success, Some(Investigate), by_controller: true }`.
@@ -608,6 +608,71 @@ pub(super) fn trigger_matches(
         | TimingEvent::GameEnd
         | TimingEvent::EliminationGameEnd { .. }
         | TimingEvent::LeftLocation { .. } => true,
+    }
+}
+
+/// [`trigger_matches`]'s narrowing of the `DamageDealt` condition, which two
+/// patterns share: Guard Dog 01021's enemy-attack scope, and the "taken by
+/// you" of [`EventPattern::HarmTaken`].
+fn damage_dealt_matches(
+    pattern: &EventPattern,
+    source: DamageSource,
+    investigator: InvestigatorId,
+    assignment: &Assignment,
+    controller: InvestigatorId,
+) -> bool {
+    match pattern {
+        // "**When an enemy attack** deals damage to Guard Dog" (01021). The
+        // self-binding half is the source's, in [`scope_matches`]; this
+        // half is the card's narrowing to an enemy attack, which
+        // `Effect::Deal` harm (Dynamite Blast, a treachery) does not
+        // satisfy.
+        EventPattern::EnemyAttackDamagedSelf => {
+            matches!(source, DamageSource::EnemyAttack { .. })
+        }
+        // "After **you** take 1 or more horror" (Psychosis 01099): at least
+        // 1 of the kind on the controller's investigator card or on any
+        // asset they control. `glossary/You_Your.md` (FAQ 2.12): *"it also
+        // includes any assets you control."*
+        //
+        // The scope is the controller of the cards placed on, read here as
+        // "the dealt investigator is the controller". The two coincide
+        // because every asset share in an assignment is a soak by the dealt
+        // investigator's own asset: the soakers are built from their
+        // controlled cards only, and nothing deals to an asset directly. It
+        // is read off the assignment rather than the board, so a soaking
+        // asset the harm has just defeated still counts in the `after`
+        // cell. Beat Cop (2) 01028 (phase 9) deals straight to an asset,
+        // and its ruling (<https://arkhamdb.com/card/02261>) makes that
+        // harm its controller's: that is when the controller has to be
+        // carried on the assignment.
+        EventPattern::HarmTaken { kind, scope } => match scope {
+            HarmTakenScope::You => {
+                let taken: u32 = match kind {
+                    HarmKind::Damage => {
+                        u32::from(assignment.investigator_damage)
+                            + assignment
+                                .asset_damage
+                                .values()
+                                .map(|n| u32::from(*n))
+                                .sum::<u32>()
+                    }
+                    HarmKind::Horror => {
+                        u32::from(assignment.investigator_horror)
+                            + assignment
+                                .asset_horror
+                                .values()
+                                .map(|n| u32::from(*n))
+                                .sum::<u32>()
+                    }
+                };
+                investigator == controller && taken >= 1
+            }
+        },
+        _ => unreachable!(
+            "trigger_matches: the condition check paired {pattern:?} with DamageDealt, but \
+             only EnemyAttackDamagedSelf and HarmTaken have that condition"
+        ),
     }
 }
 
@@ -720,10 +785,15 @@ fn scope_matches(
         // "When an enemy attack deals damage to **Guard Dog**" (01021): only an
         // asset the assignment gives damage to. It reads the *event's*
         // assignment, which is what makes an edit in a `when` cell visible to
-        // the cells after it (ADR 0009).
-        TimingEvent::DamageDealt { assignment, .. } => self_scoped(source, |instance| {
-            assignment.asset_damage.contains_key(&instance)
-        }),
+        // the cells after it (ADR 0009). "After **you** take" (Psychosis 01099)
+        // names no card: its whole scope is the controller, in
+        // [`trigger_matches`].
+        TimingEvent::DamageDealt { assignment, .. } => match pattern {
+            EventPattern::HarmTaken { .. } => true,
+            _ => self_scoped(source, |instance| {
+                assignment.asset_damage.contains_key(&instance)
+            }),
+        },
         // "After **Research Librarian** enters play" (01032): the entered
         // instance itself.
         TimingEvent::EnteredPlay { instance, .. } => {

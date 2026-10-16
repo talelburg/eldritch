@@ -482,16 +482,22 @@ pub(super) fn sanity_reached(inv: &Investigator, cards: &CardRegistry) -> bool {
 /// two that do (the enemy attack's coordinator, and `Effect::Deal`'s parked
 /// effect walk) already have one. See
 /// `docs/adr/0009-damage-is-assigned-then-placed.md`.
+///
+/// A `direct` deal offers no asset the soak: every point lands on the
+/// investigator card (`glossary/Direct_Damage_Direct_Horror.md`), with no
+/// prompt, and both conditions are still announced.
 pub(crate) fn begin_deal_damage(
     cx: &mut Cx,
     investigator: InvestigatorId,
     damage: u8,
     horror: u8,
     source: DamageSource,
+    direct: bool,
 ) -> EngineOutcome {
     cx.state.continuations.push(DealDamageFrame {
         investigator,
         source,
+        direct,
         assignment: Assignment::default(),
         step: DealDamageStep::Distribute {
             remaining_damage: damage,
@@ -520,7 +526,14 @@ pub(crate) fn deal_harm(
     if damage == 0 && horror == 0 {
         return EngineOutcome::Done;
     }
-    begin_deal_damage(cx, investigator, damage, horror, DamageSource::Effect)
+    begin_deal_damage(
+        cx,
+        investigator,
+        damage,
+        horror,
+        DamageSource::Effect,
+        false,
+    )
 }
 
 /// Build the eligible soakers for an enemy attack against `investigator`
@@ -993,6 +1006,7 @@ pub(crate) fn drive_deal_damage(cx: &mut Cx) -> EngineOutcome {
     let DealDamageFrame {
         investigator,
         source,
+        direct,
         assignment,
         step,
     } = cx
@@ -1006,7 +1020,14 @@ pub(crate) fn drive_deal_damage(cx: &mut Cx) -> EngineOutcome {
             mut remaining_horror,
         } => {
             let mut assignment = assignment;
-            let soakers = build_soakers(cx.state, cx.cards, investigator);
+            // Direct harm *"cannot be assigned or re-assigned elsewhere"*: with
+            // no soaker, every point drains onto the investigator card and the
+            // prompt below is never reached.
+            let soakers = if direct {
+                Vec::new()
+            } else {
+                build_soakers(cx.state, cx.cards, investigator)
+            };
             if advance_distribution(
                 &soakers,
                 &mut remaining_damage,
@@ -1092,6 +1113,7 @@ pub(super) fn deal_enemy_attack(
         damage,
         horror,
         DamageSource::EnemyAttack { enemy: enemy_id },
+        false,
     )
 }
 
