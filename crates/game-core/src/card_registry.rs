@@ -98,10 +98,32 @@ pub struct CardRegistry {
     ///
     /// [`Condition::Native`]: card_dsl::dsl::Condition::Native
     pub native_condition_for: fn(&str) -> Option<NativeConditionFn>,
+    /// Whether a card has an implementation and may be taken into a scenario.
+    /// Scenario start refuses a roster whose investigator or deck holds a code
+    /// this rejects, naming every such code, so an unimplemented card is never
+    /// seated to sit in play doing nothing.
+    ///
+    /// The production registry wires this to `cards::is_playable`. Test
+    /// registries accept every code, so synthetic test decks seat.
+    pub is_playable: fn(&CardCode) -> bool,
+    /// The **weakness pool**: the codes a random basic weakness is drawn
+    /// from, one entry per physical copy. Scenario start draws each roster
+    /// entry's [`random_basic_weaknesses`](crate::action::RosterEntry::random_basic_weaknesses)
+    /// from it, without replacement, and refuses a roster asking for more than
+    /// it holds. Drawn codes skip [`is_playable`](Self::is_playable): the pool
+    /// is trusted, and `cards`' pool test guards it.
+    ///
+    /// The production registry wires this to `cards::decks::weakness_pool`.
+    /// Test registries supply an empty pool.
+    pub weakness_pool: fn() -> &'static [CardCode],
 }
 
 impl CardRegistry {
     /// A registry that knows nothing: every lookup returns `None`.
+    /// It also refuses nothing: [`is_playable`](Self::is_playable) accepts
+    /// every code, so a deck of synthetic codes seats under a registry built
+    /// from it. Its [`weakness_pool`](Self::weakness_pool) is empty, so a
+    /// roster seated under it can ask for no random basic weakness.
     ///
     /// **The base every partial registry is built from**, so a literal names
     /// only the slots it actually implements:
@@ -137,6 +159,8 @@ impl CardRegistry {
         back_abilities_for: |_| None,
         native_effect_for: |_| None,
         native_condition_for: |_| None,
+        is_playable: |_| true,
+        weakness_pool: || &[],
     };
 }
 
@@ -180,7 +204,7 @@ mod tests {
             back_name: None,
             back_text: None,
             pack_code: "test".to_string(),
-            weakness: false,
+            weakness: None,
             kind: CardKind::Asset {
                 class: Class::Neutral,
                 cost: Some(0),

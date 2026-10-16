@@ -26,7 +26,7 @@ async fn post_games_creates_game_and_returns_id() {
         .uri("/games")
         .header("content-type", "application/json")
         .body(Body::from(format!(
-            r#"{{"scenario_id":"{TEST_SCENARIO_ID}","roster":[{{"investigator":"{TEST_INV}","deck":[]}}]}}"#
+            r#"{{"scenario_id":"{TEST_SCENARIO_ID}","roster":[{{"investigator":"{TEST_INV}","deck":[],"random_basic_weaknesses":0}}]}}"#
         )))
         .unwrap();
     let response = app.oneshot(request).await.unwrap();

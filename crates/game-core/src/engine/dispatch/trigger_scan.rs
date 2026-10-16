@@ -799,7 +799,7 @@ fn controlled_weakness(
         return false;
     };
     placement.investigator() == Some(investigator)
-        && (cards.metadata_for)(&card.code).is_some_and(|meta| meta.weakness)
+        && (cards.metadata_for)(&card.code).is_some_and(CardMetadata::is_weakness)
 }
 
 /// Whether investigators `a` and `b` share a current location. Two

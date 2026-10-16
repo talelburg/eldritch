@@ -12,7 +12,7 @@ fn location_meta(code: &str, name: &str, shroud: u8, clues: u8) -> CardMetadata 
         back_name: None,
         back_text: None,
         pack_code: "core".to_string(),
-        weakness: false,
+        weakness: None,
         kind: CardKind::Location {
             shroud,
             printed_clues: ClueValue::PerInvestigator(clues),
@@ -60,7 +60,7 @@ fn enemy_meta(code: &str, name: &str) -> CardMetadata {
         back_name: None,
         back_text: None,
         pack_code: "core".to_string(),
-        weakness: false,
+        weakness: None,
         kind: CardKind::Enemy {
             fight: 1,
             evade: 1,
@@ -105,7 +105,7 @@ fn add_location_panics_on_non_location_metadata() {
         back_name: None,
         back_text: None,
         pack_code: "core".to_string(),
-        weakness: false,
+        weakness: None,
         kind: CardKind::Act {
             clue_threshold: Some(2),
             victory: None,

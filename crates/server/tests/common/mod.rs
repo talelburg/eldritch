@@ -57,6 +57,7 @@ pub fn roster() -> Vec<RosterEntry> {
     vec![RosterEntry {
         investigator: CardCode::new(test_support::TEST_INV),
         deck: vec![],
+        random_basic_weaknesses: 0,
     }]
 }
 

@@ -81,7 +81,7 @@ fn treachery_metadata(code: &str, name: &str, text: &str, surge: bool) -> CardMe
         back_name: None,
         back_text: None,
         pack_code: "_mpp".to_owned(),
-        weakness: false,
+        weakness: None,
         kind: CardKind::Treachery {
             surge,
             peril: false,
@@ -143,6 +143,7 @@ fn at_mythos_draw(seats: usize) -> TestSession {
         .map(|_| RosterEntry {
             investigator: CardCode::new(TEST_INV),
             deck: vec![],
+            random_basic_weaknesses: 0,
         })
         .collect();
     let session = TestSession::new(

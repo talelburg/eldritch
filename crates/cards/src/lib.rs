@@ -14,8 +14,9 @@
 //!   patterns; weird cards get a Rust trait impl.
 //!
 //! A card is *playable* iff it has an effect implementation. The
-//! [`is_playable`] check is what the deck importer (Phase 9) uses to
-//! refuse decks containing unimplemented cards.
+//! [`is_playable`] check is the deck-import gate: through [`REGISTRY`],
+//! scenario start refuses a roster whose investigator or deck holds an
+//! unimplemented card.
 //!
 //! # Engine integration
 //!
@@ -39,6 +40,7 @@ use game_core::engine::Registries;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::CardCode;
 
+pub mod decks;
 pub mod generated;
 pub mod impls;
 
@@ -116,6 +118,11 @@ fn registry_native_condition_for(tag: &str) -> Option<NativeConditionFn> {
     impls::native_condition_for(tag)
 }
 
+/// Adapter from [`CardCode`] to [`is_playable`].
+fn registry_is_playable(code: &CardCode) -> bool {
+    is_playable(code.as_str())
+}
+
 /// Ready-made [`CardRegistry`] backed by this crate's corpus and
 /// implementations. The host passes it to every [`game_core::engine::apply`]
 /// inside a [`Registries`].
@@ -125,6 +132,8 @@ pub const REGISTRY: CardRegistry = CardRegistry {
     back_abilities_for: registry_back_abilities_for,
     native_effect_for: registry_native_effect_for,
     native_condition_for: registry_native_condition_for,
+    is_playable: registry_is_playable,
+    weakness_pool: decks::weakness_pool,
 };
 
 /// [`REGISTRY`] with game-core's synthetic test cards composed in: the
@@ -135,12 +144,19 @@ pub const REGISTRY: CardRegistry = CardRegistry {
 /// plain [`test_investigator`](game_core::test_support::test_investigator)
 /// next to the corpus without borrowing a real investigator's code (#934).
 ///
+/// Its playable check and weakness pool are [`CardRegistry::EMPTY`]'s: it
+/// accepts every code, so a test deck may hold synthetic probe cards, and its
+/// weakness pool is empty. A test of the playable gate or of the random basic
+/// weakness draw names [`REGISTRY`], through [`REGISTRIES`].
+///
 /// The value a real-card test names. Pair it with a scenario registry in
 /// [`TEST_REGISTRIES`], or in `scenarios`' pairing for a scenario test.
 #[cfg(feature = "test-support")]
 pub const TEST_REGISTRY: CardRegistry = CardRegistry {
     metadata_for: test_registry_metadata_for,
     abilities_for: test_registry_abilities_for,
+    is_playable: CardRegistry::EMPTY.is_playable,
+    weakness_pool: CardRegistry::EMPTY.weakness_pool,
     // `back_abilities_for` and the native slots stay the real ones: the
     // terminal cards have no reverse side and no natives to compose in.
     ..REGISTRY
@@ -151,6 +167,15 @@ pub const TEST_REGISTRY: CardRegistry = CardRegistry {
 #[cfg(feature = "test-support")]
 pub const TEST_REGISTRIES: Registries = Registries {
     cards: &TEST_REGISTRY,
+    scenarios: &ScenarioRegistry::EMPTY,
+};
+
+/// [`REGISTRY`] with no scenario modules: the registries a test of the
+/// playable gate or of the random basic weakness draw runs against, since
+/// [`TEST_REGISTRIES`] accepts every code and has an empty weakness pool.
+#[cfg(feature = "test-support")]
+pub const REGISTRIES: Registries = Registries {
+    cards: &REGISTRY,
     scenarios: &ScenarioRegistry::EMPTY,
 };
 

@@ -90,7 +90,7 @@ pub fn test_investigator_card(code: &str) -> CardMetadata {
         back_name: None,
         back_text: None,
         pack_code: "_mock".to_owned(),
-        weakness: false,
+        weakness: None,
         kind: CardKind::Investigator {
             class: Class::Neutral,
             skills: Skills {

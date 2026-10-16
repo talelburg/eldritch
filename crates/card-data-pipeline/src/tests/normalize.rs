@@ -193,22 +193,19 @@ fn fast_marker_inside_text_is_not_a_fast_card() {
 }
 
 #[test]
-fn normalize_weakness_subtype_sets_weakness_true() {
+fn normalize_weakness_subtype_is_other_weakness() {
     let mut raw = raw_card("01007");
     raw.subtype_code = Some("weakness".to_owned());
     let n = normalize(raw).expect("normalize");
-    assert!(n.weakness, "subtype_code=weakness should set weakness=true");
+    assert_eq!(n.weakness, Some(WeaknessKind::Other));
 }
 
 #[test]
-fn normalize_basicweakness_subtype_sets_weakness_true() {
+fn normalize_basicweakness_subtype_is_basic_weakness() {
     let mut raw = raw_card("01097");
     raw.subtype_code = Some("basicweakness".to_owned());
     let n = normalize(raw).expect("normalize");
-    assert!(
-        n.weakness,
-        "subtype_code=basicweakness should set weakness=true"
-    );
+    assert_eq!(n.weakness, Some(WeaknessKind::Basic));
 }
 
 #[test]
@@ -228,25 +225,19 @@ fn normalize_carries_back_name_and_text() {
 }
 
 #[test]
-fn normalize_no_subtype_sets_weakness_false() {
+fn normalize_no_subtype_is_not_a_weakness() {
     let raw = raw_card("01059");
     // subtype_code is None on the default fixture
     let n = normalize(raw).expect("normalize");
-    assert!(
-        !n.weakness,
-        "absent subtype_code should leave weakness=false"
-    );
+    assert_eq!(n.weakness, None);
 }
 
 #[test]
-fn normalize_other_subtype_sets_weakness_false() {
+fn normalize_other_subtype_is_not_a_weakness() {
     let mut raw = raw_card("01088");
     raw.subtype_code = Some("other".to_owned());
     let n = normalize(raw).expect("normalize");
-    assert!(
-        !n.weakness,
-        "unrecognized subtype_code should leave weakness=false"
-    );
+    assert_eq!(n.weakness, None);
 }
 
 #[test]

@@ -55,16 +55,28 @@ pub enum PlayerAction {
     },
 }
 
-/// One seat in a scenario: which investigator, and the deck the player
-/// chose for them. Crosses the wire and lands in the action log, so the
-/// deck composition replays deterministically.
+/// One seat in a scenario: which investigator, the deck the player chose for
+/// them, and how many random basic weaknesses to shuffle into it. Crosses the
+/// wire to the host, which seats it through `engine::seat_and_open`. Seating is
+/// not a logged action: the seated state is frozen as the game's seed state,
+/// so the deck composition, drawn weaknesses included, replays
+/// deterministically.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RosterEntry {
     /// Investigator card code (e.g. `"01001"` for Roland Banks).
     pub investigator: CardCode,
-    /// The player's chosen deck, top-to-bottom. Taken verbatim by
-    /// seating; deckbuilding-legality validation is Phase 9.
+    /// The player's chosen deck, top-to-bottom. Seating refuses it if it
+    /// holds an unimplemented card, then appends the drawn random basic
+    /// weaknesses before the setup shuffle; deckbuilding-legality validation
+    /// is Phase 9. A **fixed** weakness, such as one carried between
+    /// scenarios of a campaign, is simply a card here.
     pub deck: Vec<CardCode>,
+    /// How many random basic weaknesses seating draws from the weakness pool
+    /// and adds to [`deck`](Self::deck). Every investigator's card back asks
+    /// for one; `0` asks for none. Draws share one pool across the roster and
+    /// are without replacement, so a roster asking for more than the pool
+    /// holds is refused.
+    pub random_basic_weaknesses: u8,
 }
 
 /// Engine-recorded events.

@@ -10,7 +10,7 @@
 
 use std::sync::LazyLock;
 
-use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
+use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, WeaknessKind};
 use card_dsl::dsl::{
     self, Ability, AttackerScope, EventPattern, EventTiming, InvestigatorTarget, SkillTestKind,
     TargetScope, TestOutcome, TestedLocationScope,
@@ -79,7 +79,7 @@ fn treachery(code: &'static str, weakness: bool) -> CardMetadata {
         back_name: None,
         back_text: None,
         pack_code: "_test".to_owned(),
-        weakness,
+        weakness: weakness.then_some(WeaknessKind::Other),
         kind: CardKind::Treachery {
             surge: false,
             peril: false,
@@ -97,7 +97,7 @@ fn fast_event(code: &'static str) -> CardMetadata {
         back_name: None,
         back_text: None,
         pack_code: "_test".to_owned(),
-        weakness: false,
+        weakness: None,
         kind: CardKind::Event {
             class: Class::Neutral,
             cost: Some(0),

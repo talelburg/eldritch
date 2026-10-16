@@ -53,7 +53,7 @@ fn treachery_metadata() -> CardMetadata {
         back_name: None,
         back_text: None,
         pack_code: "_mock".to_owned(),
-        weakness: false,
+        weakness: None,
         kind: CardKind::Treachery {
             surge: false,
             peril: false,
@@ -143,6 +143,7 @@ fn roster() -> Vec<RosterEntry> {
     vec![RosterEntry {
         investigator: CardCode::new(TEST_INV),
         deck: vec![],
+        random_basic_weaknesses: 0,
     }]
 }
 

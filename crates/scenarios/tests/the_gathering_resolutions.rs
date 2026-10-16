@@ -43,6 +43,7 @@ fn seated_roland() -> GameState {
     let roster = vec![RosterEntry {
         investigator: CardCode::new(ROLAND),
         deck: vec![CardCode::new("01088"); 8],
+        random_basic_weaknesses: 0,
     }];
     // seat_and_open opens the mulligan prompt; the session settles at it, and
     // Roland keeps his opening hand before the turn's actions begin.

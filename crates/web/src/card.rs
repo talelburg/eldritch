@@ -354,7 +354,7 @@ pub fn Card(code: CardCode, #[prop(optional)] in_play: Option<CardInPlay>) -> im
         .as_deref()
         .map(|t| render_segments(parse_card_text(t)));
     let weakness_view = meta
-        .weakness
+        .is_weakness()
         .then(|| view! { <span class="card-weakness">"Weakness"</span> });
 
     let is_in_play = in_play.is_some();

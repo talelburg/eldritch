@@ -98,6 +98,7 @@ fn roster() -> Vec<RosterEntry> {
     vec![RosterEntry {
         investigator: CardCode::new(TEST_INV),
         deck: (0..6u32).map(deck_code).collect(),
+        random_basic_weaknesses: 0,
     }]
 }
 

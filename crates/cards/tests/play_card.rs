@@ -283,8 +283,8 @@ fn play_non_event_or_asset_card_is_rejected() {
 #[test]
 fn play_unimplemented_card_is_rejected() {
     // The canary card is in the corpus (metadata resolves) but has
-    // no ability implementation yet. The deck-import gate (Phase 9)
-    // will refuse decks containing unimplemented cards; PlayCard
+    // no ability implementation yet. The deck-import gate refuses
+    // decks containing unimplemented cards at scenario start; PlayCard
     // double-checks rather than silently no-op.
     let result = play_off_menu(play_state(&[UNIMPLEMENTED_ASSET])).finish();
     assert!(result.events.is_empty());

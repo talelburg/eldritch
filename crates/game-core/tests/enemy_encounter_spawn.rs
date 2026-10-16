@@ -34,7 +34,7 @@ fn synth_enemy_metadata() -> CardMetadata {
         back_name: None,
         back_text: None,
         pack_code: "_synth".into(),
-        weakness: false,
+        weakness: None,
         kind: CardKind::Enemy {
             fight: 1,
             evade: 1,

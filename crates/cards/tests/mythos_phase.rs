@@ -144,6 +144,7 @@ fn seat_keeping_hands(state: GameState, investigators: &[&str]) -> TestSession {
         .map(|code| RosterEntry {
             investigator: CardCode::new(*code),
             deck: vec![],
+            random_basic_weaknesses: 0,
         })
         .collect();
     let session = TestSession::new(

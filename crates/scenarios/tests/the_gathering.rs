@@ -26,6 +26,7 @@ fn setup_and_seat() -> GameState {
     let roster = vec![RosterEntry {
         investigator: CardCode::new("01001"),
         deck: vec![],
+        random_basic_weaknesses: 0,
     }];
     // seat_and_open rests at the mulligan; the session settles there.
     let session = TestSession::new(
