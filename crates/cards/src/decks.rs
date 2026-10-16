@@ -109,9 +109,9 @@ impl DefaultDeck {
     /// request for one random basic weakness under [`WeaknessChoice::Random`].
     #[must_use]
     pub fn roster_entry(&self, choice: WeaknessChoice) -> RosterEntry {
-        let fixed: &[&str] = match choice {
-            WeaknessChoice::Fixed => &[self.weakness],
-            WeaknessChoice::Random => &[],
+        let (fixed, random_basic_weaknesses): (&[&str], u8) = match choice {
+            WeaknessChoice::Fixed => (&[self.weakness], 0),
+            WeaknessChoice::Random => (&[], 1),
         };
         RosterEntry {
             investigator: CardCode::new(self.investigator),
@@ -122,10 +122,7 @@ impl DefaultDeck {
                 .chain(fixed)
                 .map(|code| CardCode::new(*code))
                 .collect(),
-            random_basic_weaknesses: match choice {
-                WeaknessChoice::Fixed => 0,
-                WeaknessChoice::Random => 1,
-            },
+            random_basic_weaknesses,
         }
     }
 }
@@ -142,11 +139,11 @@ pub const DEFAULT_DECKS: &[DefaultDeck] = &[ROLAND, DAISY, SKIDS, AGNES, WENDY];
 /// place of the book's Paranoia 01097, for a weakness that bites in The
 /// Gathering.
 ///
-/// **Skills:** the book's Guts 01089 and Manual Dexterity 01092, for his
-/// willpower 3 and agility 2.
+/// **Skills:** the book's Guts 01089 and Manual Dexterity 01092: agility 2 is
+/// his lowest skill, and the book takes willpower over the tied intellect 3.
 ///
 /// **Requirements**, from his card back: *"Deck Size: 30. Deckbuilding
-/// Options: Guardian cards ([guardian]) level 0-5, Seeker cards ([seeker])
+/// Options: Guardian cards (\[guardian\]) level 0-5, Seeker cards (\[seeker\])
 /// level 0-2, Neutral cards level 0-5. Deckbuilding Requirements (do not count
 /// toward deck size): Roland's .38 Special, Cover Up, 1 random basic
 /// weakness."*
@@ -199,7 +196,7 @@ pub const ROLAND: DefaultDeck = DefaultDeck {
 /// skills, combat 2 and agility 2.
 ///
 /// **Requirements**, from her card back: *"Deck Size: 30. Deckbuilding
-/// Options: Seeker cards ([seeker]) level 0-5, Mystic cards ([mystic]) level
+/// Options: Seeker cards (\[seeker\]) level 0-5, Mystic cards (\[mystic\]) level
 /// 0-2, Neutral cards level 0-5. Deckbuilding Requirements (do not count toward
 /// deck size): Daisy’s Tote Bag, The Necronomicon (John Dee Translation), 1
 /// random basic weakness."*
@@ -253,7 +250,7 @@ pub const DAISY: DefaultDeck = DefaultDeck {
 /// his weapons cover combat.
 ///
 /// **Requirements**, from his card back: *"Deck Size: 30. Deckbuilding
-/// Options: Rogue cards ([rogue]) level 0-5, Guardian cards ([guardian]) level
+/// Options: Rogue cards (\[rogue\]) level 0-5, Guardian cards (\[guardian\]) level
 /// 0-2, Neutral cards level 0-5. Deckbuilding Requirements (do not count toward
 /// deck size): On the Lam, Hospital Debts, 1 random basic weakness."*
 pub const SKIDS: DefaultDeck = DefaultDeck {
@@ -305,7 +302,7 @@ pub const SKIDS: DefaultDeck = DefaultDeck {
 /// skills, intellect 2 and combat 2.
 ///
 /// **Requirements**, from her card back: *"Deck Size: 30. Deckbuilding
-/// Options: Mystic cards ([mystic]) level 0-5, Survivor cards ([survivor])
+/// Options: Mystic cards (\[mystic\]) level 0-5, Survivor cards (\[survivor\])
 /// level 0-2, Neutral cards level 0-5. Deckbuilding Requirements (do not count
 /// toward deck size): Heirloom of Hyperborea, Dark Memory, 1 random basic
 /// weakness."*
@@ -356,7 +353,7 @@ pub const AGNES: DefaultDeck = DefaultDeck {
 /// Unexpected Courage 01093, whose two wild icons back any test.
 ///
 /// **Requirements**, from her card back: *"Deck Size: 30. Deckbuilding
-/// Options: Survivor cards ([survivor]) level 0-5, Rogue cards ([rogue]) level
+/// Options: Survivor cards (\[survivor\]) level 0-5, Rogue cards (\[rogue\]) level
 /// 0-2, Neutral cards level 0-5. Deckbuilding Requirements (do not count toward
 /// deck size): Wendy's Amulet, Abandoned and Alone, 1 random basic weakness."*
 pub const WENDY: DefaultDeck = DefaultDeck {

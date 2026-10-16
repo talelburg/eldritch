@@ -758,7 +758,7 @@ by PR #717 — the attack loop now parks unconditionally, so the strand it descr
 is unreachable and its `debug_assert` is gone.
 
 **#427/#429's deferral was justified here as "rare in 1p", and that was wrong.**
-Dynamite Blast 01024 is in `ROLAND_DEFAULT_DECK` (`crates/web/src/picker.rs`), so
+Dynamite Blast 01024 is in Roland's default deck (`cards::decks::ROLAND`), so
 #769 will play it. The deferral holds for a different reason: in 1 player,
 `for inv in investigators` is a loop of **one**, so #728's frame-shaped restructure
 buys nothing the gate can observe — the soak is a single investigator's, which

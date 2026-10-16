@@ -12,8 +12,8 @@
 //!
 //! Two stand-ins, the same in every walk: a single-token `Numeric(0)` chaos bag
 //! (production serves the random Standard bag), and an encounter deck of one
-//! Ancient Evils 01166, whose Revelation only places 1 doom, so round 2's
-//! Mythos draw is deterministic and cannot advance the agenda. The player deck
+//! Ancient Evils 01166, whose Revelation only places 1 doom, too little to
+//! advance the agenda, so round 2's Mythos draw is deterministic. The player deck
 //! is the real one, and the fixed `rng` seed `setup()` builds with makes its
 //! shuffle deterministic: each walk scripts the windows that shuffle's hand
 //! opens. That shuffle leaves every deck's fixed weakness at the same depth,
@@ -34,7 +34,9 @@ use game_core::{assert_event, assert_event_sequence};
 use scenarios::the_gathering;
 
 /// What the server passes to every `apply`: the real corpus and the real
-/// scenario modules, with no synthetic test cards composed in.
+/// scenario modules, with no synthetic test cards composed in. Not
+/// `scenarios::TEST_REGISTRIES`, because each walk's claim is that the roster
+/// the picker sends plays in production.
 const REGISTRIES: Registries = Registries {
     cards: &cards::REGISTRY,
     scenarios: &scenarios::REGISTRY,
@@ -59,7 +61,17 @@ fn seated(deck: &DefaultDeck) -> TestSession {
 
     let roster = [deck.roster_entry(WeaknessChoice::Fixed)];
     let started = engine::seat_and_open(state, &roster, REGISTRIES);
-    TestSession::new(started.state, REGISTRIES).choose_from_hand(&[])
+    let session = TestSession::new(started.state, REGISTRIES).choose_from_hand(&[]);
+    // The module doc's claim: the shuffle leaves the fixed weakness deep in the
+    // deck, below the one upkeep draw a walk makes.
+    let weakness = CardCode::new(deck.weakness);
+    let depth = session.state().investigators[&INV]
+        .deck
+        .iter()
+        .position(|c| *c == weakness)
+        .expect("the fixed weakness is in the deck");
+    assert!(depth > 1, "{} sits at depth {depth}", deck.weakness);
+    session
 }
 
 /// Where `code` sits in the investigator's hand.

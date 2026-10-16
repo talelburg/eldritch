@@ -4,7 +4,6 @@
 
 use cards::decks::{self, DefaultDeck, WeaknessChoice};
 use futures::channel::mpsc::UnboundedSender;
-use game_core::action::RosterEntry;
 use leptos::prelude::*;
 use protocol::CreateGameRequest;
 
@@ -16,19 +15,9 @@ pub type CreateTx = UnboundedSender<CreateGameRequest>;
 
 /// A radio's label: the investigator's name and code.
 fn label(deck: &DefaultDeck) -> String {
-    let name = cards::by_code(deck.investigator).map_or("?", |meta| meta.name.as_str());
-    format!(" {name} ({})", deck.investigator)
-}
-
-/// The roster entry for the deck at `picked`, with a random basic weakness in
-/// place of its fixed one when `random_weakness` is set.
-fn roster_entry(picked: usize, random_weakness: bool) -> RosterEntry {
-    let choice = if random_weakness {
-        WeaknessChoice::Random
-    } else {
-        WeaknessChoice::Fixed
-    };
-    decks::DEFAULT_DECKS[picked].roster_entry(choice)
+    let meta =
+        cards::by_code(deck.investigator).expect("a default deck's investigator is in the corpus");
+    format!(" {} ({})", meta.name, deck.investigator)
 }
 
 /// Pre-game picker, rendered as a **full-viewport overlay**. Renders only while
@@ -44,7 +33,7 @@ pub fn PickerView() -> impl IntoView {
     // overlay keeps the pick and the checkbox. The pick is an index into
     // `DEFAULT_DECKS`.
     let picked = RwSignal::new(0_usize);
-    let random_weakness = RwSignal::new(false);
+    let weakness = RwSignal::new(WeaknessChoice::Fixed);
 
     view! {
         {move || {
@@ -84,8 +73,15 @@ pub fn PickerView() -> impl IntoView {
                         <input
                             type="checkbox"
                             class="random-basic-weakness"
-                            prop:checked=move || random_weakness.get()
-                            on:change=move |_| random_weakness.update(|on| *on = !*on)
+                            prop:checked=move || weakness.get() == WeaknessChoice::Random
+                            on:change=move |_| {
+                                weakness.update(|choice| {
+                                    *choice = match choice {
+                                        WeaknessChoice::Fixed => WeaknessChoice::Random,
+                                        WeaknessChoice::Random => WeaknessChoice::Fixed,
+                                    }
+                                });
+                            }
                         />
                         " Random basic weakness"
                     </label>
@@ -95,10 +91,8 @@ pub fn PickerView() -> impl IntoView {
                             if let Some(tx) = tx.clone() {
                                 let _ = tx.unbounded_send(CreateGameRequest {
                                     scenario_id: "the-gathering".to_string(),
-                                    roster: vec![roster_entry(
-                                        picked.get_untracked(),
-                                        random_weakness.get_untracked(),
-                                    )],
+                                    roster: vec![decks::DEFAULT_DECKS[picked.get_untracked()]
+                                        .roster_entry(weakness.get_untracked())],
                                 });
                             }
                         }
