@@ -786,9 +786,27 @@ fn audience_reaches(
 /// a state-contingent elder-sign modifier, so it is not a one-card concern
 /// (ADR 0007).
 ///
+/// Read through [`abilities_in_effect::for_source`], the lookup every other
+/// reader of an investigator card uses (ADR 0014): the printed elder sign
+/// first, then any the board grants. So a text-box blank (Stubborn Detective
+/// 01103, *"treat your investigator as if his or her printed text box were
+/// blank (except for \[\[Traits\]\])"*) takes the printed one away, and a
+/// granted one survives it (`glossary/Blank.md`: *"Text and/or icons gained
+/// from another source are not blanked."*).
+///
+/// **Whether the elder sign is part of the text box is the user's decision,
+/// not the sources'** (#1127). The vendored sources leave it open:
+/// `Appendix_IV_Card_Anatomy.md` lists *"9. **Ability:** This card's
+/// specialized means of interacting with the game."* and *"10. **Elder Sign
+/// Ability:** This investigator's ability for the Elder Sign token."* as
+/// separate parts of an investigator card, and neither `glossary/Blank.md` nor
+/// the Official FAQ says which side of that line a blank falls. The user ruled
+/// the elder sign blanked with the rest.
+///
 /// `None` when the controller is not found, the card isn't in the
-/// registry, or it carries no elder-sign ability — so every investigator
-/// without an elder-sign contributes no row at all rather than a zero one.
+/// registry, it carries no elder-sign ability, or it is blanked and granted
+/// none — so every investigator without an elder-sign contributes no row at
+/// all rather than a zero one.
 #[must_use]
 pub(crate) fn elder_sign_outcome(
     state: &GameState,
@@ -796,11 +814,19 @@ pub(crate) fn elder_sign_outcome(
     controller: InvestigatorId,
 ) -> Option<TokenOutcome> {
     let inv = state.investigators.get(&controller)?;
-    let abilities = (registry.abilities_for)(&inv.investigator_card.code)?;
-    abilities.iter().find_map(|ability| match &ability.trigger {
-        Trigger::ElderSign { outcome } => Some(outcome.clone()),
-        _ => None,
-    })
+    let card = &inv.investigator_card;
+    let abilities = abilities_in_effect::for_source(
+        state,
+        registry,
+        AbilitySource::InPlay(card.instance_id),
+        &card.code,
+    )?;
+    abilities
+        .iter()
+        .find_map(|(_, ability)| match &ability.trigger {
+            Trigger::ElderSign { outcome } => Some(outcome.clone()),
+            _ => None,
+        })
 }
 
 /// The [`Stat`] a tested [`SkillKind`] names.
