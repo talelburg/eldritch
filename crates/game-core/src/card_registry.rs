@@ -98,10 +98,21 @@ pub struct CardRegistry {
     ///
     /// [`Condition::Native`]: card_dsl::dsl::Condition::Native
     pub native_condition_for: fn(&str) -> Option<NativeConditionFn>,
+    /// Whether a card has an implementation and may be taken into a scenario.
+    /// Scenario start refuses a roster whose investigator or deck holds a code
+    /// this rejects, naming every such code, so an unimplemented card is never
+    /// seated to sit in play doing nothing.
+    ///
+    /// The production registry wires this to `cards::is_playable`. Test
+    /// registries accept every code, so synthetic test decks seat.
+    pub is_playable: fn(&CardCode) -> bool,
 }
 
 impl CardRegistry {
     /// A registry that knows nothing: every lookup returns `None`.
+    /// It also refuses nothing: [`is_playable`](Self::is_playable) accepts
+    /// every code, so a deck of synthetic codes seats under a registry built
+    /// from it.
     ///
     /// **The base every partial registry is built from**, so a literal names
     /// only the slots it actually implements:
@@ -137,6 +148,7 @@ impl CardRegistry {
         back_abilities_for: |_| None,
         native_effect_for: |_| None,
         native_condition_for: |_| None,
+        is_playable: |_| true,
     };
 }
 

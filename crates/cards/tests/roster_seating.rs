@@ -1,11 +1,14 @@
 //! B2: seating a roster resolves investigator stats from the real corpus
 //! ([`game_core::card_registry::CardRegistry`]) and takes the deck from the payload. Integration test so
 //! it can run against `cards::TEST_REGISTRIES` (per the test layering in
-//! `docs/agents/standards.md`).
+//! `docs/agents/standards.md`). The playable-gate tests run against the
+//! production `cards::REGISTRY` instead, since `TEST_REGISTRIES` accepts every
+//! code.
 
 use cards::TEST_REGISTRIES;
 use game_core::action::RosterEntry;
-use game_core::engine::{self, EngineOutcome};
+use game_core::engine::{self, EngineOutcome, Registries};
+use game_core::scenario::ScenarioRegistry;
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, Skills};
 
 #[test]
@@ -123,6 +126,70 @@ fn seated_investigator_carries_its_card_code() {
         .get(&InvestigatorId(1))
         .expect("Roland seated at id 1");
     assert_eq!(inv.investigator_card.code, CardCode::new("01001"));
+}
+
+/// The production card registry, with no scenario module: the playable gate
+/// reads `cards::is_playable` through it, where [`TEST_REGISTRIES`] accepts
+/// every code so synthetic test decks seat.
+const REAL_REGISTRIES: Registries = Registries {
+    cards: &cards::REGISTRY,
+    scenarios: &ScenarioRegistry::EMPTY,
+};
+
+/// Shotgun 01029 and Hot Streak 01057: core-set cards with no implementation.
+const SHOTGUN: &str = "01029";
+const HOT_STREAK: &str = "01057";
+
+/// Seat Roland 01001 with `deck` under [`REAL_REGISTRIES`], asserting the
+/// seating is refused with state unchanged, and return the reason.
+fn refused_reason(deck: &[&str]) -> String {
+    for code in [SHOTGUN, HOT_STREAK] {
+        assert!(
+            !cards::is_playable(code),
+            "{code} is implemented now; pick another unimplemented card"
+        );
+    }
+    let roster = vec![RosterEntry {
+        investigator: CardCode::new("01001"),
+        deck: deck.iter().map(|c| CardCode::new(*c)).collect(),
+    }];
+    let state = GameStateBuilder::new()
+        .with_registries(REAL_REGISTRIES)
+        .build();
+    let result = engine::seat_and_open(state.clone(), &roster, REAL_REGISTRIES);
+    let EngineOutcome::Rejected { reason } = result.outcome else {
+        panic!(
+            "a deck with unimplemented cards is refused, got {:?}",
+            result.outcome
+        );
+    };
+    assert_eq!(
+        result.state, state,
+        "a refused seating leaves state unchanged"
+    );
+    assert!(result.events.is_empty());
+    reason.to_string()
+}
+
+#[test]
+fn refuses_a_deck_with_an_unimplemented_card_and_names_it() {
+    let reason = refused_reason(&["01030", SHOTGUN]);
+    assert!(reason.contains(SHOTGUN), "reason names {SHOTGUN}: {reason}");
+}
+
+#[test]
+fn refuses_a_deck_with_two_unimplemented_cards_and_names_both() {
+    let reason = refused_reason(&[SHOTGUN, "01030", HOT_STREAK, SHOTGUN]);
+    assert!(reason.contains(SHOTGUN), "reason names {SHOTGUN}: {reason}");
+    assert!(
+        reason.contains(HOT_STREAK),
+        "reason names {HOT_STREAK}: {reason}"
+    );
+    assert_eq!(
+        reason.matches(SHOTGUN).count(),
+        1,
+        "a repeated code is named once: {reason}"
+    );
 }
 
 #[test]
