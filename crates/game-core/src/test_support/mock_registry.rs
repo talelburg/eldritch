@@ -186,9 +186,11 @@ impl MockRegistry {
     }
 }
 
-/// The registry every mock serves through: all five slots read [`TABLES`].
+/// The registry every mock serves through: the five lookup slots read
+/// [`TABLES`], and the playable check accepts every code, so a mock's
+/// synthetic deck seats.
 ///
-/// The literal names all five slots rather than spreading
+/// The literal names every slot rather than spreading
 /// [`CardRegistry::EMPTY`], so a slot added later is a compile error here —
 /// which is what a builder wants, since every slot is one it must decide
 /// whether to expose a `with_*` for. (`EMPTY` is the right base for a
@@ -199,6 +201,7 @@ static MOCK: CardRegistry = CardRegistry {
     back_abilities_for,
     native_effect_for,
     native_condition_for,
+    is_playable: |_| true,
 };
 
 /// Serve `tag` out of one of the `Copy`-valued native tables. The two native

@@ -70,6 +70,28 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
         ));
     }
 
+    // The playable gate: refuse any investigator or deck code with no
+    // implementation, naming each offending code once, in first-seen order.
+    let mut unplayable: Vec<&CardCode> = Vec::new();
+    for code in roster
+        .iter()
+        .flat_map(|entry| std::iter::once(&entry.investigator).chain(&entry.deck))
+    {
+        if !(reg.is_playable)(code) && !unplayable.contains(&code) {
+            unplayable.push(code);
+        }
+    }
+    if !unplayable.is_empty() {
+        let codes: Vec<&str> = unplayable.iter().map(|code| code.as_str()).collect();
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "the roster holds cards with no implementation: {}",
+                codes.join(", ")
+            )
+            .into(),
+        };
+    }
+
     // A scenario requires at least one investigator. Seating is the sole
     // seater (#224): the roster is mandatory, an empty roster rejects.
     if resolved.is_empty() {

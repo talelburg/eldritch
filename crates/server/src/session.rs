@@ -34,7 +34,8 @@ pub enum SessionError {
     #[error("unknown scenario: {}", .0.as_str())]
     UnknownScenario(ScenarioId),
     /// Seating the roster at creation was rejected by the engine (empty
-    /// roster, unknown/non-investigator code, or an already-started seed).
+    /// roster, unknown/non-investigator code, an unimplemented card in the
+    /// roster, or an already-started seed).
     #[error("seating rejected: {0}")]
     Seating(String),
     /// A logged action was rejected while replaying it over the seed state, so
@@ -95,7 +96,7 @@ impl GameSession {
     /// - [`SessionError::UnknownScenario`] if no module is registered for
     ///   `scenario_id`.
     /// - [`SessionError::Seating`] if the engine rejects the roster (empty
-    ///   roster, unknown investigator code, etc.).
+    ///   roster, unknown investigator code, unimplemented deck card, etc.).
     /// - [`SessionError::Serde`] / [`SessionError::Db`] if persisting the seed
     ///   state fails.
     pub async fn create(

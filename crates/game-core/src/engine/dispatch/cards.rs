@@ -969,7 +969,7 @@ pub(super) fn resolve_play_target(
         return Err(EngineOutcome::Rejected {
             reason: format!(
                 "PlayCard: card {code} has no effect implementation; the deck-import \
-                 gate (#73-era) should refuse decks containing unimplemented cards.",
+                 gate refuses decks containing unimplemented cards at scenario start.",
             )
             .into(),
         });

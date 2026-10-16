@@ -14,8 +14,9 @@
 //!   patterns; weird cards get a Rust trait impl.
 //!
 //! A card is *playable* iff it has an effect implementation. The
-//! [`is_playable`] check is what the deck importer (Phase 9) uses to
-//! refuse decks containing unimplemented cards.
+//! [`is_playable`] check is the deck-import gate: through [`REGISTRY`],
+//! scenario start refuses a roster whose investigator or deck holds an
+//! unimplemented card.
 //!
 //! # Engine integration
 //!
@@ -116,6 +117,11 @@ fn registry_native_condition_for(tag: &str) -> Option<NativeConditionFn> {
     impls::native_condition_for(tag)
 }
 
+/// Adapter from [`CardCode`] to [`is_playable`].
+fn registry_is_playable(code: &CardCode) -> bool {
+    is_playable(code.as_str())
+}
+
 /// Ready-made [`CardRegistry`] backed by this crate's corpus and
 /// implementations. The host passes it to every [`game_core::engine::apply`]
 /// inside a [`Registries`].
@@ -125,6 +131,7 @@ pub const REGISTRY: CardRegistry = CardRegistry {
     back_abilities_for: registry_back_abilities_for,
     native_effect_for: registry_native_effect_for,
     native_condition_for: registry_native_condition_for,
+    is_playable: registry_is_playable,
 };
 
 /// [`REGISTRY`] with game-core's synthetic test cards composed in: the
@@ -135,12 +142,16 @@ pub const REGISTRY: CardRegistry = CardRegistry {
 /// plain [`test_investigator`](game_core::test_support::test_investigator)
 /// next to the corpus without borrowing a real investigator's code (#934).
 ///
+/// Its playable check accepts every code, so a test deck may hold synthetic
+/// probe cards. A test of the playable gate itself names [`REGISTRY`].
+///
 /// The value a real-card test names. Pair it with a scenario registry in
 /// [`TEST_REGISTRIES`], or in `scenarios`' pairing for a scenario test.
 #[cfg(feature = "test-support")]
 pub const TEST_REGISTRY: CardRegistry = CardRegistry {
     metadata_for: test_registry_metadata_for,
     abilities_for: test_registry_abilities_for,
+    is_playable: |_| true,
     // `back_abilities_for` and the native slots stay the real ones: the
     // terminal cards have no reverse side and no natives to compose in.
     ..REGISTRY
