@@ -1948,7 +1948,8 @@ impl Effect {
             | Effect::AdditionalSlots { .. }
             | Effect::TreatRevealedToken { .. }
             | Effect::PlaceEventsOnBottomOfDeck
-            | Effect::PlayTopmostEventInDiscardPile => {}
+            | Effect::PlayTopmostEventInDiscardPile
+            | Effect::BlankText { .. } => {}
         }
     }
 }
@@ -2465,6 +2466,21 @@ pub enum Effect {
     /// a commit (<https://arkhamdb.com/card/01014>: *"'Play' and 'Commit' are
     /// two different game terms."*). Resolving it rejects.
     PlayTopmostEventInDiscardPile,
+    /// **Treat each investigator `target` names as if their printed text box
+    /// were blank, except for traits**: Stubborn Detective 01103's *"While
+    /// Stubborn Detective is at your location, treat your investigator as if
+    /// his or her printed text box were blank (except for \[\[Traits\]\])."* A
+    /// constant marker like [`Grant`](Self::Grant), under a
+    /// [`Trigger::Constant`]: **inspected, not executed** — the engine's
+    /// ability lookup reads it off the board each time it is asked what is
+    /// printed on an investigator card, and answers *nothing* for a blanked
+    /// one. Gained text survives (`glossary/Blank.md`: *"Text and/or icons
+    /// gained from another source are not blanked."*), and skills, health,
+    /// sanity and traits are not text-box content. Resolving it rejects.
+    BlankText {
+        /// Whose investigator card is blanked.
+        target: BlankTarget,
+    },
     /// Search a region of an investigator's deck for one card matching
     /// `filter`, move it to that investigator's hand, then shuffle the deck.
     /// Old Book of Lore 01031 (top 3, any card, chosen investigator) and
@@ -2629,6 +2645,16 @@ pub enum AdditionalActionRestriction {
     /// action, and an ability on a location, enemy, act or agenda never
     /// qualify. Daisy Walker 01002 filters on the Tome trait.
     ActivatedAbilityOn(CardFilter),
+}
+
+/// Whose investigator card an [`Effect::BlankText`] blanks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum BlankTarget {
+    /// Each investigator at the blanking card's location. Stubborn Detective
+    /// 01103's *"While Stubborn Detective is at your location"*, where
+    /// `glossary/You_Your.md` reads the "you": *"This clause identifies "you"
+    /// as any investigator at his location."*
+    InvestigatorsAtThisLocation,
 }
 
 /// Which card an [`Effect::Grant`] gives its abilities to.

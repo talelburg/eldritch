@@ -1087,6 +1087,12 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
                      played from, never executed"
                 .into(),
         },
+        Effect::BlankText { .. } => EngineOutcome::Rejected {
+            reason: "Effect::BlankText is a constant marker — swept off the board by \
+                     engine::abilities_in_effect when an investigator card's printed \
+                     abilities are read, never executed"
+                .into(),
+        },
         Effect::BoostAttackDamage(amount) => boost_attack_damage_effect(cx, *amount),
         Effect::DiscoverAdditionalClues(amount) => discover_additional_clues_effect(cx, *amount),
         Effect::DrawCards { target, count } => draw_cards_effect(cx, eval_ctx, *target, count),

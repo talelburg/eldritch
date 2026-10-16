@@ -85,9 +85,20 @@
 //! addressing with a fixed vector to index. `docs/adr/0014-a-granted-ability-is-a-constant-effect-swept-off-the-board.md`
 //! has the argument.
 //!
+//! # Blanked text (#1127)
+//!
+//! The printed half answers *nothing* for an investigator card whose text box
+//! is blanked: Stubborn Detective 01103's *"treat your investigator as if his
+//! or her printed text box were blank (except for \[\[Traits\]\])"*. Because
+//! the blank lives in [`printed_in_effect`], every reader sees it at once,
+//! the elder sign included (`modified_value::elder_sign_outcome` reads through
+//! [`for_source`]), and granted abilities survive it, as `glossary/Blank.md`
+//! requires: *"Text and/or icons gained from another source are not
+//! blanked."*
+//!
 //! [`Location::revealed`]: crate::state::Location::revealed
 
-use card_dsl::dsl::{Ability, Condition, Effect, GrantTarget, Restriction, Trigger};
+use card_dsl::dsl::{Ability, BlankTarget, Condition, Effect, GrantTarget, Restriction, Trigger};
 
 use crate::card_registry::CardRegistry;
 use crate::engine::board;
@@ -330,13 +341,21 @@ pub(crate) fn resolve(
         .map(|(_, ability)| ability)
 }
 
-/// The abilities **printed** on the side of `source` that is in effect.
+/// The abilities **printed** on the side of `source` that is in effect, and
+/// none at all on an investigator card whose text box is blanked
+/// ([`text_box_blanked`]).
 ///
 /// Private, and the grant sweep calls *this* rather than [`for_source`]. Two
 /// things follow, and ADR 0014 leans on both: **a grant cannot itself be
 /// granted**, so there is no fixed point to iterate to and no termination
 /// argument to make; and an [`AbilityAddress::Granted`] indexes a vector that
-/// is a pure function of `(code, side)`, which is what makes the address sound.
+/// is a pure function of `(code, side, blanked)`, which is what makes the
+/// address sound. A blank empties the vector rather than reindexing it, so an
+/// address is either the ability it named or nothing.
+///
+/// A blanked card that *grants* stops granting, since its grant is printed
+/// text (`glossary/Blank.md`: *"A card's text box includes: traits, keywords,
+/// card text and abilities."*). No corpus investigator card grants anything.
 ///
 /// `TODO(#829)`: a granted grant does not apply. Promoting it means a bounded
 /// fixed point and an address that can name a chain, and it wants a card that
@@ -351,7 +370,58 @@ fn printed_in_effect(
     if let AbilitySource::Location(id) = source {
         return location_abilities(state, reg, id);
     }
-    (reg.abilities_for)(code)
+    let printed = (reg.abilities_for)(code)?;
+    // `Some(empty)` rather than `None`: the card still implements something,
+    // it is only blanked, so a caller rejecting on `None` would give the wrong
+    // reason ("unimplemented card").
+    if text_box_blanked(state, reg, source) {
+        return Some(Vec::new());
+    }
+    Some(printed)
+}
+
+/// Whether `source` is an investigator card an in-effect
+/// [`Effect::BlankText`] blanks. Stubborn Detective 01103: *"While Stubborn
+/// Detective is at your location, treat your investigator as if his or her
+/// printed text box were blank (except for \[\[Traits\]\])."*, where
+/// `glossary/You_Your.md` reads the "you": *"This clause identifies "you" as
+/// any investigator at his location."* The ruling agrees
+/// (<https://arkhamdb.com/card/01103>): *"His static ability affects each
+/// investigator in his location (not just the bearer)."*
+///
+/// The sweep reads each blanking card's **raw** printed abilities, never
+/// [`printed_in_effect`] or [`for_source`]: so a blank cannot be blanked, and
+/// the read cannot recurse. Blanking a blanker (Mind Wipe 01068 on the
+/// Detective) is phase 9's.
+///
+/// Only abilities are blanked. Skills, health and sanity are investigator
+/// stats rather than abilities, and traits are card metadata, so none of them
+/// passes through here and all read unchanged.
+#[must_use]
+fn text_box_blanked(state: &GameState, reg: &CardRegistry, source: AbilitySource) -> bool {
+    let AbilitySource::InPlay(id) = source else {
+        return false;
+    };
+    let Some(here) = state
+        .investigators
+        .values()
+        .find(|inv| inv.investigator_card.instance_id == id)
+        .and_then(|inv| inv.current_location)
+    else {
+        return false;
+    };
+    board::walk_active(state).iter().any(|blanker| {
+        blanker.placement.location(state) == Some(here)
+            && (reg.abilities_for)(blanker.code()).is_some_and(|abilities| {
+                abilities.iter().any(|ability| {
+                    ability.trigger == Trigger::Constant
+                        && ability.effect
+                            == Effect::BlankText {
+                                target: BlankTarget::InvestigatorsAtThisLocation,
+                            }
+                })
+            })
+    })
 }
 
 /// **The grant sweep**: every ability the board currently grants the card
