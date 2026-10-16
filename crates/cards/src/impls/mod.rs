@@ -86,7 +86,9 @@
 use card_dsl::dsl::Ability;
 use game_core::card_registry::{NativeConditionFn, NativeEffectFn};
 
+pub mod abandoned_and_alone;
 pub mod agnes_baker;
+pub mod amnesia;
 pub mod ancient_evils;
 pub mod arcane_initiate;
 pub mod arcane_studies;
@@ -148,6 +150,7 @@ pub mod old_book_of_lore;
 pub mod on_the_lam;
 pub mod opportunist;
 pub mod overpower;
+pub mod paranoia;
 pub mod parlor;
 pub mod perception;
 pub mod physical_training;
@@ -254,7 +257,9 @@ impl CardRecord {
 /// Every implemented card's registration, one entry per card module. A card
 /// is playable iff it is listed here.
 pub const ALL: &[CardRecord] = &[
+    abandoned_and_alone::CARD,
     agnes_baker::CARD,
+    amnesia::CARD,
     ancient_evils::CARD,
     arcane_initiate::CARD,
     arcane_studies::CARD,
@@ -316,6 +321,7 @@ pub const ALL: &[CardRecord] = &[
     on_the_lam::CARD,
     opportunist::CARD,
     overpower::CARD,
+    paranoia::CARD,
     parlor::CARD,
     perception::CARD,
     physical_training::CARD,

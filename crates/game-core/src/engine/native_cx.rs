@@ -325,6 +325,16 @@ impl<'a> NativeCx<'a> {
         board::move_resources_to_card(self.write_access(), investigator, instance, amount)
     }
 
+    /// Discard up to `amount` resources from `investigator`'s resource pool
+    /// (Paranoia 01097), emitting
+    /// [`Event::ResourcesDiscarded`](crate::event::Event::ResourcesDiscarded)
+    /// with the number discarded. A discard, not a payment, so
+    /// [`Event::ResourcesPaid`](crate::event::Event::ResourcesPaid) stays
+    /// silent. An empty pool discards nothing and announces nothing.
+    pub fn discard_resources(&mut self, investigator: InvestigatorId, amount: u8) {
+        cards::discard_resources(self.write_access(), investigator, amount);
+    }
+
     /// Move up to `amount` horror from the card instance `from` onto the card
     /// instance `to`, wherever each is on the board (The Necronomicon 01009),
     /// emitting [`Event::HorrorMoved`](crate::event::Event::HorrorMoved) with
@@ -395,6 +405,37 @@ impl<'a> NativeCx<'a> {
     /// `None` for an empty hand.
     pub fn discard_random_from_hand(&mut self, investigator: InvestigatorId) -> Option<CardCode> {
         cards::discard_random_from_hand(self.write_access(), investigator)
+    }
+
+    /// Discard the card at `hand_index` of `investigator`'s hand to their
+    /// discard pile, returning it, or `None` (and nothing moves) for an index
+    /// past the hand's end or a missing investigator. Emits
+    /// [`Event::CardDiscarded`](crate::event::Event::CardDiscarded) from
+    /// [`Zone::Hand`].
+    ///
+    /// Each discard shifts the cards above it down one, so a native discarding
+    /// several goes from the highest index to the lowest. Whether a weakness may
+    /// be chosen is the caller's rule: `glossary/Weakness.md`, *"A player may
+    /// not optionally choose to discard a weakness card from hand."*
+    pub fn discard_from_hand(
+        &mut self,
+        investigator: InvestigatorId,
+        hand_index: usize,
+    ) -> Option<CardCode> {
+        let in_hand = self
+            .state()
+            .investigators
+            .get(&investigator)
+            .is_some_and(|inv| hand_index < inv.hand.len());
+        in_hand.then(|| cards::discard_from_hand(self.write_access(), investigator, hand_index))
+    }
+
+    /// Remove every card in `investigator`'s discard pile from the game, into
+    /// their removed-from-game pile, emitting one
+    /// [`Event::DiscardPileRemovedFromGame`](crate::event::Event::DiscardPileRemovedFromGame).
+    /// An empty pile changes nothing and emits nothing.
+    pub fn remove_discard_pile_from_game(&mut self, investigator: InvestigatorId) {
+        cards::remove_discard_pile_from_game(self.write_access(), investigator);
     }
 
     /// Move the card at `index` of `investigator`'s discard pile to their

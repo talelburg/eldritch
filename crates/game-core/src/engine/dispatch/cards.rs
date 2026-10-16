@@ -516,7 +516,7 @@ pub fn discard_random_from_hand(cx: &mut Cx, investigator: InvestigatorId) -> Op
 ///
 /// Panics if `investigator` is not in the state or `hand_index` is past the
 /// end of their hand: every caller has just read the index from that hand.
-pub(super) fn discard_from_hand(
+pub(crate) fn discard_from_hand(
     cx: &mut Cx,
     investigator: InvestigatorId,
     hand_index: usize,
@@ -589,6 +589,54 @@ pub(crate) fn add_discarded_card_to_hand(
         code: card.clone(),
     });
     Some(card)
+}
+
+/// Remove every card in `investigator`'s discard pile from the game, into
+/// their own removed-from-game pile, and emit one
+/// [`Event::DiscardPileRemovedFromGame`] naming them: Abandoned and Alone
+/// 01015's *"remove all cards in your discard pile from the game."* A discard
+/// pile holds only its investigator's own cards, so the owner routing the
+/// leave-play router does is settled here by construction. An empty pile, or a
+/// missing investigator, changes nothing and emits nothing.
+///
+/// The removal lasts only for the scenario. The ruling
+/// (<https://arkhamdb.com/card/01015>): *"Remove cards from the game for the
+/// duration of the current scenario only. They're still part of your deck
+/// during this campaign."* Nothing carries a deck between scenarios yet; that
+/// is phase 9's campaign work.
+pub(crate) fn remove_discard_pile_from_game(cx: &mut Cx, investigator: InvestigatorId) {
+    let Some(inv) = cx.state.investigators.get_mut(&investigator) else {
+        return;
+    };
+    if inv.discard.is_empty() {
+        return;
+    }
+    let cards = std::mem::take(&mut inv.discard);
+    inv.removed_from_game.extend(cards.iter().cloned());
+    cx.events.push(Event::DiscardPileRemovedFromGame {
+        investigator,
+        cards,
+    });
+}
+
+/// Discard up to `amount` resources from `investigator`'s resource pool and
+/// emit [`Event::ResourcesDiscarded`] with the number discarded (Paranoia
+/// 01097: *"Discard all your resources."*). A discard, neither a payment nor a
+/// move, so [`Event::ResourcesPaid`] stays silent. An empty pool, or a missing
+/// investigator, discards nothing and emits nothing.
+pub(crate) fn discard_resources(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
+    let Some(inv) = cx.state.investigators.get_mut(&investigator) else {
+        return;
+    };
+    let discarded = amount.min(inv.resources);
+    if discarded == 0 {
+        return;
+    }
+    inv.resources -= discarded;
+    cx.events.push(Event::ResourcesDiscarded {
+        investigator,
+        amount: discarded,
+    });
 }
 
 /// Grant `amount` resources to `investigator`: saturating-add to the
@@ -1439,7 +1487,7 @@ fn place_played_event(cx: &mut Cx, investigator: InvestigatorId, card: CardCode)
 }
 
 #[cfg(test)]
-mod grant_resources_tests {
+mod resource_pool_tests {
     use super::*;
     use crate::state::{GameStateBuilder, InvestigatorId};
     use crate::test_support::{self, TEST_REGISTRIES};
@@ -1476,6 +1524,95 @@ mod grant_resources_tests {
         grant_resources(&mut Cx::for_test(&mut state, &mut events), id, 0);
 
         assert_eq!(state.investigators[&id].resources, before);
+        assert!(events.is_empty());
+    }
+
+    /// Discarding takes up to the amount from the pool and announces the
+    /// number actually discarded: a discard, not a payment, so
+    /// `ResourcesPaid` stays silent.
+    #[test]
+    fn discard_resources_empties_up_to_the_amount_and_announces_it() {
+        let id = InvestigatorId(1);
+        let mut state = GameStateBuilder::default()
+            .with_registries(TEST_REGISTRIES)
+            .with_seat(test_support::seat(1).resources(3))
+            .build();
+        let mut events = Vec::new();
+
+        discard_resources(&mut Cx::for_test(&mut state, &mut events), id, 5);
+
+        assert_eq!(state.investigators[&id].resources, 0);
+        assert_eq!(
+            events,
+            vec![Event::ResourcesDiscarded {
+                investigator: id,
+                amount: 3,
+            }]
+        );
+    }
+
+    #[test]
+    fn discard_resources_from_an_empty_pool_is_silent() {
+        let id = InvestigatorId(1);
+        let mut state = GameStateBuilder::default()
+            .with_registries(TEST_REGISTRIES)
+            .with_seat(test_support::seat(1).resources(0))
+            .build();
+        let mut events = Vec::new();
+
+        discard_resources(&mut Cx::for_test(&mut state, &mut events), id, 5);
+
+        assert_eq!(state.investigators[&id].resources, 0);
+        assert!(events.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod discard_pile_removal_tests {
+    use super::*;
+    use crate::state::{GameStateBuilder, InvestigatorId};
+    use crate::test_support::{self, TEST_REGISTRIES};
+
+    /// The whole pile moves, in pile order, to the same investigator's
+    /// removed-from-game pile, announced once.
+    #[test]
+    fn the_whole_discard_pile_moves_to_removed_from_game_with_one_event() {
+        let id = InvestigatorId(1);
+        let mut state = GameStateBuilder::default()
+            .with_registries(TEST_REGISTRIES)
+            .with_seat(test_support::seat(1).discard(["A", "B"]))
+            .build();
+        let mut events = Vec::new();
+
+        remove_discard_pile_from_game(&mut Cx::for_test(&mut state, &mut events), id);
+
+        let inv = &state.investigators[&id];
+        assert!(inv.discard.is_empty());
+        assert_eq!(
+            inv.removed_from_game,
+            vec![CardCode::new("A"), CardCode::new("B")]
+        );
+        assert_eq!(
+            events,
+            vec![Event::DiscardPileRemovedFromGame {
+                investigator: id,
+                cards: vec![CardCode::new("A"), CardCode::new("B")],
+            }]
+        );
+    }
+
+    #[test]
+    fn an_empty_discard_pile_removes_nothing_and_is_silent() {
+        let id = InvestigatorId(1);
+        let mut state = GameStateBuilder::default()
+            .with_registries(TEST_REGISTRIES)
+            .with_seat(test_support::seat(1))
+            .build();
+        let mut events = Vec::new();
+
+        remove_discard_pile_from_game(&mut Cx::for_test(&mut state, &mut events), id);
+
+        assert!(state.investigators[&id].removed_from_game.is_empty());
         assert!(events.is_empty());
     }
 }
