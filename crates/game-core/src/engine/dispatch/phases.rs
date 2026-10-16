@@ -50,6 +50,51 @@ fn unplayable_roster_cards(reg: &CardRegistry, roster: &[RosterEntry]) -> Option
     })
 }
 
+/// The rejection reason for a roster asking for more random basic weaknesses,
+/// in total, than the weakness pool holds. Draws are without replacement from
+/// one pool shared across the roster, so such a roster can't be dealt; it is
+/// refused rather than short-drawn. `None` when the pool suffices.
+fn weakness_pool_shortfall(reg: &CardRegistry, roster: &[RosterEntry]) -> Option<String> {
+    let requested: usize = roster
+        .iter()
+        .map(|entry| usize::from(entry.random_basic_weaknesses))
+        .sum();
+    let available = (reg.weakness_pool)().len();
+    (requested > available).then(|| {
+        format!(
+            "the roster asks for {requested} random basic weaknesses, \
+             but the weakness pool holds {available}"
+        )
+    })
+}
+
+/// Draw each roster entry's random basic weaknesses from the weakness pool,
+/// with the game's RNG: one list of drawn codes per entry, parallel to
+/// `roster`, for seating to add to that entry's deck ahead of the setup
+/// shuffle.
+///
+/// Draws go in roster order, from one pool shared across the roster, without
+/// replacement (the Official FAQ's pool, `Frequently_Asked_Questions.md` lines
+/// 59-61: *"This leaves a pool of 8 weaknesses remaining"* once two players
+/// have drawn). Drawn codes skip the playable gate: the pool is trusted, and
+/// `cards`' pool test guards it. No event is emitted, since deck contents are
+/// hidden. A roster asking for none draws nothing from the RNG, so its seating
+/// is exactly what it was before the draw existed.
+///
+/// The caller has already refused a roster asking for more than the pool
+/// holds ([`weakness_pool_shortfall`]).
+fn draw_random_basic_weaknesses(cx: &mut Cx, roster: &[RosterEntry]) -> Vec<Vec<CardCode>> {
+    let mut pool: Vec<CardCode> = (cx.cards.weakness_pool)().to_vec();
+    roster
+        .iter()
+        .map(|entry| {
+            (0..entry.random_basic_weaknesses)
+                .map(|_| pool.swap_remove(cx.state.rng.next_index(pool.len())))
+                .collect()
+        })
+        .collect()
+}
+
 /// Internal scenario setup: seat the roster, shuffle decks, push the initial
 /// phase anchors. Called by [`super::seat_and_open`] (the non-logged engine
 /// entry point); never reached via a `PlayerAction` — the action log is
@@ -92,7 +137,9 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
         ));
     }
 
-    if let Some(reason) = unplayable_roster_cards(reg, roster) {
+    if let Some(reason) =
+        unplayable_roster_cards(reg, roster).or_else(|| weakness_pool_shortfall(reg, roster))
+    {
         return EngineOutcome::Rejected {
             reason: reason.into(),
         };
@@ -107,6 +154,13 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
     }
 
     // --- mutate (all validations passed) ---
+    // Each required random basic weakness joins its deck before the setup
+    // shuffle mixes it in.
+    let drawn = draw_random_basic_weaknesses(cx, roster);
+    for ((_, _, deck, _), weaknesses) in resolved.iter_mut().zip(drawn) {
+        deck.extend(weaknesses);
+    }
+
     // Seat resolved investigators. Ids are sequential (1-based) in roster
     // order. Seated investigators start at the scenario's starting location
     // (set by setup()). None leaves them unplaced.

@@ -40,6 +40,7 @@ use game_core::engine::Registries;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::CardCode;
 
+pub mod decks;
 pub mod generated;
 pub mod impls;
 
@@ -132,6 +133,7 @@ pub const REGISTRY: CardRegistry = CardRegistry {
     native_effect_for: registry_native_effect_for,
     native_condition_for: registry_native_condition_for,
     is_playable: registry_is_playable,
+    weakness_pool: decks::weakness_pool,
 };
 
 /// [`REGISTRY`] with game-core's synthetic test cards composed in: the
@@ -143,7 +145,8 @@ pub const REGISTRY: CardRegistry = CardRegistry {
 /// next to the corpus without borrowing a real investigator's code (#934).
 ///
 /// Its playable check accepts every code, so a test deck may hold synthetic
-/// probe cards. A test of the playable gate itself names [`REGISTRY`].
+/// probe cards, and its weakness pool is empty. A test of the playable gate or
+/// of the random basic weakness draw names [`REGISTRY`].
 ///
 /// The value a real-card test names. Pair it with a scenario registry in
 /// [`TEST_REGISTRIES`], or in `scenarios`' pairing for a scenario test.
@@ -152,6 +155,7 @@ pub const TEST_REGISTRY: CardRegistry = CardRegistry {
     metadata_for: test_registry_metadata_for,
     abilities_for: test_registry_abilities_for,
     is_playable: |_| true,
+    weakness_pool: || &[],
     // `back_abilities_for` and the native slots stay the real ones: the
     // terminal cards have no reverse side and no natives to compose in.
     ..REGISTRY

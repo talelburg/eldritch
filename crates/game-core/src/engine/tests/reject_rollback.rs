@@ -111,6 +111,7 @@ fn engine_record_applied_while_a_prompt_is_outstanding_is_rejected() {
     let roster = [RosterEntry {
         investigator: CardCode::new(test_support::TEST_INV),
         deck: (0..20).map(|i| CardCode::new(format!("d-{i}"))).collect(),
+        random_basic_weaknesses: 0,
     }];
     let opened = seat_and_open(
         GameStateBuilder::new().with_rng_seed(7).build(),

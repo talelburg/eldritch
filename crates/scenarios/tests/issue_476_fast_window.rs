@@ -23,6 +23,7 @@ fn to_fast_window() -> TestSession {
     let roster = vec![RosterEntry {
         investigator: CardCode::new("01001"),
         deck: vec![],
+        random_basic_weaknesses: 0,
     }];
     // seat_and_open rests at the mulligan; Roland keeps his (empty) hand.
     let mut state = TestSession::new(

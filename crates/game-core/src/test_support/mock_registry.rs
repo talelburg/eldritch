@@ -187,8 +187,8 @@ impl MockRegistry {
 }
 
 /// The registry every mock serves through: the five lookup slots read
-/// [`TABLES`], and the playable check accepts every code, so a mock's
-/// synthetic deck seats.
+/// [`TABLES`], the playable check accepts every code, so a mock's synthetic
+/// deck seats, and the weakness pool is empty.
 ///
 /// The literal names every slot rather than spreading
 /// [`CardRegistry::EMPTY`], so a slot added later is a compile error here —
@@ -202,6 +202,7 @@ static MOCK: CardRegistry = CardRegistry {
     native_effect_for,
     native_condition_for,
     is_playable: |_| true,
+    weakness_pool: || &[],
 };
 
 /// Serve `tag` out of one of the `Copy`-valued native tables. The two native

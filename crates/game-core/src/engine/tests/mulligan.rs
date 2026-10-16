@@ -311,6 +311,7 @@ fn start_scenario_seeds_mulligan_loop() {
     let roster = vec![RosterEntry {
         investigator: CardCode::new(test_support::TEST_INV),
         deck: make_test_deck(10),
+        random_basic_weaknesses: 0,
     }];
     let result = seat_and_open(state, &roster, TEST_REGISTRIES);
     assert!(

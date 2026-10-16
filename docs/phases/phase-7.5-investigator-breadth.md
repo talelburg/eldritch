@@ -3,8 +3,8 @@
 ## Status
 
 🟡 **in progress** (opened 2026-08-23). #776, #777 (Agnes Baker), #778
-("Skids" O'Toole), #779 (Daisy Walker) and #780 (Wendy Adams) are closed. #781
-is next.
+("Skids" O'Toole), #779 (Daisy Walker) and #780 (Wendy Adams) are closed. #1116
+(the random basic weakness draw) is in progress; #781 follows it.
 
 This milestone was **Slice 2** in `phase-7-the-gathering.md`'s Future slices, an
 unfiled intent. It became a milestone on 2026-08-23 (`/grill-with-docs`) when
@@ -37,8 +37,9 @@ Level-0 core player cards, against `crates/cards/src/impls/`:
 | Investigator cards | 5 | **0** |
 
 Counting real titles: `01000 "Random Basic Weakness"` is a deckbuilder placeholder
-meaning *"draw one of the eight"*, not a card, so it is excluded from the neutral row
-and lives in #781. The eight neutral cards left are Abandoned and Alone 01015 and
+meaning *"draw one from the weakness pool"* (10 copies over 8 titles; see GLOSSARY.md),
+not a card, so it is excluded from the neutral row, and the draw it stands for is
+#1116's. The eight neutral cards left are Abandoned and Alone 01015 and
 the seven basic weaknesses still unimplemented (01102 is), all of them #781's.
 
 Roland's two classes are already complete, which is exactly why breadth costs what
@@ -52,7 +53,8 @@ ship untested by anything but a unit test.
 
 | Issue | Work |
 |---|---|
-| #781 | Abandoned and Alone 01015 + the seven basic weaknesses + the random-basic-weakness draw |
+| #1116 | The random basic weakness draw (roster count, weakness pool, seeded draw at scenario start) + the playable gate on roster codes + `WeaknessKind` in the corpus: #1117, #1118, #1119 |
+| #781 | Abandoned and Alone 01015 + the seven basic weaknesses |
 | #782 | Five legal starter decks + a real investigator picker |
 | #1059 | A designated Move — the `TODO(#1059)`s #777 left at every Move site |
 | #1099 | Mind over Matter 01036: `SkillTestStarted` announces Combat after the player chose Intellect (found during #779) |
@@ -73,7 +75,7 @@ ship untested by anything but a unit test.
 
 ## Ordering
 
-**#1025 ✅ PR #1030 → #776 ✅ PR #1044 → #777 ✅ PR #1057 → #778 ✅ PR #1080 → #779 ✅ PR #1096 → #780 ✅ PR #1114 → #781 → #782.**
+**#1025 ✅ PR #1030 → #776 ✅ PR #1044 → #777 ✅ PR #1057 → #778 ✅ PR #1080 → #779 ✅ PR #1096 → #780 ✅ PR #1114 → #1116 → #781 → #782.**
 
 **Vertical slices, one investigator at a time** — investigator card, signature
 pair, and that investigator's class pool, each slice ending in someone playable.

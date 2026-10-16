@@ -100,6 +100,7 @@ fn roster() -> Vec<RosterEntry> {
         deck: (0..6u32)
             .map(|i| CardCode::new(format!("{PREFIX}deck_{i}")))
             .collect(),
+        random_basic_weaknesses: 0,
     }]
 }
 

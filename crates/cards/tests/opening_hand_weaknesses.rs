@@ -87,6 +87,7 @@ fn roland_with(deck: Vec<CardCode>) -> Vec<RosterEntry> {
     vec![RosterEntry {
         investigator: CardCode::new(ROLAND),
         deck,
+        random_basic_weaknesses: 0,
     }]
 }
 

@@ -16,6 +16,7 @@ fn start_scenario_advances_to_investigation_with_round_one() {
     let roster = vec![RosterEntry {
         investigator: CardCode::new(test_support::TEST_INV),
         deck: vec![],
+        random_basic_weaknesses: 0,
     }];
     let start_result = seat_and_open(state, &roster, TEST_REGISTRIES);
     let id = InvestigatorId(1);
@@ -106,6 +107,7 @@ fn start_scenario_shuffles_each_deck_and_deals_initial_hand() {
     let roster = vec![RosterEntry {
         investigator: CardCode::new(test_support::TEST_INV),
         deck: make_test_deck(10),
+        random_basic_weaknesses: 0,
     }];
     let result = seat_and_open(state, &roster, TEST_REGISTRIES);
     let id = InvestigatorId(1);
@@ -145,6 +147,7 @@ fn start_scenario_with_empty_deck_yields_empty_hand_and_no_events() {
     let roster = vec![RosterEntry {
         investigator: CardCode::new(test_support::TEST_INV),
         deck: vec![],
+        random_basic_weaknesses: 0,
     }];
     let result = seat_and_open(state, &roster, TEST_REGISTRIES);
     let id = InvestigatorId(1);
@@ -173,6 +176,7 @@ fn start_scenario_with_short_deck_draws_only_what_remains() {
     let roster = vec![RosterEntry {
         investigator: CardCode::new(test_support::TEST_INV),
         deck: make_test_deck(3),
+        random_basic_weaknesses: 0,
     }];
     let result = seat_and_open(state, &roster, TEST_REGISTRIES);
     let id = InvestigatorId(1);
@@ -200,6 +204,7 @@ fn start_scenario_handles_multiple_investigators_deterministically() {
         .map(|_| RosterEntry {
             investigator: CardCode::new(test_support::TEST_INV),
             deck: make_test_deck(8),
+            random_basic_weaknesses: 0,
         })
         .collect();
     let result = seat_and_open(state, &roster, TEST_REGISTRIES);
@@ -225,6 +230,7 @@ fn seat_and_open_opens_mulligan_for_a_synthetic_roster() {
     let roster = vec![RosterEntry {
         investigator: CardCode::new(test_support::TEST_INV),
         deck: vec![],
+        random_basic_weaknesses: 0,
     }];
 
     let result = seat_and_open(setup, &roster, TEST_REGISTRIES);
@@ -244,6 +250,7 @@ fn seat_and_open_rejects_an_unknown_investigator_code() {
     let roster = vec![RosterEntry {
         investigator: CardCode::new("99999"),
         deck: vec![],
+        random_basic_weaknesses: 0,
     }];
 
     let result = seat_and_open(setup, &roster, TEST_REGISTRIES);

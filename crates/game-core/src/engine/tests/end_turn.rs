@@ -86,6 +86,7 @@ fn last_end_turn_advances_to_mythos_and_pauses_for_draw_two_investigators() {
         RosterEntry {
             investigator: CardCode::new(test_support::TEST_INV),
             deck: vec![],
+            random_basic_weaknesses: 0,
         };
         2
     ];
@@ -198,6 +199,7 @@ fn last_end_turn_advances_to_mythos_and_pauses_for_draw_solo() {
     let roster = vec![RosterEntry {
         investigator: CardCode::new(test_support::TEST_INV),
         deck: vec![],
+        random_basic_weaknesses: 0,
     }];
     // seat_and_open: round 0 → 1, mulligan window opens.
     // active_investigator is None until mulligan completion.

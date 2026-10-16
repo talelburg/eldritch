@@ -29,6 +29,7 @@ fn deck_shuffle_is_deterministic_across_replay() {
         vec![RosterEntry {
             investigator: CardCode::new(test_support::TEST_INV),
             deck: deck.clone(),
+            random_basic_weaknesses: 0,
         }]
     };
 

@@ -17,6 +17,7 @@ fn seats_roland_with_corpus_stats_and_payload_deck() {
     let roster = vec![RosterEntry {
         investigator: CardCode::new("01001"),
         deck: deck.clone(),
+        random_basic_weaknesses: 0,
     }];
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -61,6 +62,7 @@ fn seats_agnes_with_corpus_stats_and_payload_deck() {
     let roster = vec![RosterEntry {
         investigator: CardCode::new("01004"),
         deck: deck.clone(),
+        random_basic_weaknesses: 0,
     }];
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -100,6 +102,7 @@ fn rejects_non_investigator_code() {
     let roster = vec![RosterEntry {
         investigator: CardCode::new("01030"),
         deck: vec![],
+        random_basic_weaknesses: 0,
     }];
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -115,6 +118,7 @@ fn seated_investigator_carries_its_card_code() {
     let roster = vec![RosterEntry {
         investigator: CardCode::new("01001"),
         deck: vec![],
+        random_basic_weaknesses: 0,
     }];
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -152,6 +156,7 @@ fn refused_reason(deck: &[&str]) -> String {
     let roster = vec![RosterEntry {
         investigator: CardCode::new("01001"),
         deck: deck.iter().map(|c| CardCode::new(*c)).collect(),
+        random_basic_weaknesses: 0,
     }];
     let state = GameStateBuilder::new()
         .with_registries(REAL_REGISTRIES)
@@ -197,6 +202,7 @@ fn rejects_unknown_code() {
     let roster = vec![RosterEntry {
         investigator: CardCode::new("99999"),
         deck: vec![],
+        random_basic_weaknesses: 0,
     }];
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)

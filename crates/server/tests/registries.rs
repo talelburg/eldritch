@@ -51,7 +51,7 @@ async fn post_games_creates_the_gathering_against_the_production_registries() {
         .uri("/games")
         .header("content-type", "application/json")
         .body(Body::from(format!(
-            r#"{{"scenario_id":"{GATHERING_SCENARIO_ID}","roster":[{{"investigator":"01001","deck":[]}}]}}"#
+            r#"{{"scenario_id":"{GATHERING_SCENARIO_ID}","roster":[{{"investigator":"01001","deck":[],"random_basic_weaknesses":0}}]}}"#
         )))
         .unwrap();
     let response = app.oneshot(request).await.unwrap();
