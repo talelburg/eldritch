@@ -217,3 +217,18 @@ fn ghoul_minion_prints_no_spawn_line_and_carries_none() {
     };
     assert_eq!(*spawn, None);
 }
+
+/// The three basic weakness enemies print *"<b>Prey</b> - Bearer only."* and
+/// *"Hunter."* (Mob Enforcer 01101, Silver Twilight Acolyte 01102, Stubborn
+/// Detective 01103). No CI job checks the generated corpus is fresh, so this
+/// guards the regeneration that carries `Prey::BearerOnly` (#1125).
+#[test]
+fn basic_weakness_enemies_hunt_their_bearer_only() {
+    for code in ["01101", "01102", "01103"] {
+        let CardKind::Enemy { prey, hunter, .. } = enemy(code) else {
+            panic!("{code} is an enemy")
+        };
+        assert_eq!(prey, Prey::BearerOnly, "{code}");
+        assert!(hunter, "{code}");
+    }
+}

@@ -21,13 +21,14 @@
 //! enemy has as much or more damage on it as it has health, that enemy is
 //! defeated and placed on the encounter discard pile (or on its owner's discard
 //! pile if it is a weakness)."* Printed health 3, fight 2.
+use card_dsl::card_data::CardKind;
 use cards::TEST_REGISTRIES;
 use game_core::assert_event_sequence;
 use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, Agenda, CardCode, ChaosBag, ChaosToken, DiscardPile, Enemy,
-    GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, TokenModifiers, Zone,
+    EnemyId, GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, TokenModifiers, Zone,
 };
 use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
 
@@ -220,5 +221,134 @@ fn defeated_in_a_two_investigator_game_it_goes_to_its_bearers_discard() {
             from: Zone::Enemy,
             to: DiscardPile::Investigator(to),
         } if code.as_str() == ACOLYTE && *to == bearer,
+    );
+}
+
+/// **Readied beside only the other investigator, it engages no one** (#1125).
+/// `glossary/Prey.md`: *"If an enemy's prey instructions contain the word
+/// "only," that enemy only moves towards and engages that investigator (as if it
+/// were the only investigator in play), and ignores all other investigators
+/// while moving and engaging."*
+///
+/// The bearer draws it at the Study, where the other investigator also stands,
+/// so it spawns engaged with the bearer. The bearer evades it (exhausting it and
+/// breaking the engagement) and walks to the Hallway. It readies in Upkeep
+/// beside the other investigator, which would engage them under any other prey.
+#[test]
+fn readied_beside_only_the_other_investigator_it_engages_no_one() {
+    let bearer = InvestigatorId(1);
+    let other = InvestigatorId(2);
+
+    let mut study = test_support::test_location(HERE.0, "Study");
+    study.connections = vec![THERE];
+    let mut hallway = test_support::test_location(THERE.0, "Hallway");
+    hallway.connections = vec![HERE];
+
+    let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_location(study)
+        .with_location(hallway)
+        .with_seat(
+            seat(1)
+                .at(HERE)
+                .skill(SkillKind::Agility, 8)
+                .deck([ACOLYTE, FILLER, FILLER]),
+        )
+        .with_seat(seat(2).at(HERE).deck([FILLER, FILLER]))
+        .with_turn_order([bearer, other])
+        .open_turn(bearer)
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .with_token_modifiers(TokenModifiers::default())
+        .session();
+    let session = draw_the_acolyte(session, bearer);
+    let acolyte = spawned_acolyte(&session).id;
+    assert_eq!(spawned_acolyte(&session).engaged_with, Some(bearer));
+
+    let session = session
+        .take(&TurnAction::Evade {
+            investigator: bearer,
+            enemy: acolyte,
+        })
+        .commit(&[])
+        .take(&TurnAction::Move {
+            investigator: bearer,
+            destination: THERE,
+        })
+        .take(&TurnAction::EndTurn);
+    session.assert_at_turn_menu(other);
+    // Its Enemy phase (exhausted, it does not hunt) and Upkeep (it readies).
+    let session = session.take(&TurnAction::EndTurn);
+
+    let enemy = spawned_acolyte(&session);
+    assert!(!enemy.exhausted, "readied in Upkeep");
+    assert_eq!(enemy.current_location, Some(HERE));
+    assert_eq!(
+        enemy.engaged_with, None,
+        "the other investigator is ignored"
+    );
+    let engagements: Vec<_> = session
+        .events()
+        .iter()
+        .filter_map(|e| match e {
+            Event::EnemyEngaged {
+                enemy,
+                investigator,
+            } if *enemy == acolyte => Some(*investigator),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        engagements,
+        vec![bearer],
+        "engaged only on spawn, never after the evade"
+    );
+}
+
+/// **In the Enemy phase it hunts its bearer, not the investigator beside it**
+/// (#1125). It stands at the Study with the other investigator, its bearer at
+/// the Hallway next door: the other investigator does not hold it in place, and
+/// it moves to its bearer and engages them. The Acolyte is placed on the board
+/// as a draw mints it, with its keywords and prey read from the corpus.
+#[test]
+fn in_the_enemy_phase_it_hunts_its_bearer_past_the_investigator_beside_it() {
+    let bearer = InvestigatorId(1);
+    let other = InvestigatorId(2);
+    let acolyte = EnemyId(50);
+
+    let mut study = test_support::test_location(HERE.0, "Study");
+    study.connections = vec![THERE];
+    let mut hallway = test_support::test_location(THERE.0, "Hallway");
+    hallway.connections = vec![HERE];
+
+    let CardKind::Enemy { hunter, prey, .. } = cards::by_code(ACOLYTE)
+        .expect("the Acolyte in the corpus")
+        .kind
+    else {
+        panic!("01102 is an enemy")
+    };
+    let mut enemy = test_support::test_enemy(acolyte.0, "Silver Twilight Acolyte");
+    enemy.code = CardCode::new(ACOLYTE);
+    enemy.hunter = hunter;
+    enemy.prey = prey;
+    enemy.owner = Owner::Investigator(bearer);
+    enemy.current_location = Some(HERE);
+
+    let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_location(study)
+        .with_location(hallway)
+        .with_seat(seat(1).at(THERE).deck([FILLER, FILLER]))
+        .with_seat(seat(2).at(HERE).deck([FILLER, FILLER]))
+        .with_turn_order([bearer, other])
+        .with_enemy(enemy)
+        .open_turn(other)
+        .session()
+        .take(&TurnAction::EndTurn);
+
+    assert_event_sequence!(
+        session.events(),
+        Event::EnemyMoved { enemy, to } if *enemy == acolyte && *to == THERE,
+        Event::EnemyEngaged { enemy, investigator }
+            if *enemy == acolyte && *investigator == bearer,
     );
 }

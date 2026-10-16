@@ -79,7 +79,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::card_registry::{self, CardRegistry};
 use crate::engine::abilities_in_effect;
-use crate::engine::board::{self, NotLeft, Placement};
+use crate::engine::board::{self, LeavingCard, NotLeft, Placement};
 use crate::engine::dispatch::actions::evade::EvadeModification;
 use crate::engine::dispatch::actions::fight::FightModification;
 use crate::engine::dispatch::actions::take;
@@ -1463,26 +1463,34 @@ fn discover_additional_clues_effect(cx: &mut Cx, amount: u8) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-/// Resolve [`Effect::DiscardSelf`]: discard `eval_ctx.source_instance()` from
-/// play through [`board::discard_from_play`], wherever it sits, which files it
-/// by its **owner** — Barricade 01038 to the player who played it, whoever's
-/// leaving fired it (#371), and Obscuring Fog 01168 to the encounter discard.
-/// Rejects loudly if there is no source, the instance is not in play, or it
-/// cannot leave play right now (`glossary/Cannot.md`: *"The word "cannot" is
+/// Resolve [`Effect::DiscardSelf`]: discard the source from play through
+/// [`board::discard_from_play`], wherever it sits, which files it by its
+/// **owner** — Barricade 01038 to the player who played it, whoever's leaving
+/// fired it (#371), Obscuring Fog 01168 to the encounter discard, and Mob
+/// Enforcer 01101, an enemy, to its bearer's discard (#1125). The source is
+/// the in-play instance ([`EvalContext::source_instance`]) or an enemy
+/// ([`AbilitySource::Enemy`]); an enemy discarded this way is not defeated, so
+/// no [`Event::EnemyDefeated`](crate::event::Event::EnemyDefeated) is logged.
+/// Rejects loudly if there is no such source, it is not in play, or it cannot
+/// leave play right now (`glossary/Cannot.md`: *"The word "cannot" is
 /// absolute, and cannot be countermanded by other abilities."*).
 fn discard_self(cx: &mut Cx, eval_ctx: &EvalContext) -> EngineOutcome {
-    let Some(source) = eval_ctx.source_instance() else {
-        return EngineOutcome::Rejected {
-            reason: "DiscardSelf: no source instance in context".into(),
-        };
+    let source: LeavingCard = match (eval_ctx.source_instance(), eval_ctx.ability_source) {
+        (Some(instance), _) => instance.into(),
+        (None, Some(AbilitySource::Enemy(enemy))) => enemy.into(),
+        (None, _) => {
+            return EngineOutcome::Rejected {
+                reason: "DiscardSelf: no source instance or enemy in context".into(),
+            };
+        }
     };
     let reason = match board::discard_from_play(cx, source) {
         Ok(_) => return EngineOutcome::Done,
         Err(NotLeft::NotInPlay) => {
-            format!("DiscardSelf: source instance {source:?} is not in play")
+            format!("DiscardSelf: source {source:?} is not in play")
         }
         Err(NotLeft::Refused) => {
-            format!("DiscardSelf: source instance {source:?} cannot leave play")
+            format!("DiscardSelf: source {source:?} cannot leave play")
         }
     };
     EngineOutcome::Rejected {
