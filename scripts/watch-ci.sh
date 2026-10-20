@@ -8,16 +8,27 @@
 # against a run that hasn't started. This script resolves the PR's head SHA,
 # waits for the `ci` run on exactly that SHA, then polls its jobs quietly.
 #
+# Straight after a push, `gh pr view` can still report the previous head, and
+# the script would then watch the old commit's run and report it. So when the
+# current branch is the PR's head branch, it first waits until the PR's head
+# is the local `HEAD` (#1148: it once reported green for the previous commit,
+# with "merge once green" approved). Run from anywhere else, it takes the PR's
+# head as reported.
+#
 # It exits as soon as any job fails, without waiting for the rest, and prints
 # one `name conclusion` line per job. A run cancelled because a newer commit
 # was pushed is followed to the new head rather than reported as a failure.
+# After the verdict it prints the PR's `mergeStateStatus`, and on `BEHIND`
+# names `gh pr update-branch`: a Dependabot merge to main can leave a green PR
+# that the merge then refuses.
 # Run it in the background and wait for the completion notification.
 #
 # Usage:
 #   scripts/watch-ci.sh <PR#>
 #
-# Exit status: 0 all jobs green, 1 a job failed or was cancelled, 2 usage error
-# or no `ci` run appeared for the head SHA within the wait.
+# Exit status: 0 all jobs green, 1 a job failed or was cancelled, 2 usage error,
+# the PR's head never reached the local HEAD, or no `ci` run appeared for the
+# head SHA within the wait. The merge state never changes the exit status.
 #
 set -uo pipefail
 
@@ -34,7 +45,34 @@ REGISTER_WAIT=300  # seconds to wait for the run to appear
 
 head_sha() { gh pr view "$PR" --json headRefOid --jq .headRefOid; }
 
+merge_state() {
+  local state
+  state=$(gh pr view "$PR" --json mergeStateStatus --jq .mergeStateStatus 2>/dev/null) || return
+  if [ "$state" = "BEHIND" ]; then
+    echo "merge state: BEHIND its base — bring it up to date with: gh pr update-branch $PR"
+  else
+    echo "merge state: $state"
+  fi
+}
+
 SHA=$(head_sha) || exit 2
+
+# Wait for the push to show up on the PR before choosing a run to watch.
+HEAD_REF=$(gh pr view "$PR" --json headRefName --jq .headRefName) || exit 2
+if [ "$(git branch --show-current 2>/dev/null)" = "$HEAD_REF" ]; then
+  LOCAL=$(git rev-parse HEAD) || exit 2
+  waited=0
+  while [ "$SHA" != "$LOCAL" ]; do
+    if [ "$waited" -ge "$REGISTER_WAIT" ]; then
+      echo "PR #$PR head is still ${SHA:0:8}, not local HEAD ${LOCAL:0:8}, after ${REGISTER_WAIT}s — was HEAD pushed?" >&2
+      exit 2
+    fi
+    [ "$waited" -eq 0 ] && echo "PR #$PR head ${SHA:0:8}: waiting for local HEAD ${LOCAL:0:8} to reach it"
+    sleep "$POLL"; waited=$(( waited + POLL ))
+    SHA=$(head_sha) || exit 2
+  done
+fi
+
 while :; do
   echo "PR #$PR head ${SHA:0:8}: waiting for the ci run"
   RUN=""
@@ -81,6 +119,8 @@ gh run view "$RUN" --json jobs \
   column -t
 if [ "$failed" -gt 0 ] || [ "$conclusion" != "success" ]; then
   echo "ci FAILED — logs: gh run view $RUN --log-failed"
+  merge_state
   exit 1
 fi
 echo "ci passed"
+merge_state

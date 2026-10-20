@@ -4,7 +4,7 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
 
 ## Conventions
 
-- **Create an issue**: write the body to a file with the Write tool, then `gh issue create --title "..." --body-file <file>`. The same goes for `gh issue comment`, `gh issue edit`, `gh pr create` and `gh pr edit`. Use the file even for a short body: a worktree-isolated subagent's shell guard refuses a heredoc or `$(...)` body as "too complex to verify", and the #938 and #962 implementers lost turns to that refusal.
+- **Create an issue**: write the body to a file with the Write tool, then `gh issue create --title "..." --body-file <file>`. The same goes for `gh issue comment`, `gh issue edit`, `gh pr create` and `gh pr edit`. Use the file even for a short body: a worktree-isolated subagent's shell guard refuses a heredoc or `$(...)` body as "too complex to verify", and the #938 and #962 implementers lost turns to that refusal. **Use a fresh path for each body, and send the `gh` call in a later message than the `Write`, once the `Write` has succeeded.** A `Write` to an existing file fails unless the file was read first, and a `gh … --body-file` sent beside it then publishes the stale file. That happened three times (#1001's body, and PRs #1096 and #1044).
 - **Read an issue**: `gh issue view <number> --json title,body,labels,milestone,comments`, narrowing with `--jq` as needed. `--comments` alone prints only the comments when output isn't a terminal, so an issue with none comes back empty.
 - **List issues**: `gh issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'` with appropriate `--label` and `--state` filters.
 - **Comment on an issue**: `gh issue comment <number> --body-file <file>`
@@ -37,7 +37,7 @@ Run `gh issue view <number> --json title,body,labels,milestone,comments`.
 
 The HTML reports from `/improve-codebase-architecture` and similar surveys don't go in the repo or in an issue body; GitHub can't attach a file to an issue. They go on the orphan branch `architecture-reviews`, which is never merged and is served by GitHub Pages at <https://talelburg.github.io/eldritch/>. Add the file to that branch, link it from `index.html`, and link the report and its tracking issue to each other, as #921 does.
 
-**Read a report verbatim:** `git fetch origin architecture-reviews && git show origin/architecture-reviews:<file>.html`, or `curl -s <url>`. `WebFetch` returns a summary, which drops the line references and counts a report is read for.
+**Read one card of a report:** `scripts/arch-review-card.py <report> <card>`, as in `scripts/arch-review-card.py 2026-10-18 c4`. It fetches the branch and prints that card as plain text; with no card it lists the report's cards, and with no arguments the reports. Each grill used to build its own regex for this. **Read a whole report verbatim:** `git fetch origin architecture-reviews && git show origin/architecture-reviews:<file>.html`, or `curl -s <url>`. `WebFetch` returns a summary, which drops the line references and counts a report is read for.
 
 ## Wayfinding operations
 

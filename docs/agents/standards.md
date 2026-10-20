@@ -94,6 +94,14 @@ Synthetic material sorts into three kinds, each with its own rule:
 
 **Why:** the synthetic Cover Up fixture cloned real 01007's eligibility predicate byte-for-byte and dropped the card's printed Revelation; a later author hit the gap and wrote a comment about it rather than fixing it. *"Never silently approximate a card"* below is this same rule on the production side. [ADR 0016](../adr/0016-a-synthetic-fixture-models-a-primitive-never-a-printed-card.md) carries the rest of the evidence and the reasoning.
 
+### A test that pins incidental behaviour is not a contract
+
+Prompt option order, and any test expectation that pins behaviour no card text, ruling or rule asks for, records what the code happens to do today. **A change that moves it edits those tests in the same PR**, and names them in its description, rather than bending its design to keep them passing. A spec or ticket doesn't promise such an order "unchanged" either ([`to-spec.md`](to-spec.md)).
+
+The exception is a test whose expectation is printed: a Decision's option order is the card's printed order ([ADR 0015](../adr/0015-a-choice-printed-on-one-card-is-a-decision-not-a-selection.md)), so that order is a contract, and moving it is a gate (`CLAUDE.md` → Gates).
+
+**Why:** three times, a design was compromised to keep "the test / option order unchanged", and each time the user overrode the compromise (#1148). The tests were never protecting a rule, only the order an earlier implementation produced.
+
 ### Stub deferred functionality with a TODO that names the issue
 
 When a variant, handler, or effect can't be implemented yet because the supporting infrastructure doesn't exist, return `EngineOutcome::Rejected` (or the analogous rejection) with a message in the form `TODO(#NN): <variant> needs <thing> (lands with #MM)`. Where several variants share a blocker, share a small helper rather than copy-pasting the prose.
@@ -123,6 +131,12 @@ When citing a card by name to illustrate a pattern — in a comment, doc, issue,
 Treat card citations in existing comments and docs as unverified until checked, particularly ones an agent wrote.
 
 **Why:** a confabulated "Magnifying Glass's *Action: Investigate*" reached both a memory file and a code comment before being caught. Wrong examples are worse than absent ones — they propagate into reviewers' mental models and become facts the project has to unlearn.
+
+### Escape an icon inside a card quote; backtick it in prose
+
+**Inside a verbatim card quote, an icon is escaped:** `*"\[reaction\] After you defeat an enemy: …"*` (Roland Banks 01001). **In prose outside a quote, it is backticked:** `` `[reaction]` ``. Inside a ```` ```text ```` block it is written as printed, because a code block links nothing.
+
+**Why:** rustdoc reads a bare `[reaction]` as an intra-doc link, and the `doc` job fails on it as a broken one. PRs #1129 and #1134 each lost a CI round to an unescaped icon (#1148). The two spellings are the existing majority usage, and the escape keeps a quote reading as the printed sentence rather than a code span inside it.
 
 ### Emit a timing point in tail position; put post-emit work on a frame
 
