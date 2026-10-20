@@ -71,9 +71,9 @@ use crate::state::{
 ///   during any player window"* (`glossary/Triggered_Abilities.md`). This
 ///   handler permits them when either (a) the acting investigator is the
 ///   active investigator during the Investigation phase, or (b) an open
-///   window's `fast_actors` scope
-///   permits the acting investigator. The `open_windows` stack is pushed by
-///   callers (scenario/server) when a player window opens.
+///   window's `fast_actors` scope permits the acting investigator. The
+///   `open_windows` stack is pushed by callers (scenario/server) when a
+///   player window opens.
 ///
 /// The negative half — a moment *inside* another ability's resolution is not
 /// itself a window, so a Fast ability needs one open at it — is not printed as

@@ -210,11 +210,11 @@ pub(super) fn begin_encounter_card(
 ///
 /// Revelation effects on enemies (rare, but printed on some encounter enemies
 /// — e.g. Coven Initiate 05090's "Revelation - Discard the top 2 cards of the
-/// encounter deck. …") fire BEFORE
-/// the enemy spawns into play, per Rules Reference p.24 ("1.4 Each
-/// investigator draws 1 encounter card"): "3. Resolve the revelation ability
-/// on the drawn card." then "4. If the card is an enemy, spawn it following
-/// any spawn instruction the card bears." The spawn happens at disposal, after
+/// encounter deck. …") fire BEFORE the enemy spawns into play, per Rules
+/// Reference p.24 ("1.4 Each investigator draws 1 encounter card"): "3.
+/// Resolve the revelation ability on the drawn card." then "4. If the card is
+/// an enemy, spawn it following any spawn instruction the card bears." The
+/// spawn happens at disposal, after
 /// the condition's sequence has drained. The drawing investigator controls the
 /// Revelation; the card is the frame's `owner`'s — the encounter deck's, or the
 /// bearer's for a drawn weakness (#1121).
