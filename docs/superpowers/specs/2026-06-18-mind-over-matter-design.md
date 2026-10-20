@@ -24,7 +24,7 @@ FAQ rulings (load-bearing, not derivable from the text):
   of skill test is determined before you get the opportunity to play Fast
   cards."*
 - *"You cannot play this card during the Mythos phase, because 'your turn'
-  is within the Investigation phase."*
+  is within the Investigaton [sic] phase."*
 
 So substituting **turns the test into an Intellect test** (icons + bonuses
 follow intellect), the choice is made **at test initiation** (the type is

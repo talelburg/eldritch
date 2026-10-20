@@ -130,7 +130,7 @@ while IFS= read -r line; do
       if in_merged_pr "$head"; then
         REMOVED+=("$rec")
         if [ "$locked" -eq 1 ]; then
-          echo "  remove  $name — tip is in merged PR #$MERGED_PR; releasing its lock:$lock"
+          echo "  remove  $name — tip is in merged PR #$MERGED_PR; releasing its lock${lock:+:$lock}"
           act git worktree remove -f -f "$rec"
         else
           echo "  remove  $name — clean, tip is in merged PR #$MERGED_PR"

@@ -13,9 +13,9 @@ The Enemy phase is the third phase-driver piece in Phase 4's set. Today `step_ph
 > **III. Enemy phase**
 > 3.1 Enemy phase begins.
 > 3.2 Hunter enemies move.
-> [PLAYER WINDOW]
+> [free] PLAYER WINDOW
 > 3.3 Next investigator resolves engaged enemy attacks. If an investigator has not yet resolved enemy attacks this phase, return to previous player window. After final investigator resolves engaged enemy attacks, proceed to next player window.
-> [PLAYER WINDOW]
+> [free] PLAYER WINDOW
 > 3.4 Enemy phase ends.
 
 Step detail (p.25):

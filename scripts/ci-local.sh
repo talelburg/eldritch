@@ -268,14 +268,16 @@ run_job() {
       # during startup"). wasm-pack has compiled every test by then, so that
       # says nothing about the code: it is recorded as degraded, compiled but
       # not run, rather than as a test failure.
-      local runner_log="$LOG_DIR/wasm-test.runner.log" status
-      wasm-pack test --headless --firefox crates/web 2>&1 | tee "$runner_log"
+      local output status
+      output=$(mktemp)
+      wasm-pack test --headless --firefox crates/web 2>&1 | tee "$output"
       status=${PIPESTATUS[0]}
-      if [ "$status" -ne 0 ] && grep -q 'driver failed to bind port during startup' "$runner_log"; then
+      if [ "$status" -ne 0 ] && grep -q 'driver failed to bind port during startup' "$output"; then
         echo "!! geckodriver failed to start — the tests compiled but did not run." >&2
         DEGRADED+=("wasm-test (geckodriver failed to start: tests compiled, not run)")
-        return 0
+        status=0
       fi
+      rm -f "$output"
       return "$status" ;;
     wasm-build)
       # CI runs `trunk build --release` — the release profile and the asset
@@ -320,7 +322,8 @@ for j in "${PLAN[@]}"; do
   echo "==> $j"
   log="$LOG_DIR/$j.log"
   start=$(date +%s)
-  # run_job stays in this shell (no pipe) so wasm-build can record DEGRADED.
+  # run_job stays in this shell (no pipe) so wasm-build and wasm-test can
+  # record DEGRADED.
   if [ "$STREAM" -eq 1 ]; then
     run_job "$j" > >(tee "$log") 2>&1
     status=$?

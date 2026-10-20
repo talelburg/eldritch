@@ -214,8 +214,8 @@ pub(super) fn begin_encounter_card(
 /// Reference p.24 ("1.4 Each investigator draws 1 encounter card"): "3.
 /// Resolve the revelation ability on the drawn card." then "4. If the card is
 /// an enemy, spawn it following any spawn instruction the card bears." The
-/// spawn happens at disposal, after
-/// the condition's sequence has drained. The drawing investigator controls the
+/// spawn happens at disposal, after the condition's sequence has drained. The
+/// drawing investigator controls the
 /// Revelation; the card is the frame's `owner`'s — the encounter deck's, or the
 /// bearer's for a drawn weakness (#1121).
 ///

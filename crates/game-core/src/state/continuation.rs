@@ -1832,11 +1832,8 @@ pub enum SkillTestFollowUp {
 ///
 /// Modeled per Rules Reference: a reaction window allows any
 /// investigator to fire a triggered reaction or play a Fast card.
-/// An investigator's own turn opens an `ActiveInvestigator` window
-/// that still permits other investigators to play Fast cards (per
-/// `glossary/Fast.md`: *"A fast event card may be played from a player's
-/// hand any time its play instructions specify."*); concrete window
-/// kinds choose the right scope at the open-window site.
+/// `ActiveInvestigator` bounds a window to the turn's owner; concrete
+/// window kinds choose the right scope at the open-window site.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum FastActorScope {

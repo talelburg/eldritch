@@ -327,7 +327,8 @@ fn substitution_covers(state: &GameState, investigator: InvestigatorId, skill: S
 
 /// Resume the Mind over Matter substitution prompt (#322): `PickSingle(0)`
 /// rewrites the in-flight test to an Intellect test (dropping any weapon combat
-/// bonus per the FAQ "ignore any bonuses to Combat or Agility"); `PickSingle(1)`
+/// bonus per the ruling "ignore any bonuses to Combat or Agility",
+/// <https://arkhamdb.com/card/01036>); `PickSingle(1)`
 /// keeps the printed skill (a genuine "may" — a player may decline to fail on
 /// purpose). Either way, parks for the `drive` loop, which opens the next window
 /// (the ST.1 player window, or the commit prompt on auto-skip).

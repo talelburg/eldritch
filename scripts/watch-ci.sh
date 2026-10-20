@@ -10,10 +10,11 @@
 #
 # Straight after a push, `gh pr view` can still report the previous head, and
 # the script would then watch the old commit's run and report it. So when the
-# current branch is the PR's head branch, it first waits until the PR's head
-# is the local `HEAD` (#1148: it once reported green for the previous commit,
-# with "merge once green" approved). Run from anywhere else, it takes the PR's
-# head as reported.
+# current branch is the PR's head branch and the PR's head is behind the local
+# `HEAD`, it first waits for the PR to catch up (#1148: it once reported green
+# for the previous commit, with "merge once green" approved). A PR head the
+# local `HEAD` doesn't contain, such as the merge `gh pr update-branch` makes,
+# is watched as it is, and so is the PR's head when run from anywhere else.
 #
 # It exits as soon as any job fails, without waiting for the rest, and prints
 # one `name conclusion` line per job. A run cancelled because a newer commit
@@ -27,8 +28,9 @@
 #   scripts/watch-ci.sh <PR#>
 #
 # Exit status: 0 all jobs green, 1 a job failed or was cancelled, 2 usage error,
-# the PR's head never reached the local HEAD, or no `ci` run appeared for the
-# head SHA within the wait. The merge state never changes the exit status.
+# the PR's head never caught up with the local HEAD, or no `ci` run appeared
+# for the head SHA within the wait. The merge state never changes the exit
+# status.
 #
 set -uo pipefail
 
@@ -41,13 +43,14 @@ case "$PR" in
 esac
 
 POLL=15            # seconds between polls
+PUSH_WAIT=120      # seconds to wait for a push to reach the PR's head
 REGISTER_WAIT=300  # seconds to wait for the run to appear
 
 head_sha() { gh pr view "$PR" --json headRefOid --jq .headRefOid; }
 
 merge_state() {
   local state
-  state=$(gh pr view "$PR" --json mergeStateStatus --jq .mergeStateStatus 2>/dev/null) || return
+  state=$(gh pr view "$PR" --json mergeStateStatus --jq .mergeStateStatus 2>/dev/null) || return 0
   if [ "$state" = "BEHIND" ]; then
     echo "merge state: BEHIND its base — bring it up to date with: gh pr update-branch $PR"
   else
@@ -62,12 +65,12 @@ HEAD_REF=$(gh pr view "$PR" --json headRefName --jq .headRefName) || exit 2
 if [ "$(git branch --show-current 2>/dev/null)" = "$HEAD_REF" ]; then
   LOCAL=$(git rev-parse HEAD) || exit 2
   waited=0
-  while [ "$SHA" != "$LOCAL" ]; do
-    if [ "$waited" -ge "$REGISTER_WAIT" ]; then
-      echo "PR #$PR head is still ${SHA:0:8}, not local HEAD ${LOCAL:0:8}, after ${REGISTER_WAIT}s — was HEAD pushed?" >&2
+  while [ "$SHA" != "$LOCAL" ] && git merge-base --is-ancestor "$SHA" "$LOCAL" 2>/dev/null; do
+    if [ "$waited" -ge "$PUSH_WAIT" ]; then
+      echo "PR #$PR head is still ${SHA:0:8}, behind local HEAD ${LOCAL:0:8}, after ${PUSH_WAIT}s — was HEAD pushed?" >&2
       exit 2
     fi
-    [ "$waited" -eq 0 ] && echo "PR #$PR head ${SHA:0:8}: waiting for local HEAD ${LOCAL:0:8} to reach it"
+    [ "$waited" -eq 0 ] && echo "PR #$PR head ${SHA:0:8}: waiting for it to reach local HEAD ${LOCAL:0:8}"
     sleep "$POLL"; waited=$(( waited + POLL ))
     SHA=$(head_sha) || exit 2
   done

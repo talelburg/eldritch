@@ -8,10 +8,12 @@ The integration branch is the PR's branch. Open it as `CLAUDE.md` step 1 says: a
 
 ## Explore first, then put every open question to the user in one batch
 
-Run exploration to completion **before** dispatching any implementer. Exploration checks every claim the spec and tickets make about the current code against the code itself. [`to-spec.md`](to-spec.md) has the same claims checked before the spec is published, so exploration is the second look. The usual suspects are claims to check, not promises to protect:
-- "existing suites pass without edits": grep the construction sites of any variant that gains a field, and the tests that pin the behaviour being changed. Where the claim is false, the tests that pin incidental behaviour are edited in the same PR (`standards.md` → A test that pins incidental behaviour is not a contract), and the gate is about the ticket's size, not about keeping the tests;
-- "order unchanged": find the test that pins today's order. Prompt option order isn't a contract either, and a design bent to keep it is a compromise the user has overridden three times (#1148 has the sessions);
+Run exploration to completion **before** dispatching any implementer. Exploration checks every claim the spec and tickets make about the current code against the code itself: the claims [`to-spec.md`](to-spec.md) lists, which should already have been checked once before publishing. The usual suspects are claims to check, not promises to protect:
+- "existing suites pass without edits": grep the construction sites of any variant that gains a field, and the tests that pin the behaviour being changed;
+- "order unchanged": find the test that pins today's order;
 - a user story that no ticket covers.
+
+A test that pins incidental behaviour, prompt option order included, is edited by the change that moves it (`standards.md` → A test that pins incidental behaviour is not a contract). So a false "unchanged" makes a gate about the ticket's size, never one about keeping the test.
 
 Every contradiction goes to the user as **one batch of gates**, each with options and a recommendation. Only tickets with no open question are dispatched.
 
@@ -58,6 +60,6 @@ It runs `ci-local.sh` (in the foreground, as above) only after resolving a confl
 
 After the last merge the review runs on the integration branch, and its findings go to the user before `gh pr ready`, exactly as `CLAUDE.md` step 3 says for any PR. A single fix subagent may apply the fixes first.
 
-Once the PR merges, run `scripts/prune-agent-worktrees.sh --merged-pr <PR#>`. Its dry run should list only this run's worktrees and branches; then run it again with `--apply`. After that, delete the ticket branches on the remote (`git push origin --delete <branch>`). Upstream's cleanup removes worktrees only, and the #925 ticket branches were still on the remote two runs later.
+Once the PR merges, run `scripts/prune-agent-worktrees.sh --merged-pr <PR#>`, read its dry run, then run it again with `--apply`. After that, delete the ticket branches on the remote (`git push origin --delete <branch>`). Upstream's cleanup removes worktrees only, and the #925 ticket branches were still on the remote two runs later.
 
-The order and the flag both matter. Without `--merged-pr` the script keeps a worktree whose lock names a live pid, and here that pid is the orchestrating session itself. It also keeps a branch whose tip is on no remote, which is what a squash-merged ticket tip becomes once its remote branch is deleted. Every run before #1148 force-removed its worktrees by hand. In PR #1096 that removed 14 where the user had approved 7.
+**The flag is what clears this run's leftovers.** Without it the script keeps a worktree whose lock names a live pid, and here that pid is the orchestrating session itself. It also keeps a branch whose tip is on no remote, which is what a squash-merged ticket tip becomes once its remote branch is deleted. Every run before #1148 force-removed its worktrees by hand, and in PR #1096 that removed 14 where the user had approved 7.

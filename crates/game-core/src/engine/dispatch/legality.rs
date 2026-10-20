@@ -227,8 +227,9 @@ pub(crate) fn check_play_card(
     // RR p.11: such an event "may be played from a player's hand any time its
     // play instructions specify" — i.e. ONLY in its matching reaction window,
     // where Axis C offers it as a `PickSingle` option (the window path runs
-    // `play_fast_event`, bypassing this gate). It is never a free-timing standalone play, so reject
-    // it from the `PlayCard` action — otherwise `play_card` would run only its
+    // `play_fast_event`, bypassing this gate). It is never a free-timing
+    // standalone play, so reject it from the `PlayCard` action — otherwise
+    // `play_card` would run only its
     // (absent) `OnPlay` abilities and silently discard it for no effect.
     //
     // Gate only on a **Reaction** `OnEvent`: an event that plays normally (an

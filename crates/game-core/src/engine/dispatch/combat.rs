@@ -318,8 +318,7 @@ pub(super) fn defeat_asset(cx: &mut Cx, inst: CardInstanceId) {
 ///    the defeat check, per RR p.7. This runs *before* the asset sweep so
 ///    elimination's step 1 (RR p.10: *"The cards he or she controls in play
 ///    … are removed from the game."*) pre-empts any co-overflowing asset's
-///    discard (see
-///    [`defeat_overflowed_assets`]).
+///    discard (see [`defeat_overflowed_assets`]).
 /// 3. Defeat overflowed assets (`accumulated >= printed stat` →
 ///    discard) — **skipped entirely if step 2 eliminated the investigator**,
 ///    whose controlled cards elimination removes from the game (RR p.10 step 1).

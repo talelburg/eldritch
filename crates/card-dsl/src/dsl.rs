@@ -3603,7 +3603,8 @@ pub fn on_play(effect: Effect) -> Ability {
 /// is the residual** the text prints beside it; the modification the action
 /// itself takes rides the designator. Playing the event *is* that action — the
 /// FAQ's Ursula Downs 04002 answer counts investigate actions *"performed via
-/// the activate action or via the play action"* — see [`ActionDesignator`].
+/// the activate action or via the play action"*
+/// (<https://arkhamdb.com/card/04002>) — see [`ActionDesignator`].
 #[must_use]
 pub fn on_play_as(designator: ActionDesignator, effect: Effect) -> Ability {
     Ability {

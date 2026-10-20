@@ -103,8 +103,8 @@ fn agenda_01105_reverse_choice_random_discard_each() {
 /// encounter deck." step randomizes order, so the order-independent
 /// invariant is: the Ghoul is always reached and drawn, both non-Ghoul cards
 /// remain (in the deck if the Ghoul sat above them, in the discard if they
-/// were dug through), and each
-/// one dug through announces its own discard, in dig order. Seeded deck =
+/// were dug through), and each one dug through announces its own discard, in
+/// dig order. Seeded deck =
 /// [Hunting Shadow (01135), False Lead (01136), Ghoul Minion (01160, the
 /// Ghoul enemy)].
 #[test]

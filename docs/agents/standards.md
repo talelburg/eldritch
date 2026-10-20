@@ -98,9 +98,9 @@ Synthetic material sorts into three kinds, each with its own rule:
 
 Prompt option order, and any test expectation that pins behaviour no card text, ruling or rule asks for, records what the code happens to do today. **A change that moves it edits those tests in the same PR**, and names them in its description, rather than bending its design to keep them passing. A spec or ticket doesn't promise such an order "unchanged" either ([`to-spec.md`](to-spec.md)).
 
-The exception is a test whose expectation is printed: a Decision's option order is the card's printed order ([ADR 0015](../adr/0015-a-choice-printed-on-one-card-is-a-decision-not-a-selection.md)), so that order is a contract, and moving it is a gate (`CLAUDE.md` → Gates).
+The exception is a test whose expectation is printed. A Decision's option order is the card's printed order (`pick_nth`, under Test layering above), so that order is a contract, and moving it is a gate (`CLAUDE.md` → Gates).
 
-**Why:** three times, a design was compromised to keep "the test / option order unchanged", and each time the user overrode the compromise (#1148). The tests were never protecting a rule, only the order an earlier implementation produced.
+**Why:** three times, in PRs #984 and #999, a design was compromised to keep "the test / option order unchanged", and each time the user overrode the compromise. The tests were never protecting a rule, only the order an earlier implementation produced.
 
 ### Stub deferred functionality with a TODO that names the issue
 

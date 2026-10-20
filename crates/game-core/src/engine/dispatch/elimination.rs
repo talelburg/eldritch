@@ -426,9 +426,9 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     // Step 3: disengage every enemy engaged with the eliminated
     // investigator, leaving them "at the location the investigator was
     // at when he or she was eliminated, unengaged but otherwise
-    // maintaining their current game state" (RR p.10). Engaged enemies already share the
-    // investigator's location by the engagement invariant (Move drags
-    // them along), so no location update is needed — just clear
+    // maintaining their current game state" (RR p.10). Engaged enemies
+    // already share the investigator's location by the engagement invariant
+    // (Move drags them along), so no location update is needed — just clear
     // `engaged_with`. Disengage all first (simultaneous), then let the
     // ready ones re-engage a surviving co-located investigator per prey.
     let affected: Vec<EnemyId> = cx

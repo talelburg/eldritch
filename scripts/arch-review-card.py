@@ -25,14 +25,18 @@ import re
 import subprocess
 import sys
 from html.parser import HTMLParser
+from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
 BRANCH = "origin/architecture-reviews"
 
 BLOCK = {"p", "div", "h1", "h2", "h3", "h4", "li", "pre", "tr", "ul", "ol", "table", "section"}
 
 
 def git(*args: str) -> str:
-    return subprocess.run(["git", *args], check=True, capture_output=True, text=True).stdout
+    return subprocess.run(
+        ["git", "-C", str(REPO_ROOT), *args], check=True, capture_output=True, text=True
+    ).stdout
 
 
 def reports() -> list[str]:
@@ -50,7 +54,7 @@ def resolve_report(name: str) -> str:
     sys.exit(f"no report {name!r}; reports: {', '.join(available)}")
 
 
-class Cards(HTMLParser):
+class CardExtractor(HTMLParser):
     """Collect each ``<article id="c…">`` as text, keeping block breaks."""
 
     def __init__(self) -> None:
@@ -119,7 +123,8 @@ def text_of(parts: list[str]) -> str:
     return "\n".join(out).strip()
 
 
-def number(ident: str) -> int:
+def card_number(ident: str) -> int:
+    """The number in a card id: ``c04`` and ``c4`` are both 4."""
     return int(ident.lstrip("c"))
 
 
@@ -131,22 +136,29 @@ def main(argv: list[str]) -> int:
         git("fetch", "--quiet", "origin", "architecture-reviews")
     except subprocess.CalledProcessError:
         print(f"!! fetch failed; reading the last fetched {BRANCH}", file=sys.stderr)
+    try:
+        available = reports()
+    except subprocess.CalledProcessError:
+        sys.exit(f"cannot read {BRANCH}; has it ever been fetched?")
     if not argv:
-        print("\n".join(reports()))
+        print("\n".join(available))
         return 0
     report = resolve_report(argv[0])
-    parser = Cards()
+    parser = CardExtractor()
     parser.feed(git("show", f"{BRANCH}:{report}"))
+    if not parser.cards:
+        sys.exit(f"{report} has no <article id=\"c…\"> cards")
     if len(argv) == 1:
-        for ident in sorted(parser.cards, key=number):
+        for ident in sorted(parser.cards, key=card_number):
             print(f"{ident:4} {re.sub(r'\s+', ' ', parser.titles[ident]).strip()}")
         return 0
     wanted = argv[1].lower().lstrip("c")
     if not wanted.isdigit():
         sys.exit(f"not a card id: {argv[1]!r} (write c4, c04 or 4)")
-    match = [i for i in parser.cards if number(i) == int(wanted)]
+    match = [i for i in parser.cards if card_number(i) == int(wanted)]
     if not match:
-        sys.exit(f"{report} has no card {argv[1]}; it has c{min(map(number, parser.cards))}–c{max(map(number, parser.cards))}")
+        numbers = [card_number(i) for i in parser.cards]
+        sys.exit(f"{report} has no card {argv[1]}; it has c{min(numbers)}–c{max(numbers)}")
     print(f"{report} #{match[0]}\n")
     print(text_of(parser.cards[match[0]]))
     return 0
