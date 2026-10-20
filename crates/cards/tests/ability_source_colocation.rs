@@ -54,7 +54,7 @@ use std::sync::LazyLock;
 /// there" differ only in where the investigator stands.
 const HALL: &str = "SRCLOC01";
 /// Synthetic **enemy**, standing in for a Parley cultist — Herman Collins
-/// 01138's *"[action] Choose and discard 4 cards from your hand: **Parley.**"*
+/// 01138's *"\[action\] Choose and discard 4 cards from your hand: **Parley.**"*
 /// is exactly an *"encounter card placed at that location"*.
 const CULTIST: &str = "SRCENE01";
 /// Synthetic **treachery** in an investigator's threat area, standing in for

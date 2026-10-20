@@ -264,7 +264,7 @@ fn play_rows() -> Vec<Row> {
             provokes: true,
         },
         // Blinding Light 01066: *"<b>Evade.</b> This evasion attempt uses
-        // [willpower] instead of [agility]. …"* Playing it is an evade action,
+        // \[willpower\] instead of \[agility\]. …"* Playing it is an evade action,
         // so it is exempt. Official FAQ, on Backstab 01051: *"Abilities with a
         // bold action designator (like Fight, Evade or Investigate) count as an
         // action of that type."* The attacker is the one enemy engaged to evade.
@@ -294,7 +294,7 @@ fn play_rows() -> Vec<Row> {
 /// as the basic actions.
 fn activate_rows() -> Vec<Row> {
     vec![
-        // First Aid 01019: *"[action] Spend 1 supply: Heal 1 damage or horror
+        // First Aid 01019: *"\[action\] Spend 1 supply: Heal 1 damage or horror
         // from an investigator at your location."* No designator. The
         // investigator carries 1 damage so the heal can change the game state.
         Row {
@@ -312,7 +312,7 @@ fn activate_rows() -> Vec<Row> {
             actions_spent: 1,
             provokes: true,
         },
-        // Machete 01020: *"[action]: <b>Fight.</b> You get +1 [combat] for this
+        // Machete 01020: *"\[action\]: <b>Fight.</b> You get +1 \[combat\] for this
         // attack."* A designated Fight is exempt. The bystander is removed so
         // the attacker is the one enemy here to fight.
         Row {
@@ -329,7 +329,7 @@ fn activate_rows() -> Vec<Row> {
             actions_spent: 1,
             provokes: false,
         },
-        // Flashlight 01087: *"[action] Spend 1 supply: <b>Investigate.</b>"*
+        // Flashlight 01087: *"\[action\] Spend 1 supply: <b>Investigate.</b>"*
         // Investigate is not on the exempt list, so it provokes as the basic
         // action does.
         Row {
@@ -344,7 +344,7 @@ fn activate_rows() -> Vec<Row> {
             actions_spent: 1,
             provokes: true,
         },
-        // Parlor 01115: *"[action] <b>Resign.</b>"* A location's ability,
+        // Parlor 01115: *"\[action\] <b>Resign.</b>"* A location's ability,
         // reached by standing in it. Resign is exempt.
         Row {
             name: "Activate (Resign)",
@@ -363,7 +363,7 @@ fn activate_rows() -> Vec<Row> {
             actions_spent: 1,
             provokes: false,
         },
-        // The probe's *"[action][action]: gain 1 resource."* Two actions, and
+        // The probe's *"\[action\]\[action\]: gain 1 resource."* Two actions, and
         // still one attack from the one engaged enemy.
         Row {
             name: "Activate (two actions)",
@@ -377,7 +377,7 @@ fn activate_rows() -> Vec<Row> {
             actions_spent: 2,
             provokes: true,
         },
-        // Beat Cop 01018: *"[fast] Discard Beat Cop: Deal 1 damage to an enemy
+        // Beat Cop 01018: *"\[fast\] Discard Beat Cop: Deal 1 damage to an enemy
         // at your location."* The bystander is removed so the attacker is the
         // one enemy here to choose.
         Row {

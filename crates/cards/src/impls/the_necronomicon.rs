@@ -35,13 +35,13 @@
 //! play'."* Elimination removes it all the same (`glossary/Elimination.md` step
 //! 0, *"remove those weaknesses from the game"*).
 //!
-//! *"Treat each `[elder_sign]` you reveal on a chaos token as a
-//! `[auto_fail]`."* is a constant `Effect::TreatRevealedToken`, read off the
+//! *"Treat each \[elder_sign\] you reveal on a chaos token as a
+//! \[auto_fail\]."* is a constant `Effect::TreatRevealedToken`, read off the
 //! threat area of the investigator revealing (#1094). Everything after the
 //! reveal reads the auto-fail, so Daisy's own `[elder_sign]` ability never
 //! initiates while this is in play.
 //!
-//! *"`[action]`: Move 1 horror from The Necronomicon to Daisy Walker. Then, if
+//! *"\[action\]: Move 1 horror from The Necronomicon to Daisy Walker. Then, if
 //! The Necronomicon has no horror on it, discard it."* is a native on
 //! [`NativeCx::move_horror`]: a move, not a deal, so nothing keyed on harm
 //! fires. The ruling (<https://arkhamdb.com/card/01009>): *"Moving damage or
@@ -73,9 +73,9 @@ const MOVE_HORROR_TAG: &str = "01009:move-horror";
 /// - *"Revelation - Put The Necronomicon into play in your threat area, with 3
 ///   horror on it. It cannot leave play while it has 1 or more horror on it."*
 ///   The Revelation and the constant restriction, two abilities here.
-/// - *"Treat each `[elder_sign]` you reveal on a chaos token as a
-///   `[auto_fail]`."*
-/// - *"`[action]`: Move 1 horror from The Necronomicon to Daisy Walker. Then,
+/// - *"Treat each \[elder_sign\] you reveal on a chaos token as a
+///   \[auto_fail\]."*
+/// - *"\[action\]: Move 1 horror from The Necronomicon to Daisy Walker. Then,
 ///   if The Necronomicon has no horror on it, discard it."*
 #[must_use]
 pub fn abilities() -> Vec<Ability> {

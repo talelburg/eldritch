@@ -18,7 +18,7 @@
 //! declares only the reaction — the soak half rides on metadata.
 //!
 //! **Cell: the `after` cell of the `EnteredPlay` condition.** The printed word
-//! is *"After"* — *"`[reaction]` After Research Librarian enters play: Search
+//! is *"After"* — *"\[reaction\] After Research Librarian enters play: Search
 //! your deck for a Tome asset and add it to your hand. Shuffle your deck."* —
 //! and `glossary/After.md` puts that *"immediately after the specified timing
 //! point or triggering condition has fully resolved."* So the ally is in play,

@@ -33,7 +33,7 @@ use game_core::test_support::{self, seat, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 const MOB_ENFORCER: &str = "01101";
-/// Roland Banks 01001: *"[reaction] After you defeat an enemy: Discover 1 clue
+/// Roland Banks 01001: *"\[reaction\] After you defeat an enemy: Discover 1 clue
 /// at your location. (Limit once per round.)"*
 const ROLAND: &str = "01001";
 /// Filler for the decks, so no draw runs a deck out.

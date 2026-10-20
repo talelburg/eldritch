@@ -31,8 +31,8 @@ use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_event_sequence};
 
 const PICKPOCKETING: &str = "01046";
-/// Event. *"Evade. This evasion attempt uses [willpower] instead of
-/// [agility]."*
+/// Event. *"Evade. This evasion attempt uses \[willpower\] instead of
+/// \[agility\]."*
 const BLINDING_LIGHT: &str = "01066";
 /// Deck filler, the card Pickpocketing draws.
 const GUTS: &str = "01089";

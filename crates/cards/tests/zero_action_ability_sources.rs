@@ -35,14 +35,14 @@
 //! that inheritance a checked property rather than a reading of the call graph.
 //!
 //! Corpus consumers in Dunwich, none of them implementable yet: Ten-Acre
-//! Meadow 02246 (*"[fast]: You lure the monster into the rain. Place 1 clue
+//! Meadow 02246 (*"\[fast\]: You lure the monster into the rain. Place 1 clue
 //! from the token bank on an [[Abomination]] enemy in Ten-Acre Meadow. At the
 //! end of the round, remove 1 clue from that enemy. (Group limit once per
-//! game)."*) and Dunwich Village 02242 (*"[fast]: You borrow some hounds to
+//! game)."*) and Dunwich Village 02242 (*"\[fast\]: You borrow some hounds to
 //! track the creatures by scent. An investigator in Dunwich Village may place 1
 //! of his or her clues on any [[Abomination]] enemy in play. (Group limit once
 //! per game)."*) both print one on a **location**; Peter Clover 02079
-//! (*"[fast] Exhaust Peter Clover: Automatically evade a [[Criminal]] enemy in
+//! (*"\[fast\] Exhaust Peter Clover: Automatically evade a [[Criminal]] enemy in
 //! your location."*) prints one on an asset, which is the control bullet #707
 //! already covers. Both locations carry a group usage limit, which a source
 //! with no card instance cannot record (#699) — so neither could be shipped
@@ -499,7 +499,7 @@ fn the_act_and_agenda_stay_reachable_from_nowhere_at_all() {
 
 // ---- what a player window does *not* open --------------------------------
 
-/// *"An [action] triggered ability may be triggered during a player's turn in
+/// *"An \[action\] triggered ability may be triggered during a player's turn in
 /// the investigation phase through the use of the activate action"* — a player
 /// window is neither, so the same card's action-costed ability stays shut.
 ///

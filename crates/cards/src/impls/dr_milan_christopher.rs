@@ -21,7 +21,7 @@
 //! reaction — the soak half rides on metadata.
 //!
 //! **Cell: the `after` cell of the `SkillTestResolved` condition.** The printed
-//! word is *"After"* — *"`[reaction]` After you successfully investigate: Gain
+//! word is *"After"* — *"\[reaction\] After you successfully investigate: Gain
 //! 1 resource."* — and `glossary/After.md` puts that *"immediately after the
 //! specified timing point or triggering condition has fully resolved."* So the
 //! investigation has already paid out, clue and all, before the resource

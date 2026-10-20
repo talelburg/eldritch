@@ -22,7 +22,7 @@ const HERE: LocationId = LocationId(10);
 const HALLWAY: LocationId = LocationId(2);
 
 /// Two seats at a Study with a clue on it, in seat 2's turn; seat 1 is Roland
-/// Banks (01001) and has `status`. 01001: *"[reaction] After you defeat an
+/// Banks (01001) and has `status`. 01001: *"\[reaction\] After you defeat an
 /// enemy: Discover 1 clue at your location. (Limit once per round.)"*
 ///
 /// Roland defeats an enemy by firing the timing point over seat 2's open turn:

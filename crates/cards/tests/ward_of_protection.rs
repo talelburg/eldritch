@@ -37,10 +37,10 @@ use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 const WARD: &str = "01065";
-/// Agnes Baker: *"[reaction] After 1 or more horror is placed on Agnes Baker:
+/// Agnes Baker: *"\[reaction\] After 1 or more horror is placed on Agnes Baker:
 /// Deal 1 damage to an enemy at your location. (Limit once per phase.)"*
 const AGNES: &str = "01004";
-/// Heirloom of Hyperborea: *"[reaction] After you play a [[Spell]] card: Draw
+/// Heirloom of Hyperborea: *"\[reaction\] After you play a [[Spell]] card: Draw
 /// 1 card."*
 const HEIRLOOM: &str = "01012";
 /// Drawn to the Flame: *"Draw the top card of the encounter deck. Then,

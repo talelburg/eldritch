@@ -136,7 +136,7 @@ Treat card citations in existing comments and docs as unverified until checked, 
 
 **Inside a verbatim card quote, an icon is escaped:** `*"\[reaction\] After you defeat an enemy: …"*` (Roland Banks 01001). **In prose outside a quote, it is backticked:** `` `[reaction]` ``. Inside a ```` ```text ```` block it is written as printed, because a code block links nothing.
 
-**Why:** rustdoc reads a bare `[reaction]` as an intra-doc link, and the `doc` job fails on it as a broken one. PRs #1129 and #1134 each lost a CI round to an unescaped icon (#1148). The two spellings are the existing majority usage, and the escape keeps a quote reading as the printed sentence rather than a code span inside it.
+**Why:** rustdoc reads a bare `[reaction]` as an intra-doc link, and the `doc` job fails on it as a broken one: PRs #1129 and #1134 each lost a CI round to an unescaped icon. That failure fires only in a public library item's doc comment, which is how bare icons survived in test files and private items. The spelling is the same in every comment anyway, so the neighbour a new author copies is always the right one, and the escape keeps a quote reading as the printed sentence rather than a code span inside it. #1148 found 52 backticked and 65 bare icons inside quotes, against 159 escaped, and converted them, so every icon inside a quote in `crates/` is now escaped.
 
 ### Emit a timing point in tail position; put post-emit work on a frame
 

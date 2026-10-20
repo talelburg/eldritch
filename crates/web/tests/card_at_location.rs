@@ -1,8 +1,8 @@
 //! The interactive surface for a card sitting **at** a location (#847).
 //!
 //! Since #772 the engine offers the Parlor 01115's granted Parley — *"While
-//! Lita Chantler is not controlled by a player, she gains: '[action]:
-//! **Parley.** Test [intellect] (4). If you succeed, take control of Lita
+//! Lita Chantler is not controlled by a player, she gains: '\[action\]:
+//! **Parley.** Test \[intellect\] (4). If you succeed, take control of Lita
 //! Chantler.'"* — anchored to Lita's **card instance**, not to the Parlor. The
 //! map rendered her as an inert `<div>`, so the option was anchored to a
 //! surface the client did not render: unreachable rather than misplaced, the

@@ -439,8 +439,8 @@ pub enum ChaosSymbol {
 impl ChaosSymbol {
     /// The four scenario symbols and `[auto_fail]`: every symbol but the elder
     /// sign. Shrivelling 01060 and Blinding Light 01066 both print exactly this
-    /// list (*"If a `[skull]`, `[cultist]`, `[tablet]`, `[elder_thing]`, or
-    /// `[auto_fail]` symbol is revealed"*).
+    /// list (*"If a \[skull\], \[cultist\], \[tablet\], \[elder_thing\], or
+    /// \[auto_fail\] symbol is revealed"*).
     pub const ALL_BUT_ELDER_SIGN: [Self; 5] = [
         Self::Skull,
         Self::Cultist,
@@ -965,7 +965,7 @@ pub enum EventPattern {
     EnemyAttackDamagedSelf,
     /// At least 1 of `kind` was **placed** on the card `scope` names — step 2
     /// of dealing damage, once the assignment has settled (ADR 0009). Agnes
-    /// Baker 01004: *"`[reaction]` After 1 or more horror is placed on Agnes
+    /// Baker 01004: *"\[reaction\] After 1 or more horror is placed on Agnes
     /// Baker: Deal 1 damage to an enemy at your location. (Limit once per
     /// phase.)"* is `{ Horror, YourInvestigator }` in the `after` cell.
     ///
@@ -1127,8 +1127,8 @@ pub enum EventPattern {
     /// 3 reveals no token, so it never announces this.
     ///
     /// Two consumers: Wendy in its `when` cell, and Ritual Candles 02029
-    /// (Dunwich) in its `after` cell, *"\[reaction\] After a `[skull]`,
-    /// `[cultist]`, `[tablet]`, or `[elder_thing]` symbol is revealed during
+    /// (Dunwich) in its `after` cell, *"\[reaction\] After a \[skull\],
+    /// \[cultist\], \[tablet\], or \[elder_thing\] symbol is revealed during
     /// a test you are performing: You get +1 skill value for this test."* The
     /// symbol narrowing arrives with the Candles. Wendy is its only corpus
     /// consumer, so it is a spec-approved exception to `standards.md`'s
@@ -1428,7 +1428,7 @@ pub enum Phase {
 /// - [`When`](Self::When) — interrupts the condition, resolving *before* its
 ///   impact lands. Dodge 01023's *"Fast. Play when an enemy attacks an
 ///   investigator at your location. / Cancel that attack."*, Cover Up 01007's
-///   *"`[reaction]` When you would discover 1 or more clues at your location:
+///   *"\[reaction\] When you would discover 1 or more clues at your location:
 ///   Discard that many clues from Cover Up instead."*
 /// - [`At`](Self::At) — between the other two, after the condition's impact has
 ///   landed. The cell the printed words *"at"* and *"if"* name: agenda 01107's
@@ -2459,7 +2459,7 @@ pub enum Effect {
     },
     /// **Treat one revealed chaos symbol as another**, for each token the
     /// source card's controller reveals: The Necronomicon 01009's *"Treat each
-    /// `[elder_sign]` you reveal on a chaos token as a `[auto_fail]`."* A
+    /// \[elder_sign\] you reveal on a chaos token as a \[auto_fail\]."* A
     /// constant marker like [`Restrict`](Self::Restrict), under a
     /// [`Trigger::Constant`]: **inspected, not executed** — the skill test
     /// reads it off the performer's cards as the token comes out of the bag,

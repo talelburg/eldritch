@@ -22,7 +22,7 @@
 //! act 01109's `when`, agenda 01107's and Dissonant Voices 01165's `at` — in
 //! `theyre_getting_out.rs` and `the_barrier_eligibility.rs`. The **enemy
 //! defeat** — act 01110's `at` objective against Roland Banks 01001's
-//! *"`[reaction]` After you defeat an enemy: Discover 1 clue at your
+//! *"\[reaction\] After you defeat an enemy: Discover 1 clue at your
 //! location."* — in `scenarios/tests/the_gathering_resolutions.rs`, whose C7b
 //! gate defeats the real Ghoul Priest and asserts Roland's window never opens,
 //! per 01110's ruling that the objective fires *"before any "After you defeat

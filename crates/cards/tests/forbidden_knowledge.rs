@@ -150,7 +150,7 @@ fn moving_the_last_secret_discards_it() {
 }
 
 /// The cost's horror is placed on Agnes Baker 01004 like any other, so it
-/// offers her *"[reaction] After 1 or more horror is placed on Agnes Baker:
+/// offers her *"\[reaction\] After 1 or more horror is placed on Agnes Baker:
 /// Deal 1 damage to an enemy at your location."* — which resolves before the
 /// secret moves, since the cost is paid before the effect.
 #[test]

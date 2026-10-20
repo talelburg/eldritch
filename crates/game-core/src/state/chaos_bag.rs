@@ -120,8 +120,8 @@ pub enum TokenResolution {
 /// `token` and `counts_as` differ only when an
 /// [`Effect::TreatRevealedToken`](card_dsl::dsl::Effect::TreatRevealedToken)
 /// on the performer's cards substitutes the drawn symbol (The Necronomicon
-/// 01009: *"Treat each `[elder_sign]` you reveal on a chaos token as a
-/// `[auto_fail]`."*). Everything downstream of the reveal reads `counts_as`;
+/// 01009: *"Treat each \[elder_sign\] you reveal on a chaos token as a
+/// \[auto_fail\]."*). Everything downstream of the reveal reads `counts_as`;
 /// `token` is the record of what was drawn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RevealedToken {

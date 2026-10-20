@@ -143,7 +143,7 @@ fn dark_memory_does_not_fire_at_the_end_of_another_investigators_turn() {
 #[test]
 fn dark_memory_beside_another_end_of_turn_forced_ability_fires_in_place() {
     // Frozen in Fear 01164 (*"Forced - At the end of your turn: Test
-    // [willpower] (3)."*) shares the cell, so the lead orders the two. Dark
+    // \[willpower\] (3)."*) shares the cell, so the lead orders the two. Dark
     // Memory resolves first: its horror lands, and it is not played — no cost
     // paid, no doom placed, still in hand.
     let session = GameStateBuilder::new()

@@ -1,8 +1,8 @@
 //! [`Effect::TreatRevealedToken`]: a constant that makes a chaos token its
 //! controller reveals count as another symbol.
 //!
-//! The Necronomicon 01009 is the corpus consumer (*"Treat each `[elder_sign]`
-//! you reveal on a chaos token as a `[auto_fail]`."*,
+//! The Necronomicon 01009 is the corpus consumer (*"Treat each \[elder_sign\]
+//! you reveal on a chaos token as a \[auto_fail\]."*,
 //! `data/arkhamdb-snapshot/pack/core/core.json`), tested against the real
 //! registry in `crates/cards/tests/the_necronomicon.rs`. This binary pins the
 //! primitive with two other pairs, so the substitution is not the one pair
@@ -28,11 +28,11 @@ use game_core::state::{
 use game_core::test_support::{self, seat, MockRegistry, Seat, TestSession, TEST_INV};
 use game_core::{assert_event, assert_no_event};
 
-/// Mock asset: *"Treat each `[skull]` you reveal on a chaos token as an
-/// `[elder_sign]`."*
+/// Mock asset: *"Treat each \[skull\] you reveal on a chaos token as an
+/// \[elder_sign\]."*
 const SKULL_AS_ELDER_SIGN: &str = "MOCK-SKULL-ES";
-/// Mock asset: *"Treat each `[cultist]` you reveal on a chaos token as an
-/// `[auto_fail]`."*
+/// Mock asset: *"Treat each \[cultist\] you reveal on a chaos token as an
+/// \[auto_fail\]."*
 const CULTIST_AS_AUTO_FAIL: &str = "MOCK-CULTIST-AF";
 
 const INV: InvestigatorId = InvestigatorId(1);

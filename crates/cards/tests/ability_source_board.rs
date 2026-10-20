@@ -26,9 +26,9 @@
 //! Own integration-test binary so it can build its own `MockRegistry`.
 //! **No corpus card can exercise this**: the act and agenda abilities the
 //! corpus prints — the resigns on Predator or Prey? 01121a and Time Is Running
-//! Short 01122 (*"[action]: **Resign.** You don't want to risk taking too long,
+//! Short 01122 (*"\[action\]: **Resign.** You don't want to risk taking too long,
 //! so you head to safety with the information you've gathered."*), and the act
-//! abilities on Uncovering the Conspiracy 01123 (*"[action] The investigators
+//! abilities on Uncovering the Conspiracy 01123 (*"\[action\] The investigators
 //! spend 2 clues per investigator, as a group: Draw the top card of the Cultist
 //! deck."*) and Disrupting the Ritual 01148 — have no ability implementations,
 //! and shipping one is not available either: Resign's effect has nowhere to go

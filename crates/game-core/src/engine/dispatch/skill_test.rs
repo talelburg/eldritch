@@ -511,7 +511,7 @@ pub(super) fn acknowledge_outcome(cx: &mut Cx) -> EngineOutcome {
 /// [`DetermineOutcome`](SkillTestStep::DetermineOutcome), because the ST.4
 /// effects this step pushes can change the board the ST.5 sum reads: a
 /// `[tablet]` in The Gathering deals 1 damage when a Ghoul is present, that
-/// damage can be soaked onto a Beat Cop 01018 (*"You get +1 [combat]."*,
+/// damage can be soaked onto a Beat Cop 01018 (*"You get +1 \[combat\]."*,
 /// printed health 2), and a Beat Cop discarded at ST.4 must not still be
 /// contributing its `+1` at ST.5 (#674). What this step *does* write down is
 /// the token's own contribution, as a [`RecordedModifier`] scoped to this
@@ -731,8 +731,8 @@ pub(in crate::engine) fn reveal_new_token(cx: &mut Cx) -> EngineOutcome {
 /// [`Effect::TreatRevealedToken`] on `investigator`'s own cards whose `from`
 /// is the drawn symbol, or `drawn` itself when none applies.
 ///
-/// The Necronomicon 01009: *"Treat each `[elder_sign]` you reveal on a chaos
-/// token as a `[auto_fail]`."* — *"you reveal"*, so the constant is read off
+/// The Necronomicon 01009: *"Treat each \[elder_sign\] you reveal on a chaos
+/// token as a \[auto_fail\]."* — *"you reveal"*, so the constant is read off
 /// the performer's cards ([`constants_of`](abilities_in_effect::constants_of):
 /// investigator card, play area, threat area) and no one else's. A numeric
 /// token shows no symbol, so nothing substitutes it. One substitution, not a
@@ -806,7 +806,7 @@ fn chaos_symbol_effect(
 ///   **unevaluated** instead (`n` is only its value at reveal).
 /// - [`ElderSign`](TokenResolution::ElderSign) records the modifier of the
 ///   investigator card's elder-sign `outcome` **unevaluated**. Roland Banks 01001's
-///   *"`[elder_sign]` effect: +1 for each clue on your location."*
+///   *"\[elder_sign\] effect: +1 for each clue on your location."*
 ///   (`data/arkhamdb-snapshot/pack/core/core.json`) counts the clues on his
 ///   location when ST.5 reads the row, not the ones that were there when the
 ///   token came out — the ST.4 window sits between the two. An investigator
@@ -1132,7 +1132,7 @@ pub(crate) fn outcome_of(resolved: ResolvedTest) -> TestOutcome {
 ///   [`DetermineOutcome`](SkillTestStep::DetermineOutcome), which announces the
 ///   fresh verdict in a sequence of its own. The revealed token and its recorded
 ///   row stay, so ST.3 and ST.4 do not run again (the 01080 ruling's *"If you
-///   reveal an `[auto_fail]` auto-fail token, your total skill value is
+///   reveal an \[auto_fail\] auto-fail token, your total skill value is
 ///   considered to be 0, overriding any modifiers"* holds on the re-total for the
 ///   same reason, <https://arkhamdb.com/card/01080>).
 ///

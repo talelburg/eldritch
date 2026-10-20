@@ -1464,7 +1464,7 @@ pub struct InFlightSkillTest {
     /// A card in play this test discards as it ends, at RR ST.8 — after the
     /// ST.7 results, so after an attack's damage.
     ///
-    /// Baseball Bat 01074's *"If a `[skull]` or `[auto_fail]` symbol is
+    /// Baseball Bat 01074's *"If a \[skull\] or \[auto_fail\] symbol is
     /// revealed during this attack, discard Baseball Bat after the attack
     /// resolves."*: its reveal clause fires at ST.3 and marks the test here
     /// (through

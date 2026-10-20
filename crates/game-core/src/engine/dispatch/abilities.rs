@@ -79,7 +79,7 @@ use crate::state::{
 /// itself a window, so a Fast ability needs one open at it — is not printed as
 /// a rule, but the official FAQ is consistent with it. Asked whether Lola Hayes
 /// may switch roles mid-resolution of another ability, it answers *"As long as
-/// it is during a [fast] player window, yes."*
+/// it is during a \[fast\] player window, yes."*
 /// (`data/official-faq/Frequently_Asked_Questions.md`) — the permission is
 /// conditioned on a window rather than granted by the moment. So an empty
 /// `open_windows` with a resolution in flight is a considered refusal, not a

@@ -207,8 +207,8 @@ fn willpower_test(state: GameStateBuilder) -> TestSession {
     session
 }
 
-/// *"Treat each `[elder_sign]` you reveal on a chaos token as a
-/// `[auto_fail]`."* Willpower 3 + 0 against 3 would pass on Daisy's elder sign
+/// *"Treat each \[elder_sign\] you reveal on a chaos token as a
+/// \[auto_fail\]."* Willpower 3 + 0 against 3 would pass on Daisy's elder sign
 /// and draw one card per Tome; counted as an auto-fail, the elder sign fails
 /// the test, and her elder-sign ability never initiates, so she draws nothing.
 #[test]
@@ -247,8 +247,8 @@ fn without_it_the_elder_sign_draws_one_card_per_tome() {
 }
 
 /// A reveal clause keyed on `[auto_fail]` fires on the counted elder sign.
-/// Shrivelling 01060: *"If a `[skull]`, `[cultist]`, `[tablet]`,
-/// `[elder_thing]`, or `[auto_fail]` symbol is revealed during this attack,
+/// Shrivelling 01060: *"If a \[skull\], \[cultist\], \[tablet\],
+/// \[elder_thing\], or \[auto_fail\] symbol is revealed during this attack,
 /// take 1 horror."* The elder sign is not in that list, but the elder sign
 /// Daisy reveals counts as an `[auto_fail]`, so the attack costs her 1 horror.
 #[test]
@@ -584,7 +584,7 @@ fn horror_on_the_necronomicon(state: &GameState) -> u8 {
         .accumulated_horror
 }
 
-/// *"[action]: Move 1 horror from The Necronomicon to Daisy Walker."* A move,
+/// *"\[action\]: Move 1 horror from The Necronomicon to Daisy Walker."* A move,
 /// so no harm event fires. The ruling (<https://arkhamdb.com/card/01009>):
 /// *"Moving damage or horror is different from 'dealing' or 'taking' damage or
 /// horror, so does not trigger effects or allow the player controlling Daisy

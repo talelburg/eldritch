@@ -1972,7 +1972,7 @@ fn discover_clue(
     // Emit the clue-discovery triggering condition and stop: the condition is
     // **coordinator-owned** (#703), so the clues move at the coordinator's
     // resolve step, between the `when` and `at` cells — not here. That is what
-    // lets Cover Up 01007's *"[reaction] When you would discover 1 or more clues
+    // lets Cover Up 01007's *"\[reaction\] When you would discover 1 or more clues
     // at your location: Discard that many clues from Cover Up instead"* replace
     // a discovery that has not happened yet.
     //

@@ -502,7 +502,7 @@ impl TimingEvent {
             | TimingEvent::CardPlayed { .. } => {
                 ConditionResolution::Coordinator(resolve_bare_milestone)
             }
-            // Coordinator-owned for Lita Chantler 01117's *"[reaction] **When**
+            // Coordinator-owned for Lita Chantler 01117's *"\[reaction\] **When**
             // an investigator at your location successfully attacks a
             // [[Monster]] enemy: That investigator deals +1 damage."* — a
             // `when` whose point is to raise the damage before ST.7 applies it.
@@ -537,7 +537,7 @@ impl TimingEvent {
             TimingEvent::DamagePlaced { .. } => {
                 ConditionResolution::Coordinator(resolve_damage_placed)
             }
-            // The first migration (#703). Cover Up 01007 prints *"[reaction] When
+            // The first migration (#703). Cover Up 01007 prints *"\[reaction\] When
             // you would discover 1 or more clues at your location: Discard that
             // many clues from Cover Up instead"*, so the discovery has to be able
             // to not happen — which it cannot be if the caller has already moved

@@ -515,7 +515,7 @@ fn reject_incompatible_costs(costs: &[Cost]) -> Result<(), Cow<'static, str>> {
 /// for a deal frame or a choice between the two. Core and Dunwich print no such
 /// player card, so it is deliberately unlifted (YAGNI, as with
 /// `reject_incompatible_costs`); the first card to print one lifts it (#1031).
-/// The Core enemy Herman Collins 01138 prints the discard — *"[action] Choose
+/// The Core enemy Herman Collins 01138 prints the discard — *"\[action\] Choose
 /// and discard 4 cards from your hand: **Parley.**"* — and needs a count
 /// besides.
 fn reject_costs_unpayable_on_an_action(
