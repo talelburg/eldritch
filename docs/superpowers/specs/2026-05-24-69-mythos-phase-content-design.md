@@ -23,8 +23,8 @@ And the per-card sub-sequence inside 1.4:
 > 1. Draw the card from the encounter deck.
 > 2. Check for the peril keyword on the drawn card. (If the card has the peril keyword, the investigator who drew the card cannot confer with the other players. Those other players cannot play cards, trigger abilities, or commit cards to that investigator's skill test(s) while the peril encounter is resolving.)
 > 3. Resolve the revelation ability on the drawn card.
-> 4. If the card is an enemy, spawn it following any spawn instruction the card bears.
-> 5. If the drawn card has the surge keyword, the investigator must draw another card from the encounter deck.
+> 4. If the card is an **enemy**, spawn it following any spawn instruction the card bears. …
+> 5. If the drawn card has the surge keyword, the investigator must draw another card. Restart this process at step 1.
 
 Plus:
 

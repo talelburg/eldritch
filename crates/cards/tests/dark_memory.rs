@@ -96,8 +96,8 @@ fn playing_dark_memory_places_one_doom_on_the_current_agenda() {
 fn playing_dark_memory_can_advance_the_agenda() {
     // 2 of 3 doom: Dark Memory's doom meets the threshold, and "This effect can
     // cause the current agenda to advance" advances it now, not at Mythos 1.3.
-    // 01105's reverse is the lead's choice; branch 1 is "the lead takes 2
-    // horror".
+    // 01105's reverse is the lead's choice; branch 1 is "the lead
+    // investigator takes 2 horror".
     let session = turn_to_play_it(2).take(&PLAY_IT).pick_nth(1);
 
     assert_event!(session.events(), Event::AgendaAdvanced { from: 0 });

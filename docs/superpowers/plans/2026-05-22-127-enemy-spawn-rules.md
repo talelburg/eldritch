@@ -25,7 +25,7 @@ These resolve the spec's "Open items resolved at implementation time" section an
 3. **`state.next_enemy_id: u32` counter for enemy minting.** Mirrors `state.next_card_instance_id`. The existing engine has no enemy-minting site (tests place enemies by hard-coded `EnemyId(...)`); this is the first one. Adding a separate counter avoids conflating "enemy in play" and "card in play" ID spaces — `EnemyId` and `CardInstanceId` are already distinct types.
 4. **`Event::EnemySpawned` is extended in place with `code` and `engaged_with`.** Grep confirms no current consumers; the existing variant is structural-only. `Event` is `#[non_exhaustive]`, but variant-field changes are still breaking by Rust rules — safe here because there are zero matches against it.
 5. **No companion `Event::EnemyEngaged` on on-spawn engagement.** The spec emits `EnemySpawned` with `engaged_with: Option<InvestigatorId>` and stops. Following the spec — denormalize the engagement state onto `EnemySpawned`. A future PR with a real "after an enemy engages an investigator" listener gets to add the separate event then (concrete-consumer-first, matching the project's pattern).
-6. **Revelation before spawn for enemies.** When an encounter enemy with Revelation effects is revealed, Revelation runs *before* the spawn handler. Matches Rules Reference page 24 ("1. Resolve any 'Revelation' effects … 2. If it is an Enemy: …spawn instructions / default engagement"). No Phase-4-scope enemy has Revelation, so this is structural — the loop is in place for Phase-7+ enemies. Quote the rules ref clause verbatim in the doc comment.
+6. **Revelation before spawn for enemies.** When an encounter enemy with Revelation effects is revealed, Revelation runs *before* the spawn handler. Matches Rules Reference page 24 ("3. Resolve the revelation ability on the drawn card. 4. If the card is an enemy, spawn it following any spawn instruction the card bears."). No Phase-4-scope enemy has Revelation, so this is structural — the loop is in place for Phase-7+ enemies. Quote the rules ref clause verbatim in the doc comment.
 7. **Pipeline emits `spawn: None` literally for every enemy.** No upstream parsing of spawn text yet — Phase-7's first spawn-bearing real card forces that work. The pipeline change is one new `writeln!` per emit and one new field on `NormalizedCard` (defaulted at construction). The regenerated `cards/src/generated/cards.rs` adds `spawn: None,` on ~ 600 lines (one per card); regenerate via `cargo run -p card-data-pipeline` and commit the diff.
 8. **`SYNTH_LOC_CODE = "_synth_loc"`.** Underscore prefix mirrors `_synth_treachery` from #126; can't collide with real ArkhamDB codes (which are digit-prefixed five-char strings). Used both as the synthetic location's `code` field and as the spawn target for `_synth_enemy`.
 9. **`_synth_enemy` carries minimal stats.** Health 1, fight 1, evade 1, attack damage 0, attack horror 0, no traits, not aloof / hunter / etc. (those fields don't exist yet). Just enough to land in play; not exercised in combat by this PR.
@@ -1435,12 +1435,13 @@ Replace it with the real wiring — Revelation effects first, then spawn:
 ```rust
         CardType::Enemy => {
             // Revelation effects on enemies (rare, but printed on
-            // some encounter enemies — e.g. "Revelation - Discard
-            // 1 card from your hand at random.") fire BEFORE the
-            // enemy spawns into play, per Rules Reference p.24:
-            // "1. Resolve any 'Revelation' effects on that card.
-            //  2. If it is an Enemy: spawn instructions / default
-            //     engagement."
+            // some encounter enemies — e.g. Coven Initiate 05090's
+            // "Revelation - Discard the top 2 cards of the encounter
+            // deck. …") fire BEFORE the enemy spawns into play, per
+            // Rules Reference p.24:
+            // "3. Resolve the revelation ability on the drawn card.
+            //  4. If the card is an enemy, spawn it following any
+            //     spawn instruction the card bears."
             //
             // No Phase-4-scope enemy has a Revelation effect; this
             // loop is structural for Phase-7+ enemies.

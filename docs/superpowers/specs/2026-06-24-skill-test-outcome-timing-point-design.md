@@ -191,7 +191,7 @@ replaced; routing damage through the interactive path is also RR-correct (the pl
 assigns damage to soak assets).
 
 **RR step placement (verified):** unconditional symbol effects resolve at **ST.4**;
-result-conditional symbol effects ("if this test is failed…") resolve at **ST.7**
+result-conditional symbol effects ("If you fail, …") resolve at **ST.7**
 (verified against the FFG rulings / ArkhamDB rules reference). This is exactly the
 `SymbolOutcome` `immediate` (ST.4) vs `on_fail` (ST.7) split. So:
 

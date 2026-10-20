@@ -305,7 +305,7 @@ The last synchronous `apply_effect` production caller. Push the frame instead, d
 
 - [ ] **Step 1: Write the failing test — Fast reaction event discards exactly once**
 
-`play_fast_event` is the reaction-window path for Fast `OnEvent` events — Evidence! 01022 ("Fast. Play after you defeat an enemy: Discover 1 clue") is the canonical card; `crates/cards/tests/evidence.rs` already drives it end-to-end through the after-defeat window. Add there, reusing that file's harness (the defeat → window → Evidence!-play drive):
+`play_fast_event` is the reaction-window path for Fast `OnEvent` events — Evidence! 01022 ("Fast. Play after you defeat an enemy. Discover 1 clue at your location.") is the canonical card; `crates/cards/tests/evidence.rs` already drives it end-to-end through the after-defeat window. Add there, reusing that file's harness (the defeat → window → Evidence!-play drive):
 
 ```rust
 #[test]

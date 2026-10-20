@@ -37,11 +37,13 @@ It does **not** wire the real enemies. The two consumers are:
   investigator fails a skill test while attacking a ready enemy with the
   retaliate keyword, after applying all results for that skill test, that enemy
   performs an attack against the attacking investigator. An enemy does not
-  exhaust after performing a retaliate attack. ==This attack occurs whether the
+  exhaust after performing a retaliate attack. This attack occurs whether the
   enemy is engaged with the attacking investigator or not."*
-- **Skill-test steps** (RR p.26): ST.7 *Apply skill test results* ("the card
-  ability or game rule that initiated the test … plus some other card abilities
-  may contribute additional consequences … at this time"); ST.8 *Skill test
+- **Skill-test steps** (RR p.26): ST.7 *Apply skill test results* ("The card
+  ability or game rule that initiated a skill test usually indicates the
+  consequences of success and/or failure for that test. (Additionally, some
+  other card abilities may contribute additional consequences … at this
+  time.)"); ST.8 *Skill test
   ends* (discard committed cards, return tokens). "After applying all results"
   = after the whole of ST.7, before ST.8.
 

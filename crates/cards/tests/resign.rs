@@ -15,7 +15,8 @@
 //! `glossary/Resign.md`, in full:
 //!
 //! > Some abilities are identified with a **Resign** action designator. Such
-//! > abilities are initiated using the "Activate" action.
+//! > abilities are initiated using the "Activate" action (see "Activate
+//! > Action" on page 4).
 //! >
 //! > - When an investigator resigns, the investigator is eliminated by
 //! >   resignation (see "Elimination" on page 10.) An investigator who

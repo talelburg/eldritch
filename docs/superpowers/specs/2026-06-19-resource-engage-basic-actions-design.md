@@ -29,7 +29,8 @@ stale exempt-list comment. Out: the AoO *reaction windows* (soak/cancel) — the
 keystone cluster (#293/#379/#361/#378) upgrades **all** AoO sites uniformly
 later; this work uses the existing window-less `fire_attacks_of_opportunity` and
 stays consistent with Move/Investigate. Also out: Engage's multiplayer
-"engage an enemy engaged with another investigator" clause (single
+"engage an enemy that is engaged with a different investigator at the same
+location" clause (single
 `Enemy.engaged_with` field; latent in 1p) and Parley/Resign (card/location-
 granted action types, not basic actions → #258).
 
@@ -61,7 +62,8 @@ Both handlers live in `engine/dispatch/actions.rs` and follow the established
   `Active`; `actions_remaining >= 1`; `enemy` exists in state; the enemy is at
   the investigator's `current_location`; the investigator is **not already
   engaged** with that enemy (`enemy.engaged_with != Some(investigator)` — RR:
-  "cannot engage an enemy he or she is already engaged with").
+  "cannot use the engage action to engage an enemy he or she is already
+  engaged with").
 - **Mutate**: `spend_one_action` →
   `fire_attacks_of_opportunity(cx, investigator)` (from *other* already-engaged
   ready enemies; the target is not engaged yet, so it is correctly not in the

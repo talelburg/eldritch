@@ -1,8 +1,8 @@
 //! The set-aside zone: bringing a set-aside card into play.
 //!
-//! Rules Reference, `Set Aside`: *"Cards that are set aside are placed
-//! outside the play area, and are considered out of play. Such cards are
-//! generally brought into play at a specific point in a scenario."*
+//! Rules Reference, `Set Aside`: *"Set-aside cards have no interaction with
+//! the game until they are referenced by instructions within the scenario or
+//! by a card ability."*
 //!
 //! The zone is [`GameState::set_aside_cards`](crate::state::GameState::set_aside_cards)
 //! — printed codes, one collection for every cardtype. Nothing is built at

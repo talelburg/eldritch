@@ -385,6 +385,7 @@ and its `customization_text`, verbatim in part:
 
 > □ <b>Heirloom.</b> This asset gets -1 cost and gains the [[Relic]] trait.
 > □ <b>Inscription of Glory.</b> Add this inscription: "- <i>Glory</i> - If this attack defeats an enemy, choose one: draw 1 card, heal 1 damage, or heal 1 horror."
+> …
 > □□□ <b>Ancient Power.</b> You may imbue the same inscription up to three times.
 
 The Raven Quill 09042 goes further and parameterises the copy with a *name*:
@@ -676,8 +677,8 @@ which is itself a durable answer.
 
 **A rule this pass surfaced that the survey never examined.** FAQ 'Game Play'
 1.4 ("Nested Sequences") is a real and separate rule: a `[reaction]` or Forced
-ability that creates a new triggering condition starts a nested sequence, *"and
-each nested sequence must complete before returning to the sequence that spawned
+ability that creates a new triggering condition starts a nested sequence, and
+*"each nested sequence must complete before returning to the sequence that spawned
 it. In effect, these sequences are resolved in a Last In, First Out (LIFO)
 manner."* There is no limit to the depth. This is ADR 0003's territory, and the
 engine's frame stack is LIFO by construction, so it may already be correct — but

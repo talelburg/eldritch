@@ -196,7 +196,9 @@ fn mind_over_matter_rejected_outside_your_turn() {
 
 #[test]
 fn weapon_fight_substituting_uses_intellect_and_keeps_weapon_damage() {
-    // .38 Special: "+1 [combat] (no clue here), this attack deals +1 damage."
+    // .38 Special: "You get +1 [combat] for this attack (if there are 1 or more
+    // clues on your location, you get +3 [combat], instead). This attack deals
+    // +1 damage." No clue here, so +1.
     // combat 1 + weapon +1 = 2 < fight 3 (would fail); substituting drops the
     // weapon's combat bonus and tests intellect 4 ≥ 3 → success, and the
     // weapon's +1 damage is still dealt (base 1 + 1 = 2).

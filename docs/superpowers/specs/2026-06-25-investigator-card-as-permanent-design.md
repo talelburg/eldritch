@@ -35,8 +35,8 @@ Rules Reference, "Dealing Damage/Horror" and defeat (quoted verbatim):
 > eligible asset cards he or she controls." … "All damage/horror that cannot be assigned to
 > an asset must be assigned to the investigator."
 
-> "After applying damage/horror, if an investigator has as much or more damage on it as it
-> has health (or as much or more horror on it as it has sanity), that investigator is
+> "After applying damage/horror, if an investigator has damage equal to or higher than his
+> or her health or horror equal to or higher than his or her sanity, he or she is
 > defeated." … "if an asset has damage equal to or higher than its health or horror equal to
 > or higher than its sanity, it is defeated and placed in its owner's discard pile."
 

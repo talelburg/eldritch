@@ -14,7 +14,7 @@
 - **Kernel purity.** `game-core` has no I/O and no presentation. The acknowledge `Confirm` prompt is a plain descriptive string (consistent with the open-turn / commit / #478 prompts); no client change.
 - **Validate-first / mutate-second.** Resume handlers check preconditions and return `Rejected` (state/events unchanged) before mutating.
 - **Gated acknowledge.** The advance `Confirm` is gated on the existing `GameState.interactive_acknowledge` (off by default → no pause, no churn; the server already sets it on for human play).
-- **RR ordering.** The index bump (`agenda_index`/`act_index` += 1; `agenda_doom = 0`) happens at `Finalize`, **after** the reverse resolves ("flip the card, follow the reverse, then the next card becomes current").
+- **RR ordering.** The index bump (`agenda_index`/`act_index` += 1; `agenda_doom = 0`) happens at `Finalize`, **after** the reverse resolves ("Flip the advancing card over and follow the instructions on the reverse ("b") side." … "the next card in the deck becomes the current act/agenda").
 - **Terminal advances unchanged.** A card carrying a resolution point goes through `request_resolution` (scenario-end latch), not `AdvanceReverse`.
 
 ---

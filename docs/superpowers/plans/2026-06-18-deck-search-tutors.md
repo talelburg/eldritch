@@ -91,8 +91,8 @@ In `crates/card-dsl/src/dsl.rs`, immediately after the `Effect::Investigate { �
     /// or more eligible options exist (no decline) — so 0 eligible ⇒ find
     /// nothing, 1 ⇒ auto-take, 2+ ⇒ the controller picks. An entire-deck
     /// search must shuffle on completion; top-N shuffles too (Old Book
-    /// "shuffles the remaining cards into the deck"). Both "draws it" (Old
-    /// Book) and "add to your hand" (Librarian) are modeled as a move to
+    /// "shuffles the remaining cards into his or her deck"). Both "draws it"
+    /// (Old Book) and "add it to your hand" (Librarian) are modeled as a move to
     /// hand — the only rules difference (on-draw triggers) has no Core
     /// consumer.
     SearchDeck {
@@ -414,8 +414,9 @@ fn apply_search_deck(
         });
     }
 
-    // 5. Shuffle (RR p.18 entire-deck mandatory; Old Book "shuffle the
-    //    remaining cards into the deck"). RNG-replayable; no-op on <2 cards.
+    // 5. Shuffle (RR p.18 entire-deck mandatory; Old Book "shuffles the
+    //    remaining cards into his or her deck"). RNG-replayable; no-op on <2
+    //    cards.
     shuffle_player_deck(cx, who);
     EngineOutcome::Done
 }
@@ -931,7 +932,7 @@ use card_dsl::dsl::{
 pub const CODE: &str = "01032";
 
 /// "[reaction] After Research Librarian enters play: Search your deck for a
-/// Tome asset, add it to your hand, shuffle."
+/// [[Tome]] asset and add it to your hand. Shuffle your deck."
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![reaction_on_event(

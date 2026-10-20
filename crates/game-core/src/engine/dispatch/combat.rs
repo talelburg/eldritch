@@ -316,8 +316,9 @@ pub(super) fn defeat_asset(cx: &mut Cx, inst: CardInstanceId) {
 ///    `accumulated >= printed capacity` rule as an asset, but the
 ///    consequence is *elimination*, not discard). Both stats land before
 ///    the defeat check, per RR p.7. This runs *before* the asset sweep so
-///    elimination's "remove controlled cards from the game" step (RR p.10)
-///    pre-empts any co-overflowing asset's discard (see
+///    elimination's step 1 (RR p.10: *"The cards he or she controls in play
+///    … are removed from the game."*) pre-empts any co-overflowing asset's
+///    discard (see
 ///    [`defeat_overflowed_assets`]).
 /// 3. Defeat overflowed assets (`accumulated >= printed stat` →
 ///    discard) — **skipped entirely if step 2 eliminated the investigator**,

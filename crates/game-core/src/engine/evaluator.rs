@@ -1371,8 +1371,9 @@ fn apply_search_deck(
         inv.hand.len() - 1
     });
 
-    // 5. Shuffle (RR p.18 entire-deck mandatory; Old Book "shuffle the
-    //    remaining cards into the deck"). RNG-replayable; no-op on <2 cards.
+    // 5. Shuffle (RR p.18 entire-deck mandatory; Old Book "shuffles the
+    //    remaining cards into his or her deck"). RNG-replayable; no-op on <2
+    //    cards.
     cards::shuffle_player_deck(cx, who);
 
     // 6. A weakness that entered hand resolves as if just drawn

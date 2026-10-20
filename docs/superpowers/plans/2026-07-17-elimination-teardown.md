@@ -77,8 +77,8 @@ Create `crates/cards/tests/elimination_teardown.rs`:
 //!
 //! ## Verified card text (`data/arkhamdb-snapshot`, 2026-07-17)
 //!
-//! **Grasping Hands (01162):** "<b>Revelation</b> - Test [agility] (3). If you
-//! fail, take 1 damage for each point you failed by."
+//! **Grasping Hands (01162):** "<b>Revelation</b> - Test [agility] (3). For
+//! each point you fail by, take 1 damage."
 //! **Overpower (01091):** a plain skill card — two [combat] icons, no triggered
 //! ability. Contributes 0 to an agility test, so committing it leaves the fail
 //! margin intact while still exercising the committed-index path.

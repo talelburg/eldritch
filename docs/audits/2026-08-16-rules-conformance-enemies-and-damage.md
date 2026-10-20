@@ -290,11 +290,13 @@ target — and is flagged under [Uncertain](#uncertain).
 > A ready enemy with the massive keyword is considered to be engaged with each
 > investigator at the same location as it.
 >
+> - …
 > - An enemy with the massive keyword cannot be placed in an investigator's threat area.
 > - When an enemy with the massive keyword attacks during the enemy phase, resolve its
 >   (full) attack against each investigator it is engaged with, one investigator at a
 >   time. […] The massive enemy does not exhaust until its final attack of the phase
 >   resolves.
+> - …
 > - A massive enemy does not move with an engaged investigator who moves away from the
 >   massive enemy's location.
 > - If an investigator fails a combat test against a massive enemy, no damage is dealt to
@@ -531,7 +533,8 @@ Each of these was checked against the quoted rule and the code, and holds.
   `:417`; `cards.rs:514`, `:873`; `abilities.rs:119`). Engage provoking is correct — it
   is not on the exempt list.
 - **AoO ordering and cost timing.** *"immediately after all costs of initiating the action
-  have been paid, but before the application of that action's effect"* and *"An ability
+  that provoked the attack have been paid, but before the application of that action's
+  effect"* and *"An ability
   that costs more than one action only provokes one attack of opportunity from each
   engaged enemy."* Every call site charges the action, pushes an `ActionResolution` frame,
   then drives one AoO loop; the primary effect runs on resume (`actions.rs:404-418` is the
