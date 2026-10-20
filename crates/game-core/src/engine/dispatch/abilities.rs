@@ -66,10 +66,12 @@ use crate::state::{
 /// - **Action-cost abilities** (`action_cost > 0`): require Investigation
 ///   phase + active investigator + sufficient actions remaining. These consume
 ///   one of the investigator's limited per-turn actions.
-/// - **Fast abilities** (`action_cost == 0`): per the Rules Reference, "Fast
-///   abilities may be used at any player window." This handler permits them
-///   when either (a) the acting investigator is the active investigator during
-///   the Investigation phase, or (b) an open window's `fast_actors` scope
+/// - **Fast abilities** (`action_cost == 0`): per the Rules Reference, *"a
+///   free triggered ability that does not cost an action and may be used
+///   during any player window"* (`glossary/Triggered_Abilities.md`). This
+///   handler permits them when either (a) the acting investigator is the
+///   active investigator during the Investigation phase, or (b) an open
+///   window's `fast_actors` scope
 ///   permits the acting investigator. The `open_windows` stack is pushed by
 ///   callers (scenario/server) when a player window opens.
 ///

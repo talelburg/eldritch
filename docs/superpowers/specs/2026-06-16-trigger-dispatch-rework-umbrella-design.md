@@ -85,8 +85,8 @@ abandon-on-suspend and the evaluator's can't-resume-mid-`Seq` are the same gap.
 
 - **Forced before reaction** (p.2, "Forced Abilities"): *"For any given timing
   point, all forced abilities initiated in reference to that timing point must
-  resolve before any [reaction] abilities referencing the same timing point in
-  the same manner may be initiated."*
+  resolve before any \[reaction\] abilities (see below) referencing the same
+  timing point in the same manner may be initiated."*
 - **Simultaneous forced ordering** (p.17, "Priority of Simultaneous
   Resolution"): *"If two or more forced abilities (including delayed effects)
   would resolve at the same time, the lead investigator determines the order in

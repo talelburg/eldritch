@@ -145,7 +145,8 @@ abilities**; the coordinator dispatches them identically.
 
 - **`when` cell — act 01109 advancement, remodeled to a registry ability.** Act 01109 gains
   an `abilities()` impl: a `When`-timed `OnEvent { RoundEnded }` **reaction** (the printed
-  "investigators … *may* … spend clues to advance" — optional ⇒ reaction) whose effect is
+  "investigators … *may*, as a group, spend the requisite number of clues to
+  advance" — optional ⇒ reaction) whose effect is
   `Effect::Native { tag: "act_round_end_advance" }`. The native effect reuses the existing
   group clue-spend (`spend_clues_from(contributors, threshold)` + advance); the
   `ActRoundEndPending` logic moves *into* it, surfaced as the `when`-bucket reaction window's

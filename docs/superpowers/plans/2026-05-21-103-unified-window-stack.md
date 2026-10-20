@@ -411,8 +411,9 @@ Insert into `crates/game-core/src/state/game_state.rs` immediately after the exi
 /// Modeled per Rules Reference: a reaction window allows any
 /// investigator to fire a triggered reaction or play a Fast card.
 /// An investigator's own turn opens an `ActiveInvestigator` window
-/// that still permits other investigators to play Fast cards (per the
-/// "Fast may be played at any player window" rule); concrete window
+/// that still permits other investigators to play Fast cards (per
+/// `glossary/Fast.md`: "A fast event card may be played from a player's
+/// hand any time its play instructions specify."); concrete window
 /// kinds choose the right scope at the open-window site.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -817,8 +818,8 @@ fn queue_reaction_window(state: &mut GameState, kind: WindowKind) {
         return;
     }
     // Reaction windows admit any investigator's Fast actions
-    // (Rules Reference: "Fast may be played at any player window,
-    // including reaction windows").
+    // (Rules Reference: "A fast event card may be played from a player's
+    // hand any time its play instructions specify.").
     state.open_windows.push(OpenWindow {
         kind,
         pending_triggers: pending,

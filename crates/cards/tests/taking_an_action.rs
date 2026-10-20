@@ -13,7 +13,7 @@
 //! > takes an action other than to **fight**, to **evade**, or to activate a
 //! > **parley** or **resign** ability, each of those enemies makes an attack of
 //! > opportunity against the investigator, in the order of the investigator's
-//! > choosing.
+//! > choosing. …
 //! >
 //! > - An attack of opportunity is made immediately after all costs of
 //! >   initiating the action that provoked the attack have been paid, but before

@@ -61,8 +61,8 @@ Expected: FAIL — `no variant named Cancel` / `no variant named EnemyAttacks`.
 ```rust
     /// An enemy is making an attack against an investigator (RR p.25 step
     /// 3.3). Before-timing only: the cancel/replacement window where Dodge
-    /// 01023 ("when an enemy attacks an investigator at your location:
-    /// cancel that attack") fires. Bare — the "at your location" spatial
+    /// 01023 ("Play when an enemy attacks an investigator at your location.
+    /// Cancel that attack.") fires. Bare — the "at your location" spatial
     /// scoping lives in the reaction-window scan (which has board state),
     /// mirroring the soaked-asset filter for `EnemyAttackDamagedSelf`.
     EnemyAttacks,

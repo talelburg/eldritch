@@ -155,9 +155,9 @@ fn tablet_immediate_damage_precedes_the_determination() {
 
 #[test]
 fn cultist_on_fail_horror_follows_the_determination() {
-    // RR: a chaos symbol's result-conditional effect ("if this test is failed")
-    // resolves at ST.7, AFTER the ST.6 determination (and after the outcome
-    // timing point). Cultist's on_fail Horror(1) must follow SkillTestFailed in
+    // RR: a chaos symbol's result-conditional effect (01104's Cultist: "If you
+    // fail, take 1 horror.") resolves at ST.7, AFTER the ST.6 determination
+    // (and after the outcome timing point). Cultist's on_fail Horror(1) must follow SkillTestFailed in
     // the log. (Difficulty 99 >> willpower 3 + (-1) = 2 → fail.)
     let session = perform(gathering_state(ChaosToken::Cultist, 0), 99);
     let failed = session

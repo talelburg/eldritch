@@ -381,7 +381,7 @@ Confirm #553 auto-closed and `git pull` on `main`.
 
 **Design:** the "Follow-up: location-sourced forced anchor" section of the spec.
 
-**Why:** a location's own forced ability (the Attic 01113 — "Forced – After you enter: take 1 horror") reaches the wire as `OptionTarget::Global` (resolvable only from the flat bar). A location has a `LocationId`, not a `CardInstanceId`; the `EnteredLocation` scan passes `push_matching(… None …)` → `CandidateSource::Board` → (code ≠ act) → `Global`. `CandidateSource` carries no `LocationId`, so there is no path to `OptionTarget::Location(id)` (which the map node already renders, S1).
+**Why:** a location's own forced ability (the Attic 01113 — "Forced - After you enter the Attic: Take 1 horror.") reaches the wire as `OptionTarget::Global` (resolvable only from the flat bar). A location has a `LocationId`, not a `CardInstanceId`; the `EnteredLocation` scan passes `push_matching(… None …)` → `CandidateSource::Board` → (code ≠ act) → `Global`. `CandidateSource` carries no `LocationId`, so there is no path to `OptionTarget::Location(id)` (which the map node already renders, S1).
 
 **Files:**
 - Modify: `crates/game-core/src/state/game_state.rs` (`CandidateSource::Location` variant + `instance()` arm)

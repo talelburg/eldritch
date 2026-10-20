@@ -53,7 +53,7 @@ fn ending_the_round_on(index: usize, lead: Seat, encounter_deck: &[&str]) -> Gam
 
 /// 01105's reverse is the lead's interactive `ChooseOne` (Axis A #334): it
 /// suspends with a two-option prompt, and picking branch 1 (the printed
-/// "lead takes 2 horror") resolves it.
+/// "the lead investigator takes 2 horror") resolves it.
 #[test]
 fn agenda_01105_reverse_choice_lead_takes_two_horror() {
     let state = ending_the_round_on(0, seat(1), &[]);
@@ -99,10 +99,11 @@ fn agenda_01105_reverse_choice_random_discard_each() {
 }
 
 /// 01106's reverse digs past non-Ghoul cards to the Ghoul enemy and the
-/// lead draws (spawns) it. The "shuffle the discard into the deck" step
-/// randomizes order, so the order-independent invariant is: the Ghoul is
-/// always reached and drawn, both non-Ghoul cards remain (in the deck if the
-/// Ghoul sat above them, in the discard if they were dug through), and each
+/// lead draws (spawns) it. The "Shuffle the encounter discard pile into the
+/// encounter deck." step randomizes order, so the order-independent
+/// invariant is: the Ghoul is always reached and drawn, both non-Ghoul cards
+/// remain (in the deck if the Ghoul sat above them, in the discard if they
+/// were dug through), and each
 /// one dug through announces its own discard, in dig order. Seeded deck =
 /// [Hunting Shadow (01135), False Lead (01136), Ghoul Minion (01160, the
 /// Ghoul enemy)].

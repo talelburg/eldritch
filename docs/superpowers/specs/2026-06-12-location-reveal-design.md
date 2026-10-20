@@ -17,7 +17,7 @@ Verified against the Rules Reference (`data/rules-reference/…`).
 > entered by an investigator, that location is revealed by turning it to its
 > other side **and placing a number of clues on it equal to its clue value**
 > (this may occur during setup). Most clue values are conveyed as a "per
-> investigator" value. If an **enemy** moves to an unrevealed location, that
+> investigator" value. … If an **enemy** moves to an unrevealed location, that
 > location **remains unrevealed**.
 
 **Per-investigator multiplier** (p.16, *Per Investigator*):

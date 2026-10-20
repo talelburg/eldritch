@@ -4,7 +4,7 @@
 //! `data/rules-reference/rules/glossary/Automatic_Failure_Success.md`:
 //!
 //! > Some card or token abilities may cause a skill test to automatically
-//! > fail or to automatically succeed.
+//! > fail or to automatically succeed. …
 //! >
 //! > - If a skill test automatically fails, the investigator's total skill
 //! >   value for that test is considered 0.

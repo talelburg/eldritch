@@ -244,8 +244,8 @@ pub(super) fn upkeep_round_end_at_and_after(cx: &mut Cx) -> EngineOutcome {
 
 /// Teardown after the round-end `at` Forced abilities resolve: expire active
 /// "until the end of the round" lasting effects (Mind over Matter 01036's
-/// substitution — RR p.24, "after the round-end forced abilities have
-/// resolved"), then transition Upkeep -> Mythos.
+/// substitution — RR p.24, 4.6: "Any active 'until the end of the round'
+/// lasting effects expire at this time."), then transition Upkeep -> Mythos.
 pub(super) fn upkeep_round_end_teardown(cx: &mut Cx) -> EngineOutcome {
     cx.state.skill_substitutions.clear();
     // Upkeep -> Mythos; calls mythos_phase. Only Investigation->Enemy suspends

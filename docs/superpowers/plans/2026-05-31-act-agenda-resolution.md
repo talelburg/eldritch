@@ -370,8 +370,8 @@ In `crates/game-core/src/action.rs`, inside `pub enum PlayerAction`, after the `
 
 ```rust
     /// Spend clues to advance the current act (Rules Reference p.3:
-    /// "spend the requisite number of clues … normally a Fast player
-    /// ability").
+    /// "spend the requisite number of clues … This is normally done as a
+    /// [free] player ability.").
     ///
     /// **Prototype.** Built minimally for the Phase-4 synthetic demo: a
     /// flat `clue_threshold`, a single-step spend with a deterministic
@@ -955,8 +955,8 @@ fn check_all_defeated(state: &mut GameState, events: &mut Vec<Event>) {
     if !any_active && !state.investigators.is_empty() {
         events.push(Event::AllInvestigatorsDefeated);
         // Rules Reference p.10 step 6: "If there are no remaining players,
-        // the scenario ends. Refer to the 'no resolution was reached'
-        // entry for that scenario." Latch the loss (first-writer-wins, so
+        // the scenario ends. Refer to 'no resolution was reached'
+        // entry for that scenario in the campaign guide." Latch the loss (first-writer-wins, so
         // an already-fired act/agenda resolution stays authoritative).
         request_resolution(
             state,

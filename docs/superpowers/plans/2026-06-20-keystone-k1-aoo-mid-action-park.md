@@ -775,7 +775,7 @@ The window-suspend/resume path needs real card abilities, so it lives in `crates
 
 - [ ] **Step 1: Verify the card text before asserting**
 
-WebFetch `https://arkhamdb.com/card/01023` (Dodge) and `https://arkhamdb.com/card/01021` (Guard Dog), **including FAQ**. Confirm: Dodge — *"Cancel all damage and horror dealt by [an] attacking enemy"* as a reaction to an enemy attacking an investigator at your location; Guard Dog — the retaliate reaction when it takes damage. Record the verified text in each test's header comment.
+WebFetch `https://arkhamdb.com/card/01023` (Dodge) and `https://arkhamdb.com/card/01021` (Guard Dog), **including FAQ**. Confirm: Dodge — *"Cancel that attack."*, played when an enemy attacks an investigator at your location; Guard Dog — the retaliate reaction when it takes damage. Record the verified text in each test's header comment.
 
 - [ ] **Step 2: Write the failing test — Guard Dog retaliates against an AoO**
 

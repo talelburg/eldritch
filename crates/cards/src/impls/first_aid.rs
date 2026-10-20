@@ -23,10 +23,11 @@
 //! location"* and *"Heal 1 horror from an investigator at your location"*.
 //! The division is the sentence's own *"damage or horror"*; nothing is added.
 //! 01019 has no rulings (`data/arkhamdb-faq/no-rulings.txt`). The `Uses (3
-//! supplies)` pool and the "if no supplies, discard it" depletion-discard are
-//! corpus metadata (`CardKind::Asset.uses` + `Uses.discard_when_empty`,
-//! pipeline-parsed, #302) — `abilities()` declares only the action; the engine
-//! discards the asset automatically when the last supply is spent.
+//! supplies)` pool and the "If First Aid has no supplies, discard it."
+//! depletion-discard are corpus metadata (`CardKind::Asset.uses` +
+//! `Uses.discard_when_empty`, pipeline-parsed, #302) — `abilities()` declares
+//! only the action; the engine discards the asset automatically when the last
+//! supply is spent.
 
 use card_dsl::card_data::UseKind;
 use card_dsl::dsl::{self, Ability, Cost, InvestigatorTarget};

@@ -402,8 +402,8 @@ apparent differences are one coherent mode, not independent axes:
 | player's choice | order only, when 2+ | which / whether to use |
 
 The resolve handler keys off the one flag (RR p.3: *"all forced abilities … must
-resolve before any reaction abilities referencing the same timing point may be
-initiated"* — so a timing point is `mode=Forced` drained, then `mode=Reaction`: two
+resolve before any \[reaction\] abilities (see below) referencing the same timing
+point in the same manner may be initiated"* — so a timing point is `mode=Forced` drained, then `mode=Reaction`: two
 passes of the same frame, exactly what the coordinator drives per bucket). The
 lead-orders-simultaneous-forced rule (RR p.17) is a property of *driving* the
 candidate list, not a reason for a distinct frame.

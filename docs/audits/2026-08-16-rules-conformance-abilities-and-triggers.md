@@ -67,7 +67,7 @@ reasoning that killed them is the useful part.
 **The rule.** `data/rules-reference/rules/Appendix_II_Timing_and_Gameplay.md`,
 the Skill Test timing chart, in order:
 
-> ST.4 Reveal chaos token.
+> ST.3 Reveal chaos token.
 > ST.4 Resolve chaos symbol effect(s).
 > ST.5 Determine investigator's modified skill value.
 

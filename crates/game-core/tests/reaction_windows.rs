@@ -422,9 +422,10 @@ fn multiple_pending_triggers_resolve_one_at_a_time() {
 
 #[test]
 fn fight_event_sequence_pins_window_between_enemy_defeated_and_skill_test_ended() {
-    // Per the Rules Reference, "after… [reaction] abilities may be
-    // used immediately after that triggering condition's impact upon
-    // the game state has resolved" — i.e. mid-action. For a Fight
+    // Per the Rules Reference, "A [reaction] ability with a triggering
+    // condition beginning with the word 'after...' may be used immediately
+    // after that triggering condition's impact upon the game state has
+    // resolved" — i.e. mid-action. For a Fight
     // that defeats an enemy with Roland-shaped reaction in play, the
     // canonical event order is:
     //   SkillTestSucceeded → EnemyDamaged → EnemyDefeated

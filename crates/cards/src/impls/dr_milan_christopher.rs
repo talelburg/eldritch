@@ -42,8 +42,8 @@ pub const CODE: &str = "01033";
 /// This card's registration, listed in [`ALL`](super::ALL).
 pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
-/// +1 intellect while in play, and "after you successfully investigate,
-/// gain 1 resource."
+/// +1 intellect while in play, and "After you successfully investigate: Gain
+/// 1 resource."
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![

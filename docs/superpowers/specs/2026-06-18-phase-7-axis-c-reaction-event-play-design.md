@@ -180,8 +180,8 @@ deciding whether Evidence! is playable here. We document this and do not remove
 Offering Evidence! in its window is only half the contract — #304 also requires
 it to be **illegal outside** that window. A reaction event is window-only: its
 play instruction *is* a triggering condition (modeled as the `OnEvent` ability),
-and RR p.11 says such an event "may be played any time its play instructions
-specify" — i.e. only then. So `check_play_card` rejects a `PlayCard` of an
+and RR p.11 says such an event "may be played from a player's hand any time its
+play instructions specify" — i.e. only then. So `check_play_card` rejects a `PlayCard` of an
 event whose abilities contain any `Trigger::OnEvent` (the standalone-action
 path). The window play (`play_fast_event`) bypasses `check_play_card`, so the
 reaction route is unaffected. Without this gate `play_card` would run only the
@@ -200,10 +200,11 @@ effect — a `no-silent-approximation` violation. The gate generalizes to Dodge
   not required by any Slice-1 card. (Filed as a follow-up at plan time.)
 - **Fast assets / Fast 0-action abilities are correctly *not* offered here —
   this is rules-precise, not a deferral.** RR p.11 splits the two by timing
-  surface: a *Fast event* "may be played any time its play instructions
-  specify… as if the described timing point were a triggering condition" — so
-  Evidence! reacts to the *defeat triggering condition* (this window). A *Fast
-  asset* "may be played during any **player window** on his or her turn," and
+  surface: a *Fast event* "may be played from a player's hand any time its play
+  instructions specify… as if the described timing point were a triggering
+  condition" — so Evidence! reacts to the *defeat triggering condition* (this
+  window). A *Fast asset* "may be played by an investigator during any **player
+  window** on his or her turn," and
   RR p.22 defines player windows as the framework windows in the timing chart
   ("The red boxes are player windows"). An after-defeat reaction window is
   *not* one of those framework player windows, so a Fast asset is not playable

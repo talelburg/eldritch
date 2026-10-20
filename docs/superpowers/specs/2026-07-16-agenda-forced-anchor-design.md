@@ -29,8 +29,8 @@ Two prompts result, only one in scope:
   one-option pick, `CandidateSource::Board`-sourced → today `Global`. **This is what
   we anchor.** Because the index hasn't bumped, `cand.code == current_agenda` holds —
   a code-equality anchor is correct with no timing hazard (symmetric to the act).
-- **The effect's own `ChooseOne`** (01105: "each investigator discards 1 random
-  card" *or* "lead takes 2 horror"), surfaced separately by the evaluator. Its
+- **The effect's own `ChooseOne`** (01105: "each investigator discards 1 card at
+  random from his or her hand" *or* "the lead investigator takes 2 horror"), surfaced separately by the evaluator. Its
   branches aren't board entities, so they stay `Global` (flat bar). Anchoring
   effect-internal choices to their source card is general evaluator machinery —
   **out of scope, tracked in #555.**

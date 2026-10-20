@@ -782,8 +782,8 @@ fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
 // Case 6 — the investigator card is the mandatory-remainder soaker
 // (#448 cp2b). An asset soaks to capacity (and is defeated); the
 // remainder lands on the *investigator card* via its `accumulated_damage`
-// (not a bespoke field), exactly as the RR's "all damage that cannot be
-// assigned to an asset must be assigned to the investigator" clause
+// (not a bespoke field), exactly as the RR's "All damage/horror that cannot
+// be assigned to an asset must be assigned to the investigator" clause
 // requires. This is the soaker-side half of the soak/defeat unification.
 // ---------------------------------------------------------------------
 
