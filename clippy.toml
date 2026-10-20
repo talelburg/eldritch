@@ -1,0 +1,5 @@
+# Icons whose names hold an underscore. Inside a verbatim card quote an icon
+# is escaped, `\[elder_sign\]` (docs/agents/standards.md), and `doc_markdown`
+# would otherwise read the name as an identifier missing its backticks.
+# ".." keeps clippy's default list.
+doc-valid-idents = ["elder_sign", "elder_thing", "auto_fail", "per_investigator", ".."]
