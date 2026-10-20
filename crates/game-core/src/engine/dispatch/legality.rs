@@ -224,11 +224,12 @@ pub(crate) fn check_play_card(
     // Reaction-event gate (Axis C, #335 / #304): a Fast event whose play
     // instruction is a triggering condition is modeled as a `TriggerKind::Reaction`
     // `OnEvent` ability (e.g. Evidence! 01022's "Play after you defeat an enemy").
-    // RR p.11: such an event "may be played any time its play instructions
-    // specify" — i.e. ONLY in its matching reaction window, where Axis C offers
-    // it as a `PickSingle` option (the window path runs `play_fast_event`,
-    // bypassing this gate). It is never a free-timing standalone play, so reject
-    // it from the `PlayCard` action — otherwise `play_card` would run only its
+    // RR p.11: such an event "may be played from a player's hand any time its
+    // play instructions specify" — i.e. ONLY in its matching reaction window,
+    // where Axis C offers it as a `PickSingle` option (the window path runs
+    // `play_fast_event`, bypassing this gate). It is never a free-timing
+    // standalone play, so reject it from the `PlayCard` action — otherwise
+    // `play_card` would run only its
     // (absent) `OnPlay` abilities and silently discard it for no effect.
     //
     // Gate only on a **Reaction** `OnEvent`: an event that plays normally (an
@@ -514,7 +515,7 @@ fn reject_incompatible_costs(costs: &[Cost]) -> Result<(), Cow<'static, str>> {
 /// for a deal frame or a choice between the two. Core and Dunwich print no such
 /// player card, so it is deliberately unlifted (YAGNI, as with
 /// `reject_incompatible_costs`); the first card to print one lifts it (#1031).
-/// The Core enemy Herman Collins 01138 prints the discard — *"[action] Choose
+/// The Core enemy Herman Collins 01138 prints the discard — *"\[action\] Choose
 /// and discard 4 cards from your hand: **Parley.**"* — and needs a count
 /// besides.
 fn reject_costs_unpayable_on_an_action(

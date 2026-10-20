@@ -56,6 +56,8 @@ the PDF and our shipped code. The card pages (`/card/<code>`) fetched faithfully
 > enemy or a treachery weakness), resolve that card as if it were just drawn from the
 > encounter deck.
 >
+> …
+>
 > Weaknesses with an encounter cardtype are, like other encounter cards, **not
 > controlled by any player**. Weaknesses with a player cardtype are controlled by
 > their bearer.
@@ -142,8 +144,9 @@ Supporting: RR p.13 "In Play and Out of Play" scopes a player's controlled in-pl
 cards to "the cards that a player controls **in his or her play area**" — an
 attachment sits under a *location*, not in the player's play area. "Attach To" (p.4)
 describes only physical placement ("placed beneath and slightly overlapped by") and
-transfers nothing. "In play, controlled by nobody" is a
-category the RR blesses explicitly (p.21, encounter cards). And Barricade's own Forced
+transfers nothing. In play and controlled by nobody is a
+category the RR blesses explicitly (p.21: encounter cards are "not controlled by any
+player"). And Barricade's own Forced
 reads "When **an investigator** leaves attached location" — not "you" — so the card
 keys on the location, not on its player.
 

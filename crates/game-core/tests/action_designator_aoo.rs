@@ -14,7 +14,7 @@
 //! effect root — exempting `Effect::Fight` because every corpus weapon happened
 //! to be rooted in one — which got two shapes wrong: a Fight buried inside a
 //! larger effect tree provoked, and **Parley** / **Resign** have no effect of
-//! their own to match, so the Parlor 01115's *"[action] **Resign.**"* would
+//! their own to match, so the Parlor 01115's *"\[action\] **Resign.**"* would
 //! have provoked once #708 made a location's abilities reachable.
 //!
 //! Since #805 the designator *performs* the action and no `Effect::Fight`
@@ -58,11 +58,11 @@ use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSes
 /// **Fight** designator, once under none. The pair is the control: only the
 /// designator can account for a difference between them.
 const SATCHEL: &str = "DESIGN_ASSET";
-/// Synthetic **location**, standing in for the Parlor 01115: *"[action]
+/// Synthetic **location**, standing in for the Parlor 01115: *"\[action\]
 /// **Resign.** 'This is too much for me!' You run out the front door, fleeing
 /// in panic."*
 const PARLOR: &str = "DESIGN_LOC";
-/// Synthetic **enemy**, standing in for Mob Enforcer 01101: *"[action] Spend 4
+/// Synthetic **enemy**, standing in for Mob Enforcer 01101: *"\[action\] Spend 4
 /// resources: **Parley.** Discard Mob Enforcer."*
 const ENFORCER: &str = "DESIGN_ENEMY";
 
@@ -237,7 +237,7 @@ fn the_same_residual_effect_without_the_designator_provokes() {
     );
 }
 
-/// The Parlor 01115's *"[action] **Resign.**"*, activated while engaged with a
+/// The Parlor 01115's *"\[action\] **Resign.**"*, activated while engaged with a
 /// ready enemy, provokes nothing. **Resign** prints nothing beside the bold
 /// word, so no effect-root match could ever have exempted it — and #708 made a
 /// location's abilities reachable, which is what put the question on the board.

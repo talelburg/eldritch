@@ -4,8 +4,9 @@
 
 The engine auto-resolves things the player never sees or "performs":
 
-- **No-choice forced effects** — the Attic (01113) "Forced: take 1 horror", the
-  Cellar (01114) "Forced: take 1 damage". They apply silently; the only trace is
+- **No-choice forced effects** — the Attic (01113) "Forced - After you enter the
+  Attic: Take 1 horror.", the Cellar (01114) "Forced - After you enter the
+  Cellar: Take 1 damage." They apply silently; the only trace is
   a changed counter the player may not notice.
 - **Auto-bound single-option choices** — when exactly one option is legal the
   engine auto-binds it without asking (`resolve_choice_count`'s `1 ⇒ Auto`): the

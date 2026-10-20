@@ -30,7 +30,7 @@ pub const CODE: &str = "01113";
 /// This card's registration, listed in [`ALL`](super::ALL).
 pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
-/// The Attic's Forced "after you enter: take 1 horror".
+/// The Attic's Forced "After you enter the Attic: Take 1 horror."
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![dsl::forced_on_event(

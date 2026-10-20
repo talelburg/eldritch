@@ -84,8 +84,9 @@ arm), through its steps:
 
 This composes the two suspension points (acknowledge, then reverse) uniformly,
 and — bonus — bookkeeping now runs **after** the reverse resolves (the correct
-RR order: "flip the card, follow the reverse, then the next card becomes
-current"), retiring the synchronous-`index`-bump quirk and the `debug_assert(…
+RR order: "Flip the advancing card over and follow the instructions on the
+reverse ("b") side." … "the next card in the deck becomes the current
+act/agenda"), retiring the synchronous-`index`-bump quirk and the `debug_assert(…
 did not resolve to Done … 2+ needs #213)`.
 
 `advance_agenda` / `advance_act` shrink to: capture `from` + `leaving_code`,

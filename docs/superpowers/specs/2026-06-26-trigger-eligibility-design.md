@@ -9,7 +9,7 @@
 A reaction ability must be **suppressed at scan time** when its effect can't change game state (RR p.2: *"An ability cannot initiate … if the resolution of its effect will not change the game state."*). The engine has no generic mechanism — it carries hardcoded, per-card stand-ins, and one is actually **missing**, which is a live bug:
 
 1. **Cover Up `01007`** — `scan_pending_triggers` hardcodes `if matches!(event, WouldDiscoverClues) && card.clues == 0 { continue }` (`reaction_windows.rs:245`). An emptied Cover Up would otherwise prompt a useless interrupt on every discovery.
-2. **The Barrier `01109`** (Act 2) — its round-end "investigators in the hallway may spend the requisite clues to advance" reaction has **no** affordability gate in the offer scan (`scan_act_agenda_reactions`). The resolve handler `round_end_advance` rejects on insufficient clues, but the candidate is offered regardless — **bug #470** (offered at 0/3 clues, investigator not in the Hallway). The doc comments in `the_barrier.rs` / `round_end_advance` claim "offered only when affordable" — stale; the gate was never implemented.
+2. **The Barrier `01109`** (Act 2) — its round-end "investigators in the hallway may, as a group, spend the requisite number of clues to advance" reaction has **no** affordability gate in the offer scan (`scan_act_agenda_reactions`). The resolve handler `round_end_advance` rejects on insufficient clues, but the candidate is offered regardless — **bug #470** (offered at 0/3 clues, investigator not in the Hallway). The doc comments in `the_barrier.rs` / `round_end_advance` claim "offered only when affordable" — stale; the gate was never implemented.
 
 ## Solution
 

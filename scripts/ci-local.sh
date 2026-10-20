@@ -18,12 +18,15 @@
 # would make each side invalidate the other's cache on every switch.
 #
 # Each job below is invoked exactly as the workflow invokes it, with the same
-# strict flags, so a job that runs here means what it means there. Two caveats,
-# both reported at the end of a run rather than left implicit:
+# strict flags, so a job that runs here means what it means there. Three
+# caveats, reported at the end of a run rather than left implicit:
 #
 #   * `trunk` and `wasm-pack` are pinned in CI (trunk@0.21.14, wasm-pack@0.15.0)
 #     but taken from $PATH here, so under --all a local pass is only as good
 #     as your installed versions.
+#   * A job that cannot run the way CI runs it is marked degraded: a missing
+#     `trunk` drops `wasm-build` to a debug cargo build, and a geckodriver that
+#     fails to start leaves `wasm-test`'s tests compiled but not run.
 #   * `classify` is not a CI job. It is a subset of `test`, offered on its own
 #     for snapshot-only changes where the rest of `test` cannot be affected.
 #
@@ -260,7 +263,22 @@ run_job() {
     doc)         RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features ;;
     classify)    cargo test -p card-data-pipeline classify ;;
     wasm-clippy) cargo clippy -p web --all-targets --target wasm32-unknown-unknown --all-features -- -D warnings ;;
-    wasm-test)   wasm-pack test --headless --firefox crates/web ;;
+    wasm-test)
+      # The snap geckodriver can fail to start ("driver failed to bind port
+      # during startup"). wasm-pack has compiled every test by then, so that
+      # says nothing about the code: it is recorded as degraded, compiled but
+      # not run, rather than as a test failure.
+      local output status
+      output=$(mktemp)
+      wasm-pack test --headless --firefox crates/web 2>&1 | tee "$output"
+      status=${PIPESTATUS[0]}
+      if [ "$status" -ne 0 ] && grep -q 'driver failed to bind port during startup' "$output"; then
+        echo "!! geckodriver failed to start — the tests compiled but did not run." >&2
+        DEGRADED+=("wasm-test (geckodriver failed to start: tests compiled, not run)")
+        status=0
+      fi
+      rm -f "$output"
+      return "$status" ;;
     wasm-build)
       # CI runs `trunk build --release` — the release profile and the asset
       # pipeline both fail in ways a debug cargo build does not. The fallback
@@ -304,7 +322,8 @@ for j in "${PLAN[@]}"; do
   echo "==> $j"
   log="$LOG_DIR/$j.log"
   start=$(date +%s)
-  # run_job stays in this shell (no pipe) so wasm-build can record DEGRADED.
+  # run_job stays in this shell (no pipe) so wasm-build and wasm-test can
+  # record DEGRADED.
   if [ "$STREAM" -eq 1 ]; then
     run_job "$j" > >(tee "$log") 2>&1
     status=$?

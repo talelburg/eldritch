@@ -18,13 +18,13 @@ FAQ rulings (load-bearing, not derivable from the text):
 - *"When making a Combat or Agility skill test, you may make an **Intellect
   test** instead. If you do, apply only bonuses to your Intellect for this
   test, and ignore any bonuses to Combat or Agility."*
-- *"You can only commit cards with an **Intellect or Wild** icon to this
+- *"You can only commit cards with an **Intellect or Wild** icons to this
   test."*
 - *"You need to play this card **before the skill test begins**. The type
   of skill test is determined before you get the opportunity to play Fast
   cards."*
 - *"You cannot play this card during the Mythos phase, because 'your turn'
-  is within the Investigation phase."*
+  is within the Investigaton [sic] phase."*
 
 So substituting **turns the test into an Intellect test** (icons + bonuses
 follow intellect), the choice is made **at test initiation** (the type is
@@ -98,8 +98,8 @@ special-casing in `sum_skill_value`.
   can choose the lower value to fail intentionally. Auto-max would be
   wrong; this is a real prompt.
 - **Timing:** the prompt fires at test *initiation* (before commits and the
-  chaos token), matching the FAQ ("the type is determined before you play
-  Fast cards"). `start_skill_test` is the single chokepoint for Fight,
+  chaos token), matching the FAQ ("The type of skill test is determined
+  before you get the opportunity to play Fast cards"). `start_skill_test` is the single chokepoint for Fight,
   Evade, weapon Fights, and forced Combat/Agility tests, so all route
   through it uniformly.
 

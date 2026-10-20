@@ -50,8 +50,8 @@ deferred idempotency latch) for free — a push fires once by construction.
   effects* stay out of scope (issue's explicit non-goal); the structural
   pointer is all this PR needs.
 - **Act advances via a new `PlayerAction::AdvanceAct` — a prototype.** This is
-  the rules-faithful shape (RR p.3: spend the requisite clues, "normally a Fast
-  player ability"). It is built minimally for the synthetic demo and **must take
+  the rules-faithful shape (RR p.3: spend the requisite clues, "This is normally
+  done as a \[free\] player ability."). It is built minimally for the synthetic demo and **must take
   final form once real consumers (Phase 7 The Gathering) exercise it** — flat
   threshold only, single-step spend, no `Objective –` handling. Noted in-source
   with a `TODO`.

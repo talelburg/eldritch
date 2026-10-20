@@ -190,7 +190,7 @@ fn a_co_located_investigator_discards_it_with_two_actions() {
     );
 }
 
-/// Agnes Baker 01004's *"[reaction] After 1 or more horror is placed on Agnes
+/// Agnes Baker 01004's *"\[reaction\] After 1 or more horror is placed on Agnes
 /// Baker: Deal 1 damage to an enemy at your location."* is offered, and
 /// resolves, before Psychosis's direct damage. Placing is nested inside
 /// dealing, so the placement's `after` comes before the whole deal's. No

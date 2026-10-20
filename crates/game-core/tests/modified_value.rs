@@ -31,12 +31,12 @@ use game_core::state::{
 use game_core::test_support::{self, seat, MockRegistry, Seat, TestSession};
 
 /// Shaped after Lita Chantler 01117: *"Each investigator at your
-/// location gets +1 [combat]."* An asset one investigator controls that
+/// location gets +1 \[combat\]."* An asset one investigator controls that
 /// reaches everyone standing with them.
 const LITA: &str = "MOCK-LITA";
 
 /// Shaped after Whateley Ruins 02250: *"Each investigator in Whateley
-/// Ruins gets -1 [willpower]."* A location card modifying from its own
+/// Ruins gets -1 \[willpower\]."* A location card modifying from its own
 /// place on the board.
 const WHATELEY: &str = "MOCK-WHATELEY";
 
@@ -45,8 +45,8 @@ const WHATELEY: &str = "MOCK-WHATELEY";
 const FOG: &str = "MOCK-FOG";
 
 /// Shaped after Whippoorwill 02090: *"Each investigator at
-/// Whippoorwill's location gets -1 [willpower], -1 [intellect], -1
-/// [combat], and -1 [agility]."* Only the intellect clause is modelled
+/// Whippoorwill's location gets -1 \[willpower\], -1 \[intellect\], -1
+/// \[combat\], and -1 \[agility\]."* Only the intellect clause is modelled
 /// here; one clause is enough to prove the enemy is swept.
 const WHIPPOORWILL: &str = "MOCK-WHIPPOORWILL";
 
@@ -179,7 +179,7 @@ fn my_test(board: GameStateBuilder, skill: SkillKind, difficulty: i8) -> TestSes
 // ---- 1. another investigator's cards in play --------------------
 
 /// Lita Chantler's *"Each investigator at your location gets +1
-/// [combat]"* reaches a teammate. My combat is 3; against difficulty 4
+/// \[combat\]"* reaches a teammate. My combat is 3; against difficulty 4
 /// the test fails by 1 on my own, and passes with Lita standing next to
 /// me.
 #[test]
@@ -209,7 +209,7 @@ fn a_card_another_investigator_controls_elsewhere_does_not_reach_me() {
 // ---- 2. a location's own card -----------------------------------
 
 /// Whateley Ruins' *"Each investigator in Whateley Ruins gets -1
-/// [willpower]"* applies to whoever is standing in it. Willpower 3 − 1
+/// \[willpower\]"* applies to whoever is standing in it. Willpower 3 − 1
 /// against difficulty 3 fails by 1.
 #[test]
 fn a_modifier_on_a_location_reaches_investigators_in_it() {

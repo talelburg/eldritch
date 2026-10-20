@@ -5,10 +5,10 @@
 //!
 //! A threat area holds both kinds: an encounter treachery is the encounter
 //! deck's, and a weakness its bearer's. Haunted 01098 is the shape this pins —
-//! *"[action] [action]: Discard Haunted."*, which its ruling lets a co-located
+//! *"\[action\] \[action\]: Discard Haunted."*, which its ruling lets a co-located
 //! investigator trigger (<https://arkhamdb.com/card/01098>): *"Any investigator
 //! at the same location as the investigator with Haunted in their threat area
-//! may trigger the [action][action] to discard Haunted, as per the FAQ [V1.0,
+//! may trigger the \[action\]\[action\] to discard Haunted, as per the FAQ [V1.0,
 //! section 2.1]."* Haunted itself is pinned in `haunted.rs`. The probe here
 //! models the primitive — a threat-area card with an activated self-discard —
 //! rather than impersonating it (ADR 0016), so it can be printed both as an

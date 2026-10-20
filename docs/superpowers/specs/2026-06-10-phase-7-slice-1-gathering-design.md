@@ -76,7 +76,7 @@ The engine already routes enemy/treachery behavior through the
 Locations, acts, and agendas are encounter cards too (`01111`, `01110`,
 `01107`, …), so they get the **same** treatment: their behavior comes
 from `abilities_for(code)`, not from a monolithic per-scenario switch.
-Attic's "after you enter: 1 horror" is a Forced ability on `01113`;
+Attic's "After you enter the Attic: Take 1 horror." is a Forced ability on `01113`;
 agenda `01107`'s Ghoul-movement is a Forced ability on `01107`.
 
 Consequence: the `ScenarioModule` collapses to **`setup` +
@@ -183,10 +183,10 @@ So Attic/Cellar become declarative data.
 
 `01107` has **two** forced abilities at **two** windows:
 
-- *"At the end of the enemy phase: each unengaged Ghoul moves 1 toward
-  the Parlor"* → fires on `PhaseEnded(Enemy)`.
-- *"At the end of the round: place 1 doom per Ghoul in the Hallway or
-  Parlor"* → fires on `RoundEnded`.
+- *"At the end of the enemy phase: Each unengaged \[\[Ghoul\]\] enemy moves
+  1 location towards the Parlor."* → fires on `PhaseEnded(Enemy)`.
+- *"At the end of the round: Place 1 doom on this agenda for each
+  \[\[Ghoul\]\] enemy in the Hallway or Parlor."* → fires on `RoundEnded`.
 
 The movement is **not** a modification of the enemy-phase hunter step
 (3.2). It is a discrete forced movement that runs *after* the enemy

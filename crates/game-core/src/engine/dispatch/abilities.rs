@@ -66,18 +66,20 @@ use crate::state::{
 /// - **Action-cost abilities** (`action_cost > 0`): require Investigation
 ///   phase + active investigator + sufficient actions remaining. These consume
 ///   one of the investigator's limited per-turn actions.
-/// - **Fast abilities** (`action_cost == 0`): per the Rules Reference, "Fast
-///   abilities may be used at any player window." This handler permits them
-///   when either (a) the acting investigator is the active investigator during
-///   the Investigation phase, or (b) an open window's `fast_actors` scope
-///   permits the acting investigator. The `open_windows` stack is pushed by
-///   callers (scenario/server) when a player window opens.
+/// - **Fast abilities** (`action_cost == 0`): per the Rules Reference, *"a
+///   free triggered ability that does not cost an action and may be used
+///   during any player window"* (`glossary/Triggered_Abilities.md`). This
+///   handler permits them when either (a) the acting investigator is the
+///   active investigator during the Investigation phase, or (b) an open
+///   window's `fast_actors` scope permits the acting investigator. The
+///   `open_windows` stack is pushed by callers (scenario/server) when a
+///   player window opens.
 ///
 /// The negative half — a moment *inside* another ability's resolution is not
 /// itself a window, so a Fast ability needs one open at it — is not printed as
 /// a rule, but the official FAQ is consistent with it. Asked whether Lola Hayes
 /// may switch roles mid-resolution of another ability, it answers *"As long as
-/// it is during a [fast] player window, yes."*
+/// it is during a \[fast\] player window, yes."*
 /// (`data/official-faq/Frequently_Asked_Questions.md`) — the permission is
 /// conditioned on a window rather than granted by the moment. So an empty
 /// `open_windows` with a resolution in flight is a considered refusal, not a

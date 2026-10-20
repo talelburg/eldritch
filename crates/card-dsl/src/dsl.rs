@@ -439,8 +439,8 @@ pub enum ChaosSymbol {
 impl ChaosSymbol {
     /// The four scenario symbols and `[auto_fail]`: every symbol but the elder
     /// sign. Shrivelling 01060 and Blinding Light 01066 both print exactly this
-    /// list (*"If a `[skull]`, `[cultist]`, `[tablet]`, `[elder_thing]`, or
-    /// `[auto_fail]` symbol is revealed"*).
+    /// list (*"If a \[skull\], \[cultist\], \[tablet\], \[elder_thing\], or
+    /// \[auto_fail\] symbol is revealed"*).
     pub const ALL_BUT_ELDER_SIGN: [Self; 5] = [
         Self::Skull,
         Self::Cultist,
@@ -965,7 +965,7 @@ pub enum EventPattern {
     EnemyAttackDamagedSelf,
     /// At least 1 of `kind` was **placed** on the card `scope` names — step 2
     /// of dealing damage, once the assignment has settled (ADR 0009). Agnes
-    /// Baker 01004: *"`[reaction]` After 1 or more horror is placed on Agnes
+    /// Baker 01004: *"\[reaction\] After 1 or more horror is placed on Agnes
     /// Baker: Deal 1 damage to an enemy at your location. (Limit once per
     /// phase.)"* is `{ Horror, YourInvestigator }` in the `after` cell.
     ///
@@ -1127,8 +1127,8 @@ pub enum EventPattern {
     /// 3 reveals no token, so it never announces this.
     ///
     /// Two consumers: Wendy in its `when` cell, and Ritual Candles 02029
-    /// (Dunwich) in its `after` cell, *"\[reaction\] After a `[skull]`,
-    /// `[cultist]`, `[tablet]`, or `[elder_thing]` symbol is revealed during
+    /// (Dunwich) in its `after` cell, *"\[reaction\] After a \[skull\],
+    /// \[cultist\], \[tablet\], or \[elder_thing\] symbol is revealed during
     /// a test you are performing: You get +1 skill value for this test."* The
     /// symbol narrowing arrives with the Candles. Wendy is its only corpus
     /// consumer, so it is a spec-approved exception to `standards.md`'s
@@ -1428,7 +1428,7 @@ pub enum Phase {
 /// - [`When`](Self::When) — interrupts the condition, resolving *before* its
 ///   impact lands. Dodge 01023's *"Fast. Play when an enemy attacks an
 ///   investigator at your location. / Cancel that attack."*, Cover Up 01007's
-///   *"`[reaction]` When you would discover 1 or more clues at your location:
+///   *"\[reaction\] When you would discover 1 or more clues at your location:
 ///   Discard that many clues from Cover Up instead."*
 /// - [`At`](Self::At) — between the other two, after the condition's impact has
 ///   landed. The cell the printed words *"at"* and *"if"* name: agenda 01107's
@@ -2459,7 +2459,7 @@ pub enum Effect {
     },
     /// **Treat one revealed chaos symbol as another**, for each token the
     /// source card's controller reveals: The Necronomicon 01009's *"Treat each
-    /// `[elder_sign]` you reveal on a chaos token as a `[auto_fail]`."* A
+    /// \[elder_sign\] you reveal on a chaos token as a \[auto_fail\]."* A
     /// constant marker like [`Restrict`](Self::Restrict), under a
     /// [`Trigger::Constant`]: **inspected, not executed** — the skill test
     /// reads it off the performer's cards as the token comes out of the bag,
@@ -2514,8 +2514,9 @@ pub enum Effect {
     /// card if one or more eligible options exist (no decline) — so 0 eligible
     /// ⇒ find nothing, 1 ⇒ auto-take, 2+ ⇒ the controller picks. An entire-deck
     /// search must shuffle on completion; top-N shuffles too (Old Book
-    /// "shuffles the remaining cards into the deck"). Both "draws it" (Old
-    /// Book) and "add to your hand" (Librarian) are modeled as a move to hand.
+    /// "shuffles the remaining cards into his or her deck"). Both "draws it"
+    /// (Old Book) and "add it to your hand" (Librarian) are modeled as a move
+    /// to hand.
     /// Either way a weakness taken resolves as if drawn: `glossary/Weakness.md`,
     /// *"If a weakness enters an investigator's hand in a manner that did not
     /// involve drawing the card, that investigator must resolve the card
@@ -2881,7 +2882,7 @@ pub enum ModifierAudience {
 ///
 /// Phase-3 set. Most cards land in `WhileInPlay` (Holy Rosary's
 /// unconditional +1 willpower) or `WhileInPlayDuring(...)` (Magnifying
-/// Glass's "+1 intellect *while investigating*" — the qualifier
+/// Glass's *"You get +1 \[intellect\] while investigating."* — the qualifier
 /// that gates most +stat assets in Core+Dunwich). Commit-time and
 /// turn-scoped buffs use `ThisSkillTest` / `ThisTurn`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -2891,8 +2892,8 @@ pub enum ModifierScope {
     WhileInPlay,
     /// Like [`WhileInPlay`](Self::WhileInPlay) but the modifier only
     /// contributes when the current skill test is of the given kind.
-    /// Magnifying Glass's "+1 intellect while investigating" is
-    /// `WhileInPlayDuring(SkillTestKind::Investigate)`.
+    /// Magnifying Glass's *"You get +1 \[intellect\] while investigating."*
+    /// is `WhileInPlayDuring(SkillTestKind::Investigate)`.
     WhileInPlayDuring(SkillTestKind),
     /// Active until the current skill test resolves. Used by
     /// commit-time bonuses and action abilities like Hyperawareness.
@@ -2907,7 +2908,7 @@ pub enum ModifierScope {
 /// `data/rules-reference/rules/glossary/Automatic_Failure_Success.md`:
 ///
 /// > Some card or token abilities may cause a skill test to
-/// > automatically fail or to automatically succeed.
+/// > automatically fail or to automatically succeed. …
 /// >
 /// > - If a skill test automatically fails, the investigator's total
 /// >   skill value for that test is considered 0.
@@ -3058,8 +3059,8 @@ pub enum ActionClass {
 /// Which kind of skill test is running.
 ///
 /// Cards routinely qualify their bonuses on the test's *kind*, not
-/// just the underlying stat — Magnifying Glass's "+1 intellect while
-/// investigating" applies to Investigate but **not** to a treachery
+/// just the underlying stat — Magnifying Glass's *"You get +1 \[intellect\]
+/// while investigating."* applies to Investigate but **not** to a treachery
 /// that tests intellect. Engine-side, every test-initiating action
 /// (Investigate, Fight, Evade, plus a generic plain skill test)
 /// passes the matching kind to skill-test resolution.
@@ -3262,7 +3263,7 @@ impl From<EnemySet> for ForEachTargets {
 /// > A: No. Both terms have the same meaning and are used interchangeably.
 ///
 /// (`data/official-faq/Frequently_Asked_Questions.md`.) So *"an enemy at your
-/// location"* and *"each investigator in that location"* both ground through
+/// location"* and *"each investigator in its location"* both ground through
 /// the same variants here, and a card author must not reach for a new one on
 /// the strength of the preposition alone. What *does* differ is whether a thing
 /// is at a location at all — see the note on `Quantity::CluesAtControllerLocation`
@@ -3601,8 +3602,9 @@ pub fn on_play(effect: Effect) -> Ability {
 /// As with [`activated_as`], **the designator performs the action and `effect`
 /// is the residual** the text prints beside it; the modification the action
 /// itself takes rides the designator. Playing the event *is* that action — the
-/// FAQ's Ursula Downs 04002 answer counts an investigate action *"performed
-/// via the play action"* — see [`ActionDesignator`].
+/// FAQ's Ursula Downs 04002 answer counts investigate actions *"performed via
+/// the activate action or via the play action"*
+/// (<https://arkhamdb.com/card/04002>) — see [`ActionDesignator`].
 #[must_use]
 pub fn on_play_as(designator: ActionDesignator, effect: Effect) -> Ability {
     Ability {

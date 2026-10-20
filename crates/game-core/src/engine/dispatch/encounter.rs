@@ -209,12 +209,13 @@ pub(super) fn begin_encounter_card(
 /// global `drive` loop to step. Nothing is pushed when there are none.
 ///
 /// Revelation effects on enemies (rare, but printed on some encounter enemies
-/// — e.g. "Revelation - Discard 1 card from your hand at random.") fire BEFORE
-/// the enemy spawns into play, per Rules Reference p.24 ("1.4 Each
-/// investigator draws 1 encounter card"): "3. Resolve the revelation ability
-/// on the drawn card." then "4. If the card is an enemy, spawn it following
-/// any spawn instruction the card bears." The spawn happens at disposal, after
-/// the condition's sequence has drained. The drawing investigator controls the
+/// — e.g. Coven Initiate 05090's "Revelation - Discard the top 2 cards of the
+/// encounter deck. …") fire BEFORE the enemy spawns into play, per Rules
+/// Reference p.24 ("1.4 Each investigator draws 1 encounter card"): "3.
+/// Resolve the revelation ability on the drawn card." then "4. If the card is
+/// an enemy, spawn it following any spawn instruction the card bears." The
+/// spawn happens at disposal, after the condition's sequence has drained. The
+/// drawing investigator controls the
 /// Revelation; the card is the frame's `owner`'s — the encounter deck's, or the
 /// bearer's for a drawn weakness (#1121).
 ///
@@ -664,8 +665,8 @@ pub(super) fn shuffle_encounter_deck(cx: &mut Cx) {
 
 /// Drain `state.encounter_discard` into `state.encounter_deck` and
 /// shuffle the resulting deck. Called by `draw_encounter_top` when the
-/// deck runs empty, and by card effects that "shuffle the discard into
-/// the encounter deck" (agenda 01106's reverse).
+/// deck runs empty, and by card effects that "Shuffle the encounter discard
+/// pile into the encounter deck." (agenda 01106's reverse).
 ///
 /// Does NOT push an `EngineRecord::EncounterDeckShuffled` to the
 /// action log — mid-handler reshuffles rely on RNG determinism for

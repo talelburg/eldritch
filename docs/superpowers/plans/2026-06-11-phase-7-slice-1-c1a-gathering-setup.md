@@ -184,7 +184,7 @@ use card_dsl::dsl::{
 /// `ArkhamDB` code for the Attic.
 pub const CODE: &str = "01113";
 
-/// The Attic's Forced "after you enter: take 1 horror".
+/// The Attic's Forced "After you enter the Attic: Take 1 horror."
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![on_event(
@@ -273,7 +273,7 @@ use card_dsl::dsl::{
 /// `ArkhamDB` code for the Cellar.
 pub const CODE: &str = "01114";
 
-/// The Cellar's Forced "after you enter: take 1 damage".
+/// The Cellar's Forced "After you enter the Cellar: Take 1 damage."
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![on_event(

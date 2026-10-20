@@ -1371,8 +1371,9 @@ fn apply_search_deck(
         inv.hand.len() - 1
     });
 
-    // 5. Shuffle (RR p.18 entire-deck mandatory; Old Book "shuffle the
-    //    remaining cards into the deck"). RNG-replayable; no-op on <2 cards.
+    // 5. Shuffle (RR p.18 entire-deck mandatory; Old Book "shuffles the
+    //    remaining cards into his or her deck"). RNG-replayable; no-op on <2
+    //    cards.
     cards::shuffle_player_deck(cx, who);
 
     // 6. A weakness that entered hand resolves as if just drawn
@@ -1971,7 +1972,7 @@ fn discover_clue(
     // Emit the clue-discovery triggering condition and stop: the condition is
     // **coordinator-owned** (#703), so the clues move at the coordinator's
     // resolve step, between the `when` and `at` cells — not here. That is what
-    // lets Cover Up 01007's *"[reaction] When you would discover 1 or more clues
+    // lets Cover Up 01007's *"\[reaction\] When you would discover 1 or more clues
     // at your location: Discard that many clues from Cover Up instead"* replace
     // a discovery that has not happened yet.
     //

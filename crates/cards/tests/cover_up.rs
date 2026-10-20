@@ -539,7 +539,7 @@ fn colocated_investigate_and_play_cover_up(state: GameState) -> TestSession {
 
 /// The ruling (<https://arkhamdb.com/card/01007>): *"Any investigator at the
 /// same location as Roland Banks with Cover Up in his threat area may trigger
-/// the [reaction] to discard clues from Cover Up, as per the FAQ [V1.0, section
+/// the \[reaction\] to discard clues from Cover Up, as per the FAQ [V1.0, section
 /// 2.1]."* The second investigator discovers, is offered the reaction, and the
 /// clue comes off Roland's Cover Up rather than the location.
 #[test]

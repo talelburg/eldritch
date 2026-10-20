@@ -28,8 +28,9 @@ Both ride the existing forced-trigger rails (`fire_forced_triggers` /
 **Out of scope (deferred, tracked — see Deferrals & follow-ups)**
 
 - **Pillar 2 — Act-2 (01109) round-end objective → moved to C3c (#232).**
-  Planning found that a faithful "may, as a group, spend clues *when the round
-  ends*" needs a suspendable round-end **player window** (the engine must pause
+  Planning found that a faithful "*When the round ends*, investigators in the
+  hallway may, as a group, spend the requisite number of clues to advance."
+  needs a suspendable round-end **player window** (the engine must pause
   at round end to offer the choice) — substantial new suspend machinery that
   directly overlaps C3c, which is *already* adding the round-end dispatch point
   (`ForcedTriggerPoint::RoundEnded`) for the agenda's forced doom. Building the

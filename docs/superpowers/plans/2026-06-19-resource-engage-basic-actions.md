@@ -408,8 +408,9 @@ In `crates/game-core/src/action.rs`, after the `Resource` variant:
     /// Engage is NOT on the AoO-exempt list, so OTHER ready engaged
     /// enemies make attacks of opportunity before the engagement
     /// resolves (the target is not engaged at that point, so it does
-    /// not). The multiplayer "engage an enemy engaged with another
-    /// investigator" clause is latent (single `engaged_with` field).
+    /// not). The multiplayer "engage an enemy that is engaged with a
+    /// different investigator at the same location" clause is latent (single
+    /// `engaged_with` field).
     Engage {
         /// Investigator performing the action. Must be the active
         /// investigator during the Investigation phase.
@@ -647,8 +648,8 @@ git commit -m "engine: Engage basic action (engage enemy at your location)
 Adds PlayerAction::Engage (RR p.4): engage an enemy at your location not
 already engaged with you; it becomes engaged. Fires attacks of
 opportunity from OTHER ready engaged enemies (the target isn't engaged
-yet). Multiplayer 'engage an enemy engaged with another investigator'
-clause is latent. Part of #77.
+yet). Multiplayer 'engage an enemy that is engaged with a different
+investigator at the same location' clause is latent. Part of #77.
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```

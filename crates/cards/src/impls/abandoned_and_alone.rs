@@ -16,10 +16,10 @@
 //! assigned directly to the specified card, and cannot be assigned or
 //! re-assigned elsewhere."*), then a card-local native over
 //! [`NativeCx::remove_discard_pile_from_game`], a single consumer of "remove
-//! your discard pile from the game" (`docs/agents/standards.md`, the
-//! DSL-primitive threshold). The removal waits for the deal to resolve, so if
-//! the horror defeats the bearer, elimination has already removed the pile and
-//! the native finds it empty.
+//! all cards in your discard pile from the game"
+//! (`docs/agents/standards.md`, the DSL-primitive threshold). The removal
+//! waits for the deal to resolve, so if the horror defeats the bearer,
+//! elimination has already removed the pile and the native finds it empty.
 //!
 //! The ruling (<https://arkhamdb.com/card/01015>): *"Remove cards from the game
 //! for the duration of the current scenario only. They're still part of your

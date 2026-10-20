@@ -62,7 +62,7 @@ const GAME_END_WEAKNESS: &str = "_ts_game_end_weakness";
 const GAME_END_NON_WEAKNESS: &str = "_ts_game_end_non_weakness";
 /// *"Forced - At the end of the round"*, on whatever card prints it.
 const ON_ROUND_END: &str = "_ts_on_round_end";
-/// *"[reaction] After an enemy is defeated"*, wherever it is printed: deals 1
+/// *"\[reaction\] After an enemy is defeated"*, wherever it is printed: deals 1
 /// horror to the investigator who used it, so the horror names who was offered
 /// the option they picked.
 const REACT_ON_DEFEAT: &str = "_ts_react_on_defeat";

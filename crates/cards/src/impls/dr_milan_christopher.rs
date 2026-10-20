@@ -21,7 +21,7 @@
 //! reaction — the soak half rides on metadata.
 //!
 //! **Cell: the `after` cell of the `SkillTestResolved` condition.** The printed
-//! word is *"After"* — *"`[reaction]` After you successfully investigate: Gain
+//! word is *"After"* — *"\[reaction\] After you successfully investigate: Gain
 //! 1 resource."* — and `glossary/After.md` puts that *"immediately after the
 //! specified timing point or triggering condition has fully resolved."* So the
 //! investigation has already paid out, clue and all, before the resource
@@ -42,8 +42,8 @@ pub const CODE: &str = "01033";
 /// This card's registration, listed in [`ALL`](super::ALL).
 pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
-/// +1 intellect while in play, and "after you successfully investigate,
-/// gain 1 resource."
+/// +1 intellect while in play, and "After you successfully investigate: Gain
+/// 1 resource."
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![

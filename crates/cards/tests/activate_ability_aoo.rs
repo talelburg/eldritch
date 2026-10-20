@@ -20,7 +20,7 @@
 //!
 //! ## Verified card text (`ArkhamDB`, 2026-06-21)
 //!
-//! **First Aid (01019):** "[action] Spend 1 supply: Heal 1 damage or 1 horror
+//! **First Aid (01019):** "\[action\] Spend 1 supply: Heal 1 damage or horror
 //! from an investigator at your location." A non-fight action ability → provokes.
 //!
 //! **Machete (01020):** "[action]: Fight. You get +1 [combat] for this attack.

@@ -779,7 +779,7 @@ fn audience_reaches(
 /// `on_fail` once the test's result is known.
 ///
 /// The modifier must **not** be resolved to a literal at reveal time.
-/// Roland Banks 01001 (*"`[elder_sign]` effect: +1 for each clue on your
+/// Roland Banks 01001 (*"\[elder_sign\] effect: +1 for each clue on your
 /// location."*) is the corpus consumer, and freezing his clue count at the
 /// reveal would pin it across the ST.4 window — the staleness ADR 0005
 /// exists to kill. A sweep of the snapshot found twelve investigators with

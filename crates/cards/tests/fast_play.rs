@@ -313,8 +313,9 @@ fn fast_event_play_only_during_turn_rejected_outside_investigation() {
     // Working a Hunch (01037): "Fast. Play only during your turn. Discover 1
     // clue at your location." The `play_only_during_turn` metadata flag (#322)
     // tightens the Fast gate to the active investigator's Investigation turn,
-    // so even a permissive window in the Mythos phase is rejected — per the FAQ,
-    // "'your turn' is within the Investigation phase." (Was previously, wrongly,
+    // so even a permissive window in the Mythos phase is rejected — per the
+    // Mind over Matter ruling (<https://arkhamdb.com/card/01036>), "'your turn'
+    // is within the Investigaton [sic] phase." (Was previously, wrongly,
     // accepted while the clause was unenforced.) A's Magnifying Glass keeps the
     // window standing; the window does not offer the Hunch, so it goes straight
     // to the handler.

@@ -24,8 +24,8 @@ location" forced trigger.
 
 ## Rules grounding
 
-- **Hunter movement (RR p.12):** a Hunter enemy "moves … toward the
-  nearest investigator … via the shortest possible path." A location that
+- **Hunter movement (RR p.12):** a Hunter enemy "moves to a connecting
+  location, along the shortest path towards the nearest investigator." A location that
   is impassable to the enemy is therefore excluded from the path *and* from
   the distance computation that picks the nearest investigator.
 - **Elite:** `Elite` is a printed **trait** (Ghoul Priest 01116:

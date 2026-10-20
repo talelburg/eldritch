@@ -1464,7 +1464,7 @@ pub struct InFlightSkillTest {
     /// A card in play this test discards as it ends, at RR ST.8 — after the
     /// ST.7 results, so after an attack's damage.
     ///
-    /// Baseball Bat 01074's *"If a `[skull]` or `[auto_fail]` symbol is
+    /// Baseball Bat 01074's *"If a \[skull\] or \[auto_fail\] symbol is
     /// revealed during this attack, discard Baseball Bat after the attack
     /// resolves."*: its reveal clause fires at ST.3 and marks the test here
     /// (through
@@ -1559,9 +1559,11 @@ impl ResolvedTest {
 /// `drive` loop, which dispatches the window. On the window's close the loop
 /// re-dispatches this `SkillTest` frame, which reads its cursor and jumps to
 /// the matching step (Slice C-plumbing). This is the rules-correct shape per
-/// the Rules Reference's "after… initiates immediately after that
-/// triggering condition's impact has resolved" clause: the reaction
-/// fires between steps 2 and 3, not after the entire action ends.
+/// the Rules Reference's *"A \[reaction\] ability with a triggering condition
+/// beginning with the word "after..." may be used immediately after that
+/// triggering condition's impact upon the game state has resolved"* clause
+/// (`glossary/Ability.md`): the reaction fires between steps 2 and 3, not
+/// after the entire action ends.
 ///
 /// The test outcome (`succeeded`/`margin`/`fail_reason`) is
 /// determined once at [`DetermineOutcome`](Self::DetermineOutcome) (ST.5–ST.6)
@@ -1830,10 +1832,8 @@ pub enum SkillTestFollowUp {
 ///
 /// Modeled per Rules Reference: a reaction window allows any
 /// investigator to fire a triggered reaction or play a Fast card.
-/// An investigator's own turn opens an `ActiveInvestigator` window
-/// that still permits other investigators to play Fast cards (per the
-/// "Fast may be played at any player window" rule); concrete window
-/// kinds choose the right scope at the open-window site.
+/// `ActiveInvestigator` bounds a window to the turn's owner; concrete
+/// window kinds choose the right scope at the open-window site.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum FastActorScope {

@@ -247,7 +247,7 @@ fn daisy_with_her_default_deck_plays_the_gathering_to_a_resolution() {
 /// "Skids" O'Toole 01003. His combat 3 fails a basic Fight against the Priest's
 /// fight 4 on the `Numeric(0)` bag, so he fights with a discarded Knife, which
 /// the shuffle deals into his opening hand: combat 3 + 2 beats fight 4. Each of
-/// his turns opens on a fast window offering his own *"[fast] During your turn,
+/// his turns opens on a fast window offering his own *"\[fast\] During your turn,
 /// spend 2 resources: You may take an additional action this turn."*, which the
 /// walk passes.
 #[test]
@@ -284,7 +284,7 @@ fn pass_his_ability(session: TestSession) -> TestSession {
 }
 
 /// Agnes Baker 01004. The engaged Priest attacks in the Enemy phase, and the
-/// horror it places offers her own *"[reaction] After 1 or more horror is
+/// horror it places offers her own *"\[reaction\] After 1 or more horror is
 /// placed on Agnes Baker: Deal 1 damage to an enemy at your location."*, whose
 /// 1 damage defeats it.
 #[test]
@@ -312,7 +312,7 @@ fn agnes_with_her_default_deck_plays_the_gathering_to_a_resolution() {
 /// Wendy Adams 01005. Her combat 1 fails a basic Fight against the Priest's
 /// fight 4 on the `Numeric(0)` bag, and a Knife's +2 still falls short. She
 /// lands the kill with Backstab 01051 (*"<b>Fight.</b> This attack uses
-/// [agility] instead of [combat]. This attack deals +2 damage."*), played from
+/// \[agility\] instead of \[combat\]. This attack deals +2 damage."*), played from
 /// her discard pile under Wendy's Amulet 01014, *"You may play the topmost event
 /// in your discard pile as if it were in your hand."* Backstab reaches the
 /// discard pile through her own reaction's cost:

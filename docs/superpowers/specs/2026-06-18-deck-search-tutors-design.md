@@ -93,7 +93,7 @@ only mutations, and they run *after* every choice resolves):
    event.
 5. Shuffle the investigator's `deck` via the existing RNG-replayable
    shuffle helper (emits `Event::DeckShuffled`). Runs for both scopes
-   (Old Book's "shuffle the remaining cards into the deck" = a whole-deck
+   (Old Book's "shuffles the remaining cards into his or her deck" = a whole-deck
    shuffle after the take; Librarian's mandatory entire-deck shuffle).
    When step 3 found nothing, still shuffle for `EntireDeck` (RR), and
    harmlessly for `Top(n)` (a top-N search that took nothing left the deck

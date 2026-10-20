@@ -15,8 +15,8 @@
 //!
 //! ## Verified card text (`data/arkhamdb-snapshot`, 2026-07-17)
 //!
-//! **Grasping Hands (01162):** "<b>Revelation</b> - Test [agility] (3). If you
-//! fail, take 1 damage for each point you failed by."
+//! **Grasping Hands (01162):** "<b>Revelation</b> - Test \[agility\] (3). For
+//! each point you fail by, take 1 damage."
 //! **Survival Instinct (01081):** "If this skill test is successful during an
 //! evasion attempt, the evading investigator may immediately disengage from
 //! each other enemy engaged with him or her, and may move to a connecting

@@ -29,8 +29,8 @@ use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 const BASEBALL_BAT: &str = "01074";
-/// Machete 01020, a single-`Hand` asset: *"[action]: <b>Fight.</b> You get +1
-/// [combat] for this attack. …"*
+/// Machete 01020, a single-`Hand` asset: *"\[action\]: <b>Fight.</b> You get +1
+/// \[combat\] for this attack. …"*
 const MACHETE: &str = "01020";
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);

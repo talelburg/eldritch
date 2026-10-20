@@ -522,7 +522,8 @@ Each of these was a live suspicion that the code answered correctly.
 ## Uncertain
 
 - **When a symbol token's variable modifier is fixed.** The Gathering's
-  `[skull]` is *"−X (X = Ghouls at your location)"*; the engine evaluates the
+  `[skull]` is *"-X. X is the number of \[\[Ghoul\]\] enemies at your location."*;
+  the engine evaluates the
   scenario hook once at reveal (ST.3/ST.4 —
   `crates/game-core/src/scenario.rs:125-129`: *"The hook is evaluated once at
   token reveal, so board-gated branches are decided up front"*), whereas

@@ -39,11 +39,11 @@
 //! - Goat Spawn 01180 (`pack/core/core_encounter.json`), *"**Forced** - When
 //!   Goat Spawn is defeated: Each investigator at this location takes 1
 //!   horror."* So the nested sequence hanging off the defeat is **Roland Banks
-//!   01001's own** *"[reaction] After you defeat an enemy: Discover 1 clue at
+//!   01001's own** *"\[reaction\] After you defeat an enemy: Discover 1 clue at
 //!   your location. (Limit once per round.)"* — a different ability in the same
 //!   structural position, spawned by the same defeat, and it has to complete
 //!   before the original deal of damage resolves for exactly the same reason.
-//! - Agnes Baker 01004 (`pack/core/core.json`), *"[reaction] After 1 or more
+//! - Agnes Baker 01004 (`pack/core/core.json`), *"\[reaction\] After 1 or more
 //!   horror is placed on Agnes Baker: Deal 1 damage to an enemy at your
 //!   location. (Limit once per phase.)"* — the example's third nesting level.
 //!   She ships (#1045, `agnes_baker.rs`), but with no Goat Spawn horror to

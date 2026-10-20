@@ -172,7 +172,7 @@ fn turn_menu(state: &GameState, cards: &CardRegistry) -> InputRequest {
 /// the only wire variant, an interjection with no live frame to answer has no
 /// representation at all. The official FAQ is consistent with the shape — asked
 /// about a Fast ability used mid-resolution of another, it answers *"As long as
-/// it is during a [fast] player window, yes."*
+/// it is during a \[fast\] player window, yes."*
 /// (`data/official-faq/Frequently_Asked_Questions.md`), conditioning the
 /// permission on a window rather than granting it by the moment. A **Forced**
 /// ability is the exception the same FAQ states and the forced path implements:
