@@ -22,13 +22,12 @@ use crate::state::{LocationId, Phase};
 /// investigator is already non-Active: an investigator is eliminated once, and
 /// only once.
 ///
-/// **The three defeat causes all land on [`Status::Defeated`]** (#814). Killed
+/// **The three defeat causes all land on [`Status::Defeated`]**. Killed
 /// and driven insane are campaign-log states derived from accumulated trauma
 /// totals, not from how one scenario defeat happened —
 /// `glossary/Campaign_Play.md`: *"If an investigator has physical trauma equal
 /// to his or her printed health, the investigator is killed."* The cause is not
-/// lost: it rides `cause` on the event, which is the campaign log's input
-/// (#766).
+/// lost: it rides `cause` on the event, which is the campaign log's input.
 ///
 /// **Elimination, not defeat.** `glossary/Elimination.md` opens *"A player is
 /// eliminated from a scenario any time his or her investigator is defeated, **or
@@ -38,11 +37,11 @@ use crate::state::{LocationId, Phase};
 /// a defeat (`glossary/Resign.md`), which is why the umbrella term names the
 /// function and the event; see [`resign_investigator`].
 ///
-/// # Then one of two paths (#638)
+/// # Then one of two paths
 ///
 /// - **No step-0 weakness ability** (every elimination but a Roland holding
 ///   clues on Cover Up): [`run_elimination_steps`] and [`check_all_eliminated`]
-///   run inline before this returns, as they always have.
+///   run inline before this returns.
 /// - **A step-0 weakness ability**: a [`Continuation::Elimination`] frame is
 ///   pushed and this returns immediately. Steps 1–6 *and*
 ///   [`check_all_eliminated`] run later, from [`drive_elimination`], once the
@@ -81,10 +80,10 @@ pub(super) fn apply_investigator_elimination(
         cause,
     });
 
-    // If it was their turn, that turn is over (#764).
+    // If it was their turn, that turn is over.
     end_turn_on_elimination(cx, investigator);
 
-    // Rules Reference p.10 Elimination step 0 (#638). The rule, why the steps
+    // Rules Reference p.10 Elimination step 0. The rule, why the steps
     // have to ride a frame to honour it, and what that costs are all documented
     // once on `Continuation::Elimination`; this is the fork it describes.
     if has_weakness_game_end_ability(cx.state, cx.cards, investigator) {
@@ -103,8 +102,8 @@ pub(super) fn apply_investigator_elimination(
     check_all_eliminated(cx);
 }
 
-/// End the active investigator's turn when elimination takes them out of it
-/// (#764): announce [`Event::TurnEnded`] and arm their
+/// End the active investigator's turn when elimination takes them out of
+/// it: announce [`Event::TurnEnded`] and arm their
 /// [`InvestigatorTurn`](Continuation::InvestigatorTurn) frame's `ending`
 /// flag so the `drive` loop runs the rotation tail
 /// ([`resume_end_turn`](super::phases::resume_end_turn)) once every frame above
@@ -198,8 +197,8 @@ fn end_turn_on_elimination(cx: &mut Cx, investigator: InvestigatorId) {
 /// fork takes the inline path and steps 1–6 remove the weakness before anything
 /// looks at it again. That is the failure mode this fork is least able to
 /// report, since a dropped ability leaves no reject behind. Cover Up 01007's
-/// game-end trauma is a `when`-cell ability since #720, and the hardcoded
-/// `After` here would have silently swallowed it.
+/// game-end trauma is a `when`-cell ability, which a hardcoded `After` here
+/// would silently swallow.
 /// [`EmitStep::cells`](crate::state::EmitStep::cells) derives the list from the
 /// coordinator's own cursor, so a fourth cell cannot be forgotten here.
 fn has_weakness_game_end_ability(
@@ -218,7 +217,7 @@ fn has_weakness_game_end_ability(
     })
 }
 
-/// Drive a [`Continuation::Elimination`] frame (#638): emit Elimination step 0's
+/// Drive a [`Continuation::Elimination`] frame: emit Elimination step 0's
 /// weakness-scoped game-end timing point, then — once its abilities have drained
 /// above this frame — run steps 1–6 and pop.
 ///
@@ -337,16 +336,16 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     // this walk takes each off its frame:
     //
     // - a card **mid-play** — it left hand when it commenced being played and
-    //   has not been placed yet (RR Appendix I step 3 → 4) — #604;
+    //   has not been placed yet (RR Appendix I step 3 → 4);
     // - a card **committed to an in-flight skill test** — RR glossary "Limbo":
     //   "A skill card enters limbo as it is committed to a skill test. … It is
     //   no longer considered to be in any investigator's hand, but it has not
-    //   yet been placed in any discard pile." (#631.)
+    //   yet been placed in any discard pile."
     // - an **encounter-cardtype weakness of theirs resolving** as an encounter
     //   card — RR glossary "Limbo": "A treachery card enters limbo after it is
     //   drawn, while its revelation ability is being resolved." Only their own:
     //   a card from the encounter deck is the scenario's, and its frame's
-    //   disposal still files it (#1121).
+    //   disposal still files it.
     //
     // Taking rather than copying is what makes the step order-independent: the
     // frame's own disposal, whenever it runs, finds nothing left to place
@@ -354,7 +353,7 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     // removed from the game.
     //
     // A card in limbo comes back with its **owner**, and is filed by it for the
-    // same reason a card leaving play is (#772): the eliminated investigator's
+    // same reason a card leaving play is: the eliminated investigator's
     // own pile is for their own deck's cards, and a card mid-take-control on a
     // `SlotDiscard` frame is the scenario's. A committed skill card is always
     // its own player's — it came from their hand.
@@ -368,15 +367,14 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     // leave-play exit, which files each by its **owner**: this investigator's
     // own cards to their removed-from-game pile, and a card they merely control
     // — Lita Chantler 01117 after a Parley — to the scenario's
-    // (`GameState::removed_from_game`, #772). See **Removed from game** in
+    // (`GameState::removed_from_game`). See **Removed from game** in
     // `GLOSSARY.md` for why the two piles differ.
     //
     // The threat area splits by the same **owner**: a card this investigator
     // owns there (a weakness such as Cover Up 01007, the bearer's) leaves with
     // them now. Step 4 would place it in "the appropriate discard pile", but
     // step 1 removes that very pile from the game one step earlier, so the
-    // card is removed. Every other threat-area card is step 4's business
-    // (#567).
+    // card is removed. Every other threat-area card is step 4's business.
     //
     // Each card leaving play emits its one removal event. The out-of-play
     // areas and limbo emit none: those cards were never in play.
@@ -462,11 +460,11 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
         board::discard_from_play_on_elimination(cx, id)
     });
 
-    // Step 5: lead-investigator transfer. No-op by construction: there
-    // is no stored lead; `first_active_investigator` recomputes the lead
-    // as the first Active investigator in `turn_order`, so a defeated
-    // lead is automatically replaced. UX for "remaining players choose"
-    // is deferred (Phase 8, #151) alongside the re-engagement-tie pick.
+    // Step 5: lead-investigator transfer. No-op by construction: the engine
+    // stores no lead, and its proxy (`first_active_investigator`, the first
+    // Active investigator in `turn_order`) passes to the next seat when this
+    // one is defeated. The remaining players' choice of a new lead is not
+    // modelled (**Lead investigator** in `GLOSSARY.md`).
 
     // Step 6 (no remaining players => scenario ends) is signaled by
     // `check_all_eliminated` (caller) emitting AllInvestigatorsEliminated
@@ -493,7 +491,7 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
 /// threshold involved — `glossary/Defeat.md`: *"An investigator might also be
 /// defeated by a card ability."*
 ///
-/// The card-local (#276) entry point onto the ordinary defeat path: it flips
+/// The card-local entry point onto the ordinary defeat path: it flips
 /// status to [`Status::Defeated`], announces
 /// [`Event::InvestigatorEliminated`] with [`EliminationCause::CardAbility`], and runs
 /// Rules Reference p.10 Elimination — including step 6, *"If there are no
@@ -520,8 +518,8 @@ pub fn defeat_investigator(cx: &mut Cx, investigator: InvestigatorId) {
 /// Cover Up 01007) reach it as
 /// [`NativeCx::suffer_trauma`](crate::engine::NativeCx::suffer_trauma).
 ///
-/// **Announced, not recorded.** Nothing persists trauma until the phase-9
-/// campaign log (#766), which makes this the one place it will be recorded.
+/// **Announced, not recorded.** Nothing persists trauma yet, and this is the
+/// one place it will be recorded. TODO(#766): record it in the campaign log.
 pub fn suffer_trauma(cx: &mut Cx, investigator: InvestigatorId, kind: TraumaKind, amount: u8) {
     cx.events.push(Event::TraumaSuffered {
         investigator,
@@ -531,8 +529,8 @@ pub fn suffer_trauma(cx: &mut Cx, investigator: InvestigatorId, kind: TraumaKind
 }
 
 /// Resign `investigator` from the scenario — what the
-/// [`Resign`](card_dsl::dsl::ActionDesignator::Resign) action designator performs
-/// (#805), and the only producer of [`EliminationCause::Resigned`].
+/// [`Resign`](card_dsl::dsl::ActionDesignator::Resign) action designator
+/// performs, and the only producer of [`EliminationCause::Resigned`].
 ///
 /// `glossary/Resign.md`: *"When an investigator resigns, the investigator is
 /// eliminated by resignation (see 'Elimination' on page 10.) An investigator
