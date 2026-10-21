@@ -1,4 +1,4 @@
-//! Integration: Arcane Initiate 01063 against `cards::TEST_REGISTRIES` (#1049).
+//! Integration: Arcane Initiate 01063 against `cards::TEST_REGISTRIES`.
 //!
 //! Printed text (`data/arkhamdb-snapshot/pack/core/core.json`):
 //!

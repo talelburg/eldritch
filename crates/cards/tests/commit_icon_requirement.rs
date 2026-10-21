@@ -1,10 +1,11 @@
-//! #763 integration: RR Appendix II ST.2 forbids committing a card that
-//! prints no appropriate skill icon — *"An appropriate skill icon is either
-//! one that matches the skill being tested, or a wild icon. […] Cards that
-//! lack an appropriate skill icon may not be committed to a skill test."*
+//! Regression for #763: the commit window rejects a card that prints no
+//! appropriate skill icon, as RR Appendix II ST.2 forbids — *"An appropriate
+//! skill icon is either one that matches the skill being tested, or a wild
+//! icon. […] Cards that lack an appropriate skill icon may not be committed to
+//! a skill test."*
 //!
-//! Before this, the commit window accepted anything in hand, which made
-//! commit a free discard outlet (dump a weakness, cf. #646).
+//! Accepting anything in hand would make commit a free discard outlet (dump a
+//! weakness).
 //!
 //! Driven against the real corpus (`cards::TEST_REGISTRIES`) so the icons under
 //! test are the ones the pipeline actually compiled, not fabricated fixtures,
@@ -33,7 +34,7 @@ fn commit_to(hand: &[&str], skill: SkillKind, commits: &[&str]) -> TestSession {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         // Somewhere for a success draw to land; an empty deck would apply the
-        // deck-out horror (#636), irrelevant noise here.
+        // deck-out horror, irrelevant noise here.
         .with_seat(
             seat(1)
                 .hand(hand.iter().copied())

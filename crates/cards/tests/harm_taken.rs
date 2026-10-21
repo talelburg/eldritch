@@ -1,5 +1,5 @@
-//! #1124: direct harm, and the "harm taken by you" pattern on the deal's outer
-//! condition, at the cases no 7.5 card can show on its own.
+//! Direct harm, and the "harm taken by you" pattern on the deal's outer
+//! condition, at the cases no implemented card can show on its own.
 //!
 //! **Direct harm.** `glossary/Direct_Damage_Direct_Horror.md`: *"that damage or
 //! horror must be assigned directly to the specified card, and cannot be
@@ -12,9 +12,9 @@
 //! prevented in the window between assigning and placing places nothing, and
 //! `GLOSSARY.md` ("Assign / Place") counts harm as dealt only once it is placed:
 //! *"If no damage/horror is applied in this step, no damage/horror has been
-//! successfully dealt"*. No 7.5 card prevents harm, so a synthetic canceller
-//! models the primitive (Perseverance 04111's shape at its full extent) beside
-//! the real Psychosis.
+//! successfully dealt"*. No implemented card prevents harm, so a synthetic
+//! canceller models the primitive (Perseverance 04111's shape at its full
+//! extent) beside the real Psychosis.
 //!
 //! Own integration-test binary so it can build its own `MockRegistry`.
 

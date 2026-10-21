@@ -1,5 +1,5 @@
-//! The deck-out penalty deals its horror through the one harm adapter (#1027,
-//! #429), under the real registry.
+//! The deck-out penalty deals its horror through the one harm adapter, under
+//! the real registry.
 //!
 //! `glossary/Drawing_Cards.md`: *"If an investigator with an empty investigator
 //! deck needs to draw a card, that investigator shuffles his or her discard pile

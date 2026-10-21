@@ -6,9 +6,11 @@
 //!
 //! Ruling (<https://arkhamdb.com/card/01067>): *"If you commit this card to
 //! another player's skill test, and the test is successful, you heal 1 horror
-//! (not the other player)."* That committer binding is multiplayer and out of
-//! scope here (#65); these tests are solo, where the committer is the
+//! (not the other player)."* These tests are solo, where the committer is the
 //! performer.
+//!
+//! TODO(#65): commits to another investigator's skill test, which the
+//! committer binding needs.
 
 use card_dsl::dsl::HarmKind;
 use cards::TEST_REGISTRIES;

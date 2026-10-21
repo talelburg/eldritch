@@ -1,4 +1,4 @@
-//! #918 integration: Crypt Chill 01167 discarding a Parleyed Lita Chantler
+//! Integration: Crypt Chill 01167 discarding a Parleyed Lita Chantler
 //! 01117 — against the real `cards::REGISTRY`.
 //!
 //! ## Verified card text (`data/arkhamdb-snapshot`, 2026-10-09)
@@ -26,10 +26,9 @@
 //! <https://arkhamdb.com/card/01167>): *"You must discard as asset from
 //! play."* A controlled Lita is an asset in play, so she is a legal choice.
 //!
-//! Crypt Chill used to route the discarded asset to its **controller's**
-//! discard pile, so a Parleyed Lita landed in the investigator's discard. It
-//! now leaves play through the engine's discard-from-play exit, which files a
-//! card by its **owner** — the scenario, for Lita.
+//! The discarded asset leaves play through the engine's discard-from-play exit,
+//! which files a card by its **owner** — the scenario, for Lita — not by its
+//! controller.
 //!
 //! Runs against `cards::TEST_REGISTRIES`.
 
@@ -121,7 +120,8 @@ fn reveal_crypt_chill(controlled: &TestSession) -> TestSession {
     drawing.confirm().commit(&[])
 }
 
-/// **Crypt Chill removes a Parleyed Lita from the game** (#918). She is the
+/// Regression for #918: **Crypt Chill removes a Parleyed Lita from the game**,
+/// rather than discarding her to the investigator's pile. She is the
 /// only asset the investigator controls, so the failed test discards her; she
 /// leaves play, and because the scenario owns her she goes to no discard pile.
 #[test]

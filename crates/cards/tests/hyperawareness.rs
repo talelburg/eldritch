@@ -9,11 +9,11 @@
 //!
 //! Demonstrates the composition of three mechanisms with a real card:
 //! - `Trigger::Activated { action_cost: 0 }` with no action designator, plus
-//!   `Cost::Resources(1)` (#53)
+//!   `Cost::Resources(1)`
 //! - the `ModifierScope::ThisSkillTest` → `Lifetime::SkillTest` translation
-//!   and its expiry (#102, #676)
+//!   and its expiry
 //! - the skill-test resolution path that folds recorded rows in alongside
-//!   the swept modifiers and the base skill (#92, #675).
+//!   the swept modifiers and the base skill.
 //!
 //! **Where the ability is bought matters.** A modifier bought "for this
 //! skill test" needs a test to attach to, so it is offered — and accepted —
@@ -155,7 +155,7 @@ fn intellect_ability_does_not_buff_an_agility_test() {
 }
 
 /// The buff belongs to the test it was bought during, and to no other: the
-/// next test is unbuffed (#676).
+/// next test is unbuffed.
 #[test]
 fn the_buff_does_not_survive_into_the_next_test() {
     let first = test_buying(
@@ -181,10 +181,10 @@ fn the_buff_does_not_survive_into_the_next_test() {
     );
 }
 
-/// Bought at an open-turn menu with no test running, the modifier has no
-/// test to attach to — so the activation is **refused**, and the test that
-/// follows shows no bonus. Before #676 the resource was spent, nothing
-/// visible happened, and the `+1` surfaced on whatever test came next.
+/// Regression for #676: bought at an open-turn menu with no test running, the
+/// modifier has no test to attach to — so the activation is **refused**, and
+/// the test that follows shows no bonus, rather than the resource being spent
+/// and the `+1` surfacing on whatever test comes next.
 #[test]
 fn activation_with_no_test_in_flight_is_rejected_and_buffs_nothing_later() {
     let session = with_hyperawareness(5);
@@ -264,7 +264,7 @@ fn buying_the_buff_costs_no_action_points() {
     assert_eq!(
         result.state().investigators[&INV].actions_remaining,
         actions_before,
-        "a fast ability spends no action",
+        "a zero-action ability spends no action",
     );
     assert_event!(result.events(), Event::AbilityActivated { .. });
 }

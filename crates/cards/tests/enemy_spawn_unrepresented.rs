@@ -1,4 +1,4 @@
-//! Integration (#635): an encounter enemy whose printed Spawn clause the
+//! Regression for #635: an encounter enemy whose printed Spawn clause the
 //! pipeline could not model refuses loudly instead of spawning at the drawing
 //! investigator's location. Driven through the real `cards` registry, so the
 //! metadata under test is the shipped corpus entry rather than a fixture.
@@ -83,8 +83,8 @@ fn acolyte_refuses_rather_than_spawning_at_the_drawers_location() {
 
 #[test]
 fn an_enemy_with_no_spawn_line_still_spawns_engaged_with_the_drawer() {
-    // Regression guard for the other half of the distinction: #635 must not
-    // turn the no-instruction rule into a refusal too.
+    // The other half of the distinction: refusing an unmodelled clause must
+    // not turn the no-instruction rule into a refusal too.
     let session = reveal_top(state_with_top_encounter(GHOUL_MINION));
 
     // A card printing no Spawn line resolves normally: play runs on out of the

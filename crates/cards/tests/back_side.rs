@@ -1,6 +1,6 @@
 //! Integration: double-sided cards carry their reverse side
-//! (`back_name`/`back_text`) through the pipeline into the corpus (#558,
-//! slice 1), against the real `cards` corpus.
+//! (`back_name`/`back_text`) through the pipeline into the corpus, against the
+//! real `cards` corpus.
 
 use cards::TEST_REGISTRIES;
 use game_core::state::CardCode;
@@ -35,7 +35,7 @@ fn single_sided_card_has_no_reverse() {
 }
 
 /// The Parlor 01115 is a **location** with a reverse, and the only card in the
-/// corpus whose back declares abilities (#774). Its `back_text` is what
+/// corpus whose back declares abilities. Its `back_text` is what
 /// `parlor::back_abilities()` implements, so the two must not drift: this pins
 /// the printed sentence the barrier is derived from.
 #[test]

@@ -2,14 +2,12 @@
 //! 1. Contributes 1 intellect icon when committed to a skill test.
 //! 2. Raises the Investigate follow-up's **single** discovery to 2 clues
 //!    at the tested location on a successful Investigate — one discovery
-//!    of 2, not two of 1 (#471; see the **Discovery** entry in
-//!    `GLOSSARY.md`).
+//!    of 2, not two of 1 (see the **Discovery** entry in `GLOSSARY.md`).
 //! 3. Discovers no clues on a failed Investigate.
 //! 4. Does not raise the count on a non-Investigate skill test.
 //!
-//! Closes the Phase-3 acceptance criterion for #39: the commit-time
-//! icon + the discovery-count bonus both work end-to-end with the
-//! real card and real registry.
+//! The commit-time icon and the discovery-count bonus are both driven
+//! end-to-end with the real card and real registry.
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
@@ -56,6 +54,8 @@ fn drive_committing_deduction(session: TestSession) -> ApplyResult {
     investigate_committing(session, &[DEDUCTION])
 }
 
+/// Regression for #471: Deduction raises the one discovery to 2 clues rather
+/// than spawning a second discovery of 1.
 #[test]
 fn investigate_with_committed_deduction_succeeds_at_shroud_4_via_intellect_icon() {
     // 3 intellect + 0 (token) + 1 (Deduction's intellect icon) = 4 vs
@@ -67,7 +67,7 @@ fn investigate_with_committed_deduction_succeeds_at_shroud_4_via_intellect_icon(
     //
     // The event *count* is the whole point of this assertion — final
     // clue totals cannot tell one discovery of 2 from two of 1, and
-    // that difference is what Cover Up 01007 keys off (#471).
+    // that difference is what Cover Up 01007 keys off.
     let session = board_with_deduction(2, 4);
     let result = drive_committing_deduction(session);
 
@@ -91,9 +91,10 @@ fn investigate_with_committed_deduction_succeeds_at_shroud_4_via_intellect_icon(
 
 #[test]
 fn deduction_at_a_one_clue_location_discovers_exactly_one() {
-    // Deduction "doesn't allow you to discover clues that aren't at that
+    // Deduction "doesn’t allow you to discover clues that aren’t at that
     // location. If your location has 1 clue at it, you can only discover 1
-    // clue at most when you investigate it" (ArkhamDB 01007/01039 FAQ). The
+    // clue at most when you investigate it" (Cover Up's ruling,
+    // <https://arkhamdb.com/card/01007>). The
     // combined count of 2 is capped to the location's 1 clue **at emission**,
     // so the single discovery reports the number actually taken.
     let session = board_with_deduction(1, 4);

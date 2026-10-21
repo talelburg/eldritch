@@ -22,7 +22,7 @@
 //! Guard Dog 01021: "[reaction] When an enemy attack deals damage to Guard
 //! Dog: Deal 1 damage to the attacking enemy." Health 3, sanity 1, Ally.
 //!
-//! **The retaliate resolves in the `when` cell of `DamageDealt`** (#722),
+//! **The retaliate resolves in the `when` cell of `DamageDealt`**,
 //! which is why every case here reads the dog's `accumulated_damage` as 0 at
 //! the window and non-zero only after the reaction has resolved. That order is
 //! the Rules Reference's — `glossary/Nested_Sequences.md` runs its worked
@@ -65,9 +65,9 @@ const HERE: LocationId = LocationId(101);
 /// Build an Investigation-phase state with one active investigator at a
 /// location carrying `damage` damage, `assets` in play, and `enemies` engaged.
 /// Driving `EndTurn` from here advances Investigation → Enemy and runs the
-/// per-investigator attack loop (the `BeforeInvestigatorAttacked` Fast window
-/// auto-skips — Guard Dog has no Fast ability — so the loop runs inline and
-/// suspends on the soak reaction window).
+/// per-investigator attack loop (the `BeforeInvestigatorAttacked` player
+/// window auto-skips — Guard Dog has no zero-action ability — so the loop runs
+/// inline and suspends on the soak reaction window).
 fn soak_state(assets: &[&str], damage: u8, enemies: Vec<Enemy>) -> GameState {
     let investigator = seat(1)
         .at(HERE)
@@ -75,7 +75,7 @@ fn soak_state(assets: &[&str], damage: u8, enemies: Vec<Enemy>) -> GameState {
         .in_play(assets.iter().copied())
         // A deck with cards left in it. The Upkeep draw these cases cascade
         // through otherwise draws from an empty deck, whose penalty is 1
-        // horror (#429) — which offers Guard Dog's 1 printed sanity the soak,
+        // horror — which offers Guard Dog's 1 printed sanity the soak,
         // in the middle of a test measuring what the *attack* did to it.
         .deck(["01087"; 5]);
     enemies
@@ -116,9 +116,9 @@ fn guard_dog_card(state: &GameState, inv: InvestigatorId, inst: CardInstanceId) 
         .expect("Guard Dog still in play")
 }
 
-/// Resolve a soak distribution (#44/K5b) by assigning every point to the soaker
-/// `inst` while it has capacity, then to the investigator once it is full —
-/// reproducing the pre-K5b soak-first default. Returns the session at the first
+/// Resolve a soak distribution by assigning every point to the soaker `inst`
+/// while it has capacity, then to the investigator once it is full — soak
+/// first. Returns the session at the first
 /// prompt that is no longer a distribution prompt: the distribution must be
 /// answered, a reaction window may be passed.
 fn distribute_onto(mut session: TestSession, inst: CardInstanceId) -> TestSession {
@@ -140,8 +140,8 @@ fn distribute_onto(mut session: TestSession, inst: CardInstanceId) -> TestSessio
     session
 }
 
-/// Fire Guard Dog's retaliate from its open reaction window. Since #727 the
-/// window is `DamageDealt`'s `when` cell, so this is also what lets the deal
+/// Fire Guard Dog's retaliate from its open reaction window. The window is
+/// `DamageDealt`'s `when` cell, so this is also what lets the deal
 /// proceed to its placement.
 fn fire_retaliate(session: TestSession, dog: CardInstanceId) -> TestSession {
     session.pick(OptionTarget::CardInstance(dog))
@@ -160,7 +160,7 @@ fn enemy_attack_soaks_onto_guard_dog_then_retaliate_damages_attacker() {
     let state = soak_state(&[GUARD_DOG], 0, vec![ready_attacker(7, 2, 3)]);
     let dog = state.in_play(INV, GUARD_DOG);
 
-    // Distribute the attack: assign both points onto Guard Dog (#44/K5b).
+    // Distribute the attack: assign both points onto Guard Dog.
     let session = distribute_onto(
         TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::EndTurn),
         dog,
@@ -222,14 +222,12 @@ fn enemy_attack_soaks_onto_guard_dog_then_retaliate_damages_attacker() {
 // ---------------------------------------------------------------------
 // Case 2a — overflow defeats Guard Dog by the SAME attack: it retaliates
 // anyway, because the assignment is announced while it is still in play.
-//
-// This is the live bug #727 fixed, not merely a retag. Placement used to
-// come first and only *surviving* damaged assets were announced, so a Guard
-// Dog killed by the attack that damaged it never bit back — against its own
-// ruling, `data/arkhamdb-faq/core/01021.md`: "You can use Guard Dog's
-// ability when you assign lethal damage/horror to it."
 // ---------------------------------------------------------------------
 
+/// Regression for #727: a Guard Dog killed by the attack that damaged it still
+/// bites back, because the assignment is announced before the placement — its
+/// ruling, `data/arkhamdb-faq/core/01021.md`: "You can use Guard Dog's ability
+/// when you assign lethal damage/horror to it."
 #[test]
 fn guard_dog_retaliates_on_a_lethal_assignment_then_is_defeated() {
     let enemy_id = EnemyId(7);
@@ -306,13 +304,11 @@ fn guard_dog_retaliates_on_a_lethal_assignment_then_is_defeated() {
 // Case 2c — the attacker is defeated by the retaliate *during its own
 // enemy-phase attack*, so there is nothing left to exhaust.
 //
-// #704 moved the exhaust off the attack's resolve step and onto the parked
-// `AttackLoop` frame, which runs it after the whole sequence
+// The exhaust runs on the parked `AttackLoop` frame, after the whole sequence
 // (`Appendix_II_Timing_and_Gameplay.md` step 3.3: "Upon completion of dealing
 // the attack (and all abilities triggered by the attack), exhaust the enemy.").
-// #727 made this path *more* reachable: the retaliate now resolves in the `when`
-// cell, before the damage is placed, so an attacker can die mid-sequence even on
-// the attack that would have killed the dog.
+// The retaliate resolves in the `when` cell, before the damage is placed, so an
+// attacker can die mid-sequence even on the attack that would kill the dog.
 // ---------------------------------------------------------------------
 
 #[test]
@@ -530,11 +526,11 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
     let dog = state.in_play(INV, GUARD_DOG);
 
     // Two engaged attackers → the enemy phase first asks the player which
-    // attacks next (#143). Pick the first attacker (EnemyId 7).
+    // attacks next. Pick the first attacker (EnemyId 7).
     let session = TestSession::new(state, TEST_REGISTRIES).take(&TurnAction::EndTurn);
 
     // The chosen first attacker attacks: its 1 damage prompts the soak
-    // distribution (#44/K5b) — assign it to Guard Dog → suspend on the soak window.
+    // distribution — assign it to Guard Dog → suspend on the soak window.
     let session = distribute_onto(session.pick(OptionTarget::Enemy(first)), dog);
     let state = session.state();
     assert!(
@@ -547,7 +543,7 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
         0,
         "first attacker's 1 damage is assigned, not yet placed"
     );
-    // Neither attacker has exhausted yet: since #704 the exhaust follows the
+    // Neither attacker has exhausted yet: the exhaust follows the
     // *whole* attack sequence — `Appendix_II_Timing_and_Gameplay.md` step 3.3's
     // "Upon completion of dealing the attack (and all abilities triggered by the
     // attack), exhaust the enemy." — and the first attack's soak reaction is one
@@ -630,22 +626,18 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
 
 // ---------------------------------------------------------------------
 // Case 5 — attack of opportunity soaks onto Guard Dog; the soak window
-// opens, Guard Dog retaliates, and the move completes after resume
-// (#293 acceptance).
+// opens, Guard Dog retaliates, and the move completes after resume.
 //
 // Verified card text (ArkhamDB https://arkhamdb.com/card/01021, 2026-06-21):
 //   Guard Dog (01021): "[reaction] When an enemy attack deals damage to
 //   Guard Dog: Deal 1 damage to the attacking enemy." Health 3, Sanity 1.
 //   FAQ: "You can use Guard Dog's ability when you assign lethal damage/
-//   horror to it." Also confirmed via FAQ: Guard Dog's reaction fires
-//   against attacks of opportunity (the trigger is 'when an enemy attack
-//   deals damage', with no carve-out for AoO).
+//   horror to it." The trigger is "when an enemy attack deals damage", with
+//   no carve-out for an attack of opportunity.
 //
-// The before-#293 behaviour was: `drive_aoo` dropped the survivor list so
-// Guard Dog's window was never queued. After #293 the AoO runs through
-// `drive_attack_loop` (which opens both the `EnemyAttacks` cancel window and
-// the `DamageDealt` window inside the attack's damage), so the full
-// suspend/resume cycle now applies to AoO attacks.
+// The AoO runs through `drive_attack_loop` (which opens both the
+// `EnemyAttacks` cancel window and the `DamageDealt` window inside the
+// attack's damage), so the full suspend/resume cycle applies to AoO attacks.
 // ---------------------------------------------------------------------
 
 #[test]
@@ -653,7 +645,7 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
 fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
     // An investigator controlling Guard Dog, engaged by a ready enemy,
     // takes a Move action. The Move fires an attack of opportunity (through
-    // the ActionResolution frame + drive_aoo path, #293). Guard Dog has no
+    // the ActionResolution frame + drive_aoo path). Guard Dog has no
     // cancel reaction so the before-attack window auto-skips; the AoO
     // damage soaks onto Guard Dog; the soak window opens and suspends;
     // the player fires Guard Dog's reaction; the attacker takes 1 damage;
@@ -689,7 +681,7 @@ fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
         investigator: inv_id,
         destination: dest,
     });
-    // The AoO prompts for the soak distribution (#44/K5b): assign both points
+    // The AoO prompts for the soak distribution: assign both points
     // onto Guard Dog to reproduce the soak.
     let session = distribute_onto(session, dog);
     let state = session.state();
@@ -780,7 +772,7 @@ fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
 
 // ---------------------------------------------------------------------
 // Case 6 — the investigator card is the mandatory-remainder soaker
-// (#448 cp2b). An asset soaks to capacity (and is defeated); the
+// An asset soaks to capacity (and is defeated); the
 // remainder lands on the *investigator card* via its `accumulated_damage`
 // (not a bespoke field), exactly as the RR's "All damage/horror that cannot
 // be assigned to an asset must be assigned to the investigator" clause
@@ -852,7 +844,7 @@ fn an_asset_soaks_first_then_the_investigator_card_takes_the_remainder() {
 
 // ---------------------------------------------------------------------
 // Case 7 — investigator-card overflow triggers investigator elimination,
-// not asset discard (#448 cp2b). The defeat half of the unification: the
+// not asset discard. The defeat half of the unification: the
 // investigator card uses the same `accumulated >= printed capacity` rule
 // as an asset, but the consequence is elimination (Status::Defeated) rather
 // than discard-to-owner.
@@ -910,7 +902,7 @@ fn investigator_card_overflow_eliminates_the_investigator() {
 
 // ---------------------------------------------------------------------
 // Case 8 — defeat ORDERING when the same attack overflows both an asset
-// and the investigator card (#448 cp2b). Load-bearing invariant: the
+// and the investigator card. Load-bearing invariant: the
 // investigator-card overflow is resolved (elimination) *before* the asset
 // overflow sweep, because RR p.10 Elimination step 1 removes every card
 // the investigator controls *from the game* (into `removed_from_game`, NOT

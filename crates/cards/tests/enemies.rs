@@ -1,4 +1,4 @@
-//! C3b — the six Gathering encounter enemies carry their printed stats,
+//! The six Gathering encounter enemies carry their printed stats,
 //! keywords, and spawn-location in the corpus. Stats verified against
 //! `data/arkhamdb-snapshot/pack/core/core_encounter.json`.
 
@@ -177,9 +177,11 @@ fn swarm_of_rats_is_a_hunter() {
     assert_eq!(quantity, 3);
 }
 
+/// Regression for #635: a Spawn clause the pipeline cannot resolve is recorded
+/// as unmodelled, not as a missing Spawn line.
 #[test]
 fn acolyte_carries_its_unmodelled_spawn_clause_not_a_missing_one() {
-    // #635. Acolyte 01169 prints "<b>Spawn</b> - Any empty location." — a
+    // Acolyte 01169 prints "<b>Spawn</b> - Any empty location." — a
     // clause the pipeline cannot resolve to a location code. The corpus must
     // record that as `SpawnLocation::Unrepresented`, *not* as `spawn: None`,
     // which is the positive rule for a card printing no Spawn line at all
@@ -203,7 +205,7 @@ fn acolyte_carries_its_unmodelled_spawn_clause_not_a_missing_one() {
 
 #[test]
 fn ghoul_minion_prints_no_spawn_line_and_carries_none() {
-    // The other half of #635's distinction, as a regression guard: Ghoul
+    // The other half of the unmodelled-clause distinction: Ghoul
     // Minion 01160's printed text bears no "Spawn" precursor, so `None` here
     // genuinely means "spawns engaged with the drawing investigator".
     let meta = cards::by_code("01160").expect("Ghoul Minion in corpus");
@@ -221,7 +223,7 @@ fn ghoul_minion_prints_no_spawn_line_and_carries_none() {
 /// The three basic weakness enemies print *"<b>Prey</b> - Bearer only."* and
 /// *"Hunter."* (Mob Enforcer 01101, Silver Twilight Acolyte 01102, Stubborn
 /// Detective 01103). No CI job checks the generated corpus is fresh, so this
-/// guards the regeneration that carries `Prey::BearerOnly` (#1125).
+/// guards the regeneration that carries `Prey::BearerOnly`.
 #[test]
 fn basic_weakness_enemies_hunt_their_bearer_only() {
     for code in ["01101", "01102", "01103"] {

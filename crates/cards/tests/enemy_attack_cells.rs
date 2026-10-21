@@ -1,4 +1,4 @@
-//! #704: an enemy attack is **one** triggering condition, and the coordinator
+//! An enemy attack is **one** triggering condition, and the coordinator
 //! resolves it between the `when` and `at` cells.
 //!
 //! `data/rules-reference/rules/glossary/Nested_Sequences.md`, verbatim:
@@ -110,7 +110,7 @@ fn attacker(code: &str) -> Enemy {
 /// cascades into the Enemy phase, where the attack walks its cells.
 ///
 /// No soaker assets, so the attack's damage/horror never prompts the
-/// interactive distribution (#44/K5b) and the only prompts are the cells' own.
+/// interactive distribution and the only prompts are the cells' own.
 fn board_with(codes: &[&str], enemy_code: &str) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(registries())
@@ -199,9 +199,6 @@ fn registries() -> Registries {
 }
 
 /// The headline claim: the attack lands *between* the `when` and `at` cells.
-/// Before #704 the `when` ability's window was opened by the attack loop
-/// itself, the damage was dealt on that window's close, and the `at` and
-/// `after` cells did not exist for this condition at all.
 #[test]
 fn the_attack_resolves_between_the_when_and_at_cells() {
     let r = end_turn_firing(
@@ -255,7 +252,7 @@ fn an_at_ability_resolves_after_the_impact_and_before_any_after_ability() {
     );
 }
 
-/// A prevented attack runs **none** of the rest of its sequence (#714), but the
+/// A prevented attack runs **none** of the rest of its sequence, but the
 /// attacker still exhausts: `data/arkhamdb-faq/core/01023.md`, verbatim —
 /// *"If an attack was cancelled during the Enemy phase, the attacking enemy
 /// still exhausts."*
