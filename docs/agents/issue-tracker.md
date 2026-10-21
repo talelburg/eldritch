@@ -35,7 +35,9 @@ Run `gh issue view <number> --json title,body,labels,milestone,comments`.
 
 ## HTML reports
 
-The HTML reports from `/improve-codebase-architecture` and similar surveys don't go in the repo or in an issue body; GitHub can't attach a file to an issue. They go on the orphan branch `architecture-reviews`, which is never merged and is served by GitHub Pages at <https://talelburg.github.io/eldritch/>. Add the file to that branch, link it from `index.html`, and link the report and its tracking issue to each other, as #921 does.
+The HTML reports from `/improve-codebase-architecture` and similar surveys don't go in the repo or in an issue body; GitHub can't attach a file to an issue. They go on the orphan branch `architecture-reviews`, which is never merged and is served by GitHub Pages at <https://talelburg.github.io/eldritch/>. Add the file to that branch, link it from `index.html`, and link the report and its tracking issue to each other.
+
+**Each review gets exactly one tracking issue.** Open it when the report is published. The next review closes it, with a comment mapping each of the old issue's open items to where it went in the new one (old → new). One issue that tracked two reviews in layers had to be untangled into that mapping when the 2026-10-18 review replaced it.
 
 **Read one card of a report:** `scripts/arch-review-card.py <report> <card>`, as in `scripts/arch-review-card.py 2026-10-18 c4`. It fetches the branch and prints that card as plain text; with no card it lists the report's cards, and with no arguments the reports. Each grill used to build its own regex for this. **Read a whole report verbatim:** `git fetch origin architecture-reviews && git show origin/architecture-reviews:<file>.html`, or `curl -s <url>`. `WebFetch` returns a summary, which drops the line references and counts a report is read for.
 

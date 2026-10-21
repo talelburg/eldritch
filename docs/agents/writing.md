@@ -26,7 +26,9 @@ Naming it as an override matters because an agent that has loaded `/domain-model
 
 ## Fold, don't append; reverse by superseding
 
-**A refinement to a settled decision is folded into the ADR's present-tense prose**, with a one-line changelog footer recording which tickets were folded. ADR 0010 is the counter-example this rule was written from: until #745 folded it, it was a decision plus three chronologically-appended amendments, one of which read *"that is the part of this ADR that was wrong"*, so a reader had to diff four sections in their head to learn what the project currently believed.
+**A refinement to a settled decision is folded into the ADR's present-tense prose.** ADR 0010 is the counter-example this rule was written from: until #745 folded it, it was a decision plus three chronologically-appended amendments, one of which read *"that is the part of this ADR that was wrong"*, so a reader had to diff four sections in their head to learn what the project currently believed.
+
+**The fold leaves a footer that names the folded tickets and nothing else:** `Folded: #a, #b.`, issue numbers only. What each fold changed is in its PR. A footer written as a changelog grows back into the appended amendments the fold removed: ADR 0009's reached 234 words.
 
 **A decision that genuinely reverses an earlier one becomes a new ADR**, and the old one gets the suite's optional `superseded by ADR-NNNN` status field. Folding a reversal erases that the project once believed the opposite — which is precisely the thing someone re-proposes.
 
@@ -36,7 +38,7 @@ Naming it as an override matters because an agent that has loaded `/domain-model
 
 1. **A PR adding to `CLAUDE.md` names the admission route in its body** — route one or route two, in a sentence. Growth is argued, not assumed.
 2. **A rule written for a transitional state carries its terminal condition inline**, and names which parts go when that condition is met. [ADR 0008](../adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md) is the model: it says outright that its reject *"is scaffolding with a terminal condition"* and that *"the arm, the classification and the reject are deleted together"* when the last condition flips. `CLAUDE.md`'s licensed-mismatch rule was the same rule written without that clause: by the time #744 deleted it, it stated that no card held the licence any more and then spent another eighty words on a mechanism that stays live for other reasons, and nobody could tell from the rule itself which half was supposed to go.
-3. **A documentation sweep at each phase close**, as the backstop for whatever the first two missed. The phase-close procedure owns that step — [`docs/phases/README.md`](../phases/README.md), "Maintaining these docs" — and this file is what the sweep reads.
+3. **A documentation sweep at each phase close**, as the backstop for whatever the first two missed. Its numbered checklist is [`docs/phases/README.md`](../phases/README.md) → "The phase-close checklist", which owns the steps; skip it and you check one doc against this file while the ADRs, the tracker and the code comments drift. The review checklist below stays the review for a documentation PR.
 
 ## De-duplication direction
 
