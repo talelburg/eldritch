@@ -1,4 +1,4 @@
-//! #470: The Barrier's round-end advance is gated by an eligibility condition
+//! Regression for #470: The Barrier's round-end advance is gated by an eligibility condition
 //! that must reject when the Hallway group can't afford the act's clue
 //! threshold. Exercises the predicate through the real `cards::REGISTRY` —
 //! the same `native_condition_for("01109:can-advance")` lookup the reaction
