@@ -9,8 +9,8 @@
 //! One activated ability: an action paying 1 supply (`Cost::SpendUses`) to
 //! heal 1 damage **or** horror from a chosen investigator at the controller's
 //! location. The damage-or-horror choice is an `Effect::ChooseOne` over the
-//! two `Effect::Heal` branches (#302), each targeting the keystone's
-//! `InvestigatorTarget::Chosen(At(your location))` (#349).
+//! two `Effect::Heal` branches, each targeting the keystone's
+//! `InvestigatorTarget::Chosen(At(your location))`.
 //!
 //! **The branch labels split one printed sentence.** 01019 prints the two modes
 //! in a single clause, verbatim (`data/arkhamdb-snapshot/pack/core/core.json`):
@@ -25,7 +25,7 @@
 //! 01019 has no rulings (`data/arkhamdb-faq/no-rulings.txt`). The `Uses (3
 //! supplies)` pool and the "If First Aid has no supplies, discard it."
 //! depletion-discard are corpus metadata (`CardKind::Asset.uses` +
-//! `Uses.discard_when_empty`, pipeline-parsed, #302) — `abilities()` declares
+//! `Uses.discard_when_empty`, pipeline-parsed) — `abilities()` declares
 //! only the action; the engine discards the asset automatically when the last
 //! supply is spent.
 

@@ -14,7 +14,7 @@
 //! the verdict ST.6 announces is provisional until that cell is done: the
 //! condition's resolve step re-totals, so a +2 that turns the failure into a
 //! success voids the failure's `at` and `after` cells and the test succeeds in
-//! a sequence of its own (#1111). The rulings put the `when` cell first —
+//! a sequence of its own. The rulings put the `when` cell first —
 //! *"The "When you would fail a skill test" triggering condition comes before
 //! the "After you fail a skill test" triggering condition, so you cannot play
 //! Lucky! after you use Rabbit’s Foot or play "Look what I found!""*

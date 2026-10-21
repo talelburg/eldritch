@@ -1,5 +1,5 @@
 //! End-to-end coverage of the general skill-test-outcome timing point
-//! (`TimingEvent::SkillTestResolved`, Slice D #423): it fires for *every*
+//! (`TimingEvent::SkillTestResolved`): it fires for *every*
 //! resolved test, not just a successful Investigate, and opens no window when
 //! nothing listens.
 //!

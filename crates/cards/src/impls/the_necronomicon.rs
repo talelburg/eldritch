@@ -37,7 +37,7 @@
 //!
 //! *"Treat each \[elder_sign\] you reveal on a chaos token as a
 //! \[auto_fail\]."* is a constant `Effect::TreatRevealedToken`, read off the
-//! threat area of the investigator revealing (#1094). Everything after the
+//! threat area of the investigator revealing. Everything after the
 //! reveal reads the auto-fail, so Daisy's own `[elder_sign]` ability never
 //! initiates while this is in play.
 //!

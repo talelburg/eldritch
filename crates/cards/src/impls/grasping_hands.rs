@@ -5,7 +5,7 @@
 //! ```
 //!
 //! Pure DSL: `Trigger::Revelation` → `Effect::SkillTest` whose `on_fail`
-//! deals `Count(SkillTestFailedBy)` damage in a single `Deal` (#426).
+//! deals `Count(SkillTestFailedBy)` damage in a single `Deal`.
 
 use card_dsl::card_data::SkillKind;
 use card_dsl::dsl::{self, Ability, IntExpr, InvestigatorTarget, Quantity};

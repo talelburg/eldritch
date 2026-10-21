@@ -21,7 +21,7 @@
 //! `Modify(Intellect, +1, WhileInPlay)` would add +1 to every
 //! intellect test — including treacheries that test intellect to
 //! resist (Frozen in Fear, Crypt Chill, …) — which is wrong per the
-//! rules. `WhileInPlayDuring(SkillTestKind::Investigate)` (#45) gates
+//! rules. `WhileInPlayDuring(SkillTestKind::Investigate)` gates
 //! the contribution to the Investigate action's intellect test.
 
 use card_dsl::dsl::{self, Ability, ModifierScope, SkillTestKind, Stat};

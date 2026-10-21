@@ -41,7 +41,7 @@
 //!    unengaged enemy is at the same location as an investigator, it engages
 //!    that investigator, …"*) applies to them once the card has resolved:
 //!    without a move they engage the evader again. Elusive's step, applied by
-//!    hand until #1087 makes it a settle check.
+//!    hand. TODO(#1087): drop it once engagement is a settle check.
 //!
 //! **Each "may" declines through a native that does nothing.** A
 //! [`choose_one`](dsl::choose_one) offers only the branches the change-state
@@ -134,8 +134,8 @@ fn connections(state: &GameState, ctx: &EvalContext) -> Vec<LocationId> {
 
 /// Whether the move is worth asking about.
 ///
-/// Reads [`connections`] without the enter check: a native condition gets no
-/// card registry. That errs the conservative way — the move is offered, and
+/// TODO(#1083): reads [`connections`] without the enter check: a native
+/// condition gets no card registry. That errs the conservative way — the move is offered, and
 /// finds nowhere to go — as Elusive's eligibility does.
 fn has_connection(state: &GameState, ctx: &EvalContext) -> bool {
     !connections(state, ctx).is_empty()
@@ -165,8 +165,7 @@ fn decline(_cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-/// Step 3: the engagement rule, applied by hand once the card has resolved
-/// (#1087).
+/// Step 3: the engagement rule, applied by hand once the card has resolved.
 fn engage_ready_enemies(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
     cx.engage_ready_enemies();
     EngineOutcome::Done

@@ -68,7 +68,7 @@ fn test_inv_metadata() -> &'static CardMetadata {
 /// `[action]` ability. Served by [`TEST_REGISTRY`].
 ///
 /// For a fixture that needs a card's cardtype to be a player one — a
-/// player card in a threat area, which co-location must not reach (#975) —
+/// player card in a threat area, which co-location must not reach —
 /// without borrowing a real corpus code the unit registry does not know.
 ///
 /// **A probe, shared rather than test-local.** ADR 0016 keeps probe cards

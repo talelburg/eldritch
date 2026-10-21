@@ -1,4 +1,4 @@
-//! The step-wise [`TestSession`] (#945) over the real engine.
+//! The step-wise [`TestSession`] over the real engine.
 //!
 //! Every test drives through the session's public steps and asserts only on
 //! what a player or client could observe — the prompt (its options, anchors and
@@ -560,7 +560,7 @@ fn pick_of_an_unoffered_target_panics() {
 
 /// An option choosing an investigator anchors to that investigator's card, so
 /// `pick` names it through `Investigator::card_anchor` like any board entity
-/// (#950): the heal's choice between two damaged investigators.
+/// — here the heal's choice between two damaged investigators.
 #[test]
 fn pick_chooses_an_investigator_by_their_card() {
     let board = GameStateBuilder::new()

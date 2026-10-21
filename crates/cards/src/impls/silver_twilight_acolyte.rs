@@ -8,15 +8,14 @@
 //! ```
 //!
 //! The first card in the corpus to declare an ability on the **enemy attack**
-//! triggering condition, which became one condition with three working cells in
-//! #704. `Prey` and `Hunter` are printed keywords the pipeline ingests into
+//! triggering condition, one condition with three working cells. `Prey` and
+//! `Hunter` are printed keywords the pipeline ingests into
 //! metadata, not abilities; only the forced doom is declared here.
 //!
-//! Being that second consumer is what graduated *"place N doom on the current
-//! agenda"* from a card-local native tag to
-//! [`Effect::PlaceDoomOnCurrentAgenda`](card_dsl::dsl::Effect::PlaceDoomOnCurrentAgenda)
-//! in #716 — the repo's two-consumer bar (`docs/agents/standards.md`), met
-//! against Ancient Evils 01166's byte-identical tag.
+//! Its *"Place 1 doom on the current agenda"* is
+//! [`Effect::PlaceDoomOnCurrentAgenda`](card_dsl::dsl::Effect::PlaceDoomOnCurrentAgenda),
+//! a DSL primitive by the repo's two-consumer bar (`docs/agents/standards.md`):
+//! Ancient Evils 01166 prints the same clause.
 //!
 //! **This card does not print the advance clause, so its doom cannot advance
 //! the agenda.** Ancient Evils 01166 and Dark Memory 01013 print *"This effect
@@ -48,7 +47,7 @@
 //! > "After attacks", that ability does not trigger if an attack is Dodged.
 //!
 //! The engine gets that for free rather than by a carve-out here: a `when`-cell
-//! cancel abandons the condition's whole sequence (#714), so the `after` cell
+//! cancel abandons the condition's whole sequence, so the `after` cell
 //! this ability sits in is never walked.
 
 use card_dsl::dsl::{self, Ability, AttackerScope, EventPattern, EventTiming, TargetScope};

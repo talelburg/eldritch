@@ -20,14 +20,14 @@ fn eval_context_round_trips_with_grouped_bindings() {
 }
 
 /// The context rides `GameState` inside a `Continuation::Effect` frame, so
-/// the collapsed source is part of the serialized shape. #834 broke that
-/// payload deliberately and without a migration — the #707 / #709 / #735
-/// posture, since persisted games are discarded and schema versioning is
-/// #581 — which is what makes the shape worth pinning.
+/// the source is part of the serialized shape. Nothing versions that shape:
+/// a change to it breaks persisted games, which are discarded rather than
+/// migrated. That is what makes the shape worth pinning.
+/// TODO(#583): version the wire format and schema.
 ///
-/// A **board** source is the case the collapse exists for: an act carries
-/// no `CardInstanceId`, so before #834 it was thrown away on the way in and
-/// `source` came back `None`.
+/// A **board** source is the case that needs the whole descriptor: an act
+/// carries no `CardInstanceId`, so a `CardInstanceId` projection would throw
+/// it away on the way in and `source` would come back `None`.
 #[test]
 fn eval_context_round_trips_a_board_source_the_instance_projection_would_lose() {
     let ctx = EvalContext::for_controller_with_source(InvestigatorId(1), AbilitySource::Act);

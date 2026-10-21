@@ -1,11 +1,11 @@
-//! K5b-2 (#44 / #422): non-attack damage/horror from card/treachery effects is
-//! distributed **interactively** across controlled soakers + self. Each point a
-//! soaker can take opens a per-point `PickSingle` prompt; the multi-point case
-//! (Grasping Hands deals `Count(SkillTestFailedBy)` damage) suspends per point
-//! and resumes without losing iterations — the case the old suspend-and-replay
-//! model dropped (#422 / #44). Driven through the real `apply` revelation path.
-//! After #426 the damage is one `Deal { amount: N }` not N×`Deal { amount: 1 }`;
-//! the per-point prompt loop still fires via the `DealDamage` frame.
+//! Non-attack damage/horror from card and treachery effects is distributed
+//! **interactively** across controlled soakers and self.
+//!
+//! Each point a soaker can take opens a per-point `PickSingle` prompt; the
+//! multi-point case (Grasping Hands deals `Count(SkillTestFailedBy)` damage)
+//! suspends per point and resumes without losing a point. The damage is one
+//! `Deal { amount: N }`, and the per-point prompt loop fires via its
+//! `DealDamage` frame. Driven through the real `apply` revelation path.
 
 use cards::TEST_REGISTRIES;
 use game_core::state::{
@@ -76,8 +76,7 @@ fn grasping_hands_distributes_both_points_onto_guard_dog() {
     // Agility 3 + Numeric(-2) = 1 vs difficulty 3 → fail by 2 → 2 damage, dealt
     // as a single Deal { amount: 2 }. Two per-point prompts still fire via the
     // DealDamage frame at its Distribute step. The player assigns both to Guard
-    // Dog. The old replay model lost the second point here — this proves no
-    // loss (#422).
+    // Dog, and neither point is lost across the suspension.
     let session = reveal_distributing(
         board_with_soaker("01162", "01021", ChaosToken::Numeric(-2)),
         "01021",
@@ -98,9 +97,8 @@ fn grasping_hands_distributes_both_points_onto_guard_dog() {
 #[test]
 fn grasping_hands_player_splits_across_soaker_and_self() {
     // Same 2-damage fail, but the player soaks one point onto Guard Dog and
-    // takes the other themselves. Under the old auto-soak (K5a) both would land
-    // on the dog; the split proves the distribution is the player's choice
-    // (K5b-2).
+    // takes the other themselves; the split proves the distribution is the
+    // player's choice, not an automatic soak.
     let session = reveal_distributing(
         board_with_soaker("01162", "01021", ChaosToken::Numeric(-2)),
         "01021",

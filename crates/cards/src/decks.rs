@@ -460,8 +460,8 @@ mod tests {
 
     /// The classes a deck's 30 counted cards may come from, by investigator:
     /// the primary and secondary class of each card back's *"Deckbuilding
-    /// Options"*, plus Neutral. Hand-written until #783's validator reads them
-    /// from `back_text`.
+    /// Options"*, plus Neutral. Hand-written, since nothing reads them from
+    /// `back_text`. TODO(#783): read them in the deckbuilding validator.
     fn allowed_classes(investigator: &str) -> [Class; 3] {
         match investigator {
             "01001" => [Class::Guardian, Class::Seeker, Class::Neutral],

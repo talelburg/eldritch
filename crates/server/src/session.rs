@@ -42,10 +42,10 @@ pub enum SessionError {
     /// A logged action was rejected while replaying it over the seed state, so
     /// the reconstructed session would not be the session that was played.
     ///
-    /// The action log carries no schema version (#581), so an engine change to
-    /// what an action *means* — #707 rewrote the activation payload, and
-    /// `ResolveInput(PickSingle(OptionId))` addresses the turn menu by
-    /// position — can leave an old log deserializable but no longer replayable.
+    /// The action log carries no schema version, so an engine change to
+    /// what an action *means* — the activation payload's shape, or the turn
+    /// menu that `ResolveInput(PickSingle(OptionId))` addresses by position —
+    /// can leave an old log deserializable but not replayable.
     /// Failing here is deliberate: a partially reconstructed session is a
     /// silently wrong one.
     #[error("replay rejected at action {seq}: {reason}")]
@@ -112,7 +112,7 @@ impl GameSession {
             .ok_or_else(|| SessionError::UnknownScenario(scenario_id.clone()))?;
 
         let mut setup = (module.setup)();
-        // Seed the setup shuffle with fresh host entropy (#467). The scenario's
+        // Seed the setup shuffle with fresh host entropy. The scenario's
         // setup() builds with a fixed builder seed (game-core is no-I/O, so it
         // can't source randomness itself); without this override every game would
         // share one shuffle/draw order. seat_and_open runs the shuffle below, and
@@ -120,8 +120,8 @@ impl GameSession {
         // stays deterministic from the seed alone (the seed needs no separate
         // recording).
         setup.rng = RngState::new(id::random_seed());
-        // Human play surfaces skill-test results with a Confirm-to-dismiss step
-        // (#478); the engine gates that pause on this flag (default off for tests
+        // Human play surfaces skill-test results with a Confirm-to-dismiss
+        // step; the engine gates that pause on this flag (default off for tests
         // and non-interactive consumers). The flag persists through seating.
         setup.interactive_acknowledge = true;
         let result = engine::seat_and_open(setup, &roster, registries);
@@ -136,7 +136,7 @@ impl GameSession {
         let seed_state = serde_json::to_string(&state)?;
         let seed_outcome = serde_json::to_string(&outcome)?;
         // Persist the setup events so a reloaded session can still surface them
-        // in the client's event log (#512) — the action log doesn't contain
+        // in the client's event log — the action log doesn't contain
         // them (setup isn't an action; the seed state is already post-setup).
         let seed_setup_events = serde_json::to_string(&setup_events)?;
         let game_id = game_id.into();
@@ -219,7 +219,7 @@ impl GameSession {
 
         let mut state: GameState = serde_json::from_str(&seed_state)?;
         let mut outcome: EngineOutcome = serde_json::from_str(&seed_outcome)?;
-        // Setup events were captured at create time (#512); replaying the
+        // Setup events were captured at create time; replaying the
         // action log doesn't reproduce them (setup isn't an action), so they
         // come straight from the persisted column.
         let setup_events: Vec<Event> = serde_json::from_str(&seed_setup_events)?;
@@ -227,9 +227,9 @@ impl GameSession {
         for action_json in store::load_actions(&db, game_id).await? {
             let action: Action = serde_json::from_str(&action_json)?;
             let result = engine::apply(state, action, registries);
-            // A rejection means the log no longer reproduces the session it
+            // A rejection means the log does not reproduce the session it
             // recorded. Stop loudly rather than serving the prefix that did
-            // replay (#707) — see `SessionError::Replay`.
+            // replay — see `SessionError::Replay`.
             if let EngineOutcome::Rejected { reason } = &result.outcome {
                 return Err(SessionError::Replay {
                     seq,

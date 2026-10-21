@@ -1,4 +1,4 @@
-//! `Restriction::CannotLeavePlay` against a mock registry (#1093): the
+//! `Restriction::CannotLeavePlay` against a mock registry: the
 //! leave-play router refuses a card that cannot leave play, and elimination
 //! removes it anyway.
 //!

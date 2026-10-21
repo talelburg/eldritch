@@ -1,4 +1,4 @@
-//! The engine exits a native changes the game through (#1010): one synthetic
+//! The engine exits a native changes the game through: one synthetic
 //! native per exit, run through the real `apply` path.
 //!
 //! Each native sits on its own mock act as a forced ability at the end of the

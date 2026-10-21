@@ -161,10 +161,10 @@ fn granting_card_board(controlled: bool) -> (GameState, InvestigatorId) {
 
 /// **ADR 0014's claim, for modifiers.** A granted ability is an ability, so
 /// a bare `Effect::Modify` a card is *granted* must reach the sweep exactly
-/// as a printed one does. Before #773 the two sweeps were parallel and
-/// uncomposed: `abilities_in_effect::for_source` merged printed + granted
-/// for every ability path, and this one read `abilities_for` — so the
-/// granted modifier was found by nothing.
+/// as a printed one does: the modifier sweep reads the same printed +
+/// granted merge, `abilities_in_effect::for_source`, that every ability path
+/// reads. A sweep reading only `abilities_for` would find the granted
+/// modifier by nothing.
 #[test]
 fn a_granted_modifier_is_swept() {
     let (state, id) = granting_card_board(true);

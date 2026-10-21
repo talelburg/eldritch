@@ -1,4 +1,4 @@
-//! Headless tests for `ContextMenu` (interactivity S1, #536): an open menu
+//! Headless tests for `ContextMenu`: an open menu
 //! renders one button per option; clicking one submits the matching
 //! `ResolveInput(PickSingle)` and closes the menu; a closed menu renders nothing.
 #![cfg(target_arch = "wasm32")]

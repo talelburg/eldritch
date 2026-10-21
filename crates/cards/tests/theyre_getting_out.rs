@@ -5,7 +5,7 @@
 //! resolves before this agenda's "at the end of the round" doom (RR `when`
 //! before `at`).
 //!
-//! And the **reverse's branch** (#809), through the same real registry: which of
+//! And the **reverse's branch**, through the same real registry: which of
 //! the two printed bullets fires depends on the act cursor, and only the first
 //! carries a `(→R#)`. Driven the way play reaches it: the table ends its turns
 //! one doom short of the threshold, and the next Mythos phase's doom advances
@@ -61,12 +61,12 @@ fn board_from(builder: GameStateBuilder, investigator: Seat) -> GameState {
     state
 }
 
-/// Regression (#569): the move must fire through the *real* step-3.4 site, not
+/// Regression for #569: the move fires through the *real* step-3.4 site, not
 /// only when its timing point is fired on its own. `enemy_phase_end` queues
-/// the agenda's forced ability as a frame and returns `Done`; before the fix it
-/// read that `Done` as "nothing happened" and pushed the Upkeep anchor on top of
-/// the queued frame, orphaning it at the bottom of the stack for the rest of the
-/// scenario — agenda 3's Ghoul movement never happened in real play.
+/// the agenda's forced ability as a frame and returns `Done`. Reading that
+/// `Done` as "nothing happened" would push the Upkeep anchor on top of the
+/// queued frame and orphan it at the bottom of the stack for the rest of the
+/// scenario, so agenda 3's Ghoul would never move in real play.
 ///
 /// Also the plain claim: the Enemy phase's end moves a Ghoul toward the Parlor.
 #[test]
@@ -91,7 +91,7 @@ fn enemy_phase_end_moves_ghoul_before_the_upkeep_transition() {
         Some(PARLOR),
         "Ghoul stepped Hallway -> Parlor at the end of the enemy phase"
     );
-    // Ordering is the defect: the queued ability resolves BEFORE the phase
+    // Ordering is the point: the queued ability resolves BEFORE the phase
     // transition's tail work, not after it (and not never).
     let moved = events
         .iter()
@@ -115,15 +115,15 @@ fn enemy_phase_end_moves_ghoul_before_the_upkeep_transition() {
     );
 }
 
-/// #633: a Ghoul the agenda walks into the investigator's location engages on
+/// Regression for #633: a Ghoul the agenda walks into the investigator's location engages on
 /// arrival, and — being engaged and ready — attacks in the *next* Enemy phase.
 ///
 /// `glossary/Enemy_Engagement.md`: *"Any time a ready unengaged enemy is at the
 /// same location as an investigator, it engages that investigator, and is
 /// placed in that investigator's threat area"*, listing *"It moves into the
 /// same location as an investigator"*. The Ghoul here is not a Hunter, so
-/// nothing else in the framework would ever pick it up: before the fix it stood
-/// in the Hallway beside the investigator forever.
+/// nothing else in the framework would ever pick it up: without this rule it
+/// would stand in the Hallway beside the investigator forever.
 #[test]
 fn ghoul_moved_into_the_investigator_engages_then_attacks_next_enemy_phase() {
     let mut walker = ghoul(GHOUL, ATTIC); // Attic, one step from the Hallway
@@ -278,7 +278,7 @@ fn round_end_act_when_window_opens_before_agenda_at_doom() {
 }
 
 // ---------------------------------------------------------------------------
-// The reverse's branch (#809)
+// The reverse's branch
 // ---------------------------------------------------------------------------
 
 /// A table of `n` seated investigators in turn order, the first's turn open,
@@ -357,6 +357,8 @@ fn agenda_01107_reverse_at_act_1_or_2_reaches_resolution_3() {
     }
 }
 
+/// Regression for #809: at act 3 the reverse reaches no resolution point.
+///
 /// *"If the investigators are at Act 3, they barely escape with their lives,
 /// allowing the ghouls to run rampant. Each investigator that has not resigned
 /// is defeated and suffers 1 physical trauma."*

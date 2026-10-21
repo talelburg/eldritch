@@ -1,7 +1,7 @@
-//! The one uses-spending path, [`NativeCx::spend_uses`] (#1009, #353): spending
+//! The one uses-spending path, [`NativeCx::spend_uses`]: spending
 //! a card's uses through a native's **effect**, not a `Cost::SpendUses`.
 //!
-//! The depletion discard is a constant ability (#353): it fires the moment the
+//! The depletion discard is a constant ability: it fires the moment the
 //! pool empties, wherever the uses leave from. A cost already reached it; an
 //! effect did not, so a card whose last use leaves through its effect would
 //! have stayed in play with none. (Forbidden Knowledge 01058's uses leave by a

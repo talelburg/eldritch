@@ -34,7 +34,8 @@
 //!
 //! - **The condition is a field on the `Grant`, never an `Effect::If` around
 //!   it.** A gated grant is silently invisible to the sweep, exactly as a gated
-//!   `Effect::Modify` is invisible to the modifier sweep (#679). The test below
+//!   `Effect::Modify` is invisible to the modifier sweep (TODO(#679): sweep a
+//!   conditional constant modifier). The test below
 //!   pins the bare shape, as the back-side `Restrict` test already does.
 //! - **The gate is board-global.** *"not controlled by a player"* asks about
 //!   Lita and about nobody's "you" — which is what lets it be answered at all,
@@ -43,12 +44,12 @@
 //!   `Condition::ControlStatus` rather than a card-local native tag, whose
 //!   predicate could not be asked without a controller to bind.
 //! - **The two grants are complements, and nothing enforces it.** Lita's own
-//!   card grants her a different pair *while* a player controls her (#773), so
+//!   card grants her a different pair *while* a player controls her, so
 //!   exactly one of the two applies at a time. That is the two cards agreeing,
 //!   not a property of the mechanism.
 //!
-//! `[action]` **Parley** needs no new action type: #696 shipped
-//! `ActionDesignator::Parley` and its attack-of-opportunity exemption, and
+//! `[action]` **Parley** needs no new action type: `ActionDesignator::Parley`
+//! carries its attack-of-opportunity exemption, and
 //! `glossary/Parley.md` says the designator performs nothing of its own — *"Some
 //! abilities are identified with a **Parley** action designator. Such abilities
 //! are initiated using the 'Activate' action."* — so the whole ability is the
@@ -86,7 +87,7 @@
 //! activation from attacks of opportunity — `glossary/Attack_of_Opportunity.md`
 //! exempts *"an action other than to **fight**, to **evade**, or to activate a
 //! **parley** or **resign** ability"* — and which **performs the elimination**
-//! (#644, #805). Nothing is printed beside it: the designator is the whole
+//! Nothing is printed beside it: the designator is the whole
 //! ability, as Machete 01020's **Fight** is the whole of its.
 //!
 //! The quoted sentence is flavour: `glossary/Resign.md` gives the ability its
@@ -182,7 +183,7 @@ mod tests {
     /// **A bare `Grant`, never an `Effect::If`.** The grant sweep matches only
     /// an unwrapped `Effect::Grant` under `Trigger::Constant`, so a condition
     /// hoisted into an `Effect::If` would make the Parley silently unavailable —
-    /// the same trap a gated `Effect::Modify` falls into (#679). The gate is the
+    /// the same trap a gated `Effect::Modify` falls into. The gate is the
     /// variant's own `condition` field, and it is board-global: it asks about
     /// Lita, not about any investigator's "you", which is what lets it be
     /// answered while nobody controls her. The status is the **negative** one —

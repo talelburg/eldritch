@@ -118,6 +118,8 @@ fn mulligan_redraw_all_replaces_entire_hand() {
     assert_eq!(all, expected);
 }
 
+/// Regression for #637: a card set aside by the mulligan cannot be drawn as
+/// its own replacement.
 #[test]
 fn mulligan_cards_cannot_be_redrawn_as_their_own_replacements() {
     // Rules Reference, glossary `Mulligan`: "These cards are set aside, and
@@ -125,7 +127,7 @@ fn mulligan_cards_cannot_be_redrawn_as_their_own_replacements() {
     // starting hand. The set-aside cards are then shuffled back into the
     // player's deck." Set-aside precedes the draw, so a mulliganed card is
     // out of the deck while its replacement is drawn and cannot come back
-    // as that replacement (#637).
+    // as that replacement.
     //
     // `mulligan_board` makes this decisive: the hand is exactly the five
     // `h-*` cards and the deck exactly the five `d-*` ones, so redrawing the
@@ -185,10 +187,9 @@ fn mulligan_partial_redraw_keeps_the_rejected_cards_out_of_the_replacements() {
 
 #[test]
 fn mulligan_draws_replacements_before_shuffling_the_set_aside_cards_back() {
-    // The bug this fixes was purely one of order, so pin the order itself
-    // rather than only its consequence: the replacement draw must land
-    // before the shuffle that returns the set-aside cards. Inverting these
-    // two is exactly what let a rejected card be redrawn (#637).
+    // Pin the order itself rather than only its consequence: the
+    // replacement draw lands before the shuffle that returns the set-aside
+    // cards. Inverting these two lets a rejected card be redrawn.
     let session = mulligan(&WHOLE_HAND);
     let events = session.events();
 

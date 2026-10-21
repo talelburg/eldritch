@@ -13,15 +13,10 @@
 //!    2+ simultaneous ones).
 //! 2. **reaction** — the optional player reaction window opens.
 //!
-//! **Queues; does not resolve.** Since the effect-frame migration (#423),
-//! firing an ability means *pushing a frame*: nothing here is evaluated
-//! synchronously, so a returned [`EngineOutcome::Done`] means **queued**, not
-//! **resolved**. A caller with work to do after the emit must put that work on
-//! a resumption frame and emit in tail position; checking the returned outcome
-//! is not a substitute. See
-//! `docs/adr/0003-emitting-a-timing-point-queues-abilities.md` — four call
-//! sites read `Done` as "nothing happened" and ran their tails *above* the
-//! abilities they had just queued (#569).
+//! **Queues; does not resolve.** Firing an ability means *pushing a frame*, and
+//! nothing here is evaluated synchronously. What that makes a returned
+//! [`EngineOutcome::Done`] mean, and how a caller with post-emit work resumes,
+//! is on [`queue_event`].
 //!
 //! Which abilities a cell holds is the one trigger scan's answer
 //! ([`trigger_scan`](super::trigger_scan)): a walk over the whole board, the same
@@ -912,7 +907,7 @@ fn resolve_chaos_token_revealed(cx: &mut Cx, event: &TimingEvent) -> EngineOutco
 /// `InvestigatorTurn { ending: true }`), or push a dedicated frame beneath the
 /// emit (`move::perform`'s [`MoveEnter`](crate::state::Continuation::MoveEnter)),
 /// then return this outcome unexamined. See
-/// `docs/adr/0003-emitting-a-timing-point-queues-abilities.md` (#569).
+/// `docs/adr/0003-emitting-a-timing-point-queues-abilities.md`.
 ///
 /// # The sequence
 ///

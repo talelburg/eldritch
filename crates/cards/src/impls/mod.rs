@@ -54,7 +54,7 @@
 //!   **Fight** action designator carrying the modification (+1 combat;
 //!   conditional +1 damage via `IntExpr::cond` over a `Condition::Native` predicate that
 //!   reads the *attacked* enemy, since the fight scope is every co-located
-//!   enemy — #451/#592).
+//!   enemy).
 //! - Attic (01113) — `Trigger::OnEvent` (`EnteredLocation`, `After`) +
 //!   `deal_horror(You, 1)`.
 //! - Cellar (01114) — `Trigger::OnEvent` (`EnteredLocation`, `After`) +
@@ -71,17 +71,18 @@
 //!   test (`SkillTestResolved { by_controller: false }`) carrying a
 //!   card-local native eligibility condition. The complement of the Parlor's
 //!   grant above.
-//! - Deduction (01039) — `Trigger::OnSkillTestResolution` (Success-
-//!   gated) + `If(SkillTestKind(Investigate), DiscoverClue@TestedLocation)`.
+//! - Deduction (01039) — `Trigger::OnCommit` +
+//!   `If(SkillTestKind(Investigate), DiscoverAdditionalClues(1))`.
 //! - Roland Banks (01001) — investigator. `Trigger::OnEvent`
 //!   reaction (`EnemyDefeated { by_controller: true }`, `After`) +
 //!   `UsageLimit { count: 1, period: Round }` for "Limit once per
-//!   round." Elder-sign half stubbed pending #118.
+//!   round." Elder-sign half: `Trigger::ElderSign` over
+//!   `Count(CluesAtControllerLocation)`.
 //! - Trapped (01108) — Act 1; `Trigger::OnEvent` (`ActAdvanced`, `After`) on-advance board build.
 //! - The Barrier (01109) — Act 2; `Trigger::OnEvent` (`ActAdvanced`, `After`) on-advance reverse: reveal the Parlor + spawn the set-aside Ghoul Priest.
 //! - What Have You Done? (01110) — Act 3; `Trigger::OnEvent` (`EnemyDefeated` 01116, `At`) -> `AdvanceCurrentAct`.
-//! - What's Going On?! (01105) — Agenda 1; `Trigger::OnEvent` (`AgendaAdvanced`, `After`) reverse: lead's interactive `ChooseOne` (each investigator discards 1 random card, or lead takes 2 horror) — Axis A #334.
-//! - Rise of the Ghouls (01106) — Agenda 2; `Trigger::OnEvent` (`AgendaAdvanced`, `After`) reverse: dig the encounter deck until a Ghoul, lead draws it.
+//! - What's Going On?! (01105) — Agenda 1; `Trigger::OnEvent` (`AgendaAdvanced`, `After`) reverse: the lead-investigator proxy's interactive `ChooseOne` (each investigator discards 1 random card, or the proxy takes 2 horror).
+//! - Rise of the Ghouls (01106) — Agenda 2; `Trigger::OnEvent` (`AgendaAdvanced`, `After`) reverse: dig the encounter deck until a Ghoul, which the proxy draws.
 
 use card_dsl::dsl::Ability;
 use game_core::card_registry::{NativeConditionFn, NativeEffectFn};
@@ -241,8 +242,9 @@ impl CardRecord {
     /// an ability's [`eligibility`](Ability::eligibility).
     ///
     /// Before registering one, check the DSL can't say it — see
-    /// [`Condition::Native`] for its consumers and `TODO(#609)`, the promotion
-    /// that retires the compound, target-referencing ones.
+    /// [`Condition::Native`] for its consumers and the promotion that retires
+    /// the compound, target-referencing ones (TODO(#609): promote them to
+    /// declarative vocab).
     ///
     /// [`Condition::Native`]: card_dsl::dsl::Condition::Native
     #[must_use]

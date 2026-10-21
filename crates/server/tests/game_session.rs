@@ -248,12 +248,12 @@ async fn load_replays_log_to_reproduce_live_state() {
     assert!(missing.is_none());
 }
 
-/// A log the engine no longer accepts must fail the load, not produce a
-/// half-reconstructed session (#707).
+/// A log the engine does not accept must fail the load, not produce a
+/// half-reconstructed session.
 ///
-/// The action log carries no schema version (#581) and addresses the turn menu
+/// The action log carries no schema version and addresses the turn menu
 /// by position, so an engine change to what an action *means* can leave a row
-/// perfectly deserializable and no longer replayable. Simulated here by
+/// perfectly deserializable and not replayable. Simulated here by
 /// appending a row the engine rejects — the same observable a stale log
 /// produces.
 #[tokio::test]
@@ -294,10 +294,11 @@ async fn load_fails_loudly_on_a_log_it_cannot_replay() {
     );
 }
 
+/// Regression for #467: every game gets a fresh RNG seed, so the setup
+/// shuffle/draw order differs across games.
 #[tokio::test]
 async fn create_randomizes_the_setup_seed_per_game() {
-    // #467: every game must get a fresh RNG seed so the setup shuffle/draw
-    // order differs across games. The mock scenario's setup() pins a fixed
+    // The mock scenario's setup() pins a fixed
     // builder seed (42); create() must override it with host entropy, so two
     // games created from the same module hold distinct frozen seeds.
     let pool = common::memory_pool().await;

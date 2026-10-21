@@ -1,4 +1,4 @@
-//! The board surfaces the engine names by role (S6, #541): the three
+//! The board surfaces the engine names by role: the three
 //! always-present investigator-panel controls (End turn, Gain resource, Draw),
 //! the per-investigator player deck, and the scenario's encounter deck.
 //!

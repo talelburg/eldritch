@@ -3,8 +3,8 @@
 //!
 //! # The walk
 //!
-//! `walk` visits every card on the board, each with its [`Placement`], in
-//! ADR 0018's order:
+//! `walk` visits every card on the board, each with its [`Placement`], in this
+//! order, which is written here and nowhere else:
 //!
 //! 1. each investigator — the active one first, then the rest of `turn_order`,
 //!    then anyone else by id — their investigator card, the cards in their play
@@ -251,8 +251,8 @@ impl<'a> BoardCard<'a> {
     }
 }
 
-/// Every card on the board, each with its [`Placement`], in ADR 0018's order —
-/// see the [module docs](self). Unfiltered: an eliminated investigator's cards
+/// Every card on the board, each with its [`Placement`], in the order the
+/// [module docs](self) give. Unfiltered: an eliminated investigator's cards
 /// are on it, and each caller decides whether to skip them.
 pub(crate) fn walk(state: &GameState) -> Vec<BoardCard<'_>> {
     fn instances(

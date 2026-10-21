@@ -25,7 +25,7 @@ pub(in crate::engine::dispatch) fn handle(
     )
 }
 
-/// The gain half of a Resource action, run after its `AoO` loop (#293).
+/// The gain half of a Resource action, run after its `AoO` loop.
 ///
 /// Resource has no target precondition (unlike Move or Investigate), so
 /// there is no secondary precondition re-check here. The `resume_action_resolution`

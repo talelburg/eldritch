@@ -1,5 +1,4 @@
-//! Wendy's Amulet 01014 end to end against the real card registry (#1109,
-//! #1112). Card text (verbatim, `data/arkhamdb-snapshot/pack/core/core.json`):
+//! Wendy's Amulet 01014 end to end against the real card registry. Card text (verbatim, `data/arkhamdb-snapshot/pack/core/core.json`):
 //!
 //! > Wendy Adams deck only.
 //! > You may play the topmost event in your discard pile as if it were in your hand.
@@ -235,7 +234,7 @@ fn an_event_discarded_from_play_goes_to_the_bottom_of_the_deck() {
     assert_no_event!(s.events(), Event::CardDiscarded { .. });
 }
 
-// --- Playing the topmost event in the discard pile (#1112) -----------------
+// --- Playing the topmost event in the discard pile -----------------------
 
 /// The labels of the options anchored on the Amulet.
 fn labels_at_amulet(s: &TestSession) -> Vec<String> {

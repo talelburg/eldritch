@@ -5,7 +5,7 @@
 //!   each enemy and to each investigator at the chosen location.
 //! ```
 //!
-//! A card-local native (the #276 escape hatch), like agenda 01105 / Crypt
+//! A card-local native, like agenda 01105 / Crypt
 //! Chill: it enumerates the controller's location and its connections, offers
 //! them through [`resolve_grounded_choice`](engine::resolve_grounded_choice)
 //! (1 candidate → auto-target, 2+ → suspend for a pick), and on the pick deals
@@ -19,11 +19,10 @@
 //! # Native, not a typed fan-out — on purpose
 //!
 //! Agendas 01105 and 01107 fan out over every investigator on the walking
-//! `Effect::ForEach` (#1067). This card stays native: the enemies one blast
+//! `Effect::ForEach`. This card stays native: the enemies one blast
 //! defeats are defeated simultaneously (official FAQ pair 145, which names
-//! Dynamite Blast), and the walk resolves its targets one after another. It
-//! moves onto the simultaneous form in #1026; the wider `EntityTarget` design
-//! is captured in #363.
+//! Dynamite Blast), and the walk resolves its targets one after another.
+//! TODO(#1026): move onto a simultaneous `ForEach`.
 //!
 //! Suspending from an `OnPlay` event relies on the played event being discarded
 //! on *completion* (RR Appendix I step 4: the card is placed in discard
@@ -31,7 +30,7 @@
 //! the choice resolves, not stranded in hand. The card rides its
 //! `Continuation::PlayFromHand` frame across the suspension; when the attack of
 //! opportunity this play provokes lets a Fast event be played on top, the two
-//! plays get their own frames rather than sharing one slot (#604).
+//! plays get their own frames rather than sharing one slot.
 
 use card_dsl::dsl::{self, Ability};
 use game_core::engine::evaluator::EvalContext;
@@ -165,7 +164,7 @@ mod tests {
     fn single_location_blast_surfaces_under_interactive_flag() {
         // Sole candidate (controller's location, no connections). With
         // interactive_acknowledge on, the blast target must surface as a
-        // one-option pick rather than auto-targeting silently (#466).
+        // one-option pick rather than auto-targeting silently.
         let loc = test_support::test_location(HERE.0, "Lonely Spot"); // no connections by default
         let mut state = GameStateBuilder::new()
             .with_registries(crate::TEST_REGISTRIES)
@@ -190,7 +189,7 @@ mod tests {
     #[test]
     fn blast_pushes_one_effect_deal_per_investigator_ascending_from_the_top() {
         // Two investigators at the lone location → auto-target; each is dealt
-        // 3 damage through the one harm adapter (#1028), investigator 1's
+        // 3 damage through the one harm adapter, investigator 1's
         // frame on top so the deals resolve in ascending id order. Nothing is
         // placed until the frames run.
         let mut state = GameStateBuilder::new()

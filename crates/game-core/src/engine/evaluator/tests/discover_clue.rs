@@ -30,8 +30,8 @@ fn discover_clue_moves_one_clue_from_location_to_controller() {
 #[test]
 fn discover_clue_with_no_interrupt_discovers_normally() {
     // The game-core test registry serves no abilities for the board → the
-    // interrupt scan finds nothing → discovery proceeds exactly as before.
-    // Regression guard for the seam's "fall through" path (C5a #236).
+    // interrupt scan finds nothing → discovery proceeds unchanged. This pins
+    // the seam's "fall through" path.
     let inv_id = InvestigatorId(1);
     let loc_id = HERE;
     let mut state = state_with_clues_at_location(3);

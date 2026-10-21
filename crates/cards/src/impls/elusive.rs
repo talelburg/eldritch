@@ -28,8 +28,8 @@
 //!    investigator, …"*): with no destination they engage you again; after a
 //!    move, any investigator still at the location you left. The rule is a
 //!    standing one, and the engine applies it at named points rather than as a
-//!    check after every change, so this step applies it by hand; #1087 makes it
-//!    a settle check.
+//!    check after every change, so this step applies it by hand.
+//!    TODO(#1087): make engagement a settle check.
 //!
 //! Ruling: *"You can play Elusive to move to another location even if you're
 //! not engaged with any enemies."* So the card is offered while it can do
@@ -38,8 +38,9 @@
 //! potential to change the game state cannot be initiated.
 //!
 //! The destination rule is a parameter of the candidate fn: the printed card
-//! reaches any revealed location, and the taboo list's version (#1063) only
-//! connecting ones.
+//! reaches any revealed location, and the taboo list's version only
+//! connecting ones. TODO(#1063): apply an imported deck's taboo list, so the
+//! taboo version is reachable; every call passes `false` today.
 //!
 //! All rulings: <https://arkhamdb.com/card/01050>.
 
@@ -82,7 +83,7 @@ pub fn abilities() -> Vec<Ability> {
 /// Where Elusive's text sends `investigator`: each revealed location in play,
 /// in id order, that is not where they are and has no enemy at it.
 /// `connecting_only` narrows it to the locations connected to theirs (the
-/// taboo text, #1063). Empty when they are not at a location.
+/// taboo text). Empty when they are not at a location.
 ///
 /// Whether a rule forbids entering one is the move's own check
 /// ([`enterable_destinations`]), since it needs the card registry.
@@ -152,7 +153,7 @@ fn move_to_destination(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
 
 /// Step 3: the engagement rule, applied by hand once the card has resolved.
 /// The engine has no standing engagement check to catch the disengaged enemies
-/// up (#1087).
+/// up. TODO(#1087): drop this step once engagement is a settle check.
 fn engage_ready_enemies(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
     cx.engage_ready_enemies();
     EngineOutcome::Done
@@ -160,9 +161,9 @@ fn engage_ready_enemies(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome 
 
 /// Engaged with an enemy, or with somewhere to move.
 ///
-/// Reads [`destinations`], not [`enterable_destinations`]: a native condition
-/// gets no card registry, so a destination a rule forbids entering still
-/// counts here. That errs the conservative way — the card is offered, and its
+/// TODO(#1083): reads [`destinations`], not [`enterable_destinations`]: a
+/// native condition gets no card registry, so a destination a rule forbids
+/// entering still counts here. That errs the conservative way — the card is offered, and its
 /// move finds nowhere to go — rather than refusing a play that could resolve.
 fn can_resolve(state: &GameState, ctx: &EvalContext) -> bool {
     let engaged = state

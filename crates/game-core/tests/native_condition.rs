@@ -1,10 +1,10 @@
-//! `Condition::Native` dispatch (#592): a card's `native_condition(tag)`
+//! `Condition::Native` dispatch: a card's `native_condition(tag)`
 //! predicate resolves through `CardRegistry.native_condition_for` to a
 //! host-provided `fn(&GameState, &EvalContext) -> bool`, and gates the
 //! surrounding effect on its verdict.
 //!
-//! Exercised via the forced-trigger path (the real apply route) since
-//! `apply_effect` is `pub(crate)` — same shape as `native_effect.rs`.
+//! Exercised via the forced-trigger path, the real `apply` route — same shape
+//! as `native_effect.rs`.
 
 use std::sync::LazyLock;
 

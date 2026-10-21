@@ -14,7 +14,7 @@ fn target_maps_each_variant() {
         .build();
     let inv = InvestigatorId(1);
 
-    // The three former `Global` actions now name their own surfaces (#541).
+    // Each of these three actions names its own surface.
     assert_eq!(
         TurnAction::EndTurn.target(&state),
         Some(OptionTarget::TurnControl(inv)),

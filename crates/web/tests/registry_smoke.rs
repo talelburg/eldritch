@@ -1,5 +1,5 @@
 //! Smoke test: investigator capacity resolves from the real corpus, the way
-//! board rendering reads it (#448 C1).
+//! board rendering reads it.
 #![cfg(target_arch = "wasm32")]
 
 use cards::TEST_REGISTRY;

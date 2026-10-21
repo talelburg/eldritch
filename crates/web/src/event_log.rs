@@ -1,4 +1,4 @@
-//! Event-log panel (#505): a read-only, accumulating view of the game's events,
+//! Event-log panel: a read-only, accumulating view of the game's events,
 //! left of the board, newest at the bottom, grouped per submitted action.
 
 use leptos::html::Div;

@@ -70,9 +70,9 @@ fn an_in_play_candidate_is_present_only_while_its_instance_is() {
 /// `LeftLocation` self-discard, Obscuring Fog 01168's test forced — is
 /// present while the attachment is on the board, not only while the
 /// controller happens to hold it. The probe is board-wide because the
-/// scans that mint these candidates are: the old controller-scoped arm
-/// answered "gone" for every attachment-sourced candidate, which is a
-/// mislabelled lapse reason rather than a wrong resolution (#735).
+/// scans that mint these candidates are: a controller-scoped probe would
+/// answer "gone" for every attachment-sourced candidate, which is a
+/// mislabelled lapse reason rather than a wrong resolution.
 #[test]
 fn an_attachment_candidate_is_present_though_no_investigator_controls_it() {
     let instance = CardInstanceId(12);
@@ -120,7 +120,7 @@ fn an_act_candidate_is_present_only_while_that_act_is_the_current_one() {
 
     // The act advanced: the source did not leave the board, it became a
     // different card — and a candidate minted from the old one is gone all
-    // the same, which is the question the code comparison asks (#735).
+    // the same, which is the question the code comparison asks.
     let mut advanced = state.clone();
     advanced.act_index = 1;
     assert!(!candidate_source_present(
@@ -174,9 +174,9 @@ fn an_agenda_candidate_is_present_only_while_that_agenda_is_the_current_one() {
 }
 
 /// Silver Twilight Acolyte 01102's forced doom: the attacking enemy is the
-/// source, so the probe asks whether that enemy is still on the board —
-/// where a `Board` candidate used to compare its code against the current
-/// act and agenda and always answer "gone" (#735).
+/// source, so the probe asks whether that enemy is still on the board,
+/// rather than comparing its code against the current act and agenda, which
+/// would always answer "gone".
 #[test]
 fn an_enemy_candidate_tracks_its_enemy() {
     let mut enemy = test_support::test_enemy(4, "Silver Twilight Acolyte");
@@ -380,10 +380,8 @@ fn resolution_options_anchor_by_candidate_source() {
 }
 
 /// Every source kind maps to its own anchor, and **none of them is
-/// un-anchored** — a board candidate used to fall through to the then-`Global`
-/// variant whenever its code matched neither the current act nor the current
-/// agenda, which is exactly what an attacking enemy's own forced ability did
-/// (#735).
+/// un-anchored**: an attacking enemy's own forced ability, whose code matches
+/// neither the current act nor the current agenda, anchors to the enemy.
 #[test]
 fn candidate_anchor_maps_each_source() {
     let anchor_of = |source| {
@@ -402,7 +400,7 @@ fn candidate_anchor_maps_each_source() {
         OptionTarget::CardInstance(CardInstanceId(5)),
     );
     // A location's own forced ability (the Attic, 01113) anchors to its map
-    // node (#553).
+    // node.
     assert_eq!(
         anchor_of(CandidateSource::Ability(AbilitySource::Location(
             LocationId(7)
@@ -410,7 +408,7 @@ fn candidate_anchor_maps_each_source() {
         OptionTarget::Location(LocationId(7)),
     );
     // Silver Twilight Acolyte 01102's forced doom anchors to the attacking
-    // enemy, where it used to anchor to nothing (#735).
+    // enemy.
     assert_eq!(
         anchor_of(CandidateSource::Ability(AbilitySource::Enemy(EnemyId(3)))),
         OptionTarget::Enemy(EnemyId(3)),
@@ -419,12 +417,12 @@ fn candidate_anchor_maps_each_source() {
         anchor_of(CandidateSource::Ability(AbilitySource::Act)),
         OptionTarget::Act,
     );
-    // What's Going On?! 01105's on-advance forced (#556).
+    // What's Going On?! 01105's on-advance forced.
     assert_eq!(
         anchor_of(CandidateSource::Ability(AbilitySource::Agenda)),
         OptionTarget::Agenda,
     );
-    // A play from the discard pile anchors to the card granting it (#1112).
+    // A play from the discard pile anchors to the card granting it.
     assert_eq!(
         anchor_of(CandidateSource::TopOfDiscardPile {
             permission: CardInstanceId(6)

@@ -6,11 +6,12 @@
 //! Until the end of the round, non-[[Elite]] enemies cannot attack you.
 //! ```
 //!
-//! One play-timing trigger, as Dodge 01023's is: *"Play after your turn
-//! begins"* names a timing point, and `glossary/Fast.md` reads one as a
-//! triggering condition — *"If the instructions specify when/after a timing
-//! point, the card may be played as if the described timing point were a
-//! triggering condition for playing the card."* So the card is a reaction on
+//! **Cell: the `after` cell of the `TurnBegan` condition.** One play-timing
+//! trigger, as Dodge 01023's is: *"Play after your turn begins"* names a
+//! timing point, and `glossary/Fast.md` reads one as a triggering condition —
+//! *"If the instructions specify when/after a timing point, the card may be
+//! played as if the described timing point were a triggering condition for
+//! playing the card."* So the card is a reaction on
 //! [`EventPattern::TurnBegan`] in its `after` cell, played from hand there:
 //! the first opening of the post-2.2 player window, and not the window step
 //! 2.2.1 returns to after each action. Being a reaction event, it is never

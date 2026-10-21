@@ -1,4 +1,4 @@
-//! #772 integration: the Parlor 01115 grants Lita Chantler 01117 a **Parley**,
+//! The Parlor 01115 grants Lita Chantler 01117 a **Parley**,
 //! and winning it takes control of her — against the real `cards::REGISTRY`.
 //!
 //! ## Verified card text (`data/arkhamdb-snapshot`, 2026-08-30)

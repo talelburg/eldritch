@@ -5,14 +5,13 @@ use crate::engine::outcome::OptionTarget;
 use crate::state::{EnemyPhaseFrame, LocationId};
 use crate::test_support::{TestSession, TEST_REGISTRIES};
 
-/// The parked loop's re-exposure (#704): the head attacker's sequence has
+/// The parked loop's re-exposure: the head attacker's sequence has
 /// popped, so the loop takes it off, exhausts it, and — with none left —
 /// runs the enemy phase's cursor advance.
 ///
 /// One attacker, not two: with 2+ remaining the drain would re-prompt for
-/// the player attack order (#143), which the order-pick tests cover. The
-/// test registry (`TEST_INV`) is named so `max_health()`/`max_sanity()`
-/// resolve (#448 cp2a).
+/// the player attack order, which the order-pick tests cover. The test
+/// registry (`TEST_INV`) is named so `max_health()`/`max_sanity()` resolve.
 #[test]
 fn drive_parked_attack_loop_exhausts_the_head_then_advances_the_cursor() {
     let inv_id = InvestigatorId(1);
@@ -167,8 +166,8 @@ fn drive_retaliate_deals_damage_but_does_not_exhaust_the_attacker() {
     let mut events = Vec::new();
     let mut cx = Cx::for_test(&mut state, &mut events);
 
-    // The attack is queued on the coordinator (#704), so drive it out: the
-    // loop's `Done` means *queued*, not *dealt*.
+    // The attack is queued on the coordinator, so drive it out: the loop's
+    // `Done` is not the damage being dealt (see `emit::queue_event`).
     let outcome = drive_retaliate(&mut cx, EnemyId(100), inv_id);
     let outcome = dispatch::drive(&mut cx, outcome);
 
@@ -244,10 +243,10 @@ fn engaged_by_two() -> TestSession {
 fn drive_aoo_offers_order_pick_for_two_engaged_enemies() {
     // 2 engaged ready enemies provoking an AoO → the loop suspends on the
     // order pick, parking the AttackLoop frame as the top frame with the AoO
-    // source + PickOrder stage (so it spans the whole AoO, #143). Picking the
+    // source + PickOrder stage (so it spans the whole AoO). Picking the
     // higher-id enemy first proves the pick overrides EnemyId order; neither
     // AoO attacker exhausts (RR p.7). Total AoO damage = 3 < 8 = TEST_INV's
-    // max_health() (#448 cp2a).
+    // max_health().
     let inv_id = InvestigatorId(1);
     let session = engaged_by_two().take(&TurnAction::Resource {
         investigator: inv_id,

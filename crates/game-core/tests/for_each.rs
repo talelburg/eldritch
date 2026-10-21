@@ -1,4 +1,4 @@
-//! `Effect::ForEach` walks its targets one at a time (#1067), so a target's
+//! `Effect::ForEach` walks its targets one at a time, so a target's
 //! body can change the board before a later target's turn comes. An
 //! investigator eliminated partway through the walk is skipped.
 //!

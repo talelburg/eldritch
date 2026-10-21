@@ -1,4 +1,4 @@
-//! `TestSession::fire_at` and the framework steps (#946) over the real engine.
+//! `TestSession::fire_at` and the framework steps over the real engine.
 //!
 //! A timing point fired from a test runs the way it does in play: the
 //! coordinator walks its cells, each cell resolves its forced abilities before
@@ -229,8 +229,8 @@ fn a_forced_ability_that_reaches_a_resolution_point_ends_the_game_there() {
         session.state().ending,
         Some(ScenarioEnding::Resolution(ResolutionId::new(1)))
     );
-    // The one stack assertion here: #946's acceptance criteria name it, an
-    // exception to standards.md § Test layering.
+    // The one stack assertion here, a deliberate exception to standards.md
+    // § Test layering: a fired timing point leaves nothing to resolve.
     assert!(
         session.state().continuations.is_empty(),
         "nothing is left to resolve"

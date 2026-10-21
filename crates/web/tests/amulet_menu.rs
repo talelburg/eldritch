@@ -1,5 +1,5 @@
-//! Wendy's Amulet 01014's discard-pile play reaches the board (#1112): the
-//! client renders no discard pile (#1101), so the engine anchors the option on
+//! Wendy's Amulet 01014's discard-pile play reaches the board: the client
+//! renders no discard pile (TODO(#1101): show it), so the engine anchors the option on
 //! the Amulet, and the Amulet's in-play menu — [`InPlayCardView`], which reads
 //! its options through [`interaction::options_for`] — offers it. Picking that
 //! entry sends the option's id, as the menu does, and plays the top event.

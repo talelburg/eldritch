@@ -1,4 +1,4 @@
-//! #508 acceptance: opening-hand weaknesses are set aside and reshuffled
+//! Opening-hand weaknesses are set aside and reshuffled
 //! per Rules Reference setup step 8, against a real Core Set weakness.
 //!
 //! "Each weakness card drawn during this step is ignored, set aside
@@ -176,7 +176,7 @@ fn opening_hand_weakness_set_aside_and_returned_to_deck() {
 // ---- Test 2: mulligan redraw also avoids weaknesses -----------------------
 
 /// The deck holds only the weakness, so the mulligan redraw is guaranteed to
-/// draw it: the filler is set aside first (#637 — a mulliganed card is held out
+/// draw it: the filler is set aside first (a mulliganed card is held out
 /// of the deck while its replacement is drawn), leaving the weakness as the only
 /// card available.
 ///

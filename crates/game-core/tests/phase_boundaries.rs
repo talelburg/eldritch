@@ -1,4 +1,4 @@
-//! All eight phase boundaries are timing points (#697).
+//! Regression for #697: all eight phase boundaries are timing points.
 //!
 //! `Appendix_II_Timing_and_Gameplay.md` gives the same sentence to step 1.1 and
 //! to step 1.5, and to no other numbered step:
@@ -249,7 +249,7 @@ fn a_boundarys_forced_ability_resolves_before_its_drivers_tail_work() {
     // the anchor's resume beneath it. The observable is what `state.phase` the
     // forced ability saw: a step-2.3 ability that saw `Enemy` would mean the
     // transition had been pushed *above* the frame the emit had just queued,
-    // which is the #569 shape this discipline exists to prevent.
+    // which is the shape this discipline exists to prevent.
     let cascade = end_the_turn_to_the_encounter_draw();
 
     assert_eq!(

@@ -1,6 +1,6 @@
 //! The registries are a value handed to each `apply`, not a process global:
 //! the same state and action under two different [`Registries`] give two
-//! different outcomes, in one test binary (#1032).
+//! different outcomes, in one test binary.
 //!
 //! Whatever the engine reads, it reads from the value it was handed.
 

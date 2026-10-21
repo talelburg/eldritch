@@ -37,7 +37,7 @@ pub(in crate::engine::dispatch) fn handle(
     )
 }
 
-/// The draw half of a Draw action, run after its `AoO` loop (#293).
+/// The draw half of a Draw action, run after its `AoO` loop.
 ///
 /// Draw has no target precondition (unlike Move or Investigate), so
 /// there is no secondary precondition re-check here. The `resume_action_resolution`

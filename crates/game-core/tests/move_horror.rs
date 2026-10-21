@@ -1,5 +1,5 @@
 //! `NativeCx::move_horror`, the exit a native moves horror from one card to
-//! another through (#1095).
+//! another through.
 //!
 //! A move is neither a deal nor a take. The Necronomicon 01009's ruling
 //! (<https://arkhamdb.com/card/01009>): *"Moving damage or horror is different

@@ -1,4 +1,5 @@
-//! A forced run re-checks its abilities (#607): once the lead resolves one
+//! Regression for #607: a forced run re-checks its abilities. Once the lead
+//! resolves one
 //! ability of a 2+ forced run, a sibling that can no longer change the game
 //! state is withdrawn and logged rather than resolved, and a run left with no
 //! abilities closes on its own.

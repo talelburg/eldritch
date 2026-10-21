@@ -1,5 +1,5 @@
-//! The continuation stack by itself, without `apply` (#925 Testing Decisions
-//! seam 3): what it answers and what it refuses.
+//! The continuation stack by itself, without `apply`: what it answers and
+//! what it refuses.
 
 use super::*;
 use crate::state::continuation::tests::profile::every_variant_rows;
@@ -7,9 +7,9 @@ use crate::test_support;
 
 // --- Wire format -----------------------------------------------------------
 
-/// Every frame variant (and value-level split), serialised by the engine as it
-/// stood before the stack became an owned type (#928). Captured once and never
-/// regenerated: a change to it is a wire-format change.
+/// Every frame variant (and value-level split), serialised as a plain frame
+/// array. Captured once and never regenerated: a change to it is a
+/// wire-format change.
 const WIRE_FIXTURE: &str = include_str!("fixtures/stack_wire.json");
 
 /// The stack reads today's wire format into exactly the frames that produced

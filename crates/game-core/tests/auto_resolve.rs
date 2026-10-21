@@ -18,12 +18,12 @@
 //!
 //! Every assertion is at the `apply()` boundary, on events crossing it —
 //! what a player would see — rather than on the shape of the recorded-row
-//! population or the name of the query behind it (#630's testing decisions).
+//! population or the name of the query behind it.
 //! The abilities are constructed inline from `card-dsl`, so no corpus card
 //! is involved; the real consumers (Rex Murphy 02002, Stroke of Luck 02271)
 //! are out of scope here.
 //!
-//! The ST.3/ST.4 **skip** lives here too (#687):
+//! The ST.3/ST.4 **skip** lives here too:
 //!
 //! > If it is known that an investigator automatically succeeds or fails at
 //! > a skill test before Step 3 ("Reveal chaos token") occurs, that step is
@@ -332,7 +332,7 @@ fn playing_through_the_test(
 }
 
 /// Run a willpower test against `difficulty`, activating the in-play `card`'s
-/// fast ability at the test's player window and committing nothing.
+/// zero-action ability at the test's player window and committing nothing.
 fn test_activating(state: GameState, card: CardInstanceId, difficulty: i8) -> TestSession {
     activating_through_the_test(
         TestSession::new(state, registries()).test_skill(INV, SkillKind::Willpower, difficulty),
@@ -578,7 +578,7 @@ fn the_latch_event_names_the_determination_and_its_source() {
 }
 
 /// The `[auto_fail]` chaos token latches the same determination through the
-/// same row (#685), but emits no latch event: its cause is already on the log
+/// same row, but emits no latch event: its cause is already on the log
 /// as the `ChaosTokenRevealed` carrying `TokenResolution::AutoFail`, and a
 /// second event for the same moment would read as two determinations.
 #[test]
@@ -601,7 +601,7 @@ fn the_auto_fail_token_latches_no_second_event() {
 }
 
 // ---------------------------------------------------------------------------
-// The ST.3/ST.4 skip (#687)
+// The ST.3/ST.4 skip
 // ---------------------------------------------------------------------------
 
 /// A determination latched before the driver reaches the resolution step

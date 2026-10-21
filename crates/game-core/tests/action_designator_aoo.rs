@@ -1,5 +1,5 @@
-//! Attacks of opportunity are exempted by the ability's **bold action
-//! designator**, not by the shape of its effect (#696).
+//! Regression for #696: attacks of opportunity are exempted by the ability's
+//! **bold action designator**, not by the shape of its effect.
 //!
 //! `glossary/Attack_of_Opportunity.md`, verbatim:
 //!
@@ -10,15 +10,13 @@
 //! > choosing. Each attack deals that enemy's damage and horror to the
 //! > investigator.
 //!
-//! The exemption is four designators. The engine used to infer it from the
-//! effect root — exempting `Effect::Fight` because every corpus weapon happened
-//! to be rooted in one — which got two shapes wrong: a Fight buried inside a
-//! larger effect tree provoked, and **Parley** / **Resign** have no effect of
-//! their own to match, so the Parlor 01115's *"\[action\] **Resign.**"* would
-//! have provoked once #708 made a location's abilities reachable.
+//! The exemption is four designators. Reading it off the effect root instead
+//! gets two shapes wrong: a Fight buried inside a larger effect tree would
+//! provoke, and **Parley** / **Resign** have no effect of their own to match,
+//! so the Parlor 01115's *"\[action\] **Resign.**"* would provoke.
 //!
-//! Since #805 the designator *performs* the action and no `Effect::Fight`
-//! exists to be matched, so the effect-root reading is not merely wrong but
+//! The designator *performs* the action and no `Effect::Fight` exists to be
+//! matched, so the effect-root reading is not merely wrong but
 //! unrepresentable. What remains testable — and what these tests fix — is that
 //! the exemption is the **designator's** doing and not the residual effect's:
 //! [`SATCHEL`] prints the *same residual effect* twice, once under a **Fight**
@@ -94,7 +92,7 @@ fn satchel_abilities() -> Vec<Ability> {
 }
 
 /// The Parlor's Resign, in its real shape: the designator performs the
-/// elimination and nothing is printed beside it (#644, #805).
+/// elimination and nothing is printed beside it.
 fn parlor_abilities() -> Vec<Ability> {
     vec![dsl::activated_as(
         ActionDesignator::Resign,
@@ -239,8 +237,8 @@ fn the_same_residual_effect_without_the_designator_provokes() {
 
 /// The Parlor 01115's *"\[action\] **Resign.**"*, activated while engaged with a
 /// ready enemy, provokes nothing. **Resign** prints nothing beside the bold
-/// word, so no effect-root match could ever have exempted it — and #708 made a
-/// location's abilities reachable, which is what put the question on the board.
+/// word, so no effect-root match could exempt it — and a location's abilities
+/// are reachable, which is what puts the question on the board.
 #[test]
 fn a_resign_ability_on_a_location_provokes_nothing() {
     assert_eq!(

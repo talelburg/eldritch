@@ -6,8 +6,7 @@ use crate::test_support::TEST_REGISTRIES;
 // `TEST_INV`-only registry never enumerates a card-bearing PlayCard, so the
 // menu never offers one. Instead we reach the handler with
 // `submit_off_menu` (bypassing the enumeration gate) and assert it
-// rejects — testing the handler's defensive validation, exactly as the
-// pre-#447 typed-action `apply(PlayCard)` tests did. (The *positive*
+// rejects — testing the handler's defensive validation. (The *positive*
 // PlayCard enumeration + the registry-backed flow live in `enumerate.rs`
 // and `crates/cards/tests/play_card.rs`.)
 const CARD: &str = "01059";

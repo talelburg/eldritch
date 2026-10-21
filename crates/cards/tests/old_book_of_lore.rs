@@ -1,4 +1,4 @@
-//! #319 integration: Old Book of Lore 01031's `[action] Exhaust Old Book of
+//! Old Book of Lore 01031's `[action] Exhaust Old Book of
 //! Lore: Choose an investigator at your location. That investigator searches
 //! the top 3 cards of his or her deck for a card, draws it, and shuffles the
 //! remaining cards into his or her deck.` end-to-end against the real
@@ -107,7 +107,8 @@ fn action_searches_top_three_into_hand_then_shuffles() {
     assert_event!(s.events(), Event::DeckShuffled { .. });
 }
 
-/// #639 — RR "Ability": *"A triggered ability can only be initiated if its
+/// Regression for #639: an activation whose effect can't change the game state
+/// is rejected. RR "Ability": *"A triggered ability can only be initiated if its
 /// effect has the potential to change the game state…"* With an empty deck
 /// there is nothing to search, nothing to draw, and nothing to shuffle, so the
 /// activation is rejected: the book stays ready and the action is not spent.

@@ -88,7 +88,7 @@ fn aoo_damage_to_active_investigator_below_threshold_does_not_defeat() {
     // Sanity check: AoO that doesn't reach max_health leaves the
     // investigator Active. Same as the existing AoO test but
     // explicit on the status field and absence of defeat events.
-    // After cp2a max_health()=8 from TEST_INV registry; attack_damage=1 < 8 → survives.
+    // max_health()=8 from TEST_INV registry; attack_damage=1 < 8 → survives.
     let session = move_engaged_with(seat(1).at(HERE), attacker(ENGAGED.0, 1, 0));
     session.assert_at_turn_menu(INV);
     assert_eq!(session.state().investigators[&INV].status, Status::Active);
@@ -101,7 +101,7 @@ fn aoo_damage_to_active_investigator_below_threshold_does_not_defeat() {
 fn defeated_investigator_does_not_take_further_damage() {
     // Two engaged ready enemies, both with attack_damage = 5.
     // Investigator has 1 health remaining (accumulated_damage=7). With 2
-    // engaged, the Move's AoO suspends on the order pick (#143); the
+    // engaged, the Move's AoO suspends on the order pick; the
     // chosen first attacker defeats the investigator, so the active-check
     // at the loop top early-breaks before the second attacks (no re-prompt).
     // max_health()=8 from TEST_INV; 7 + 5 = 12 >= 8 = defeated.
@@ -117,7 +117,7 @@ fn defeated_investigator_does_not_take_further_damage() {
     // and the engine's latch for it is `Lost`. The attack loop and the open
     // turn are therefore cancelled and the ending finalizes in this same
     // step, rather than the engine re-offering a turn menu to a table with
-    // no remaining players (#566).
+    // no remaining players.
     assert_eq!(r2.outcome, EngineOutcome::Done, "the scenario has ended");
     assert_event!(r2.events, Event::ScenarioResolved { .. });
     // The subject includes a stack invariant: no frame survives the ending.
@@ -134,7 +134,7 @@ fn defeated_investigator_does_not_take_further_damage() {
     // second AoO had fired too, damage() would be 17 instead.
     assert_eq!(r2.state.investigators[&INV].damage(), 12);
     // The actor was defeated mid-action → the Move's primary effect is
-    // suppressed by the re-validation gate (#293 keystone).
+    // suppressed by the re-validation gate.
     assert_no_event!(r2.events, Event::InvestigatorMoved { .. });
 }
 

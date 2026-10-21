@@ -1,16 +1,16 @@
 use super::*;
 
 /// Every defeat cause lands on the same status; only the event's cause
-/// separates them (#814).
+/// separates them.
 ///
 /// `glossary/Campaign_Play.md`: *"If an investigator is defeated by taking
 /// damage equal to his or her health, he or she suffers 1 physical trauma
 /// (recorded in the campaign log). … If an investigator has physical trauma
 /// equal to his or her printed health, the investigator is killed."* So a
 /// defeat by damage at zero prior trauma leaves the investigator
-/// **defeated**, owing one trauma — not killed. The engine used to assert
-/// the kill here; the derivation belongs to the campaign log (#766), which
-/// reads the recorded totals.
+/// **defeated**, owing one trauma — not killed. Deriving a kill from the
+/// recorded trauma totals is the campaign log's job, and the engine has no
+/// campaign log. TODO(#766): record the scenario's trauma in the campaign log.
 #[test]
 fn damage_and_horror_defeats_both_land_on_defeated() {
     for cause in [EliminationCause::Damage, EliminationCause::Horror] {

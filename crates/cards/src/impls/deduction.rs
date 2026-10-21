@@ -28,7 +28,7 @@
 //! `1 + bonus`. A second `DiscoverClue` would be observably wrong, not merely
 //! differently shaped: Cover Up 01007 replaces *a discovery*, so two of 1
 //! discard 2 clues from Cover Up where one of 2 (capped at the location's
-//! clues) discards 1 — the bug #471 fixed. See the **Discovery** entry in
+//! clues) discards 1. See the **Discovery** entry in
 //! `GLOSSARY.md`.
 //!
 //! The **"while investigating a location"** qualifier is the kind gate — the
@@ -44,10 +44,8 @@
 //! outcome, but the accumulator's only reader is the Investigate follow-up,
 //! which runs on success only — so on a failed test the bonus is accumulated,
 //! never read, and thrown away with the test's frame. (Not "because the outcome
-//! isn't known yet": post-#423 the `FireOnCommit` step runs *after*
-//! `DetermineOutcome`, so it is on the frame. The reason it can't be
-//! card-expressed is that `Condition::SkillTest { outcome }` is unimplemented —
-//! it rejects with a TODO.)
+//! isn't known yet": the `FireOnCommit` step runs *after* `DetermineOutcome`,
+//! so it is on the frame.)
 //!
 //! "At that location" is likewise intrinsic: the follow-up discovers at the
 //! test's [`LocationTarget::TestedLocation`] snapshot, and the accumulator lives
@@ -55,6 +53,12 @@
 //! another player's investigation attempt, that other player would discover 1
 //! additional clue, not you"* holds structurally. The bonus is a property of the
 //! test, not of the committer.
+//!
+//! # Module gap
+//!
+//! The "if this skill test is successful" qualifier can't be card-expressed:
+//! `Condition::SkillTest { outcome }` is not evaluated, and rejects. That is
+//! why it stays intrinsic to [`Effect::DiscoverAdditionalClues`].
 //!
 //! [`Trigger::OnCommit`]: card_dsl::dsl::Trigger::OnCommit
 //! [`Effect::DiscoverAdditionalClues`]: card_dsl::dsl::Effect::DiscoverAdditionalClues

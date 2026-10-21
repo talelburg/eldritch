@@ -14,8 +14,8 @@
 //! field to those structs requires updating these fixtures in the
 //! same PR**, otherwise the new field defaults to whatever
 //! `test_investigator` / `test_location` set, which may not match the
-//! field's intent. Phase-2+ reviewers: flag missing fixture updates
-//! when a field addition lands.
+//! field's intent. Reviewers: flag a missing fixture update when a
+//! field addition lands.
 
 use std::collections::BTreeSet;
 
@@ -276,7 +276,7 @@ pub fn awaiting_request(request: InputRequest) -> EngineOutcome {
 
 /// A sample structured [`PickSingle`](crate::action::InputResponse::PickSingle)
 /// [`AwaitingInput`](EngineOutcome::AwaitingInput) outcome, for client/UI
-/// fixtures (#447). Carries two options:
+/// fixtures. Carries two options:
 ///
 /// - `OptionId(0)` → `"End turn"`
 /// - `OptionId(1)` → `"Investigate"`

@@ -23,11 +23,8 @@
 //! initiates, but before its impact upon the game state resolves"*. The impact
 //! of a departure is the investigator (and any enemy engaged with them)
 //! arriving at the destination, so the discard resolves while they are still
-//! standing on the attached location. That cell only became declarable when
-//! #721 migrated `LeftLocation` to a coordinator-owned condition; until then the
-//! departure had already landed by the time the coordinator ran, and the tag
-//! read `After` under the licensed mismatch this card was the second-to-last
-//! holder of. No card holds it now (`docs/agents/standards.md`).
+//! standing on the attached location. `LeftLocation` is a coordinator-owned
+//! condition, so its `when` cell runs before the departure lands.
 
 use card_dsl::dsl::{self, Ability, CardFilter, EventPattern, EventTiming, Restriction};
 

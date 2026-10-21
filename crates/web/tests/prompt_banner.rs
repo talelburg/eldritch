@@ -1,6 +1,6 @@
-//! Headless tests for `PromptBanner` (interactivity S3/S6, #538/#541).
+//! Headless tests for `PromptBanner`.
 //!
-//! Since the flat `.action-bar` was deleted the banner is the **floor**: it names
+//! The banner is the **floor**: it names
 //! any live prompt and homes whatever has no board surface — un-anchored options,
 //! a `PickMultiple` commit's Confirm, a skippable window's Pass, and a fallback
 //! Confirm. Its one silence is the open-turn menu, recognised by its
@@ -138,7 +138,7 @@ async fn renders_the_prompt_text() {
 
 #[wasm_bindgen_test]
 async fn an_unanchored_confirm_gets_text_and_a_confirm_button() {
-    // S6 (#541): with the flat bar deleted the banner is the floor, so a prompt the
+    // The banner is the floor, so a prompt the
     // client does not specifically home still tells the player the engine is
     // waiting — and an un-anchored `Confirm` the result modal is not carrying gets
     // a Confirm here rather than being unreachable.
@@ -267,8 +267,8 @@ async fn the_open_turn_menu_suppresses_its_text_but_not_its_controls() {
 
 #[wasm_bindgen_test]
 async fn an_unanchored_pick_single_still_reaches_the_banner() {
-    // Not skippable, not multi, no board home: with the flat bar gone the banner
-    // is the only thing between this option and being unreachable (#541). The
+    // Not skippable, not multi, no board home: the banner
+    // is the only thing between this option and being unreachable. The
     // fixture's two options are un-anchored.
     let outcome = test_support::awaiting_pick_single_input("Choose one");
     let mut rx = mount(outcome, &[]).await;
@@ -294,10 +294,11 @@ async fn an_unanchored_pick_single_still_reaches_the_banner() {
     }
 }
 
+/// Regression for #549: a skippable window's options render as banner buttons
+/// (not only Pass), so a Board/Global option such as the round-end advance is
+/// reachable.
 #[wasm_bindgen_test]
 async fn skippable_window_renders_options_that_submit_pick_single() {
-    // The round-end-advance fix (#549): a skippable window's options render as
-    // banner buttons (not only Pass), so a Board/Global option is reachable.
     let mut rx = mount(
         test_support::awaiting_skippable_pick_single_input("You may advance"),
         &[],
@@ -322,8 +323,8 @@ async fn skippable_window_renders_options_that_submit_pick_single() {
 
 #[wasm_bindgen_test]
 async fn banner_renders_only_unanchored_options() {
-    // S5 (#540): once the round-end advance is anchored to the act card, the banner
-    // stops duplicating anchored options — it renders only un-anchored ones.
+    // With the round-end advance anchored to the act card, the banner does not
+    // duplicate anchored options — it renders only un-anchored ones.
     let outcome = test_support::awaiting_skippable_pick_single_with(
         "You may advance",
         vec![

@@ -22,7 +22,7 @@ use crate::state::{
 /// The scope of enemies a Fight (basic action or designated **Fight** ability)
 /// may target: any enemy *at your location*. Per RR you choose an enemy at your
 /// location to attack and need not already be engaged, so this is co-located
-/// (`EnemyScope::at(Here)`), not engaged-only (#451). Its only reader is the Fight action's
+/// (`EnemyScope::at(Here)`), not engaged-only. Its only reader is the Fight action's
 /// [`candidates`](crate::engine::dispatch::actions::fight::candidates), which
 /// is what the basic action's target validation, the turn menu, the activation
 /// pre-cost gate (`designator::can_perform`) and the evaluator's target
@@ -100,7 +100,7 @@ pub(crate) fn enemies_in_scope_before_exemption(
 /// consumer: Guard Dog 01021's "Deal 1 damage to the attacking enemy."
 /// Reusing `damage_enemy` means a card that defeats its target here runs
 /// the same defeat cascade (`EnemyDefeated`, victory display) as the Fight
-/// action — intended. (C5b #237.)
+/// action — intended.
 pub fn deal_damage_to_enemy(
     cx: &mut Cx,
     enemy_id: EnemyId,
@@ -158,7 +158,7 @@ pub(super) fn damage_enemy(cx: &mut Cx, enemy_id: EnemyId, amount: u8, by: Optio
             board::discard_from_play(cx, enemy_id)
         };
         // Enemy defeated: dispatch the timing point through the unified
-        // chokepoint (Axis-B T5a). `queue_event` queues the after-defeat
+        // chokepoint. `queue_event` queues the after-defeat
         // reaction window (Roland 01001) and the forced act objectives (act 3's
         // advance-on-Ghoul-Priest-defeat) as frames for the `drive` loop.
         //
@@ -169,12 +169,9 @@ pub(super) fn damage_enemy(cx: &mut Cx, enemy_id: EnemyId, amount: u8, by: Optio
         // `SkillTest` is no longer the top frame. So the queued frames resolve
         // first and the test resumes at the already-advanced cursor afterwards —
         // no post-emit work runs here. The outcome is deliberately discarded
-        // rather than returned: this helper's callers (`Effect::Deal`,
-        // `deal_damage_to_enemy`) have their own frames, and the loop drives what
-        // was queued. (The former `debug_assert!(Done)` asserted the wrong
-        // invariant — a legitimate 2+ ordering run returns `AwaitingInput` — and
-        // would have panicked in debug on the day a second act objective keyed
-        // here; #569.)
+        // rather than returned: this helper's callers (`deal_damage_to_enemy`
+        // and `fight::after_test`) have their own frames, and the loop drives
+        // what was queued.
         let _ = emit::queue_event(
             cx,
             &TimingEvent::EnemyDefeated {
@@ -191,7 +188,7 @@ pub(super) fn damage_enemy(cx: &mut Cx, enemy_id: EnemyId, amount: u8, by: Optio
 // live one is owned by the `Continuation::DealDamage` frame that walks the two
 // steps of dealing it (ADR 0009). Imported above.
 
-/// One eligible soaker for a deal's distribution (C5b #237).
+/// One eligible soaker for a deal's distribution.
 ///
 /// `remaining_health` / `remaining_sanity` are the asset's *remaining*
 /// damage / horror capacity — printed stat (registry metadata) minus
@@ -208,7 +205,7 @@ pub(super) struct Soaker {
 }
 
 /// Mutable handle to the controlled in-play instance `inst`, or `None`
-/// if the investigator doesn't control it (C5b #237).
+/// if the investigator doesn't control it.
 fn find_controlled_mut(
     state: &mut GameState,
     investigator: InvestigatorId,
@@ -223,7 +220,7 @@ fn find_controlled_mut(
 }
 
 /// Discard every controlled **asset** whose accumulated damage/horror has
-/// reached its printed health/sanity (C5b #237).
+/// reached its printed health/sanity.
 ///
 /// Reads printed health/sanity from the card registry; an asset whose
 /// metadata can't be resolved (an unknown code, or a non-asset kind) is never defeated here. Each defeated asset leaves play through
@@ -232,7 +229,7 @@ fn find_controlled_mut(
 /// pile."*).
 ///
 /// The **investigator card** is the other soaker subject to the same
-/// `accumulated >= printed capacity` defeat rule (#448), but it is
+/// `accumulated >= printed capacity` defeat rule, but it is
 /// deliberately *not* swept here: it lives in `investigator_card`, not
 /// `cards_in_play`, and its overflow consequence is *elimination*, not a
 /// discard. That defeat is resolved one step earlier — in
@@ -302,7 +299,7 @@ pub(super) fn defeat_asset(cx: &mut Cx, inst: CardInstanceId) {
 }
 
 /// Place a computed [`Assignment`] simultaneously, then defeat overflowed
-/// assets (RR p.7; C5b #237).
+/// assets (RR p.7).
 ///
 /// Steps, in order:
 /// 1. Accumulate the soaked damage/horror onto each asset's
@@ -324,7 +321,7 @@ pub(super) fn defeat_asset(cx: &mut Cx, inst: CardInstanceId) {
 ///    whose controlled cards elimination removes from the game (RR p.10 step 1).
 ///
 /// Step 3's skip is gated on [`Status`], not on `cards_in_play` having been
-/// drained: since #638 an elimination with a step-0 weakness game-end ability
+/// drained: an elimination with a step-0 weakness game-end ability
 /// (Cover Up 01007) finishes on a continuation frame, so the zone is still
 /// populated when this returns.
 ///
@@ -367,7 +364,7 @@ pub(super) fn place_assignment(cx: &mut Cx, investigator: InvestigatorId, assign
     // pre-empts a co-overflowing asset's discard, and a card on its way out of
     // play gets no soak reaction window. Gated on status rather than on
     // `cards_in_play` having been drained because elimination may still be in
-    // progress here — see `Continuation::Elimination` (#638).
+    // progress here — see `Continuation::Elimination`.
     let eliminated = cx
         .state
         .investigators
@@ -508,7 +505,7 @@ pub(crate) fn begin_deal_damage(
 }
 
 /// Deal `damage` + `horror` to `investigator` from anything that is not an enemy
-/// attack: the one harm adapter (#1025). It begins a deal with
+/// attack: the one harm adapter. It begins a deal with
 /// [`DamageSource::Effect`], so the harm is distributed through the interactive
 /// soak prompt and announces `DamageDealt` with `DamagePlaced` nested inside it,
 /// exactly as an enemy attack's does.
@@ -536,8 +533,7 @@ pub(crate) fn deal_harm(
     )
 }
 
-/// Build the eligible soakers for an enemy attack against `investigator`
-/// (C5b #237).
+/// Build the eligible soakers for an enemy attack against `investigator`.
 ///
 /// Iterates the investigator's `cards_in_play` in order (already
 /// `CardInstanceId`-ordered, since instances are pushed in mint order),
@@ -576,12 +572,12 @@ fn build_soakers(
 }
 
 /// Fire attacks of opportunity from every ready enemy engaged with
-/// `investigator`, driving them through the shared attack loop (#293) so each
+/// `investigator`, driving them through the shared attack loop so each
 /// `AoO` opens its before-attack cancel window (Dodge 01023) and per-soaked-asset
 /// reaction window (Guard Dog 01021). Returns [`EngineOutcome::AwaitingInput`]
 /// if a window suspends the loop, [`EngineOutcome::Done`] otherwise. With 2+
 /// engaged ready enemies the loop suspends for the player's attack-order pick
-/// (#143, RR p.25 step 3.3); a single attacker resolves inline. `AoO` attackers
+/// (RR p.25 step 3.3); a single attacker resolves inline. `AoO` attackers
 /// never exhaust (RR p.7) — honored by
 /// [`EnemyAttackSource::AttackOfOpportunity`].
 pub(super) fn drive_aoo(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
@@ -595,7 +591,7 @@ pub(super) fn drive_aoo(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutc
 }
 
 /// Fire a single Retaliate attack from `enemy` against `investigator`, driving it
-/// through the shared attack loop (#379) so it opens the before-attack cancel
+/// through the shared attack loop so it opens the before-attack cancel
 /// window (Dodge 01023) and the per-soaked-asset reaction window (Guard Dog 01021).
 /// A retaliate is one enemy attacking once, so the attacker list is a singleton;
 /// the two sequential suspension points are tracked by [`AttackLoopStage`]. Returns
@@ -619,9 +615,9 @@ pub(super) fn drive_retaliate(
 /// list in [`EnemyId`] order (`BTreeMap` iteration is sorted), then
 /// delegate to [`drive_attack_loop`] — which owns the per-attacker
 /// steps (early-break-on-defeat, [`place_assignment`], exhaust) and the
-/// soak-window suspend/resume contract (C5b #237).
+/// soak-window suspend/resume contract.
 ///
-/// **Attack order:** player-chosen (#143). With 2+ ready engaged enemies
+/// **Attack order:** player-chosen. With 2+ ready engaged enemies
 /// the loop suspends on a `PickSingle` ([`AttackLoopStage::PickOrder`]) so
 /// the attacked investigator picks which strikes next (RR p.25 step 3.3:
 /// "resolve their attacks in the order of the attacked investigator's
@@ -734,7 +730,7 @@ pub fn restrict_until_end_of_round(
 /// > still exhausts.
 ///
 /// — so it must survive a `when`-cell cancel, which abandons the rest of the
-/// sequence (#714) and would take an exhaust inside it along.
+/// sequence and would take an exhaust inside it along.
 ///
 /// `AoO` / `Retaliate` attackers never exhaust (RR p.7 / p.18), and an attacker
 /// that is no longer on the board (defeated by Guard Dog 01021's retaliate
@@ -751,12 +747,12 @@ fn exhaust_after_attack(cx: &mut Cx, enemy_id: EnemyId, source: EnemyAttackSourc
 }
 
 // ---------------------------------------------------------------------------
-// Interactive soak distribution (#44/K5b): the defending player assigns each
+// Interactive soak distribution: the defending player assigns each
 // point of damage/horror across themselves and eligible soakers (RR p.7), one
 // point at a time. Gated to prompt only when a soaker can take the point.
 // ---------------------------------------------------------------------------
 
-/// A target for one point of soak distribution (#44/K5b): the investigator
+/// A target for one point of soak distribution: the investigator
 /// itself, or a controlled soaker asset instance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DistributionTarget {
@@ -850,9 +846,9 @@ fn credit_point(assignment: &mut Assignment, target: DistributionTarget, damage_
 }
 
 /// Build the per-point soak options, anchoring each to its board home so a host
-/// renders it on the right card (S5, #540): a soaker asset to its card instance,
-/// the defending investigator to their own investigator card (`me`, #950).
-/// Each label is the anchored card's name (#989).
+/// renders it on the right card: a soaker asset to its card instance,
+/// the defending investigator to their own investigator card (`me`).
+/// Each label is the anchored card's name.
 fn soak_options(
     state: &GameState,
     cards: &CardRegistry,
@@ -987,7 +983,7 @@ fn set_deal_damage(cx: &mut Cx, new_assignment: Assignment, new_step: DealDamage
 /// The cursor is the Rules Reference's two steps plus the bookends that get it
 /// there and hand back (`glossary/Dealing_Damage_Horror.md`; ADR 0009):
 ///
-/// - `Distribute` — step 1's determination, interactive per point (#44/K5b). It
+/// - `Distribute` — step 1's determination, interactive per point. It
 ///   drains immediately when uncontested, so the cursor always starts at the
 ///   top; while a point is contested this frame *is* the prompt.
 /// - `Announce` — emit `DamageDealt`, whose `when` cell is the window the rules
@@ -1067,10 +1063,10 @@ pub(crate) fn drive_deal_damage(cx: &mut Cx) -> EngineOutcome {
             match source {
                 // The attack's own sequence continues on the frames beneath: its
                 // `at` and `after` cells on the coordinator, then the parked
-                // `AttackLoop`'s exhaust and the next attacker (#704).
+                // `AttackLoop`'s exhaust and the next attacker.
                 DamageSource::EnemyAttack { .. } => EngineOutcome::Done,
-                // K5b-2: resume the parked effect walk, so subsequent effects
-                // run (and may prompt again) with no point lost (#422/#44). A
+                // Resume the parked effect walk, so subsequent effects
+                // run (and may prompt again) with no point lost. A
                 // `deal_harm` caller's own work (a native's enclosing frames, a
                 // drawn weakness's Revelation) is likewise on the frames beneath.
                 DamageSource::Effect => choice::resume_effect_walk(cx),
@@ -1080,7 +1076,7 @@ pub(crate) fn drive_deal_damage(cx: &mut Cx) -> EngineOutcome {
 }
 
 /// Deal one enemy attack: the resolve step of the `EnemyAttacks` triggering
-/// condition (#704), reached from [`super::emit`] once the `when` cell has run
+/// condition, reached from [`super::emit`] once the `when` cell has run
 /// without preventing it.
 ///
 /// The attack's impact is the damage and horror it deals, so this is one call to
@@ -1093,7 +1089,7 @@ pub(crate) fn drive_deal_damage(cx: &mut Cx) -> EngineOutcome {
 /// on.
 ///
 /// A cancelled attack never reaches here at all: the coordinator abandons the
-/// sequence at its resolve step (#714), which is also why the exhaust is not
+/// sequence at its resolve step, which is also why the exhaust is not
 /// here (see [`exhaust_after_attack`]).
 pub(super) fn deal_enemy_attack(
     cx: &mut Cx,
@@ -1122,9 +1118,8 @@ pub(super) fn deal_enemy_attack(
 /// `attackers` — and emit the `EnemyAttacks` triggering condition in tail
 /// position (ADR 0003).
 ///
-/// This is the whole of the #704 migration's drive-shape change. The loop used
-/// to emit and then read `open_windows()` synchronously to decide whether to
-/// park; now it parks unconditionally and lets the coordinator above it walk the
+/// The loop parks unconditionally, rather than reading the windows the emit
+/// opened, and lets the coordinator above it walk the
 /// attack's `when → resolve → at → after` sequence, suspending wherever that
 /// sequence needs to. [`drive_parked_attack_loop`] picks the loop back up when
 /// the coordinator pops.
@@ -1173,7 +1168,7 @@ pub(super) fn drive_parked_attack_loop(cx: &mut Cx) -> EngineOutcome {
     drive_attack_loop(cx, investigator, remaining_attackers, source)
 }
 
-/// Park the loop on its order-pick `PickSingle` (#143): push the `AttackLoop`
+/// Park the loop on its order-pick `PickSingle`: push the `AttackLoop`
 /// frame as the **top** frame (no window above — it *is* the prompt) at
 /// [`AttackLoopStage::PickOrder`], and return `AwaitingInput` offering the
 /// remaining attackers (option `i` = `remaining_attackers[i]`, `EnemyId` order).
@@ -1214,16 +1209,16 @@ fn suspend_order_pick(
 ///   and do not exhaust, per Rules Reference p.10 Elimination step 3 (*"All
 ///   enemies engaged with that player are placed at the location … unengaged"*)
 ///   and p.25 (*"Each ready, engaged enemy makes an attack"* — a disengaged enemy
-///   is not "engaged"). `apply_investigator_elimination` (#144) also clears
+///   is not "engaged"). `apply_investigator_elimination` also clears
 ///   `engaged_with`, so this is the simpler local form of a condition that holds
 ///   anyway.
 /// - **None left** — run the source-keyed tail ([`finish_attack_loop`]).
 /// - **One left** — begin its attack ([`begin_head_attack`]).
-/// - **Two or more** — suspend on the attacked investigator's order pick (#143,
-///   RR p.25 step 3.3: *"resolve their attacks in the order of the attacked
+/// - **Two or more** — suspend on the attacked investigator's order pick (RR
+///   p.25 step 3.3: *"resolve their attacks in the order of the attacked
 ///   investigator's choosing"*), one pick at a time between attacks.
 ///
-/// Since #704 this never resolves an attack inline: `begin_head_attack` parks
+/// This never resolves an attack inline: `begin_head_attack` parks
 /// the loop and hands the attack to the timing coordinator, so a single call
 /// makes exactly one decision and returns.
 fn drive_attack_loop(
@@ -1262,17 +1257,16 @@ fn finish_attack_loop(
         EnemyAttackSource::EnemyPhase => {
             reaction_windows::after_enemy_phase_attacks(cx, investigator)
         }
-        // AoO: nothing follows the drain. Retaliate (#379): the Fight's `SkillTest`
+        // AoO: nothing follows the drain. Retaliate: the Fight's `SkillTest`
         // frame is now top (cursor at `PostOnResolution`); returning `Done` lets the
-        // `drive` loop dispatch it to finish teardown (Slice C-plumbing — formerly a
-        // direct `skill_test::advance` reach-down here).
+        // `drive` loop dispatch it to finish teardown.
         EnemyAttackSource::AttackOfOpportunity | EnemyAttackSource::Retaliate => {
             EngineOutcome::Done
         }
     }
 }
 
-/// Resume a loop suspended on its order-pick `PickSingle` (#143). The
+/// Resume a loop suspended on its order-pick `PickSingle`. The
 /// `AttackLoop{stage: PickOrder}` frame is the top frame (no window above it),
 /// so [`resolve_input`](super::resolve_input) routes here directly (not via
 /// window-close). Validate the `PickSingle` against the stored

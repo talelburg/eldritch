@@ -1,8 +1,7 @@
-//! Layout regression for the map node (#848). A location node used to be a
-//! fixed `NODE_W`x`NODE_H` box with `overflow: hidden`, so a node whose card
-//! text was long enough — the Parlor 01115, the longest printed text of any
-//! Core location — clipped its own occupancy tokens out of view. Lita Chantler
-//! was invisible in a real act-3 run once an investigator stood in the Parlor.
+//! Regression for #848: a map node keeps its occupancy tokens in view however
+//! long its card text. A fixed-size node with `overflow: hidden` would clip them
+//! on the Parlor 01115, the longest printed text of any Core location, and hide
+//! Lita Chantler once an investigator stands there.
 //!
 //! These tests measure rather than inspect: the real `style.css` is injected and
 //! the real corpus (`cards::TEST_REGISTRY`) provided, so the node is filled with the text the

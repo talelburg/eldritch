@@ -63,7 +63,7 @@ fn search_deck_top_n_suspends_on_two_eligible_then_takes_pick() {
     assert_eq!(inv.deck.len(), 2);
 }
 
-/// The searched cards are offered by name (#989), still un-anchored (ADR 0015):
+/// The searched cards are offered by name, still un-anchored (ADR 0015):
 /// a deck card has no board home, so the options land in the prompt banner.
 #[test]
 fn search_deck_options_are_labelled_with_card_names_and_unanchored() {

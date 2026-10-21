@@ -67,7 +67,7 @@ pub fn EnemyCard(enemy: Enemy) -> impl IntoView {
     let exhausted = enemy.exhausted;
     let exhausted_badge =
         exhausted.then(|| view! { <span class="card-exhausted">"Exhausted"</span> });
-    // Interactivity (#537): route the live prompt's options to this enemy; glow +
+    // Interactivity: route the live prompt's options to this enemy; glow +
     // open a context menu of its offered actions (Fight/Evade) when non-empty.
     let pending = use_context::<PendingOptions>()
         .map(|p| p.0.get())

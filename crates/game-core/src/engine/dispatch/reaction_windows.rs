@@ -1040,8 +1040,8 @@ pub(super) fn run_fast_continuation(cx: &mut Cx, kind: FastWindowKind) -> Engine
 ///
 /// Since #704 there is one caller: `combat::finish_attack_loop`, run when the
 /// attack loop's list drains. The [`PhaseStep::BeforeInvestigatorAttacked`]
-/// continuation no longer calls it — the loop only *queues* its attacks, so a
-/// `Done` there means queued, not finished (ADR 0003). Advances the
+/// continuation does not call it: the loop only *queues* its attacks (see
+/// `emit::queue_event`), so they are not finished when it returns. Advances the
 /// `EnemyPhase` anchor's `attacking`
 /// cursor to the next Active investigator AFTER `investigator` via
 /// [`cursor::next_active_investigator_after`](super::cursor::next_active_investigator_after)
