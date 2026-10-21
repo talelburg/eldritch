@@ -1,4 +1,4 @@
-//! Integration tests for #69 Mythos phase content, against real Core Set cards.
+//! Mythos phase content, driven against real Core Set cards.
 //!
 //! Drives full apply cycles through `seat_and_open` → `Mulligan` →
 //! `EndTurn` → `DrawEncounterCard`, verifying the per-card 5-step
@@ -51,8 +51,7 @@
 //! act deck: nothing here discovers a clue.
 //!
 //! "The lead" below always means the first Active investigator in
-//! `turn_order`, the proxy the engine
-//! actually binds — not the chosen lead investigator of
+//! `turn_order`, the proxy the engine actually binds — not the lead investigator of
 //! `glossary/Lead_Investigator.md`, which we do not model (`GLOSSARY.md`, *Lead
 //! investigator*). The two coincide in the solo tests and are not guaranteed to
 //! in the two-investigator ones; nothing here turns on the difference.
@@ -201,7 +200,7 @@ fn mythos_phase_resolves_single_treachery() {
 
     // Mythos → Investigation transition completes inline (MythosAfterDraws
     // auto-closes because no fast-play-eligible cards are in any hand), and
-    // investigation_phase rotates to the lead investigator's turn.
+    // investigation_phase rotates to the first investigator's turn.
     session.assert_at_turn_menu(INV1);
     let state = session.state();
     assert_eq!(state.phase, Phase::Investigation);
@@ -224,7 +223,7 @@ fn mythos_phase_resolves_single_treachery() {
     assert_eq!(
         state.active_investigator,
         Some(INV1),
-        "investigation_phase rotates to the lead investigator",
+        "investigation_phase rotates to the first investigator",
     );
 
     let result = session.finish();
@@ -293,8 +292,8 @@ fn mythos_phase_resolves_single_spawn_enemy() {
 #[test]
 fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
     // Two investigators co-located at the Attic: the drawn Flesh-Eater ties
-    // under Prey::Default, so the draw suspends for the lead's PickSingle
-    // (#128, option A). Resolving the pick engages the chosen investigator and
+    // under Prey::Default, so the draw suspends for the lead's PickSingle.
+    // Resolving the pick engages the chosen investigator and
     // resumes inv1's Mythos draw chain — which, the enemy being non-surge,
     // advances the cursor to inv2 and stays in Mythos.
     // Both investigators are seated at the Attic (starting_location) by
@@ -457,7 +456,7 @@ fn mythos_draw_rejects_when_initial_deck_and_discard_both_empty() {
 }
 
 // ------------------------------------------------------------------
-// Fast-window push-then-scan fix (defect A + B from #476's pre-PR review)
+// The MythosAfterDraws fast window: pushed, then scanned
 // ------------------------------------------------------------------
 
 /// The board for the `MythosAfterDraws` pair: the standard solo setup, with
@@ -488,20 +487,17 @@ fn at_mythos_draw_with_beat_cop_in_play() -> TestSession {
     })
 }
 
-/// Regression test for the push-then-scan ordering fix in
-/// `open_fast_window`. Before the fix, `any_fast_play_eligible` was
-/// called BEFORE the `MythosAfterDraws` window was pushed onto
-/// `state.open_windows`, so `check_play_card`'s `permissive_window`
-/// check saw an empty stack and evaluated every Fast card as
-/// ineligible. The window would auto-skip even when the player had an
-/// eligible Fast play — silently denying plays in the post-1.4 window.
+/// Regression for #476: the `MythosAfterDraws` window stays open while a fast
+/// play is eligible, and surfaces it as a **skippable** `PickSingle` prompt
+/// rather than idling silently as `Done`.
+///
+/// `open_fast_window` pushes the window onto `state.open_windows` before it
+/// scans, so `check_play_card`'s `permissive_window` check sees the window it
+/// is judging eligibility for, and the window does not auto-skip.
 ///
 /// The eligible play here arrives from the Mythos draw itself: Flesh-Eater
 /// spawns at the investigator's location, which gives Beat Cop's `[fast]`
-/// *"Deal 1 damage to an enemy at your location"* a legal target. The test
-/// asserts that the window STAYS OPEN (not auto-skipped) and — post-#476 —
-/// surfaces the eligible play as a **skippable** `PickSingle` prompt rather
-/// than idling silently as `Done`.
+/// *"Deal 1 damage to an enemy at your location"* a legal target.
 #[test]
 fn mythos_after_draws_window_stays_open_when_a_fast_play_is_eligible() {
     let drawing = at_mythos_draw_with_beat_cop_in_play();
@@ -510,8 +506,8 @@ fn mythos_after_draws_window_stays_open_when_a_fast_play_is_eligible() {
 
     let session = drawing.confirm();
 
-    // #476: the MythosAfterDraws window now surfaces the eligible Fast play as
-    // a skippable choice instead of idling as Done — the player can use it or pass.
+    // The MythosAfterDraws window surfaces the eligible Fast play as a
+    // skippable choice instead of idling as Done — the player can use it or pass.
     let request = session.prompt();
     assert_eq!(request.kind, InputKind::PickSingle, "{request:?}");
     assert!(
@@ -538,20 +534,18 @@ fn mythos_after_draws_window_stays_open_when_a_fast_play_is_eligible() {
     );
 }
 
-/// Continuation of the push-then-scan regression: after the encounter draw
+/// Continuation of the test above: after the encounter draw
 /// leaves the `MythosAfterDraws` window open (because a Fast play is
 /// eligible), a `Skip` must close the window, run `mythos_phase_end`, and
 /// transition to Investigation.
 ///
 /// `resolve_input`'s Skip arm closes the top frame: a pure-Fast
 /// `MythosAfterDraws` gate (empty `pending_triggers`) on top is closed via
-/// `close_reaction_window`. (Historically this routed through an empty-skipping
-/// `top_reaction_window_index`, which failed to find the pure-Fast window and
-/// left it stuck — Slice C-plumbing replaced that with top-frame dispatch.)
+/// `close_reaction_window`.
 #[test]
 fn mythos_after_draws_window_closed_by_skip_and_transitions_to_investigation() {
-    // Advance through the draw to land in the open-window state (post-#476 a
-    // skippable fast-window prompt, not Done-idle).
+    // Advance through the draw to land in the open-window state (a skippable
+    // fast-window prompt, not Done-idle).
     let window = at_mythos_draw_with_beat_cop_in_play().confirm();
     let beat_cop = window.state().card(INV1, BEAT_COP);
     assert!(
@@ -565,13 +559,13 @@ fn mythos_after_draws_window_closed_by_skip_and_transitions_to_investigation() {
         "window must be open before Skip test"
     );
 
-    // Now close the window with Skip (player decides not to use the Fast ability).
+    // Now close the window with Skip (player decides not to use the zero-action ability).
     let session = window.skip();
 
     // MythosAfterDraws is closed; investigation_phase then opens
     // InvestigationBegins. Because Beat Cop's ability is still eligible (the
     // spawned enemy is still there), that window also surfaces a skippable
-    // prompt (#476) rather than idling.
+    // prompt rather than idling.
     let request = session.prompt();
     assert!(
         request.skippable,
@@ -580,7 +574,7 @@ fn mythos_after_draws_window_closed_by_skip_and_transitions_to_investigation() {
     assert_eq!(
         session.offered_at(&beat_cop),
         1,
-        "InvestigationBegins window must be open (the Fast ability is eligible): {request:?}"
+        "InvestigationBegins window must be open (the zero-action ability is eligible): {request:?}"
     );
 
     // mythos_phase_end ran: phase transitioned to Investigation, so the open

@@ -1,4 +1,4 @@
-//! Integration: The Gathering's three persistent treacheries (C4c, #235)
+//! The Gathering's three persistent treacheries,
 //! resolved through the real `cards` registry — they stay in play, enforce
 //! their constant restriction, and discard at a forced timing point.
 
@@ -247,7 +247,7 @@ fn dissonant_voices_forbids_playing_an_asset() {
 fn dissonant_voices_round_end_coexists_with_agenda_01107_doom() {
     // Both Dissonant Voices (threat area) and agenda 01107 carry an
     // `At`-`RoundEnded` forced ability. Two simultaneous forced at one timing
-    // point let the lead order them (#213), so the real round-end coordinator
+    // point let the lead order them, so the real round-end coordinator
     // path opens the ordered forced-run: the agenda places doom per ghoul in the
     // Hallway/Parlor and Dissonant Voices discards itself, both resolving in the
     // lead's chosen order rather than rejecting. Driven through the end of the
@@ -502,7 +502,7 @@ fn frozen_in_fear_end_of_turn_failure_keeps_card_but_turn_still_resumes() {
 
 #[test]
 fn two_frozen_in_fear_end_of_turn_tests_both_resolve_then_turn_resumes() {
-    // #213 reentrancy: two Frozen in Fear copies on one investigator fire two
+    // Reentrancy: two Frozen in Fear copies on one investigator fire two
     // simultaneous `EndOfTurn` forced abilities, each a *suspending* willpower
     // test. The lead orders them; firing the first suspends on its commit
     // window, and once it resolves the forced run resumes the second sibling —
@@ -590,7 +590,7 @@ fn obscuring_fog_limit_one_per_location_discards_the_second_copy() {
     );
 }
 
-// ---- Frozen in Fear (01164) × a bold action designator (#754) -------
+// ---- Frozen in Fear (01164) × a bold action designator -------
 
 /// Board: investigator 1 at `HERE`, Frozen in Fear 01164 in the threat area, a
 /// .45 Automatic 01016 (4 ammo) in play, and a co-located enemy to shoot, with
@@ -638,7 +638,8 @@ fn fire_weapon(session: TestSession) -> TestSession {
     session.take(&fight).commit(&[])
 }
 
-/// Official FAQ, `Frequently_Asked_Questions.md`:
+/// Regression for #754: Frozen in Fear surcharges a Fight-designated ability
+/// like a basic Fight. Official FAQ, `Frequently_Asked_Questions.md`:
 ///
 /// > Abilities with a bold action designator (like Fight, Evade or
 /// > Investigate) **count as an action of that type**.
@@ -649,8 +650,8 @@ fn fire_weapon(session: TestSession) -> TestSession {
 /// > (**Move**, **Fight**, **Evade**).
 ///
 /// So shooting the .45 Automatic *is* a Fight action, and the first one each
-/// round costs 2 — the same as punching. Before #754 it cost 1, making the
-/// weapon a way to duck the treachery entirely.
+/// round costs 2 — the same as punching, so the weapon is no way to duck the
+/// treachery.
 #[test]
 fn frozen_in_fear_surcharges_a_fight_designated_ability() {
     let s = fire_weapon(frozen_in_fear_with_weapon_board(3));
@@ -662,10 +663,9 @@ fn frozen_in_fear_surcharges_a_fight_designated_ability() {
     );
 }
 
-/// The surcharge's `first_each_round` budget is one *shared* budget: a
-/// designated Fight consumes it, so the basic Fight that follows pays the
-/// plain 1. Before #754 the activation path never marked the source spent,
-/// so the treachery could surcharge twice in a round.
+/// Regression for #754: the surcharge's `first_each_round` budget is one
+/// *shared* budget. A designated Fight consumes it, so the basic Fight that
+/// follows pays the plain 1 and the treachery surcharges once a round.
 #[test]
 fn a_designated_fight_consumes_the_once_each_round_surcharge() {
     let s = fire_weapon(frozen_in_fear_with_weapon_board(3));

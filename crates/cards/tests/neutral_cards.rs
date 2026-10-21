@@ -1,4 +1,4 @@
-//! C6c (#243) integration: the neutral cards' new effect shapes end-to-end
+//! The neutral cards' effect shapes end-to-end
 //! against the real `cards::REGISTRY`.
 //!
 //! - Emergency Cache 01088: `on_play(gain_resources(You, 3))`.
@@ -82,8 +82,8 @@ fn guts_draws_nothing_on_a_failed_test() {
     assert_no_event!(s.finish().events, Event::CardsDrawn { .. });
 }
 
-/// A card-effect draw obeys the empty-deck rule like the Draw action does
-/// (#636). Rules Reference, glossary "Drawing Cards": "If an investigator
+/// Regression for #636: a card-effect draw obeys the empty-deck rule like the
+/// Draw action does. Rules Reference, glossary "Drawing Cards": "If an investigator
 /// with an empty investigator deck needs to draw a card, that investigator
 /// shuffles his or her discard pile back into his or her deck, then draws
 /// the card, and upon completion of the entire draw takes one horror."

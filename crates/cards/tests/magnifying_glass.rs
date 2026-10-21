@@ -1,10 +1,6 @@
 //! End-to-end test that Magnifying Glass's +1 intellect applies
-//! during Investigate but not during a bare intellect test.
-//!
-//! The acceptance criterion from #45 (per-skill-test-kind scope) was
-//! "Magnifying Glass's full impl lands and the simulator applies +1
-//! intellect to investigate tests but not to other intellect tests."
-//! This file closes that loop with the real card and real registry.
+//! during Investigate but not during a bare intellect test, with the real card
+//! and real registry.
 
 use cards::TEST_REGISTRIES;
 use game_core::assert_event;

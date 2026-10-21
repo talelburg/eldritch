@@ -1,4 +1,4 @@
-//! #773 integration: Lita Chantler 01117's two granted abilities, end-to-end
+//! Lita Chantler 01117's two granted abilities, end-to-end
 //! against the real `cards::REGISTRY`.
 //!
 //! ## Verified card text (`data/arkhamdb-snapshot`, 2026-08-30)
@@ -38,9 +38,9 @@
 //!
 //! ## The `when` cell
 //!
-//! `a_co_located_attack_on_a_monster_deals_one_more_damage` is the regression
-//! cover for #773's engine half: `SkillTestResolved` migrated from caller-owned
-//! to coordinator-owned so its `when` cell could be walked at all. The `2` it asserts is the boost landing between RR ST.6's
+//! `a_co_located_attack_on_a_monster_deals_one_more_damage` walks the `when`
+//! cell of `SkillTestResolved`, which the coordinator owns. The `2` it asserts
+//! is the boost landing between RR ST.6's
 //! determination and ST.7's application — *"before its impact upon the game
 //! state resolves"* (`glossary/Ability.md`) — which is observable here and
 //! nowhere in `timing_cells.rs`, whose tests drive a bare plain test with no
@@ -93,7 +93,7 @@ const NON_MONSTER: EnemyId = EnemyId(101);
 /// How the board is arranged for one case.
 struct Board {
     /// Whether Lita is under `KEEPER`'s control (her play area) or in play at
-    /// the Parlor under nobody's — the #772 transition, both sides of it.
+    /// the Parlor under nobody's — both sides of a won Parley.
     controlled: bool,
     /// Where the second investigator stands.
     other_at: LocationId,
@@ -249,7 +249,7 @@ fn moving_away_from_her_drops_the_bonus() {
 
 /// **While nobody controls her, neither half applies** — the grant's condition
 /// is *"While **you control** Lita Chantler"*, and in the Parlor before a Parley
-/// nobody does (#772). She is in play, at the very location the audience would
+/// nobody does. She is in play, at the very location the audience would
 /// resolve to, and still contributes nothing.
 #[test]
 fn while_uncontrolled_the_combat_bonus_does_not_apply() {
@@ -405,7 +405,7 @@ fn a_designated_fight_ability_gets_the_bonus() {
             address: AbilityAddress::Printed(0),
         })
         // Two enemies stand at the Parlor, so a weapon Fight asks which
-        // (#451 widened a Fight's candidates to every co-located enemy).
+        // (a Fight's candidates are every co-located enemy).
         .pick(OptionTarget::Enemy(GHOUL))
         .commit(&[])
         .pick(lita);
