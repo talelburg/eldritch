@@ -134,8 +134,8 @@ fn connections(state: &GameState, ctx: &EvalContext) -> Vec<LocationId> {
 
 /// Whether the move is worth asking about.
 ///
-/// Reads [`connections`] without the enter check: a native condition gets no
-/// card registry. That errs the conservative way — the move is offered, and
+/// TODO(#1083): reads [`connections`] without the enter check: a native
+/// condition gets no card registry. That errs the conservative way — the move is offered, and
 /// finds nowhere to go — as Elusive's eligibility does.
 fn has_connection(state: &GameState, ctx: &EvalContext) -> bool {
     !connections(state, ctx).is_empty()

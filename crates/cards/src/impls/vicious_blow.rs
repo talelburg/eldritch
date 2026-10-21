@@ -31,14 +31,17 @@
 //! [`Effect::BoostAttackDamage`]: the bonus is
 //! consumed by the Fight follow-up, which deals damage only on success, so
 //! on a failed test it is accumulated, never read, and thrown away with the
-//! test's frame. It is **not** that the outcome is unknown at commit —
-//! post-#423 the `FireOnCommit` step runs after `DetermineOutcome`, so the
-//! outcome is on the frame; the reason it can't be card-expressed is that
-//! `Condition::SkillTest { outcome }` is unimplemented — it rejects with a
-//! TODO. `OnCommit`
-//! (not `OnSkillTestResolution`) is required regardless, because the
-//! follow-up deals the attack's damage *during* resolution, before the
-//! resolution trigger fires.
+//! test's frame. It is **not** that the outcome is unknown at commit — the
+//! `FireOnCommit` step runs after `DetermineOutcome`, so the outcome is on the
+//! frame. `OnCommit` (not `OnSkillTestResolution`) is required regardless,
+//! because the follow-up deals the attack's damage *during* resolution, before
+//! the resolution trigger fires.
+//!
+//! # Module gap
+//!
+//! The "if successful" qualifier can't be card-expressed:
+//! `Condition::SkillTest { outcome }` is not evaluated, and rejects. That is
+//! why it stays intrinsic to [`Effect::BoostAttackDamage`].
 //!
 //! [`Trigger::OnCommit`]: card_dsl::dsl::Trigger::OnCommit
 //! [`Effect::BoostAttackDamage`]: card_dsl::dsl::Effect::BoostAttackDamage

@@ -28,10 +28,11 @@
 //! post-test choice would let the player pick the target after seeing the
 //! result — strictly more information than the card grants.
 //!
+//! # Module gap
+//!
 //! TODO(#359): bind the chosen investigator before the test (needs the
 //! binding to survive the `Effect::SkillTest` suspend/resume) once
-//! multiplayer makes the ordering observable. Mirrors Machete's #300
-//! deferral.
+//! multiplayer makes the ordering observable.
 
 use card_dsl::card_data::SkillKind;
 use card_dsl::dsl::{self, Ability, InvestigatorTarget};

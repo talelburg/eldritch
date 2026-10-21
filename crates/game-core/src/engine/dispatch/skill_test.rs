@@ -201,6 +201,10 @@ pub(in crate::engine) fn start_skill_test(
     // resolves against. ST.6 re-reads it (`determine_outcome_step`), so a
     // card that changes it mid-test changes the outcome without changing
     // what was announced.
+    //
+    // TODO(#1099): the announced skill is the test's skill before the
+    // substitution prompt below. When Mind over Matter 01036 substitutes
+    // Intellect, `SkillTestStarted` has already announced Combat or Agility.
     cx.events.push(Event::SkillTestStarted {
         investigator,
         skill,
@@ -573,9 +577,10 @@ pub(super) fn acknowledge_outcome(cx: &mut Cx) -> EngineOutcome {
 /// [`ChaosTokenRevealed`](Event::ChaosTokenRevealed) announces is the same
 /// expression evaluated once, here, at reveal — a display value, as
 /// `SkillTestStarted`'s announced difficulty is. The two agree for every
-/// `IntExpr::Lit` a scenario returns today; a live one (The Gathering's `[skull]`, #921)
-/// can drift between reveal and ST.5, and the ST.5 read is the one the test
-/// resolves against.
+/// `IntExpr::Lit` a scenario returns today. A live expression, as The
+/// Gathering's `[skull]` would be once it counts Ghouls at ST.5, could drift
+/// between reveal and ST.5, and the ST.5 read is the one the test resolves
+/// against.
 fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
     // Known already? Then ST.3 and ST.4 do not happen at all: no draw, no
     // `ChaosTokenRevealed`, no symbol effects — straight to ST.5. Every other
@@ -953,6 +958,11 @@ fn apply_follow_up_step(cx: &mut Cx, investigator: InvestigatorId) -> Result<(),
         .expect("the SkillTest frame was present immediately above")
         .continuation = SkillTestStep::ApplyResultEffect;
 
+    // TODO(#409): a failed Fight does nothing here, but
+    // `data/rules-reference/rules/glossary/Fight_Action.md` has *"if an
+    // investigator fails this test against an enemy that is engaged with
+    // another single investigator, the damage of the attack is dealt to the
+    // investigator engaged with that enemy."*
     if !resolved(cx).succeeded {
         return Ok(());
     }
