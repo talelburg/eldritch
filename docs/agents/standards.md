@@ -160,9 +160,34 @@ Making a module private, demoting an item to `pub(crate)`, or deleting a re-expo
 
 **Why:** the #900 import sweep (PR #910) ran a ten-minute full gauntlet three times, and each failed only on `doc` or a doctest: an unresolved link to `GameStateBuilder`, a `builder.rs` doctest importing through a deleted facade, and `card-dsl` links to `Ability`. #925 repeated the pattern: a public doc on `top_of` linked to the crate-private `top_mut`.
 
-### Remove a deleted symbol's mentions from the docs in the same PR
+### Code prose: a comment says what is true now
 
-When a diff deletes or renames a symbol, a module, or a mechanism, grep for its name across `docs/adr/`, `GLOSSARY.md`, `docs/agents/`, and `//!`/`///` comments. Bring every hit up to date in the same PR. An ADR describing the removed shape is **folded**, per [`writing.md`](writing.md) → Fold, don't append. If the deletion contradicts the decision itself, that is a gate (`CLAUDE.md` → Gates, item 3), not a fold. Review reads the diff's deletions for exactly this.
+This covers every Rust comment, `//`, `///` and `//!`. The docs under `docs/` are `writing.md`'s.
+
+**A `//!` header says what the module owns today, and its first paragraph is one sentence.** It doesn't describe the scope the module was first written for or the work still planned for it. Point at the enum or function that holds a list rather than copying it, so the list can't drift from the code.
+
+**A doc says what is true now, and why.** Renames, slice and PR names, retired plan vocabulary ("Phase-3 set", "C1a", "Slice D") and "since #N" belong in git. "Used to" in its past-tense sense and "formerly" are history too. "No longer" and "previously" are allowed only for present-tense game state (*"an investigator no longer `Active`"*) or inside a verbatim quote, and never for the code's own past. A gap that is still open becomes a `TODO(#N):` where an open issue holds it, and "not modelled" where none does.
+
+**An issue number appears in a comment in exactly two forms:**
+
+- **`TODO(#N): …`, with issue N open.** It may sit anywhere in a comment, in production or test code. It is written unbackticked and followed by a colon: `` `TODO(#609)` `` mid-sentence is not the form.
+- **`Regression for #N: …`, followed by the behaviour the test pins, in the present tense.** Only in test code, and only for a bug that shipped. It goes on the doc of the test fn that reproduces the bug, or on the file's `//!` header when the whole file pins that one bug.
+
+Any other `#N` is a violation, whether issue N is open or closed. **A PR number has no allowed form.** A feature test is described by the behaviour it checks, not by the ticket that added it.
+
+**Test code** is a file under a `tests/` directory, whether a crate's `tests/` or an out-of-line `src/**/tests/` module, plus every `#[cfg(test)]` module. That includes `game-core/src/test_support/tests/`. The rest of `test_support` counts as production code: it compiles into every build, with no `cfg(test)` around it.
+
+**Tell a shipped bug from a feature by reading the issue,** whatever its label says. It is a shipped bug if the issue body describes wrong behaviour that was on `main`. When in doubt, describe the behaviour and drop the number.
+
+**Production code that exists because of a bug cites the rules clause it enforces**, quoted per `CLAUDE.md` → Cite card text and rules, and its test carries the issue number. A guard with no rules clause behind it, such as a UI invariant, states that invariant in the present tense instead.
+
+The rule covers comments, not strings. A rejection reason that carries `TODO(#N)` with N open is the convention [Stub deferred functionality](#stub-deferred-functionality-with-a-todo-that-names-the-issue) sets, and it stays.
+
+**Why:** an agent editing a file reads its comments as the truth about the code beside them. At main 86332221, the evaluator's header said it implemented three `Effect` variants and rejected the rest, when `step_leaf` had an arm for all 37. The DSL's `Trigger::OnEvent` doc said the engine ignored `OnEvent` abilities, which 35 cards use. `EngineOutcome::Done` was documented as "the action resolved fully", where the contract is that the game is over. Comments under `crates/` carried 2,220 issue references in neither form, and 106 of them pointed at an open issue, so a number told the reader nothing about whether its work was done. The two forms are syntactic so that a scan can check them offline; only "the TODO's issue is open" needs `gh`.
+
+### Remove a deleted symbol's mentions, and a changed behaviour's, in the same PR
+
+When a diff deletes or renames a symbol, a module, or a mechanism, grep for its name across `docs/adr/`, `GLOSSARY.md`, `docs/agents/`, and the Rust comments. Bring every hit up to date in the same PR. **A behaviour change is the same case:** the PR removes or rewrites the prose that describes the old behaviour, wherever it sits. An ADR describing the removed shape is **folded**, per [`writing.md`](writing.md) → Fold, don't append. If the deletion contradicts the decision itself, that is a gate (`CLAUDE.md` → Gates, item 3), not a fold. Review reads the diff's deletions for exactly this.
 
 **Why:** these mentions sit in files the diff never touched, so neither the compiler nor `cargo doc` sees them. PR #968 deleted `forced_point` and the per-zone collector scans. Its review then found ADR 0009 still calling a `forced_point()` returning `Some` "dead code", `initiation.rs` still describing collector arms, and `GLOSSARY.md` still pointing the reaction lead-proxy binding at `reaction_windows.rs`. Fixing them took a separate round after review.
 
