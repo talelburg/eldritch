@@ -77,7 +77,7 @@ pub(super) fn activate_ability(
 }
 
 /// [`activate_ability`] again, once the player has answered the FAQ 1.10
-/// choice its take step put (#1098): paid for with the `chosen`th additional
+/// choice its take step put: paid for with the `chosen`th additional
 /// action it offered. Nothing was paid when the choice was put, so this is the
 /// whole activation, validation included.
 pub(super) fn activate_ability_paid_with(
@@ -118,7 +118,7 @@ fn activate(
         // of play mid-payment. Within this one `apply` the order is
         // unobservable: nothing between here and step 3 reads the counter, and a
         // payment that rejects snapshot-restores the whole activation, the
-        // recorded use included (#161). A use on an instance that then leaves
+        // recorded use included. A use on an instance that then leaves
         // play is correctly lost — `glossary/Limits_and_Maximums.md`: *"If a
         // card leaves play and re-enters play during the same period, the card
         // is considered to be bringing a new instance of the ability to the
@@ -126,7 +126,7 @@ fn activate(
         initiation::record_initiation(cx.state, &candidate, usage_limit);
         pay_activation_costs(cx, investigator, source, &candidate.code, &costs)?;
         // The event names the **source**, not a card instance: the location and
-        // enemy kinds (#708) and the act and agenda kinds (#709) have no
+        // enemy kinds and the act and agenda kinds have no
         // `CardInstanceId`. Consumers that want the instance ask
         // `source.instance()` and handle the `None`.
         cx.events.push(Event::AbilityActivated {
@@ -138,8 +138,8 @@ fn activate(
         Ok(())
     };
 
-    // A fast ability is not an action, so it takes none: push both halves for
-    // the drive loop (Slice D, #423) — no enclosing frame, no post-logic.
+    // A zero-action ability is not an action, so it takes none: push both
+    // halves for the drive loop — no enclosing frame, no post-logic.
     if action_cost == 0 {
         if let Err(reason) = pay_and_announce(cx) {
             return EngineOutcome::Rejected { reason };
@@ -166,7 +166,7 @@ fn activate(
 
     // An action-cost ability is taken as an action. The step pays the actions,
     // the hook pays the rest and announces, and the step then either parks the
-    // resolution behind the attacks of opportunity or performs it now (#361).
+    // resolution behind the attacks of opportunity or performs it now.
     let mut description =
         ActionDescription::activate(source, address.clone(), action_cost, designator.clone());
     if let Some(chosen) = chosen_additional_action {
@@ -195,19 +195,17 @@ fn harm_cost(costs: &[Cost]) -> Option<(u8, u8)> {
 }
 
 /// Push an activated ability's two halves for the global drive loop, in
-/// resolution order: the **designated action** it performs (#805), then the
+/// resolution order: the **designated action** it performs, then the
 /// residual `effect` its text prints beside the bold word.
 ///
-/// Continuation frames are LIFO, so they go on in reverse. Every ability
-/// implemented today has an empty residual — a `Seq` of nothing, which pops
-/// without running anything — so the observable behaviour is the designated
-/// action alone; an undesignated ability is its effect alone, exactly as
-/// before.
+/// Continuation frames are LIFO, so they go on in reverse. Every designated
+/// ability implemented today has an empty residual — a `Seq` of nothing, which
+/// pops without running anything — so the observable behaviour is the
+/// designated action alone; an undesignated ability is its effect alone.
 ///
-/// A residual cannot contradict the bold word the way the retired
-/// designator-plus-`Effect::Fight` split could: with the fight and the
-/// investigation gone from [`Effect`](card_dsl::dsl::Effect) entirely, no effect
-/// tree can re-root a designated action into a different one.
+/// A residual cannot contradict the bold word: [`Effect`](card_dsl::dsl::Effect)
+/// has no fight or investigation of its own, so no effect tree can re-root a
+/// designated action into a different one.
 fn push_activation_resolution(
     cx: &mut Cx,
     designator: Option<&ActionDesignator>,
@@ -220,27 +218,26 @@ fn push_activation_resolution(
     }
 }
 
-/// Run a parked activated ability's `effect` after its `AoO` loop completes
-/// (#361). The actor-`Active` re-validation gate has already run in
+/// Run a parked activated ability's `effect` after its `AoO` loop completes.
+/// The actor-`Active` re-validation gate has already run in
 /// [`resume_action_resolution`](super::resume_action_resolution); the source
 /// may have self-discarded as a cost (so we run the snapshotted `effect`, not a
 /// re-resolution by instance), with `instance_id` only seeding the eval
 /// context's source.
 ///
-/// TODO(#417) (richer mid-action invalidation): unlike the basic-action resumes
+/// TODO(#417): unlike the basic-action resumes
 /// (`investigate::perform` etc., which return `Done` to *suppress*
 /// gracefully when their target precondition has lapsed), this pushes the
-/// effect for the drive loop with no suppression gate. Some effects
-/// (`Effect::Investigate` on Flashlight 01087, `Effect::Heal` on First Aid
-/// 01019) return [`EngineOutcome::Rejected`] on a lapsed precondition, which `apply()`
-/// snapshot-restores — rolling back the *whole* activation (the `AoO` damage +
-/// the spent cost) rather than suppressing the primary only (the §D contract).
-/// Unreachable in scope: for the actor to survive the `Active` gate yet have a
-/// lapsed precondition, an `AoO` reaction would have to relocate it / unreveal
-/// the location without defeating it, and no in-scope reaction (Dodge cancel,
-/// Guard Dog soak) does that. Give this the basic actions' suppress-on-lapse
-/// shape when a board-changing `AoO` reaction lands (pairs with the §D
-/// "richer mid-action invalidation" hook in the keystone spec).
+/// effect for the drive loop with no suppression gate. An effect that returns
+/// [`EngineOutcome::Rejected`] on a lapsed precondition (`Effect::Heal` on
+/// First Aid 01019) is snapshot-restored by `apply()` — rolling back the
+/// *whole* activation (the `AoO` damage + the spent cost) rather than
+/// suppressing the primary only. Unreachable in the corpus: for the actor to
+/// survive the `Active` gate yet have a lapsed precondition, an `AoO` reaction
+/// would have to relocate it / unreveal the location without defeating it, and
+/// no corpus reaction (Dodge cancel, Guard Dog soak) does that. Give this the
+/// basic actions' suppress-on-lapse shape when a board-changing `AoO` reaction
+/// lands.
 pub(super) fn resume_activate_ability(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -255,7 +252,7 @@ pub(super) fn resume_activate_ability(
 
 /// Pay every payment cost of an activated ability beyond its actions, which
 /// the step pays ([`take::take`]) — and every cost of a reaction ability, which
-/// `initiation::initiate` pays through here too (#1075). Mutates state in
+/// `initiation::initiate` pays through here too. Mutates state in
 /// place and pushes the matching events.
 /// Caller has already validated that every cost was payable *at validation
 /// time*; a cost can still fail here by outliving its own source, which is
@@ -265,14 +262,14 @@ pub(super) fn resume_activate_ability(
 ///
 /// Every source-referencing cost (`Exhaust`, `SpendUses`, `DiscardSelf`)
 /// re-resolves the source by its [`CardInstanceId`] at the moment it is paid,
-/// rather than indexing a position cached during validation (#706). A cost can
+/// rather than indexing a position cached during validation. A cost can
 /// remove the source mid-payment — `SpendUses` depleting a `discard_when_empty`
 /// asset, or `DiscardSelf` — and a cached position would then address whichever
 /// card slid down into the vacated slot, silently exhausting or draining a
 /// different card. Resolving by identity cannot: the source is simply absent, so
 /// a later source-referencing cost returns `Err` and the whole activation is
 /// rejected. `apply_via` snapshot-restores state, events and the RNG position on
-/// rejection (#161), so a mid-payment `Err` leaves the board untouched.
+/// rejection, so a mid-payment `Err` leaves the board untouched.
 pub(super) fn pay_activation_costs(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -308,16 +305,16 @@ pub(super) fn pay_activation_costs(
                 let instance_id =
                     require_source_reachable(cx, investigator, source, cost, source_code)?
                         .instance_id;
-                // The one uses-spending path (#353). If this empties a
+                // The one uses-spending path. If this empties a
                 // `discard_when_empty` pool (First Aid 01019), the card's
                 // depletion discard is a constant ability with no point of
                 // initiation, so it fires right here, mid-payment, not after
                 // the ability resolves.
                 //
-                // Like `Cost::DiscardSelf`, that removes the source mid-payment.
-                // That is no longer a trap: a later source-referencing cost
-                // re-resolves by identity, finds nothing, and rejects the whole
-                // activation rather than addressing a shifted neighbour (#706).
+                // Like `Cost::DiscardSelf`, that removes the source mid-payment,
+                // safely: a later source-referencing cost re-resolves by
+                // identity, finds nothing, and rejects the whole activation
+                // rather than addressing a shifted neighbour.
                 match uses::spend_uses(cx, investigator, instance_id, *kind, *count) {
                     Ok(()) => {}
                     Err(SpendUsesError::Undiscardable) => {
@@ -346,7 +343,7 @@ pub(super) fn pay_activation_costs(
             // deal frame once every other cost is paid and the ability
             // announced, by `activate_ability` (`harm_cost`); a triggered
             // ability carrying one is refused at the initiation gate, so never
-            // reaches here (TODO(#1081)).
+            // reaches here. TODO(#1081): pay `TakeHarm` on triggered abilities.
             Cost::DiscardCardFromHand | Cost::TakeHarm { .. } => {}
         }
     }
@@ -359,7 +356,7 @@ pub(super) fn pay_activation_costs(
 ///
 /// The single gate every source-referencing cost passes through, so "the source
 /// might be gone by now" has one answer rather than one per cost arm. Delegates
-/// to the same reachability predicate the validator used (#707), so a cost
+/// to the same reachability predicate the validator used, so a cost
 /// cannot reach a card the activation was never allowed to name.
 fn require_source_reachable<'a>(
     cx: &'a mut Cx,
@@ -442,15 +439,15 @@ fn cost_label(cost: &Cost) -> &'static str {
 /// lifted out of the registry entry.
 ///
 /// `usage_limit` rides along because the validator has to answer *"can this
-/// source record a use at all"* before any cost is paid — a location cannot
-/// (#699), and the rejection for that is `reject_untrackable_usage_limit`.
+/// source record a use at all"* before any cost is paid — a location cannot,
+/// and the rejection for that is `reject_untrackable_usage_limit`.
 #[derive(Debug, Clone)]
 pub(super) struct ActivatedAbility {
     /// Actions the activation costs; `0` for a `[free]` ability.
     pub(super) action_cost: u8,
     /// The bold action designator the ability prints, if any — which is what
     /// **performs the action**, carrying the modification the printed text
-    /// describes (#805).
+    /// describes.
     pub(super) designator: Option<ActionDesignator>,
     /// The ability's payment costs, in printed order.
     pub(super) costs: Vec<Cost>,
@@ -473,7 +470,7 @@ pub(super) fn resolve_activated_ability(
     code: &CardCode,
     address: &AbilityAddress,
 ) -> Result<ActivatedAbility, EngineOutcome> {
-    // Re-derived from the address (#772), against the side in effect (#774) and
+    // Re-derived from the address, against the side in effect and
     // the grants currently on the board — which is what the enumerator listed
     // from, so an address means the same ability on both ends of the round
     // trip. A granted ability whose granter has left play or whose condition
@@ -537,7 +534,7 @@ pub(super) fn check_cost_payable(
         Cost::Exhaust => {
             if source_exhausted {
                 return Err(
-                    "ActivateAbility: source card is already exhausted; Exhaust cost \
+                    "ActivateAbility: the ability's card is already exhausted; Exhaust cost \
                      cannot be paid"
                         .to_string(),
                 );

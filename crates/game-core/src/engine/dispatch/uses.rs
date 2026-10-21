@@ -1,6 +1,6 @@
 //! Taking a card's uses off it: the one path every spend takes, whether a
-//! `Cost::SpendUses` pays it or a card's effect spends them (#353), and the
-//! move that turns uses into resources (Forbidden Knowledge 01058, #1050).
+//! `Cost::SpendUses` pays it or a card's effect spends them, and the
+//! move that turns uses into resources (Forbidden Knowledge 01058).
 //!
 //! A card printing *"If First Aid has no supplies, discard it."* (First Aid
 //! 01019) carries a **constant ability**, and

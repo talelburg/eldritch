@@ -9,7 +9,7 @@
 //! *whether*. What taking the action costs is the take-an-action step's
 //! answer: a non-fast play and an action-cost ability ask [`take::check`], so
 //! the surcharge a validator would refuse on is the one the step charges.
-//! A fast play or fast ability takes no action and never asks it.
+//! A fast play or a zero-action ability takes no action and never asks it.
 
 use std::borrow::Cow;
 
@@ -41,8 +41,7 @@ use crate::state::{
 ///
 /// The card's destination is deliberately **not** here: commencing a play is
 /// destination-agnostic (asset and event alike leave hand at RR Appendix I step
-/// 3), and the disposal that needs it re-derives it from the code at step 4
-/// (#604).
+/// 3), and the disposal that needs it re-derives it from the code at step 4.
 ///
 /// `#[allow(dead_code)]` covers `abilities` (not yet read outside validation)
 /// and suppresses the rustc `dead_code` lint on struct fields that are only read
@@ -59,21 +58,21 @@ pub(crate) struct PlayCheckResult {
 /// Carries the data `activate_ability`'s mutation step needs without
 /// re-running the validation.
 #[derive(Debug)]
-#[allow(dead_code)] // Fields consumed by any_fast_play_eligible in T05.
+#[allow(dead_code)] // `source_exhausted` has no reader.
 pub(crate) struct ActivateCheckResult {
-    /// The activation as the initiation gate checked it — the source card's
-    /// code, the activating investigator, the ability's address and its source.
+    /// The activation as the initiation gate checked it — the code of the card
+    /// printing the ability, the activating investigator, the ability's address and its source.
     /// What `initiation::record_initiation` counts the use against, so the
     /// handler records the very candidate the gate approved.
     pub candidate: ResolutionCandidate,
     /// The action points the ability prints (its `Trigger::Activated` cost),
     /// without any surcharge. Taking the activation as an action adds the
-    /// `ExtraActionCost` surcharge on the class its designator names (#754),
+    /// `ExtraActionCost` surcharge on the class its designator names,
     /// pays the total and marks the surcharge sources.
     pub action_cost: u8,
     /// The bold action designator the ability prints, if any — what the
-    /// attack-of-opportunity exemption reads (#696) and what names the action
-    /// class the surcharge keys on (#754).
+    /// attack-of-opportunity exemption reads and what names the action
+    /// class the surcharge keys on.
     pub designator: Option<ActionDesignator>,
     /// Payment costs (beyond the action cost).
     pub costs: Vec<Cost>,
@@ -82,7 +81,7 @@ pub(crate) struct ActivateCheckResult {
     /// The *"Limit X per \[period\]"* cap, if the ability prints one — what
     /// `initiation::record_initiation` counts the activation against.
     pub usage_limit: Option<UsageLimit>,
-    /// Whether the source card was exhausted at validation time —
+    /// Whether the ability's card was exhausted at validation time —
     /// load-bearing for activated abilities whose payment includes
     /// `Cost::Exhaust`.
     pub source_exhausted: bool,
@@ -212,7 +211,7 @@ pub(crate) fn check_play_card(
     // produce wrong gameplay.
     // The destination is re-derived from the code at disposal time
     // (`dispose_play_from_hand`), not carried through validation — commencing a
-    // play is destination-agnostic (#604).
+    // play is destination-agnostic.
     let (_destination, abilities, is_fast, card_type) =
         match cards::resolve_play_target(cards, &code) {
             Ok(v) => v,
@@ -221,12 +220,12 @@ pub(crate) fn check_play_card(
                 unreachable!("resolve_play_target returned non-Rejected outcome: {other:?}")
             }
         };
-    // Reaction-event gate (Axis C, #335 / #304): a Fast event whose play
+    // Reaction-event gate: a Fast event whose play
     // instruction is a triggering condition is modeled as a `TriggerKind::Reaction`
     // `OnEvent` ability (e.g. Evidence! 01022's "Play after you defeat an enemy").
     // RR p.11: such an event "may be played from a player's hand any time its
     // play instructions specify" — i.e. ONLY in its matching reaction window,
-    // where Axis C offers it as a `PickSingle` option (the window path runs
+    // which offers it as a `PickSingle` option (the window path runs
     // `play_fast_event`, bypassing this gate). It is never a free-timing
     // standalone play, so reject it from the `PlayCard` action — otherwise
     // `play_card` would run only its
@@ -258,14 +257,14 @@ pub(crate) fn check_play_card(
     // Before the gate, as the activation path asks it.
     let designator = check_play_designator(state, investigator, &abilities)?;
     // The initiation gate, as a play (ADR 0017): the investigator is Active, an
-    // event's effect can change the game state (#495), no "cannot play" forbids
-    // the card's type (Dissonant Voices 01165, #852), and its resource cost can
-    // be paid — Fast only skips the *action* cost (#501). Asked here rather than
+    // event's effect can change the game state, no "cannot play" forbids
+    // the card's type (Dissonant Voices 01165), and its resource cost can
+    // be paid — Fast only skips the *action* cost. Asked here rather than
     // in the `play_card` handler so every consumer of this validator — the
     // open-turn menu, `enumerate_fast_plays` and the handler — agrees, and a card
     // that can't be played is never *offered*.
     initiation::check_play(state, cards, investigator, &code)?;
-    // RR p.19 slots (#498): reject only when the card needs more of a slot type
+    // RR p.19 slots: reject only when the card needs more of a slot type
     // than the investigator has capacity for — unsatisfiable even after discarding
     // every occupying asset that may leave play. A merely-full slot is NOT
     // rejected here; the play proceeds and discards occupiers to make room at
@@ -346,7 +345,7 @@ pub(crate) fn check_play_card(
     }
     // Playing a card is an action (RR p.5), so a non-fast play is taken through
     // the step, which says whether it can be afforded (validate-first;
-    // `play_card` takes it). Fast plays are not actions and never ask (#378).
+    // `play_card` takes it). Fast plays are not actions and never ask.
     if !is_fast {
         take::check(
             state,
@@ -407,7 +406,7 @@ fn check_play_designator<'a>(
 /// - **The designated action** — delegated whole to
 ///   [`can_perform`](crate::engine::designator::can_perform), the single
 ///   predicate the basic-action handlers and the turn-menu enumerator also
-///   read (#805). A **Fight** needs ≥1 enemy at your location (0 = no target,
+///   read. A **Fight** needs ≥1 enemy at your location (0 = no target,
 ///   rejected here; 2+ suspends to a `PickSingle` in the evaluator); an
 ///   **Investigate** needs a revealed location, so Flashlight 01087 cannot
 ///   spend its supply with nothing to investigate.
@@ -417,7 +416,7 @@ fn check_play_designator<'a>(
 ///   via the `Choose` resolver — so only the empty case rejects here; this is
 ///   why the effects are typed, not `Native` (Beat Cop and Stray Cat can't pay
 ///   their discard-self cost for no legal target). `amount` is
-///   not consulted (a degenerate `amount: 0` ability — none in scope — would
+///   not consulted (a degenerate `amount: 0` ability — none in the corpus — would
 ///   still require a target here even though its handler is a no-op).
 fn check_activation_target_available(
     state: &GameState,
@@ -450,11 +449,10 @@ fn check_activation_target_available(
 }
 
 /// Render the initiation gate's [`Refusal`] in the activation validator's
-/// voice, so its rejection reasons read as they did before the gate (#958).
+/// voice.
 ///
 /// The cost check already speaks it (`abilities::check_cost_payable`), and the
-/// change-state refusal keeps its #639 wording, which cites the rule it
-/// enforces — `glossary/Ability.md`, "Triggered Abilities": *"A triggered
+/// change-state refusal cites the rule it enforces — `glossary/Ability.md`, "Triggered Abilities": *"A triggered
 /// ability can only be initiated if its effect has the potential to change the
 /// game state, and its cost (if any) has the potential to be paid in full,
 /// taking active cost modifiers into account."* Every other refusal takes the
@@ -505,16 +503,15 @@ fn reject_incompatible_costs(costs: &[Cost]) -> Result<(), Cow<'static, str>> {
 }
 
 /// Reject a cost the take-an-action step has no place to pay on an `[action]`
-/// ability: a [`Cost::TakeHarm`](card_dsl::dsl::Cost::TakeHarm) (#1029) or a
-/// [`Cost::DiscardCardFromHand`](card_dsl::dsl::Cost::DiscardCardFromHand)
-/// (#1107). Both share one blocker. On the action path the harm would have to
+/// ability: a [`Cost::TakeHarm`](card_dsl::dsl::Cost::TakeHarm) or a
+/// [`Cost::DiscardCardFromHand`](card_dsl::dsl::Cost::DiscardCardFromHand).
+/// Both share one blocker. On the action path the harm would have to
 /// resolve, and the discard's choice be made, before the attacks of
 /// opportunity — Appendix I step 2, *"Upon completion of this step, attacks of
 /// opportunity, if applicable, resolve"* — and the take-an-action step's hook
 /// pays its costs inline and parks the effect behind the attacks, with no place
 /// for a deal frame or a choice between the two. Core and Dunwich print no such
-/// player card, so it is deliberately unlifted (YAGNI, as with
-/// `reject_incompatible_costs`); the first card to print one lifts it (#1031).
+/// player card. TODO(#1031): give the step a place to pay these costs.
 /// The Core enemy Herman Collins 01138 prints the discard — *"\[action\] Choose
 /// and discard 4 cards from your hand: **Parley.**"* — and needs a count
 /// besides.
@@ -560,8 +557,8 @@ fn reject_costs_unpayable_on_an_action(
 /// No Core or Dunwich card in the corpus reaches this: the Parlor 01115's
 /// Resign is unlimited. Dunwich prints two that will — Base of the Hill 02282
 /// (*"\[action\]: **Investigate.** … (Limit once per round.)"*) and Ten-Acre
-/// Meadow 02246 (*"(Group limit once per game)"*) — and **#699** builds the
-/// capability they need. `glossary/Limits_and_Maximums.md` makes the key scoped
+/// Meadow 02246 (*"(Group limit once per game)"*). TODO(#699): build the
+/// state-level counter they need. `glossary/Limits_and_Maximums.md` makes the key scoped
 /// rather than global there, verbatim: *"Unless stated otherwise, limits are
 /// player specific"*, while a group limit *"applies to the entire group of
 /// investigators"*.
@@ -574,7 +571,7 @@ fn reject_untrackable_usage_limit(
     if usage_limit.is_none() {
         return Ok(());
     }
-    // The second untrackable shape (#772): a **granted** ability. The counter is
+    // The second untrackable shape: a **granted** ability. The counter is
     // keyed by printed index — `BTreeMap<u8, _>`, because a JSON object key is a
     // string and an enum key does not survive the wire — so a granted ability
     // has nowhere to record a use. Refused for the same reason as the first
@@ -604,8 +601,8 @@ fn reject_untrackable_usage_limit(
 /// location or an enemy.
 ///
 /// Refused at validation rather than at payment so the turn menu never offers
-/// it: `pay_activation_costs` addresses these costs through a `CardInPlay`
-/// (#706), and a location has none. No corpus card needs one — the Parley
+/// it: `pay_activation_costs` addresses these costs through a `CardInPlay`,
+/// and a location has none. No corpus card needs one — the Parley
 /// abilities cost cards, clues or resources (Herman Collins 01138 *"Choose and
 /// discard 4 cards from your hand"*, Peter Warren 01139 *"Spend 2 clues"*,
 /// Victoria Devereux 01140 and Mob Enforcer 01101 *"Spend … resources"*), all
@@ -634,9 +631,8 @@ fn reject_source_costs_without_an_instance(
     .into())
 }
 
-/// Pure-validation peer to [`activate_ability`](abilities::activate_ability). Mirrors
-/// [`check_play_card`]: validation block lifted verbatim, no behavior
-/// change at the call site.
+/// Pure-validation peer to [`activate_ability`](abilities::activate_ability),
+/// as [`check_play_card`] is to `play_card`.
 ///
 /// Returns `Ok(ActivateCheckResult)` if the ability is currently
 /// activatable, `Err(reason)` otherwise. Does not mutate state.
@@ -656,9 +652,9 @@ pub(crate) fn check_activate_ability(
         );
     }
     // Which sources exist is the reachability predicate's answer, and it is the
-    // same one the turn-menu enumerator lists from (#707). Addressed by
+    // same one the turn-menu enumerator lists from. Addressed by
     // identity, never by position: the position a validation computes is stale
-    // the moment a cost removes the source (#706).
+    // the moment a cost removes the source.
     let source_card = ability_source::resolve(state, cards, investigator, source)?;
     let source_code = source_card.code().clone();
     let source_exhausted = source_card.exhausted();
@@ -687,7 +683,7 @@ pub(crate) fn check_activate_ability(
     reject_untrackable_usage_limit(source, &source_code, address, usage_limit)?;
 
     // Gate: branch on action_cost now that we have it.
-    // Fast abilities (action_cost == 0) may be used at any player window.
+    // Zero-action abilities (action_cost == 0) may be used at any player window.
     let active_during_investigation =
         state.phase == Phase::Investigation && state.active_investigator == Some(investigator);
     let in_permissive_window = state
@@ -704,10 +700,10 @@ pub(crate) fn check_activate_ability(
             .into());
         }
     } else {
-        // Fast ability: active during Investigation OR permissive window.
+        // Zero-action ability: active during Investigation OR permissive window.
         if !active_during_investigation && !in_permissive_window {
             return Err(
-                "ActivateAbility: Fast ability requires either active investigator \
+                "ActivateAbility: zero-action ability requires either active investigator \
                          during Investigation, or an open window whose fast_actors permits \
                          this investigator"
                     .into(),
@@ -717,12 +713,12 @@ pub(crate) fn check_activate_ability(
 
     // An action-cost ability is taken as an action, so whether it can be
     // afforded is the step's answer: its printed cost plus any `ExtraActionCost`
-    // surcharge on the class its bold designator names (#754). Official FAQ:
+    // surcharge on the class its bold designator names. Official FAQ:
     // *"Abilities with a bold action designator (like Fight, Evade or
     // Investigate) count as an action of that type."* Asking the step means the
-    // surcharge refused on here is the one taking it charges. A fast ability
-    // takes no action and never asks: the same ruling taxes *fast* designated
-    // abilities too, which no corpus card can reach (#759).
+    // surcharge refused on here is the one taking it charges. A zero-action
+    // ability takes no action and never asks. TODO(#759): the same ruling taxes
+    // zero-action designated abilities too; no corpus card reaches one.
     if action_cost > 0 {
         let description =
             ActionDescription::activate(source, address.clone(), action_cost, designator.clone());

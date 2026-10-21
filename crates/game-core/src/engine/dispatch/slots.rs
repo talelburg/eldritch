@@ -1,4 +1,4 @@
-//! Asset slot limits (Rules Reference p.19, #498).
+//! Asset slot limits (Rules Reference p.19).
 //!
 //! Slots cap how many asset cards of a given type an investigator may have in
 //! play. A full slot does **not** block a play: per RR the player "must choose
@@ -314,9 +314,9 @@ pub(super) fn make_room_candidates(
 
 /// Bring the asset **instance** `card` (held by the caller, in no zone) into
 /// the area of `investigator`'s that `entry` names, discarding occupying
-/// assets to make room per RR p.19 (#498).
+/// assets to make room per RR p.19.
 ///
-/// **Three entry paths, one prompt** (#772, #1097). A play from hand mints the
+/// **Three entry paths, one prompt.** A play from hand mints the
 /// instance and hands it over at RR Appendix I step 3; a
 /// [`TakeControl`](card_dsl::dsl::Effect::TakeControl) lifts the instance already
 /// on the board. Slot pressure applies to both, and `glossary/Slots.md` says so

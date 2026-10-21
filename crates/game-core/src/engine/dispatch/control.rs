@@ -1,4 +1,4 @@
-//! Taking control of a card that is already in play (#772).
+//! Taking control of a card that is already in play.
 //!
 //! `glossary/Ownership_and_Control.md` splits the two properties a card carries
 //! at once:
@@ -77,7 +77,7 @@ pub(crate) fn take_control(cx: &mut Cx, investigator: InvestigatorId, code: &str
 ///
 /// Two zones can yield one, and both are control changes the corpus can reach:
 /// a card put into play **at a location** under nobody's control (Lita Chantler
-/// 01117 in the Parlor, #825), and a card **another investigator controls** —
+/// 01117 in the Parlor), and a card **another investigator controls** —
 /// nothing in Core takes control off a teammate, but the verb means the same
 /// thing when something does, and leaving that arm out would make it a silent
 /// rejection rather than a considered one.
