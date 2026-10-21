@@ -1,9 +1,8 @@
 # A synthetic fixture models a primitive, never a printed card
 
-**Every `file:line` in this Context section records the tree as it stood when the
-decision was taken; `crates/scenarios/src/test_fixtures/` has since been deleted
-(see the changelog footer), so read them against history rather than the working
-tree.**
+**Every `file:line` and count in this ADR records the tree as it stood when the
+decision was taken, before the decision deleted `crates/scenarios/src/test_fixtures/`
+(below), so read them against history rather than the working tree.**
 
 `crates/scenarios/src/test_fixtures/synth_cards.rs` defined `_synth_cover_up`, a
 hand-written treachery carrying a `DiscoverClues` reaction and a `GameEnd`
@@ -42,8 +41,8 @@ O'Toole and Agnes Baker, four real *investigator* cards, in a zone none of them
 can legally occupy — because the test needs four opaque tokens and reached for
 real codes. And `crates/web/tests/board.rs:161` asserted
 `html.contains("_synth_fast_event")` — over a hand seeded at `:119-122` — while
-the file installed `install_test_registry()` (`:33`),
-which knows only `TEST_INV` and the terminal act/agenda cards: the assertion
+the file's test registry (`:33`)
+knew only `TEST_INV` and the terminal act/agenda cards: the assertion
 passed **because** the code failed to resolve to a name. A test that appears to
 pin card rendering pins the unresolved-code fallback instead. That last one was
 cited here as evidence of the drift rather than fixed by this posture, since it
@@ -104,10 +103,10 @@ so the pre-seeded investigator and turn order are NOT injected here."*
 
 ## The `test_fixtures` feature is deleted, not narrowed
 
-`crates/scenarios/Cargo.toml:24-30` declares the feature `default`-on and says it
+`crates/scenarios/Cargo.toml:24-30` declared the feature `default`-on and said it
 *"may be enabled by downstream crates (server / web integration tests) that want
-the fixture without writing their own."* Neither ever did. `TEST_REGISTRY` has
-eleven readers, all inside `crates/scenarios/tests/`. The one crate the feature was
+the fixture without writing their own."* Neither ever did. The fixture's
+`TEST_REGISTRY` had eleven readers, all inside `crates/scenarios/tests/`. The one crate the feature was
 built for looked at the fixture, wanted a different shape, and wrote its own.
 
 The feature existed because cargo compiles integration-test binaries without
@@ -125,34 +124,30 @@ HTTP request — so the toy scenario was startable in production by POSTing
 discipline. With nothing to route to, it cannot be. `crates/scenarios/src/lib.rs`
 carries a `None`-for-`"synthetic"` test as insurance against a future re-export.
 
-**Deletion rather than relocation is a refinement of this ADR, folded in after the
-fact.** The plan was to move the fixture to `crates/scenarios/tests/common/`, on the
-reasoning that `synthetic_resolution.rs` and `closing_demo.rs` still needed a shell
-to share. By the time the final child ([#878](https://github.com/talelburg/eldritch/issues/878))
-ran, the four children ahead of it had moved or retired every reader, each building
-its own shell on the way — so `tests/common/` would have held a module no test
+**The fixture is deleted rather than relocated to `crates/scenarios/tests/common/`.**
+Every reader builds its own shell, so `tests/common/` would hold a module no test
 binary declares `mod common;` for, and cargo compiles nothing under a `tests/`
-subdirectory on its own. It would have been invisible to `cargo test`, `clippy` and
+subdirectory on its own. It would be invisible to `cargo test`, `clippy` and
 `rustfmt` alike: dead code that rots silently, in place of the guarantee the
 relocation existed to buy.
 
-## One synthetic is transitional, and carries its terminal condition
+## One probe is transitional, and carries its terminal condition
 
-`_synth_surge_treachery` stays, and it is scaffolding. The corpus has no Surge card
-because `crates/card-data-pipeline/src/main.rs` hardcodes `surge: false` in both
-arms that can carry it — `:955` for enemies, `:970` for treacheries — and the
-comment at `:897` calls it the *"not-yet-parsed"* default (#138). The snapshot has 156 cards whose text carries Surge, including
-False Lead 01136 in the Core set. That parsing is
-[#138](https://github.com/talelburg/eldritch/issues/138), which already names
-this fixture in its own Context and is milestoned to phase 9. **When #138 lands,
-the surge fixture and its two tests flip to a real card unless the synthetic is
-better tailored to what the test asks** — the criterion above, not an automatic
-sweep. `peril` is stubbed at the same site and inherits the same clause, and has
-no fixture to retire because nothing tests it today.
+The surge probe, `_mpp_surge_treachery` in `crates/cards/tests/mythos_phase_probes.rs`,
+is scaffolding. The corpus has no Surge card because
+`crates/card-data-pipeline/src/main.rs` emits `surge: false` for every card that
+can carry it, a stub its `TODO(#138)` names. The snapshot has 156 cards whose text
+carries Surge, including False Lead 01136 in the Core set. That parsing is
+[#138](https://github.com/talelburg/eldritch/issues/138), milestoned to phase 9.
+**When #138 lands, the surge probe and its two tests flip to a real card unless
+the probe is better tailored to what the test asks** — the criterion above, not an
+automatic sweep. `peril` is stubbed at the same site and inherits the same clause,
+and has no probe to retire because nothing tests it.
 
-`_synth_choice_treachery` is not transitional. No implemented card has a
-top-level choice Revelation: Crypt Chill 01167's choice sits under a skill test,
-and stripping that wrapper is the whole point of the probe.
+The choice-Revelation probe, `_mpp_choice_treachery` in the same file, is not
+transitional. No implemented card has a top-level choice Revelation: Crypt Chill
+01167's choice sits under a skill test, and stripping that wrapper is the whole
+point of the probe.
 
 ## Considered options
 
@@ -179,49 +174,34 @@ reaches first.
 ## Consequences
 
 **`docs/agents/standards.md` § Test layering owns the operative rule and cites
-this ADR**; the ADR owns the reasoning. That section also gains
-`crates/scenarios/tests/`, which it does not currently mention, and loses a
-`TestGame` builder that does not exist anywhere in the workspace — the type is
-`GameStateBuilder` (`crates/game-core/src/state/builder.rs:52`), a production type
-re-exported from `test_support` (`test_support/mod.rs:196`). `TestGame` was real:
-PR #253 promoted it to `GameStateBuilder` for #251, and `standards.md` was never
-updated. Two dated phase docs still name it and keep it, since they record what
-shipped at the time; each gains the rename inline so the pointer does not dangle.
-`docs/superpowers/` is a dated archive and is not rewritten.
+this ADR**; the ADR owns the reasoning. That section names
+`crates/scenarios/tests/` as a layer, and names the state builder by its type,
+`GameStateBuilder`, a production type re-exported from `test_support`.
 
 The per-file disposition behind the consequences below is the table in
-[#864](https://github.com/talelburg/eldritch/issues/864), which is the contract the
-migration is reviewed against; what follows is the shape of the result, not a
-second copy to keep in sync.
+[#864](https://github.com/talelburg/eldritch/issues/864); what follows is the shape
+of the result, not a second copy to keep in sync.
 
-**`crates/scenarios/tests/` becomes scenario-level end-to-end only.** It goes from
-16 files to five: the three `the_gathering*` files plus `issue_476_fast_window.rs`
-and `issue_482_advance.rs`, which stay because they exercise scenario data in situ
-— `issue_482` drives the doom cascade through The Gathering's own agenda 01105.
-The line is *does it exercise scenario data*, not *is it a full walk*; a full-walk
-rule would evict `the_gathering_symbols.rs` and its 12 tests against reference
-card 01104.
+**`crates/scenarios/tests/` is scenario-level end-to-end only.** Its tests
+exercise scenario data in situ: the `the_gathering*` files, and
+`issue_476_fast_window.rs` and `issue_482_advance.rs` beside them — `issue_482`
+drives the doom cascade through The Gathering's own agenda 01105. The line is *does it
+exercise scenario data*, not *is it a full walk*; a full-walk rule would evict
+`the_gathering_symbols.rs` and its tests against reference card 01104.
 
-**Four test groups drop a layer to `crates/game-core/tests/`.** `upkeep_phase.rs`,
-`upkeep_hand_size.rs`, `synthetic_resolution.rs` and `hunter_movement.rs`'s
-diamond-map test have no card dependency at all; they needed a scenario module,
-which is now a locally-built shell. Three groups are deleted as duplicates:
-`cover_up_interrupt.rs` (superseded by `crates/cards/tests/cover_up.rs`, against
-the real 01007 and going further), `mythos_phase.rs`'s Fast-window pair
-(superseded by `issue_476_fast_window.rs` with Magnifying Glass 01030), and
-`closing_demo.rs`'s walks (superseded by `the_gathering_resolutions.rs`) — whose
-`replay_with_roundtrip` determinism check is ported onto a Gathering walk rather
-than lost.
+**A test with no card dependency lives in `crates/game-core/tests/`.** The upkeep,
+hand-size, resolution and hunter-movement tests need a scenario module, not a card,
+and build that shell locally. A scenario test that duplicated a corpus test is
+deleted rather than kept: `crates/cards/tests/cover_up.rs` tests the real 01007,
+`issue_476_fast_window.rs` covers the Fast window with Magnifying Glass 01030, and
+`the_gathering_resolutions.rs` covers the full walks, its replay-determinism walk
+included.
 
-**Naming stops implying a shared fixture that is not there.** `_synth_enemy` has
-four independent definitions with independently hand-written stats
-(`synth_cards.rs:45`, `game-core/src/engine/dispatch/encounter.rs:1274`,
-`card-dsl/src/card_data.rs:1037`, `game-core/tests/enemy_encounter_spawn.rs:30`)
-plus three bare uses that carry no stats at all (`game-core/src/event.rs:758,771`,
-`cards/tests/window_revalidation.rs:314`); `_synth_loc` has three. Test-local codes take a per-binary
-prefix, as `crates/cards/tests/` already does with `_tc_*` / `_cd_*` / `_ea_*` /
-`SRC*`. Three codes — `_synth_asset`, `_synth_card`, `_synth_reaction` — are
-defined nowhere at all.
+**Naming stops implying a shared fixture that is not there.** Test-local codes take
+a per-binary prefix, as `crates/cards/tests/` does with `_tc_*` / `_cd_*` /
+`_ea_*` / `SRC*` / `_mpp_*`. Under the shared `_synth_` prefix, `_synth_enemy` had
+four independent definitions with independently hand-written stats, and three
+`_synth_*` codes were defined nowhere at all.
 
 **The rule is enforced by review, not by a lint.** A regex banning ArkhamDB's
 `^\d{5}[a-z]?$` shape in test code would have caught the `01001`–`01004` filler,
@@ -231,20 +211,10 @@ filler* needs the surrounding intent. `standards.md` is already how this repo
 binds rules the compiler cannot check, and `code-review`'s Standards axis reads
 it.
 
-**#864 is re-scoped from a narrow feature-flag cleanup into the tracking issue for
-this work**, with the migration's steps as child issues. Its original
-acceptance criterion — that the production `server` binary does not compile
-`scenarios::test_fixtures` — is satisfied by the deletion above rather than by
-`default-features = false`, and the phase-4 note it was going to update
-(`docs/phases/phase-4-scenario-plumbing.md:78`) points here instead.
+**The production `server` binary does not compile `scenarios::test_fixtures`**,
+#864's original acceptance criterion, because the deletion above leaves nothing to
+compile rather than because of `default-features = false`.
 
 ---
 
-*Folded in: [#878](https://github.com/talelburg/eldritch/issues/878) — the fixture is
-deleted outright rather than relocated to `crates/scenarios/tests/common/`, its
-readers having all been migrated by the four children ahead of it.*
-
-*Folded in: [#868](https://github.com/talelburg/eldritch/issues/868) — the
-`board.rs` instance is resolved, and a rendering test's substrate is the real
-corpus; [#1038](https://github.com/talelburg/eldritch/issues/1038) — a test
-names its registry rather than installing one.*
+*Folded: #868, #878, #1038.*

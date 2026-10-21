@@ -6,7 +6,7 @@ The repo previously mandated the `superpowers` skills (brainstorm → TDD plan �
 
 **Keeping `superpowers` enabled alongside the suite** was rejected because its plugin-provided `SessionStart` hook mandates invoking superpowers skills before responding — a standing instruction that would actively fight the new doctrine every session. Half-migrating was not available; the hook lives and dies with the plugin toggle.
 
-**Deleting `docs/superpowers/`** (253 tracked plan and spec files) was rejected because phase docs 5, 6 and 7 carry 29 citations into that tree, two of them live markdown links, and **phase 7 is the active phase**. Those files are current working context, not historical residue. The tree is frozen in place with a README marking it closed to new entries.
+**Deleting `docs/superpowers/`** (253 tracked plan and spec files) was rejected because phase docs 5, 6 and 7 carry 29 citations into that tree, two of them live markdown links, and **phase 7 was the active phase**. Those files were working context, not historical residue. The tree is frozen in place with a README marking it closed to new entries.
 
 **Retiring `docs/phases/`** was rejected because the suite has no analogue for the phase-level narrative — status, goal, what shipped, dependencies, done-criteria — or for the "read this before picking up an issue" entry point. The suite does cover the phase docs' other jobs, so their role narrowed instead: ordering lives in ticket blocking edges, and design decisions now become ADRs.
 
@@ -18,5 +18,4 @@ Every flow entry point in the suite — `grill-with-docs`, `to-spec`, `to-ticket
 
 Closed phases were **not** retro-migrated: their existing "Decisions made" entries stay in the phase docs, and only new decisions become ADRs. Phase 7's drift from the phase-doc template is likewise left alone.
 
-*Folded in: [#922](https://github.com/talelburg/eldritch/issues/922) — the glossary, created as `CONTEXT.md`, is renamed
-`GLOSSARY.md` to follow the suite's 1.3.0 convention.*
+*Folded: #922.*

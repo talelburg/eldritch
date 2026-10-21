@@ -63,4 +63,4 @@ Each caller filters the walk to what it needs:
 
 ---
 
-*Folded #983 (the sweeps, reachability and the instance lookup moved onto the walk, which moved from `trigger_scan` to `engine::board`, and the Fast events in hand to after the whole board), #975 (the cardtype filter on co-located threat areas), #1046 (forced abilities live in hand, which the ability declares), #1112 (a Fast event on top of a discard pile under a play permission), and #1151 (the walk's order is written once, in `engine::board`).*
+*Folded: #975, #983, #1046, #1112, #1151.*

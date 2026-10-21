@@ -32,7 +32,7 @@ Five stages, each with a corpus consumer:
 
 Stage 2 is a predicate over rows evaluated at read time, not an address. No card names an individual modifier — Jim Culver names a class (`[skull]` rows this investigator revealed), Hunting Nightgaunt names a class under a live condition, whose ruling confirms the liveness: *"The ability ceases to apply if you play Sure Gamble."* (<https://arkhamdb.com/card/01172>)
 
-Stage 5 is where the `[auto_fail]` chaos token lands, which collapses `TokenResolution`'s third variant into the same path as Rex Murphy 02002's elder sign (*"You may instead choose to automatically fail this skill test to draw 3 cards."*) and Stroke of Luck 02271. It does **not** carry the ST.3/ST.4 skip, which is a timing concern on a separate axis and belongs to #630: `glossary/Automatic_Failure_Success.md` is explicit that *"If a chaos token effect causes an investigator to automatically succeed or fail at a skill test, continue with Steps 3 and 4, as normal."* ADR 0007 has since answered #630: the substitution still happens at stage 5, but *whether* the test automatically fails or succeeds is one query resolved above the fold for the whole test, and the `InFlightSkillTest::token_resolution` field is retired rather than collapsed into stage 5.
+Stage 5 is where the `[auto_fail]` chaos token lands, which collapses `TokenResolution`'s third variant into the same path as Rex Murphy 02002's elder sign (*"You may instead choose to automatically fail this skill test to draw 3 cards."*) and Stroke of Luck 02271. It does **not** carry the ST.3/ST.4 skip, which is a timing concern on a separate axis and belongs to #630: `glossary/Automatic_Failure_Success.md` is explicit that *"If a chaos token effect causes an investigator to automatically succeed or fail at a skill test, continue with Steps 3 and 4, as normal."* [ADR 0007](0007-a-tests-determination-is-resolved-above-the-fold.md) answers #630: the substitution still happens at stage 5, but *whether* the test automatically fails or succeeds is one query resolved above the fold for the whole test.
 
 ## Identity and targets
 
@@ -64,7 +64,7 @@ Difficulty stops being a field. `InFlightSkillTest.difficulty`, `InFlightSkillTe
 
 The query returns a breakdown — base plus attributed contributions — rather than a bare `i8`. This is what recovers the one real advantage a registered table had (it can answer "why is my combat 5?"), and it lets engine tests assert on the composition rather than only the total.
 
-Reconstructing an `EvalContext` at read time is the substantive cost, and it lands in the first slice rather than the last. The queries are `&GameState` reads in places the evaluator's machinery is not currently reachable; if that turns out to be intractable the whole decision is in question, which is why it is sequenced first.
+Reconstructing an `EvalContext` at read time is the substantive cost. The queries are `&GameState` reads in places the evaluator's machinery does not reach, so the sweep builds the context itself rather than receiving one from a resolution in progress.
 
 Stage 2 exists but stays narrow. A *filter* over rows — 83001's `[tablet]`, *"For this skill test, ignore all bonuses to your skill value"* — has no Chapter 1 corpus consumer and is not built; the stage's signature is a transform over the row set, so a filter slots in without reshaping the fold.
 
@@ -72,4 +72,4 @@ The precedence rule at stage 5 is **not in the rules reference**. `glossary/Auto
 
 Duke 02014 and Strange Solution 02263/02264 motivate stage 1 but are not implemented by it — they are card work with their own tests, tracked on **#673**. The stage exists regardless, because a fold without a base-replacement hook is wrong for them by construction.
 
-*Folded #672, #756. #672 vendored the official FAQ that stage 5's precedence clause needed; #756 sourced stage 1's "everything in stages 2–4 still stacks on top", which until then was this ADR's own inference.*
+*Folded: #672, #756.*
