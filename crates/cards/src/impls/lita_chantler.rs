@@ -25,7 +25,7 @@
 //! she has one.
 //!
 //! This is the exact complement of the Parlor 01115's grant, which gives her a
-//! **Parley** while `ByNoPlayer` (#772). Exactly one of the two applies at a
+//! **Parley** while `ByNoPlayer`. Exactly one of the two applies at a
 //! time; that is the two cards agreeing, not something the mechanism enforces.
 //!
 //! # The `+1 [combat]` half
@@ -37,11 +37,10 @@
 //! and the audience reaches **every** investigator standing there, not just the
 //! controller. The 1p case is the degenerate one, not the rule.
 //!
-//! She is the audience's first corpus consumer, and she is also why
-//! `modified_value::sweep` now sources abilities through
-//! `abilities_in_effect::for_source` (#773): a *granted* `Effect::Modify` used
-//! to reach the ability paths and nothing else, so this modifier would have been
-//! merged onto her ability list and contributed to no stat.
+//! She is the audience's first corpus consumer. The modifier is *granted*, and
+//! it still contributes to the stat because `modified_value::sweep` sources
+//! abilities through `abilities_in_effect::for_source`, which includes granted
+//! ones.
 //!
 //! # The reaction half
 //!
@@ -55,14 +54,11 @@
 //! > "when..." may be used after the specified triggering condition initiates,
 //! > but before its impact upon the game state resolves.
 //!
-//! **She is why that cell exists on this condition.** `SkillTestResolved` was
-//! caller-owned until #773, so its `when` cell was not walked and an ability
-//! declaring interrupt timing on it was *rejected* — and `standards.md` is
-//! explicit that migrating the condition is the fix rather than retagging the
-//! card. So the condition migrated: RR ST.6 is *"Determine success/failure of
-//! skill test"*, and no card, enemy, location or investigator moves as it
-//! resolves — its resolve step only re-totals the test and logs the verdict
-//! (#1111). ST.7, *"Apply skill test results"*, is the `SkillTest` frame's,
+//! **`SkillTestResolved` is coordinator-owned, so its `when` cell is walked.**
+//! RR ST.6 is *"Determine success/failure of skill test"*, and no card, enemy,
+//! location or investigator moves as it resolves — its resolve step only
+//! re-totals the test and logs the verdict. ST.7, *"Apply skill test
+//! results"*, is the `SkillTest` frame's,
 //! run on its own resume after the whole sequence has drained.
 //!
 //! That is exactly the ordering this ability needs: the boost is written before
@@ -110,13 +106,13 @@
 //! the style of `EnemyAttacks`'s attacker/target scopes and its own
 //! `tested_location` scope, each landing once a second consumer arrives:
 //! **Jewel of Aureolus 02269** (*"during a skill test at your location"*) for
-//! the location half, and Heirloom of Hyperborea's trait-filtered shape (#777)
-//! for the `[[Monster]]` half. See #609 and #777.
+//! the location half, and Heirloom of Hyperborea's trait-filtered shape for
+//! the `[[Monster]]` half.
 //!
 //! # Module gap
 //!
-//! Promote the predicate to DSL vocabulary when a second card wants the same
-//! shape. The graduation triggers are **Grievous Wound 09027** (*"Play after you
+//! TODO(#609): promote the predicate to DSL vocabulary when a second card
+//! wants the same shape. The graduation triggers are **Grievous Wound 09027** (*"Play after you
 //! successfully attack a non-\[\[Elite\]\] enemy using a \[\[Melee\]\] asset."*)
 //! and **Queen of Ash 12168**; the second of them arriving is the signal to
 //! turn "successful attack against a trait-filtered enemy" into a real pattern.
@@ -137,7 +133,7 @@
 //!
 //! Her three other rulings — that taking control puts her in the play area, that
 //! the control is temporary, and that she is removed from the game if she leaves
-//! play — belong to the take-control transition and shipped with #772.
+//! play — belong to the take-control transition, not to this card's abilities.
 
 use card_dsl::dsl::{
     self, Ability, ControlStatus, EventPattern, EventTiming, GrantTarget, ModifierAudience,

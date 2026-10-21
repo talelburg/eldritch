@@ -16,7 +16,7 @@
 //! move/fight/evade, read via `pending_action_surcharge` by **both** ways of
 //! taking one of those actions: the engine's take-an-action step, which every
 //! basic move, fight and evade is taken through, and an
-//! activated ability whose bold designator names the class (#754) — a weapon's
+//! activated ability whose bold designator names the class — a weapon's
 //! *"\[action\] … **Fight**"* is a Fight action, so the first one each round
 //! costs 2 exactly as punching does. The three actions share one
 //! `first_each_round` budget, whichever kind spends it.
@@ -35,7 +35,7 @@
 //! # Module gap
 //!
 //! The surcharge reaches basic actions and action-cost abilities with a bold
-//! designator, but **not fast ones**. The rulings
+//! designator, but **not `[fast]` zero-action ones**. The rulings
 //! (<https://arkhamdb.com/card/01164>) go further than we implement:
 //!
 //! > Frozen in Fear requires 1 additional action to be spent when performing
@@ -50,8 +50,10 @@
 //!
 //! Neither is reachable in the current corpus — every implemented ability with
 //! a Move/Fight/Evade designator prints an action cost, and no granted-action
-//! effect exists — and taxing a fast ability needs a decision about an actor
-//! spending actions outside their own turn. Tracked as #759.
+//! effect exists — and taxing a zero-action ability needs a decision about an
+//! actor spending actions outside their own turn.
+//!
+//! TODO(#759): tax `[fast]` abilities with a bold Move/Fight/Evade designator.
 
 use card_dsl::card_data::SkillKind;
 use card_dsl::dsl::{self, Ability, ActionClass, EventPattern, EventTiming, Restriction};

@@ -28,7 +28,7 @@
 //! into a non-attack test even if a second reader is added later.
 //!
 //! The **"if successful"** qualifier stays intrinsic to
-//! [`Effect::BoostAttackDamage`] (see #307 / PR #308): the bonus is
+//! [`Effect::BoostAttackDamage`]: the bonus is
 //! consumed by the Fight follow-up, which deals damage only on success, so
 //! on a failed test it is accumulated, never read, and thrown away with the
 //! test's frame. It is **not** that the outcome is unknown at commit —

@@ -24,8 +24,8 @@
 //! The ruling (<https://arkhamdb.com/card/01015>): *"Remove cards from the game
 //! for the duration of the current scenario only. They're still part of your
 //! deck during this campaign."* Nothing carries a deck from one scenario to the
-//! next yet, so the removal is the scenario's; returning the cards to the deck
-//! between scenarios is phase 9's campaign work.
+//! next, so the removal is the scenario's. TODO(#75): return the cards to the
+//! deck between scenarios once scenarios are sequenced.
 
 use card_dsl::dsl::{self, Ability, InvestigatorTarget};
 use game_core::engine::evaluator::EvalContext;

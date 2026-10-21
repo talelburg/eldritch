@@ -7,16 +7,15 @@
 //! ```
 //!
 //! One `[action]` ability (no exhaust, no uses): an
-//! [`Effect::SkillTest`](card_dsl::dsl::Effect::SkillTest) (#286) against
+//! [`Effect::SkillTest`](card_dsl::dsl::Effect::SkillTest) against
 //! intellect (2), branching on the controller's result —
 //! `on_success` heals 1 damage, `on_fail` deals 1 damage, each to the chosen
 //! investigator at the controller's location
-//! ([`InvestigatorTarget::chosen_at_your_location`], #349). Composed entirely
-//! from existing primitives — no native effect, no engine work. The first
-//! `Effect::SkillTest` initiated from an *activated* ability (every prior
-//! caller is a Revelation/forced effect); `activate_ability` ends in
-//! `apply_effect`, so the test suspends at the commit window and resumes
-//! through the same `advance` path regardless of origin.
+//! ([`InvestigatorTarget::chosen_at_your_location`]). Composed entirely
+//! from existing primitives — no native effect, no engine work. A test
+//! initiated from an *activated* ability suspends at the commit window and
+//! resumes through the same `advance` path as one from a Revelation or a
+//! forced effect.
 //!
 //! # The target is chosen *inside* the post-test branch — exact in solo
 //!

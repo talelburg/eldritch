@@ -7,7 +7,7 @@
 //! ```
 //!
 //! **Designator: Fight**, on both abilities — the bold word that **performs**
-//! each attack carrying that ability's modification (#805), and which is what
+//! each attack carrying that ability's modification, and which is what
 //! exempts either activation from attacks of opportunity.
 //!
 //! Two `[action]` Fight abilities, both pure compositions of existing
@@ -16,11 +16,11 @@
 //! - **Ability 0** — a bare `[action]` Fight (no cost) with a `+1` combat
 //!   modifier, dealing the base `1` damage (`extra_damage: 0`). The same
 //!   shape as [`machete`](super::machete) minus the bonus damage.
-//! - **Ability 1** — discards Knife itself ([`Cost::DiscardSelf`], #301) for
+//! - **Ability 1** — discards Knife itself ([`Cost::DiscardSelf`]) for
 //!   a `+2` combat modifier and `+1` damage, dealing `1 + 1` on success.
 //!
-//! Both target a co-located enemy (choice-resolved when several are present
-//! — #449/#451 widened the scope beyond engaged-only) and reject when no
+//! Both target a co-located enemy, engaged or not (choice-resolved when
+//! several are present), and reject when no
 //! eligible target exists **before** any cost is paid — so ability 1's
 //! discard is never spent for nothing. The two are printed abilities 0 and 1;
 //! an activation names one by its **ability address**

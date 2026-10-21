@@ -41,7 +41,7 @@
 //!    unengaged enemy is at the same location as an investigator, it engages
 //!    that investigator, …"*) applies to them once the card has resolved:
 //!    without a move they engage the evader again. Elusive's step, applied by
-//!    hand until #1087 makes it a settle check.
+//!    hand. TODO(#1087): drop it once engagement is a settle check.
 //!
 //! **Each "may" declines through a native that does nothing.** A
 //! [`choose_one`](dsl::choose_one) offers only the branches the change-state
@@ -165,8 +165,7 @@ fn decline(_cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-/// Step 3: the engagement rule, applied by hand once the card has resolved
-/// (#1087).
+/// Step 3: the engagement rule, applied by hand once the card has resolved.
 fn engage_ready_enemies(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
     cx.engage_ready_enemies();
     EngineOutcome::Done

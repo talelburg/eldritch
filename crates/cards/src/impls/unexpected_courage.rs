@@ -8,7 +8,7 @@
 //! A pure-icon skill: its whole effect is the 2 wild icons it contributes
 //! when committed, which are printed metadata (`SkillIcons`), and the "Max
 //! 1 committed per skill test" cap (`CardKind::Skill.commit_limit`,
-//! enforced at the commit window, #311) — neither lives in `abilities()`.
+//! enforced at the commit window) — neither lives in `abilities()`.
 //! It has **no triggered ability**, so `abilities()` is empty. (An empty
 //! `abilities()` is still "implemented" — `is_playable` keys off the
 //! presence of the impl, so the card passes the deck-import gate.)

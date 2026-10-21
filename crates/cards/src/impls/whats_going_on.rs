@@ -10,9 +10,10 @@
 //! Forced on-advance reverse, fired at the agenda's own `AgendaAdvanced` condition
 //! from `advance_agenda` (the mirror of the act path).
 //!
-//! **Interactive choice (Axis A, #334).** The lead-investigator "choose one"
-//! is an `Effect::ChooseOne` over the two printed branches, each carrying the
-//! label the lead reads. **Those labels split one printed sentence** — 01105
+//! **Interactive choice.** The printed "choose one" is an `Effect::ChooseOne`
+//! over the two printed branches, offered to the lead-investigator proxy, each
+//! carrying the label the proxy reads. **Those labels split one printed
+//! sentence** — 01105
 //! prints its options in prose, `back_text` verbatim
 //! (`data/arkhamdb-snapshot/pack/core/core_encounter.json`):
 //!
@@ -25,7 +26,7 @@
 //! investigator takes 2 horror"*. Nothing is added. The choice
 //! suspends inside the Forced run (auto-resolving only if one branch is the
 //! sole legal option — both always are here, so it round-trips), and the
-//! Axis-B reentrant forced loop resumes after the lead picks.
+//! reentrant forced loop resumes after the proxy picks.
 //!
 //! The random-discard branch is an `Effect::ForEach` over every investigator,
 //! in turn order, whose body is a card-local `Effect::Native` discarding one
@@ -33,8 +34,7 @@
 //! [`NativeCx::discard_random_from_hand`]. The order shows only in which
 //! investigator's discard draws from the RNG first. The randomness replays
 //! deterministically from the engine's `(seed, draws)` RNG (no `EngineRecord`
-//! is needed — see that helper's docs); the earlier "needs recorded
-//! randomness" deferral note was incorrect.
+//! is needed — see that helper's docs).
 //!
 //! **Cell: the `after` cell of the `AgendaAdvanced` condition.** The reverse
 //! prints no trigger word, because it is not a triggered ability: it is step 2
@@ -72,8 +72,8 @@ const DISCARD_EACH_LABEL: &str = "Each investigator discards 1 card at random fr
 /// Label for its second half.
 const LEAD_TAKES_HORROR_LABEL: &str = "The lead investigator takes 2 horror";
 
-/// 01105's Forced on-advance reverse: the lead's "choose one" between each
-/// investigator discarding 1 random card or the lead taking 2 horror.
+/// 01105's Forced on-advance reverse: the proxy's "choose one" between each
+/// investigator discarding 1 random card or the proxy taking 2 horror.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![dsl::forced_on_event(
@@ -88,8 +88,8 @@ pub fn abilities() -> Vec<Ability> {
                 DISCARD_EACH_LABEL,
                 dsl::for_each(InvestigatorTargetSet::All, dsl::native(RANDOM_DISCARD)),
             ),
-            // Branch B: the lead (`You`, bound to the lead by `AgendaAdvanced`)
-            // takes 2 horror.
+            // Branch B: the proxy (`You`, which `AgendaAdvanced` binds to the
+            // lead-investigator proxy) takes 2 horror.
             (
                 LEAD_TAKES_HORROR_LABEL,
                 dsl::deal_horror(InvestigatorTarget::You, 2u8),
@@ -158,9 +158,9 @@ mod tests {
             ),
             "branch B is the lead taking 2 horror",
         );
-        // The labels are what the lead reads; before #775 this rendered the
-        // branches' `Debug` form, tag and all. Asserted as literals — a const
-        // checked against itself would pass through a typo in the split.
+        // The labels are what the proxy reads, not the branches' `Debug` form.
+        // Asserted as literals — a const checked against itself would pass
+        // through a typo in the split.
         assert_eq!(
             branches[0].label,
             "Each investigator discards 1 card at random from his or her hand"

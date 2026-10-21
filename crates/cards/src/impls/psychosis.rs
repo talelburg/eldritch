@@ -27,7 +27,7 @@
 //! on Agnes Baker"* sits in the placement's `after` cell, which is nested inside
 //! the deal (ADR 0009), so it resolves before this Forced in the deal's own
 //! `after` cell. No vendored source settles this pair: the order is the one the
-//! nesting gives, and it was decided for #781 rather than found in a rule.
+//! nesting gives, a project choice rather than a rule.
 
 use card_dsl::dsl::{
     self, Ability, EventPattern, EventTiming, HarmKind, HarmTakenScope, IntExpr, InvestigatorTarget,

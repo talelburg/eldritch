@@ -8,7 +8,7 @@
 //!
 //! The 2 willpower icons and the "Max 1 committed per skill test" cap are
 //! printed metadata (`SkillIcons` + `CardKind::Skill.commit_limit`,
-//! enforced at the commit window, #311), not `abilities()`. `abilities()`
+//! enforced at the commit window), not `abilities()`. `abilities()`
 //! describes only the triggered effect: an `OnSkillTestResolution` gated on
 //! `Success` that draws 1 card. No kind narrowing — it draws on **any**
 //! successful test the card is committed to (unlike Deduction's

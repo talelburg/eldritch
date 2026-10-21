@@ -7,7 +7,7 @@
 //! ```
 //!
 //! Same shape as Guts 01089 (agility icons). Icons + the "Max 1 committed"
-//! cap are printed metadata (#311); `abilities()` is the
+//! cap are printed metadata; `abilities()` is the
 //! `OnSkillTestResolution { Success }` draw, firing on any successful
 //! committed-to test.
 

@@ -15,8 +15,8 @@
 //! **Which deck** is an `Effect::ChooseOne` between *"Your deck"* and *"The
 //! encounter deck"*, because the later picks must know it and a native cannot
 //! hand a pick to the next one: the effect tree holds it instead. Solo, *"any
-//! investigator's deck"* is your own; another investigator's deck waits for
-//! multiplayer (#1061).
+//! investigator's deck"* is your own. TODO(#1061): offer another
+//! investigator's deck in multiplayer.
 //!
 //! **The order** is built one card at a time, one native per pick, since a
 //! native sees one pick and must make it before it writes. Pick `k` offers the

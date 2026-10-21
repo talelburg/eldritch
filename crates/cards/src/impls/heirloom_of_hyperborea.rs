@@ -13,7 +13,7 @@
 //! the Spell card has resolved in full."* — a Spell event once it is in the
 //! discard pile, a Spell asset once it is in play.
 //!
-//! *"Agnes Baker deck only"* is a deckbuilding restriction (#783), not an
+//! *"Agnes Baker deck only"* is a deckbuilding restriction, not an
 //! ability.
 
 use card_dsl::dsl::{self, Ability, CardFilter, EventPattern, EventTiming, InvestigatorTarget};

@@ -18,8 +18,7 @@
 //! modifier-only token outcome, `IntExpr::Count(Quantity::CluesAtControllerLocation)`
 //! — "+1 for each clue on your location" — which the skill-test resolution
 //! records unevaluated when Roland's elder-sign token is drawn and reads at
-//! ST.5 (#118, #684). Reached via
-//! `investigator_card.code` after the bridge fields were retired (#448 cp3b).
+//! ST.5. Reached via `investigator_card.code`.
 //!
 //! The reaction compiles to a [`Trigger::OnEvent`] with the
 //! [`EventPattern::EnemyDefeated`] pattern narrowed by

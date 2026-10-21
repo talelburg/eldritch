@@ -8,7 +8,7 @@
 //! No rulings (`data/arkhamdb-faq/no-rulings.txt`).
 //!
 //! **Designator: Fight** — the bold word, which **performs the attack** and
-//! carries its conditional `+1` damage (#805). There is no combat modifier.
+//! carries its conditional `+1` damage. There is no combat modifier.
 //!
 //! The margin is [`Quantity::SkillTestSucceededBy`], which the Fight follow-up
 //! binds when it evaluates `extra_damage` at RR ST.7, the moment the attack's

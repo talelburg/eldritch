@@ -9,7 +9,7 @@
 //! ```
 //!
 //! **Designator: Fight** — the bold word, which **performs the attack**
-//! carrying the ability's combat modifier and its `+1` damage (#805), and which
+//! carrying the ability's combat modifier and its `+1` damage, and which
 //! is what exempts the activation from attacks of opportunity.
 //!
 //! Ammo (4) comes from the corpus (`CardKind::Asset.uses`, pipeline-
