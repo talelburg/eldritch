@@ -321,7 +321,8 @@ fn drain(
 /// Execute Rules Reference p.10 Elimination steps 1–5 for an
 /// investigator whose `status` has just been flipped to a defeated
 /// variant. Synchronous: the step-3 re-engagement tie auto-picks the
-/// lead rather than suspending (see `reengage_at_location`).
+/// turn-order-first tied investigator rather than suspending (see
+/// `reengage_at_location`).
 fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     // The location the investigator was at "when eliminated" — read once
     // before any mutations; step 2 deposits clues here.

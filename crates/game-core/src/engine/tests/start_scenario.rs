@@ -65,7 +65,7 @@ fn start_scenario_advances_to_investigation_with_round_one() {
     );
 
     // After the sole investigator mulligans (keeping their hand), the phase
-    // begins and the lead becomes active.
+    // begins and the first investigator in turn order becomes active.
     let mulligan_result = TestSession::new(start_result.state, TEST_REGISTRIES)
         .choose_from_hand(&[])
         .finish();

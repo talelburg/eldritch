@@ -9,7 +9,7 @@
 //! two phases — Rules Reference p.2 forced-then-reaction:
 //!
 //! 1. **forced** — mandatory abilities are queued (via
-//!    `queue_forced_triggers` for a lone hit, or the lead-ordered run for
+//!    `queue_forced_triggers` for a lone hit, or the ordered forced run for
 //!    2+ simultaneous ones).
 //! 2. **reaction** — the optional player reaction window opens.
 //!
@@ -357,7 +357,7 @@ impl TimingEvent {
     /// The forced-binding rule's third arm (ADR 0018): a forced ability on an
     /// uncontrolled card other than the act or agenda — a location, an enemy,
     /// an encounter attachment — is bound to the subject, falling back to the
-    /// lead proxy when there is none. An **exhaustive** match, so a new timing
+    /// lead-investigator proxy when there is none. An **exhaustive** match, so a new timing
     /// event cannot compile without saying who it is about.
     pub(crate) fn subject(&self) -> Option<InvestigatorId> {
         match self {

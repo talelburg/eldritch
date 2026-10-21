@@ -218,7 +218,7 @@ fn build_resolution_options(
 ///
 /// # A forced run is re-checked the same way
 ///
-/// A 2+ lead-ordered run is a snapshot too, and resolving one of its
+/// A 2+ forced run is a snapshot too, and resolving one of its
 /// abilities can leave a later one with nothing to do. `glossary/Ability.md`:
 ///
 /// > - If a forced ability does not have the potential to change the game
@@ -231,12 +231,12 @@ fn build_resolution_options(
 /// as a reaction window does.
 ///
 /// **A lapsed forced ability is withdrawn and logged, not silently skipped.**
-/// The lead was shown it in an earlier prompt, so its disappearance is
+/// It was offered in an earlier prompt, so its disappearance is
 /// observable; the [`Event::ReactionOptionLapsed`] says why, with the reason
 /// the initiation gate gives when asked as [`InitiationKind::Forced`]. A run
 /// emptied this way closes itself at both prompt sites, as a skipped reaction
 /// window would — the run rejects `Skip`, so leaving it open with no options
-/// would strand the lead at a mandatory prompt they cannot answer.
+/// would strand the game at a mandatory prompt nobody can answer.
 ///
 /// A [`FastWindow`](Continuation::FastWindow) is skipped: it has no reaction
 /// candidates by construction ([`open_fast_window`] pushes an empty list) and no

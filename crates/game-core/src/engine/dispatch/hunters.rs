@@ -22,9 +22,9 @@ use crate::state::{
 pub(super) enum PreyResolution {
     /// Exactly one investigator best meets the instruction.
     One(InvestigatorId),
-    /// Two or more tie — the lead's call, which the engine asks of the
-    /// proxy (**Lead investigator** in `GLOSSARY.md`); carries the tied set,
-    /// in input order.
+    /// Two or more tie — under the rules the lead investigator's call
+    /// (**Lead investigator** in `GLOSSARY.md`); carries the tied set, in
+    /// input order.
     Tie(Vec<InvestigatorId>),
     /// No candidates at all.
     None,
@@ -73,7 +73,7 @@ fn measure_value(
 /// Narrow `candidates` by `prey`. `Default` treats all candidates as
 /// equal; `Ranked` keeps those with the most extreme measure value (max
 /// for `Highest`, min for `Lowest`). Returns `One` (single best), `Tie`
-/// (2+ best — lead decides), or `None` (empty candidate set). Caller
+/// (2+ best — a tie-break), or `None` (empty candidate set). Caller
 /// supplies the candidate set (equidistant-nearest investigators for
 /// movement; co-located investigators for engagement), already narrowed by
 /// [`engagement::pursues`].
@@ -166,9 +166,10 @@ fn is_eligible_hunter(enemy: &Enemy) -> bool {
 ///
 /// The filter runs over the union across prey-tied investigators, so a blocked
 /// step toward one tied investigator can still leave an unblocked step toward
-/// another. Under a stricter reading the lead's choice is over *investigators*
-/// first — pick the blocked one and the hunter stays put — but this engine
-/// offers the lead destinations rather than investigators, so that reading
+/// another. Under a stricter reading the lead investigator's choice is over
+/// *investigators* first — pick the blocked one and the hunter stays put — but
+/// this engine's tie-break prompt offers destinations rather than investigators,
+/// so that reading
 /// has nowhere to live. TODO(#795): offer the tied investigators instead, so
 /// a blocked step means "no move".
 fn hunter_destinations(
@@ -242,7 +243,7 @@ fn hunter_destinations(
 /// The only two callers are [`relocate_enemy`] (the funnel every mover
 /// should use) and the Hunter path, which runs its own *interactive*
 /// [`engage_on_arrival`] immediately afterwards: a prey tie there
-/// suspends for the lead's choice rather than auto-picking, so it must
+/// suspends for a tie-break prompt rather than auto-picking, so it must
 /// not go through `relocate_enemy`'s synchronous engagement.
 fn place_enemy_at(cx: &mut Cx, enemy_id: EnemyId, to: LocationId) {
     let enemy = cx.state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
@@ -290,8 +291,8 @@ fn place_enemy_at(cx: &mut Cx, enemy_id: EnemyId, to: LocationId) {
 ///
 /// Synchronous by construction, unlike the Hunter path: a prey tie
 /// among co-located investigators auto-picks the turn-order-first of them
-/// rather than suspending for the lead's choice. TODO(#151): make it the
-/// lead's choice, as for `reengage_at_location`. Solo play — the only mode
+/// rather than suspending for a tie-break prompt. TODO(#151): make it an
+/// interactive tie-break, as `reengage_at_location` needs too. Solo play — the only mode
 /// that ships today — never ties.
 pub fn relocate_enemy(cx: &mut Cx, enemy_id: EnemyId, to: LocationId) {
     place_enemy_at(cx, enemy_id, to);
@@ -387,16 +388,16 @@ pub(crate) fn drive_hunter_moves(cx: &mut Cx) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-/// Store the pending hunter choice and return `AwaitingInput` for the lead's
-/// tie-break, which the prompt puts to the proxy (the first investigator in
-/// turn order): the candidates ride the request as structured options, and the
-/// resume comes back as `PickSingle(OptionId)` indexing the candidate list.
+/// Store the pending hunter choice and return `AwaitingInput` for the tie-break,
+/// which the rules give the lead investigator. The request carries no
+/// recipient: the candidates ride it as structured options, and the resume
+/// comes back as `PickSingle(OptionId)` indexing the candidate list.
 fn suspend_hunter_choice(cx: &mut Cx, choice: HunterChoice) -> EngineOutcome {
     let (prompt, options) = match &choice {
         HunterChoice::Move { enemy, candidates } => (
             format!(
-                "Hunter {enemy:?} movement: the first investigator in turn order picks a \
-                 destination among {candidates:?}"
+                "Hunter {enemy:?} movement: the first Active investigator in turn order \
+                 picks a destination among {candidates:?}"
             ),
             choice::candidate_options(cx.state, cx.cards, candidates, |l| {
                 OptionTarget::Location(*l)
@@ -404,8 +405,8 @@ fn suspend_hunter_choice(cx: &mut Cx, choice: HunterChoice) -> EngineOutcome {
         ),
         HunterChoice::Engage { enemy, candidates } => (
             format!(
-                "Hunter {enemy:?} engagement: the first investigator in turn order picks \
-                 whom to engage among {candidates:?}"
+                "Hunter {enemy:?} engagement: the first Active investigator in turn order \
+                 picks whom to engage among {candidates:?}"
             ),
             choice::candidate_options(cx.state, cx.cards, candidates, |i| {
                 cx.state.investigators[i].card_anchor()

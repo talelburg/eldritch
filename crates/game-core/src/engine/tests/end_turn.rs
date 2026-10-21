@@ -211,7 +211,8 @@ fn last_end_turn_advances_to_mythos_and_pauses_for_draw_solo() {
         "active investigator not set until mulligan window closes"
     );
 
-    // Mulligan past the setup loop. After completion, lead becomes active.
+    // Mulligan past the setup loop. After completion, the first investigator in
+    // turn order becomes active.
     let session = session.choose_from_hand(&[]);
     session.assert_at_turn_menu(INV);
 

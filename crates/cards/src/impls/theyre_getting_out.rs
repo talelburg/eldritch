@@ -53,9 +53,9 @@
 //! trauma for the one investigator it runs for. The defeat-and-trauma body has
 //! one consumer, so it fails the DSL-primitive threshold and stays native (ADR
 //! 0013). The walk runs in **turn order**, and the order is observable on a
-//! defeat body: Elimination step 5 reassigns the lead when the lead is
-//! eliminated, and step 6's no-remaining-players check fires on whoever falls
-//! last. Each investigator's Elimination — including one a *"when the game
+//! defeat body: the lead-investigator proxy moves to the next Active seat as
+//! each one falls, and step 6's no-remaining-players check fires on whoever
+//! falls last. Each investigator's Elimination — including one a *"when the game
 //! ends"* weakness such as Cover Up 01007 routes onto a
 //! `Continuation::Elimination` frame — drains before the walk reaches
 //! the next investigator.
@@ -86,7 +86,7 @@
 //!
 //! **The physical trauma is announced, not recorded.** `Event::TraumaSuffered`
 //! is emitted per defeated investigator, following Cover Up 01007's
-//! mental-trauma precedent. TODO(#766): record it in the campaign log.
+//! mental-trauma precedent.
 //!
 //! **Cell: the `after` cell of the `AgendaAdvanced` condition**, for the
 //! reverse. The reverse prints no trigger word, because it is not a triggered
@@ -117,8 +117,11 @@
 //! simultaneously (`glossary/Priority_of_Simultaneous_Resolution.md`: *"Once all
 //! necessary choices have been made, the effect resolves simultaneously upon
 //! all affected entities."*), while the walk defeats one investigator at a time,
-//! so the lead transfer and the step-6 check above see a table that is part
-//! defeated.
+//! so the lead-investigator proxy and the step-6 check above see a table that
+//! is part defeated.
+//!
+//! TODO(#766): the physical trauma is announced but not recorded in the
+//! campaign log.
 //!
 //! A tie between first steps toward the Parlor is broken by the lowest
 //! `LocationId`, where the rules have the controlling player choose (RR p.12).

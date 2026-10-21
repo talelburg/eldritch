@@ -36,11 +36,11 @@ use game_core::{assert_event, assert_event_sequence, assert_no_event};
 const HORROR_ATTIC: &str = "test-attic";
 
 /// Mock agenda code: one `EventPattern::PhaseEnded { phase: Enemy }` forced
-/// ability that deals 1 horror to the controller (the lead proxy).
+/// ability that deals 1 horror to the controller (the lead-investigator proxy).
 const DOOM_AGENDA: &str = "test-agenda";
 
 /// Mock act code: one `EventPattern::PhaseEnded { phase: Enemy }` forced
-/// ability that deals 1 horror to the controller (the lead proxy).
+/// ability that deals 1 horror to the controller (the lead-investigator proxy).
 const DOOM_ACT: &str = "test-act";
 
 /// Mock location code: TWO `EventPattern::EnteredLocation` forced abilities,
@@ -449,7 +449,7 @@ fn forced_on_enemy_phase_end_fires_agenda_ability() {
     assert_eq!(
         horror(&session),
         1,
-        "the lead proxy should have taken 1 horror from agenda forced ability"
+        "the lead-investigator proxy should have taken 1 horror from agenda forced ability"
     );
     assert_event!(
         session.events(),
@@ -509,7 +509,7 @@ fn forced_on_phase_end_no_op_when_no_act_or_agenda() {
 
 #[test]
 fn forced_on_phase_end_no_op_when_no_lead_investigator() {
-    // No turn_order → no lead proxy → early return. No real phase end runs
+    // No turn_order → no lead-investigator proxy → early return. No real phase end runs
     // without one — every round needs one — so the timing point is
     // fired on its own, over a staged turn.
     let mut state =
@@ -523,7 +523,7 @@ fn forced_on_phase_end_no_op_when_no_lead_investigator() {
     session.assert_at_turn_menu(INV);
     assert!(
         session.finish().events.is_empty(),
-        "no events without a lead proxy"
+        "no events without a lead-investigator proxy"
     );
 }
 
@@ -535,7 +535,7 @@ fn forced_on_phase_end_fires_act_ability() {
     assert_eq!(
         horror(&session),
         1,
-        "the lead proxy should have taken 1 horror from act forced ability"
+        "the lead-investigator proxy should have taken 1 horror from act forced ability"
     );
     assert_event!(
         session.events(),

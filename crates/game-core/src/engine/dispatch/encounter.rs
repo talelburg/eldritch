@@ -310,9 +310,9 @@ pub(super) fn push_revelation(
 /// prey. `None`/`One` resolve inline (no engagement, or engage the
 /// sole/best candidate); `Tie` suspends via
 /// [`SpawnEngagePending`](crate::state::SpawnEngagePending) and returns
-/// [`EngineOutcome::AwaitingInput`] for the lead's tie-break `PickSingle`,
-/// which the prompt puts to the proxy (**Lead investigator** in
-/// `GLOSSARY.md`). When the spawn happens inside a Mythos
+/// [`EngineOutcome::AwaitingInput`] for a tie-break `PickSingle`, which the
+/// rules give the lead investigator (**Lead investigator** in `GLOSSARY.md`);
+/// the request carries no recipient. When the spawn happens inside a Mythos
 /// encounter-draw chain, [`resume_spawn_engage`] continues the drawer's
 /// [`PlayerDraw`](crate::state::Continuation::PlayerDraw) chain after the pick
 /// resolves.
@@ -571,8 +571,7 @@ fn spawn_enemy_engaging(
 
     // Resolve engagement-on-spawn. A drawer is engaged outright. Otherwise the
     // co-located set is narrowed by the enemy's `prey`; with `Prey::Default` a
-    // 2+ set ties and suspends for the lead's tie-break `PickSingle`, put to
-    // the proxy.
+    // 2+ set ties and suspends for a tie-break `PickSingle`.
     let resolution = match engages {
         SpawnEngagement::Drawer(drawer) => PreyResolution::One(drawer),
         SpawnEngagement::Prey => {
@@ -608,8 +607,9 @@ fn spawn_enemy_engaging(
                 engaged_with: None,
             });
             // The surge/chain state lives on the drawer's `PlayerDraw` frame
-            // beneath; this frame holds only the engagement pick. `resume_spawn_engage` engages + pops, and the loop continues
-            // the chain through the exposed `PlayerDraw`.
+            // beneath; this frame holds only the engagement pick.
+            // `resume_spawn_engage` engages + pops, and the loop continues the
+            // chain through the exposed `PlayerDraw`.
             cx.state
                 .continuations
                 .push(Continuation::SpawnEngage(SpawnEngagePending {
@@ -619,8 +619,8 @@ fn spawn_enemy_engaging(
             EngineOutcome::AwaitingInput {
                 request: InputRequest::pick_single(
                     format!(
-                        "Enemy {enemy_id:?} spawn engagement: the first investigator in turn \
-                         order picks whom to engage among {tied:?}"
+                        "Enemy {enemy_id:?} spawn engagement: the first Active investigator \
+                         in turn order picks whom to engage among {tied:?}"
                     ),
                     choice::candidate_options(cx.state, cx.cards, &tied, |i| {
                         cx.state.investigators[i].card_anchor()

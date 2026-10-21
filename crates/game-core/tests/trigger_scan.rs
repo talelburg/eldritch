@@ -220,7 +220,7 @@ fn attaching(mut location: Location, code: &str, id: CardInstanceId) -> Location
 }
 
 /// Investigators `one` and `two` seated at the Study, with `study` and
-/// `hallway` on the map and `turn_order` `[1, 2]` — so the lead proxy is
+/// `hallway` on the map and `turn_order` `[1, 2]` — so the lead-investigator proxy is
 /// investigator 1.
 fn board(one: Seat, two: Seat, study: Location, hallway: Location) -> GameStateBuilder {
     GameStateBuilder::new()

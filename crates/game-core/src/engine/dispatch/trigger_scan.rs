@@ -205,14 +205,14 @@ pub(super) fn board_walk<'a>(
 /// rule:
 ///
 /// - a **controlled** card → its controller;
-/// - the current **act** or **agenda** → the lead proxy, the first Active
+/// - the current **act** or **agenda** → the lead-investigator proxy, the first Active
 ///   investigator in `turn_order` (`cursor::first_active_investigator`; see
 ///   GLOSSARY.md for how the proxy differs from the rules' role);
 /// - any other **uncontrolled** card → the condition's
-///   [`subject`](TimingEvent::subject), or the lead proxy when it has none;
+///   [`subject`](TimingEvent::subject), or the lead-investigator proxy when it has none;
 /// - a card in **hand** → the investigator holding it.
 ///
-/// A hit with no one to bind (no lead proxy and no subject) is not collected.
+/// A hit with no one to bind (no lead-investigator proxy and no subject) is not collected.
 ///
 /// A card's forced abilities are read where they are live
 /// ([`Ability::active_in`](dsl::Ability::active_in)) — `glossary/Ability.md`:

@@ -143,9 +143,9 @@ pub(super) fn candidates(state: &GameState, enemy_id: EnemyId) -> Vec<Investigat
 /// No-op when the enemy is exhausted (*"An exhausted unengaged enemy does not
 /// engage"*) or has no location. On a prey `Tie` this engages `tied[0]`, the
 /// `turn_order`-first of the tied investigators because [`candidates`] is
-/// turn-order-ordered, rather than suspending for the lead's tie-break
-/// `PickSingle` — keeping every caller synchronous. TODO(#151): make the multiplayer tie an interactive lead
-/// choice when multiplayer lands.
+/// turn-order-ordered, rather than suspending for a tie-break `PickSingle` —
+/// keeping every caller synchronous. TODO(#151): make the multiplayer tie an
+/// interactive choice.
 ///
 /// Callers: elimination's step-3 re-engagement, the Upkeep "engage on ready",
 /// relocation, and [`engage_ready_enemies`].
