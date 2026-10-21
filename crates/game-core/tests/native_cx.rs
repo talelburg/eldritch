@@ -1,8 +1,9 @@
-//! The native contract `NativeCx` enforces (#1011, #571): a native chooses
-//! before it writes. One that writes through an exit and then suspends for a
-//! choice is `Rejected` in every build, and the apply's snapshot rollback
-//! undoes the write. One that suspends before any write suspends and resumes
-//! as before.
+//! Regression for #571: a native that writes through an exit and then
+//! suspends for a choice is `Rejected` in every build.
+//!
+//! That is the contract `NativeCx` enforces: a native chooses before it
+//! writes. The apply's snapshot rollback undoes the rejected native's write. One
+//! that suspends before any write suspends and resumes normally.
 //!
 //! Each native sits on its own mock act as a forced ability at the end of the
 //! enemy phase, the `native_effect.rs` idiom. The natives model the contract,

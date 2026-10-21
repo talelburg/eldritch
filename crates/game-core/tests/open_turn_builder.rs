@@ -1,4 +1,4 @@
-//! The builder's open-turn and engagement fixtures (#939) produce states the
+//! The builder's open-turn and engagement fixtures produce states the
 //! engine treats as a real open turn and a real engagement.
 //!
 //! Asserted only on what a player could observe — the prompt the engine

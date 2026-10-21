@@ -1,5 +1,5 @@
-//! "Until the end of the round" lasting effects expire at Upkeep 4.6 **before**
-//! the round-end abilities initiate (#643, #1066).
+//! Regression for #643: "until the end of the round" lasting effects expire at
+//! Upkeep 4.6 **before** the round-end abilities initiate.
 //!
 //! `glossary/Lasting_Effects.md`: *"A lasting effect expires as soon as the
 //! timing point specified by its duration is reached. This means that an

@@ -36,11 +36,11 @@ use game_core::{assert_event, assert_event_sequence, assert_no_event};
 const HORROR_ATTIC: &str = "test-attic";
 
 /// Mock agenda code: one `EventPattern::PhaseEnded { phase: Enemy }` forced
-/// ability that deals 1 horror to the controller (lead investigator).
+/// ability that deals 1 horror to the controller (the lead proxy).
 const DOOM_AGENDA: &str = "test-agenda";
 
 /// Mock act code: one `EventPattern::PhaseEnded { phase: Enemy }` forced
-/// ability that deals 1 horror to the controller (lead investigator).
+/// ability that deals 1 horror to the controller (the lead proxy).
 const DOOM_ACT: &str = "test-act";
 
 /// Mock location code: TWO `EventPattern::EnteredLocation` forced abilities,
@@ -50,8 +50,8 @@ const DOOM_ACT: &str = "test-act";
 const DOUBLE_FORCED: &str = "test-double-forced";
 
 /// Mock threat-area card: one `EventPattern::EndOfTurn` forced ability
-/// dealing 1 horror to the controller. The Frozen-in-Fear-shape (C4c),
-/// minus the skill test (kept non-suspending for the C4a firing path).
+/// dealing 1 horror to the controller. The Frozen-in-Fear shape, minus the
+/// skill test (kept non-suspending so the ability fires without a prompt).
 const END_OF_TURN_CARD: &str = "test-end-of-turn";
 
 /// Mock act code: one `EventPattern::PhaseEnded { phase: Upkeep }` forced
@@ -66,14 +66,14 @@ const ROUND_END_AGENDA: &str = "test-round-end-agenda";
 
 /// Mock location attachment: TWO `EventPattern::LeftLocation` forced abilities,
 /// each dealing 1 horror to the leaving investigator. The Barricade-01038 shape
-/// doubled, so leaving opens a lead-ordered run that *suspends* mid-move (#569).
+/// doubled, so leaving opens a lead-ordered run that *suspends* mid-move.
 const DOUBLE_LEFT_LOCATION: &str = "test-double-left-location";
 
 /// Mock location attachment: one `EventPattern::LeftLocation` forced ability in
 /// the **`when`** cell, dealing 1 horror to the leaving investigator. The
 /// Barricade-01038 shape as the card actually prints it — *"Forced - When an
-/// investigator leaves attached location"* — declarable since #721 made
-/// `LeftLocation` coordinator-owned.
+/// investigator leaves attached location"* — declarable because
+/// `LeftLocation` is coordinator-owned.
 const WHEN_LEFT_LOCATION: &str = "test-when-left-location";
 
 /// The same, doubled: two `when`-cell `LeftLocation` forced abilities, so
@@ -84,10 +84,10 @@ const DOUBLE_WHEN_LEFT_LOCATION: &str = "test-double-when-left-location";
 
 /// Mock threat-area card: one `EventPattern::SkillTestResolved { Success,
 /// Some(Investigate) }` forced ability dealing 1 horror to the controller. The
-/// Obscuring-Fog-shape (C4c), minus the location attachment.
+/// Obscuring Fog shape, minus the location attachment.
 const AFTER_INVESTIGATE_CARD: &str = "test-after-investigate";
 
-/// Mock locations exercising the forced scan's **eligibility gate** (#786): the
+/// Mock locations exercising the forced scan's **eligibility gate**: the
 /// `EnteredLocation` horror ability of [`HORROR_ATTIC`], carrying an
 /// `Ability::eligibility` native condition that respectively passes, fails,
 /// and has no registered predicate at all. RR p.2: an ability with no potential
@@ -114,8 +114,7 @@ fn forced_horror(pattern: EventPattern, cell: EventTiming, horror: u8) -> Abilit
     )
 }
 
-/// [`HORROR_ATTIC`]'s on-enter ability, gated on the native condition `tag`
-/// (#786).
+/// [`HORROR_ATTIC`]'s on-enter ability, gated on the native condition `tag`.
 fn gated_on_enter(tag: &'static str) -> Vec<Ability> {
     vec![
         forced_horror(EventPattern::EnteredLocation, EventTiming::After, 1)
@@ -124,7 +123,7 @@ fn gated_on_enter(tag: &'static str) -> Vec<Ability> {
 }
 
 /// A `LeftLocation` forced ability in `cell` — a card printing two of these
-/// opens a lead-ordered run that suspends mid-move (#569).
+/// opens a lead-ordered run that suspends mid-move.
 fn left_location(cell: EventTiming) -> Ability {
     forced_horror(EventPattern::LeftLocation, cell, 1)
 }
@@ -450,7 +449,7 @@ fn forced_on_enemy_phase_end_fires_agenda_ability() {
     assert_eq!(
         horror(&session),
         1,
-        "lead investigator should have taken 1 horror from agenda forced ability"
+        "the lead proxy should have taken 1 horror from agenda forced ability"
     );
     assert_event!(
         session.events(),
@@ -510,8 +509,8 @@ fn forced_on_phase_end_no_op_when_no_act_or_agenda() {
 
 #[test]
 fn forced_on_phase_end_no_op_when_no_lead_investigator() {
-    // No turn_order → no lead investigator → early return. No real phase end
-    // runs without a lead — every round needs one — so the timing point is
+    // No turn_order → no lead proxy → early return. No real phase end runs
+    // without one — every round needs one — so the timing point is
     // fired on its own, over a staged turn.
     let mut state =
         with_act_and_agenda(lead_alone().open_turn(INV).build(), None, Some(DOOM_AGENDA));
@@ -524,7 +523,7 @@ fn forced_on_phase_end_no_op_when_no_lead_investigator() {
     session.assert_at_turn_menu(INV);
     assert!(
         session.finish().events.is_empty(),
-        "no events without a lead investigator"
+        "no events without a lead proxy"
     );
 }
 
@@ -536,7 +535,7 @@ fn forced_on_phase_end_fires_act_ability() {
     assert_eq!(
         horror(&session),
         1,
-        "lead investigator should have taken 1 horror from act forced ability"
+        "the lead proxy should have taken 1 horror from act forced ability"
     );
     assert_event!(
         session.events(),
@@ -649,8 +648,8 @@ fn double_forced_board() -> GameStateBuilder {
 
 #[test]
 fn two_simultaneous_forced_triggers_present_a_choice() {
-    // Axis-B T5b (#213): 2+ forced abilities at the same timing point let the
-    // lead investigator choose the order — dispatch suspends with
+    // 2+ forced abilities at the same timing point let the lead choose the
+    // order — dispatch suspends with
     // `AwaitingInput` instead of auto-resolving both in a fixed order. Driven
     // through `apply` (Move into a location with two forced on-enter abilities,
     // a terminal emit site) so the suspension round-trips.
@@ -693,17 +692,16 @@ fn two_simultaneous_forced_triggers_resolved_in_lead_chosen_order() {
     assert_eq!(horror(&done), 2);
 }
 
-// ── #569: an emit queues, so every site with post-emit work rides a frame ─────
+// ── An emit queues, so every site with post-emit work rides a frame ──────────
 
 /// Both mock board cards carry a `PhaseEnded { Enemy }` forced ability, so step
-/// 3.4 has two simultaneous hits and the lead orders them (#213) — a suspension
+/// 3.4 has two simultaneous hits and the lead orders them — a suspension
 /// that outlives `engine::apply()`.
 ///
-/// Regression (#569): `enemy_phase_end` used to pop the Enemy anchor *before*
-/// emitting and push the Upkeep anchor only after, so the ordering run closed
-/// onto an empty continuation stack: `phase` stuck at `Enemy` forever, every
-/// later input rejected. Now the anchor is re-parked beneath the run and the
-/// transition runs on its re-exposure.
+/// Regression for #569: the Enemy anchor is re-parked beneath the ordering
+/// run and the transition runs on its re-exposure, so the run closes onto the
+/// anchor rather than onto an empty continuation stack, which would leave
+/// `phase` stuck at `Enemy` with every later input rejected.
 #[test]
 fn two_forced_at_enemy_phase_end_resolve_and_the_phase_still_transitions() {
     let state = board_with_two_phase_end_forced();
@@ -771,10 +769,10 @@ fn lurker_in_the_attic() -> Enemy {
 /// A `LeftLocation` forced that suspends (two attachment abilities → an ordering
 /// run) must not cost the move its entered-location half.
 ///
-/// Regression (#569): `move::perform` returned the suspension, and nothing
-/// resumed it — `engage_ready_enemies_on_enter` and the `EnteredLocation` emit
-/// were skipped permanently. Both now ride the `MoveEnter` frame parked beneath
-/// the emit, which also fixes their order: leaving resolves before entering.
+/// Regression for #569: `engage_ready_enemies_on_enter` and the
+/// `EnteredLocation` emit ride the `MoveEnter` frame parked beneath the emit,
+/// so the suspension does not skip them, and leaving resolves before
+/// entering.
 #[test]
 fn suspending_left_location_forced_still_engages_and_fires_entered_location() {
     // Two `LeftLocation` forced abilities on the left location's attachment.
@@ -846,7 +844,7 @@ fn suspending_left_location_forced_still_engages_and_fires_entered_location() {
 }
 
 /// A `when`-cell `LeftLocation` forced resolves **before** the departure lands,
-/// and the entered-location half still resolves after it (#721 over #569).
+/// and the entered-location half still resolves after it.
 ///
 /// `glossary/When.md`: *"the moment immediately after the specified timing point
 /// or triggering condition initiates, but before its impact upon the game state
@@ -897,10 +895,9 @@ fn a_when_cell_left_location_forced_resolves_before_the_departure_lands() {
 /// the whole `LeftLocation` sequence and before the entered location's own
 /// forced ability.
 ///
-/// #721 moved it there. Left in `move::perform` it would have revealed
-/// the destination before the investigator had even left the location they
-/// were on — Rules Reference p.14 reveals a location when an investigator
-/// *enters* it.
+/// In `move::perform` it would reveal the destination before the
+/// investigator had even left the location they were on — Rules Reference
+/// p.14 reveals a location when an investigator *enters* it.
 #[test]
 fn the_destination_reveal_belongs_to_the_arrival_not_the_departure() {
     let mut attic = location_as(ATTIC, "Attic", HORROR_ATTIC);
@@ -928,8 +925,8 @@ fn the_destination_reveal_belongs_to_the_arrival_not_the_departure() {
 /// the location they are leaving, the enemy engaged with them still beside them.
 ///
 /// This is the state-level counterpart to the event-order assertion above, and
-/// the one an event log cannot make: before #721 the caller had already moved
-/// both by the time any ability ran. It also pins that the engaged enemy still
+/// the one an event log cannot make: it reads the board while the ability
+/// runs, before either has moved. It also pins that the engaged enemy still
 /// rides along (`glossary/Enemy_Engagement.md`: such an enemy *"remains engaged
 /// and moves to the new location simultaneously with the investigator"*) when the
 /// departure finally lands.
@@ -986,11 +983,11 @@ fn a_suspended_when_cell_sees_the_investigator_still_at_the_location_they_are_le
 /// Step 4.6's `PhaseEnded { Upkeep }` forced ability resolves before the round
 /// end that follows it.
 ///
-/// Regression (#569): `upkeep_phase_end` emitted the phase end, read the `Done`
-/// as "resolved", and emitted `RoundEnded` — pushing the round-end coordinator
-/// *above* the phase-end ability it had just queued, so the round end resolved
-/// first. The round-end emit now lives in the anchor's `AfterPhaseEndForced`
-/// resume arm, which the loop reaches only once that ability has resolved.
+/// Regression for #569: the round-end emit lives in the anchor's
+/// `AfterPhaseEndForced` resume arm, which the loop reaches only once the
+/// phase-end ability has resolved. Emitting `RoundEnded` on the phase end's
+/// `Done` would push the round-end coordinator *above* the ability it had
+/// just queued, so the round end would resolve first.
 #[test]
 fn upkeep_phase_end_forced_resolves_before_the_round_end() {
     let state = with_act_and_agenda(
@@ -1046,14 +1043,11 @@ fn board_with_two_phase_end_forced() -> GameState {
     )
 }
 
-// (Removed `two_simultaneous_forced_triggers_resolve_in_order`, Slice D #423: it
-// was a pre-#213 stand-in that fired 2+ forced directly through
-// `queue_forced_triggers` in a fixed order. The production route for 2+
-// simultaneous forced is the lead-ordered run, covered by
-// `two_simultaneous_forced_triggers_present_a_choice` +
-// `two_simultaneous_forced_triggers_resolved_in_lead_chosen_order` through `apply`.)
+// 2+ simultaneous forced abilities resolve through the lead-ordered run,
+// covered by `two_simultaneous_forced_triggers_present_a_choice` +
+// `two_simultaneous_forced_triggers_resolved_in_lead_chosen_order` through `apply`.
 
-// #786: the forced scan asks the same eligibility question the reaction-offer
+// The forced scan asks the same eligibility question the reaction-offer
 // scan does, so a forced ability's `eligibility` condition gates *initiation*. Rules
 // Reference, "Ability" -> "Forced Abilities" (p.2):
 //
@@ -1079,6 +1073,8 @@ fn a_forced_with_a_satisfied_eligibility_tag_still_fires() {
     assert_eq!(horror_after_entering(GATED_ELIGIBLE), 1);
 }
 
+/// Regression for #786: a forced ability whose eligibility condition fails
+/// does not initiate.
 #[test]
 fn a_forced_with_an_unmet_eligibility_tag_does_not_initiate() {
     assert_eq!(

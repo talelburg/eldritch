@@ -1,7 +1,6 @@
 //! `Effect::Native` dispatch: a card's `native(tag)` effect resolves
 //! through `CardRegistry.native_effect_for` to a host-provided Rust fn.
-//! Exercised via the forced-trigger path (the real apply route) since
-//! `apply_effect` is `pub(crate)`.
+//! Exercised via the forced-trigger path, the real `apply` route.
 
 use std::sync::LazyLock;
 

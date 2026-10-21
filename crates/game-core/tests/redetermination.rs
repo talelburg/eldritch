@@ -1,4 +1,4 @@
-//! `SkillTestResolved`'s resolve step re-totals the test (#1111).
+//! `SkillTestResolved`'s resolve step re-totals the test.
 //!
 //! Lucky! 01080 prints *"Fast. Play when you would fail a skill test. Get +2 to
 //! your skill value for that test."* — a `when`-cell modifier that can turn the

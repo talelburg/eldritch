@@ -44,7 +44,7 @@ const ON_SUCCESS: &str = "_es_on_success";
 const ON_FAIL: &str = "_es_on_fail";
 /// Elder sign: modifier `+0`, and an `immediate` arm that is
 /// `AutoResolve(AutomaticSuccess)`, unconditionally. Wendy Adams 01005 is
-/// the motivating consumer, and registers with her own condition in #780.
+/// the motivating consumer, and registers with her own condition.
 const AUTO_SUCCESS: &str = "_es_auto_success";
 
 const INV: InvestigatorId = InvestigatorId(1);

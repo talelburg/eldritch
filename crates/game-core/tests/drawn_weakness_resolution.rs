@@ -1,5 +1,5 @@
 //! Weaknesses drawn together from their bearer's deck resolve as encounter
-//! cards in draw order (#1121), against a mock registry. `glossary/Weakness.md`:
+//! cards in draw order, against a mock registry. `glossary/Weakness.md`:
 //!
 //! > When an investigator draws a weakness with an encounter cardtype *(for
 //! > example, an enemy or a treachery weakness)*, resolve that card as if it
@@ -7,7 +7,7 @@
 //!
 //! The one-shot weakness treacheries themselves (Amnesia 01096, Paranoia 01097,
 //! Abandoned and Alone 01015) are tested from their printed cards in
-//! `crates/cards/tests` (#1126). What stays here is the ordering of several
+//! `crates/cards/tests`. What stays here is the ordering of several
 //! weaknesses drawn by one draw, which no core card can stage: none draws more
 //! than one card at once. So two synthetic one-shot weakness treacheries and a
 //! synthetic "draw 2" event model the primitive (ADR 0016). Its own test
@@ -110,10 +110,10 @@ fn board(investigator: Seat) -> TestSession {
         .session()
 }
 
-/// **Two weaknesses drawn together resolve in draw order** (#1121, Q2): both
-/// are revealed once the draw completes, then the first-drawn card resolves and
-/// is discarded before the second begins. The FAQ lets the player choose the
-/// order; this is the kept narrowing, tracked by #1130.
+/// **Two weaknesses drawn together resolve in draw order**: both are revealed
+/// once the draw completes, then the first-drawn card resolves and is
+/// discarded before the second begins. The FAQ lets the player choose the
+/// order; this is the kept narrowing. TODO(#1130): let the player choose.
 /// `data/official-faq/Frequently_Asked_Questions.md`: *"once all of the cards
 /// have been drawn, you must resolve all Revelation abilities on those cards
 /// (in an order of your choosing)."*

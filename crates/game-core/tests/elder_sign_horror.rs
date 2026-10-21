@@ -2,7 +2,7 @@
 //! live at ST.5 (ADR 0005).
 //!
 //! The motivating consumer is Agnes Baker 01004
-//! (`data/arkhamdb-snapshot/pack/core/core.json`), who registers in #777:
+//! (`data/arkhamdb-snapshot/pack/core/core.json`):
 //!
 //! > \[elder_sign\] effect: +1 for each horror on Agnes Baker.
 //!

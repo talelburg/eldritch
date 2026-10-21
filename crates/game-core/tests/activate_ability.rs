@@ -6,9 +6,8 @@
 //! so building a mock registry here doesn't collide with game-core's
 //! in-crate tests (which name game-core's test registry instead).
 //!
-//! No real card has a `Trigger::Activated` ability yet — `#38`
-//! Hyperawareness will be the first. Until then, mock cards are the
-//! only way to exercise the full activation flow.
+//! Mock cards exercise the activation flow's shapes without depending on
+//! a printed card.
 
 use std::sync::LazyLock;
 
@@ -55,13 +54,12 @@ const DISCARD_COST_ABILITY: &str = "MOCK4";
 const SKILL_BOOST: &str = "MOCK5";
 
 /// Mock card code: `[fast] Gain 1 resource. (Limit once per round.)` — a
-/// usage-limited activated ability, a primitive no corpus card prints yet
-/// (#958).
+/// usage-limited activated ability, a primitive no corpus card prints yet.
 const ONCE_PER_ROUND_GAIN: &str = "MOCK6";
 
 /// Mock card code: `[fast] Gain 1 resource.`, gated by a native eligibility
 /// condition whose predicate holds only while the controller has a clue — an activated
-/// ability whose condition lives outside its effect (#958, the #791 class).
+/// ability whose condition lives outside its effect.
 const CLUE_GATED_GAIN: &str = "MOCK7";
 const HAS_A_CLUE_TAG: &str = "_activate:has_a_clue";
 
@@ -345,7 +343,7 @@ fn activating_with_defeated_status_doesnt_need_registry() {
     assert_no_event!(refused.finish().events, Event::AbilityActivated { .. });
 }
 
-// ---- test-scoped recorded modifiers (#102, #676) -------------------
+// ---- test-scoped recorded modifiers ---------------------------------
 
 /// Run an Intellect test at difficulty 4, buying the `SKILL_BOOST` ability on
 /// `instance_id` at the test's ST.1 player window, committing nothing and
@@ -437,8 +435,9 @@ fn a_test_scoped_row_is_stamped_with_the_running_test_and_carries_its_source() {
     assert_eq!(row.source, Some(instance_id));
 }
 
-/// A modifier bought "for this skill test" with no test running has no test
-/// to attach to, so the activation is refused rather than banked (#676) —
+/// Regression for #676: a modifier bought "for this skill test" with no test
+/// running has no test to attach to, so the activation is refused rather than
+/// banked —
 /// and a client that submits it over the wire without consulting the menu
 /// gets the same answer the menu gave.
 #[test]
@@ -459,7 +458,7 @@ fn activating_a_test_scoped_modifier_outside_a_test_is_rejected() {
 }
 
 /// A "Limit once per round" activated ability is offered once, refused once it
-/// has been used, and offered again the next round (#958).
+/// has been used, and offered again the next round.
 /// `glossary/Limits_and_Maximums.md`: *"Each instance of an ability with such a
 /// limit may be initiated X times during the designated period."*
 #[test]
@@ -487,7 +486,7 @@ fn a_once_per_round_activated_ability_is_offered_once_per_round() {
 }
 
 /// A limited ability on a source the activator reaches without controlling it —
-/// here a card attached to their location (#708) — records its use on that
+/// here a card attached to their location — records its use on that
 /// card, wherever it sits, and is refused for the rest of the round.
 #[test]
 fn a_limited_ability_on_a_card_the_activator_does_not_control_counts_its_use() {
@@ -517,8 +516,8 @@ fn a_limited_ability_on_a_card_the_activator_does_not_control_counts_its_use() {
 
 /// An activated ability whose eligibility condition is false is not offered, and a
 /// submission that skips the menu is refused; once the condition holds it is
-/// offered (#958). The activation side of the bug class #791 closed for forced
-/// abilities.
+/// offered: the activation side of the eligibility gate the forced scan
+/// applies.
 #[test]
 fn a_tagged_activated_ability_is_not_offered_while_its_condition_is_false() {
     let (state, id, instance_id) = state_with_in_play(CLUE_GATED_GAIN);

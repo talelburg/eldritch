@@ -1,4 +1,4 @@
-//! `Effect::PlaceEventsOnBottomOfDeck` against a mock registry (#1109): an
+//! `Effect::PlaceEventsOnBottomOfDeck` against a mock registry: an
 //! event leaving play goes to the bottom of its owner's deck, instead of their
 //! discard pile, while the owner controls a card carrying the constant.
 //!

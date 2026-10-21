@@ -1,4 +1,4 @@
-//! The `margin` scope on `EventPattern::SkillTestResolved` (#1103): an ability
+//! The `margin` scope on `EventPattern::SkillTestResolved`: an ability
 //! listening for *"by 2 or more"* on a success, or *"by 2 or less"* on a
 //! failure, hears only the tests whose margin, measured in the outcome's
 //! direction, is inside its bound.

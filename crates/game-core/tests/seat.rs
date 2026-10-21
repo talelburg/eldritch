@@ -1,4 +1,4 @@
-//! The [`Seat`](test_support::Seat) fixture (#1014): seating an investigator in
+//! The [`Seat`](test_support::Seat) fixture: seating an investigator in
 //! one expression through `with_seat`, observed only through the built state.
 //!
 //! Synthetic probes only (ADR 0016), local to this binary. `_seat_inv` models

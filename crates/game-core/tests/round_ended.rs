@@ -18,7 +18,7 @@ const AGENDA: &str = "TEST-AGENDA";
 /// A second round-end forced source: a threat-area card with an
 /// `OnEvent(RoundEnded)` forced ability dealing 1 horror to its controller.
 /// Mirrors the real two-source collision (agenda 01107's doom + Dissonant
-/// Voices 01165's discard) so the lead orders both at round end (#213).
+/// Voices 01165's discard) so the lead orders both at round end.
 const DISSONANT: &str = "TEST-DISSONANT";
 
 fn set_doom(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
@@ -95,7 +95,7 @@ fn round_ended_fires_agenda_forced_ability() {
 
 #[test]
 fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
-    // #213 end-to-end through `apply`: two simultaneous round-end forced
+    // End-to-end through `apply`: two simultaneous round-end forced
     // abilities (agenda doom + a threat-area discard-shape) make `upkeep_phase_end`
     // open the forced run and suspend for the lead's ordering. Resolving both
     // closes the run, whose `UpkeepAfterRoundEnded` continuation resumes the

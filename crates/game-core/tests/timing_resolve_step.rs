@@ -1,5 +1,5 @@
 //! The triggering condition's own resolution is a step of its timing sequence,
-//! and who performs it is an exhaustive classification (#701).
+//! and who performs it is an exhaustive classification.
 //!
 //! `glossary/Nested_Sequences.md` puts the condition's resolution *inside* the
 //! sequence: *"Each time a triggering condition occurs, the following sequence
@@ -43,8 +43,8 @@ const AT_ACT: &str = "TESTAT";
 /// Declares `when`- and `at`-timed forceds on `RoundEnded`, a coordinator-owned
 /// bare milestone: both cells are walked, in order.
 const ROUND_ACT: &str = "TESTROUND";
-/// Declares `when`- and `at`-timed forceds on `GameEnd`, the bare milestone #720
-/// migrated. Held in an investigator's threat area rather than on the act, since
+/// Declares `when`- and `at`-timed forceds on `GameEnd`, a coordinator-owned
+/// bare milestone. Held in an investigator's threat area rather than on the act, since
 /// the `GameEnd` forced scan reads the cards each active investigator controls.
 const GAME_END_CARD: &str = "TESTGAMEEND";
 
@@ -210,7 +210,7 @@ fn coordinator_owned_condition_walks_its_when_cell_before_its_at_cell() {
     );
 }
 
-/// The game's ending is the second bare milestone (#720): its resolve step is a
+/// The game's ending is the second bare milestone: its resolve step is a
 /// documented no-op, so the `when` cell is walked and an ability declaring it
 /// resolves *before* the `at` cell rather than being rejected.
 ///
@@ -258,7 +258,7 @@ fn the_game_ending_is_a_bare_milestone_that_walks_its_when_cell() {
 }
 
 /// `EmitStep::cells()` is the whole-sequence cell list, derived from the
-/// coordinator's own cursor rather than written out beside it (#720). Pinned
+/// coordinator's own cursor rather than written out beside it. Pinned
 /// here because a caller asking a whole-sequence question — elimination's
 /// `has_weakness_game_end_ability` — gets a *silent drop* if the list is short,
 /// not a reject: it is the one failure mode the fork cannot report.

@@ -7,9 +7,8 @@
 //! a mock registry without colliding with game-core's in-crate tests
 //! or with other `tests/*.rs` files. Mirrors `activate_ability.rs`.
 //!
-//! No real card carries `Trigger::OnSkillTestResolution` yet — the
-//! follow-up issue (#39 Deduction) is the first consumer. Until then,
-//! mock cards are the only way to exercise the full path.
+//! Mock cards exercise the path without depending on a printed card;
+//! Deduction 01039 is a corpus consumer.
 
 use std::sync::LazyLock;
 
