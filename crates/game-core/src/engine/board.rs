@@ -669,9 +669,8 @@ mod tests {
         }
     }
 
-    /// ADR 0018's order: the active investigator's cards first, then the rest
-    /// of `turn_order`; each location with its attachments and the cards put
-    /// into play at it; each enemy with its attachments; the act; the agenda.
+    /// `walk` visits the board in the order the module doc's "The walk"
+    /// section lists.
     #[test]
     fn the_walk_visits_every_card_in_adr_0018_order() {
         const SECOND: InvestigatorId = InvestigatorId(2);

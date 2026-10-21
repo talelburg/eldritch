@@ -680,16 +680,18 @@ impl TokenOutcome {
 /// or is an optional player reaction.
 ///
 /// Forced abilities all resolve before any reaction abilities at the same
-/// timing point (Rules Reference p.2), and the engine's `queue_event`
-/// dispatch keys its two phases off this distinction rather than guessing
-/// from the [`EventPattern`].
+/// timing point (Rules Reference p.2). In each cell of a triggering
+/// condition's sequence, the engine's `TimingPoint` frame fires the forced
+/// abilities first and then opens the reaction window (its `sub` cursor), and
+/// it sorts the cell's abilities by this distinction rather than guessing from
+/// the [`EventPattern`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TriggerKind {
     /// Mandatory; resolves automatically (the player only orders
-    /// simultaneous ones). Phase 1 of `queue_event`.
+    /// simultaneous ones). Fired in the cell's forced step.
     Forced,
     /// Optional; the controller may use it in the reaction window.
-    /// Phase 2 of `queue_event`.
+    /// Offered in the cell's reaction step.
     Reaction,
 }
 

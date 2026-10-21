@@ -33,7 +33,7 @@ Every other condition starts caller-owned and flips one at a time, when a card d
 
 ## Considered options
 
-**Inverting every emit site at once** — moving all fourteen caller-owned conditions' mutations behind the coordinator in one change — was rejected on the evidence of ADR 0003. That is the precise manoeuvre four call sites already got wrong: they read a queued emit's `Done` as "nothing happened" and ran their tails *above* the abilities they had just queued, which orphaned agenda 01107's forced end-of-enemy-phase Ghoul movement for a whole scenario (#569; ADR 0003 carries the trace and the printed text). Migrating one condition at a time costs a classification and a reject; migrating fourteen at once costs a bug class the engine has already paid for once.
+**Inverting every emit site at once** — moving every caller-owned condition's mutations behind the coordinator in one change — was rejected on the evidence of ADR 0003. That is the precise manoeuvre four call sites already got wrong: they read a queued emit's `Done` as "nothing happened" and ran their tails *above* the abilities they had just queued, which orphaned agenda 01107's forced end-of-enemy-phase Ghoul movement for a whole scenario (#569; ADR 0003 carries the trace and the printed text). Migrating one condition at a time costs a classification and a reject; migrating them all at once costs a bug class the engine has already paid for once.
 
 **Letting an un-migrated condition's when cell resolve anyway** — collecting the interrupt and firing it after the caller's mutation — was rejected because it is the bug the whole spec exists to fix, only now with the engine's endorsement. An ability that resolves in the wrong cell is harder to notice than one that refuses.
 

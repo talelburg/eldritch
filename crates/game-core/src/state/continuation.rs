@@ -1221,7 +1221,7 @@ impl EmitStep {
 
 /// The forced-then-reaction sub-cursor of a [`Continuation::TimingPoint`].
 /// `Forced` fires the bucket's forced abilities (0/1 inline, 2+ via the
-/// lead-ordered run), `Reaction` opens the bucket's reaction window, `Done`
+/// ordered forced run), `Reaction` opens the bucket's reaction window, `Done`
 /// finishes the bucket (advance the parent `EmitEvent`'s cursor + pop).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TimingSub {

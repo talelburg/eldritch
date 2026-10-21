@@ -33,18 +33,8 @@ use crate::state::{
 ///   encounter draw or hand-size discard shows its prompt. A
 ///   fixture whose top frame cannot re-surface its prompt is a stack the engine
 ///   never rests at, and construction panics.
-/// - **Every step applies once, then drains to the next rest.** The steps are:
-///   - from the turn menu, [`take`](Self::take);
-///   - at a prompt, [`pick`](Self::pick), [`pick_nth`](Self::pick_nth),
-///     [`pick_nth_at`](Self::pick_nth_at), [`confirm`](Self::confirm),
-///     [`skip`](Self::skip), [`commit`](Self::commit) at a skill test's
-///     commit window, and [`choose_from_hand`](Self::choose_from_hand) at a
-///     mulligan or hand-size discard;
-///   - the framework entry points [`fire_at`](Self::fire_at),
-///     [`take_damage`](Self::take_damage) and [`test_skill`](Self::test_skill);
-///   - [`submit_off_menu`](Self::submit_off_menu), for a turn action the menu
-///     does not offer, and the raw [`apply`](Self::apply).
-///
+/// - **Every step applies once, then drains to the next rest.** The steps are
+///   the methods whose doc starts "Step:", and each says where it applies.
 ///   The drain answers prompts through the session's
 ///   reply policy and stops at the turn menu, at `Done` (the game is over), at
 ///   `Rejected`, or at the first prompt the policy has no answer for — which is
