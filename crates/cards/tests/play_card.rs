@@ -299,8 +299,8 @@ const MACHETE: &str = "01020";
 #[test]
 fn normal_event_play_discards_exactly_once() {
     // Play Emergency Cache 01088 (event, OnPlay GainResources 3) with no
-    // engaged enemy (no AoO). Invariant guard for the PlayFromHand frame
-    // migration: the card must be discarded exactly once (single disposal site)
+    // engaged enemy (no AoO). Invariant guard for the PlayFromHand frame: the
+    // card must be discarded exactly once (single disposal site)
     // and no play may be left in progress once it completes.
     let session = play_state(&[EMERGENCY_CACHE]).take(&PLAY_FIRST);
 
@@ -317,7 +317,7 @@ fn normal_event_play_discards_exactly_once() {
     );
     // Resources gained.
     assert!(inv.resources > 0, "resources should be gained");
-    // Exactly one CardDiscarded(Hand) — the migration invariant.
+    // Exactly one CardDiscarded(Hand) — the single-disposal invariant.
     assert_event_count!(
         result.events,
         1,
@@ -335,7 +335,7 @@ fn normal_event_play_discards_exactly_once() {
 #[test]
 fn asset_play_enters_play_through_the_frame() {
     // Play Machete 01020 (asset, no OnPlay), no engaged enemy. Invariant
-    // guard for the PlayFromHand frame migration: the asset must land in
+    // guard for the PlayFromHand frame: the asset must land in
     // cards_in_play and be removed from hand, and no CardDiscarded fires.
     let session = play_state(&[MACHETE]).take(&PLAY_FIRST);
 

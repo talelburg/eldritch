@@ -235,7 +235,7 @@ fn a_set_aside_asset_named_at_a_location_not_in_play_is_rejected() {
     );
 }
 
-// ---- the acceptance clauses ------------------------------------------
+// ---- an uncontrolled asset in play --------------------------------------
 
 /// `glossary/Asset_Cards.md` limits assignment to assets an investigator
 /// *"controls"*, so an uncontrolled Lita is not an eligible soaker even for an
@@ -408,7 +408,7 @@ fn the_reverse_rejects_when_lita_is_not_set_aside() {
 
 /// The preconditions are checked **up front**, not implied by the ordering:
 /// with the Hallway not in play the spawn cannot happen, and the reveal that
-/// now comes first must not have run. Without the up-front check this leaves
+/// comes first must not have run. Without the up-front check this leaves
 /// the barrier lifted (`revealed` is its gate) on a board the reverse
 /// never finished.
 #[test]

@@ -439,9 +439,8 @@ fn frozen_in_fear_board(copies: usize, tokens: Vec<ChaosToken>) -> TestSession {
         .session()
 }
 
-/// The turn was not left stranded: no `InvestigatorTurn` frame is mid-end
-/// (slice 2a-i absorbed the former `pending_end_turn` into `ending`). A stack
-/// invariant — no stranded frames — so it reads the stack.
+/// The turn was not left stranded: no `InvestigatorTurn` frame is mid-end. A
+/// stack invariant — no stranded frames — so it reads the stack.
 fn assert_no_turn_mid_end(state: &GameState) {
     assert!(
         !state.continuations.iter().any(|c| matches!(

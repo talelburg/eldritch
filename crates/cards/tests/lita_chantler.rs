@@ -309,7 +309,7 @@ fn fight_expecting_no_window(state: GameState, enemy: EnemyId) -> TestSession {
     session
 }
 
-/// The acceptance case: a **second** investigator, at her location, successfully
+/// The main case: a **second** investigator, at her location, successfully
 /// attacks a `[[Monster]]`. The reaction is offered — *"an investigator"*, not
 /// *"you"* — and firing it makes the attack deal `1 + 1 = 2`.
 ///

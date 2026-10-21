@@ -9,10 +9,9 @@
 //!   Necronomicon has no horror on it, discard it.
 //! ```
 //!
-//! This file covers the Revelation reaching the board (#1090), making room in
-//! the hand slots as it does (#1097), the elder sign counted as an auto-fail
-//! (#1094), the card holding there while it has horror (#1093), and its
-//! `[action]` moving that horror to Daisy (#1095).
+//! This file covers the Revelation reaching the board, making room in the hand
+//! slots as it does, the elder sign counted as an auto-fail, the card holding
+//! there while it has horror, and its `[action]` moving that horror to Daisy.
 //! `glossary/Weakness.md`:
 //!
 //! > When an investigator draws a weakness with a player cardtype *(for
@@ -320,7 +319,7 @@ fn fetched_by_old_book_of_lore_the_revelation_still_fires() {
     assert_resolved_after_the_shuffle(&session);
 }
 
-// ---- Making room as it enters the threat area (#1097) ----
+// ---- Making room as it enters the threat area ----
 //
 // `glossary/Put_into_Play.md`: *"Unless otherwise stated by the put into play
 // ability, cards that enter play in this manner must do so in a play area
@@ -470,7 +469,7 @@ fn a_slotless_threat_area_card_never_prompts() {
     assert!(inv.discard.is_empty());
 }
 
-// ---- It cannot leave play while it has horror (#1093) ----
+// ---- It cannot leave play while it has horror ----
 
 /// Discard The Necronomicon through a native's discard-from-play exit, the way
 /// a card-local "discard an asset" effect would. No corpus effect reaches an
@@ -558,7 +557,7 @@ fn eliminating_daisy_removes_it_while_it_has_horror() {
     );
 }
 
-// ---- Its [action] moves horror to Daisy (#1095) ----
+// ---- Its [action] moves horror to Daisy ----
 
 /// Activate The Necronomicon's `[action]`, its fourth printed ability (after
 /// the Revelation, the cannot-leave-play constant and the token substitution),
