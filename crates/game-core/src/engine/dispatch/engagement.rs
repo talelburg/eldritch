@@ -1,4 +1,4 @@
-//! Enemy engagement: the one place that writes [`Enemy::engaged_with`] (#1122).
+//! Enemy engagement: the one place that writes [`Enemy::engaged_with`].
 //!
 //! Two exits change an engagement. [`engage`] places an enemy in an
 //! investigator's threat area, first disengaging it from whoever held it, and
@@ -82,7 +82,7 @@ pub(crate) fn disengage(cx: &mut Cx, enemy_id: EnemyId) {
 ///
 /// The step [`Effect::Disengage`](card_dsl::dsl::Effect::Disengage) runs for
 /// its controller: Elusive 01050's *"Disengage from each enemy engaged with
-/// you"* (#1076) breaks your engagements, not another investigator's.
+/// you"* breaks your engagements, not another investigator's.
 ///
 /// The enemy is in state, as for [`engage`].
 pub(crate) fn disengage_from(cx: &mut Cx, enemy_id: EnemyId, investigator: InvestigatorId) {
@@ -141,14 +141,14 @@ pub(super) fn candidates(state: &GameState, enemy_id: EnemyId) -> Vec<Investigat
 /// [`candidates`] by the enemy's prey.
 ///
 /// No-op when the enemy is exhausted (*"An exhausted unengaged enemy does not
-/// engage"*) or has no location. On a prey `Tie` this engages the lead
-/// (`tied[0]`, which is `turn_order`-first because [`candidates`] is
-/// turn-order-ordered) rather than suspending for the lead's `PickSingle` —
-/// keeping every caller synchronous. TODO(#151): make the multiplayer tie an
-/// interactive lead choice when multiplayer lands.
+/// engage"*) or has no location. On a prey `Tie` this engages `tied[0]`, the
+/// `turn_order`-first of the tied investigators because [`candidates`] is
+/// turn-order-ordered, rather than suspending for the lead's tie-break
+/// `PickSingle` — keeping every caller synchronous. TODO(#151): make the multiplayer tie an interactive lead
+/// choice when multiplayer lands.
 ///
-/// Callers: elimination's step-3 re-engagement, the Upkeep "engage on ready"
-/// (#150), relocation, and [`engage_ready_enemies`].
+/// Callers: elimination's step-3 re-engagement, the Upkeep "engage on ready",
+/// relocation, and [`engage_ready_enemies`].
 ///
 /// Precondition: `enemy.engaged_with` is `None` on entry. An engaged enemy
 /// would be re-targeted through [`engage`], which is not what any of the rule's
@@ -206,9 +206,9 @@ pub(crate) fn engage_ready_enemies(cx: &mut Cx) {
 /// its bearer ([`pursues`]): `glossary/Prey.md`, *"ignores all other
 /// investigators while moving and engaging"*.
 ///
-/// The **Aloof** carve-out (an Aloof enemy does not automatically engage) is not
-/// yet modeled — consistent with the spawn, Hunter, and Upkeep-reengage paths,
-/// which also don't gate on Aloof (shared deferral, #144/#150). No Aloof enemy
+/// TODO(#653): the **Aloof** carve-out (an Aloof enemy does not automatically
+/// engage) is not modelled — consistent with the spawn, Hunter, and
+/// Upkeep-reengage paths, which also don't gate on Aloof. No Aloof enemy
 /// appears in a currently-implemented scenario.
 pub(super) fn engage_ready_enemies_on_enter(
     cx: &mut Cx,
