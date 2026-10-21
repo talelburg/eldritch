@@ -1,4 +1,4 @@
-//! #311 integration: the "Max N committed per skill test" cap is enforced
+//! Integration: the "Max N committed per skill test" cap is enforced
 //! at the commit window, against the real `cards::REGISTRY`. Guts 01089
 //! carries `commit_limit: Some(1)`, so committing two copies to one test
 //! is rejected; committing one is fine.
@@ -20,7 +20,7 @@ fn at_commit_window(copies: usize) -> TestSession {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         // A card for Guts' success draw to land on. Without it the draw hits
-        // an empty deck, which now applies the deck-out horror (#636) —
+        // an empty deck, which applies the deck-out horror —
         // irrelevant noise for a test about the commit cap.
         .with_seat(seat(1).hand(vec![GUTS; copies]).deck(["spare-1"]))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))

@@ -1,4 +1,4 @@
-//! #1123: dealing harm is **one** outer triggering condition, `DamageDealt`,
+//! Dealing harm is **one** outer triggering condition, `DamageDealt`,
 //! whose resolve step is the whole `DamagePlaced` sequence (ADR 0009).
 //!
 //! `data/rules-reference/rules/glossary/When.md`, verbatim: *"immediately after
@@ -225,8 +225,7 @@ fn the_placement_sequence_nests_inside_the_deal() {
 }
 
 /// A cancel in `DamageDealt`'s `when` cell abandons its resolve step, and with
-/// it the placement: nothing lands, and neither `after` cell runs. This is the
-/// gap ADR 0009 used to record, where the cancel left the deal to place anyway.
+/// it the placement: nothing lands, and neither `after` cell runs.
 #[test]
 fn a_cancel_in_the_dealt_when_cell_stops_the_placement() {
     // One reaction prompt only: the cancel. No later cell offers anything.

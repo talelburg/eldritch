@@ -1,7 +1,7 @@
-//! #323 integration: Barricade 01038's attach / non-Elite movement block /
+//! Integration: Barricade 01038's attach / non-Elite movement block /
 //! leave-location self-discard, end-to-end against the real `cards::REGISTRY`.
 //!
-//! Since #721 the self-discard is declared in the **`when`** cell of the
+//! The self-discard is declared in the **`when`** cell of the
 //! `LeftLocation` condition, as the card prints it — *"**Forced** - When an
 //! investigator leaves attached location: Discard Barricade."* — so it resolves
 //! before the departure lands. That ordering spans the move handler, the
@@ -282,14 +282,10 @@ fn leaving_the_barricaded_location_discards_barricade() {
 }
 
 /// The `when` cell, end to end: Barricade discards **before** the departure
-/// lands (#721). `glossary/When.md` pins the printed word to *"the moment
+/// lands. `glossary/When.md` pins the printed word to *"the moment
 /// immediately after the specified timing point or triggering condition
 /// initiates, but before its impact upon the game state resolves"*, and the
 /// departure's impact is the investigator arriving — `InvestigatorMoved`.
-///
-/// Before the migration `LeftLocation` was caller-owned: the move handler
-/// assigned the location and *then* emitted, so the card was tagged `After` and
-/// discarded with the investigator already at B.
 #[test]
 fn barricade_discards_before_the_departure_lands() {
     let r = take(map_leaving_barricaded_a(None), &MOVE_TO_B).finish();
@@ -392,7 +388,7 @@ fn map_leaving_barricaded_a_with(enemy: Option<Enemy>, b: Location) -> TestSessi
 }
 
 // ---------------------------------------------------------------------------
-// #651: a movement block never changes *who is nearest* or *what the shortest
+// A movement block never changes *who is nearest* or *what the shortest
 // path is* — it only turns the compelled step into a non-move.
 //
 // `data/rules-reference/rules/glossary/Nearest.md`: *"Nearest refers to the
@@ -504,6 +500,8 @@ fn hallway_attic_cellar_barricading(barricaded: &[LocationId]) -> TestSession {
     )
 }
 
+/// Regression for #651: a hunter whose nearest investigator stands behind a
+/// block does not move, rather than rerouting toward a farther investigator.
 #[test]
 fn a_blocked_nearest_investigator_is_still_the_nearest_and_the_hunter_does_not_move() {
     let session = end_the_investigation_phase(hallway_attic_cellar(), 2);
@@ -556,6 +554,8 @@ fn a_block_off_the_shortest_path_leaves_hunter_movement_alone() {
     );
 }
 
+/// Regression for #651: a blocked step on the only shortest path is a non-move,
+/// not a reroute along a longer unblocked detour.
 #[test]
 fn a_blocked_step_on_the_only_shortest_path_is_not_rerouted_around() {
     const TARGET: LocationId = LocationId(3);
@@ -612,7 +612,8 @@ fn one_blocked_shortest_step_of_two_leaves_the_other_open() {
     );
 }
 
-/// **#371: Barricade goes to the player who played it**, not to whoever left.
+/// Regression for #371: **Barricade goes to the player who played it**, not to
+/// whoever left.
 /// Investigator 1 played it at A; investigator 2 leaves A, which fires its
 /// *"**Forced** - When an investigator leaves attached location: Discard
 /// Barricade."* `glossary/Discard_Piles.md`: *"Any time a card is discarded, it

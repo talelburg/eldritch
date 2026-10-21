@@ -1,11 +1,9 @@
-//! A defeated active investigator's turn ends (#764), driven through the public
-//! `apply` loop against the real card corpus.
+//! Regression for #764: a defeated active investigator's turn ends, driven
+//! through the public `apply` loop against the real card corpus.
 //!
-//! Before this, `apply_investigator_elimination` flipped the status and ran the
-//! elimination steps but left the `InvestigatorTurn` frame on top with
-//! `ending: false` — so `drive` re-enumerated the open turn and prompted the
-//! investigator who had just been killed, with only `EndTurn` surviving
-//! enumeration.
+//! The `InvestigatorTurn` frame does not stay on top after the elimination
+//! steps run, so `drive` never re-enumerates the open turn and prompts the
+//! investigator who has just been defeated.
 //!
 //! ## The rule
 //!

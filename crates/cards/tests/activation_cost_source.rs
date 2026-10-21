@@ -1,5 +1,5 @@
 //! Activation costs resolve their source by **identity**, not by its position
-//! in the controller's `cards_in_play` (#706).
+//! in the controller's `cards_in_play`.
 //!
 //! The hazard this pins down: a cost that removes the source mid-payment
 //! (`SpendUses` depleting a `discard_when_empty` asset) shifts every later

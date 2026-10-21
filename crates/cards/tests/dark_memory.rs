@@ -1,5 +1,5 @@
-//! End-to-end tests for Dark Memory 01013 (Agnes Baker's signature weakness,
-//! #1046) against the real `cards::TEST_REGISTRIES`.
+//! End-to-end tests for Dark Memory 01013 (Agnes Baker's signature weakness)
+//! against the real `cards::TEST_REGISTRIES`.
 //!
 //! Card text (verbatim, `data/arkhamdb-snapshot/pack/core/core.json`):
 //!

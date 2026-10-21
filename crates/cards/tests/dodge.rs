@@ -1,6 +1,5 @@
 //! End-to-end Dodge 01023: cancel an enemy-phase attack, driven through the
-//! public [`apply`] API against the real card corpus (#305 / Axis D
-//! #336).
+//! public [`apply`] API against the real card corpus.
 //!
 //! `game-core`'s unit tests can't reach `cards::REGISTRY` (the engine crate
 //! can't depend on `cards`), so the before-attack cancel window's end-to-end
@@ -44,8 +43,8 @@ fn holding_dodge() -> Seat {
     // A spare deck card so the round-ending cascade's upkeep step-4.4 draw has
     // something to draw. Without it, the empty deck reshuffles the discard —
     // and since a played Dodge is discarded the instant its effect completes
-    // (RR Appendix I step 4, now flushed at completion rather than the apply
-    // boundary — #348), the reshuffle would draw Dodge straight back into hand,
+    // (RR Appendix I step 4, flushed at completion rather than at the apply
+    // boundary), the reshuffle would draw Dodge straight back into hand,
     // obscuring the "Dodge went to discard" assertion.
     seat(1).at(HERE).hand([DODGE]).deck(["01088"])
 }
@@ -109,9 +108,9 @@ fn dodge_in_hand_of(holder: InvestigatorId) -> OptionTarget {
 /// > If the attacking enemy has a **Forced** ability that says "When attacks" or
 /// > "After attacks", that ability does not trigger if an attack is Dodged.
 ///
-/// The suppression is #714's, in the coordinator; what #704 adds is that the
-/// attack now walks its cells at all, so the Acolyte's forced ability sits in a
-/// cell the cancel can suppress. Verified against the real corpus: 01102's
+/// The coordinator suppresses the rest of a prevented condition's sequence, and
+/// the attack walks its cells, so the Acolyte's forced ability sits in a cell
+/// the cancel can suppress. Verified against the real corpus: 01102's
 /// abilities come from the real `cards::REGISTRY`.
 #[test]
 fn dodging_a_silver_twilight_acolyte_stops_its_forced_doom() {
@@ -233,10 +232,11 @@ fn declining_the_before_attack_window_lets_the_attack_land() {
 /// ```
 const DISSONANT_VOICES: &str = "01165";
 
-/// #917, at the offer. A Fast event is still *played* — `glossary/Fast.md`:
-/// *"A fast card does not cost an action to be played and is not played using
-/// the "Play" action."* — so Dissonant Voices' ban on playing events keeps
-/// Dodge out of the before-attack window, and the attack lands.
+/// Regression for #917, at the offer: a Fast event is still *played* —
+/// `glossary/Fast.md`: *"A fast card does not cost an action to be played and
+/// is not played using the "Play" action."* — so Dissonant Voices' ban on
+/// playing events keeps Dodge out of the before-attack window, and the attack
+/// lands.
 #[test]
 fn dissonant_voices_keeps_dodge_out_of_the_attack_window() {
     let session = dodge_board(
@@ -259,10 +259,10 @@ fn dissonant_voices_keeps_dodge_out_of_the_attack_window() {
     );
 }
 
-/// #917, at the pick. Dodge is offered, then the ban arrives before the player
-/// picks it. The ban binds at initiation, not at the scan: the stale pick is
-/// refused, and when the window next surfaces Dodge has lapsed and the attack
-/// lands.
+/// Regression for #917, at the pick: Dodge is offered, then the ban arrives
+/// before the player picks it. The ban binds at initiation, not at the scan:
+/// the stale pick is refused, and when the window next surfaces Dodge has
+/// lapsed and the attack lands.
 #[test]
 fn dodge_lapses_when_dissonant_voices_arrives_before_the_pick() {
     let offered_dodge = dodge_board(holding_dodge(), ready_attacker())

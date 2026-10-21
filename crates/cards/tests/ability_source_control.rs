@@ -1,6 +1,6 @@
 //! The control bullet: an activation names an **ability source**, and every
 //! card in play under your control carries reachable abilities — including your
-//! investigator card and your own threat area (#707).
+//! investigator card and your own threat area.
 //!
 //! `glossary/Triggered_Abilities.md`, first bullet, verbatim:
 //!
@@ -121,7 +121,8 @@ fn treachery_kind() -> CardKind {
 
 /// Two investigators at the same location: mine holds a threat-area card, theirs
 /// an asset in play. Co-location is deliberate — under the control bullet it
-/// must not matter, and it is #708 that makes their threat area reachable.
+/// must not matter, and it is the co-location bullet that makes their threat
+/// area reachable.
 fn board() -> GameState {
     GameStateBuilder::new()
         .with_registries(registries())

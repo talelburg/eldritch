@@ -1,4 +1,4 @@
-//! C5d (#239) integration: Beat Cop 01018's `[fast] Discard Beat Cop: Deal 1
+//! Integration: Beat Cop 01018's `[fast] Discard Beat Cop: Deal 1
 //! damage to an enemy at your location` end-to-end against the real
 //! `cards::REGISTRY`. The activated ability is at index 1 (index 0 is the
 //! constant `+1 [combat]`). Runs against `cards::TEST_REGISTRIES`.
@@ -80,7 +80,7 @@ fn rejects_with_no_enemy_at_location_and_keeps_beat_cop_in_play() {
     let activate = activate_ability(&session);
     let session = session.submit_off_menu(&activate);
     session.expect_rejected();
-    // Pre-cost target check (#301) rejects before paying ⇒ Beat Cop survives.
+    // The pre-cost target check rejects before paying ⇒ Beat Cop survives.
     assert_eq!(
         session.state().investigators[&INV].cards_in_play.len(),
         1,

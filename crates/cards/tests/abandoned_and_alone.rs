@@ -88,7 +88,7 @@ fn drawn_it_takes_two_direct_horror_and_removes_the_discard_pile() {
     );
 }
 
-/// **Its own horror can defeat its bearer** (ADR 0002, #1121). With 6 horror
+/// **Its own horror can defeat its bearer** (ADR 0002). With 6 horror
 /// on a sanity of 8, the 2 direct horror defeat the bearer while the card is
 /// still resolving. Elimination removes the discard pile from the game with the
 /// rest of their cards, and the card itself with them, since it is in limbo;

@@ -1,6 +1,6 @@
 //! End-to-end Dodge 01023 + Guard Dog 01021 against attacks of opportunity
 //! (`AoO`), driven step by step through a `TestSession` against the real card
-//! corpus (#293 acceptance — K1 keystone integration test).
+//! corpus.
 //!
 //! These are the registry-backed proofs that the mid-action park / resume
 //! mechanism works end-to-end: when a basic action (Move) fires an `AoO`, the
@@ -213,7 +213,7 @@ fn dodge_cancels_attack_of_opportunity_no_damage_move_completes_attacker_not_exh
 /// explicitly skipped (not played): the attack lands normally, and the move
 /// still completes after the `AoO` loop finishes.
 ///
-/// This is NOT the primary #293 case (no Guard Dog, no soak window here since
+/// This is NOT the soak case (no Guard Dog, no soak window here since
 /// the investigator has no soaking asset), but it verifies that a
 /// `ResolveInput{Skip}` on a `BeforeEnemyAttack` window correctly resumes the
 /// `ActionResolution` frame.
@@ -266,7 +266,7 @@ fn skipping_before_attack_window_lets_aoo_land_and_move_still_completes() {
 /// takes 1 damage; the `ActionResolution` frame then resumes and the move
 /// completes.
 ///
-/// This is the canonical K1/#293 acceptance test: a soak window opened by an
+/// This is the canonical soak-on-`AoO` test: a soak window opened by an
 /// `AoO` drives the full suspend/resume cycle, confirming that the
 /// `ActionResolution` frame beneath the `AttackLoop` is correctly resumed by
 /// `drive` once the window closes.
@@ -279,7 +279,7 @@ fn guard_dog_retaliates_against_aoo_and_move_completes() {
     let dog_id = session.state().in_play(INV, GUARD_DOG);
     let dog = OptionTarget::CardInstance(dog_id);
 
-    // Step 1: Move → AoO → distribution prompt (Guard Dog has capacity, #44/K5b).
+    // Step 1: Move → AoO → distribution prompt (Guard Dog has capacity).
     // Assign both AoO damage points onto Guard Dog → soak window opens.
     let session = session
         .take(&MOVE_TO_HALLWAY)
@@ -293,7 +293,7 @@ fn guard_dog_retaliates_against_aoo_and_move_completes() {
         session.prompt()
     );
     // The damage is assigned to Guard Dog and not yet placed — the open window
-    // is the one the rules put between assigning and placing (#727).
+    // is the one the rules put between assigning and placing.
     let dog_in_play = state.investigators[&INV]
         .cards_in_play
         .iter()
