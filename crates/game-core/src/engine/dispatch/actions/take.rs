@@ -1,8 +1,10 @@
 //! **Taking an action** (see `GLOSSARY.md`): deciding whether an investigator
 //! may take it, paying its actions, and deciding whether it provokes attacks of
-//! opportunity. Every action is taken through [`take`]: the basic actions, a
-//! non-fast play, and an action-cost ability. A fast play or a zero-action
-//! ability spends no action, so it takes none and never reaches the step. The turn menu asks
+//! opportunity.
+//!
+//! Every action is taken through [`take`]: the basic actions, a non-fast play,
+//! and an action-cost ability. A fast play or a zero-action ability spends no
+//! action, so it takes none and never reaches the step. The turn menu asks
 //! [`check`] what taking a basic action would cost, and the play and activation
 //! validators ask it whether a non-fast play or an action-cost ability can be
 //! afforded.

@@ -1,9 +1,9 @@
-//! End-to-end commit-time attack buff with a mock `CardRegistry`: a
-//! skill card carrying `[Trigger::OnCommit] BoostAttackDamage(1)`
-//! (Vicious-Blow-shaped). Verifies that committing it to a Fight skill
-//! test adds +1 to the attack's damage on success, and that the
-//! `OnCommit` firing path fires committed cards' effects at the commit
-//! step.
+//! End-to-end commit-time attack buff with a mock `CardRegistry`: a skill card
+//! carrying `[Trigger::OnCommit] BoostAttackDamage(1)` (Vicious-Blow-shaped).
+//!
+//! Verifies that committing it to a Fight skill test adds +1 to the attack's
+//! damage on success, and that the `OnCommit` firing path fires committed
+//! cards' effects at the commit step.
 //!
 //! Lives at `crates/game-core/tests/` (its own integration-test binary,
 //! hence its own process and its own `MockRegistry`). Vicious Blow 01025 is

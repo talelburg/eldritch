@@ -1,5 +1,7 @@
 //! Silver Twilight Acolyte 01102 carries its owner, drawn from its bearer's
-//! deck. Runs against `cards::TEST_REGISTRIES`.
+//! deck.
+//!
+//! Runs against `cards::TEST_REGISTRIES`.
 //!
 //! The card is a basic weakness enemy, printed verbatim:
 //!

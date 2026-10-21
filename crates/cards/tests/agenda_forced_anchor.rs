@@ -1,6 +1,7 @@
-//! Integration: an agenda's forced-on-advance acknowledge anchors to the
-//! agenda card on the board, not the flat prompt bar. Runs against
-//! `cards::TEST_REGISTRIES`.
+//! Integration: an agenda's forced-on-advance acknowledge anchors to the agenda
+//! card on the board, not the flat prompt bar.
+//!
+//! Runs against `cards::TEST_REGISTRIES`.
 //!
 //! Drives What's Going On?! (01105)'s `AgendaAdvanced` forced with
 //! `interactive_acknowledge` on, so the one-option "Resolve" acknowledge surfaces

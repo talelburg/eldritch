@@ -1,4 +1,6 @@
-//! Wendy's Amulet 01014 end to end against the real card registry. Card text (verbatim, `data/arkhamdb-snapshot/pack/core/core.json`):
+//! Wendy's Amulet 01014 end to end against the real card registry.
+//!
+//! Card text (verbatim, `data/arkhamdb-snapshot/pack/core/core.json`):
 //!
 //! > Wendy Adams deck only.
 //! > You may play the topmost event in your discard pile as if it were in your hand.

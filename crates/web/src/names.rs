@@ -1,6 +1,7 @@
 //! Display-name helpers for the web UI: resolve entity codes/ids to their
-//! printed names, falling back to the raw code/id when unavailable. UI display
-//! only — never used for engine input.
+//! printed names, falling back to the raw code/id when unavailable.
+//!
+//! UI display only — never used for engine input.
 
 use game_core::card_registry::CardRegistry;
 use game_core::state::{CardCode, GameState, LocationId};

@@ -1,5 +1,6 @@
 //! A slot-bearing asset in the threat area is held in a slot, so playing an
 //! asset into full slots offers it as a make-room discard.
+//!
 //! `glossary/Slots.md`: *"Each asset in an investigator's play area or threat
 //! area with a slot symbol is held in a slot of that type."* and *"If playing
 //! or gaining control of an asset would put an investigator above his or her

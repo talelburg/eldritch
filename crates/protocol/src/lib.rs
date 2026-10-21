@@ -1,6 +1,8 @@
-//! Websocket wire protocol: the JSON messages exchanged between a
-//! client and the server. The server is authoritative; clients submit
-//! [`PlayerAction`]s and render the state the server broadcasts.
+//! Websocket wire protocol: the JSON messages exchanged between a client and
+//! the server.
+//!
+//! The server is authoritative; clients submit [`PlayerAction`]s and render the
+//! state the server broadcasts.
 
 use game_core::action::{PlayerAction, RosterEntry};
 use game_core::engine::EngineOutcome;

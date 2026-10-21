@@ -1,8 +1,10 @@
-//! A chaos-token reveal that can be cancelled: Skill Test Timing step
-//! 3 draws and announces the token, then emits the coordinator-owned
-//! `ChaosTokenRevealed` condition, whose resolve step is what the token does
-//! to the test. A `when`-cell cancel skips it; [`Effect::RevealChaosToken`]
-//! sends the test back to draw again.
+//! A chaos-token reveal that can be cancelled: Skill Test Timing step 3 draws
+//! and announces the token, then emits the coordinator-owned
+//! `ChaosTokenRevealed` condition, whose resolve step is what the token does to
+//! the test.
+//!
+//! A `when`-cell cancel skips it; [`Effect::RevealChaosToken`] sends the test
+//! back to draw again.
 //!
 //! Wendy Adams 01005 is the corpus consumer (*"\[reaction\] When you reveal a
 //! chaos token, choose and discard 1 card from your hand: Cancel that chaos

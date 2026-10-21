@@ -1,10 +1,12 @@
-//! Act + Agenda cards atop the board (above the map). A pure render of
-//! `GameState` (mirrors `map::location_map`): the current act and agenda render
-//! as cards — name + ability text from the corpus by `code`, thresholds from the
-//! `Act`/`Agenda` structs. The act has no running clue counter (clues sit on
-//! locations/investigators), so it shows `clues to advance: N` rather than a
-//! fake `0/N`. Both cards glow + open a context menu when the live prompt anchors
-//! an option to them (`OptionTarget::Act`/`Agenda`); inert otherwise.
+//! Act + Agenda cards atop the board (above the map).
+//!
+//! A pure render of `GameState` (mirrors `map::location_map`): the current act
+//! and agenda render as cards — name + ability text from the corpus by `code`,
+//! thresholds from the `Act`/`Agenda` structs. The act has no running clue
+//! counter (clues sit on locations/investigators), so it shows `clues to
+//! advance: N` rather than a fake `0/N`. Both cards glow + open a context menu
+//! when the live prompt anchors an option to them
+//! (`OptionTarget::Act`/`Agenda`); inert otherwise.
 
 use game_core::card_registry::CardRegistry;
 use game_core::engine::OptionTarget;

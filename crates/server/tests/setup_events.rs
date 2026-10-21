@@ -1,9 +1,11 @@
-//! Regression for #512: the events emitted during scenario setup (`seat_and_open`) are
-//! persisted at create time and delivered in the reconnect baseline `Hello`,
-//! so the client's event log can show the opening draws / shuffles / weakness
-//! set-aside. This is the path the live client hits: `POST /games` creates and
-//! persists the session, then the websocket connection reloads it from the DB
-//! (the in-memory created session is not held), so the events must survive the
+//! Regression for #512: the events emitted during scenario setup
+//! (`seat_and_open`) are persisted at create time and delivered in the
+//! reconnect baseline `Hello`, so the client's event log can show the opening
+//! draws / shuffles / weakness set-aside.
+//!
+//! This is the path the live client hits: `POST /games` creates and persists
+//! the session, then the websocket connection reloads it from the DB (the
+//! in-memory created session is not held), so the events must survive the
 //! round-trip through the persisted column — not just live in memory.
 
 mod common;

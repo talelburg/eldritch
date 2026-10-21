@@ -1,7 +1,8 @@
-//! "They're Getting Out!" (agenda 01107) forced abilities through the real
-//! card registry: the enemy-phase-end move + round-end doom fire via the
-//! forced-trigger path and the `Effect::Native` bridge end-to-end. Also
-//! covers round-end ordering — the act's "when the round ends" window
+//! "They're Getting Out!" (agenda 01107) forced abilities through the real card
+//! registry: the enemy-phase-end move + round-end doom fire via the
+//! forced-trigger path and the `Effect::Native` bridge end-to-end.
+//!
+//! Also covers round-end ordering — the act's "when the round ends" window
 //! resolves before this agenda's "at the end of the round" doom (RR `when`
 //! before `at`).
 //!

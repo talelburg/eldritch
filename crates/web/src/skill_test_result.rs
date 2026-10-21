@@ -1,13 +1,14 @@
-//! Skill-test result panel: renders the just-resolved test — chaos token
-//! drawn, final total vs difficulty, pass/fail by N — from the three things the
-//! store latches for it:
+//! Skill-test result panel: renders the just-resolved test — chaos token drawn,
+//! final total vs difficulty, pass/fail by N — from the three things the store
+//! latches for it:
 //! [`last_skill_test_result`](crate::store::ClientState::last_skill_test_result),
 //! [`last_skill_test_difficulty`](crate::store::ClientState::last_skill_test_difficulty)
 //! and [`last_revealed_token`](crate::store::ClientState::last_revealed_token).
-//! It reads no live event batch: the three are routinely determined in different
-//! applies from each other and from the pause this renders on.
-//! It is a centred modal carrying **its own** Confirm — the acknowledge pause's
-//! only one.
+//!
+//! It reads no live event batch: the three are routinely determined in
+//! different applies from each other and from the pause this renders on. It is
+//! a centred modal carrying **its own** Confirm — the acknowledge pause's only
+//! one.
 
 #[cfg(target_arch = "wasm32")]
 use game_core::action::InputResponse;

@@ -1,7 +1,8 @@
-//! Integration: Beat Cop 01018's `[fast] Discard Beat Cop: Deal 1
-//! damage to an enemy at your location` end-to-end against the real
-//! `cards::REGISTRY`. The activated ability is at index 1 (index 0 is the
-//! constant `+1 [combat]`). Runs against `cards::TEST_REGISTRIES`.
+//! Integration: Beat Cop 01018's `[fast] Discard Beat Cop: Deal 1 damage to an
+//! enemy at your location` end-to-end against the real `cards::REGISTRY`.
+//!
+//! The activated ability is at index 1 (index 0 is the constant `+1 [combat]`).
+//! Runs against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;

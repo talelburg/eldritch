@@ -1,7 +1,7 @@
-//! Vicious Blow 01025 end-to-end against the real
-//! `cards::REGISTRY`. The Guardian L0 skill commits to a Fight test and,
-//! on success, adds +1 to the attack's damage via its `OnCommit`
-//! `BoostAttackDamage(1)` ability.
+//! Vicious Blow 01025 end-to-end against the real `cards::REGISTRY`.
+//!
+//! The Guardian L0 skill commits to a Fight test and, on success, adds +1 to
+//! the attack's damage via its `OnCommit` `BoostAttackDamage(1)` ability.
 //!
 //! Runs against `cards::TEST_REGISTRIES`.
 

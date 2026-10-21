@@ -1,5 +1,7 @@
-//! Headless render tests for the spatial board map. Mount `BoardView`,
-//! feed a constructed `GameState`, assert on the rendered DOM. wasm32-only.
+//! Headless render tests for the spatial board map.
+//!
+//! Mount `BoardView`, feed a constructed `GameState`, assert on the rendered
+//! DOM. wasm32-only.
 #![cfg(target_arch = "wasm32")]
 
 use futures::channel::mpsc::{self, UnboundedReceiver};

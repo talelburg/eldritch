@@ -1,5 +1,7 @@
 //! Weaknesses drawn together from their bearer's deck resolve as encounter
-//! cards in draw order, against a mock registry. `glossary/Weakness.md`:
+//! cards in draw order, against a mock registry.
+//!
+//! `glossary/Weakness.md`:
 //!
 //! > When an investigator draws a weakness with an encounter cardtype *(for
 //! > example, an enemy or a treachery weakness)*, resolve that card as if it

@@ -1,4 +1,5 @@
 //! Heirloom of Hyperborea 01012 end-to-end against the real card registry.
+//!
 //! Card text (verbatim, `data/arkhamdb-snapshot/pack/core/core.json`):
 //!
 //! > Agnes Baker deck only.

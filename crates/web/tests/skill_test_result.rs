@@ -2,7 +2,9 @@
 //! `SkillTestStarted` batch (captures difficulty) then a resolution batch (chaos
 //! token + outcome) through the store, and assert the modal renders the token,
 //! total-vs-difficulty and outcome lines, carries the acknowledge pause's **only**
-//! Confirm, and cannot be dismissed by anything else. wasm32-only (browser DOM).
+//! Confirm, and cannot be dismissed by anything else.
+//!
+//! wasm32-only (browser DOM).
 #![cfg(target_arch = "wasm32")]
 
 use futures::channel::mpsc::{self, UnboundedReceiver};

@@ -1,4 +1,5 @@
 //! Ward of Protection 01065 end-to-end against the real card registry.
+//!
 //! Card text (verbatim, `data/arkhamdb-snapshot/pack/core/core.json`):
 //!
 //! > Fast. Play when you draw a non-weakness treachery card.

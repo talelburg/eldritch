@@ -1,10 +1,12 @@
-//! Reactions and elimination. `glossary/Elimination.md`: *"The only
-//! manner in which eliminated investigators interact with the game is when
-//! establishing "per investigator" values"* — so an eliminated investigator is
-//! never offered a reaction, and the initiation gate refuses a controller who
-//! is not Active (ADR 0017). The act's and agenda's reactions bind the lead
-//! proxy, the first Active investigator in `turn_order` (GLOSSARY "Lead
-//! investigator"), so they survive the first seat's elimination.
+//! Reactions and elimination.
+//!
+//! `glossary/Elimination.md`: *"The only manner in which eliminated
+//! investigators interact with the game is when establishing "per investigator"
+//! values"* — so an eliminated investigator is never offered a reaction, and
+//! the initiation gate refuses a controller who is not Active (ADR 0017). The
+//! act's and agenda's reactions bind the lead-investigator proxy, the first Active
+//! investigator in `turn_order` (GLOSSARY "Lead investigator"), so they survive
+//! the first seat's elimination.
 //!
 //! Integration test so it can run against `cards::TEST_REGISTRIES`.
 

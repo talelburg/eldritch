@@ -1,7 +1,8 @@
-//! Where a defeated enemy's card goes, against the real
-//! `cards::REGISTRY`. A defeated enemy leaves play through the leave-play exit,
-//! filed by its owner: the encounter deck's enemy to the encounter
-//! discard, a weakness enemy to its bearer's discard.
+//! Where a defeated enemy's card goes, against the real `cards::REGISTRY`.
+//!
+//! A defeated enemy leaves play through the leave-play exit, filed by its
+//! owner: the encounter deck's enemy to the encounter discard, a weakness enemy
+//! to its bearer's discard.
 //!
 //! `data/rules-reference/rules/glossary/Defeat.md`:
 //!

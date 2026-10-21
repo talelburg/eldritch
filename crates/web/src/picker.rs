@@ -1,6 +1,7 @@
-//! Pre-game investigator/scenario picker (wasm-only). Collects a roster and
-//! submits a `CreateGameRequest` on the `CreateTx` channel; the transport
-//! creates the game.
+//! Pre-game investigator/scenario picker (wasm-only).
+//!
+//! Collects a roster and submits a `CreateGameRequest` on the `CreateTx`
+//! channel; the transport creates the game.
 
 use cards::decks::{self, DefaultDeck, WeaknessChoice};
 use futures::channel::mpsc::UnboundedSender;

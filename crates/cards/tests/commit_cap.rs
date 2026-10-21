@@ -1,7 +1,8 @@
-//! Integration: the "Max N committed per skill test" cap is enforced
-//! at the commit window, against the real `cards::REGISTRY`. Guts 01089
-//! carries `commit_limit: Some(1)`, so committing two copies to one test
-//! is rejected; committing one is fine.
+//! Integration: the "Max N committed per skill test" cap is enforced at the
+//! commit window, against the real `cards::REGISTRY`.
+//!
+//! Guts 01089 carries `commit_limit: Some(1)`, so committing two copies to one
+//! test is rejected; committing one is fine.
 //!
 //! Runs against `cards::TEST_REGISTRIES`.
 

@@ -1,7 +1,8 @@
 //! Deck-level card lists: the **weakness pool** a random basic weakness is
 //! drawn from, and the **default decks** the picker seats an investigator with
-//! when the player brings none of their own. See **Default deck** in
-//! `GLOSSARY.md`.
+//! when the player brings none of their own.
+//!
+//! See **Default deck** in `GLOSSARY.md`.
 //!
 //! Every default deck has the structure of the 2016 Learn to Play's
 //! *"Investigator Starter Decks"* sidebar (p. 4, transcribed verbatim in

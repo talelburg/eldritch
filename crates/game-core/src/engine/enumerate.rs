@@ -1,7 +1,9 @@
 //! The legal-action enumerator: the legal open-turn actions for the active
-//! investigator. Read-only; routing is via `ResolveInput`. This module shares
-//! the handlers' legality predicates so the enumeration matches
-//! handler-acceptance by construction.
+//! investigator.
+//!
+//! Read-only; routing is via `ResolveInput`. This module shares the handlers'
+//! legality predicates so the enumeration matches handler-acceptance by
+//! construction.
 
 use std::fmt;
 

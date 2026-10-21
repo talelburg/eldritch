@@ -1,7 +1,9 @@
 //! Regression for #848: a map node keeps its occupancy tokens in view however
-//! long its card text. A fixed-size node with `overflow: hidden` would clip them
-//! on the Parlor 01115, the longest printed text of any Core location, and hide
-//! Lita Chantler once an investigator stands there.
+//! long its card text.
+//!
+//! A fixed-size node with `overflow: hidden` would clip them on the Parlor
+//! 01115, the longest printed text of any Core location, and hide Lita Chantler
+//! once an investigator stands there.
 //!
 //! These tests measure rather than inspect: the real `style.css` is injected and
 //! the real corpus (`cards::TEST_REGISTRY`) provided, so the node is filled with the text the

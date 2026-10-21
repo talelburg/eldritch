@@ -1,7 +1,9 @@
 //! Regression for #635: an encounter enemy whose printed Spawn clause the
 //! pipeline could not model refuses loudly instead of spawning at the drawing
-//! investigator's location. Driven through the real `cards` registry, so the
-//! metadata under test is the shipped corpus entry rather than a fixture.
+//! investigator's location.
+//!
+//! Driven through the real `cards` registry, so the metadata under test is the
+//! shipped corpus entry rather than a fixture.
 //!
 //! `data/rules-reference/rules/glossary/Spawn.md`:
 //!

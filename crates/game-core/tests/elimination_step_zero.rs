@@ -1,6 +1,7 @@
 //! Regression for #638: Rules Reference p.10 Elimination **step 0** fires an
-//! eliminated investigator's weaknesses' game-end abilities. These pin the
-//! scan's scoping, against a mock `CardRegistry`.
+//! eliminated investigator's weaknesses' game-end abilities.
+//!
+//! These pin the scan's scoping, against a mock `CardRegistry`.
 //!
 //! > 0. For the purpose of resolving weakness cards, the game has ended for the
 //! >    eliminated investigator. Trigger any "when the game ends" abilities on

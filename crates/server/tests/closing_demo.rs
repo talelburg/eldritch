@@ -1,5 +1,6 @@
-//! The server's end-to-end demonstration. One narrative exercises each of
-//! these:
+//! The server's end-to-end demonstration.
+//!
+//! One narrative exercises each of these:
 //!
 //! 1. two clients connected to one game see the same initial state and
 //!    an identical event stream as actions are applied (the spectator

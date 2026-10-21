@@ -1,8 +1,10 @@
-//! Regression for #470: The Barrier's round-end advance is gated by an eligibility condition
-//! that must reject when the Hallway group can't afford the act's clue
-//! threshold. Exercises the predicate through the real `cards::REGISTRY` —
-//! the same `native_condition_for("01109:can-advance")` lookup the reaction
-//! scan performs through the initiation gate (`trigger_scan::collect_reactions`).
+//! Regression for #470: The Barrier's round-end advance is gated by an
+//! eligibility condition that must reject when the Hallway group can't afford
+//! the act's clue threshold.
+//!
+//! Exercises the predicate through the real `cards::REGISTRY` — the same
+//! `native_condition_for("01109:can-advance")` lookup the reaction scan
+//! performs through the initiation gate (`trigger_scan::collect_reactions`).
 use cards::TEST_REGISTRIES;
 use game_core::engine::evaluator::EvalContext;
 use game_core::state::{Act, CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId};

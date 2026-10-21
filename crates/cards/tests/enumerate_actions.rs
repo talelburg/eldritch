@@ -1,8 +1,10 @@
 //! Registry-backed tests for the legal-action enumerator: the card actions
 //! (`PlayCard`, `ActivateAbility`) plus the whole-enumeration sweep covering
-//! every action category. These need
-//! real card metadata/abilities, so they run against `cards::TEST_REGISTRIES` and live here
-//! rather than in `game-core`'s registry-less unit tests.
+//! every action category.
+//!
+//! These need real card metadata/abilities, so they run against
+//! `cards::TEST_REGISTRIES` and live here rather than in `game-core`'s
+//! registry-less unit tests.
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{self, PlaySource, TurnAction};

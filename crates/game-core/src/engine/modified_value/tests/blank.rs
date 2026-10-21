@@ -1,9 +1,10 @@
-//! The elder sign under a text-box blank. Stubborn Detective 01103:
-//! *"While Stubborn Detective is at your location, treat your investigator as
-//! if his or her printed text box were blank (except for \[\[Traits\]\])."*
-//! [`elder_sign_outcome`] reads the investigator card through the same lookup
-//! every other reader of it does, so a blank empties its printed elder sign
-//! and leaves a granted one standing.
+//! The elder sign under a text-box blank.
+//!
+//! Stubborn Detective 01103: *"While Stubborn Detective is at your location,
+//! treat your investigator as if his or her printed text box were blank (except
+//! for \[\[Traits\]\])."* [`elder_sign_outcome`] reads the investigator card
+//! through the same lookup every other reader of it does, so a blank empties
+//! its printed elder sign and leaves a granted one standing.
 
 use super::*;
 

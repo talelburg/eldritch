@@ -1,5 +1,7 @@
 //! Mob Enforcer 01101, a basic weakness enemy that pursues its bearer only and
-//! can be paid off. Runs against `cards::TEST_REGISTRIES`.
+//! can be paid off.
+//!
+//! Runs against `cards::TEST_REGISTRIES`.
 //!
 //! Printed text (`data/arkhamdb-snapshot/pack/core/core.json`), verbatim:
 //!

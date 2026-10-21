@@ -1,6 +1,7 @@
 //! **Taking an action** (see `GLOSSARY.md`): which actions provoke an attack of
-//! opportunity, and which are refused before anything is paid. The attack rows
-//! take each action from the turn menu through
+//! opportunity, and which are refused before anything is paid.
+//!
+//! The attack rows take each action from the turn menu through
 //! [`TestSession`](game_core::test_support::TestSession); the refusal test
 //! submits it past the menu with
 //! [`submit_off_menu`](game_core::test_support::TestSession::submit_off_menu),

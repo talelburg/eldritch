@@ -1,8 +1,9 @@
-//! Render of `GameState` into the DOM. Panels are plain helper fns, and
-//! `BoardView` is this module's only component; the interactive pieces (hand and
-//! in-play cards, the anchored controls) are components from their own modules.
-//! Cards and locations render as
-//! their names, read from the registry provided at mount
+//! Render of `GameState` into the DOM.
+//!
+//! Panels are plain helper fns, and `BoardView` is this module's only
+//! component; the interactive pieces (hand and in-play cards, the anchored
+//! controls) are components from their own modules. Cards and locations render
+//! as their names, read from the registry provided at mount
 //! ([`registry::use_cards`]).
 
 use game_core::engine::{self, OptionTarget};

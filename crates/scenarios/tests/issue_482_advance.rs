@@ -1,8 +1,10 @@
 //! Regression for #482: advancing The Gathering's agenda 01105 via the real
 //! Mythos doom-to-threshold cascade lets its suspending Forced reverse resolve
-//! before the 1.4 draws. The reverse is an interactive `ChooseOne` for the
-//! lead-investigator proxy; the cascade leaves no stranded `Effect` frame and
-//! does not panic in `anchor_on_child_pop`.
+//! before the 1.4 draws.
+//!
+//! The reverse is an interactive `ChooseOne` for the lead-investigator proxy;
+//! the cascade leaves no stranded `Effect` frame and does not panic in
+//! `anchor_on_child_pop`.
 
 use game_core::action::RosterEntry;
 use game_core::engine::enumerate::TurnAction;

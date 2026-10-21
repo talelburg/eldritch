@@ -1,8 +1,10 @@
 //! `GameSession` persistence: create-from-setup, apply-and-persist,
-//! load-by-replay. Driven against an in-memory `SQLite` with a mock
-//! scenario registry (seating runs at creation: the seed is
-//! round-1 mulligan-pending, so a `ResolveInput(PickMultiple{selected:[]})` is
-//! accepted and a `ResolveInput` selecting a non-existent card is rejected).
+//! load-by-replay.
+//!
+//! Driven against an in-memory `SQLite` with a mock scenario registry (seating
+//! runs at creation: the seed is round-1 mulligan-pending, so a
+//! `ResolveInput(PickMultiple{selected:[]})` is accepted and a `ResolveInput`
+//! selecting a non-existent card is rejected).
 
 mod common;
 

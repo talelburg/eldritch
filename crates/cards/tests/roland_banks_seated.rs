@@ -1,6 +1,7 @@
 //! Roland Banks (01001) reacts from a **roster-seated** investigator — his
 //! `[reaction]` fires with NO manual `cards_in_play` injection, sourced from
 //! the investigator card via the unified `controlled_card_instances()` scan.
+//!
 //! Caps once per round through `investigator_card.ability_usage`.
 //!
 //! Card text (`data/arkhamdb-snapshot/pack/core/core.json`, 01001):

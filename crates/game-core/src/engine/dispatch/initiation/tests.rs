@@ -1,8 +1,10 @@
 //! The gate seam: one test per cell of the check × kind table, on synthetic
 //! fixtures that each model one primitive (ADR 0016) — an ability with a usage
-//! limit, an ability with an eligibility condition, an ability whose effect provably
-//! cannot change the game state, a card in hand with a resource cost, a
-//! constant "cannot play events". None of them stands in for a printed card.
+//! limit, an ability with an eligibility condition, an ability whose effect
+//! provably cannot change the game state, a card in hand with a resource cost,
+//! a constant "cannot play events".
+//!
+//! None of them stands in for a printed card.
 
 use std::sync::OnceLock;
 

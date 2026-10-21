@@ -1,5 +1,7 @@
-//! The six Gathering encounter enemies carry their printed stats,
-//! keywords, and spawn-location in the corpus. Stats verified against
+//! The six Gathering encounter enemies carry their printed stats, keywords, and
+//! spawn-location in the corpus.
+//!
+//! Stats verified against
 //! `data/arkhamdb-snapshot/pack/core/core_encounter.json`.
 
 use card_dsl::card_data::{

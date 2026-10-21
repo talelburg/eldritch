@@ -1,9 +1,11 @@
-//! Integration: First Aid 01019's `[action] Spend 1 supply: Heal 1
-//! damage or horror from an investigator at your location` end-to-end against
-//! the real `cards::REGISTRY`. The damage-or-horror choice is a `ChooseOne`
-//! that suspends; resume picks the branch. The `Uses (3 supplies)` pool and
-//! the "If First Aid has no supplies, discard it." depletion-discard come from
-//! corpus metadata. Runs against `cards::TEST_REGISTRIES`.
+//! Integration: First Aid 01019's `[action] Spend 1 supply: Heal 1 damage or
+//! horror from an investigator at your location` end-to-end against the real
+//! `cards::REGISTRY`.
+//!
+//! The damage-or-horror choice is a `ChooseOne` that suspends; resume picks the
+//! branch. The `Uses (3 supplies)` pool and the "If First Aid has no supplies,
+//! discard it." depletion-discard come from corpus metadata. Runs against
+//! `cards::TEST_REGISTRIES`.
 
 use card_dsl::dsl::HarmKind;
 use cards::TEST_REGISTRIES;

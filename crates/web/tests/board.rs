@@ -1,6 +1,7 @@
-//! Headless render tests for `BoardView`. Feed a constructed
-//! `GameState` through the store and assert on the rendered DOM.
-//! wasm32-only (browser DOM); native jobs skip this file.
+//! Headless render tests for `BoardView`.
+//!
+//! Feed a constructed `GameState` through the store and assert on the rendered
+//! DOM. wasm32-only (browser DOM); native jobs skip this file.
 //!
 //! **This binary runs against the real corpus, `cards::TEST_REGISTRY`.** Every
 //! card code it seeds resolves, so no assertion can pass on the renderer's

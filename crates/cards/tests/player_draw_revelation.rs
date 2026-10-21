@@ -1,6 +1,7 @@
-//! Drawing a persistent treachery weakness (Cover Up 01007) from the
-//! player deck during play reveals it and resolves its Revelation — Cover Up
-//! enters the controller's threat area with 3 clues instead of staying in hand.
+//! Drawing a persistent treachery weakness (Cover Up 01007) from the player
+//! deck during play reveals it and resolves its Revelation — Cover Up enters
+//! the controller's threat area with 3 clues instead of staying in hand.
+//!
 //! A drawn one-shot weakness (Paranoia 01097) whose bearer is defeated before
 //! it resolves leaves the game with them.
 

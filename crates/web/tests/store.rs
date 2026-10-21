@@ -1,5 +1,7 @@
 //! Headless acceptance: feeding `Hello`/`Applied` updates the signal and
-//! the DOM rendered from it. wasm32-only (browser DOM); native jobs skip.
+//! the DOM rendered from it.
+//!
+//! wasm32-only (browser DOM); native jobs skip.
 #![cfg(target_arch = "wasm32")]
 
 use game_core::engine::EngineOutcome;

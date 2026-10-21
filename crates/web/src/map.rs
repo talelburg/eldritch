@@ -1,6 +1,8 @@
-//! Spatial board map: positioned location-container nodes with drawn
-//! connection lines. Read-only; a pure derivation of `GameState`. The map and
-//! its layout helpers live here; `board.rs` calls `location_map`.
+//! Spatial board map: positioned location-container nodes with drawn connection
+//! lines.
+//!
+//! Read-only; a pure derivation of `GameState`. The map and its layout helpers
+//! live here; `board.rs` calls `location_map`.
 
 use std::collections::{BTreeMap, BTreeSet};
 

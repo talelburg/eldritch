@@ -1,4 +1,6 @@
-//! Headless render tests for the `Card` component. wasm32-only (browser DOM).
+//! Headless render tests for the `Card` component.
+//!
+//! wasm32-only (browser DOM).
 #![cfg(target_arch = "wasm32")]
 
 use std::collections::BTreeSet;

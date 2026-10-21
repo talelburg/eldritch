@@ -1,9 +1,10 @@
-//! Visual rendering of enemies for the web client. Enemies are a distinct data
-//! source — the `Enemy` state struct carries stats *and* live state, while its
-//! traits and text stay on the printed card — so they get a dedicated
-//! `EnemyCard` component rather than reusing `Card` (which is built around
-//! registry lookup + a `CardInPlay`). Shares the card CSS / chip vocabulary and
-//! the text renderer. Display-only.
+//! Visual rendering of enemies for the web client.
+//!
+//! Enemies are a distinct data source — the `Enemy` state struct carries stats
+//! *and* live state, while its traits and text stay on the printed card — so
+//! they get a dedicated `EnemyCard` component rather than reusing `Card` (which
+//! is built around registry lookup + a `CardInPlay`). Shares the card CSS /
+//! chip vocabulary and the text renderer. Display-only.
 
 use game_core::engine::OptionTarget;
 use game_core::state::Enemy;

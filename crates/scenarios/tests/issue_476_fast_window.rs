@@ -1,10 +1,11 @@
-//! Regression for #476: a framework Fast window does not strand. Real registries,
-//! Roland (01001), Rotting Remains (01163) on the encounter deck, a forced
-//! Cultist bag, and Magnifying Glass (01030, a Fast asset) in hand. After the
-//! Mythos draw + failed willpower test resolve, the `InvestigatorTurnBegins` Fast
-//! window finds a fast play eligible and surfaces a SKIPPABLE `PickSingle` (not a
-//! `Done`-idle strand). Skipping reaches the open turn; picking the option plays
-//! the asset.
+//! Regression for #476: a framework Fast window does not strand.
+//!
+//! Real registries, Roland (01001), Rotting Remains (01163) on the encounter
+//! deck, a forced Cultist bag, and Magnifying Glass (01030, a Fast asset) in
+//! hand. After the Mythos draw + failed willpower test resolve, the
+//! `InvestigatorTurnBegins` Fast window finds a fast play eligible and surfaces
+//! a SKIPPABLE `PickSingle` (not a `Done`-idle strand). Skipping reaches the
+//! open turn; picking the option plays the asset.
 
 use game_core::action::RosterEntry;
 use game_core::engine::enumerate::TurnAction;
