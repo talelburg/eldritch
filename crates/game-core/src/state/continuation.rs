@@ -1439,8 +1439,8 @@ pub struct InFlightSkillTest {
     /// a live value, so ADR 0005's ban on re-reading a stored value in place
     /// of live state does not reach them; the parts they name are read live
     /// at ST.7. The drawn token and the resolution are display only for the
-    /// client: ADR 0007 retired `token_resolution` because the total
-    /// computation reads the token's recorded row instead.
+    /// client: the total computation reads the token's recorded row instead
+    /// (ADR 0007).
     pub revealed: Option<RevealedToken>,
     /// The initiating card's *"If a \<symbol\> is revealed during this test"*
     /// clause (Shrivelling 01060), set when the test starts and fired at ST.3
@@ -1499,7 +1499,7 @@ pub struct ResolvedTest {
     /// which the engine never reads back: ADR 0005 makes every modified
     /// quantity a read over live state, so a later step that needs the total
     /// re-reads it rather than this field. ADR 0007
-    /// retired a stored token resolution for the same reason.
+    /// keeps no stored token resolution for the same reason.
     pub total: i8,
 }
 

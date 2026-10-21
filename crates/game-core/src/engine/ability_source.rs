@@ -1,5 +1,5 @@
 //! Reachability: which [`AbilitySource`]s a given investigator may use an
-//! ability from (#707, #708, #709).
+//! ability from.
 //!
 //! The Rules Reference answers this once for `[free]`, `[reaction]` and
 //! `[action]` abilities alike — `glossary/Triggered_Abilities.md`'s four
@@ -16,7 +16,7 @@
 //! used during any player window"* — on a location, an enemy, a co-located
 //! threat area, the act or the agenda reaches a player window on exactly the
 //! terms an action-costed one reaches the turn menu, because both ask this
-//! function (#710).
+//! function.
 //!
 //! Three bullets are implemented. The **control** bullet — *"A card in play and
 //! under his or her control. This includes his or her investigator card."* —
@@ -35,7 +35,7 @@
 //! > their threat area may trigger the \[action\]\[action\] to discard Haunted, as
 //! > per the FAQ \[V1.0, section 2.1\].
 //!
-//! The third bullet lands here too (#709) — *"The current act or current agenda
+//! The third bullet lands here too — *"The current act or current agenda
 //! card."* It is the one bullet with **no gate at all**: not control, not
 //! co-location. Disrupting the Ritual 01148's ruling says so about the printed
 //! card (<https://arkhamdb.com/card/01148>), verbatim:
@@ -141,7 +141,7 @@ fn reaches(
         }
         // "all encounter cards in the threat area of any investigator at that
         // location" — *any*, so this is other people's threat areas too
-        // (Haunted 01098's ruling), but only their **encounter** cards (#975):
+        // (Haunted 01098's ruling), but only their **encounter** cards:
         // a player card there is its bearer's alone. "Encounter" is read off
         // the card type, so a player-owned **treachery** weakness counts, as
         // Hospital Debts 01011's ruling needs (<https://arkhamdb.com/card/01011>):
@@ -156,14 +156,14 @@ fn reaches(
         // Co-location is not control: a co-located investigator's own
         // investigator card and assets are theirs alone.
         Placement::InvestigatorCard(_) | Placement::PlayArea(_) => false,
-        // *"The current act or current agenda card."* (#709) — the one bullet
+        // *"The current act or current agenda card."* — the one bullet
         // with no gate at all, so an investigator between locations still
         // reaches both.
         Placement::Act | Placement::Agenda => true,
         // "the location itself", and "encounter cards placed at that location":
         // its attachments (Obscuring Fog 01168), the cards put into play at it
         // (Lita Chantler 01117, whom nobody controls, so this is the only way
-        // she is reached at all, #771), and the enemies standing on it with
+        // she is reached at all), and the enemies standing on it with
         // their attachments — the Parley abilities are printed on enemies
         // (Herman Collins 01138, Mob Enforcer 01101).
         //
@@ -204,7 +204,7 @@ fn is_encounter_card(cards: &CardRegistry, card: &BoardCard<'_>) -> bool {
 }
 
 /// The card `source` names right now, wherever it sits — **existence, not
-/// reachability** (#735). `None` once the source has left the board.
+/// reachability**. `None` once the source has left the board.
 ///
 /// The deliberate contrast with [`reachable_sources`], which sits directly
 /// above: that predicate answers *"may **this investigator** use an ability
@@ -233,7 +233,7 @@ fn is_encounter_card(cards: &CardRegistry, card: &BoardCard<'_>) -> bool {
 /// location's attachments or the cards put into play at it, or an enemy's
 /// attachments — matching
 /// the collections [`reachable_sources`] reads, so a co-located threat-area card
-/// (#708) is not reported gone just because its controller is not the
+/// is not reported gone just because its controller is not the
 /// candidate's.
 pub(crate) fn source_card(state: &GameState, source: AbilitySource) -> Option<SourceCard<'_>> {
     match source {
@@ -289,7 +289,7 @@ pub(crate) fn resolve<'a>(
 }
 
 /// The mutable peer of [`resolve`], for cost payment: the same instance,
-/// addressed by identity at the moment it is paid against (#706). `None` for a
+/// addressed by identity at the moment it is paid against. `None` for a
 /// source with no card instance behind it — a location, an enemy, the act or the
 /// agenda — which is why `check_activate_ability` refuses a source-referencing
 /// cost on one before any payment starts.
@@ -302,8 +302,8 @@ pub(crate) fn resolve<'a>(
 /// **Reachability is decided by [`resolve`], never re-derived here.** This
 /// function only re-finds mutably what the predicate already said is reachable,
 /// which is why the second walk is over the whole board: a source reachable
-/// under a bullet the acting investigator does not control it under — #708's
-/// co-located threat areas — must still be payable against. Deciding
+/// under a bullet the acting investigator does not control it under — a
+/// co-located threat area — must still be payable against. Deciding
 /// reachability twice is how the validator and the cost path would come to
 /// disagree.
 pub(crate) fn resolve_mut<'a>(
@@ -516,7 +516,7 @@ mod tests {
 
     /// A card put into play **at** the location is reached by the same
     /// co-location bullet as the location's attachments, and by nothing else:
-    /// nobody controls it, so the control bullet never yields it (#771).
+    /// nobody controls it, so the control bullet never yields it.
     #[test]
     fn a_card_put_into_play_at_the_location_is_reachable() {
         let state = board();
@@ -537,7 +537,7 @@ mod tests {
 
     /// The presence probe (`source_card`) is board-wide, so a forced or
     /// reaction candidate minted from an uncontrolled card at a location is
-    /// not reported gone (#735's contract, extended to the new zone).
+    /// not reported gone.
     #[test]
     fn source_card_finds_a_card_put_into_play_at_a_location() {
         let state = board();
@@ -596,7 +596,7 @@ mod tests {
     }
 
     /// *"all **encounter** cards in the threat area of any investigator at
-    /// that location"* (#975): co-location reaches another investigator's
+    /// that location"*: co-location reaches another investigator's
     /// threat-area treachery, not a player card sitting beside it. The bearer
     /// reaches both, through control.
     #[test]
@@ -620,7 +620,7 @@ mod tests {
         );
     }
 
-    /// The same #975 boundary, as the turn menu shows it: on investigator 2's
+    /// The same boundary, as the turn menu shows it: on investigator 2's
     /// turn the treachery's `[action]` ability is offered and the player
     /// card's is not; on the bearer's turn both are.
     #[test]
@@ -810,7 +810,7 @@ mod tests {
         )
         .is_none());
     }
-    // --- The act / agenda bullet (#709) ------------------------------------
+    // --- The act / agenda bullet -------------------------------------------
     //
     // *"The current act or current agenda card."* — the one bullet gated on
     // nothing at all.

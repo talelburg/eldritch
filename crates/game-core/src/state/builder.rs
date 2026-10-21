@@ -294,7 +294,7 @@ impl GameStateBuilder {
     /// also need a reaction queue should manipulate `state` after
     /// `build()` rather than complicate this builder).
     pub fn with_open_window(mut self, kind: FastWindowKind, fast_actors: FastActorScope) -> Self {
-        // Framework player windows are `FastWindow` (#433 A-ii). The builder
+        // Framework player windows are `FastWindow`. The builder
         // only constructs framework windows; event windows / the forced run
         // (`TimingPointWindow`) are produced by the engine, not seeded here.
         self.open_windows.push(
@@ -308,7 +308,7 @@ impl GameStateBuilder {
         self
     }
 
-    /// Stage a `*Phase` anchor frame (slice 1a, #393) at the **bottom** of the
+    /// Stage a `*Phase` anchor frame at the **bottom** of the
     /// continuation stack — the realistic invariant for a state constructed
     /// mid-phase (the real driver pushes the anchor at phase entry, beneath any
     /// framework windows). Tests that drive `end_turn` / open phase windows
@@ -396,13 +396,13 @@ impl GameStateBuilder {
     }
 
     /// Stage an [`InvestigatorTurn`](Continuation::InvestigatorTurn) frame
-    /// (slice 2a-i, #393) on top of the staged `*Phase` anchor — the realistic
+    /// on top of the staged `*Phase` anchor — the realistic
     /// invariant for a state constructed mid-turn (the real driver pushes it once
     /// the `InvestigatorTurnBegins` window closes).
     ///
     /// Private: a turn frame without its phase anchor is a state the engine
     /// never rests in, so [`open_turn`](Self::open_turn) is the only public way
-    /// to open a turn — it stages the anchor and the turn together (#942).
+    /// to open a turn — it stages the anchor and the turn together.
     fn with_investigator_turn(mut self, investigator: InvestigatorId) -> Self {
         self.investigator_turn = Some(investigator);
         self
@@ -496,16 +496,16 @@ impl GameStateBuilder {
                 enemy.current_location = location;
             }
         }
-        // Builder-staged windows become `Resolution` frames on the one
-        // continuation stack (Axis-B T3); a staged hand-size discard becomes a
-        // `HandSizeDiscard` frame on top of them (#348).
-        // A staged `*Phase` anchor (slice 1a, #393) sits at the bottom of the
+        // Builder-staged windows become `FastWindow` frames on the one
+        // continuation stack; a staged hand-size discard becomes a
+        // `HandSizeDiscard` frame on top of them.
+        // A staged `*Phase` anchor sits at the bottom of the
         // stack — beneath any windows, which open *above* it during the phase.
         let mut continuations = ContinuationStack::new();
         if let Some(anchor) = self.phase_anchor {
             continuations.push(anchor);
         }
-        // A staged open turn (slice 2a-i, #393) sits directly above the anchor;
+        // A staged open turn sits directly above the anchor;
         // any window opened during the turn is a sub-resolution above it.
         if let Some(investigator) = self.investigator_turn {
             continuations.push(InvestigatorTurnFrame {
@@ -519,14 +519,14 @@ impl GameStateBuilder {
         if let Some(hsd) = self.hand_size_discard_pending {
             continuations.push(Continuation::HandSizeDiscard(hsd));
         }
-        // A staged setup mulligan becomes a `Mulligan` frame (#348). Setup and
+        // A staged setup mulligan becomes a `Mulligan` frame. Setup and
         // upkeep are disjoint phases, so this never coexists with a staged
         // hand-size discard; push order is immaterial.
         if let Some(remaining) = self.mulligan_remaining {
             continuations.push(MulliganFrame { remaining });
         }
-        // A staged Mythos encounter draw becomes an `EncounterDraw` frame
-        // (#348). Disjoint from setup/upkeep, so push order is immaterial.
+        // A staged Mythos encounter draw becomes an `EncounterDraw` frame.
+        // Disjoint from setup/upkeep, so push order is immaterial.
         if let Some(remaining) = self.mythos_draw_remaining {
             continuations.push(EncounterDrawFrame { remaining });
         }

@@ -1,5 +1,5 @@
 //! Pure BFS helpers over the location-connection graph, used by Hunter
-//! movement (#128, Rules Reference p.12 "shortest path towards the
+//! movement (Rules Reference p.12 "shortest path towards the
 //! nearest investigator").
 
 use std::collections::btree_map::Entry;
@@ -15,9 +15,9 @@ use crate::state::{GameState, LocationId};
 ///
 /// Measured on the **full** connection graph, blocks and all: no mover
 /// prunes the graph, because a movement block never changes which
-/// investigator is nearest (#651,
-/// `data/rules-reference/rules/glossary/Nearest.md`) nor how far the
-/// destination is (#797). Callers apply the block to the compelled step
+/// investigator is nearest
+/// (`data/rules-reference/rules/glossary/Nearest.md`) nor how far the
+/// destination is. Callers apply the block to the compelled step
 /// instead.
 pub(crate) fn bfs_distance(state: &GameState, from: LocationId, to: LocationId) -> Option<u32> {
     if from == to {

@@ -11,10 +11,6 @@ crate::state::define_id! {
 }
 
 /// A location in the current scenario.
-///
-/// Phase-1 minimal shape; later phases will add e.g. encounter-set
-/// affiliation, victory points, location-specific effects, and
-/// hidden-information state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct Location {
@@ -73,7 +69,7 @@ pub struct Location {
     ///
     /// # Leaving the zone
     ///
-    /// Two exits, both shipped with #772. The zone has exactly one occupant
+    /// Two exits. The zone has exactly one occupant
     /// today, and she leaves it through the Parlor 01115's granted take-control
     /// Parley.
     ///
@@ -174,7 +170,7 @@ mod location_code_tests {
     fn location_serde_roundtrip_preserves_cards_at_location() {
         // The uncontrolled-asset zone is board state a client renders, so it
         // has to survive the wire — and, like `attachments`, it carries no
-        // `#[serde(default)]`, so a payload that omits it fails loudly (#453)
+        // `#[serde(default)]`, so a payload that omits it fails loudly
         // rather than silently emptying the Parlor.
         let mut original = Location::new(LocationId(4), CardCode("01115".into()), "Parlor", 2, 0);
         original.cards_at_location.push(CardInPlay::enter_play(

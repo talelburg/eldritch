@@ -117,8 +117,8 @@ pub enum Event {
         amount: u8,
     },
     /// An investigator suffered trauma. Emitted by Cover Up 01007's
-    /// game-end Forced ability. Observable + replay-visible; persistence
-    /// (campaign log, max-stat reduction) is Phase 9 — no state mutation.
+    /// game-end Forced ability. Observable and replay-visible, with no state
+    /// mutation. TODO(#766): record it in the campaign log.
     TraumaSuffered {
         /// Who suffered the trauma.
         investigator: InvestigatorId,
@@ -312,7 +312,8 @@ pub enum Event {
     /// someone: the drawer of an enemy with no Spawn instruction, or the
     /// investigator its prey picked at its location (Rules Reference
     /// p.10). It is `None` when the enemy spawned at an empty location, or
-    /// when a prey tie there waits on the lead investigator's pick.
+    /// when a prey tie there waits on a pick
+    /// ([`SpawnEngagePending`](crate::state::SpawnEngagePending)).
     ///
     /// When `engaged_with == Some(_)`, the spawn handler also emits
     /// [`EnemyEngaged`](Self::EnemyEngaged) immediately after this
@@ -426,7 +427,7 @@ pub enum Event {
     /// defeated, or if he or she resigns"*, and `glossary/Resign.md` is
     /// explicit that an investigator who resigns *"is not considered to have
     /// been defeated"*. Defeat is one [`EliminationCause`] among four, so the
-    /// umbrella term is the one the event carries (#644).
+    /// umbrella term is the one the event carries.
     InvestigatorEliminated {
         /// The eliminated investigator.
         investigator: InvestigatorId,
@@ -548,9 +549,9 @@ pub enum Event {
     /// players, the scenario ends."* — so this fires just as well for a
     /// scenario nobody was defeated in, every investigator having walked out
     /// through a Resign ability (`glossary/Resign.md`: an investigator who
-    /// resigns *"is not considered to have been defeated"*). Scenario-resolution
-    /// flow (#74) consumes this when it lands; for now, downstream listeners can
-    /// use it as a "the scenario ended with nobody left" trigger.
+    /// resigns *"is not considered to have been defeated"*). The emitter latches
+    /// the scenario's no-resolution ending beside it; nothing reads the event
+    /// itself.
     ///
     /// [`InvestigatorEliminated`]: Event::InvestigatorEliminated
     AllInvestigatorsEliminated,
@@ -621,8 +622,8 @@ pub enum Event {
         /// The discard pile the card landed in.
         to: DiscardPile,
     },
-    /// A card left play and was **removed from the game** rather than discarded
-    /// (#772) — `glossary/Removed_from_Game.md`: *"A card that has been removed
+    /// A card left play and was **removed from the game** rather than
+    /// discarded — `glossary/Removed_from_Game.md`: *"A card that has been removed
     /// from the game is placed away from the game area and has no further
     /// interaction with the game in any manner for the duration of its
     /// removal."*
@@ -649,7 +650,7 @@ pub enum Event {
         /// Where the card came from before leaving the game.
         from: Zone,
     },
-    /// An investigator **took control** of an in-play card (#772) — the Parlor
+    /// An investigator **took control** of an in-play card — the Parlor
     /// 01115's Parley moving Lita Chantler 01117 out of the location she was
     /// put into play at and into the parleying investigator's play area.
     ///
@@ -704,15 +705,14 @@ pub enum Event {
     /// before any [`Trigger::Revelation`](card_dsl::dsl::Trigger::Revelation)
     /// effects on the card resolve — the card has been drawn off the
     /// deck and identified, but its Revelation effect has not yet
-    /// applied. Before-timing reaction listeners (#52's machinery, not
-    /// wired in Phase 4) hook this point to interpose or cancel.
+    /// applied.
     ///
     /// Emitted by `encounter_card_revealed` (in `engine::dispatch`) in
     /// response to `EngineRecord::EncounterCardRevealed`.
     CardRevealed {
         /// The investigator whose draw produced this reveal. For
-        /// Phase-4 Mythos draws, this is the investigator taking their
-        /// Mythos turn; for forced reveals (scenario effects), the
+        /// Mythos draws, this is the investigator drawing; for forced
+        /// reveals (scenario effects), the
         /// scenario module names the controller.
         investigator: InvestigatorId,
         /// The revealed card's code.
@@ -731,14 +731,14 @@ pub enum Event {
         /// Who activated the ability.
         investigator: InvestigatorId,
         /// What carried the ability — a card instance in play, a location, or
-        /// an enemy (#707, #708). Not every source has a
+        /// an enemy. Not every source has a
         /// [`CardInstanceId`]; a consumer that
         /// needs one reads
         /// [`AbilitySource::instance`](crate::state::AbilitySource::instance).
         source: AbilitySource,
-        /// The source card's code.
+        /// The code of the card the ability is printed on.
         code: CardCode,
-        /// Which ability fired, named by where it is printed (#772).
+        /// Which ability fired, named by where it is printed.
         address: AbilityAddress,
     },
     /// A scenario ended — at a resolution point, or at none. Emitted by
@@ -751,11 +751,10 @@ pub enum Event {
     /// continuation stack, runs the game-end Forced abilities (Cover Up 01007's
     /// mental trauma), and only then pushes this event. So it can land on a
     /// *later* apply than the latch — the interactive acknowledge of a game-end
-    /// forced ability spans an apply boundary (#566).
+    /// forced ability spans an apply boundary.
     ///
     /// Followed immediately by any events the scenario's `apply_resolution`
-    /// pushes — XP / trauma changes will appear after this event once
-    /// Phase 9 lands real bodies.
+    /// pushes.
     ///
     /// Fire-once: the latch is first-writer-wins and pushes the `ScenarioEnd`
     /// frame with it, and the apply boundary pops that frame as it finalizes —
@@ -802,7 +801,7 @@ pub enum Event {
     /// can only be initiated if its effect has the potential to change the game
     /// state, and its cost (if any) has the potential to be paid in full, taking
     /// active cost modifiers into account."*). Emitted once per withdrawn
-    /// option, immediately before the window re-prompts without it (#568).
+    /// option, immediately before the window re-prompts without it.
     ///
     /// Purely explanatory: the withdrawal itself is visible as a shorter option
     /// list, and this event is what lets a client say *why* the option went away
@@ -851,7 +850,7 @@ pub enum FailureReason {
 }
 
 /// Why an already-offered reaction option could no longer be initiated
-/// ([`Event::ReactionOptionLapsed`], #568).
+/// ([`Event::ReactionOptionLapsed`]).
 ///
 /// **Attribution, not adjudication.** The decision to withdraw the option is
 /// made by re-running the reaction scan and seeing that it no longer produces
@@ -880,7 +879,7 @@ pub enum LapseReason {
     NoStateChange,
     /// The triggering condition the window belongs to was **prevented** from
     /// resolving by a sibling `when`-cell ability, so the rest of its sequence
-    /// is suppressed (#714 — Dodge 01023's ruling, quoted on the flag,
+    /// is suppressed (Dodge 01023's ruling, quoted on the flag,
     /// [`EmitEventFrame::prevented`](crate::state::EmitEventFrame::prevented)). Unlike the
     /// other reasons, this candidate is not withdrawn by a re-scan — it is
     /// still perfectly initiable; the condition it references is simply no
