@@ -1,6 +1,6 @@
 //! [`engage_ready_enemies_on_enter`], driven by a real Move.
 //!
-//! A `Prey::BearerOnly` enemy engages its bearer when they walk in (#1125).
+//! A `Prey::BearerOnly` enemy engages its bearer when they walk in.
 //! `glossary/Prey.md`: *"that enemy only moves towards and engages that
 //! investigator (as if it were the only investigator in play), and ignores all
 //! other investigators while moving and engaging."* That a non-bearer walking

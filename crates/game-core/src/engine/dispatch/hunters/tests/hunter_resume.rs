@@ -21,7 +21,7 @@ const D: LocationId = LocationId(4);
 fn hunter_move_tie_suspends_then_resumes_on_pick_location() {
     // Diamond A(1)-{B(2),C(3)}-D(4). Investigator at D; hunter at A,
     // default prey. Ending the turn runs the Enemy phase, where two equal
-    // first-steps (B, C) suspend for the lead investigator's pick.
+    // first-steps (B, C) suspend for a pick between them.
     let mut loc_a = test_support::test_location(A.0, "A");
     let mut loc_b = test_support::test_location(B.0, "B");
     let mut loc_c = test_support::test_location(C.0, "C");

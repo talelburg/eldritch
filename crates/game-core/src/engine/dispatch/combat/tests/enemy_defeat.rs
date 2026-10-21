@@ -20,18 +20,20 @@ fn defeating_victory_enemy_places_it_in_the_victory_display() {
     );
     // "place the card in the victory display instead of in the discard
     // pile" (`glossary/Victory_Display_Victory_Points.md`) — the victory
-    // display is the only pile it lands in (#632).
+    // display is the only pile it lands in.
     assert!(
         state.encounter_discard.is_empty(),
         "a victory enemy goes to the victory display instead of the encounter discard"
     );
 }
 
+/// Regression for #632: a defeated enemy without victory points goes to the
+/// encounter discard pile rather than out of the game.
 #[test]
 fn defeating_non_victory_enemy_places_its_card_in_the_encounter_discard() {
     // `glossary/Defeat.md`: "that enemy is defeated and placed on the
     // encounter discard pile" — not removed from the game, so the
-    // `glossary/Encounter_Deck.md` reshuffle can bring it back (#632).
+    // `glossary/Encounter_Deck.md` reshuffle can bring it back.
     let eid = EnemyId(1);
     let mut enemy = test_support::test_enemy(1, "Ghoul");
     enemy.code = CardCode::new("01160");

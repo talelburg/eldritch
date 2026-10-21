@@ -78,7 +78,7 @@ fn resolve_prey_highest_stat_tie_is_tie() {
 
 #[test]
 fn resolve_prey_lowest_remaining_health_picks_min() {
-    // max_health() = 8 (TEST_INV registry, #448 cp2a).
+    // max_health() = 8 (TEST_INV registry).
     // hurt: accumulated_damage 6 → remaining 2.
     // healthy: accumulated_damage 0 → remaining 8. hurt is lowest.
     let state = GameStateBuilder::new()
@@ -100,7 +100,7 @@ fn resolve_prey_lowest_remaining_health_picks_min() {
 
 #[test]
 fn resolve_prey_lowest_remaining_health_tie_is_tie() {
-    // max_health() = 8 (TEST_INV registry, #448 cp2a).
+    // max_health() = 8 (TEST_INV registry).
     // a: accumulated_damage 3 → remaining 5.
     // b: accumulated_damage 3 → remaining 5. Tie.
     let state = GameStateBuilder::new()

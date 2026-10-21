@@ -16,7 +16,7 @@ fn mythos_phase_emits_phase_started_and_prompts_first_drawer() {
         .build();
     let mut events = Vec::new();
 
-    // mythos_phase parks the anchor at Draws (#482); the 1.4 draws run when
+    // mythos_phase parks the anchor at Draws; the 1.4 draws run when
     // the drive loop processes that anchor (no agenda deck ⇒ no advance to
     // wait on, so this completes in the same drive).
     mythos_phase(&mut Cx::for_test(&mut state, &mut events));
@@ -84,7 +84,7 @@ fn mythos_anchor_pushed_during_phase() {
         .build();
     let mut events = Vec::new();
     mythos_phase(&mut Cx::for_test(&mut state, &mut events));
-    // Draws run from the anchor's Draws resume (#482); drive to reach them.
+    // Draws run from the anchor's Draws resume; drive to reach them.
     let outcome = dispatch::drive(
         &mut Cx::for_test(&mut state, &mut events),
         EngineOutcome::Done,
@@ -188,10 +188,9 @@ fn mythos_phase_end_emits_phase_ended_and_steps_to_investigation() {
     );
 }
 
-/// Site 1 fix (Rules Reference p.10): when the lead investigator in
-/// `turn_order` is eliminated, `mythos_phase` must seed the encounter-draw
-/// queue from the first Active investigator rather than blindly taking
-/// `turn_order.first()`.
+/// Rules Reference p.10: when the first investigator in `turn_order` is
+/// eliminated, `mythos_phase` seeds the encounter-draw queue from the first
+/// Active investigator rather than blindly taking `turn_order.first()`.
 #[test]
 fn mythos_phase_skips_eliminated_lead_when_seeding_queue() {
     let mut state = GameStateBuilder::default()
@@ -209,7 +208,7 @@ fn mythos_phase_skips_eliminated_lead_when_seeding_queue() {
     let mut events = Vec::new();
 
     mythos_phase(&mut Cx::for_test(&mut state, &mut events));
-    // The 1.4 draws (queue seeding) run from the Draws anchor (#482); drive.
+    // The 1.4 draws (queue seeding) run from the Draws anchor; drive.
     dispatch::drive(
         &mut Cx::for_test(&mut state, &mut events),
         EngineOutcome::Done,
@@ -246,7 +245,7 @@ fn mythos_phase_with_all_investigators_eliminated_opens_after_draws_window() {
 
     mythos_phase(&mut Cx::for_test(&mut state, &mut events));
     // No Active drawers: the Draws anchor opens + auto-skips MythosAfterDraws,
-    // cascading to Investigation — all once the loop processes it (#482).
+    // cascading to Investigation — all once the loop processes it.
     dispatch::drive(
         &mut Cx::for_test(&mut state, &mut events),
         EngineOutcome::Done,

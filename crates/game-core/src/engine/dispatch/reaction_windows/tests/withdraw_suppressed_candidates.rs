@@ -130,7 +130,7 @@ fn a_later_cells_window_is_untouched() {
     }
 }
 
-/// The forced arm: a 2+ lead-ordered run (#213) empties the same way, so it
+/// The forced arm: a 2+ lead-ordered run empties the same way, so it
 /// closes itself instead of demanding a pick for a condition that is no
 /// longer happening. The unit half of the shape Dodge 01023's ruling is
 /// stated about; the corpus half — dodging Silver Twilight Acolyte 01102 —
@@ -155,10 +155,8 @@ fn a_forced_run_in_the_when_cell_empties_too() {
 
 /// A **caller-owned** condition is left alone: it has already mutated the
 /// board by the time any window opens, so a prevention flag in flight is
-/// not its to consume. The enemy attack used to be this fixture and #704
-/// migrated it; the soak condition stood in until #727 replaced it with the
-/// coordinator-owned `DamageDealt`/`DamagePlaced` pair, so `EnteredPlay`
-/// (Research Librarian 01032's window) stands in now.
+/// not its to consume. `EnteredPlay` (Research Librarian 01032's window) is
+/// such a condition; an enemy attack and its damage are coordinator-owned.
 #[test]
 fn a_caller_owned_conditions_window_is_untouched() {
     let entered = TimingEvent::EnteredPlay {
