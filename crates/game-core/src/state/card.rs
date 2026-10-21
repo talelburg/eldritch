@@ -77,13 +77,13 @@ pub enum Zone {
     /// A player's deck (top or bottom — events that need the
     /// distinction can record it separately). Also the `from` zone of a drawn
     /// treachery weakness discarded once its Revelation resolves, or of an enemy
-    /// weakness that could not spawn (#1121); see [`EncounterDeck`](Self::EncounterDeck).
+    /// weakness that could not spawn; see [`EncounterDeck`](Self::EncounterDeck).
     Deck,
     /// The encounter deck. Used as the `from` zone when a card taken off the
     /// encounter deck is discarded without being drawn (Rise of the Ghouls
     /// 01106's *"Discard cards from the top of the encounter deck"*), and when
     /// a drawn encounter card is discarded after resolving — a one-shot
-    /// treachery after its Revelation, or an enemy that could not spawn (#1121).
+    /// treachery after its Revelation, or an enemy that could not spawn.
     /// A card resolving is in limbo, in no zone of its own, so the event names
     /// the deck it was drawn from.
     EncounterDeck,
@@ -158,17 +158,16 @@ pub use card_dsl::card_data::UseKind;
 /// State for a single copy of a card in play under an investigator's
 /// control.
 ///
-/// Replaces the bare [`CardCode`] entries that lived in
-/// [`Investigator::cards_in_play`](crate::state::Investigator::cards_in_play)
-/// through Phase-3. Carries the per-instance fields that activated
+/// The entries of
+/// [`Investigator::cards_in_play`](crate::state::Investigator::cards_in_play).
+/// Carries the per-instance fields that activated
 /// abilities, soak effects, and identity-aware queries need:
 ///
 /// - `instance_id` so effects can name a specific copy.
 /// - `exhausted` for ready/exhaust dispatch.
 /// - `uses` for typed named-uses tracking (charges, ammo, …).
 /// - `accumulated_damage` / `accumulated_horror` for asset soak
-///   (the soak mechanic itself is #44; this struct just owns the
-///   storage).
+///   (this struct only owns the storage).
 ///
 /// Construction goes through [`CardInPlay::enter_play`] so all the
 /// defaults flow from one place.
@@ -198,14 +197,14 @@ pub struct CardInPlay {
     /// Clues sitting on this card instance (Cover Up 01007 enters the
     /// threat area "with 3 clues on it"). Distinct from the investigator
     /// and location clue pools. Most cards never carry clues (0). Required
-    /// on the wire (#453).
+    /// on the wire.
     pub clues: u8,
     /// Doom sitting on this card instance (Arcane Initiate 01063: *"Place 1
     /// doom on it."*). It counts toward the agenda's threshold —
     /// `glossary/Doom.md`: *"Doom on cards other than the agenda (such as
     /// enemies, allies, locations, etc.) counts towards the amount of doom in
     /// play."* — through [`board::doom_in_play`](crate::engine::board::doom_in_play),
-    /// and it leaves play with the card. Required on the wire (#453).
+    /// and it leaves play with the card. Required on the wire.
     pub doom: u8,
     /// Resources sitting on this card instance (Hospital Debts 01011: *"Move 1
     /// resource from your resource pool to Hospital Debts."*). A plain count,
@@ -216,7 +215,7 @@ pub struct CardInPlay {
     /// abilities that *"“move” resources from one card to another or from one
     /// card to your resource pool … do not trigger Stylish Coat’s ability"*
     /// (`data/official-faq/Frequently_Asked_Questions.md`). They leave play
-    /// with the card. Required on the wire (#453).
+    /// with the card. Required on the wire.
     pub resources: u8,
     /// Per-ability usage counter for "Limit X per \[period\]" caps. Key
     /// is the ability index within the card's `abilities()`; value maps each
@@ -233,7 +232,7 @@ pub struct CardInPlay {
     /// another investigator will trigger the ability even if you have already
     /// triggered it this round."* So a co-located friend triggering Hospital
     /// Debts 01011 gets their own two a round, beside its bearer's. A "group
-    /// limit" (shared by every investigator) is not modelled yet (#699).
+    /// limit" (shared by every investigator) is not modelled.
     ///
     /// Reset is **lazy** — when a query needs the count for the current
     /// period, it reads the record; if the stored clock is outside the
@@ -244,7 +243,7 @@ pub struct CardInPlay {
     /// required.
     ///
     /// Empty for cards with no [`UsageLimit`] on any ability. Required on the
-    /// wire (#453).
+    /// wire.
     ///
     /// [`UsageLimit`]: card_dsl::dsl::UsageLimit
     pub ability_usage: BTreeMap<u8, BTreeMap<InvestigatorId, AbilityUsageRecord>>,
@@ -271,7 +270,7 @@ pub struct CardInPlay {
     ///
     /// Fixed when the card enters play: [`enter_play`](Self::enter_play) takes
     /// it as a required argument, because the caller knows where the card came
-    /// from and the card's metadata does not. Required on the wire (#453).
+    /// from and the card's metadata does not. Required on the wire.
     pub owner: Owner,
 }
 
@@ -558,7 +557,7 @@ mod tests {
     #[test]
     fn omitting_any_required_field_is_rejected() {
         // `clues`, `doom`, `resources`, `ability_usage` and `owner` are required on the
-        // wire (#453): a payload missing one fails loudly rather than
+        // wire: a payload missing one fails loudly rather than
         // silently defaulting.
         let c = CardInPlay::enter_play(CardCode("_x".into()), CardInstanceId(1), Owner::Scenario);
         let full = serde_json::to_value(&c).expect("serialize");

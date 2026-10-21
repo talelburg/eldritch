@@ -1,6 +1,7 @@
-//! C5c (#238) integration: Roland's .38 Special 01006 end-to-end against
-//! the real `cards::REGISTRY`. Verifies the clue-conditional combat
-//! modifier (+3 with a clue on the location, +1 without) and ammo spend.
+//! Roland's .38 Special 01006 end-to-end against the real `cards::REGISTRY`.
+//!
+//! Verifies the clue-conditional combat modifier (+3 with a clue on the
+//! location, +1 without) and ammo spend.
 //!
 //! Runs against `cards::TEST_REGISTRIES`.
 

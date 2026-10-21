@@ -1,4 +1,4 @@
-//! The step-wise [`TestSession`] driver (#938): settle a built state, then
+//! The step-wise [`TestSession`] driver: settle a built state, then
 //! apply one step at a time and drain to the next rest through the one drain
 //! loop in [`resolver`](super::resolver).
 
@@ -21,7 +21,7 @@ use crate::state::{
 /// Step-wise test driver: drive the real engine one step at a time, reading the
 /// prompt, state and events between steps.
 ///
-/// One model, eager throughout (#938):
+/// One model, eager throughout:
 ///
 /// - **Construction settles** the built state through the production `apply`
 ///   scaffolding, so the session starts where the engine would rest. An open
@@ -33,18 +33,8 @@ use crate::state::{
 ///   encounter draw or hand-size discard shows its prompt. A
 ///   fixture whose top frame cannot re-surface its prompt is a stack the engine
 ///   never rests at, and construction panics.
-/// - **Every step applies once, then drains to the next rest.** The steps are:
-///   - from the turn menu, [`take`](Self::take);
-///   - at a prompt, [`pick`](Self::pick), [`pick_nth`](Self::pick_nth),
-///     [`pick_nth_at`](Self::pick_nth_at), [`confirm`](Self::confirm),
-///     [`skip`](Self::skip), [`commit`](Self::commit) at a skill test's
-///     commit window, and [`choose_from_hand`](Self::choose_from_hand) at a
-///     mulligan or hand-size discard;
-///   - the framework entry points [`fire_at`](Self::fire_at),
-///     [`take_damage`](Self::take_damage) and [`test_skill`](Self::test_skill);
-///   - [`submit_off_menu`](Self::submit_off_menu), for a turn action the menu
-///     does not offer, and the raw [`apply`](Self::apply).
-///
+/// - **Every step applies once, then drains to the next rest.** The steps are
+///   the methods whose doc starts "Step:", and each says where it applies.
 ///   The drain answers prompts through the session's
 ///   reply policy and stops at the turn menu, at `Done` (the game is over), at
 ///   `Rejected`, or at the first prompt the policy has no answer for — which is
@@ -343,7 +333,7 @@ impl TestSession {
     ///
     /// For a check the engine makes when an answer resolves rather than when
     /// the option was offered — a play-ban that arrives between a reaction
-    /// window's offer and the pick (#917). A change that play can make is made
+    /// window's offer and the pick. A change that play can make is made
     /// by playing; this is for the change no step can make while a prompt is
     /// open. To have the prompt re-asked against the edit instead, settle the
     /// edited state with [`new`](Self::new).
@@ -545,7 +535,7 @@ impl TestSession {
     ///    the handler — not the enumerator — to panic.
     /// 2. Proving a handler *itself* rejects an action the enumerator already
     ///    filters out, which a client can send over the wire without consulting
-    ///    the menu (#639's activation initiation gate).
+    ///    the menu (an activation's initiation gate, say).
     ///
     /// Everything else takes the action from the menu with
     /// [`take`](Self::take).

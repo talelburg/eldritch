@@ -1,4 +1,4 @@
-//! Drag-to-move for a centred modal (#857).
+//! Drag-to-move for a centred modal.
 //!
 //! A modal that covers the board answers one question and hides everything the
 //! player might want to check while answering it. This lets them shove it aside

@@ -1,7 +1,8 @@
 //! Roland Banks (01001) reacts from a **roster-seated** investigator — his
 //! `[reaction]` fires with NO manual `cards_in_play` injection, sourced from
-//! the investigator card via the unified `controlled_card_instances()` scan
-//! (#448 cp3a). Caps once per round through `investigator_card.ability_usage`.
+//! the investigator card via the unified `controlled_card_instances()` scan.
+//!
+//! Caps once per round through `investigator_card.ability_usage`.
 //!
 //! Card text (`data/arkhamdb-snapshot/pack/core/core.json`, 01001):
 //! > [reaction] After you defeat an enemy: Discover 1 clue at your
@@ -87,7 +88,7 @@ fn seated_roland_reaction_fires_with_no_in_play_injection() {
     assert_eq!(session.state().locations[&HERE].clues, 1);
     assert_eq!(session.state().investigators[&INV].clues, 1);
 
-    // Usage bumped on the investigator CARD (#448 cp3a — the unified scan fires
+    // Usage bumped on the investigator CARD (the unified scan fires
     // it via `controlled_card_instances()`, so usage lives on the card's own
     // `ability_usage`, not `Investigator.ability_usage`): ability index 0, round 0.
     let inv = &session.state().investigators[&INV];
@@ -110,7 +111,7 @@ fn seated_roland_reaction_fires_with_no_in_play_injection() {
 fn seated_roland_reaction_capped_once_per_round() {
     let mut state = seated_roland_with_enemy();
     // Pretend Roland already reacted this round — bump the investigator CARD's
-    // usage (#448 cp3a: the unified scan reads `investigator_card.ability_usage`).
+    // usage (the unified scan reads `investigator_card.ability_usage`).
     state
         .investigators
         .get_mut(&INV)

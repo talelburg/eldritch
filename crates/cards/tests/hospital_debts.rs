@@ -19,7 +19,8 @@
 //! player-specific, so another investigator will trigger the ability even if
 //! you have already triggered it this round."*
 //!
-//! The Forced experience clause is `TODO(#1062)`, and untested here.
+//! The Forced experience clause is not modelled, so it is untested here.
+//! TODO(#1062): earn 2 fewer experience below 6 resources.
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{self, TurnAction};
@@ -135,7 +136,7 @@ fn revelation_puts_it_into_the_drawers_threat_area() {
     assert_eq!(
         window.offered_at(&window.state().card(SKIDS, HOSPITAL_DEBTS)),
         1,
-        "the fast ability is offered in the window as soon as the card is in play"
+        "the zero-action ability is offered in the window as soon as the card is in play"
     );
 
     let state = window.state();

@@ -1,6 +1,8 @@
-//! Spatial board map (#497): positioned location-container nodes with drawn
-//! connection lines. Read-only; a pure derivation of `GameState`. The map and
-//! its layout helpers live here; `board.rs` calls `location_map`.
+//! Spatial board map: positioned location-container nodes with drawn connection
+//! lines.
+//!
+//! Read-only; a pure derivation of `GameState`. The map and its layout helpers
+//! live here; `board.rs` calls `location_map`.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -36,8 +38,8 @@ const FALLBACK_COLS: u16 = 6;
 
 /// Resolve a `(col, row)` grid cell for every in-play location: its authored
 /// cell from [`location_grid_pos`], or — for codes without one — the next free
-/// cell in row-major order, skipping cells already taken (authored or
-/// previously assigned). Deterministic in `locations` order, so the layout is
+/// cell in row-major order, skipping cells already taken (authored, or
+/// assigned earlier in the walk). Deterministic in `locations` order, so the layout is
 /// stable across renders.
 pub(crate) fn layout_positions(
     locations: &[(LocationId, CardCode)],
@@ -86,7 +88,7 @@ fn advance_cell((col, row): (u16, u16)) -> (u16, u16) {
 /// Pixel geometry for the grid. A node is `CARD_W` of location card plus a
 /// token rail beside it, `NODE_W` wide in total; cells are larger again to
 /// leave gaps for the connection lines. Node *height* is deliberately absent:
-/// the node grows with its tokens rather than clipping them (#848).
+/// the node grows with its tokens rather than clipping them.
 const CELL_W: u16 = 400;
 const CELL_H: u16 = 250;
 const NODE_W: u16 = 360;
@@ -218,7 +220,7 @@ fn map_extent(positions: &BTreeMap<LocationId, (u16, u16)>) -> (u16, u16) {
 /// and while nothing on the board carried that anchor the Parlor's granted
 /// Parley on Lita Chantler 01117 was unreachable — the deadlock ADR 0011 names,
 /// *"an option the engine anchors to a surface the client does not render is
-/// unreachable rather than merely misplaced"* (#847). Mirrors
+/// unreachable rather than merely misplaced"*. Mirrors
 /// [`InPlayCardView`](crate::card::InPlayCardView), the play-area surface with
 /// the same anchor.
 ///
@@ -277,7 +279,7 @@ pub fn location_map(game: &GameState) -> impl IntoView {
     let positions = layout_positions(&locs);
     let cards = registry::use_cards();
 
-    // The live prompt's options, for glow + per-node context menus (#536).
+    // The live prompt's options, for glow + per-node context menus.
     // Absent (native / no prompt) → empty → no node is actionable.
     let pending = use_context::<PendingOptions>()
         .map(|p| p.0.get())
@@ -318,7 +320,7 @@ pub fn location_map(game: &GameState) -> impl IntoView {
             // Cards put into play *at* the location, under nobody's control
             // (Lita Chantler 01117 in the Parlor). They are in play — RR
             // "In Play and Out of Play" counts a card "at a location" as such —
-            // so the node has to show them; nobody's play area will (#771).
+            // so the node has to show them; nobody's play area will.
             let at_location: Vec<_> = loc
                 .cards_at_location
                 .iter()
@@ -410,7 +412,7 @@ pub fn location_map(game: &GameState) -> impl IntoView {
                     </div>
                     // The satellite rail: one bordered box per occupant, laid
                     // out beside the card rather than inside it, so a long
-                    // printed text can never push a token out of view (#848).
+                    // printed text can never push a token out of view.
                     <div class="node-tokens">
                         {invs}
                         {enemies}

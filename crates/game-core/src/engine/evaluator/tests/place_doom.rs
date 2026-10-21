@@ -50,7 +50,7 @@ fn place_doom_on_current_agenda_advances_at_threshold() {
         EvalContext::for_controller(InvestigatorId(1)),
     );
     assert_eq!(out, EngineOutcome::Done);
-    // The advance is deferred to an AdvanceReverse frame (#482); drive it
+    // The advance is deferred to an AdvanceReverse frame; drive it
     // (the test registry serves no reverse for it ⇒ it drives straight through).
     dispatch::drive(&mut cx, EngineOutcome::Done);
     assert_eq!(
@@ -133,7 +133,7 @@ fn place_doom_evaluates_a_computed_count() {
     assert_eq!(state.agenda_doom, 3);
 }
 
-/// The point of the variant over a card-local `Native` tag (#716): it
+/// The point of the variant over a card-local `Native` tag: it
 /// nests. Saracenic Script 02240's act back places its doom as the last
 /// step of a `Seq`; Offer of Power 01178 places 2 inside a `ChooseOne`
 /// branch; Blood on the Altar 02195 places 1 under an `If`-on-failure.

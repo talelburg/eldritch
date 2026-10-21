@@ -89,10 +89,10 @@ pub(in crate::engine::dispatch) fn handle(
     })
 }
 
-/// The engagement half of an Engage action, run after its `AoO` loop (#293).
+/// The engagement half of an Engage action, run after its `AoO` loop.
 ///
 /// Re-reads the enemy from live state and re-checks the target precondition
-/// (the §D primary-precondition re-check): enemy still exists, is co-located
+/// (the post-`AoO` precondition re-check): enemy still exists, is co-located
 /// with the investigator, and is not already engaged with this investigator.
 /// Returns `Done` on any lapsed precondition (the engagement simply does not
 /// happen — legitimately suppressed, not a state corruption).

@@ -1,4 +1,4 @@
-//! #703: clue discovery is **one** triggering condition, and the coordinator
+//! Clue discovery is **one** triggering condition, and the coordinator
 //! resolves it between the `when` and `at` cells.
 //!
 //! `data/rules-reference/rules/glossary/Nested_Sequences.md`, verbatim:
@@ -8,14 +8,11 @@
 //! > condition, (2) resolve the triggering condition, and then, (3) execute
 //! > "after..." effects in response to that triggering condition.
 //!
-//! Before this, the interrupt point was its own timing event, reaction-only,
-//! and there was no after-discovery condition at all: an ability declaring
-//! `at` or `after` on a discovery was never collected, never resolved and
-//! never rejected. No corpus card wants one yet, so the two new cells are
-//! proved with a mock registry (prior art: `timing_cells.rs`,
+//! No corpus card declares the `at` or `after` cell on a discovery, so those
+//! two cells are proved with a mock registry (prior art: `timing_cells.rs`,
 //! `advance_act_interactive_reverse.rs`). Cover Up 01007 — the one card that
 //! *does* declare the `when` cell — is covered against the **real** corpus in
-//! `cover_up.rs`, which must not move.
+//! `cover_up.rs`.
 //!
 //! The cell order is the event order, so that is what these assert on: each
 //! synthetic ability gains a distinct number of resources, and `CluePlaced`
@@ -39,8 +36,7 @@ use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSes
 use std::sync::LazyLock;
 
 /// `when`-tagged reaction: +4 resources. Declaring interrupt timing on this
-/// condition is accepted now that it is coordinator-owned — before #703 the
-/// engine rejected it.
+/// condition is accepted, because the coordinator owns it.
 const WHEN: &str = "_cd_when";
 /// `at`-tagged reaction: +1 resource.
 const AT: &str = "_cd_at";
@@ -150,9 +146,7 @@ fn registries() -> Registries {
 }
 
 /// The headline claim: the discovery happens *between* the `when` and `at`
-/// cells. Before #703 the `when` ability's window was opened by the emit site
-/// itself, the discovery was performed on that window's close, and the `at` and
-/// `after` cells did not exist for this condition at all.
+/// cells.
 #[test]
 fn the_discovery_resolves_between_the_when_and_at_cells() {
     let session = investigate_firing(board_with(&[WHEN, AT, AFTER], 2), &[WHEN, AT, AFTER]);
@@ -209,7 +203,7 @@ fn an_at_ability_resolves_after_the_clues_move_and_before_any_after_ability() {
     );
 }
 
-/// A prevented condition runs **none** of the rest of its sequence (#714).
+/// A prevented condition runs **none** of the rest of its sequence.
 /// Dodge 01023's ruling (`data/arkhamdb-faq/core/01023.md`) settles it for the
 /// sibling condition: *"If the attacking enemy has a **Forced** ability that
 /// says "When attacks" or "After attacks", that ability does not trigger if an

@@ -1,7 +1,5 @@
 //! Each of the five investigators, seated with their **default deck** exactly
-//! as the picker sends it, plays The Gathering to a resolution — #782's *"any
-//! investigator I pick [can] play The Gathering to a resolution with their
-//! default deck."*
+//! as the picker sends it, plays The Gathering to a resolution.
 //!
 //! Every walk seats [`WeaknessChoice::Fixed`]'s roster entry, the picker's
 //! default, against the production registries (the real corpus and the real
@@ -270,7 +268,7 @@ fn skids_with_his_default_deck_plays_the_gathering_to_a_resolution() {
     resolves_on_the_first_bullet(defeated);
 }
 
-/// Skids's own Fast ability, offered on his investigator card; the walk passes
+/// Skids's own zero-action ability, offered on his investigator card; the walk passes
 /// it.
 fn pass_his_ability(session: TestSession) -> TestSession {
     let skids = session.state().investigators[&INV].card_anchor();

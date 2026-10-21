@@ -11,10 +11,10 @@
 //! [`ModifierScope::ThisSkillTest`] scope. The DSL primitives that
 //! make this expressible:
 //!
-//! - `Trigger::Activated { action_cost: 0 }` with no action designator (#53)
+//! - `Trigger::Activated { action_cost: 0 }` with no action designator
 //!   — `[fast]` means no action cost.
-//! - `Cost::Resources(1)` (#53) — the per-ability payment.
-//! - `ModifierScope::ThisSkillTest` evaluator push path (#102) —
+//! - `Cost::Resources(1)` — the per-ability payment.
+//! - `ModifierScope::ThisSkillTest` evaluator push path —
 //!   records the modifier into [`GameState::recorded_modifiers`]
 //!   for the next skill-test resolution to consume.
 //!

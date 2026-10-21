@@ -1,6 +1,8 @@
-//! Headless render tests for the version-mismatch overlay (#770): the terminal
-//! wire-format-skew state must announce itself over the board rather than as one
-//! line in the header. wasm32-only.
+//! Regression for #770: the terminal wire-format-skew state announces itself
+//! over the board, in the version-mismatch overlay, rather than as one line in
+//! the header.
+//!
+//! wasm32-only.
 #![cfg(target_arch = "wasm32")]
 
 use std::collections::BTreeSet;

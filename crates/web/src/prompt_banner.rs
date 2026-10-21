@@ -1,5 +1,4 @@
-//! The prompt banner (interactivity S3–S6, #538/#539/#541) — **the floor** now
-//! that the flat `.action-bar` is gone.
+//! The prompt banner — **the floor** every live prompt reaches.
 //!
 //! It renders whenever an `AwaitingInput` is live, with one exception: the
 //! open-turn menu, which the engine anchors to
@@ -7,7 +6,7 @@
 //! suppress its "Choose an action" noise **structurally** rather than by matching
 //! the prompt string (ADR 0011). Every other prompt gets at least its text here,
 //! so a prompt the client does not specifically home still says the engine is
-//! waiting (#770 stays open; this is a non-regression floor, not its fix).
+//! waiting.
 //!
 //! It stays the home for the controls that belong nowhere on the board: a live
 //! prompt's **un-anchored** options, a `PickMultiple` commit's Confirm (submitting
@@ -40,8 +39,8 @@ pub fn PromptBanner() -> impl IntoView {
                 return ().into_any();
             };
             let is_multi = request.kind == InputKind::PickMultiple;
-            // A decision has its own modal, and that modal is its *sole* surface
-            // (#856): the banner renders neither its text nor its branches. The
+            // A decision has its own modal, and that modal is its *sole*
+            // surface: the banner renders neither its text nor its branches. The
             // predicate lives with the view it governs, exactly as the skill-test
             // result modal's does below. The banner's other controls stay — it is
             // still the floor, and a Pass with nowhere else to go must not vanish
@@ -50,7 +49,7 @@ pub fn PromptBanner() -> impl IntoView {
             // The open-turn menu is the one prompt whose *text* the banner
             // swallows — identified by its anchor rather than by its string (ADR
             // 0011), because "Choose an action" every turn would spend the one
-            // persistent surface on noise (#541).
+            // persistent surface on noise.
             //
             // Only the text. The banner is the floor, so its controls stay: a
             // turn action whose anchor is `None` — Investigate with no current
@@ -65,7 +64,7 @@ pub fn PromptBanner() -> impl IntoView {
             let prompt = (!suppress_text).then(|| request.prompt.clone());
             // A prompt inside a skill test's verdict, before the verdict is
             // logged — Lucky! 01080's `when` cell — says how the test stands,
-            // since the result modal comes only after it (#1111).
+            // since the result modal comes only after it.
             let verdict = prompt
                 .is_some()
                 .then(|| skill_test_result::provisional_verdict(&state))
@@ -73,13 +72,13 @@ pub fn PromptBanner() -> impl IntoView {
 
             // Option buttons — the live prompt's **un-anchored** options only;
             // an anchored option renders on its board card and must not render
-            // twice (#541). With the flat bar gone this is the only home an
+            // twice. This is the only home an
             // un-anchored option has: evaluator `ChooseOne` branches, the
             // skill-substitution pick, a soak point taken by the investigator.
             //
             // A decision's branches are excluded whatever their anchor: they are
-            // un-anchored whenever #845 degrades the source, and the modal is
-            // carrying them regardless.
+            // un-anchored whenever their source has left play and the engine
+            // degrades the anchor, and the modal is carrying them regardless.
             let option_btns: Vec<_> = request
                 .options
                 .iter()
@@ -130,7 +129,7 @@ pub fn PromptBanner() -> impl IntoView {
 
             // Nothing to say and nothing to offer — the ordinary open turn, where
             // every option sits on a board surface. Render no bar at all rather
-            // than an empty one (#541).
+            // than an empty one.
             if prompt.is_none()
                 && option_btns.is_empty()
                 && confirm_btn.is_none()

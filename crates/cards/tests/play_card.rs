@@ -1,7 +1,7 @@
 //! End-to-end `PlayCard` integration tests with the real card corpus.
 //!
 //! These tests run against `cards::TEST_REGISTRIES` and exercise
-//! the engine's `PlayCard` handler against actual Phase-2 cards (Holy
+//! the engine's `PlayCard` handler against actual cards (Holy
 //! Rosary, Working a Hunch). Lives in `cards/tests/` rather than
 //! `game-core/src/engine/`'s unit tests because:
 //!
@@ -31,7 +31,7 @@ const WORKING_A_HUNCH: &str = "01037";
 /// Fire Axe (02032) — a Dunwich Legacy Survivor weapon asset, in the
 /// corpus but unimplemented. Chosen as the "unimplemented but known"
 /// rejection canary precisely because it's far-future content (the
-/// Dunwich cycle is Phase 10), so it stays unimplemented long after
+/// Dunwich cycle comes after the Core Set), so it stays unimplemented long after
 /// the Core Set assets land and won't churn this test.
 const UNIMPLEMENTED_ASSET: &str = "02032";
 
@@ -221,8 +221,8 @@ fn play_working_a_hunch_resolves_on_play_and_discards() {
     );
 
     // Ordering: CardPlayed < CluePlaced < CardDiscarded. Matters
-    // because event listeners building causal chains (#52 reaction
-    // windows) will key off the order.
+    // because event listeners building causal chains (reaction
+    // windows) key off the order.
     assert_event_sequence!(
         result.events,
         Event::CardPlayed { .. },
@@ -233,7 +233,7 @@ fn play_working_a_hunch_resolves_on_play_and_discards() {
 
 #[test]
 fn play_working_a_hunch_on_empty_location_is_rejected() {
-    // RR p.11 (#495): "An event card cannot be played unless the resolution of
+    // RR p.11: "An event card cannot be played unless the resolution of
     // its effect has the potential to change the game state." Working a Hunch's
     // only effect is "discover 1 clue at your location"; at a 0-clue location it
     // would discover nothing, so the play is **rejected** — not played-and-
@@ -299,8 +299,8 @@ const MACHETE: &str = "01020";
 #[test]
 fn normal_event_play_discards_exactly_once() {
     // Play Emergency Cache 01088 (event, OnPlay GainResources 3) with no
-    // engaged enemy (no AoO). Invariant guard for the PlayFromHand frame
-    // migration: the card must be discarded exactly once (single disposal site)
+    // engaged enemy (no AoO). Invariant guard for the PlayFromHand frame: the
+    // card must be discarded exactly once (single disposal site)
     // and no play may be left in progress once it completes.
     let session = play_state(&[EMERGENCY_CACHE]).take(&PLAY_FIRST);
 
@@ -317,7 +317,7 @@ fn normal_event_play_discards_exactly_once() {
     );
     // Resources gained.
     assert!(inv.resources > 0, "resources should be gained");
-    // Exactly one CardDiscarded(Hand) — the migration invariant.
+    // Exactly one CardDiscarded(Hand) — the single-disposal invariant.
     assert_event_count!(
         result.events,
         1,
@@ -335,7 +335,7 @@ fn normal_event_play_discards_exactly_once() {
 #[test]
 fn asset_play_enters_play_through_the_frame() {
     // Play Machete 01020 (asset, no OnPlay), no engaged enemy. Invariant
-    // guard for the PlayFromHand frame migration: the asset must land in
+    // guard for the PlayFromHand frame: the asset must land in
     // cards_in_play and be removed from hand, and no CardDiscarded fires.
     let session = play_state(&[MACHETE]).take(&PLAY_FIRST);
 
@@ -370,13 +370,15 @@ fn play_card_after_defeat_is_rejected() {
     assert!(result.events.is_empty());
 }
 
-// --- Resource-cost payment (#501) -----------------------------------------
+// --- Resource-cost payment ------------------------------------------------
 //
 // Playing a card is paying its cost (RR p.22, Initiation Sequence): a card
 // cannot be played unless its resource cost can be paid in full, and on a
 // successful play the cost is deducted before attacks of opportunity resolve.
 // Holy Rosary (01059) costs 2 resources (verified against the corpus).
 
+/// Regression for #501: a card whose resource cost can't be paid in full is
+/// not played.
 #[test]
 fn play_card_rejected_when_resources_below_cost() {
     let session = play_board(holding(&[HOLY_ROSARY]).resources(1), 0); // cost 2
@@ -390,6 +392,7 @@ fn play_card_rejected_when_resources_below_cost() {
     assert!(result.events.is_empty(), "no events on rejection");
 }
 
+/// Regression for #501: a successful play deducts the card's resource cost.
 #[test]
 fn play_card_deducts_resource_cost_and_emits_resources_paid() {
     let session = play_board(holding(&[HOLY_ROSARY]).resources(5), 0).take(&PLAY_FIRST); // cost 2

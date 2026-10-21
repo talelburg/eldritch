@@ -22,9 +22,9 @@ fn game_state_is_partial_eq() {
 
 #[test]
 fn saved_state_whose_enemy_carries_traits_still_loads() {
-    // Enemies once carried a copy of their printed traits (#1000 removed it).
-    // A save written before then still has a `traits` key on each enemy, and
-    // it must keep loading: the key is ignored, not rejected.
+    // A save may carry a `traits` key on each enemy, a copy of its printed
+    // traits that the engine does not keep. It must keep loading: the key is
+    // ignored, not rejected.
     let enemy = crate::test_support::test_enemy(1, "Ghoul Minion");
     let state = crate::state::GameStateBuilder::new()
         .with_enemy(enemy)

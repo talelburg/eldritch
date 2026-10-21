@@ -13,7 +13,7 @@ fn rejected_actions_do_not_mutate_state() {
     let phase_before = state.phase;
     let active_before = state.active_investigator;
 
-    // ResolveInput is a Phase-1 stub — guaranteed to be Rejected.
+    // A ResolveInput with no outstanding prompt is Rejected.
     let result = apply(
         state,
         Action::Player(PlayerAction::ResolveInput {

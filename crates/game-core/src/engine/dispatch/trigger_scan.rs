@@ -1,4 +1,4 @@
-//! The trigger scan: which triggered abilities a timing event reaches (#962).
+//! The trigger scan: which triggered abilities a timing event reaches.
 //!
 //! Four pieces, each written once so the forced and reaction paths cannot
 //! disagree about them:
@@ -86,7 +86,7 @@ pub(super) struct BoardSource<'a> {
 ///
 /// **Eliminated investigators are skipped**, their cards and their hands —
 /// Rules Reference p.10 removes their cards from play, all but the
-/// investigator card, which only this filter keeps out of the scan (#567).
+/// investigator card, which only this filter keeps out of the scan.
 /// The one exception is the investigator
 /// [`TimingEvent::EliminationGameEnd`] names, who has already been flipped off
 /// `Active` when Elimination step 0 fires for their weaknesses.
@@ -205,13 +205,14 @@ pub(super) fn board_walk<'a>(
 /// rule:
 ///
 /// - a **controlled** card → its controller;
-/// - the current **act** or **agenda** → the lead proxy, the first Active
-///   investigator in `turn_order` (GLOSSARY "Lead investigator");
+/// - the current **act** or **agenda** → the lead-investigator proxy, the first Active
+///   investigator in `turn_order` (`cursor::first_active_investigator`; see
+///   GLOSSARY.md for how the proxy differs from the rules' role);
 /// - any other **uncontrolled** card → the condition's
-///   [`subject`](TimingEvent::subject), or the lead proxy when it has none;
+///   [`subject`](TimingEvent::subject), or the lead-investigator proxy when it has none;
 /// - a card in **hand** → the investigator holding it.
 ///
-/// A hit with no one to bind (no lead and no subject) is not collected.
+/// A hit with no one to bind (no lead-investigator proxy and no subject) is not collected.
 ///
 /// A card's forced abilities are read where they are live
 /// ([`Ability::active_in`](dsl::Ability::active_in)) — `glossary/Ability.md`:
@@ -242,7 +243,7 @@ pub(super) fn collect_forced(
             continue;
         };
         // Kind and cell are load-bearing: the coordinator scans the same
-        // (event, bucket) for both kinds (#434), and act 01109 carries a
+        // (event, bucket) for both kinds, and act 01109 carries a
         // `when`-`RoundEnded` *reaction* this scan must not collect.
         let forced = triggers_at(
             state,
@@ -276,7 +277,7 @@ pub(super) fn collect_forced(
     // initiate neither resolves nor prompts. As `Forced` it gets the
     // change-state and eligibility checks — Cover Up 01007's *"if there are any
     // clues on Cover Up"* is an eligibility condition, and without it a clueless
-    // Cover Up prompted at game end (#786).
+    // Cover Up would prompt at game end.
     hits.retain(|hit| initiation::check(state, cards, hit, InitiationKind::Forced).is_ok());
     hits
 }
@@ -284,7 +285,7 @@ pub(super) fn collect_forced(
 /// Every reaction `event` reaches in the `bucket` cell, as candidates that pass
 /// the initiation gate (ADR 0017), in [`board_walk`] order — the one reaction
 /// scan, which the coordinator, the window's re-validation and its fire-time
-/// check all ask (#568).
+/// check all ask.
 ///
 /// A reaction is a player's choice, so a hit becomes **one candidate per
 /// investigator who can reach its source** — ADR 0010's
@@ -378,18 +379,18 @@ pub(super) fn collect_reactions(
                 };
                 // The initiation gate (ADR 0017). For a Fast event this is the
                 // play gate — its effect must be able to change the game state
-                // (Evidence! 01022 at a 0-clue location, #495), no "cannot
-                // play" may forbid it (Dissonant Voices 01165, #917), and its
-                // cost must be payable (#501). Filtering keeps the offer honest;
+                // (Evidence! 01022 at a 0-clue location), no "cannot
+                // play" may forbid it (Dissonant Voices 01165), and its
+                // cost must be payable. Filtering keeps the offer honest;
                 // it is not the binding check — the wallet is shared, so a
                 // sibling option can empty it after this ran, and initiation
-                // re-asks (#568).
+                // re-asks.
                 if initiation::check(state, cards, &candidate, kind).is_err() {
                     continue;
                 }
                 hits.push(candidate);
                 // One option per copy of a Fast event: a card with two matching
-                // abilities is still played once. No in-scope card has two.
+                // abilities is still played once. No corpus card has two.
                 if walked.source.is_play() {
                     break;
                 }
@@ -463,7 +464,7 @@ pub(super) fn pattern_matches(
 /// `event` — the half of the matcher that reads only the event, the pattern and
 /// the controller.
 ///
-/// Two steps, both exhaustive (#963):
+/// Two steps, both exhaustive:
 ///
 /// 1. **The condition.** The pattern's [`EventPattern::condition`] must equal
 ///    the event's [`TimingEvent::condition`]. Both maps are exhaustive, so a new
@@ -474,7 +475,7 @@ pub(super) fn pattern_matches(
 ///    itself: Roland Banks 01001's *"you defeat"*, a test's outcome and kind,
 ///    Frozen in Fear 01164's *"your turn"*.
 ///
-/// **Timing is not consulted here** (#704). Which cell an ability resolves in is
+/// **Timing is not consulted here.** Which cell an ability resolves in is
 /// the coordinator's business — it scans one cell at a time and the scans
 /// filter on `timing == bucket` — so a pattern pairs with its condition
 /// identically in all three cells.
@@ -642,7 +643,7 @@ fn damage_dealt_matches(
         // controlled cards only, and nothing deals to an asset directly. It
         // is read off the assignment rather than the board, so a soaking
         // asset the harm has just defeated still counts in the `after`
-        // cell. Beat Cop (2) 01028 (phase 9) deals straight to an asset,
+        // cell. Beat Cop (2) 01028, not implemented, deals straight to an asset,
         // and its ruling (<https://arkhamdb.com/card/02261>) makes that
         // harm its controller's: that is when the controller has to be
         // carried on the assignment.
@@ -657,8 +658,8 @@ fn damage_dealt_matches(
 }
 
 /// The half of the matcher that reads where the card is: its source, and the
-/// board around it. Every narrowing a per-condition zone table used to make by
-/// choosing where to look is stated here instead (ADR 0018) — as the card's
+/// board around it. Every narrowing is stated here rather than by choosing
+/// where to look (ADR 0018) — as the card's
 /// own scoping word when the pattern carries one (*"this"*, *"attached"*, *"at
 /// your location"*), and as the condition's definition otherwise.
 ///
@@ -822,7 +823,7 @@ fn scope_matches(
 /// for the self to be, and passes unread: whether its ability is read at all
 /// is [`triggers_at`]'s zone gate.
 /// So a Fast event declaring the pattern is played in that condition's window
-/// unscoped by it, as `trigger_initiation.rs` relies on (#964).
+/// unscoped by it, as `trigger_initiation.rs` relies on.
 fn self_scoped(source: CandidateSource, is_self: impl Fn(CardInstanceId) -> bool) -> bool {
     source.is_play() || source.instance().is_some_and(is_self)
 }

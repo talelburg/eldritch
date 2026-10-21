@@ -256,7 +256,7 @@ fn a_modifier_on_a_location_attachment_reaches_that_location() {
 
 /// Lita Chantler put into play *in* a location, controlled by nobody,
 /// reaches the investigators standing there — the same audience, resolved
-/// against the location she sits in rather than a controller's seat (#771).
+/// against the location she sits in rather than a controller's seat.
 /// Combat 3 + 1 against difficulty 4 passes by 0.
 #[test]
 fn a_card_put_into_play_at_my_location_reaches_me() {
@@ -436,7 +436,7 @@ fn a_modifier_answers_differently_either_side_of_a_board_change() {
 // ---- an enemy's stats as a test's difficulty ---------------------
 
 /// A Fight action's difficulty **is** the attacked enemy's modified
-/// fight value (#677) — `glossary/Skill_Tests.md`, "Variable Difficulty
+/// fight value — `glossary/Skill_Tests.md`, "Variable Difficulty
 /// Skill Tests", quoted on `DifficultyBasis`.
 ///
 /// Combat 2 against a Ghoul (printed fight 2) succeeds by 0; with The

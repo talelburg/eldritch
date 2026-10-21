@@ -21,17 +21,11 @@
 //!
 //! Most modifiers are true exactly while a card sits somewhere, so the
 //! sweep over those places *is* the population and there is nothing to
-//! keep in sync. Seven collections carry them:
-//!
-//! 1. every investigator's controlled instances (investigator card,
-//!    cards in play, threat area),
-//! 2. every location's own card,
-//! 3. every location's attachments,
-//! 4. every location's cards put into play *at* it, controlled by
-//!    nobody (Lita Chantler 01117 in the Parlor),
-//! 5. every enemy's own card,
-//! 6. every enemy's attachments,
-//! 7. the current act and the current agenda.
+//! keep in sync. Those places are every card on the board, in the order
+//! [the board walk](crate::engine::board) visits them: the sweep reads
+//! `board::walk_active`, which leaves out an eliminated investigator's area.
+//! That includes the cards put into play *at* a location and controlled by
+//! nobody (Lita Chantler 01117 in the Parlor).
 //!
 //! Narrower is wrong rather than merely incomplete: Whippoorwill 02090
 //! is an *enemy* modifying investigators, Whateley Ruins 02250 a
@@ -63,7 +57,7 @@
 //! fight or evade value of the enemy being attacked or evaded. Reading
 //! [`ModifierTarget::Test`] resolves the in-flight test's
 //! [`DifficultyBasis`] and asks that target, so every card modifying the
-//! enemy or the location modifies the test (#677).
+//! enemy or the location modifies the test.
 //!
 //! # The fold
 //!
@@ -87,8 +81,8 @@
 //!
 //! The clamp is genuinely last among the additive stages: every
 //! contribution to a skill test's ST.5 total is a row this query folds,
-//! including the revealed chaos token's ±N and the elder sign's bonus
-//! (#684), so nothing is added after [`ModifierBreakdown::total`]
+//! including the revealed chaos token's ±N and the elder sign's bonus,
+//! so nothing is added after [`ModifierBreakdown::total`]
 //! returns. That is what `Modifiers.md`'s own worked example demands —
 //! base 4, a −8 token and a +2 is −2 → 0, **not** 0 + 2 → 2.
 
@@ -176,9 +170,9 @@ pub enum ContributionSource {
     /// cards that have no in-play instance of their own — a location, an
     /// enemy, the act, the agenda.
     Card {
-        /// The source card's printed code.
+        /// The contributing card's printed code.
         code: CardCode,
-        /// The source card's in-play instance, where it has one.
+        /// The contributing card's in-play instance, where it has one.
         instance: Option<CardInstanceId>,
     },
     /// A recorded row queued by an earlier effect resolution, attributed
@@ -435,7 +429,7 @@ fn substitution(
 /// delegate finds nothing and answers a base of 0 — but no verdict is ever
 /// taken against that 0: `skill_test::advance` abandons a test whose
 /// difficulty target has left play before it reaches ST.6 ([`DifficultyBasis`]
-/// records the decision and why the vendored sources do not settle it, #682).
+/// records the decision and why the vendored sources do not settle it).
 /// So the absent-target read survives only as a display value for a client
 /// asking about a test that is on its way out.
 fn difficulty(
@@ -464,8 +458,8 @@ fn difficulty(
 /// George Barnaby's ability sets his **base** maximum hand size to be equal to
 /// the number of facedown cards beneath him (rather than the default value of
 /// 8), **this value can then be modified by other abilities**."* So a stage-1
-/// replacement must return here rather than short-circuit the fold — which is
-/// what #673 will build Duke against.
+/// replacement must return here rather than short-circuit the fold.
+/// TODO(#673): Duke 02014's base-value replacement.
 fn base_value(
     state: &GameState,
     registry: &CardRegistry,
@@ -518,14 +512,13 @@ fn base_value(
 ///
 /// Matches a **bare** `Effect::Modify` under `Trigger::Constant`. A
 /// modifier gated on a predicate — `Effect::If { condition, then:
-/// Modify }` — is skipped, carrying forward the gap the superseded
-/// `constant_skill_modifier` had. That is a card-expressiveness gap
+/// Modify }` — is skipped. That is a card-expressiveness gap
 /// rather than a read-time one: everything matched here is re-derived
 /// at every read. Wiring it needs `Condition` variants no card can
 /// express yet *and* a decision about who "you" is for a source with no
-/// controller, so it is **#679**.
+/// controller. TODO(#679): read a conditional constant modifier.
 ///
-/// # A granted modifier is a modifier (#773)
+/// # A granted modifier is a modifier
 ///
 /// The abilities a card sits behind here come from
 /// [`abilities_in_effect::for_source`], the same funnel every *ability* path
@@ -563,8 +556,8 @@ fn sweep(
                      placement: Placement,
                      source: AbilitySource| {
         // The funnel: the side in effect — a location's back's constants while
-        // unrevealed, its front's while revealed (#774) — plus whatever the
-        // board grants this card (#772). The address each ability comes paired
+        // unrevealed, its front's while revealed — plus whatever the
+        // board grants this card. The address each ability comes paired
         // with names it across a suspension; a modifier is read fresh at every
         // read and never suspended, so it is dropped here.
         let Some(abilities) = abilities_in_effect::for_source(state, registry, source, code) else {
@@ -634,7 +627,7 @@ fn sweep(
 /// token's ±N; the elder-sign row carries the investigator card's own
 /// expression, so Roland Banks 01001's *"+1 for each clue on your
 /// location"* counts the clues that are there at ST.5 rather than the ones
-/// that were there at the reveal (#684).
+/// that were there at the reveal.
 ///
 /// An expression that cannot be resolved is **skipped**, not counted as
 /// zero and not asserted on: contributing a silently-wrong number is worse
@@ -672,7 +665,7 @@ fn collect_recorded(
         // `AbilitySource::InPlay` is an **address** — *"any card instance in
         // play, wherever it sits"* — not a record that an ability was
         // activated, so a recorded row's origin instance is one honestly. The
-        // row itself stays instance-valued (#834): widening it would push the
+        // row itself stays instance-valued: widening it would push the
         // same narrowing one layer down onto `ContributionSource::Recorded`.
         let eval_ctx = EvalContext::for_controller_with_optional_source(
             row.investigator,
@@ -774,7 +767,7 @@ fn audience_reaches(
 /// revealed at ST.3 the skill-test driver records the modifier as a
 /// [`RecordedModifier`](crate::state::RecordedModifier) scoped to that
 /// test, and [`collect_recorded`] evaluates it at ST.5 like every other
-/// row (#684). The same driver step pushes the outcome's `immediate` part at
+/// row. The same driver step pushes the outcome's `immediate` part at
 /// ST.4, and the ST.7 step calls this again to read its `on_success` /
 /// `on_fail` once the test's result is known.
 ///
@@ -795,7 +788,7 @@ fn audience_reaches(
 /// from another source are not blanked."*).
 ///
 /// **Whether the elder sign is part of the text box is the user's decision,
-/// not the sources'** (#1127). The vendored sources leave it open:
+/// not the sources'.** The vendored sources leave it open:
 /// `Appendix_IV_Card_Anatomy.md` lists *"9. **Ability:** This card's
 /// specialized means of interacting with the game."* and *"10. **Elder Sign
 /// Ability:** This investigator's ability for the Elder Sign token."* as
@@ -834,7 +827,7 @@ pub(crate) fn elder_sign_outcome(
 /// The one place the two vocabularies are mapped: [`stat_matches`] reads it
 /// to *filter* rows by the quantity being asked about, and the skill-test
 /// driver reads it to *write* a row against the skill a test is being taken
-/// with (the revealed token's ±N and the elder sign's bonus, #684).
+/// with (the revealed token's ±N and the elder sign's bonus).
 #[must_use]
 pub(crate) fn stat_for_skill(skill: SkillKind) -> Stat {
     match skill {

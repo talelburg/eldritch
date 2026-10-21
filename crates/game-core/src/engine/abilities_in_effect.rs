@@ -1,4 +1,4 @@
-//! Which side of a card is in effect right now (#774).
+//! Which side of a card is in effect right now.
 //!
 //! A double-sided card prints text on both faces, and only one of them is in
 //! effect at a time. For a location the switch is [`Location::revealed`], and
@@ -29,8 +29,8 @@
 //!   module and a `Trigger::Constant` `Restrict`.
 //! - **Twelve conditional** — Train Car 02167-02174, Engine Car 02175-02177,
 //!   The Edge of the Universe 02321 — each gating on discovered clues, which a
-//!   constant `Restrict` cannot carry. That is `#821`, and it does not block
-//!   this.
+//!   constant `Restrict` cannot carry. TODO(#821): a conditional constant
+//!   `Restrict`. It does not block this.
 //!
 //! The twentieth, Sentinel Peak 02284, is the one that is not a restriction:
 //! *"As an additional cost to move to Sentinel Peak, the investigators must
@@ -67,9 +67,9 @@
 //! that picks the other would fire the wrong ability. One choice, made in one
 //! place, is what keeps the address meaningful.
 //!
-//! # Granted abilities (#772)
+//! # Granted abilities
 //!
-//! Since #772 this module answers a second question, and it is the same
+//! This module answers a second question, and it is the same
 //! question: *what abilities does this card have right now?* A card can have
 //! abilities that are not printed on it — `glossary/Gains.md`: *"If a card
 //! gains a characteristic (such as an icon, a trait, a keyword, or ability
@@ -85,7 +85,7 @@
 //! addressing with a fixed vector to index. `docs/adr/0014-a-granted-ability-is-a-constant-effect-swept-off-the-board.md`
 //! has the argument.
 //!
-//! # Blanked text (#1127)
+//! # Blanked text
 //!
 //! The printed half answers *nothing* for an investigator card whose text box
 //! is blanked: Stubborn Detective 01103's *"treat your investigator as if his
@@ -147,8 +147,8 @@ pub(crate) fn location_abilities_or_empty(
 ///
 /// Returns `None` when the card implements nothing *and* is granted nothing —
 /// preserving `abilities_for`'s *"this card implements nothing"* signal for the
-/// callers that reject on it. Since #772 the `None` means *"no printed **and**
-/// no granted abilities"*, which is the same rejection those callers wanted.
+/// callers that reject on it. The `None` means *"no printed **and**
+/// no granted abilities"*, which is the same rejection those callers want.
 ///
 /// Each ability comes paired with its [`AbilityAddress`] — how to name it again
 /// after a suspension. Callers scan the pairs and carry the address, never the
@@ -272,8 +272,8 @@ pub(crate) fn cannot_leave_play(state: &GameState, reg: &CardRegistry, id: CardI
 ///
 /// The two placements that read it are a played event's, at RR Appendix I
 /// step 4 (`cards::dispose_play_from_hand`), and an event's leaving play
-/// (`leave_play`'s owner filing). A second card that changes where an event
-/// goes is the trigger for #366's general machinery.
+/// (`leave_play`'s owner filing). TODO(#366): general replacement machinery,
+/// once a second card changes where an event goes.
 #[must_use]
 pub(crate) fn events_go_to_bottom_of_deck(
     state: &GameState,
@@ -357,7 +357,7 @@ pub(crate) fn resolve(
 /// text (`glossary/Blank.md`: *"A card's text box includes: traits, keywords,
 /// card text and abilities."*). No corpus investigator card grants anything.
 ///
-/// `TODO(#829)`: a granted grant does not apply. Promoting it means a bounded
+/// TODO(#829): a granted grant does not apply. Promoting it means a bounded
 /// fixed point and an address that can name a chain, and it wants a card that
 /// prints one.
 #[must_use]
@@ -392,7 +392,7 @@ fn printed_in_effect(
 /// The sweep reads each blanking card's **raw** printed abilities, never
 /// [`printed_in_effect`] or [`for_source`]: so a blank cannot be blanked, and
 /// the read cannot recurse. Blanking a blanker (Mind Wipe 01068 on the
-/// Detective) is phase 9's.
+/// Detective) is not modelled.
 ///
 /// Only abilities are blanked. Skills, health and sanity are investigator
 /// stats rather than abilities, and traits are card metadata, so none of them

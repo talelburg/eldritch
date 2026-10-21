@@ -9,7 +9,7 @@
 //! No rulings (`data/arkhamdb-faq/no-rulings.txt`).
 //!
 //! **Designator: Fight** — the bold word, which **performs the attack**
-//! carrying the `+2 [combat]` and the conditional `+1` damage (#805).
+//! carrying the `+2 [combat]` and the conditional `+1` damage.
 //!
 //! The .45 Automatic 01016's shape with Switchblade 01044's damage clause.
 //! Ammo (3) comes from the corpus (`CardKind::Asset.uses`, pipeline-parsed),

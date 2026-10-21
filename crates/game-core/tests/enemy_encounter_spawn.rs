@@ -1,6 +1,6 @@
-//! An enemy encounter card spawns via the disposition frame (Slice D, #423).
+//! An enemy encounter card spawns via the disposition frame.
 //!
-//! `resolve_encounter_card`'s enemy arm no longer spawns inline — it pushes a
+//! `resolve_encounter_card`'s enemy arm does not spawn inline — it pushes a
 //! [`Continuation::EncounterCard`] frame carrying
 //! [`EncounterDisposition::Spawn`], and the global `drive` loop spawns the enemy
 //! when it disposes of that frame after the (here empty) Revelation. This test

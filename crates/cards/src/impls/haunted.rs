@@ -21,7 +21,7 @@
 //! threat area may trigger the \[action\]\[action\] to discard Haunted, as per the
 //! FAQ [V1.0, section 2.1]."* The engine's ability-source reach already admits a
 //! co-located investigator's threat-area encounter-cardtype card, and the
-//! discard goes to the owner's pile (#981).
+//! discard goes to the owner's pile.
 //!
 //! [`Effect::Modify`]: card_dsl::dsl::Effect::Modify
 

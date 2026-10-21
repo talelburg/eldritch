@@ -1,7 +1,7 @@
-//! C5e (#240) integration: Vicious Blow 01025 end-to-end against the real
-//! `cards::REGISTRY`. The Guardian L0 skill commits to a Fight test and,
-//! on success, adds +1 to the attack's damage via its `OnCommit`
-//! `BoostAttackDamage(1)` ability (engine machinery from #307 / PR #308).
+//! Vicious Blow 01025 end-to-end against the real `cards::REGISTRY`.
+//!
+//! The Guardian L0 skill commits to a Fight test and, on success, adds +1 to
+//! the attack's damage via its `OnCommit` `BoostAttackDamage(1)` ability.
 //!
 //! Runs against `cards::TEST_REGISTRIES`.
 
@@ -32,7 +32,7 @@ fn fight_committing(commit: &[&str]) -> TestSession {
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE).hand([VICIOUS_BLOW]))
         .with_location(test_support::test_location(HERE.0, "Study"))
-        // Co-located: Fight is location-gated (#401).
+        // Co-located: Fight is location-gated.
         .with_enemy_engaged(enemy, INV)
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))

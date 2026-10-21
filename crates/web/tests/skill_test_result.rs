@@ -1,8 +1,10 @@
-//! Headless tests for `SkillTestResultView` (#478, made a modal by #541): feed a
+//! Headless tests for `SkillTestResultView`, the result modal: feed a
 //! `SkillTestStarted` batch (captures difficulty) then a resolution batch (chaos
 //! token + outcome) through the store, and assert the modal renders the token,
 //! total-vs-difficulty and outcome lines, carries the acknowledge pause's **only**
-//! Confirm, and cannot be dismissed by anything else. wasm32-only (browser DOM).
+//! Confirm, and cannot be dismissed by anything else.
+//!
+//! wasm32-only (browser DOM).
 #![cfg(target_arch = "wasm32")]
 
 use futures::channel::mpsc::{self, UnboundedReceiver};
@@ -107,7 +109,7 @@ async fn renders_token_total_and_outcome_after_resolution() {
     assert!(text.contains("Succeeded by 2"), "shows outcome: {text}");
 }
 
-/// #787: a symbol token whose ST.4 effect suspends for input (The Gathering's
+/// Regression for #787: a symbol token whose ST.4 effect suspends for input (The Gathering's
 /// Tablet dealing damage with a soak target in play) puts the reveal in an
 /// earlier batch than the outcome. The modal must still name it, not show the
 /// em-dash fallback.
@@ -318,7 +320,7 @@ fn style_of(el: &Element) -> String {
     el.get_attribute("style").unwrap_or_default()
 }
 
-/// #857: the modal covers the board, and dismissing it submits engine input, so
+/// The modal covers the board, and dismissing it submits engine input, so
 /// the only way to check the board first is to shove it aside. Dragging must not
 /// break the way out — the Confirm still submits after the modal has been moved.
 #[wasm_bindgen_test]

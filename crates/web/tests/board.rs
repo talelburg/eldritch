@@ -1,15 +1,12 @@
-//! Headless render tests for `BoardView` (P6.5). Feed a constructed
-//! `GameState` through the store and assert on the rendered DOM.
-//! wasm32-only (browser DOM); native jobs skip this file.
+//! Headless render tests for `BoardView`.
 //!
-//! **This binary runs against the real corpus, `cards::TEST_REGISTRY` (#868).**
-//! It used to run against game-core's `test_support::TEST_REGISTRY`, which knows
-//! only
-//! `TEST_INV` and the synthetic terminal act/agenda cards — so every card code
-//! the file seeded failed to resolve and the assertions passed on the
-//! renderer's unresolved-code fallback (`card--unknown`) rather than on card
-//! rendering. Real codes make that structural: nothing here *can* ride the
-//! fallback, and [`render_state`] asserts as much on every render.
+//! Feed a constructed `GameState` through the store and assert on the rendered
+//! DOM. wasm32-only (browser DOM); native jobs skip this file.
+//!
+//! **This binary runs against the real corpus, `cards::TEST_REGISTRY`.** Every
+//! card code it seeds resolves, so no assertion can pass on the renderer's
+//! unresolved-code fallback (`card--unknown`) rather than on card rendering, and
+//! [`render_state`] asserts as much on every render.
 //!
 //! Two of the three code→name paths the board can take are pinned here: the
 //! `Card` component's (hand / in play / threat area) and
@@ -119,7 +116,7 @@ fn count_in(el: &Element, sel: &str) -> u32 {
 /// rendered body HTML.
 async fn render_state(state: GameState) -> String {
     // The real corpus registry: the code→name/kind source, and the source of
-    // the investigator capacity the panel reads (#448).
+    // the investigator capacity the panel reads.
     let store = RwSignal::new(ClientState::default());
     mount::mount_to_body(move || {
         provide_cards(&cards::TEST_REGISTRY);
@@ -138,11 +135,11 @@ async fn render_state(state: GameState) -> String {
     });
     task::tick().await;
     let html = body_html();
-    // #868: the guard that keeps this file honest. `Card` renders
+    // The guard that keeps this file honest. `Card` renders
     // `card--unknown` for a code the registry cannot resolve
     // (`crates/web/src/card.rs:324-331`), and that element still matches
     // `.card` — so a selector or substring assertion below could pass on the
-    // fallback without anyone noticing, which is exactly how this file rotted.
+    // fallback without anyone noticing.
     // Every code it seeds is a real one, so the class must never appear.
     assert!(
         !html.contains("card--unknown"),
@@ -169,8 +166,7 @@ async fn act_agenda_cards_render_name_and_thresholds() {
     // Names come from the corpus via `act_agenda::name_and_text_src`, which
     // `crates/web/tests/act_agenda.rs` already covers in more depth (including
     // the reverse `back_name` face). These two assertions are here so the test
-    // earns its own name: it asserted only thresholds before (#868), which is
-    // how the file came to advertise coverage it did not have.
+    // earns its own name, rather than asserting only thresholds.
     let board = last_mounted(".board");
     let text = board.text_content().unwrap_or_default();
     assert!(text.contains("Trapped"), "act name missing: {text}");
@@ -200,7 +196,7 @@ async fn map_renders_location_name_shroud_clues() {
 
     assert!(html.contains("Rivertown"), "location name missing: {html}");
     // The header prints numerals in fixed, colour-coded slots rather than
-    // labels (#848); the words survive only as the badges' `title`.
+    // labels; the words survive only as the badges' `title`.
     assert!(
         html.contains(r#"title="shroud 3""#),
         "shroud badge missing: {html}"
@@ -242,8 +238,8 @@ async fn investigators_panel_renders_stats_and_hand() {
     // Every assertion is scoped to this test's own panel. DOM accumulates
     // across tests on the shared page, and now that real card *text* renders
     // too, a bare `html.contains(..)` shares the page with the printed text of
-    // four cards — a false pass from a collision is the same failure mode #868
-    // is about.
+    // four cards — a false pass from a collision is the same failure mode as
+    // an assertion riding the unresolved-code fallback.
     let inv_el = last_mounted(".investigator");
 
     // Identity + folded vitals (skills + hp/san) live in the investigator block.
@@ -262,7 +258,7 @@ async fn investigators_panel_renders_stats_and_hand() {
         "resources missing: {html}"
     );
     assert_eq!(text_of(&inv_el, ".inv-clues"), "clues 3");
-    // Location is no longer shown in the panel (it's on the map token).
+    // Location is not shown in the panel (it's on the map token).
     assert!(
         !html.contains("inv-location"),
         "location line should be gone: {html}"
@@ -350,8 +346,7 @@ async fn resolution_banner_names_the_resolution_point() {
 
     // The banner names the ending the player takes to the campaign guide, not
     // a win/loss verdict — R3 is agenda-invoked in The Gathering, and calling
-    // that "lost" is the standalone-mode projection this client no longer
-    // makes.
+    // that "lost" is a standalone-mode projection this client does not make.
     let html = last_mounted(".resolution").inner_html();
     assert!(
         html.contains("Resolution 3"),
@@ -458,8 +453,8 @@ async fn threat_area_treachery_renders_as_card() {
     // A treachery has no bespoke face — `card_face` returns `None` for it, so
     // it renders the generic rectangle (`crates/web/src/card.rs:416-433`).
     // Asserting `card--generic` rather than the bare `.card` is what
-    // distinguishes it from `card--unknown`, which also matches `.card` and is
-    // what this assertion used to be silently passing on (#868).
+    // distinguishes it from `card--unknown`, which also matches `.card` and
+    // would let it pass silently.
     let card = last_game
         .query_selector(".threat .card-row .card--generic")
         .expect("query_selector");

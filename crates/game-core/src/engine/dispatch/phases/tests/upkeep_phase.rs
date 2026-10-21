@@ -46,9 +46,9 @@ fn upkeep_phase_emits_phase_started_and_auto_skips_to_mythos() {
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         // Give the investigator a card so the step-4.4 draw pulls it normally
-        // rather than decking out: since #509 routed 4.4 through
-        // `draw_one_with_deckout`, an empty deck applies the deckout horror
-        // penalty, which this test isn't about.
+        // rather than decking out: 4.4 draws through `draw_one_with_deckout`,
+        // so an empty deck applies the deckout horror penalty, which this test
+        // isn't about.
         .with_seat(test_support::seat(1).deck(["filler0"]))
         .with_turn_order([id])
         .with_phase(Phase::Enemy)
@@ -377,8 +377,8 @@ fn rotate_to_active_does_not_refresh_actions() {
 #[test]
 fn round_increments_on_mythos_entry_via_driver() {
     // After the Upkeep→Mythos cascade, state.round bumps by 1.
-    // The bump now lives in mythos_phase step 1.1 (this task);
-    // the test asserts observable behavior, which is unchanged.
+    // The bump happens at the Mythos phase's step 1.1; the test asserts the
+    // observable round number.
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)

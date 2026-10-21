@@ -3,10 +3,9 @@
 //! Two ways a scenario ends, both latched by the push model: walking the act
 //! deck past its terminal card latches `GameState.ending = Resolution(R1)` and
 //! emits `Event::ScenarioResolved`; doom crossing the terminal agenda's
-//! threshold latches at Mythos step 1.3, *before* the 1.4 draw (#566), so the
+//! threshold latches at Mythos step 1.3, *before* the 1.4 draw, so the
 //! draw prompt is cancelled rather than surfaced.
 //!
-//! Moved down from `crates/scenarios/tests/synthetic_resolution.rs` (#873).
 //! What these tests need is a two-card act deck that ends in a couple of clicks
 //! and a scenario module to hang `apply_resolution` off — no scenario *content*
 //! at all — so under ADR 0016 the module shell and its `setup()` state are built
@@ -181,6 +180,8 @@ fn scenario_resolves_won_via_act_advance() {
     assert!(session.state().ending.is_some());
 }
 
+/// Regression for #566: a doom loss latched at Mythos step 1.3 cancels the
+/// step-1.4 draw prompt rather than surfacing it.
 #[test]
 fn scenario_resolves_lost_via_doom() {
     // Each round: EndTurn cascades into Mythos, which adds doom (and may
@@ -188,9 +189,8 @@ fn scenario_resolves_lost_via_doom() {
     // draw; confirming the draw then resolves it and completes Mythos
     // back to Investigation. The EndTurn that enters the round whose Mythos
     // crosses the terminal agenda's threshold latches Lost at step 1.3 —
-    // *before* the 1.4 draw pause, which is exactly the case #566 names: the
-    // scenario has ended, so step 1.4 never happens and the draw prompt is
-    // cancelled rather than surfaced.
+    // *before* the 1.4 draw pause: the scenario has ended, so step 1.4 never
+    // happens and the draw prompt is cancelled rather than surfaced.
     //
     // Break-on-resolution rather than a fixed count: tolerates cadence
     // drift and only draws when a Mythos draw is actually pending.

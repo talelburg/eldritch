@@ -9,9 +9,12 @@
 //!
 //! The reverse side is a Forced on-advance ability: it fires via
 //! the act's own `ActAdvanced` condition when the act advances, before the
-//! next act becomes current. "Discard each enemy in the Study" is a
-//! faithful **no-op** — nothing can spawn into the isolated Act-1 Study
-//! in Slice-1 scope (no encounter path targets the Study). The four rooms are
+//! next act becomes current.
+//!
+//! TODO(#1159): "Discard each enemy in the Study" is not modelled: an enemy
+//! in the Study when the act advances is left at the removed location.
+//!
+//! The four rooms are
 //! set aside by the scenario's `setup()` as bare card codes; this ability
 //! puts each into play through
 //! [`put_set_aside_card_into_play`](NativeCx::put_set_aside_card_into_play),
@@ -23,7 +26,7 @@
 //!
 //! The board build is board-dependent, single-use scenario logic, so it
 //! lives card-locally as a [`card_dsl::dsl::Effect::Native`] handler
-//! (the `board_build` fn) rather than as shared `Effect` variants (#276).
+//! (the `board_build` fn) rather than as shared `Effect` variants.
 //!
 //! **Cell: the `after` cell of the `ActAdvanced` condition.** The reverse prints
 //! no trigger word, because it is not a triggered ability: it is step 2 of the
@@ -80,8 +83,7 @@ pub fn abilities() -> Vec<Ability> {
 
 /// Put the set-aside Hallway/Cellar/Attic/Parlor into play, relocate
 /// every investigator to the Hallway (01112), and remove the Study
-/// (01111). Ports the three former `Effect` arms verbatim, now
-/// card-local. Validates the whole set of rooms and the Study up front
+/// (01111). Validates the whole set of rooms and the Study up front
 /// and rejects before any mutation; a rejection is additionally rolled
 /// back wholesale by `apply_via`'s snapshot-restore, so validate-first
 /// here is about precise reasons, not state safety.

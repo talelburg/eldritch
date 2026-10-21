@@ -1,5 +1,6 @@
-//! Heirloom of Hyperborea 01012 end-to-end against the real card registry
-//! (#1048). Card text (verbatim, `data/arkhamdb-snapshot/pack/core/core.json`):
+//! Heirloom of Hyperborea 01012 end-to-end against the real card registry.
+//!
+//! Card text (verbatim, `data/arkhamdb-snapshot/pack/core/core.json`):
 //!
 //! > Agnes Baker deck only.
 //! > [reaction] After you play a [[Spell]] card: Draw 1 card.
@@ -168,9 +169,8 @@ fn another_investigators_spell_offers_nothing() {
 /// The reaction-window play path announces the completed play too, so a Fast
 /// event played from a window reaches the `CardPlayed` scan. Dodge is no Spell,
 /// so Heirloom stays silent, and Dodge's cancel still holds: the `CardPlayed`
-/// sequence nested inside the attack's `when` cell does not consume it (#1055).
-/// The positive case, a Spell played from a window, is Ward of Protection's
-/// (#1056).
+/// sequence nested inside the attack's `when` cell does not consume it. The
+/// positive case, a Spell played from a window, is Ward of Protection's.
 #[test]
 fn a_non_spell_played_from_a_reaction_window_offers_nothing() {
     let mut attacker = test_support::test_enemy(ATTACKER.0, "Attacker");

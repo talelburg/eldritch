@@ -6,11 +6,12 @@
 //! ```
 //!
 //! One activated ability: an action, exhausting Burglary, that performs an
-//! **Investigate** (#805) whose success gains 3 resources in place of the
+//! **Investigate** whose success gains 3 resources in place of the
 //! clue discovery (the designator's `instead_of_discovery`).
 //!
 //! The replacement is the card's own, on its own investigation, so it is not a
-//! general replacement effect (#366). The test is still a successful
+//! general replacement effect, which the engine does not model beyond cancel.
+//! The test is still a successful
 //! investigation in every other respect: "after you successfully investigate"
 //! (Dr. Milan Christopher 01033) fires at ST.6 as usual. Deduction 01039 only
 //! raises the discovery's count, so it adds nothing here, which is its ruling

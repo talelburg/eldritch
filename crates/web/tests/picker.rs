@@ -1,9 +1,11 @@
-//! Headless browser test for `PickerView` (#459): clicking "Create game"
-//! sends a `CreateGameRequest` with the picked investigator's default-deck
-//! roster on the `CreateTx` channel (#782) — with the deck's fixed weakness by
-//! default, or a random basic weakness once the checkbox is checked. These are
-//! the rosters `crates/scenarios/tests/the_gathering_default_decks.rs` plays
-//! and the server's registries test creates.
+//! Headless browser test for `PickerView`: clicking "Create game" sends a
+//! `CreateGameRequest` with the picked investigator's default-deck roster on
+//! the `CreateTx` channel — with the deck's fixed weakness by default, or a
+//! random basic weakness once the checkbox is checked.
+//!
+//! These are the rosters
+//! `crates/scenarios/tests/the_gathering_default_decks.rs` plays and the
+//! server's registries test creates.
 #![cfg(target_arch = "wasm32")]
 use cards::decks::{self, WeaknessChoice};
 use futures::channel::mpsc;

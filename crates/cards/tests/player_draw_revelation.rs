@@ -1,6 +1,7 @@
-//! #509: drawing a persistent treachery weakness (Cover Up 01007) from the
-//! player deck during play reveals it and resolves its Revelation — Cover Up
-//! enters the controller's threat area with 3 clues instead of staying in hand.
+//! Drawing a persistent treachery weakness (Cover Up 01007) from the player
+//! deck during play reveals it and resolves its Revelation — Cover Up enters
+//! the controller's threat area with 3 clues instead of staying in hand.
+//!
 //! A drawn one-shot weakness (Paranoia 01097) whose bearer is defeated before
 //! it resolves leaves the game with them.
 
@@ -97,8 +98,8 @@ fn drawing_a_non_weakness_leaves_it_in_hand() {
     assert_no_event!(session.events(), Event::CardRevealed { .. });
 }
 
-/// **A bearer defeated mid-resolution takes their weakness with them** (#1121,
-/// ADR 0002). The drawer's deck is empty, so the draw reshuffles their discard
+/// **A bearer defeated mid-resolution takes their weakness with them** (ADR
+/// 0002). The drawer's deck is empty, so the draw reshuffles their discard
 /// — Paranoia 01097 — back in, draws it, and then deals the deck-out horror
 /// first, which defeats them before Paranoia's Revelation resolves.
 /// `glossary/Drawing_Cards.md`: *"that investigator shuffles his or her discard

@@ -17,9 +17,8 @@ use crate::state::{
 
 /// Whether the current act advances *only* at the end of the round (its
 /// round-end objective — act 01109's `When`-`RoundEnded` group advance), in
-/// which case the `AdvanceAct` action is rejected. Detected from the registry
-/// (#434 — replaces the former `Act.round_end_advance` data field; the
-/// contributor location is now printed-in-card on the ability's native).
+/// which case the `AdvanceAct` action is rejected. Detected from the registry:
+/// the contributor location is printed in the act's own ability native.
 fn act_advances_at_round_end(state: &GameState, reg: &CardRegistry) -> bool {
     let Some(act) = state.act_deck.get(state.act_index) else {
         return false;
@@ -43,8 +42,8 @@ fn act_advances_at_round_end(state: &GameState, reg: &CardRegistry) -> bool {
 /// 1.2 (Rules Reference p.24) — "Take 1 doom from the token pool, and place it
 /// on the current agenda card." — passes `1`; a card effect passes whatever it
 /// prints. No-op on an empty agenda deck, so a card can't place doom on an
-/// agenda that isn't there. Places doom silently: no event announces doom yet
-/// (#593).
+/// agenda that isn't there. Places doom silently. TODO(#593): no event
+/// announces doom yet.
 ///
 /// A card-local native (They're Getting Out 01107) reaches it as
 /// [`NativeCx::place_doom_on_agenda`](crate::engine::NativeCx::place_doom_on_agenda),
@@ -69,9 +68,8 @@ pub fn place_doom_on_agenda(cx: &mut Cx, count: u8) {
 /// agenda's reverse is what ends the scenario — it runs
 /// [`Effect::ReachResolution`](card_dsl::dsl::Effect::ReachResolution), or drains
 /// the last active investigator — and `advance_reverse::finalize` holds the
-/// cursor there and asserts the ending landed. This used to latch the agenda's
-/// `resolution` field *instead of* advancing, which meant the last agenda in the
-/// deck never flipped and the player never saw which branch ended their game.
+/// cursor there and asserts the ending landed, so the last agenda flips like
+/// any other and the player sees which branch ended their game.
 pub(crate) fn check_doom_threshold(cx: &mut Cx) {
     if cx.state.agenda_deck.is_empty() {
         return;
@@ -83,7 +81,7 @@ pub(crate) fn check_doom_threshold(cx: &mut Cx) {
     advance_agenda(cx);
 }
 
-/// Advance the agenda deck one step (#482): push an
+/// Advance the agenda deck one step: push an
 /// [`AdvanceReverse`](crate::state::Continuation::AdvanceReverse) frame and let
 /// the `drive` loop run it — emit [`Event::AgendaAdvanced`], optionally pause for
 /// the gated acknowledge, fire the leaving agenda's Forced reverse (which may
@@ -94,11 +92,11 @@ pub(crate) fn check_doom_threshold(cx: &mut Cx) {
 pub(super) fn advance_agenda(cx: &mut Cx) {
     let from = cx.state.agenda_index;
     let leaving_code = cx.state.agenda_deck[from].code.clone();
-    // Defer to the resumable AdvanceReverse sub-process (#482): it pushes the
+    // Defer to the resumable AdvanceReverse sub-process: it pushes the
     // observable event, optionally pauses for the gated acknowledge, fires the
     // leaving agenda's Forced reverse (which may suspend — 01105's ChooseOne),
     // then bumps the cursor at Finalize (RR order — after the reverse resolves).
-    // The drive loop owns it from here; the terminal-card guard now lives in
+    // The drive loop owns it from here; the terminal-card guard lives in
     // `advance_reverse::finalize`.
     cx.state.continuations.push(AdvanceReverseFrame {
         deck: AdvanceDeck::Agenda,
@@ -125,8 +123,8 @@ fn clue_contributors(state: &GameState, acting: InvestigatorId) -> Vec<Investiga
 /// without mutating: Investigation phase, a modeled act deck, the current act
 /// advances via the action (not a round-end objective), and the group holds at
 /// least the act's clue threshold. Returns the threshold on success (so the
-/// handler can spend it) or the rejection reason on failure. The enumerator
-/// (slice 2a-ii-4, #393) calls this in "is-legal?" mode; [`advance_act_action`]
+/// handler can spend it) or the rejection reason on failure. The action
+/// enumerator calls this in "is-legal?" mode; [`advance_act_action`]
 /// calls it then mutates.
 pub(crate) fn check_advance_act(
     state: &GameState,
@@ -156,7 +154,7 @@ pub(crate) fn check_advance_act(
     // zero threshold (corpus `null`) marks a non-clue objective — e.g. The
     // Gathering's Act 3 (01110), which advances via its Forced EnemyDefeated on
     // the Ghoul Priest. Offering the action there would let the player "spend 0
-    // clues to advance", bypassing the objective (#486 — an instant win on a
+    // clues to advance", bypassing the objective (an instant win on a
     // terminal-Won act). Unlike `act_advances_at_round_end` (registry-based, so
     // it silently fails open for an act the registry doesn't know), this is a
     // self-contained invariant. Act 01109's round-end objective carries a positive threshold and
@@ -317,7 +315,7 @@ pub fn round_end_advance(cx: &mut Cx, contributor_location_code: &str) -> Engine
     EngineOutcome::Done
 }
 
-/// Advance the act deck one step (#482): push an
+/// Advance the act deck one step: push an
 /// [`AdvanceReverse`](crate::state::Continuation::AdvanceReverse) frame for the
 /// `drive` loop to run — emit [`Event::ActAdvanced`], optionally pause for the
 /// gated acknowledge, fire the leaving act's Forced reverse (which may suspend),
@@ -332,11 +330,11 @@ pub fn round_end_advance(cx: &mut Cx, contributor_location_code: &str) -> Engine
 /// `trigger` records why the act is advancing so the sub-process can decide
 /// whether to prompt the on-card flip: `Deliberate` for the player-driven
 /// `AdvanceAct` action and the round-end objective, `Forced` for 01110's
-/// Ghoul-Priest-defeat forced advance (#558).
+/// Ghoul-Priest-defeat forced advance.
 pub(crate) fn advance_act(cx: &mut Cx, trigger: AdvanceTrigger) {
     let from = cx.state.act_index;
     let leaving_code = cx.state.act_deck[from].code.clone();
-    // Mirror of advance_agenda (#482): defer to the resumable AdvanceReverse
+    // Mirror of advance_agenda: defer to the resumable AdvanceReverse
     // sub-process (observable event → gated acknowledge → leaving act's Forced
     // reverse, which may suspend → bump the cursor at Finalize, RR order). The
     // drive loop owns it; the terminal-card guard lives in
@@ -365,8 +363,7 @@ pub(crate) fn advance_act(cx: &mut Cx, trigger: AdvanceTrigger) {
 /// Bottom, not top: everything already under way sits above it and resolves
 /// first, so the frame is exposed exactly when the ending should run — no
 /// insertion index has to guess where "in-flight" stops and "framework" starts.
-/// See `docs/adr/0004-a-latched-resolution-cancels-opportunities-not-resolutions.md`
-/// (#566).
+/// See `docs/adr/0004-a-latched-resolution-cancels-opportunities-not-resolutions.md`.
 ///
 /// Because the frame is pushed under the same first-writer-wins guard, it exists
 /// exactly once per scenario, and the apply boundary pops it exactly once — which
@@ -425,7 +422,7 @@ mod doom_agenda_tests {
         let mut events = Vec::new();
         place_doom_on_agenda(&mut Cx::for_test(&mut state, &mut events), 1);
         check_doom_threshold(&mut Cx::for_test(&mut state, &mut events));
-        // The advance is deferred to an AdvanceReverse frame (#482); drive it
+        // The advance is deferred to an AdvanceReverse frame; drive it
         // (the test registry serves no reverse for it ⇒ it drives straight through).
         dispatch::drive(
             &mut Cx::for_test(&mut state, &mut events),
@@ -452,7 +449,7 @@ mod doom_agenda_tests {
         state.agenda_doom = 2;
         let mut events = Vec::new();
         check_doom_threshold(&mut Cx::for_test(&mut state, &mut events));
-        // The advance is deferred to an AdvanceReverse frame (#482); drive it.
+        // The advance is deferred to an AdvanceReverse frame; drive it.
         dispatch::drive(
             &mut Cx::for_test(&mut state, &mut events),
             EngineOutcome::Done,
@@ -469,9 +466,7 @@ mod doom_agenda_tests {
     /// A terminal agenda takes the same advance path as every other one
     /// (ADR 0013): it **emits `AgendaAdvanced`**, its reverse fires, and the
     /// reverse is what latches the ending — the cursor stays put because there
-    /// is no next card. Before #808 the threshold check latched the field and
-    /// skipped the flip entirely, so the player never saw which agenda ended
-    /// their game.
+    /// is no next card, so the player sees which agenda ended their game.
     #[test]
     fn terminal_agenda_advances_and_its_reverse_latches_the_ending() {
         // The synthetic terminal card's reverse comes from the registry, and a
@@ -645,11 +640,10 @@ mod advance_act_tests {
         );
     }
 
-    // `advance_act_rejected_for_round_end_advance_act` moved to
-    // `crates/cards/tests/act_advancement.rs`: the round-end-only detection is
-    // now registry-based (`act_advances_at_round_end` reads act 01109's
-    // `When`-RoundEnded reaction, #434), and the real act is corpus content a
-    // game-core unit test can't reach.
+    // The round-end-only rejection is tested in
+    // `crates/cards/tests/act_advancement.rs`: `act_advances_at_round_end`
+    // reads act 01109's `When`-RoundEnded reaction from the registry, and the
+    // real act is corpus content a game-core unit test can't reach.
 
     #[test]
     fn advance_act_spends_clues_and_advances_non_terminal() {

@@ -1,5 +1,5 @@
 //! Integration: The Gathering's agenda reverses fire on advance, through
-//! the real card registry (#281).
+//! the real card registry.
 //!
 //! Drives the reverses through the real advance: the round ends one doom
 //! short of the agenda's threshold, so the next Mythos phase's step-1.2 doom
@@ -51,8 +51,8 @@ fn ending_the_round_on(index: usize, lead: Seat, encounter_deck: &[&str]) -> Gam
     state
 }
 
-/// 01105's reverse is the lead's interactive `ChooseOne` (Axis A #334): it
-/// suspends with a two-option prompt, and picking branch 1 (the printed
+/// 01105's reverse is an interactive `ChooseOne`, made by the lead-investigator proxy:
+/// it suspends with a two-option prompt, and picking branch 1 (the printed
 /// "the lead investigator takes 2 horror") resolves it.
 #[test]
 fn agenda_01105_reverse_choice_lead_takes_two_horror() {
@@ -73,7 +73,7 @@ fn agenda_01105_reverse_choice_lead_takes_two_horror() {
     assert_eq!(
         session.state().investigators[&LEAD].horror(),
         2,
-        "branch 1 deals 2 horror to the lead investigator",
+        "branch 1 deals 2 horror to the lead-investigator proxy",
     );
 }
 

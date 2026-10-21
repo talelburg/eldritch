@@ -1,4 +1,5 @@
-//! Ward of Protection 01065 end-to-end against the real card registry (#1056).
+//! Ward of Protection 01065 end-to-end against the real card registry.
+//!
 //! Card text (verbatim, `data/arkhamdb-snapshot/pack/core/core.json`):
 //!
 //! > Fast. Play when you draw a non-weakness treachery card.
@@ -19,8 +20,8 @@
 //! - Swarm of Rats 01159, an enemy: *"Hunter."*
 //!
 //! Ward's narrowing to a non-weakness card is reached by a weakness treachery
-//! drawn from the player deck, which resolves through the same draw condition
-//! (#1121): Cover Up 01007, *"**Revelation** - Put Cover Up into play in your
+//! drawn from the player deck, which resolves through the same draw condition:
+//! Cover Up 01007, *"**Revelation** - Put Cover Up into play in your
 //! threat area, with 3 clues on it. …"*
 //!
 //! Runs against `cards::TEST_REGISTRIES`.
@@ -198,7 +199,7 @@ fn drawing_an_enemy_does_not_offer_ward() {
 
 /// *"…a **non-weakness** treachery card"*: Cover Up 01007, a treachery
 /// weakness drawn from the player deck, opens the same draw condition as an
-/// encounter-deck treachery (#1121), and Ward's filter turns it away. Cover Up's
+/// encounter-deck treachery, and Ward's filter turns it away. Cover Up's
 /// *"**Revelation** - Put Cover Up into play in your threat area, with 3 clues
 /// on it."* resolves uncancelled.
 #[test]
@@ -240,7 +241,7 @@ fn another_investigators_draw_does_not_offer_ward() {
 }
 
 /// The cancel names the draw's own condition, so the horror's sequences run
-/// normally above it and Agnes's reaction is offered for Ward's horror (#1055).
+/// normally above it and Agnes's reaction is offered for Ward's horror.
 #[test]
 fn agnes_reaction_is_offered_for_wards_horror() {
     let agnes = seat(1)

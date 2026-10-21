@@ -1,7 +1,8 @@
-//! Where a defeated enemy's card goes (#632), against the real
-//! `cards::REGISTRY`. A defeated enemy leaves play through the leave-play exit,
-//! filed by its owner (#982): the encounter deck's enemy to the encounter
-//! discard, a weakness enemy to its bearer's discard.
+//! Where a defeated enemy's card goes, against the real `cards::REGISTRY`.
+//!
+//! A defeated enemy leaves play through the leave-play exit, filed by its
+//! owner: the encounter deck's enemy to the encounter discard, a weakness enemy
+//! to its bearer's discard.
 //!
 //! `data/rules-reference/rules/glossary/Defeat.md`:
 //!
@@ -39,7 +40,7 @@
 //! The enemies are built as fixtures rather than spawned from the corpus, each
 //! with the owner it would enter play with: the encounter deck for Ghoul Minion
 //! and Ghoul Priest, and its bearer for Mob Enforcer (`glossary/Weakness.md`) —
-//! the owner a weakness enemy drawn from its bearer's deck spawns with (#1121).
+//! the owner a weakness enemy drawn from its bearer's deck spawns with.
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
@@ -88,7 +89,7 @@ fn solo_investigator_facing(
         .with_registries(TEST_REGISTRIES)
         .with_round(0)
         .with_seat(seat(1).at(HERE).skill(SkillKind::Combat, 8).deck(["01088"]))
-        // Fight is location-gated (#401); an engaged enemy is at its
+        // Fight is location-gated; an engaged enemy is at its
         // investigator's location.
         .with_enemy_engaged(enemy, INV)
         .with_location(test_support::test_location(HERE.0, "Study"))
@@ -120,6 +121,9 @@ fn defeated(state: GameState) -> ApplyResult {
     fight_to_defeat(state).finish()
 }
 
+/// Regression for #632: a defeated encounter enemy goes to the encounter
+/// discard rather than out of the game, so it is drawn again once the deck
+/// runs out.
 #[test]
 fn defeated_ghoul_minion_is_drawn_again_once_the_encounter_deck_runs_out() {
     let after = fight_to_defeat(solo_investigator_facing(
@@ -141,7 +145,6 @@ fn defeated_ghoul_minion_is_drawn_again_once_the_encounter_deck_runs_out() {
     // discard back in first ("If the encounter deck is empty, shuffle the
     // encounter discard pile back into the encounter deck") — so the card drawn
     // must be the Ghoul the investigator just killed, which then spawns again.
-    // Before this fix the discard was empty and the draw had nothing to find.
     assert!(after.state().encounter_deck.is_empty());
     // Ending the turn plays on through the round to the next Mythos phase's
     // encounter draw.
@@ -167,6 +170,8 @@ fn defeated_ghoul_minion_is_drawn_again_once_the_encounter_deck_runs_out() {
     assert!(redraw.state().encounter_discard.is_empty());
 }
 
+/// Regression for #632: a defeated enemy weakness goes to its owner's discard
+/// pile rather than out of the game.
 #[test]
 fn defeated_enemy_weakness_lands_in_its_owners_discard_pile() {
     let after = defeated(solo_investigator_facing(

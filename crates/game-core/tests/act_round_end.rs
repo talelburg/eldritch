@@ -1,7 +1,8 @@
-//! Round-end `when` act-advance window through the public `apply` entry
-//! (EmitEvent-frame C-coordinators, #434). The Upkeep round-end coordinator
-//! opens act 01109's `When`-`RoundEnded` reaction as a board candidate;
-//! picking it fires the advance / `Skip` declines.
+//! Round-end `when` act-advance window through the public `apply` entry.
+//!
+//! The Upkeep round-end coordinator opens act 01109's `When`-`RoundEnded`
+//! reaction as a board candidate; picking it fires the advance / `Skip`
+//! declines.
 
 use std::sync::LazyLock;
 

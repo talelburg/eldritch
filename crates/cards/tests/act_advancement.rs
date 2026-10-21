@@ -1,9 +1,10 @@
-//! Act-3 objective: defeating the Ghoul Priest (01116) advances Act 3
-//! (01110), whose reverse asks the lead investigator which of the two printed
-//! resolution points to reach (#775). The Ghoul Priest enemy + its spawn land
-//! in C3 (#231); here an enemy printed as the Ghoul Priest is defeated by a
-//! real Fight against the real registry. End-to-end defeat->ending in the
-//! scenario is C7b (#245).
+//! Act-3 objective: defeating the Ghoul Priest (01116) advances Act 3 (01110),
+//! whose reverse offers two printed resolution points behind *"The lead
+//! investigator must decide (choose one)"*.
+//!
+//! Here an enemy printed as the Ghoul Priest is defeated by a real Fight
+//! against the real registry. The scenario's end-to-end defeat-to-ending path
+//! is `scenarios/tests/the_gathering_resolutions.rs`.
 
 use cards::TEST_REGISTRIES;
 use game_core::assert_event;
@@ -74,10 +75,10 @@ fn defeat_the_ghoul_priest() -> TestSession {
     defeat("01116") // the Ghoul Priest
 }
 
-/// The printed reverse offers both resolution points, verbatim, and anchors
-/// them to the act — the card the choice is printed on, whose reverse face the
-/// advance is already showing (#555 / ADR 0011). Before #775 the act latched R1
-/// without asking.
+/// Regression for #775: the printed reverse offers both resolution points,
+/// verbatim, rather than latching R1 without asking. It anchors them to the
+/// act — the card the choice is printed on, whose reverse face the advance is
+/// already showing (ADR 0011).
 #[test]
 fn defeating_ghoul_priest_offers_the_lead_both_printed_resolution_points() {
     let session = defeat_the_ghoul_priest();
@@ -131,11 +132,11 @@ fn defeating_other_enemy_does_not_advance_act_3() {
     );
 }
 
-/// Act 01110 ("What Have You Done?") advances only via its Forced
-/// `EnemyDefeated` objective (the Ghoul Priest), so its corpus clue threshold is
-/// `null` -> 0. The deliberate clue-spend `AdvanceAct` action must be rejected
-/// for it — otherwise the player could "spend 0 clues to advance" and instantly
-/// latch the terminal Won resolution, bypassing the Ghoul Priest fight (#486).
+/// Regression for #486: Act 01110 ("What Have You Done?") advances only via its
+/// Forced `EnemyDefeated` objective (the Ghoul Priest), so its corpus clue
+/// threshold is `null` -> 0. The deliberate clue-spend `AdvanceAct` action is
+/// rejected for it — otherwise the player could "spend 0 clues to advance" and
+/// instantly latch the terminal Won resolution, bypassing the Ghoul Priest fight.
 /// The legitimate defeat path stays covered by
 /// `defeating_ghoul_priest_advances_act_3_to_won` above.
 #[test]
@@ -160,7 +161,7 @@ fn advance_act_action_rejected_for_act_3_objective() {
 
 /// Act 01109 ("The Barrier") advances only at the end of the round (its
 /// `When`-`RoundEnded` group objective), so the `AdvanceAct` *action* is rejected.
-/// Registry-based detection (`act_advances_at_round_end`, #434) — needs the real
+/// Registry-based detection (`act_advances_at_round_end`) — needs the real
 /// registry, so it lives here rather than as a game-core lib unit test.
 #[test]
 fn advance_act_rejected_for_round_end_advance_act() {

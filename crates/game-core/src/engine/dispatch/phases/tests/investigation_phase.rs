@@ -43,7 +43,7 @@ fn open_turn_leaves_investigator_turn_frame_on_top() {
         dispatch::drive(&mut cx, EngineOutcome::Done)
     };
 
-    // The open turn surfaces its action menu as AwaitingInput (2b, #447).
+    // The open turn surfaces its action menu as AwaitingInput.
     assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
     // Top frame is the InvestigatorTurn for investigator 1...
     assert_eq!(
@@ -103,7 +103,7 @@ fn mulligan_completion_kicks_off_investigation_phase() {
 #[test]
 fn investigation_anchor_pushed_and_persists_through_turn() {
     // The Investigation driver pushes its anchor at entry; it persists
-    // beneath the open-action turn (slice 1a) after the framework windows
+    // beneath the open-action turn after the framework windows
     // auto-skip closed.
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::default()
@@ -283,8 +283,8 @@ fn end_turn_for_last_investigator_ends_phase_and_steps_to_enemy() {
 
 #[test]
 fn end_turn_rotates_to_next_active_and_opens_turn_window() {
-    // Two investigators: ending #1's turn returns to 2.2 for #2 and
-    // opens the InvestigatorTurnBegins window for them.
+    // Two investigators: ending the first investigator's turn returns to 2.2
+    // for the second's and opens the InvestigatorTurnBegins window for them.
     let session = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
@@ -319,7 +319,7 @@ fn end_turn_rotates_to_next_active_and_opens_turn_window() {
 
 #[test]
 fn step_phase_emits_no_phase_ended() {
-    // step_phase no longer emits PhaseEnded for any phase — each
+    // step_phase emits no PhaseEnded for any phase — each
     // phase's *_end helper owns it. Direct Investigation→Enemy step:
     // step_phase must NOT emit PhaseEnded(Investigation); the
     // downstream cascade may emit PhaseEnded for Enemy/Upkeep via

@@ -99,7 +99,7 @@ fn draw_random_basic_weaknesses(cx: &mut Cx, roster: &[RosterEntry]) -> Vec<Vec<
 /// Internal scenario setup: seat the roster, shuffle decks, push the initial
 /// phase anchors. Called by [`super::seat_and_open`] (the non-logged engine
 /// entry point); never reached via a `PlayerAction` — the action log is
-/// `ResolveInput`-only after #447/#459.
+/// `ResolveInput`-only.
 pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutcome {
     // Replaying on an already-started state is a bug, not a no-op — reject so
     // callers notice rather than silently double-emitting `ScenarioStarted`.
@@ -111,8 +111,8 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
 
     // Validate-first: resolve every roster entry's stats from card data
     // before mutating anything. Any failure rejects with state unchanged.
-    // Capacity (health/sanity) is no longer copied into Investigator fields
-    // (#448 cp4) — the accessors read from the registry directly via
+    // Capacity (health/sanity) is not copied into Investigator fields — the
+    // accessors read from the registry directly via
     // `investigator_card.code`. We still validate that the code resolves to a
     // `CardKind::Investigator` here so seating rejects non-investigators.
     let reg = cx.cards;
@@ -147,7 +147,7 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
     }
 
     // A scenario requires at least one investigator. Seating is the sole
-    // seater (#224): the roster is mandatory, an empty roster rejects.
+    // seater: the roster is mandatory, an empty roster rejects.
     if resolved.is_empty() {
         return EngineOutcome::Rejected {
             reason: "a scenario requires a non-empty roster".into(),
@@ -295,19 +295,19 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
 
     // Forced "at the end of your turn" abilities (threat-area cards such as
     // Frozen in Fear 01164's willpower test) fire for the investigator whose
-    // turn just ended, before the turn passes on (first consumer: C4c, #235).
+    // turn just ended, before the turn passes on.
     //
     // A forced effect that initiates a skill test, or a 2+ simultaneous forced
-    // run (#213, two Frozen in Fear copies), suspends here (`AwaitingInput`),
-    // stranding `end_turn` before rotation. Both cases are handled uniformly
-    // (#434): flag the `InvestigatorTurn { ending: true }` frame (beneath the
+    // run (two Frozen in Fear copies), suspends here (`AwaitingInput`),
+    // stranding `end_turn` before rotation. Both cases are handled uniformly:
+    // flag the `InvestigatorTurn { ending: true }` frame (beneath the
     // suspension); the `drive` loop re-dispatches it once the suspension
     // resolves and runs [`resume_end_turn`]. The 2+ forced run closes to `Done`
-    // (its `Terminal` continuation), so it no longer carries a bespoke
-    // `EndOfTurnAfterForced` — the turn frame is the single resume path.
+    // (its `Terminal` continuation), so the turn frame is the single resume
+    // path.
     //
     // A `Rejected` propagates as-is.
-    // Frame-driven rotation (Slice D, #423): arm the `InvestigatorTurn` frame's
+    // Frame-driven rotation: arm the `InvestigatorTurn` frame's
     // `ending` flag BEFORE emitting `EndOfTurn`, then emit. `queue_event` pushes
     // the forced/reaction abilities (Frozen in Fear 01164's willpower test, a 2+
     // forced run) as frames; the `drive` loop drives them and, once they pop,
@@ -331,14 +331,14 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
 /// Run the post-`EndOfTurn`-forced portion of [`end_turn`] (Rules
 /// Reference p.24 step 2.2.2): rotate to the next active investigator, or
 /// end the Investigation phase. Reached uniformly through the `drive` loop's
-/// `InvestigatorTurn { ending: true }` arm (Slice D, #423): `end_turn` arms
+/// `InvestigatorTurn { ending: true }` arm: `end_turn` arms
 /// that flag and emits `EndOfTurn`, whose forced/reaction effects (Frozen in
 /// Fear 01164's willpower test) the loop drives as frames; once they pop, the
 /// re-exposed turn frame runs this rotation — whether the forced run was empty,
 /// completed immediately, or suspended.
 pub(super) fn resume_end_turn(cx: &mut Cx, active_id: InvestigatorId) -> EngineOutcome {
-    // The turn is over: pop the InvestigatorTurn frame this turn ran on (slice
-    // 2a-i, #393). It is always on top here — end_turn reaches this after the
+    // The turn is over: pop the InvestigatorTurn frame this turn ran on. It is
+    // always on top here — end_turn reaches this after the
     // EndOfTurn forced run resolves, the stranded-skill-test resume after the
     // SkillTest pops, and the forced-run continuation after its Resolution pops.
     let turn = cx.state.continuations.pop_expect::<InvestigatorTurnFrame>();
@@ -361,21 +361,21 @@ pub(super) fn resume_end_turn(cx: &mut Cx, active_id: InvestigatorId) -> EngineO
     }
 }
 
-/// Entered by [`step_phase`] on any-to-Investigation transition, and by
-/// the mulligan-completion site in [`apply_player_action`] for round 1.
+/// Entered by [`advance_phase_entry`] on any-to-Investigation transition, and
+/// by the mulligan's completion (`cards::resume_mulligan`) for round 1.
 /// Owns the `PhaseStarted(Investigation)` emit (Rules Reference p.24 step 2.1)
 /// and queues its forced abilities; [`investigation_after_phase_start`] opens
 /// the post-2.1 player window once they have resolved. Rotation to the
 /// first active investigator (step 2.2) runs in the
 /// [`PhaseStep::InvestigationBegins`] continuation via
-/// [`begin_investigator_turn`], lead-first by default; explicit
-/// player-pick within this window is deferred to #146.
+/// [`begin_investigator_turn`], the first Active investigator in turn order
+/// first. TODO(#146): let the players choose who takes the first turn.
 pub(super) fn investigation_phase(cx: &mut Cx) -> EngineOutcome {
     // 2.1 Investigation phase begins.
     cx.events.push(Event::PhaseStarted {
         phase: Phase::Investigation,
     });
-    // Push the Investigation phase anchor (slice 1a, #393). It persists for the
+    // Push the Investigation phase anchor. It persists for the
     // whole phase (across every investigator's turn), beneath the framework
     // windows; popped at investigation_phase_end_transition.
     //
@@ -405,8 +405,8 @@ pub(super) fn investigation_phase(cx: &mut Cx) -> EngineOutcome {
 /// in this window's continuation (`anchor_on_child_pop` →
 /// [`Begins`](crate::state::InvestigationResume::Begins)), so the printed order
 /// 2.1 → window → 2.2 holds. Auto-skips inline when nothing is Fast-eligible, so
-/// single-investigator entry still lands the lead active within the same
-/// `apply()` call.
+/// single-investigator entry still makes the first investigator in turn order
+/// active within the same `apply()` call.
 fn investigation_after_phase_start(cx: &mut Cx) -> EngineOutcome {
     set_investigation_resume(cx, InvestigationResume::Begins);
     let outcome = reaction_windows::open_fast_window(
@@ -467,8 +467,7 @@ pub(super) fn begin_investigator_turn(cx: &mut Cx, who: InvestigatorId) -> Engin
 /// window.
 ///
 /// The anchor advances to `TurnBegins` first, so the closing
-/// `InvestigatorTurnBegins` window routes to the right `on_child_pop` arm
-/// (slice 1a, #393).
+/// `InvestigatorTurnBegins` window routes to the right `on_child_pop` arm.
 fn investigation_after_turn_began(cx: &mut Cx) -> EngineOutcome {
     set_investigation_resume(cx, InvestigationResume::TurnBegins);
     let outcome = reaction_windows::open_fast_window(
@@ -494,7 +493,7 @@ fn investigation_after_turn_began(cx: &mut Cx) -> EngineOutcome {
 /// [`AfterPhaseEndForced`](crate::state::InvestigationResume::AfterPhaseEndForced)
 /// *beneath* whatever the emit queues rather than popped, because popping it and
 /// pushing the Enemy anchor here would bury those frames at the bottom of the
-/// stack — phase anchors pop-and-push rather than drain (#569).
+/// stack — phase anchors pop-and-push rather than drain.
 fn investigation_phase_end(cx: &mut Cx) -> EngineOutcome {
     cx.events.push(Event::PhaseEnded {
         phase: Phase::Investigation,
@@ -516,7 +515,7 @@ fn investigation_phase_end(cx: &mut Cx) -> EngineOutcome {
     )
 }
 
-/// Investigation → Enemy (slice 1b, #393), reached via the Investigation
+/// Investigation → Enemy, reached via the Investigation
 /// anchor's
 /// [`AfterPhaseEndForced`](crate::state::InvestigationResume::AfterPhaseEndForced)
 /// resume once step 2.3's queued forced abilities have resolved: pop the anchor,
@@ -538,7 +537,7 @@ fn investigation_phase_end_transition(cx: &mut Cx) -> EngineOutcome {
 /// Test helper: run a phase driver and let the drive loop carry it to its next
 /// idle point, the way the `apply` boundary does in production.
 ///
-/// Since #697 each phase opener emits its step-N.1 `PhaseStarted` milestone in
+/// Each phase opener emits its step-N.1 `PhaseStarted` milestone in
 /// **tail position** (ADR 0003), so the phase's own opening work runs from the
 /// anchor's resume rather than inline. A unit test that calls the opener
 /// directly and inspects the board therefore has to drive, exactly as the loop
@@ -548,16 +547,15 @@ fn drive_phase(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
     dispatch::drive(cx, outcome)
 }
 
-/// Entered by [`step_phase`] on the Upkeep→Mythos transition. Lays
+/// Entered by [`advance_phase_entry`] on the Upkeep→Mythos transition. Lays
 /// out the Rules Reference p.24 sub-steps as discrete named call
-/// sites so the rule structure is grep-able and #73 / #139
-/// fills in TODO bodies without changing the driver shape.
+/// sites so the rule structure is grep-able.
 fn mythos_phase(cx: &mut Cx) -> EngineOutcome {
     // 1.1 Round begins. Mythos phase begins.
     //     Rules Reference p.24: "As this is the first framework event
     //     of the round, it [1.1] also formalizes the beginning of a new
     //     game round." The round-counter increment lives HERE (not in
-    //     step_phase) so the rule's round-begin point has explicit
+    //     the transition) so the rule's round-begin point has explicit
     //     driver ownership, mirroring PhaseStarted(Mythos). Round 1 is
     //     bypassed: start_scenario sets round = 1 directly (Mythos
     //     skipped). This is also the future home for a RoundStarted
@@ -592,8 +590,8 @@ fn mythos_phase(cx: &mut Cx) -> EngineOutcome {
 /// [`AfterPhaseStartForced`](crate::state::MythosResume::AfterPhaseStartForced)
 /// resume once step 1.1's queued forced abilities have resolved.
 ///
-/// Re-parks the anchor at [`Draws`](crate::state::MythosResume::Draws) first
-/// (#482): 1.2/1.3 may push an `AdvanceReverse` frame whose reverse suspends
+/// Re-parks the anchor at [`Draws`](crate::state::MythosResume::Draws)
+/// first: 1.2/1.3 may push an `AdvanceReverse` frame whose reverse suspends
 /// (01105's `ChooseOne`), and the 1.4 draws run from that resume once the frame
 /// pops, never before — RR order has the agenda's on-advance effect resolve
 /// before the encounter draws.
@@ -621,9 +619,9 @@ fn set_mythos_resume(cx: &mut Cx, resume: MythosResume) {
         .resume = resume;
 }
 
-/// Test helper (slice 1b, #393): advance to the next phase via the main loop,
+/// Test helper: advance to the next phase via the main loop,
 /// the way a real transition does — set `state.phase` to the next phase, push
-/// its anchor at `Entry`, and `drive`. Production no longer has a synchronous
+/// its anchor at `Entry`, and `drive`. Production has no synchronous
 /// phase-stepping function: the four `*_phase_end`/teardown transitions push the
 /// next `{Entry}` anchor and the apply boundary's `drive` advances it. Tests
 /// that constructed a state in phase *N* and want phase *N+1* run through the
@@ -676,13 +674,13 @@ fn rotate_to_active(cx: &mut Cx, id: InvestigatorId) {
 /// Seeds the cursor to the first Active investigator in `turn_order`.
 /// Eliminated investigators (Defeated / Resigned) are skipped per
 /// Rules Reference p.10 (Elimination); [`cursor::first_active_investigator`] is
-/// the shared helper used by Mythos 1.4 (#69) for the same semantics.
+/// the shared helper used by Mythos 1.4 for the same semantics.
 /// The loop body runs in [`anchor_on_child_pop`]'s arms.
 ///
 /// Returns the opened window's [`EngineOutcome`]. The no-active-investigator
 /// path opens `AfterAllInvestigatorsAttacked`, whose continuation cascades
 /// Enemy → Upkeep; that cascade can now suspend at Upkeep step 4.5
-/// (hand-size discard, #111), so the outcome propagates rather than being
+/// (hand-size discard), so the outcome propagates rather than being
 /// discarded.
 pub(super) fn enemy_attack_kickoff(cx: &mut Cx) -> EngineOutcome {
     // No Active investigators (turn_order empty or all eliminated) → `None`
@@ -691,7 +689,7 @@ pub(super) fn enemy_attack_kickoff(cx: &mut Cx) -> EngineOutcome {
 }
 
 /// Point the Enemy phase anchor at the next step-3.3 window and open it. The
-/// `attacking` cursor is the single source of truth (#411): `Some(inv)` opens
+/// `attacking` cursor is the single source of truth: `Some(inv)` opens
 /// that investigator's `BeforeInvestigatorAttacked` window and the anchor
 /// resumes into resolving their attacks; `None` means no investigator remains,
 /// so open the terminal `AfterAllInvestigatorsAttacked` window and the anchor
@@ -718,8 +716,8 @@ pub(super) fn open_attack_window(cx: &mut Cx, attacking: Option<InvestigatorId>)
     reaction_windows::open_fast_window(cx, FastWindowKind::Phase(step))
 }
 
-/// Set the Enemy phase anchor's `resume` and `attacking` cursor together (slice
-/// 1a / #411) so neither is dropped. The low-level primitive behind
+/// Set the Enemy phase anchor's `resume` and `attacking` cursor together so
+/// neither is dropped. The low-level primitive behind
 /// [`open_attack_window`]; the anchor is the bottom-most Enemy frame, and this
 /// is a no-op if it is absent (only in tests that drive the attack loop in
 /// isolation).
@@ -733,7 +731,7 @@ pub(super) fn set_enemy_anchor(
     }
 }
 
-/// Entered by [`step_phase`] on the Investigation→Enemy transition. Owns the
+/// Entered by [`advance_phase_entry`] on the Investigation→Enemy transition. Owns the
 /// `PhaseStarted(Enemy)` emit (Rules Reference p.25 step 3.1) and queues its
 /// forced abilities; hunter movement (3.2) and the attack-loop kickoff (3.3)
 /// run from [`enemy_after_phase_start`] once they have resolved.
@@ -742,7 +740,7 @@ fn enemy_phase(cx: &mut Cx) -> EngineOutcome {
     cx.events.push(Event::PhaseStarted {
         phase: Phase::Enemy,
     });
-    // Push the Enemy phase anchor (slice 1a, #393) before hunter movement, so a
+    // Push the Enemy phase anchor before hunter movement, so a
     // lead-tie suspension parks above it and the kickoff on resume finds it.
     //
     // **Emits in tail position** (ADR 0003): parked at `AfterPhaseStartForced`
@@ -803,16 +801,16 @@ fn enemy_after_phase_start(cx: &mut Cx) -> EngineOutcome {
 /// enemy moves 1 location towards the Parlor"* — so the anchor is re-parked at
 /// [`AfterPhaseEndForced`](crate::state::EnemyResume::AfterPhaseEndForced)
 /// *beneath* them rather than popped. Popping it and pushing the Upkeep anchor
-/// here (the pre-#569 shape) buried the queued frame at the bottom of the stack
-/// for the rest of the scenario, because phase anchors pop-and-push rather than
-/// drain: the Ghoul movement never happened in real play.
+/// here would bury the queued frame at the bottom of the stack for the rest of
+/// the scenario, because phase anchors pop-and-push rather than drain, and the
+/// Ghoul would never move.
 pub(crate) fn enemy_phase_end(cx: &mut Cx) -> EngineOutcome {
     // 3.4 Enemy phase ends.
     cx.events.push(Event::PhaseEnded {
         phase: Phase::Enemy,
     });
     // The AfterAllInvestigatorsAttacked window has closed, so the anchor is the
-    // top frame (slice 1a, #393). It stays: the transition needs it as its
+    // top frame. It stays: the transition needs it as its
     // resume point. Arm the resume BEFORE emitting: the emit may push an
     // ordering run that suspends across an `apply()` boundary, and the anchor
     // beneath it must already know where to continue. Uniform across 0 / 1 / 2+
@@ -831,7 +829,7 @@ pub(crate) fn enemy_phase_end(cx: &mut Cx) -> EngineOutcome {
     )
 }
 
-/// Enemy → Upkeep (slice 1b, #393), reached via the Enemy anchor's
+/// Enemy → Upkeep, reached via the Enemy anchor's
 /// [`AfterPhaseEndForced`](crate::state::EnemyResume::AfterPhaseEndForced)
 /// resume once step 3.4's queued forced abilities have resolved: pop the anchor,
 /// advance `state.phase`, and push the Upkeep anchor at `Entry`. The main loop's
@@ -857,11 +855,11 @@ fn enemy_phase_end_transition(cx: &mut Cx) -> EngineOutcome {
 /// *"**Forced** - At the end of the mythos phase: Place 1 doom on Wizard of the
 /// Order."*, so this emit has a live corpus consumer once a card in play can
 /// carry doom; popping the anchor and pushing the Investigation one here would
-/// bury whatever it queues at the bottom of the stack, the #569 shape.
+/// bury whatever it queues at the bottom of the stack.
 pub(super) fn mythos_phase_end(cx: &mut Cx) -> EngineOutcome {
     // 1.5 Mythos phase ends.
     //     The PhaseEnded(Mythos) emit lives HERE rather than in
-    //     step_phase so step 1.5 has explicit ownership in the
+    //     the transition so step 1.5 has explicit ownership in the
     //     driver — mirror of step 1.1's PhaseStarted ownership in
     //     mythos_phase. Rules Reference p.24: "This step formalizes
     //     the end of the mythos phase."
@@ -881,7 +879,7 @@ pub(super) fn mythos_phase_end(cx: &mut Cx) -> EngineOutcome {
     )
 }
 
-/// Mythos → Investigation (slice 1b, #393), reached via the Mythos anchor's
+/// Mythos → Investigation, reached via the Mythos anchor's
 /// [`AfterPhaseEndForced`](crate::state::MythosResume::AfterPhaseEndForced)
 /// resume once step 1.5's queued forced abilities have resolved: pop the anchor,
 /// advance `state.phase`, and push the Investigation anchor at `Entry`. The main
@@ -895,7 +893,7 @@ fn mythos_phase_end_transition(cx: &mut Cx) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-/// Advance a freshly-entered phase anchor (slice 1b, #393): if the top frame is
+/// Advance a freshly-entered phase anchor: if the top frame is
 /// a `*Phase` anchor at `Entry`, pop the placeholder and run that phase's
 /// opening via its existing driver (which pushes the running anchor at its first
 /// boundary resume + the phase's first child). Returns `None` when the top is
@@ -934,7 +932,7 @@ fn advance_phase_entry(cx: &mut Cx, anchor: Option<&Continuation>) -> Option<Eng
     }
 }
 
-/// Mythos step 1.4 (#482): re-park the anchor at `AfterDraws`, then seed + open
+/// Mythos step 1.4: re-park the anchor at `AfterDraws`, then seed + open
 /// the encounter draws. Reached from `anchor_on_child_pop`'s `MythosPhase{Draws}`
 /// arm — i.e. once any `AdvanceReverse` frame (the agenda's on-advance reverse +
 /// acknowledge) above the anchor has popped, so the agenda effect resolves before
@@ -965,7 +963,7 @@ fn run_mythos_draws(cx: &mut Cx) -> EngineOutcome {
 }
 
 /// Run the top `*Phase` anchor's continuation after one of its framework
-/// windows closed (slice 1a, #393), or advance it from `Entry` (slice 1b, via
+/// windows closed, or advance it from `Entry` (via
 /// [`advance_phase_entry`]). The window has already been popped by the close
 /// path, so the anchor is now the top frame; its `resume` selects the relocated
 /// body. Suspension-agnostic: a body that itself suspends returns
@@ -976,24 +974,23 @@ fn run_mythos_draws(cx: &mut Cx) -> EngineOutcome {
 #[allow(clippy::too_many_lines)]
 pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
     let anchor = cx.state.continuations.top().cloned();
-    // `Entry` advances (slice 1b, #393) run the phase opening; delegated so this
-    // function stays the boundary-dispatch it was in slice 1a.
+    // `Entry` advances run the phase opening; delegated so this function stays
+    // the boundary dispatch.
     if let Some(out) = advance_phase_entry(cx, anchor.as_ref()) {
         return out;
     }
     match anchor {
         // Step 4.1's queued `PhaseStarted { Upkeep }` forced abilities have
-        // resolved, re-exposing this anchor (#697): open the post-4.1 window.
+        // resolved, re-exposing this anchor: open the post-4.1 window.
         Some(Continuation::UpkeepPhase(UpkeepPhaseFrame {
             resume: UpkeepResume::AfterPhaseStartForced,
         })) => upkeep_after_phase_start(cx),
         Some(Continuation::UpkeepPhase(UpkeepPhaseFrame {
             resume: UpkeepResume::Begins,
         })) => {
-            // Structurally impossible under the main loop (slice 1b, #393): a
-            // skill test in flight sits *above* its phase anchor, so `drive`
-            // never advances the anchor with one pending. (Was an `unreachable!`
-            // gated on "no Upkeep-phase skill-test source"; now a cheap assert.)
+            // Structurally impossible under the main loop: a skill test in
+            // flight sits *above* its phase anchor, so `drive` never advances
+            // the anchor with one pending.
             debug_assert!(
                 cx.state.current_skill_test().is_none(),
                 "UpkeepBegins advanced with a skill test in flight",
@@ -1001,7 +998,7 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
             upkeep_resume(cx)
         }
         // One investigator's step-4.4 draw (its deck-out horror, a drawn
-        // weakness's Revelation, #509) has resolved, re-exposing this anchor:
+        // weakness's Revelation) has resolved, re-exposing this anchor:
         // the next investigator draws, or 4.4 completes.
         Some(Continuation::UpkeepPhase(UpkeepPhaseFrame {
             resume: UpkeepResume::Drawing { drew },
@@ -1012,7 +1009,7 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
             resume: UpkeepResume::AfterDraw,
         })) => upkeep_after_draw(cx),
         // Step 4.6's queued `PhaseEnded { Upkeep }` forced abilities have
-        // resolved, re-exposing this anchor (#569): run the round end.
+        // resolved, re-exposing this anchor: run the round end.
         Some(Continuation::UpkeepPhase(UpkeepPhaseFrame {
             resume: UpkeepResume::AfterPhaseEndForced,
         })) => upkeep_round_end(cx),
@@ -1020,12 +1017,12 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
             resume: UpkeepResume::AfterRoundEnd,
         })) => {
             // The round-end `EmitEvent` coordinator (the `when` act advance + the
-            // `at` doom) popped, re-exposing this anchor (#434). Run teardown
+            // `at` doom) popped, re-exposing this anchor. Run teardown
             // (expire until-end-of-round effects, Upkeep → Mythos).
             upkeep_round_end_teardown(cx)
         }
         // Step 3.1's queued `PhaseStarted { Enemy }` forced abilities have
-        // resolved, re-exposing this anchor (#697): run 3.2 + 3.3.
+        // resolved, re-exposing this anchor: run 3.2 + 3.3.
         Some(Continuation::EnemyPhase(EnemyPhaseFrame {
             resume: EnemyResume::AfterPhaseStartForced,
             ..
@@ -1034,7 +1031,7 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
             resume: EnemyResume::BeforeInvestigatorAttacked,
             attacking,
         })) => {
-            // Structurally impossible under the main loop (slice 1b): a skill
+            // Structurally impossible under the main loop: a skill
             // test in flight sits above its phase anchor, so `drive` never
             // advances the anchor with one pending.
             debug_assert!(
@@ -1050,10 +1047,10 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
                      `attacking` cursor == None; state-corruption invariant violation"
                 )
             });
-            // Tail position (ADR 0003): since #704 the attack loop parks itself
-            // on a `Continuation::AttackLoop` frame and hands each attack to the
-            // timing coordinator, so a `Done` here means *queued*, not *the
-            // attacks are over*. The per-investigator cursor advance
+            // Tail position (see `emit::queue_event`): the attack loop parks
+            // itself on a `Continuation::AttackLoop` frame and hands each attack
+            // to the timing coordinator, so a `Done` here does not mean the
+            // attacks are over. The per-investigator cursor advance
             // (`after_enemy_phase_attacks`) therefore runs from the loop's own
             // drain (`finish_attack_loop`), never from this arm.
             combat::resolve_attacks_for_investigator(cx, investigator)
@@ -1062,7 +1059,7 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
             resume: EnemyResume::AfterAllAttacked,
             ..
         })) => {
-            // Structurally impossible under the main loop (slice 1b): see the
+            // Structurally impossible under the main loop: see the
             // BeforeInvestigatorAttacked arm above.
             debug_assert!(
                 cx.state.current_skill_test().is_none(),
@@ -1071,19 +1068,19 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
             enemy_phase_end(cx)
         }
         // Step 3.4's queued `PhaseEnded { Enemy }` forced abilities have
-        // resolved, re-exposing this anchor (#569): transition to Upkeep.
+        // resolved, re-exposing this anchor: transition to Upkeep.
         Some(Continuation::EnemyPhase(EnemyPhaseFrame {
             resume: EnemyResume::AfterPhaseEndForced,
             ..
         })) => enemy_phase_end_transition(cx),
         // Step 2.1's queued `PhaseStarted { Investigation }` forced abilities
-        // have resolved, re-exposing this anchor (#697): open the post-2.1
+        // have resolved, re-exposing this anchor: open the post-2.1
         // window.
         Some(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::AfterPhaseStartForced,
         })) => investigation_after_phase_start(cx),
         // Step 2.3's queued `PhaseEnded { Investigation }` forced abilities have
-        // resolved, re-exposing this anchor (#697): transition to Enemy.
+        // resolved, re-exposing this anchor: transition to Enemy.
         Some(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::AfterPhaseEndForced,
         })) => investigation_phase_end_transition(cx),
@@ -1109,8 +1106,8 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
         Some(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
         })) => {
-            // 2.2.1 — push the InvestigatorTurn frame above the anchor (slice
-            // 2a-i, #393). The anchor stays at TurnBegins beneath it; the frame
+            // 2.2.1 — push the InvestigatorTurn frame above the anchor. The
+            // anchor stays at TurnBegins beneath it; the frame
             // is the open turn, a prompt (drive surfaces its action menu here).
             // `active_investigator` was set by rotate_to_active in
             // begin_investigator_turn; it is the frame's investigator.
@@ -1127,7 +1124,7 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
             EngineOutcome::Done
         }
         // Step 1.1's queued `PhaseStarted { Mythos }` forced abilities have
-        // resolved, re-exposing this anchor (#697): run 1.2 + 1.3.
+        // resolved, re-exposing this anchor: run 1.2 + 1.3.
         Some(Continuation::MythosPhase(MythosPhaseFrame {
             resume: MythosResume::AfterPhaseStartForced,
         })) => mythos_after_phase_start(cx),
@@ -1135,14 +1132,14 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
             resume: MythosResume::Draws,
         })) => run_mythos_draws(cx),
         // Step 1.5's queued `PhaseEnded { Mythos }` forced abilities have
-        // resolved, re-exposing this anchor (#697): transition to Investigation.
+        // resolved, re-exposing this anchor: transition to Investigation.
         Some(Continuation::MythosPhase(MythosPhaseFrame {
             resume: MythosResume::AfterPhaseEndForced,
         })) => mythos_phase_end_transition(cx),
         Some(Continuation::MythosPhase(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
         })) => {
-            // Structurally impossible under the main loop (slice 1b): a skill
+            // Structurally impossible under the main loop: a skill
             // test in flight sits above its phase anchor, so `drive` never
             // advances the anchor with one pending.
             debug_assert!(
@@ -1157,7 +1154,7 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
     }
 }
 
-/// Entered by [`step_phase`] on the Enemy→Upkeep transition. Owns the
+/// Entered by [`advance_phase_entry`] on the Enemy→Upkeep transition. Owns the
 /// `PhaseStarted(Upkeep)` emit (step 4.1) and queues its forced abilities;
 /// [`upkeep_after_phase_start`] opens the post-4.1 player window once they have
 /// resolved, and steps 4.2 onward run as that window's continuation
@@ -1170,7 +1167,7 @@ fn upkeep_phase(cx: &mut Cx) -> EngineOutcome {
     cx.events.push(Event::PhaseStarted {
         phase: Phase::Upkeep,
     });
-    // Push the Upkeep phase anchor (slice 1a, #393). It persists for the whole
+    // Push the Upkeep phase anchor. It persists for the whole
     // phase — beneath the post-4.1 window, any step-4.5 hand-size discard, and
     // the round-end act window — and is popped at upkeep_round_end_teardown (the
     // single Upkeep→Mythos exit, after the round-end sequence finishes).
@@ -1238,7 +1235,7 @@ fn upkeep_draws_after(cx: &mut Cx, drew: Option<InvestigatorId>) -> EngineOutcom
         set_upkeep_resume(cx, UpkeepResume::Drawing { drew: id });
         // Compares the top frame rather than the stack depth, so a frame
         // inserted lower down (a latched `ScenarioEnd` sits at the *bottom* of
-        // the stack, #566) never reads as a push above this anchor.
+        // the stack) never reads as a push above this anchor.
         let top_before = cx.state.continuations.top().cloned();
         // Tail position for this investigator's draw: when it pushed, the
         // outcome (`Done`) is returned as the cede below.
@@ -1265,7 +1262,7 @@ fn upkeep_after_draw(cx: &mut Cx) -> EngineOutcome {
 
 /// Owns step 4.6's `PhaseEnded(Upkeep)` emit and queues its forced abilities;
 /// the round-end sequence follows from [`upkeep_round_end`] once they have
-/// resolved. Exact analog of [`enemy_phase_end`]. `step_phase` emits no
+/// resolved. Exact analog of [`enemy_phase_end`]. No transition emits a
 /// `PhaseEnded` itself — every phase's `*_end` helper owns its own.
 ///
 /// **Emits in tail position** (ADR 0003). The emit queues rather than resolves,
@@ -1295,7 +1292,7 @@ pub(crate) fn upkeep_phase_end(cx: &mut Cx) -> EngineOutcome {
 /// resume once step 4.6's queued `PhaseEnded { Upkeep }` forced abilities have
 /// resolved.
 ///
-/// First, "until the end of the round" lasting effects expire (#643). Appendix
+/// First, "until the end of the round" lasting effects expire. Appendix
 /// II step 4.6: *"Any active "until the end of the round" lasting effects
 /// expire at this time."* They expire before `RoundEnded` is emitted, so no
 /// round-end ability sees them: `glossary/Lasting_Effects.md`, *"an "until the
@@ -1306,7 +1303,7 @@ pub(crate) fn upkeep_phase_end(cx: &mut Cx) -> EngineOutcome {
 ///
 /// The `when the round ends` act advance (act 01109) and the `at the end of the
 /// round` doom (agenda 01107, Dissonant Voices 01165) resolve as the `RoundEnded`
-/// `EmitEvent` coordinator's `When`/`At` cells (#434) — structural ordering, no
+/// `EmitEvent` coordinator's `When`/`At` cells — structural ordering, no
 /// hand-threading. Sets this anchor's resume so [`upkeep_round_end_teardown`]
 /// runs when the coordinator pops, then cedes: the emit pushes the coordinator
 /// and returns `Done`; the global loop drives the bucket walk (suspending at the
@@ -1321,7 +1318,7 @@ fn upkeep_round_end(cx: &mut Cx) -> EngineOutcome {
 /// resume cursor. Reverse-searches the stack (mirroring [`set_enemy_anchor`])
 /// so it is robust whether the anchor is on top (`upkeep_phase_end`'s call, made
 /// before the round-end coordinator is pushed) or buried beneath a drawn-weakness
-/// Revelation pushed by the step-4.4 draw (#509, `upkeep_resume`'s cede).
+/// Revelation pushed by the step-4.4 draw (`upkeep_resume`'s cede).
 fn set_upkeep_resume(cx: &mut Cx, resume: UpkeepResume) {
     cx.state
         .continuations
@@ -1332,19 +1329,17 @@ fn set_upkeep_resume(cx: &mut Cx, resume: UpkeepResume) {
 
 /// Teardown after the round-end `EmitEvent` coordinator pops — reached via the
 /// Upkeep anchor's [`AfterRoundEnd`](crate::state::UpkeepResume::AfterRoundEnd)
-/// resume (#434, subsuming the former `ForcedContinuation::UpkeepAfterRoundEnded`):
+/// resume:
 /// transition Upkeep → Mythos. Round-lifetime lasting effects have already
 /// expired, ahead of the emit in [`upkeep_round_end`].
 pub(super) fn upkeep_round_end_teardown(cx: &mut Cx) -> EngineOutcome {
-    // Pop the Upkeep anchor (slice 1a, #393): this is the single Upkeep→Mythos
+    // Pop the Upkeep anchor: this is the single Upkeep→Mythos
     // exit, reached after the whole round-end sequence (act window, doom) has
     // resolved, so the anchor is the top frame here.
     cx.state.continuations.pop_expect::<UpkeepPhaseFrame>();
-    // Upkeep → Mythos (slice 1b, #393): advance `state.phase` + push the Mythos
+    // Upkeep → Mythos: advance `state.phase` + push the Mythos
     // anchor at `Entry`. The main loop's `drive` advances it (runs mythos_phase —
-    // the round bump + PhaseStarted(Mythos) live there). Replaces the former
-    // synchronous `step_phase(cx)`. With all four transitions now loop-driven,
-    // `step_phase` is gone.
+    // the round bump + PhaseStarted(Mythos) live there).
     cx.state.phase = Phase::Mythos;
     cx.state.continuations.push(MythosPhaseFrame {
         resume: MythosResume::Entry,
@@ -1407,7 +1402,7 @@ fn ready_exhausted_cards(cx: &mut Cx) {
 /// Maximum hand size (Rules Reference p.25 step 4.5: discard down to 8). A module
 /// constant rather than a per-investigator field — no card in the
 /// current scope modifies the cap. A future hand-size-modifying card
-/// introduces the field when it is actually needed (#111 spec).
+/// introduces the field when it is actually needed.
 pub(super) const HAND_SIZE_LIMIT: u8 = 8;
 
 /// Active investigators, in player order, whose hand exceeds
@@ -1493,7 +1488,7 @@ fn check_hand_size(cx: &mut Cx) -> EngineOutcome {
     park_hand_size_discard(cx, remaining)
 }
 
-/// Resume a parked upkeep hand-size discard (#111). Validates the
+/// Resume a parked upkeep hand-size discard. Validates the
 /// `PickMultiple` response against the currently-prompted investigator
 /// (`remaining[0]`): the indices must be unique, in-bounds, name no weakness,
 /// and be exactly [`hand_size_discard_count`] in count. On success, discards the
@@ -1608,7 +1603,7 @@ pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) ->
 /// The canonical action-refresh site. Sets `actions_remaining` to
 /// `ACTIONS_PER_TURN` for each Active investigator and emits
 /// `ActionsRemainingChanged` when the value changes. `rotate_to_active`
-/// no longer refreshes (step 2.2 is just "the turn begins");
+/// does not refresh (step 2.2 is just "the turn begins");
 /// `start_scenario` seeds round 1. Eliminated investigators are skipped
 /// (Rules Reference p.10).
 fn reset_actions(cx: &mut Cx) {

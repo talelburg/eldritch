@@ -1,31 +1,29 @@
-//! The Gathering (Night of the Zealot, scenario 1) — Slice 1 C1a skeleton.
+//! The Gathering (Night of the Zealot, scenario 1): its setup, its chaos bag,
+//! and the symbol tokens of its reference card, 01104.
 //!
-//! Builds the faithful **Act-1 board**: only the Study is in play (the
-//! Hallway/Attic/Cellar/Parlor are set aside (`set_aside_cards`, by code)
-//! and enter play via Act 1's (01108) Forced on-advance reverse, which
-//! also relocates investigators to the Hallway and removes the Study).
-//! Their connections come from [`LAYOUT`], wired as each room enters.
-//! `setup()` builds the world; the scenario setup (via `seat_and_open`)
-//! seats investigators at the starting location (the Study, `01111`) via
-//! `GameState.starting_location`.
+//! `setup()` builds the **Act-1 board**. Only the Study (01111) is in play,
+//! and the scenario setup (`seat_and_open`) seats the investigators there, at
+//! `GameState.starting_location`. The Hallway, Attic, Cellar and Parlor are
+//! set aside by code (`set_aside_cards`). They enter play through act 01108's
+//! Forced on-advance reverse, which also places each investigator in the
+//! Hallway and removes the Study. Their connections come from [`LAYOUT`],
+//! wired as each room enters. The agenda doom and act clue thresholds are read
+//! from the corpus, and the chaos bag is the verified Standard bag.
 //!
-//! Faithful where it can be (agenda doom 3/7/10; the verified Standard
-//! chaos bag; Study shroud/clues); structural stand-in where the rest of
-//! Group C owns fidelity (act 01110 advances via its Forced `EnemyDefeated`
-//! objective (01116; in `cards`); symbol-token effects on reference card
-//! 01104 are C2). C1a does
-//! not claim faithful win/lose semantics — only structural reachability,
-//! proven by `tests/the_gathering.rs`.
+//! `resolve_symbol` implements 01104's Easy / Standard face. Its doc carries
+//! the Hard / Expert face, which waits on difficulty selection.
 //!
 //! **The two terminal cards carry no resolution point here.** A resolution
 //! point is a printed *effect* on a card's reverse, not a datum on the deck
 //! entry (ADR 0013), so 01107's `(→R3)` and 01110's `(→R1)`/`(→R2)` live in
 //! `cards::theyre_getting_out` and `cards::what_have_you_done`. Both are the
 //! last card in their deck, which is the only thing that makes them terminal.
-//! Both reverses are faithful now — 01107 branches on the current act (#809)
-//! and 01110 asks the lead to choose (#775). What each ending *means* is the
-//! remaining gap, recorded on the cards: the trauma, the campaign log, and
-//! Lita Chantler at R1 are campaign machinery and stay with #766.
+//! 01107's reverse branches on the current act, and 01110's offers its choice
+//! to the lead investigator's proxy, the first Active investigator in
+//! `turn_order`.
+//!
+//! TODO(#766): apply what each ending means. The trauma, the campaign log, and
+//! Lita Chantler at R1 are campaign machinery, and the cards record each gap.
 
 use card_dsl::card_data::CardKind;
 use card_dsl::dsl::{Effect, HarmKind, IntExpr, InvestigatorTarget, TokenOutcome};
@@ -57,8 +55,8 @@ fn act_clue_threshold(code: &str) -> u8 {
 /// Chilling Cold"). Listed by distinct code; each is pushed at its printed
 /// corpus quantity. The set membership is hand-transcribed from the guide
 /// because the *generated* corpus does not carry `encounter_code` — the
-/// snapshot JSON does, one hop upstream; the pipeline drops it (ingesting
-/// it so scenarios can derive per-set lists is tracked in #579).
+/// snapshot JSON does, one hop upstream; the pipeline drops it. TODO(#579):
+/// ingest `encounter_code` so scenarios can derive per-set lists.
 ///
 /// **Set-aside cards are absent by construction:** the Ghoul Priest
 /// (`01116`) and Lita Chantler (`01117`) are set aside, and the scenario's
@@ -150,11 +148,18 @@ fn ghoul_count_at_investigator_location(cx: &SymbolCtx) -> u8 {
 /// [`Effect::Deal`]s on the tester. The hook runs once at reveal, so the
 /// tablet's Ghoul gate and the skull's X are decided then; every modifier is
 /// an `IntExpr::Lit` computed at reveal. The Gathering's Standard bag has no
-/// Elder Thing token. The Hard/Expert back (skull −2; cultist "reveal another
-/// token"; tablet −4, 1 damage AND 1 horror) is unimplemented — when
-/// difficulty selection lands (`TODO(#862)`) this fn needs a difficulty
-/// parameter, and the Hard/Expert cultist needs a token-re-draw shape
-/// `TokenOutcome` can't express yet.
+/// Elder Thing token.
+///
+/// TODO(#862): the Hard/Expert face is not modelled. Its text, from the same
+/// snapshot entry's `back_text`:
+///
+/// > \[skull\] -2. If you fail, after this skill test, search the encounter deck and discard pile for a \[\[Ghoul\]\] enemy, and draw it. Shuffle the encounter deck.
+/// > \[cultist\] Reveal another token. If you fail, take 2 horror.
+/// > \[tablet\] -4. If there is a \[\[Ghoul\]\] enemy at your location, take 1 damage and 1 horror.
+///
+/// Difficulty selection gives this fn a difficulty parameter, and the
+/// Hard/Expert cultist needs a token-re-draw shape `TokenOutcome` can't
+/// express.
 fn resolve_symbol(token: ChaosToken, cx: &SymbolCtx) -> TokenOutcome {
     let ghouls = ghoul_count_at_investigator_location(cx);
     let deal_to_tester = |kind| Effect::Deal {
@@ -164,7 +169,7 @@ fn resolve_symbol(token: ChaosToken, cx: &SymbolCtx) -> TokenOutcome {
         direct: false,
     };
     match token {
-        // TODO(#921): the live-read candidate. X is frozen at reveal here; once
+        // TODO(#1138): the live-read candidate. X is frozen at reveal here; once
         // a `Quantity` can count the Ghouls at the tester's location, the
         // modifier becomes an unevaluated count that ST.5 reads live.
         ChaosToken::Skull => {
@@ -226,7 +231,7 @@ pub fn setup() -> GameState {
     // reverse spawns it in the Hallway (cards::the_barrier), where its
     // per-investigator health is minted with the investigator count known,
     // then Lita Chantler (01117), whom the same reverse puts into play in the
-    // Parlor under no investigator's control (#771/#772).
+    // Parlor under no investigator's control.
     for code in ["01112", "01113", "01114", "01115", "01116", "01117"] {
         state.add_set_aside_card(meta(code));
     }
@@ -235,12 +240,13 @@ pub fn setup() -> GameState {
     // corpus. 01110 advances via its Forced EnemyDefeated objective
     // (01116; in cards::what_have_you_done), not a clue spend — its printed
     // clue threshold is null, which the reader maps to 0.
-    // Act-2 (01109) reverse — reveals the Parlor and spawns the set-aside
-    // Ghoul Priest (01116) in the Hallway — ships in cards::the_barrier (#280).
-    // Lita Chantler / the Parlor barrier -> #258.
-    // Agenda reverses (01105 discard/horror, 01106 dig-until-Ghoul) ship as
+    // Act-2 (01109) reverse — reveals the Parlor, puts Lita Chantler (01117)
+    // into play there and spawns the set-aside Ghoul Priest (01116) in the
+    // Hallway — is cards::the_barrier. The Parlor's barrier is its own
+    // unrevealed back (cards::parlor).
+    // Agenda reverses (01105 discard/horror, 01106 dig-until-Ghoul) are
     // the agendas' own `AgendaAdvanced` forced abilities (cards::whats_going_on,
-    // cards::rise_of_the_ghouls); #281.
+    // cards::rise_of_the_ghouls).
     state.act_deck = vec![
         Act {
             code: CardCode("01108".into()),
@@ -250,13 +256,13 @@ pub fn setup() -> GameState {
             code: CardCode("01109".into()),
             clue_threshold: act_clue_threshold("01109"),
             // "When the round ends, investigators in the hallway may, as a
-            // group, spend the requisite number of clues to advance." (C3d)
+            // group, spend the requisite number of clues to advance."
         },
         Act {
             // 01110 advances via its Forced EnemyDefeated objective (01116; in cards::what_have_you_done), not a clue spend.
-            // Terminal because it is last here; its reverse — which asks the
-            // lead to choose between R1 and R2 — is an ability on the card
-            // (cards::what_have_you_done).
+            // Terminal because it is last here; its reverse — *"The lead
+            // investigator must decide (choose one):"* between R1 and R2 — is
+            // an ability on the card (cards::what_have_you_done).
             code: CardCode("01110".into()),
             clue_threshold: act_clue_threshold("01110"),
         },
@@ -296,8 +302,8 @@ pub fn setup() -> GameState {
     state
 }
 
-/// No-op for C1a (matches the synthetic fixture). XP / trauma / campaign
-/// log application is Phase 9.
+/// A no-op: no ending records anything yet. TODO(#766): apply the
+/// resolutions' trauma, campaign log and Lita Chantler.
 pub fn apply_resolution(_ending: ScenarioEnding, _state: &mut GameState, _events: &mut Vec<Event>) {
 }
 
@@ -354,7 +360,7 @@ mod tests {
         assert!(study.connections.is_empty(), "Study is isolated");
         // Set aside: the four rooms, the Ghoul Priest and Lita Chantler,
         // codes only. No LocationId is minted for a room until it enters play,
-        // and no CardInstanceId for Lita until she is put into play (#771).
+        // and no CardInstanceId for Lita until she is put into play.
         assert_eq!(
             s.set_aside_cards
                 .iter()

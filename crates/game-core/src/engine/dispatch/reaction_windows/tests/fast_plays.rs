@@ -25,8 +25,8 @@ fn open_fast_window_with_no_eligibility_auto_skips_inline() {
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
-        // The MythosAfterDraws window now closes onto the MythosPhase anchor
-        // (slice 1a); stage it so the auto-skip continuation has its frame.
+        // The MythosAfterDraws window closes onto the MythosPhase anchor;
+        // stage it so the auto-skip continuation has its frame.
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
         })

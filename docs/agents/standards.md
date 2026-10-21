@@ -52,7 +52,7 @@ It is pipeline output and carries a header comment saying so. Change the impl, o
 
 In order of importance:
 
-1. **Card tests** — per-card, in `crates/cards/src/impls/<name>.rs` or split out beneath it (below); **each card needs at least one.**
+1. **Card tests** — **each card needs at least one.** A card's behaviour is tested from `crates/cards/tests/` (layer 3), where the real corpus is in reach. The `#[cfg(test)]` module in `crates/cards/src/impls/<name>.rs`, inline or split out beneath it (below), holds what needs the module's private items: the check that the registry dispatches to the module's abilities, the abilities' declared shape, and unit tests of a native helper.
 2. **Engine unit tests** — per-module `#[cfg(test)]`, inline or split out beneath the module (below). Build the board with `GameStateBuilder` (a production type, reached as `game_core::state::GameStateBuilder`) and drive it with a session: `GameStateBuilder::new().with_registries(TEST_REGISTRIES).with_location(test_location(HERE.0, "Study")).with_seat(seat(1).at(HERE).hand([..])).open_turn(INV).session()`, with `const HERE: LocationId = LocationId(10)`, `const INV: InvestigatorId = InvestigatorId(1)`, and `test_support::TEST_REGISTRIES` (game-core's test card registry, no scenarios) imported once per test module; `session()` panics on a builder that never named its registries. A location id is named once, as a constant, and never written as a literal beside it. Assert with the **event-assertion macros** `assert_event!` / `assert_no_event!` / `assert_event_count!` / `assert_event_sequence!` (order-insensitive by default; `_sequence` for in-order subsequence). Use `assert_eq!` on the events slice only when you need exact contiguous order.
 3. **Integration tests** — `crates/cards/tests/`; a test names `cards::TEST_REGISTRIES` (the real corpus with `TEST_INV` and the synthetic terminal cards composed in, behind the `test-support` feature) on the board builder or the session. The right home for anything needing real card metadata + abilities, which `game-core` can't reach by crate direction. Pattern: `crates/cards/tests/play_card.rs`.
 4. **Scenario end-to-end tests** — `crates/scenarios/tests/`; a test names `scenarios::TEST_REGISTRIES` (`cards::TEST_REGISTRY` paired with the real scenario modules), which `cards` can't reach by crate direction. Reserved for tests that exercise **real scenario data in situ** — a Gathering walk, its agenda's doom cascade, its reference card's symbol tokens. The line is *does it drive scenario content*, not *is it a full walk*. A test that needs no scenario content belongs at layer 2 or 3.
@@ -63,13 +63,11 @@ In order of importance:
 
 **Why:** an empty stack settles to `Done` without complaint, where a fixture with an unresumable frame on top panics, so a test missing its staging still passes — and it then asserts a moment no game reaches. `forced_triggers.rs`' on-enter tests fired `EnteredLocation` over an empty stack and asserted `Done` and `events.is_empty()`, though a real arrival always comes inside a `Move`, with that move's events, on a turn that goes on afterwards. #1013 counted 32 files staging `with_active_investigator` with no turn open.
 
-**Drive the engine through `test_support::TestSession`, one step at a time.** Construction settles the built state to where the engine would rest, and each step applies once and drains to the next rest:
+**Drive the engine through `test_support::TestSession`, one step at a time.** Construction settles the built state to where the engine would rest, and each step applies once and drains to the next rest. The steps are the methods of `TestSession` (`crates/game-core/src/test_support/session.rs`) whose doc starts "Step:", and each says where it applies and how it names what it answers; the readers are listed on `TestSession`'s own doc. The rules for choosing between them:
 
-- **From the turn menu,** `take(&TurnAction)`. `submit_off_menu` is for the two handler tests its doc names, and nothing else.
-- **At a prompt,** `pick(OptionTarget)`, naming the board entity the option is anchored to. `pick_nth(n)` is for a Decision only ([ADR 0015](../adr/0015-a-choice-printed-on-one-card-is-a-decision-not-a-selection.md)), where printed order is the meaning. `confirm()` and `skip()` answer the rest.
+- **From the turn menu,** `take(&TurnAction)`. `submit_off_menu` is for the two uses its doc names, and nothing else.
+- **At a prompt,** `pick(OptionTarget)`, naming the board entity the option is anchored to. `pick_nth(n)` is for a Decision only ([ADR 0015](../adr/0015-a-choice-printed-on-one-card-is-a-decision-not-a-selection.md)), where printed order is the meaning.
 - **Several options sharing one anchor** — several abilities printed on one card (two reactions, or two forced abilities in a lead-ordered run), one ability offered to several investigators, or identical copies of a card in hand — are options `pick` cannot tell apart. `pick_nth_at(anchor, n)` is the narrow escape hatch for exactly those cases: the anchor names the entity and `n` the option, in the order the prompt offers them (printed order, for abilities on one card). Where the options differ by investigator, first assert that each option's label names the investigator it is offered to. It panics unless at least two options sit at the anchor, so it cannot stand in for `pick`.
-- **At a skill test's commit window,** `commit(&[GUTS])`, by card code (`&str`, so `commit(&[])` commits nothing). **At a mulligan or hand-size discard,** `choose_from_hand(&[codes])`, by card code the same way; two copies are named by repeating the code.
-- **Framework entry points:** `test_skill(inv, skill, difficulty)`, `fire_at(TimingEvent)`, `take_damage(inv, n)`, `take_horror(inv, n)`.
 - **Prompts a step's drain meets** are scripted with `resolve_choices` before the step; prefer stepping through them. A flow that needs a stateful reply rule installs a `ChoiceResolver` with `answer_with(resolver)`, which answers every prompt until the policy is changed again.
 
 Assert on `prompt()`, `offered_at(&OptionTarget)`, `state()`, `events()` and `expect_rejected()`, and read the continuation stack only in a test whose subject is a stack invariant (no stranded frames, the active window on top). A step that comes back to the turn menu is checked by the state it left (`assert_at_turn_menu(inv)` where resting there is the claim), not by an outcome: `Done` means the game is over. A step that runs through a round end is checked with `assert_at_encounter_draw()`. A handler's own rejection is `assert_rejects(|s| s.submit_off_menu(&action))`, which returns the reason and checks that nothing moved. Never write a local copy of a session reader. `crates/cards/tests/dodge.rs` and `crates/cards/tests/roland_elder_sign.rs` show the whole shape.
@@ -140,9 +138,9 @@ Treat card citations in existing comments and docs as unverified until checked, 
 
 ### Emit a timing point in tail position; put post-emit work on a frame
 
-`queue_event` (and `queue_forced_triggers` beneath it) **queues** an ability — it pushes a continuation frame — and returns. It does not resolve anything, so a returned `EngineOutcome::Done` means *queued*, not *happened*. Any work a handler does after the emit is pushed **above** the abilities it just queued and therefore runs **first**.
+`queue_event` (and `queue_forced_triggers` beneath it) **queues** an ability — it pushes a continuation frame — and returns. It does not resolve anything; what its returned `EngineOutcome::Done` means is stated once, on `queue_event`'s doc (`crates/game-core/src/engine/dispatch/emit.rs`). Any work a handler does after the emit is pushed **above** the abilities it just queued and therefore runs **first**.
 
-So a call site with post-emit work arms its own resume point *before* emitting, and emits as the last thing it does: re-park a phase anchor at a new resume (`enemy_phase_end`, `upkeep_phase_end`), flag the frame it is already riding (`end_turn`'s `InvestigatorTurn { ending: true }`), or push a dedicated frame for the tail (`move_primary_effect`'s `MoveEnter`). Inspecting the returned outcome is not a substitute for any of that — `if !matches!(out, Done) { … }` and `debug_assert!(matches!(out, Done))` both pass in the ordinary single-ability case, while the ability sits unresolved on the stack.
+So a call site with post-emit work arms its own resume point *before* emitting, and emits as the last thing it does: re-park a phase anchor at a new resume (`enemy_phase_end`, `upkeep_phase_end`), flag the frame it is already riding (`end_turn`'s `InvestigatorTurn { ending: true }`), or push a dedicated frame for the tail (`move::perform`'s `MoveEnter`). Inspecting the returned outcome is not a substitute for any of that — `if !matches!(out, Done) { … }` and `debug_assert!(matches!(out, Done))` both pass in the ordinary single-ability case, while the ability sits unresolved on the stack.
 
 A debug assertion on `ContinuationStack::push` backstops the class: pushing a phase anchor while a queued ability frame is on the stack panics at the push. See `docs/adr/0003-emitting-a-timing-point-queues-abilities.md`, and **Queued ability** in `GLOSSARY.md`.
 
@@ -160,9 +158,34 @@ Making a module private, demoting an item to `pub(crate)`, or deleting a re-expo
 
 **Why:** the #900 import sweep (PR #910) ran a ten-minute full gauntlet three times, and each failed only on `doc` or a doctest: an unresolved link to `GameStateBuilder`, a `builder.rs` doctest importing through a deleted facade, and `card-dsl` links to `Ability`. #925 repeated the pattern: a public doc on `top_of` linked to the crate-private `top_mut`.
 
-### Remove a deleted symbol's mentions from the docs in the same PR
+### Code prose: a comment says what is true now
 
-When a diff deletes or renames a symbol, a module, or a mechanism, grep for its name across `docs/adr/`, `GLOSSARY.md`, `docs/agents/`, and `//!`/`///` comments. Bring every hit up to date in the same PR. An ADR describing the removed shape is **folded**, per [`writing.md`](writing.md) → Fold, don't append. If the deletion contradicts the decision itself, that is a gate (`CLAUDE.md` → Gates, item 3), not a fold. Review reads the diff's deletions for exactly this.
+This covers every Rust comment, `//`, `///` and `//!`. The docs under `docs/` are `writing.md`'s.
+
+**A `//!` header says what the module owns today, and its first paragraph is one sentence.** It doesn't describe the scope the module was first written for or the work still planned for it. Point at the enum or function that holds a list rather than copying it, so the list can't drift from the code.
+
+**A doc says what is true now, and why.** Renames, slice and PR names, retired plan vocabulary ("Phase-3 set", "C1a", "Slice D") and "since #N" belong in git. "Used to" in its past-tense sense and "formerly" are history too. "No longer" and "previously" are allowed only for present-tense game state (*"an investigator no longer `Active`"*) or inside a verbatim quote, and never for the code's own past. A gap that is still open becomes a `TODO(#N):` where an open issue holds it, and "not modelled" where none does.
+
+**An issue number appears in a comment in exactly two forms:**
+
+- **`TODO(#N): …`, with issue N open.** It may sit anywhere in a comment, in production or test code. It is written unbackticked and followed by a colon: `` `TODO(#609)` `` mid-sentence is not the form.
+- **`Regression for #N: …`, followed by the behaviour the test pins, in the present tense.** Only in test code, and only for a bug that shipped. It goes on the doc of the test fn that reproduces the bug, or on the file's `//!` header when the whole file pins that one bug.
+
+Any other `#N` is a violation, whether issue N is open or closed. **A PR number has no allowed form.** A feature test is described by the behaviour it checks, not by the ticket that added it.
+
+**Test code** is a file under a `tests/` directory, whether a crate's `tests/` or an out-of-line `src/**/tests/` module, plus every `#[cfg(test)]` module. That includes `game-core/src/test_support/tests/`. The rest of `test_support` counts as production code: it compiles into every build, with no `cfg(test)` around it.
+
+**Tell a shipped bug from a feature by reading the issue,** whatever its label says. It is a shipped bug if the issue body describes wrong behaviour that was on `main`. When in doubt, describe the behaviour and drop the number.
+
+**Production code that exists because of a bug cites the rules clause it enforces**, quoted per `CLAUDE.md` → Cite card text and rules, and its test carries the issue number. A guard with no rules clause behind it, such as a UI invariant, states that invariant in the present tense instead.
+
+The rule covers comments, not strings. A rejection reason that carries `TODO(#N)` with N open is the convention [Stub deferred functionality](#stub-deferred-functionality-with-a-todo-that-names-the-issue) sets, and it stays.
+
+**Why:** an agent editing a file reads its comments as the truth about the code beside them. At main 86332221, the evaluator's header said it implemented three `Effect` variants and rejected the rest, when `step_leaf` had an arm for all 37. The DSL's `Trigger::OnEvent` doc said the engine ignored `OnEvent` abilities, which 35 cards use. `EngineOutcome::Done` was documented as "the action resolved fully", where the contract is that the game is over. Comments under `crates/` carried 2,220 issue references in neither form, and 106 of them pointed at an open issue, so a number told the reader nothing about whether its work was done. The two forms are syntactic so that a scan can check them offline; only "the TODO's issue is open" needs `gh`.
+
+### Remove a deleted symbol's mentions, and a changed behaviour's, in the same PR
+
+When a diff deletes or renames a symbol, a module, or a mechanism, grep for its name across `docs/adr/`, `GLOSSARY.md`, `docs/agents/`, and the Rust comments. Bring every hit up to date in the same PR. **A behaviour change is the same case:** the PR removes or rewrites the prose that describes the old behaviour, wherever it sits. An ADR describing the removed shape is **folded**, per [`writing.md`](writing.md) → Fold, don't append. If the deletion contradicts the decision itself, that is a gate (`CLAUDE.md` → Gates, item 3), not a fold. Review reads the diff's deletions for exactly this.
 
 **Why:** these mentions sit in files the diff never touched, so neither the compiler nor `cargo doc` sees them. PR #968 deleted `forced_point` and the per-zone collector scans. Its review then found ADR 0009 still calling a `forced_point()` returning `Some` "dead code", `initiation.rs` still describing collector arms, and `GLOSSARY.md` still pointing the reaction lead-proxy binding at `reaction_windows.rs`. Fixing them took a separate round after review.
 

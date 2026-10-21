@@ -1,5 +1,5 @@
 //! **A hand-discard cost** — [`Cost::DiscardCardFromHand`], Wendy Adams
-//! 01005's *"choose and discard 1 card from your hand"* (#1107).
+//! 01005's *"choose and discard 1 card from your hand"*.
 //!
 //! The cost needs a choice, so it cannot be paid inline with the others
 //! (`abilities::pay_activation_costs`). Instead the ability's effect is pushed
@@ -67,7 +67,7 @@ pub(super) fn park(cx: &mut Cx, investigator: InvestigatorId, code: &CardCode, c
 /// hand cards the cost may discard, or — the resolve convention every choice
 /// among board entities follows (`choice::resolve_grounded_choice`) — discard a
 /// lone one with no prompt, unless the game is acknowledging every choice
-/// (#466).
+/// (`interactive_acknowledge`).
 ///
 /// Rejects if nothing in hand may be discarded. The ability was refused at the
 /// gate in that case, and nothing pays a cost between the gate and here, so the

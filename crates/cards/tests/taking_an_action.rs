@@ -1,6 +1,7 @@
 //! **Taking an action** (see `GLOSSARY.md`): which actions provoke an attack of
-//! opportunity, and which are refused before anything is paid. The attack rows
-//! take each action from the turn menu through
+//! opportunity, and which are refused before anything is paid.
+//!
+//! The attack rows take each action from the turn menu through
 //! [`TestSession`](game_core::test_support::TestSession); the refusal test
 //! submits it past the menu with
 //! [`submit_off_menu`](game_core::test_support::TestSession::submit_off_menu),
@@ -31,9 +32,9 @@
 //! probe models that primitive and impersonates no printed card (ADR 0016).
 //!
 //! The Parley exemption, which no implemented card prints, is
-//! `crates/game-core/tests/action_designator_aoo.rs`. A designated Move ability
-//! is refused before it is taken (`engine::designator`, `TODO(#1059)`), so it
-//! has no row yet.
+//! `crates/game-core/tests/action_designator_aoo.rs`. TODO(#1059): a designated
+//! Move ability is refused before it is taken (`engine::designator`), so it has
+//! no row yet.
 
 use card_dsl::dsl::{self, Ability, InvestigatorTarget};
 use cards::TEST_REGISTRY;
@@ -69,7 +70,7 @@ const MACHETE: &str = "01020";
 const FLASHLIGHT: &str = "01087";
 /// Parlor (01115), whose action ability is a Resign.
 const PARLOR: &str = "01115";
-/// Beat Cop (01018), whose ability 1 is a fast ability.
+/// Beat Cop (01018), whose ability 1 is a zero-action ability.
 const BEAT_COP: &str = "01018";
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -249,7 +250,7 @@ const PLAY_FROM_HAND: Take = Take::Action(TurnAction::PlayCard {
 });
 
 /// Playing a card, taken through the same step as the basic actions. A fast
-/// play (and, in [`activate_rows`], a fast ability) spends no action, so it
+/// play (and, in [`activate_rows`], a zero-action ability) spends no action, so it
 /// takes no action at all and provokes nothing.
 fn play_rows() -> Vec<Row> {
     vec![
@@ -407,7 +408,7 @@ fn position(events: &[Event], name: &str, what: &str, p: impl Fn(&Event) -> bool
 /// Every action but Fight, Evade, a designated Fight or Evade and a Resign is attacked
 /// by a ready engaged enemy, once, after its actions are paid and before its
 /// effect lands. The exempt actions are paid for and take effect with no attack
-/// at all, and a fast play or fast ability spends nothing and is not attacked.
+/// at all, and a fast play or zero-action ability spends nothing and is not attacked.
 #[test]
 fn a_ready_engaged_enemy_attacks_every_action_but_the_exempt_ones() {
     for row in basic_action_rows()

@@ -1,9 +1,11 @@
-//! C5d (#239) integration: First Aid 01019's `[action] Spend 1 supply: Heal 1
-//! damage or horror from an investigator at your location` end-to-end against
-//! the real `cards::REGISTRY`. The damage-or-horror choice is a `ChooseOne`
-//! that suspends; resume picks the branch. The `Uses (3 supplies)` pool and
-//! the "If First Aid has no supplies, discard it." depletion-discard come from
-//! corpus metadata (#302). Runs against `cards::TEST_REGISTRIES`.
+//! Integration: First Aid 01019's `[action] Spend 1 supply: Heal 1 damage or
+//! horror from an investigator at your location` end-to-end against the real
+//! `cards::REGISTRY`.
+//!
+//! The damage-or-horror choice is a `ChooseOne` that suspends; resume picks the
+//! branch. The `Uses (3 supplies)` pool and the "If First Aid has no supplies,
+//! discard it." depletion-discard come from corpus metadata. Runs against
+//! `cards::TEST_REGISTRIES`.
 
 use card_dsl::dsl::HarmKind;
 use cards::TEST_REGISTRIES;
@@ -136,7 +138,7 @@ fn heals_one_horror_when_the_horror_branch_is_chosen() {
 fn spending_the_last_supply_discards_first_aid() {
     // 1 supply: the activation's SpendUses empties the pool, so the
     // depletion discard — "If First Aid has no supplies, discard it.", a
-    // constant ability (#353) — fires during cost payment, through the one
+    // constant ability — fires during cost payment, through the one
     // uses-spending path: First Aid is gone before the heal's choice even
     // suspends.
     let ready = board(1).session();
@@ -184,10 +186,11 @@ fn spending_the_last_supply_discards_first_aid() {
 }
 
 // -----------------------------------------------------------------------
-// #639 — the RR initiation gate on the activation path.
+// The RR initiation gate on the activation path.
 // -----------------------------------------------------------------------
 
-/// RR "Ability": *"A triggered ability can only be initiated if its effect has
+/// Regression for #639: the activation path applies the initiation gate. RR
+/// "Ability": *"A triggered ability can only be initiated if its effect has
 /// the potential to change the game state…"* An undamaged, unhorrored solo
 /// investigator gives First Aid's heal nothing to remove, so the activation is
 /// rejected outright — no action spent, no supply consumed, First Aid still in
@@ -219,7 +222,7 @@ fn an_undamaged_solo_investigator_cannot_activate_first_aid() {
     );
 }
 
-/// The turn menu agrees with the validator (#639): an activation that
+/// The turn menu agrees with the validator: an activation that
 /// `check_activate_ability` would reject is not offered.
 #[test]
 fn the_turn_menu_does_not_offer_first_aid_with_nothing_to_heal() {
@@ -256,7 +259,7 @@ fn two_investigators(healer_damage: u8, patient_damage: u8) -> GameStateBuilder 
 /// control below (both damaged) shows the same board *does* prompt when both
 /// are eligible, which is what makes the auto-bind evidence of the filter.
 ///
-/// Neither board carries horror, so #664's mode filter drops First Aid's horror
+/// Neither board carries horror, so the mode filter drops First Aid's horror
 /// branch and the damage-or-horror choice auto-resolves: the *first* suspension
 /// on these boards is the target grounding, not the mode pick.
 #[test]
@@ -301,15 +304,16 @@ fn only_a_damaged_investigator_is_offered_as_a_heal_target() {
 }
 
 // -----------------------------------------------------------------------
-// #664 — the same gate, applied per *mode* rather than per ability.
+// The same gate, applied per *mode* rather than per ability.
 // -----------------------------------------------------------------------
 
-/// RR "Ability": *"A triggered ability can only be initiated if its effect has
-/// the potential to change the game state…"* — read per branch. A damaged,
-/// unhorrored solo investigator leaves First Aid's horror mode with nothing to
-/// remove, so only the damage mode is live; one live branch auto-resolves, so
-/// the damage-or-horror prompt never appears and the supply cannot be burned on
-/// a dead mode.
+/// Regression for #664: a `ChooseOne` mode with nothing to change is not
+/// offered. RR "Ability": *"A triggered ability can only be initiated if its
+/// effect has the potential to change the game state…"* — read per branch. A
+/// damaged, unhorrored solo investigator leaves First Aid's horror mode with
+/// nothing to remove, so only the damage mode is live; one live branch
+/// auto-resolves, so the damage-or-horror prompt never appears and the supply
+/// cannot be burned on a dead mode.
 #[test]
 fn a_dead_mode_is_not_offered() {
     let s = activate(board_with_harm(3, 2, 0).session());
@@ -331,7 +335,7 @@ fn a_dead_mode_is_not_offered() {
 
 /// The offer itself, for the damaged-and-unhorrored board: with
 /// `interactive_acknowledge` on, the lone live mode surfaces as a one-option
-/// prompt (#466) — and answering it heals damage, so the option offered is the
+/// prompt — and answering it heals damage, so the option offered is the
 /// damage mode and the horror mode is absent from the list.
 #[test]
 fn only_the_damage_mode_is_offered_with_no_horror_to_heal() {
@@ -388,7 +392,7 @@ fn both_modes_are_offered_when_both_harms_are_present() {
 /// ones behind it: with only horror to heal, offered option 0 is the *horror*
 /// branch (branch 1 of the printed `ChooseOne`), not the damage branch. Driven
 /// with `interactive_acknowledge` on so the single live mode surfaces as a
-/// one-option prompt (#466) rather than auto-binding.
+/// one-option prompt rather than auto-binding.
 #[test]
 fn the_offered_index_names_the_live_mode_not_the_printed_one() {
     let mut state = board_with_harm(3, 0, 2).build();
@@ -421,15 +425,13 @@ fn the_offered_index_names_the_live_mode_not_the_printed_one() {
     );
 }
 
-/// **The damage-or-horror choice anchors to the First Aid asset** (#834).
+/// **The damage-or-horror choice anchors to the First Aid asset**, as a
+/// `ChooseOne` inside a *forced* or *reaction* ability anchors to its card.
 ///
-/// #775 gave a `ChooseOne` inside a *forced* or *reaction* ability its card's
-/// anchor, but the activation path narrowed its `AbilitySource` to a bare
-/// `CardInstanceId` on the way into the evaluator and left the anchor unset —
-/// so this prompt rendered in the banner. Collapsing `EvalContext` onto the one
-/// source field carries the activation's own source through, and ADR 0011 is
-/// why that matters: *"the client never decides where a control belongs — it
-/// reads the anchor the engine attached"*.
+/// `EvalContext`'s one source field carries the activation's own source into
+/// the evaluator, so the anchor is set and the prompt does not fall back to
+/// the banner. ADR 0011 is why that matters: *"the client never decides where
+/// a control belongs — it reads the anchor the engine attached"*.
 #[test]
 fn the_damage_or_horror_choice_anchors_to_the_asset_it_is_printed_on() {
     let ready = board(3).session();
@@ -450,15 +452,17 @@ fn the_damage_or_horror_choice_anchors_to_the_asset_it_is_printed_on() {
     }
 }
 
-/// **The choice survives its own card's depletion-discard** (#845).
+/// Regression for #845: **the choice survives its own card's
+/// depletion-discard**.
 ///
 /// Spending the *last* supply discards First Aid during cost payment, so the
 /// damage-or-horror prompt that follows is built with its source already in the
-/// discard pile. Anchoring it to that card left it unrenderable: ADR 0011 —
-/// *"an option the engine anchors to a surface the client does not render is
-/// unreachable rather than merely misplaced"* — so the prompt was unanswerable
-/// and the game could not advance. The anchor now degrades to `None`, taking
-/// ADR 0011's other branch (*"leave it un-anchored and accept the banner"*).
+/// discard pile. Anchoring it to that card would leave it unrenderable: ADR 0011
+/// — *"an option the engine anchors to a surface the client does not render is
+/// unreachable rather than merely misplaced"* — so the prompt would be
+/// unanswerable and the game could not advance. The anchor degrades to `None`,
+/// taking ADR 0011's other branch (*"leave it un-anchored and accept the
+/// banner"*).
 ///
 /// The ability still resolves in full: RR Appendix I step 4, *"If the ability
 /// being initiated is on an in-play card, the sequence does not stop from

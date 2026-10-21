@@ -93,9 +93,11 @@ fn parse_spawn_name_extracts_location_name() {
     assert_eq!(parse_spawn_name("Hunter."), None);
 }
 
+/// Regression for #635: an unresolved spawn clause does not collapse into the
+/// no-instruction rule.
 #[test]
 fn spawn_lit_separates_no_instruction_from_unrepresented_one() {
-    // #635: the two must not collapse. No Spawn line at all → `None`,
+    // The two must not collapse. No Spawn line at all → `None`,
     // which the engine reads as "spawns engaged with the drawer".
     assert_eq!(spawn_lit(None, None), "None");
     // A resolved clause → the location code.

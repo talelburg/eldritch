@@ -1,5 +1,7 @@
-//! `Effect::ForEach`: the walking frame (#1067). The body runs once per target,
-//! in turn order, with the target bound as `InvestigatorTarget::Each`.
+//! `Effect::ForEach`: the walking frame.
+//!
+//! The body runs once per target, in turn order, with the target bound as
+//! `InvestigatorTarget::Each`.
 
 use card_dsl::dsl::InvestigatorTargetSet;
 

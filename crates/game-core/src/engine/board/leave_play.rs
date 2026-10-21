@@ -274,7 +274,7 @@ pub fn remove_location_from_game(cx: &mut Cx, location: LocationId) -> bool {
 /// - A resolved one-shot, `from` the deck it was drawn from
 ///   ([`Zone::EncounterDeck`] or [`Zone::Deck`]), since a card resolving in
 ///   limbo is in no zone of its own. An encounter-cardtype weakness drawn from
-///   its bearer's deck resolves as an encounter card (#1121) and goes to its
+///   its bearer's deck resolves as an encounter card and goes to its
 ///   owner's pile.
 /// - An encounter card that cannot enter play (Obscuring Fog 01168's limit-1
 ///   second copy, reported `from` [`Zone::LocationAttachment`]), or one taken
@@ -442,8 +442,8 @@ fn file(cx: &mut Cx, code: CardCode, owner: Owner, from: Zone, exit: Exit) {
 /// modify where the event goes (such as Heirloom of Hyberborea’s ability) would
 /// naturally trigger just after step 4."* The Amulet is the corpus's only such
 /// effect, so the redirect is one constant read here rather than a step-4
-/// replacement window; a second card that changes where an event goes is the
-/// trigger for #366's general machinery. Pushing onto the deck's bottom also
+/// replacement window. TODO(#366): general replacement machinery, once a
+/// second card changes where an event goes. Pushing onto the deck's bottom also
 /// makes an empty deck the event itself, as the Amulet's ruling has it
 /// (<https://arkhamdb.com/card/01014>): *"If your deck is empty, and Wendy’s
 /// Amulet would have you place an event “on the bottom of your deck,” that

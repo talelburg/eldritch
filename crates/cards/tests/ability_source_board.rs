@@ -1,5 +1,5 @@
 //! The act/agenda bullet: the current act and the current agenda are reachable
-//! ability sources from anywhere on the board (#709).
+//! ability sources from anywhere on the board.
 //!
 //! `glossary/Triggered_Abilities.md`, third bullet, verbatim:
 //!
@@ -30,9 +30,8 @@
 //! so you head to safety with the information you've gathered."*), and the act
 //! abilities on Uncovering the Conspiracy 01123 (*"\[action\] The investigators
 //! spend 2 clues per investigator, as a group: Draw the top card of the Cultist
-//! deck."*) and Disrupting the Ritual 01148 — have no ability implementations,
-//! and shipping one is not available either: Resign's effect has nowhere to go
-//! until #644. Purpose-built abilities prove reachability directly. Prior art:
+//! deck."*) and Disrupting the Ritual 01148 — have no ability implementations.
+//! Purpose-built abilities prove reachability directly. Prior art:
 //! `ability_source_colocation.rs`.
 
 use card_dsl::dsl::{self, Ability, InvestigatorTarget, UsageLimit, UsagePeriod};
@@ -68,7 +67,8 @@ const LIVE: u8 = 0;
 /// Ability index of an activation whose effect cannot change the game state.
 const INERT: u8 = 1;
 /// Ability index of an activation carrying a *"Limit once per round"* — which
-/// a source with no card instance cannot record (#699).
+/// a source with no card instance cannot record.
+/// TODO(#699): track usage limits on a board source.
 const LIMITED: u8 = 2;
 
 /// The same three abilities on every synthetic board card, so "offered from
@@ -303,8 +303,9 @@ fn an_inert_ability_stays_unoffered_from_the_board_cards() {
 /// Usage state is per-instance (`CardInPlay::ability_usage`), and neither board
 /// card has an instance — so a limited act or agenda ability reaches an
 /// unreachable-branch panic, and making them activatable is what puts that
-/// branch behind player input. It must **reject**, naming #699, which builds
-/// the capability.
+/// branch behind player input. It must **reject**, with a reason that names
+/// the open issue building the capability.
+/// TODO(#699): track usage limits on a board source.
 #[test]
 fn a_usage_limited_board_ability_rejects_naming_699_rather_than_panicking() {
     let state = board();

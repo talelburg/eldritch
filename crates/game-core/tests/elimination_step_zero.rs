@@ -1,5 +1,7 @@
-//! Rules Reference p.10 Elimination **step 0** (#638) — the scan's scoping,
-//! against a mock `CardRegistry`.
+//! Regression for #638: Rules Reference p.10 Elimination **step 0** fires an
+//! eliminated investigator's weaknesses' game-end abilities.
+//!
+//! These pin the scan's scoping, against a mock `CardRegistry`.
 //!
 //! > 0. For the purpose of resolving weakness cards, the game has ended for the
 //! >    eliminated investigator. Trigger any "when the game ends" abilities on
@@ -43,9 +45,9 @@ const WEAKNESS: &str = "test-weakness-game-end";
 const NOT_A_WEAKNESS: &str = "test-asset-game-end";
 
 /// The weakness shape the real corpus now has: a `GameEnd` forced declared in
-/// the **`when` cell**, as Cover Up 01007 declares since #720. `EliminationGameEnd`
-/// became a coordinator-owned bare milestone in the same change, so this cell is
-/// walked here rather than rejected — and the fork that decides whether
+/// the **`when` cell**, as Cover Up 01007 declares it. `EliminationGameEnd` is a
+/// coordinator-owned bare milestone, so this cell is walked here rather than
+/// rejected — and the fork that decides whether
 /// elimination needs its frame at all has to scan every cell to find it.
 const WEAKNESS_WHEN_CELL: &str = "test-weakness-game-end-when";
 
@@ -278,7 +280,7 @@ fn interactive_elimination_acknowledges_step_zero_before_running_the_steps() {
     // is the shape real play takes: step 0's lone forced hit pushes an
     // `AcknowledgeForced`, elimination *suspends* mid-sequence, and steps 1–6
     // run only once the player has acknowledged. The resumability the
-    // `Elimination` frame exists for (#638).
+    // `Elimination` frame exists for.
     let mut state = board(WEAKNESS, 3, true);
     // No builder setter stages `interactive_acknowledge`.
     state.interactive_acknowledge = true;
@@ -321,8 +323,8 @@ fn interactive_elimination_acknowledges_step_zero_before_running_the_steps() {
     );
 }
 
-/// Step 0's condition is a **bare milestone**, so its `when` cell is walked
-/// (#720). The unit-level counterpart of `GameEnd`'s cell walk in
+/// Step 0's condition is a **bare milestone**, so its `when` cell is walked.
+/// The unit-level counterpart of `GameEnd`'s cell walk in
 /// `timing_resolve_step.rs`, on the point that scans the same
 /// `EventPattern::GameEnd` declaration.
 ///

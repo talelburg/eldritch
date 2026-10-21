@@ -1,11 +1,13 @@
-//! Interactive-choice resolution (#422): effect nodes that need a controller
-//! pick **suspend in place** — the evaluator leaves the node's
+//! Interactive-choice resolution: how an effect node that needs a controller
+//! pick suspends in place, builds its prompt, and resumes.
+//!
+//! The evaluator leaves the node's
 //! [`EffectFrame::Leaf`](crate::state::EffectFrame::Leaf) on top of the
 //! continuation stack as the prompt. [`resume_effect_choice`] sets the pick on
 //! that frame and re-steps it. A choice among board entities goes through
 //! [`resolve_grounded_choice`] (`0 ⇒ empty · 1 ⇒ auto · 2+ ⇒ suspend`, plus the
 //! resume re-indexing), which the evaluator's `Chosen` arms and card-local
-//! natives share (#990). No replay, no separate choice frame (umbrella §3.4).
+//! natives share. There is no separate choice frame.
 
 use crate::action::InputResponse;
 use crate::card_registry::CardRegistry;
@@ -16,7 +18,7 @@ use crate::engine::{board, Cx, EvalContext};
 use crate::state::{CardCode, Continuation, EffectFrame, GameState};
 
 /// Outcome of applying the uniform resolve convention to a count of legal
-/// options (umbrella §3.4 / spec §5). Crate-private: an entity selection goes
+/// options. Crate-private: an entity selection goes
 /// through [`resolve_grounded_choice`], which owns the resume protocol on top of
 /// this count; only `ChooseOne` and the search-deck pick count directly.
 pub(crate) enum ChoiceResolution {
@@ -30,7 +32,7 @@ pub(crate) enum ChoiceResolution {
 
 /// Map a legal-option count to the resolve convention. When `interactive` is set
 /// (human play, `interactive_acknowledge`), a single option surfaces as a
-/// one-option pick (`Suspend`) instead of auto-binding silently (#466).
+/// one-option pick (`Suspend`) instead of auto-binding silently.
 pub(crate) fn resolve_choice_count(n: usize, interactive: bool) -> ChoiceResolution {
     match n {
         0 => ChoiceResolution::Empty,
@@ -55,13 +57,13 @@ pub enum Grounded<T> {
     Suspend(EngineOutcome),
 }
 
-/// Offer the controller a choice among board entities (#422, #990): the one way
+/// Offer the controller a choice among board entities: the one way
 /// an evaluator arm or a card-local native grounds a pick.
 ///
 /// `candidates` must be enumerated from `state` in a deterministic order,
 /// because a resumed node re-enumerates them and indexes the same list by the
 /// pick. `anchor` names the board entity each candidate renders on, and each
-/// option's label is derived from it (ADR 0011, #989).
+/// option's label is derived from it (ADR 0011).
 ///
 /// - A pick threaded in through
 ///   [`EvalContext::chosen_option`] is checked first. In range, it gives
@@ -69,7 +71,7 @@ pub enum Grounded<T> {
 ///   whatever the candidate count.
 /// - Otherwise zero candidates give [`Grounded::Empty`], one gives `Picked`
 ///   with no prompt, and two or more give `Suspend` with the prompt. Under
-///   `state.interactive_acknowledge` a lone candidate is prompted too (#466).
+///   `state.interactive_acknowledge` a lone candidate is prompted too.
 ///
 /// It pushes nothing. The caller's suspending frame (the effect `Leaf`, or the
 /// designated-action frame) stays on the stack as the prompt and is re-stepped
@@ -101,7 +103,7 @@ pub fn resolve_grounded_choice<T: Clone>(
     }
 }
 
-/// Offer the controller a choice among cards **in a deck** (#1047) or a discard
+/// Offer the controller a choice among cards **in a deck** or a discard
 /// pile: the one way an evaluator arm or a card-local native picks a card that
 /// has no board surface to anchor on, such as a searched card, a card looked at
 /// on top of a deck, or Scavenging 01073's Item in the discard pile. It hands
@@ -109,7 +111,7 @@ pub fn resolve_grounded_choice<T: Clone>(
 ///
 /// The rule is [`resolve_grounded_choice`]'s, so a threaded pick is checked
 /// first and a lone card is prompted only under
-/// `state.interactive_acknowledge` (#466). The difference is the prompt: each
+/// `state.interactive_acknowledge`. The difference is the prompt: each
 /// option is labelled with its card's name and left un-anchored, so the host
 /// renders it in the prompt banner (ADR 0015 excludes deck cards from its two
 /// natures).
@@ -146,11 +148,11 @@ pub fn resolve_card_choice(
 
 /// Build the `AwaitingInput` for a controller pick among board entities, one
 /// anchor per offered option in offered order (`OptionId(i)` is the index).
-/// Each option renders on the entity its anchor names (S5, #540), and its label
+/// Each option renders on the entity its anchor names, and its label
 /// is derived from that anchor by [`anchor_label`], so the two cannot disagree
-/// and no caller can leave an option unlabelled (#989). Pushes **nothing**: the
-/// suspending effect node's own `Leaf` frame stays on the stack as the prompt
-/// (#422), and resume re-derives the option set and validates the pick by
+/// and no caller can leave an option unlabelled. Pushes **nothing**: the
+/// suspending effect node's own `Leaf` frame stays on the stack as the prompt,
+/// and resume re-derives the option set and validates the pick by
 /// checked indexing.
 fn awaiting_selection(
     state: &GameState,
@@ -186,9 +188,9 @@ fn option_id(i: usize) -> OptionId {
 
 /// Build the offered options for a candidate list: option `i` is
 /// `candidates[i]`, anchored by `anchor` and labelled from that anchor by
-/// [`anchor_label`] (#989). Every candidate here is a board entity, so `anchor`
+/// [`anchor_label`]. Every candidate here is a board entity, so `anchor`
 /// returns a bare [`OptionTarget`] rather than an `Option`: a caller cannot leave
-/// one un-anchored and land it in the prompt banner (ADR 0011, #950). It supplies
+/// one un-anchored and land it in the prompt banner (ADR 0011). It supplies
 /// no label, so it cannot forget one or name a different entity than it anchors.
 pub(super) fn candidate_options<T>(
     state: &GameState,
@@ -207,7 +209,7 @@ pub(super) fn candidate_options<T>(
 }
 
 /// The player-facing name of the board surface `anchor` names, for an option's
-/// label (#989). A location or enemy reads as its name. A card (in play, in a
+/// label. A location or enemy reads as its name. A card (in play, in a
 /// threat area, an investigator card, in hand, the current act or agenda) reads
 /// as its card's name via [`card_name`]. An investigator's panel affordances
 /// read as the investigator's name.
@@ -255,8 +257,8 @@ fn anchor_label(state: &GameState, cards: &CardRegistry, anchor: &OptionTarget) 
 }
 
 /// A card's printed name, looked up through the card registry's metadata.
-/// Falls back to the bare code when the registry lacks the code, so a gap degrades readably rather than crashing a live
-/// game (#989).
+/// Falls back to the bare code when the registry lacks the code, so a gap
+/// degrades readably rather than crashing a live game.
 pub(crate) fn card_name(cards: &CardRegistry, code: &CardCode) -> String {
     (cards.metadata_for)(code).map_or_else(|| code.0.clone(), |m| m.name.clone())
 }
@@ -264,12 +266,12 @@ pub(crate) fn card_name(cards: &CardRegistry, code: &CardCode) -> String {
 /// Build the `AwaitingInput` for a **decision** — a choice among alternatives
 /// printed on one card, rather than among board entities (ADR 0015). Every
 /// branch shares `anchor`, so it rides on the request as well as on each option:
-/// the options keep it because that is what makes the source card glow, and the
-/// request carries it because the surface presenting the choice reads one anchor
-/// to name where the text is printed.
+/// the options keep it because that is what makes the card printing the choice
+/// glow, and the request carries it because the surface presenting the choice
+/// reads one anchor to name where the text is printed.
 ///
-/// `anchor` is already **liveness-checked** by the caller (#845) — `None` means
-/// the source left play during cost payment, and the prompt falls back to the
+/// `anchor` is already **liveness-checked** by the caller — `None` means
+/// the card left play during cost payment, and the prompt falls back to the
 /// banner like any un-anchored one.
 ///
 /// Two callers: the evaluator's `Effect::ChooseOne` step, and the skill-test
@@ -298,7 +300,7 @@ pub(crate) fn awaiting_decision(
 /// offered option, each **un-anchored** (no board home, so the host renders it in
 /// the prompt banner). Used by [`resolve_card_choice`], whose options are cards
 /// in a deck with no board surface (ADR 0015 excludes them), labelled by
-/// [`card_name`]. A choice among board entities goes the other way (#950):
+/// [`card_name`]. A choice among board entities goes the other way:
 /// through [`resolve_grounded_choice`], with an anchor per option.
 fn awaiting_choice(prompt: impl Into<String>, labels: Vec<String>) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
@@ -310,14 +312,13 @@ fn awaiting_choice(prompt: impl Into<String>, labels: Vec<String>) -> EngineOutc
     }
 }
 
-/// Resume an effect node suspended in place for a controller pick (#422): the
+/// Resume an effect node suspended in place for a controller pick: the
 /// top frame is the suspended [`EffectFrame::Leaf`] — or the
 /// [`EffectFrame::Designated`] a designated **Fight** suspends on while the
-/// controller picks which co-located enemy to attack (#805). Set its
+/// controller picks which co-located enemy to attack. Set its
 /// `chosen_option` and re-step it via the effect drive — the node grounds/picks
 /// (checked indexing, validate-first) instead of suspending. On completion,
-/// re-enter the enclosing driver (skill test / reaction window), mirroring the
-/// former replay resume.
+/// re-enter the enclosing driver (skill test / reaction window).
 pub(crate) fn resume_effect_choice(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
     let InputResponse::PickSingle(picked) = response else {
         return EngineOutcome::Rejected {
@@ -340,12 +341,12 @@ pub(crate) fn resume_effect_choice(cx: &mut Cx, response: &InputResponse) -> Eng
 }
 
 /// Resume a parked effect walk after a player input by ceding to the global
-/// `drive` loop (Slice D #423). The caller ([`resume_effect_choice`] / the
-/// effect-path arm of the `DealDamage` frame's `Finish` step, K5b-2) has already recorded
+/// `drive` loop. The caller ([`resume_effect_choice`] / the
+/// effect-path arm of the `DealDamage` frame's `Finish` step) has already recorded
 /// the input on the suspended top `Effect` leaf; returning `Done` hands the
 /// parked frames to `apply_player_action`'s `drive(cx, outcome)`, whose
-/// `Continuation::Effect` arm steps them via the same `step_effect_frame` the
-/// old bounded `drive_effect_to_base` used, then dispatches whatever frame the
+/// `Continuation::Effect` arm steps them via `step_effect_frame`, then
+/// dispatches whatever frame the
 /// walk was nested within (a `SkillTest` mid-resolution, a window with remaining
 /// candidates). No bounded re-entry, no reach-down.
 pub(crate) fn resume_effect_walk(_cx: &mut Cx) -> EngineOutcome {
@@ -367,9 +368,8 @@ mod tests {
     use crate::test_support::{self, SeatLookup as _, TEST_REGISTRIES};
 
     /// A `ChooseOne` branch that is **live** — one `effect_can_change_state`
-    /// cannot prove inert, so #664's mode filter keeps it in the offer. (An
-    /// empty `Seq`, the old placeholder here, is provably inert and would be
-    /// filtered out.)
+    /// cannot prove inert, so the mode filter keeps it in the offer. (An
+    /// empty `Seq` is provably inert and would be filtered out.)
     fn live_branch() -> Effect {
         dsl::gain_resources(InvestigatorTarget::You, 1)
     }
@@ -404,7 +404,7 @@ mod tests {
 
     #[test]
     fn resolve_one_option_suspends_when_interactive() {
-        // #466: a lone option surfaces as a one-option pick in human play.
+        // A lone option surfaces as a one-option pick in human play.
         assert!(matches!(
             resolve_choice_count(1, true),
             ChoiceResolution::Suspend
@@ -430,12 +430,11 @@ mod tests {
         ctx.set_failed_by(2);
 
         // Two live branches — a filtered-empty ChooseOne skips instead of
-        // suspending (#664), which is not the behaviour under test here.
+        // suspending, which is not the behaviour under test here.
         let effect = dsl::choose_one([("A", live_branch()), ("B", live_branch())]);
         let mut state = state_with_investigator();
         let mut events = Vec::new();
-        // Push the effect root + drive it through the real global loop (the
-        // deleted `apply_effect` bounded entry's test-only successor); a
+        // Push the effect root + drive it through the real global loop; a
         // 2-branch ChooseOne suspends in place for a pick.
         let out = {
             let mut cx = Cx::for_test(&mut state, &mut events);
@@ -461,8 +460,8 @@ mod tests {
 
     #[test]
     fn single_branch_choose_one_surfaces_under_interactive_flag() {
-        // One ChooseOne branch: today it auto-binds. With interactive_acknowledge
-        // on it must surface as a one-option pick (#466).
+        // One ChooseOne branch auto-binds by default. With interactive_acknowledge
+        // on it must surface as a one-option pick.
         let effect = dsl::choose_one([("Only", live_branch())]);
         let ctx = EvalContext::for_controller(InvestigatorId(1));
 
@@ -542,7 +541,7 @@ mod tests {
         assert_eq!(
             request.target,
             Some(OptionTarget::Act),
-            "the request carries the anchor so one surface can name the source card",
+            "the request carries the anchor so one surface can name the card printing the choice",
         );
         assert!(
             request
@@ -553,9 +552,9 @@ mod tests {
         );
     }
 
-    /// #845's degradation reaching the request: a source discarded during cost
-    /// payment leaves the decision un-anchored at both levels rather than
-    /// pointing at a card no board surface renders.
+    /// Regression for #845: a card discarded during cost payment leaves its
+    /// decision un-anchored at both levels rather than pointing at a card no
+    /// board surface renders.
     #[test]
     fn awaiting_decision_with_no_live_source_is_unanchored_but_still_a_decision() {
         let out = awaiting_decision("Choose one", vec!["A".into(), "B".into()], None);
@@ -682,7 +681,7 @@ mod tests {
 
     #[test]
     fn grounded_choice_surfaces_a_lone_candidate_under_the_interactive_flag() {
-        // #466: in human play a lone candidate is a one-option pick.
+        // In human play a lone candidate is a one-option pick.
         let mut state = labelled_board();
         state.interactive_acknowledge = true;
         let ctx = EvalContext::for_controller(InvestigatorId(1));
@@ -749,8 +748,8 @@ mod tests {
         assert_eq!(request.options[1].label, "Ravenous Ghoul");
     }
 
-    /// Investigator candidates anchor to their investigator card (#950) and are
-    /// labelled with that card's name (#989).
+    /// Investigator candidates anchor to their investigator card and are
+    /// labelled with that card's name.
     #[test]
     fn grounded_choice_anchors_investigators_to_their_card() {
         let ctx = EvalContext::for_controller(InvestigatorId(1));
@@ -793,7 +792,7 @@ mod tests {
     }
 
     /// The threaded pick is checked before the candidates are counted, so an
-    /// out-of-range pick is rejected whatever the list's length (#990).
+    /// out-of-range pick is rejected whatever the list's length.
     #[test]
     fn grounded_choice_rejects_an_out_of_range_pick_at_any_candidate_count() {
         let state = labelled_board();

@@ -1,4 +1,4 @@
-//! End-to-end test of the spawn-on-reveal path (#127), against a real Core Set
+//! End-to-end test of the spawn-on-reveal path, against a real Core Set
 //! enemy.
 //!
 //! Staged **at** the Mythos phase's step-1.4 encounter draw, and driven by
@@ -11,9 +11,8 @@
 //!   printed spawn location, engaged with the drawing investigator. The enemy
 //!   lands in `state.enemies` and does NOT appear in `encounter_discard`.
 //! - Multi-investigator suspend: two investigators at the spawn location → the
-//!   spawn suspends (`AwaitingInput`) for the lead investigator's `PickSingle`
-//!   (#128, option A), leaving the enemy in play but unengaged until the pick
-//!   resolves.
+//!   spawn suspends (`AwaitingInput`) for a `PickSingle` of whom it engages,
+//!   leaving the enemy in play but unengaged until the pick resolves.
 //!
 //! Default-spawn and location-not-in-play coverage lives in
 //! `spawn_engaged_with_drawer.rs`, `enemy_spawn_no_location.rs` and
@@ -157,7 +156,7 @@ fn revealing_flesh_eater_with_two_investigators_at_the_attic_suspends_for_lead_p
     let (draw, _) = drawing_flesh_eater(&[INV, InvestigatorId(2)]);
     let session = draw.confirm();
 
-    // The spawn suspends for the lead's choice of whom it engages, offering
+    // The spawn suspends for a choice of whom it engages, offering
     // each investigator at the Attic by their investigator card.
     let state = session.state();
     let offered: Vec<_> = state

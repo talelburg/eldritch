@@ -1,6 +1,6 @@
-//! C6b integration: Dr. Milan Christopher 01033 end-to-end against the
+//! Integration: Dr. Milan Christopher 01033 end-to-end against the
 //! real `cards::REGISTRY` — the +1 intellect constant ability and the
-//! after-successful-investigate reaction (engine window from #241).
+//! after-successful-investigate reaction.
 //!
 //! Runs against `cards::TEST_REGISTRIES`.
 
@@ -86,11 +86,10 @@ fn dr_milan_plus_one_intellect_succeeds_then_reaction_gains_resource() {
 
 #[test]
 fn obscuring_fog_forced_discard_precedes_dr_milan_reaction_window() {
-    // #213 forced-before-reaction: the "after you successfully investigate"
+    // Forced before reaction: the "after you successfully investigate"
     // timing point fires Obscuring Fog 01168's *forced* discard before Dr.
     // Milan 01033's *reaction* window opens (RR p.2). Observable: at the
-    // moment the reaction window suspends, Obscuring Fog is already gone —
-    // pre-T5b it was still attached (the forced fired a later driver step).
+    // moment the reaction window suspends, Obscuring Fog is already gone.
     //
     // Effective shroud is 2 (printed) + 2 (Obscuring Fog) = 4. Intellect 4 +
     // Dr. Milan's +1 = 5 ≥ 4 → success with a Numeric(0) draw.

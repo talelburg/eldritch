@@ -1,12 +1,12 @@
 //! A test-scoped modifier expires with the test it names — including when
-//! that test ends unusually (#676).
+//! that test ends unusually.
 //!
 //! The happy path is covered by `hyperawareness.rs`, which buys a real
 //! `ThisSkillTest` buff at a running test's player window and finds it gone
 //! afterwards. This file covers the two endings where a leak would be
 //! invisible: a test **abandoned** because its tester was eliminated
-//! mid-resolution (#564), and one that **resolves across a suspension** (the
-//! per-point damage-distribution prompts, #422). Both go through a teardown
+//! mid-resolution, and one that **resolves across a suspension** (the
+//! per-point damage-distribution prompts). Both go through a teardown
 //! that is easy to miss, and a surviving row would silently buff whatever
 //! test came next.
 //!
@@ -106,7 +106,7 @@ fn surviving_lifetimes(state: &GameState) -> Vec<Lifetime> {
 #[test]
 fn a_row_expires_when_its_test_is_abandoned_on_the_testers_elimination() {
     // The investigator at 7/8 damage takes 1 more → killed. The test is abandoned
-    // rather than resolved (#564), and its teardown must still expire the
+    // rather than resolved, and its teardown must still expire the
     // rows bought for it. No soaker, so no distribution prompt.
     let session = reveal(board(7, &[]));
     let state = session.state();

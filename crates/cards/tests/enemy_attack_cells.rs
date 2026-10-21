@@ -1,4 +1,4 @@
-//! #704: an enemy attack is **one** triggering condition, and the coordinator
+//! An enemy attack is **one** triggering condition, and the coordinator
 //! resolves it between the `when` and `at` cells.
 //!
 //! `data/rules-reference/rules/glossary/Nested_Sequences.md`, verbatim:
@@ -8,11 +8,10 @@
 //! > condition, (2) resolve the triggering condition, and then, (3) execute
 //! > "after..." effects in response to that triggering condition.
 //!
-//! Before this, the attack's interrupt point was a single-cell reaction window
-//! the attack loop opened by hand, and there was no after-attack condition at
-//! all: an ability declaring `at` or `after` on an attack was never collected,
-//! never resolved and never rejected. The sibling migration for clue discovery
-//! is `clue_discovery_cells.rs`, whose structure this file mirrors.
+//! So an attack has all three cells, and an ability declaring `when`, `at` or
+//! `after` on an attack is collected and resolved in its cell. Clue discovery's
+//! cells are pinned the same way in `clue_discovery_cells.rs`, whose structure
+//! this file mirrors.
 //!
 //! The corpus halves live elsewhere and must not move: Dodge 01023's cancel in
 //! `dodge.rs` / `dodge_aoo.rs`, Guard Dog 01021's soak reaction in
@@ -110,7 +109,7 @@ fn attacker(code: &str) -> Enemy {
 /// cascades into the Enemy phase, where the attack walks its cells.
 ///
 /// No soaker assets, so the attack's damage/horror never prompts the
-/// interactive distribution (#44/K5b) and the only prompts are the cells' own.
+/// interactive distribution and the only prompts are the cells' own.
 fn board_with(codes: &[&str], enemy_code: &str) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(registries())
@@ -199,9 +198,6 @@ fn registries() -> Registries {
 }
 
 /// The headline claim: the attack lands *between* the `when` and `at` cells.
-/// Before #704 the `when` ability's window was opened by the attack loop
-/// itself, the damage was dealt on that window's close, and the `at` and
-/// `after` cells did not exist for this condition at all.
 #[test]
 fn the_attack_resolves_between_the_when_and_at_cells() {
     let r = end_turn_firing(
@@ -255,7 +251,7 @@ fn an_at_ability_resolves_after_the_impact_and_before_any_after_ability() {
     );
 }
 
-/// A prevented attack runs **none** of the rest of its sequence (#714), but the
+/// A prevented attack runs **none** of the rest of its sequence, but the
 /// attacker still exhausts: `data/arkhamdb-faq/core/01023.md`, verbatim —
 /// *"If an attack was cancelled during the Enemy phase, the attacking enemy
 /// still exhausts."*

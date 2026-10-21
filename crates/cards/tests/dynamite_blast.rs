@@ -1,4 +1,4 @@
-//! PR-8 (#306) integration: Dynamite Blast 01024's `Choose either your
+//! Integration: Dynamite Blast 01024's `Choose either your
 //! location or a connecting location. Deal 3 damage to each enemy and to each
 //! investigator at the chosen location.` end-to-end against the real
 //! `cards::REGISTRY`.
@@ -78,7 +78,7 @@ fn blasts_only_the_chosen_location_then_discards_the_event() {
         "2 candidate locations → choice suspends: {:?}",
         s.prompt(),
     );
-    // Each option names its location (#989), not the `Debug` form of its id.
+    // Each option names its location, not the `Debug` form of its id.
     let labels: Vec<_> = s
         .prompt()
         .options
@@ -204,8 +204,8 @@ fn blast_is_rejected_when_the_controller_has_no_location() {
 /// Guard Dog 01021: health 3, sanity 1. The health-bearing soaker.
 const GUARD_DOG: &str = "01021";
 
-/// The blast's investigator damage is dealt the way an enemy attack's is
-/// (#1028): a health-bearing asset is offered the soak, one point at a time,
+/// The blast's investigator damage is dealt the way an enemy attack's is: a
+/// health-bearing asset is offered the soak, one point at a time,
 /// rather than absorbing the damage silently.
 #[test]
 fn blasted_investigator_is_offered_the_soak() {

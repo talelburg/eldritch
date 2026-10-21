@@ -1,4 +1,5 @@
-//! Asset slot limits + discard-to-make-room (#498), against the real corpus.
+//! Regression for #498: playing an asset enforces its slot limits, discarding
+//! to make room, against the real corpus.
 //!
 //! Mirrors the `play_card.rs` harness: the real registries, named, and a
 //! one-investigator mid-investigation state.

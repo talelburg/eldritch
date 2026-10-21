@@ -1,4 +1,4 @@
-//! The engine exits a native changes the game through (#1010): one synthetic
+//! The engine exits a native changes the game through: one synthetic
 //! native per exit, run through the real `apply` path.
 //!
 //! Each native sits on its own mock act as a forced ability at the end of the
@@ -114,8 +114,8 @@ const INV: InvestigatorId = InvestigatorId(1);
 /// Where investigator 1 starts on the placement board.
 const HERE: LocationId = LocationId(10);
 
-/// `seated` as the lead on their open turn (the `PhaseEnded` forced dispatch
-/// binds the controller to the first investigator in turn order). A filler
+/// `seated` as the lead-investigator proxy on their open turn (the
+/// `PhaseEnded` forced dispatch binds the controller to it). A filler
 /// deck keeps Upkeep 4.4's draw from dealing empty-deck horror once the enemy
 /// phase has ended.
 fn lead(seated: Seat) -> GameStateBuilder {

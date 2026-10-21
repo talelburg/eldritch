@@ -1,5 +1,5 @@
-//! An enemy with no Spawn instruction spawns engaged with the investigator who
-//! drew it (#650), driven through a real encounter draw against the corpus.
+//! Regression for #650: an enemy with no Spawn instruction spawns engaged with
+//! the investigator who drew it, driven through a real encounter draw against the corpus.
 //!
 //! `glossary/Spawn.md`, *Spawning an Enemy*: *"If the enemy does not have a
 //! "Spawn –" instruction, the investigator drawing the enemy spawns it engaged
@@ -25,7 +25,7 @@ use game_core::{assert_event_sequence, assert_no_event};
 /// Ravenous Ghoul — *"<b>Prey</b> - Lowest remaining health."*
 const RAVENOUS_GHOUL: &str = "01161";
 
-/// The lead investigator, wounded so the Ghoul's prey would pick them.
+/// The first investigator, wounded so the Ghoul's prey would pick them.
 const LEAD: InvestigatorId = InvestigatorId(1);
 /// The investigator who draws the Ghoul.
 const DRAWER: InvestigatorId = InvestigatorId(2);

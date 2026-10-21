@@ -12,15 +12,13 @@
 //! as a ready-made value that the host hands to every
 //! [`game_core::engine::apply`].
 //!
-//! [`the_gathering`] is the first real scenario module (Night of the
-//! Zealot, scenario 1; Slice 1 C1a skeleton). **Every module in this
-//! crate is shipped content** — there is no test fixture to route
-//! around, so anything [`module_for`] resolves is a scenario a player
-//! is meant to be able to start (#878, [ADR 0016]). A test that needs
-//! a scenario module builds its own shell locally, as
+//! [`the_gathering`] (Night of the Zealot, scenario 1) is the one scenario
+//! module. **Every module in this crate is shipped content** — there is no
+//! test fixture to route around, so anything [`module_for`] resolves is a
+//! scenario a player is meant to be able to start ([ADR 0016]). A test that
+//! needs a scenario module builds its own shell locally, as
 //! `crates/game-core/tests/scenario_resolution.rs` and
-//! `crates/server/tests/common/mod.rs` do. Further scenarios (the rest
-//! of Night of the Zealot, Dunwich, …) land in later phases.
+//! `crates/server/tests/common/mod.rs` do.
 //!
 //! [ADR 0016]: https://github.com/talelburg/eldritch/blob/main/docs/adr/0016-a-synthetic-fixture-models-a-primitive-never-a-printed-card.md
 
@@ -65,12 +63,11 @@ mod tests {
         assert!(module_for(&id).is_none());
     }
 
-    /// The toy scenario used to be routable here whenever the
-    /// `test_fixtures` feature was on — and it was on by default, so
-    /// a `POST` of `{"scenario_id":"synthetic"}` started a one-location
-    /// demo on the production server. #878 deleted the fixture, which
-    /// makes this structurally true; the test is insurance against a
-    /// future re-export rather than the guarantee itself.
+    /// Regression for #878: the toy scenario's id `"synthetic"` is not
+    /// routable, so a `POST` of `{"scenario_id":"synthetic"}` cannot start a
+    /// one-location demo on the production server. The fixture lives outside
+    /// `src/`, which makes this structurally true; the test is insurance
+    /// against a future re-export rather than the guarantee itself.
     #[test]
     fn module_for_returns_none_for_the_retired_synthetic_id() {
         let id = ScenarioId::new("synthetic");

@@ -22,8 +22,9 @@ use crate::state::{
 pub(super) enum PreyResolution {
     /// Exactly one investigator best meets the instruction.
     One(InvestigatorId),
-    /// Two or more tie — the lead investigator decides (carries the
-    /// tied set, in input order).
+    /// Two or more tie — under the rules the lead investigator's call
+    /// (**Lead investigator** in `GLOSSARY.md`); carries the tied set, in
+    /// input order.
     Tie(Vec<InvestigatorId>),
     /// No candidates at all.
     None,
@@ -72,7 +73,7 @@ fn measure_value(
 /// Narrow `candidates` by `prey`. `Default` treats all candidates as
 /// equal; `Ranked` keeps those with the most extreme measure value (max
 /// for `Highest`, min for `Lowest`). Returns `One` (single best), `Tie`
-/// (2+ best — lead decides), or `None` (empty candidate set). Caller
+/// (2+ best — a tie-break), or `None` (empty candidate set). Caller
 /// supplies the candidate set (equidistant-nearest investigators for
 /// movement; co-located investigators for engagement), already narrowed by
 /// [`engagement::pursues`].
@@ -143,7 +144,7 @@ fn is_eligible_hunter(enemy: &Enemy) -> bool {
 /// (sorted `LocationId`). Empty means the hunter does not move — either no
 /// investigator is reachable, or every compelled step is blocked.
 ///
-/// A movement block is applied to the *step*, never to the graph (#651).
+/// A movement block is applied to the *step*, never to the graph.
 /// `data/rules-reference/rules/glossary/Nearest.md`: *"Nearest refers to the
 /// entity of the specified kind at a location that can be reached in the
 /// fewest number of connections, even if one or more of those connections
@@ -165,10 +166,12 @@ fn is_eligible_hunter(enemy: &Enemy) -> bool {
 ///
 /// The filter runs over the union across prey-tied investigators, so a blocked
 /// step toward one tied investigator can still leave an unblocked step toward
-/// another. Under a stricter reading the lead's choice is over *investigators*
-/// first — pick the blocked one and the hunter stays put — but this engine
-/// offers the lead destinations rather than investigators (#128), so that
-/// reading has nowhere to live until the choice is remodelled (#795).
+/// another. Under a stricter reading the lead investigator's choice is over
+/// *investigators* first — pick the blocked one and the hunter stays put — but
+/// this engine's tie-break prompt offers destinations rather than investigators,
+/// so that reading
+/// has nowhere to live. TODO(#795): offer the tied investigators instead, so
+/// a blocked step means "no move".
 fn hunter_destinations(
     state: &GameState,
     cards: &CardRegistry,
@@ -240,7 +243,7 @@ fn hunter_destinations(
 /// The only two callers are [`relocate_enemy`] (the funnel every mover
 /// should use) and the Hunter path, which runs its own *interactive*
 /// [`engage_on_arrival`] immediately afterwards: a prey tie there
-/// suspends for the lead's choice rather than auto-picking, so it must
+/// suspends for a tie-break prompt rather than auto-picking, so it must
 /// not go through `relocate_enemy`'s synchronous engagement.
 fn place_enemy_at(cx: &mut Cx, enemy_id: EnemyId, to: LocationId) {
     let enemy = cx.state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
@@ -255,7 +258,7 @@ fn place_enemy_at(cx: &mut Cx, enemy_id: EnemyId, to: LocationId) {
 
 /// Move an enemy to `to` and run the engage-on-arrival check there —
 /// the funnel for every card effect, scenario native, or engine path
-/// that relocates an enemy (#633).
+/// that relocates an enemy.
 ///
 /// `data/rules-reference/rules/glossary/Enemy_Engagement.md`: *"Any time
 /// a ready unengaged enemy is at the same location as an investigator,
@@ -287,9 +290,9 @@ fn place_enemy_at(cx: &mut Cx, enemy_id: EnemyId, to: LocationId) {
 /// `EnemyEngaged` one and a spawn-time tie can suspend interactively.
 ///
 /// Synchronous by construction, unlike the Hunter path: a prey tie
-/// among co-located investigators auto-picks the turn-order-first lead
-/// rather than suspending for the lead's choice (see
-/// `reengage_at_location`'s `TODO(#151)`). Solo play — the only mode
+/// among co-located investigators auto-picks the turn-order-first of them
+/// rather than suspending for a tie-break prompt. TODO(#151): make it an
+/// interactive tie-break, as `reengage_at_location` needs too. Solo play — the only mode
 /// that ships today — never ties.
 pub fn relocate_enemy(cx: &mut Cx, enemy_id: EnemyId, to: LocationId) {
     place_enemy_at(cx, enemy_id, to);
@@ -334,7 +337,7 @@ fn process_one_hunter(cx: &mut Cx, enemy_id: EnemyId) -> Option<HunterChoice> {
     // `glossary/Hunter.md`: *"Enemies at a location with one or more
     // investigators do not move."* For a bearer-only hunter only its bearer
     // counts, so a non-bearer standing with it does not hold it in place. That
-    // is the user's reading (#1125), taken from `glossary/Prey.md`'s *"as if it
+    // is the project's reading, taken from `glossary/Prey.md`'s *"as if it
     // were the only investigator in play"*; no ruling settles it.
     let enemy = &cx.state.enemies[&enemy_id];
     let pinned = cursor::active_investigators_at(cx.state, from)
@@ -385,15 +388,16 @@ pub(crate) fn drive_hunter_moves(cx: &mut Cx) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-/// Store the pending hunter choice and return `AwaitingInput` for the lead
-/// investigator: the candidates ride the request as structured options, and the
-/// resume comes back as `PickSingle(OptionId)` indexing the candidate list (#348).
+/// Store the pending hunter choice and return `AwaitingInput` for the tie-break,
+/// which the rules give the lead investigator. The request carries no
+/// recipient: the candidates ride it as structured options, and the resume
+/// comes back as `PickSingle(OptionId)` indexing the candidate list.
 fn suspend_hunter_choice(cx: &mut Cx, choice: HunterChoice) -> EngineOutcome {
     let (prompt, options) = match &choice {
         HunterChoice::Move { enemy, candidates } => (
             format!(
-                "Hunter {enemy:?} movement: lead investigator picks a destination among \
-                 {candidates:?}"
+                "Hunter {enemy:?} movement: the first Active investigator in turn order \
+                 picks a destination among {candidates:?}"
             ),
             choice::candidate_options(cx.state, cx.cards, candidates, |l| {
                 OptionTarget::Location(*l)
@@ -401,8 +405,8 @@ fn suspend_hunter_choice(cx: &mut Cx, choice: HunterChoice) -> EngineOutcome {
         ),
         HunterChoice::Engage { enemy, candidates } => (
             format!(
-                "Hunter {enemy:?} engagement: lead investigator picks whom to engage among \
-                 {candidates:?}"
+                "Hunter {enemy:?} engagement: the first Active investigator in turn order \
+                 picks whom to engage among {candidates:?}"
             ),
             choice::candidate_options(cx.state, cx.cards, candidates, |i| {
                 cx.state.investigators[i].card_anchor()
@@ -418,11 +422,11 @@ fn suspend_hunter_choice(cx: &mut Cx, choice: HunterChoice) -> EngineOutcome {
     }
 }
 
-/// Resume a suspended Hunter-movement choice with the lead
-/// investigator's response, then continue driving remaining hunters.
+/// Resume a suspended Hunter-movement choice with the tie-break response,
+/// then continue driving remaining hunters.
 /// Validates the response against the stored candidate set; on an
 /// invalid pick, rejects and leaves the `HunterMove` frame on the stack so
-/// the client can retry. (#128)
+/// the client can retry.
 pub(super) fn resume_hunter_choice(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
     let pending = cx.state.continuations.top_expect::<HunterChoice>().clone();
     let InputResponse::PickSingle(OptionId(i)) = response else {
@@ -484,17 +488,17 @@ pub(super) fn resume_hunter_choice(cx: &mut Cx, response: &InputResponse) -> Eng
     phases::enemy_attack_kickoff(cx)
 }
 
-/// Resume a suspended engagement-on-spawn choice (#128, option A) with
-/// the lead investigator's `PickSingle`: pop the `SpawnEngage` frame and engage
+/// Resume a suspended engagement-on-spawn choice with the tie-break
+/// `PickSingle`: pop the `SpawnEngage` frame and engage
 /// the chosen investigator, then return [`EngineOutcome::Done`].
 ///
 /// Validate-first: an invalid pick (wrong response shape, or a target
 /// outside the stored candidate set) rejects and leaves the `SpawnEngage` frame
 /// on the stack so the client can retry.
 ///
-/// Continuing the Mythos surge chain is no longer this function's job
-/// (callsite-migration). The enemy's `EncounterCard` frame was already popped
-/// before `spawn_enemy` suspended (the disposal pops, then spawns — #380), so
+/// This function does not continue the Mythos surge chain. The enemy's
+/// `EncounterCard` frame was already popped before `spawn_enemy` suspended
+/// (the disposal pops, then spawns), so
 /// the `SpawnEngage` frame sits *above* the drawing investigator's
 /// [`PlayerDraw`](crate::state::Continuation::PlayerDraw) chain frame. Once we
 /// pop the `SpawnEngage` here, that `PlayerDraw` frame is exposed and the

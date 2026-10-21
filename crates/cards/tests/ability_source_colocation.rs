@@ -1,6 +1,6 @@
 //! The co-location bullet: scenario cards at your location are reachable —
 //! the location itself, the encounter cards placed on it, and the threat areas
-//! of *any* investigator standing there (#708).
+//! of *any* investigator standing there.
 //!
 //! `glossary/Triggered_Abilities.md`, second bullet, verbatim:
 //!
@@ -30,8 +30,8 @@
 //! that "reachable here" and "unreachable there" differ only in the source: the
 //! same three probes sit on the location, on the enemy, on the threat-area card
 //! and on the investigator card, and only one of them (`gain_resources`) is
-//! observable. The Parlor 01115's Resign is a real implementation since #644,
-//! but it is the wrong instrument here — it eliminates its user, so every case
+//! observable. The Parlor 01115's Resign is a real implementation, but it is
+//! the wrong instrument here — it eliminates its user, so every case
 //! after the first would be reasoning about a board that no longer has an
 //! investigator on it. Prior art: `ability_source_control.rs`.
 
@@ -55,7 +55,7 @@ use std::sync::LazyLock;
 const HALL: &str = "SRCLOC01";
 /// Synthetic **enemy**, standing in for a Parley cultist — Herman Collins
 /// 01138's *"\[action\] Choose and discard 4 cards from your hand: **Parley.**"*
-/// is exactly an *"encounter card placed at that location"*.
+/// is exactly one of the *"encounter cards placed at that location"*.
 const CULTIST: &str = "SRCENE01";
 /// Synthetic **treachery** in an investigator's threat area, standing in for
 /// Haunted 01098.
@@ -75,11 +75,12 @@ const LIVE: u8 = 0;
 /// Ability index of an activation whose effect cannot change the game state.
 const INERT: u8 = 1;
 /// Ability index of an activation carrying a *"Limit once per round"* — which
-/// a source with no card instance cannot record (#699).
+/// a source with no card instance cannot record.
+/// TODO(#699): track usage limits on a board source.
 const LIMITED: u8 = 2;
 
 /// The same three abilities on every synthetic card — and on the investigator
-/// card, so the control bullet #707 shipped can be re-checked against the same
+/// card, so the control bullet can be re-checked against the same
 /// probe — so "offered from this source" and "not offered from that one"
 /// differ only in the source.
 fn probe_abilities() -> Vec<Ability> {
@@ -228,7 +229,7 @@ fn registries() -> Registries {
 }
 
 /// *"This includes the location itself"* — the Parlor's Resign, in the shape
-/// the engine can currently prove (#258).
+/// the engine can currently prove.
 #[test]
 fn the_location_you_stand_at_offers_its_ability() {
     assert_offered_and_activatable(
@@ -333,10 +334,12 @@ fn an_inert_ability_stays_unoffered_from_every_newly_reachable_source() {
 
 /// Usage state is per-instance (`CardInPlay::ability_usage`), and a location
 /// has no instance — so a limited location ability reaches an
-/// unreachable-branch panic, and this is the change that first puts that branch
-/// behind player input. It must **reject**, naming #699, which builds the
-/// capability Base of the Hill 02282 (*"(Limit once per round.)"*) and Ten-Acre
-/// Meadow 02246 (*"(Group limit once per game)"*) will need.
+/// unreachable-branch panic, and making it activatable puts that branch behind
+/// player input. It must **reject**, with a reason that names the open issue
+/// building the capability.
+/// TODO(#699): track usage limits on a location, which Base of the Hill 02282
+/// (*"(Limit once per round.)"*) and Ten-Acre Meadow 02246 (*"(Group limit once
+/// per game)"*) need.
 #[test]
 fn a_usage_limited_ability_on_a_location_rejects_naming_699_rather_than_panicking() {
     let state = board();
@@ -372,7 +375,7 @@ fn the_same_limit_on_a_card_instance_is_not_refused() {
     );
 }
 
-/// #707's control bullet is untouched by the widening.
+/// The control bullet is untouched by the co-location bullet.
 #[test]
 fn abilities_reachable_under_the_control_bullet_are_unaffected() {
     let state = board();

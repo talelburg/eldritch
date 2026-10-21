@@ -19,10 +19,9 @@ fn move_scenario_with_enemy(
     let l2 = LocationId(11);
     let enemy_id = EnemyId(100);
 
-    // After #448 cp2a: max_health() reads from the registry (TEST_INV = 8).
-    // Pre-load the damage so the old `inv_health` parameter still determines
-    // defeat: total = (8 - inv_health) + attack_damage >= 8
-    // ⟺ attack_damage >= inv_health (same condition as before).
+    // `max_health()` reads from the registry (TEST_INV = 8), so pre-load the
+    // damage to leave `inv_health` remaining: total = (8 - inv_health) +
+    // attack_damage >= 8 ⟺ attack_damage >= inv_health.
     let inv = test_support::seat(1)
         .at(l1)
         .harm(8_u8.saturating_sub(inv_health), 0);

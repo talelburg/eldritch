@@ -1,72 +1,31 @@
-//! DSL effect evaluator.
+//! The card-effect evaluator: it steps an [`Effect`] tree on the continuation
+//! stack, and evaluates the [`Condition`]s and [`IntExpr`]s the tree reads.
 //!
-//! Walks an [`Effect`] tree and mutates [`GameState`] accordingly.
-//! Bridges card declarations (DSL) and runtime gameplay.
+//! An effect runs as frames on the stack, not as a recursive call.
+//! `push_effect` parks its root frame, and the global `drive` loop steps it one
+//! node at a time through `step_effect_frame`. A `Seq` keeps its own
+//! [`EffectFrame::Seq`] cursor, and a `ForEach` becomes an
+//! [`EffectFrame::ForEach`] walk once its targets are read off the board. Every
+//! other node is an [`EffectFrame::Leaf`], which `step_leaf` evaluates in one
+//! match with an arm for every [`Effect`] variant. A constant marker such as
+//! [`Effect::Restrict`] has an arm there too, and it rejects: a query reads it,
+//! and nothing executes it.
 //!
-//! # Phase-3 PR-J scope
+//! # Choices
 //!
-//! Implements the leaf effects whose state requirements are already
-//! met by the engine ([`Effect::GainResources`], [`Effect::DiscoverClue`])
-//! and the simplest composition ([`Effect::Seq`]). The remaining
-//! variants return [`EngineOutcome::Rejected`] with a TODO message
-//! pointing at the issue or PR that fills them in:
-//!
-//! - [`Effect::Modify`] splits by scope. [`WhileInPlay`] and
-//!   [`WhileInPlayDuring`] contributions are passive and swept
-//!   from card abilities directly by
-//!   [`modified_value`](crate::engine::modified_value::modified_value) —
-//!   reaching `apply_effect` with one of those means the card
-//!   author put a constant-flavored modifier under a non-constant
-//!   trigger, which rejects. [`ThisSkillTest`] is **recorded** into
-//!   [`GameState::recorded_modifiers`], which the same query reads as a
-//!   recorded row — stamped with the in-flight test's id, and refused
-//!   outright when no test is in flight; the skill-test handler expires
-//!   it after `SkillTestEnded`. [`ThisTurn`] is not yet wired; rejects
-//!   with TODO until a card or test demands the turn-scoped
-//!   accumulator.
-//! - [`Effect::AutoResolve`] writes a test's
-//!   [`Determination`] into the same recorded
-//!   population, under the same gate: with no test in flight there is no
-//!   identity to stamp, so it rejects rather than banking a determination
-//!   for whatever test comes next.
-//!
-//! [`WhileInPlay`]: card_dsl::dsl::ModifierScope::WhileInPlay
-//! [`WhileInPlayDuring`]: card_dsl::dsl::ModifierScope::WhileInPlayDuring
-//! [`ThisSkillTest`]: card_dsl::dsl::ModifierScope::ThisSkillTest
-//! [`ThisTurn`]: card_dsl::dsl::ModifierScope::ThisTurn
-//! [`GameState::recorded_modifiers`]: crate::state::GameState::recorded_modifiers
-//! - [`Effect::If`] evaluates [`Condition::SkillTestKind`] against
-//!   the in-flight test's `kind`. [`SkillTest`](card_dsl::dsl::Condition::SkillTest)
-//!   isn't yet wired — inside an
-//!   [`Trigger::OnSkillTestResolution`](card_dsl::dsl::Trigger::OnSkillTestResolution) effect
-//!   the trigger itself gates outcome, so the condition is redundant there,
-//!   and no other trigger has yet needed it (the outcome *is* on
-//!   [`InFlightSkillTest::resolved`](crate::state::InFlightSkillTest::resolved)
-//!   from ST.6 on, so this is unwired, not unknowable).
-//! - [`Effect::ForEach`] resolves its target set once (investigators in turn
-//!   order, enemies in id order) and walks it on an [`EffectFrame::ForEach`], running the body once per target with
-//!   that target bound as [`EvalContext::each`] (#1067). The walk is
-//!   sequential, not simultaneous; the frame's docs say when that matters.
-//! - [`Effect::ChooseOne`] and the `*::Chosen` targets resolve
-//!   interactively via the frame-driven choice machinery (`step_choose_one` /
-//!   `ground_chosen_targets`): each auto-binds 0/1 options and suspends on 2+ by
-//!   leaving the node's own [`EffectFrame::Leaf`]
-//!   on the stack as the prompt; resume sets `chosen_option` and re-steps it (no
-//!   replay — #422). A `Chosen` target
-//!   honors its scope: `Anywhere` offers all investigators / locations,
-//!   `LocationSet::Here` filters to the chooser's
-//!   location (#349). The enemy variety and `YourOrConnecting` are deferred to
-//!   their consuming PRs (#301 / #306).
+//! A leaf that needs a choice, an [`Effect::ChooseOne`] or a `*::Chosen` target,
+//! resolves without a prompt when it has fewer than two candidates. With two or
+//! more it suspends: its [`EffectFrame::Leaf`] stays on top of the stack as the
+//! prompt, and the answer re-steps that frame with the choice bound.
+//! `ground_chosen_targets` says which candidates each target's scope offers.
 //!
 //! # State-mutation contract
 //!
-//! `apply_effect` follows the same validate-first / mutate-second
-//! pattern the existing dispatch handlers use: if the effect can't
-//! resolve cleanly, return [`EngineOutcome::Rejected`]. Partial
-//! mutation before a mid-tree rejection is fully rolled back at the
-//! apply boundary — `apply_via` (`engine/mod.rs`) snapshot-restores
-//! state, events, and RNG position on `Rejected` — so validate-first
-//! here is about cheap, precise rejections, not state safety.
+//! A leaf validates before it mutates, and returns [`EngineOutcome::Rejected`]
+//! when it can't resolve. A rejection partway through a tree leaves no partial
+//! state, because `apply_via` (`engine/mod.rs`) restores the state, the events
+//! and the RNG position on `Rejected`. So validate-first here buys a cheap,
+//! precise reason, not state safety.
 
 use card_dsl::card_data::{CardType, SkillKind};
 use card_dsl::dsl::{
@@ -106,7 +65,7 @@ use crate::state::{
 /// margin for the attack's damage and an `on_success` effect. Innermost-only:
 /// same-kind test nesting is carried by the per-frame snapshot stack, not
 /// multiple slots here (corpus-verified moot — no card reads a non-innermost
-/// margin; see the §1 cleanup spec §D).
+/// margin).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SkillTestBinding {
     /// The test failed, by this many points.
@@ -192,11 +151,8 @@ pub enum EachBinding {
 /// Per-evaluation context the effect needs to resolve targets and
 /// reference in-flight game state (current skill test, etc.).
 ///
-/// Phase-3 minimal. Grows fields as effects demand them — current
-/// skill test (for [`SkillTest`](card_dsl::dsl::Condition::SkillTest)
-/// condition), reaction-window context (for `OnEvent` triggers), etc. Keep the
-/// surface narrow and add fields only when an effect's evaluator
-/// actually reads them.
+/// Keep the surface narrow: add a field only when an effect's evaluator
+/// actually reads it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct EvalContext {
@@ -214,7 +170,7 @@ pub struct EvalContext {
     pub discovery: Option<DiscoveryBinding>,
     /// Enemy-attack reaction binding, bound only while resolving an
     /// enemy-attack `DamageDealt` reaction. Read via [`Self::attacking_enemy`].
-    /// `None` outside that window. (C5b #237.)
+    /// `None` outside that window.
     pub enemy_attack: Option<EnemyAttackBinding>,
     /// Revealed-card binding, bound only while resolving a Revelation. Read via
     /// [`Self::revealed_card_owner`]. `None` outside that window.
@@ -223,8 +179,8 @@ pub struct EvalContext {
     /// `OnSkillTestResolution` effect. Read via [`Self::committed_card`].
     /// `None` outside that window.
     pub committed_card: Option<CommittedCardBinding>,
-    /// Grounded `*::Chosen` picks, bound during a grounded-choice evaluation
-    /// (Axis A #334). Read via [`Self::chosen_investigator`] /
+    /// Grounded `*::Chosen` picks, bound during a grounded-choice evaluation.
+    /// Read via [`Self::chosen_investigator`] /
     /// [`Self::chosen_location`] / [`Self::chosen_enemy`] /
     /// [`Self::chosen_option`]. `None` outside a grounded choice.
     pub choice: Option<ChoiceBinding>,
@@ -232,13 +188,13 @@ pub struct EvalContext {
     /// is *printed on*, when the dispatch site knows it.
     ///
     /// Two things read it, and they read it at different widths. The board home
-    /// an effect-internal [`Effect::ChooseOne`] anchors its options to (#555)
+    /// an effect-internal [`Effect::ChooseOne`] anchors its options to
     /// wants the whole descriptor, act and agenda included; the in-play
     /// instance [`Effect::DiscardSelf`] removes, and that a
     /// [`RecordedModifier`] names as its
     /// origin, wants the [`source_instance`](Self::source_instance) projection.
     /// One field carries both because the narrow reading is a function of the
-    /// wide one (#834).
+    /// wide one.
     ///
     /// A dispatch site that does not know its source leaves this `None` and its
     /// choices stay un-anchored, rendering in the prompt banner. One case is
@@ -478,8 +434,7 @@ impl EvalContext {
     }
     /// Bind (or clear) the native-leaf chosen option (see [`Self::chosen_option`]).
     pub fn set_chosen_option(&mut self, opt: Option<OptionId>) {
-        // Match the old flat-field semantics exactly: a `None` pick must NOT
-        // materialize an otherwise-empty `choice` binding (which would make
+        // A `None` pick must NOT materialize an otherwise-empty `choice` binding (which would make
         // `EvalContext` compare unequal to a never-touched one). Only create the
         // binding to store a `Some`; otherwise clear an existing slot in place.
         match opt {
@@ -494,11 +449,10 @@ impl EvalContext {
 }
 
 /// Push an effect's root [`EffectFrame`](crate::state::EffectFrame) onto the
-/// continuation stack for the global `drive` loop to own (top-frame dispatch,
-/// #393/#423). The caller returns [`EngineOutcome::Done`]; `drive` then steps
+/// continuation stack for the global `drive` loop to own (top-frame
+/// dispatch). The caller returns [`EngineOutcome::Done`]; `drive` then steps
 /// the pushed frame via its [`Continuation::Effect`](crate::state::Continuation::Effect)
-/// arm. Replaced the synchronous `apply_effect` bounded entry at every
-/// production site (Slice D #423 retired that wrapper).
+/// arm.
 pub(crate) fn push_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) {
     cx.state
         .continuations
@@ -670,7 +624,7 @@ fn still_targetable(state: &GameState, target: EachBinding) -> bool {
 
 /// Push a [`EffectFrame::Designated`](crate::state::EffectFrame::Designated)
 /// frame for the global `drive` loop to own — the designated action of an
-/// activated ability (#805). The [`push_effect`] twin for the half of an
+/// activated ability. The [`push_effect`] twin for the half of an
 /// ability that is not an effect.
 pub(crate) fn push_designated_action(
     cx: &mut Cx,
@@ -720,7 +674,7 @@ fn step_designated(
 }
 
 /// Perform the action a bold [`ActionDesignator`](card_dsl::dsl::ActionDesignator)
-/// names, modified in the manner the ability carries (#805).
+/// names, modified in the manner the ability carries.
 /// `glossary/Ability.md`, verbatim:
 ///
 /// > Some abilities have bold action designators (such as **Fight**, **Evade**,
@@ -817,8 +771,8 @@ fn perform_designated(
         }
         // Unreachable through the activation and play paths: `can_perform`
         // rejects it pre-cost, since no implemented card prints one. One helper
-        // owns the rejection (and its `TODO(#1059)`), so the two sites share a
-        // wording.
+        // owns the rejection, so the two sites share a wording. TODO(#1059):
+        // perform a designated Move.
         ActionDesignator::Move => EngineOutcome::Rejected {
             reason: actions::designated_unimplemented_move(),
         },
@@ -888,12 +842,12 @@ fn suspend_leaf_in_place(cx: &mut Cx, effect: &Effect, ctx: EvalContext) {
 /// their own frames by [`frame_of`]; if one reaches here it is pushed as its
 /// frame. The `Leaf` itself was already popped by the caller.
 // A single exhaustive dispatch over every `Effect` variant; splitting it would
-// only obscure the dispatch (it mirrors the former `apply_effect_inner`).
+// only obscure the dispatch.
 #[allow(clippy::too_many_lines)]
 fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutcome {
     // Ground any `Chosen` target this node carries before running it. On a 2+
     // candidate suspension, re-push this Leaf (the prompt) and surface the
-    // AwaitingInput; resume re-steps with `chosen_option` set (#422).
+    // AwaitingInput; resume re-steps with `chosen_option` set.
     let eval_ctx = match ground_chosen_targets(cx, effect, eval_ctx) {
         Ok(ctx) => ctx,
         Err(outcome) => {
@@ -965,6 +919,10 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
             then,
             else_,
         } => {
+            // A condition that can't be evaluated, or a `Rejected` from the
+            // branch, passes through; whatever the branch already pushed or
+            // mutated is rolled back by `apply_via`'s snapshot-restore at the
+            // apply boundary.
             let holds = match eval_condition(cx.state, cx.cards, &eval_ctx, condition) {
                 Ok(b) => b,
                 Err(reason) => {
@@ -1036,7 +994,7 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
                 };
             };
             // A card with a slot symbol makes room first, which can suspend on
-            // the make-room prompt (#1097).
+            // the make-room prompt.
             threat_area::put_into_threat_area(
                 cx,
                 eval_ctx.controller,
@@ -1110,7 +1068,7 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
 /// re-pushing `node` as a `Leaf` and returning the prompt. No replay.
 ///
 /// The offered branches are the **live** ones — those
-/// [`effect_can_change_state`] cannot prove inert (#664). RR "Ability" reads
+/// [`effect_can_change_state`] cannot prove inert. RR "Ability" reads
 /// per mode: *"A triggered ability can only be initiated if its effect has the
 /// potential to change the game state"*, and RR "Target" makes a target with
 /// nothing to change ineligible, so First Aid 01019's *"Heal 1 damage or horror
@@ -1126,7 +1084,7 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
 /// anything, so replay is unaffected.
 ///
 /// **Each option is offered under its branch's own label, anchored to the card
-/// the effect is printed on** (#775 / #555). The label comes from
+/// the effect is printed on**. The label comes from
 /// [`ChoiceBranch::label`](card_dsl::dsl::ChoiceBranch::label) — authored from the
 /// printed text — and the anchor from [`EvalContext::ability_source`], mapped
 /// through the one `AbilitySource → OptionTarget` map. A dispatch site that
@@ -1142,7 +1100,7 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
 /// other `PickSingle` sites keep the `Selection` default, which is the status
 /// quo. The engine names the nature and never the presentation.
 ///
-/// **The anchor is liveness-checked, because this one is a snapshot** (#845).
+/// **The anchor is liveness-checked, because this one is a snapshot.**
 /// `ability_source` is fixed when the ability is activated, but this prompt is
 /// built after the costs are paid and after the `AoO` loop — so the source may
 /// have left play in between. First Aid 01019 spending its *last* supply is the
@@ -1217,9 +1175,9 @@ fn step_choose_one(
 /// suspends for a choice, **suspend in place** (re-push `node` so resume
 /// re-invokes the native with the pick). The native must choose *before* any
 /// side effect (standalone contract) so re-invocation is idempotent up to the
-/// suspension — no double-apply (#422, #334).
+/// suspension — no double-apply.
 ///
-/// The contract is enforced in every build (#571): the native gets a fresh
+/// The contract is enforced in every build: the native gets a fresh
 /// [`NativeCx`], which notes any exit call, and a native that suspends after
 /// one is `Rejected`. The apply's snapshot rollback then undoes its writes.
 fn step_native(cx: &mut Cx, tag: &str, eval_ctx: EvalContext, node: &Effect) -> EngineOutcome {
@@ -1255,7 +1213,7 @@ fn step_native(cx: &mut Cx, tag: &str, eval_ctx: EvalContext, node: &Effect) -> 
 /// target investigator via the engine's `draw_with_deckout` helper —
 /// the same empty-deck path the Draw action and Upkeep step 4.4 use, so
 /// a card-effect draw on an empty deck reshuffles the discard, completes
-/// the draw, and takes 1 horror on completion (#636). `count` is evaluated
+/// the draw, and takes 1 horror on completion. `count` is evaluated
 /// as the effect resolves; one of 0 or below is a clean no-op (no target
 /// resolution, no event).
 fn draw_cards_effect(
@@ -1392,7 +1350,7 @@ fn apply_search_deck(
 /// "*This* card" is the one on the **nearest enclosing**
 /// [`PlayFromHand`](crate::state::Continuation::PlayFromHand) frame — the play
 /// this effect is running inside. Reading the innermost frame rather than a
-/// global slot is what makes the answer right when plays nest (#604). The card is
+/// global slot is what makes the answer right when plays nest. The card is
 /// **taken** off that frame, so its disposal does not also discard it — one card,
 /// no duplicate. Rejects if no play is in progress or the controller is between
 /// locations.
@@ -1473,8 +1431,8 @@ fn discover_additional_clues_effect(cx: &mut Cx, amount: u8) -> EngineOutcome {
 /// Resolve [`Effect::DiscardSelf`]: discard the source from play through
 /// [`board::discard_from_play`], wherever it sits, which files it by its
 /// **owner** — Barricade 01038 to the player who played it, whoever's leaving
-/// fired it (#371), Obscuring Fog 01168 to the encounter discard, and Mob
-/// Enforcer 01101, an enemy, to its bearer's discard (#1125). The source is
+/// fired it, Obscuring Fog 01168 to the encounter discard, and Mob
+/// Enforcer 01101, an enemy, to its bearer's discard. The source is
 /// the in-play instance ([`EvalContext::source_instance`]) or an enemy
 /// ([`AbilitySource::Enemy`]); an enemy discarded this way is not defeated, so
 /// no [`Event::EnemyDefeated`](crate::event::Event::EnemyDefeated) is logged.
@@ -1505,17 +1463,6 @@ fn discard_self(cx: &mut Cx, eval_ctx: &EvalContext) -> EngineOutcome {
     }
 }
 
-/// Evaluate an [`Effect::If`].
-///
-/// Walks the [`Condition`], branches into `then` on hold or `else_`
-/// otherwise (or [`EngineOutcome::Done`] when `else_` is absent).
-/// Condition evaluation that needs context the engine can't supply
-/// today (e.g. comparing against a stat snapshot not stored on
-/// state) returns [`EngineOutcome::Rejected`] with a TODO message.
-///
-/// A `Rejected` returned by the branch passes through; any events
-/// the branch already pushed (and any state it mutated) are rolled
-/// back by `apply_via`'s snapshot-restore at the apply boundary.
 /// Which side of the control split the card printed with `code` is on —
 /// [`Condition::ControlStatus`]'s reader, and the one the grant sweep asks on
 /// behalf of a recipient nobody controls.
@@ -1527,7 +1474,7 @@ fn discard_self(cx: &mut Cx, eval_ctx: &EvalContext) -> EngineOutcome {
 /// *"each encounter card in a investigator's threat area **or at a location**"*
 /// as in play. So an encounter card in a threat area sits in an investigator's
 /// area while being the scenario's card, and a card put into play *at* a
-/// location is under nobody's control at all (#825). The Parlor's *"While Lita
+/// location is under nobody's control at all. The Parlor's *"While Lita
 /// Chantler is not controlled by a player"* is therefore true for as long as
 /// Lita sits in `Location::cards_at_location`, and false the instant her Parley
 /// moves her into a player's `cards_in_play`.
@@ -1590,19 +1537,18 @@ pub(crate) fn eval_condition(
             Ok(predicate(state, eval_ctx))
         }
         Condition::SkillTest { outcome } => {
+            // TODO(#1147): delete Condition::SkillTest, which no card uses.
+            //
             // Inside an [`Trigger::OnSkillTestResolution`] effect, the
             // outcome is already gated by the trigger; using this
-            // condition there is redundant. It is *not* unknowable
-            // elsewhere in ST.7 — post-#423 the determination lives on
+            // condition there is redundant. The determination lives on
             // [`InFlightSkillTest::resolved`], so an `OnCommit` effect
-            // could read it — but nothing wires this condition to that
-            // field, and outside an in-flight test (an OnEvent reaction
-            // keying off `SkillTestSucceeded`) there is no such frame to
-            // read. Reject with a TODO pointing at the preferred trigger.
+            // could read it, but nothing wires this condition to that
+            // field, and outside an in-flight test there is no such frame
+            // to read. So it rejects, naming the trigger to use instead.
             Err(format!(
-                "TODO: Condition::SkillTest {{ outcome: {outcome:?} }} not yet evaluated; \
-                 prefer Trigger::OnSkillTestResolution for resolution-time effects, \
-                 or wait for an OnEvent-based reaction model to surface past-test outcome."
+                "Condition::SkillTest {{ outcome: {outcome:?} }} is not evaluated; \
+                 gate on the outcome with Trigger::OnSkillTestResolution instead."
             ))
         }
     }
@@ -1650,7 +1596,7 @@ fn eval_quantity(
         // 11005's *"If you succeed by exactly 0"* and Chemistry Set 10040's
         // *"succeed by exactly 0"* would fire on a failure. The exact-margin
         // cards (those two, Katana 10021, Correlate All Its Contents 11040) are
-        // all outside the core corpus; #1084 tracks reading the outcome too.
+        // all outside the core corpus. TODO(#1084): read the outcome too.
         Quantity::SkillTestFailedBy => usize::from(eval_ctx.failed_by().unwrap_or(0)),
         Quantity::SkillTestSucceededBy => usize::from(eval_ctx.succeeded_by().unwrap_or(0)),
         // Play area and threat area only. `controlled_card_instances` would
@@ -1699,7 +1645,7 @@ pub(crate) fn eval_int_expr(
 ///
 /// - [`ModifierScope::WhileInPlay`] / [`ModifierScope::WhileInPlayDuring`]:
 ///   the constant-modifier query walks `cards_in_play` and reads
-///   abilities directly. Reaching `apply_effect` with one of these
+///   abilities directly. Reaching `modify` with one of these
 ///   means a card author put a constant-flavored modifier under a
 ///   non-constant trigger (an `OnPlay`/`Activated` ability whose
 ///   effect *is* a `Modify` with constant scope), which doesn't fit
@@ -1712,8 +1658,8 @@ pub(crate) fn eval_int_expr(
 ///   [`ModifierScope`] becomes the engine's
 ///   [`Lifetime`](crate::state::Lifetime) — and therefore where a scope with
 ///   nothing to stamp is refused (see below).
-/// - [`ModifierScope::ThisTurn`]: not yet wired; rejects with TODO
-///   until a card or test demands it.
+/// - [`ModifierScope::ThisTurn`]: rejected. TODO(#572): a turn-scoped
+///   accumulator that drains on `TurnEnded`.
 ///
 /// # A test-scoped modifier with no test
 ///
@@ -1740,8 +1686,7 @@ fn modify(
     // A recorded row carries only the controller today (see
     // `RecordedModifier`), so a wider audience under a non-constant
     // scope has nowhere to be written down. Reject loudly rather than
-    // silently narrowing it to the controller — recorded rows that can
-    // name an arbitrary target are #676's.
+    // silently narrowing it to the controller.
     if audience != ModifierAudience::Controller {
         return EngineOutcome::Rejected {
             reason: format!(
@@ -1817,7 +1762,7 @@ fn modify(
 /// [`RecordedModifier`] row stamped with the
 /// running test's [`SkillTestId`](crate::state::SkillTestId) — the same
 /// population, the same identity check and the same teardown sweep the
-/// `[auto_fail]` chaos token's row goes through (#685), so a card-latched
+/// `[auto_fail]` chaos token's row goes through, so a card-latched
 /// determination is the one rule and not a second one. Precedence between a
 /// simultaneous failure and success is resolved at *read* time, above the
 /// fold, by
@@ -1960,7 +1905,7 @@ fn discover_clue(
     // at it, you can only discover 1 clue at most when you investigate it."*
     // Cap **here**, before the timing point, so the would-be-discovery count
     // every replacement effect reads is the real one — Cover Up's "discard that
-    // many" derives from `DiscoverClues.count` (#471, ex-#368 item 2).
+    // many" derives from `DiscoverClues.count`.
     //
     // Locked at emission: `perform_discovery`'s own `min` stays as the
     // shrinkage backstop, so a mid-window reaction that *removes* clues shrinks
@@ -1970,16 +1915,16 @@ fn discover_clue(
     let capped = count.min(location.clues);
 
     // Emit the clue-discovery triggering condition and stop: the condition is
-    // **coordinator-owned** (#703), so the clues move at the coordinator's
+    // **coordinator-owned**, so the clues move at the coordinator's
     // resolve step, between the `when` and `at` cells — not here. That is what
     // lets Cover Up 01007's *"\[reaction\] When you would discover 1 or more clues
     // at your location: Discard that many clues from Cover Up instead"* replace
     // a discovery that has not happened yet.
     //
-    // In tail position with nothing after it, per ADR 0003: this returns
-    // `Done` when nothing was queued *and* when a `when` window was, and the
-    // `drive` loop owns both. The pre-#703 code peeked at the top frame here to
-    // tell those apart, which is the shape the ADR forbids.
+    // In tail position with nothing after it: this returns `queue_event`'s
+    // outcome unexamined (see its doc), whether or not a `when` window opened,
+    // and the `drive` loop owns both. Peeking at the top frame here to tell
+    // those apart is the shape ADR 0003 forbids.
     emit::queue_event(
         cx,
         &TimingEvent::DiscoverClues {
@@ -1990,9 +1935,9 @@ fn discover_clue(
     )
 }
 
-/// Flag the condition [`Effect::Cancel`] prevents (Axis D #336): the topmost
+/// Flag the condition [`Effect::Cancel`] prevents: the topmost
 /// [`EmitEventFrame`](crate::state::EmitEventFrame) whose cursor is still at
-/// [`EmitStep::When`], i.e. the condition whose `when` cell is open (#1055).
+/// [`EmitStep::When`], i.e. the condition whose `when` cell is open.
 ///
 /// That is the cancelled condition's own frame. `Cancel` only resolves inside a
 /// `when`-cell window (via `fire_pending_trigger` / `play_fast_event`), and a
@@ -2038,7 +1983,7 @@ fn cancel_current_impact(cx: &mut Cx) -> EngineOutcome {
 ///
 /// The clue-discovery condition's **resolve step** — step 2 of
 /// `glossary/Nested_Sequences.md`, called by the timing coordinator between the
-/// `when` and `at` cells (`emit::resolve_clue_discovery`, #703), never by
+/// `when` and `at` cells (`emit::resolve_clue_discovery`), never by
 /// [`discover_clue`], which only caps the count and emits. Caller guarantees
 /// both ids exist and the location has clues.
 ///
@@ -2048,7 +1993,7 @@ fn cancel_current_impact(cx: &mut Cx) -> EngineOutcome {
 /// **shrinkage backstop** for the gap between emission and this call: a `when`
 /// ability that removed clues shrinks the discovery, while one that added clues
 /// does not grow it — the quantity is fixed at the moment of the would-be
-/// discovery (#471).
+/// discovery.
 pub(crate) fn perform_discovery(
     cx: &mut Cx,
     location_id: LocationId,
@@ -2113,7 +2058,7 @@ fn deal_effect(
         };
     }
     // Dealing damage is the two-step procedure of ADR 0009, walked on a
-    // `DealDamage` frame: distribution across soakers + self (#44/K5b-2, prompting
+    // `DealDamage` frame: distribution across soakers + self (prompting
     // per contested point), then the `DamageDealt` condition with
     // `DamagePlaced` nested in its resolve step. This call is therefore **tail position** — the effect walk is
     // parked on its own frame beneath and `Finish` resumes it.
@@ -2201,7 +2146,7 @@ fn apply_advance_current_act(cx: &mut Cx) -> EngineOutcome {
     }
     // AdvanceCurrentAct is only reached from a Forced ability (01110's
     // Ghoul-Priest-defeat advance) — a game-forced advance, so it prompts
-    // the on-card flip (#558).
+    // the on-card flip.
     act_agenda::advance_act(cx, AdvanceTrigger::Forced);
     EngineOutcome::Done
 }
@@ -2271,7 +2216,7 @@ fn apply_place_doom_on_current_agenda(
 }
 
 /// Ground any `Chosen` target carried by `effect` before its
-/// handler runs (Axis A): enumerate candidates, apply the resolve convention
+/// handler runs: enumerate candidates, apply the resolve convention
 /// (auto 0/1, suspend on 2+, replay from `cursor`), and bind the choice into
 /// the returned [`EvalContext`] (`chosen_investigator` / `chosen_location`)
 /// that the handler's target resolver reads. A no-op (returns `eval_ctx`
@@ -2282,9 +2227,8 @@ fn apply_place_doom_on_current_agenda(
 /// to a per-variety enumerator. `Anywhere` offers all investigators / locations;
 /// `LocationSet::Here` on an investigator choice filters to investigators co-located with the
 /// controller and `LocationSet::Here` to the controller's own location (empty —
-/// hence a reject — when the controller is between locations). The enemy variety
-/// and `LocationSet::YourOrConnecting` land with their consuming PRs (#301 /
-/// #306).
+/// hence a reject — when the controller is between locations). An enemy choice
+/// is grounded against its [`EnemyScope`] by `ground_enemy_choice`.
 fn ground_chosen_targets(
     cx: &mut Cx,
     effect: &Effect,
@@ -2355,7 +2299,7 @@ fn picked_or_reject<T>(
 /// or suspends in place.
 ///
 /// The scoped list is then filtered by [`investigator_target_eligible`] for the
-/// consuming `effect` (RR "Target", #639): an investigator with nothing to heal
+/// consuming `effect` (RR "Target"): an investigator with nothing to heal
 /// is not offered as a heal target. The predicate is pure over `&GameState` and
 /// the pick is taken before the effect mutates anything, so the filtered list
 /// re-derives identically on resume.
@@ -2370,7 +2314,7 @@ fn picked_or_reject<T>(
 /// action — chaos draw included — via `apply_via`'s snapshot restore, so the
 /// effect is skipped (`Err(EngineOutcome::Done)`, which `step_leaf` returns
 /// after having already popped the leaf) instead. An *empty scope* still
-/// rejects, exactly as before this filter existed.
+/// rejects.
 fn ground_investigator_choice(
     cx: &mut Cx,
     eval_ctx: EvalContext,
@@ -2468,7 +2412,7 @@ enum DesignatedTarget {
 /// Candidates are the basic action's own `candidates`, in ascending [`EnemyId`]
 /// order, the list the basic action validates against: for a Fight
 /// [`fight::candidates`](crate::engine::dispatch::actions::fight::candidates),
-/// every enemy *at the controller's location* (not engaged-only, #451); for an
+/// every enemy *at the controller's location* (not engaged-only); for an
 /// Evade [`evade::candidates`](crate::engine::dispatch::actions::evade::candidates),
 /// every enemy *engaged with the controller*. Unlike the basic action, the
 /// grounding does not also filter out a malformed fight or evade value.
@@ -2598,9 +2542,9 @@ fn resolve_investigator_target(
 /// **Conservative by construction:** returns `true` unless it can *prove* the
 /// effect is inert. A meaningful ability is therefore never wrongly suppressed;
 /// only provable no-ops are. The proven-no-op set starts with `DiscoverClue`
-/// (Roland 01001 at a 0-clue location, #495) and grows one arm per recurring
+/// (Roland 01001 at a 0-clue location) and grows one arm per recurring
 /// pattern. Opaque [`Effect::Native`] effects fall through to `true` — their
-/// no-op detection stays with the card's `eligibility` predicate (#368).
+/// no-op detection stays with the card's `eligibility` predicate.
 pub(crate) fn effect_can_change_state(
     state: &GameState,
     ctx: EvalContext,
@@ -2625,7 +2569,7 @@ pub(crate) fn effect_can_change_state(
                 }
         }
         // Investigator-targeted effects whose no-op case is a property of the
-        // *target* (#639): inert iff no investigator the target could resolve to
+        // *target*: inert iff no investigator the target could resolve to
         // is an eligible one. The per-effect judgement lives in
         // [`investigator_target_eligible`] — the single place that decides what
         // "eligible" means — so adding an arm there is all a new such effect
@@ -2637,13 +2581,13 @@ pub(crate) fn effect_can_change_state(
         Effect::Heal { target, .. } | Effect::SearchDeck { target, .. } => {
             any_eligible_investigator_target(state, ctx, effect, *target)
         }
-        // A modifier bought "for this skill test" needs a test to attach to
-        // (#676): with none in flight there is no identity to stamp onto the
+        // A modifier bought "for this skill test" needs a test to attach to:
+        // with none in flight there is no identity to stamp onto the
         // recorded row, so `modify` refuses it and nothing changes. Proving it
         // inert *here* is what keeps the turn menu and the fast-window
         // enumerator from offering Hyperawareness 01034 at a window where
         // clicking it would only cost a resource and reject — the same
-        // menu/validator agreement #639 established for the activation gate.
+        // menu/validator agreement the activation gate keeps.
         //
         // `AutoResolve` shares the arm for the same reason on the same gate: a
         // determination latched with no test in flight has no identity to stamp

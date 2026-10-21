@@ -15,7 +15,7 @@
 //!
 //! # Engine consumers
 //!
-//! The skill-test commit window (#63) is the prompt tests answer most: the
+//! The skill-test commit window is the prompt tests answer most: the
 //! active investigator replies with [`InputResponse::PickMultiple`] (each
 //! `OptionId` a hand index). [`ScriptedResolver::commit_cards`] is the
 //! ergonomic helper: tests pass card codes, the resolver translates them to
@@ -121,7 +121,7 @@ impl ScriptedResolver {
         self.push(InputResponse::Skip)
     }
 
-    /// Respond with [`InputResponse::PickSingle`] (the Axis-A choice contract).
+    /// Respond with [`InputResponse::PickSingle`].
     pub fn pick_single(&mut self, id: OptionId) -> &mut Self {
         self.push(InputResponse::PickSingle(id))
     }
@@ -262,7 +262,7 @@ pub(super) fn hand_indices_of(
     indices
 }
 
-/// Whether `request` is the open-turn action menu (2b, #447): the prompt the
+/// Whether `request` is the open-turn action menu: the prompt the
 /// engine anchors to the acting investigator's
 /// [`TurnControl`](OptionTarget::TurnControl). Read off the outcome alone — the
 /// menu is the only prompt anchored there (ADR 0011) — so no driver needs to
@@ -603,8 +603,8 @@ mod tests {
             match step {
                 1 => {
                     // The initial action is the opaque payload threaded to the
-                    // (fake) applier — any surviving variant works; `ResolveInput`
-                    // is the only gameplay-bearing one post-OptionId-routing (#447).
+                    // (fake) applier; `ResolveInput` is the only `PlayerAction`
+                    // variant.
                     assert!(matches!(
                         action,
                         Action::Player(PlayerAction::ResolveInput {
@@ -748,7 +748,7 @@ mod tests {
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     }
 
-    /// Flag on: the acknowledge `Confirm` (#478) surfaces after the commit
+    /// Flag on: the acknowledge `Confirm` surfaces after the commit
     /// window, and confirming it resolves the skill test to teardown (the
     /// dispatch-level Confirm routing, end-to-end through `apply`).
     #[test]

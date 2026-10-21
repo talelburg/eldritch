@@ -1,9 +1,10 @@
-//! Visual rendering of enemies for the web client. Enemies are a distinct data
-//! source — the `Enemy` state struct carries stats *and* live state, while its
-//! traits and text stay on the printed card — so they get a dedicated
-//! `EnemyCard` component rather than reusing `Card` (which is built around
-//! registry lookup + a `CardInPlay`). Shares the card CSS / chip vocabulary and
-//! the text renderer. Display-only.
+//! Visual rendering of enemies for the web client.
+//!
+//! Enemies are a distinct data source — the `Enemy` state struct carries stats
+//! *and* live state, while its traits and text stay on the printed card — so
+//! they get a dedicated `EnemyCard` component rather than reusing `Card` (which
+//! is built around registry lookup + a `CardInPlay`). Shares the card CSS /
+//! chip vocabulary and the text renderer. Display-only.
 
 use game_core::engine::OptionTarget;
 use game_core::state::Enemy;
@@ -45,7 +46,7 @@ pub fn enemy_keyword_chips(enemy: &Enemy) -> Vec<String> {
 }
 
 /// One engaged enemy rendered as a card (red border via `card--enemy`), reusing
-/// the card CSS and the `card--exhausted` dim from the asset slice. Stats and
+/// the card CSS and the `card--exhausted` dim the asset cards use. Stats and
 /// live state come from the `Enemy` state struct; traits and ability text come
 /// from its printed card, looked up by code via the registry.
 /// Display-only — no click handlers.
@@ -67,7 +68,7 @@ pub fn EnemyCard(enemy: Enemy) -> impl IntoView {
     let exhausted = enemy.exhausted;
     let exhausted_badge =
         exhausted.then(|| view! { <span class="card-exhausted">"Exhausted"</span> });
-    // Interactivity (#537): route the live prompt's options to this enemy; glow +
+    // Interactivity: route the live prompt's options to this enemy; glow +
     // open a context menu of its offered actions (Fight/Evade) when non-empty.
     let pending = use_context::<PendingOptions>()
         .map(|p| p.0.get())

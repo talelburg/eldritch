@@ -1,8 +1,10 @@
 //! **Taking an action** (see `GLOSSARY.md`): deciding whether an investigator
 //! may take it, paying its actions, and deciding whether it provokes attacks of
-//! opportunity. Every action is taken through [`take`]: the basic actions, a
-//! non-fast play, and an action-cost ability. A fast play or fast ability spends
-//! no action, so it takes none and never reaches the step. The turn menu asks
+//! opportunity.
+//!
+//! Every action is taken through [`take`]: the basic actions, a non-fast play,
+//! and an action-cost ability. A fast play or a zero-action ability spends no
+//! action, so it takes none and never reaches the step. The turn menu asks
 //! [`check`] what taking a basic action would cost, and the play and activation
 //! validators ask it whether a non-fast play or an action-cost ability can be
 //! afforded.
@@ -166,8 +168,8 @@ impl ActionDescription {
     }
 
     /// An activation of the ability at `address` on `source`, printing
-    /// `action_cost` actions (at least one; a fast ability is not taken) and
-    /// `designator`.
+    /// `action_cost` actions (at least one; a zero-action ability is not
+    /// taken) and `designator`.
     pub(crate) fn activate(
         source: AbilitySource,
         address: AbilityAddress,
@@ -531,7 +533,7 @@ fn quote(
     // mark spent once the action is paid; no card data for a code means no
     // surcharge. [`check`] and [`take`] price every action here, an
     // activation included, whose bold designator names the class via
-    // [`ActionDesignator::action_class`] (#754). Nothing outside the step
+    // [`ActionDesignator::action_class`]. Nothing outside the step
     // prices a surcharge: the play and activation validators ask [`check`].
     // One pricing is the point: a surcharge only one path applies is the bug
     // that made shooting a weapon cheaper than punching.

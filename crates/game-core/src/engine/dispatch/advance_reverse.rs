@@ -1,5 +1,5 @@
-//! Resumable act/agenda advance (#482): the `AdvanceReverse` continuation frame
-//! and its driver. See the `Continuation::AdvanceReverse` doc.
+//! The driver of the `AdvanceReverse` continuation frame, which advances an
+//! act or agenda resumably (see the `Continuation::AdvanceReverse` doc).
 
 use crate::action::InputResponse;
 use crate::engine::dispatch::emit;
@@ -39,11 +39,11 @@ fn ack_prompt(deck: AdvanceDeck, from: usize) -> String {
     format!("{what} {} advanced — acknowledge.", from + 1)
 }
 
-/// Drive the top `AdvanceReverse` frame one step (#482). `AwaitAck` pushes the
+/// Drive the top `AdvanceReverse` frame one step. `AwaitAck` pushes the
 /// observable `…Advanced` event and, for a **forced** advance in interactive
 /// mode, suspends with a one-option on-card `PickSingle` anchored to the
 /// act/agenda (the flip pick — cursor stays at `AwaitAck` until `resume`); a
-/// **deliberate** advance skips the ack and falls through (#558). `FireReverse`
+/// **deliberate** advance skips the ack and falls through. `FireReverse`
 /// fires the leaving card's Forced reverse via `queue_event` (queued; may
 /// suspend). `Finalize` bumps the deck cursor and pops the frame.
 pub(super) fn drive(cx: &mut Cx) -> EngineOutcome {
@@ -61,7 +61,7 @@ pub(super) fn drive(cx: &mut Cx) -> EngineOutcome {
     match step {
         AdvanceStep::AwaitAck => {
             cx.events.push(advanced_event(deck, from));
-            // Fire-once, on-card (#558): a FORCED advance surfaces the flip as a
+            // Fire-once, on-card: a FORCED advance surfaces the flip as a
             // one-option pick anchored to the act/agenda; a DELIBERATE advance was
             // already the player's choice (the `AdvanceAct` action / round-end
             // objective), so skip the ack and fall through to fire the reverse.
@@ -138,7 +138,7 @@ fn finalize(cx: &mut Cx, deck: AdvanceDeck, from: usize) {
     cx.state.continuations.pop_expect::<AdvanceReverseFrame>();
 }
 
-/// Resume the acknowledge pause (#558): the single "Advance" pick at `AwaitAck`
+/// Resume the acknowledge pause: the single "Advance" pick at `AwaitAck`
 /// advances the cursor to `FireReverse`; the `drive` loop then fires the reverse.
 /// `resume` only runs when `drive` paused here — which happens only for a forced,
 /// interactive advance — so `PickSingle(OptionId(0))` is the sole valid response.
@@ -257,7 +257,7 @@ mod tests {
 
     /// Forced + interactive: the frame suspends with a one-option on-card
     /// `PickSingle` anchored to the agenda (the flip pick) before firing the
-    /// reverse — the cursor has NOT bumped yet (#558).
+    /// reverse — the cursor has NOT bumped yet.
     #[test]
     fn forced_interactive_advance_prompts_on_card_pick_anchored_to_the_deck() {
         let mut state = state_advancing_agenda(true);
@@ -283,7 +283,7 @@ mod tests {
     }
 
     /// Forced + interactive on the **act** deck (01110's Ghoul-Priest-defeat
-    /// advance): the flip pick anchors to the act card, not the agenda (#558).
+    /// advance): the flip pick anchors to the act card, not the agenda.
     #[test]
     fn forced_interactive_act_advance_anchors_to_the_act() {
         let mut state = state_advancing_act(true, AdvanceTrigger::Forced);
@@ -303,7 +303,7 @@ mod tests {
     }
 
     /// A **terminal** act on 01110's forced-advance path pauses on the flip
-    /// acknowledge too (#558), with the ending unlatched — the player reads the
+    /// acknowledge too, with the ending unlatched — the player reads the
     /// reverse that ends their game before the result panel replaces the board.
     /// Answering it fires that reverse, and the reverse is what latches (ADR
     /// 0013). The agenda-deck mirror is proven end-to-end in
@@ -348,7 +348,7 @@ mod tests {
             "the ending waits for the reverse the player is being asked to read"
         );
 
-        // Answering the flip fires the reverse. Its own #466 forced
+        // Answering the flip fires the reverse. Its own forced
         // acknowledge (asserted end-to-end in
         // `scenarios/tests/the_gathering_resolutions.rs`) is the next prompt;
         // what is under test here is that the ending lands *after* the flip.
@@ -388,7 +388,7 @@ mod tests {
 
     /// Deliberate + interactive: the advance was already the player's choice, so
     /// the frame skips the ack and drives straight to `FireReverse` — no pause,
-    /// cursor not yet bumped (#558). Single-step `drive` so the frame doesn't run
+    /// cursor not yet bumped. Single-step `drive` so the frame doesn't run
     /// all the way to Finalize (no reverse served ⇒ the reverse is a no-op).
     #[test]
     fn deliberate_interactive_advance_skips_the_ack() {

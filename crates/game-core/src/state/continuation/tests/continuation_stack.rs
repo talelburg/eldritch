@@ -13,7 +13,7 @@ fn awaits_input_gates_suspensions_but_not_anchors() {
     })
     .awaits_input());
     // A framework Fast window is a prompt even with no pending candidates:
-    // `ResolveInput::Skip` closes it (#476; D1(a) on #927).
+    // `ResolveInput::Skip` closes it.
     assert!(Continuation::FastWindow(FastWindowFrame {
         candidates: Vec::new(),
         fast_actors: FastActorScope::Any,
@@ -39,7 +39,7 @@ fn investigator_turn_frame_classification() {
     assert!(!frame.is_phase_anchor());
     // ...and it DOES await input: the open turn surfaces its legal-action
     // enumeration as an `AwaitingInput` menu, resolved by
-    // `ResolveInput(PickSingle(OptionId))` (2b, #447).
+    // `ResolveInput(PickSingle(OptionId))`.
     assert!(frame.awaits_input());
     // The transient `ending: true` rotation sentinel is not a prompt.
     assert!(!Continuation::InvestigatorTurn(InvestigatorTurnFrame {
@@ -95,8 +95,8 @@ fn phase_anchor_variants_round_trip_and_are_not_resolution_windows() {
 
 #[test]
 fn omitting_any_required_field_is_rejected() {
-    // The non-`Option` formerly-`#[serde(default)]` fields are now required
-    // on the wire (#453): a payload missing one fails loudly rather than
+    // The non-`Option` fields are required on the wire: a payload missing
+    // one fails loudly rather than
     // silently defaulting (e.g. an absent `continuations` would drop every
     // open window).
     let s = GameStateBuilder::new().build();
@@ -105,7 +105,7 @@ fn omitting_any_required_field_is_rejected() {
     for field in [
         "continuations",
         "lasting_effects",
-        // #676's two: a defaulted `skill_test_ids` would re-mint ids a
+        // The skill-test pair: a defaulted `skill_test_ids` would re-mint ids a
         // live row already names, and a defaulted `recorded_modifiers`
         // would silently drop every test-scoped buff in flight.
         "skill_test_ids",
@@ -126,7 +126,7 @@ fn omitting_any_required_field_is_rejected() {
 #[test]
 fn open_window_lives_on_the_continuation_stack_as_a_fast_window() {
     // A framework window is a `Continuation::FastWindow` frame on the one
-    // stack (#433 A-ii) — there is no separate `open_windows` Vec.
+    // stack — there is no separate `open_windows` Vec.
     let state = GameStateBuilder::new()
         .with_open_window(
             FastWindowKind::Phase(PhaseStep::MythosAfterDraws),

@@ -6,8 +6,10 @@
 //! ```
 //!
 //! Health 3, sanity 1, Ally slot. As an ally with printed health/sanity,
-//! Guard Dog is a soak container (RR p.7): enemy-attack damage routes onto
-//! it before the controller (C5b's soak pipeline). The reaction below is
+//! Guard Dog is a soak container (`glossary/Dealing_Damage_Horror.md`: an
+//! investigator *"may assign it to eligible asset cards he or she
+//! controls"*): enemy-attack damage routes onto it before the controller.
+//! The reaction below is
 //! the *other* half — when that soak sends damage its way, it bites back.
 //!
 //! **Cell: the `when` cell of the `DamageDealt` condition**, which is the
@@ -31,7 +33,7 @@
 //! `EventPattern::EnemyAttackDamagedSelf`, which pairs with `DamageDealt`
 //! narrowed to an enemy *attack* and scoped to a card the assignment gives
 //! damage to, and reads the attacker from `EvalContext.attacking_enemy`, which
-//! the window binds. (C5b #237.)
+//! the window binds.
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::evaluator::EvalContext;
@@ -87,7 +89,7 @@ mod tests {
     /// `docs/agents/standards.md` names: the module's verbatim text block above
     /// reads *"\[reaction\] **When** an enemy attack deals damage to Guard Dog"*,
     /// and `GLOSSARY.md`'s **Timing cell** entry puts *"when"* in the interrupt
-    /// cell — so `EventTiming::When`, on the `DamageDealt` condition (#722).
+    /// cell — so `EventTiming::When`, on the `DamageDealt` condition.
     #[test]
     fn ability_is_one_when_reaction_native() {
         let abilities = abilities();

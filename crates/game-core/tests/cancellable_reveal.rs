@@ -1,14 +1,17 @@
-//! A chaos-token reveal that can be cancelled (#1106): Skill Test Timing step
-//! 3 draws and announces the token, then emits the coordinator-owned
-//! `ChaosTokenRevealed` condition, whose resolve step is what the token does
-//! to the test. A `when`-cell cancel skips it; [`Effect::RevealChaosToken`]
-//! sends the test back to draw again.
+//! A chaos-token reveal that can be cancelled: Skill Test Timing step 3 draws
+//! and announces the token, then emits the coordinator-owned
+//! `ChaosTokenRevealed` condition, whose resolve step is what the token does to
+//! the test.
+//!
+//! A `when`-cell cancel skips it; [`Effect::RevealChaosToken`] sends the test
+//! back to draw again.
 //!
 //! Wendy Adams 01005 is the corpus consumer (*"\[reaction\] When you reveal a
 //! chaos token, choose and discard 1 card from your hand: Cancel that chaos
 //! token and return it to the bag. Reveal a new chaos token. (Limit once per
 //! test/ability.)"*, `data/arkhamdb-snapshot/pack/core/core.json`), tested
-//! against the real registry with #1110. Her ruling is what the split builds
+//! against the real registry in `crates/cards/tests/wendy_adams.rs`. Her
+//! ruling is what the split builds
 //! by construction (<https://arkhamdb.com/card/01005>): *"treat it as if
 //! you've never revealed that token, for purposes of effects that trigger if a
 //! specific symbol is revealed"*. This binary pins the engine half with a

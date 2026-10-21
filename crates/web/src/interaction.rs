@@ -1,8 +1,9 @@
-//! Board interactivity routing (#536): map an `AwaitingInput`'s options to the
-//! board entity each acts on (via S0's `OptionTarget`), plus the `ContextMenu`
-//! that renders a chosen entity's options. The routing fns are pure and
-//! native-tested; `ContextMenu` is wasm-only (it submits via the wasm-only
-//! `OutboundTx`).
+//! Board interactivity routing: map an `AwaitingInput`'s options to the
+//! board entity each acts on (via `OptionTarget`), plus the `ContextMenu`
+//! that renders a chosen entity's options.
+//!
+//! The routing fns are pure and native-tested; `ContextMenu` is wasm-only (it
+//! submits via the wasm-only `OutboundTx`).
 
 use std::collections::BTreeSet;
 
@@ -39,7 +40,7 @@ pub fn pending_options(state: &ClientState) -> Vec<ChoiceOption> {
 /// The options anchored to `target`, in offered order. Pure; a linear scan
 /// (option counts are tiny, so `OptionTarget` needs no `Hash`).
 // Callers pass a freshly-constructed anchor (a temporary) which is only compared,
-// so by-value is natural even though `OptionTarget` is no longer `Copy` (#539).
+// so by-value is natural even though `OptionTarget` is not `Copy`.
 #[allow(clippy::needless_pass_by_value)]
 #[must_use]
 pub fn options_for(options: &[ChoiceOption], target: OptionTarget) -> Vec<ChoiceOption> {
@@ -144,7 +145,7 @@ pub fn is_multi_select(state: &ClientState) -> bool {
     )
 }
 
-/// A popover of a board entity's offered options (#536, #537). When `open` is
+/// A popover of a board entity's offered options. When `open` is
 /// `Some((x, y))`, renders a full-screen transparent `.menu-backdrop` (click →
 /// close) and a `.context-menu` positioned `fixed` at viewport coords `(x, y)`
 /// (so it escapes any `overflow`/positioning ancestor); a click submits
@@ -209,18 +210,18 @@ pub fn ContextMenu(
     }
 }
 
-/// The interactive trigger for a board entity's context menu (#537), wasm-only.
+/// The interactive trigger for a board entity's context menu, wasm-only.
 /// A transparent hit-layer covering the anchor captures the open click's viewport
 /// coords into `open`; the [`ContextMenu`] renders there. Embedded by each entity
 /// under `#[cfg(target_arch = "wasm32")]` so no `web_sys` touches the host build;
 /// the anchor supplies the `actionable` glow class + `position: relative`.
 ///
-/// **Renders nothing while a decision modal is up** (#856). That modal is the
+/// **Renders nothing while a decision modal is up**. That modal is the
 /// sole surface for the choice it carries, and the rule belongs here rather than
 /// at each of the seven entities that embed a menu: an entity decides whether it
 /// has options, not whether a menu is how they are offered. The glow is
-/// untouched — it stays on the anchor, and on the source card it is the
-/// provenance signal saying where the choice came from.
+/// untouched — it stays on the anchor, and on the card the choice is printed on
+/// it is the provenance signal saying where the choice came from.
 #[cfg(target_arch = "wasm32")]
 pub fn menu_layer(options: Vec<ChoiceOption>, open: RwSignal<Option<(i32, i32)>>) -> impl IntoView {
     if decision::menus_are_suppressed() {

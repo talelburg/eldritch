@@ -1,4 +1,4 @@
-//! All eight phase boundaries are timing points (#697).
+//! Regression for #697: all eight phase boundaries are timing points.
 //!
 //! `Appendix_II_Timing_and_Gameplay.md` gives the same sentence to step 1.1 and
 //! to step 1.5, and to no other numbered step:
@@ -9,9 +9,7 @@
 //! > effect expires.
 //!
 //! So each of the four phases begins and ends at a point a card can listen on,
-//! and all eight route through `queue_event`. Before this, two of the four
-//! phase-ends pushed a bare `Event::PhaseEnded` log entry and ran no scan, and
-//! there was no phase-*start* trigger point at all.
+//! and all eight route through `queue_event`.
 //!
 //! Driven against a mock registry rather than the corpus: the corpus consumers
 //! are Wizard of the Order 01170 at the Mythos end (which needs a
@@ -249,7 +247,7 @@ fn a_boundarys_forced_ability_resolves_before_its_drivers_tail_work() {
     // the anchor's resume beneath it. The observable is what `state.phase` the
     // forced ability saw: a step-2.3 ability that saw `Enemy` would mean the
     // transition had been pushed *above* the frame the emit had just queued,
-    // which is the #569 shape this discipline exists to prevent.
+    // which is the shape this discipline exists to prevent.
     let cascade = end_the_turn_to_the_encounter_draw();
 
     assert_eq!(

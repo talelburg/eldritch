@@ -8,8 +8,8 @@ fn enemy_attacks(inv: InvestigatorId) -> TimingEvent {
     }
 }
 
-/// The pattern↔condition pairings, which since #704 are **timing-free**:
-/// `trigger_matches` no longer takes a timing, so a card pairs with its
+/// The pattern↔condition pairings, which are **timing-free**:
+/// `trigger_matches` takes no timing, so a card pairs with its
 /// condition identically in all three cells and the cell filtering happens
 /// in the scans. Deleting the `When` whitelist is what makes an
 /// `after`-an-enemy-attacks ability declarable at all.
@@ -48,7 +48,7 @@ fn a_pattern_pairs_with_its_condition_in_every_cell() {
 #[test]
 fn round_ended_matches_its_own_pattern_board_scoped() {
     let lead = InvestigatorId(1);
-    // RoundEnded ↔ RoundEnded — act 01109's group advance (#434).
+    // RoundEnded ↔ RoundEnded — act 01109's group advance.
     // Board-scoped: matches regardless of the candidate's controller.
     assert!(trigger_matches(
         &TimingEvent::RoundEnded,
@@ -80,11 +80,11 @@ fn assignment_damaging(inst: CardInstanceId) -> Assignment {
 }
 
 /// Direct `trigger_matches` coverage for the `EnemyAttackDamagedSelf` soak
-/// pairing (Guard Dog 01021, C5b #237). The instance-level scoping (only an
+/// pairing (Guard Dog 01021). The instance-level scoping (only an
 /// asset the assignment gives damage to fires) is the source's half of the
 /// matcher, `scope_matches`, and is exercised end-to-end in
 /// `crates/cards/tests/guard_dog_soak.rs` (which names the real registry);
-/// what *this* layer owns since #727 is the card's narrowing to an enemy
+/// what *this* layer owns is the card's narrowing to an enemy
 /// **attack**.
 #[test]
 fn soak_event_matches_only_the_self_soak_pattern() {
@@ -94,7 +94,7 @@ fn soak_event_matches_only_the_self_soak_pattern() {
         investigator: controller,
         assignment: assignment_damaging(CardInstanceId(7)),
     };
-    // The soak-self pattern matches the soak event. (C5b #237.)
+    // The soak-self pattern matches the soak event.
     assert!(trigger_matches(
         &soak,
         &EventPattern::EnemyAttackDamagedSelf,

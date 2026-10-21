@@ -1,4 +1,5 @@
-//! #484: the board renders card/location *names*, not raw codes/ids.
+//! The board renders card/location *names*, not raw codes/ids.
+//!
 //! wasm32-only (browser DOM). Runs against the real corpus
 //! (`cards::TEST_REGISTRY`), the code→name source.
 #![cfg(target_arch = "wasm32")]

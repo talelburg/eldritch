@@ -1,4 +1,4 @@
-//! Elimination teardown (#564, #567): an eliminated investigator stops driving
+//! Elimination teardown: an eliminated investigator stops driving
 //! the engine — their in-flight skill test is abandoned rather than resolved
 //! against the hand elimination drained, and their threat area is emptied to the
 //! right pile.
@@ -7,7 +7,7 @@
 //! abilities (Grasping Hands' revelation, Cover Up's step-0 Forced) — `game-core`
 //! can't reach the corpus by crate direction, and its test registry
 //! resolves metadata for `TEST_INV` only. The threat area is routed by each
-//! card's owner, not by its metadata (#982).
+//! card's owner, not by its metadata.
 //!
 //! Elimination is reached through the **real** path (a lethal Grasping Hands
 //! revelation, drawn at the Mythos phase's encounter draw);
@@ -21,7 +21,7 @@
 //! evasion attempt, the evading investigator may immediately disengage from
 //! each other enemy engaged with him or her, and may move to a connecting
 //! location." One [agility] icon, so it is legally committable to Grasping
-//! Hands' agility test (RR ST.2, #763) while its ability stays inert — the
+//! Hands' agility test (RR ST.2) while its ability stays inert — the
 //! test fails, and this is a revelation rather than an evasion attempt.
 //! **Cover Up (01007):** "<b>Revelation</b> - Put Cover Up into play in your
 //! threat area, with 3 clues on it. […] <b>Forced</b> - When the game ends, if
@@ -119,6 +119,8 @@ fn revealed(state: GameState, commit: &[&str]) -> ApplyResult {
     reveal_committing(state, commit).finish()
 }
 
+/// Regression for #564: a tester eliminated mid-skill-test abandons the test
+/// rather than resolving it against the hand elimination drained.
 #[test]
 fn tester_eliminated_mid_test_abandons_the_test_without_panicking() {
     // Agility 3 + Numeric(-2) + 1 committed [agility] icon = 2 vs difficulty 3 →
@@ -138,8 +140,8 @@ fn tester_eliminated_mid_test_abandons_the_test_without_panicking() {
         "lethal damage eliminated the investigator"
     );
 
-    // RR p.10 step 1: the committed card is in limbo on the SkillTest frame
-    // (#631), which `run_elimination_steps`' frame walk sweeps alongside
+    // RR p.10 step 1: the committed card is in limbo on the SkillTest frame,
+    // which `run_elimination_steps`' frame walk sweeps alongside
     // in-progress plays — so it is removed from the game, NOT discarded by the
     // skill-test teardown. Deleting that sweep arm turns this assertion red.
     assert!(inv.hand.is_empty(), "hand drained by elimination");
@@ -261,9 +263,11 @@ fn elimination_routes_a_mixed_threat_area_both_ways() {
         .any(|c| c.as_str() == DISSONANT_VOICES));
 }
 
+/// Regression for #638: an eliminated investigator's weakness fires its "when
+/// the game ends" ability before it is removed from the game.
 #[test]
 fn eliminated_investigator_fires_cover_ups_game_end_trauma() {
-    // Rules Reference p.10 Elimination **step 0** (#638):
+    // Rules Reference p.10 Elimination **step 0**:
     //
     // > For the purpose of resolving weakness cards, the game has ended for the
     // > eliminated investigator. Trigger any "when the game ends" abilities on
@@ -275,17 +279,16 @@ fn eliminated_investigator_fires_cover_ups_game_end_trauma() {
     // is in play, Cover Up's Forced effect triggers, as per the FAQ [V1.0,
     // section 'Rulebook errata', topic "Elimination"]."
     //
-    // **Supersedes #567's acceptance criterion** ("Eliminated investigator's
-    // Cover Up does not fire GameEnd trauma"), which read step 1 without step 0
-    // — the step that exists precisely to carve weaknesses out of it.
+    // Step 1 read without step 0 would say the eliminated investigator's Cover
+    // Up does not fire; step 0 exists precisely to carve weaknesses out of it.
     //
-    // Since #720 this is also the regression guard for the **fork predicate**.
-    // `EliminationGameEnd` became a coordinator-owned bare milestone alongside
-    // `GameEnd`, and Cover Up's declaration retagged to the `when` cell; a
-    // `has_weakness_game_end_ability` that scans one hardcoded cell then finds
-    // nothing, routes elimination down its inline path, and lets steps 1–6
-    // remove Cover Up without ever firing it — a silent drop with no reject to
-    // show for it. This test and the multiplayer one below are what caught it.
+    // This is also the guard for the **fork predicate**. `EliminationGameEnd`
+    // is a coordinator-owned bare milestone alongside `GameEnd`, and Cover Up
+    // declares its trauma in the `when` cell; a `has_weakness_game_end_ability`
+    // that scanned one hardcoded cell would find nothing, route elimination
+    // down its inline path, and let steps 1–6 remove Cover Up without ever
+    // firing it — a silent drop with no reject to show for it. This test and
+    // the multiplayer one below catch it.
     let r = revealed(
         drawing_grasping_hands(hurt_with_threat(7, &[(COVER_UP, 3)]), false),
         &[],
@@ -297,7 +300,7 @@ fn eliminated_investigator_fires_cover_ups_game_end_trauma() {
     // Exactly once. Solo, so the death also latches NoResolution and the
     // ordinary scenario-end `GameEnd` scan runs — it must not fire this a second
     // time (Cover Up has left play by then, and that scan skips non-Active
-    // investigators anyway, #567).
+    // investigators anyway).
     assert_event_count!(r.events, 1, Event::TraumaSuffered { .. });
     // The scenario-end GameEnd path must still have run, so the exactly-once
     // assertion above is not vacuous.
@@ -309,9 +312,11 @@ fn eliminated_investigator_fires_cover_ups_game_end_trauma() {
     assert!(inv.removed_from_game.iter().any(|c| c.as_str() == COVER_UP));
 }
 
+/// Regression for #638: in multiplayer, the eliminated investigator's Cover Up
+/// fires its trauma while the scenario continues.
 #[test]
 fn cover_ups_trauma_fires_on_elimination_while_the_scenario_continues() {
-    // The multiplayer half of the hole (#638): the scenario does *not* end, so
+    // The multiplayer half: the scenario does *not* end, so
     // the ordinary `GameEnd` path never runs at all — the trauma can only come
     // from Elimination step 0. RR p.10: "For the purpose of resolving weakness
     // cards, the game has ended for the eliminated investigator."
@@ -337,7 +342,7 @@ fn cover_ups_trauma_fires_on_elimination_while_the_scenario_continues() {
 #[test]
 fn eliminated_investigator_with_a_clueless_cover_up_suffers_no_trauma() {
     // The Forced's own condition: "if there are any clues on Cover Up". With no
-    // clues the ability does not *initiate* at all (#786) — RR p.2, "Forced
+    // clues the ability does not *initiate* at all — RR p.2, "Forced
     // Abilities": *"If a forced ability does not have the potential to change
     // the game state, the ability does not initiate."* Step 0 scans it and
     // collects nothing. The control that keeps the test above honest about
@@ -355,12 +360,14 @@ fn eliminated_investigator_with_a_clueless_cover_up_suffers_no_trauma() {
     assert_no_event!(r.events, Event::TraumaSuffered { .. });
 }
 
+/// Regression for #786: on the elimination path, a clueless Cover Up raises no
+/// forced acknowledge.
 #[test]
 fn interactive_elimination_with_a_clueless_cover_up_raises_no_acknowledge() {
-    // The elimination half of #786. RR p.10 Elimination step 0 scans the same
-    // `EventPattern::GameEnd` declaration, so the initiation gate must hold
-    // there too: with no clues the Forced does not initiate, and the #466
-    // acknowledge `interactive_acknowledge` would otherwise raise never appears.
+    // RR p.10 Elimination step 0 scans the same `EventPattern::GameEnd`
+    // declaration as the game's end, so the initiation gate must hold there
+    // too: with no clues the Forced does not initiate, and the acknowledge
+    // `interactive_acknowledge` would otherwise raise never appears.
     let mut state = drawing_grasping_hands(hurt_with_threat(7, &[(COVER_UP, 0)]), false);
     state.interactive_acknowledge = true;
 
@@ -392,9 +399,11 @@ fn interactive_elimination_with_a_clueless_cover_up_raises_no_acknowledge() {
     );
 }
 
+/// Regression for #567: a round-end forced does not fire for an eliminated
+/// investigator.
 #[test]
 fn eliminated_investigator_fires_no_further_round_end_forced() {
-    // #567's acceptance: Dissonant Voices' Forced ("At the end of the round:
+    // Dissonant Voices' Forced ("At the end of the round:
     // Discard Dissonant Voices") must not fire again for a dead investigator —
     // step 4 already discarded it. The survivor keeps the game running, so the
     // round really ends: their turn is the round's last.
@@ -431,8 +440,8 @@ fn eliminated_investigator_fires_no_further_round_end_forced() {
 
 #[test]
 fn elimination_does_not_drain_the_investigator_card() {
-    // The premise of the Status filter (#567): `investigator_card` is a
-    // non-Option field carrying identity + harm (#448) and is read by
+    // The premise of the Status filter: `investigator_card` is a
+    // non-Option field carrying identity + harm and is read by
     // max_health(), so elimination cannot drain it. Without the filter it would
     // keep contributing GameEnd/RoundEnded forced candidates for a dead
     // investigator. No in-scope investigator card carries such a forced
@@ -450,12 +459,13 @@ fn elimination_does_not_drain_the_investigator_card() {
     );
 }
 
+/// Regression for #564: the elimination interleaving drives without panicking,
+/// and replays to an identical final state.
 #[test]
 fn the_elimination_interleaving_replays_bit_for_bit() {
     // Deterministic re-drive: driving the same action sequence twice from an
     // identical initial state must land on an identical final state — the
-    // property the persisted action log depends on. Before #564 this
-    // interleaving panicked deterministically on every drive. (This mirrors the
+    // property the persisted action log depends on. (This mirrors the
     // repo's `deck_shuffle_is_deterministic_across_replay` idiom — two seeded
     // runs compared — rather than re-applying a recorded `Vec<Action>`; with the
     // single rigged chaos token no RNG divergence is possible either way.)

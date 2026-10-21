@@ -49,7 +49,7 @@ use crate::state::{
 /// answered, so it must ask before it writes. Every exit marks the context as
 /// written to when it is called, even when it turns out to change nothing, and
 /// a native that suspends after any exit call is `Rejected` in every build. The
-/// apply's snapshot rollback then undoes what it wrote (#571).
+/// apply's snapshot rollback then undoes what it wrote.
 ///
 /// Read-only helpers, such as
 /// [`resolve_grounded_choice`](crate::engine::resolve_grounded_choice),
@@ -123,7 +123,7 @@ impl<'a> NativeCx<'a> {
 
     /// `investigator` suffers `amount` trauma of `kind`. Emits
     /// [`Event::TraumaSuffered`](crate::event::Event::TraumaSuffered); nothing
-    /// records it yet (#766).
+    /// records it yet. TODO(#766): record it in the campaign log.
     pub fn suffer_trauma(&mut self, investigator: InvestigatorId, kind: TraumaKind, amount: u8) {
         elimination::suffer_trauma(self.write_access(), investigator, kind, amount);
     }
@@ -169,8 +169,8 @@ impl<'a> NativeCx<'a> {
     ///
     /// **Makes no room.** A card with a slot symbol lands even when its slot is
     /// full, and no occupier is discarded. [`Effect::PutIntoThreatArea`] is the
-    /// entry that makes room first, and can suspend on the make-room prompt
-    /// (#1097). Use this one only for a card that holds no slot.
+    /// entry that makes room first, and can suspend on the make-room prompt.
+    /// Use this one only for a card that holds no slot.
     ///
     /// [`Effect::PutIntoThreatArea`]: card_dsl::dsl::Effect::PutIntoThreatArea
     pub fn place_in_threat_area(
@@ -235,7 +235,7 @@ impl<'a> NativeCx<'a> {
     // --- Tokens ---
 
     /// Place `count` doom on the current agenda. A no-op on an empty agenda
-    /// deck. No event announces doom yet (#593).
+    /// deck. No event announces doom yet. TODO(#593): announce it.
     pub fn place_doom_on_agenda(&mut self, count: u8) {
         act_agenda::place_doom_on_agenda(self.write_access(), count);
     }
@@ -243,7 +243,7 @@ impl<'a> NativeCx<'a> {
     /// Place `count` doom on the card instance `instance`, wherever it is on
     /// the board; a no-op once it has left play. The doom counts toward the
     /// agenda's threshold at the next check, not at once. No event announces
-    /// doom yet (#593).
+    /// doom yet. TODO(#593): announce it.
     pub fn place_doom_on_card(&mut self, instance: CardInstanceId, count: u8) {
         board::place_doom(self.write_access(), instance, count);
     }

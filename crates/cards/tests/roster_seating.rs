@@ -1,6 +1,8 @@
-//! B2: seating a roster resolves investigator stats from the real corpus
-//! ([`game_core::card_registry::CardRegistry`]) and takes the deck from the payload. Integration test so
-//! it can run against `cards::TEST_REGISTRIES` (per the test layering in
+//! Seating a roster resolves investigator stats from the real corpus
+//! ([`game_core::card_registry::CardRegistry`]) and takes the deck from the
+//! payload.
+//!
+//! Integration test so it can run against `cards::TEST_REGISTRIES` (per the test layering in
 //! `docs/agents/standards.md`). The playable-gate tests run against the
 //! production `cards::REGISTRY` instead, since `TEST_REGISTRIES` accepts every
 //! code.
@@ -25,7 +27,7 @@ fn seats_roland_with_corpus_stats_and_payload_deck() {
     let result = engine::seat_and_open(state, &roster, TEST_REGISTRIES);
 
     // seat_and_open seats the roster and opens the setup mulligan prompt
-    // (AwaitingInput) for the first investigator (#348).
+    // (AwaitingInput) for the first investigator.
     assert!(
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
         "seat_and_open opens the mulligan prompt, got {:?}",

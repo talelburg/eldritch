@@ -169,9 +169,9 @@ fn failed_evade_against_retaliate_enemy_does_not_trigger_attack() {
 
 #[test]
 fn retaliate_via_loop_does_not_exhaust_the_enemy() {
-    // After K2 routes retaliate through drive_attack_loop, a failed Fight against a
-    // ready retaliate enemy still deals the retaliate damage AND leaves the enemy
-    // ready (RR p.18) — the loop path must not exhaust it.
+    // Retaliate runs through drive_attack_loop: a failed Fight against a ready
+    // retaliate enemy deals the retaliate damage AND leaves the enemy ready
+    // (RR p.18) — the loop path must not exhaust it.
     let mut enemy = retaliating_ghoul();
     enemy.attack_horror = 0;
     // Combat 1 vs fight 3 → fail.
@@ -256,11 +256,12 @@ fn evade_failure_leaves_engagement_intact() {
     assert!(!session.state().enemies[&GHOUL].exhausted);
 }
 
+/// Regression for #401: an unengaged but co-located enemy is a legal Fight
+/// target.
 #[test]
 fn fight_against_co_located_unengaged_enemy_is_accepted() {
     // Rules Reference p.12: "To fight an enemy at his or her location…" —
-    // Fight targets any enemy at the investigator's location, engaged or not
-    // (#401). An unengaged but co-located enemy is a legal Fight target.
+    // Fight targets any enemy at the investigator's location, engaged or not.
     let mut enemy = ghoul();
     enemy.current_location = Some(HERE);
     let board = GameStateBuilder::new()
@@ -279,7 +280,7 @@ fn fight_against_co_located_unengaged_enemy_is_accepted() {
 
 #[test]
 fn fight_against_enemy_at_a_different_location_is_rejected() {
-    // The flip side of #401: an enemy NOT at the investigator's location is
+    // The flip side: an enemy NOT at the investigator's location is
     // not a Fight target, even though enemies engaged with the investigator
     // are (they share the location). Here the enemy is unengaged and elsewhere.
     let attic = LocationId(51);

@@ -26,9 +26,7 @@ pub struct InvestigatorId(pub u32);
 
 /// An investigator's full state during a scenario.
 ///
-/// Phase-1 minimal shape; fields will grow as later phases need them
-/// (mental/physical trauma carried in from the campaign log, traits,
-/// passive ability flags, etc.).
+/// TODO(#766): trauma carried in from the campaign log.
 ///
 /// # Invariants
 ///
@@ -113,7 +111,7 @@ pub struct Investigator {
     /// cards there are at the investigator's location). Mirrors
     /// [`cards_in_play`](Self::cards_in_play) — same `CardInPlay`
     /// per-instance state — but holds scenario-bag content rather than
-    /// player cards. Required on the wire (#453).
+    /// player cards. Required on the wire.
     ///
     /// [`cards_in_play`]: Self::cards_in_play
     pub threat_area: Vec<CardInPlay>,
@@ -143,20 +141,20 @@ pub struct Investigator {
     /// takes out of play lands here too, by its owner, wherever it was, and so
     /// does their whole discard pile under
     /// [`NativeCx::remove_discard_pile_from_game`](crate::engine::NativeCx::remove_discard_pile_from_game)
-    /// (Abandoned and Alone 01015). Required on the wire (#453).
+    /// (Abandoned and Alone 01015). Required on the wire.
     pub removed_from_game: Vec<CardCode>,
     /// Source instances whose [`ExtraActionCost`](card_dsl::dsl::Restriction::ExtraActionCost)
     /// with `first_each_round` has already surcharged an action this round
     /// (Frozen in Fear 01164). Cleared at the round boundary. Keyed by
     /// instance so multiple surcharge sources track independently. Required
-    /// on the wire (#453).
+    /// on the wire.
     pub action_surcharge_spent_this_round: BTreeSet<CardInstanceId>,
     /// The investigator's own card as a real in-play permanent: it holds the
     /// investigator's health/sanity capacity (from `CardKind::Investigator`
     /// metadata) and is the default damage/horror soaker via its
     /// `accumulated_damage` / `accumulated_horror`. Lives here rather than in
-    /// `cards_in_play` so loops over "cards the player played" never touch it
-    /// (#448). Required on the wire.
+    /// `cards_in_play` so loops over "cards the player played" never touch it.
+    /// Required on the wire.
     pub investigator_card: CardInPlay,
 }
 
@@ -165,7 +163,7 @@ impl Investigator {
     /// investigator card. An option that chooses an investigator — whom a
     /// hunter engages, a chosen investigator, the soak prompt's "take it
     /// yourself" — anchors here, so it renders on the investigator panel's
-    /// card (ADR 0011, #950). The card, not the seat, because it is the
+    /// card (ADR 0011). The card, not the seat, because it is the
     /// rendered surface and where damage and horror are placed; a test picks
     /// such an option through this same method.
     #[must_use]
@@ -178,9 +176,7 @@ impl Investigator {
     /// cards in play, then threat-area cards. The single definition both
     /// the reaction-window scan and the forced instance-scan walk, so the
     /// investigator card and threat area are covered by both dispatch paths
-    /// without a duplicate walk (#448 cp3a folds the investigator card into
-    /// this iterator, retiring the bespoke `scan_investigator_card_reactions`
-    /// source). This is the shared scan source #212 later absorbs.
+    /// without a duplicate walk.
     ///
     /// **This is "cards at your seat with live abilities", not "cards you
     /// control", and the two are not the same set.** The threat area holds
@@ -223,7 +219,7 @@ impl Investigator {
     }
 
     /// Physical damage currently on the investigator — reads
-    /// `investigator_card.accumulated_damage` (#448 cp2a).
+    /// `investigator_card.accumulated_damage`.
     #[must_use]
     pub fn damage(&self) -> u8 {
         self.investigator_card.accumulated_damage
@@ -236,7 +232,7 @@ impl Investigator {
     }
 
     /// Maximum health (printed) — reads `CardKind::Investigator` metadata from
-    /// `cards` (#448 cp2a). Panics if the investigator card's code is not a
+    /// `cards`. Panics if the investigator card's code is not a
     /// `CardKind::Investigator` in `cards`.
     #[must_use]
     pub fn max_health(&self, cards: &CardRegistry) -> u8 {
@@ -274,7 +270,7 @@ fn investigator_capacity(reg: &CardRegistry, code: &CardCode) -> (u8, u8) {
 /// investigator who resigns is not considered to have been defeated."* So
 /// non-`Active` splits exactly two ways, and *how* a defeat happened rides
 /// [`EliminationCause`] on [`Event::InvestigatorEliminated`] rather than
-/// fragmenting this enum (#814).
+/// fragmenting this enum.
 ///
 /// **Killed and driven insane are not on this axis.** They are campaign-log
 /// states derived from accumulated trauma totals against *printed*
@@ -282,8 +278,8 @@ fn investigator_capacity(reg: &CardRegistry, code: &CardCode) -> (u8, u8) {
 /// physical trauma equal to his or her printed health, the investigator is
 /// **killed**."* An investigator defeated by damage at zero prior trauma is
 /// defeated and owes 1 physical trauma; they are not killed. The derivation
-/// belongs to the campaign log (#766), which reads the recorded totals — not
-/// to the defeat that ended the scenario.
+/// belongs to the campaign log, which reads the recorded totals — not
+/// to the defeat that ended the scenario. TODO(#766): the campaign log.
 ///
 /// Nor does the corpus ask for it. Cards read *eliminated* (33 cards, e.g.
 /// Threads of Time 04315) and *undefeated* (38, e.g. All In 02068 *"If each
@@ -302,12 +298,12 @@ pub enum Status {
     Active,
     /// Investigator resigned from the scenario, via an ability printing the
     /// [`Resign`](card_dsl::dsl::ActionDesignator::Resign) action designator —
-    /// the Parlor 01115 is the corpus's first (#644).
+    /// the Parlor 01115 is the corpus's first.
     ///
     /// `glossary/Resign.md`: *"When an investigator resigns, the investigator
     /// is eliminated by resignation … An investigator who resigns is not
     /// considered to have been defeated."* So this is the one non-`Active`
-    /// status that carries no defeat, and phase 9's campaign log reads that
+    /// status that carries no defeat, and the campaign log reads that
     /// distinction — trauma is owed for defeat, not for walking out.
     Resigned,
     /// Investigator was defeated — however it happened.
@@ -378,7 +374,7 @@ mod threat_area_tests {
 
     #[test]
     fn omitting_any_required_field_is_rejected() {
-        // Every field is required on the wire (#453): a payload missing one
+        // Every field is required on the wire: a payload missing one
         // fails loudly rather than silently defaulting. `investigator_card`
         // in particular — an absent identity field must not degrade to some
         // default that silently disables elder-sign + seated reaction.
@@ -386,7 +382,7 @@ mod threat_area_tests {
         let full = serde_json::to_value(&inv).expect("serialize");
         // The complete object still round-trips.
         serde_json::from_value::<Investigator>(full.clone()).expect("full object deserializes");
-        // Each formerly-`#[serde(default)]` field is now mandatory.
+        // Each field is mandatory.
         for field in [
             "investigator_card",
             "threat_area",
@@ -409,7 +405,7 @@ mod threat_area_tests {
 
     #[test]
     fn controlled_card_instances_yields_investigator_card_then_in_play_then_threat_area() {
-        // #448 cp3a: the investigator card is yielded first (so the unified
+        // The investigator card is yielded first (so the unified
         // scan fires its abilities), then `cards_in_play`, then `threat_area`.
         let mut inv = test_support::test_investigator(1);
         inv.investigator_card.code = CardCode::new("inv-card");
@@ -571,8 +567,6 @@ mod removed_from_game_tests {
 mod harm_accessor_tests {
     use crate::test_support;
 
-    // Seam test from cp1b (which delegated to legacy fields) is removed by
-    // cp2a: the accessors now read the investigator_card directly.
     #[test]
     fn harm_accessors_read_from_investigator_card() {
         let mut inv = test_support::test_investigator(1);
@@ -598,10 +592,6 @@ mod investigator_card_tests {
         assert_eq!(inv.investigator_card.accumulated_damage, 0);
         assert_eq!(inv.investigator_card.accumulated_horror, 0);
     }
-
-    // `identity_is_read_from_the_investigator_card` removed: it was a
-    // duplicate of `test_investigator_has_an_investigator_card_with_the_synthetic_code`
-    // (cp4 cleanup per task-7-brief).
 
     #[test]
     fn defeat_reads_capacity_from_the_card_not_a_field() {

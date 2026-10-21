@@ -70,8 +70,8 @@ impl ScenarioId {
 /// `end_scenario`.
 ///
 /// The meaning of a given number is scenario-local: the campaign guide's
-/// "do not read until end of game" section is what interprets it, and
-/// Phase 9's campaign log looks the ending up by it.
+/// "do not read until end of game" section is what interprets it.
+/// TODO(#766): the campaign log, which looks the ending up by it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ResolutionId(u8);
 
@@ -113,7 +113,7 @@ impl fmt::Display for ResolutionId {
 /// the standalone bullet collapses the endings into two. See
 /// `docs/adr/0012-a-scenario-ends-at-a-resolution-point-or-at-none.md`.
 ///
-/// `#[non_exhaustive]` reserves room for Phase 9's campaign-log work.
+/// `#[non_exhaustive]` reserves room for the campaign log's needs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum ScenarioEnding {
@@ -231,8 +231,8 @@ pub struct ScenarioModule {
     /// `Some` during an apply. Receives the events buffer so changes are
     /// observable to clients.
     ///
-    /// For the Phase-4 synthetic fixture this is a no-op. Phase 9 fills in
-    /// real bodies once the campaign log lands.
+    /// It may be a no-op. TODO(#766): record each resolution in the campaign
+    /// log.
     pub apply_resolution: fn(ScenarioEnding, &mut GameState, &mut Vec<Event>),
     /// This scenario's [`LocationLayout`]. Read when a set-aside location
     /// enters play, which is the only moment both of a connection's

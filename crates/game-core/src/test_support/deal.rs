@@ -9,7 +9,7 @@ use crate::state::{Continuation, DamageSource, DealDamageFrame, DealDamageStep, 
 /// [`Distribute`](DealDamageStep::Distribute) step.
 ///
 /// The one check each caller of the harm adapter makes that it routes its harm
-/// through the deal (#1025); the walk from there is pinned once, on the kernel
+/// through the deal; the walk from there is pinned once, on the kernel
 /// adapter.
 ///
 /// # Panics

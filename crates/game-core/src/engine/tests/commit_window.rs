@@ -62,7 +62,7 @@ fn resolve_input_with_empty_commits_resumes_the_test() {
 
 #[test]
 fn skill_test_pushes_and_pops_a_continuation_frame() {
-    // Axis-B T4: the commit window is a `Continuation::SkillTest` frame
+    // The commit window is a `Continuation::SkillTest` frame
     // on the one stack, pushed when the test parks and popped when it
     // fully resolves. The stack is the subject here.
     let at_menu = commit_board(&[]).session();
@@ -162,15 +162,10 @@ fn commit_window_rejects_duplicate_indices() {
     assert!(bad.state().has_skill_test_in_flight());
 }
 
-// NOTE: `non_resolve_input_action_rejects_while_skill_test_paused` was
-// removed here: it used a variant as a proxy for "any non-ResolveInput action"
-// to exercise the pending-prompt gate in `apply_player_action`. Once
-// `PlayerAction` collapsed to a single `ResolveInput` variant (#459), the
-// gate's `!matches!(action, ResolveInput)` condition became dead and the gate
-// itself was removed — there is no non-`ResolveInput` action left to proxy
-// with. Pending-prompt protection is now structural: `resolve_input` rejects a
-// `ResolveInput` that arrives with no outstanding prompt, and the
-// wrong-response-kind rejection is pinned in
+// `PlayerAction` has a single variant, `ResolveInput`, so there is no other
+// action to reject while a skill test is paused. Pending-prompt protection is
+// structural: `resolve_input` rejects a `ResolveInput` that arrives with no
+// outstanding prompt, and the wrong-response-kind rejection is pinned in
 // `resolve_input_with_wrong_response_variant_rejects`.
 
 #[test]
@@ -202,13 +197,11 @@ fn resolve_input_without_any_outstanding_prompt_rejects() {
 
 #[test]
 fn investigate_canonical_event_sequence_pins_followup_before_test_ended() {
-    // Pins the post-#63 ordering: on a successful Investigate the
-    // discover-clue events fire *before* SkillTestEnded, matching
-    // the `SkillTestEnded` event-doc text that cleanup precedes
-    // the end marker. The pre-#63 ordering ran the follow-up
-    // after the bracketing end event — silently flipping that
-    // back would break downstream listeners that key off the end
-    // marker as "all sub-effects already applied."
+    // On a successful Investigate the discover-clue events fire *before*
+    // SkillTestEnded, matching the `SkillTestEnded` event-doc text that
+    // cleanup precedes the end marker. Running the follow-up after the
+    // bracketing end event would break downstream listeners that key off the
+    // end marker as "all sub-effects already applied."
     let session = take_committing_nothing(
         investigate_board(seat(1).at(HERE), 2, 2),
         &TurnAction::Investigate { investigator: INV },

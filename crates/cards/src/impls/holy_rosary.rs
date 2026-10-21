@@ -9,8 +9,8 @@
 //!
 //! Card metadata gives the asset `sanity: 2`. This is **not** a max-
 //! sanity boost on the controller — it's the asset's horror-soak
-//! capacity. Soak is engine-modeled from that corpus metadata
-//! (#44/K5): while in play the asset can absorb horror assigned to
+//! capacity. Soak is engine-modeled from that corpus metadata:
+//! while in play the asset can absorb horror assigned to
 //! the controller (interactively distributed when contested), and is
 //! discarded when its capacity is spent. Nothing about soak needs
 //! declaring in `abilities()` — this impl ships the "+1 willpower

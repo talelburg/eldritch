@@ -1,14 +1,14 @@
-//! Skill-test result panel (#478): renders the just-resolved test — chaos token
-//! drawn, final total vs difficulty, pass/fail by N — from the three things the
-//! store latches for it:
+//! Skill-test result panel: renders the just-resolved test — chaos token drawn,
+//! final total vs difficulty, pass/fail by N — from the three things the store
+//! latches for it:
 //! [`last_skill_test_result`](crate::store::ClientState::last_skill_test_result),
 //! [`last_skill_test_difficulty`](crate::store::ClientState::last_skill_test_difficulty)
 //! and [`last_revealed_token`](crate::store::ClientState::last_revealed_token).
-//! It reads no live event batch: the three are routinely determined in different
-//! applies from each other and from the pause this renders on (#787, #853).
-//! Since #541 it is a centred modal carrying **its own** Confirm — the
-//! acknowledge pause's only one — rather than a panel beside a button in the
-//! retired action bar.
+//!
+//! It reads no live event batch: the three are routinely determined in
+//! different applies from each other and from the pause this renders on. It is
+//! a centred modal carrying **its own** Confirm — the acknowledge pause's only
+//! one.
 
 #[cfg(target_arch = "wasm32")]
 use game_core::action::InputResponse;
@@ -43,9 +43,9 @@ pub struct SkillTestSummary {
 /// **Every input is a latch, and none is read off the live batch.** A resolution
 /// can span several apply batches, and the batch carrying the outcome is not
 /// reliably the one the panel renders on: an ST.4 effect that suspends for input
-/// strands the reveal an earlier batch back (#787), and a reaction on
+/// strands the reveal an earlier batch back, and a reaction on
 /// `SkillTestResolved` — Lita Chantler 01117 — fires in the same apply as the
-/// outcome, so the acknowledge pause arrives on an *empty* batch (#853).
+/// outcome, so the acknowledge pause arrives on an *empty* batch.
 /// [`crate::store::reduce`] owns holding all three across those boundaries and
 /// releasing them at `SkillTestEnded`. `None` for the token means no token was
 /// drawn at all, and renders the em dash.
@@ -85,7 +85,7 @@ pub fn summarize(state: &ClientState) -> Option<SkillTestSummary> {
 /// once the store holds the logged result, and while no verdict has been
 /// worked out yet.
 ///
-/// Since #1111 the `SkillTestSucceeded`/`SkillTestFailed` line is logged at
+/// The `SkillTestSucceeded`/`SkillTestFailed` line is logged at
 /// `SkillTestResolved`'s resolve step, *after* its `when` cell, because Lucky!
 /// 01080 (*"Play when you would fail a skill test"*) can change the verdict
 /// there. A player deciding whether to play it needs to see that, and by how
@@ -128,7 +128,7 @@ fn token_display(token: ChaosToken, resolution: TokenResolution) -> String {
 /// *and* the live prompt is the un-anchored `Confirm` acknowledge pause.
 ///
 /// Public because the prompt banner needs it — the modal carries that pause's only
-/// Confirm, so the banner must not render a second one (#541). The rule lives here,
+/// Confirm, so the banner must not render a second one. The rule lives here,
 /// with the view it governs, rather than being re-derived by the banner. Pure.
 #[must_use]
 pub fn modal_is_live(state: &ClientState) -> bool {
@@ -140,7 +140,7 @@ pub fn modal_is_live(state: &ClientState) -> bool {
         )
 }
 
-/// Result modal for the just-resolved skill test (#478, made a modal by #541).
+/// Result modal for the just-resolved skill test.
 /// Renders nothing unless the store is holding a skill-test result
 /// *and* the live prompt is the un-anchored `Confirm` acknowledge pause — that
 /// pairing is what guarantees the modal always has a way out, since the modal
@@ -151,7 +151,7 @@ pub fn modal_is_live(state: &ClientState) -> bool {
 /// player's behalf; neither is wired, deliberately. The backdrop is inert —
 /// it exists to stop the player scrolling past the token that decided the test.
 ///
-/// **Draggable** (#857, [`crate::drag`]). Since dismissal is engine input, a
+/// **Draggable** ([`crate::drag`]). Since dismissal is engine input, a
 /// player who wants to check the board before acknowledging otherwise has no way
 /// to get the modal out of the way; dragging is that way, and the backdrop fades
 /// once the modal has been moved. The dismissal rule is untouched — moving the
@@ -161,8 +161,7 @@ pub fn SkillTestResultView() -> impl IntoView {
     let store = store::use_store();
     // The prompt's fingerprint: which applied batch a live modal is up for. The
     // batch count is what tells one prompt from the next when neither liveness
-    // nor the rendered content does — two identical tests running back to back
-    // (#857).
+    // nor the rendered content does — two identical tests running back to back.
     let drag = Drag::per_prompt(move || {
         let st = store.get();
         modal_is_live(&st).then_some(st.log.len())
@@ -226,7 +225,7 @@ mod tests {
     /// A store holding what the panel renders from: the difficulty announced at
     /// ST.1, the token drawn (or none), and the resolution. The three arrive in
     /// different batches often enough that the panel never sees them together
-    /// except here (#787, #853).
+    /// except here.
     fn holding(
         difficulty: Option<i8>,
         token: Option<(ChaosToken, TokenResolution)>,
@@ -317,8 +316,8 @@ mod tests {
         assert!(summarize(&holding(None, Some(latched(1)), Some(succeeded(0)))).is_none());
     }
 
-    /// The #787 case: a symbol token whose ST.4 effect suspends strands the
-    /// reveal in an earlier batch. The latch is what names the token.
+    /// Regression for #787: a symbol token whose ST.4 effect suspends strands
+    /// the reveal in an earlier batch, and the latch still names the token.
     #[test]
     fn names_a_token_revealed_in_an_earlier_batch() {
         let s = summarize(&holding(
@@ -330,7 +329,7 @@ mod tests {
         assert_eq!(s.token, "Tablet (-2)", "names the latched token");
     }
 
-    /// The #853 case, at this seam: the resolution came in a batch of its own —
+    /// Regression for #853: at this seam, the resolution came in a batch of its own —
     /// the one Lita's reaction window suspended on — and the panel renders it all
     /// the same, because it reads the latch rather than the live batch.
     #[test]

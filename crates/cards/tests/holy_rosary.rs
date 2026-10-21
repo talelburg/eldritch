@@ -1,11 +1,10 @@
 //! End-to-end test that Holy Rosary's +1 willpower applies during a
 //! real skill test once the card is in play.
 //!
-//! This is the Phase-3 demonstration the project has been building
-//! toward: a real card's `Trigger::Constant` ability contributes to
-//! skill-test totals through the registry (#88), via the in-play
-//! state populated by `PlayCard` (#89), summed by the constant-
-//! modifier query (#92). Setup uses `PlayCard` to land the rosary in
+//! A real card's `Trigger::Constant` ability contributes to skill-test
+//! totals through the registry, via the in-play state populated by
+//! `PlayCard`, summed by the constant-modifier query. Setup uses
+//! `PlayCard` to land the rosary in
 //! `cards_in_play` so the action log mirrors a real session.
 
 use cards::TEST_REGISTRIES;

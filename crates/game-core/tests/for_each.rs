@@ -1,6 +1,7 @@
-//! `Effect::ForEach` walks its targets one at a time (#1067), so a target's
-//! body can change the board before a later target's turn comes. An
-//! investigator eliminated partway through the walk is skipped.
+//! `Effect::ForEach` walks its targets one at a time, so a target's body can
+//! change the board before a later target's turn comes.
+//!
+//! An investigator eliminated partway through the walk is skipped.
 //!
 //! No printed card's per-target body eliminates *another* target, so the case
 //! runs on a synthetic native that models the situation, not a card (ADR 0016):

@@ -142,7 +142,7 @@ fn native_effect_round_trips_through_serde_json() {
     assert_eq!(effect, recovered);
 }
 
-/// `Condition::Native` (#592) round-trips, and composes inside an
+/// `Condition::Native` round-trips, and composes inside an
 /// [`IntExpr::Cond`] — the position Machete 01020 uses it from.
 #[test]
 fn native_condition_round_trips_through_serde_json() {

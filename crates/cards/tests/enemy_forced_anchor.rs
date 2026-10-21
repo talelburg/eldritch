@@ -1,6 +1,7 @@
-//! Integration (#735): an attacking enemy's own forced ability anchors its
-//! acknowledge to **that enemy**, not to the flat prompt bar. Runs against
-//! `cards::TEST_REGISTRIES`.
+//! Integration: an attacking enemy's own forced ability anchors its acknowledge
+//! to **that enemy**, not to the flat prompt bar.
+//!
+//! Runs against `cards::TEST_REGISTRIES`.
 //!
 //! The corpus card is Silver Twilight Acolyte 01102, whose printed text is
 //! verbatim:
@@ -10,15 +11,13 @@
 //!   agenda.
 //! ```
 //!
-//! Before the `CandidateSource::Board` split this candidate had nowhere to go:
-//! `Board` covered the act, the agenda *and* an attacking enemy's own ability,
-//! and the anchor was worked out by comparing the candidate's code against the
-//! current act and agenda — which for an enemy matches neither, so the prompt
-//! fell through to an un-anchored option. The source now names the enemy.
+//! The candidate's source names the enemy, so the anchor is read from it
+//! rather than by comparing the candidate's code against the current act and
+//! agenda, which for an enemy matches neither.
 //!
 //! Driven with `interactive_acknowledge` on, so the one-option "Resolve"
-//! acknowledge surfaces *before* the effect (the #466 confirm-before-effect
-//! pause), which is where the anchor is readable. The investigator ends their
+//! acknowledge surfaces *before* the effect (the confirm-before-effect pause),
+//! which is where the anchor is readable. The investigator ends their
 //! turn engaged with the Acolyte, the Enemy phase deals its attack, and the
 //! `after` cell the card prints then offers the acknowledge.
 

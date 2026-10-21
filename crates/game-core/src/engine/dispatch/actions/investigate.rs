@@ -25,7 +25,7 @@ use crate::state::{
 /// dangling `current_location` is the handler's to surface loudly, ahead of
 /// asking this. Every Investigate path reads it, the designated
 /// **Investigate**'s perform included, so they agree on what a location has to
-/// be to investigate it (#805).
+/// be to investigate it.
 pub(crate) fn candidates(state: &GameState, investigator: InvestigatorId) -> Option<LocationId> {
     state
         .investigators
@@ -110,10 +110,10 @@ pub(in crate::engine::dispatch) fn handle(
 
 /// Perform an **investigate**: an Intellect test against `investigator`'s
 /// location whose difficulty *is* that location's modified shroud, read live at
-/// ST.6 rather than snapshotted here (#677), with the base Investigate follow-up
+/// ST.6 rather than snapshotted here, with the base Investigate follow-up
 /// (so a success discovers a clue).
 ///
-/// The one perform behind both ways of investigating (#805) — the basic action
+/// The one perform behind both ways of investigating — the basic action
 /// (after its attack-of-opportunity loop, with no modification) and an ability
 /// printing the bold **Investigate** designator (Flashlight 01087).
 /// `glossary/Ability.md` is what makes them the same procedure: *"Activating
@@ -141,7 +141,7 @@ pub(in crate::engine::dispatch) fn handle(
 /// the discovery's count, so with the discovery gone it raises nothing, which
 /// is its ruling: *"does not stack with Burglary"*.
 ///
-/// The location is re-read here through [`candidates`] — the §D precondition
+/// The location is re-read here through [`candidates`] — the precondition
 /// re-check after the basic action's attacks of opportunity. If the
 /// investigator is locationless or their location is gone or no longer
 /// revealed, the precondition has lapsed and this suppresses (returns `Done`).
@@ -194,20 +194,20 @@ pub(crate) fn perform(
 
 /// An investigation's after-test step (RR ST.7), run on success only: push
 /// **one** discovery of `1 + bonus_clues_discovered` clues at the tested
-/// location, for the global drive loop (Slice D #423).
+/// location, for the global drive loop.
 ///
 /// The discovery may suspend on a before-timing interrupt (Cover Up 01007); the
 /// loop drives it to completion either way, then re-dispatches the skill test
 /// at its `ApplyResultEffect` step. The "after you successfully investigate"
 /// timing point already fired at the preceding `DetermineOutcome` step, on the
-/// ST.6 success, before this discovery. The discovery has no source card, so
-/// `for_controller` is correct.
+/// ST.6 success, before this discovery. The discovery comes from the action,
+/// not from an ability source, so `for_controller` is correct.
 ///
 /// **One** discovery, whose count carries any commit-time bonus (Deduction
 /// 01039's `bonus_clues_discovered`, the clue-side twin of Fight's
 /// `bonus_attack_damage`). "Discover 1 additional clue" raises this discovery's
 /// count; it does not make a second one — see the **Discovery** entry in
-/// `GLOSSARY.md` and #471. The in-flight test is still present here (torn down
+/// `GLOSSARY.md`. The in-flight test is still present here (torn down
 /// only at the end of resolution), so the accumulator is readable.
 ///
 /// `TestedLocation` — the test's start-of-test location snapshot — is the
@@ -245,11 +245,12 @@ mod tests {
     };
     use crate::test_support::{self, TEST_REGISTRIES};
 
-    /// The `Investigate` follow-up pushes **one** `DiscoverClue` of
+    /// Regression for #471: the `Investigate` follow-up pushes **one**
+    /// `DiscoverClue` of
     /// `1 + bonus_clues_discovered` at the test's `tested_location`, reading the
     /// commit-time accumulator off the in-flight record (Deduction 01039). With
     /// `bonus_clues_discovered: 1` that is a single discovery of 2 — not two of
-    /// 1, which is what Cover Up 01007 would replace twice (#471).
+    /// 1, which is what Cover Up 01007 would replace twice.
     #[test]
     fn investigate_follow_up_pushes_one_discovery_carrying_the_clue_bonus() {
         let inv = InvestigatorId(1);

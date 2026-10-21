@@ -6,18 +6,18 @@
 //! [reaction] After you successfully investigate: Gain 1 resource.
 //! ```
 //!
-//! Two abilities: a `Constant` +1 intellect while in play, and an
-//! `OnEvent` reaction at the after-successful-investigate window (C6a
-//! #241) that gains the controller 1 resource. "after **you**
-//! investigate" is enforced by the window being controller-scoped, so the
-//! pattern is bare and the effect's `You` resolves to the controller.
+//! Two abilities: a `Constant` +1 intellect while in play, and an `OnEvent`
+//! reaction at the after-successful-investigate window that gains the
+//! controller 1 resource. "after **you** investigate" is enforced by the window
+//! being controller-scoped, so the pattern is bare and the effect's `You`
+//! resolves to the controller.
 //!
 //! # Ally soak
 //!
 //! Card metadata gives Dr. Milan `health: 1, sanity: 2` — ally
 //! damage/horror soak, not a max-stat boost on the controller. Soak is
-//! engine-modeled from that metadata (#44/K5, shared with Holy Rosary /
-//! Beat Cop); `abilities()` declares only the +1 intellect and the
+//! engine-modeled from that metadata, as for Holy Rosary and
+//! Beat Cop; `abilities()` declares only the +1 intellect and the
 //! reaction — the soak half rides on metadata.
 //!
 //! **Cell: the `after` cell of the `SkillTestResolved` condition.** The printed

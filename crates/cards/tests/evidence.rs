@@ -1,5 +1,5 @@
-//! End-to-end tests for Evidence! 01022 (Axis C reaction-event-play, #304)
-//! against the real `cards::REGISTRY`.
+//! End-to-end tests for Evidence! 01022, a Fast event played in a reaction
+//! window, against the real `cards::REGISTRY`.
 //!
 //! Card text (verbatim, `data/arkhamdb-snapshot/pack/core/core.json`):
 //!
@@ -57,7 +57,7 @@ fn fight_board(investigator: Seat, location_clues: u8) -> GameStateBuilder {
         .with_registries(TEST_REGISTRIES)
         .with_round(0)
         .with_seat(investigator)
-        // Co-located by engagement: Fight is location-gated (#401).
+        // Co-located by engagement: Fight is location-gated.
         .with_enemy_engaged(enemy, INV)
         .with_location(loc)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -88,8 +88,8 @@ fn play_evidence(board: GameStateBuilder) -> TestSession {
 fn after_defeat_window_opens_and_offers_evidence_with_no_in_play_reaction() {
     // Apply the Fight, then commit nothing to the resulting skill-test prompt;
     // the engine must then SUSPEND on the after-defeat reaction window — that
-    // suspend is how "a window opened" is observed (the dedicated WindowOpened
-    // event was removed as redundant with the AwaitingInput channel). The
+    // suspend is how "a window opened" is observed, since no event marks a
+    // window opening; the AwaitingInput channel does. The
     // window opens even though no in-play card reacts: the hand match alone
     // opens it, observable as the offered Evidence! hand play.
     let session = defeat_the_enemy(fight_board(holding_evidence(), 2));
@@ -118,7 +118,7 @@ fn after_defeat_window_opens_and_offers_evidence_with_no_in_play_reaction() {
 
 #[test]
 fn evidence_not_offered_when_location_has_no_clues() {
-    // #495: Evidence!'s "Discover 1 clue at your location" can't change the game
+    // Evidence!'s "Discover 1 clue at your location" can't change the game
     // state at a 0-clue location, so it must not be offered as a Fast play after
     // a defeat (RR: an event can't be played if its effect can't change the game
     // state). Mirror of the in-play Roland suppression — same ability, sourced
@@ -142,7 +142,7 @@ fn evidence_not_offered_when_location_has_no_clues() {
 
 #[test]
 fn evidence_cannot_be_played_as_a_standalone_action() {
-    // #304 acceptance: Evidence! is illegal outside its named window. Playing
+    // Evidence! is illegal outside its named window. Playing
     // it via the ordinary PlayCard action (here, during the turn with no defeat)
     // must reject — otherwise it would run no OnPlay effect and silently fizzle.
     // The menu does not offer it, so it goes straight to the handler, which a
@@ -204,8 +204,8 @@ fn picking_evidence_plays_it_and_discovers_a_clue() {
 #[test]
 fn evidence_fast_event_discards_exactly_once() {
     // Defeat an enemy to open the after-defeat window, then play Evidence!
-    // 01022 from hand in it. Invariant guard for the PlayFromHand migration
-    // (Slice D #423): the event must be discarded exactly once — no double-flush.
+    // 01022 from hand in it. The event must be discarded exactly once — no
+    // double-flush.
     let session = play_evidence(fight_board(holding_evidence(), 2));
 
     assert_event_count!(
@@ -249,8 +249,8 @@ fn playing_evidence_from_hand_pays_its_resource_cost() {
 fn evidence_not_offered_when_resources_below_cost() {
     // Evidence! costs 1; with 0 resources the cost can't be paid, so the
     // after-defeat window must not offer it (RR p.22: the cost must be
-    // established as payable before initiation). Mirror of the #495 change-
-    // game-state suppression, but on affordability.
+    // established as payable before initiation). Mirror of the change-
+    // game-state suppression above, but on affordability.
     let session = defeat_the_enemy(fight_board(holding_evidence().resources(0), 2));
 
     // No window offering Evidence! opened: play is back at the turn menu.

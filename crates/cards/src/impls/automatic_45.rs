@@ -7,7 +7,7 @@
 //! ```
 //!
 //! **Designator: Fight** — the bold word, which **performs the attack**
-//! carrying the ability's `+1 [combat]` and `+1` damage (#805), and which is
+//! carrying the ability's `+1 [combat]` and `+1` damage, and which is
 //! what exempts the activation from attacks of opportunity.
 //!
 //! The same shape as Roland's .38 Special (01006), only simpler: a flat

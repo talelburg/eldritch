@@ -1,10 +1,8 @@
-//! C5c (#238) integration: Cover Up 01007 end-to-end against the real
+//! Integration: Cover Up 01007 end-to-end against the real
 //! `cards::REGISTRY` — the 3-clue threat-area Revelation, the before-timing
 //! clue-discovery interrupt, and the game-end mental-trauma forced point.
 //!
-//! Runs against `cards::TEST_REGISTRIES`. The interrupt / game-end shapes
-//! were first proved by the C5a synthetic fixture; that fixture's test binary is
-//! gone (#871, ADR 0016) and this file is its successor.
+//! Runs against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
@@ -116,7 +114,7 @@ fn investigate_to_interrupt(board: GameStateBuilder) -> TestSession {
 fn playing_cover_up_discards_instead_of_discovering() {
     let offered = investigate_to_interrupt(investigate_board(holding_cover_up(3), 2));
     // Play Cover Up in the before-discover window → discard-from-self + cancel
-    // the discovery (Axis D #336).
+    // the discovery.
     let cover_up = cover_up_of(offered.state(), INV);
     let session = offered.pick(cover_up);
     session.assert_at_turn_menu(INV);
@@ -160,10 +158,11 @@ fn investigate_with_deduction_and_play_cover_up(board: GameStateBuilder) -> Test
     offered.pick(cover_up)
 }
 
-/// The #471 bug, end-to-end through both real cards: Deduction used to spawn a
-/// *second* discovery, so Cover Up's replacement fired twice and discarded 2
-/// clues at a location that only ever had 1 to discover. Per the FAQ —
-/// *"Deduction doesn't allow you to discover clues that aren't at that
+/// Regression for #471: end-to-end through both real cards, Deduction modifies
+/// the one discovery rather than spawning a *second*, so Cover Up's replacement
+/// fires once and discards 1 clue at a location that only ever had 1 to
+/// discover. Per Cover Up's ruling (<https://arkhamdb.com/card/01007>) —
+/// *"Deduction doesn’t allow you to discover clues that aren’t at that
 /// location. If your location has 1 clue at it, you can only discover 1 clue
 /// at most when you investigate it."* — the correct reading is one discovery
 /// of 2, capped to 1, so Cover Up discards exactly 1.
@@ -220,10 +219,6 @@ fn deduction_at_a_two_clue_location_discards_two_in_one_window() {
 /// has nothing to discard, so the before-discover window is never offered and the
 /// Investigate discovers normally. (`cards::impls::cover_up`'s unit test pins the
 /// `01007:has-clues` predicate itself; this pins what the window does with it.)
-///
-/// Ported from the C5a synthetic binary's `no_interrupt_when_cover_up_has_no_clues`
-/// under #871 — the behaviour had no real-card successor, so it moved rather than
-/// being deleted.
 #[test]
 fn no_reaction_offered_when_cover_up_has_no_clues() {
     let session = investigate_to_interrupt(investigate_board(holding_cover_up(0), 2));
@@ -245,11 +240,6 @@ fn no_reaction_offered_when_cover_up_has_no_clues() {
 /// Up actually has (no underflow), and the discovery is still *fully* replaced,
 /// because the reaction cancels the triggering condition outright rather than
 /// paying for it clue by clue (`glossary/Instead.md`).
-///
-/// Ported from the C5a synthetic binary's
-/// `playing_cover_up_caps_discard_at_held_clue_count` under #871, which reached
-/// the same shape by pushing frames by hand with `count = 3`. Real cards reach it
-/// at `count = 2`.
 #[test]
 fn deduction_discard_is_capped_at_the_clues_cover_up_holds() {
     let session =
@@ -325,7 +315,7 @@ fn interactive(mut state: GameState) -> GameState {
 ///
 /// A terminal act reaches its resolution point by running `reach_resolution` on
 /// its reverse (ADR 0013), and a lone Forced ability in interactive mode surfaces
-/// a #466 acknowledge before it runs. That acknowledge is not what these tests
+/// an acknowledge before it runs. That acknowledge is not what these tests
 /// are about — the `GameEnd` forced that follows it is — so it is answered here.
 fn advance_terminal_act_interactively(state: GameState) -> TestSession {
     let paused = TestSession::new(state, TEST_REGISTRIES)
@@ -340,7 +330,7 @@ fn advance_terminal_act_interactively(state: GameState) -> TestSession {
     paused.pick(OptionTarget::Act)
 }
 
-/// The trauma resolves in the `when` cell of the `GameEnd` condition (#720), and
+/// The trauma resolves in the `when` cell of the `GameEnd` condition, and
 /// the ending finalizes only once the whole sequence has drained — so the order
 /// is trauma *then* `ScenarioResolved`, never the reverse.
 ///
@@ -376,10 +366,10 @@ fn game_end_emits_no_trauma_when_cover_up_empty() {
 
 // ---- Interactive mode: the game-end forced spans the apply boundary ----
 
-/// #566: with `interactive_acknowledge` on (the server default), the lone
-/// game-end forced hit pushes an `AcknowledgeForced` frame, so the ending
-/// *suspends*. The scenario must not finish resolving until the player has
-/// acknowledged and the trauma has landed.
+/// Regression for #566: with `interactive_acknowledge` on (the server default),
+/// the lone game-end forced hit pushes an `AcknowledgeForced` frame, so the
+/// ending *suspends*. The scenario must not finish resolving until the player
+/// has acknowledged and the trauma has landed.
 #[test]
 fn interactive_game_end_trauma_surfaces_an_acknowledge_before_resolving() {
     let paused = advance_terminal_act_interactively(interactive(resolving_state(3)));
@@ -421,13 +411,12 @@ fn interactive_game_end_trauma_surfaces_an_acknowledge_before_resolving() {
     );
 }
 
-/// #786: the mirror of the test above at zero clues. "if there are any clues on
-/// Cover Up" is an *initiation* condition — RR p.2, "Forced Abilities": *"If a
-/// forced ability does not have the potential to change the game state, the
-/// ability does not initiate."* So the forced scan collects nothing, the #466
-/// acknowledge never surfaces, and the scenario resolves in one uninterrupted
-/// batch. Before the fix this raised a `"Forced — Cover Up"` prompt whose only
-/// option resolved to no events at all.
+/// Regression for #786: the mirror of the test above at zero clues. "if there
+/// are any clues on Cover Up" is an *initiation* condition — RR p.2, "Forced
+/// Abilities": *"If a forced ability does not have the potential to change the
+/// game state, the ability does not initiate."* So the forced scan collects
+/// nothing, no `"Forced — Cover Up"` acknowledge surfaces, and the scenario
+/// resolves in one uninterrupted batch.
 #[test]
 fn interactive_game_end_with_a_clueless_cover_up_neither_prompts_nor_resolves_it() {
     let session = advance_terminal_act_interactively(interactive(resolving_state(0)));
@@ -444,9 +433,10 @@ fn interactive_game_end_with_a_clueless_cover_up_neither_prompts_nor_resolves_it
     );
 }
 
-/// #566: two investigators each holding a clue-bearing Cover Up produce two
-/// simultaneous `GameEnd` forced hits, which route to the lead-ordered run
-/// (#213) instead of the single-hit acknowledge. Both traumas must land, and
+/// Regression for #566: two investigators each holding a clue-bearing Cover Up
+/// produce two simultaneous `GameEnd` forced hits, which route to the ordered
+/// run, where the player picks the order, instead of the single-hit
+/// acknowledge. Both traumas must land, and
 /// the run must not strand frames.
 #[test]
 fn two_simultaneous_game_end_forceds_both_resolve() {
@@ -466,7 +456,7 @@ fn two_simultaneous_game_end_forceds_both_resolve() {
 
     let session = advance_terminal_act_interactively(state);
 
-    // Two hits, so the emit routes to the lead-ordered forced run rather than
+    // Two hits, so the emit routes to the ordered forced run rather than
     // the single-hit acknowledge (Rules Reference p.17: the player orders
     // simultaneous triggers, even in solo). Asserted explicitly — the shapes
     // differ, and only this one exercises `open_forced_resolution`: the run
@@ -504,7 +494,7 @@ fn two_simultaneous_game_end_forceds_both_resolve() {
     );
 }
 
-// ---- Co-located investigators: anyone at Roland's location (#974) ------
+// ---- Co-located investigators: anyone at Roland's location ------------
 
 /// The investigator who is *not* Roland, standing at his location.
 const OTHER: InvestigatorId = InvestigatorId(2);
@@ -537,6 +527,7 @@ fn colocated_investigate_and_play_cover_up(state: GameState) -> TestSession {
     offered.pick(cover_up)
 }
 
+/// Regression for #974: a co-located investigator can trigger the reaction.
 /// The ruling (<https://arkhamdb.com/card/01007>): *"Any investigator at the
 /// same location as Roland Banks with Cover Up in his threat area may trigger
 /// the \[reaction\] to discard clues from Cover Up, as per the FAQ [V1.0, section

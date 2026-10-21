@@ -21,7 +21,7 @@ pub enum ConnStatus {
     VersionMismatch,
 }
 
-/// One applied submit's worth of events, for the event-log view (#505).
+/// One applied submit's worth of events, for the event-log view.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LogBatch {
     /// Human label of the menu choice that produced this batch
@@ -48,17 +48,17 @@ pub struct ClientState {
     /// The chaos token drawn by the most recent reveal, captured from
     /// `Event::ChaosTokenRevealed` with how it resolved. Latched for the same
     /// reason as the difficulty: a symbol token whose ST.4 effect suspends for
-    /// input puts the reveal in an earlier batch than the outcome (#787).
+    /// input puts the reveal in an earlier batch than the outcome.
     /// Cleared by a new test's `SkillTestStarted` and by `Hello`.
     pub last_revealed_token: Option<(ChaosToken, TokenResolution)>,
     /// The most recent skill test's resolution — the `SkillTestSucceeded` or
     /// `SkillTestFailed` event itself — held from the batch that determined it
     /// until the batch that tears the test down. Latched for the same reason as
-    /// the token, and for a sharper case (#853): a reaction on `SkillTestResolved`
+    /// the token, and for a sharper case: a reaction on `SkillTestResolved`
     /// suspends in the *same* batch as the outcome, so by the time the acknowledge
     /// pause arrives the live batch is empty and the result panel had nothing to
     /// render. Lita Chantler 01117 fires from that condition's `when` cell, before
-    /// its resolve step logs the result (#1111), and Dr. Milan 01033 from its
+    /// its resolve step logs the result, and Dr. Milan 01033 from its
     /// `after` cell, after it; both cells are walked before `AcknowledgeOutcome`,
     /// so either splits the batch. A prompt in the `when` cell therefore has no
     /// result latched yet: the banner shows
@@ -68,7 +68,7 @@ pub struct ClientState {
     /// `Hello`.
     pub last_skill_test_result: Option<Event>,
     /// Full accumulated event history, grouped per applied submit, oldest
-    /// first. Cleared by `Hello`. The event-log panel (#505) renders this.
+    /// first. Cleared by `Hello`. The event-log panel renders this.
     pub log: Vec<LogBatch>,
     /// Header label for the *next* `Applied` batch, set by the input view at
     /// submit time and taken when that batch arrives. Cleared on `Rejected`
@@ -118,14 +118,14 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
             // the batch holding the outcome need not be the one holding the
             // reveal, nor the one the acknowledge pause arrives on. Two known
             // splitters — an ST.4 effect that suspends for input, The
-            // Gathering's Tablet dealing damage with a soak target in play
-            // (#787), and a reaction on `SkillTestResolved`, which fires in the
+            // Gathering's Tablet dealing damage with a soak target in play,
+            // and a reaction on `SkillTestResolved`, which fires in the
             // same apply as the outcome and pushes the acknowledge into a batch
-            // of its own (#853).
+            // of its own.
             for event in &events {
                 match event {
                     // The difficulty announced at ST.1. Exact in current scope:
-                    // since #677 the difficulty is a live query rather than a
+                    // the difficulty is a live query rather than a
                     // stored number, so this is the difficulty *at ST.1* and the
                     // margin is computed against the ST.6 re-read — but no
                     // in-corpus card changes an investigated location's shroud or
@@ -142,7 +142,7 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
                         // re-announces its own — but a test whose determination is
                         // already known draws no token at all (ST.3 and ST.4 do
                         // not happen), so without this the panel would name the
-                        // *previous* test's token instead of the em dash (#787).
+                        // *previous* test's token instead of the em dash.
                         state.last_revealed_token = None;
                         state.last_skill_test_result = None;
                     }
@@ -295,8 +295,9 @@ mod tests {
         assert_eq!(s.log.len(), 1, "the batch is logged");
     }
 
-    /// #787: the reveal and the outcome can land in different batches when an
-    /// ST.4 effect suspends for input. The latch is what carries the token over.
+    /// Regression for #787: the reveal and the outcome can land in different
+    /// batches when an ST.4 effect suspends for input, and the latch carries the
+    /// token over.
     #[test]
     fn applied_latches_the_revealed_token_across_batches() {
         let mut s = ClientState::default();
@@ -337,7 +338,7 @@ mod tests {
     }
 
     /// A test whose determination is already known draws no token at all, so the
-    /// previous test's token must not survive into it (#787).
+    /// previous test's token must not survive into it.
     #[test]
     fn a_new_test_clears_the_previous_tests_token() {
         let mut s = ClientState {
@@ -421,7 +422,7 @@ mod tests {
         );
     }
 
-    /// #853: the resolution outlives the batch that determined it, because a
+    /// Regression for #853: the resolution outlives the batch that determined it, because a
     /// reaction on `SkillTestResolved` puts the acknowledge pause in a batch of
     /// its own — an *empty* one, on the board that found this.
     #[test]

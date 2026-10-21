@@ -1,6 +1,9 @@
-//! Read-only render of `GameState` into the DOM (P6.5). Panels are plain
-//! helper fns; `BoardView` is the only component. Cards and locations render as
-//! their names, read from the registry provided at mount
+//! Render of `GameState` into the DOM.
+//!
+//! Panels are plain helper fns, and `BoardView` is this module's only
+//! component; the interactive pieces (hand and in-play cards, the anchored
+//! controls) are components from their own modules. Cards and locations render
+//! as their names, read from the registry provided at mount
 //! ([`registry::use_cards`]).
 
 use game_core::engine::{self, OptionTarget};
@@ -116,7 +119,7 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
                                 <span class="inv-resources">
                                     "resources " {inv.resources}
                                     // The Gain-resource affordance sits with the
-                                    // number it changes (#541).
+                                    // number it changes.
                                     <AnchoredControl
                                         label="Gain resource".to_string()
                                         class="resource-control"
@@ -128,7 +131,7 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
                             </div>
                             // End turn lives on the investigator's own panel, in
                             // the same place all game — greyed out off-turn rather
-                            // than vanishing (#541).
+                            // than vanishing.
                             <AnchoredControl
                                 label="End turn".to_string()
                                 class="turn-control"

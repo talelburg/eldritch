@@ -9,10 +9,12 @@
 //!   transport boundary from a client. The wire layer parses incoming
 //!   messages as `PlayerAction`, so a client cannot fabricate
 //!   engine-only events.
-//! - [`Action::Engine`] wraps an [`EngineRecord`] — recorded output of
-//!   engine-side randomness or system events (deck shuffles). The
-//!   engine generates these itself so the action log is replayable;
-//!   clients never construct them.
+//! - [`Action::Engine`] wraps an [`EngineRecord`] — a system event
+//!   (a deck shuffle, an encounter reveal) applied without a player
+//!   decision. Production code never constructs one; only tests issue
+//!   them, to drive those handlers directly. Replay stays deterministic
+//!   because every random draw comes from the seeded `RngState` in
+//!   `GameState`, not because draws are logged.
 
 use serde::{Deserialize, Serialize};
 
@@ -27,19 +29,19 @@ use crate::state::{CardCode, InvestigatorId};
 pub enum Action {
     /// Action initiated by a human player.
     Player(PlayerAction),
-    /// Action emitted by the engine itself, recording a system event or
-    /// random draw.
+    /// A system event applied without a player decision. Only tests
+    /// issue one.
     Engine(EngineRecord),
 }
 
 /// Input from a human player.
 ///
-/// After #447/#459 the action log is `ResolveInput`-only. Session setup
+/// The action log is `ResolveInput`-only. Session setup
 /// (seating investigators, starting the scenario) is handled by the
 /// non-logged `seat_and_open` entry point and never appears here.
 /// Open-turn gameplay flows through `ResolveInput(PickSingle(OptionId))`
 /// against the `InvestigatorTurn` menu, dispatched internally via the
-/// `TurnAction` id→action map (slice 2b, #447).
+/// `TurnAction` id→action map.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum PlayerAction {
@@ -47,8 +49,7 @@ pub enum PlayerAction {
     /// prompt the engine emitted. The shape of `response` is dictated by the
     /// active prompt — the open-turn action menu and every framework suspension
     /// (mulligan, encounter draw, skill-test commit, reaction/Fast windows,
-    /// choices, soak distribution) all round-trip through this one channel
-    /// (umbrella §3, #393).
+    /// choices, soak distribution) all round-trip through this one channel.
     ResolveInput {
         /// The chosen response payload.
         response: InputResponse,
@@ -67,8 +68,9 @@ pub struct RosterEntry {
     pub investigator: CardCode,
     /// The player's chosen deck, top-to-bottom. Seating refuses it if it
     /// holds an unimplemented card, then appends the drawn random basic
-    /// weaknesses before the setup shuffle; deckbuilding-legality validation
-    /// is Phase 9. A **fixed** weakness, such as one carried between
+    /// weaknesses before the setup shuffle. It does not check deckbuilding
+    /// legality (TODO(#783): a deckbuilding validator). A **fixed** weakness,
+    /// such as one carried between
     /// scenarios of a campaign, is simply a card here.
     pub deck: Vec<CardCode>,
     /// How many random basic weaknesses seating draws from the weakness pool
@@ -88,16 +90,10 @@ pub struct RosterEntry {
 /// them (e.g. `seat_and_open` shuffles every player deck during scenario
 /// setup), and RNG determinism reproduces them from the same triggering
 /// action.
-///
-/// The standalone [`DeckShuffled`](EngineRecord::DeckShuffled)
-/// variant is for shuffle requests that don't come from a player
-/// action — future card effects like "shuffle X into your deck" will
-/// emit this when the effect resolves.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum EngineRecord {
-    /// Shuffle the named investigator's player deck. Encounter deck
-    /// and act/agenda decks add their own variants when they land.
+    /// Shuffle the named investigator's player deck.
     DeckShuffled {
         /// Whose deck to shuffle.
         investigator: InvestigatorId,
@@ -109,15 +105,15 @@ pub enum EngineRecord {
     /// does NOT push this variant. No payload — the deck is shared.
     EncounterDeckShuffled,
     /// The named investigator reveals the top card of the encounter
-    /// deck. Emitted by #69's Mythos draw loop when it lands; in
-    /// #126's tests, issued directly to exercise the on-draw path.
+    /// deck — the engine-record draw, separate from the Mythos draw loop's
+    /// frames. Tests issue it directly to exercise the on-draw path.
     ///
     /// The reveal flow: the dispatch handler (`encounter_card_revealed`
     /// in `engine::dispatch`) draws the top of the deck (transparently
     /// reshuffling discard if needed), emits `Event::CardRevealed`, runs
     /// any `Trigger::Revelation` abilities through the DSL evaluator,
     /// then routes by card type (treachery → discard; enemy → spawn
-    /// handler from #127).
+    /// handler).
     EncounterCardRevealed {
         /// The investigator whose draw produced this reveal.
         investigator: InvestigatorId,
@@ -125,10 +121,6 @@ pub enum EngineRecord {
 }
 
 /// The shape of a response to an `AwaitingInput` prompt.
-///
-/// Phase-1 minimal set; later phases add target lists, card commits,
-/// multi-target picks, etc. (The `EngineOutcome::AwaitingInput` variant
-/// lands in a later PR.)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum InputResponse {
@@ -139,12 +131,12 @@ pub enum InputResponse {
     /// Pick one option from a structured choice prompt
     /// ([`InputRequest::pick_single`](crate::engine::InputRequest::pick_single)),
     /// echoing back its [`OptionId`]. The
-    /// single-selection family (umbrella §3): the Axis-A choice machinery, and
+    /// single-selection family: the effect-choice machinery, and
     /// the location/investigator-pick windows (hunter move/engage, spawn engage)
     /// whose offered options index the candidate list.
     PickSingle(OptionId),
     /// Select a subset of the offered options, echoing back their
-    /// [`OptionId`]s (umbrella §3). The multi-selection
+    /// [`OptionId`]s. The multi-selection
     /// family — the skill-test commit window and the upkeep hand-size discard
     /// fold into this; min/exact-count constraints live on the request/frame,
     /// not here. For those windows an `OptionId(i)` denotes hand index `i`.

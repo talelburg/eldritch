@@ -6,9 +6,8 @@
 //! > [reaction] After you defeat an enemy: Discover 1 clue at your
 //! > location. (Limit once per round.)
 //!
-//! Closes the Phase-3 acceptance for #55's reaction half. The
-//! `[elder_sign]` half stays on its `+0` placeholder; #118 picks it
-//! up alongside the dynamic skill-test modifier DSL primitive.
+//! This file covers the reaction; the `[elder_sign]` half is
+//! `roland_elder_sign.rs`'s.
 //!
 //! Lives at `crates/cards/tests/` so it can run against
 //! `cards::TEST_REGISTRIES`, which `game-core` cannot reach by crate
@@ -62,7 +61,7 @@ fn roland_at_location_with_enemy(location_clues: u8, round: u32) -> GameState {
                 .skill(SkillKind::Combat, 4)
                 .in_play([ROLAND]),
         )
-        // Co-located: Fight is location-gated (#401).
+        // Co-located: Fight is location-gated.
         .with_enemy_engaged(enemy, INV)
         .with_location(loc)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -232,9 +231,11 @@ fn skipping_the_reaction_window_does_not_bump_the_counter() {
     );
 }
 
+/// Regression for #495: Roland's reaction is not offered on an enemy defeat at
+/// a location with no clues.
 #[test]
 fn reaction_not_offered_when_location_has_no_clues() {
-    // #495 / RR p.2: "Discover 1 clue at your location" can't change the game
+    // RR p.2: "Discover 1 clue at your location" can't change the game
     // state at a 0-clue location, so the reaction must not initiate — the engine
     // must not even open the (skippable) reaction window. If the window opened,
     // the commit would rest on a skippable reaction prompt instead of the

@@ -1,6 +1,8 @@
-//! Websocket wire protocol: the JSON messages exchanged between a
-//! client and the server. The server is authoritative; clients submit
-//! [`PlayerAction`]s and render the state the server broadcasts.
+//! Websocket wire protocol: the JSON messages exchanged between a client and
+//! the server.
+//!
+//! The server is authoritative; clients submit [`PlayerAction`]s and render the
+//! state the server broadcasts.
 
 use game_core::action::{PlayerAction, RosterEntry};
 use game_core::engine::EngineOutcome;
@@ -104,7 +106,7 @@ pub struct CreateGameRequest {
     /// The scenario module to set up.
     pub scenario_id: String,
     /// The investigators to seat at creation, each paired with the deck the
-    /// player chose. Seated into the persisted seed (#459); a rejected
+    /// player chose. Seated into the persisted seed; a rejected
     /// seating fails creation with no game row.
     pub roster: Vec<RosterEntry>,
 }
@@ -191,8 +193,7 @@ mod tests {
             .build();
         // The fixture's options are un-anchored; this proves the
         // ChoiceOption.target field survives the ServerMessage envelope
-        // (game-core covers an anchored value directly). See the interactivity
-        // S0 plan.
+        // (game-core covers an anchored value directly).
         let outcome = test_support::awaiting_pick_single_input("Choose an action");
         let msg = ServerMessage::Applied {
             state: Box::new(state),

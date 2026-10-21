@@ -1,4 +1,4 @@
-//! End-to-end coverage for #631: a card committed to a skill test is the same
+//! Regression for #631: a card committed to a skill test is the same
 //! card at ST.2, at ST.5, and at ST.8 — even when the hand it came from is
 //! mutated in between.
 //!
@@ -117,10 +117,10 @@ fn assert_turn_resolved(session: &TestSession) {
 
 #[test]
 fn a_fast_play_in_the_st2_window_does_not_move_the_committed_card() {
-    // #631's divergence scenario. Hand is [Working a Hunch, Deduction]; commit
+    // The divergence scenario. Hand is [Working a Hunch, Deduction]; commit
     // Deduction (hand index 1), then play Working a Hunch in the ST.2→ST.3
-    // window. Under the old hand-index binding, index 1 pointed past the end of
-    // the one-card hand at ST.5 and panicked.
+    // window. A commit bound by hand index would point past the end of the
+    // one-card hand at ST.5.
     let r = investigate_playing(
         board(&[WORKING_A_HUNCH, DEDUCTION], 2),
         &[DEDUCTION],
@@ -216,8 +216,8 @@ fn only_the_committed_copy_of_a_duplicated_card_is_discarded() {
 #[test]
 fn committing_both_copies_of_a_card_discards_both_after_a_hand_shift() {
     // Both Deductions committed, then Working a Hunch played in the ST.2→ST.3
-    // window. Under the old hand-index binding the descending-order ST.8 removal
-    // ran off the end of the two-card hand and left one copy behind.
+    // window, which shifts the hand under both committed copies. The ST.8
+    // removal must still find and discard both.
     let r = investigate_playing(
         board(&[WORKING_A_HUNCH, DEDUCTION, DEDUCTION], 2),
         &[DEDUCTION, DEDUCTION],

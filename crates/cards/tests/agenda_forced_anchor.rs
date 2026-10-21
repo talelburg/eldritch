@@ -1,13 +1,14 @@
-//! Integration (#556): an agenda's forced-on-advance acknowledge anchors to the
-//! agenda card on the board, not the flat prompt bar. Runs against
-//! `cards::TEST_REGISTRIES`.
+//! Integration: an agenda's forced-on-advance acknowledge anchors to the agenda
+//! card on the board, not the flat prompt bar.
+//!
+//! Runs against `cards::TEST_REGISTRIES`.
 //!
 //! Drives What's Going On?! (01105)'s `AgendaAdvanced` forced with
 //! `interactive_acknowledge` on, so the one-option "Resolve" acknowledge surfaces
-//! *before* the effect (the #466 confirm-before-effect pause) — and asserts its
+//! *before* the effect (the confirm-before-effect pause) — and asserts its
 //! anchor is `OptionTarget::Agenda`. The subsequent discard-vs-horror
-//! `ChooseOne` is a separate evaluator prompt, and since #775 closed #555 it
-//! anchors to the agenda too; the second test below pins that, because an
+//! `ChooseOne` is a separate evaluator prompt, and it anchors to the agenda
+//! too; the second test below pins that, because an
 //! un-anchored option is silently rendered in the banner instead.
 
 use cards::TEST_REGISTRIES;
@@ -31,7 +32,7 @@ fn state_on_agenda_01105() -> GameState {
         .build();
     // The current agenda must be in the deck for the scan to reach 01105's
     // ability at all; the candidate it mints names `AbilitySource::Agenda`, and
-    // that is what the ack anchors to (#735).
+    // that is what the ack anchors to.
     state.agenda_deck = vec![Agenda {
         code: CardCode::new("01105"),
         doom_threshold: 3,
@@ -42,7 +43,7 @@ fn state_on_agenda_01105() -> GameState {
     state
 }
 
-/// Advance 01105 for real and acknowledge its flip (#558), so the session
+/// Advance 01105 for real and acknowledge its flip, so the session
 /// rests at 01105's `AgendaAdvanced` forced, paused on the acknowledge.
 fn advance_01105() -> TestSession {
     let flipped =
@@ -78,7 +79,7 @@ fn agenda_01105_forced_ack_anchors_to_the_agenda_card() {
 
 /// 01105's printed *"choose one"* renders on the agenda card, under the two
 /// labels split from its printed sentence — not in the prompt banner under the
-/// branches' `Debug` form, which is what shipped until #775.
+/// branches' `Debug` form.
 #[test]
 fn agenda_01105_choose_one_anchors_to_the_agenda_card_under_its_printed_labels() {
     // Acknowledge, so the effect — and its ChooseOne — resolves.

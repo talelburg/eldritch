@@ -1,55 +1,19 @@
-//! Card-effect DSL — v0 primitive set.
+//! The card-effect DSL: the vocabulary a card declares its abilities in, as
+//! [`Ability`] values that pair a [`Trigger`] with an [`Effect`] tree.
 //!
-//! This module is the alphabet that card declarations speak. A card's
-//! abilities are expressed as ([`Trigger`], [`Effect`]) pairs assembled
-//! into [`Ability`] values. The engine evaluator (lands when skill
-//! tests do, in Phase 3+) walks an [`Effect`] tree to actually mutate
-//! game state.
+//! The DSL describes and the engine resolves. `game-core`'s evaluator steps an
+//! [`Effect`] tree, and its timing machinery resolves a [`Trigger::OnEvent`]
+//! ability when an emitted event matches the ability's [`EventPattern`]. The
+//! enums are the vocabulary's only list: what a card can say today is what
+//! [`Trigger`], [`Effect`], [`EventPattern`] and [`Condition`] have variants
+//! for.
 //!
-//! # Scope
+//! # What the DSL can't express
 //!
-//! The primitive set grows as cards demand. Today the DSL covers
-//! constant modifiers, on-play and on-commit triggers, activated
-//! abilities with action / payment costs, a skill-test-resolution
-//! trigger, and a revelation trigger for encounter-card-reveal effects.
-//! Reaction-style abilities have a DSL surface
-//! ([`Trigger::OnEvent`]) but no engine machinery yet (see below).
-//! Cards needing primitives the DSL doesn't yet express get a Rust
-//! trait impl until the verb lands.
-//!
-//! # What's not yet expressible
-//!
-//! Common shapes the DSL cannot describe today, and where they'll
-//! land:
-//!
-//! - **Forced / leave-play triggers** (Harold Walsted's `Forced — when
-//!   Harold Walsted leaves play: Remove him from the game and add...`
-//!   from the Dunwich cycle). Need `Trigger::OnLeavePlay` plus
-//!   ability-specific effect machinery.
-//! - **Stat-comparison / location-state conditions** (`AnyEnemyEngaged`,
-//!   `SkillSucceededByAtLeast(N)`). Note: [`Condition::Compare`] already
-//!   covers clue-count and engaged-enemy-count comparisons — these are
-//!   expressible today. What remains unexpressible are conditions keyed on
-//!   location state, success margin, or other quantities not yet in
-//!   [`Quantity`].
-//! - **Compound conditions** (`All` / `Any`) and **target-referencing
-//!   conditions or quantities** (predicates about the *chosen* enemy rather
-//!   than the controller). Held in [`Condition::Native`] predicates until
-//!   `TODO(#609)` promotes them; its doc names the consumers.
-//!
-//! # Has DSL surface but not yet engine support
-//!
-//! - **Reaction abilities** (Roland Banks's `[reaction] After you
-//!   defeat an enemy: Discover 1 clue at your location. (Limit once
-//!   per round.)`). [`Trigger::OnEvent`] compiles and round-trips
-//!   through serde, but the engine event-window plumbing —
-//!   registering active triggers from cards in play and firing them
-//!   against emitted events — lands in
-//!   [issue #52](https://github.com/talelburg/eldritch/issues/52),
-//!   and per-round limit tracking still needs a primitive.
-//!
-//! Cards needing primitives in either list go to a Rust impl until
-//! the relevant verb lands.
+//! A shape with no variant goes to a card-local native, [`Effect::Native`] or
+//! [`Condition::Native`]. It graduates to a variant once a second card wants
+//! it (`docs/agents/standards.md` → Don't add DSL primitives speculatively).
+//! [`Condition::Native`]'s doc names the predicates waiting on that promotion.
 //!
 //! # Free-function builders
 //!
@@ -101,7 +65,7 @@ use crate::card_data::{CardMetadata, CardType, SkillKind, Slot, UseKind};
 /// trigger is the whole price, and nothing may add a second action for the
 /// designated action itself. On the counting: *"Abilities with a bold action
 /// designator (like Fight, Evade or Investigate) count as an action of that
-/// type"*, which is what #760 routed through the surcharge path. So an event
+/// type"*, which is why a designated ability takes the surcharge path. So an event
 /// that prints one (Backstab 01051) is as much a Fight as a weapon's
 /// `[action]` ability is — and the FAQ takes the same view of how the ability
 /// was reached, answering for Ursula Downs 04002's *"take an investigate
@@ -118,7 +82,7 @@ use crate::card_data::{CardMetadata, CardType, SkillKind, Slot, UseKind};
 /// # The designator performs; the ability modifies
 ///
 /// Each variant carries **the modification the printed text describes**, and
-/// nothing else (#805). Machete 01020's *"You get +1 \[combat\] for this
+/// nothing else. Machete 01020's *"You get +1 \[combat\] for this
 /// attack"* is [`Fight`](Self::Fight)'s `combat_modifier`; Flashlight 01087's
 /// *"Your location gets -2 shroud for this investigation"* is
 /// [`Investigate`](Self::Investigate)'s `shroud_modifier`. The
@@ -159,14 +123,14 @@ pub enum ActionDesignator {
     ///
     /// Per RR you choose an enemy at your location to attack and need not
     /// already be engaged with it, so the candidate scope is co-located, not
-    /// engaged-only (#451). The engine auto-targets on exactly one candidate
+    /// engaged-only. The engine auto-targets on exactly one candidate
     /// and suspends for a pick on two or more; the activation check rejects
     /// *zero* candidates before any cost is paid.
     ///
     /// Because the target need not be an engaged one, an `extra_damage`
     /// expression whose card text qualifies on the *attacked* enemy must read
     /// the chosen target, not the controller's engaged count — see Machete
-    /// 01020's [`Condition::Native`] predicate (#592).
+    /// 01020's [`Condition::Native`] predicate.
     Fight {
         /// Combat modifier for this attack. Evaluated at every read
         /// while the attack runs, not once at initiation, so an
@@ -227,8 +191,9 @@ pub enum ActionDesignator {
     /// Dogs: **Move.** Move X times."*, Ring Library 11624's *"\[action\]:
     /// **Move.** Move to a revealed \[\[Passageway\]\] location."*), so its
     /// modification is a *destination or a repeat count* rather than a stat
-    /// row. Rejected (`TODO(#1059)`) because nothing the build compiles prints
-    /// one at all, so there is no printed shape to take its payload from. Named
+    /// row. Rejected, because nothing the build compiles prints one at all, so
+    /// there is no printed shape to take its payload from (TODO(#1059): a
+    /// designated Move). Named
     /// as a designator by the rules quote above and by Frozen in Fear 01164's
     /// ruling.
     Move,
@@ -254,7 +219,7 @@ pub enum ActionDesignator {
         /// succeed, instead of discovering clues, gain 3 resources."*
         ///
         /// A self-replacement the card prints on its own investigation, not a
-        /// general replacement effect (#366): the test is still a successful
+        /// general replacement effect: the test is still a successful
         /// investigation in every other respect, so "after you successfully
         /// investigate" (Dr. Milan Christopher 01033) still fires at ST.6. Only
         /// the ST.7 discovery is gone, and with it anything that raises its
@@ -319,7 +284,7 @@ impl ActionDesignator {
     /// every rule that keys on one. The consumer today is
     /// [`Restriction::ExtraActionCost`], whose `actions` list is
     /// `ActionClass` — Frozen in Fear 01164 surcharges a designated Fight
-    /// exactly as it surcharges a basic one (#754).
+    /// exactly as it surcharges a basic one.
     ///
     /// The `None` arm is structural rather than a gap: `ActionClass` exists
     /// to name what `ExtraActionCost` can surcharge, and no card surcharges
@@ -481,8 +446,9 @@ impl RevealClause {
 
 /// When an [`Ability`] is active.
 ///
-/// Phase-3 set. Later phases add `AtPhaseStart`/`AtPhaseEnd`,
-/// `OnLeavePlay`, and additional reactive patterns as cards demand.
+/// A reactive timing — a phase boundary, a defeated enemy, a card entering
+/// play — is an [`EventPattern`] under [`OnEvent`](Self::OnEvent), not a
+/// trigger of its own.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 // `allow`, not `expect`: the lint is pointer-width dependent and does not fire
 // on wasm32, where an unfulfilled `expect` would fail `wasm-clippy`.
@@ -514,14 +480,12 @@ pub enum Trigger {
     /// Consumers are the real encounter treacheries in
     /// `cards::impls` — Ancient Evils 01166, Rotting Remains 01163,
     /// Crypt Chill 01167 and the rest — and the weaknesses that print one:
-    /// Cover Up 01007, Hospital Debts 01011, The Necronomicon 01009. (The
-    /// synthetic treachery that was this trigger's first consumer is gone;
-    /// #878 retired the toy-scenario fixture it lived in.)
+    /// Cover Up 01007, Hospital Debts 01011, The Necronomicon 01009.
     ///
     /// Distinct from [`OnPlay`](Self::OnPlay) — Revelation fires when a card is
     /// drawn, not when it is played from hand. A treachery or enemy weakness
     /// drawn from a player deck never stays in hand: it resolves as if just
-    /// drawn from the encounter deck (`glossary/Weakness.md`, #1121), and an
+    /// drawn from the encounter deck (`glossary/Weakness.md`), and an
     /// asset weakness's Revelation resolves as it is drawn.
     ///
     /// The engine's encounter-card path (`resolve_encounter_card` in
@@ -553,15 +517,14 @@ pub enum Trigger {
     /// it's part of the test's own resolution machinery. The effect
     /// evaluates after the action-specific
     /// `SkillTestFollowUp` (in `game_core::state`) and
-    /// before the committed cards discard, so the source card is
+    /// before the committed cards discard, so the committed card is
     /// still in hand at evaluation time and
     /// [`LocationTarget::TestedLocation`] resolves against the
     /// in-flight test record.
     ///
     /// Canonical motivating card: Deduction (01039) — "If this skill
     /// test is successful while investigating a location, discover 1
-    /// additional clue at that location." See
-    /// [issue #112](https://github.com/talelburg/eldritch/issues/112).
+    /// additional clue at that location."
     ///
     /// Kind narrowing (the "while investigating" qualifier) is not
     /// baked into the trigger; it's expressed as an [`Effect::If`]
@@ -570,7 +533,7 @@ pub enum Trigger {
     /// trivial kind narrowing lands.
     ///
     /// Distinct from the after-resolution reactive trigger window
-    /// tracked in [issue #64](https://github.com/talelburg/eldritch/issues/64),
+    /// ([`EventPattern::SkillTestResolved`] under [`OnEvent`](Self::OnEvent)),
     /// which fires *after* the test ends with a player decision
     /// window ("after a test succeeds, you may …"). This trigger
     /// runs as part of the test's resolution machinery with no
@@ -580,27 +543,19 @@ pub enum Trigger {
         /// resolving test.
         outcome: TestOutcome,
     },
-    /// Fires when an engine `Event` (in `game_core`) matching `pattern`
-    /// is emitted, in the reaction window opened by the engine for
-    /// the corresponding `timing`.
+    /// Fires when an engine `Event` (in `game_core`) matching `pattern` reaches
+    /// the timing cell `timing` names. `kind` says whether the ability is
+    /// **forced**, and resolves there, or a **reaction**, which its controller
+    /// may use in the window that opens there.
     ///
-    /// Canonical motivating card: Roland Banks (01001) —
-    /// `[reaction] After you defeat an enemy: Discover 1 clue at your
-    /// location.` compiles to `OnEvent { pattern: EnemyDefeated {
-    /// by_controller: true }, timing: After }`.
+    /// Canonical card: Roland Banks 01001, *"\[reaction\] After you defeat an
+    /// enemy: Discover 1 clue at your location. (Limit once per round.)"*, is
+    /// `dsl::reaction_on_event` over `EventPattern::EnemyDefeated` in the
+    /// [`After`](EventTiming::After) cell, with the limit as a [`UsageLimit`].
     ///
     /// Distinct from [`OnSkillTestResolution`](Self::OnSkillTestResolution),
-    /// which fires inside a skill test's own resolution machinery
-    /// (no player decision, no `may`). `OnEvent` triggers fire in
-    /// reaction windows where the controller may choose to use them.
-    ///
-    /// The DSL surface lands here; the engine machinery that
-    /// registers these triggers from cards in play and fires them
-    /// during reaction windows lands in
-    /// [issue #52](https://github.com/talelburg/eldritch/issues/52).
-    /// Until then the engine ignores `OnEvent` abilities; cards
-    /// declaring one compile and round-trip through serde but
-    /// otherwise do nothing at runtime.
+    /// which fires inside a skill test's own resolution machinery, with no
+    /// player decision and no `may`.
     OnEvent {
         /// Which engine event(s) trigger this ability.
         pattern: EventPattern,
@@ -725,16 +680,18 @@ impl TokenOutcome {
 /// or is an optional player reaction.
 ///
 /// Forced abilities all resolve before any reaction abilities at the same
-/// timing point (Rules Reference p.2), and the engine's `queue_event`
-/// dispatch keys its two phases off this distinction rather than guessing
-/// from the [`EventPattern`].
+/// timing point (Rules Reference p.2). In each cell of a triggering
+/// condition's sequence, the engine's `TimingPoint` frame fires the forced
+/// abilities first and then opens the reaction window (its `sub` cursor), and
+/// it sorts the cell's abilities by this distinction rather than guessing from
+/// the [`EventPattern`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TriggerKind {
     /// Mandatory; resolves automatically (the player only orders
-    /// simultaneous ones). Phase 1 of `queue_event`.
+    /// simultaneous ones). Fired in the cell's forced step.
     Forced,
     /// Optional; the controller may use it in the reaction window.
-    /// Phase 2 of `queue_event`.
+    /// Offered in the cell's reaction step.
     Reaction,
 }
 
@@ -779,7 +736,7 @@ pub enum EventPattern {
     /// a lasting effect expires."*
     ///
     /// The mirror of [`PhaseEnded`](Self::PhaseEnded), and wired at all four
-    /// starts (#697). Dunwich supplies the first consumers — Hunting Horror
+    /// starts. Dunwich supplies the first consumers — Hunting Horror
     /// 02141 and Peter Clover 02079 print *"**Forced** - At the start of the
     /// enemy phase: …"*, as does agenda 02065.
     PhaseStarted { phase: Phase },
@@ -788,21 +745,22 @@ pub enum EventPattern {
     /// `PhaseEnded { phase: Enemy }`. (Its end-of-round doom keys off
     /// [`RoundEnded`](Self::RoundEnded), not `PhaseEnded { Upkeep }`.)
     ///
-    /// Wired at all four phase-ends (#697); `Appendix_II_Timing_and_Gameplay.md`
+    /// Wired at all four phase-ends; `Appendix_II_Timing_and_Gameplay.md`
     /// step 1.5 gives the end of a phase the same milestone sentence its step
     /// 1.1 gives the beginning.
     PhaseEnded { phase: Phase },
     /// The act this ability is printed on advanced (its reverse side
     /// resolves). *This act* is part of the definition: the engine's matcher
-    /// hears it only on the advancing act, and binds controller = the lead
-    /// investigator (board-wide reverse effects ignore it).
+    /// hears it only on the advancing act, and binds controller = the
+    /// lead-investigator proxy (**Lead investigator** in `GLOSSARY.md`;
+    /// board-wide reverse effects ignore it).
     ActAdvanced,
     /// The agenda this ability is printed on advanced (its reverse side
     /// resolves on doom) — the mirror of [`ActAdvanced`](Self::ActAdvanced),
-    /// heard only on the advancing agenda and bound to the lead
-    /// investigator. The Gathering's agenda reverses
-    /// listen here: 01105 (lead's discard/horror choice) and 01106
-    /// (dig the encounter deck until a `Ghoul` enemy, lead draws it).
+    /// heard only on the advancing agenda and bound to the lead-investigator
+    /// proxy. The Gathering's agenda reverses
+    /// listen here: 01105 (the discard/horror choice) and 01106
+    /// (discard from the encounter deck until a `Ghoul` enemy, and draw it).
     AgendaAdvanced,
     /// The round ended (Rules Reference p.24: the round ends at the close
     /// of the upkeep phase). Forced agenda/act effects keyed to "at the
@@ -816,7 +774,7 @@ pub enum EventPattern {
     /// "Forced – At the end of your turn"). *Your* is part of the
     /// definition: the engine's matcher hears it only when the ability's
     /// controller is the investigator whose turn ended. First consumer:
-    /// Frozen in Fear (01164), C4c (#235).
+    /// Frozen in Fear (01164).
     EndOfTurn,
     /// A skill test resolved with the given `outcome` (RR ST.6). The
     /// card-facing narrowing of the engine's ST.6→ST.7 timing point — the
@@ -828,9 +786,7 @@ pub enum EventPattern {
     /// pattern distinction — both share this pattern. A forced ability on a
     /// location attachment binds *you* = the testing investigator, and
     /// [`tested_location`](Self::SkillTestResolved::tested_location) says
-    /// whether it hears only its own location's tests. (Slice D #423;
-    /// collapses the #212/#213 forced/reaction pattern split for this timing
-    /// point.)
+    /// whether it hears only its own location's tests.
     SkillTestResolved {
         /// Whether the listener fires on a passed or failed test.
         outcome: TestOutcome,
@@ -881,12 +837,12 @@ pub enum EventPattern {
         /// measured against.
         ///
         /// Trigger scope rather than an eligibility predicate, which is how
-        /// Lita Chantler 01117 narrows her own condition (#1006): with two
+        /// Lita Chantler 01117 narrows her own condition: with two
         /// consumers the narrowing belongs on the declaration.
         margin: Option<MarginScope>,
     },
     /// An investigator discovers one or more clues — the **one** triggering
-    /// condition for clue discovery, in all three cells (#703). Which cell an
+    /// condition for clue discovery, in all three cells. Which cell an
     /// ability lands in is its
     /// [`EventTiming`], not a second pattern:
     /// [`When`](EventTiming::When) interrupts the discovery (a replacement
@@ -905,13 +861,13 @@ pub enum EventPattern {
     /// standing at the discovery location. It binds, for a `when` ability, the
     /// would-be discovery's count (Cover Up's "that many"). That
     /// count is what would **actually** be discovered — capped at the clues
-    /// present, per the **Discovery** entry in `GLOSSARY.md` (#471).
+    /// present, per the **Discovery** entry in `GLOSSARY.md`.
     DiscoverClues,
     /// The game ended (a scenario resolution latched) — or, at Elimination step
     /// 0, ended for one eliminated investigator's weaknesses only. Heard on
     /// every card in play. First consumer: Cover Up
     /// 01007's "Forced - When the game ends, if there are any clues on
-    /// Cover Up: You suffer 1 mental trauma." (C5a #236.)
+    /// Cover Up: You suffer 1 mental trauma."
     GameEnd,
     /// An enemy attack assigned damage to the asset this ability is printed on
     /// (the soaked ally). Bare — the engine binds *self* = an asset the
@@ -929,9 +885,9 @@ pub enum EventPattern {
     /// Deal 1 damage to the attacking enemy." So the retaliate resolves *before*
     /// the damage lands on Guard Dog, and a Guard Dog killed by the attack still
     /// bites back (`data/arkhamdb-faq/core/01021.md`). See
-    /// `docs/adr/0009-damage-is-assigned-then-placed.md`. (C5b #237.)
+    /// `docs/adr/0009-damage-is-assigned-then-placed.md`.
     ///
-    /// **The name deliberately no longer mirrors its condition.** Mirroring it
+    /// **The name deliberately does not mirror its condition.** Mirroring it
     /// would mean a general "damage was assigned to self" pattern carrying the
     /// damage source, and that is a DSL primitive no second card wants yet — the
     /// threshold `docs/agents/standards.md` sets for adding one. This name says
@@ -990,7 +946,7 @@ pub enum EventPattern {
     /// its `after` cell runs once the nested placement has fully resolved
     /// (`glossary/After.md`), and its `when` cell is the window between
     /// assigning and placing, where harm is about to be taken but has not been.
-    /// No 7.5 card listens there; Psychopomp's Song 02221 (phase 10) will.
+    /// No implemented card listens there; Psychopomp's Song 02221 will.
     ///
     /// **Taken by, not placed on** (`GLOSSARY.md`, "Taken by you / placed on
     /// your investigator"): "you" counts the controller's investigator card
@@ -1007,7 +963,7 @@ pub enum EventPattern {
         scope: HarmTakenScope,
     },
     /// An enemy attacks an investigator (RR p.25 step 3.3) — one triggering
-    /// condition in all three cells since #704, so a card declares this pattern
+    /// condition in all three cells, so a card declares this pattern
     /// plus the trigger word it prints:
     ///
     /// - [`When`](EventTiming::When) — the cancel/replacement window. Dodge
@@ -1027,8 +983,8 @@ pub enum EventPattern {
     /// left to where the scan looks.
     ///
     /// A cancel in the `when` cell suppresses the rest of the sequence, so an
-    /// `at`/`after` ability on a dodged attack does not fire (#714;
-    /// `data/arkhamdb-faq/core/01023.md`).
+    /// `at`/`after` ability on a dodged attack does not fire
+    /// (`data/arkhamdb-faq/core/01023.md`).
     EnemyAttacks {
         /// Which attacking enemy the ability listens to.
         attacker: AttackerScope,
@@ -1077,14 +1033,14 @@ pub enum EventPattern {
     /// evasions by the ability's controller.
     ///
     /// One evasion, however it came about: the Evade action, a designated
-    /// **Evade** (Blinding Light 01066), and an automatic evade (#780) all
+    /// **Evade** (Blinding Light 01066), and an automatic evade all
     /// announce it, which Pickpocketing's ruling needs
     /// (<https://arkhamdb.com/card/01046>): *"the auto-evade effect from
     /// Breaking and Entering can trigger the reaction on Pickpocketing (0)"*.
     /// The condition's own resolution is the disengage and the exhaust, so an
     /// `after` ability sees the enemy already evaded.
     ///
-    /// One hand-written consumer in this slice, below `standards.md`'s
+    /// One hand-written consumer in the corpus, below `standards.md`'s
     /// threshold for a new pattern; a trigger has no card-local alternative,
     /// and Earl Sawyer 02218 (Dunwich) prints the same condition: *"\[reaction\]
     /// After you evade an enemy, exhaust Earl Sawyer: Draw 1 card."*
@@ -1132,7 +1088,7 @@ pub enum EventPattern {
     /// a test you are performing: You get +1 skill value for this test."* The
     /// symbol narrowing arrives with the Candles. Wendy is its only corpus
     /// consumer, so it is a spec-approved exception to `standards.md`'s
-    /// DSL-primitive threshold (#780).
+    /// DSL-primitive threshold.
     ChaosTokenRevealed,
 }
 
@@ -1476,11 +1432,9 @@ pub enum EventTiming {
     /// abilities with the same triggering condition."* — and, per ADR 0008's
     /// interpretation, after the condition's own impact has landed.
     ///
-    /// Since #702 this cell is reachable on **every** triggering condition, not
-    /// just the round end as before — the enemy attack and its soak window, the
-    /// last two conditions to bypass the coordinator entirely, joined the walk
-    /// in #704 — and regardless of who owns the resolve step: caller-owned costs
-    /// the `when` cell only.
+    /// This cell is reachable on **every** triggering condition, the enemy
+    /// attack and its soak window included, and regardless of who owns the
+    /// resolve step: a caller-owned resolve step loses only the `when` cell.
     At,
     /// Resolves once the triggering condition has finished — `glossary/After.md`:
     /// *"the moment immediately after the specified timing point or triggering
@@ -1489,7 +1443,7 @@ pub enum EventTiming {
     /// A coordinator-owned condition prevented in its `when` cell never fully
     /// resolves, and takes the **rest of its sequence** with it: neither this
     /// cell nor [`At`](Self::At) runs, and the remainder of the `when` cell is
-    /// withdrawn too (#714; `data/arkhamdb-faq/core/01023.md`).
+    /// withdrawn too (`data/arkhamdb-faq/core/01023.md`).
     After,
 }
 
@@ -1505,7 +1459,7 @@ pub enum Cost {
     /// Spend `n` resources from the controller's wallet. Insufficient
     /// resources reject the activation.
     Resources(u8),
-    /// Exhaust the source card. Already-exhausted source rejects.
+    /// Exhaust the card the ability is on. An already-exhausted card rejects.
     /// (Most activated abilities self-exhaust per the rulebook; cards
     /// with a `[fast] no exhaust` ability simply don't list this cost.)
     Exhaust,
@@ -1517,7 +1471,7 @@ pub enum Cost {
     /// discard'."* (<https://arkhamdb.com/card/01013>). Paid through a choice
     /// of hand card before the effect resolves, on a triggered ability or a
     /// `[fast]` activated one; an `[action]` ability with the cost is refused
-    /// (TODO(#1031)).
+    /// (TODO(#1031): resolve the harm before attacks of opportunity).
     DiscardCardFromHand,
     /// Spend `count` tokens of the named [`UseKind`]
     /// from the source asset's runtime uses-pool (".38 Special": "Spend 1
@@ -1528,13 +1482,13 @@ pub enum Cost {
         /// How many to spend.
         count: u8,
     },
-    /// Discard the source card from play to pay for its own ability
+    /// Discard the card from play to pay for its own ability
     /// (Beat Cop 01018, Knife 01086), wherever it sits, to its owner's pile.
     /// Distinct from [`Effect::DiscardSelf`], which discards the source as
     /// the ability's effect. Must be the only source-referencing cost on an
     /// ability (it removes the source); paid last.
     DiscardSelf,
-    /// The controller takes `damage` damage and `horror` horror (#1029). One
+    /// The controller takes `damage` damage and `horror` horror. One
     /// variant carries both kinds because the snapshot prints both, on three
     /// cards that agree on the shape:
     ///
@@ -1672,11 +1626,11 @@ pub struct Ability {
     /// Payment costs (besides action cost). Empty for abilities with no
     /// non-action payment. Paid when an activated or a reaction ability
     /// initiates; a forced ability's are neither checked nor paid. Required on
-    /// the wire (#453).
+    /// the wire.
     pub costs: Vec<Cost>,
     pub effect: Effect,
     /// "Limit X per \[period\]" cap. `None` for abilities with no
-    /// printed cap. Stays implicitly optional (#453 per-field reassessment):
+    /// printed cap. Stays implicitly optional:
     /// serde treats a missing `Option` field as `None`, the genuine
     /// absent-by-design case.
     pub usage_limit: Option<UsageLimit>,
@@ -1707,11 +1661,11 @@ pub struct Ability {
     /// Evaluated like any other condition, so a declarative one needs no Rust;
     /// [`Condition::Native`] is the escape hatch for a gate the vocabulary
     /// can't express. `None` for the common no-gate case; stays implicitly
-    /// optional on the wire (#453 per-field carve-out, like `usage_limit`).
+    /// optional on the wire, like `usage_limit`.
     pub eligibility: Option<Condition>,
     /// Where the card must be for this ability to interact with the game.
     /// [`AbilityZone::InPlay`] for every ability [`Self::with_active_in`] does
-    /// not move; required on the wire (#453).
+    /// not move; required on the wire.
     pub active_in: AbilityZone,
 }
 
@@ -1776,7 +1730,7 @@ impl Ability {
 
     /// Every native tag this ability references, each with the registry
     /// namespace it resolves in — the `cards` crate's corpus test checks each
-    /// one is registered (#986).
+    /// one is registered.
     ///
     /// Walks the whole ability: its own eligibility, its action designator,
     /// the trigger's elder-sign outcome, and the effect tree, descending
@@ -2173,9 +2127,8 @@ pub enum Effect {
     /// branch's effect. Requires an `AwaitingInput` round-trip.
     ///
     /// **Each branch carries the label the controller reads** — a
-    /// [`ChoiceBranch`], not a bare `Effect`. Through #775 the evaluator
-    /// rendered `format!("{effect:?}")`, so What's Going On?! 01105 offered the
-    /// lead investigator `Native { tag: "01105:random-discard-each" }`. A label
+    /// [`ChoiceBranch`], not a bare `Effect`, so the prompt shows printed text
+    /// and never a debug rendering of the effect. A label
     /// is authored per card, from the printed text, and there is no position in
     /// which a branch does not need one — hence a mandatory `String` on the
     /// branch rather than an `Option`, or an `Effect::Labeled` wrapper node
@@ -2248,8 +2201,7 @@ pub enum Effect {
     /// zero or negative is a **full no-op** — no placement and no threshold
     /// check, so it cannot advance an already-at-threshold agenda.
     ///
-    /// Typed rather than [`Native`](Self::Native) (graduated from two
-    /// card-local tags in #716) so it can sit inside a [`Seq`](Self::Seq),
+    /// Typed rather than [`Native`](Self::Native) so it can sit inside a [`Seq`](Self::Seq),
     /// [`ChooseOne`](Self::ChooseOne), or [`If`](Self::If) as a sub-effect —
     /// which the three remaining corpus printings each need: 01178 inside a
     /// `ChooseOne` branch, 02240 as the last step of a `Seq`, and 02195 under
@@ -2265,14 +2217,13 @@ pub enum Effect {
     /// A card-local Rust effect, resolved by tag through the host's
     /// `CardRegistry.native_effect_for`. The generic escape hatch for
     /// single-use card logic that doesn't earn a shared `Effect` variant
-    /// (see issue #276). The `cards` crate maps the tag to a Rust fn; the
+    /// The `cards` crate maps the tag to a Rust fn; the
     /// evaluator rejects loudly on an unknown tag or absent registry.
     ///
     /// **A pattern a second card wants graduates to a variant**
     /// (`docs/agents/standards.md`). *"Place N doom on the current agenda"* was
-    /// the first to do so: Ancient Evils 01166 and Silver Twilight Acolyte 01102
-    /// each carried a byte-identical `<code>:place-doom` tag until #716 replaced
-    /// both with [`PlaceDoomOnCurrentAgenda`](Self::PlaceDoomOnCurrentAgenda).
+    /// one: Ancient Evils 01166 and Silver Twilight Acolyte 01102 both place
+    /// doom through [`PlaceDoomOnCurrentAgenda`](Self::PlaceDoomOnCurrentAgenda).
     /// Reach for that variant, not a fresh tag.
     Native { tag: String },
     /// Initiate a skill test as part of a card effect (treachery
@@ -2281,7 +2232,7 @@ pub enum Effect {
     /// `difficulty`, always suspending at the commit window. `on_fail`
     /// runs after the test resolves **on failure**, with the failure
     /// margin available via the evaluator context's `failed_by` (success
-    /// is a no-op for the cards in scope). See issue #286.
+    /// is a no-op for the cards in scope).
     ///
     /// **This variant is one of the two ways a card prompts a test, and the
     /// rules draw the same line.** The official FAQ, defining *"a skill test on
@@ -2318,17 +2269,17 @@ pub enum Effect {
     DiscardSelf,
     /// Cancel the current cancellable game impact — the subject of the
     /// `when`-cell window this effect resolves inside. Flags that triggering
-    /// condition as prevented (the engine's `EmitEventFrame::prevented`, #1055),
+    /// condition as prevented (the engine's `EmitEventFrame::prevented`),
     /// and its timing coordinator skips the prevented impact at its resolve step
     /// (an enemy attack's damage/horror — Dodge 01023; or a clue discovery —
     /// Cover Up 01007). The flag is the condition's own, so a condition the same
     /// effect emits after the cancel still resolves.
     /// RR p.6: the cancelled thing is "still regarded as initiated", only
-    /// its effects are prevented. (Axis D #336.)
+    /// its effects are prevented.
     ///
     /// A cancelled triggering condition takes **the rest of its sequence** with
     /// it: the `at` and `after` cells do not run, and neither does the rest of
-    /// the `when` cell (#714). Dodge 01023's ruling is the citation, quoted on
+    /// the `when` cell. Dodge 01023's ruling is the citation, quoted on
     /// the engine's flag (`EmitEventFrame::prevented`), which every
     /// coordinator-owned condition reads.
     ///
@@ -2350,8 +2301,7 @@ pub enum Effect {
     /// in a fresh `when` cell. *"Return it to the bag"* needs nothing: a drawn
     /// token never leaves the bag, so the redraw can draw the same token.
     /// Rejected with no test in flight. Wendy is its only consumer, a
-    /// spec-approved exception to `standards.md`'s DSL-primitive threshold
-    /// (#780).
+    /// spec-approved exception to `standards.md`'s DSL-primitive threshold.
     RevealChaosToken,
     /// Put the card with this printed `code` into the controller's threat
     /// area as a fresh in-play instance. The Revelation of persistent
@@ -2364,7 +2314,7 @@ pub enum Effect {
     /// The `code` is carried because at Revelation the card isn't in play
     /// yet, so the evaluator context has no instance handle for "self"
     /// (unlike [`DiscardSelf`](Self::DiscardSelf), which reads the
-    /// already-in-play `EvalContext.source`). `TODO(#290)`: once encounter
+    /// already-in-play `EvalContext.source`). TODO(#290): once encounter
     /// cards are minted as in-play instances *at reveal* (so the source
     /// instance exists before the Revelation runs), this can drop the
     /// `code` and place "self" uniformly with `DiscardSelf`.
@@ -2415,13 +2365,13 @@ pub enum Effect {
     /// the **Discovery** entry in `GLOSSARY.md` and Deduction's module doc for
     /// the FAQ that settles it.
     DiscoverAdditionalClues(u8),
-    /// A constant restriction the source card imposes while in play
+    /// A constant restriction its card imposes while in play
     /// (under [`Trigger::Constant`]). **Inspected, not executed** — the
     /// engine reads it at the relevant decision point (`play_is_prohibited`
     /// for `CannotPlay`, `pending_action_surcharge` for `ExtraActionCost`);
     /// resolving it as an effect is a misuse and rejects.
     Restrict(Restriction),
-    /// **An additional action for as long as the source card is in play**,
+    /// **An additional action for as long as its card is in play**,
     /// once during each of its controller's turns (see **Standard action /
     /// additional action** in `GLOSSARY.md`): Leo De Luca 01048's *"You may
     /// take an additional action during your turn."* A constant marker like
@@ -2431,14 +2381,14 @@ pub enum Effect {
     /// the moment the card leaves play. Resolving it rejects.
     ///
     /// The executed form, a grant an ability resolves, is
-    /// [`GainAdditionalAction`](Self::GainAdditionalAction). That a
-    /// constant-only marker is an `Effect` at all, which the evaluator must
-    /// refuse if executed, is #1085.
+    /// [`GainAdditionalAction`](Self::GainAdditionalAction). TODO(#1085): a
+    /// constant-only marker should not be an `Effect` at all, which the
+    /// evaluator must refuse if executed.
     AdditionalActionWhileInPlay {
         /// What the additional action may be used for. `None` is any action.
         restriction: Option<AdditionalActionRestriction>,
     },
-    /// **Additional slots for as long as the source card is in play**:
+    /// **Additional slots for as long as its card is in play**:
     /// Daisy's Tote Bag 01008's *"You have 2 additional hand slots, which can
     /// only be used to hold \[\[Tome\]\] assets."* A constant marker like
     /// [`AdditionalActionWhileInPlay`](Self::AdditionalActionWhileInPlay),
@@ -2458,7 +2408,7 @@ pub enum Effect {
         only: Option<CardFilter>,
     },
     /// **Treat one revealed chaos symbol as another**, for each token the
-    /// source card's controller reveals: The Necronomicon 01009's *"Treat each
+    /// controller of its card reveals: The Necronomicon 01009's *"Treat each
     /// \[elder_sign\] you reveal on a chaos token as a \[auto_fail\]."* A
     /// constant marker like [`Restrict`](Self::Restrict), under a
     /// [`Trigger::Constant`]: **inspected, not executed** — the skill test
@@ -2574,8 +2524,9 @@ pub enum Effect {
     /// borrow the evaluator's control flow: there is no resolution in flight
     /// and the "else" of *"this ability applies"* is silence. A constant effect
     /// that wants a condition carries it as data. The alternative — teaching a
-    /// sweep to see through `Effect::If` — is the gap **#679** already tracks
-    /// for [`Modify`](Self::Modify), and two sweeps with different traversal
+    /// sweep to see through `Effect::If` — is an open gap for
+    /// [`Modify`](Self::Modify) (TODO(#679): a conditional constant modifier is
+    /// skipped by the modified-value sweep), and two sweeps with different traversal
     /// power would give two answers to *"does this constant effect apply"*.
     /// Each granting card's own test pins the bare shape.
     ///
@@ -2623,7 +2574,7 @@ pub enum Effect {
     /// new asset entering the slot."* — the same make-room prompt a play from
     /// hand raises.
     ///
-    /// `TODO(#824)`: the corpus's other entry path is a **set-aside** card —
+    /// TODO(#824): the corpus's other entry path is a **set-aside** card —
     /// Harold Walsted 02124's *"Choose an investigator to take control of the
     /// set-aside Harold Walsted"* — which both names a chosen controller and
     /// pulls from out of play. Out of scope: *"take control of 1 of the clues
@@ -2834,13 +2785,12 @@ pub enum Stat {
     /// evaluator resolves it to the test's own skill as it records the
     /// row. A constant modifier has no test to name, so the sweep never
     /// matches it. Lucky! is its only corpus consumer, so it is a
-    /// spec-approved exception to `standards.md`'s DSL-primitive threshold
-    /// (#780).
+    /// spec-approved exception to `standards.md`'s DSL-primitive threshold.
     TestedSkill,
 }
 
 /// Who an [`Effect::Modify`] applies to, read off the printed text's
-/// subject rather than off where the source card happens to sit.
+/// subject rather than off where the card carrying it happens to sit.
 ///
 /// A modifier is *found* by a sweep over every place a card can sit —
 /// investigators' in-play cards, locations, enemies, their attachments,
@@ -2850,7 +2800,7 @@ pub enum Stat {
 /// another's, which most of the corpus's non-asset modifiers require.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ModifierAudience {
-    /// "You get …" — the investigator who controls the source card.
+    /// "You get …" — the investigator who controls the modifier's card.
     /// The overwhelmingly common case (Beat Cop 01018: *"You get +1
     /// \[combat\]."*) and the [`modify`] builder's default.
     Controller,
@@ -2870,7 +2820,7 @@ pub enum ModifierAudience {
     /// sits. The Ritual Begins 01144 (*"Each enemy gets +1 fight and +1
     /// evade."*).
     EachEnemy,
-    /// "Attached \<location/enemy\> gets …" — the entity the source card
+    /// "Attached \<location/enemy\> gets …" — the entity the modifier's card
     /// is attached to. Obscuring Fog 01168 (*"Attached location gets +2
     /// shroud."*) and Towering Beasts 02256 (*"Attached enemy gets +1
     /// fight and +1 health."*). Contributes nothing from a source that
@@ -2880,14 +2830,14 @@ pub enum ModifierAudience {
 
 /// How long an [`Effect::Modify`] applies.
 ///
-/// Phase-3 set. Most cards land in `WhileInPlay` (Holy Rosary's
+/// Most cards land in `WhileInPlay` (Holy Rosary's
 /// unconditional +1 willpower) or `WhileInPlayDuring(...)` (Magnifying
 /// Glass's *"You get +1 \[intellect\] while investigating."* — the qualifier
 /// that gates most +stat assets in Core+Dunwich). Commit-time and
 /// turn-scoped buffs use `ThisSkillTest` / `ThisTurn`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ModifierScope {
-    /// Active for as long as the source card is in play. Used by
+    /// Active for as long as the modifier's card is in play. Used by
     /// unqualified constant abilities (Holy Rosary).
     WhileInPlay,
     /// Like [`WhileInPlay`](Self::WhileInPlay) but the modifier only
@@ -2970,7 +2920,7 @@ pub enum Restriction {
     /// the engaged drag-along, forced enemy moves) read it to decide whether
     /// an enemy may enter. It applies to the **compelled step alone**, leaving
     /// distances and shortest paths on the full connection graph — Hunter
-    /// movement (#651) and agenda 01107's forced Ghoul move (#797) both read
+    /// movement and agenda 01107's forced Ghoul move both read
     /// it that way, so a blocked step is a non-move rather than a detour.
     ///
     /// The exemption is the declaring card's own, not a rule: Barricade 01038
@@ -3103,9 +3053,10 @@ pub enum LocationSet {
     /// The chooser's own location ("your location"). Empty when the chooser is
     /// between locations.
     Here,
-    /// Any location in play (the old bare `ChosenByController` for locations).
+    /// Any location in play.
     Anywhere,
-    // `YourOrConnecting` is added by PR-8 (#306) with the adjacency model.
+    // No "your location or a connecting location" set: Dynamite Blast 01024,
+    // the one card that prints it, chooses natively (its module doc says why).
 }
 
 /// An enemy-choice filter: a conjunction of constraints a candidate enemy must
@@ -3347,7 +3298,6 @@ pub enum Condition {
     /// no test is in flight.
     SkillTestKind(SkillTestKind),
     /// Compare a [`Quantity`] against `value` under `op`.
-    /// Replaces the old `LocationHasClues` (now `Compare { CluesAtControllerLocation, Gt, 0 }`).
     Compare {
         quantity: Quantity,
         op: CmpOp,
@@ -3379,12 +3329,12 @@ pub enum Condition {
     /// - **"Skids" O'Toole 01003**, as eligibility — *"During your turn"* on a
     ///   `[fast]` ability, a play restriction no declarative condition names.
     ///
-    /// `TODO(#609)`: this is an escape hatch, not a pattern. Lita's *"an
+    /// TODO(#609): this is an escape hatch, not a pattern. Lita's *"an
     /// investigator at your location successfully attacks a \[\[Monster\]\]
     /// enemy"* is the second compound, target-referencing predicate after
-    /// Machete's, so it fired #609's promotion trigger: `Condition::All` plus a
+    /// Machete's, so it meets the promotion trigger: `Condition::All` plus a
     /// target-referencing variant, with Machete and Lita re-expressed through
-    /// them, rather than more native tags of that shape. Issue #609 names the
+    /// them, rather than more native tags of that shape. The issue names the
     /// further in-corpus candidates (Oops! 02113, Esoteric Formula 02254,
     /// Springfield M1903 02226 — all Dunwich).
     Native { tag: String },
@@ -3468,7 +3418,7 @@ pub enum Quantity {
     /// Clues on the controller's current location.
     CluesAtControllerLocation,
     /// Horror on the card the evaluation is sourced to, wherever it sits; `0`
-    /// with no source card. Agnes Baker 01004's `[elder_sign]` effect, *"+1 for
+    /// when it is sourced to no card. Agnes Baker 01004's `[elder_sign]` effect, *"+1 for
     /// each horror on Agnes Baker."*, is sourced to her investigator card, so it
     /// reads her own horror and not the horror on her assets. The Necronomicon
     /// 01009's *"while it has 1 or more horror on it"* reads the card's own.
@@ -3734,7 +3684,7 @@ pub fn activated(action_cost: u8, costs: Vec<Cost>, effect: Effect) -> Ability {
 ///
 /// **The designator performs the action; `effect` is the residual** the printed
 /// text prints *beside* the designated action, and is empty (`seq([])`) for
-/// every card implemented today (#805). The modification the action itself takes
+/// every card implemented today. The modification the action itself takes
 /// — Machete's `+1 [combat]`, Flashlight's `-2 [shroud]` — rides the designator,
 /// so no effect can re-root a designated action into a different one; see
 /// [`ActionDesignator`].
@@ -4171,7 +4121,7 @@ pub fn put_into_threat_area_with_horror(code: impl Into<String>, horror: u8) -> 
 /// prints on its attack — the combat modifier and the bonus damage beyond the
 /// base 1 (.38 Special: `fight(IntExpr::cond(Condition::Compare { quantity: Quantity::CluesAtControllerLocation, op: CmpOp::Gt, value: 0 }, 3, 1), 1u8)`).
 /// The fight itself is the designator's; this only says how it differs from a
-/// basic one (#805). It tests `[combat]` and carries no reveal clause; chain
+/// basic one. It tests `[combat]` and carries no reveal clause; chain
 /// [`ActionDesignator::testing`] and [`ActionDesignator::with_reveal_clause`]
 /// for a card that prints either (Shrivelling 01060).
 #[must_use]

@@ -104,11 +104,9 @@ fn if_skill_test_kind_rejects_without_in_flight_test() {
 }
 
 #[test]
-fn if_skill_test_outcome_condition_remains_todo() {
-    // `Condition::SkillTest { outcome }` isn't yet wired. The
-    // preferred path for resolution-time outcome-gated effects is
-    // Trigger::OnSkillTestResolution; the condition is reserved
-    // for a future past-test reaction model.
+fn if_on_a_skill_test_condition_rejects_with_a_reason_naming_it() {
+    // `Condition::SkillTest { outcome }` is not evaluated: it rejects, and
+    // an outcome-gated effect uses Trigger::OnSkillTestResolution.
     let mut state = state_with_in_flight_kind(SkillTestKind::Investigate);
     let mut events = Vec::new();
     let effect = dsl::if_(

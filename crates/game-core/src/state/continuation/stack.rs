@@ -10,7 +10,7 @@ use crate::state::continuation::{
     Continuation, InFlightSkillTest, ScenarioEndFrame, ScenarioEndStep,
 };
 
-/// The continuation stack (umbrella §1 / Axis-B): every suspended resolution,
+/// The continuation stack: every suspended resolution,
 /// bottom to top, the top being the frame the engine resumes next.
 ///
 /// Its rules, and where each is enforced:
@@ -148,7 +148,7 @@ impl ContinuationStack {
 
     /// The push-time checks behind [`push`](Self::push).
     ///
-    /// The anchor check is the backstop for the ADR 0003 defect class (#569).
+    /// The anchor check is the backstop for the ADR 0003 defect class.
     /// Phase anchors **pop-and-push** rather than drain — a transition pops the
     /// outgoing anchor and pushes the incoming one on whatever is left — so a
     /// queued ability that ends up below one is not merely mis-ordered, it is

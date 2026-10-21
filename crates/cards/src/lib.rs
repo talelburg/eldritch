@@ -142,7 +142,7 @@ pub const REGISTRY: CardRegistry = CardRegistry {
 /// ([`terminal_code`](game_core::test_support::terminal_code)) in
 /// `abilities_for`. Every real card is served unchanged, so a test seats a
 /// plain [`test_investigator`](game_core::test_support::test_investigator)
-/// next to the corpus without borrowing a real investigator's code (#934).
+/// next to the corpus without borrowing a real investigator's code.
 ///
 /// Its playable check and weakness pool are [`CardRegistry::EMPTY`]'s: it
 /// accepts every code, so a test deck may hold synthetic probe cards, and its
@@ -233,13 +233,10 @@ mod tests {
 
     #[test]
     fn implemented_cards_are_playable() {
-        // Phase-2 PR-I: Holy Rosary (01059), Working a Hunch (01037).
-        // Phase-3 #37: Magnifying Glass (01030).
-        // Phase-3 #38: Hyperawareness (01034).
-        // Phase-3 #39: Deduction (01039).
-        // Phase-3 #55: Roland Banks (01001).
-        // Phase-7 C5d #239: .45 Automatic (01016), Physical Training
-        // (01017), Machete (01020).
+        // Working a Hunch (01037), Holy Rosary (01059), Magnifying Glass
+        // (01030), Hyperawareness (01034), Deduction (01039), Roland Banks
+        // (01001), .45 Automatic (01016), Physical Training (01017) and
+        // Machete (01020).
         assert!(is_playable("01037"));
         assert!(is_playable("01059"));
         assert!(is_playable("01030"));
@@ -253,10 +250,10 @@ mod tests {
 
     #[test]
     fn unimplemented_cards_are_not_playable() {
-        // Most of the corpus is still unimplemented. Fire Axe (02032)
-        // is far-future Dunwich content (Phase 10), so it stays a
-        // stable unimplemented canary as Core assets land.
-        assert!(!is_playable("02032")); // Fire Axe (Dunwich, Phase 10)
+        // Most of the corpus is unimplemented. Fire Axe (02032) is Dunwich
+        // content, so it stays a stable unimplemented canary as Core assets
+        // land.
+        assert!(!is_playable("02032")); // Fire Axe (Dunwich)
         assert!(!is_playable("99999")); // unknown code
     }
 
@@ -293,7 +290,7 @@ mod tests {
         assert!(!abilities.is_empty());
     }
 
-    // ---- the registration corpus (#986) ---------------------------------
+    // ---- the registration corpus ----------------------------------------
     //
     // Each test walks every `impls::ALL` record and asserts what the engine
     // will see through `REGISTRY`, so a card left out of a namespace, a

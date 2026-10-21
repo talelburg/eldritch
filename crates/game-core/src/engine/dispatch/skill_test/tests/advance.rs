@@ -3,16 +3,12 @@ use crate::state::ChaosBag;
 use crate::test_support::{TestSession, TEST_REGISTRIES};
 use crate::{assert_event, assert_no_event};
 
-// The former `revelation_skill_test_failure_deals_margin_damage_and_discards`
-// unit test is gone (#380): it simulated the removed
-// `pending_revelation_discard` slot and drove `finish_skill_test` directly,
-// bypassing the new `resolve_input`-chokepoint disposal. The real
-// suspended-Revelation-into-skill-test discard is integration-tested by
-// `crates/cards/tests/revelation_treacheries.rs::grasping_hands_*`
-// (01162), and the margin-damage math by the same test.
+// The suspended-Revelation-into-skill-test discard, and its margin-damage
+// math, are integration-tested by
+// `crates/cards/tests/revelation_treacheries.rs::grasping_hands_*` (01162).
 
 /// A plain (non-revelation) skill test disposes of no encounter card — the
-/// skill-test driver no longer touches encounter disposal at all (#380).
+/// skill-test driver does not touch encounter disposal at all.
 #[test]
 fn plain_skill_test_disposes_of_no_encounter_card() {
     let inv = InvestigatorId(1);
@@ -68,7 +64,7 @@ fn skill_test_runs_on_success_effect_on_a_passing_draw() {
 }
 
 /// Both ST.1/ST.2 player windows open and auto-skip (no ability served / nothing
-/// Fast-eligible), bracketing the commit, and the test still resolves. (#374.)
+/// Fast-eligible), bracketing the commit, and the test still resolves.
 #[test]
 fn skill_test_opens_and_auto_skips_both_player_windows() {
     let inv = InvestigatorId(1);
@@ -97,7 +93,7 @@ fn skill_test_opens_and_auto_skips_both_player_windows() {
 /// pre-advanced cursor (the `run_fast_continuation` arm), not just via the
 /// auto-skip path. Here window 1 is "about to close" — the cursor is already
 /// `AwaitingCommit` — so `run_fast_continuation` must re-enter `advance` and
-/// emit the commit prompt. (#374.)
+/// emit the commit prompt.
 #[test]
 fn closing_a_skill_test_player_window_re_enters_advance() {
     let inv = InvestigatorId(1);
@@ -168,7 +164,7 @@ fn commit_emits_then_resolves_through_advance() {
 
 /// Flag on: a skill test pauses at the acknowledge step with a `Confirm`
 /// prompt — after the result events are emitted, before teardown — and a
-/// Confirm drives it to completion (#478).
+/// Confirm drives it to completion.
 #[test]
 fn interactive_acknowledge_pauses_for_confirm_then_resolves() {
     let inv = InvestigatorId(1);
@@ -216,7 +212,7 @@ fn interactive_acknowledge_pauses_for_confirm_then_resolves() {
 }
 
 /// Flag off (default): no acknowledge pause — the test resolves straight
-/// through, exactly as before #478 (guards against test churn).
+/// through (guards against test churn).
 #[test]
 fn no_acknowledge_pause_when_flag_off() {
     let inv = InvestigatorId(1);
@@ -257,8 +253,7 @@ fn acknowledge_outcome_rejects_without_in_flight_test() {
 /// The commit hop parks the resolution for the loop rather than driving it
 /// itself: `finish_skill_test` returns `Done` with the `SkillTest` frame on
 /// top at `PreTokenWindow` and emits no `SkillTestEnded`; the `drive` loop's
-/// `SkillTest` arm then resolves it to teardown. (Slice C, #431 — commit-hop
-/// re-entry retired.)
+/// `SkillTest` arm then resolves it to teardown.
 #[test]
 fn finish_skill_test_parks_the_resolution_for_the_loop() {
     let inv = InvestigatorId(1);

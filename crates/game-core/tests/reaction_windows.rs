@@ -6,11 +6,11 @@
 //! a mock registry without colliding with game-core's in-crate tests or
 //! with other `tests/*.rs` files. Mirrors `on_skill_test_resolution.rs`.
 //!
-//! Roland Banks (01001, #55) is the first real-card `Trigger::OnEvent`
-//! consumer; that card's end-to-end test lives in
-//! `crates/cards/tests/roland_banks.rs`. This file keeps mock cards to
-//! exercise edge cases (multi-controller defeats, two abilities on one
-//! card, `by_controller: false`) that no real Phase-3 card hits.
+//! Roland Banks 01001 is a corpus `Trigger::OnEvent` consumer; that card's
+//! end-to-end test lives in `crates/cards/tests/roland_banks.rs`. This file
+//! keeps mock cards to exercise edge cases (multi-controller defeats, two
+//! abilities on one card, `by_controller: false`) without depending on a
+//! printed card.
 
 use std::sync::LazyLock;
 
@@ -45,16 +45,16 @@ const BYSTANDER_REACTION: &str = "MOCK-OE-BYSTANDER";
 const TWO_REACTIONS: &str = "MOCK-OE-TWO";
 
 /// Mock: optional reaction "after you successfully investigate, gain 1
-/// resource" — the Dr. Milan Christopher 01033 shape (C6a #241).
+/// resource" — the Dr. Milan Christopher 01033 shape.
 const MILAN_REACTION: &str = "MOCK-OE-MILAN";
 
 /// Mock: optional reaction "after **a** skill test is successfully resolved,
 /// gain 1 resource" — `by_controller: false`, the unqualified form Lita
-/// Chantler 01117 needs (#773). Its controller reacts to somebody else's test.
+/// Chantler 01117 needs. Its controller reacts to somebody else's test.
 const BYSTANDER_TEST_REACTION: &str = "MOCK-OE-BYSTANDER-TEST";
 
 /// Mock: the Roland-shape reaction whose effect is a two-branch `ChooseOne`.
-/// Pins the *other* half of #555's anchor threading — a reaction fired from an
+/// Pins the *other* half of the anchor threading — a reaction fired from an
 /// in-play instance, where `fire_pending_trigger` is the setter site.
 const MODAL_REACTION: &str = "MOCK-OE-MODAL";
 
@@ -159,7 +159,7 @@ fn ghoul() -> Enemy {
 }
 
 /// `INV`'s open turn at a location holding `location_clues`, engaged with the
-/// Ghoul (co-located: Fight is location-gated, #401), with `seats` seated. The
+/// Ghoul (co-located: Fight is location-gated), with `seats` seated. The
 /// test investigator's combat 3 against the Ghoul's fight 3 with a `+0` token
 /// always succeeds, so the Fight defeats it.
 fn fight_board(seats: impl IntoIterator<Item = Seat>, location_clues: u8) -> GameStateBuilder {
@@ -269,8 +269,8 @@ fn pick_fires_pending_trigger_and_closes_window() {
 }
 
 /// A `ChooseOne` inside a reaction's effect offers its branches' authored
-/// labels, anchored to the in-play card the ability is printed on (#555 /
-/// ADR 0011: *"the client never decides where a control belongs — it reads the
+/// labels, anchored to the in-play card the ability is printed on (ADR 0011:
+/// *"the client never decides where a control belongs — it reads the
 /// anchor the engine attached"*). The anchor comes from the pending trigger's
 /// own `AbilitySource`, threaded through `EvalContext::ability_source` by
 /// `fire_pending_trigger`; drop that and the options silently fall back to the
@@ -528,7 +528,7 @@ fn reaction_window_closes_before_on_skill_test_resolution_fires() {
     // Verify the final event order from the resumed step: the reaction effect
     // (CluePlaced, fired inside the now-closing window) precedes the
     // OnSkillTestResolution/discard step, which precedes SkillTestEnded. The
-    // window closing itself is no longer a discrete event — the reaction
+    // window closing itself is not a discrete event — the reaction
     // resolving before the discard is the observable mid-action shape.
     let mut clue_idx: Option<usize> = None;
     let mut discarded_idx: Option<usize> = None;
@@ -650,16 +650,13 @@ fn reaction_trigger_in_threat_area_opens_window() {
 
 #[test]
 fn active_reaction_window_is_the_top_continuation_frame() {
-    // Invariant the loop-driven dispatch relies on (Slice C-plumbing, #431): the
-    // continuation stack is the resolution order, so an *active* reaction window
-    // (one with pending candidates) is always `continuations.top()` — never
-    // stranded beneath another frame. The engine dispatches the top frame and
-    // operates on it directly (no `top_reaction_window_index` reach-down); this
-    // pins the property that makes that correct. (Replaces the former
-    // `close_reaction_window_at_removes_..._phase_gate_on_top` regression, which
-    // hand-injected an empty gate *above* a pending reaction window — a shape the
-    // framework never produces, because the `drive` loop stops at a pending
-    // window's prompt, so the framework never advances past it to open one.)
+    // Invariant the loop-driven dispatch relies on: the continuation stack is
+    // the resolution order, so an *active* reaction window (one with pending
+    // candidates) is always `continuations.top()` — never stranded beneath
+    // another frame. The engine dispatches the top frame and operates on it
+    // directly; this pins the property that makes that correct. Nothing opens
+    // a frame *above* a pending reaction window, because the `drive` loop stops
+    // at a pending window's prompt.
     let paused = fight_through_commit_window(fight_to_defeat_scenario(&[ROLAND_REACTION]));
     let top = paused
         .state()
@@ -695,7 +692,7 @@ fn pick_fires_threat_area_reaction_and_closes_window() {
 }
 
 // ------------------------------------------------------------------
-// After-successful-investigate reaction window (Dr. Milan, C6a #241)
+// After-successful-investigate reaction window (Dr. Milan)
 // ------------------------------------------------------------------
 
 /// The 1-clue Study (shroud 2).
@@ -750,7 +747,7 @@ fn investigate_and_commit_nothing(board: GameStateBuilder) -> TestSession {
 /// `by_controller: false` is the whole point of the field: the matcher runs
 /// **before** a candidate is minted, so without it a reaction to another
 /// investigator's test is unreachable no matter what the card says afterwards.
-/// Here the bystander's card fires on a test they did not take (#773).
+/// Here the bystander's card fires on a test they did not take.
 #[test]
 fn an_unqualified_listener_reacts_to_another_investigators_test() {
     let paused =

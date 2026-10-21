@@ -1,8 +1,8 @@
 //! The engine's mutation context: the mutable working set threaded
 //! through every dispatch handler and effect evaluation.
 //!
-//! `Cx` bundles the two `&mut` references that previously rode together
-//! by hand through every signature — the [`GameState`] being mutated and
+//! `Cx` bundles the two `&mut` references every handler needs — the
+//! [`GameState`] being mutated and
 //! the [`Event`] buffer being emitted into — plus the registries the
 //! apply was handed: the card registry, and the scenario module resolved
 //! once at the apply boundary. It is *not* a semantic

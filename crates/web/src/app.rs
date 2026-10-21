@@ -29,7 +29,7 @@ pub fn App() -> impl IntoView {
     let store = store::provide_store();
 
     // Derive the live prompt's options and expose them so board entities can
-    // route each option to itself and open a context menu (#536).
+    // route each option to itself and open a context menu.
     let pending = Signal::derive(move || store.with(interaction::pending_options));
     provide_context(PendingOptions(pending));
 
@@ -41,12 +41,12 @@ pub fn App() -> impl IntoView {
 
     // "A decision modal is up" — the board's cards read it to keep their glow
     // while giving up their context menu, since the modal is a decision's sole
-    // surface (#856).
+    // surface.
     let decision_live = Signal::derive(move || store.with(decision::modal_is_live));
     provide_context(DecisionLive(decision_live));
 
     // Multi-select (PickMultiple) selection state, shared by the hand cards and
-    // the prompt banner; cleared whenever a PickMultiple isn't live (#538).
+    // the prompt banner; cleared whenever a PickMultiple isn't live.
     let selected = RwSignal::new(BTreeSet::<u32>::new());
     let multi_active = Signal::derive(move || store.with(interaction::is_multi_select));
     Effect::new(move |_| {
@@ -90,11 +90,11 @@ pub fn App() -> impl IntoView {
 ///
 /// A component rather than four inline tags so a headless test can mount the
 /// exact set the app does — which is how "`.action-bar` is absent from the DOM"
-/// is asserted against the real composition rather than against a copy of it
-/// (#541). The sticky bar that used to hold these is gone; each of them is now
-/// its own viewport-fixed overlay, and the picker only renders pre-game.
+/// is asserted against the real composition rather than against a copy of it.
+/// Each of them is its own viewport-fixed overlay, and the picker only renders
+/// pre-game.
 /// The version-mismatch overlay is last, and stacks above the rest: it is
-/// terminal, so nothing it covers can still be acted on (#770).
+/// terminal, so nothing it covers can still be acted on.
 #[component]
 pub fn Overlays() -> impl IntoView {
     view! {

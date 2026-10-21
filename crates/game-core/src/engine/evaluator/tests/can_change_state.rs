@@ -1,10 +1,10 @@
 use super::*;
 use crate::test_support::TEST_REGISTRIES;
 
+/// Regression for #495: discovering a clue at your location changes the game
+/// state only if there is a clue to discover (RR p.2).
 #[test]
 fn discover_clue_can_change_state_only_with_clues_present() {
-    // #495 / RR p.2: discovering a clue at your location changes state iff
-    // there is a clue to discover.
     let discover = dsl::discover_clue(LocationTarget::YourLocation, 1);
 
     let with_clues = state_with_clues_at_location(2);
@@ -67,7 +67,7 @@ fn unknown_effects_are_conservatively_state_changing() {
 }
 
 /// Investigator 1 (and, when `others` is non-empty, further investigators)
-/// on [`HERE`], each seeded `(id, damage, horror, deck_len)`. #639 fixtures.
+/// on [`HERE`], each seeded `(id, damage, horror, deck_len)`.
 fn state_with_harm(seeds: &[(u32, u8, u8, usize)]) -> GameState {
     seeds
         .iter()
@@ -86,10 +86,10 @@ fn state_with_harm(seeds: &[(u32, u8, u8, usize)]) -> GameState {
         .build()
 }
 
+/// Regression for #639: First Aid's heal on an unharmed investigator has no
+/// potential to change the game state (RR "Ability"), so it does not initiate.
 #[test]
 fn heal_can_change_state_only_when_the_target_carries_that_harm() {
-    // #639 / RR "Ability": First Aid's heal on an unharmed investigator has
-    // no potential to change the game state.
     let heal_damage = dsl::heal(HarmKind::Damage, InvestigatorTarget::You, 1);
     assert!(effect_can_change_state(
         &state_with_harm(&[(1, 2, 0, 0)]),
@@ -148,7 +148,7 @@ fn a_chosen_heal_target_scans_every_candidate_in_scope() {
 
 #[test]
 fn search_deck_is_inert_only_against_an_empty_deck() {
-    // #639 / Old Book of Lore 01031: an empty deck has nothing to find and
+    // Old Book of Lore 01031: an empty deck has nothing to find and
     // nothing to shuffle. A non-empty one is never proven inert (the
     // mandatory shuffle reorders it even on a fruitless search).
     let search = dsl::search_deck(

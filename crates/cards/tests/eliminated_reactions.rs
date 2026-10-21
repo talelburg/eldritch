@@ -1,10 +1,12 @@
-//! Reactions and elimination (#959). `glossary/Elimination.md`: *"The only
-//! manner in which eliminated investigators interact with the game is when
-//! establishing "per investigator" values"* — so an eliminated investigator is
-//! never offered a reaction, and the initiation gate refuses a controller who
-//! is not Active (ADR 0017). The act's and agenda's reactions bind the lead
-//! proxy, the first Active investigator in `turn_order` (GLOSSARY "Lead
-//! investigator"), so they survive the first seat's elimination.
+//! Reactions and elimination.
+//!
+//! `glossary/Elimination.md`: *"The only manner in which eliminated
+//! investigators interact with the game is when establishing "per investigator"
+//! values"* — so an eliminated investigator is never offered a reaction, and
+//! the initiation gate refuses a controller who is not Active (ADR 0017). The
+//! act's and agenda's reactions bind the lead-investigator proxy, the first Active
+//! investigator in `turn_order` (GLOSSARY "Lead investigator"), so they survive
+//! the first seat's elimination.
 //!
 //! Integration test so it can run against `cards::TEST_REGISTRIES`.
 
@@ -63,8 +65,8 @@ fn an_active_roland_is_offered_his_reaction() {
     );
 }
 
-/// Elimination leaves the investigator card behind (it cannot be drained,
-/// #448), so a defeated Roland still holds his printed reaction; the gate's
+/// Elimination leaves the investigator card behind (it cannot be drained), so
+/// a defeated Roland still holds his printed reaction; the gate's
 /// status check is what keeps it from being offered.
 #[test]
 fn an_eliminated_investigator_is_offered_no_reaction() {

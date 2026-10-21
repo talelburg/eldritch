@@ -154,12 +154,12 @@ pub enum SkillKind {
 
 /// Where on the location map an encounter enemy spawns.
 ///
-/// Phase-4 minimal set: a printed location code, plus an explicit
+/// A printed location code, plus an explicit
 /// [`Unrepresented`](Self::Unrepresented) marker for spawn clauses the
-/// pipeline could not model. Future *modelled* variants (`AnyEmptyLocation`,
-/// `FarthestFromYou`, `NearestWithTrait`, `MostClues`, `EngagedWithPrey`)
-/// land with the PR that implements the spawning investigator's choice
-/// among multiple valid locations.
+/// pipeline could not model. Spawn instructions that leave the spawning
+/// investigator a choice among several valid locations (`AnyEmptyLocation`,
+/// `FarthestFromYou`, `NearestWithTrait`, `MostClues`, `EngagedWithPrey`) are
+/// not modelled.
 ///
 /// **Why `Unrepresented` is a variant rather than `spawn: None`.**
 /// `spawn: None` is the *positive* rule "this enemy prints no Spawn line",
@@ -168,8 +168,7 @@ pub enum SkillKind {
 /// a different, valid rule to the wrong enemy — Acolyte 01169's "**Spawn** -
 /// Any empty location." would spawn it at the one location guaranteed *not*
 /// to be empty. Keeping the two apart lets the engine refuse loudly on
-/// unmodelled content, the way `PlayCard` refuses an unimplemented card
-/// (#635).
+/// unmodelled content, the way `PlayCard` refuses an unimplemented card.
 ///
 /// **Why a [`String`] code rather than a `LocationCode` newtype.**
 /// Locations in Arkham are cards with `ArkhamDB` codes; the namespace
@@ -207,8 +206,7 @@ pub enum SpawnLocation {
 /// EngagementOnSpawn` for Aloof / "spawn unengaged" cards,
 /// `also_spawn_doom_at: ...` for the rare multi-effect spawns)
 /// without churning every enemy declaration in the generated corpus.
-/// Phase-4 ships only `location`; later variants land alongside the
-/// cards that force them.
+/// Today it carries only `location`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Spawn {
     /// Where the enemy spawns.
@@ -219,8 +217,9 @@ pub struct Spawn {
 /// investigator it pursues / engages when it has a choice.
 ///
 /// `Default` covers "no prey instruction" and "Prey – nearest" — among
-/// equidistant / co-located investigators all are equal, so the lead
-/// investigator breaks the tie (p.12 / p.17). [`Ranked`](Self::Ranked)
+/// equidistant / co-located investigators all are equal, and a tie is
+/// settled per `glossary/Prey.md`: *"the lead investigator decides among those
+/// investigators."* [`Ranked`](Self::Ranked)
 /// covers every *comparative* prey line as a `{ direction, measure }`
 /// pair: Ghoul Priest's `Highest [combat]` (`Highest` +
 /// `Skill(Combat)`) and Ravenous Ghoul's "Lowest remaining health"
@@ -230,12 +229,12 @@ pub struct Spawn {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum Prey {
-    /// No discriminating instruction — all candidates are equal; the
-    /// lead investigator breaks ties.
+    /// No discriminating instruction — all candidates are equal, and a tie is
+    /// settled per `glossary/Prey.md` (quoted on [`Prey`]).
     #[default]
     Default,
     /// Pursue / engage the investigator with the highest or lowest value
-    /// of `measure`; ties fall to the lead investigator.
+    /// of `measure`; a tie is settled per `glossary/Prey.md`.
     Ranked {
         /// Whether the highest or lowest measure value is preferred.
         direction: PreyDirection,
@@ -388,11 +387,10 @@ pub struct Uses {
 ///
 /// Lives here in `card-dsl` (the lowest layer) so both the printed
 /// metadata ([`Uses`]) and the engine's runtime pool key off one type;
-/// `game_core::state` re-exports it at the historical path.
+/// `game_core::state` re-exports it.
 ///
-/// Phase-3 minimal set; cards using exotic uses (Time on some Dunwich
-/// cards, Resource on a few Mystic effects) add their variant when
-/// they land.
+/// The kinds implemented cards use. Other printed kinds (Time on some
+/// Dunwich cards, Resource on a few Mystic effects) are not modelled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum UseKind {
@@ -412,9 +410,7 @@ pub enum UseKind {
 /// via [`CardMetadata::card_type`]. Player variants carry a [`Class`];
 /// encounter variants do not (encounter cards have no player class).
 ///
-/// Location / Act / Agenda variants and the `Enemy` combat stats land
-/// with encounter-card ingestion (issue #252); this is the current
-/// corpus's six types. Not `#[non_exhaustive]` for the same reason as
+/// One variant per card type in the corpus. Not `#[non_exhaustive]` for the same reason as
 /// [`CardMetadata`] — the generated corpus constructs these variants.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CardKind {
@@ -578,7 +574,8 @@ impl CardMetadata {
     ///
     /// An entity whose identity differs from its printed card — Chapel Crypt
     /// 05173b's *"Treat that card as a Reanimated Dead enemy with … the
-    /// `[[Monster]]` trait."* — is #921 item 12's question, not this query's.
+    /// `[[Monster]]` trait."* — replaces the entity's base values, which is not
+    /// modelled. It is a base-value question, not this query's.
     #[must_use]
     pub fn has_trait(&self, trait_name: &str) -> bool {
         self.traits.iter().any(|t| t == trait_name)

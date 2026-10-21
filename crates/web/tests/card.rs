@@ -1,4 +1,6 @@
-//! Headless render tests for the `Card` component. wasm32-only (browser DOM).
+//! Headless render tests for the `Card` component.
+//!
+//! wasm32-only (browser DOM).
 #![cfg(target_arch = "wasm32")]
 
 use std::collections::BTreeSet;
@@ -92,7 +94,7 @@ async fn guardian_card_carries_class_modifier() {
 /// The class is asserted, not just the code, because it is the contract
 /// `crates/web/tests/board.rs` reads: that binary asserts `card--unknown` never
 /// appears, which is only a real guard if the fallback is the sole producer of
-/// it (#868). `entity_names.rs` holds the complementary property — that a code
+/// it. `entity_names.rs` holds the complementary property — that a code
 /// which *does* resolve never leaks to the player.
 #[wasm_bindgen_test]
 async fn unknown_code_falls_back_to_raw_code() {

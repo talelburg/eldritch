@@ -14,7 +14,7 @@
 //! # Ally soak
 //!
 //! Metadata gives Research Librarian `health: 1, sanity: 1` (ally soak, not a
-//! stat boost). Soak is engine-modeled from that metadata (#44/K5); this impl
+//! stat boost). Soak is engine-modeled from that metadata; this impl
 //! declares only the reaction — the soak half rides on metadata.
 //!
 //! **Cell: the `after` cell of the `EnteredPlay` condition.** The printed word

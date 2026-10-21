@@ -1,14 +1,14 @@
-//! The Parlor 01115's `[action]` **Resign** (#644), end to end: the whole
+//! The Parlor 01115's `[action]` **Resign**, end to end: the whole
 //! elimination trail an investigator leaves behind when they walk out.
 //!
 //! ## Verified card text (`data/arkhamdb-snapshot`, 2026-08-29)
 //!
 //! **Parlor (01115):** "[action] <b>Resign.</b> \"This is too much for me!\"
-//! You run out the front door, fleeing in panic." (Shroud 2, 0 clues. Lita
-//! Chantler's granted Parley is #772 and is not implemented, so it is not
-//! exercised here. The back side's barrier shipped in #774 and lives in
-//! `parlor_barrier.rs`; the Parlor is **revealed** throughout this file, which
-//! is the side the Resign is printed on.)
+//! You run out the front door, fleeing in panic." (Shroud 2, 0 clues. The
+//! Parley the Parlor grants Lita Chantler is exercised in `lita_parley.rs`, not
+//! here. The back side's barrier lives in `parlor_barrier.rs`; the Parlor is
+//! **revealed** throughout this file, which is the side the Resign is printed
+//! on.)
 //!
 //! ## The rules being asserted
 //!
@@ -32,7 +32,7 @@
 //! the Parlor's metadata and its `abilities()`, resolved through
 //! `cards::REGISTRY`. The engine-side peers are `elimination.rs`'s unit tests
 //! (the steps themselves) and `game-core/tests/action_designator_aoo.rs` (the
-//! designator's attack-of-opportunity exemption, #696).
+//! designator's attack-of-opportunity exemption).
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{self, TurnAction};
@@ -200,8 +200,7 @@ fn the_resigners_cards_are_removed_from_the_game() {
 /// but otherwise maintaining their current game state"* — and it takes no
 /// attack of opportunity on the way out, because
 /// `glossary/Attack_of_Opportunity.md` exempts *"an action other than to
-/// **fight**, to **evade**, or to activate a **parley** or **resign** ability"*
-/// (#696).
+/// **fight**, to **evade**, or to activate a **parley** or **resign** ability"*.
 #[test]
 fn an_engaged_enemy_is_left_at_the_parlor_and_takes_no_parting_shot() {
     let ghoul = test_support::test_enemy(1, "Ghoul Minion");

@@ -1,6 +1,6 @@
-//! Phase-5 closing demo: the end-to-end demonstration that closes the
-//! milestone (mirrors Phase 4's #157). One narrative exercises every
-//! "done" criterion of the phase:
+//! The server's end-to-end demonstration.
+//!
+//! One narrative exercises each of these:
 //!
 //! 1. two clients connected to one game see the same initial state and
 //!    an identical event stream as actions are applied (the spectator

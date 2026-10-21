@@ -1,6 +1,7 @@
-//! Pre-game investigator/scenario picker (wasm-only). Collects a roster and
-//! submits a `CreateGameRequest` on the `CreateTx` channel; the transport
-//! creates the game (#459).
+//! Pre-game investigator/scenario picker (wasm-only).
+//!
+//! Collects a roster and submits a `CreateGameRequest` on the `CreateTx`
+//! channel; the transport creates the game.
 
 use cards::decks::{self, DefaultDeck, WeaknessChoice};
 use futures::channel::mpsc::UnboundedSender;
@@ -43,8 +44,8 @@ pub fn PickerView() -> impl IntoView {
             let tx = create_tx.clone();
             view! {
                 // A full pre-game overlay: it only renders at `AwaitingRoster`,
-                // when there is no board behind it, so it no longer shares a
-                // container with in-game controls it has nothing to do with (#541).
+                // when there is no board behind it, so it shares no container
+                // with in-game controls it has nothing to do with.
                 <section class="picker picker-overlay">
                     <h2>"New Game"</h2>
                     <label>"Scenario: " <select><option>"The Gathering"</option></select></label>

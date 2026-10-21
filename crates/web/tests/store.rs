@@ -1,5 +1,7 @@
 //! Headless acceptance: feeding `Hello`/`Applied` updates the signal and
-//! the DOM rendered from it. wasm32-only (browser DOM); native jobs skip.
+//! the DOM rendered from it.
+//!
+//! wasm32-only (browser DOM); native jobs skip.
 #![cfg(target_arch = "wasm32")]
 
 use game_core::engine::EngineOutcome;
@@ -22,7 +24,7 @@ fn body_html() -> String {
 #[wasm_bindgen_test]
 async fn hello_renders_state_present() {
     // Rendering the investigator panel reads `max_health()`/`max_sanity()`,
-    // which resolve the investigator card's capacity from the registry (#448).
+    // which resolve the investigator card's capacity from the registry.
     // The fixture investigator uses the synthetic `TEST_INV` code (8/8).
     let store = RwSignal::new(ClientState::default());
     // Provide the same signal the component reads, then mount the board;

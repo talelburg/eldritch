@@ -1,6 +1,8 @@
-//! Headless render test for `EventLogView` (#505): seed the store with one
+//! Headless render test for `EventLogView`: seed the store with one
 //! `LogBatch` and assert the panel renders the batch header and an event's
-//! `Debug` text. wasm32-only (browser DOM).
+//! `Debug` text.
+//!
+//! wasm32-only (browser DOM).
 #![cfg(target_arch = "wasm32")]
 
 use game_core::event::Event;

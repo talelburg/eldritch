@@ -1,5 +1,5 @@
 //! A card discarded from a threat area goes to its **owner's** discard pile
-//! (#981). `glossary/Discard_Piles.md`: *"Any time a card is discarded, it is
+//! `glossary/Discard_Piles.md`: *"Any time a card is discarded, it is
 //! placed faceup on top of its owner's discard pile. Encounter cards are owned
 //! by the encounter deck."*
 //!

@@ -11,7 +11,7 @@
 //! this investigation.
 //!
 //! **Designator: Investigate** — the bold word, which **performs the
-//! investigation** (#805) carrying the `-2` as its `shroud_modifier` (#313).
+//! investigation** carrying the `-2` as its `shroud_modifier`.
 //! The modifier lowers the location *difficulty* (clamped at 0), not the
 //! investigator's total, and the investigation is the same primary the basic
 //! investigate action runs, so a success discovers a clue exactly as that does.
@@ -19,9 +19,8 @@
 //! **Investigate** is not on the attack-of-opportunity exempt list
 //! (`glossary/Attack_of_Opportunity.md` names only **fight**, **evade**,
 //! **parley** and **resign**), so activating this `[action]` while engaged with
-//! a ready enemy provokes one — again exactly as the basic action does. Shipped
-//! engine-wide in #361, exercised in
-//! `crates/cards/tests/activate_ability_aoo.rs`.
+//! a ready enemy provokes one — again exactly as the basic action does
+//! (`crates/cards/tests/activate_ability_aoo.rs`).
 //!
 //! The `Uses (3 supplies)` pool is corpus metadata (`CardKind::Asset.uses`,
 //! pipeline-parsed with `discard_when_empty: false` — Flashlight's printed
@@ -79,7 +78,7 @@ mod tests {
             }]
         );
         // The designator performs the investigation; nothing is printed beside
-        // it (#805).
+        // it.
         assert_eq!(abilities[0].effect, Effect::Seq(vec![]));
     }
 

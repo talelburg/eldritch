@@ -1,8 +1,7 @@
-//! C7b — the Slice-1 "done" gate: drive solo Roland through The Gathering
-//! to a genuine engine-latched Won and Lost resolution, against the real
-//! `scenarios` + `cards` registries.
+//! Drive solo Roland through The Gathering to a genuine engine-latched Won
+//! and Lost resolution, against the real `scenarios` + `cards` registries.
 //!
-//! Hybrid fidelity (see the C7b design spec): drive the cheap, deterministic
+//! Hybrid fidelity: drive the cheap, deterministic
 //! real progression and seed only the expensive preconditions, so the
 //! resolution itself is always engine-latched. Test-determinism stand-ins
 //! (a controlled chaos bag, a minimal roster deck, seeded health/act state)
@@ -81,8 +80,8 @@ fn solo_roland_is_seated_in_the_study_ready_to_act() {
 fn enemy_attack_defeats_roland_and_latches_no_resolution() {
     let mut state = seated_roland();
 
-    // Seed: Roland one hit from death. After cp2a, accumulated_damage is the
-    // source of truth; max_health() reads from cards::REGISTRY (9 for Roland).
+    // Seed: Roland one hit from death. accumulated_damage is the source of
+    // truth; max_health() reads from cards::REGISTRY (9 for Roland).
     {
         let roland = state.investigators.get_mut(&INV).expect("Roland seated");
         roland.investigator_card.accumulated_damage =
@@ -124,7 +123,7 @@ fn advance_to_the_terminal_act(state: GameState) -> GameState {
         .take(&TurnAction::AdvanceAct { investigator: INV });
     assert_eq!(advanced.state().act_index, 1, "act 1 advanced to act 2");
 
-    // --- Act 2 (real): end the round → the C3d round-end clue-spend window
+    // --- Act 2 (real): end the round → the round-end clue-spend window
     // opens (Roland holds 3 clues in the Hallway) → spending them on the act
     // advances it, and its reverse spawns the real Ghoul Priest (01116).
     let round_end = advanced.take(&TurnAction::EndTurn);
@@ -162,7 +161,7 @@ fn advance_to_the_terminal_act(state: GameState) -> GameState {
 }
 
 /// Won via the real progression + defeat→advance→win latch. Drives act 1
-/// (`AdvanceAct`) and act 2 (the C3d round-end clue-spend window) for real —
+/// (`AdvanceAct`) and act 2 (the round-end clue-spend window) for real —
 /// act 2's reverse spawns the **real** Ghoul Priest — then fights that
 /// spawned Priest to trigger `what_have_you_done`'s forced advance on the terminal
 /// act → `ScenarioEnding::Resolution(R1)`.
@@ -179,9 +178,9 @@ fn act_progression_and_ghoul_priest_defeat_reaches_r1() {
     drive_the_ghoul_priest_defeat_and_pick(0, 1);
 }
 
-/// The second printed bullet — *"This hell-pit is my home! No way are we
-/// burning it! (→R2)"* — down the same real path. Before #775 no sequence of
-/// play could reach it: the act's reverse latched R1 unconditionally.
+/// Regression for #775: the second printed bullet — *"This hell-pit is my
+/// home! No way are we burning it! (→R2)"* — is reachable down the same real
+/// path, because the act's reverse offers the choice rather than latching R1.
 ///
 /// The banner the player ends on is a pure function of this `ResolutionId`
 /// (`crates/web/tests/board.rs::resolution_banner_names_the_resolution_point`),
@@ -246,8 +245,9 @@ fn drive_the_ghoul_priest_defeat_and_pick(pick: usize, expected: u8) {
         "terminal: cursor does not bump"
     );
 
-    // The flipped act asks the lead investigator which printed point to reach
-    // (#775) — the scenario has not ended yet.
+    // The flipped act prints *"The lead investigator must decide (choose
+    // one):"*, so solo Roland is asked which printed point to reach — the
+    // scenario has not ended yet.
     let request = session.prompt();
     assert_eq!(
         request
@@ -281,7 +281,7 @@ fn drive_the_ghoul_priest_defeat_and_pick(pick: usize, expected: u8) {
         "act 01110's reverse reaches the campaign guide's (→R{expected})",
     );
 
-    // #566: advancing act 3 reaches a resolution point, so the scenario ends
+    // Advancing act 3 reaches a resolution point, so the scenario ends
     // *during* the defeat that triggered it — and Roland Banks' "After you
     // defeat an enemy: Discover 1 clue at your location" window must never open.
     // Act 01110's ruling is explicit that its Forced objective "will trigger as
@@ -349,13 +349,13 @@ fn interactive_ghoul_priest_defeat() -> TestSession {
     s.confirm()
 }
 
-/// Act 3 (01110) advances in **two** clicks — the flip, then the reverse — and
-/// its printed choice follows the second without a third (#562).
+/// Regression for #562: act 3 (01110) advances in **two** clicks — the flip,
+/// then the reverse — and its printed choice follows the second without a third.
 ///
-/// The flip pick (#558) is the click that advances: the act glows, you click it,
-/// and it turns over. The reverse's own `#466` acknowledge is the click that
+/// The flip pick is the click that advances: the act glows, you click it,
+/// and it turns over. The reverse's own acknowledge is the click that
 /// resolves what you have just read. What sat in front of both was a *third*
-/// prompt, the `#466` acknowledge for 01110's Objective — a forced ability whose
+/// prompt, the acknowledge for 01110's Objective — a forced ability whose
 /// entire effect is the advance — and on this card it renders under the very same
 /// text as the reverse's, because both are printed on What Have You Done?. The
 /// suppression removes it, leaving 01110 with the agenda's shape.
@@ -432,9 +432,9 @@ fn act_3_advances_in_two_clicks_and_its_choice_follows_the_second() {
 /// still on act 1 or 2 meets 01107's enemy-phase-end Forced with no Parlor on
 /// the board. That is a no-op — `move_ghouls_toward_parlor`'s own doc carries the
 /// rules argument — and what this pins is the part only a full turn can show:
-/// because a rejection rolls the whole apply back (#161), the old `Rejected`
-/// landed on the *player's* action, and the scenario was unplayable from the
-/// moment agenda 3 turned up (#811). The no-op itself is pinned at the unit.
+/// because a rejection rolls the whole apply back, a `Rejected` here would land
+/// on the *player's* action, and the scenario would be unplayable from the
+/// moment agenda 3 turned up. The no-op itself is pinned at the unit.
 #[test]
 fn the_terminal_agendas_ghoul_move_is_a_no_op_when_the_parlor_is_not_in_play() {
     let mut state = seated_roland();
@@ -468,9 +468,8 @@ fn the_terminal_agendas_ghoul_move_is_a_no_op_when_the_parlor_is_not_in_play() {
 /// Roland is at act 1 here, so R3 is the branch the card prints for him; the
 /// act-3 branch is the two tests below.
 ///
-/// Before #808 this path never emitted `AgendaAdvanced` at all: the doom-threshold
-/// check latched the field *instead of* advancing, so the board went quiet and the
-/// player never saw which agenda ended their game.
+/// The doom threshold advances the agenda and emits `AgendaAdvanced` before the
+/// ending latches, so the player sees which agenda ended their game.
 ///
 /// Here rather than in `crates/cards/tests/` — which is where the rest of 01107's
 /// integration coverage lives — because reaching agenda 3 needs
@@ -553,7 +552,7 @@ fn dooming_out_the_terminal_agenda_at_act_2_also_reaches_r3() {
 /// resolution was reached' entry for that scenario in the campaign guide."* —
 /// and *that* is what ends the scenario. The ending is
 /// [`ScenarioEnding::NoResolution`], the campaign guide's own untitled entry,
-/// rather than the Resolution 3 the act-1/2 branch reaches (#809).
+/// rather than the Resolution 3 the act-1/2 branch reaches.
 #[test]
 fn dooming_out_the_terminal_agenda_at_act_3_defeats_the_table_and_reaches_no_resolution() {
     let mut state = seated_roland();
@@ -608,7 +607,7 @@ fn dooming_out_the_terminal_agenda_at_act_3_defeats_the_table_and_reaches_no_res
 }
 
 /// The player gets to read the terminal agenda's reverse before the result panel
-/// replaces the board: the advance-flip acknowledge (#558) surfaces on the
+/// replaces the board: the advance-flip acknowledge surfaces on the
 /// terminal agenda exactly as it does on 01105 and 01106, and the ending is not
 /// latched until it is answered.
 #[test]
@@ -621,7 +620,7 @@ fn the_terminal_agendas_advance_flip_acknowledge_precedes_the_ending() {
 
     // Ending the round fires 01107's two Forced *fronts* first — the
     // enemy-phase-end Ghoul move and the round-end doom — each raising its own
-    // #466 acknowledge before the Mythos doom tips the threshold.
+    // acknowledge before the Mythos doom tips the threshold.
     let mut s = TestSession::new(state, scenarios::TEST_REGISTRIES).take(&TurnAction::EndTurn);
     for _ in 0..2 {
         assert_eq!(
@@ -634,7 +633,7 @@ fn the_terminal_agendas_advance_flip_acknowledge_precedes_the_ending() {
 
     // Then the flip: a single on-card option anchored to the agenda, with the
     // ending still unlatched — the player reads the reverse before the result
-    // panel replaces the board (#558).
+    // panel replaces the board.
     let request = s.prompt();
     assert_eq!(request.prompt, "Agenda 3 advanced — acknowledge.");
     assert_eq!(request.options.len(), 1, "one option: {request:?}");
@@ -834,12 +833,10 @@ fn drive_the_walk() -> (Vec<Action>, usize, GameState) {
 /// from the same seeded start, ends in a byte-identical state — even when the
 /// replay is serialized to JSON and rebuilt from it partway through.
 ///
-/// This is the one property the retired phase-4 closing demo uniquely held
-/// (#874). It held it on two synthetic full-cycle walks; this holds it on a real
-/// Gathering walk, which is the substrate ADR 0016 asks for. The serde step
-/// at the split is the *only* delta from a straight second drive of the log, so
-/// the comparison isolates round-trip fidelity — the property Phase 5's
-/// persistence depends on, since the server persists a seed state plus a
+/// It holds on a real Gathering walk, which is the substrate ADR 0016 asks for.
+/// The serde step at the split is the *only* delta from a straight second drive
+/// of the log, so the comparison isolates round-trip fidelity — the property the
+/// server's persistence depends on, since it persists a seed state plus a
 /// `ResolveInput`-only action log — on top of the seeded-`rng` replay path both
 /// runs share.
 #[test]

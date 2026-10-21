@@ -201,12 +201,12 @@ const _: () = {
 /// being offered or resolved.
 ///
 /// Pure over `&GameState`, which is what lets a reaction window re-ask it once
-/// a sibling option has resolved (#568).
+/// a sibling option has resolved.
 ///
 /// The **change-state** check is [`evaluator::effect_can_change_state`],
 /// conservative by construction; the **eligibility** condition is a play
 /// restriction the card supplies where the engine can't derive one, such as an
-/// opaque `Effect::Native` it can't introspect (#368: Cover Up 01007's *"if
+/// opaque `Effect::Native` it can't introspect (Cover Up 01007's *"if
 /// there are any clues on Cover Up"*, act 01109). No condition → eligible. A
 /// condition that can't be evaluated (an unregistered native tag) panics in a
 /// debug build and is refused in release, so a half-installed host never
@@ -434,7 +434,7 @@ fn restrictions_met(
 /// — every designator but **Parley**, which performs nothing.
 ///
 /// Such an ability's substance is the action, not the residual effect printed
-/// beside the bold word (#805; `glossary/Ability.md`: *"Activating such an
+/// beside the bold word (`glossary/Ability.md`: *"Activating such an
 /// ability **performs the designated action**"*), and every implemented one's
 /// residual is empty, which [`evaluator::effect_can_change_state`] proves inert.
 /// So the change-state question is asked of the **action** instead, by
@@ -466,10 +466,11 @@ fn performs_an_action(ability: &Ability) -> bool {
 /// period **for `candidate`'s controller** — the triggering investigator, since
 /// limits are player specific (`CardInPlay::ability_usage` cites the rule and
 /// The Stranger 03047a's ruling). Only a printed ability on an in-play card instance carries a
-/// counter: a granted ability has no printed index to key one by (#829), and a
-/// location, enemy, act or agenda has no instance to hold one (#699). Neither
+/// counter: a granted ability has no printed index to key one by, and a
+/// location, enemy, act or agenda has no instance to hold one. Neither
 /// is counted out here, and the activation validator refuses either one that
-/// prints a limit (ADR 0010).
+/// prints a limit (ADR 0010). TODO(#829): a counter key for a granted ability.
+/// TODO(#699): a state-level counter for the instance-less sources.
 fn usage_exhausted(
     state: &GameState,
     candidate: &ResolutionCandidate,
@@ -524,7 +525,8 @@ fn ability_cost_payable(
 /// arm pays nothing: an activation deals the harm through the deal frame once
 /// its other costs are paid, beneath which it parks a resolution that keeps no
 /// trigger's event bindings. No Core or Dunwich triggered ability prints one,
-/// so it is refused rather than built (#1081). The park it needs is the
+/// so it is refused rather than built. TODO(#1081): build it. The park it needs
+/// is the
 /// hand-discard cost's — the bound effect pushed first, the cost on top
 /// ([`initiate`], `hand_discard_cost::park`).
 fn triggered_harm_cost(code: &CardCode, ability: &Ability) -> Result<(), Cow<'static, str>> {
@@ -564,7 +566,7 @@ fn triggered_harm_cost(code: &CardCode, ability: &Ability) -> Result<(), Cow<'st
 ///   rejection is the final behaviour. Putting such a card into play without
 ///   playing it is a different path and does not come through here.
 /// - **`Some(n)` with `n < 0` — an X cost.** Genuinely **not yet modeled**
-///   (deferral split from #501): X needs a player-chosen amount the play path
+///   (TODO(#577): model the X cost): X needs a player-chosen amount the play path
 ///   has no channel for. Rejected loudly, because the alternative is worse
 ///   than a reject — `u8::try_from(-2).unwrap_or(0)` would make the card
 ///   *free*, both here and at `pay_play_cost`. Jenny's Twin .45s 02010 is
@@ -633,15 +635,16 @@ fn payable_play_cost(play_cost: Option<i8>, code: &CardCode) -> Result<u8, Cow<'
 /// (`ability_source::source_card`, over [`board::find_instance`]). That covers
 /// the controller's investigator card (Roland Banks 01001's seated `[reaction]`), cards in play and threat
 /// area, and the sources an activation reaches without controlling them: a
-/// co-located threat area, a location's attachments (#708). A granted ability
-/// has no printed index, so nothing is recorded for one (#829).
+/// co-located threat area, a location's attachments. A granted ability
+/// has no printed index, so nothing is recorded for one (TODO(#829): a counter
+/// key for it).
 ///
 /// **A limit on a source with no card instance is refused before it can reach
 /// here.** A location, enemy, act or agenda has nowhere to record a use, so
 /// `reject_untrackable_usage_limit` rejects the activation-side case at
 /// validation, no corpus card prints such a forced or reaction ability, and one
-/// reaching here is an invariant violation. #699 builds the state-level counter
-/// the Dunwich locations need, and lifts both.
+/// reaching here is an invariant violation. TODO(#699): the state-level counter
+/// the Dunwich locations need, which lifts both.
 pub(super) fn record_initiation(
     state: &mut GameState,
     candidate: &ResolutionCandidate,
@@ -686,7 +689,7 @@ pub(super) fn record_initiation(
 
 /// **Fire** the triggered ability `candidate` names, at the timing point
 /// `event` — the one firing path for every forced and reaction ability: a lone
-/// forced hit, an ability the lead picks from an ordered forced run, and a
+/// forced hit, an ability picked from an ordered forced run, and a
 /// reaction a player picks from a window. Four steps:
 ///
 /// 1. resolve the ability at its address through the side-in-effect / grant
@@ -706,8 +709,8 @@ pub(super) fn record_initiation(
 ///
 /// A [`Cost::DiscardCardFromHand`](card_dsl::dsl::Cost::DiscardCardFromHand)
 /// needs a choice, so step 3 cannot pay it inline: once step 4 has pushed the
-/// bound effect, its choice frame is parked on top (`hand_discard_cost::park`,
-/// #1107). The stack is LIFO, so the cost is still paid before the effect
+/// bound effect, its choice frame is parked on top (`hand_discard_cost::park`).
+/// The stack is LIFO, so the cost is still paid before the effect
 /// resolves, and the effect resolves with the bindings it was pushed with.
 ///
 /// A [`Cost::TakeHarm`](card_dsl::dsl::Cost::TakeHarm) is never paid here:
@@ -721,10 +724,10 @@ pub(super) fn record_initiation(
 /// point."*
 ///
 /// Returns the pushed effect, so the lone forced path can decide whether it
-/// warrants a #466 acknowledge. Refuses with [`Refusal::SideNotInEffect`],
+/// warrants a forced acknowledge. Refuses with [`Refusal::SideNotInEffect`],
 /// having changed nothing, when no ability resolves at the address, and with
 /// [`Refusal::CostUnpayable`] when a cost cannot be paid after all — which the
-/// gate the caller asked first rules out, so the apply's rollback (#161) is
+/// gate the caller asked first rules out, so the apply's rollback is
 /// what undoes the use recorded before it.
 ///
 /// **Not the activation path.** An activated ability runs the effect it
@@ -749,7 +752,7 @@ pub(super) fn initiate(
     // The source rides along as an `AbilitySource`, so an effect that refers to
     // itself (`DiscardSelf`) finds the firing card, and an effect-internal
     // `ChooseOne` anchors its options to it — including the act's and agenda's
-    // reverses, which have no card instance (#555).
+    // reverses, which have no card instance.
     let ctx = EvalContext::for_controller_with_optional_source(
         candidate.controller,
         candidate.source.ability(),
@@ -786,7 +789,7 @@ pub(super) fn initiate(
 /// - An enemy attack's damage assignment binds the **attacking enemy** — Guard
 ///   Dog 01021's retaliate names it.
 /// - A clue discovery binds the **capped** count. `discover_clue` caps at the
-///   location's clues before emitting (#471), so *"that many"* (Cover Up 01007)
+///   location's clues before emitting, so *"that many"* (Cover Up 01007)
 ///   is what would actually have been discovered, not what was requested.
 pub(super) fn push_bound_effect(
     cx: &mut Cx,

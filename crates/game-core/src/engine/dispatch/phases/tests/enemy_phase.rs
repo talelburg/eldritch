@@ -94,7 +94,7 @@ fn enemy_phase_suspends_on_hunter_tie_then_resumes_into_attack_loop() {
         1
     );
     assert_eq!(session.state().phase, Phase::Enemy);
-    // The EnemyPhase anchor (slice 1a) is on the stack beneath the
+    // The EnemyPhase anchor is on the stack beneath the
     // suspended hunter-movement choice — a stack invariant, so read the stack.
     assert!(
         session
@@ -174,7 +174,7 @@ fn resolve_attacks_for_investigator_pick_overrides_enemy_id_order() {
         ],
     )
     .session()
-    // 2 ready engaged enemies → suspend on the order pick (#143), not EnemyId order.
+    // 2 ready engaged enemies → suspend on the order pick, not EnemyId order.
     .take(&TurnAction::EndTurn);
 
     // Options are the snapshotted attackers in EnemyId order.
@@ -236,7 +236,7 @@ fn resolve_attacks_for_investigator_early_breaks_when_target_defeated_mid_loop()
         vec![attacker(1, "Killer", 1), attacker(2, "Bystander", 5)],
     )
     .session()
-    // 2 engaged → order pick first (#143).
+    // 2 engaged → order pick first.
     .take(&TurnAction::EndTurn);
 
     // Pick EnemyId(1) (the killer) to strike first; after it defeats the
@@ -248,8 +248,8 @@ fn resolve_attacks_for_investigator_early_breaks_when_target_defeated_mid_loop()
     // e1's attack killed the sole investigator, so the scenario's resolution
     // latched and the parked attack loop is one of the frames that cancels
     // (ADR 0004 — `cancelled_by_scenario_end`). Nothing further in the round
-    // happens, including e1's own exhaust, which since #704 follows its
-    // attack rather than being part of it.
+    // happens, including e1's own exhaust, which follows its attack rather
+    // than being part of it.
     assert_eq!(result.outcome, EngineOutcome::Done, "the game is over");
     assert!(
         state.ending.is_some(),
@@ -550,7 +550,7 @@ fn enemy_phase_resumes_via_skip_input() {
     let mut enemy = test_support::test_enemy(1, "Test Enemy");
     enemy.engaged_with = Some(inv_id);
     enemy.attack_damage = 1;
-    // active_investigator defaults to None. The EnemyPhase anchor (slice 1a)
+    // active_investigator defaults to None. The EnemyPhase anchor
     // sits beneath the synthetic BeforeInvestigatorAttacked window staged
     // above it; the window's close routes to anchor_on_child_pop.
     let session = GameStateBuilder::default()

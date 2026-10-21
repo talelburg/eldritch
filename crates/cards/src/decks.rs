@@ -1,7 +1,8 @@
 //! Deck-level card lists: the **weakness pool** a random basic weakness is
 //! drawn from, and the **default decks** the picker seats an investigator with
-//! when the player brings none of their own. See **Default deck** in
-//! `GLOSSARY.md`.
+//! when the player brings none of their own.
+//!
+//! See **Default deck** in `GLOSSARY.md`.
 //!
 //! Every default deck has the structure of the 2016 Learn to Play's
 //! *"Investigator Starter Decks"* sidebar (p. 4, transcribed verbatim in
@@ -460,8 +461,8 @@ mod tests {
 
     /// The classes a deck's 30 counted cards may come from, by investigator:
     /// the primary and secondary class of each card back's *"Deckbuilding
-    /// Options"*, plus Neutral. Hand-written until #783's validator reads them
-    /// from `back_text`.
+    /// Options"*, plus Neutral. Hand-written, since nothing reads them from
+    /// `back_text`. TODO(#783): read them in the deckbuilding validator.
     fn allowed_classes(investigator: &str) -> [Class; 3] {
         match investigator {
             "01001" => [Class::Guardian, Class::Seeker, Class::Neutral],

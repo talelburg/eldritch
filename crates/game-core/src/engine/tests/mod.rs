@@ -110,7 +110,7 @@ fn ghoul() -> Enemy {
 }
 
 /// `fighter`'s open turn at `HERE`, engaged with `enemy` there: Fight is
-/// co-location-gated (RR p.12, #401), Evade engagement-gated (RR p.11) — this
+/// co-location-gated (RR p.12), Evade engagement-gated (RR p.11) — this
 /// satisfies both. Bag is `Numeric(0)` so the test outcome is determined
 /// purely by (skill vs fight/evade).
 fn fight_evade_board(fighter: Seat, enemy: Enemy) -> GameStateBuilder {
