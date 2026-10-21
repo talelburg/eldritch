@@ -49,11 +49,11 @@ The act-3 branch then reaches its ending by the rules' own route rather than by 
 
 **Terminal cards now emit `AgendaAdvanced` / `ActAdvanced` before the ending latches**, so any test asserting an exact event sequence across a terminal advance changed. `advance_reverse::finalize`'s past-the-end assertion is replaced by its inverse: a terminal card does not bump the cursor, and the ending must be latched by the time it finishes — so a terminal card that reaches neither a `ReachResolution` nor a defeat fails loudly instead of silently running off the end of the deck.
 
-**The mechanism and the card fix are two PRs**, #808 then #809. The first is a pure refactor whose entire claim is *nothing behaves differently except the advance-flip*; the second is 01107's branch, and every consequence named above that touches the defeat cause, the status, or trauma belongs to it. Every one of the 38 files is in the first, so the second reads as a card fix.
+**The mechanism changes nothing but the advance-flip.** Everything else above that touches the defeat cause, the status, or trauma belongs to 01107's reverse, the `Effect::If` in `crates/cards/src/impls/theyre_getting_out.rs`, so a card's ending changes in that card's module, never in the mechanism.
 
 **Physical trauma is announced, not recorded.** The act-3 branch emits `Event::TraumaSuffered { kind: Physical, amount: 1 }` per investigator, following Cover Up 01007's mental-trauma precedent; nothing persists it until the phase-9 campaign log (#766). An ending that announced nothing would leave #766 nothing to log.
 
-ADR 0012's substance is untouched — the ending shape, the `u8`, and the deliberate omission of the invoking deck all stand — so #808 is **folded** into it rather than superseding it.
+ADR 0012's substance is untouched — the ending shape, the `u8`, and the deliberate omission of the invoking deck all stand — so this ADR refines it rather than superseding it.
 
 ---
 

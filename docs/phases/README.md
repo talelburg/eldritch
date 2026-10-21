@@ -109,13 +109,13 @@ The sweep issue's PR works through these six items, and its description lists ev
    **Why:** 7.5's doc still listed three open, unmilestoned rows (#1059, #1099, #1100) as the phase closed. Phase 7's "The arcs behind it", 647 of the doc's 1,177 lines, mentioned 11 open issues that appear nowhere else in the doc, and carried live notes such as #427/#429 waiting on #728.
 2. **Tracker vs docs.**
    - Each milestone's state matches the table above: `gh api 'repos/talelburg/eldritch/milestones?state=all' --jq '.[] | "\(.title) \(.state) \(.open_issues)"'`. A phase's milestone closes once its last issue does.
-   - Each open phase's doc mentions every open issue on its milestone (`gh issue list --milestone <title> --state open`), in whatever format the doc uses. The check runs one way: closed issues aren't required, because ticket children don't belong in a phase doc.
+   - Each open phase's doc mentions every open issue on its milestone (`gh issue list --milestone <title> --state open --limit 1000`), in whatever format the doc uses. The check runs one way: closed issues aren't required, because ticket children don't belong in a phase doc.
 
    **Why:** the phase-6 milestone stayed open with 0 open issues while the table marked phase 6 ✅. GLOSSARY counted 11 milestones when there were 12. Phase 9's doc left out nine open issues on its milestone.
 3. **ADRs vs code.**
    - Every backticked symbol in an ADR still exists under `crates/`, unless its removal *is* the ADR's decision (ADR 0016's deleted `test_fixtures/`). Any other mention of a gone symbol is rewritten in present tense, under [`writing.md`](../agents/writing.md)'s folding rule: it is a fold, not a supersession.
    - A plan that has shipped is written in present tense.
-   - The footer reads `Folded: #a, #b.`, issue numbers only.
+   - The footer reads `*Folded: #a, #b.*`, in italics, issue numbers only.
 
    **Why:** ADRs named nine symbols that no longer existed, among them `begin_event_play` (0002), `request_resolution` (0004 and 0012) and `DefeatCause` (0013, by then `EliminationCause::CardAbility`). ADR 0013 described its plan, "#808 then #809", in the future tense after both had shipped. Footers ran to 234 words (0009).
 4. **Agent docs.** `writing.md`'s "Is anything here now history?" is applied to `CLAUDE.md`, `docs/agents/` and `GLOSSARY.md`. A rule whose transitional state ended during the phase is deleted, or it outlives the thing it described. A count that goes stale is replaced by a pointer to whatever holds the list.
@@ -141,7 +141,7 @@ The sweep issue's PR works through these six items, and its description lists ev
      ```
 
    **Why:** at main 86332221, comments under `crates/` carried 2,220 issue references in neither form, 87 history markers, and a `TODO` on the closed #921. #1142 fixed them with a one-off scan (PR #1158), and the commands above are its core patterns.
-6. **Labels.** No open issue carries a contradictory pair of state labels: `blocked` with `ready-for-agent` or `ready-for-human`, or `needs-design` with `ready-for-human`. None carries `blocked` without naming a blocker that is still live. An issue body the code has overtaken is rewritten to match the code, or confirmed current. Passing `--label` twice lists the issues carrying both:
+6. **Labels.** No open issue carries a contradictory pair of state labels: `blocked` with `ready-for-agent` or `ready-for-human`, or `needs-design` with `ready-for-human`. None carries `blocked` without naming a blocker that is still live. An issue body the code has overtaken is rewritten to match the code, or confirmed current. The first command lists every open `blocked` issue, to read for a `ready-for-*` label and for whether its blocker is still live. The second passes `--label` twice, so it lists only the issues carrying both labels:
 
    ```sh
    gh issue list --state open --label blocked --json number,title,labels

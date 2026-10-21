@@ -2,7 +2,7 @@
 
 ## Status
 
-📐 Architecture only; not yet ordered. Issues milestoned here are deferrals
+⏳ **planned**; not yet ordered. Issues milestoned here are deferrals
 whose first consumer is Midnight Masks / Devourer content or the deck-import gate
 (the [milestone query](https://github.com/talelburg/eldritch/milestone/10) is
 authoritative): #75 (campaign log), #138/#139 (Surge / Peril), #575/#578 (spawn-clause and

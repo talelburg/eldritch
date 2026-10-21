@@ -54,6 +54,8 @@ ship untested by anything but a unit test.
 
 ## Issues
 
+**Open:** #1144 (lint posture: `#[expect(…, reason)]` by default, adopt `unreachable_pub`).
+
 ### Closed
 
 | Issue | Work |

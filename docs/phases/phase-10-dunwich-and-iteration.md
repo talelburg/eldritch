@@ -2,7 +2,7 @@
 
 ## Status
 
-📐 Architecture only; the phase is not yet scoped. One issue has shipped ahead of
+⏳ **planned**; the phase is not yet scoped. One issue has shipped ahead of
 the scoping — a DSL primitive that reached its two-consumer bar on Core cards and
 was milestoned here because the cards that need it *nested* are Dunwich's.
 

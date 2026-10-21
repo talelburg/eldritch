@@ -1,8 +1,9 @@
 # A synthetic fixture models a primitive, never a printed card
 
-**Every `file:line` and count in this ADR records the tree as it stood when the
-decision was taken, before the decision deleted `crates/scenarios/src/test_fixtures/`
-(below), so read them against history rather than the working tree.**
+**Every `file:line` in this Context section, down to "The three categories",
+records the tree as it stood when the decision was taken, before the decision
+deleted `crates/scenarios/src/test_fixtures/` (below), so read them against history
+rather than the working tree.**
 
 `crates/scenarios/src/test_fixtures/synth_cards.rs` defined `_synth_cover_up`, a
 hand-written treachery carrying a `DiscoverClues` reaction and a `GameEnd`
@@ -74,21 +75,21 @@ that catch real engine bugs.
 `test_enemy` — is not a shortcut around real cards. `Investigator` and `Location`
 are `#[non_exhaustive]`, so as the module's own doc says, *"downstream test
 crates cannot construct them via struct literal — they MUST go through these
-fixtures"* (`fixtures.rs:8-18`). Roughly 1,300 call-site lines across 168 files
-depend on that, and the layering is why:
+fixtures"* (`fixtures.rs:8-18`). Hundreds of call sites across `game-core`,
+`cards`, `scenarios` and `web` depend on that, and the layering is why:
 `game-core` cannot reach `cards` by crate direction, so there is no real-card
 alternative at the kernel. These build entities, not cards.
 
 **Probe cards are test-local.** A degenerate code that isolates one mechanism has
 one reader, and belongs in that reader's file. `crates/cards/tests/` already does
-this at scale and correctly: 11 of its 81 binaries name a registry of
-hand-written probes over `CardRegistry::EMPTY` — `timing_cells.rs` (`_tc_when` / `_tc_at` / `_tc_after`),
+this at scale and correctly: its probe binaries build a `MockRegistry` of
+hand-written probes — `timing_cells.rs` (`_tc_when` / `_tc_at` / `_tc_after`),
 `clue_discovery_cells.rs`, `enemy_attack_cells.rs`, `ability_source_*.rs`
 (`SRCCTL01`…), `zero_action_ability_sources.rs` — and never touch the corpus. Each
 probe exists to make one cell fire in isolation, which no printed card does
-cleanly. The other 70 run against the corpus: 68 name the real corpus
-(`cards::TEST_REGISTRIES`), and `enemies.rs` and `registry_smoke.rs` read it
-directly through `cards::by_code` without a registry. That split is the posture
+cleanly. Most of the rest name the real corpus (`cards::TEST_REGISTRIES`), and
+`enemies.rs` and `registry_smoke.rs` read it directly through `cards::by_code`
+without a registry. That split is the posture
 already working; this ADR names it rather than inventing it.
 
 **The toy scenario splits at the seam where sharing is real.** The
@@ -96,14 +97,14 @@ already working; this ADR names it rather than inventing it.
 `layout: &[]`, and the local scenario registry — is identical across every reader,
 so where several tests in one crate need it, it is shared *there*, in that crate's
 own `tests/common/`. The `setup()` *state* is local, composed per test with
-`GameStateBuilder`. `crates/server/tests/common/mod.rs:19-42` already demonstrates
-this: a ten-line mock scenario, with a comment naming exactly where the shared
+`GameStateBuilder`. `crates/server/tests/common/mod.rs` demonstrates this: a
+ten-line mock scenario, with a comment naming exactly where the shared
 fixture's shape was wrong for it — *"seating runs at creation via `seat_and_open`,
 so the pre-seeded investigator and turn order are NOT injected here."*
 
 ## The `test_fixtures` feature is deleted, not narrowed
 
-`crates/scenarios/Cargo.toml:24-30` declared the feature `default`-on and said it
+`crates/scenarios/Cargo.toml` declared the feature `default`-on and said it
 *"may be enabled by downstream crates (server / web integration tests) that want
 the fixture without writing their own."* Neither ever did. The fixture's
 `TEST_REGISTRY` had eleven readers, all inside `crates/scenarios/tests/`. The one crate the feature was
@@ -117,8 +118,8 @@ is the more honest thing for them to do: they test the engine's resolution hook,
 not the crate's routing table. **The fixture is deleted, and the feature with it.**
 
 This makes one property structural rather than maintained. `module_for`
-(`crates/scenarios/src/lib.rs:37-38`) routed `"synthetic"` whenever the feature was
-on, and `crates/server/src/lifecycle.rs:22` takes the scenario id straight off the
+in `crates/scenarios/src/lib.rs` routed `"synthetic"` whenever the feature was
+on, and `crates/server/src/lifecycle.rs` takes the scenario id straight off the
 HTTP request — so the toy scenario was startable in production by POSTing
 `{"scenario_id":"synthetic"}`, and whether it was depended on Cargo.toml
 discipline. With nothing to route to, it cannot be. `crates/scenarios/src/lib.rs`
@@ -152,19 +153,19 @@ point of the probe.
 ## Considered options
 
 **Real cards everywhere.** The strongest form of the realism argument, and it
-fails on the 11 probe binaries in `crates/cards/tests/`: no printed card fires one
+fails on the probe binaries in `crates/cards/tests/`: no printed card fires one
 timing cell in isolation, so `timing_cells.rs` would lose the property it exists
 to pin. It also cannot be followed at the kernel, where `#[non_exhaustive]` and
 crate direction make primitive builders the only way to build a state.
 
-**Keep the shared toy scenario as-is.** Rejected because it serves three different
+**Keep the shared toy scenario as-is.** Rejected because it served three different
 needs under one name — *a scenario that will not resolve mid-round*
 (`upkeep_phase.rs`), *a two-card act deck that ends in a couple of clicks*
 (`synthetic_resolution.rs`), *a full four-phase walk in ten actions*
-(`closing_demo.rs`) — and the consumers already bend it: `with_encounter_deck`
-exists purely as an override hook, `upkeep_hand_size.rs` pads with an unregistered
-`01999`, and `hunter_movement.rs`'s second test abandons the fixture to hand-build
-a diamond map.
+(`closing_demo.rs`) — and the consumers already bent it: `with_encounter_deck`
+existed purely as an override hook, `upkeep_hand_size.rs` padded with an
+unregistered `01999`, and `hunter_movement.rs`'s second test abandoned the fixture
+to hand-build a diamond map.
 
 **Scope the rule to `crates/scenarios/`.** The narrow, shippable version, and it
 leaves the largest cluster undocumented: `game_core::test_support` is
@@ -185,7 +186,9 @@ of the result, not a second copy to keep in sync.
 **`crates/scenarios/tests/` is scenario-level end-to-end only.** Its tests
 exercise scenario data in situ: the `the_gathering*` files, and
 `issue_476_fast_window.rs` and `issue_482_advance.rs` beside them — `issue_482`
-drives the doom cascade through The Gathering's own agenda 01105. The line is *does it
+drives the doom cascade through The Gathering's own agenda 01105 — and
+`test_registries.rs`, which checks that `scenarios::TEST_REGISTRIES` serves The
+Gathering's module and seats a real investigator beside a synthetic one. The line is *does it
 exercise scenario data*, not *is it a full walk*; a full-walk rule would evict
 `the_gathering_symbols.rs` and its tests against reference card 01104.
 
@@ -205,7 +208,7 @@ four independent definitions with independently hand-written stats, and three
 
 **The rule is enforced by review, not by a lint.** A regex banning ArkhamDB's
 `^\d{5}[a-z]?$` shape in test code would have caught the `01001`–`01004` filler,
-and would fire constantly on the 70 binaries that legitimately name real codes.
+and would fire constantly on the many binaries that legitimately name real codes.
 Distinguishing *names 01007 because it is testing Cover Up* from *names 01001 as
 filler* needs the surrounding intent. `standards.md` is already how this repo
 binds rules the compiler cannot check, and `code-review`'s Standards axis reads
