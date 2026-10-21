@@ -14,8 +14,10 @@ use crate::state::{
 /// After the engine finishes applying an action, it is in one of three
 /// states:
 ///
-/// - [`Done`](EngineOutcome::Done) — the action resolved fully and the
-///   engine is ready for the next action.
+/// - [`Done`](EngineOutcome::Done) — the game is over. The continuation
+///   stack is empty, so nothing is left for a next action to answer. A turn
+///   menu is a prompt, so an action that ends back at one returns
+///   `AwaitingInput`, not `Done`.
 /// - [`AwaitingInput`](EngineOutcome::AwaitingInput) — the action
 ///   triggered a choice point and needs the active player to respond
 ///   before the engine can continue. The next action must be a
@@ -27,7 +29,10 @@ use crate::state::{
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum EngineOutcome {
-    /// Action resolved fully; engine ready for next action.
+    /// From [`apply`](crate::engine::apply), the game is over and the
+    /// continuation stack is empty. A dispatch step inside the engine returns
+    /// it to mean only that the step did not suspend; after an emit, that
+    /// means its abilities are queued, not resolved.
     Done,
     /// Engine paused mid-resolution waiting for a player choice.
     AwaitingInput {

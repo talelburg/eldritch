@@ -22,95 +22,51 @@ use crate::state::{
     CardInPlay, CardInstanceId, GameState, Investigator, InvestigatorId, UseKind,
 };
 
-/// Handler for `TurnAction::ActivateAbility`.
+/// Handler for `TurnAction::ActivateAbility`: validates the activation, pays
+/// its costs, announces it and resolves it.
 ///
-/// Validates that the acting investigator can reach the named
-/// [`AbilitySource`] (`engine::ability_source`, #707), the indexed ability's
-/// trigger,
-/// and every cost-payability precondition. On success, pays every cost
-/// (emitting cost events per primitive), emits [`Event::AbilityActivated`],
-/// and resolves the ability — **its designated action first, then its residual
-/// effect** ([`push_activation_resolution`]).
+/// [`legality::check_activate_ability`] validates that the acting investigator
+/// can reach the named [`AbilitySource`], that the indexed ability is
+/// activated, and that every cost is payable. The handler then pays the costs,
+/// emits [`Event::AbilityActivated`], and resolves the ability: **its
+/// designated action first, then its residual effect**
+/// ([`push_activation_resolution`]). `glossary/Ability.md`: *"Activating such an
+/// ability performs the designated action as described in the rules, but
+/// modified in the manner described by the ability."*
 ///
-/// The designated action is the ability's substance for every card that prints
-/// a bold word (#805): `glossary/Ability.md`, *"Activating such an ability
-/// **performs the designated action** as described in the rules, but modified
-/// in the manner described by the ability."* Every implemented such ability's
-/// residual `effect` is empty; a non-empty one would run after.
+/// # Action cost
 ///
-/// An action-cost ability is **taken as an action** ([`take::take`]): the step
-/// pays its actions and marks any surcharge, this handler's hook pays the
-/// ability's other costs and announces it, and the step then decides from the
-/// printed **action designator** whether it provokes attacks of opportunity.
-/// If it does, both halves are parked on an `ActionResolution` frame and run on
-/// resume ([`resume_activate_ability`]). A fast ability spends no action, so it
-/// takes none: it pays, announces and resolves synchronously, as an exempt
-/// action ability does.
+/// An ability with an action cost is **taken as an action** ([`take::take`]).
+/// The step pays its actions, this handler's hook pays the other costs and
+/// announces, and the step then decides from the printed **action designator**
+/// whether it provokes attacks of opportunity. If it does, both halves wait on
+/// an `ActionResolution` frame and run on resume ([`resume_activate_ability`]).
 ///
-/// # A harm cost
+/// A zero-action ability takes no action, so it pays, announces and pushes its
+/// resolution at once. With a [`Cost::TakeHarm`] it parks both halves on an
+/// `ActionResolution` frame and deals the harm on top, so the harm and every
+/// sequence it opens resolve first: Appendix I pays *"the cost(s)"* at step 2,
+/// before the effect at steps 3–4. That frame's gate is the one attacks of
+/// opportunity use, so a harm that eliminates the controller suppresses the
+/// effect, as Dynamite Blast 01024's ruling has it for an attack of opportunity
+/// (<https://arkhamdb.com/card/01024>): *"If the enemies' attacks defeat you,
+/// the effects won't resolve."* Validation refuses a [`Cost::TakeHarm`] or a
+/// [`Cost::DiscardCardFromHand`] on an ability with an action cost.
 ///
-/// A fast ability with a [`Cost::TakeHarm`] pays its other costs inline and
-/// announces, then parks both halves on an `ActionResolution` frame — the
-/// actor-`Active` gate attacks of opportunity use — and deals the harm on top
-/// (#1029). The harm, its soak prompt and every nested sequence it opens
-/// therefore resolve first: Appendix I pays *"the cost(s)"* at step 2, before the
-/// effect at steps 3–4. If the harm eliminates the controller, the gate
-/// suppresses the effect, as Dynamite Blast 01024's ruling has it for an attack
-/// of opportunity: *"If the enemies' attacks defeat you, the effects won't
-/// resolve."* An action-cost ability with the cost is refused at validation.
+/// # When a zero-action ability may be used
 ///
-/// # Timing gate
-///
-/// The gate branches on `action_cost` from `Trigger::Activated`:
-///
-/// - **Action-cost abilities** (`action_cost > 0`): require Investigation
-///   phase + active investigator + sufficient actions remaining. These consume
-///   one of the investigator's limited per-turn actions.
-/// - **Fast abilities** (`action_cost == 0`): per the Rules Reference, *"a
-///   free triggered ability that does not cost an action and may be used
-///   during any player window"* (`glossary/Triggered_Abilities.md`). This
-///   handler permits them when either (a) the acting investigator is the
-///   active investigator during the Investigation phase, or (b) an open
-///   window's `fast_actors` scope permits the acting investigator. The
-///   `open_windows` stack is pushed by callers (scenario/server) when a
-///   player window opens.
-///
-/// The negative half — a moment *inside* another ability's resolution is not
-/// itself a window, so a Fast ability needs one open at it — is not printed as
-/// a rule, but the official FAQ is consistent with it. Asked whether Lola Hayes
-/// may switch roles mid-resolution of another ability, it answers *"As long as
-/// it is during a \[fast\] player window, yes."*
-/// (`data/official-faq/Frequently_Asked_Questions.md`) — the permission is
-/// conditioned on a window rather than granted by the moment. So an empty
-/// `open_windows` with a resolution in flight is a considered refusal, not a
-/// missing case. It binds **`[fast]` player abilities only**: a Forced ability
-/// nests without one, which the same FAQ says outright (*"it can create a
-/// nested sequence if used during another ability or a skill test, and it does
-/// not need to be during a player window in order for it to occur"*) and which
-/// the forced path implements separately.
-///
-/// # Cost coverage
-///
-/// - [`Cost::Resources`](card_dsl::dsl::Cost::Resources): validates
-///   wallet, deducts on payment, emits [`Event::ResourcesPaid`].
-/// - [`Cost::Exhaust`](card_dsl::dsl::Cost::Exhaust): validates source
-///   not already exhausted, flips `exhausted` on the source instance,
-///   emits [`Event::CardExhausted`].
-/// - [`Cost::DiscardCardFromHand`](card_dsl::dsl::Cost::DiscardCardFromHand):
-///   validates a non-weakness card in hand, then is paid through a choice
-///   frame parked above the effect, once the other costs are paid and the
-///   ability announced (`hand_discard_cost`, #1107). Fast abilities only: an
-///   action-cost ability with the cost is refused at validation (#1031).
-///
-/// # State-mutation contract
-///
-/// Same caveat as `play_card`: costs are paid and `AbilityActivated`
-/// is emitted before `apply_effect` runs, so a mid-resolution
-/// rejection inside the effect leaves the costs paid. The apply
-/// loop's belt-and-suspenders `events.clear()` still wipes the event
-/// stream on rejection. Phase-3 in-scope effects (`GainResources`,
-/// `DiscoverClue`, `Seq` of those, future `Modify`/`ThisSkillTest`
-/// push) can't reject mid-flight once the standard prefix passes.
+/// The Rules Reference's free triggered ability *"does not cost an action and
+/// may be used during any player window"* (`glossary/Triggered_Abilities.md`).
+/// So validation permits one when the acting investigator is the active
+/// investigator during the Investigation phase, or when an open window's
+/// `fast_actors` permits them. A moment inside another ability's resolution is
+/// not itself a window. Asked whether Lola Hayes may switch roles while another
+/// ability resolves, the official FAQ answers *"As long as it is during a
+/// \[fast\] player window, yes."*
+/// (`data/official-faq/Frequently_Asked_Questions.md`), so an empty
+/// `open_windows` with a resolution in flight is a refusal, not a missing case.
+/// It binds `[fast]` player abilities only: a Forced ability nests without a
+/// window, and the forced path implements that separately.
 pub(super) fn activate_ability(
     cx: &mut Cx,
     investigator: InvestigatorId,

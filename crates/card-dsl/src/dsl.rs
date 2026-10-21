@@ -1,55 +1,19 @@
-//! Card-effect DSL — v0 primitive set.
+//! The card-effect DSL: the vocabulary a card declares its abilities in, as
+//! [`Ability`] values that pair a [`Trigger`] with an [`Effect`] tree.
 //!
-//! This module is the alphabet that card declarations speak. A card's
-//! abilities are expressed as ([`Trigger`], [`Effect`]) pairs assembled
-//! into [`Ability`] values. The engine evaluator (lands when skill
-//! tests do, in Phase 3+) walks an [`Effect`] tree to actually mutate
-//! game state.
+//! The DSL describes and the engine resolves. `game-core`'s evaluator steps an
+//! [`Effect`] tree, and its timing machinery resolves a [`Trigger::OnEvent`]
+//! ability when an emitted event matches the ability's [`EventPattern`]. The
+//! enums are the vocabulary's only list: what a card can say today is what
+//! [`Trigger`], [`Effect`], [`EventPattern`] and [`Condition`] have variants
+//! for.
 //!
-//! # Scope
+//! # What the DSL can't express
 //!
-//! The primitive set grows as cards demand. Today the DSL covers
-//! constant modifiers, on-play and on-commit triggers, activated
-//! abilities with action / payment costs, a skill-test-resolution
-//! trigger, and a revelation trigger for encounter-card-reveal effects.
-//! Reaction-style abilities have a DSL surface
-//! ([`Trigger::OnEvent`]) but no engine machinery yet (see below).
-//! Cards needing primitives the DSL doesn't yet express get a Rust
-//! trait impl until the verb lands.
-//!
-//! # What's not yet expressible
-//!
-//! Common shapes the DSL cannot describe today, and where they'll
-//! land:
-//!
-//! - **Forced / leave-play triggers** (Harold Walsted's `Forced — when
-//!   Harold Walsted leaves play: Remove him from the game and add...`
-//!   from the Dunwich cycle). Need `Trigger::OnLeavePlay` plus
-//!   ability-specific effect machinery.
-//! - **Stat-comparison / location-state conditions** (`AnyEnemyEngaged`,
-//!   `SkillSucceededByAtLeast(N)`). Note: [`Condition::Compare`] already
-//!   covers clue-count and engaged-enemy-count comparisons — these are
-//!   expressible today. What remains unexpressible are conditions keyed on
-//!   location state, success margin, or other quantities not yet in
-//!   [`Quantity`].
-//! - **Compound conditions** (`All` / `Any`) and **target-referencing
-//!   conditions or quantities** (predicates about the *chosen* enemy rather
-//!   than the controller). Held in [`Condition::Native`] predicates until
-//!   `TODO(#609)` promotes them; its doc names the consumers.
-//!
-//! # Has DSL surface but not yet engine support
-//!
-//! - **Reaction abilities** (Roland Banks's `[reaction] After you
-//!   defeat an enemy: Discover 1 clue at your location. (Limit once
-//!   per round.)`). [`Trigger::OnEvent`] compiles and round-trips
-//!   through serde, but the engine event-window plumbing —
-//!   registering active triggers from cards in play and firing them
-//!   against emitted events — lands in
-//!   [issue #52](https://github.com/talelburg/eldritch/issues/52),
-//!   and per-round limit tracking still needs a primitive.
-//!
-//! Cards needing primitives in either list go to a Rust impl until
-//! the relevant verb lands.
+//! A shape with no variant goes to a card-local native, [`Effect::Native`] or
+//! [`Condition::Native`]. It graduates to a variant once a second card wants
+//! it (`docs/agents/standards.md` → Don't add DSL primitives speculatively).
+//! [`Condition::Native`]'s doc names the predicates waiting on that promotion.
 //!
 //! # Free-function builders
 //!
@@ -580,27 +544,19 @@ pub enum Trigger {
         /// resolving test.
         outcome: TestOutcome,
     },
-    /// Fires when an engine `Event` (in `game_core`) matching `pattern`
-    /// is emitted, in the reaction window opened by the engine for
-    /// the corresponding `timing`.
+    /// Fires when an engine `Event` (in `game_core`) matching `pattern` reaches
+    /// the timing cell `timing` names. `kind` says whether the ability is
+    /// **forced**, and resolves there, or a **reaction**, which its controller
+    /// may use in the window that opens there.
     ///
-    /// Canonical motivating card: Roland Banks (01001) —
-    /// `[reaction] After you defeat an enemy: Discover 1 clue at your
-    /// location.` compiles to `OnEvent { pattern: EnemyDefeated {
-    /// by_controller: true }, timing: After }`.
+    /// Canonical card: Roland Banks 01001, *"\[reaction\] After you defeat an
+    /// enemy: Discover 1 clue at your location. (Limit once per round.)"*, is
+    /// `dsl::reaction_on_event` over `EventPattern::EnemyDefeated` in the
+    /// [`After`](EventTiming::After) cell, with the limit as a [`UsageLimit`].
     ///
     /// Distinct from [`OnSkillTestResolution`](Self::OnSkillTestResolution),
-    /// which fires inside a skill test's own resolution machinery
-    /// (no player decision, no `may`). `OnEvent` triggers fire in
-    /// reaction windows where the controller may choose to use them.
-    ///
-    /// The DSL surface lands here; the engine machinery that
-    /// registers these triggers from cards in play and fires them
-    /// during reaction windows lands in
-    /// [issue #52](https://github.com/talelburg/eldritch/issues/52).
-    /// Until then the engine ignores `OnEvent` abilities; cards
-    /// declaring one compile and round-trip through serde but
-    /// otherwise do nothing at runtime.
+    /// which fires inside a skill test's own resolution machinery, with no
+    /// player decision and no `may`.
     OnEvent {
         /// Which engine event(s) trigger this ability.
         pattern: EventPattern,

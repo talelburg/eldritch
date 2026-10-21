@@ -22,14 +22,9 @@ use crate::state::{
     UseKind, Zone,
 };
 
-/// One state-change record emitted by the engine.
-///
-/// Phase-1 minimal set. Later phases add events for skill-test
-/// commits, card plays, ability triggers, encounter draws, doom changes,
-/// trauma, scenario resolution, etc.
-/// Which trauma track a [`Event::TraumaSuffered`] applies to. Trauma is a
-/// cross-scenario campaign concept (Phase 9 owns persistence / max-stat
-/// reduction); this event makes it observable now without modeling state.
+/// Which trauma track an [`Event::TraumaSuffered`] applies to. The engine
+/// keeps no trauma state, so the event is the whole record: campaign play,
+/// where trauma persists and lowers max health or sanity, is not modelled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TraumaKind {
     /// Physical trauma (reduces max health in campaign play).
@@ -38,6 +33,8 @@ pub enum TraumaKind {
     Mental,
 }
 
+/// One state-change record emitted by the engine. The [module docs](self) say
+/// who reads the stream.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum Event {

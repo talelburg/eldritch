@@ -1,31 +1,29 @@
-//! The Gathering (Night of the Zealot, scenario 1) — Slice 1 C1a skeleton.
+//! The Gathering (Night of the Zealot, scenario 1): its setup, its chaos bag,
+//! and the symbol tokens of its reference card, 01104.
 //!
-//! Builds the faithful **Act-1 board**: only the Study is in play (the
-//! Hallway/Attic/Cellar/Parlor are set aside (`set_aside_cards`, by code)
-//! and enter play via Act 1's (01108) Forced on-advance reverse, which
-//! also relocates investigators to the Hallway and removes the Study).
-//! Their connections come from [`LAYOUT`], wired as each room enters.
-//! `setup()` builds the world; the scenario setup (via `seat_and_open`)
-//! seats investigators at the starting location (the Study, `01111`) via
-//! `GameState.starting_location`.
+//! `setup()` builds the **Act-1 board**. Only the Study (01111) is in play,
+//! and the scenario setup (`seat_and_open`) seats the investigators there, at
+//! `GameState.starting_location`. The Hallway, Attic, Cellar and Parlor are
+//! set aside by code (`set_aside_cards`). They enter play through act 01108's
+//! Forced on-advance reverse, which also places each investigator in the
+//! Hallway and removes the Study. Their connections come from [`LAYOUT`],
+//! wired as each room enters. The agenda doom and act clue thresholds are read
+//! from the corpus, and the chaos bag is the verified Standard bag.
 //!
-//! Faithful where it can be (agenda doom 3/7/10; the verified Standard
-//! chaos bag; Study shroud/clues); structural stand-in where the rest of
-//! Group C owns fidelity (act 01110 advances via its Forced `EnemyDefeated`
-//! objective (01116; in `cards`); symbol-token effects on reference card
-//! 01104 are C2). C1a does
-//! not claim faithful win/lose semantics — only structural reachability,
-//! proven by `tests/the_gathering.rs`.
+//! `resolve_symbol` implements 01104's Easy / Standard face. Its doc carries
+//! the Hard / Expert face, which waits on difficulty selection.
 //!
 //! **The two terminal cards carry no resolution point here.** A resolution
 //! point is a printed *effect* on a card's reverse, not a datum on the deck
 //! entry (ADR 0013), so 01107's `(→R3)` and 01110's `(→R1)`/`(→R2)` live in
 //! `cards::theyre_getting_out` and `cards::what_have_you_done`. Both are the
 //! last card in their deck, which is the only thing that makes them terminal.
-//! Both reverses are faithful now — 01107 branches on the current act (#809)
-//! and 01110 asks the lead to choose (#775). What each ending *means* is the
-//! remaining gap, recorded on the cards: the trauma, the campaign log, and
-//! Lita Chantler at R1 are campaign machinery and stay with #766.
+//! 01107's reverse branches on the current act, and 01110's offers its choice
+//! to the lead investigator's proxy, the first Active investigator in
+//! `turn_order`.
+//!
+//! TODO(#766): apply what each ending means. The trauma, the campaign log, and
+//! Lita Chantler at R1 are campaign machinery, and the cards record each gap.
 
 use card_dsl::card_data::CardKind;
 use card_dsl::dsl::{Effect, HarmKind, IntExpr, InvestigatorTarget, TokenOutcome};

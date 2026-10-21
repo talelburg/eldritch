@@ -1,72 +1,31 @@
-//! DSL effect evaluator.
+//! The card-effect evaluator: it steps an [`Effect`] tree on the continuation
+//! stack, and evaluates the [`Condition`]s and [`IntExpr`]s the tree reads.
 //!
-//! Walks an [`Effect`] tree and mutates [`GameState`] accordingly.
-//! Bridges card declarations (DSL) and runtime gameplay.
+//! An effect runs as frames on the stack, not as a recursive call.
+//! `push_effect` parks its root frame, and the global `drive` loop steps it one
+//! node at a time through `step_effect_frame`. A `Seq` keeps its own
+//! [`EffectFrame::Seq`] cursor, and a `ForEach` becomes an
+//! [`EffectFrame::ForEach`] walk once its targets are read off the board. Every
+//! other node is an [`EffectFrame::Leaf`], which `step_leaf` evaluates in one
+//! match with an arm for every [`Effect`] variant. A constant marker such as
+//! [`Effect::Restrict`] has an arm there too, and it rejects: a query reads it,
+//! and nothing executes it.
 //!
-//! # Phase-3 PR-J scope
+//! # Choices
 //!
-//! Implements the leaf effects whose state requirements are already
-//! met by the engine ([`Effect::GainResources`], [`Effect::DiscoverClue`])
-//! and the simplest composition ([`Effect::Seq`]). The remaining
-//! variants return [`EngineOutcome::Rejected`] with a TODO message
-//! pointing at the issue or PR that fills them in:
-//!
-//! - [`Effect::Modify`] splits by scope. [`WhileInPlay`] and
-//!   [`WhileInPlayDuring`] contributions are passive and swept
-//!   from card abilities directly by
-//!   [`modified_value`](crate::engine::modified_value::modified_value) —
-//!   reaching `apply_effect` with one of those means the card
-//!   author put a constant-flavored modifier under a non-constant
-//!   trigger, which rejects. [`ThisSkillTest`] is **recorded** into
-//!   [`GameState::recorded_modifiers`], which the same query reads as a
-//!   recorded row — stamped with the in-flight test's id, and refused
-//!   outright when no test is in flight; the skill-test handler expires
-//!   it after `SkillTestEnded`. [`ThisTurn`] is not yet wired; rejects
-//!   with TODO until a card or test demands the turn-scoped
-//!   accumulator.
-//! - [`Effect::AutoResolve`] writes a test's
-//!   [`Determination`] into the same recorded
-//!   population, under the same gate: with no test in flight there is no
-//!   identity to stamp, so it rejects rather than banking a determination
-//!   for whatever test comes next.
-//!
-//! [`WhileInPlay`]: card_dsl::dsl::ModifierScope::WhileInPlay
-//! [`WhileInPlayDuring`]: card_dsl::dsl::ModifierScope::WhileInPlayDuring
-//! [`ThisSkillTest`]: card_dsl::dsl::ModifierScope::ThisSkillTest
-//! [`ThisTurn`]: card_dsl::dsl::ModifierScope::ThisTurn
-//! [`GameState::recorded_modifiers`]: crate::state::GameState::recorded_modifiers
-//! - [`Effect::If`] evaluates [`Condition::SkillTestKind`] against
-//!   the in-flight test's `kind`. [`SkillTest`](card_dsl::dsl::Condition::SkillTest)
-//!   isn't yet wired — inside an
-//!   [`Trigger::OnSkillTestResolution`](card_dsl::dsl::Trigger::OnSkillTestResolution) effect
-//!   the trigger itself gates outcome, so the condition is redundant there,
-//!   and no other trigger has yet needed it (the outcome *is* on
-//!   [`InFlightSkillTest::resolved`](crate::state::InFlightSkillTest::resolved)
-//!   from ST.6 on, so this is unwired, not unknowable).
-//! - [`Effect::ForEach`] resolves its target set once (investigators in turn
-//!   order, enemies in id order) and walks it on an [`EffectFrame::ForEach`], running the body once per target with
-//!   that target bound as [`EvalContext::each`] (#1067). The walk is
-//!   sequential, not simultaneous; the frame's docs say when that matters.
-//! - [`Effect::ChooseOne`] and the `*::Chosen` targets resolve
-//!   interactively via the frame-driven choice machinery (`step_choose_one` /
-//!   `ground_chosen_targets`): each auto-binds 0/1 options and suspends on 2+ by
-//!   leaving the node's own [`EffectFrame::Leaf`]
-//!   on the stack as the prompt; resume sets `chosen_option` and re-steps it (no
-//!   replay — #422). A `Chosen` target
-//!   honors its scope: `Anywhere` offers all investigators / locations,
-//!   `LocationSet::Here` filters to the chooser's
-//!   location (#349). The enemy variety and `YourOrConnecting` are deferred to
-//!   their consuming PRs (#301 / #306).
+//! A leaf that needs a choice, an [`Effect::ChooseOne`] or a `*::Chosen` target,
+//! resolves without a prompt when it has fewer than two candidates. With two or
+//! more it suspends: its [`EffectFrame::Leaf`] stays on top of the stack as the
+//! prompt, and the answer re-steps that frame with the choice bound.
+//! `ground_chosen_targets` says which candidates each target's scope offers.
 //!
 //! # State-mutation contract
 //!
-//! `apply_effect` follows the same validate-first / mutate-second
-//! pattern the existing dispatch handlers use: if the effect can't
-//! resolve cleanly, return [`EngineOutcome::Rejected`]. Partial
-//! mutation before a mid-tree rejection is fully rolled back at the
-//! apply boundary — `apply_via` (`engine/mod.rs`) snapshot-restores
-//! state, events, and RNG position on `Rejected` — so validate-first
-//! here is about cheap, precise rejections, not state safety.
+//! A leaf validates before it mutates, and returns [`EngineOutcome::Rejected`]
+//! when it can't resolve. A rejection partway through a tree leaves no partial
+//! state, because `apply_via` (`engine/mod.rs`) restores the state, the events
+//! and the RNG position on `Rejected`. So validate-first here buys a cheap,
+//! precise reason, not state safety.
 
 use card_dsl::card_data::{CardType, SkillKind};
 use card_dsl::dsl::{
