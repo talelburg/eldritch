@@ -80,8 +80,7 @@ pub fn abilities() -> Vec<Ability> {
 
 /// Put the set-aside Hallway/Cellar/Attic/Parlor into play, relocate
 /// every investigator to the Hallway (01112), and remove the Study
-/// (01111). Ports the three former `Effect` arms verbatim, now
-/// card-local. Validates the whole set of rooms and the Study up front
+/// (01111). Validates the whole set of rooms and the Study up front
 /// and rejects before any mutation; a rejection is additionally rolled
 /// back wholesale by `apply_via`'s snapshot-restore, so validate-first
 /// here is about precise reasons, not state safety.

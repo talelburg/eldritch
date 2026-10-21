@@ -12,17 +12,15 @@
 //! Persistent treachery: the Revelation self-places into the threat area
 //! with 3 clues (`Effect::PutIntoThreatArea`), so `resolve_encounter_card`
 //! does not auto-discard it. Both triggered abilities are backed by the native
-//! effects below — ports of what the synthetic Cover-Up fixture proved in C5a.
-//! That fixture is gone: #877 deleted it once this impl had taken over its
-//! readers.
+//! effects below.
 //!
-//! **Cell: the `when` cell of the `DiscoverClues` condition** for the reaction
-//! (#703). The printed word is *"When you **would** discover…"*, and the
+//! **Cell: the `when` cell of the `DiscoverClues` condition** for the reaction.
+//! The printed word is *"When you **would** discover…"*, and the
 //! replacement has to land before the clues move or there is nothing left to
 //! replace.
 //!
-//! **Cell: the `when` cell of the `GameEnd` condition** for the Forced trauma
-//! (#720). The printed word is *"When the game ends"*, and `glossary/When.md`
+//! **Cell: the `when` cell of the `GameEnd` condition** for the Forced trauma.
+//! The printed word is *"When the game ends"*, and `glossary/When.md`
 //! puts that *"immediately after the specified timing point or triggering
 //! condition initiates, but before its impact upon the game state resolves."*
 //! The game's ending is a **bare milestone** — its resolve step is a documented
@@ -36,12 +34,12 @@
 //! **Forced** effect triggers"* (<https://arkhamdb.com/card/01007>).
 //!
 //! **The Forced's *"if there are any clues"* is an initiation condition, not
-//! part of its effect** (#786). RR p.2: *"If a forced ability does not have the
-//! potential to change the game state, the ability does not initiate."* So it
-//! carries `HAS_CLUES_TAG` — the same gate the reaction declares — and a
-//! clueless Cover Up is collected by neither scan. Without the tag the opaque
-//! native effect is uninspectable, the forced scan collected it anyway, and
-//! interactive play prompted the player to resolve an ability that did nothing.
+//! part of its effect**. `glossary/Ability.md`: *"If a forced ability does not
+//! have the potential to change the game state, the ability does not
+//! initiate."* So it carries `HAS_CLUES_TAG` — the same gate the reaction
+//! declares — and a clueless Cover Up is collected by neither scan. The native
+//! effect is opaque, so without the tag nothing could tell that it would change
+//! nothing, and interactive play would prompt the player to resolve it.
 
 use card_dsl::dsl::{self, Ability, Effect, EventPattern, EventTiming};
 use game_core::engine::evaluator::EvalContext;
@@ -66,8 +64,7 @@ const TRAUMA_TAG: &str = "01007:trauma";
 /// Native-condition tag, the eligibility both of Cover Up's clue-conditional
 /// abilities gate on — the discover-replacement reaction is offered only while
 /// Cover Up still holds clues to discard, and the game-end Forced only initiates
-/// while it does (RR p.2 potential gate, #786). Replaces the former hardcoded
-/// `card.clues == 0` stand-in in the reaction scan.
+/// while it does (the potential gate of `glossary/Ability.md`).
 const HAS_CLUES_TAG: &str = "01007:has-clues";
 
 #[must_use]
@@ -78,10 +75,10 @@ pub fn abilities() -> Vec<Ability> {
             EventPattern::DiscoverClues,
             EventTiming::When,
             // "Discard that many clues from Cover Up instead": run the discard,
-            // then cancel the discovery — cancel = degenerate replacement
-            // (Axis D #336). The `when` cell resolves before the clues move, and
-            // the coordinator abandons the sequence the cancel flagged (#703,
-            // #714, #1055), so the discovery never happens — and neither
+            // then cancel the discovery — cancel = degenerate replacement.
+            // The `when` cell resolves before the clues move, and the
+            // coordinator abandons the sequence the cancel flagged, so the
+            // discovery never happens — and neither
             // does any other ability referencing it. `glossary/Instead.md`: this
             // "would" replacement changes the nature of the triggering
             // condition, so *"No further abilities referencing the original
@@ -90,11 +87,11 @@ pub fn abilities() -> Vec<Ability> {
         )
         .with_eligibility(dsl::native_condition(HAS_CLUES_TAG)),
         // "if there are any clues on Cover Up" is an initiation condition, not
-        // part of the effect: RR p.2 ("Forced Abilities") — *"If a forced
-        // ability does not have the potential to change the game state, the
-        // ability does not initiate."* With no clues the trauma cannot happen,
-        // so the same tag the reaction gates on keeps the forced scan from
-        // collecting it — and from prompting to resolve it (#786).
+        // part of the effect: `glossary/Ability.md` — *"If a forced ability
+        // does not have the potential to change the game state, the ability
+        // does not initiate."* With no clues the trauma cannot happen, so the
+        // same tag the reaction gates on keeps the forced scan from collecting
+        // it — and from prompting to resolve it.
         dsl::forced_on_event(
             EventPattern::GameEnd,
             EventTiming::When,
@@ -105,8 +102,8 @@ pub fn abilities() -> Vec<Ability> {
 }
 
 /// True while the Cover Up instance (the firing source) still holds clues to
-/// discard, wherever it sits — so a co-located investigator is offered Roland's
-/// (#974).
+/// discard, wherever it sits — so a co-located investigator is offered the
+/// reaction on Roland's Cover Up too.
 fn has_clues(state: &GameState, ctx: &EvalContext) -> bool {
     ctx.source_instance()
         .and_then(|source| board::find_instance(state, source))
@@ -137,10 +134,10 @@ fn discard_clues(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
 /// mental trauma."
 ///
 /// The clue check is duplicated deliberately. [`HAS_CLUES_TAG`] keeps a clueless
-/// instance from *initiating* (#786), which is the rules-correct home for the
+/// instance from *initiating*, which is the rules-correct home for the
 /// condition; this inner check guards the window the gate cannot, since the
 /// forced scan evaluates eligibility once at collect time. Two simultaneous
-/// game-end hits resolve in a chosen order (#213), so a sibling could strip the
+/// game-end hits resolve in a chosen order, so a sibling could strip the
 /// clues between this one's collection and its resolution.
 fn trauma(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     let Some(source) = ctx.source_instance() else {
@@ -192,7 +189,7 @@ mod tests {
             Effect::Seq(steps) if steps.len() == 2 && matches!(steps[1], Effect::Cancel)
         ));
         // *"**Forced** - When the game ends…"* — the `when` cell of the
-        // `GameEnd` condition, a bare milestone since #720.
+        // `GameEnd` condition, a bare milestone.
         assert!(matches!(
             abilities[2].trigger,
             Trigger::OnEvent {
@@ -203,6 +200,8 @@ mod tests {
         ));
     }
 
+    /// Regression for #786: the game-end Forced declares the clue gate too, so
+    /// a clueless Cover Up never initiates.
     #[test]
     fn has_clues_predicate_gates_on_source_instance_clues() {
         // Both clue-conditional abilities gate on the eligibility condition.

@@ -58,13 +58,13 @@
 //! RR ST.6 is *"Determine success/failure of skill test"*, and no card, enemy,
 //! location or investigator moves as it resolves — its resolve step only
 //! re-totals the test and logs the verdict. ST.7, *"Apply skill test
-//! results"*, is the `SkillTest` frame's,
-//! run on its own resume after the whole sequence has drained.
+//! results"*, is the `SkillTest` frame's, run on its own resume after the
+//! whole sequence has drained.
 //!
 //! That is exactly the ordering this ability needs: the boost is written before
 //! `ApplyFollowUp` deals the attack's damage, which is *"before its impact upon
-//! the game state resolves"*. ADR 0008 carries the classification and the four
-//! migrations before this one.
+//! the game state resolves"*. ADR 0008 carries the classification, and
+//! `TimingEvent::condition_resolution` lists each coordinator-owned condition.
 //!
 //! **"That investigator" needs no targeting.** [`Effect::BoostAttackDamage`](card_dsl::dsl::Effect::BoostAttackDamage)
 //! writes the *in-flight* test's accumulator, and the in-flight test **is** the

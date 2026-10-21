@@ -8,9 +8,9 @@
 //! ```
 //!
 //! Both are board-dependent, single-use scenario logic, so they live
-//! card-locally as `Effect::Native` handlers (#276) rather than shared
-//! `Effect` variants. The enemy-phase-end move keys off the existing
-//! `EventPattern::PhaseEnded { Enemy }`; the round-end doom off the new
+//! card-locally as `Effect::Native` handlers rather than shared
+//! `Effect` variants. The enemy-phase-end move keys off
+//! `EventPattern::PhaseEnded { Enemy }`; the round-end doom off
 //! `EventPattern::RoundEnded`.
 //!
 //! **Cell: the `at` cell, for both fronts.** Each prints *"At"* — *"At the end of
@@ -41,14 +41,14 @@
 //! scenario, on either branch.
 //!
 //! The branch is an `Effect::If` over a card-local
-//! [`Condition::Native`](card_dsl::dsl::Condition::Native) (#276/#592) reading
-//! `act_index`. One consumer, and a plain scenario-state read rather than the
-//! *compound or target-referencing* predicate `TODO(#609)` reserves promotion
-//! for, so it stays card-local. **The card says "Act 3"; the engine holds a
+//! [`Condition::Native`](card_dsl::dsl::Condition::Native) reading
+//! `act_index`. One consumer, and a plain scenario-state read rather than a
+//! *compound or target-referencing* predicate, the kind due for promotion to
+//! declarative vocab, so it stays card-local. **The card says "Act 3"; the engine holds a
 //! zero-based act cursor**, so the predicate is `act_index == 2`.
 //!
-//! The act-3 arm's fan-out rides `Effect::ForEach` over every investigator
-//! (#1067); its body is a card-local native effect calling
+//! The act-3 arm's fan-out rides `Effect::ForEach` over every investigator;
+//! its body is a card-local native effect calling
 //! [`defeat_investigator`](NativeCx::defeat_investigator) and announcing the
 //! trauma for the one investigator it runs for. The defeat-and-trauma body has
 //! one consumer, so it fails the DSL-primitive threshold and stays native (ADR
@@ -57,7 +57,7 @@
 //! eliminated, and step 6's no-remaining-players check fires on whoever falls
 //! last. Each investigator's Elimination — including one a *"when the game
 //! ends"* weakness such as Cover Up 01007 routes onto a
-//! `Continuation::Elimination` frame (#638) — drains before the walk reaches
+//! `Continuation::Elimination` frame — drains before the walk reaches
 //! the next investigator.
 //!
 //! **A known gap: the walk is sequential, and this body's intermediate state is
@@ -96,8 +96,7 @@
 //!
 //! **The physical trauma is announced, not recorded.** `Event::TraumaSuffered`
 //! is emitted per defeated investigator, following Cover Up 01007's
-//! mental-trauma precedent; nothing persists it until the phase-9 campaign log
-//! (#766).
+//! mental-trauma precedent. TODO(#766): record it in the campaign log.
 //!
 //! **Cell: the `after` cell of the `AgendaAdvanced` condition**, for the
 //! reverse. The reverse prints no trigger word, because it is not a triggered
@@ -119,7 +118,7 @@
 //! until a map with ties lands). The move goes through
 //! [`relocate_enemy`](NativeCx::relocate_enemy), so a Ghoul arriving at an
 //! investigator's location engages on arrival per the general engagement rule
-//! (#633) — the card text is positional only, but the framework rule applies
+//! — the card text is positional only, but the framework rule applies
 //! regardless.
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, InvestigatorTargetSet, Phase};
@@ -228,8 +227,8 @@ fn defeated_with_trauma(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
         return EngineOutcome::Done;
     }
     cx.defeat_investigator(investigator);
-    // Announced, not recorded: nothing persists trauma until the phase-9
-    // campaign log (#766). Cover Up 01007's mental trauma is the precedent.
+    // Announced, not recorded: nothing persists trauma (TODO(#766): record it
+    // in the campaign log). Cover Up 01007's mental trauma is the precedent.
     cx.suffer_trauma(investigator, TraumaKind::Physical, 1);
     EngineOutcome::Done
 }
@@ -249,8 +248,8 @@ fn is_ghoul(enemy: &Enemy) -> bool {
 /// ability does not have the potential to change the game state, the ability
 /// does not initiate."* Rejecting here would report malformed data for a board
 /// state the scenario reaches legitimately — and since a rejection rolls the
-/// whole apply back (#161), it landed on the *player's* action and made the
-/// scenario unplayable (#811). Same reading as the barricaded first step
+/// whole apply back, it would land on the *player's* action and make the
+/// scenario unplayable. Same reading as the barricaded first step
 /// below: no move available means no move, never an error.
 fn move_ghouls_toward_parlor(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
     let Some(parlor) = evaluator::location_id_by_code(cx.state(), PARLOR) else {
@@ -268,14 +267,14 @@ fn move_ghouls_toward_parlor(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOut
         };
         // A non-Elite Ghoul cannot move into a barricaded location (Barricade
         // 01038), and the block bites at the *compelled step*, not on the
-        // graph the path is measured over — as Hunter movement does since
-        // #651. 01107 names a fixed destination rather than a "nearest"
+        // graph the path is measured over — as Hunter movement does.
+        // 01107 names a fixed destination rather than a "nearest"
         // target, so `glossary/Nearest.md` does not reach it, but
         // `glossary/Patrol.md` carries the same rule on a fixed-destination,
         // shortest-path mover, which is structurally what 01107 is: *"If an
         // enemy with patrol would be compelled to move to a location which is
         // blocked by a card ability, the enemy does not move."* So a
-        // barricaded first step is a non-move, never a detour (#797).
+        // barricaded first step is a non-move, never a detour.
         let mut steps: Vec<LocationId> = engine::shortest_first_steps(cx.state(), from, parlor)
             .into_iter()
             .filter(|&loc| engine::enemy_can_enter_location(cx.state(), cx.cards(), e, loc))
@@ -286,7 +285,7 @@ fn move_ghouls_toward_parlor(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOut
         }
     }
     for (id, to) in movers {
-        // The shared relocation funnel (#633): the board write, the
+        // The shared relocation funnel: the board write, the
         // `EnemyMoved` emit, and the engage-on-arrival check the general
         // engagement rule requires of *any* enemy movement — an exhausted
         // (evaded) Ghoul moved by this agenda still arrives unengaged.
@@ -555,10 +554,10 @@ mod tests {
         );
     }
 
-    /// No Parlor on the board is a **no-op**, not a rejection: `Done`, no
-    /// events, nothing moved. The reachable case is agenda 3 turning up while
-    /// the act deck is still on act 1 or 2 — see the function's own doc for why
-    /// (#811). `run_done` already asserts the `Done`.
+    /// Regression for #811: no Parlor on the board is a **no-op**, not a
+    /// rejection: `Done`, no events, nothing moved. The reachable case is
+    /// agenda 3 turning up while the act deck is still on act 1 or 2 — see the
+    /// function's own doc for why. `run_done` already asserts the `Done`.
     #[test]
     fn no_parlor_in_play_moves_nothing_and_does_not_reject() {
         let mut state = star_board();
@@ -652,11 +651,11 @@ mod tests {
             ));
     }
 
-    /// `glossary/Patrol.md`: *"If an enemy with patrol would be compelled to
-    /// move to a location which is blocked by a card ability, the enemy does
-    /// not move."* 01107 is structurally the same fixed-destination,
-    /// shortest-path mover, so a barricaded compelled step is a non-move,
-    /// not a detour (#797).
+    /// Regression for #797: a barricaded compelled step is a non-move, not a
+    /// detour. `glossary/Patrol.md`: *"If an enemy with patrol would be
+    /// compelled to move to a location which is blocked by a card ability, the
+    /// enemy does not move."* 01107 is structurally the same fixed-destination,
+    /// shortest-path mover.
     #[test]
     fn ghoul_does_not_reroute_around_a_barricaded_shortest_step() {
         let mut state = detour_board();
@@ -696,8 +695,8 @@ mod tests {
         );
     }
 
-    /// A Ghoul that steps into a lone investigator's location engages on
-    /// arrival (#633). `Enemy_Engagement.md`: *"Any time a ready unengaged
+    /// Regression for #633: a Ghoul that steps into a lone investigator's
+    /// location engages on arrival. `Enemy_Engagement.md`: *"Any time a ready unengaged
     /// enemy is at the same location as an investigator, it engages that
     /// investigator"*, listed example *"It moves into the same location as
     /// an investigator"*.
@@ -726,7 +725,7 @@ mod tests {
     /// *"This agenda can move exhausted (evaded) enemies"*
     /// (<https://arkhamdb.com/card/01107>), but `Enemy_Engagement.md`:
     /// *"An exhausted unengaged enemy does not engage"* — so it arrives
-    /// unengaged and engages only when it readies (#633).
+    /// unengaged and engages only when it readies.
     #[test]
     fn exhausted_ghoul_moved_into_the_investigators_location_arrives_unengaged() {
         let mut state = star_board_with_investigator_in_hallway();
