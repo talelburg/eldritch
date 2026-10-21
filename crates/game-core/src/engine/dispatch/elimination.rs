@@ -464,7 +464,7 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     // stores no lead, and its proxy (`first_active_investigator`, the first
     // Active investigator in `turn_order`) passes to the next seat when this
     // one is defeated. The remaining players' choice of a new lead is not
-    // modelled (**Lead investigator** in `GLOSSARY.md`).
+    // modelled; see the proxy under **Lead investigator** in `GLOSSARY.md`.
 
     // Step 6 (no remaining players => scenario ends) is signaled by
     // `check_all_eliminated` (caller) emitting AllInvestigatorsEliminated

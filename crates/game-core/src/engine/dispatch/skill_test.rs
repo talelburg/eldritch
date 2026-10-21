@@ -53,7 +53,7 @@ use crate::state::{
 /// enemy"* expressible later.
 ///
 /// One consequence of not evaluating at initiation: an expression the
-/// evaluator cannot resolve no longer rejects the initiating effect, it is
+/// evaluator cannot resolve does not reject the initiating effect: it is
 /// skipped at read time under the recorded population's silent-skip policy
 /// (loudly in debug — `collect_recorded` `debug_assert`s on it). Nothing
 /// can write one today: both DSL modifiers carry literals, and the only
@@ -139,12 +139,12 @@ pub(in crate::engine) fn start_skill_test(
     // borrow from the validation block above is still live; reading
     // `current_location` here doesn't extend it past this line.
     let tested_location = inv.current_location;
-    // Mint this test's identity (#676). Every test-scoped modifier bought
+    // Mint this test's identity. Every test-scoped modifier bought
     // while it runs is stamped with it, and its teardown expires exactly the
     // rows carrying it — which is what makes "for *this* skill test" mean a
     // particular test rather than "the next one to come along".
     let id = cx.state.skill_test_ids.mint();
-    // Push the SkillTest frame up front (carrying the test's data — #348), so the
+    // Push the SkillTest frame up front (carrying the test's data), so the
     // in-flight test has a home from test start. Safe: all validation precedes
     // this point, and the only outcomes below are `AwaitingInput` (the
     // Mind-over-Matter substitution prompt, or the commit window). During the
@@ -192,7 +192,7 @@ pub(in crate::engine) fn start_skill_test(
                 // limit-keying it will feed (Fire Axe 02032's *"Limit three
                 // times per attack"*) has nothing to key on for a board source.
                 // Narrowing here rather than widening `RecordedModifier` keeps
-                // the projection at the row's own boundary (#834).
+                // the projection at the row's own boundary.
                 source.and_then(AbilitySource::instance),
             ));
     }
@@ -325,7 +325,7 @@ fn substitution_covers(state: &GameState, investigator: InvestigatorId, skill: S
     })
 }
 
-/// Resume the Mind over Matter substitution prompt (#322): `PickSingle(0)`
+/// Resume the Mind over Matter substitution prompt: `PickSingle(0)`
 /// rewrites the in-flight test to an Intellect test (dropping any weapon combat
 /// bonus per the ruling "ignore any bonuses to Combat or Agility",
 /// <https://arkhamdb.com/card/01036>); `PickSingle(1)`
@@ -365,11 +365,10 @@ pub(in crate::engine) fn resume_substitution_choice(
         t.skill = SkillKind::Intellect;
     }
     // Park: return `Done` so the `drive` loop's `SkillTest` arm drives the test
-    // from its pre-commit cursor — opening the ST.1 player window (#374), then
+    // from its pre-commit cursor — opening the ST.1 player window, then
     // (on auto-skip) the commit prompt reading the now-possibly-rewritten skill,
     // or parking at the window if a Fast play is available. The frame is on top
-    // and `resolve_input`'s caller drives it. Slice C, #431 — the
-    // substitution-resume `advance` reach-down is retired.
+    // and `resolve_input`'s caller drives it.
     EngineOutcome::Done
 }
 
@@ -379,8 +378,7 @@ pub(in crate::engine) fn resume_substitution_choice(
 /// the commit window: validate the supplied indices, persist them onto the
 /// in-flight record, pre-advance the cursor to [`SkillTestStep::PreTokenWindow`],
 /// and return [`EngineOutcome::Done`] so the `drive` loop's `SkillTest` arm runs
-/// the resolution body ([`run_resolution`]) and the remaining steps. (Slice C,
-/// #431 — the commit-hop `advance` reach-down is retired.)
+/// the resolution body ([`run_resolution`]) and the remaining steps.
 ///
 /// On invalid input (no in-flight test, malformed indices, or continuation
 /// already advanced) returns [`EngineOutcome::Rejected`] with no state change
@@ -413,7 +411,7 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
     // stays paused so the client can retry.
     //
     // The committer is the investigator performing the test: only they commit
-    // today (#65).
+    // today. TODO(#65): let another investigator at the same location commit.
     let indices_u8 = match validate_commit_indices(
         cx.state,
         cx.cards,
@@ -440,7 +438,7 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
     // unique and in bounds against this same, so-far-unmutated hand.
     //
     // From here on nothing re-indexes the hand for a committed card, so the
-    // ST.2→ST.3 player window is free to mutate it (#631).
+    // ST.2→ST.3 player window is free to mutate it.
     let inv = cx
         .state
         .investigators
@@ -460,8 +458,7 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
     // `PreTokenWindow`, then park: return `Done` so the `drive` loop's
     // `SkillTest` arm (dispatch/mod.rs) runs the resolution body from there.
     // The frame stays on top and `resolve_input`'s caller drives it
-    // (apply_player_action runs `drive` after this returns). Slice C, #431 —
-    // the commit-hop `advance` reach-down is retired.
+    // (apply_player_action runs `drive` after this returns).
     let t = cx
         .state
         .current_skill_test_mut()
@@ -471,7 +468,7 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-/// Resume the cosmetic acknowledgment pause (#478): the player has Confirmed the
+/// Resume the cosmetic acknowledgment pause: the player has Confirmed the
 /// skill-test result. Validate-first — the in-flight test's cursor must be at
 /// [`SkillTestStep::AcknowledgeOutcome`] — then advance it to
 /// [`SkillTestStep::FireOnCommit`] and return [`EngineOutcome::Done`] so the
@@ -513,10 +510,10 @@ pub(super) fn acknowledge_outcome(cx: &mut Cx) -> EngineOutcome {
 /// `[tablet]` in The Gathering deals 1 damage when a Ghoul is present, that
 /// damage can be soaked onto a Beat Cop 01018 (*"You get +1 \[combat\]."*,
 /// printed health 2), and a Beat Cop discarded at ST.4 must not still be
-/// contributing its `+1` at ST.5 (#674). What this step *does* write down is
+/// contributing its `+1` at ST.5. What this step *does* write down is
 /// the token's own contribution, as a [`RecordedModifier`] scoped to this
 /// test — see [`record_token_contribution`] — so the ST.5 total is one query
-/// rather than a query plus an integer the driver adds afterwards (#684).
+/// rather than a query plus an integer the driver adds afterwards.
 ///
 /// **Both steps are skipped outright when the test's determination is already
 /// known.** `glossary/Automatic_Failure_Success.md`:
@@ -796,7 +793,7 @@ fn chaos_symbol_effect(
 /// on the board to sweep for it, and it expires with the test. Recording it
 /// is what lets the whole ST.5 total — base, every additive row, the clamp —
 /// be a single fold with the clamp genuinely last, instead of a query whose
-/// result the driver then adds to and clamps itself (#684).
+/// result the driver then adds to and clamps itself.
 ///
 /// The three resolutions:
 ///
@@ -977,14 +974,14 @@ fn apply_follow_up_step(cx: &mut Cx, investigator: InvestigatorId) -> Result<(),
 /// then fire the general `SkillTestResolved` timing point for **every** test and
 /// both outcomes (the `{ Investigate, Success }` narrowing is Obscuring Fog 01168
 /// forced with Dr. Milan 01033 reaction; one `queue_event` so forced precedes
-/// reaction — RR p.2, #213).
+/// reaction — RR p.2).
 ///
 /// The verdict announced here is **provisional**: the condition's own resolve
 /// step ([`resolve_verdict`]) re-totals after the `when` cell, logs the
 /// [`SkillTestSucceeded`](crate::event::Event::SkillTestSucceeded) /
 /// [`SkillTestFailed`](crate::event::Event::SkillTestFailed), and sends the test
 /// back here if a `when`-cell modifier turned it into the other verdict (Lucky!
-/// 01080, #1111).
+/// 01080).
 ///
 /// The sum happens **here** rather than at
 /// [`Resolving`](SkillTestStep::Resolving) because
@@ -993,7 +990,7 @@ fn apply_follow_up_step(cx: &mut Cx, investigator: InvestigatorId) -> Result<(),
 /// are modifying the investigator's skill value"* — active **at ST.5**. An
 /// ST.4 effect that discards a modifying asset (a `[tablet]`'s damage soaked
 /// onto a lethally-damaged Beat Cop 01018) must therefore have taken its `+1`
-/// away by the time this runs (#674).
+/// away by the time this runs.
 ///
 /// The forced/reaction scans (and an empty candidate set) decide whether any
 /// window actually opens, so a test no card listens to costs nothing. Returns
@@ -1024,7 +1021,7 @@ fn determine_outcome_step(cx: &mut Cx, investigator: InvestigatorId) -> EngineOu
 /// determination applied. A pure read, so the resolve step of
 /// `SkillTestResolved` can re-total ([`resolve_verdict`]) and an open `when`
 /// cell can ask whether the verdict it was opened for still holds
-/// (`reaction_windows`, D17 of #780).
+/// (`reaction_windows`).
 ///
 /// # Panics
 ///
@@ -1042,12 +1039,12 @@ pub(crate) fn verdict(state: &GameState, cards: &CardRegistry) -> ResolvedTest {
     // The total difficulty, read the same way as the total skill value: off
     // the board as it stands now, not as it stood at ST.1. An enemy's
     // modified fight value *is* the difficulty of a Fight action, so a card
-    // that changed it since initiation has changed this test (#677).
+    // that changed it after initiation has changed this test.
     let difficulty = current_difficulty(state, cards);
 
     // ST.5 modified skill value — read off the board as the ST.4 symbol effects
     // left it, with the revealed token's own row already among the modifiers
-    // it folds and the clamp applied once at the end (#684).
+    // it folds and the clamp applied once at the end.
     let total = sum_skill_value(
         state,
         cards,
@@ -1067,10 +1064,10 @@ pub(crate) fn verdict(state: &GameState, cards: &CardRegistry) -> ResolvedTest {
     // test needs to read.
     let margin = total.saturating_sub(difficulty);
     // The verdict itself is the determination's where there is one, and the
-    // comparison's otherwise. The comparison no longer carries a "…and it
-    // wasn't an auto-fail" term, which named the *token*; the determination
-    // is what says so now, and says it for a card-latched failure as
-    // readily as for the token's.
+    // comparison's otherwise. The comparison carries no "…and it wasn't an
+    // auto-fail" term, which would name the *token*; the determination says
+    // so, and says it for a card-latched failure as readily as for the
+    // token's.
     //
     // The failure arm is not merely a restatement of the substituted
     // comparison. At every difficulty of 1 or more it agrees with it — skill
@@ -1111,7 +1108,7 @@ pub(crate) fn outcome_of(resolved: ResolvedTest) -> TestOutcome {
     }
 }
 
-/// The resolve step of `SkillTestResolved` (#1111): **re-total**, then either
+/// The resolve step of `SkillTestResolved`: **re-total**, then either
 /// confirm the verdict the condition announced or void it.
 ///
 /// Lucky! 01080 prints *"Fast. Play when you would fail a skill test. Get +2 to
@@ -1197,7 +1194,7 @@ fn apply_result_effect_step(cx: &mut Cx, investigator: InvestigatorId) {
         .continuation = SkillTestStep::ApplyTokenResult;
     // Rebuild the context from the parked source: `Effect::DiscardSelf` finds
     // itself across the suspend/resume boundary, and a `ChooseOne` in either
-    // branch keeps the anchor the activation gave it (#834).
+    // branch keeps the anchor the activation gave it.
     let card_ctx =
         |inv: InvestigatorId| EvalContext::for_controller_with_optional_source(inv, source);
     // The margin is bound either way: `Quantity::SkillTestSucceededBy` on a
@@ -1234,7 +1231,8 @@ fn apply_result_effect_step(cx: &mut Cx, investigator: InvestigatorId) {
 /// Pre-advances the cursor to
 /// [`FireOnResolution`](SkillTestStep::FireOnResolution) **before** the push, so
 /// a suspending effect (a sanity-soak on an `Effect::Deal`) resumes past this
-/// step. The fixed position after the card result is #642's divergence.
+/// step. TODO(#642): the token result's fixed position after the card result
+/// ignores the performer's chosen order of the ST.7 results.
 fn apply_token_result_step(cx: &mut Cx, investigator: InvestigatorId) {
     let resolved_test = resolved(cx);
     let token = cx
@@ -1329,7 +1327,7 @@ fn emit_commit_window(cx: &Cx, _investigator: InvestigatorId) -> EngineOutcome {
     }
 }
 
-/// Open one of the RR p.26 skill-test framework player windows (#374) and return
+/// Open one of the RR p.26 skill-test framework player windows and return
 /// `open_fast_window`'s outcome directly. Pre-advances the cursor to `next`
 /// **before** opening (the suspend/resume invariant), so a resume — whether the
 /// auto-skip inline `run_fast_continuation -> advance` or a wait-then-close —
@@ -1362,7 +1360,7 @@ fn open_skill_test_player_window(
 /// close path ([`close_reaction_window`]) re-enters this driver on
 /// resume.
 ///
-/// Fully frame-driven (Slice D #423): every effect a step would run is
+/// Fully frame-driven: every effect a step would run is
 /// `push_effect`'d for the global `drive` loop rather than run synchronously.
 /// When a step pushes an effect (or a sub-step queues a reaction window), the
 /// pushed frame becomes `last()`; the top-of-loop check below sees a
@@ -1410,11 +1408,11 @@ fn open_skill_test_player_window(
 pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
     loop {
         // A sub-frame queued by the previous step sits *above* this `SkillTest`
-        // frame — a reaction window, or a pushed on_success/on_fail effect
-        // (Slice D #423). Whenever the top frame is not this `SkillTest`, yield to
+        // frame — a reaction window, or a pushed on_success/on_fail effect.
+        // Whenever the top frame is not this `SkillTest`, yield to
         // the `drive` loop: it drives the sub-frame, and its completion
         // re-dispatches this `SkillTest` at the pre-advanced cursor. A forced run
-        // *below* this frame (#213 reentrancy: two Frozen in Fear copies) is never
+        // *below* this frame (reentrancy: two Frozen in Fear copies) is never
         // `last()` while this driver runs, so "not the SkillTest on top" simply
         // means "a sub-frame above me" — no `rposition` self-location.
         if !matches!(
@@ -1444,7 +1442,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
         // from the game — including the cards this test holds in limbo. Abandon
         // the test rather than resolve it on behalf of someone who has left the
         // scenario. Mirrors `drive_attack_loop`'s early-break (`combat.rs`),
-        // which drops remaining attackers on the same signal (#564).
+        // which drops remaining attackers on the same signal.
         //
         // This is the single choke point: both the `drive` loop's `SkillTest`
         // arm and the `finish_skill_test` commit hop reach the driver here.
@@ -1457,7 +1455,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
             return abandon_test(cx, investigator, None);
         }
 
-        // #682: the test's difficulty *is* a quantity of some entity on the
+        // The test's difficulty *is* a quantity of some entity on the
         // board ([`DifficultyBasis`]), and that entity has left play — a
         // 1-health enemy killed by Beat Cop 01018 at the ST.2 player window
         // while the attack against it is in flight. There is no test left to
@@ -1474,7 +1472,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
 
         match continuation {
             SkillTestStep::PreCommitWindow => {
-                // RR p.26 player window after ST.1. (#374.)
+                // RR p.26 player window after ST.1.
                 return open_skill_test_player_window(cx, SkillTestStep::AwaitingCommit, false);
             }
             SkillTestStep::AwaitingCommit => {
@@ -1483,12 +1481,12 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 return emit_commit_window(cx, investigator);
             }
             SkillTestStep::PreTokenWindow => {
-                // RR p.26 player window after ST.2. (#374.)
+                // RR p.26 player window after ST.2.
                 return open_skill_test_player_window(cx, SkillTestStep::Resolving, true);
             }
             SkillTestStep::Resolving => {
                 // RR ST.3 (reveal the chaos token) — skipped outright, with
-                // ST.4, when the test's determination is already known (#687).
+                // ST.4, when the test's determination is already known.
                 // Draws and announces the token, pre-advances to
                 // DetermineOutcome and queues the `ChaosTokenRevealed`
                 // condition, whose resolve step records the token and pushes
@@ -1503,7 +1501,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 // outcome), then the general SkillTestResolved timing point
                 // (every test/outcome) — BEFORE the ST.7 consequences. Its resolve
                 // step logs the verdict, or sends the test back here when a
-                // `when`-cell modifier flipped it (#1111). Pre-advances to
+                // `when`-cell modifier flipped it. Pre-advances to
                 // AcknowledgeOutcome; yields if a 2+ forced run suspends.
                 //
                 // A token was revealed and resolved, or the result was known
@@ -1528,7 +1526,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 }
             }
             SkillTestStep::AcknowledgeOutcome => {
-                // RR-neutral cosmetic pause (#478). The result events were emitted
+                // RR-neutral cosmetic pause. The result events were emitted
                 // by SkillTestResolved's resolve step; if interactive acknowledgment is enabled,
                 // suspend with a Confirm so the player registers the result before
                 // the ST.7 consequence resolves. The cursor stays at
@@ -1606,7 +1604,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 // RR ST.8 teardown. The skill-test-outcome timing point
                 // (`SkillTestResolved`; "after you successfully investigate" =
                 // Obscuring Fog forced + Dr. Milan reaction) already fired at
-                // the DetermineOutcome step via `queue_event` (#213) —
+                // the DetermineOutcome step via `queue_event` —
                 // forced-before-reaction.
                 discard_committed_cards(cx, investigator, &committed);
                 // A card the test was marked to discard (Baseball Bat 01074's
@@ -1616,21 +1614,21 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 cx.events.push(Event::SkillTestEnded { investigator });
                 // ModifierScope::ThisSkillTest contributions expire when the
                 // test they were bought for ends. Keyed on this test's
-                // identity (#676), so it takes every row bought for it and
+                // identity, so it takes every row bought for it and
                 // leaves any other test's alone. The frame is still on the
                 // stack here (`take_skill_test` below removes it); a missing
                 // one would leak rows into the next test, so say so loudly in
                 // debug rather than skipping in silence.
                 expire_this_tests_modifiers(cx);
-                // Encounter-treachery disposal is no longer the skill-test
-                // driver's concern (#380): a treachery whose Revelation
+                // Encounter-treachery disposal is not the skill-test
+                // driver's concern: a treachery whose Revelation
                 // suspended into this test parks an `EncounterCard` frame
                 // beneath it, which the framework disposes of at the
                 // `resolve_input` chokepoint once this test completes.
-                // Tear down the test's SkillTest frame (Axis-B T4), which also
-                // carries the test data (#348). `take_skill_test` removes the
+                // Tear down the test's SkillTest frame, which also
+                // carries the test data. `take_skill_test` removes the
                 // (unique — no nesting today) frame by position, so a player-
-                // window gate legitimately sitting above it (#69/#70/#71) is
+                // window gate legitimately sitting above it is
                 // unaffected.
                 let taken = cx.state.take_skill_test();
                 debug_assert!(
@@ -1644,7 +1642,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 // frame beneath (a single Frozen in Fear, or a 2+ forced run);
                 // the loop's `InvestigatorTurn { ending: true }` arm runs
                 // `resume_end_turn` once this returns — no reach-down here
-                // (#434, unified with the former 2+ `EndOfTurnAfterForced` path).
+                // (the same path a 2+ forced run takes).
                 return EngineOutcome::Done;
             }
         }
@@ -1652,13 +1650,13 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
 }
 
 /// Expire every [`RecordedModifier`](crate::state::RecordedModifier) bought for
-/// the test being torn down (#676).
+/// the test being torn down.
 ///
 /// Called from both teardowns — the ST.8 one and [`abandon_test`] — with the
 /// `SkillTest` frame still on the stack, since the id it keys on lives there.
 /// A missing frame is a teardown bug that would leak test-scoped rows into the
-/// next test, which is the failure #676 exists to prevent, so it trips a
-/// `debug_assert` rather than quietly doing nothing.
+/// next test — the failure a test's identity exists to prevent — so it trips
+/// a `debug_assert` rather than quietly doing nothing.
 fn expire_this_tests_modifiers(cx: &mut Cx) {
     let ending = cx.state.current_skill_test().map(|t| t.id);
     debug_assert!(
@@ -1671,7 +1669,7 @@ fn expire_this_tests_modifiers(cx: &mut Cx) {
 }
 
 /// Whether the entity whose quantity `basis` reads has left play, so the test
-/// resting on it has nothing left to be a test *of* (#682).
+/// resting on it has nothing left to be a test *of*.
 ///
 /// [`Fixed`](DifficultyBasis::Fixed) reads a number printed on a card rather
 /// than a board entity, so it can never go absent.
@@ -1685,12 +1683,11 @@ fn difficulty_target_left_play(state: &GameState, basis: DifficultyBasis) -> boo
 
 /// Tear down an in-flight skill test that cannot be resolved, and pop its
 /// frame. Two callers, both in [`advance`]'s loop preamble: the tester was
-/// eliminated mid-resolution (#564), or the test's difficulty target left play
-/// (#682).
+/// eliminated mid-resolution, or the test's difficulty target left play.
 ///
 /// Mirrors the [`PostOnResolution`](SkillTestStep::PostOnResolution) teardown,
 /// and `committed` is where the two callers part company — it names the cards
-/// to discard out of limbo (#631), or `None` to drop them with the frame:
+/// to discard out of limbo, or `None` to drop them with the frame:
 ///
 /// - **Eliminated tester** passes `None`. Rules Reference p.10 Elimination
 ///   step 1 ("The cards he or she controls in play and all of the cards in his
@@ -1720,7 +1717,7 @@ fn abandon_test(
     cx.events.push(Event::SkillTestEnded { investigator });
     // ModifierScope::ThisSkillTest contributions expire with the test, however
     // it ended — the abandoned case is exactly the one where a leak would be
-    // invisible (#676). Keyed on this test's identity, as in the normal
+    // invisible. Keyed on this test's identity, as in the normal
     // teardown.
     expire_this_tests_modifiers(cx);
     let taken = cx.state.take_skill_test();
@@ -1732,7 +1729,7 @@ fn abandon_test(
 }
 
 /// Who is committing, to whose test: the two differ once another investigator
-/// at the same location may commit (#65).
+/// at the same location may commit.
 #[derive(Debug, Clone, Copy)]
 struct CommitBy {
     /// The investigator whose hand the cards come from.
@@ -1760,8 +1757,8 @@ fn validate_commit_indices(
         )
     });
     // Arkham's upkeep hand-size limit caps hands well below 256 cards
-    // in practice (#111 tracks the engine-side enforcement of the
-    // discard-to-max-hand-size step), so the `u8::try_from` below
+    // in practice (the Upkeep discard-to-max-hand-size step enforces it),
+    // so the `u8::try_from` below
     // succeeds for every index that passed the bounds check. No
     // defensive overflow-rejection branch needed.
     let hand_len = inv.hand.len();
@@ -1787,14 +1784,14 @@ fn validate_commit_indices(
         );
     }
 
-    // Enforce per-card "Max N committed per skill test" caps (#311). The
+    // Enforce per-card "Max N committed per skill test" caps. The
     // limit is printed metadata (`CardKind::Skill.commit_limit`); a card
     // with no cap, or no registry entry, is unconstrained.
     // RR Appendix II ST.2: *"An appropriate skill icon is either one that
     // matches the skill being tested, or a wild icon. […] Cards that lack
     // an appropriate skill icon may not be committed to a skill test."*
     // Without this, commit is a free discard outlet for any card in hand
-    // — a weakness included (#763, cf. #646).
+    // — a weakness included.
     //
     // `skill` is the test's skill *as it stands at the commit window*, so
     // a substitution that already rewrote it (Mind over Matter 01036 makes
@@ -1896,8 +1893,8 @@ fn current_difficulty(state: &GameState, cards: &CardRegistry) -> i8 {
 /// contribution that is a property of this test rather than of the
 /// board, the committed cards' matching and wild icons, pushed into the
 /// same breakdown. A weapon's one-shot *"+N \[combat\] for this attack"*
-/// is a recorded row the query itself folds in (#677), and so is the
-/// revealed token's ±N and the elder sign's bonus (#684).
+/// is a recorded row the query itself folds in, and so is the
+/// revealed token's ±N and the elder sign's bonus.
 ///
 /// **Returned clamped**, because nothing is left to add: the icons go
 /// into the breakdown rather than onto its result, so the clamp is last
@@ -1946,7 +1943,7 @@ fn sum_skill_value(
 ///
 /// Reads the codes the commit hop moved into limbo, **not** the hand — the
 /// ST.2→ST.3 player window sits between the commit and this sum and is free to
-/// mutate the hand (#631).
+/// mutate the hand.
 fn push_committed_icons(
     cards: &CardRegistry,
     out: &mut ModifierBreakdown,
@@ -1983,7 +1980,7 @@ fn push_committed_icons(
 /// instead of discarding it."*). Each card goes in commit order.
 ///
 /// The cards come off the in-flight record, not out of the hand — the commit
-/// hop already removed them (#631), so nothing here can index a hand position
+/// hop already removed them, so nothing here can index a hand position
 /// that a Fast play in the ST.2→ST.3 window has since shifted. The emitted
 /// `from` is still [`Zone::Hand`]: limbo is not a zone the event vocabulary
 /// models, and the hand is where the cards came from.
@@ -1991,7 +1988,7 @@ fn discard_committed_cards(cx: &mut Cx, investigator: InvestigatorId, committed:
     if committed.is_empty() {
         return;
     }
-    // Unreachable: `advance`'s Status gate (#564) abandons the test before
+    // Unreachable: `advance`'s Status gate abandons the test before
     // teardown if the tester was eliminated. Total rather than `expect` so a
     // future path can't panic a production apply (a panic escapes `apply_via`'s
     // rollback) — the committed cards then simply stay in limbo and die with
@@ -2109,11 +2106,10 @@ fn collect_on_commit(cards: &CardRegistry, committed: &[CommittedCard]) -> Vec<E
 }
 
 /// Start a plain skill test directly, the synthetic entry point behind
-/// [`TestSession::test_skill`](crate::test_support::TestSession::test_skill)
-/// (the retired `PlayerAction::PerformSkillTest` wire variant, #447).
+/// [`TestSession::test_skill`](crate::test_support::TestSession::test_skill).
 ///
 /// Opens the commit window with no action-specific follow-up. The
-/// after-resolution trigger window (#64) is downstream.
+/// after-resolution trigger window is downstream.
 pub(crate) fn perform_skill_test(
     cx: &mut Cx,
     investigator: InvestigatorId,

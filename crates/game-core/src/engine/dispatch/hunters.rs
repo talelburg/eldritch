@@ -22,9 +22,9 @@ use crate::state::{
 pub(super) enum PreyResolution {
     /// Exactly one investigator best meets the instruction.
     One(InvestigatorId),
-    /// Two or more tie — the lead's call, which the engine asks of the proxy
-    /// (**Lead investigator** in `GLOSSARY.md`); carries the tied set, in
-    /// input order.
+    /// Two or more tie — the lead's call, which the engine asks of the
+    /// proxy (**Lead investigator** in `GLOSSARY.md`); carries the tied set,
+    /// in input order.
     Tie(Vec<InvestigatorId>),
     /// No candidates at all.
     None,
