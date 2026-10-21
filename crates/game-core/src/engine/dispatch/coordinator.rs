@@ -1,25 +1,23 @@
-//! The timing-sequence coordinator frames (EmitEvent-frame C-coordinators,
-//! #434): the `when → at → after` cells of one triggering condition, with the
-//! condition's own resolution between the first two (#701).
+//! The timing-sequence coordinator frames: the `when → at → after` cells of
+//! one triggering condition, with the condition's own resolution between the
+//! first two.
 //!
 //! [`super::emit::queue_event`] pushes a [`Continuation::EmitEvent`](crate::state::Continuation::EmitEvent) for **every**
-//! triggering condition — no exceptions since #704 retired the last two, the
-//! enemy attack and its soak window; the `drive` loop dispatches it here.
+//! triggering condition, with no exceptions; the `drive` loop dispatches it
+//! here.
 //!
 //! - [`dispatch_emit_event`] walks `When → ResolveCondition → At → After` —
 //!   the three RR timing cells with the triggering condition's own resolution
-//!   between the first two (#701) — pushing a
+//!   between the first two — pushing a
 //!   [`Continuation::TimingPoint`](crate::state::Continuation::TimingPoint) for each *populated* bucket and **re-scanning
 //!   each cell fresh** (the per-cell eligibility re-scan — a `when` reaction can
 //!   change whether an `at` forced fires; the grid is not pre-computed).
 //! - [`dispatch_timing_point`] resolves one cell's forced-then-reaction
 //!   (`sub` cursor `Forced → Reaction → Done`) — RR p.2's forced-before-reaction,
-//!   which since #702 is the *only* mechanism for that ordering (the pre-#702
-//!   single-cell path achieved it structurally, by queueing the reaction window
-//!   beneath the forced frames).
+//!   for which this cursor is the only mechanism.
 //! - A `when`-cell ability that **prevents** the condition suppresses the rest
 //!   of the sequence — the resolve step, the `at` and `after` cells, and the
-//!   remainder of the `when` cell itself (#714; citations on
+//!   remainder of the `when` cell itself (citations on
 //!   [`EmitEventFrame::prevented`]).
 //!
 //! Neither driver suspends *itself*: each does one step and returns `Done`, and
@@ -57,7 +55,7 @@ use crate::state::{EmitEventFrame, EmitStep, TimingPointFrame, TimingSub};
 /// `docs/adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md`.
 ///
 /// Visible to `engine` rather than to `dispatch` alone because the evaluator's
-/// bounded test driver has to walk the coordinator too: since #703 an effect
+/// bounded test driver has to walk the coordinator too: an effect
 /// leaf can emit a condition whose own resolution happens here, so a driver that
 /// stopped at this frame would leave the effect half-resolved.
 pub(in crate::engine) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
@@ -77,7 +75,7 @@ pub(in crate::engine) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
                 if prevented {
                     // A `when`-cell ability prevented the condition, so neither
                     // step 2 nor the cells after it happen: the sequence is
-                    // abandoned where it stands (#714, and see
+                    // abandoned where it stands (see
                     // [`EmitEventFrame::prevented`] for the citations).
                     abandon_emit(cx);
                     EngineOutcome::Done
@@ -101,7 +99,7 @@ pub(in crate::engine) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
         unreachable!("dispatch_emit_event: ResolveCondition handled above");
     };
     let caller_owned = matches!(resolution, ConditionResolution::Caller);
-    // Per-cell re-scan (#434): the prior cell may have changed board state.
+    // Per-cell re-scan: the prior cell may have changed board state.
     let asked = reaction_windows::condition_as_it_now_stands(cx.state, cx.cards, &event, bucket);
     let has_forced = !trigger_scan::collect_forced(cx.state, cx.cards, &asked, bucket).is_empty();
     let has_reaction =
@@ -140,7 +138,7 @@ pub(in crate::engine) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
 /// by the `drive` loop). Runs the `sub` cursor `Forced → Reaction → Done`:
 ///
 /// - **`Forced`** — fire the bucket's forced abilities (0/1 inline; 2+ via the
-///   lead-ordered run). The cursor advances to `Reaction` *before* firing, so a
+///   ordered run). The cursor advances to `Reaction` *before* firing, so a
 ///   suspending 2+ run resumes at `Reaction`, not by re-scanning forced.
 /// - **`Reaction`** — open the bucket's reaction window if any candidate; else
 ///   finish the bucket. The cursor advances to `Done` before opening, so the
@@ -156,7 +154,7 @@ pub(in crate::engine) fn dispatch_timing_point(cx: &mut Cx) -> EngineOutcome {
         .clone();
     if bucket == EventTiming::When && condition_is_prevented(cx) {
         // A `when`-cell ability just prevented the condition. The rest of *this*
-        // cell is suppressed along with the cells after it (#714) — Dodge
+        // cell is suppressed along with the cells after it — Dodge
         // 01023's ruling reaches the `when` cell itself. Any candidate still
         // pending in an open window of this cell was withdrawn by
         // `reaction_windows::withdraw_suppressed_candidates` before that window
@@ -167,14 +165,14 @@ pub(in crate::engine) fn dispatch_timing_point(cx: &mut Cx) -> EngineOutcome {
         // No ownership check is needed: a caller-owned condition's `when` cell is
         // never walked (the arm above returns before any `TimingPoint` is
         // pushed), so a `When` bucket here is coordinator-owned by construction.
-        // The flag is this point's own parent's (#1055), so a condition emitted
+        // The flag is this point's own parent's, so a condition emitted
         // while another is cancelled walks its own `when` cell untouched.
         finish_timing_point(cx);
         return EngineOutcome::Done;
     }
     // Both sub-steps ask about the condition as it now stands: a forced `when`
     // ability resolved in the `Forced` step can have flipped a skill test's
-    // verdict before the `Reaction` step scans (#780).
+    // verdict before the `Reaction` step scans.
     let event = reaction_windows::condition_as_it_now_stands(cx.state, cx.cards, &event, bucket);
     match sub {
         TimingSub::Forced => {
@@ -183,8 +181,8 @@ pub(in crate::engine) fn dispatch_timing_point(cx: &mut Cx) -> EngineOutcome {
             set_timing_sub(cx, TimingSub::Reaction);
             let candidates = trigger_scan::collect_forced(cx.state, cx.cards, &event, bucket);
             if candidates.len() >= 2 {
-                // 2+ forced: the lead orders them (#213). The run carries no
-                // continuation (#434) — when it closes the loop re-dispatches the
+                // 2+ forced: an ordered run (Rules Reference p.17). The run
+                // carries no continuation — when it closes the loop re-dispatches the
                 // parent `TimingPoint` (now at `Reaction`).
                 reaction_windows::open_forced_resolution(cx, &event, bucket, candidates)
             } else {
@@ -234,7 +232,7 @@ fn advance_or_finish_emit(cx: &mut Cx) {
 /// is pushed straight above its condition's `EmitEvent`, and a window straight
 /// above its cell's `TimingPoint`, so for either on top the nearest one down is
 /// its own condition. The one reading both the coordinator and the window's
-/// withdrawal share (#1055).
+/// withdrawal share.
 pub(super) fn condition_is_prevented(cx: &Cx) -> bool {
     cx.state
         .continuations
@@ -243,7 +241,7 @@ pub(super) fn condition_is_prevented(cx: &Cx) -> bool {
 }
 
 /// Pop the [`Continuation::EmitEvent`](crate::state::Continuation::EmitEvent) coordinator on top **without** walking
-/// the rest of its sequence — the prevented condition's exit (#714). The
+/// the rest of its sequence — the prevented condition's exit. The
 /// remaining cells are not visited at all, so nothing is left for a later
 /// re-dispatch to pick up.
 fn abandon_emit(cx: &mut Cx) {
@@ -254,9 +252,8 @@ fn abandon_emit(cx: &mut Cx) {
 }
 
 /// A resolve step voids the rest of **its own** sequence: the `at` and `after`
-/// cells of the condition being resolved never run (#1111). Until then only a
-/// `when`-cell cancel could end a sequence early; this is the same exit taken
-/// from inside step 2.
+/// cells of the condition being resolved never run. It is the exit a
+/// `when`-cell cancel takes ([`abandon_emit`]), taken from inside step 2.
 ///
 /// `SkillTestResolved` is the one caller. Its resolve step re-totals the test
 /// and, when a `when`-cell modifier (Lucky! 01080) has turned the announced
