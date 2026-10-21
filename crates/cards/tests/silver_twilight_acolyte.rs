@@ -1,5 +1,5 @@
-//! Silver Twilight Acolyte 01102 carries its owner (#977), drawn from its
-//! bearer's deck (#1121). Runs against `cards::TEST_REGISTRIES`.
+//! Silver Twilight Acolyte 01102 carries its owner, drawn from its bearer's
+//! deck. Runs against `cards::TEST_REGISTRIES`.
 //!
 //! The card is a basic weakness enemy, printed verbatim:
 //!
@@ -125,8 +125,7 @@ fn the_acolyte_keeps_its_bearer_as_owner_through_its_attack() {
 
 /// **Defeated in a two-investigator game, it goes to its bearer's discard** —
 /// not the encounter discard, and not the discard of the investigator who
-/// defeated it. Before #982 a multiplayer defeat had no owner to route by
-/// (#654) and left the card unplaced.
+/// defeated it. Its bearer owns it, so the defeat routes it there.
 ///
 /// The bearer (investigator 1) draws it alone at the Study, so it spawns
 /// engaged with them, and hits it once. The fighter (investigator 2) starts
@@ -224,7 +223,7 @@ fn defeated_in_a_two_investigator_game_it_goes_to_its_bearers_discard() {
     );
 }
 
-/// **Readied beside only the other investigator, it engages no one** (#1125).
+/// **Readied beside only the other investigator, it engages no one**.
 /// `glossary/Prey.md`: *"If an enemy's prey instructions contain the word
 /// "only," that enemy only moves towards and engages that investigator (as if it
 /// were the only investigator in play), and ignores all other investigators
@@ -304,8 +303,8 @@ fn readied_beside_only_the_other_investigator_it_engages_no_one() {
     );
 }
 
-/// **In the Enemy phase it hunts its bearer, not the investigator beside it**
-/// (#1125). It stands at the Study with the other investigator, its bearer at
+/// **In the Enemy phase it hunts its bearer, not the investigator beside it**.
+/// It stands at the Study with the other investigator, its bearer at
 /// the Hallway next door: the other investigator does not hold it in place, and
 /// it moves to its bearer and engages them. The Acolyte is placed on the board
 /// as a draw mints it, with its keywords and prey read from the corpus.

@@ -1,6 +1,5 @@
 //! A card that has commenced being played and is not yet placed rides the frame
-//! driving its play (#604, #565 — see
-//! `docs/adr/0002-in-progress-play-lives-on-its-frame.md`).
+//! driving its play (see `docs/adr/0002-in-progress-play-lives-on-its-frame.md`).
 //!
 //! Rules Reference **Appendix I: Initiation Sequence**, steps 3–4:
 //!
@@ -102,17 +101,16 @@ fn board_attacked_for(hand: &[&str], resources: u8, attack_damage: u8) -> TestSe
 }
 
 // -----------------------------------------------------------------------
-// #604 — a nested play must not erase the play it nests inside.
+// A nested play must not erase the play it nests inside.
 // -----------------------------------------------------------------------
 
+/// Regression for #604: a nested play does not erase the play it nests inside.
+///
 /// Dynamite Blast is mid-play when Dodge is played to cancel the attack of
 /// opportunity it provoked. Both are events, so both belong in the discard pile
-/// once their effects resolve (RR Appendix I step 4).
-///
-/// Before #604 the two plays shared one global slot: Dodge's play overwrote
-/// Dynamite Blast's entry, and Dynamite Blast's own disposal then found the slot
-/// empty — the card resolved its effect and ended up in no zone at all, with no
-/// panic, rejection, or event to show for it.
+/// once their effects resolve (RR Appendix I step 4). Each play rides its own
+/// frame, so Dodge's play leaves Dynamite Blast's in place, and Dynamite Blast
+/// reaches the discard pile rather than ending up in no zone at all.
 #[test]
 fn dodging_the_aoo_of_a_non_fast_event_does_not_erase_it() {
     // Play Dynamite Blast (hand_index 0). Non-fast → action spent, cost paid,
@@ -208,18 +206,17 @@ fn defeated_by_its_own_aoo_the_mid_play_event_is_removed_not_discarded() {
 }
 
 // -----------------------------------------------------------------------
-// #565 — a play parked across the AoO must survive a hand-shifting reaction.
+// A play parked across the AoO must survive a hand-shifting reaction.
 // -----------------------------------------------------------------------
 
-/// A non-fast **asset** play parks across the attack-of-opportunity loop, and the
-/// Dodge played in that loop leaves hand from under it. The asset that enters
-/// play must be the one that was announced.
+/// Regression for #565: the asset that enters play is the one that was
+/// announced, even when a reaction shifts the hand under the parked play.
 ///
-/// Before #565 the parked play carried a raw `hand_index`: with hand
-/// `[Dodge, Machete, Knife]`, Machete is announced at index 1, Dodge's play
-/// shifts the hand to `[Machete, Knife]`, and disposal took index 1 — putting
-/// **Knife** into play while Machete stayed in hand, with `CardPlayed`, the cost
-/// payment, and the slot check all naming Machete.
+/// A non-fast **asset** play parks across the attack-of-opportunity loop, and the
+/// Dodge played in that loop leaves hand from under it. With hand
+/// `[Dodge, Machete, Knife]`, Machete is announced at index 1 and Dodge's play
+/// shifts the hand to `[Machete, Knife]`. The parked play names Machete rather
+/// than an index, so Machete enters play, not **Knife** at index 1.
 #[test]
 fn a_hand_shifting_reaction_does_not_swap_the_asset_that_enters_play() {
     // Machete 3 + Dodge 1 = 4 resources.

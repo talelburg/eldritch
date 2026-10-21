@@ -1,7 +1,6 @@
-//! Integration tests proving that a failed Fight against a ready retaliate
-//! enemy (a) lets Dodge cancel the resulting retaliate attack, and (b) lets
-//! Guard Dog retaliate against the retaliating enemy — the acceptance test
-//! for #379 (K2b).
+//! Regression for #379: a failed Fight against a ready retaliate enemy (a) lets
+//! Dodge cancel the resulting retaliate attack, and (b) lets Guard Dog retaliate
+//! against the retaliating enemy.
 //!
 //! These are registry-backed proofs of the full
 //! `drive_retaliate` → suspend (`BeforeEnemyAttack` or
@@ -132,7 +131,7 @@ fn assert_nothing_stranded(state: &GameState) {
 // ---------------------------------------------------------------------------
 
 /// Investigator controls Guard Dog, fails a Fight against a ready retaliate
-/// enemy → the retaliate runs through the attack loop (K2a, #379) → Guard
+/// enemy → the retaliate runs through the attack loop → Guard
 /// Dog soaks the retaliate's 1 damage → the
 /// `AfterEnemyAttackDamagedAsset` window opens → fire Guard Dog's reaction
 /// → the retaliating enemy takes 1 → the Fight's skill test tears down
@@ -149,7 +148,7 @@ fn guard_dog_retaliates_against_retaliate_and_skill_test_ends() {
     // → Guard Dog has no cancel reaction so the attack's `when` cell auto-skips →
     // its damage is assigned to Guard Dog → the `DamageDealt` window opens →
     // suspend, before anything is placed.
-    // The retaliate's damage prompts the soak distribution (#44/K5b): assign it
+    // The retaliate's damage prompts the soak distribution: assign it
     // onto Guard Dog → soak window opens.
     let session = fight_committing_nothing(session).pick(dog.clone());
     let state = session.state();
@@ -161,8 +160,7 @@ fn guard_dog_retaliates_against_retaliate_and_skill_test_ends() {
     );
 
     // The retaliate's 1 damage is assigned to Guard Dog and not yet placed: the
-    // open window is Guard Dog's own `when` cell, between the two rules steps
-    // (#727).
+    // open window is Guard Dog's own `when` cell, between the two rules steps.
     let dog_in_play = state.investigators[&INV]
         .cards_in_play
         .iter()

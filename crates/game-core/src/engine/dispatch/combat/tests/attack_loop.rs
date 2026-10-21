@@ -167,8 +167,8 @@ fn drive_retaliate_deals_damage_but_does_not_exhaust_the_attacker() {
     let mut events = Vec::new();
     let mut cx = Cx::for_test(&mut state, &mut events);
 
-    // The attack is queued on the coordinator (#704), so drive it out: the
-    // loop's `Done` means *queued*, not *dealt*.
+    // The attack is queued on the coordinator, so drive it out: the loop's
+    // `Done` is not the damage being dealt (see `emit::queue_event`).
     let outcome = drive_retaliate(&mut cx, EnemyId(100), inv_id);
     let outcome = dispatch::drive(&mut cx, outcome);
 

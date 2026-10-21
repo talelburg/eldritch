@@ -1,5 +1,5 @@
 //! Zero-action abilities on the newly reachable sources are available in
-//! player windows (#710).
+//! player windows.
 //!
 //! The rules bullets governing which sources an investigator can reach are
 //! written **once**, for all three kinds of triggered ability together.
@@ -30,8 +30,8 @@
 //!
 //! **This is confirmation, not construction.** `enumerate_fast_plays` and
 //! `check_activate_ability` already ask `engine::ability_source` the same
-//! question the turn-menu enumerator asks it, so the widening #707/#708/#709
-//! shipped reaches player windows by construction. These tests are what makes
+//! question the turn-menu enumerator asks it, so every source the turn menu
+//! reaches is reached by player windows by construction. These tests are what makes
 //! that inheritance a checked property rather than a reading of the call graph.
 //!
 //! Corpus consumers in Dunwich, none of them implementable yet: Ten-Acre
@@ -43,10 +43,11 @@
 //! of his or her clues on any [[Abomination]] enemy in play. (Group limit once
 //! per game)."*) both print one on a **location**; Peter Clover 02079
 //! (*"\[fast\] Exhaust Peter Clover: Automatically evade a [[Criminal]] enemy in
-//! your location."*) prints one on an asset, which is the control bullet #707
-//! already covers. Both locations carry a group usage limit, which a source
-//! with no card instance cannot record (#699) — so neither could be shipped
-//! here even if the DSL had the effect. Purpose-built abilities prove
+//! your location."*) prints one on an asset, which the control bullet already
+//! covers. Both locations carry a group usage limit, which a source
+//! with no card instance cannot record — so neither could be shipped here even
+//! if the DSL had the effect. TODO(#699): record usage limits on a location,
+//! act or agenda. Purpose-built abilities prove
 //! reachability directly; prior art: `ability_source_colocation.rs`,
 //! `ability_source_board.rs`.
 //!
@@ -60,8 +61,7 @@
 //!
 //! A skill test's ST.1 window, opened by the engine rather than seeded onto the
 //! builder's stack, so the prompt the client would see is the thing asserted
-//! on. Two seams, both existing public engine entry points and both the ones
-//! #695 named:
+//! on. Two seams, both existing public engine entry points:
 //!
 //! - **The window's own option list** — whether an ability is *offered*. An
 //!   option carries an [`OptionTarget`], which is what names the source; it
@@ -344,7 +344,7 @@ fn assert_out_of_reach(source: impl FnOnce(&GameState) -> AbilitySource, why: &s
     );
 }
 
-// ---- the sources the window now reaches ----------------------------------
+// ---- the sources a window reaches ---------------------------------------
 
 /// The binary's one mock, built once on first use.
 fn registries() -> Registries {
@@ -428,7 +428,7 @@ fn an_enemy_at_another_location_is_out_of_reach_even_in_a_window() {
 
 /// *"all encounter cards in the threat area of **any** investigator at that
 /// location"* — Haunted 01098's ruling (<https://arkhamdb.com/card/01098>),
-/// now in a player window rather than through the Activate action.
+/// in a player window rather than through the Activate action.
 #[test]
 fn a_colocated_investigators_threat_area_card_offers_its_zero_action_ability_in_a_window() {
     assert_offered_and_usable(

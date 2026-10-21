@@ -1,5 +1,5 @@
 //! `seat(..).as_card(..)` reads a real investigator's printed card from
-//! `cards::REGISTRY`, the metadata real seating reads (#1014).
+//! `cards::REGISTRY`, the metadata real seating reads.
 //!
 //! Roland Banks (01001), per `data/arkhamdb-snapshot/pack/core/core.json`:
 //! `"skill_willpower": 3`, `"skill_intellect": 3`, `"skill_combat": 4`,

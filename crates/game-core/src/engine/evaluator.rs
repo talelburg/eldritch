@@ -920,6 +920,10 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
             then,
             else_,
         } => {
+            // A condition that can't be evaluated, or a `Rejected` from the
+            // branch, passes through; whatever the branch already pushed or
+            // mutated is rolled back by `apply_via`'s snapshot-restore at the
+            // apply boundary.
             let holds = match eval_condition(cx.state, cx.cards, &eval_ctx, condition) {
                 Ok(b) => b,
                 Err(reason) => {
@@ -1460,17 +1464,6 @@ fn discard_self(cx: &mut Cx, eval_ctx: &EvalContext) -> EngineOutcome {
     }
 }
 
-/// Evaluate an [`Effect::If`].
-///
-/// Walks the [`Condition`], branches into `then` on hold or `else_`
-/// otherwise (or [`EngineOutcome::Done`] when `else_` is absent).
-/// Condition evaluation that needs context the engine can't supply
-/// today (e.g. comparing against a stat snapshot not stored on
-/// state) returns [`EngineOutcome::Rejected`] with a TODO message.
-///
-/// A `Rejected` returned by the branch passes through; any events
-/// the branch already pushed (and any state it mutated) are rolled
-/// back by `apply_via`'s snapshot-restore at the apply boundary.
 /// Which side of the control split the card printed with `code` is on —
 /// [`Condition::ControlStatus`]'s reader, and the one the grant sweep asks on
 /// behalf of a recipient nobody controls.
@@ -1545,19 +1538,18 @@ pub(crate) fn eval_condition(
             Ok(predicate(state, eval_ctx))
         }
         Condition::SkillTest { outcome } => {
+            // TODO(#1147): delete Condition::SkillTest, which no card uses.
+            //
             // Inside an [`Trigger::OnSkillTestResolution`] effect, the
             // outcome is already gated by the trigger; using this
-            // condition there is redundant. It is *not* unknowable
-            // elsewhere in ST.7 — post-#423 the determination lives on
+            // condition there is redundant. The determination lives on
             // [`InFlightSkillTest::resolved`], so an `OnCommit` effect
-            // could read it — but nothing wires this condition to that
-            // field, and outside an in-flight test (an OnEvent reaction
-            // keying off `SkillTestSucceeded`) there is no such frame to
-            // read. Reject with a TODO pointing at the preferred trigger.
+            // could read it, but nothing wires this condition to that
+            // field, and outside an in-flight test there is no such frame
+            // to read. So it rejects, naming the trigger to use instead.
             Err(format!(
-                "TODO: Condition::SkillTest {{ outcome: {outcome:?} }} not yet evaluated; \
-                 prefer Trigger::OnSkillTestResolution for resolution-time effects, \
-                 or wait for an OnEvent-based reaction model to surface past-test outcome."
+                "Condition::SkillTest {{ outcome: {outcome:?} }} is not evaluated; \
+                 gate on the outcome with Trigger::OnSkillTestResolution instead."
             ))
         }
     }
@@ -1930,10 +1922,10 @@ fn discover_clue(
     // at your location: Discard that many clues from Cover Up instead"* replace
     // a discovery that has not happened yet.
     //
-    // In tail position with nothing after it, per ADR 0003: this returns
-    // `Done` when nothing was queued *and* when a `when` window was, and the
-    // `drive` loop owns both. Peeking at the top frame here to tell those
-    // apart is the shape the ADR forbids.
+    // In tail position with nothing after it: this returns `queue_event`'s
+    // outcome unexamined (see its doc), whether or not a `when` window opened,
+    // and the `drive` loop owns both. Peeking at the top frame here to tell
+    // those apart is the shape ADR 0003 forbids.
     emit::queue_event(
         cx,
         &TimingEvent::DiscoverClues {

@@ -1,4 +1,4 @@
-//! K5b-1 (#44): the defending player distributes an enemy attack's damage
+//! The defending player distributes an enemy attack's damage
 //! across themselves and eligible soakers, one point at a time (RR p.7),
 //! driven through the real `apply` enemy-phase path against the corpus registry.
 
@@ -28,7 +28,7 @@ fn ready_attacker(id: u32, damage: u8) -> Enemy {
 /// `enemy` engaged. `EndTurn` advances into the Enemy phase and runs the attack.
 fn attack_state(enemy: Enemy) -> GameState {
     // Non-empty deck so the post-attack Upkeep draw doesn't trigger the
-    // draw-from-empty horror penalty (which, per K5a, soaks onto a sanity asset
+    // draw-from-empty horror penalty (which soaks onto a sanity asset
     // and would muddy these damage-only tests).
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -73,7 +73,7 @@ fn two_damage_attack_splits_one_to_guard_dog_one_to_self() {
         .pick(me.clone());
 
     // The distribution is complete but nothing is placed: Guard Dog is in the
-    // assignment, so its `when` cell opens between the two rules steps (#727),
+    // assignment, so its `when` cell opens between the two rules steps,
     // and that is the window here rather than a further distribution prompt.
     assert!(
         !at_distribution_prompt(&session),
@@ -144,7 +144,7 @@ fn a_full_soaker_drops_out_of_the_next_prompt() {
 
     // Guard Dog is now full, so the second point is auto-assigned to the
     // investigator with NO further distribution prompt. What is open instead is
-    // Guard Dog's `when` cell on the completed assignment (#727) — a lethal one,
+    // Guard Dog's `when` cell on the completed assignment — a lethal one,
     // which it is still entitled to react to (`data/arkhamdb-faq/core/01021.md`).
     assert!(
         !at_distribution_prompt(&session),

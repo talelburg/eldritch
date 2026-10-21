@@ -1,10 +1,10 @@
-//! #682: an attack whose target leaves play mid-test is **abandoned**, not
-//! resolved.
+//! Regression for #682: an attack whose target leaves play mid-test is
+//! **abandoned**, not resolved.
 //!
 //! A Fight action's difficulty *is* the attacked enemy's modified fight value,
-//! read at ST.6 (#677, ADR 0005). If the enemy leaves `state.enemies` between
-//! ST.1 and ST.6 the query finds nothing, answers 0, and the test
-//! automatically succeeds — the defect this file pins shut.
+//! read at ST.6 (ADR 0005). If the enemy leaves `state.enemies` between ST.1
+//! and ST.6, the query finds nothing and answers 0, so a test that resolved
+//! would automatically succeed.
 //!
 //! **The vendored sources do not settle what becomes of such a test**, so the
 //! behaviour asserted here is an engine decision, recorded on
@@ -97,7 +97,7 @@ fn to_st2(session: TestSession, action: &TurnAction, commit: &[&str]) -> TestSes
     session.take(action).skip().commit(commit)
 }
 
-/// [`to_st2`], then take the one offered fast ability at the ST.2 window: Beat
+/// [`to_st2`], then take the one offered zero-action ability at the ST.2 window: Beat
 /// Cop's discard, which defeats the 1-health enemy the in-flight attack is
 /// against.
 fn attack_then_kill_the_target_on(
@@ -160,8 +160,8 @@ fn a_fight_whose_target_leaves_play_at_st2_is_abandoned() {
     assert_abandoned(&session);
     // The only damage dealt is Beat Cop's own. The Fight follow-up is
     // success-only, there is no success to trigger it, and no enemy left to
-    // damage — before #682 it reached `damage_enemy` against an absent enemy
-    // and tripped that handler's state-corruption `unreachable!`.
+    // damage, so nothing reaches `damage_enemy` against an absent enemy and
+    // trips that handler's state-corruption `unreachable!`.
     assert_eq!(
         session
             .events()
@@ -205,7 +205,7 @@ fn abandoning_the_test_does_not_refund_the_action() {
 }
 
 /// A card committed to the abandoned test is **discarded**, not deleted. The
-/// eliminated-tester abandonment (#564) drops limboed cards with the frame
+/// eliminated-tester abandonment drops limboed cards with the frame
 /// because RR p.10 Elimination step 1 has already removed them from the game;
 /// here the investigator is still in the scenario and the cards are still
 /// theirs, so the teardown must send them to the pile exactly as ST.8 would.

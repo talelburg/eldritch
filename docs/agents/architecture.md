@@ -8,7 +8,7 @@ How this repo is put together: what each crate may depend on, how state changes,
 card-dsl  ←  game-core   ←  cards          ←  scenarios
                 ↑              ↑                  ↑
                 └───────  server, web (consume both)
-                └───────  card-data-pipeline (consumes card-dsl only — emits cards/src/generated/)
+                └───────  card-data-pipeline (depends on no workspace crate — emits cards/src/generated/, which uses card-dsl)
 ```
 
 - `card-dsl` — pure data types: the effect DSL (`Ability`, `Effect`, `Trigger`, builders) and static metadata (`CardMetadata`, `CardType`, `Class`, …). No I/O, state, or engine behavior. Both `game-core` and `cards` depend on it.
@@ -30,22 +30,22 @@ The engine looks the scenario module up once per apply and carries both on `Cx`;
 
 ## Event-sourced state — Action → apply → ApplyResult
 
-`apply(state: GameState, action: Action) -> ApplyResult { state, events, outcome }` is the **only** entry point that mutates state. The action log is a flat `Vec<Action>`; replaying it reproduces state bit-for-bit. Every randomness source (chaos draws, deck shuffles) is recorded as an explicit `EngineRecord` action so replay is deterministic.
+`apply(state: GameState, action: Action, registries: Registries) -> ApplyResult { state, events, outcome }` (`crates/game-core/src/engine/mod.rs`) is the **only** entry point that mutates state. The action log is a flat `Vec<Action>`; replaying it over the same seed state reproduces state bit-for-bit. Replay is deterministic because every random draw (chaos tokens, deck shuffles) comes from the seeded `RngState` carried in `GameState` (`crates/game-core/src/rng.rs`), not because draws are logged: production code never constructs an `Action::Engine` record, and only tests issue one.
 
-**Handler contract — validate-first / mutate-second.** Every dispatch handler in `crates/game-core/src/engine/dispatch.rs`:
+**Handler contract — validate-first / mutate-second.** Every dispatch handler in the `crates/game-core/src/engine/dispatch/` module tree:
 
 1. Checks every precondition; on any failure returns `EngineOutcome::Rejected { reason }` with state and events **unchanged**.
 2. Mutates state and pushes events only after all validations pass.
 
-Backstopped structurally since #161: `apply_via` (`crates/game-core/src/engine/mod.rs`) snapshots the pristine state before dispatch and restores it (state, events, and RNG position) whenever the outcome is `Rejected` — no handler, including the mutating DSL evaluator, can leak partial state past a rejection. Handlers still follow validate-first as a convention (it keeps rejection cheap and reasons precise; canonical shape: `move_action`, `investigate`, `play_card`), but mid-resolution mutations before a reject are rolled back at the apply boundary, not merely event-cleared.
+Backstopped structurally since #161: `apply_via` (`crates/game-core/src/engine/mod.rs`) snapshots the pristine state before dispatch and restores it (state, events, and RNG position) whenever the outcome is `Rejected` — no handler, including the mutating DSL evaluator, can leak partial state past a rejection. Handlers still follow validate-first as a convention (it keeps rejection cheap and reasons precise; canonical shape: `actions::move::handle`, `actions::investigate::handle`, `cards::play_card`), but mid-resolution mutations before a reject are rolled back at the apply boundary, not merely event-cleared.
 
 `EngineOutcome` = `Done | AwaitingInput { … } | Rejected { reason }`; `AwaitingInput` round-trips via `PlayerAction::ResolveInput`.
 
 ## Hybrid card-effect DSL
 
-`crates/card-dsl/src/dsl.rs` defines `Ability { trigger: Trigger, effect: Effect }`. Triggers: `Constant`, `OnPlay`, `OnCommit` (+ `OnEvent` / `Activated` / reaction triggers later). Effects: `GainResources`, `DiscoverClue`, `Modify`, `Seq`, `If`, `ForEach`, `ChooseOne`. The evaluator (`crates/game-core/src/engine/evaluator.rs`) walks effect trees under the same validate-first contract.
+`crates/card-dsl/src/dsl.rs` defines `Ability`, which pairs a `Trigger` (when the ability is active) with an `Effect` tree (what it does). An `OnEvent` trigger names the event it listens for with an `EventPattern`. The variants are the enums themselves — read `Trigger`, `Effect` and `EventPattern` in `dsl.rs` rather than a list here. The evaluator (`crates/game-core/src/engine/evaluator.rs`) walks effect trees under the same validate-first contract, and `step_leaf` there is the one exhaustive match that dispatches every `Effect` variant.
 
-An `OnEvent` ability declares the **timing cell** its printed trigger word names (**Timing cell** in [`GLOSSARY.md`](../../GLOSSARY.md)). The conventions an author follows when writing one — checking the declared `EventTiming` against the quoted trigger word, and naming the cell in the module's prose — are in [`standards.md`](standards.md); the *why*, and the caller-owned conditions that remain, are in [ADR 0008](../adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md).
+An `OnEvent` ability declares the **timing cell** its printed trigger word names (**Timing cell** in [`GLOSSARY.md`](../../GLOSSARY.md)). The conventions an author follows when writing one — checking the declared `EventTiming` against the quoted trigger word, and naming the cell in the module's prose — are in [`standards.md`](standards.md); the *why* is in [ADR 0008](../adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md), and which conditions are still caller-owned is `TimingEvent::condition_resolution` (`crates/game-core/src/engine/dispatch/emit.rs`).
 
 Cards are **Rust source** (typed, compiler-checked), not JSON: each is a module `crates/cards/src/impls/<name>.rs` exposing `CODE: &str`, `abilities() -> Vec<Ability>` and a `CARD` registration record listed in `impls::ALL`; the `impls` module header gives the add-a-card procedure. Cards needing primitives the DSL lacks get a Rust impl — and a primitive is added only once a second card wants the same pattern ([`standards.md`](standards.md)).
 

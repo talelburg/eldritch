@@ -158,7 +158,7 @@ pub(super) fn damage_enemy(cx: &mut Cx, enemy_id: EnemyId, amount: u8, by: Optio
             board::discard_from_play(cx, enemy_id)
         };
         // Enemy defeated: dispatch the timing point through the unified
-        // chokepoint (Axis-B T5a). `queue_event` queues the after-defeat
+        // chokepoint. `queue_event` queues the after-defeat
         // reaction window (Roland 01001) and the forced act objectives (act 3's
         // advance-on-Ghoul-Priest-defeat) as frames for the `drive` loop.
         //
@@ -169,12 +169,9 @@ pub(super) fn damage_enemy(cx: &mut Cx, enemy_id: EnemyId, amount: u8, by: Optio
         // `SkillTest` is no longer the top frame. So the queued frames resolve
         // first and the test resumes at the already-advanced cursor afterwards —
         // no post-emit work runs here. The outcome is deliberately discarded
-        // rather than returned: this helper's callers (`Effect::Deal`,
-        // `deal_damage_to_enemy`) have their own frames, and the loop drives what
-        // was queued. (The former `debug_assert!(Done)` asserted the wrong
-        // invariant — a legitimate 2+ ordering run returns `AwaitingInput` — and
-        // would have panicked in debug on the day a second act objective keyed
-        // here; #569.)
+        // rather than returned: this helper's callers (`deal_damage_to_enemy`
+        // and `fight::after_test`) have their own frames, and the loop drives
+        // what was queued.
         let _ = emit::queue_event(
             cx,
             &TimingEvent::EnemyDefeated {
