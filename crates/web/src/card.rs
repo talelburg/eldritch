@@ -1,7 +1,10 @@
-//! Visual card rendering for the web client. Pure helpers (`parse_card_text`,
-//! field formatters, `card_face`) are native-testable; the `Card` component
-//! assembles them into a faithful mini-card rectangle. Display-only (no click
-//! handlers) — interactivity is a later slice.
+//! Visual card rendering for the web client.
+//!
+//! Pure helpers (`parse_card_text`, field formatters, `card_face`) are
+//! native-testable, and the `Card` component assembles them into a faithful
+//! mini-card rectangle. `Card` itself is display-only: the wrappers
+//! [`HandCardView`] and [`InPlayCardView`] add the click handling and the
+//! action menus.
 
 use std::mem;
 
@@ -232,7 +235,7 @@ pub struct CardFace {
 }
 
 /// Map a hand-eligible `CardKind` (Asset/Event/Skill) to a `CardFace`; `None`
-/// for other kinds (rendered as a generic rectangle in this slice).
+/// for other kinds (rendered as a generic rectangle).
 #[must_use]
 pub fn card_face(kind: &CardKind) -> Option<CardFace> {
     match kind {

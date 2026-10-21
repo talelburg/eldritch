@@ -3,7 +3,7 @@
 //!
 //! The `ROUND` outline's step labels are transcribed from the RR Appendix II
 //! "Timing and Gameplay" — the Phase Sequence timing chart and Framework Event
-//! Details (`data/rules-reference/ahc01_rules_reference_web.pdf`, pp. 23-25),
+//! Details (`data/rules-reference/rules/Appendix_II_Timing_and_Gameplay.md`),
 //! with loop/flow-control tails elided for the cheat-sheet.
 //! Grey boxes are framework events; red boxes are player windows.
 //! The engine exposes only the coarse phase, so only the current *phase* is

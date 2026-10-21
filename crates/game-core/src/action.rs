@@ -9,10 +9,12 @@
 //!   transport boundary from a client. The wire layer parses incoming
 //!   messages as `PlayerAction`, so a client cannot fabricate
 //!   engine-only events.
-//! - [`Action::Engine`] wraps an [`EngineRecord`] — recorded output of
-//!   engine-side randomness or system events (deck shuffles). The
-//!   engine generates these itself so the action log is replayable;
-//!   clients never construct them.
+//! - [`Action::Engine`] wraps an [`EngineRecord`] — a system event
+//!   (a deck shuffle, an encounter reveal) applied without a player
+//!   decision. Production code never constructs one; only tests issue
+//!   them, to drive those handlers directly. Replay stays deterministic
+//!   because every random draw comes from the seeded `RngState` in
+//!   `GameState`, not because draws are logged.
 
 use serde::{Deserialize, Serialize};
 
@@ -27,8 +29,8 @@ use crate::state::{CardCode, InvestigatorId};
 pub enum Action {
     /// Action initiated by a human player.
     Player(PlayerAction),
-    /// Action emitted by the engine itself, recording a system event or
-    /// random draw.
+    /// A system event applied without a player decision. Only tests
+    /// issue one.
     Engine(EngineRecord),
 }
 
@@ -88,16 +90,10 @@ pub struct RosterEntry {
 /// them (e.g. `seat_and_open` shuffles every player deck during scenario
 /// setup), and RNG determinism reproduces them from the same triggering
 /// action.
-///
-/// The standalone [`DeckShuffled`](EngineRecord::DeckShuffled)
-/// variant is for shuffle requests that don't come from a player
-/// action — future card effects like "shuffle X into your deck" will
-/// emit this when the effect resolves.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum EngineRecord {
-    /// Shuffle the named investigator's player deck. Encounter deck
-    /// and act/agenda decks add their own variants when they land.
+    /// Shuffle the named investigator's player deck.
     DeckShuffled {
         /// Whose deck to shuffle.
         investigator: InvestigatorId,

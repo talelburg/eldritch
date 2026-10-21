@@ -1,4 +1,5 @@
-//! The production server runs on the real `scenarios` + `cards` registries
+//! The production server runs on the real `scenarios` + `cards` registries.
+//!
 //! `POST /games` for The Gathering succeeds and real card codes
 //! resolve. This binary hands the server the *production* pairing,
 //! `server::REGISTRIES`, where the other test binaries pass the mock pairing

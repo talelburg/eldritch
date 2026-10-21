@@ -1,5 +1,6 @@
-//! Every card the weakness pool can deal resolves when its bearer draws it
-//! a seeded game under the production [`cards::REGISTRIES`] seats
+//! Every card the weakness pool can deal resolves when its bearer draws it.
+//!
+//! A seeded game under the production [`cards::REGISTRIES`] seats
 //! Roland with one random basic weakness, and the Draw action brings it into
 //! play. Seeds are walked until each of the pool's eight titles has been dealt.
 //!
