@@ -104,7 +104,7 @@ pub struct CreateGameRequest {
     /// The scenario module to set up.
     pub scenario_id: String,
     /// The investigators to seat at creation, each paired with the deck the
-    /// player chose. Seated into the persisted seed (#459); a rejected
+    /// player chose. Seated into the persisted seed; a rejected
     /// seating fails creation with no game row.
     pub roster: Vec<RosterEntry>,
 }

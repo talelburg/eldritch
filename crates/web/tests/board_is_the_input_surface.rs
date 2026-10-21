@@ -1,6 +1,6 @@
-//! The one test that asserts the claim #541 closes on: a whole turn driven from
-//! the board alone, with **no** flat input bar behind it to catch what falls
-//! through (S6, #206).
+//! The one test that asserts the board is the input surface: a whole turn driven
+//! from the board alone, with **no** flat input bar behind it to catch what falls
+//! through.
 //!
 //! A miniature server runs the real engine in-process: every `ClientMessage` the
 //! UI submits is applied with `game_core::engine::apply` and folded back into the store as
@@ -190,7 +190,7 @@ async fn a_whole_turn_is_driven_from_the_board_alone() {
     // the acknowledge pause — the second of the two identical-on-the-wire
     // `Confirm`s (ADR 0011).
     state.encounter_deck = [CardCode::new(ROTTING_REMAINS)].into_iter().collect();
-    // The cosmetic acknowledge pause (#478) is what the result modal renders on.
+    // The cosmetic acknowledge pause is what the result modal renders on.
     state.interactive_acknowledge = true;
 
     // Seed by spending the one action through the engine: what comes back is the
@@ -258,13 +258,13 @@ async fn a_whole_turn_is_driven_from_the_board_alone() {
 const FIRST_AID: &str = "01019";
 const KIT: CardInstanceId = CardInstanceId(7);
 
-/// **A choice printed on one card arrives without a second click** (#856).
+/// **A choice printed on one card arrives without a second click.**
 ///
-/// Activating First Aid pays the supply and then asks which mode. Before this,
-/// the answer was a context menu on the same asset the player had just clicked
-/// twice — so the game read as stalled at exactly the moment it was waiting on
-/// them. Now the branches present themselves, on one surface: the modal carries
-/// them, the card keeps its glow but opens no menu, and the banner stands down.
+/// Activating First Aid pays the supply and then asks which mode. A context menu
+/// on the asset the player has just clicked would make the game read as stalled
+/// at exactly the moment it is waiting on them, so the branches present
+/// themselves, on one surface: the modal carries them, the card keeps its glow
+/// but opens no menu, and the banner stands down.
 #[wasm_bindgen_test]
 async fn a_choice_printed_on_one_card_presents_itself_without_a_second_click() {
     // An open turn with First Aid 01019 in play and harm to heal, so its
@@ -326,11 +326,11 @@ async fn a_choice_printed_on_one_card_presents_itself_without_a_second_click() {
     );
 
     // 3. The modal is the sole surface. The asset still glows — that is the
-    //    provenance signal — but it no longer opens a menu, and the banner
-    //    renders neither the prompt nor the branches (#541's double render).
+    //    provenance signal — but it opens no menu, and the banner renders
+    //    neither the prompt nor the branches, so nothing is offered twice.
     assert!(
         !absent(".card-slot.actionable"),
-        "the source card keeps its glow while the decision is live",
+        "the card the choice is printed on keeps its glow while the decision is live",
     );
     assert!(
         absent(".card-slot .menu-hit"),

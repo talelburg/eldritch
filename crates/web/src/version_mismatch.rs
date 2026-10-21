@@ -1,11 +1,11 @@
-//! The version-mismatch overlay (#770, wasm-only).
+//! The version-mismatch overlay (wasm-only).
 //!
 //! [`ConnStatus::VersionMismatch`](crate::store::ConnStatus::VersionMismatch) is
 //! terminal: the transport sets it on the first un-parseable server frame and
-//! stops reconnecting (#463), so nothing on the board behind it will ever
-//! respond again. One line in the header did not carry that — the board stayed
-//! fully rendered and clickable, which reads exactly like a stalled engine, and
-//! a skew filed as an engine bug is what corrupts a playthrough's findings.
+//! stops reconnecting, so nothing on the board behind it will ever
+//! respond again. One line in the header would not carry that: a fully rendered,
+//! clickable board reads exactly like a stalled engine, and a skew filed as an
+//! engine bug is what corrupts a playthrough's findings.
 //!
 //! So the state gets a scrim and a card, above every other overlay. The board
 //! stays *visible* beneath it — it is the evidence of what was happening when

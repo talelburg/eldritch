@@ -18,11 +18,10 @@ use crate::url;
 
 /// localStorage key holding the active game id across reloads.
 const GAME_ID_KEY: &str = "eldritch_game_id";
-/// Fixed reconnect backoff. Plenty for a solo v0; not exponential.
+/// Fixed reconnect backoff. Plenty for solo play; not exponential.
 const RECONNECT_MS: u32 = 1000;
 
-/// Sender used by views (the debug button, later P6.7 controls) to
-/// submit actions; cloneable, survives reconnects.
+/// Sender the views use to submit actions; cloneable, survives reconnects.
 pub type OutboundTx = UnboundedSender<ClientMessage>;
 
 /// Start the transport: provide an `OutboundTx` and a `CreateTx` into context,
@@ -207,7 +206,7 @@ fn clear_saved_id() {
 }
 
 /// Reload the page, keeping the saved game id — the *rejoin* counterpart to
-/// [`start_new_game`]. Drives the version-mismatch overlay's button (#770): the
+/// [`start_new_game`]. Drives the version-mismatch overlay's button: the
 /// server-side game persists across a server restart, so the fix for a skew is
 /// to pick the same game back up with a freshly-loaded client, not to abandon it.
 pub fn reload() {

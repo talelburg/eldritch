@@ -1,4 +1,4 @@
-//! #1111: a prompt inside a skill test's verdict shows how the test stands.
+//! A prompt inside a skill test's verdict shows how the test stands.
 //!
 //! Lucky! 01080, `text` verbatim (`data/arkhamdb-snapshot/pack/core/core.json`):
 //!

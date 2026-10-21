@@ -448,7 +448,7 @@ pub fn Card(code: CardCode, #[prop(optional)] in_play: Option<CardInPlay>) -> im
     }
 }
 
-/// Interactive wrapper for a hand card (#538). Keeps [`Card`] display-only:
+/// Interactive wrapper for a hand card. Keeps [`Card`] display-only:
 /// reads `PendingOptions` + `MultiSelect` and either enters selection mode (a
 /// `PickMultiple` is live — click toggles `.hand-slot.selected`) or offers a
 /// "Play …" [`menu_layer`](crate::interaction::menu_layer) via the card's
@@ -495,7 +495,7 @@ pub fn HandCardView(code: CardCode, investigator: InvestigatorId, index: u8) -> 
     .into_any()
 }
 
-/// Interactive wrapper for an in-play / threat-area card (#539). Keeps [`Card`]
+/// Interactive wrapper for an in-play / threat-area card. Keeps [`Card`]
 /// display-only: reads `PendingOptions` and, via the card's `CardInstance` anchor,
 /// offers an Activate (open-turn) / Trigger (reaction-window) menu. No selection
 /// mode — that is hand-only.

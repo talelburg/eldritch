@@ -1,4 +1,4 @@
-//! Headless tests for the investigator panel's three named controls (S6, #541):
+//! Headless tests for the investigator panel's three named controls:
 //! End turn, Gain resource and Draw.
 //!
 //! Each asserts what a player can see and do — the control exists, is disabled
@@ -93,7 +93,7 @@ fn submitted(rx: &mut UnboundedReceiver<ClientMessage>) -> InputResponse {
 #[wasm_bindgen_test]
 async fn end_turn_renders_disabled_when_nothing_anchors_to_it() {
     // The Mythos phase: the control is still there, greyed out, so the panel does
-    // not reflow and the player can see it is not their moment (#541).
+    // not reflow and the player can see it is not their moment.
     let _ = mount(
         "End turn",
         "turn-control",

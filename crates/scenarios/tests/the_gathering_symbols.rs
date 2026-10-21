@@ -1,4 +1,4 @@
-//! C2: 01104 reference-card symbol-token effects, end-to-end through the
+//! The 01104 reference card's symbol-token effects, end-to-end through the
 //! real card registry (Ghoul metadata) + the scenario module, both named by
 //! `scenarios::TEST_REGISTRIES`.
 
@@ -322,7 +322,7 @@ fn the_soak_suspension_between_st4_and_st5_does_not_redraw_the_token() {
 }
 
 // ---------------------------------------------------------------------------
-// Victory display tests (C2 — location VPs at scenario end)
+// Victory display tests (location VPs at scenario end)
 // ---------------------------------------------------------------------------
 
 /// `INV`'s open turn in a Gathering game holding the 1 clue a terminal act

@@ -1,14 +1,14 @@
-//! #853: the skill-test result modal survives a reaction between the result and
-//! the acknowledge pause.
+//! Regression for #853: the skill-test result modal survives a reaction between
+//! the result and the acknowledge pause.
 //!
 //! **Native, not wasm** — every other file in this directory drives the DOM in a
 //! headless browser; this one drives the *engine*. It mirrors the server exactly:
 //! one `game_core::engine::apply` call is one `ServerMessage::Applied` frame
 //! (`crates/server/src/session.rs`), so applying one at a time and folding each
 //! result through the real `store::reduce` reproduces the batch boundaries the
-//! client actually sees. The bug lives in those boundaries and nowhere else — a
-//! unit test over hand-built batches would not have caught it, because nobody
-//! would have hand-built the empty batch that carries the acknowledge pause.
+//! client actually sees. The hazard lives in those boundaries and nowhere else —
+//! a unit test over hand-built batches would miss it, because nobody hand-builds
+//! the empty batch that carries the acknowledge pause.
 //!
 //! ## The card
 //!
@@ -22,11 +22,9 @@
 //!
 //! She is the *occasion*, not the subject: her reaction sits in the `when` cell
 //! of `SkillTestResolved`, which the engine walks before `AcknowledgeOutcome`.
-//! When #853 was found the verdict was logged *before* that cell, so her window
-//! split the result from the acknowledge. Since #1111 the condition's resolve
-//! step logs it, after the `when` cell, so her pick's batch carries both and
-//! she no longer splits anything; her tests stay as the control for a `when`
-//! cell.
+//! The condition's resolve step logs the verdict, after the `when` cell, so her
+//! pick's batch carries both the result and the acknowledge and she splits
+//! nothing; her tests are the control for a `when` cell.
 //!
 //! The splitter now is an `after` reaction: **Dr. Milan Christopher (01033)**,
 //! `text` verbatim (`data/arkhamdb-snapshot/pack/core/core.json`): *"You get +1
@@ -106,7 +104,7 @@ fn board(lita_in_play: bool) -> GameState {
         .with_token_modifiers(TokenModifiers::default())
         .build();
     // The server's default, and the only setting under which the modal exists
-    // at all: without it the acknowledge pause never surfaces (#478).
+    // at all: without it the acknowledge pause never surfaces.
     state.interactive_acknowledge = true;
     state
 }
@@ -253,7 +251,7 @@ fn an_attack_through_litas_reaction_window_still_shows_the_result_modal() {
     assert!(modal_at_acknowledge(&fight_ghoul(true)));
 }
 
-/// #853: with Dr. Milan in play the result lands in the batch that opens his
+/// Regression for #853: with Dr. Milan in play the result lands in the batch that opens his
 /// `after` window, and the acknowledge's batch is empty — so a modal that reads
 /// only the live batch never renders, and the player is asked to acknowledge a
 /// result they were never shown.

@@ -1,4 +1,4 @@
-//! Headless render tests for the spatial board map (#497). Mount `BoardView`,
+//! Headless render tests for the spatial board map. Mount `BoardView`,
 //! feed a constructed `GameState`, assert on the rendered DOM. wasm32-only.
 #![cfg(target_arch = "wasm32")]
 
@@ -150,7 +150,7 @@ async fn engaged_enemy_renders_in_detail_panel_not_in_node() {
 }
 
 /// The `class` attribute of the shroud / clue badge in the last-mounted node
-/// named `loc_name`. The header prints numerals only (#848), so what a badge
+/// named `loc_name`. The header prints numerals only, so what a badge
 /// *is* lives in its class, not in its text.
 fn badge_class(loc_name: &str, which: &str) -> String {
     let sel = format!(".map-location[data-loc=\"{loc_name}\"] .loc-head .badge:{which}-child");
@@ -415,7 +415,7 @@ async fn location_without_a_matching_option_is_not_actionable() {
 #[wasm_bindgen_test]
 async fn investigator_card_glows_for_a_reaction_anchored_to_it() {
     // A reaction on the investigator card (Roland-style) anchors to that card's
-    // instance; the panel now renders it as an InPlayCardView, so it glows (#539).
+    // instance; the panel renders it as an InPlayCardView, so it glows.
     let game = GameStateBuilder::new()
         .with_investigator(test_support::test_investigator(1))
         .build();

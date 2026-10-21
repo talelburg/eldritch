@@ -18,7 +18,7 @@ use crate::{card, controls, registry};
 
 /// Which face of an act/agenda to show. During an advance the card flips from its
 /// front to its reverse (the "1b" side that carries the on-advance effect) once
-/// the flip is clicked (#558). `pub` because it rides in the generated component
+/// the flip is clicked. `pub` because it rides in the generated component
 /// props struct.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Face {
@@ -30,7 +30,7 @@ pub enum Face {
 
 /// Which face an advancing act/agenda should show: `Reverse` once the advance has
 /// passed its acknowledge (`step` ≥ `FireReverse`), else `Front`. `Front` when the
-/// deck isn't advancing (#558).
+/// deck isn't advancing.
 pub(crate) fn deck_face(game: &GameState, deck: AdvanceDeck) -> Face {
     // A scan rather than `topmost_of`, which can't filter on the deck: the
     // topmost advance may be the other deck's.
@@ -50,7 +50,7 @@ pub(crate) fn deck_face(game: &GameState, deck: AdvanceDeck) -> Face {
 /// front name if a card carries no `back_name` (defensive — a real advancing
 /// act/agenda always prints one).
 ///
-/// `pub(crate)` because the decision modal names its source card from the very
+/// `pub(crate)` because the decision modal names the card it is printed on from the very
 /// same face the board is showing (ADR 0015) — the front/reverse choice is
 /// computed once, here, rather than re-derived per surface.
 pub(crate) fn name_and_text_src(
@@ -85,8 +85,8 @@ fn name_and_text(code: &CardCode, face: Face) -> (String, Option<Vec<AnyView>>) 
 
 /// The current act as a card. Glows and opens an "Advance act" context menu when
 /// the live prompt anchors an option to the act (`OptionTarget::Act`) — both the
-/// open-turn Advance action and the round-end advance reaction (S5, #540). The
-/// agenda has the parallel [`AgendaCard`] (#556).
+/// open-turn Advance action and the round-end advance reaction. The
+/// agenda has the parallel [`AgendaCard`].
 // `act` is taken by value: Leptos `#[component]` generates an owned props struct.
 #[allow(clippy::needless_pass_by_value)]
 #[component]
@@ -116,7 +116,7 @@ pub fn ActCard(act: Act, face: Face) -> impl IntoView {
             <div class="card-text">{text}</div>
             {
                 // Thresholds belong to the front face only — the reverse ("1b")
-                // side prints the on-advance effect, not the advance cost (#558).
+                // side prints the on-advance effect, not the advance cost.
                 (face == Face::Front).then(|| {
                     view! {
                         <div class="threshold-stats">
@@ -136,7 +136,7 @@ pub fn ActCard(act: Act, face: Face) -> impl IntoView {
 }
 
 /// The current agenda as a card. Glows and opens a "Resolve" context menu when the
-/// live prompt anchors an option to the agenda (`OptionTarget::Agenda`, #556) — an
+/// live prompt anchors an option to the agenda (`OptionTarget::Agenda`) — an
 /// agenda-sourced forced effect (What's Going On?! 01105's on-advance reverse). The
 /// mirror of [`ActCard`]; the doom counter lives on `GameState`, not the `Agenda`
 /// struct, so it arrives as a second prop.
@@ -169,7 +169,7 @@ pub fn AgendaCard(agenda: Agenda, doom: u8, face: Face) -> impl IntoView {
             <div class="card-text">{text}</div>
             {
                 // Doom belongs to the front face only — the reverse ("1b") side
-                // prints the on-advance effect, not the doom track (#558).
+                // prints the on-advance effect, not the doom track.
                 (face == Face::Front).then(|| {
                     view! {
                         <div class="threshold-stats">
@@ -206,7 +206,7 @@ pub fn act_agenda_view(game: &GameState) -> impl IntoView {
         .map(|ag| view! { <AgendaCard agenda=ag doom=doom face=agenda_face/> });
     // The encounter deck sits beside the act and agenda: it is scenario-level,
     // not per-investigator, and the Mythos draw is an act on the board rather
-    // than a "Confirm" with no referent (#541).
+    // than a "Confirm" with no referent.
     let encounter = controls::encounter_deck_view(game);
     view! { <section class="act-agenda">{act}{agenda}{encounter}</section> }
 }

@@ -1,4 +1,4 @@
-//! Display-name helpers for the web UI (#484): resolve entity codes/ids to their
+//! Display-name helpers for the web UI: resolve entity codes/ids to their
 //! printed names, falling back to the raw code/id when unavailable. UI display
 //! only — never used for engine input.
 
