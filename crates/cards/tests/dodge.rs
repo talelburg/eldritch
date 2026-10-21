@@ -232,7 +232,7 @@ fn declining_the_before_attack_window_lets_the_attack_land() {
 /// ```
 const DISSONANT_VOICES: &str = "01165";
 
-/// Regression for #917, at the offer: a Fast event is still *played* —
+/// Regression for #917: at the offer, a Fast event is still *played* —
 /// `glossary/Fast.md`: *"A fast card does not cost an action to be played and
 /// is not played using the "Play" action."* — so Dissonant Voices' ban on
 /// playing events keeps Dodge out of the before-attack window, and the attack
@@ -259,7 +259,7 @@ fn dissonant_voices_keeps_dodge_out_of_the_attack_window() {
     );
 }
 
-/// Regression for #917, at the pick: Dodge is offered, then the ban arrives
+/// Regression for #917: at the pick, Dodge is offered, then the ban arrives
 /// before the player picks it. The ban binds at initiation, not at the scan:
 /// the stale pick is refused, and when the window next surfaces Dodge has
 /// lapsed and the attack lands.

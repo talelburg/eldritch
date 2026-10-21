@@ -51,9 +51,9 @@ fn ending_the_round_on(index: usize, lead: Seat, encounter_deck: &[&str]) -> Gam
     state
 }
 
-/// 01105's reverse is an interactive `ChooseOne`, made by the first-seat proxy
-/// for the lead investigator: it suspends with a two-option prompt, and picking
-/// branch 1 (the printed "the lead investigator takes 2 horror") resolves it.
+/// 01105's reverse is an interactive `ChooseOne`, made by the first-seat proxy:
+/// it suspends with a two-option prompt, and picking branch 1 (the printed
+/// "the lead investigator takes 2 horror") resolves it.
 #[test]
 fn agenda_01105_reverse_choice_lead_takes_two_horror() {
     let state = ending_the_round_on(0, seat(1), &[]);

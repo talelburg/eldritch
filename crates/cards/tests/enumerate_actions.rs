@@ -1,6 +1,6 @@
-//! Registry-backed tests for the legal-action enumerator (#393 slice 2a-ii):
-//! the card actions (`PlayCard`, `ActivateAbility`, added in 2a-ii-3) plus the
-//! whole-enumeration sweep covering every action category (2a-ii-4). These need
+//! Registry-backed tests for the legal-action enumerator: the card actions
+//! (`PlayCard`, `ActivateAbility`) plus the whole-enumeration sweep covering
+//! every action category. These need
 //! real card metadata/abilities, so they run against `cards::TEST_REGISTRIES` and live here
 //! rather than in `game-core`'s registry-less unit tests.
 
@@ -75,7 +75,7 @@ fn rosary_and_flashlight_board() -> GameState {
 
 /// Take each of `actions` from `state`'s turn menu, asserting none is
 /// rejected. `take` answers the turn menu with the option id of the action's
-/// place on it (#447), so this is the menu's id round-trip.
+/// place on it, so this is the menu's id round-trip.
 fn assert_each_applies(state: &GameState, actions: &[TurnAction]) {
     for action in actions {
         let taken = TestSession::new(state.clone(), TEST_REGISTRIES).take(action);
@@ -175,7 +175,7 @@ fn full_enumeration_covers_every_action_category_and_all_apply() {
 const TRAPPED: &str = "01108";
 const WHATS_GOING_ON: &str = "01105";
 
-/// The act/agenda bullet's real-corpus half (#709): widening which sources an
+/// The act/agenda bullet's real-corpus half: widening which sources an
 /// investigator can reach must not turn a **Forced** ability into an
 /// activatable one.
 ///
@@ -183,7 +183,7 @@ const WHATS_GOING_ON: &str = "01105";
 /// Trapped 01108's board build and What's Going On?! 01105's *"The lead
 /// investigator must decide (choose one)…"* both fire from the advance
 /// procedure, not from a player initiating them. So the current act and agenda
-/// are now **reachable**, and the enumerator still offers nothing on them: the
+/// are **reachable**, and the enumerator still offers nothing on them: the
 /// filter that stops them is the trigger kind, which is what the rejection
 /// reason has to say. A reason naming reachability instead would mean the
 /// bullet had not landed at all, and the assertion would pass for the wrong
@@ -230,7 +230,7 @@ fn the_corpus_act_and_agenda_are_reachable_but_offer_no_activation() {
     }
 }
 
-// ---- Turn-menu completeness (#997) -----------------------------------
+// ---- Turn-menu completeness ------------------------------------------
 
 /// Every basic action the investigator could name on `state`: the three
 /// targetless ones, a Move to every location in state, and a Fight, Evade and

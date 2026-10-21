@@ -91,9 +91,10 @@ fn investigate_with_committed_deduction_succeeds_at_shroud_4_via_intellect_icon(
 
 #[test]
 fn deduction_at_a_one_clue_location_discovers_exactly_one() {
-    // Deduction "doesn't allow you to discover clues that aren't at that
+    // Deduction "doesn’t allow you to discover clues that aren’t at that
     // location. If your location has 1 clue at it, you can only discover 1
-    // clue at most when you investigate it" (ArkhamDB 01007/01039 FAQ). The
+    // clue at most when you investigate it" (Cover Up's ruling,
+    // <https://arkhamdb.com/card/01007>). The
     // combined count of 2 is capped to the location's 1 clue **at emission**,
     // so the single discovery reports the number actually taken.
     let session = board_with_deduction(1, 4);

@@ -1,5 +1,5 @@
 //! The Enemy phase's per-investigator `BeforeInvestigatorAttacked` player
-//! window **pauses** when a Fast play is eligible (#842), driven end-to-end
+//! window **pauses** when a Fast play is eligible, driven end-to-end
 //! through the public [`apply`] API against the real card corpus.
 //!
 //! Rules Reference, Appendix II — the flow chart's Enemy phase, verbatim:

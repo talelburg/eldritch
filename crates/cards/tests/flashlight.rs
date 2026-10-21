@@ -1,4 +1,4 @@
-//! PR-7 (#313) integration: Flashlight 01087's `[action] Spend 1 supply:
+//! Integration: Flashlight 01087's `[action] Spend 1 supply:
 //! Investigate. Your location gets -2 shroud for this investigation.`
 //! end-to-end against the real `cards::REGISTRY`.
 //!
@@ -157,7 +157,7 @@ fn fogged_board(intellect: i8, shroud: u8) -> GameStateBuilder {
 }
 
 /// The shroud is **one** modified quantity that both cards contribute
-/// to, not two mechanisms applied at two different times (#677):
+/// to, not two mechanisms applied at two different times:
 /// printed 2, +2 from the fog, −2 from the flashlight, resolved against
 /// a single difficulty of 2.
 #[test]

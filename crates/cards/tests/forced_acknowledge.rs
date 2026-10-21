@@ -1,4 +1,4 @@
-//! #466: a no-choice forced location ability (the Attic's 1 horror, the Cellar's
+//! A no-choice forced location ability (the Attic's 1 horror, the Cellar's
 //! 1 damage) surfaces a one-option acknowledge *before* the harm lands when
 //! `interactive_acknowledge` is on, and resolves synchronously when it is off.
 //!
@@ -41,7 +41,7 @@ fn enter(code: &str, interactive: bool) -> TestSession {
 }
 
 /// The acknowledge is a one-option pick anchored to the location on the map
-/// (#553), not the flat bar.
+/// rather than the flat bar.
 fn assert_acknowledge_at_the_location(session: &TestSession) {
     let request = session.prompt();
     assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");

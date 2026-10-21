@@ -312,7 +312,7 @@ fn eliminated_investigator_fires_cover_ups_game_end_trauma() {
     assert!(inv.removed_from_game.iter().any(|c| c.as_str() == COVER_UP));
 }
 
-/// Regression for #638, multiplayer: the eliminated investigator's Cover Up
+/// Regression for #638: in multiplayer, the eliminated investigator's Cover Up
 /// fires its trauma while the scenario continues.
 #[test]
 fn cover_ups_trauma_fires_on_elimination_while_the_scenario_continues() {
@@ -360,7 +360,7 @@ fn eliminated_investigator_with_a_clueless_cover_up_suffers_no_trauma() {
     assert_no_event!(r.events, Event::TraumaSuffered { .. });
 }
 
-/// Regression for #786, on the elimination path: a clueless Cover Up raises no
+/// Regression for #786: on the elimination path, a clueless Cover Up raises no
 /// forced acknowledge.
 #[test]
 fn interactive_elimination_with_a_clueless_cover_up_raises_no_acknowledge() {

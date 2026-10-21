@@ -90,7 +90,7 @@ fn using_it_moves_one_secret_to_the_resource_pool_for_one_horror() {
     let investigator = &session.state().investigators[&INV];
     assert_eq!(investigator.horror(), 1, "the cost's horror is taken");
     assert_eq!(investigator.resources, 1, "the secret is now a resource");
-    assert_eq!(investigator.actions_remaining, 3, "a fast ability");
+    assert_eq!(investigator.actions_remaining, 3, "a zero-action ability");
     assert!(
         investigator
             .cards_in_play

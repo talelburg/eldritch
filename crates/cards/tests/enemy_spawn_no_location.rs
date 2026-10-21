@@ -1,4 +1,4 @@
-//! Integration (#517): an encounter enemy whose designated spawn location is
+//! Regression for #517: an encounter enemy whose designated spawn location is
 //! not in play is placed in the encounter discard pile — the draw must NOT
 //! reject. Driven through the real `cards` registry and the full `apply` →
 //! resolve → disposal pipeline, against the real corpus.

@@ -1,4 +1,4 @@
-//! The **grant sweep** (#772): a card's abilities are what it prints *plus*
+//! The **grant sweep**: a card's abilities are what it prints *plus*
 //! what the board grants it, and a granted ability is addressed by where it is
 //! printed.
 //!
@@ -43,8 +43,8 @@ use std::sync::LazyLock;
 /// [`RECIPIENT`] while nobody controls it — the Parlor 01115's shape.
 const GRANTER: &str = "GRANTLOC";
 /// The **recipient**: an asset put into play at [`HERE`] under nobody's
-/// control, printing nothing of its own — Lita Chantler 01117's shape before
-/// #773 gives her a card module.
+/// control, printing nothing of its own — the position Lita Chantler 01117
+/// holds in the Parlor.
 const RECIPIENT: &str = "GRANTREC";
 /// A second recipient, used only to prove that a **granted grant** does not
 /// apply.

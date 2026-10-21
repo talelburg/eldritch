@@ -1,5 +1,5 @@
-//! Integration tests for the Fast play-card and activated-ability gates
-//! introduced in #103.
+//! Integration tests for the Fast play-card and zero-action activated-ability
+//! gates.
 //!
 //! Per the Arkham Horror LCG Rules Reference (page 11):
 //!
@@ -9,7 +9,7 @@
 //! - "A fast asset may be played by an investigator during any player
 //!   window on his or her turn." → restricted to the OWNER (the active
 //!   investigator); non-owner plays remain illegal even in a window.
-//! - "The ⚡ icon indicates a free triggered ability that does not cost
+//! - "The \[free\] icon indicates a free triggered ability that does not cost
 //!   an action and may be used during any player window." → activated
 //!   abilities have no owner restriction.
 //!
@@ -17,7 +17,7 @@
 //! event gate via Working a Hunch (01037), and the activated-ability gate
 //! via Beat Cop's (01018) `[fast]` *"Discard Beat Cop: Deal 1 damage to an
 //! enemy at your location."*. Beat Cop rather than Hyperawareness (01034)
-//! because a `for this skill test` buff is refused outside a test (#676),
+//! because a `for this skill test` buff is refused outside a test,
 //! which would mask the window gate this file is about.
 //!
 //! Note: we use `Phase::Mythos` (a non-Investigation phase) in the
@@ -26,10 +26,10 @@
 //! is enough to play under the active-investigator branch and would mask
 //! the actual rule being tested.
 //!
-//! The file grew a #710 section at the end: the same zero-action gate, asked of
-//! an **engine-opened** player window rather than a builder-seeded one, so that
-//! the corpus's existing `[fast]` abilities are checked for *being offered* and
-//! not only for being accepted.
+//! The last section asks the same zero-action gate of an **engine-opened**
+//! player window rather than a builder-seeded one, so that the corpus's
+//! `[fast]` abilities are checked for *being offered* and not only for being
+//! accepted.
 //!
 //! Why this file exists at the `cards/tests/` layer: it needs real card
 //! metadata + abilities from the `cards` corpus, which `game-core` itself
@@ -137,11 +137,11 @@ fn assert_window_offers_as_glass(session: &TestSession) {
 #[test]
 fn fast_asset_playable_by_owner_during_permissive_window() {
     // Owner-as-active-investigator with a real permissive window (MythosAfterDraws)
-    // open during a non-Investigation phase: the strict pre-#103 gate would reject
-    // (phase != Investigation), but the loosened gate must accept because the
-    // window permits and the owner IS the active investigator. This is the
-    // rules-correct positive case for Fast assets. (#476: the window surfaces
-    // the play as a choice and auto-closes once nothing remains, so the post-play
+    // open during a non-Investigation phase: a gate requiring the Investigation
+    // phase would reject, but the gate must accept because the window permits
+    // and the owner IS the active investigator. This is the rules-correct
+    // positive case for Fast assets. (The window surfaces the play as a choice
+    // and auto-closes once nothing remains, so the post-play
     // drive cascades through the MythosPhase anchor to the next phase — hence the
     // realistic anchor; the assertion is that the play executed, not the exact
     // post-cascade outcome.)
@@ -219,8 +219,8 @@ fn fast_asset_still_playable_by_active_investigator_during_investigation() {
             investigator: A,
             source: PlaySource::Hand(0),
         });
-    // Magnifying Glass plays normally for the active investigator (Phase-3
-    // behavior preserved), and the turn goes on.
+    // Magnifying Glass plays normally for the active investigator during their
+    // Investigation turn, and the turn goes on.
     session.assert_at_turn_menu(A);
     assert!(
         session.state().investigators[&A]
@@ -285,7 +285,7 @@ fn assert_beat_cop_fired(session: &TestSession) {
 fn fast_activated_ability_usable_by_non_active_investigator_when_window_permits() {
     let window = board_with_beat_cop(mythos_after_draws_window).session();
     // The window offers B's ability, and it activates from the pick (its
-    // DiscardSelf cost is paid and the damage lands). The #476 fast window may
+    // DiscardSelf cost is paid and the damage lands). The window may
     // re-prompt afterwards, so assert the activation executed rather than the
     // exact post-activation outcome.
     let beat_cop = beat_cop(window.state());
@@ -311,12 +311,11 @@ fn fast_activated_ability_rejected_when_no_permissive_window() {
 #[test]
 fn fast_event_play_only_during_turn_rejected_outside_investigation() {
     // Working a Hunch (01037): "Fast. Play only during your turn. Discover 1
-    // clue at your location." The `play_only_during_turn` metadata flag (#322)
+    // clue at your location." The `play_only_during_turn` metadata flag
     // tightens the Fast gate to the active investigator's Investigation turn,
     // so even a permissive window in the Mythos phase is rejected — per the
     // Mind over Matter ruling (<https://arkhamdb.com/card/01036>), "'your turn'
-    // is within the Investigaton [sic] phase." (Was previously, wrongly,
-    // accepted while the clause was unenforced.) A's Magnifying Glass keeps the
+    // is within the Investigaton [sic] phase." A's Magnifying Glass keeps the
     // window standing; the window does not offer the Hunch, so it goes straight
     // to the handler.
     let mut location = test_support::test_location(HERE.0, "Study");
@@ -362,7 +361,7 @@ fn fast_event_play_only_during_turn_rejected_for_non_owner() {
     // Working a Hunch (01037): "Fast. Play only during your turn." During
     // investigator 1's turn (Investigation, active = inv 1), investigator 2
     // cannot play it — it is not inv 2's turn. The `play_only_during_turn`
-    // gate (#322) requires the *active* investigator, so a non-owner is
+    // gate requires the *active* investigator, so a non-owner is
     // rejected even in a permissive window.
     let window = a_turn_begins_window(seat(2).resources(5).at(HERE).hand([WORKING_A_HUNCH]));
     assert_window_offers_as_glass(&window);
@@ -404,14 +403,13 @@ fn fast_asset_rejected_by_owner_outside_investigation_with_no_window() {
     );
 }
 
-// ---- the corpus regression for #710 --------------------------------------
+// ---- zero-action abilities in an engine-opened window ----------------------
 //
-// #710 widened *which sources* a player window reaches, by making the window's
-// enumerator consult the one reachability predicate the turn menu consults
-// (`engine::ability_source`). The cards that already print a zero-action
-// ability all sit under the first rules bullet — *"a card in play and under his
-// or her control"* — so this is the half most at risk of a silent regression,
-// and the one the ticket asks be checked against the real corpus.
+// A player window's enumerator consults the one reachability predicate the
+// turn menu consults (`engine::ability_source`). The corpus cards that print a
+// zero-action ability all sit under the first rules bullet — *"a card in play
+// and under his or her control"* — so this is the half most at risk of a
+// silent regression, and it is checked here against the real corpus.
 //
 // Beat Cop 01018 (verbatim, <https://arkhamdb.com/card/01018>):
 //
@@ -426,9 +424,9 @@ fn fast_asset_rejected_by_owner_outside_investigation_with_no_window() {
 //
 // The two tests above activate against a builder-seeded window. This one goes
 // through an **engine-opened** window — a skill test's ST.1 player window —
-// and asserts the ability is *offered* there, which is the seam #710 is about:
-// the Parlor's Resign missing from the menu was as much the defect as its
-// being refused on submission, and the same is true of a window's option list.
+// and asserts the ability is *offered* there, which is the seam under test: an
+// ability missing from a window's option list is as much a defect as one
+// refused on submission.
 
 /// The anchors of the options `session`'s prompt offers.
 fn offered_anchors(session: &TestSession) -> Vec<OptionTarget> {
@@ -441,8 +439,7 @@ fn offered_anchors(session: &TestSession) -> Vec<OptionTarget> {
 }
 
 /// Beat Cop's zero-action ability is offered by an engine-opened player window,
-/// anchored to the card instance carrying it, and resolves from the pick — the
-/// existing corpus behaviour, unchanged by the source widening.
+/// anchored to the card instance carrying it, and resolves from the pick.
 #[test]
 fn corpus_zero_action_ability_is_offered_by_an_engine_opened_player_window() {
     // No seeded window: the skill test opens its own, so the option list under
@@ -484,14 +481,14 @@ fn corpus_zero_action_ability_is_offered_by_an_engine_opened_player_window() {
 /// > [fast] Spend 1 resource: You get +1 [combat] for this skill test.
 ///
 /// — the corpus's other zero-action abilities, and the only ones that print
-/// two apiece. Both carry the same ruling, Hyperawareness's verbatim:
+/// two apiece. Both carry a matching ruling; Hyperawareness's, verbatim:
 ///
 /// > You can use [fast]fast actions as many times as you want, as long as you
 /// > can pay the cost; there is no limit.
 ///
 /// The window offers all four, each anchored to the instance that prints it —
-/// the control bullet, unchanged by #710's widening. Their `for this skill
-/// test` scope is why they can only be checked inside a test (#676), which is
+/// the control bullet. Their `for this skill test` scope is why they can only
+/// be checked inside a test, which is
 /// exactly what a ST.1 player window is.
 #[test]
 fn corpus_zero_action_abilities_are_offered_once_per_ability_not_once_per_card() {

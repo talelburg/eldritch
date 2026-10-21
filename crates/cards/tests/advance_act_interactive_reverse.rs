@@ -1,7 +1,9 @@
-//! Regression for #482, the act path: an *interactive* act on-advance reverse (a
-//! synthetic Forced `ChooseOne`) resolves cleanly through the `AdvanceReverse`
-//! frame — it does not strand, mirroring the agenda path. No such card exists in the corpus,
-//! so we build a mock registry that gives act code `_iact` a `ChooseOne` reverse.
+//! Regression for #482: on the act path, an *interactive* act on-advance
+//! reverse (a synthetic Forced `ChooseOne`) resolves cleanly through the
+//! `AdvanceReverse` frame — it does not strand, mirroring the agenda path.
+//!
+//! No such card exists in the corpus, so we build a mock registry that gives
+//! act code `_iact` a `ChooseOne` reverse.
 
 use card_dsl::dsl::{self, EventPattern, EventTiming, InvestigatorTarget};
 use game_core::engine::enumerate::TurnAction;

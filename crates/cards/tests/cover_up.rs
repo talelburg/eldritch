@@ -158,7 +158,7 @@ fn investigate_with_deduction_and_play_cover_up(board: GameStateBuilder) -> Test
     offered.pick(cover_up)
 }
 
-/// Regression for #471, end-to-end through both real cards: Deduction modifies
+/// Regression for #471: end-to-end through both real cards, Deduction modifies
 /// the one discovery rather than spawning a *second*, so Cover Up's replacement
 /// fires once and discards 1 clue at a location that only ever had 1 to
 /// discover. Per Cover Up's ruling (<https://arkhamdb.com/card/01007>) —
@@ -435,7 +435,7 @@ fn interactive_game_end_with_a_clueless_cover_up_neither_prompts_nor_resolves_it
 
 /// Regression for #566: two investigators each holding a clue-bearing Cover Up
 /// produce two simultaneous `GameEnd` forced hits, which route to the ordered
-/// run, where the first-seat proxy picks the order, instead of the single-hit
+/// run, where the player picks the order, instead of the single-hit
 /// acknowledge. Both traumas must land, and
 /// the run must not strand frames.
 #[test]
@@ -456,7 +456,7 @@ fn two_simultaneous_game_end_forceds_both_resolve() {
 
     let session = advance_terminal_act_interactively(state);
 
-    // Two hits, so the emit routes to the lead-ordered forced run rather than
+    // Two hits, so the emit routes to the ordered forced run rather than
     // the single-hit acknowledge (Rules Reference p.17: the player orders
     // simultaneous triggers, even in solo). Asserted explicitly — the shapes
     // differ, and only this one exercises `open_forced_resolution`: the run
