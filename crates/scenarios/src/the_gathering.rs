@@ -148,11 +148,18 @@ fn ghoul_count_at_investigator_location(cx: &SymbolCtx) -> u8 {
 /// [`Effect::Deal`]s on the tester. The hook runs once at reveal, so the
 /// tablet's Ghoul gate and the skull's X are decided then; every modifier is
 /// an `IntExpr::Lit` computed at reveal. The Gathering's Standard bag has no
-/// Elder Thing token. The Hard/Expert back (skull −2; cultist "reveal another
-/// token"; tablet −4, 1 damage AND 1 horror) is unimplemented — when
-/// difficulty selection lands (`TODO(#862)`) this fn needs a difficulty
-/// parameter, and the Hard/Expert cultist needs a token-re-draw shape
-/// `TokenOutcome` can't express yet.
+/// Elder Thing token.
+///
+/// TODO(#862): the Hard/Expert face is not modelled. Its text, from the same
+/// snapshot entry's `back_text`:
+///
+/// > \[skull\] -2. If you fail, after this skill test, search the encounter deck and discard pile for a \[\[Ghoul\]\] enemy, and draw it. Shuffle the encounter deck.
+/// > \[cultist\] Reveal another token. If you fail, take 2 horror.
+/// > \[tablet\] -4. If there is a \[\[Ghoul\]\] enemy at your location, take 1 damage and 1 horror.
+///
+/// Difficulty selection gives this fn a difficulty parameter, and the
+/// Hard/Expert cultist needs a token-re-draw shape `TokenOutcome` can't
+/// express.
 fn resolve_symbol(token: ChaosToken, cx: &SymbolCtx) -> TokenOutcome {
     let ghouls = ghoul_count_at_investigator_location(cx);
     let deal_to_tester = |kind| Effect::Deal {
@@ -162,7 +169,7 @@ fn resolve_symbol(token: ChaosToken, cx: &SymbolCtx) -> TokenOutcome {
         direct: false,
     };
     match token {
-        // TODO(#921): the live-read candidate. X is frozen at reveal here; once
+        // TODO(#1138): the live-read candidate. X is frozen at reveal here; once
         // a `Quantity` can count the Ghouls at the tester's location, the
         // modifier becomes an unevaluated count that ST.5 reads live.
         ChaosToken::Skull => {

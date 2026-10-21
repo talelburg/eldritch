@@ -244,10 +244,6 @@ pub(super) fn drive_elimination(cx: &mut Cx) -> EngineOutcome {
     }
 }
 
-/// Execute Rules Reference p.10 Elimination steps 1–5 for an
-/// investigator whose `status` has just been flipped to a defeated
-/// variant. Synchronous: the step-3 re-engagement tie auto-picks the
-/// lead rather than suspending (see `reengage_at_location`).
 /// Take every card of `investigator`'s that is in **no zone** off the frames
 /// holding it, split by owner: `(theirs, the scenario's)`.
 ///
@@ -323,6 +319,10 @@ fn drain(
     }
 }
 
+/// Execute Rules Reference p.10 Elimination steps 1–5 for an
+/// investigator whose `status` has just been flipped to a defeated
+/// variant. Synchronous: the step-3 re-engagement tie auto-picks the
+/// lead rather than suspending (see `reengage_at_location`).
 fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     // The location the investigator was at "when eliminated" — read once
     // before any mutations; step 2 deposits clues here.
@@ -380,6 +380,10 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     //
     // Each card leaving play emits its one removal event. The out-of-play
     // areas and limbo emit none: those cards were never in play.
+    //
+    // TODO(#1132): an enemy this investigator owns, such as the weakness Mob
+    // Enforcer 01101, lives in `state.enemies`, which this step doesn't
+    // touch, so it stays in play with a bearer who is gone.
     let inv = cx
         .state
         .investigators

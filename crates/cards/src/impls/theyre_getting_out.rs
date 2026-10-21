@@ -60,16 +60,6 @@
 //! `Continuation::Elimination` frame (#638) — drains before the walk reaches
 //! the next investigator.
 //!
-//! **A known gap: the walk is sequential, and this body's intermediate state is
-//! visible.** The rules resolve *"each investigator … is defeated"*
-//! simultaneously (`glossary/Priority_of_Simultaneous_Resolution.md`: *"Once all
-//! necessary choices have been made, the effect resolves simultaneously upon
-//! all affected entities."*), while the walk defeats one investigator at a time,
-//! so the lead transfer and the step-6 check above see a table that is part
-//! defeated. That is the walking frame's documented limit, and the
-//! simultaneous form is #1026. The behaviour is the same as the hand-rolled
-//! turn-order loop this replaced.
-//!
 //! **The ending is reached by the rules' route, not latched.** Each defeat runs
 //! Rules Reference p.10 Elimination, and step 6 — *"If there are no remaining
 //! players, the scenario ends. Refer to "no resolution was reached" entry for
@@ -115,12 +105,25 @@
 //! Map note: on The Gathering's star map (Hallway hub ↔ Attic/Cellar/
 //! Parlor), every location has a unique shortest first step toward the
 //! Parlor, so the lowest-`LocationId` tie-break below is unreachable in this
-//! scenario (RR p.12: the controlling player chooses on a tie — deferred
-//! until a map with ties lands). The move goes through
+//! scenario. The move goes through
 //! [`relocate_enemy`](NativeCx::relocate_enemy), so a Ghoul arriving at an
 //! investigator's location engages on arrival per the general engagement rule
 //! (#633) — the card text is positional only, but the framework rule applies
 //! regardless.
+//!
+//! # Module gap
+//!
+//! TODO(#1026): the walk is sequential, and this body's intermediate state is
+//! visible. The rules resolve *"each investigator … is defeated"*
+//! simultaneously (`glossary/Priority_of_Simultaneous_Resolution.md`: *"Once all
+//! necessary choices have been made, the effect resolves simultaneously upon
+//! all affected entities."*), while the walk defeats one investigator at a time,
+//! so the lead transfer and the step-6 check above see a table that is part
+//! defeated.
+//!
+//! A tie between first steps toward the Parlor is broken by the lowest
+//! `LocationId`, where the rules have the controlling player choose (RR p.12).
+//! A player's choice on a tie is not modelled; The Gathering's map has no tie.
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, InvestigatorTargetSet, Phase};
 use game_core::engine::evaluator::{self, EvalContext};

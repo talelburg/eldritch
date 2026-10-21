@@ -574,7 +574,8 @@ impl CardMetadata {
     ///
     /// An entity whose identity differs from its printed card — Chapel Crypt
     /// 05173b's *"Treat that card as a Reanimated Dead enemy with … the
-    /// `[[Monster]]` trait."* — is #921 item 12's question, not this query's.
+    /// `[[Monster]]` trait."* — replaces the entity's base values, which is not
+    /// modelled. It is a base-value question, not this query's.
     #[must_use]
     pub fn has_trait(&self, trait_name: &str) -> bool {
         self.traits.iter().any(|t| t == trait_name)
