@@ -47,7 +47,7 @@ pub(crate) fn has_malformed_value(enemy: &Enemy) -> bool {
 ///
 /// Returns nothing on success: the fight value it range-checks is read
 /// again at ST.6 through the modified-value query, not carried out of
-/// here (#677).
+/// here.
 fn validate_fight_target(
     state: &GameState,
     investigator: InvestigatorId,
@@ -88,7 +88,7 @@ fn validate_fight_target(
 /// Per Rules Reference p.12 ("To fight an enemy **at his or her location**…"),
 /// Fight targets any enemy at the investigator's location — engaged with them or
 /// not (unlike Evade, which is engagement-only; RR p.11). The eligibility check
-/// is co-location, mirroring [`engage`](super::engage::handle) (#401).
+/// is co-location, mirroring [`engage`](super::engage::handle).
 ///
 /// Validate-first: the investigator may take the action ([`take::check`]), then
 /// the target checks. Then take it ([`take::take`]). Fight is on the
@@ -143,10 +143,10 @@ pub(crate) struct FightModification {
 
 /// Perform a **fight** against `enemy_id`: a Combat test (or the skill
 /// `modification` tests instead) whose difficulty *is* that enemy's modified
-/// fight value, read at ST.6 rather than snapshotted here (#677), dealing
+/// fight value, read at ST.6 rather than snapshotted here, dealing
 /// `1 + extra_damage` on success.
 ///
-/// The one primary behind both ways of attacking (#805) — the basic Fight
+/// The one primary behind both ways of attacking — the basic Fight
 /// action and an ability printing the bold **Fight** designator (every weapon
 /// in the corpus, and Shrivelling 01060). `glossary/Ability.md`: *"Activating
 /// such an ability **performs the designated action** as described in the
@@ -213,7 +213,7 @@ pub(crate) fn perform(
 /// at initiation.
 ///
 /// The attacked enemy is still here. An enemy that left play *before* ST.6
-/// abandons the test outright (#682, the skill-test driver's preamble), which is
+/// abandons the test outright (the skill-test driver's preamble), which is
 /// what keeps `damage_enemy`'s enemy-missing panic loud rather than reachable.
 /// The residue it does not cover — an enemy removed by something firing in the
 /// post-ST.6 `SkillTestResolved` run, before this step — has no corpus card that
@@ -224,7 +224,7 @@ pub(crate) fn perform(
 ///
 /// A weapon's bonus damage (.38 Special's +1) rides on `extra_damage`; a
 /// committed skill's bonus (Vicious Blow's +1) accumulates on the in-flight
-/// record at commit time (#307). The in-flight test is still present here —
+/// record at commit time. The in-flight test is still present here —
 /// it's torn down only at the end of resolution — so the accumulator, the
 /// ability's source and the verdict are all readable.
 pub(in crate::engine::dispatch) fn after_test(
@@ -276,7 +276,7 @@ pub(in crate::engine::dispatch) fn after_test(
 /// `PostOnResolution` teardown (ST.8) — matching "after applying all results."
 /// Routes through [`combat::drive_retaliate`] so the attack opens its
 /// before-attack cancel window (Dodge 01023) and per-soaked-asset soak window
-/// (Guard Dog 01021) (#379). Returns [`AwaitingInput`] if a window suspends,
+/// (Guard Dog 01021). Returns [`AwaitingInput`] if a window suspends,
 /// [`Done`] otherwise. Non-exhausting — honored by
 /// [`EnemyAttackSource::Retaliate`] inside `drive_retaliate`.
 ///
@@ -309,7 +309,7 @@ pub(in crate::engine::dispatch) fn fire_retaliate_if_any(
         e.retaliate && !e.exhausted && combat::enemy_may_attack(cx.state, cx.cards, e, investigator)
     });
     if retaliates {
-        // Route through the attack loop (#379) so the retaliate opens its cancel
+        // Route through the attack loop so the retaliate opens its cancel
         // (Dodge) and soak (Guard Dog) windows; non-exhausting.
         combat::drive_retaliate(cx, enemy, investigator)
     } else {

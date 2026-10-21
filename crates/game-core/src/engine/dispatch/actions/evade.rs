@@ -76,7 +76,7 @@ pub(in crate::engine::dispatch) fn handle(
         };
     }
     // The evade value it range-checks is read again at ST.6 through the
-    // modified-value query, not carried out of here (#677). A malformed
+    // modified-value query, not carried out of here. A malformed
     // `evade: -1` rejects with a clear reason rather than being clamped.
     if has_malformed_value(enemy) {
         return EngineOutcome::Rejected {
@@ -142,7 +142,7 @@ pub(crate) fn perform(
         SkillTestKind::Evade,
         // The difficulty *is* the enemy's modified evade value, read at
         // ST.6 — Cold Spring Glen 02244's "Each enemy in Cold Spring Glen
-        // gets -1 evade" reaches this test (#677).
+        // gets -1 evade" reaches this test.
         DifficultyBasis::Evade(enemy_id),
         SkillTestFollowUp::Evade { enemy: enemy_id },
         on_success,
@@ -182,7 +182,7 @@ pub(in crate::engine::dispatch) fn after_test(
 
 /// **`investigator` evades `enemy_id`**: the one evade exit, which every way
 /// of evading reaches — the Evade action's and a designated **Evade**'s success
-/// ([`after_test`]), and an automatic evade (#780). Pickpocketing 01046's
+/// ([`after_test`]), and an automatic evade. Pickpocketing 01046's
 /// ruling is why it is one exit rather than the Evade action's own step
 /// (<https://arkhamdb.com/card/01046>): *"the auto-evade effect from Breaking
 /// and Entering can trigger the reaction on Pickpocketing (0)"*.
@@ -211,7 +211,7 @@ pub(crate) fn evade_enemy(
 /// `glossary/Evade_Action.md`: *"Any time an enemy is evaded (whether by an
 /// evade action, or by card ability), the enemy is exhausted (if it was ready)
 /// and the engagement is broken."* So an already-exhausted enemy logs no
-/// second exhaust, and an unengaged one (an automatic evade, #780) no
+/// second exhaust, and an unengaged one (an automatic evade) no
 /// disengage.
 ///
 /// An enemy a `when` ability took out of play has nothing left to evade, and
