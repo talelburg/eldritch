@@ -34,8 +34,8 @@ use crate::state::{
 /// per-cell scan.
 ///
 /// Reaction windows admit any investigator's Fast actions (RR: Fast may be
-/// played at any player window) — encoded by `mode: Reaction` (the former
-/// `FastActorScope::Any` binding). Multi-window nesting is structural.
+/// played at any player window) — encoded by `mode: Reaction`. Multi-window
+/// nesting is structural.
 fn push_reaction_window(
     cx: &mut Cx,
     event: &TimingEvent,
@@ -51,15 +51,15 @@ fn push_reaction_window(
 }
 
 /// Push a reaction window for the coordinator's pre-scanned `candidates` and
-/// open it (the round-end `when` act-advance window, #434). `bucket` is the cell
+/// open it (the round-end `when` act-advance window). `bucket` is the cell
 /// the caller scanned, recorded on the frame so the fire-time re-validation can
-/// re-scan the same cell (#568). Returns the `AwaitingInput` from
+/// re-scan the same cell. Returns the `AwaitingInput` from
 /// [`open_queued_reaction_window`]. Caller guarantees `candidates` is non-empty
 /// (it checked, to decide open-vs-finish).
 ///
 /// This is also the one path where re-validation is provably a no-op — the caller
 /// scanned this cell moments ago and nothing between then and here mutates what
-/// the scan reads — so it carries the debug-only tripwire for #568's re-scan. A
+/// the scan reads — so it carries the debug-only tripwire for the re-scan. A
 /// withdrawal *here* means [`trigger_scan::collect_reactions`] disagrees with itself over
 /// unchanged state, which is a bug in the scan, not in the re-check. The other
 /// prompt site can't assert this: its window was queued an emit ago, and the
@@ -89,17 +89,17 @@ pub(super) fn open_reaction_run(
     open_queued_reaction_window(cx)
 }
 
-/// Open the forced-resolution run (Axis-B T5b / #213): push a
-/// `TimingPointWindow { mode: Forced }` holding the 2+ simultaneous forced
-/// `candidates`, and present the lead investigator's order choice. The forced
-/// run is mandatory (cannot be skipped) and admits no Fast plays. It carries no
-/// resume continuation (#434): on close it returns `Done` and the `drive` loop
-/// re-dispatches the exposed parent frame. The caller returns the `AwaitingInput`.
+/// Open the forced-resolution run: push a `TimingPointWindow { mode: Forced }`
+/// holding the 2+ simultaneous forced `candidates`, and prompt for their order.
+/// `glossary/Priority_of_Simultaneous_Resolution.md` gives that choice to *"the
+/// lead investigator"*; the prompt names no investigator. The forced run is
+/// mandatory (cannot be skipped) and admits no Fast plays. It carries no resume
+/// continuation: on close it returns `Done` and the `drive` loop re-dispatches
+/// the exposed parent frame. The caller returns the `AwaitingInput`.
 ///
 /// `bucket` is the cell the caller collected at. The frame is the same variant a
 /// reaction window uses, so every one records its cell, and both read it back
-/// to re-validate before each prompt (#568, #607 — see
-/// [`withdraw_lapsed_candidates`]).
+/// to re-validate before each prompt (see [`withdraw_lapsed_candidates`]).
 pub(super) fn open_forced_resolution(
     cx: &mut Cx,
     event: &TimingEvent,
@@ -116,18 +116,15 @@ pub(super) fn open_forced_resolution(
 }
 
 /// The board anchor for a resolution candidate's source: a Fast hand event by
-/// code — every copy (#539); a Fast event on top of the discard pile on the
+/// code — every copy; a Fast event on top of the discard pile on the
 /// card whose permission it is played under, since the client renders no
-/// discard pile (#1101); everything else through the one
+/// discard pile; everything else through the one
 /// [`AbilitySource`] → [`OptionTarget`] map, which the turn menu
-/// (`TurnAction::target`) shares (#735).
+/// (`TurnAction::target`) shares.
 ///
-/// Before the split this arm had to work out *which* board card a
-/// `CandidateSource::Board` candidate was by comparing its code against the
-/// current act and agenda, and fell through to an un-anchored option when
-/// neither matched — which is what an attacking enemy's own forced ability hit
-/// (Silver Twilight Acolyte 01102). The source now says which it is, so there is
-/// nothing to derive and no fall-through: every candidate is anchored.
+/// The [`AbilitySource`] says which card it is (an attacking enemy's own forced
+/// ability, Silver Twilight Acolyte 01102, included), so there is nothing to
+/// derive and no fall-through: every candidate is anchored.
 ///
 /// Shared by [`build_resolution_options`] and the forced-ack path.
 pub(super) fn candidate_anchor(cand: &ResolutionCandidate) -> OptionTarget {
@@ -143,11 +140,11 @@ pub(super) fn candidate_anchor(cand: &ResolutionCandidate) -> OptionTarget {
 
 /// Build the structured option list for a resolution frame: one
 /// [`ChoiceOption`] per pending candidate, in `pending_triggers` order.
-/// `OptionId(i)` is the index into the returned list — the Axis-A convention
+/// `OptionId(i)` is the index into the returned list — the convention
 /// shared with [`super::choice`]. The label distinguishes a hand Fast-event
 /// play ([`CandidateSource::Hand`] in a reaction window) from an in-play
 /// reaction, and from a `forced` run's ability on a card in hand, which fires
-/// without being played (Dark Memory 01013, #1046). A play from the top of the
+/// without being played (Dark Memory 01013). A play from the top of the
 /// discard pile names the event and the permission's card, as the turn menu
 /// does (`enumerate::play_under_permission_label`).
 fn build_resolution_options(
@@ -162,7 +159,7 @@ fn build_resolution_options(
         .map(|(i, cand)| {
             let id = OptionId(u32::try_from(i).expect("option count fits in u32"));
             // Label distinguishes a hand Fast-event play from an ability fired
-            // in place; the anchor is the shared `candidate_anchor` (#553).
+            // in place; the anchor is the shared `candidate_anchor`.
             let label = match cand.source {
                 CandidateSource::Hand if forced => format!("Resolve {} in hand", cand.code),
                 CandidateSource::Hand => format!("Play {} from hand", cand.code),
@@ -183,7 +180,7 @@ fn build_resolution_options(
 
 /// Re-run the scan behind the open reaction window or forced run on top of the
 /// stack and withdraw every candidate it no longer produces, emitting an
-/// [`Event::ReactionOptionLapsed`] for each (#568, #607). Called at both prompt
+/// [`Event::ReactionOptionLapsed`] for each. Called at both prompt
 /// sites, so the option list a player sees is never older than the board.
 ///
 /// # Why an offered option can stop being legal
@@ -219,9 +216,9 @@ fn build_resolution_options(
 ///   play when the triggering condition occurred, so a fresh scan naming it is
 ///   not an invitation to offer it.
 ///
-/// # A forced run is re-checked the same way (#607)
+/// # A forced run is re-checked the same way
 ///
-/// A 2+ lead-ordered run (#213) is a snapshot too, and resolving one of its
+/// A 2+ lead-ordered run is a snapshot too, and resolving one of its
 /// abilities can leave a later one with nothing to do. `glossary/Ability.md`:
 ///
 /// > - If a forced ability does not have the potential to change the game
@@ -297,7 +294,7 @@ fn withdraw_lapsed_candidates(cx: &mut Cx) -> usize {
 /// Keep a skill test's stored verdict live while its `when` cell is open: a
 /// modifier played there (Lucky! 01080) changes the total before the resolve
 /// step re-totals, and the client shows the player the stored verdict while
-/// they decide whether to play another (#1111). Written before every re-offer,
+/// they decide whether to play another. Written before every re-offer,
 /// so the window's own re-scan and the client read the same result.
 fn refresh_provisional_verdict(cx: &mut Cx, event: &TimingEvent, bucket: EventTiming) {
     if bucket != EventTiming::When || !matches!(event, TimingEvent::SkillTestResolved { .. }) {
@@ -310,7 +307,7 @@ fn refresh_provisional_verdict(cx: &mut Cx, event: &TimingEvent, bucket: EventTi
 }
 
 /// Withdraw **every** remaining candidate from an open `when`-cell window whose
-/// triggering condition has just been prevented from resolving (#714).
+/// triggering condition has just been prevented from resolving.
 ///
 /// Unlike [`withdraw_lapsed_candidates`], this is not a re-scan: the withdrawn
 /// options are still perfectly initiable, and would still be found by a fresh
@@ -326,14 +323,12 @@ fn refresh_provisional_verdict(cx: &mut Cx, event: &TimingEvent, bucket: EventTi
 /// abilities resolve before the condition does, so it is the only one a live
 /// prevention signal can belong to. And to a **coordinator-owned** condition,
 /// because a caller-owned one has already mutated the board and never walks its
-/// `when` cell at all. #704 migrated the enemy attack into the coordinator, and
-/// it inherited this rather than reimplementing it — the order #714 and #704
-/// were sequenced in.
+/// `when` cell at all.
 ///
 /// Both window modes are covered — a forced run empties the same way and closes
 /// itself, rather than demanding a pick for a condition that is no longer
-/// happening. Reachable since #704 gave the enemy attack forced abilities of
-/// its own — Dodge 01023's ruling is stated about a **Forced** ability, and
+/// happening. The enemy attack has forced `when` abilities of its own — Dodge
+/// 01023's ruling is stated about a **Forced** ability, and
 /// `crates/cards/tests/dodge.rs` proves it against Silver Twilight Acolyte
 /// 01102. `0` for any other top frame, so the callers need no guard.
 fn withdraw_suppressed_candidates(cx: &mut Cx) -> usize {
@@ -375,7 +370,7 @@ fn withdraw_suppressed_candidates(cx: &mut Cx) -> usize {
 
 /// The `(event, cell, mode)` an open reaction window or forced run on top of
 /// the stack was scanned at — the question a re-scan has to re-ask, and the
-/// single place the "which frames are re-validated" test lives (#568, #607).
+/// single place the "which frames are re-validated" test lives.
 ///
 /// `None` for a [`FastWindow`](Continuation::FastWindow) and for every
 /// non-window frame; the two callers turn that into their own no-op.
@@ -410,7 +405,7 @@ fn rescan(
 
 /// The condition a scan of `bucket` asks about. Every condition is the one that
 /// was announced, except a skill test's verdict in its `when` cell: that
-/// verdict is provisional until the resolve step re-totals (#1111), so the scan
+/// verdict is provisional until the resolve step re-totals, so the scan
 /// re-totals too, and asks about the verdict the test would now resolve with.
 ///
 /// Every scan of a cell asks through here — the coordinator's per-cell check,
@@ -446,8 +441,8 @@ pub(super) fn condition_as_it_now_stands(
     }
 }
 
-/// Why a withdrawn candidate lapsed, for the client log ([`LapseReason`],
-/// #568). The withdrawal has already been decided by the re-scan in
+/// Why a withdrawn candidate lapsed, for the client log ([`LapseReason`]).
+/// The withdrawal has already been decided by the re-scan in
 /// [`withdraw_lapsed_candidates`]; this names the reason.
 ///
 /// A source that is gone is [`LapseReason::SourceGone`]. Otherwise the
@@ -532,7 +527,7 @@ fn candidate_source_present(
 /// Whether `candidate` still survives a fresh scan of the open reaction window's
 /// or forced run's own timing cell — the single-candidate form of
 /// [`withdraw_lapsed_candidates`], used as the fire-time gate in
-/// [`fire_pending_trigger`] (#568, #607).
+/// [`fire_pending_trigger`].
 ///
 /// Membership, not multiplicity: the question is "may *this* option still be
 /// initiated", and one surviving match answers it. `true` for any other top
@@ -558,7 +553,7 @@ pub(crate) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
     // window and then the point's *forced* abilities above it, and the `drive`
     // loop resolves those before this window is reached (ADR 0003) — the combat
     // callers additionally park the attack loop beneath it. Anything those steps
-    // changed can have withdrawn an option already in the list (#568).
+    // changed can have withdrawn an option already in the list.
     withdraw_lapsed_candidates(cx);
     if cx
         .state
@@ -626,12 +621,12 @@ pub(super) fn resume_reaction_window(cx: &mut Cx, response: &InputResponse) -> E
     match response {
         // `OptionId(i)` indexes the single `pending_triggers` list (see
         // `build_resolution_options`); `fire_pending_trigger` dispatches on
-        // the candidate's source (in-play ability vs. Axis-C hand play).
+        // the candidate's source (in-play ability vs. hand play).
         InputResponse::PickSingle(OptionId(i)) => fire_pending_trigger(cx, *i),
         InputResponse::Skip => {
             // The window being skipped is the top frame (the prompt). Forced
             // abilities are mandatory — the forced run cannot be skipped
-            // (RR p.2 / #213). The lead must pick one.
+            // (RR p.2). One must be picked.
             if cx
                 .state
                 .continuations
@@ -661,13 +656,13 @@ pub(super) fn resume_reaction_window(cx: &mut Cx, response: &InputResponse) -> E
 /// Rejects out-of-bounds; the window stays open so the client can
 /// retry with a corrected index.
 // Mostly invariant-violation `unreachable!` arms + the Resolution-frame
-// unwrapping (Axis-B T3); over the line limit but cohesive.
+// unwrapping; over the line limit but cohesive.
 #[allow(clippy::too_many_lines)]
 fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // The window being driven is the top frame — the prompt the player is
     // responding to. Operate on it directly; the stack-is-resolution-order
-    // invariant means the active window is always `last()` (Slice C-plumbing).
-    // Snapshot to avoid borrowing state across the apply_effect call.
+    // invariant means the active window is always `last()`.
+    // Snapshot the fields so no borrow of the frame outlives this block.
     let (trigger, pending_idx, event, forced) = {
         let window = cx
             .state
@@ -706,7 +701,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
         (candidates[idx].clone(), idx, event, window.is_forced())
     };
 
-    // The initiation gate, at initiation (#568). Both prompt sites withdraw
+    // The initiation gate, at initiation. Both prompt sites withdraw
     // lapsed options before offering the list, so a pick taken from the prompt
     // the engine last emitted always passes this; what it rejects is a *stale*
     // pick — an option id replayed from an earlier prompt, or one fired by a
@@ -725,12 +720,12 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
         };
     }
 
-    // Axis C (#335): a hand candidate in a reaction window is a Fast event,
+    // A hand candidate in a reaction window is a Fast event,
     // *played* rather than fired in place. Remove it from the run first (so a
     // suspending play resumes the remaining siblings, not this one again —
     // mirrors the in-play path below), then play it. A hand candidate in a
-    // forced run is a forced ability working from hand (Dark Memory 01013,
-    // #1046): it fires in place like any other forced hit, and the card stays
+    // forced run is a forced ability working from hand (Dark Memory 01013):
+    // it fires in place like any other forced hit, and the card stays
     // in hand.
     if trigger.source.is_play() && !forced {
         cx.state
@@ -746,7 +741,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // changed state between scan and fire (exhausted, used, …) but
     // its ability list is static, so registry lookup is sufficient.
     //
-    // "Static" now means *static per side* (#774): a location shows its back's
+    // "Static" means *static per side*: a location shows its back's
     // abilities while unrevealed and its front's while revealed, so a reveal
     // between scan and fire would swap the vector the `ability_index` indexes.
     // That is a **game-state** change, not registry corruption, so it rejects
@@ -788,7 +783,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
         .expect("fire_pending_trigger: top frame is an open window/run")
         .remove(pending_idx);
 
-    // The one firing path a lone forced hit shares (#964): resolve, bind from
+    // The one firing path a lone forced hit shares: resolve, bind from
     // the window's timing event, record the use, pay a reaction's costs, push.
     // The window frame beneath stays with its remaining candidates, and
     // `advance_resolution` re-dispatches it once the effect (and any nested
@@ -808,26 +803,25 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-/// Play the hand Fast-event `candidate` from the open resolution run (Axis C,
-/// #335) — the [`CandidateSource::Hand`] resolution of [`fire_pending_trigger`].
+/// Play the hand Fast-event `candidate` from the open resolution run — the [`CandidateSource::Hand`] resolution of [`fire_pending_trigger`].
 /// Commences the play via the shared [`super::cards::commence_play`] (emit
 /// [`crate::event::Event::CardPlayed`], leave hand — RR Appendix I step 3), then pushes a
 /// [`Continuation::PlayFromHand`] frame **holding that card** (above the live
 /// reaction window) and the `OnEvent` effect for the drive loop. On the effect's
 /// completion, [`super::cards::dispose_play_from_hand`] places the event in
 /// discard (RR Appendix I step 4) and the window beneath resumes its candidate
-/// scan (Slice D #423).
+/// scan.
 ///
 /// This is the nesting site: the window may itself belong to an attack of
 /// opportunity provoked by a *non-fast* play that is still mid-resolution
 /// underneath. The frame stack keeps the two plays apart — this frame sits above
-/// the outer play's and pops first (#604).
+/// the outer play's and pops first.
 ///
 /// Pays the event's resource cost (RR p.22) via [`super::cards::pay_play_cost`]
 /// before announcing the play, matching [`super::cards::play_card`] — a Fast
-/// play skips the *action* cost, not the *resource* cost (#501). Affordability
+/// play skips the *action* cost, not the *resource* cost. Affordability
 /// and hand-presence were established by [`fire_pending_trigger`]'s fire-time
-/// gate immediately above, not merely at scan time (#568), so the cost paid here
+/// gate immediately above, not merely at scan time, so the cost paid here
 /// is a cost the wallet holds. The caller has already removed the candidate from
 /// the run, so a suspending effect's resume drives the remaining siblings, not
 /// this play again.
@@ -843,7 +837,7 @@ fn play_fast_event(
     // under the same permission. A miss is unreachable behind the fire-time
     // gate, but it rejects rather than panicking: nothing has been paid or
     // moved yet, so the reject is clean, and a panic here would take the whole
-    // session down over one bad option id (#568).
+    // session down over one bad option id.
     let source = match candidate.source {
         CandidateSource::TopOfDiscardPile { permission } => {
             let source = PlaySource::TopOfDiscardPile { permission };
@@ -871,7 +865,7 @@ fn play_fast_event(
     };
     // Pay the resource cost before announcing the play (RR p.22): Fast plays
     // skip the action cost, not the resource cost. Affordability was re-checked
-    // at fire time (#501, #568).
+    // at fire time.
     cards::pay_play_cost(cx, controller, &candidate.code);
     let card = cards::commence_play(cx, controller, source);
 
@@ -904,20 +898,20 @@ fn play_fast_event(
     // Push the event's disposal frame (above the window) holding the card, then
     // push its effect for the drive loop. On the effect's completion,
     // PlayFromHand disposal places the event in discard (RR Appendix I step 4)
-    // and the window beneath resumes its candidate scan. (Slice D #423.)
+    // and the window beneath resumes its candidate scan.
     cx.state.continuations.push(PlayFromHandFrame {
         investigator: controller,
         card: Some(card),
     });
     // The bind-and-push tail a triggered ability's `initiate` ends on, so an
-    // event naming "that enemy" or "that many" is bound as a reaction is (#964).
+    // event naming "that enemy" or "that many" is bound as a reaction is.
     initiation::push_bound_effect(cx, &effect, eval_ctx, event);
     EngineOutcome::Done
 }
 
 /// Advance the resolution run on **top** of the stack after one of its
 /// candidates resolved: withdraw any sibling the just-resolved candidate made
-/// un-initiable ([`withdraw_lapsed_candidates`], #568), then close the run
+/// un-initiable ([`withdraw_lapsed_candidates`]), then close the run
 /// (running its continuation) when none remain, else re-emit the pick prompt.
 /// Called by the `drive` loop's window arm — the
 /// window being driven is always the top frame (the stack-is-resolution-order
@@ -925,11 +919,11 @@ fn play_fast_event(
 pub(super) fn advance_resolution(cx: &mut Cx) -> EngineOutcome {
     // The candidate that just resolved may have *prevented the condition itself*
     // — Cover Up 01007's replacement, Dodge 01023's cancel. Then no sibling of
-    // this `when` cell may still be offered, however initiable it remains
-    // (#714), and the window closes into a sequence the coordinator abandons.
+    // this `when` cell may still be offered, however initiable it remains,
+    // and the window closes into a sequence the coordinator abandons.
     withdraw_suppressed_candidates(cx);
     // Short of that, the candidate may have withdrawn its siblings — spent
-    // the shared wallet, or consumed what they would have acted on (#568). Re-ask
+    // the shared wallet, or consumed what they would have acted on. Re-ask
     // before re-prompting, so the list below is the *current* set of legal
     // initiations rather than the scan's.
     withdraw_lapsed_candidates(cx);
@@ -941,7 +935,7 @@ pub(super) fn advance_resolution(cx: &mut Cx) -> EngineOutcome {
     let candidates = window
         .pending_candidates()
         .expect("advance_resolution: top frame is an open window/run");
-    // Close when no candidate remains. Hand Fast-event plays (Axis C) ride
+    // Close when no candidate remains. Hand Fast-event plays ride
     // the candidate list alongside in-play triggers, so this single check
     // keeps a window with only a remaining hand play open.
     if candidates.is_empty() {
@@ -975,13 +969,13 @@ pub(super) fn advance_resolution(cx: &mut Cx) -> EngineOutcome {
 ///
 /// The window being closed is always the top frame — the player is acting on
 /// the prompt it emitted (the stack-is-resolution-order invariant), so this
-/// `pop()`s rather than threading an index (Slice C-plumbing). On a `Done`
+/// `pop()`s rather than threading an index. On a `Done`
 /// continuation the loop dispatches whatever frame the close exposed (a
 /// mid-resolution `SkillTest`, an `EncounterCard`, a forced run, …).
 pub(super) fn close_reaction_window(cx: &mut Cx) -> EngineOutcome {
     // Reaction windows are all-optional, so `Skip` always closes them. The
     // "forced abilities are mandatory" rule lives in the forced resolution
-    // run (its frame is `window: None` — Axis-B T5b), not here.
+    // run (its frame has `mode: Forced`), not here.
     let removed = cx
         .state
         .continuations
@@ -993,13 +987,11 @@ pub(super) fn close_reaction_window(cx: &mut Cx) -> EngineOutcome {
     // continuation may itself suspend — so propagate the outcome.
     //
     // A **reaction** window runs nothing, because no triggering condition has a
-    // continuation of its own any more: since #727 the last two that did — the
-    // enemy attack and its soak window — walk the coordinator like everything
-    // else, so what used to be post-window work is now a resolve step or a
+    // continuation of its own: work after a condition is a resolve step or a
     // parked frame (`DealDamage`, `AttackLoop`, the coordinator's own
     // `TimingPoint`). It returns `Done` and the `drive` loop dispatches whatever
-    // frame the pop exposed. The forced run (#213/#434) never had one either,
-    // which is why the two share an arm.
+    // frame the pop exposed. The forced run has no continuation either, which is
+    // why the two share an arm.
     let continuation = match &removed {
         Continuation::FastWindow(FastWindowFrame { kind, .. }) => run_fast_continuation(cx, *kind),
         _ => EngineOutcome::Done,
@@ -1016,8 +1008,7 @@ pub(super) fn close_reaction_window(cx: &mut Cx) -> EngineOutcome {
     // The window is closed and its continuation ran to `Done`. Return to the
     // `drive` loop, which dispatches whatever frame is now top — a `SkillTest`
     // mid-resolution (its driver picks up the remaining steps), an `EncounterCard`
-    // to dispose, a forced run, or idle. No reach-down into `skill_test::advance`
-    // (Slice C-plumbing).
+    // to dispose, a forced run, or idle. No reach-down into `skill_test::advance`.
     EngineOutcome::Done
 }
 
@@ -1025,10 +1016,10 @@ pub(super) fn close_reaction_window(cx: &mut Cx) -> EngineOutcome {
 /// closes, keyed on its [`FastWindowKind`]. Called from the auto-skip path in
 /// [`open_fast_window`] and from [`close_reaction_window`].
 ///
-/// A phase window routes to the `*Phase` anchor beneath it (slice 1a, #393): the
+/// A phase window routes to the `*Phase` anchor beneath it: the
 /// anchor's `resume` — not the [`PhaseStep`] — selects the relocated body (the
 /// Mythos/Investigation transitions, the Enemy attack-loop step, the Upkeep
-/// 4.2–4.6 cascade). A skill-test window (#374) re-enters the skill-test driver;
+/// 4.2–4.6 cascade). A skill-test window re-enters the skill-test driver;
 /// its cursor was pre-advanced before the window opened. Returns `Done` or
 /// `AwaitingInput` when a body suspends.
 pub(super) fn run_fast_continuation(cx: &mut Cx, kind: FastWindowKind) -> EngineOutcome {
@@ -1036,9 +1027,8 @@ pub(super) fn run_fast_continuation(cx: &mut Cx, kind: FastWindowKind) -> Engine
     // the open-time auto-skip path in `open_fast_window`, which relies on it
     // advancing the phase / skill-test driver **synchronously** to reach the next
     // suspending step (the commit prompt, the next phase window). It is not a
-    // driver-to-driver reach-down, so it stays imperative (the genuine reach-down
-    // — the redundant `skill_test::advance` *after* this in `close_reaction_window`
-    // — was removed in Slice C-plumbing).
+    // driver-to-driver reach-down, so it stays imperative; `close_reaction_window`
+    // calls nothing after it.
     match kind {
         FastWindowKind::Phase(_) => phases::anchor_on_child_pop(cx),
         FastWindowKind::SkillTest { .. } => skill_test::advance(cx),
@@ -1091,18 +1081,17 @@ pub(super) fn after_enemy_phase_attacks(
 /// `permissive_window = false`) and the window would auto-skip even
 /// though Fast plays are available.
 ///
-/// On the auto-skip path the window is popped before returning so the
-/// net effect on `state.open_windows` is identical to the pre-fix
-/// behaviour (window never lands persistently on the stack).
+/// On the auto-skip path the window is popped before returning, so it never
+/// lands persistently on the stack.
 ///
-/// Returns the continuation's outcome on the auto-skip path (today always
-/// [`EngineOutcome::Done`]; propagates [`EngineOutcome::AwaitingInput`] once
-/// #111 step 4.5 can suspend); returns [`EngineOutcome::Done`] immediately on
+/// Returns the continuation's outcome on the auto-skip path
+/// ([`EngineOutcome::Done`], or [`EngineOutcome::AwaitingInput`] when the body
+/// suspends, as Upkeep step 4.5's hand-size discard can); returns [`EngineOutcome::Done`] immediately on
 /// the wait path (window left on the stack).
 pub(super) fn open_fast_window(cx: &mut Cx, kind: FastWindowKind) -> EngineOutcome {
     // Push first so any_fast_play_eligible's check_play_card call sees
     // this window in state.open_windows when evaluating permissive_window.
-    // Framework windows are `FastWindow` (#433 A-ii); the `FastWindowKind`
+    // Framework windows are `FastWindow`; the `FastWindowKind`
     // discriminant reproduces `kind` and routes the
     // close continuation. Fast windows carry no reaction candidates — they are
     // pure Fast-gates (no `TimingEvent` reaction matches a framework window), so
@@ -1126,8 +1115,8 @@ pub(super) fn open_fast_window(cx: &mut Cx, kind: FastWindowKind) -> EngineOutco
 
     if !has_pending && !has_fast_eligible {
         // Auto-skip: nothing to do. Pop the window we just pushed and run the
-        // continuation inline, so the net effect on the continuation stack is
-        // the same as before.
+        // continuation inline, so the window leaves the continuation stack as
+        // it found it.
         let _ = cx.state.continuations.pop();
         return run_fast_continuation(cx, kind);
     }
@@ -1151,7 +1140,7 @@ pub(super) fn any_fast_play_eligible(state: &GameState, cards: &CardRegistry) ->
     !enumerate_fast_plays(state, cards).is_empty()
 }
 
-/// Drive a framework Fast window that is on top of the stack (#476): surface the
+/// Drive a framework Fast window that is on top of the stack: surface the
 /// currently-eligible fast plays as a **skippable** `PickSingle`, or close the
 /// window (running its continuation) when none remain. Called by the `drive`
 /// loop's `FastWindow` arm — both when the window first parks and each time it is
@@ -1185,11 +1174,11 @@ pub(super) fn drive_fast_window(cx: &mut Cx) -> EngineOutcome {
 /// cards in hand ([`check_play_card`] `Ok` + `is_fast`) and 0-action
 /// [`Trigger::Activated`] abilities on cards in play ([`check_activate_ability`]
 /// `Ok`). MUST be called with the `FastWindow` on top of the stack so
-/// `check_play_card`'s `permits_fast` gate applies to the right window (#476).
+/// `check_play_card`'s `permits_fast` gate applies to the right window.
 ///
 /// Returns the plays as [`TurnAction`]s in deterministic (investigator,
 /// hand-index / ability-index) order — the same shape the open-turn menu
-/// dispatches via `dispatch_turn_action`, so the #476 fast-window prompt reuses
+/// dispatches via `dispatch_turn_action`, so the fast-window prompt reuses
 /// that dispatch path verbatim.
 pub(super) fn enumerate_fast_plays(state: &GameState, cards: &CardRegistry) -> Vec<TurnAction> {
     let mut out = Vec::new();
@@ -1209,7 +1198,7 @@ pub(super) fn enumerate_fast_plays(state: &GameState, cards: &CardRegistry) -> V
         // 0-action Activated abilities on every source this investigator can
         // reach. The rules bullets are written once for `[free]`, `[reaction]`
         // and `[action]` together, so the fast window consults the same
-        // reachability predicate the turn menu does (#707).
+        // reachability predicate the turn menu does.
         for (source, code) in ability_source::reachable_source_codes(state, cards, inv_id) {
             let Some(abilities) = abilities_in_effect::for_source(state, cards, source, &code)
             else {
