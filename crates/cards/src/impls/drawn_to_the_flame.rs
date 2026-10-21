@@ -29,8 +29,13 @@
 //! discovery is then skipped (`If` over the card-local native condition
 //! `01064:drawer-active`): an eliminated investigator discovers nothing, and a
 //! location-less `DiscoverClue` would reject, rolling back the whole play.
-// TODO(#1060): resolve the drawn card's surge and peril keywords, which
-// `resolve_encounter_card` does not (no corpus encounter card has either).
+//!
+//! # Module gap
+//!
+//! TODO(#1060): resolve the drawn card's surge and peril keywords, which
+//! `resolve_encounter_card` does not. The corpus has cards with each, such as
+//! Core's Hunting Shadow 01135 (Peril) and The Dunwich Legacy's Something in
+//! the Drinks 02081 (Surge).
 
 use card_dsl::dsl::{self, Ability, LocationTarget};
 use game_core::engine::evaluator::EvalContext;

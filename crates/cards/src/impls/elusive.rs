@@ -160,9 +160,9 @@ fn engage_ready_enemies(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome 
 
 /// Engaged with an enemy, or with somewhere to move.
 ///
-/// Reads [`destinations`], not [`enterable_destinations`]: a native condition
-/// gets no card registry, so a destination a rule forbids entering still
-/// counts here. That errs the conservative way — the card is offered, and its
+/// TODO(#1083): reads [`destinations`], not [`enterable_destinations`]: a
+/// native condition gets no card registry, so a destination a rule forbids
+/// entering still counts here. That errs the conservative way — the card is offered, and its
 /// move finds nowhere to go — rather than refusing a play that could resolve.
 fn can_resolve(state: &GameState, ctx: &EvalContext) -> bool {
     let engaged = state

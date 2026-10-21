@@ -1050,10 +1050,10 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
                      `attacking` cursor == None; state-corruption invariant violation"
                 )
             });
-            // Tail position (ADR 0003): since #704 the attack loop parks itself
-            // on a `Continuation::AttackLoop` frame and hands each attack to the
-            // timing coordinator, so a `Done` here means *queued*, not *the
-            // attacks are over*. The per-investigator cursor advance
+            // Tail position (see `emit::queue_event`): the attack loop parks
+            // itself on a `Continuation::AttackLoop` frame and hands each attack
+            // to the timing coordinator, so a `Done` here does not mean the
+            // attacks are over. The per-investigator cursor advance
             // (`after_enemy_phase_attacks`) therefore runs from the loop's own
             // drain (`finish_attack_loop`), never from this arm.
             combat::resolve_attacks_for_investigator(cx, investigator)

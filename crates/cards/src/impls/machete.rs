@@ -31,14 +31,17 @@
 //!
 //! Encoding the conjunction needs a predicate over the *chosen* target, which
 //! the declarative vocabulary cannot express (no `Condition` combinator, no
-//! target-referencing `Condition`/`Quantity`), so it rides `Condition::Native`
-//! (#592). `TODO(#609)`: promote to declarative vocab when a second card wants
-//! either half.
+//! target-referencing `Condition`/`Quantity`), so it rides `Condition::Native`.
 //!
 //! All three branches are reachable: with exactly one co-located enemy the
 //! target auto-binds (#449); with two or more the player picks which to attack;
 //! and the picked enemy may be engaged with you, with another investigator, or
 //! with nobody.
+//!
+//! # Module gap
+//!
+//! TODO(#609): promote the condition to declarative vocab when a second card
+//! wants either half.
 
 use card_dsl::dsl::{self, Ability, IntExpr};
 use game_core::engine::evaluator::EvalContext;
