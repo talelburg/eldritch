@@ -21,17 +21,11 @@
 //!
 //! Most modifiers are true exactly while a card sits somewhere, so the
 //! sweep over those places *is* the population and there is nothing to
-//! keep in sync. Seven collections carry them:
-//!
-//! 1. every investigator's controlled instances (investigator card,
-//!    cards in play, threat area),
-//! 2. every location's own card,
-//! 3. every location's attachments,
-//! 4. every location's cards put into play *at* it, controlled by
-//!    nobody (Lita Chantler 01117 in the Parlor),
-//! 5. every enemy's own card,
-//! 6. every enemy's attachments,
-//! 7. the current act and the current agenda.
+//! keep in sync. Those places are every card on the board, in the order
+//! [the board walk](crate::engine::board) visits them: the sweep reads
+//! `board::walk_active`, which leaves out an eliminated investigator's area.
+//! That includes the cards put into play *at* a location and controlled by
+//! nobody (Lita Chantler 01117 in the Parlor).
 //!
 //! Narrower is wrong rather than merely incomplete: Whippoorwill 02090
 //! is an *enemy* modifying investigators, Whateley Ruins 02250 a
