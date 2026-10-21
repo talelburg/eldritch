@@ -1,4 +1,4 @@
-//! Headless tests for the encounter-deck element (S6, #541): it shows the
+//! Headless tests for the encounter-deck element: it shows the
 //! remaining count, and its Draw button is live exactly while the Mythos step-1.4
 //! prompt is up — which is a **request** anchor, since that prompt is an
 //! option-less `Confirm` (ADR 0011).

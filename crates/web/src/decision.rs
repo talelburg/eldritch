@@ -1,4 +1,4 @@
-//! The decision modal (#856): a choice among alternatives **printed on one
+//! The decision modal: a choice among alternatives **printed on one
 //! card** presents itself the moment it arises, instead of waiting behind a
 //! second click on the card the player has just committed to.
 //!
@@ -7,11 +7,11 @@
 //! belongs — it reads the anchor the engine attached"*) one layer in, recorded in
 //! ADR 0015. Nothing here infers the nature from the prompt's shape.
 //!
-//! It is the **sole** surface for a decision: the source card keeps its glow, the
-//! provenance signal, but opens no context menu while the modal is up, and the
-//! prompt banner renders neither the prompt text nor the branches. Offering one
-//! choice on two surfaces is the double-render defect #541 fixed for anchored
-//! options.
+//! It is the **sole** surface for a decision: the card it is printed on keeps its
+//! glow, the provenance signal, but opens no context menu while the modal is up,
+//! and the prompt banner renders neither the prompt text nor the branches. One
+//! choice is never offered on two surfaces, as an anchored option is never
+//! rendered twice.
 //!
 //! [`live_decision`] is pure and native-tested; the view's submit is wasm-only.
 
@@ -48,7 +48,7 @@ pub struct DecisionSource {
 /// the card they are printed on.
 ///
 /// `source` is `None` when the prompt is un-anchored — First Aid 01019 spending
-/// its *last* supply is discarded during cost payment, so #845 degrades the
+/// its *last* supply is discarded during cost payment, so the engine degrades the
 /// anchor rather than pointing at a card in the discard pile. The modal still
 /// carries the branches; it just cannot name where they came from.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,7 +69,7 @@ fn live_decision_request(state: &ClientState) -> Option<&InputRequest> {
 
 /// The live decision prompt, or `None` when the live prompt is a selection (or
 /// there is none). Reads the nature the engine attached — never the prompt's
-/// shape; the source card's name and text come from `cards`. Pure.
+/// shape; the printed card's name and text come from `cards`. Pure.
 #[must_use]
 pub fn live_decision(cards: &CardRegistry, state: &ClientState) -> Option<Decision> {
     let request = live_decision_request(state)?;
@@ -105,7 +105,7 @@ pub struct DecisionLive(pub Signal<bool>);
 /// but opens no menu; every other card is behind the scrim anyway.
 ///
 /// Absent context reads as `false` — a view mounted without [`DecisionLive`]
-/// (an isolated component test) behaves exactly as it did before #856.
+/// (an isolated component test) keeps its context menus.
 #[must_use]
 pub fn menus_are_suppressed() -> bool {
     use_context::<DecisionLive>().is_some_and(|d| d.0.get())
@@ -140,13 +140,13 @@ fn decision_source(
 
 /// The decision modal. Renders nothing unless a decision prompt is live.
 ///
-/// A scrim over the board and a centred panel carrying the source card's name and
+/// A scrim over the board and a centred panel carrying the printed card's name and
 /// printed text, the engine's prompt, and one button per branch. **Dismissible
 /// only by choosing a branch** — every exit submits engine input, so a backdrop
 /// click or an Escape key would choose on the player's behalf; neither is wired,
 /// deliberately, the same rule the skill-test result modal follows.
 ///
-/// **Draggable** (#857, [`crate::drag`]): a player choosing a First Aid mode can
+/// **Draggable** ([`crate::drag`]): a player choosing a First Aid mode can
 /// park the modal aside — the backdrop fades once it has been moved — and read
 /// who is at their location before answering. Moving it is not answering it, and
 /// a press that lands on a branch button starts no drag.
@@ -156,7 +156,7 @@ pub fn DecisionView() -> impl IntoView {
     let cards = registry::use_cards();
     // The prompt's fingerprint: which applied batch a live modal is up for. The
     // batch count is what tells one prompt from the next when liveness does not
-    // — one decision answered straight into another (#857).
+    // — one decision answered straight into another.
     let drag = Drag::per_prompt(move || {
         let st = store.get();
         modal_is_live(&st).then_some(st.log.len())
@@ -410,8 +410,8 @@ mod tests {
         );
     }
 
-    /// #845 reaching the modal: the anchor degraded to `None` because First Aid
-    /// was discarded paying its own cost. The branches still arrive — an
+    /// Regression for #845: with the anchor degraded to `None` because First Aid
+    /// was discarded paying its own cost, the branches still arrive — an
     /// unanswerable prompt is a deadlock, not a cosmetic slip (ADR 0011).
     #[test]
     fn a_decision_with_no_live_source_still_carries_its_branches() {

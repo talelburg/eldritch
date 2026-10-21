@@ -1,4 +1,4 @@
-//! Headless tests for the per-investigator board surfaces S6 adds (#541): each
+//! Headless tests for the per-investigator board surfaces: each
 //! panel carries its own player deck (card back + remaining count) and its own
 //! End turn / Gain resource controls.
 //!
@@ -26,7 +26,7 @@ wasm_bindgen_test_configure!(run_in_browser);
 /// Mount `BoardView` against a fresh store carrying `state`, and return the
 /// last-mounted wrapper so absence assertions are scoped to this test.
 async fn mount(state: GameState) -> Element {
-    // Panels read investigator-card capacity from the registry (#448).
+    // Panels read investigator-card capacity from the registry.
     let store = RwSignal::new(ClientState::default());
     mount_to_body(move || {
         provide_cards(&test_support::TEST_REGISTRY);
@@ -120,7 +120,7 @@ async fn the_named_controls_are_present_and_dead_with_no_prompt() {
 
 #[wasm_bindgen_test]
 async fn the_board_carries_no_action_bar() {
-    // #206's closer: the sticky bar is deleted, and a merge must not bring it back.
+    // The board has no sticky action bar, and a merge must not bring one back.
     let state = GameStateBuilder::new()
         .with_investigator(test_support::test_investigator(1))
         .build();

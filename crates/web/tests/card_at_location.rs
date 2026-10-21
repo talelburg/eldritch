@@ -1,16 +1,16 @@
-//! The interactive surface for a card sitting **at** a location (#847).
+//! Regression for #847: a card sitting **at** a location has an interactive
+//! surface.
 //!
-//! Since #772 the engine offers the Parlor 01115's granted Parley — *"While
+//! The engine offers the Parlor 01115's granted Parley — *"While
 //! Lita Chantler is not controlled by a player, she gains: '\[action\]:
 //! **Parley.** Test \[intellect\] (4). If you succeed, take control of Lita
-//! Chantler.'"* — anchored to Lita's **card instance**, not to the Parlor. The
-//! map rendered her as an inert `<div>`, so the option was anchored to a
-//! surface the client did not render: unreachable rather than misplaced, the
-//! deadlock ADR 0011 names. These tests pin the surface down — the rail token
-//! carries the anchor's options, glows, and opens a menu.
+//! Chantler.'"* — anchored to Lita's **card instance**, not to the Parlor. An
+//! inert rendering would anchor the option to a surface the client does not
+//! render: unreachable rather than misplaced, the deadlock ADR 0011 names. These
+//! tests pin the surface down — the rail token carries the anchor's options,
+//! glows, and opens a menu.
 //!
-//! Location `attachments` are the same zone shape and were rendered by nobody
-//! at all, so they are covered here too.
+//! Location `attachments` are the same zone shape, so they are covered here too.
 //!
 //! Real corpus registry (`cards::TEST_REGISTRY`), so the tokens carry the
 //! printed names.

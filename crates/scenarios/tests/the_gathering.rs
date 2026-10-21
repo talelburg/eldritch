@@ -1,4 +1,4 @@
-//! C1a end-to-end: the-gathering `setup()` seats a roster at the Study and
+//! End to end: the-gathering `setup()` seats a roster at the Study and
 //! reaches a resolution; the Attic/Cellar forced-on-enter abilities fire
 //! through the real card registry, named as `scenarios::TEST_REGISTRIES` (the
 //! real `cards` corpus with the synthetic test cards, plus this crate's
@@ -63,7 +63,7 @@ fn set_aside_codes(state: &GameState) -> Vec<String> {
 
 /// Act 2's reverse leaves the Parlor (01115) revealed with Lita Chantler
 /// (01117) in play *at* it under nobody's control — lines 1 and 2 of the three
-/// it prints (#772).
+/// it prints.
 fn assert_parlor_revealed_with_lita(state: &GameState) {
     let parlor = state
         .locations
@@ -106,7 +106,7 @@ fn drives_act_1_then_act_2_via_round_end_window() {
     let state = session.state();
     assert_eq!(state.act_index, 1, "act 1 advanced to act 2");
 
-    // #774: the board act 1 builds puts the Parlor (01115) into play
+    // The board act 1 builds puts the Parlor (01115) into play
     // **unrevealed**, and its unrevealed back reads *"The entrance to the
     // Parlor is blocked by a darkly glowing unfathomable barrier. You cannot
     // move into the Parlor."* — so the Hallway investigator is not offered it,
@@ -162,7 +162,7 @@ fn drives_act_1_then_act_2_via_round_end_window() {
     assert!(round_end.prompt().skippable, "a reaction window");
 
     // Pick the act-advance candidate (the window's sole option): act 2 advances
-    // to act 3 via 01109's `When`-RoundEnded group clue-spend (#434). A
+    // to act 3 via 01109's `When`-RoundEnded group clue-spend. A
     // rejected pick would leave the act where it was.
     let after_spend = round_end.pick(OptionTarget::Act);
     let r = after_spend.state();
@@ -175,9 +175,9 @@ fn drives_act_1_then_act_2_via_round_end_window() {
          the Ghoul-Priest defeat advances it",
     );
 
-    // Act 2's reverse (#280) fired on advance: all three of its printed lines
+    // Act 2's reverse fired on advance: all three of its printed lines
     // ran, so the Parlor (01115) is revealed, Lita Chantler (01117) is in play
-    // *at* the Parlor under nobody's control (#772), and the set-aside Ghoul
+    // *at* the Parlor under nobody's control, and the set-aside Ghoul
     // Priest (01116) is in the Hallway (01112) — which makes act 3's "Ghoul
     // Priest defeated" objective reachable in real play.
     assert!(
@@ -203,7 +203,7 @@ fn drives_act_1_then_act_2_via_round_end_window() {
     );
     assert_parlor_revealed_with_lita(r);
 
-    // …and revealing it is what lifts the barrier (#774), which is the whole
+    // …and revealing it is what lifts the barrier, which is the whole
     // point of 01109b's *"The barrier blocking passage into the parlor has
     // vanished. Reveal the Parlor."* The Hallway investigator can now move in.
     assert!(
@@ -378,7 +378,7 @@ fn advancing_act_1_rebuilds_the_board() {
 }
 
 /// **Removing the Study discards what is attached to it, each by its owner**
-/// (#981). Trapped 01108's reverse prints *"Remove the Study from the game."*,
+/// — Trapped 01108's reverse prints *"Remove the Study from the game."*,
 /// and `glossary/Leaves_Play.md` makes a card's attachments go with it: *"All
 /// attachments on the card are discarded."* Obscuring Fog 01168 drawn in Act 1
 /// attaches to the Study; it is the encounter deck's, so it lands in the
@@ -457,7 +457,7 @@ fn removing_the_study_discards_its_attachments_by_owner() {
 
 /// *"Place each investigator in the Hallway."* reaches only the investigators
 /// still in the game: one who has resigned has left it, and is not placed back
-/// onto the board (#1067).
+/// onto the board.
 #[test]
 fn advancing_act_1_does_not_place_a_resigned_investigator() {
     let mut state = act_1_ready_to_advance();

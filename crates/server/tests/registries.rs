@@ -1,9 +1,9 @@
 //! The production server runs on the real `scenarios` + `cards` registries
-//! (C7a): `POST /games` for The Gathering succeeds and real card codes
+//! `POST /games` for The Gathering succeeds and real card codes
 //! resolve. This binary hands the server the *production* pairing,
 //! `server::REGISTRIES`, where the other test binaries pass the mock pairing
-//! from `common`. It also creates a game from every roster the picker can send
-//! (#782): each default deck, with its fixed weakness and with a random one.
+//! from `common`. It also creates a game from every roster the picker can send:
+//! each default deck, with its fixed weakness and with a random one.
 
 mod common;
 

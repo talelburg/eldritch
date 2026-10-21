@@ -22,7 +22,7 @@ fn parse_prey_none_when_no_prey_line() {
 }
 
 /// Mob Enforcer 01101, Silver Twilight Acolyte 01102 and Stubborn Detective
-/// 01103 all print *"<b>Prey</b> - Bearer only."* (#1125).
+/// 01103 all print *"<b>Prey</b> - Bearer only."*
 #[test]
 fn parse_prey_recognizes_bearer_only() {
     assert_eq!(

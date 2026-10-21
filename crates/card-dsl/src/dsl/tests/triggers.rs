@@ -1,9 +1,7 @@
 use super::*;
 
-/// Deduction-shaped commit-trigger ability. The DSL won't fully
-/// resolve this until the engine grows commit-time machinery in
-/// Phase 3, but the type-level construction has to work today so
-/// future commit-trigger cards have somewhere to land.
+/// Deduction-shaped commit-trigger ability: `on_commit` builds a trigger
+/// distinct from `on_play`.
 #[test]
 fn on_commit_distinct_from_on_play() {
     let ability = on_commit(if_(
@@ -45,9 +43,7 @@ fn on_skill_test_resolution_builder() {
 
 /// Roland-Banks-shaped reaction: "after you defeat an enemy,
 /// discover 1 clue at your location" — the canonical motivating
-/// card for [`Trigger::OnEvent`]. The DSL doesn't fire it yet
-/// (engine reaction windows land in #52), but construction must
-/// work today so #55 has somewhere to land.
+/// card for [`Trigger::OnEvent`].
 #[test]
 fn on_event_builder_constructs_roland_banks_reaction() {
     let ability = on_event(
@@ -121,8 +117,8 @@ fn on_event_distinct_from_other_triggers_and_internally() {
 
 /// An `OnEvent`-triggered ability round-trips through `serde_json`
 /// — struct-variant × serde derive can surprise; pin the wire
-/// shape now so #52's persistence doesn't re-discover problems
-/// later. All three [`EventTiming`] variants (`When`, `At`, `After`)
+/// shape so a persisted ability round-trips. All three [`EventTiming`]
+/// variants (`When`, `At`, `After`)
 /// are exercised independently since unit-variant × serde can fail on
 /// any alone (very rare, but the test rationale explicitly covers this
 /// surface).
@@ -200,8 +196,8 @@ fn elder_sign_builder_constructs_the_trigger() {
 }
 
 /// `Trigger::OnEvent` carries an explicit `TriggerKind` (forced vs
-/// reaction), and it round-trips through serde. The kind retires the
-/// old route-by-pattern dispatch (umbrella §2, Axis-B T1).
+/// reaction), and it round-trips through serde. Dispatch reads the kind, not
+/// the pattern, to tell forced from reaction.
 #[test]
 fn on_event_carries_trigger_kind() {
     let t = Trigger::OnEvent {

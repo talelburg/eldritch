@@ -170,7 +170,7 @@ fn agenda_card() -> Element {
 
 #[wasm_bindgen_test]
 async fn agenda_card_glows_and_resolves_via_menu() {
-    // An agenda-sourced forced effect anchors its "Resolve" to the agenda card (#556).
+    // An agenda-sourced forced effect anchors its "Resolve" to the agenda card.
     let outcome = test_support::awaiting_pick_single_with(
         "Forced — They're Getting Out!",
         vec![ChoiceOption::new(OptionId(0), "Resolve").at(OptionTarget::Agenda)],
@@ -216,7 +216,7 @@ async fn agenda_card_inert_without_an_agenda_anchored_option() {
 }
 
 /// Mount `act_agenda_view` with the given deck's leaving card mid-advance at
-/// `step`. Pushes an `AdvanceReverse` frame as the engine would (#558).
+/// `step`. Pushes an `AdvanceReverse` frame as the engine would.
 async fn mount_advancing(deck: AdvanceDeck, code: &str, step: AdvanceStep) {
     let mut state = GameStateBuilder::new().build();
     match deck {

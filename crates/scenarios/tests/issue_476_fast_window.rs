@@ -1,4 +1,4 @@
-//! #476 regression: a framework Fast window no longer strands. Real registries,
+//! Regression for #476: a framework Fast window does not strand. Real registries,
 //! Roland (01001), Rotting Remains (01163) on the encounter deck, a forced
 //! Cultist bag, and Magnifying Glass (01030, a Fast asset) in hand. After the
 //! Mythos draw + failed willpower test resolve, the `InvestigatorTurnBegins` Fast

@@ -8,7 +8,7 @@ fn main() {
     console_error_panic_hook::set_once();
     mount::mount_to_body(|| {
         // The card registry every render path reads: card faces, names, and
-        // investigator capacity (`max_health` / `max_sanity`, #448).
+        // investigator capacity (`max_health` / `max_sanity`).
         registry::provide_cards(&cards::REGISTRY);
         view! { <App/> }
     });

@@ -240,9 +240,11 @@ fn normalize_other_subtype_is_not_a_weakness() {
     assert_eq!(n.weakness, None);
 }
 
+/// Regression for #576: `Fast.` leading the line after a deck-only line reads
+/// as the keyword.
 #[test]
 fn fast_leading_a_line_after_a_deck_only_line_is_fast() {
-    // On the Lam 01010, printed text verbatim from the snapshot (#576).
+    // On the Lam 01010, printed text verbatim from the snapshot.
     let mut raw = raw_card("01010");
     raw.text = Some(
         "\"Skids\" O'Toole deck only.\nFast. Play after your turn begins.\n\
@@ -258,9 +260,11 @@ fn fast_leading_a_line_after_a_deck_only_line_is_fast() {
     );
 }
 
+/// Regression for #576: `Fast.` after a keyword prefix on the same line reads
+/// as the keyword.
 #[test]
 fn fast_starting_a_sentence_after_a_prefix_on_the_same_line_is_fast() {
-    // Ace in the Hole 02266, printed text verbatim from the snapshot (#576).
+    // Ace in the Hole 02266, printed text verbatim from the snapshot.
     let mut raw = raw_card("02266");
     raw.text = Some(
         "Exceptional. Fast. Play only during your turn.\n\
@@ -274,7 +278,7 @@ fn fast_starting_a_sentence_after_a_prefix_on_the_same_line_is_fast() {
 #[test]
 fn turn_restriction_without_fast_is_flagged() {
     // Synthetic: a turn-only play restriction on a card the pipeline
-    // didn't read as Fast — the #576 shape of bug.
+    // didn't read as Fast — the shape a missed `Fast.` keyword takes.
     let mut raw = raw_card("TEST03");
     raw.name = Some("Test Event".to_owned());
     raw.text = Some("Mystery. Play only during your turn.".to_owned());

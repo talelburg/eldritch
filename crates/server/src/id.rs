@@ -13,7 +13,7 @@ pub fn random_game_id() -> GameId {
     GameId::new(Uuid::new_v4().to_string())
 }
 
-/// Generate a fresh random RNG seed for a new game's setup shuffle (#467).
+/// Generate a fresh random RNG seed for a new game's setup shuffle.
 ///
 /// game-core is host-agnostic (no I/O, compiles to wasm), so entropy is the
 /// host's job; we reuse `uuid`'s getrandom-backed v4 generator (already a
@@ -39,7 +39,7 @@ mod tests {
 
     #[test]
     fn random_seeds_are_distinct() {
-        // Two creations must not collide on the same setup shuffle (#467).
+        // Two creations must not collide on the same setup shuffle.
         assert_ne!(random_seed(), random_seed());
     }
 }

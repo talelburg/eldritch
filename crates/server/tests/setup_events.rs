@@ -1,4 +1,4 @@
-//! #512: the events emitted during scenario setup (`seat_and_open`) are
+//! Regression for #512: the events emitted during scenario setup (`seat_and_open`) are
 //! persisted at create time and delivered in the reconnect baseline `Hello`,
 //! so the client's event log can show the opening draws / shuffles / weakness
 //! set-aside. This is the path the live client hits: `POST /games` creates and

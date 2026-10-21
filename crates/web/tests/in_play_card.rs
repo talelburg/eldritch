@@ -1,4 +1,4 @@
-//! Headless tests for `InPlayCardView` (interactivity S4, #539): a card whose
+//! Headless tests for `InPlayCardView`: a card whose
 //! `CardInstance` anchor has an option glows and opens a menu that submits
 //! `PickSingle`; an inert instance has no glow.
 #![cfg(target_arch = "wasm32")]

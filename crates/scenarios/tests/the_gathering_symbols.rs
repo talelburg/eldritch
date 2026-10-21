@@ -1,4 +1,4 @@
-//! C2: 01104 reference-card symbol-token effects, end-to-end through the
+//! The 01104 reference card's symbol-token effects, end-to-end through the
 //! real card registry (Ghoul metadata) + the scenario module, both named by
 //! `scenarios::TEST_REGISTRIES`.
 
@@ -208,7 +208,7 @@ fn tablet_immediate_damage_suspends_on_soak_without_redrawing() {
 }
 
 // ---------------------------------------------------------------------------
-// ST.5 reads the board the ST.4 symbol effects left behind (#674)
+// ST.5 reads the board the ST.4 symbol effects left behind
 // ---------------------------------------------------------------------------
 
 const BEAT_COP: &str = "01018"; // Ally, 2 health, "You get +1 [combat]."
@@ -322,7 +322,7 @@ fn the_soak_suspension_between_st4_and_st5_does_not_redraw_the_token() {
 }
 
 // ---------------------------------------------------------------------------
-// Victory display tests (C2 — location VPs at scenario end)
+// Victory display tests (location VPs at scenario end)
 // ---------------------------------------------------------------------------
 
 /// `INV`'s open turn in a Gathering game holding the 1 clue a terminal act

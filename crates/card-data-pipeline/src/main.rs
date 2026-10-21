@@ -471,7 +471,7 @@ fn run() -> Result<(), String> {
     // location" or "Engaged with Prey") stay None here and warn, and
     // `spawn_lit` turns them into `SpawnLocation::Unrepresented` — a loud
     // stub the engine refuses on, not a silent collapse into "no spawn
-    // instruction" (#635).
+    // instruction".
     let loc_index: BTreeMap<String, String> = all
         .values()
         .filter(|c| c.card_type == "Location")
@@ -508,7 +508,7 @@ fn run() -> Result<(), String> {
         }
     }
 
-    // Warn on a turn-only play restriction without Fast (#576).
+    // Warn on a turn-only play restriction without Fast.
     for warning in all.values().filter_map(fast_timing_inconsistency) {
         eprintln!("{warning}");
     }
@@ -1007,8 +1007,8 @@ fn render_card(out: &mut String, c: &NormalizedCard) {
 /// Render the `CardKind` literal for `c`, dispatched on its card type.
 ///
 /// Enemy `hunter`/`retaliate`/`prey`/`spawn`/`health` are parsed from card
-/// text (C3b); `surge`/`peril` still emit their not-yet-parsed `false`
-/// default (#138).
+/// text; `surge`/`peril` emit a `false` default (TODO(#138): parse the surge
+/// and peril keywords).
 fn render_kind(c: &NormalizedCard) -> String {
     let icons = format!(
         "SkillIcons {{ willpower: {}, intellect: {}, combat: {}, agility: {}, wild: {} }}",
@@ -1160,7 +1160,7 @@ fn strip_html_bold(s: &str) -> String {
 }
 
 /// Whether printed text carries the `Fast` keyword: `Fast.` starting the
-/// text, a line, or a sentence on a line (#576). Keyword prefixes come
+/// text, a line, or a sentence on a line. Keyword prefixes come
 /// before it on the same line (Ace in the Hole 02266, `Exceptional. Fast.`)
 /// or on lines of their own (On the Lam 01010, `"Skids" O'Toole deck
 /// only.\nFast.`), so a text-start check alone misses both. A `[fast]`
@@ -1305,7 +1305,7 @@ fn parse_spawn_name(text: &str) -> Option<String> {
 
 /// Emit the `Option<Spawn>` literal for an enemy's spawn instruction.
 ///
-/// Three cases, and the middle one is the point (#635): `spawn: None` is the
+/// Three cases, and the middle one is the point: `spawn: None` is the
 /// *positive* rule "this card prints no Spawn line", so it is emitted only
 /// when `spawn_name` is absent. A printed clause we could not resolve to a
 /// location code becomes `SpawnLocation::Unrepresented`, which the engine
