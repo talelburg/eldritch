@@ -195,7 +195,7 @@ fn perform_skill_test_autofail_at_difficulty_zero_still_fails() {
 }
 
 /// The `[auto_fail]` token latches a determination rather than
-/// tripping a special case in the driver (#685), and a determination is
+/// tripping a special case in the driver, and a determination is
 /// a test-scoped recorded row — so it expires with the test that
 /// carried it. A leak here would automatically fail the *next* test.
 #[test]
@@ -293,7 +293,7 @@ fn perform_skill_test_symbol_token_modifier_applies() {
 
 #[test]
 fn a_skill_tests_teardown_expires_only_its_own_recorded_rows() {
-    // A recorded row belongs to the test it names (#676). The test run
+    // A recorded row belongs to the test it names. The test run
     // here mints its own id, so a row stamped with a different one is
     // neither counted by it (skill 3 vs difficulty 4 fails by 1, despite
     // the +1 row) nor swept away by its teardown.

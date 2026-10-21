@@ -3,12 +3,12 @@
 //! (Vicious-Blow-shaped). Verifies that committing it to a Fight skill
 //! test adds +1 to the attack's damage on success, and that the
 //! `OnCommit` firing path fires committed cards' effects at the commit
-//! step (no such firing existed before #307).
+//! step.
 //!
 //! Lives at `crates/game-core/tests/` (its own integration-test binary,
-//! hence its own process and its own `MockRegistry`). No real card has an
-//! `OnCommit` ability yet — Vicious Blow 01025 (the consumer, #240) is the
-//! first; until then this mock skill exercises the full commit path.
+//! hence its own process and its own `MockRegistry`). Vicious Blow 01025 is
+//! the corpus consumer; this mock skill exercises the commit path without
+//! depending on it.
 
 use std::sync::LazyLock;
 
@@ -81,7 +81,7 @@ fn board() -> GameStateBuilder {
         .with_registries(registries())
         .with_seat(seat(1).at(HERE).hand([SKILL]))
         .with_location(test_support::test_location(HERE.0, "Study"))
-        // Co-located: Fight is location-gated (#401).
+        // Co-located: Fight is location-gated.
         .with_enemy_engaged(enemy, INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())

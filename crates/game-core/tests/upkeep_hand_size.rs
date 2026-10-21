@@ -1,4 +1,4 @@
-//! #111 acceptance: upkeep step 4.5 discards down to the hand-size cap.
+//! Upkeep step 4.5 discards down to the hand-size cap.
 //!
 //! Drives a full apply cycle through a locally-built scenario shell (via
 //! `seat_and_open`) → `Mulligan` → `EndTurn`, padding the sole investigator's
@@ -7,8 +7,7 @@
 //! discard prompt; choosing the discards must land the hand
 //! at exactly the cap and let the round proceed.
 //!
-//! Moved down from `crates/scenarios/tests/upkeep_hand_size.rs` (#873): no card
-//! is involved, only a scenario module, which under ADR 0016 is a locally-built
+//! No card is involved, only a scenario module, which under ADR 0016 is a locally-built
 //! shell. The registries name no scenario module, so the resolution hook is skipped
 //! and the round cannot end mid-cascade.
 

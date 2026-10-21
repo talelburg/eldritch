@@ -8,10 +8,9 @@
 //! analogue, which is why the map stays hand-built rather than flipping to real
 //! scenario content.
 //!
-//! Renamed on the way down from `crates/scenarios/tests/hunter_movement.rs`
-//! (#873): the surviving test is about the tie and the `PickSingle` that settles
-//! it, not about hunter movement at large. The spawn-engagement tie that also
-//! lived in that file went to real cards under #877.
+//! The test is about the tie and the `PickSingle` that settles it, not about
+//! hunter movement at large. The spawn-engagement tie is tested on real cards
+//! under `crates/cards/tests/`.
 
 use std::sync::LazyLock;
 

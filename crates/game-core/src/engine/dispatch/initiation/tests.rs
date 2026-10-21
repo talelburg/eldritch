@@ -308,7 +308,7 @@ fn activated_ability_that_cannot_change_state_is_refused() {
 }
 
 /// A designated ability's substance is the action it performs, not its residual
-/// effect (#805), so an inert residual beside a bold word is not a no-op — the
+/// effect, so an inert residual beside a bold word is not a no-op — the
 /// activation path asks the action's own question (`designator::can_perform`).
 /// **Parley** performs nothing, so its residual is all there is to ask about.
 #[test]
@@ -603,8 +603,8 @@ fn reaction_whose_cost_cannot_be_paid_is_refused() {
 }
 
 /// A reaction whose cost is harm to its controller is refused outright: the
-/// payer a triggered ability shares with activations pays no harm itself
-/// (TODO(#1081)).
+/// payer a triggered ability shares with activations pays no harm itself.
+/// TODO(#1081): pay a harm cost on a triggered ability.
 #[test]
 fn reaction_with_a_harm_cost_is_refused() {
     let refusal = gate(

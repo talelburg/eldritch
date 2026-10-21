@@ -409,7 +409,7 @@ fn heal_target_chosen_suspends_when_two_are_co_located() {
         .with_seat(seat(2).at(A))
         .with_location(test_support::test_location(A.0, "A"))
         .build();
-    // Both carry damage: RR "Target" (#639) makes an investigator with
+    // Both carry damage: RR "Target" makes an investigator with
     // nothing to heal an ineligible target, so a suspend needs two
     // *eligible* candidates, not merely two co-located ones.
     for id in [InvestigatorId(1), InvestigatorId(2)] {

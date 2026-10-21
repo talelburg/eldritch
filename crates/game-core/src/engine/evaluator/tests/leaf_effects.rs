@@ -6,7 +6,7 @@ use crate::state::{
 };
 use crate::test_support::TEST_REGISTRIES;
 
-/// `Effect::Cancel` flags the condition whose `when` cell is open (#1055):
+/// `Effect::Cancel` flags the condition whose `when` cell is open:
 /// stage the frames a coordinator leaves under a `when`-cell window, the fired
 /// candidate already taken out of it.
 #[test]

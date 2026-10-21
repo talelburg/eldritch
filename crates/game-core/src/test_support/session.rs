@@ -1,4 +1,4 @@
-//! The step-wise [`TestSession`] driver (#938): settle a built state, then
+//! The step-wise [`TestSession`] driver: settle a built state, then
 //! apply one step at a time and drain to the next rest through the one drain
 //! loop in [`resolver`](super::resolver).
 
@@ -21,7 +21,7 @@ use crate::state::{
 /// Step-wise test driver: drive the real engine one step at a time, reading the
 /// prompt, state and events between steps.
 ///
-/// One model, eager throughout (#938):
+/// One model, eager throughout:
 ///
 /// - **Construction settles** the built state through the production `apply`
 ///   scaffolding, so the session starts where the engine would rest. An open
@@ -343,7 +343,7 @@ impl TestSession {
     ///
     /// For a check the engine makes when an answer resolves rather than when
     /// the option was offered — a play-ban that arrives between a reaction
-    /// window's offer and the pick (#917). A change that play can make is made
+    /// window's offer and the pick. A change that play can make is made
     /// by playing; this is for the change no step can make while a prompt is
     /// open. To have the prompt re-asked against the edit instead, settle the
     /// edited state with [`new`](Self::new).
@@ -545,7 +545,7 @@ impl TestSession {
     ///    the handler — not the enumerator — to panic.
     /// 2. Proving a handler *itself* rejects an action the enumerator already
     ///    filters out, which a client can send over the wire without consulting
-    ///    the menu (#639's activation initiation gate).
+    ///    the menu (an activation's initiation gate, say).
     ///
     /// Everything else takes the action from the menu with
     /// [`take`](Self::take).

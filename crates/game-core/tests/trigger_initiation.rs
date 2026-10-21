@@ -1,4 +1,4 @@
-//! One firing path for triggered abilities (#964): a forced ability resolves
+//! One firing path for triggered abilities: a forced ability resolves
 //! the same way whether it fires alone or in the lead's ordered run, and a
 //! Fast event played from a reaction window gets the same binding from its
 //! timing event as a reaction would.

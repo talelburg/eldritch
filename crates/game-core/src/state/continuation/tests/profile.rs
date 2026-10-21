@@ -54,12 +54,12 @@ fn investigator_turn(ending: bool) -> Continuation {
     })
 }
 
-// --- The eight corrected answers (#925 / #927) -----------------------------
+// --- Eight answers a phase-anchor catch-all gets wrong ----------------------
 //
-// Before the profile, `awaits_input` ended in a `!is_phase_anchor()` catch-all
-// that answered `true` for six framework-internal frames input routing rejects,
-// and `false` for two frames routing accepts. Each is pinned here so the
-// correction is explicit rather than a side effect.
+// A `!is_phase_anchor()` catch-all would answer `true` for six
+// framework-internal frames input routing rejects, and `false` for two frames
+// routing accepts. Each is pinned here so its answer is explicit rather than a
+// side effect.
 
 #[test]
 fn an_encounter_card_disposal_does_not_await_input() {
@@ -125,8 +125,8 @@ fn an_attack_loop_at_its_order_pick_awaits_input() {
     assert!(attack_loop(AttackLoopStage::PickOrder).awaits_input());
 }
 
-/// D1(a) on #927: a framework Fast window is a prompt whether or not it holds
-/// candidates — `Skip` closes it through `resolve_input` (#476).
+/// A framework Fast window is a prompt whether or not it holds candidates —
+/// `Skip` closes it through `resolve_input`.
 #[test]
 fn an_empty_fast_window_awaits_input() {
     assert!(fast_window(Vec::new()).awaits_input());
@@ -160,7 +160,7 @@ fn a_timing_point_window_is_a_prompt_only_while_it_has_candidates() {
     assert_eq!(timing_point_window(Vec::new()).profile().activity, DRIVEN);
 }
 
-/// D1(a) on #927: the candidates split is the event window's alone.
+/// The candidates split is the event window's alone.
 #[test]
 fn a_fast_window_is_a_prompt_with_or_without_candidates() {
     assert_eq!(fast_window(vec![candidate()]).profile().activity, PROMPT);
@@ -235,7 +235,7 @@ fn a_reaction_window_cancels_and_its_forced_run_twin_completes() {
 /// here as well as decided by the exhaustive match in `profile`.
 ///
 /// Shared with the stack's wire-format test (`stack.rs`), whose fixture is
-/// these frames serialised in the pre-#928 format.
+/// these frames serialised.
 // One flat table reads better than splitting it by role across functions.
 #[allow(clippy::too_many_lines)]
 pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
@@ -248,7 +248,7 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             profile(PROMPT, CANCEL),
         ),
         // A Fast event played from the top of the discard pile under a
-        // permission (Wendy's Amulet 01014, #1112).
+        // permission (Wendy's Amulet 01014).
         (
             timing_point_window(vec![ResolutionCandidate::new(
                 CardCode::new("01079"),

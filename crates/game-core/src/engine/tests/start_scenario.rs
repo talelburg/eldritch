@@ -77,7 +77,7 @@ fn start_scenario_advances_to_investigation_with_round_one() {
     assert_eq!(
         mulligan_result.state.active_investigator,
         Some(id),
-        "lead investigator becomes active after mulligan window closes"
+        "the first investigator in turn order becomes active after mulligan window closes"
     );
     assert_event!(
         mulligan_result.events,
@@ -85,7 +85,7 @@ fn start_scenario_advances_to_investigation_with_round_one() {
             phase: Phase::Investigation
         }
     );
-    // rotate no longer emits ActionsRemainingChanged (actions reset at Upkeep 4.2 / start_scenario seed);
+    // rotate emits no ActionsRemainingChanged (actions reset at Upkeep 4.2 / start_scenario seed);
     // actions_remaining == 3 is verified above via assert_eq.
 }
 

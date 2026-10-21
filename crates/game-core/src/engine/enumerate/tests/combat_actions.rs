@@ -38,9 +38,10 @@ fn fight_and_evade_offered_for_each_engaged_enemy() {
     }));
 }
 
+/// Regression for #401: Fight targets any co-located enemy, engaged or not.
 #[test]
 fn fight_but_not_evade_for_an_unengaged_co_located_enemy() {
-    // #401: Fight targets any co-located enemy (RR p.12); Evade is
+    // Fight targets any co-located enemy (RR p.12); Evade is
     // engagement-only (RR p.11). An unengaged enemy at the investigator's
     // location is a Fight target but not an Evade target.
     let mut e = test_support::test_enemy(7, "Ghoul");
@@ -61,7 +62,7 @@ fn fight_but_not_evade_for_an_unengaged_co_located_enemy() {
 #[test]
 fn no_combat_for_an_enemy_at_a_different_location() {
     // An enemy elsewhere (and unengaged) is neither a Fight nor an Evade
-    // target (#401: Fight needs co-location).
+    // target (Fight needs co-location).
     let mut e = test_support::test_enemy(7, "Ghoul");
     e.current_location = Some(ELSEWHERE);
     let state = open_turn_here()

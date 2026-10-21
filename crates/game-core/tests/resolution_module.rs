@@ -1,10 +1,10 @@
 //! The scenario module's `apply_resolution` hook, run when a terminal act's
 //! reverse latches a resolution.
 //!
-//! Moved out of `engine/tests/resolution.rs` (#1022): these tests need a
-//! scenario module that stamps the state when its hook runs, and a mock card
-//! registry alongside it; a process builds one mock, so this binary names its
-//! own registries (prior art: `tests/scenario_resolution.rs`).
+//! These tests have their own binary because they need a scenario module that
+//! stamps the state when its hook runs, and a mock card registry alongside it;
+//! a process builds one mock, so this binary names its own registries (prior
+//! art: `tests/scenario_resolution.rs`).
 
 use std::sync::LazyLock;
 
@@ -112,6 +112,8 @@ fn resolution_fires_and_applies_when_latch_set_with_module() {
     );
 }
 
+/// Regression for #566: a resolution cancels the framework sequence it was
+/// suspended in, so the engine stops offering the turn menu.
 #[test]
 fn resolution_cancels_the_open_turn_and_does_not_refire() {
     // `terminal_act_state` opens the turn: AdvanceAct latches the terminal
@@ -119,10 +121,9 @@ fn resolution_cancels_the_open_turn_and_does_not_refire() {
     let session = advanced();
     assert_event!(session.events(), Event::ScenarioResolved { .. });
     // The scenario ended, so the framework sequence it was suspended in is
-    // cancelled (#566): the open turn and its phase anchor are gone, and
-    // with them every legal action. Before #566 the engine kept offering the
-    // turn menu and cascading into the next round's Mythos phase. A stack
-    // invariant: no frame survives the ending.
+    // cancelled: the open turn and its phase anchor are gone, and with them
+    // every legal action, so nothing cascades into the next round's Mythos
+    // phase. A stack invariant: no frame survives the ending.
     assert!(
         session.state().continuations.is_empty(),
         "the open turn and phase anchor are cancelled: {:?}",
@@ -146,7 +147,7 @@ fn resolution_cancels_the_open_turn_and_does_not_refire() {
 fn resolution_skipped_on_rejected_outcome() {
     let session = TestSession::new(terminal_act_state(0), registries());
     // With 0 clues AdvanceAct is illegal, so it is not enumerated — there is
-    // no OptionId to submit (OptionId-routing #447 expresses illegality as
+    // no OptionId to submit (OptionId routing expresses illegality as
     // non-enumeration).
     let legal = legal_actions(session.state(), registries().cards);
     assert!(!legal

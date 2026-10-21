@@ -40,8 +40,8 @@ fn fake_registry() -> CardRegistry {
 /// `state.investigators[inv.id].cards_in_play`, so the investigator
 /// must be in the state, not merely passed by reference).
 fn state_with(cards: &[&str], damage: u8) -> GameState {
-    // combat 3, max_health() = 8 from the TEST_INV registry. After #448 cp2a
-    // harm accumulates on the investigator card.
+    // combat 3, max_health() = 8 from the TEST_INV registry. Harm
+    // accumulates on the investigator card.
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(

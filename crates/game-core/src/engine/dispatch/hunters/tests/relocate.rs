@@ -1,4 +1,5 @@
-//! The relocation funnel (#633): move + engage-on-arrival in one call.
+//! Regression for #633: an enemy a card effect moves engages on arrival,
+//! through the relocation funnel (move + engage-on-arrival in one call).
 
 use super::*;
 use crate::engine::Cx;

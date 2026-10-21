@@ -46,7 +46,7 @@ fn resolution_event_fires_without_a_registered_module() {
 
 #[test]
 fn game_end_is_a_noop_without_a_game_end_ability_in_play() {
-    // The GameEnd condition (C5a #236) is emitted at resolution but is a
+    // The GameEnd condition is emitted at resolution but is a
     // no-op with no card in play carrying a GameEnd ability: the resolution
     // still fires, and no TraumaSuffered is emitted.
     let result = TestSession::new(terminal_act_state(), TEST_REGISTRIES)

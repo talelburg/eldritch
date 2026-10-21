@@ -325,10 +325,11 @@ fn spawn_at_specific_location_discards_when_location_not_in_play() {
     );
 }
 
+/// Regression for #635: a printed Spawn clause the engine cannot model
+/// refuses loudly rather than falling through to the no-instruction rule.
 #[test]
 fn spawn_with_unrepresented_instruction_rejects_without_mutating() {
-    // #635: a printed Spawn clause we cannot model must refuse loudly
-    // rather than fall through to the no-instruction rule. Acolyte 01169
+    // Acolyte 01169
     // prints "Spawn - Any empty location."; the drawer's own location is
     // the one location guaranteed *not* to be empty, so the fallback
     // placement would be doubly wrong (wrong location, plus an engagement
@@ -434,8 +435,8 @@ fn spawn_with_no_instruction_rejects_when_drawing_investigator_has_no_location()
 
 #[test]
 fn spawn_engages_sole_colocated_investigator() {
-    // Regression: #127's single-investigator engage-on-spawn path
-    // still resolves inline under the shared prey resolver.
+    // The single-investigator engage-on-spawn path resolves inline under the
+    // shared prey resolver.
     let mut loc = test_support::test_location(HALL.0, "Hall");
     loc.code = CardCode("_loc".into());
     let mut state = GameStateBuilder::new()
@@ -459,12 +460,14 @@ fn spawn_engages_sole_colocated_investigator() {
     assert_eq!(spawned.engaged_with, Some(InvestigatorId(1)));
 }
 
+/// Regression for #650: an enemy with no Spawn instruction engages the
+/// drawer instead of prey-resolving its engagement.
 #[test]
 fn no_instruction_spawn_engages_the_drawer_without_resolving_prey() {
     // `glossary/Spawn.md`: "If the enemy does not have a "Spawn –"
     // instruction, the investigator drawing the enemy spawns it engaged with
     // him/her". Two investigators share the location and the drawer is not the
-    // lead, so a prey resolution would tie and prompt the lead (#650).
+    // lead, so a prey resolution would tie and prompt the lead.
     let mut loc = test_support::test_location(HALL.0, "Hall");
     loc.code = CardCode("_loc".into());
     let mut state = GameStateBuilder::new()
@@ -519,7 +522,7 @@ fn spawn_tie_suspends_for_lead_pick() {
         .with_mythos_draw_remaining([InvestigatorId(1)])
         .build();
     // A `Specific` spawn: only an enemy that spawns *at a location* resolves
-    // prey among the investigators there (#650).
+    // prey among the investigators there.
     let metadata = synth_enemy_metadata(Some(Spawn {
         location: SpawnLocation::Specific("_loc".into()),
     }));
@@ -557,7 +560,7 @@ fn resume_spawn_engage_rejects_bad_pick_and_preserves_pending() {
         .with_mythos_draw_remaining([InvestigatorId(1)])
         .build();
     // A `Specific` spawn: only an enemy that spawns *at a location* resolves
-    // prey among the investigators there (#650).
+    // prey among the investigators there.
     let metadata = synth_enemy_metadata(Some(Spawn {
         location: SpawnLocation::Specific("_loc".into()),
     }));

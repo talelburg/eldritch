@@ -5,15 +5,12 @@ use crate::state::{
 };
 use crate::test_support::{self, TestSession, TEST_REGISTRIES};
 
-// The former `rejects_outside_mythos_phase` / `rejects_when_no_draw_pending`
-// / `rejects_when_out_of_order` tests are gone (#348 part 2c-iii-b): the
-// dedicated `DrawEncounterCard` action is removed. "Outside Mythos" and "no
-// draw pending" are now structurally impossible — `resume_encounter_draw` is
-// only reached when an `EncounterDraw` frame is on top, which `mythos_phase`
-// only pushes during Mythos — and "out of order" is gone because the folded
-// `Confirm` carries no investigator (the drawer is always `remaining[0]`).
-// The frame-presence gate is exercised by `apply`'s `EncounterDraw` guard
-// and `resolve_input`'s no-frame rejection.
+// `resume_encounter_draw` has no out-of-Mythos, no-draw-pending or
+// out-of-order case to reject. It is reached only when an `EncounterDraw`
+// frame is on top, which `mythos_phase` pushes only during Mythos, and the
+// `Confirm` it resumes on carries no investigator (the drawer is always
+// `remaining[0]`). The frame-presence gate is exercised by `apply`'s
+// `EncounterDraw` guard and `resolve_input`'s no-frame rejection.
 
 /// Investigator 1's Mythos step-1.4 encounter draw, the moment it is asked.
 fn drawing() -> GameState {

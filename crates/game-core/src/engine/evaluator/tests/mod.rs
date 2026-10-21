@@ -47,18 +47,17 @@ fn state_with_clues_at_location(clues: u8) -> GameState {
         .build()
 }
 
-/// Bounded effect driver — the deleted production `drive_effect_to_base`,
-/// now test-only (Slice D #423). Steps the top contiguous run until it
+/// Bounded effect driver, test-only. Steps the top contiguous run until it
 /// shrinks to `base` (run complete → `Done`) or a leaf suspends for a pick
 /// (`AwaitingInput`), WITHOUT touching fixture frames beneath `base` (an
 /// in-flight `SkillTest` carrying `tested_location`, say). The production
-/// path no longer needs this — the global `drive` loop drives the parked run
+/// path does not need this — the global `drive` loop drives the parked run
 /// and then *does* advance the enclosing frame — but a unit test parks
 /// fixtures it does not want driven, so it drives bounded instead.
 ///
 /// The run includes the timing coordinator, because a leaf can emit a
 /// triggering condition whose *own resolution* the coordinator performs —
-/// `Effect::DiscoverClue` since #703 only caps the count and emits, and the
+/// `Effect::DiscoverClue` only caps the count and emits, and the
 /// clues move at the coordinator's resolve step. Stopping at the `EmitEvent`
 /// frame would leave the effect half-resolved in a way `apply` never does.
 fn drive_effect_run_to(cx: &mut Cx, base: usize) -> EngineOutcome {
@@ -70,8 +69,8 @@ fn drive_effect_run_to(cx: &mut Cx, base: usize) -> EngineOutcome {
             Some(Continuation::Effect(_)) => step_effect_frame(cx),
             Some(Continuation::EmitEvent(_)) => coordinator::dispatch_emit_event(cx),
             Some(Continuation::TimingPoint(_)) => coordinator::dispatch_timing_point(cx),
-            // `Effect::Deal` parks one of these and returns in tail position
-            // (#727): the two steps of dealing the damage are the frame's,
+            // `Effect::Deal` parks one of these and returns in tail position:
+            // the two steps of dealing the damage are the frame's,
             // not the effect walk's. The real `drive` loop dispatches it, so
             // this bounded stand-in must too, or `Deal` in a unit test
             // assigns damage that is never placed.
@@ -86,9 +85,8 @@ fn drive_effect_run_to(cx: &mut Cx, base: usize) -> EngineOutcome {
 }
 
 /// Push an effect's root frame and drive **only that run** to completion or
-/// a controller-pick suspension — the test-only successor to the deleted
-/// `apply_effect` bounded entry (Slice D #423). `Done` stays `Done`; a 2+
-/// controller pick stays `AwaitingInput`.
+/// a controller-pick suspension. `Done` stays `Done`; a 2+ controller pick
+/// stays `AwaitingInput`.
 fn run(cx: &mut Cx, effect: &Effect, ctx: EvalContext) -> EngineOutcome {
     let base = cx.state.continuations.len();
     push_effect(cx, effect, ctx);
@@ -96,10 +94,10 @@ fn run(cx: &mut Cx, effect: &Effect, ctx: EvalContext) -> EngineOutcome {
 }
 
 /// Resume a suspended-in-place effect choice with `PickSingle(i)` — the same
-/// path `apply(ResolveInput)` routes to (#422). Records the pick on the top
-/// `Leaf` via `resume_effect_choice` (which now just cedes to the global
-/// loop), then drives the resumed top effect run **bounded** — in a unit
-/// test there is no `apply()`→`drive()` afterward to step it (Slice D #423).
+/// path `apply(ResolveInput)` routes to. Records the pick on the top `Leaf`
+/// via `resume_effect_choice` (which cedes to the global loop), then drives
+/// the resumed top effect run **bounded** — in a unit test there is no
+/// `apply()`→`drive()` afterward to step it.
 fn resume_pick(state: &mut GameState, events: &mut Vec<Event>, i: u32) -> EngineOutcome {
     let mut cx = Cx::for_test(state, events);
     let recorded = choice::resume_effect_choice(&mut cx, &InputResponse::PickSingle(OptionId(i)));
@@ -118,8 +116,7 @@ fn resume_pick(state: &mut GameState, events: &mut Vec<Event>, i: u32) -> Engine
     drive_effect_run_to(&mut cx, base)
 }
 
-/// Number of options offered by a suspending `AwaitingInput` (replaces the
-/// former `ChoiceFrame.offered.len()` assertion — #422).
+/// Number of options offered by a suspending `AwaitingInput`.
 fn offered_count(outcome: &EngineOutcome) -> usize {
     match outcome {
         EngineOutcome::AwaitingInput { request, .. } => request.options.len(),

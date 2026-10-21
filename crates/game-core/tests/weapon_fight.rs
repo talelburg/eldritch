@@ -2,15 +2,15 @@
 //! asset that carries `Uses (4 ammo)` and an `[action] Spend 1 ammo:
 //! Fight` activated ability — an `ActionDesignator::Fight` on the ability,
 //! carrying the `+1 [combat]` / `+1` damage the card prints. The designator is
-//! what makes it a fight action and what **performs** the attack (#696, #805):
+//! what makes it a fight action and what **performs** the attack:
 //! it is what the attack-of-opportunity exemption, the pre-cost "needs a
 //! co-located enemy" check, and the attack itself all read.
 //!
 //! Lives at `crates/game-core/tests/` (its own integration-test binary,
 //! hence its own process and its own `MockRegistry`) so the mock
-//! registry doesn't collide with the in-crate tests. No real card has a
-//! weapon ability yet — Roland's .38 Special (C5c) is the first; until
-//! then a mock card exercises the full path.
+//! registry doesn't collide with the in-crate tests. Roland's .38 Special
+//! 01006 is a corpus consumer; the mock card exercises the path without
+//! depending on it.
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Slot, UseKind, Uses};
 use card_dsl::dsl::{self, Cost, IntExpr};
@@ -246,12 +246,14 @@ fn weapon_fight_spends_ammo_and_deals_bonus_damage() {
     assert_eq!(session.state().enemies[&GHOUL].damage, 2);
 }
 
+/// Regression for #451: a weapon's designated Fight targets any co-located
+/// enemy, not only an engaged one.
 #[test]
 fn weapon_fight_targets_a_co_located_unengaged_enemy() {
     // A co-located but unengaged enemy (e.g. Aloof, or engaged with another
     // investigator in MP) is a legal weapon Fight target — RR: you choose an
-    // enemy *at your location* to attack; you need not already be engaged
-    // (#451). With exactly one such enemy the target auto-binds (no suspend),
+    // enemy *at your location* to attack; you need not already be engaged.
+    // With exactly one such enemy the target auto-binds (no suspend),
     // mirroring the single-engaged case.
     let session = board(loaded_weapon(), 1, false).session();
     assert_eq!(
@@ -284,7 +286,7 @@ fn weapon_fight_targets_a_co_located_unengaged_enemy() {
 fn weapon_fight_rejects_an_enemy_at_a_different_location() {
     // The scope is co-located (`EnemyScope::at(Here)`), NOT global: an enemy elsewhere is
     // no target, even though it exists. Guards against widening past the basic
-    // Fight action (#451). The menu already leaves the activation out, so it
+    // Fight action. The menu already leaves the activation out, so it
     // is submitted off the menu, as a client could send it, to prove the
     // handler itself rejects it.
     let session = board(loaded_weapon(), 0, false)
@@ -363,7 +365,7 @@ fn weapon_fight_with_two_enemies_suspends_for_pick_then_attacks_chosen() {
     assert_eq!(ammo_remaining(session.state()), 3);
 }
 
-/// **A designated Fight *is* a Fight action** (#805). `glossary/Ability.md`:
+/// **A designated Fight *is* a Fight action.** `glossary/Ability.md`:
 /// *"Activating such an ability **performs the designated action** as described
 /// in the rules, but modified in the manner described by the ability."*
 ///

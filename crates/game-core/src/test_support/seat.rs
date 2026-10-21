@@ -463,7 +463,7 @@ pub trait SeatLookup {
     /// The [`CardInstance`](OptionTarget::CardInstance) anchor of that same
     /// card — what [`pick`](super::TestSession::pick) and
     /// [`offered_at`](super::TestSession::offered_at) take for a reaction,
-    /// forced or Fast ability on a seated card.
+    /// forced or zero-action ability on a seated card.
     ///
     /// # Panics
     ///

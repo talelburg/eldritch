@@ -185,7 +185,7 @@ fn hunter_already_co_located_does_not_move_but_engages() {
     assert_event!(events, Event::EnemyEngaged { enemy, investigator } if *enemy == EnemyId(1) && *investigator == InvestigatorId(1));
 }
 
-// A `Prey::BearerOnly` hunter moves toward and engages its bearer only (#1125).
+// A `Prey::BearerOnly` hunter moves toward and engages its bearer only.
 // `glossary/Prey.md`: *"If an enemy's prey instructions contain the word
 // "only," that enemy only moves towards and engages that investigator (as if
 // it were the only investigator in play), and ignores all other investigators

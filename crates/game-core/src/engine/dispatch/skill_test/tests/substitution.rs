@@ -130,7 +130,7 @@ fn combat_test_with_substitution_prompts_then_becomes_intellect_on_yes() {
 fn substitution_prompt_keeps_the_test_on_its_frame() {
     // The substitution prompt suspends *before* the commit window — the one
     // place test data exists pre-commit. Pin that it lives on a SkillTest
-    // frame (not a removed Option field) during that window (#348).
+    // frame during that window.
     let inv = InvestigatorId(1);
     let mut state = substitution_state(inv);
     let mut events = Vec::new();
@@ -195,8 +195,7 @@ fn substitution_choice_no_keeps_the_printed_skill() {
 /// The substitution resume parks the test for the loop rather than driving to
 /// the commit window itself: choosing the substitution pops the
 /// `SubstitutionPrompt`, rewrites the skill, and returns `Done` with the
-/// `SkillTest` on top; the `drive` loop then opens the commit window. (Slice C,
-/// #431 — substitution-resume re-entry retired.)
+/// `SkillTest` on top; the `drive` loop then opens the commit window.
 #[test]
 fn resume_substitution_choice_parks_for_the_loop() {
     let inv = InvestigatorId(1);

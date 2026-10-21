@@ -24,7 +24,7 @@ fn advance_current_act_non_terminal_bumps_cursor() {
         EvalContext::for_controller(InvestigatorId(1)),
     );
     assert_eq!(out, EngineOutcome::Done);
-    // The advance is deferred to an AdvanceReverse frame (#482); drive it
+    // The advance is deferred to an AdvanceReverse frame; drive it
     // (the test registry serves no reverse for it ⇒ it drives straight through).
     dispatch::drive(&mut cx, EngineOutcome::Done);
     assert_eq!(state.act_index, 1);

@@ -25,9 +25,9 @@ fn gain_resources_increments_target_wallet_and_emits_event() {
     );
 }
 
-/// `push_effect` + the real `drive` runs an effect to completion identically
-/// to the (deleted in Slice D) synchronous `apply_effect`: the root frame is
-/// pushed, the global loop steps it, the effect applies, the frame pops.
+/// `push_effect` + the real `drive` runs an effect to completion: the root
+/// frame is pushed, the global loop steps it, the effect applies, the frame
+/// pops.
 #[test]
 fn push_effect_then_drive_runs_to_completion() {
     let id = InvestigatorId(1);

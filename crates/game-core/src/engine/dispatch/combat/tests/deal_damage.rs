@@ -97,7 +97,7 @@ fn top_emitted(cx: &Cx, what: &str) -> TimingEvent {
     event.clone()
 }
 
-/// The cursor's whole walk (#727, #1123): `Distribute → Announce → Finish`,
+/// The cursor's whole walk: `Distribute → Announce → Finish`,
 /// stepped one dispatch at a time with no soaker in play, so distribution
 /// drains immediately and the frame never prompts.
 ///
@@ -201,7 +201,7 @@ fn deal_damage_cursor_walks_distribute_announce_finish() {
 
 /// The re-read ADR 0009 relies on: `DamageDealt`'s resolve step hands
 /// `DamagePlaced` the frame's **live** assignment, not the one `DamageDealt`
-/// announced. A `when`-cell edit — #366's partial prevention, the one thing
+/// announced. A `when`-cell edit — partial damage prevention, the one thing
 /// the window exists for — therefore reaches the placement.
 #[test]
 fn damage_dealt_places_the_live_assignment_not_the_announced_one() {
@@ -300,13 +300,13 @@ fn soak_options_anchor_assets_to_card_instances() {
     // Anchors: the investigator to their own card; a soaker asset to its card.
     assert_eq!(opts[0].target, Some(me), "the investigator's own card");
     assert_eq!(opts[1].target, Some(OptionTarget::CardInstance(asset)));
-    // Labels: each anchored card's name (#989), not the target's Debug form.
+    // Labels: each anchored card's name, not the target's Debug form.
     assert_eq!(opts[0].label, "Test Investigator");
     assert_eq!(opts[1].label, "Test Asset");
 }
 
-/// The one harm adapter (#1027) deals through the same cursor an enemy attack
-/// does (#727): `deal_harm` parks a `DealDamage { source: Effect }` frame, and
+/// The one harm adapter deals through the same cursor an enemy attack
+/// does: `deal_harm` parks a `DealDamage { source: Effect }` frame, and
 /// the walk announces `DamageDealt`, whose resolve step announces
 /// `DamagePlaced`, before anything lands. Walked once here on the kernel
 /// adapter; each caller (Crypt Chill, the deck-out penalty, Dynamite Blast) only

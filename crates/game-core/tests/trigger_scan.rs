@@ -1,4 +1,4 @@
-//! The one forced-trigger scan (#965, spec #962): a walk over the whole board
+//! The one forced-trigger scan: a walk over the whole board
 //! at every triggering condition, narrowed only by the card's pattern and the
 //! condition's own data, binding each hit to one controller.
 //!
@@ -302,8 +302,8 @@ fn end_the_round(state: GameState) -> TestSession {
 }
 
 // ---------------------------------------------------------------------------
-// #698: a forced ability on an enemy defeat fires from any card in play, and
-// the forced-binding rule names who "you" is on each kind of source.
+// A forced ability on an enemy defeat fires from any card in play, and the
+// forced-binding rule names who "you" is on each kind of source.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -314,6 +314,8 @@ fn an_agendas_forced_ability_fires_on_an_enemy_defeat_bound_to_the_lead_proxy() 
     assert_eq!(horror(session.state(), TWO), 0);
 }
 
+/// Regression for #698: an enemy defeat's forced scan reaches cards in play,
+/// not only the current act.
 #[test]
 fn an_in_play_assets_forced_ability_fires_on_an_enemy_defeat_bound_to_its_controller() {
     let state = board(
@@ -618,7 +620,7 @@ fn a_board_wide_condition_reaches_every_kind_of_source_in_walk_order() {
 }
 
 // ---------------------------------------------------------------------------
-// #966: a reaction is offered to each investigator who can reach its source
+// A reaction is offered to each investigator who can reach its source
 // (ADR 0010), and to nobody else.
 // ---------------------------------------------------------------------------
 
@@ -662,8 +664,9 @@ fn a_reaction_on_a_co_located_location_is_offered_to_each_investigator_there() {
         "both investigators stand at the Study"
     );
     // The two options share the Study's anchor and label; nothing in them names
-    // the investigator each is offered to (#1024). So they are picked by
-    // position, and the horror assertions pin whose option each position is.
+    // the investigator each is offered to. So they are picked by position, and
+    // the horror assertions pin whose option each position is.
+    // TODO(#1024): name the investigator an option is offered to.
     let react_nth = |n| {
         window(state.clone(), defeat(None))
             .pick_nth_at(OptionTarget::Location(STUDY), n)

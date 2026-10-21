@@ -1,5 +1,5 @@
 //! A hand-discard cost — *"choose and discard 1 card from your hand"* — on a
-//! triggered ability and on a `[fast]` activated one (#1107).
+//! triggered ability and on a `[fast]` activated one.
 //!
 //! The cost is payable only with a card in hand that is not a weakness. Dark
 //! Memory 01013's ruling: *"You cannot choose to discard a Weakness card from
@@ -337,7 +337,9 @@ fn the_discard_stays_made_when_the_effect_is_cancelled() {
 }
 
 /// An `[action]` ability's costs are paid inside the take-an-action step, which
-/// has no place for the choice before the attacks of opportunity (#1031).
+/// has no place for the choice before the attacks of opportunity.
+/// TODO(#1031): pay an `[action]` ability's costs before its attacks of
+/// opportunity.
 #[test]
 fn an_action_ability_with_the_cost_is_refused_with_a_todo() {
     let session = session(&[ACTION_GAIN], &[CARD_A]);

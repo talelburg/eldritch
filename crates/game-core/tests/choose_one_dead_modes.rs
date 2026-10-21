@@ -1,4 +1,5 @@
-//! #664: an [`Effect::ChooseOne`] offers only its **live** modes, and one whose
+//! Regression for #664: an [`Effect::ChooseOne`] offers only its **live**
+//! modes, and one whose
 //! modes are *all* dead is **skipped**, not rejected.
 //!
 //! The skip half needs a `ChooseOne` reached where no initiation gate has
@@ -7,8 +8,8 @@
 //! never provably inert), the test resolves, and only then does the heal find
 //! nobody to heal. Rejecting there would unwind the whole action through
 //! `apply_via`'s snapshot restore — chaos draw included — so the sub-effect is
-//! skipped instead, the convention `ground_investigator_choice` established for
-//! the same reason (#639).
+//! skipped instead, the convention `ground_investigator_choice` follows for
+//! the same reason.
 //!
 //! Lives at `crates/game-core/tests/` for its own process and its own
 //! `MockRegistry`, like the sibling mock-registry integration tests.
@@ -147,14 +148,14 @@ fn every_mode_dead_under_a_skill_test_skips_rather_than_rejecting() {
     );
 }
 
-/// **The anchor survives the chaos-token suspension** (#834).
+/// **The anchor survives the chaos-token suspension.**
 ///
 /// The eval context that runs the `on_success` is not the one that started the
 /// test — it is rebuilt at `apply_result_effect_step` from the source parked on
 /// `InFlightSkillTest`. Park the `AbilitySource::instance()` projection there
 /// instead of the whole descriptor and this still passes for an in-play card
 /// while silently un-anchoring every board source (an act's `on_fail`), which
-/// is the half-fix #834 exists to rule out. ADR 0011: *"the client never
+/// is the half-fix this test rules out. ADR 0011: *"the client never
 /// decides where a control belongs — it reads the anchor the engine attached"*.
 #[test]
 fn a_modal_on_success_keeps_the_activating_cards_anchor_across_the_test() {

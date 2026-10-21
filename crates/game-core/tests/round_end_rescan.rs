@@ -1,4 +1,4 @@
-//! §G per-cell eligibility re-scan (EmitEvent-frame C-coordinators, #434).
+//! Per-cell eligibility re-scan at the round end.
 //!
 //! The `RoundEnded` coordinator walks `when → at → after`, re-scanning each cell
 //! fresh — a `when` reaction can change whether an `at` forced even fires, so the
