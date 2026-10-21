@@ -191,8 +191,7 @@ mod tests {
             .build();
         // The fixture's options are un-anchored; this proves the
         // ChoiceOption.target field survives the ServerMessage envelope
-        // (game-core covers an anchored value directly). See the interactivity
-        // S0 plan.
+        // (game-core covers an anchored value directly).
         let outcome = test_support::awaiting_pick_single_input("Choose an action");
         let msg = ServerMessage::Applied {
             state: Box::new(state),

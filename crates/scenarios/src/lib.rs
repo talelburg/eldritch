@@ -63,7 +63,7 @@ mod tests {
         assert!(module_for(&id).is_none());
     }
 
-    /// Regression for #878: the retired toy scenario's id `"synthetic"` is not
+    /// Regression for #878: the toy scenario's id `"synthetic"` is not
     /// routable, so a `POST` of `{"scenario_id":"synthetic"}` cannot start a
     /// one-location demo on the production server. The fixture lives outside
     /// `src/`, which makes this structurally true; the test is insurance

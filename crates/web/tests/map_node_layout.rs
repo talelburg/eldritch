@@ -173,7 +173,7 @@ async fn parlor_tokens_are_visible_with_two_investigators() {
     assert_parlor_tokens_visible(2).await;
 }
 
-/// Baseline: even an empty Parlor clipped Lita by a few pixels before the fix.
+/// Baseline: an empty Parlor must not clip Lita either, even by a few pixels.
 #[wasm_bindgen_test]
 async fn parlor_tokens_are_visible_with_an_empty_parlor() {
     assert_parlor_tokens_visible(0).await;

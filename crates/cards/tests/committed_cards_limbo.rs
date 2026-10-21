@@ -216,8 +216,8 @@ fn only_the_committed_copy_of_a_duplicated_card_is_discarded() {
 #[test]
 fn committing_both_copies_of_a_card_discards_both_after_a_hand_shift() {
     // Both Deductions committed, then Working a Hunch played in the ST.2→ST.3
-    // window. Under the old hand-index binding the descending-order ST.8 removal
-    // ran off the end of the two-card hand and left one copy behind.
+    // window, which shifts the hand under both committed copies. The ST.8
+    // removal must still find and discard both.
     let r = investigate_playing(
         board(&[WORKING_A_HUNCH, DEDUCTION, DEDUCTION], 2),
         &[DEDUCTION, DEDUCTION],

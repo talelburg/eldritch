@@ -9,9 +9,9 @@
 //!
 //! The reverse side is a Forced on-advance ability: it fires via
 //! the act's own `ActAdvanced` condition when the act advances, before the
-//! next act becomes current. "Discard each enemy in the Study" is a
-//! faithful **no-op** — nothing can spawn into the isolated Act-1 Study
-//! in Slice-1 scope (no encounter path targets the Study). The four rooms are
+//! next act becomes current. "Discard each enemy in the Study" is not
+//! modelled: an enemy in the Study when the act advances is left at the
+//! removed location. The four rooms are
 //! set aside by the scenario's `setup()` as bare card codes; this ability
 //! puts each into play through
 //! [`put_set_aside_card_into_play`](NativeCx::put_set_aside_card_into_play),

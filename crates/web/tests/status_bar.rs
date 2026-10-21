@@ -1,5 +1,7 @@
 //! Headless render tests for the app status bar (status / rejection / New game),
-//! which now lives in the page header (moved out of `BoardView`). wasm32-only.
+//! which lives in the page header.
+//!
+//! wasm32-only.
 #![cfg(target_arch = "wasm32")]
 
 use leptos::prelude::{document, provide_context, RwSignal, Update};

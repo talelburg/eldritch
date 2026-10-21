@@ -9,9 +9,7 @@
 //! > effect expires.
 //!
 //! So each of the four phases begins and ends at a point a card can listen on,
-//! and all eight route through `queue_event`. Before this, two of the four
-//! phase-ends pushed a bare `Event::PhaseEnded` log entry and ran no scan, and
-//! there was no phase-*start* trigger point at all.
+//! and all eight route through `queue_event`.
 //!
 //! Driven against a mock registry rather than the corpus: the corpus consumers
 //! are Wizard of the Order 01170 at the Mythos end (which needs a

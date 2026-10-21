@@ -1,6 +1,8 @@
-//! B2: seating a roster resolves investigator stats from the real corpus
-//! ([`game_core::card_registry::CardRegistry`]) and takes the deck from the payload. Integration test so
-//! it can run against `cards::TEST_REGISTRIES` (per the test layering in
+//! Seating a roster resolves investigator stats from the real corpus
+//! ([`game_core::card_registry::CardRegistry`]) and takes the deck from the
+//! payload.
+//!
+//! Integration test so it can run against `cards::TEST_REGISTRIES` (per the test layering in
 //! `docs/agents/standards.md`). The playable-gate tests run against the
 //! production `cards::REGISTRY` instead, since `TEST_REGISTRIES` accepts every
 //! code.

@@ -13,13 +13,9 @@ crate::state::define_id! {
 
 /// An enemy in play during a scenario.
 ///
-/// Minimal shape needed for Fight / Evade actions in this PR. Fields
-/// that don't influence those actions are deferred to the issues that
-/// will exercise them:
-/// - `aloof`: spawn-time engagement rule (separate issue).
-///
-/// Adding each field with its real shape when its consumer lands keeps
-/// us from baking placeholder semantics that turn out to be wrong.
+/// A field is added with its real shape when a consumer needs it, which
+/// keeps placeholder semantics out of the state. TODO(#579): the Aloof
+/// keyword (the spawn-time engagement rule) has no field.
 ///
 /// # Invariants
 ///

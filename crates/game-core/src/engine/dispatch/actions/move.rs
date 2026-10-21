@@ -133,8 +133,8 @@ pub(in crate::engine::dispatch) fn handle(
 /// The relocation half of a Move, run after its attack-of-opportunity loop
 /// completes. Re-derives `from` from the live `current_location` (the `AoO`
 /// never moves the actor) and re-checks the destination is still one of the
-/// [`candidates`], so still connected and still enterable — the §D
-/// primary-precondition re-check — suppressing the move (returns `Done`) if it
+/// [`candidates`], so still connected and still enterable — the post-`AoO`
+/// precondition re-check — suppressing the move (returns `Done`) if it
 /// no longer is. The barrier re-check is
 /// there for the same reason the connection one is: the `AoO` loop can resolve
 /// arbitrary card effects between validation and relocation.
@@ -284,7 +284,7 @@ pub(in crate::engine::dispatch) fn resolve_departure(
         // a departure; suppressing (as the connection re-check above does)
         // beats panicking if one ever does.
         //
-        // The rest of the §D re-check — that the actor is still standing at
+        // The rest of the post-AoO re-check — that the actor is still standing at
         // `from`, and that `from` is still connected to a `destination` that
         // still exists — is deliberately *not* repeated here, though the `when`
         // cell can now in principle invalidate all three. Nothing in the corpus

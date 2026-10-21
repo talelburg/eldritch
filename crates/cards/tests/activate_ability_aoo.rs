@@ -363,7 +363,7 @@ fn dodge_cancels_the_activations_aoo_then_the_ability_effect_resumes() {
 // An AoO that defeats the actor mid-activation suppresses the ability effect.
 // -----------------------------------------------------------------------
 
-/// If the activation's `AoO` defeats the investigator, the §D re-validation gate
+/// If the activation's `AoO` defeats the investigator, the post-`AoO` re-validation gate
 /// suppresses the parked ability effect: First Aid's heal never runs (no heal
 /// choice opens), though the supply spent as the activation cost stays spent.
 #[test]
@@ -382,7 +382,7 @@ fn aoo_that_defeats_the_actor_suppresses_the_ability_effect() {
         0,
     );
 
-    // The heal effect was suppressed by the §D re-validation gate: outcome-
+    // The heal effect was suppressed by the post-AoO re-validation gate: outcome-
     // independent proof. Had First Aid's heal run, a `Healed` event would have
     // fired and the actor's damage would be 1 lower. Neither happens ⇒ the
     // parked effect was aborted.

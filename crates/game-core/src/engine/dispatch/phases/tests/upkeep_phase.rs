@@ -377,8 +377,8 @@ fn rotate_to_active_does_not_refresh_actions() {
 #[test]
 fn round_increments_on_mythos_entry_via_driver() {
     // After the Upkeep→Mythos cascade, state.round bumps by 1.
-    // The bump now lives in mythos_phase step 1.1 (this task);
-    // the test asserts observable behavior, which is unchanged.
+    // The bump happens at the Mythos phase's step 1.1; the test asserts the
+    // observable round number.
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)

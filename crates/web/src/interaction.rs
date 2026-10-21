@@ -1,8 +1,9 @@
 //! Board interactivity routing: map an `AwaitingInput`'s options to the
-//! board entity each acts on (via S0's `OptionTarget`), plus the `ContextMenu`
-//! that renders a chosen entity's options. The routing fns are pure and
-//! native-tested; `ContextMenu` is wasm-only (it submits via the wasm-only
-//! `OutboundTx`).
+//! board entity each acts on (via `OptionTarget`), plus the `ContextMenu`
+//! that renders a chosen entity's options.
+//!
+//! The routing fns are pure and native-tested; `ContextMenu` is wasm-only (it
+//! submits via the wasm-only `OutboundTx`).
 
 use std::collections::BTreeSet;
 

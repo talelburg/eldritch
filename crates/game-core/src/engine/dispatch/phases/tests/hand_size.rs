@@ -57,7 +57,7 @@ fn over_cap_investigators_lists_only_over_eight_in_player_order() {
 #[test]
 fn upkeep_anchor_present_while_suspended_at_hand_size() {
     // upkeep_phase pushes the UpkeepPhase anchor at entry; it sits beneath
-    // the step-4.5 hand-size discard while the phase is suspended (slice 1a).
+    // the step-4.5 hand-size discard while the phase is suspended.
     // The anchor's place on the stack is the subject, so this reads the stack.
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()

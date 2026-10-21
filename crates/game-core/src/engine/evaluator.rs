@@ -65,7 +65,7 @@ use crate::state::{
 /// margin for the attack's damage and an `on_success` effect. Innermost-only:
 /// same-kind test nesting is carried by the per-frame snapshot stack, not
 /// multiple slots here (corpus-verified moot — no card reads a non-innermost
-/// margin; see the §1 cleanup spec §D).
+/// margin).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SkillTestBinding {
     /// The test failed, by this many points.
@@ -434,8 +434,7 @@ impl EvalContext {
     }
     /// Bind (or clear) the native-leaf chosen option (see [`Self::chosen_option`]).
     pub fn set_chosen_option(&mut self, opt: Option<OptionId>) {
-        // Match the old flat-field semantics exactly: a `None` pick must NOT
-        // materialize an otherwise-empty `choice` binding (which would make
+        // A `None` pick must NOT materialize an otherwise-empty `choice` binding (which would make
         // `EvalContext` compare unequal to a never-touched one). Only create the
         // binding to store a `Some`; otherwise clear an existing slot in place.
         match opt {
@@ -2315,7 +2314,7 @@ fn picked_or_reject<T>(
 /// action — chaos draw included — via `apply_via`'s snapshot restore, so the
 /// effect is skipped (`Err(EngineOutcome::Done)`, which `step_leaf` returns
 /// after having already popped the leaf) instead. An *empty scope* still
-/// rejects, exactly as before this filter existed.
+/// rejects.
 fn ground_investigator_choice(
     cx: &mut Cx,
     eval_ctx: EvalContext,

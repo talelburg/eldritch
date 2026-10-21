@@ -45,7 +45,7 @@ pub fn enemy_keyword_chips(enemy: &Enemy) -> Vec<String> {
 }
 
 /// One engaged enemy rendered as a card (red border via `card--enemy`), reusing
-/// the card CSS and the `card--exhausted` dim from the asset slice. Stats and
+/// the card CSS and the `card--exhausted` dim the asset cards use. Stats and
 /// live state come from the `Enemy` state struct; traits and ability text come
 /// from its printed card, looked up by code via the registry.
 /// Display-only — no click handlers.

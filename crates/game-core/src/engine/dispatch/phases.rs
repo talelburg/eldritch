@@ -1139,7 +1139,7 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
         Some(Continuation::MythosPhase(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
         })) => {
-            // Structurally impossible under the main loop (slice 1b): a skill
+            // Structurally impossible under the main loop: a skill
             // test in flight sits above its phase anchor, so `drive` never
             // advances the anchor with one pending.
             debug_assert!(

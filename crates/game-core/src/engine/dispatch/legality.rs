@@ -201,8 +201,8 @@ pub(crate) fn check_play_card(
     // applying the phase/active-investigator gate so the gate can branch on
     // is_fast AND card_type per the Rules Reference (p. 11).
     // Invariant: `resolve_play_target` currently returns only `Ok(...)` (success)
-    // or `Err(EngineOutcome::Rejected { ... })` (validation failure). If a future
-    // PR extends it to return `AwaitingInput` (e.g. for a card requiring in-
+    // or `Err(EngineOutcome::Rejected { ... })` (validation failure). If it is
+    // ever extended to return `AwaitingInput` (e.g. for a card requiring in-
     // validation target selection), this `unreachable!()` will panic; the
     // validator's caller chain in `play_card` would need to be redesigned to
     // thread the `AwaitingInput` outcome back through `check_play_card`'s
@@ -661,7 +661,7 @@ pub(crate) fn check_activate_ability(
 
     // Invariant: `resolve_activated_ability` currently returns only `Ok(...)`
     // (success) or `Err(EngineOutcome::Rejected { ... })` (validation failure).
-    // If a future PR extends it to return `AwaitingInput` (e.g. for an ability
+    // If it is ever extended to return `AwaitingInput` (e.g. for an ability
     // requiring target selection during validation), this `unreachable!()` will
     // panic; the validator's caller chain in `activate_ability` would need to be
     // redesigned to thread the `AwaitingInput` outcome back through

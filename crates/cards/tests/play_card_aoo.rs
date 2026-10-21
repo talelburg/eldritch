@@ -341,7 +341,7 @@ fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
 }
 
 /// If the asset play's `AoO` defeats the player, the asset never enters play (the
-/// §D gate suppresses the resume before the enter-play step). Elimination sweeps
+/// post-`AoO` re-validation gate suppresses the resume before the enter-play step). Elimination sweeps
 /// the un-entered card off the frame carrying it and out of the game (RR p.10
 /// step 1) — it is neither in play nor stranded mid-play.
 #[test]

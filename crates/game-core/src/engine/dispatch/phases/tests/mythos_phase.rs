@@ -45,10 +45,9 @@ fn mythos_phase_emits_phase_started_and_prompts_first_drawer() {
 
 #[test]
 fn mythos_drives_from_entry_via_the_loop() {
-    // slice 1b: a MythosPhase{Entry} anchor advanced by `drive` runs the
-    // phase opening (PhaseStarted + round bump + push the EncounterDraw
-    // loop) and suspends at the first drawer prompt — same as the old
-    // synchronous mythos_phase entry.
+    // A MythosPhase{Entry} anchor advanced by `drive` runs the phase opening
+    // (PhaseStarted + round bump + push the EncounterDraw loop) and suspends
+    // at the first drawer prompt.
     let session = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
@@ -75,7 +74,7 @@ fn mythos_drives_from_entry_via_the_loop() {
 #[test]
 fn mythos_anchor_pushed_during_phase() {
     // The Mythos driver pushes its anchor at entry; it sits beneath the
-    // encounter-draw loop while the phase is suspended (slice 1a).
+    // encounter-draw loop while the phase is suspended.
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
@@ -108,8 +107,8 @@ fn mythos_phase_with_empty_turn_order_opens_after_draws_window_inline() {
     let mut events = Vec::new();
 
     // No drawers → MythosAfterDraws auto-skips, mythos_phase_end pushes the
-    // Investigation anchor; `drive` then advances it (slice 1b) — completing
-    // the Mythos→Investigation transition that was synchronous in slice 1a.
+    // Investigation anchor; `drive` then advances it — completing the
+    // Mythos→Investigation transition.
     let mut cx = Cx::for_test(&mut state, &mut events);
     let outcome = mythos_phase(&mut cx);
     let outcome = dispatch::drive(&mut cx, outcome);
@@ -139,8 +138,8 @@ fn mythos_phase_with_empty_turn_order_opens_after_draws_window_inline() {
 
 #[test]
 fn mythos_phase_end_emits_phase_ended_and_steps_to_investigation() {
-    // mythos_phase_end now runs only with the MythosPhase anchor on top
-    // (slice 1a) — it pops the anchor as its first act.
+    // mythos_phase_end runs only with the MythosPhase anchor on top — it
+    // pops the anchor as its first act.
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
@@ -153,8 +152,8 @@ fn mythos_phase_end_emits_phase_ended_and_steps_to_investigation() {
     let mut events = Vec::new();
 
     // mythos_phase_end pops the Mythos anchor + pushes the Investigation
-    // anchor (Entry); `drive` advances it to run investigation_phase (slice
-    // 1b) — completing the transition.
+    // anchor (Entry); `drive` advances it to run investigation_phase —
+    // completing the transition.
     let mut cx = Cx::for_test(&mut state, &mut events);
     mythos_phase_end(&mut cx);
     let _ = dispatch::drive(&mut cx, EngineOutcome::Done);

@@ -141,7 +141,7 @@ pub(in crate::engine::dispatch) fn handle(
 /// the discovery's count, so with the discovery gone it raises nothing, which
 /// is its ruling: *"does not stack with Burglary"*.
 ///
-/// The location is re-read here through [`candidates`] — the §D precondition
+/// The location is re-read here through [`candidates`] — the precondition
 /// re-check after the basic action's attacks of opportunity. If the
 /// investigator is locationless or their location is gone or no longer
 /// revealed, the precondition has lapsed and this suppresses (returns `Done`).

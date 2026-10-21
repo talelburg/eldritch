@@ -144,7 +144,6 @@ fn defeated_ghoul_minion_is_drawn_again_once_the_encounter_deck_runs_out() {
     // discard back in first ("If the encounter deck is empty, shuffle the
     // encounter discard pile back into the encounter deck") — so the card drawn
     // must be the Ghoul the investigator just killed, which then spawns again.
-    // Before this fix the discard was empty and the draw had nothing to find.
     assert!(after.state().encounter_deck.is_empty());
     // Ending the turn plays on through the round to the next Mythos phase's
     // encounter draw.

@@ -88,8 +88,8 @@ fn play_evidence(board: GameStateBuilder) -> TestSession {
 fn after_defeat_window_opens_and_offers_evidence_with_no_in_play_reaction() {
     // Apply the Fight, then commit nothing to the resulting skill-test prompt;
     // the engine must then SUSPEND on the after-defeat reaction window — that
-    // suspend is how "a window opened" is observed (the dedicated WindowOpened
-    // event was removed as redundant with the AwaitingInput channel). The
+    // suspend is how "a window opened" is observed, since no event marks a
+    // window opening; the AwaitingInput channel does. The
     // window opens even though no in-play card reacts: the hand match alone
     // opens it, observable as the offered Evidence! hand play.
     let session = defeat_the_enemy(fight_board(holding_evidence(), 2));

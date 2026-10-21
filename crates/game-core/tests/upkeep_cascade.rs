@@ -1,8 +1,9 @@
 //! The Upkeep cascade, driven end to end: ready exhausted cards, draw 1, gain 1
 //! resource, bump the round — and replay it identically.
 //!
-//! Nothing here depends on a card: what the tests needed was a *scenario module*, and under
-//! ADR 0016 that is a locally-built shell rather than a shared fixture. The
+//! Nothing here depends on a card: what the tests need is a *scenario module*,
+//! and under ADR 0016 that is a locally-built shell rather than a shared
+//! fixture. The
 //! `setup()` below is that shell's state, composed with `GameStateBuilder`.
 //!
 //! The registries name no scenario module — the resolution hook treats `None`

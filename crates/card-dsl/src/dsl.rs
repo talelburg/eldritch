@@ -1038,7 +1038,7 @@ pub enum EventPattern {
     /// The condition's own resolution is the disengage and the exhaust, so an
     /// `after` ability sees the enemy already evaded.
     ///
-    /// One hand-written consumer in this slice, below `standards.md`'s
+    /// One hand-written consumer in the corpus, below `standards.md`'s
     /// threshold for a new pattern; a trigger has no card-local alternative,
     /// and Earl Sawyer 02218 (Dunwich) prints the same condition: *"\[reaction\]
     /// After you evade an enemy, exhaust Earl Sawyer: Draw 1 card."*
@@ -3051,7 +3051,7 @@ pub enum LocationSet {
     /// The chooser's own location ("your location"). Empty when the chooser is
     /// between locations.
     Here,
-    /// Any location in play (the old bare `ChosenByController` for locations).
+    /// Any location in play.
     Anywhere,
     // No "your location or a connecting location" set: Dynamite Blast 01024,
     // the one card that prints it, chooses natively (its module doc says why).
@@ -3296,7 +3296,6 @@ pub enum Condition {
     /// no test is in flight.
     SkillTestKind(SkillTestKind),
     /// Compare a [`Quantity`] against `value` under `op`.
-    /// Replaces the old `LocationHasClues` (now `Compare { CluesAtControllerLocation, Gt, 0 }`).
     Compare {
         quantity: Quantity,
         op: CmpOp,

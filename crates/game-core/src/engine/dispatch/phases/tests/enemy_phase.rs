@@ -94,7 +94,7 @@ fn enemy_phase_suspends_on_hunter_tie_then_resumes_into_attack_loop() {
         1
     );
     assert_eq!(session.state().phase, Phase::Enemy);
-    // The EnemyPhase anchor (slice 1a) is on the stack beneath the
+    // The EnemyPhase anchor is on the stack beneath the
     // suspended hunter-movement choice — a stack invariant, so read the stack.
     assert!(
         session
@@ -550,7 +550,7 @@ fn enemy_phase_resumes_via_skip_input() {
     let mut enemy = test_support::test_enemy(1, "Test Enemy");
     enemy.engaged_with = Some(inv_id);
     enemy.attack_damage = 1;
-    // active_investigator defaults to None. The EnemyPhase anchor (slice 1a)
+    // active_investigator defaults to None. The EnemyPhase anchor
     // sits beneath the synthetic BeforeInvestigatorAttacked window staged
     // above it; the window's close routes to anchor_on_child_pop.
     let session = GameStateBuilder::default()

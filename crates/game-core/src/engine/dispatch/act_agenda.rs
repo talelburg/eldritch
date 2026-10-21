@@ -96,7 +96,7 @@ pub(super) fn advance_agenda(cx: &mut Cx) {
     // observable event, optionally pauses for the gated acknowledge, fires the
     // leaving agenda's Forced reverse (which may suspend — 01105's ChooseOne),
     // then bumps the cursor at Finalize (RR order — after the reverse resolves).
-    // The drive loop owns it from here; the terminal-card guard now lives in
+    // The drive loop owns it from here; the terminal-card guard lives in
     // `advance_reverse::finalize`.
     cx.state.continuations.push(AdvanceReverseFrame {
         deck: AdvanceDeck::Agenda,

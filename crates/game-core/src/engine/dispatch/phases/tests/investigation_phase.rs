@@ -103,7 +103,7 @@ fn mulligan_completion_kicks_off_investigation_phase() {
 #[test]
 fn investigation_anchor_pushed_and_persists_through_turn() {
     // The Investigation driver pushes its anchor at entry; it persists
-    // beneath the open-action turn (slice 1a) after the framework windows
+    // beneath the open-action turn after the framework windows
     // auto-skip closed.
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::default()

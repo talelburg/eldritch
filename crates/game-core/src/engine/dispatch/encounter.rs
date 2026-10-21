@@ -608,8 +608,7 @@ fn spawn_enemy_engaging(
                 engaged_with: None,
             });
             // The surge/chain state lives on the drawer's `PlayerDraw` frame
-            // beneath (callsite-migration); this frame holds only the engagement
-            // pick. `resume_spawn_engage` engages + pops, and the loop continues
+            // beneath; this frame holds only the engagement pick. `resume_spawn_engage` engages + pops, and the loop continues
             // the chain through the exposed `PlayerDraw`.
             cx.state
                 .continuations
@@ -767,8 +766,7 @@ pub(super) fn resume_encounter_draw(cx: &mut Cx, response: &InputResponse) -> En
     }
     // Push a fresh per-drawer surge-chain frame above the loop frame and let the
     // `drive` loop's `PlayerDraw` arm draw the first card (chain_count == 0).
-    // Surge recursion and the loop advance happen on that frame, not here
-    // (callsite-migration).
+    // Surge recursion and the loop advance happen on that frame, not here.
     cx.state.continuations.push(PlayerDrawFrame {
         investigator: drawer,
         chain_count: 0,
@@ -779,7 +777,7 @@ pub(super) fn resume_encounter_draw(cx: &mut Cx, response: &InputResponse) -> En
 
 /// Drive one step of the topmost [`Continuation::PlayerDraw`] frame (the
 /// `drive` loop's `PlayerDraw` arm). The frame owns one drawer's Mythos surge
-/// chain (callsite-migration):
+/// chain:
 ///
 /// - On the first step (`chain_count == 0`) or when the last-drawn card surged
 ///   (`surge_pending`), draw the next card via [`draw_encounter_card_into_frame`]
@@ -810,7 +808,7 @@ pub(super) fn drive_player_draw(cx: &mut Cx) -> EngineOutcome {
 }
 
 /// Draw one card into an [`Continuation::EncounterCard`] frame for the global
-/// `drive` loop to resolve (callsite-migration). The shared per-card prelude of
+/// `drive` loop to resolve. The shared per-card prelude of
 /// the Mythos surge chain: bump the topmost
 /// [`Continuation::PlayerDraw`] frame's `chain_count`, enforce
 /// [`MAX_SURGE_CHAIN`], [`draw_encounter_top`], run the peril check, record the
@@ -944,8 +942,8 @@ pub(super) fn advance_encounter_draw(cx: &mut Cx) -> EngineOutcome {
         EngineOutcome::Done
     } else {
         // Write the advanced queue back and prompt the next drawer. The surge
-        // budget is per-`PlayerDraw` now (a fresh frame is pushed on the next
-        // drawer's Confirm), so there is nothing to reset here (callsite-migration).
+        // budget is per-`PlayerDraw` frame (a fresh frame is pushed on the next
+        // drawer's Confirm), so there is nothing to reset here.
         cx.state
             .continuations
             .top_mut::<EncounterDrawFrame>()

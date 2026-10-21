@@ -8,11 +8,10 @@
 //! > condition, (2) resolve the triggering condition, and then, (3) execute
 //! > "after..." effects in response to that triggering condition.
 //!
-//! Before this, the attack's interrupt point was a single-cell reaction window
-//! the attack loop opened by hand, and there was no after-attack condition at
-//! all: an ability declaring `at` or `after` on an attack was never collected,
-//! never resolved and never rejected. The sibling migration for clue discovery
-//! is `clue_discovery_cells.rs`, whose structure this file mirrors.
+//! So an attack has all three cells, and an ability declaring `when`, `at` or
+//! `after` on an attack is collected and resolved in its cell. Clue discovery's
+//! cells are pinned the same way in `clue_discovery_cells.rs`, whose structure
+//! this file mirrors.
 //!
 //! The corpus halves live elsewhere and must not move: Dodge 01023's cancel in
 //! `dodge.rs` / `dodge_aoo.rs`, Guard Dog 01021's soak reaction in

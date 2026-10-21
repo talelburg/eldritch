@@ -86,8 +86,7 @@ fn rejects_an_unknown_encounter_code() {
     let pre_deck_len = state.encounter_deck.len();
     // `resume_encounter_draw` only pushes the per-drawer `PlayerDraw` chain
     // frame; the actual draw (and its unknown-code reject) happens in the
-    // `drive` loop's `PlayerDraw` arm (callsite-migration), which the step's
-    // drain runs.
+    // `drive` loop's `PlayerDraw` arm, which the step's drain runs.
     let session = TestSession::new(state, TEST_REGISTRIES).confirm();
     let reason = session.expect_rejected();
     assert!(
