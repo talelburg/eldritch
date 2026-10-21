@@ -1935,9 +1935,9 @@ fn discover_clue(
     // at your location: Discard that many clues from Cover Up instead"* replace
     // a discovery that has not happened yet.
     //
-    // In tail position with nothing after it, per ADR 0003: this returns
-    // `Done` when nothing was queued *and* when a `when` window was, and the
-    // `drive` loop owns both. The pre-#703 code peeked at the top frame here to
+    // In tail position with nothing after it: this returns `queue_event`'s
+    // outcome unexamined (see its doc), whether or not a `when` window opened,
+    // and the `drive` loop owns both. The pre-#703 code peeked at the top frame here to
     // tell those apart, which is the shape the ADR forbids.
     emit::queue_event(
         cx,

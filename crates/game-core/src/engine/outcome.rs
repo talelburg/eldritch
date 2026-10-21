@@ -31,8 +31,8 @@ use crate::state::{
 pub enum EngineOutcome {
     /// From [`apply`](crate::engine::apply), the game is over and the
     /// continuation stack is empty. A dispatch step inside the engine returns
-    /// it to mean only that the step did not suspend; after an emit, that
-    /// means its abilities are queued, not resolved.
+    /// it to mean only that the step did not suspend; what that means after an
+    /// emit is on `emit::queue_event`.
     Done,
     /// Engine paused mid-resolution waiting for a player choice.
     AwaitingInput {
