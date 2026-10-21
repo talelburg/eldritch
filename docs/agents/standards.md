@@ -86,7 +86,7 @@ Synthetic material sorts into three kinds, each with its own rule:
 
 - **Primitive builders are shared, unconditional and mandatory.** `game_core::test_support::fixtures` builds entities, not cards. `Investigator` and `Location` are `#[non_exhaustive]`, so downstream test crates cannot construct them by literal, and `game-core` cannot reach `cards` by crate direction — there is no real-card alternative at the kernel. **A real investigator code is never a placeholder**: `test_investigator` resolves under every test registry, so a test seats a printed investigator only when it is about that investigator (#934).
 - **Probe cards are test-local**, defined in the one binary that reads them, with a per-binary code prefix (`_tc_*`, `_cd_*`, `SRC*` — see `crates/cards/tests/timing_cells.rs`). A probe exists to fire one cell in isolation, which no printed card does cleanly. Never promote one into a shared fixture module.
-- **A mock scenario shares its module shell, never its state.** The no-op `ScenarioModule` is shared; the `setup()` state is composed per test with `GameStateBuilder`. `crates/server/tests/common/mod.rs:19-42` is the model.
+- **A mock scenario shares its module shell, never its state.** The no-op `ScenarioModule` is shared; the `setup()` state is composed per test with `GameStateBuilder`. `test_setup` and `module_for` in `crates/server/tests/common/mod.rs` are the model.
 
 **A fixture that is transitional says so inline and names its terminal condition** — the ticket that retires it, and which tests flip when it lands.
 
