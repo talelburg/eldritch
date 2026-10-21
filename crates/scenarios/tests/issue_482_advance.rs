@@ -1,7 +1,8 @@
-//! #482 regression: advancing The Gathering's agenda 01105 via the real Mythos
-//! doom-to-threshold cascade. Its Forced reverse is the lead's interactive
-//! `ChooseOne`, which suspends. The cascade must let it resolve before the 1.4
-//! draws — no stranded `Effect` frame / `anchor_on_child_pop` panic.
+//! Regression for #482: advancing The Gathering's agenda 01105 via the real
+//! Mythos doom-to-threshold cascade lets its suspending Forced reverse resolve
+//! before the 1.4 draws. The reverse is an interactive `ChooseOne` for the
+//! lead-investigator proxy; the cascade leaves no stranded `Effect` frame and
+//! does not panic in `anchor_on_child_pop`.
 
 use game_core::action::RosterEntry;
 use game_core::engine::enumerate::TurnAction;
@@ -91,7 +92,7 @@ fn mythos_agenda_advance_choose_one_resolves_without_panic() {
 #[test]
 fn mythos_agenda_advance_acknowledge_precedes_the_choice() {
     // Flag on (server path): the forced agenda advance surfaces as an on-card
-    // flip pick anchored to the agenda, and it precedes the ChooseOne (#558).
+    // flip pick anchored to the agenda, and it precedes the ChooseOne.
     let session = drive_to_mythos_advance(true);
     let request = session.prompt();
     assert_eq!(request.kind, InputKind::PickSingle, "{request:?}");

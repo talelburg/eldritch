@@ -208,7 +208,7 @@ fn tablet_immediate_damage_suspends_on_soak_without_redrawing() {
 }
 
 // ---------------------------------------------------------------------------
-// ST.5 reads the board the ST.4 symbol effects left behind (#674)
+// ST.5 reads the board the ST.4 symbol effects left behind
 // ---------------------------------------------------------------------------
 
 const BEAT_COP: &str = "01018"; // Ally, 2 health, "You get +1 [combat]."

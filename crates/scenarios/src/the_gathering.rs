@@ -55,8 +55,8 @@ fn act_clue_threshold(code: &str) -> u8 {
 /// Chilling Cold"). Listed by distinct code; each is pushed at its printed
 /// corpus quantity. The set membership is hand-transcribed from the guide
 /// because the *generated* corpus does not carry `encounter_code` — the
-/// snapshot JSON does, one hop upstream; the pipeline drops it (ingesting
-/// it so scenarios can derive per-set lists is tracked in #579).
+/// snapshot JSON does, one hop upstream; the pipeline drops it. TODO(#579):
+/// ingest `encounter_code` so scenarios can derive per-set lists.
 ///
 /// **Set-aside cards are absent by construction:** the Ghoul Priest
 /// (`01116`) and Lita Chantler (`01117`) are set aside, and the scenario's
@@ -224,7 +224,7 @@ pub fn setup() -> GameState {
     // reverse spawns it in the Hallway (cards::the_barrier), where its
     // per-investigator health is minted with the investigator count known,
     // then Lita Chantler (01117), whom the same reverse puts into play in the
-    // Parlor under no investigator's control (#771/#772).
+    // Parlor under no investigator's control.
     for code in ["01112", "01113", "01114", "01115", "01116", "01117"] {
         state.add_set_aside_card(meta(code));
     }
@@ -233,12 +233,13 @@ pub fn setup() -> GameState {
     // corpus. 01110 advances via its Forced EnemyDefeated objective
     // (01116; in cards::what_have_you_done), not a clue spend — its printed
     // clue threshold is null, which the reader maps to 0.
-    // Act-2 (01109) reverse — reveals the Parlor and spawns the set-aside
-    // Ghoul Priest (01116) in the Hallway — ships in cards::the_barrier (#280).
-    // Lita Chantler / the Parlor barrier -> #258.
-    // Agenda reverses (01105 discard/horror, 01106 dig-until-Ghoul) ship as
+    // Act-2 (01109) reverse — reveals the Parlor, puts Lita Chantler (01117)
+    // into play there and spawns the set-aside Ghoul Priest (01116) in the
+    // Hallway — is cards::the_barrier. The Parlor's barrier is its own
+    // unrevealed back (cards::parlor).
+    // Agenda reverses (01105 discard/horror, 01106 dig-until-Ghoul) are
     // the agendas' own `AgendaAdvanced` forced abilities (cards::whats_going_on,
-    // cards::rise_of_the_ghouls); #281.
+    // cards::rise_of_the_ghouls).
     state.act_deck = vec![
         Act {
             code: CardCode("01108".into()),
@@ -248,13 +249,13 @@ pub fn setup() -> GameState {
             code: CardCode("01109".into()),
             clue_threshold: act_clue_threshold("01109"),
             // "When the round ends, investigators in the hallway may, as a
-            // group, spend the requisite number of clues to advance." (C3d)
+            // group, spend the requisite number of clues to advance."
         },
         Act {
             // 01110 advances via its Forced EnemyDefeated objective (01116; in cards::what_have_you_done), not a clue spend.
-            // Terminal because it is last here; its reverse — which asks the
-            // lead to choose between R1 and R2 — is an ability on the card
-            // (cards::what_have_you_done).
+            // Terminal because it is last here; its reverse — *"The lead
+            // investigator must decide (choose one):"* between R1 and R2 — is
+            // an ability on the card (cards::what_have_you_done).
             code: CardCode("01110".into()),
             clue_threshold: act_clue_threshold("01110"),
         },
@@ -294,8 +295,8 @@ pub fn setup() -> GameState {
     state
 }
 
-/// No-op for C1a (matches the synthetic fixture). XP / trauma / campaign
-/// log application is Phase 9.
+/// A no-op: no ending records anything yet. TODO(#766): apply the
+/// resolutions' trauma, campaign log and Lita Chantler.
 pub fn apply_resolution(_ending: ScenarioEnding, _state: &mut GameState, _events: &mut Vec<Event>) {
 }
 
@@ -352,7 +353,7 @@ mod tests {
         assert!(study.connections.is_empty(), "Study is isolated");
         // Set aside: the four rooms, the Ghoul Priest and Lita Chantler,
         // codes only. No LocationId is minted for a room until it enters play,
-        // and no CardInstanceId for Lita until she is put into play (#771).
+        // and no CardInstanceId for Lita until she is put into play.
         assert_eq!(
             s.set_aside_cards
                 .iter()

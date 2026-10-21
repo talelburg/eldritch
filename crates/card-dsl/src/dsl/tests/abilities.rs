@@ -1,7 +1,8 @@
 use super::*;
 
-/// The designators `ActionClass` names map onto it; the three it
-/// doesn't name map to `None` (#754).
+/// Regression for #754: the designators `ActionClass` names map onto it, so a
+/// designated ability counts as that action; the three it doesn't name map to
+/// `None`.
 #[test]
 fn a_designator_maps_onto_the_action_class_it_performs() {
     assert_eq!(fight(0u8, 0u8).action_class(), Some(ActionClass::Fight));
@@ -24,8 +25,8 @@ fn a_designator_maps_onto_the_action_class_it_performs() {
     }
 }
 
-/// The designator is the ability's, and only two builders set it (D21 of
-/// #777): `activated_as` on an `Activated` ability and `on_play_as` on an
+/// The designator is the ability's, and only two builders set it:
+/// `activated_as` on an `Activated` ability and `on_play_as` on an
 /// event's `OnPlay` ability. Every other builder leaves it `None`, so a
 /// designator on a reaction, constant, commit, revelation or elder-sign
 /// ability is not something a card can build.
@@ -93,8 +94,7 @@ fn holy_rosary_willpower_modifier_compiles() {
 /// `Ability` declarations: one constant willpower modifier plus a
 /// constant max-health buff. Illustrative shape only — not a real
 /// printed card. (Holy Rosary's `sanity: 2` is *horror-soak*
-/// capacity, NOT a max-sanity modifier; that's a redirect-and-
-/// discard mechanic the DSL doesn't yet model — see #44.)
+/// capacity, NOT a max-sanity modifier.)
 #[test]
 fn vec_of_abilities_supports_multiple_constant_modifiers() {
     let abilities = [
@@ -146,7 +146,7 @@ fn discard_self_cost_serde_round_trips() {
 
 #[test]
 fn omitting_any_required_ability_field_is_rejected() {
-    // `costs` is required on the wire (#453): a payload missing it fails
+    // `costs` is required on the wire: a payload missing it fails
     // loudly rather than silently defaulting. `usage_limit` is an `Option`
     // and stays implicitly optional (handled separately below).
     let ability = on_event(
