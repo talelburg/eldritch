@@ -28,7 +28,7 @@
 //! `1 + bonus`. A second `DiscoverClue` would be observably wrong, not merely
 //! differently shaped: Cover Up 01007 replaces *a discovery*, so two of 1
 //! discard 2 clues from Cover Up where one of 2 (capped at the location's
-//! clues) discards 1 — the bug #471 fixed. See the **Discovery** entry in
+//! clues) discards 1. See the **Discovery** entry in
 //! `GLOSSARY.md`.
 //!
 //! The **"while investigating a location"** qualifier is the kind gate — the

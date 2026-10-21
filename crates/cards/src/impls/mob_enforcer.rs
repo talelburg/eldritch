@@ -7,7 +7,7 @@
 //! ```
 //!
 //! `Prey` and `Hunter` are printed keywords the pipeline ingests into metadata
-//! (`Prey::BearerOnly`, #1125), not abilities; only the Parley is declared here.
+//! (`Prey::BearerOnly`), not abilities; only the Parley is declared here.
 //!
 //! **The Parley is an ability on the enemy**, reached by any investigator at
 //! its location (`AbilitySource::Enemy`). Its cost is the 4 resources, which

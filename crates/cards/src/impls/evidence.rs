@@ -12,11 +12,11 @@
 //! Evidence! is Roland Banks 01001's `[reaction]` ("After you defeat an
 //! enemy: Discover 1 clue at your location.") sourced from hand instead of
 //! from play — the identical [`Trigger::OnEvent`] declaration, minus Roland's
-//! once-per-round [`UsageLimit`]. Per Rules Reference p.11, a Fast event with
-//! a "Play after …" instruction plays "as if the described timing point were a
-//! triggering condition", so the play-timing predicate IS the `OnEvent`
-//! pattern (Axis C, #335 / #304). The Fast/cost/Insight metadata comes from
-//! the generated corpus.
+//! once-per-round [`UsageLimit`]. Per `glossary/Fast.md`, a fast event whose
+//! instructions specify an after timing point *"may be played as if the
+//! described timing point were a triggering condition for playing the card"*,
+//! so the play-timing predicate IS the `OnEvent` pattern. The Fast/cost/Insight
+//! metadata comes from the generated corpus.
 //!
 //! **Cell: the `after` cell of the `EnemyDefeated` condition.** The printed
 //! word is *"after"* — *"Fast. Play after you defeat an enemy."* — and

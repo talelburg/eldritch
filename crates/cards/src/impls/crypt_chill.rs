@@ -6,9 +6,9 @@
 //! ```
 //!
 //! The willpower(4) test is shared DSL; the failure branch is card-local
-//! native (#276) — a single consumer of "discard an asset you control".
+//! native — a single consumer of "discard an asset you control".
 //!
-//! **Interactive choice (Axis A, #334).** The fail branch enumerates the
+//! **Interactive choice.** The fail branch enumerates the
 //! controller's in-play assets and offers them through
 //! [`game_core::engine::resolve_grounded_choice`]: 0 assets → the printed "take
 //! 2 damage" fallback; 1 → auto-discard; 2+ → suspend for a controller pick. On
@@ -83,7 +83,7 @@ fn crypt_chill_fail(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
 
 /// Discard the chosen asset through the engine's discard-from-play exit, which
 /// files it by its **owner** — so a Parleyed Lita Chantler 01117 is removed
-/// from the game rather than discarded (#918, <https://arkhamdb.com/card/01117>).
+/// from the game rather than discarded (<https://arkhamdb.com/card/01117>).
 ///
 /// Its ruling (<https://arkhamdb.com/card/01167>): *"You cannot choose and
 /// discard The Necronomicon or Baron Samedi because they 'cannot leave
@@ -135,7 +135,7 @@ mod tests {
     fn single_asset_discard_surfaces_under_interactive_flag() {
         // Exactly one discardable asset (Machete 01020) in play. With
         // interactive_acknowledge on, the fail branch must surface the discard as
-        // a one-option pick rather than auto-discarding silently (#466).
+        // a one-option pick rather than auto-discarding silently.
         let mut state = GameStateBuilder::new()
             .with_registries(crate::TEST_REGISTRIES)
             .with_seat(seat(1).in_play(["01020"]))
@@ -158,8 +158,8 @@ mod tests {
 
     #[test]
     fn single_asset_auto_discards_when_flag_off() {
-        // Flag off (default): the lone asset auto-discards silently, as today —
-        // the n=1 regression guard local to this card (#466).
+        // Flag off (default): the lone asset auto-discards silently — the n=1
+        // case local to this card.
         let mut state = GameStateBuilder::new()
             .with_registries(crate::TEST_REGISTRIES)
             .with_seat(seat(1).in_play(["01020"]))
@@ -184,7 +184,7 @@ mod tests {
     fn no_asset_fallback_deals_two_damage_through_the_deal_frame() {
         // No asset to discard → "take 2 damage instead", dealt through the one
         // harm adapter: a `DealDamage { Effect }` frame for 2 damage is the
-        // native's tail, and nothing is placed until that frame runs (#1027).
+        // native's tail, and nothing is placed until that frame runs.
         let mut state = GameStateBuilder::new()
             .with_registries(crate::TEST_REGISTRIES)
             .with_seat(seat(1))

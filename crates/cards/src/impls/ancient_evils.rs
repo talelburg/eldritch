@@ -5,8 +5,8 @@
 //!   the current agenda to advance.
 //! ```
 //!
-//! The clause is a DSL primitive as of #716
-//! ([`Effect::PlaceDoomOnCurrentAgenda`](card_dsl::dsl::Effect::PlaceDoomOnCurrentAgenda)).
+//! The clause is a DSL primitive,
+//! [`Effect::PlaceDoomOnCurrentAgenda`](card_dsl::dsl::Effect::PlaceDoomOnCurrentAgenda).
 //! It reached the repo's two-consumer bar (`docs/agents/standards.md`) against
 //! Silver Twilight Acolyte 01102's byte-identical native tag, and the corpus
 //! prints a doom placement in four more places — three of them nested inside a

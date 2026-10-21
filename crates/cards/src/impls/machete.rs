@@ -7,7 +7,7 @@
 //!
 //! **Designator: Fight** — the bold word, declared on the ability, which
 //! **performs the attack** and carries the two modifications the printed text
-//! describes: the `+1 [combat]` and the conditional `+1` damage (#805). There
+//! describes: the `+1 [combat]` and the conditional `+1` damage. There
 //! is no effect beside it that could root the ability in a different action;
 //! the whole ability *is* a Fight, modified. The designator is also what
 //! exempts the activation from attacks of opportunity, in the rule's own
@@ -17,7 +17,7 @@
 //! A bare `[action]` Fight (no exhaust, no uses) with a flat `+1` combat
 //! modifier. The bonus damage is conditional on the **attacked** enemy, not on
 //! the controller's engaged count alone: a Fight's candidate scope is every
-//! enemy *at your location* (#451), so the target may be one you are not
+//! enemy *at your location*, so the target may be one you are not
 //! engaged with at all. `sole_engaged_target` therefore asks whether the set of
 //! enemies engaged with you is exactly `{the chosen target}`.
 //!
@@ -34,7 +34,7 @@
 //! target-referencing `Condition`/`Quantity`), so it rides `Condition::Native`.
 //!
 //! All three branches are reachable: with exactly one co-located enemy the
-//! target auto-binds (#449); with two or more the player picks which to attack;
+//! target auto-binds; with two or more the player picks which to attack;
 //! and the picked enemy may be engaged with you, with another investigator, or
 //! with nobody.
 //!
@@ -87,15 +87,14 @@ pub fn abilities() -> Vec<Ability> {
 /// Engagement is read through [`GameState::enemies_engaged_with`] rather than
 /// re-filtered here, so this predicate and the kernel's
 /// [`Quantity::EngagedEnemies`](card_dsl::dsl::Quantity::EngagedEnemies) can't
-/// drift to two readings of "engaged with you" — which is the shape of the bug
-/// this card had (#592).
+/// drift to two readings of "engaged with you".
 ///
-/// `TODO(#579)`: the card's second FAQ ruling is **not** honoured — "Machete
+/// TODO(#579): the card's second FAQ ruling is **not** honoured — "Machete
 /// will provide a damage bonus for attacking a Massive enemy, as long as it is
 /// ready and the only enemy engaged with you. A Massive enemy is 'considered'
 /// engaged with you". `Massive` is unparsed corpus-wide, so such an enemy is
 /// absent from the engaged set and the bonus is withheld. Under-granting, not
-/// over-granting; #579 tracks the keyword, and this is its first live consumer.
+/// over-granting; this is the keyword's first live consumer.
 fn sole_engaged_target(state: &GameState, ctx: &EvalContext) -> bool {
     let Some(target) = ctx.chosen_enemy() else {
         return false;
@@ -133,13 +132,12 @@ mod tests {
             "Machete's Fight has no exhaust/uses cost — just the action",
         );
         assert_eq!(*combat_modifier, IntExpr::Lit(1));
-        // +1 only when the *attacked* enemy is the sole engaged enemy (#592).
+        // +1 only when the *attacked* enemy is the sole engaged enemy.
         assert_eq!(
             *extra_damage,
             IntExpr::cond(dsl::native_condition(SOLE_ENGAGED_TAG), 1, 0)
         );
-        // The designator performs the attack; nothing is printed beside it
-        // (#805).
+        // The designator performs the attack; nothing is printed beside it.
         assert_eq!(abilities[0].effect, Effect::Seq(vec![]));
     }
 
@@ -150,9 +148,12 @@ mod tests {
         assert_eq!(crate::abilities_for(CODE), Some(abilities()));
     }
 
-    /// The predicate itself, across the four target/engagement shapes the
-    /// widened Fight scope (#451) can produce. `EnemyId(1)` is the attacked
-    /// enemy throughout; `EnemyId(2)` is a bystander.
+    /// Regression for #592: the bonus asks whether the *attacked* enemy is the
+    /// only one engaged with you, not how many enemies are engaged with you.
+    ///
+    /// The predicate itself, across the four target/engagement shapes a Fight's
+    /// co-located scope can produce. `EnemyId(1)` is the attacked enemy
+    /// throughout; `EnemyId(2)` is a bystander.
     #[test]
     fn sole_engaged_target_is_set_equality_not_a_count() {
         const ACTOR: InvestigatorId = InvestigatorId(1);
@@ -198,10 +199,10 @@ mod tests {
             !sole_engaged_target(&board(&[(1, Some(OTHER))]), &ctx),
             "enemy engaged to another player → no bonus (FAQ)",
         );
-        // The two shapes above agree with the old count-only encoding (the
-        // actor is engaged with nothing, so it read 0 too). This one does not:
-        // the actor is engaged with exactly one enemy, so `EngagedEnemies == 1`
-        // held and the bonus was wrongly granted before #592.
+        // The two shapes above agree with a count-only encoding (the actor is
+        // engaged with nothing, so it reads 0 too). This one does not: the
+        // actor is engaged with exactly one enemy, so `EngagedEnemies == 1`
+        // holds and a count would wrongly grant the bonus.
         assert!(
             !sole_engaged_target(&board(&[(1, Some(OTHER)), (2, Some(ACTOR))]), &ctx),
             "target engaged to another player while you are engaged with exactly \

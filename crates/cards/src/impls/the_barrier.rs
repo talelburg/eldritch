@@ -14,42 +14,29 @@
 //! objective** (the round-end clue-spend advance) is a `When`-`RoundEnded`
 //! reaction whose native does the group clue-spend + `advance_act`. The
 //! `RoundEnded` `EmitEvent` coordinator surfaces it as the round-end `when`-cell
-//! reaction candidate (#434); picking it fires this native, `Skip` declines.
+//! reaction candidate; picking it fires this native, `Skip` declines.
 //! The contributor location (the Hallway, `01112`) is printed-in-card — passed
-//! to the native directly — not a framework data field (the former
-//! `Act.round_end_advance` was deleted with the coordinator remodel).
+//! to the native directly — not a framework data field.
 //!
 //! The **reverse** is a Forced on-advance ability that fires via
 //! the act's own `ActAdvanced` condition when the act advances
-//! (Rules Reference p.3: flip the card, follow the reverse). It reveals
+//! (`glossary/Act_Deck_and_Agenda_Deck.md`: flip the card, follow the
+//! reverse). It reveals
 //! the Parlor (01115), puts the set-aside Lita Chantler (01117) into play there,
 //! and spawns the set-aside Ghoul Priest (01116) in the Hallway (01112), making
 //! act 3's "If the Ghoul Priest is Defeated, advance" objective reachable in
 //! real play.
 //!
-//! **All three lines ship as of #772.** Line 2 waited on the granting hook
-//! rather than being approximated: `put_set_aside_card_into_play` could seat her
-//! in the Parlor's `cards_at_location` zone from #771 onward, but until the
-//! grant sweep existed she would have arrived inert — an uncontrolled card
-//! nobody could reach, with neither the Parlor's *"While Lita Chantler is not
-//! controlled by a player, she gains: \[action\] **Parley.** …"* nor her own
-//! controlled-side buffs. The Parley lands with #772, and her controlled-side
-//! buffs with **#773**; she is worth putting on the board the moment the first
-//! of the two exists, because the Parley is what a player does with her.
+//! All three lines are modelled. Lita arrives in the Parlor's
+//! `cards_at_location` zone under nobody's control, where the Parlor's grant
+//! gives her the Parley and her own card's grant waits for a controller.
 //!
 //! Like 01108's board build, the reverse is board-dependent, single-use
 //! scenario logic, so it lives card-locally as a [`card_dsl::dsl::Effect::Native`]
-//! handler (#276) rather than as shared `Effect` variants. The spawn reuses
+//! handler rather than as shared `Effect` variants. The spawn reuses
 //! the engine's [`NativeCx::put_set_aside_card_into_play`], which reads
 //! the Priest's cardtype back from the corpus metadata and mints his
 //! combat stats / keywords / per-investigator health from it.
-//!
-//! Solo-scope note: with one investigator in the Hallway the Priest's
-//! `Prey - Highest [combat]` resolves to that lone investigator and the
-//! spawn engages inline (`Done`). A 2+-investigator Hallway with tied
-//! combat would suspend (`AwaitingInput`) — unreachable through the
-//! single-trigger forced-advance path until #213/#212; consistent with
-//! the rest of Slice 1's solo-first scope.
 //!
 //! **Cell: the `when` cell of the `RoundEnded` condition**, for the front
 //! objective. The printed word is *"When"* — *"**Objective** - When the round
@@ -79,6 +66,15 @@
 //! reveal and the Priest spawn have drained. With no printed word to read
 //! against, nothing contests the cell. This act has no rulings (recorded in
 //! `data/arkhamdb-faq/no-rulings.txt`).
+//!
+//! # Module gap
+//!
+//! With one investigator in the Hallway the Priest's `Prey - Highest
+//! [combat]` resolves to that lone investigator and the spawn engages inline
+//! (`Done`). Two investigators in the Hallway tied on combat make the spawn
+//! suspend (`AwaitingInput`) after the reverse has written, so the native is
+//! rejected and the act does not advance. TODO(#1139): advance, and ask whom
+//! the Priest engages.
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::evaluator::{self, EvalContext};
@@ -109,9 +105,9 @@ const REVERSE: &str = "01109:reverse";
 const ROUND_END_ADVANCE: &str = "01109:round-end-advance";
 
 /// Native-condition tag, the round-end advance's eligibility: it may be offered
-/// only when the Hallway group can afford the act's clue threshold (RR p.2
-/// potential gate). Restores the affordability gate the offer scan lost in the
-/// #434 coordinator remodel (#470).
+/// only when the Hallway group can afford the act's clue threshold.
+/// `glossary/Ability.md`: *"A triggered ability can only be initiated if its
+/// effect has the potential to change the game state"*.
 ///
 /// A **stand-in** for the change-state check: that check reads an ability's
 /// effect, and [`ROUND_END_ADVANCE`] is an opaque native whose group clue spend
@@ -133,7 +129,7 @@ const PARLOR: &str = "01115";
 ///   eligibility condition (shared with the resolve-side
 ///   [`round_end_advance_affordable`](engine::round_end_advance_affordable)),
 ///   so the candidate isn't offered when the
-///   Hallway group can't afford the clue threshold (#470).
+///   Hallway group can't afford the clue threshold.
 /// - the **reverse** — a Forced on-advance ability (reveal the Parlor + spawn
 ///   the Priest) that fires when the act advances.
 #[must_use]
@@ -174,18 +170,17 @@ fn advance_via_clue_spend(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcom
 /// Validate-first is an explicit **up-front check of every precondition**,
 /// not a consequence of the ordering: the Parlor must be in play, the Priest
 /// must still be set aside, and the Hallway must be in play, all confirmed
-/// before the reveal mutates anything. The order used to run spawn-then-reveal
-/// on the grounds that the two *"touch disjoint state"*, which stopped being
-/// true once #774 made the Parlor's `revealed` flag the barrier's gate: with
-/// the reveal first, a spawn that rejected halfway would leave the barrier
-/// lifted on a board the reverse never finished. `put_set_aside_card_into_play`
+/// before the reveal mutates anything. The Parlor's `revealed` flag is the
+/// barrier's gate, so with the reveal first, a spawn that rejected halfway
+/// would leave the barrier lifted on a board the reverse never finished.
+/// `put_set_aside_card_into_play`
 /// re-validates the same two conditions internally, and it is that check —
 /// not the ordering — that keeps the board safe. Lita's own precondition joins
 /// the up-front block for the same reason.
 ///
 /// She lands in the Parlor **under nobody's control**, which is what the
 /// Parlor's own printed grant is written against: *"While Lita Chantler is not
-/// controlled by a player, she gains: '\[action\]: **Parley.** …'"* (#772).
+/// controlled by a player, she gains: '\[action\]: **Parley.** …'"*.
 fn reverse(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
     let Some(parlor) = evaluator::location_id_by_code(cx.state(), PARLOR) else {
         return EngineOutcome::Rejected {

@@ -35,20 +35,21 @@
 //! It reaches its resolution point by *running an effect* — `reach_resolution`
 //! (ADR 0013). This is 01110 being terminal in the ordinary way: it is the last
 //! card in the act deck, so advancing it flips it and its reverse ends the
-//! scenario. **Which** point it reaches is the lead investigator's to decide,
-//! so the reverse is an `Effect::ChooseOne` of the two printed bullets. Each is
+//! scenario. **Which** point it reaches is the printed *"lead investigator"*'s
+//! to decide, so the reverse is an `Effect::ChooseOne` of the two printed
+//! bullets, offered to the proxy (below). Each is
 //! copied verbatim as its branch's label, `(→R1)` / `(→R2)` markers included —
 //! a player choosing an ending should see which ending it is — and the two
-//! branches are `reach_resolution(1)` and `reach_resolution(2)` (#775).
+//! branches are `reach_resolution(1)` and `reach_resolution(2)`.
 //!
 //! The controller of a Forced ability declared on the act is the first Active
 //! investigator in `turn_order`, which stands in for the printed *"lead investigator"*;
-//! the two coincide in solo. See **Lead investigator** in `GLOSSARY.md` for
-//! where the proxy diverges in multiplayer.
+//! the two coincide in solo. `GLOSSARY.md` says where the proxy diverges in
+//! multiplayer.
 //!
 //! The options anchor to `OptionTarget::Act`, so the host renders them on the
 //! act card — whose reverse face is already what the advance shows at
-//! `FireReverse` (#558) — rather than in the prompt banner (#555).
+//! `FireReverse` — rather than in the prompt banner.
 //!
 //! **Cell: the `after` cell of the `ActAdvanced` condition**, for the reverse.
 //! The reverse prints no trigger word, because it is not a triggered ability: it
@@ -63,16 +64,16 @@
 //! (<https://arkhamdb.com/card/01110>) reach only the Objective's timing, quoted
 //! above; nothing contests this cell.
 //!
-//! The Ghoul Priest enemy + its spawn land in C3 (#231);
-//! this objective is unit-tested here and proven end-to-end in C7b (#245).
+//! This objective is unit-tested here and played end to end in
+//! `crates/scenarios/tests/the_gathering.rs`.
 //!
 //! # Module gap
 //!
 //! **What each ending *means* is not modelled.** Both branches end the scenario
 //! at their printed point and nothing else: the trauma, the campaign log, and
-//! the lead investigator earning the Lita Chantler card at R1 are campaign
-//! machinery and stay with #766, which is why `apply_resolution` is still a
-//! stub. The board tells the two apart today — ADR 0012 put the win/loss
+//! the Lita Chantler card earned at R1 are campaign machinery, which is why
+//! `apply_resolution` is a stub. TODO(#766): record what each resolution
+//! awards. The board tells the two apart today — ADR 0012 put the win/loss
 //! projection at the display boundary, so the banner reads *"Scenario ended —
 //! Resolution 1"* or *"— Resolution 2"* off `GameState.ending`.
 
@@ -92,7 +93,7 @@ const BURN_IT_DOWN_LABEL: &str = "It was never much of a home. Burn it down! (�
 const MY_HOME_LABEL: &str = "This hell-pit is my home! No way are we burning it! (→R2)";
 
 /// 01110's Forced objective (advance when the Ghoul Priest is defeated) and its
-/// on-advance reverse (the lead investigator's choice of resolution point).
+/// on-advance reverse (the resolution point the lead-investigator proxy picks).
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![
@@ -139,7 +140,7 @@ mod tests {
         assert!(matches!(abilities[0].effect, Effect::AdvanceCurrentAct));
     }
 
-    /// The reverse offers the lead investigator the two printed resolution
+    /// The reverse offers the lead-investigator proxy the two printed resolution
     /// points on the `after` cell of the act's own advance (ADR 0013). Both
     /// bullets are reachable; the labels are the printed text, markers and all.
     #[test]

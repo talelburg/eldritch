@@ -21,7 +21,7 @@
 //!
 //! *"Then, take 1 horror"* is dealt through its own `DamageDealt` and
 //! `DamagePlaced` conditions, which resolve normally while the draw stays
-//! cancelled: the cancel is a flag on the draw condition's own frame (#1055).
+//! cancelled: the cancel is a flag on the draw condition's own frame.
 //!
 //! [`Effect::Cancel`]: card_dsl::dsl::Effect::Cancel
 

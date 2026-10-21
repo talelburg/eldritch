@@ -10,14 +10,14 @@
 //! Forced on-advance reverse, fired at the agenda's own `AgendaAdvanced` condition
 //! from `advance_agenda` (the mirror of the act path). Board-dependent,
 //! single-use scenario logic, so it lives card-locally as an `Effect::Native`
-//! handler (#276), orchestrating engine primitives
+//! handler, orchestrating engine primitives
 //! ([`reshuffle_encounter_discard`](NativeCx::reshuffle_encounter_discard),
 //! `take_encounter_top`,
 //! [`resolve_encounter_card`](NativeCx::resolve_encounter_card)) over the
 //! encounter deck.
 //!
 //! The dug-up enemy is a *generic* `Ghoul` from the encounter deck — distinct
-//! from act-2's set-aside Ghoul Priest (01116, #280). "Draws that enemy"
+//! from act-2's set-aside Ghoul Priest (01116). "Draws that enemy"
 //! resolves it through the normal encounter-draw path
 //! ([`resolve_encounter_card`](NativeCx::resolve_encounter_card)):
 //! `CardRevealed`, any Revelation, then spawn.
@@ -84,7 +84,7 @@ fn is_ghoul_enemy(code: &str) -> bool {
 
 /// Shuffle the encounter discard into the deck, then dig from the top —
 /// discarding each non-`Ghoul`-enemy — until a `Ghoul` enemy is found, and
-/// have the lead investigator draw it. A deck exhausted without a Ghoul is
+/// have the lead-investigator proxy draw it. A deck exhausted without a Ghoul is
 /// a no-op (nothing to draw).
 fn reverse(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     cx.reshuffle_encounter_discard();

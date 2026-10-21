@@ -6,16 +6,16 @@
 //! ```
 //!
 //! Two abilities: a constant `+1 [combat]` while in play, and a `[fast]`
-//! ability whose cost discards the ally itself (`Cost::DiscardSelf`, #301)
+//! zero-action ability whose cost discards the ally itself (`Cost::DiscardSelf`)
 //! to deal 1 direct damage to a chosen enemy at the controller's location
 //! (`Effect::DealDamageToEnemy` over the keystone's
-//! `EnemyTarget::Chosen(At(your location))`, #349/#301). The activation
+//! `EnemyTarget::Chosen(At(your location))`). The activation
 //! pre-cost check rejects when no enemy is there, so the discard is never
 //! paid for nothing; 2+ enemies suspend for the controller's pick.
 //!
 //! The `health: 2, sanity: 2` soak the printed ally also carries is corpus
-//! metadata; soak is engine-modeled from it (#44/K5 — nothing to declare in
-//! `abilities()`; see `crates/cards/tests/non_attack_soak.rs`).
+//! metadata; soak is engine-modeled from it, so there is nothing to declare in
+//! `abilities()` (see `crates/cards/tests/non_attack_soak.rs`).
 
 use card_dsl::dsl::{self, Ability, Cost, EnemyTarget, ModifierScope, Stat};
 
