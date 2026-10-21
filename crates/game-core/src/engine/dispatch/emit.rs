@@ -1,4 +1,5 @@
-//! The unified trigger-dispatch chokepoint (umbrella §2 / Axis-B T5a).
+//! The one chokepoint for trigger dispatch at a timing point, and the
+//! [`TimingEvent`]s it dispatches.
 //!
 //! [`queue_event`] is the single entry point for forced + reaction trigger
 //! dispatch at a framework/game timing point. A [`TimingEvent`] names the
@@ -47,7 +48,7 @@ use crate::state::{
 /// (`subject`), and who resolves the condition itself (`condition_resolution`).
 /// Which zones hold its abilities is **not** tabulated: every condition walks
 /// the whole board, and whether a cell holds a forced or reaction ability is the
-/// coordinator's per-cell scan's answer (#702, ADR 0018).
+/// coordinator's per-cell scan's answer (ADR 0018).
 ///
 /// `SkillTestResolved` is the general skill-test-outcome timing point (RR
 /// ST.6), of which "after you successfully investigate" (Obscuring Fog forced +
@@ -90,7 +91,7 @@ pub enum TimingEvent {
     /// The game has ended **for one eliminated investigator**, for the purpose
     /// of resolving weakness cards — Rules Reference p.10 Elimination step 0,
     /// quoted in full on [`Continuation::Elimination`](crate::state::Continuation::Elimination)
-    /// (forced only, #638).
+    /// (forced only).
     ///
     /// Same card-facing pattern as [`GameEnd`](Self::GameEnd) (a weakness prints
     /// *"when the game ends"*, not two different triggers) but a different scan:
@@ -108,7 +109,7 @@ pub enum TimingEvent {
     /// the cards that will be taking the damage/horror."* Nothing is on any card
     /// yet when this is announced. **Coordinator-owned**, and its impact is the
     /// placement: its resolve step emits [`DamagePlaced`](Self::DamagePlaced),
-    /// so that whole sequence nests inside this one (#1123).
+    /// so that whole sequence nests inside this one.
     ///
     /// Its `when` cell is the window the Rules Reference names between the two
     /// steps — *"Abilities that prevent, reduce, or reassign damage and/or
@@ -175,7 +176,7 @@ pub enum TimingEvent {
         outcome: TestOutcome,
     },
     /// An enemy attacks an investigator (RR p.25 step 3.3) — one triggering
-    /// condition in all three cells, **coordinator-owned** (#704).
+    /// condition in all three cells, **coordinator-owned**.
     ///
     /// The `when` cell is the cancel/replacement window (Dodge 01023); the
     /// coordinator deals the attack at its resolve step; the `at` and `after`
@@ -193,7 +194,7 @@ pub enum TimingEvent {
         investigator: InvestigatorId,
     },
     /// An investigator discovers clues (reaction only, all three cells).
-    /// **Coordinator-owned** (#703): the emitting `discover_clue` only caps the
+    /// **Coordinator-owned**: the emitting `discover_clue` only caps the
     /// count and emits, and the coordinator moves the clues at its resolve step,
     /// between the `when` and `at` cells. So a `when` ability interrupts the
     /// discovery before the clues move — Cover Up 01007's replacement — while an
@@ -204,7 +205,7 @@ pub enum TimingEvent {
         /// Clues that will actually be discovered — already capped at the
         /// location's clue count by the emitting `discover_clue`, so a
         /// replacement effect's "discard that many" (Cover Up) reads the real
-        /// quantity, not the requested one (#471).
+        /// quantity, not the requested one.
         count: u8,
     },
     /// A card entered play (After). Opens the `AfterEnteredPlay` window —
@@ -219,7 +220,7 @@ pub enum TimingEvent {
     /// An investigator left a location — Barricade 01038's self-discard, heard
     /// on the left location's attachments.
     ///
-    /// Coordinator-owned since #721: the departure itself resolves at
+    /// **Coordinator-owned**: the departure itself resolves at
     /// `resolve_left_location`, so a `when` ability sees the investigator
     /// still standing at `location`, while an `at` or `after` one sees them
     /// already at `destination`.
@@ -266,10 +267,10 @@ pub enum TimingEvent {
     /// through `encounter::resolve_encounter_card`, which announces this. So
     /// does a treachery or enemy weakness drawn from its bearer's deck, which
     /// resolves *"as if it were just drawn from the encounter deck"*
-    /// (`glossary/Weakness.md`, #1121); a trigger that must not see it filters
+    /// (`glossary/Weakness.md`); a trigger that must not see it filters
     /// on *"non-weakness"*, as Ward of Protection does.
     ///
-    /// **Coordinator-owned**, born so (#1056): its resolve step is the drawn
+    /// **Coordinator-owned**: its resolve step is the drawn
     /// card's revelation, step 3 of 1.4's *"3. Resolve the revelation ability
     /// on the drawn card."* So a `when` ability resolves before the revelation —
     /// `glossary/When.md`'s *"When you draw an enemy card" initiates
@@ -297,9 +298,10 @@ pub enum TimingEvent {
     },
     /// An investigator **evaded** an enemy — announced by the one evade exit,
     /// `evade::evade_enemy`, which the Evade action's and a designated
-    /// **Evade**'s success reach, and an automatic evade will (#780).
+    /// **Evade**'s success reach, as does an automatic evade
+    /// ([`Effect::AutoEvade`](card_dsl::dsl::Effect::AutoEvade)).
     ///
-    /// **Coordinator-owned**, born so (#1075): its resolve step is the
+    /// **Coordinator-owned**: its resolve step is the
     /// evasion's impact, `glossary/Evade_Action.md`'s *"the enemy is exhausted
     /// (if it was ready) and the engagement is broken."* So an `after` ability
     /// sees the enemy already evaded — Pickpocketing 01046's *"\[reaction\]
@@ -332,7 +334,7 @@ pub enum TimingEvent {
     /// Test Timing step 3, announced by the test's draw step once the token is
     /// out and logged.
     ///
-    /// **Coordinator-owned**, born so (#1106): its resolve step is what the
+    /// **Coordinator-owned**: its resolve step is what the
     /// token does to the test — its modifier row or automatic failure, the
     /// frame's revealed token, step 4's chaos symbol effect and the initiating
     /// card's reveal clause. So a `when` ability that cancels the token leaves
@@ -436,18 +438,18 @@ impl TimingEvent {
             // the condition itself resolves, so there is no impact for a caller
             // to have mutated ahead of the emit and none for the coordinator to
             // perform. Each owns a no-op resolve step and each `when` cell is
-            // genuinely safe to walk. In all three the teardown that *looks*
-            // like the impact runs after the whole sequence, on a frame the
-            // `drive` loop re-exposes once the sequence has drained:
+            // genuinely safe to walk. Where some teardown *looks* like the
+            // impact, it runs after the whole sequence, on a frame the `drive`
+            // loop re-exposes once the sequence has drained:
             //
             // - `RoundEnded` — Upkeep → Mythos runs on the Upkeep anchor's
-            //   `AfterRoundEnd` resume, which is why act 01109 The Barrier's
-            //   *"When the round ends"* objective has resolved in the `when`
-            //   cell all along. "Until the end of the round" lasting effects
-            //   expire just ahead of the emit, so no cell sees them (#643).
+            //   `AfterRoundEnd` resume, so act 01109 The Barrier's *"When the
+            //   round ends"* objective resolves in the `when` cell. "Until the
+            //   end of the round" lasting effects expire just ahead of the emit,
+            //   so no cell sees them.
             // - `GameEnd` — the victory-display scan and `apply_resolution` run
             //   at the apply boundary, once the `ScenarioEnd` frame is re-exposed
-            //   at `ScenarioEndStep::Finalize` (#720). The frame advances its own
+            //   at `ScenarioEndStep::Finalize`. The frame advances its own
             //   cursor before emitting, so the emit is in tail position and the
             //   ending finishes only after every ability it queued has drained —
             //   which is why Cover Up 01007's trauma, with its interactive
@@ -459,41 +461,38 @@ impl TimingEvent {
             //   own impact, step 0's *"Then, remove those weaknesses from the
             //   game."* — the engine discharges it through step 1's threat-area
             //   partition, so it too runs after the whole sequence rather than
-            //   between the cells. It migrates with `GameEnd` and for the same
-            //   card: a weakness prints one *"when the game ends"* trigger, and
-            //   Cover Up's `EventPattern::GameEnd` declaration is scanned by both
-            //   points, so leaving this one caller-owned would reject the
-            //   elimination that the retag was meant to serve.
-            // - `PhaseStarted` — born coordinator-owned (#697), as
-            //   `ConditionResolution::Caller` requires of a new event: there is
-            //   no legacy emit site to invert. A phase beginning changes nothing
-            //   by itself; the phase's opening *work* (the Mythos doom, the
-            //   Enemy phase's hunter movement, each phase's first player window)
-            //   belongs to the driver frame that emitted it and runs on that
-            //   frame's resume, after the whole sequence. The one thing that
-            //   does precede the emit is Mythos's round-counter bump — step 1.1
+            //   between the cells. It shares `GameEnd`'s arm for the same card:
+            //   a weakness prints one *"when the game ends"* trigger, and Cover
+            //   Up's `EventPattern::GameEnd` declaration is scanned by both
+            //   points, so a caller-owned arm here would reject Cover Up's
+            //   `when` ability at an elimination.
+            // - `PhaseStarted` — a phase beginning changes nothing by itself;
+            //   the phase's opening *work* (the Mythos doom, the Enemy phase's
+            //   hunter movement, each phase's first player window) belongs to
+            //   the driver frame that emitted it and runs on that frame's
+            //   resume, after the whole sequence. The one thing that does
+            //   precede the emit is Mythos's round-counter bump — step 1.1
             //   *"also formalizes the beginning of a new game round"*
             //   (`Appendix_II_Timing_and_Gameplay.md`), so an ability firing at
             //   this milestone must already read the new round.
-            // - `CardPlayed` — born coordinator-owned (#1048). The condition is
-            //   the play's *completion*, not its placement: the 01012 ruling
-            //   puts Heirloom of Hyperborea's *"After you play a [[Spell]]
-            //   card"* *"after the Spell card has resolved in full"*, and
-            //   Appendix I step 4 makes the card *"regarded as played"*
-            //   simultaneously with the step's completion. A completion is a
-            //   milestone like `PhaseStarted`, so the placement — the event to
-            //   the discard pile, the asset into play — precedes the emit rather
-            //   than being its resolve step. It could not be the resolve step
-            //   anyway: between the emit and that step the card would sit in no
-            //   zone, carried only by the event, where elimination's sweep could
-            //   not find it (ADR 0002). Its `when` cell is walked and no corpus
-            //   card listens there.
-            // - `TurnBegan` — born coordinator-owned (#778), like
-            //   `PhaseStarted`: a turn beginning changes nothing by itself. The
-            //   rotation that makes the investigator active precedes the emit,
-            //   and the post-2.2 player window opens on the Investigation
-            //   anchor's resume, after the whole sequence. On the Lam 01010's
-            //   *"Play after your turn begins."* is played in its `after` cell.
+            // - `CardPlayed` — the condition is the play's *completion*, not its
+            //   placement: the 01012 ruling puts Heirloom of Hyperborea's
+            //   *"After you play a [[Spell]] card"* *"after the Spell card has
+            //   resolved in full"*, and Appendix I step 4 makes the card
+            //   *"regarded as played"* simultaneously with the step's
+            //   completion. A completion is a milestone like `PhaseStarted`, so
+            //   the placement — the event to the discard pile, the asset into
+            //   play — precedes the emit rather than being its resolve step. It
+            //   could not be the resolve step anyway: between the emit and that
+            //   step the card would sit in no zone, carried only by the event,
+            //   where elimination's sweep could not find it (ADR 0002). Its
+            //   `when` cell is walked and no corpus card listens there.
+            // - `TurnBegan` — like `PhaseStarted`, a turn beginning changes
+            //   nothing by itself. The rotation that makes the investigator
+            //   active precedes the emit, and the post-2.2 player window opens
+            //   on the Investigation anchor's resume, after the whole sequence.
+            //   On the Lam 01010's *"Play after your turn begins."* is played in
+            //   its `after` cell.
             TimingEvent::PhaseStarted { .. }
             | TimingEvent::TurnBegan { .. }
             | TimingEvent::RoundEnded
@@ -519,15 +518,15 @@ impl TimingEvent {
             TimingEvent::SkillTestResolved { .. } => {
                 ConditionResolution::Coordinator(resolve_skill_test_resolved)
             }
-            // The fourth migration (#727/#722), which cost a model rather than
-            // an arm: `EnemyAttackDamagedSelf` could not be flipped to
-            // coordinator-owned, because one condition emitted per damaged asset
-            // *after* a single collapsed place-and-announce call was neither of
-            // the Rules Reference's two steps. `DamageDealt` is the first of
-            // them, and its impact is the second: dealing has fully resolved
-            // only once the harm is placed (`glossary/After.md`: *"has fully
-            // resolved"*), so its resolve step runs the whole `DamagePlaced`
-            // sequence and its `after` cell is *"after you take"* (#1123).
+            // Coordinator-owned because the Rules Reference deals harm in two
+            // steps, assigning it and then placing it, with a window between
+            // them for Guard Dog 01021's *"\[reaction\] When an enemy attack
+            // deals damage to Guard Dog"* (ADR 0009). `DamageDealt` is the
+            // first step, and its impact is the second: dealing has fully
+            // resolved only once the harm is placed (`glossary/After.md`:
+            // *"has fully resolved"*), so its resolve step runs the whole
+            // `DamagePlaced` sequence and its `after` cell is *"after you
+            // take"*.
             TimingEvent::DamageDealt { .. } => {
                 ConditionResolution::Coordinator(resolve_damage_dealt)
             }
@@ -537,60 +536,57 @@ impl TimingEvent {
             TimingEvent::DamagePlaced { .. } => {
                 ConditionResolution::Coordinator(resolve_damage_placed)
             }
-            // The first migration (#703). Cover Up 01007 prints *"\[reaction\] When
-            // you would discover 1 or more clues at your location: Discard that
-            // many clues from Cover Up instead"*, so the discovery has to be able
-            // to not happen — which it cannot be if the caller has already moved
-            // the clues by the time the `when` cell runs.
+            // Coordinator-owned for Cover Up 01007, which prints *"\[reaction\]
+            // When you would discover 1 or more clues at your location: Discard
+            // that many clues from Cover Up instead"*: the discovery has to be
+            // able to not happen, so moving the clues is the resolve step, after
+            // the `when` cell.
             TimingEvent::DiscoverClues { .. } => {
                 ConditionResolution::Coordinator(resolve_clue_discovery)
             }
-            // The second migration (#704). Dodge 01023 prints *"Fast. Play when
+            // Coordinator-owned for Dodge 01023, which prints *"Fast. Play when
             // an enemy attacks an investigator at your location. / Cancel that
-            // attack."*, so the attack has to be able to not happen — which it
-            // cannot be if the caller has already dealt the damage by the time
-            // the `when` cell runs. The attack's impact is the damage and horror
-            // it places, so that is what moves to the resolve step; the
-            // attacker's *exhaust* does not (`data/arkhamdb-faq/core/01023.md`:
+            // attack."*: the attack has to be able to not happen. Its impact is
+            // the damage and horror it places, so that is the resolve step; the
+            // attacker's *exhaust* is not (`data/arkhamdb-faq/core/01023.md`:
             // *"If an attack was cancelled during the Enemy phase, the
             // attacking enemy still exhausts."*), and lives on the parked
             // `AttackLoop` frame instead.
             TimingEvent::EnemyAttacks { .. } => {
                 ConditionResolution::Coordinator(resolve_enemy_attack)
             }
-            // The third migration (#721). Barricade 01038 prints *"**Forced** -
+            // Coordinator-owned for Barricade 01038, which prints *"**Forced** -
             // When an investigator leaves attached location: Discard
-            // Barricade."*, so the discard has to resolve before the departure
-            // lands — which it cannot if the caller has already moved the
-            // investigator by the time the `when` cell runs. The departure's
-            // impact is the engaged-enemy drag and the location assignment, so
-            // that is what moves to the resolve step; the destination *reveal*
-            // and the auto-engagement do not, being the arrival's business, and
-            // stay on the `MoveEnter` frame parked beneath the emit (#569).
+            // Barricade."*: the discard has to resolve before the departure
+            // lands. The departure's impact is the engaged-enemy drag and the
+            // location assignment, so that is the resolve step; the destination
+            // *reveal* and the auto-engagement are the arrival's business, and
+            // stay on the `MoveEnter` frame parked beneath the emit, so entering
+            // follows leaving.
             TimingEvent::LeftLocation { .. } => {
                 ConditionResolution::Coordinator(resolve_left_location)
             }
-            // Born coordinator-owned (#1056). Ward of Protection 01065 prints
+            // Coordinator-owned for Ward of Protection 01065, which prints
             // *"Fast. Play when you draw a non-weakness treachery card. / Cancel
-            // that card's revelation effect."*, so the revelation has to be able
-            // to not happen: it is the condition's resolve step.
+            // that card's revelation effect."*: the revelation has to be able to
+            // not happen, so it is the condition's resolve step.
             TimingEvent::EncounterCardDrawn { .. } => {
                 ConditionResolution::Coordinator(resolve_encounter_draw)
             }
-            // Born coordinator-owned (#1075). Evading is not a bare milestone:
-            // it disengages and exhausts the enemy, so that is the resolve step,
+            // Coordinator-owned because evading is not a bare milestone: it
+            // disengages and exhausts the enemy, so that is the resolve step,
             // and Pickpocketing 01046's after-evade reaction sees it done.
             TimingEvent::EnemyEvaded { .. } => {
                 ConditionResolution::Coordinator(resolve_enemy_evaded)
             }
-            // Born coordinator-owned (#1106). Wendy Adams 01005 cancels a
-            // revealed chaos token in the `when` cell, so what the token does to
-            // the test has to be able to not happen: it is the resolve step.
+            // Coordinator-owned for Wendy Adams 01005, who cancels a revealed
+            // chaos token in the `when` cell: what the token does to the test
+            // has to be able to not happen, so it is the resolve step.
             TimingEvent::ChaosTokenRevealed { .. } => {
                 ConditionResolution::Coordinator(resolve_chaos_token_revealed)
             }
-            // Every other condition is still caller-owned: the emitting call site
-            // mutates the board and *then* emits. Each flips to a coordinator-
+            // Every other condition is caller-owned: the emitting call site
+            // mutates the board and *then* emits. Each moves to a coordinator-
             // owned arm when a card demands its `when` cell — what that costs,
             // and the terminal condition for the arm itself, is on
             // [`ConditionResolution::Caller`].
@@ -636,16 +632,15 @@ pub(crate) enum ConditionResolution {
     /// **Migrating one event** means: move the caller's mutation into a named
     /// function (the emit site keeps only the emit, in tail position per ADR
     /// 0003), point a `Coordinator` arm at it, and let the coordinator call it at
-    /// the resolve step. The worked example is `resolve_clue_discovery` (#703):
-    /// that mutation was already factored into `perform_discovery` for a resume
-    /// frame to call, so the migration moved the call site and deleted the
-    /// resume. `resolve_enemy_attack` (#704) is the dearer worked example: the
-    /// mutation was tangled into a loop that read the stack after emitting, so
-    /// migrating it meant parking that loop on its own frame first.
+    /// the resolve step. `resolve_clue_discovery` is the plain case: its mutation
+    /// is `perform_discovery`, which it calls as it stands.
+    /// `resolve_enemy_attack` is the dearer one: the mutation sits in a loop that
+    /// reads the stack after emitting, so that loop is parked on its own
+    /// [`AttackLoop`](crate::state::Continuation::AttackLoop) frame.
     ///
     /// **This arm exists to migrate existing callers, not to accommodate new
-    /// ones.** A new timing event has no legacy emit site to invert, so it is
-    /// born `Coordinator`. When the last member migrates, this arm — and the
+    /// ones.** A new timing event has no emit site to invert, so it starts as
+    /// `Coordinator`. When the last member migrates, this arm — and the
     /// classification, and the reject — are deleted together.
     Caller,
 }
@@ -673,14 +668,14 @@ fn resolve_bare_milestone(_cx: &mut Cx, _event: &TimingEvent) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-/// The resolve step of [`TimingEvent::DiscoverClues`]: move the clues (#703).
+/// The resolve step of [`TimingEvent::DiscoverClues`]: move the clues.
 ///
 /// The impact of "you discover clues" is the clues arriving on the investigator,
 /// so this is where they move — after the `when` cell's replacement effects have
 /// had their chance to cancel it, and before the `at` and `after` cells see the
 /// board. `count` is the count fixed at the moment of the would-be discovery;
 /// `perform_discovery`'s own `min` is the shrinkage backstop for a `when`
-/// reaction that removed clues in between (#471).
+/// reaction that removed clues in between.
 fn resolve_clue_discovery(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
     let TimingEvent::DiscoverClues {
         investigator,
@@ -694,13 +689,13 @@ fn resolve_clue_discovery(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-/// The resolve step of [`TimingEvent::EnemyAttacks`]: deal the attack (#704).
+/// The resolve step of [`TimingEvent::EnemyAttacks`]: deal the attack.
 ///
 /// The impact of "an enemy attacks an investigator" is the damage and horror it
 /// places, so that is what happens here — after the `when` cell's cancel window
 /// (Dodge 01023) has had its chance to prevent it, and before the `at` and
 /// `after` cells see the board. May suspend on the interactive soak
-/// distribution (#44/K5b); the coordinator has already advanced its cursor to
+/// distribution; the coordinator has already advanced its cursor to
 /// `At`, so the resumed prompt lands back on the `at` cell rather than dealing
 /// the attack twice.
 ///
@@ -726,7 +721,7 @@ fn resolve_enemy_attack(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
 
 /// The resolve step of [`TimingEvent::DamageDealt`]: emit
 /// [`DamagePlaced`](TimingEvent::DamagePlaced), so the placement's whole
-/// sequence nests inside the deal (#1123).
+/// sequence nests inside the deal.
 ///
 /// Dealing harm has an impact only once it is placed — `glossary/After.md`
 /// pins *"after"* to the moment the condition *"has fully resolved"*, and
@@ -773,7 +768,7 @@ fn resolve_damage_dealt(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
     )
 }
 
-/// The resolve step of [`TimingEvent::DamagePlaced`]: the tokens land (#727).
+/// The resolve step of [`TimingEvent::DamagePlaced`]: the tokens land.
 ///
 /// `glossary/Dealing_Damage_Horror.md` step 2, verbatim: *"Any assigned
 /// damage/horror that has not been prevented is now placed on each card to which
@@ -802,8 +797,7 @@ fn resolve_damage_placed(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-/// The resolve step of [`TimingEvent::LeftLocation`]: the departure lands
-/// (#721).
+/// The resolve step of [`TimingEvent::LeftLocation`]: the departure lands.
 ///
 /// The impact of "an investigator leaves a location" is the investigator (and
 /// the enemies engaged with them) arriving at the destination, so that is what
@@ -815,7 +809,7 @@ fn resolve_damage_placed(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
 /// **Not** here: the destination reveal and the entered location's
 /// auto-engagement. Both belong to the arrival, not the departure, and stay on
 /// the [`MoveEnter`](crate::state::Continuation::MoveEnter) frame parked beneath
-/// the emit — which is also what keeps #569's ordering, entering after leaving.
+/// the emit, which is also what orders entering after leaving.
 fn resolve_left_location(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
     let TimingEvent::LeftLocation {
         investigator,
@@ -830,7 +824,7 @@ fn resolve_left_location(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
 }
 
 /// The resolve step of [`TimingEvent::EncounterCardDrawn`]: the drawn card's
-/// revelation (#1056).
+/// revelation.
 ///
 /// Framework step 1.4's *"3. Resolve the revelation ability on the drawn
 /// card."*, after the `when` cell has had its chance to cancel it (Ward of
@@ -851,7 +845,7 @@ fn resolve_encounter_draw(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
 }
 
 /// The resolve step of [`TimingEvent::EnemyEvaded`]: the evasion lands
-/// (#1075) — the enemy disengages and, if it was ready, exhausts
+/// — the enemy disengages and, if it was ready, exhausts
 /// (`evade::resolve_evasion`). After the `when` cell, before the `at` and
 /// `after` cells, so Pickpocketing 01046's *"After you evade an enemy"* sees it
 /// done.
@@ -868,8 +862,8 @@ fn resolve_enemy_evaded(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
 }
 
 /// The resolve step of [`TimingEvent::SkillTestResolved`]: re-total the test
-/// and confirm or void the verdict the event announced (#1111,
-/// `skill_test::resolve_verdict`). After the `when` cell, so a modifier played
+/// and confirm or void the verdict the event announced
+/// (`skill_test::resolve_verdict`). After the `when` cell, so a modifier played
 /// there (Lucky! 01080) is counted; before the `at` and `after` cells, so a
 /// verdict it flipped never reaches them.
 fn resolve_skill_test_resolved(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
@@ -885,7 +879,7 @@ fn resolve_skill_test_resolved(cx: &mut Cx, event: &TimingEvent) -> EngineOutcom
 }
 
 /// The resolve step of [`TimingEvent::ChaosTokenRevealed`]: the token takes
-/// effect on the test (#1106, `skill_test::resolve_reveal`) — its row, the
+/// effect on the test (`skill_test::resolve_reveal`) — its row, the
 /// frame's revealed token, the ST.4 symbol effect and the reveal clause. After
 /// the `when` cell, so a cancelled token (Wendy Adams 01005) never gets here.
 /// The pushed effects sit above the coordinator, already at `At`, so one that
