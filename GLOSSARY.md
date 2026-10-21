@@ -172,7 +172,7 @@ _Avoid_: Writing "the lead investigator" in a doc comment or test name where the
 ## Project vocabulary
 
 **Project phase**:
-One of the 11 milestones the build is broken into, tracked in `docs/phases/` and on GitHub.
+One of the milestones the build is broken into, tracked in `docs/phases/` and on GitHub. The table in `docs/phases/README.md` lists them.
 _Avoid_: Bare "phase" anywhere a game phase could be meant — which is most of the engine. Say "project phase" or "phase 7" and reserve the bare word for the game concept.
 
 **Snapshot**:
