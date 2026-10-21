@@ -16,7 +16,7 @@ The five variants each name a card that needs it:
 
 ## Considered options
 
-**Deriving the audience from the source's placement** — a controlled card reaches its controller, a location or its attachments reach whoever stands there, an enemy reaches investigators at its location, the act and agenda reach everyone — was attractive because it needs no DSL change at all and answers thirteen of the fourteen. It was rejected on Lita, and on a second count that outlives her: the rule would be invisible. "A `Stat::Shroud` modifier found on a location's attachment applies to that location" was already an unwritten convention inside `effective_shroud`, and generalising a convention that no card text can contradict makes the next card that *does* contradict it a silent wrong answer rather than a compile error.
+**Deriving the audience from the source's placement** — a controlled card reaches its controller, a location or its attachments reach whoever stands there, an enemy reaches investigators at its location, the act and agenda reach everyone — was attractive because it needs no DSL change at all and answers thirteen of the fourteen. It was rejected on Lita, and on a second count that outlives her: the rule would be invisible. "A `Stat::Shroud` modifier found on a location's attachment applies to that location" was already an unwritten convention inside the controller-keyed shroud scan, and generalising a convention that no card text can contradict makes the next card that *does* contradict it a silent wrong answer rather than a compile error.
 
 **A `ModifierScope` variant per audience** — `WhileInPlayForEachInvestigatorHere` and friends — was rejected for conflating two independent axes. Scope is *how long*, audience is *who*; the product of the two is a combinatorial enum in which most cells never occur, and ADR 0005 already commits to `ModifierScope` staying the card author's duration vocabulary while the engine records a resolved `Lifetime`.
 
@@ -28,6 +28,6 @@ The audience is checked against the target, so the sweep visiting a card never m
 
 Obscuring Fog 01168 is the one corpus card whose declaration changed, from a bare `Modify(Shroud, +2)` read only by a scan that knew where to look, to `AttachedCard`. It reads identically; the rule that used to live in the scanner now lives on the card.
 
-A `Modify` whose audience is not `Controller` **rejects** under a non-constant scope. `PendingSkillModifier` records an investigator and nothing else, so a wider audience has nowhere to be written down; rejecting says so rather than silently narrowing the modifier to its controller. Recorded rows that can name an arbitrary target arrive with #676.
+A `Modify` whose audience is not `Controller` **rejects** under a non-constant scope. The `RecordedModifier` such a `Modify` writes names its controller and nothing else, so a wider audience has nowhere to be written down; rejecting says so rather than silently narrowing the modifier to its controller. A wider audience is declared under `Trigger::Constant`, where the sweep finds it.
 
 `Stat` gained `Fight` and `Evade` in the same change, not speculatively but because `ModifierTarget::Enemy` is otherwise a target with no quantity — the audience vocabulary and the quantities it addresses are one decision, and half of it would not be testable.

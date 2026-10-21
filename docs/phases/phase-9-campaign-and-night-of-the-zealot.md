@@ -2,7 +2,7 @@
 
 ## Status
 
-📐 Architecture only; not yet ordered. Issues milestoned here are deferrals
+⏳ **planned**; not yet ordered. Issues milestoned here are deferrals
 whose first consumer is Midnight Masks / Devourer content or the deck-import gate
 (the [milestone query](https://github.com/talelburg/eldritch/milestone/10) is
 authoritative): #75 (campaign log), #138/#139 (Surge / Peril), #575/#578 (spawn-clause and
@@ -14,8 +14,19 @@ play, and the phase-boundary forced scan that reaches it — 01169/01170 again),
 umbrella), #679 (conditional constant modifiers — Screeching Byakhee 01175),
 #765 (`is_unique` / `permanent` / `restrictions` ingestion, p1 — deck import
 cannot validate without them), #766 (The Gathering's resolution fidelity: agenda
-01107's act-conditional back, act 01110's R1/R2 choice). Scoping proper happens
-when Phase 8 closes.
+01107's act-conditional back, act 01110's R1/R2 choice), #699 (usage limits on a
+location, act or agenda ability — eight Night of the Zealot location abilities
+print a limit), #783 (the deckbuilding validator, for imported decks), #862 (difficulty
+selection: the four chaos bags and the reference card's Hard/Expert face), #1062
+(Hospital Debts 01011's "2 fewer experience" Forced, waiting on experience),
+#1063 (an imported deck's taboo list applied to card text, Elusive 01050 first),
+#1100 (losing actions: the investigator picks which additional actions go, first
+reachable through another investigator's Police Badge 01027), #1131 (unrecognised
+prey clauses ingested silently as `Prey::Default`), #1133 (Amnesia 01096 with two
+weaknesses in hand), #1138 (a `Quantity` counting enemies at a location, so The
+Gathering's skull is read live — The Midnight Masks 01120 and The Devourer Below
+01142 count over the board too), #1141 (simultaneously lethal damage and horror:
+the investigator chooses the trauma). Scoping proper happens when Phase 8 closes.
 
 ## Goal
 

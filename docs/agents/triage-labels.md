@@ -14,6 +14,6 @@ When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the 
 
 ## Current state on `talelburg/eldritch`
 
-Labels are created on first use; `wontfix` and `ready-for-agent` are in use today.
+Labels are created on first use; `gh label list` is the current set. `needs-info` has not been created yet, so the first issue that needs it creates it.
 
 These five are an **additive axis** — they do not replace the repo's existing labels. In particular the pre-existing `ready` label is coarser than `ready-for-agent` / `ready-for-human` and carries no claim about who implements the issue; see `docs/agents/issue-tracker.md` for the full existing vocabulary.

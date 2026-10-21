@@ -1,6 +1,6 @@
 # Phase plans
 
-Eldritch is broken into 12 phases, milestone-tracked on GitHub. Each one's plan, status, decisions, and open questions lives in its own file in this directory. Closed phases get short retrospectives; the active phase has full detail; future phases capture what's been decided and what's still open.
+Eldritch is broken into 12 phases, milestone-tracked on GitHub. Each one's plan, status, decisions, and open questions lives in its own file in this directory. The active phase has full detail; future phases capture what's been decided and what's still open; a closed phase's live items have been moved out to their new homes by the phase-close checklist below.
 
 ## Why this exists
 
@@ -30,14 +30,14 @@ cross-reference in this directory and the milestone names on GitHub — costs mo
 than the decimal does.
 
 **Status legend:**
-- ✅ **closed** — milestone closed; docs are retrospective.
+- ✅ **closed** — milestone closed; the phase-close checklist has moved the doc's live items out.
 - 🟡 **in progress** — issues filed and being worked; doc has live status.
 - ⏳ **planned** — issues filed but work not started; doc has issue list + dependency notes; ordering may be TBD.
 - 📐 **architecture only** — no issues filed yet; doc captures the strategy-phase decisions and explicit scoping TBDs.
 
 ## Cross-cutting / unmilestoned work
 
-Some issues don't belong to a single phase. They live unmilestoned (mostly `p2-later`) and get picked up when convenient — the authoritative list is the [open unmilestoned issues query](https://github.com/talelburg/eldritch/issues?q=is%3Aissue+is%3Aopen+no%3Amilestone). Examples of the standing kind: `#31` (empty-`turn_order` guard), `#117` (event-keyed trigger index), `#119` (damage/horror dispatcher consolidation), `#174` (replay snapshots — build only when profiling demands it).
+Some issues don't belong to a single phase. They live unmilestoned (mostly `p2-later`) and get picked up when convenient — the authoritative list is the [open unmilestoned issues query](https://github.com/talelburg/eldritch/issues?q=is%3Aissue+is%3Aopen+no%3Amilestone). Examples of the standing kind: `#117` (event-keyed trigger index), `#174` (replay snapshots — build only when profiling demands it).
 
 Three **standing cross-cutting records** live under [`docs/audits/`](../audits/). Each is a point-in-time reading that still constrains work today; each section below says what it covers and what it asks of you. Per-finding detail lives in the issues each record filed, and the reasoning behind a fix lives in its PR — don't look for either here.
 
@@ -89,9 +89,63 @@ This section is the authoritative spec for the phase-doc edit in the PR procedur
   - Flip the corresponding **Ordering / Arc** row to `✅ PR #N`.
   - Remove any **Open question** the PR settled.
   - Add an **Open question** the PR raised, or a row for a follow-up issue it filed.
-- **Anything else is a PR retro, and a PR retro is not written.** How the PR went, why it was designed that way, what review changed, what was tried and dropped: that is history, and git and the PR already keep it. The reasoning goes in the PR description; a decision that passes the three-part test below goes in an ADR; a fact a future author needs at the code goes in a doc-comment. A phase doc is read before picking up an issue, and every PR retro is something that reader has to wade past — phase 7's "The arcs behind it" grew to roughly 650 lines of them. A PR retro is not the **phase retrospective**, the summary a phase doc becomes when its milestone closes (below).
+- **Anything else is a PR retro, and a PR retro is not written.** How the PR went, why it was designed that way, what review changed, what was tried and dropped: that is history, and git and the PR already keep it. The reasoning goes in the PR description; a decision that passes the three-part test below goes in an ADR; a fact a future author needs at the code goes in a doc-comment. A phase doc is read before picking up an issue, and every PR retro is something that reader has to wade past — phase 7's "The arcs behind it" grew to roughly 650 lines of them.
 - **Do not add a "Decisions made" entry.** Design decisions live in `docs/adr/` now. If the PR made a choice that is (a) hard to reverse, (b) surprising without context, and (c) the result of a real trade-off, write it up as an ADR in the same commit. All three must hold — if a future PR-author would discover the same fact by grepping the code or reading a doc-comment / `TODO(#NNN)`, there's no ADR to write. Most PRs need none.
   - Existing **Decisions made** sections in closed phase docs stay where they are; they are not retro-migrated ([ADR 0001](../adr/0001-workflow-runs-on-mattpocock-skills.md) drew that scope line).
 - **Don't batch phase-doc edits into unrelated PRs.**
-- **When a phase milestone closes:** flip the phase's Status to ✅ (here and in the doc), trim Open Questions to closed-out items only, and the doc becomes a **phase retrospective**. Trim any PR retros written before they were banned — phase 7's "The arcs behind it" is the known case (its heading says "retrospective", but its content is PR retros), and this clause goes once it is trimmed. Sweep the agent-facing docs in the same pass, against the checklist in [`docs/agents/writing.md`](../agents/writing.md) — a rule whose transitional state ended during the phase is deleted here or it outlives the thing it described.
-- **When the next phase starts:** flip its Status from ⏳/📐 to 🟡, add the ordered plan if not already there.
+- **When a phase milestone closes:** work the phase's sweep issue through [the phase-close checklist](#the-phase-close-checklist) below.
+- **When the next phase starts:** flip its Status from ⏳/📐 to 🟡, add the ordered plan if not already there, and file a `[docs] Phase N close sweep` issue on its milestone. The milestone then can't close until the sweep has been done. Phase 7 closed without its sweep, because nothing but memory asked for one at the busiest moment of the phase.
+
+### The phase-close checklist
+
+The sweep issue's PR works through these six items, and its description lists every edit, tracker edits included. Every item is a judgement, not a lint: an ADR may name a gone symbol because removing it *is* the decision, a live note can sit beside a dead one, and an issue body is overtaken by the code or it isn't. That is why no script runs the list. The evidence under each item is the drift #1143 found at 7.5's close, after phase 7 had closed without a sweep.
+
+1. **The closing phase's doc.** Every live item moves to a new home, and Status goes to ✅, here and in the doc.
+   - An open row goes to a milestone, or to standing unmilestoned work (above).
+   - A settled open question goes into an ADR if it passes the three-part test above. If the code shows the answer, the code is the record. Otherwise the question is removed: the PR that settled it holds the reasoning.
+   - An unsettled open question goes to the Open questions of the phase that will decide it, or failing that into a `needs-design` issue.
+   - No PR retro and no phase retrospective is written.
+
+   **Why:** 7.5's doc still listed three open, unmilestoned rows (#1059, #1099, #1100) as the phase closed. Phase 7's "The arcs behind it", 647 of the doc's 1,177 lines, mentioned 11 open issues that appear nowhere else in the doc, and carried live notes such as #427/#429 waiting on #728.
+2. **Tracker vs docs.**
+   - Each milestone's state matches the table above: `gh api 'repos/talelburg/eldritch/milestones?state=all' --jq '.[] | "\(.title) \(.state) \(.open_issues)"'`. A phase's milestone closes once its last issue does.
+   - Each open phase's doc mentions every open issue on its milestone (`gh issue list --milestone <title> --state open --limit 1000`), in whatever format the doc uses. The check runs one way: closed issues aren't required, because ticket children don't belong in a phase doc.
+
+   **Why:** the phase-6 milestone stayed open with 0 open issues while the table marked phase 6 ✅. GLOSSARY counted 11 milestones when there were 12. Phase 9's doc left out nine open issues on its milestone.
+3. **ADRs vs code.**
+   - Every backticked symbol in an ADR still exists under `crates/`, unless its removal *is* the ADR's decision (ADR 0016's deleted `test_fixtures/`). Any other mention of a gone symbol is rewritten in present tense, under [`writing.md`](../agents/writing.md)'s folding rule: it is a fold, not a supersession.
+   - A plan that has shipped is written in present tense.
+   - The footer reads `*Folded: #a, #b.*`, in italics, issue numbers only.
+
+   **Why:** ADRs named nine symbols that no longer existed, among them `begin_event_play` (0002), `request_resolution` (0004 and 0012) and `DefeatCause` (0013, by then `EliminationCause::CardAbility`). ADR 0013 described its plan, "#808 then #809", in the future tense after both had shipped. Footers ran to 234 words (0009).
+4. **Agent docs.** `writing.md`'s "Is anything here now history?" is applied to `CLAUDE.md`, `docs/agents/` and `GLOSSARY.md`. A rule whose transitional state ended during the phase is deleted, or it outlives the thing it described. A count that goes stale is replaced by a pointer to whatever holds the list.
+
+   **Why:** `issue-tracker.md` pointed at the closed #921 as its example of a review's tracking issue. `domain.md`'s example ADR conflict was the upstream template's "ADR-0007 (event-sourced orders)", and this repo's ADR 0007 is about something else. `triage-labels.md` named `wontfix` as in use when no issue carried it.
+5. **Code prose.** Comments under `crates/` are checked against [`standards.md`](../agents/standards.md)'s "Code prose" rule. Each check below is one command from the repo root. Read every hit rather than bulk-fixing: a pattern can't tell history from a verbatim quote or present-tense game state.
+   - An issue number appears only as `TODO(#N):`, or as `Regression for #N:` in test code. The first command lists every other `#N` in a comment. The second lists `Regression for #N:` outside a `tests/` directory, and each hit must sit in a `#[cfg(test)]` module. The third lists a `TODO(#N)` that is backticked or has no colon after it.
+
+     ```sh
+     rg -nP '//.*(?<![\w&#])(?<!TODO\()(?<!Regression for )#\d+\b' crates/
+     rg -n 'Regression for #' crates/ --glob '!**/tests/**'
+     rg -nP '//.*(`TODO\(#\d+\)|TODO\(#\d+\)(?!:))' crates/
+     ```
+   - No history markers. "since #", "formerly" and past-tense "used to" are violations, while "used to" in its functional sense ("can be used to hold") is a false hit. "previously" and "no longer" are allowed only for present-tense game state or inside a verbatim quote.
+
+     ```sh
+     rg -niP '//.*(since #|used to|formerly|previously|no longer)' crates/
+     ```
+   - Every `TODO(#N)` names an open issue. This prints the numbers that don't:
+
+     ```sh
+     comm -23 <(rg -oN --no-filename 'TODO\(#(\d+)\)' -r '$1' crates/ | sort -u) <(gh issue list --state open --limit 1000 --json number --jq '.[].number' | sort -u)
+     ```
+
+   **Why:** at main 86332221, comments under `crates/` carried 2,220 issue references in neither form, 87 history markers, and a `TODO` on the closed #921. #1142 fixed them with a one-off scan (PR #1158), and the commands above are its core patterns.
+6. **Labels.** No open issue carries a contradictory pair of state labels: `blocked` with `ready-for-agent` or `ready-for-human`, or `needs-design` with `ready-for-human`. None carries `blocked` without naming a blocker that is still live. An issue body the code has overtaken is rewritten to match the code, or confirmed current. The first command lists every open `blocked` issue, to read for a `ready-for-*` label and for whether its blocker is still live. The second passes `--label` twice, so it lists only the issues carrying both labels:
+
+   ```sh
+   gh issue list --state open --label blocked --json number,title,labels
+   gh issue list --state open --label needs-design --label ready-for-human
+   ```
+
+   **Why:** #588 and #642 were `blocked` and `ready-for-agent` at once, and #670, #679 and #759 were `needs-design` and `ready-for-human`. #65, #609 and #492 were `blocked` on a blocker that had closed or a trigger that had fired. Twelve issue bodies needed checking against the code, among them #290, whose proposed remedy contradicted GLOSSARY's Limbo entry.

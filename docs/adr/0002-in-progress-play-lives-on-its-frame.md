@@ -2,7 +2,7 @@
 
 The Rules Reference gives a played card a transitional state. At Appendix I step 3 "the card commences being played", and only at the completion of step 4 is it "regarded as played (**and placed in play, or in its owner's discard pile if it's an event**)". Between those two points the card is in no zone at all — "In Play and Out of Play" lists hand, decks, discard piles, the victory display and set-aside/removed cards as out of play, and a card mid-play is in none of them, nor in any player's play area. The engine modelled that state in a single global slot, `GameState.pending_played_event`. We moved it onto the `Continuation::PlayFromHand` frame instead, because **plays nest**: a non-fast event provokes an attack of opportunity while it is itself mid-play, and a Fast event played to cancel that attack overwrote the slot and erased the first card from the game (#604 — Dynamite Blast 01024 with a mid-AoO Dodge 01023, both Core Set, no panic and no error). The continuation stack already nests correctly — Dodge's frame sits above Dynamite Blast's and pops first — so carrying the card there makes the failure structurally impossible instead of guarded against.
 
-The nesting is the whole reason, and it is invisible at every individual call site. A reader looking at `begin_event_play`, at `dispose_play_from_hand`, or at the asset enter-play path sees one play at a time and will conclude a global slot was fine.
+The nesting is the whole reason, and it is invisible at every individual call site. A reader looking at `commence_play`, at `dispose_play_from_hand`, or at the asset enter-play path sees one play at a time and will conclude a global slot was fine.
 
 ## Considered options
 
@@ -16,7 +16,7 @@ The nesting is the whole reason, and it is invisible at every individual call si
 
 `pending_played_event` is retired, and with it the `Effect::AttachSelfToLocation` special case: Barricade 01038 reads the nearest enclosing `PlayFromHand` frame, which is what "*this* card attaches itself" actually means.
 
-Elimination gains a sweep it never had. `run_elimination_steps` drained `cards_in_play`, owned threat-area weaknesses, `hand`, `deck` and `discard`, and never looked at the in-progress slot — so a controller defeated by the attack of opportunity its own Dynamite Blast provoked ended with the card in the *drained* discard pile of a `Killed` investigator and an empty `removed_from_game`. Frame-carried makes the sweep a walk of that investigator's continuation frames, which is order-independent and so immune to the flush-versus-teardown ordering that caused it.
+Elimination gains a sweep it never had. `run_elimination_steps` drained `cards_in_play`, owned threat-area weaknesses, `hand`, `deck` and `discard`, and never looked at the in-progress slot — so a controller defeated by the attack of opportunity its own Dynamite Blast provoked ended with the card in the *drained* discard pile of a defeated investigator and an empty `removed_from_game`. Frame-carried makes the sweep a walk of that investigator's continuation frames, which is order-independent and so immune to the flush-versus-teardown ordering that caused it.
 
 The state shape changes, and there is no wire or schema versioning yet (#583). Persisted games from before this change will not load. That is acceptable now and will not be later — it is an argument for #583 landing before real games exist, not against this shape.
 

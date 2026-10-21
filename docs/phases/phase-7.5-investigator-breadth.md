@@ -54,11 +54,7 @@ ship untested by anything but a unit test.
 
 ## Issues
 
-| Issue | Work |
-|---|---|
-| #1059 | A designated Move — the `TODO(#1059)`s #777 left at every Move site |
-| #1099 | Mind over Matter 01036: `SkillTestStarted` announces Combat after the player chose Intellect (found during #779) |
-| #1100 | Losing actions: the investigator chooses which additional actions are lost (FAQ 1.10) — the `TODO(#1100)` #779 left in `lose_actions` |
+**Open:** #1144 (lint posture: `#[expect(…, reason)]` by default, adopt `unreachable_pub`).
 
 ### Closed
 
