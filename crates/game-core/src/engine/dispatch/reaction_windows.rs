@@ -1036,9 +1036,9 @@ pub(super) fn run_fast_continuation(cx: &mut Cx, kind: FastWindowKind) -> Engine
 }
 
 /// Advance the enemy-phase cursor past `investigator` and open the next
-/// window (C5b #237).
+/// window.
 ///
-/// Since #704 there is one caller: `combat::finish_attack_loop`, run when the
+/// There is one caller: `combat::finish_attack_loop`, run when the
 /// attack loop's list drains. The [`PhaseStep::BeforeInvestigatorAttacked`]
 /// continuation does not call it: the loop only *queues* its attacks (see
 /// `emit::queue_event`), so they are not finished when it returns. Advances the

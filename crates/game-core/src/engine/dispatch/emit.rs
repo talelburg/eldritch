@@ -891,9 +891,9 @@ fn resolve_chaos_token_revealed(cx: &mut Cx, event: &TimingEvent) -> EngineOutco
     EngineOutcome::Done
 }
 
-/// Dispatch a timing event: push its `when → resolve → at → after` coordinator
-/// (#702). **Every** triggering condition goes through it — since #704 there is
-/// no bypass and no per-condition table of any kind here.
+/// Dispatch a timing event: push its `when → resolve → at → after` coordinator.
+/// **Every** triggering condition goes through it — there is no bypass and no
+/// per-condition table of any kind here.
 ///
 /// # This queues; it does not resolve
 ///
@@ -914,8 +914,8 @@ fn resolve_chaos_token_revealed(cx: &mut Cx, event: &TimingEvent) -> EngineOutco
 /// `glossary/Nested_Sequences.md` gives *every* triggering condition the same
 /// three-part sequence, and `glossary/At.md` adds the middle cell — so there is
 /// no per-event table of which cells an event supports and no single-cell fast
-/// path — the last two bypasses, the enemy attack and its soak window, walk the
-/// coordinator since #704. A cell is populated iff [the coordinator's per-cell
+/// path; the enemy attack and its soak window walk the coordinator like every
+/// other condition. A cell is populated iff [the coordinator's per-cell
 /// scan](super::coordinator::dispatch_emit_event) finds something in it, and an
 /// empty cell is skipped without prompting. Forced-before-reaction within a cell
 /// (RR p.2) is the [`TimingPoint`](crate::state::Continuation::TimingPoint)
@@ -923,8 +923,8 @@ fn resolve_chaos_token_revealed(cx: &mut Cx, event: &TimingEvent) -> EngineOutco
 ///
 /// Returns `Done`: the walk itself never suspends here, because pushing the
 /// coordinator *is* the whole of the queueing. The suspensions it will produce —
-/// a reaction window, or the lead's ordering pick for 2+ simultaneous forced
-/// abilities (#213) — surface from the `drive` loop as it walks the cells, which
+/// a reaction window, or the ordering pick for 2+ simultaneous forced
+/// abilities — surface from the `drive` loop as it walks the cells, which
 /// is why a call site's only obligation is to emit in tail position.
 #[must_use = "queue_event only queues frames: post-emit work belongs on a resume \
               frame, not after this call (ADR 0003). Return the outcome, or bind \
