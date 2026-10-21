@@ -8,10 +8,9 @@
 //! > designated action as described in the rules, but modified in the manner
 //! > described by the ability.
 //!
-//! Since the designator *performs* (#805), this module owns what the action
-//! needs of the board, and every path that takes one reads it from here. A
-//! check only one of the paths applies is precisely the bug shape #754 was for
-//! the action surcharge.
+//! Since the designator *performs*, this module owns what the action
+//! needs of the board, and every path that takes one reads it from here, so
+//! no check is applied by one path and skipped by another.
 //!
 //! [`can_perform`] answers *"can this designated ability initiate at all"* —
 //! whether **some** legal target exists, never which one. Its callers are the
@@ -49,7 +48,7 @@ use crate::state::{GameState, InvestigatorId};
 /// - **Fight** — needs ≥1 enemy *at your location*. Scope is co-located, not
 ///   engaged-only: per RR you choose an enemy at your location to attack and
 ///   need not already be engaged (an Aloof enemy, or one engaged with another
-///   investigator in MP, is a legal target). #451.
+///   investigator in MP, is a legal target).
 /// - **Evade** — needs ≥1 enemy *engaged with you*. `glossary/Evade_Action.md`:
 ///   *"Unlike the fight and engage action, an investigator can only perform an
 ///   evade action against an enemy engaged with him or her."*
@@ -66,9 +65,10 @@ use crate::state::{GameState, InvestigatorId};
 ///   with"*). Whether there is an enemy to evade is its residual effect's
 ///   question.
 /// - **Move** — rejected, with the reason
-///   [`actions::designated_unimplemented_move`] gives (`TODO(#1059)`). The
+///   [`actions::designated_unimplemented_move`] gives. The
 ///   variant carries no modification because no corpus card prints a bold
 ///   **Move**, so the engine says so rather than performing a guess.
+///   TODO(#1059): perform a designated Move.
 pub(crate) fn can_perform(
     state: &GameState,
     investigator: InvestigatorId,

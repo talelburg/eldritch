@@ -63,7 +63,7 @@ pub struct OptionId(pub u32);
 /// The board surface a prompt or an offered [`ChoiceOption`] acts on, letting a
 /// host render it on the entity it targets rather than in a flat list. Anchors
 /// are derived from the engine's own action / candidate targets, so a host never
-/// re-computes legality (#535, #206). **Un-anchored is spelled `None` at the
+/// re-computes legality. **Un-anchored is spelled `None` at the
 /// [`Option`] wrapping this enum**, not a variant here — see ADR 0011; a host
 /// that reads a `None` anchor falls back to the prompt banner.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -82,7 +82,7 @@ pub enum OptionTarget {
     },
     /// A card in an investigator's hand, matched by **code** (every copy) — for a
     /// queued Fast reaction event, which is code-identified (either copy plays), so
-    /// all matching hand cards are actionable (#539).
+    /// all matching hand cards are actionable.
     HandCardByCode {
         /// The hand's owner.
         investigator: InvestigatorId,
@@ -96,7 +96,7 @@ pub enum OptionTarget {
     /// The current agenda.
     Agenda,
     /// An investigator's turn control (End turn) — the panel affordance that is
-    /// always present and disabled when nothing anchors to it (#541).
+    /// always present and disabled when nothing anchors to it.
     TurnControl(InvestigatorId),
     /// An investigator's resource pool (Gain resource).
     ResourcePool(InvestigatorId),
@@ -108,15 +108,12 @@ pub enum OptionTarget {
 
 impl From<AbilitySource> for OptionTarget {
     /// The board surface an ability source is rendered on — **the one map from
-    /// a source to an anchor** (#735).
+    /// a source to an anchor**.
     ///
     /// Both paths that offer an ability go through it: the turn menu
     /// (`TurnAction::target`) and the forced / reaction resolution options
-    /// (`reaction_windows::candidate_anchor`). They used to carry a copy each,
-    /// and the copies had already drifted — the candidate side re-derived which
-    /// board card it was by comparing card codes and fell through to the
-    /// then-`Global` variant for an attacking enemy's own forced ability, so
-    /// Silver Twilight Acolyte 01102's doom prompt anchored to nothing.
+    /// (`reaction_windows::candidate_anchor`), so neither keeps a copy that
+    /// could drift from the other.
     ///
     /// The `match` is exhaustive on purpose: a sixth
     /// [`AbilitySource`](crate::state::AbilitySource) kind should stop this
@@ -126,10 +123,10 @@ impl From<AbilitySource> for OptionTarget {
     /// and a caller may only use it when it holds that guarantee itself. Two do:
     /// the turn menu enumerates from `ability_source::reachable_sources`, and the
     /// forced / reaction candidates are re-probed against
-    /// `ability_source::source_card` by the #568 lapse sweep at every prompt
+    /// `ability_source::source_card` by the lapse sweep at every prompt
     /// site. A caller holding an anchor that was **snapshotted before arbitrary
     /// mutation** has no such guarantee and must use the crate-internal
-    /// `OptionTarget::for_live_source` instead (#845).
+    /// `OptionTarget::for_live_source` instead.
     fn from(source: AbilitySource) -> Self {
         match source {
             AbilitySource::InPlay(instance_id) => OptionTarget::CardInstance(instance_id),
@@ -144,7 +141,7 @@ impl From<AbilitySource> for OptionTarget {
 impl OptionTarget {
     /// The board surface `source` renders on, or `None` when `source` has left
     /// the board — the **liveness-checked** form of the `From<AbilitySource>`
-    /// map above (#845).
+    /// map above.
     ///
     /// ADR 0011 makes an unrenderable anchor a deadlock rather than a cosmetic
     /// slip: *"an option the engine anchors to a surface the client does not
@@ -237,7 +234,7 @@ pub enum InputKind {
 /// nature to presentation. A `Presentation::Modal` on the wire would put UI
 /// vocabulary in the kernel, and a host re-deriving the nature from the prompt's
 /// shape ("all options anchored to the same card") is the same re-derivation
-/// ADR 0011 rejected when it refused to read targets off `label` strings.
+/// ADR 0011 rejects for targets read off `label` strings.
 ///
 /// [`Selection`](Self::Selection) is the default every constructor reaches, so a
 /// builder that never considered its nature produces the status quo. The type
@@ -367,7 +364,7 @@ impl InputRequest {
 
     /// Anchor this prompt to `target` when there is one. The request-level twin
     /// of [`ChoiceOption::maybe_at`], for a caller holding an anchor that may
-    /// have degraded to `None` because its source left play (#845).
+    /// have degraded to `None` because its source left play.
     #[must_use]
     pub fn maybe_at(self, target: Option<OptionTarget>) -> Self {
         match target {

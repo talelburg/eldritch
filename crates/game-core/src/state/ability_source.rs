@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::state::{CardCode, CardInstanceId, EnemyId, LocationId};
 
 /// The thing whose ability is being used — the descriptor an activation
-/// names instead of a bare card instance (#707).
+/// names instead of a bare card instance.
 ///
 /// The Rules Reference lists the sources an investigator may use a triggered
 /// ability from, and it lists *things*, not zones —
@@ -32,12 +32,11 @@ use crate::state::{CardCode, CardInstanceId, EnemyId, LocationId};
 /// membership out of the addressing vocabulary is what stops the four bullets
 /// becoming a pile of special cases.
 ///
-/// The enum is `#[non_exhaustive]`, and #709 filled in the last two kinds the
-/// bullets name. It is **not** the activation side's private vocabulary: since
-/// #735 the forced and reaction scans say where an ability comes from with the
-/// same descriptor, through
+/// The enum is `#[non_exhaustive]`, and covers every kind the bullets name. It
+/// is **not** the activation side's private vocabulary: the forced and reaction
+/// scans say where an ability comes from with the same descriptor, through
 /// [`CandidateSource::Ability`](crate::state::CandidateSource::Ability). The
-/// one thing that stayed outside it is a Fast event played from hand, which is
+/// one thing outside it is a Fast event played from hand, which is
 /// not an ability source in the rules' sense — no bullet above names a card in
 /// hand — which is why `CandidateSource` wraps this enum rather than the two
 /// merging into one. See
@@ -47,17 +46,17 @@ use crate::state::{CardCode, CardInstanceId, EnemyId, LocationId};
 pub enum AbilitySource {
     /// A card instance in play, wherever it sits.
     InPlay(CardInstanceId),
-    /// A location card itself — the second bullet's *"the location itself"*
-    /// (#708). Locations carry a [`LocationId`] and no
+    /// A location card itself — the second bullet's *"the location itself"*.
+    /// Locations carry a [`LocationId`] and no
     /// [`CardInstanceId`], which is why this
     /// cannot fold into [`InPlay`](Self::InPlay).
     Location(LocationId),
-    /// An enemy in play — an *"encounter card placed at that location"* (#708).
+    /// An enemy in play — an *"encounter card placed at that location"*.
     /// The Parley abilities the corpus prints sit here: Herman Collins 01138,
     /// Peter Warren 01139, Victoria Devereux 01140, Mob Enforcer 01101.
     Enemy(EnemyId),
-    /// The **current** act — the third bullet's *"The current act … card"*
-    /// (#709). Carries no id: there is exactly one current act, and it is
+    /// The **current** act — the third bullet's *"The current act … card"*.
+    /// Carries no id: there is exactly one current act, and it is
     /// `act_deck[act_index]`, so naming it by cursor position would let an
     /// action address an act that is no longer current.
     ///
@@ -72,7 +71,7 @@ pub enum AbilitySource {
     /// Test \[willpower\] (3) or \[agility\] (3). If you succeed, place 1
     /// clue on this Act."*).
     Act,
-    /// The **current** agenda — *"… or current agenda card"* (#709). Carries no
+    /// The **current** agenda — *"… or current agenda card"*. Carries no
     /// id, and is not location-gated, for the same reasons as
     /// [`Act`](Self::Act). Corpus cards printing such an ability: the Core
     /// resigns on Predator or Prey? 01121a and Time Is Running Short 01122 (*"\[action\]:
@@ -105,9 +104,9 @@ impl AbilitySource {
 /// **How an ability is named across a suspension.**
 ///
 /// An ability has no id: a scan mints a candidate naming one, and a resolve
-/// looks it back up, possibly several suspensions later. Through #774 that name
-/// was a bare index into the card's ability vector, and that worked only while
-/// the vector was a pure function of the card.
+/// looks it back up, possibly several suspensions later. A bare index into the
+/// card's ability vector would work only while the vector was a pure function
+/// of the card.
 ///
 /// It is not, once anything grants abilities to it (ADR 0014). **So an address
 /// points at where the ability is *printed*, never at where it currently
@@ -123,7 +122,7 @@ impl AbilitySource {
 #[non_exhaustive]
 pub enum AbilityAddress {
     /// The ability at this index of the card's **printed** abilities, on the
-    /// side of it that is in effect (#774).
+    /// side of it that is in effect.
     Printed(u8),
     /// An ability another card grants to this one — addressed by the
     /// *granter's* printed text, which is what stays put.
@@ -171,10 +170,9 @@ mod tests {
 
     /// The descriptor rides the wire twice: inside a parked
     /// [`ActionResume::ActivateAbility`] frame in serialized game state, and in
-    /// the seed state the server replays its action log over. #707 broke that
-    /// payload deliberately and without a migration (persisted games are
-    /// discarded, and schema versioning is #581), so what the shape *is* wants
-    /// pinning.
+    /// the seed state the server replays its action log over. A change to it
+    /// carries no migration (persisted games are discarded), so what the shape
+    /// *is* wants pinning.
     #[test]
     fn a_source_round_trips_through_serialization() {
         let source = AbilitySource::InPlay(CardInstanceId(7));
@@ -190,7 +188,7 @@ mod tests {
         let resume = ActionResume::ActivateAbility {
             source: AbilitySource::InPlay(CardInstanceId(7)),
             // Flashlight 01087's shape: the designated action rides the frame
-            // beside the (empty) residual effect (#805).
+            // beside the (empty) residual effect.
             designator: Some(dsl::investigate(-2i8)),
             effect: Effect::Seq(vec![]),
         };
@@ -231,8 +229,8 @@ mod tests {
 
     /// The descriptor also rides the wire *inside* a
     /// [`CandidateSource`](crate::state::CandidateSource), on a
-    /// `ResolutionCandidate` in an open window frame — the payload #735 broke,
-    /// deliberately and without a migration (same posture as #707/#709).
+    /// `ResolutionCandidate` in an open window frame, which likewise carries
+    /// no migration.
     #[test]
     fn a_candidate_source_round_trips_through_serialization() {
         for source in [
@@ -251,7 +249,7 @@ mod tests {
         }
     }
 
-    /// Every kind rides the wire, not just the one #707 shipped.
+    /// Every kind rides the wire, not just `InPlay`.
     #[test]
     fn the_location_enemy_act_and_agenda_kinds_round_trip_through_serialization() {
         for source in [

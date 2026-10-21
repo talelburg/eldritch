@@ -1,7 +1,7 @@
-//! The legal-action enumerator (slice 2a-ii, #393): the legal open-turn
-//! actions for the active investigator. Read-only; routing is via `ResolveInput`
-//! (2b) — this module shares the handlers' legality predicates so the
-//! enumeration matches handler-acceptance by construction.
+//! The legal-action enumerator: the legal open-turn actions for the active
+//! investigator. Read-only; routing is via `ResolveInput`. This module shares
+//! the handlers' legality predicates so the enumeration matches
+//! handler-acceptance by construction.
 
 use std::fmt;
 
@@ -77,7 +77,7 @@ pub enum TurnAction {
         source: PlaySource,
     },
     /// Activate a `Trigger::Activated` ability on an ability source the
-    /// investigator can reach (#707).
+    /// investigator can reach.
     ActivateAbility {
         /// Investigator activating the ability.
         investigator: InvestigatorId,
@@ -85,8 +85,8 @@ pub enum TurnAction {
         /// independently of which collection holds it. Reachability is
         /// `engine::ability_source`'s answer, not the descriptor's.
         source: AbilitySource,
-        /// Which ability on that source — named by where it is printed
-        /// (#772), so the menu entry and the handler agree about the same
+        /// Which ability on that source — named by where it is printed,
+        /// so the menu entry and the handler agree about the same
         /// ability even when a grant lands or lapses in between.
         address: AbilityAddress,
     },
@@ -114,7 +114,7 @@ pub enum PlaySource {
     /// permission on the card instance `permission`: Wendy's Amulet 01014,
     /// *"You may play the topmost event in your discard pile as if it were in
     /// your hand."* The permission is named so the option can anchor on the
-    /// card that grants it — the client renders no discard pile (#1101).
+    /// card that grants it — the client renders no discard pile.
     TopOfDiscardPile {
         /// The in-play card whose permission the play is made under.
         permission: CardInstanceId,
@@ -146,12 +146,13 @@ impl fmt::Display for PlaySource {
 }
 
 impl TurnAction {
-    /// Plain human-readable menu label. Rich/structured rendering is #205.
+    /// Plain human-readable menu label; [`target`](Self::target) is the
+    /// structured anchor.
     ///
     /// A play from the discard pile names the event and the card whose
     /// permission it is played under — *"Play Emergency Cache (Wendy's
-    /// Amulet)"* — because it is anchored on that card, not on the event
-    /// (#1112); `cards` supplies both names.
+    /// Amulet)"* — because it is anchored on that card, not on the event;
+    /// `cards` supplies both names.
     #[must_use]
     pub fn label(&self, state: &GameState, cards: &CardRegistry) -> String {
         let loc_name = |id: LocationId| {
@@ -196,9 +197,8 @@ impl TurnAction {
                     .map_or_else(|| format!("card at {source}"), ToString::to_string);
                 format!("Play {code}")
             }
-            // Structured / rich rendering is #205; until then a granted
-            // ability says so rather than printing an index that belongs to a
-            // different card.
+            // A granted ability says so rather than printing an index that
+            // belongs to a different card.
             TurnAction::ActivateAbility { address, .. } => match address {
                 AbilityAddress::Printed(index) => format!("Activate ability {index}"),
                 AbilityAddress::Granted { granter, .. } => {
@@ -209,7 +209,7 @@ impl TurnAction {
         }
     }
 
-    /// The board surface this action anchors to, for host rendering (#535).
+    /// The board surface this action anchors to, for host rendering.
     /// Mirrors [`label`](Self::label): it takes `state` because some actions'
     /// anchors are implicit — Investigate acts at the investigator's current
     /// location, which is not a field on the variant.
@@ -237,18 +237,16 @@ impl TurnAction {
                 investigator: *investigator,
                 hand_index: *hand_index,
             },
-            // On the permission's card: the client renders no discard pile
-            // (#1101), and ADR 0011 needs a surface it does render.
+            // On the permission's card: the client renders no discard pile,
+            // and ADR 0011 needs a surface it does render.
             TurnAction::PlayCard {
                 source: PlaySource::TopOfDiscardPile { permission },
                 ..
             } => OptionTarget::CardInstance(*permission),
             // One map from a source to an anchor, shared with the forced /
-            // reaction candidates' `candidate_anchor` (#735): the two carried a
-            // copy each and the copies had drifted. The exhaustive `match` that
-            // used to live here — a new `AbilitySource` kind should stop the
-            // build rather than quietly anchor itself somewhere wrong — lives in
-            // the `From` impl now.
+            // reaction candidates' `candidate_anchor`. Its exhaustive `match`
+            // lives in the `From` impl, so a new `AbilitySource` kind stops the
+            // build rather than quietly anchoring itself somewhere wrong.
             TurnAction::ActivateAbility { source, .. } => (*source).into(),
             TurnAction::AdvanceAct { .. } => OptionTarget::Act,
         })
@@ -294,7 +292,7 @@ fn active_investigator(state: &GameState) -> Option<InvestigatorId> {
 /// turn, in stable order (position = the `OptionId` accepted by
 /// `ResolveInput(PickSingle(OptionId))`). Empty unless an
 /// [`InvestigatorTurn`](crate::state::Continuation::InvestigatorTurn) frame is on top — the
-/// only point gameplay actions are taken (slice 2a-ii, #393).
+/// only point gameplay actions are taken.
 ///
 /// Covers the full open-turn surface: `EndTurn`, `Resource`, `Draw`,
 /// `Investigate`, `Move` (basic); `Fight`, `Evade`, `Engage` (combat/engage);
@@ -315,7 +313,7 @@ pub fn legal_actions(state: &GameState, cards: &CardRegistry) -> Vec<TurnAction>
     actions
 }
 
-/// Append the `AdvanceAct` action if legal (slice 2a-ii-4, #393) — delegated to
+/// Append the `AdvanceAct` action if legal — delegated to
 /// `check_advance_act`, registry-free (act decks are scenario state, not card
 /// data).
 fn push_act_actions(
@@ -329,8 +327,8 @@ fn push_act_actions(
     }
 }
 
-/// Append the card actions legal for `investigator` — `PlayCard` and (Task 2)
-/// `ActivateAbility` (slice 2a-ii-3, #393).
+/// Append the card actions legal for `investigator` — `PlayCard` and
+/// `ActivateAbility`.
 /// Fidelity is by delegation: the enumerator calls the same `check_play_card` /
 /// `check_activate_ability` the handlers call.
 fn push_card_actions(
@@ -353,10 +351,10 @@ fn push_card_actions(
     }
 
     // ActivateAbility: one option per activatable ability on each ability source
-    // the investigator can reach (#707) — the same predicate the validator
+    // the investigator can reach — the same predicate the validator
     // consults, so the menu and handler-acceptance cannot disagree about which
     // sources exist. The list is the card's abilities *in effect*: printed plus
-    // granted (#772), each carrying the address that names it;
+    // granted, each carrying the address that names it;
     // `check_activate_ability` filters to the activated, payable,
     // window-eligible ones (so a non-`Activated` ability is simply not offered).
     for (source, code) in ability_source::reachable_source_codes(state, cards, investigator) {
@@ -376,8 +374,8 @@ fn push_card_actions(
     }
 }
 
-/// Append the combat / engage actions legal for `investigator` (slice 2a-ii-2,
-/// #393): one per enemy in each action's own `candidates` — the same lists the
+/// Append the combat / engage actions legal for `investigator`: one per enemy
+/// in each action's own `candidates` — the same lists the
 /// `fight`/`evade`/`engage` handlers validate against — less an enemy whose
 /// fight or evade value is malformed.
 fn push_combat_engage_actions(

@@ -62,10 +62,10 @@ pub struct Enemy {
     /// is just a scan of `state.enemies`.
     ///
     /// Every production write goes through the engagement exits
-    /// (`engine::dispatch::engagement`, #1122), which log the paired
+    /// (`engine::dispatch::engagement`), which log the paired
     /// `EnemyEngaged` / `EnemyDisengaged` events; test fixtures may still set
-    /// it directly. TODO(#611): make the field private once reads (#611) and
-    /// writes (#1122) both funnel through the module.
+    /// it directly. TODO(#611): make the field private once reads funnel
+    /// through the module too.
     pub engaged_with: Option<InvestigatorId>,
     /// Whether this enemy has the Hunter keyword (Rules Reference p.12):
     /// a ready, unengaged hunter moves toward the nearest investigator
@@ -94,14 +94,14 @@ pub struct Enemy {
     /// No effect populates it yet — the DSL has
     /// [`AttachSelfToLocation`](card_dsl::dsl::Effect::AttachSelfToLocation)
     /// and no enemy counterpart — so it is empty on every board the
-    /// engine builds today. Required on the wire (#453).
+    /// engine builds today. Required on the wire.
     pub attachments: Vec<CardInPlay>,
     /// **Who owns this enemy** — the same three-valued [`Owner`] a card in
     /// play carries, fixed when the enemy enters play. An enemy drawn from the
     /// encounter deck is the encounter deck's; a weakness enemy is its
     /// bearer's (`glossary/Weakness.md`: *"The bearer of a weakness is the
     /// investigator who started the game with the weakness in his or her deck
-    /// or play area."*). Required on the wire (#453).
+    /// or play area."*). Required on the wire.
     pub owner: Owner,
 }
 

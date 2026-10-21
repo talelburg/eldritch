@@ -68,7 +68,7 @@ pub struct CardRegistry {
     /// which is every card but the Parlor 01115 today.
     ///
     /// A location's back is in effect exactly while the location is
-    /// **unrevealed**, and its front exactly while it is revealed (#774), so
+    /// **unrevealed**, and its front exactly while it is revealed, so
     /// nothing reads this slot directly: engine code goes through
     /// `engine::abilities_in_effect`, which owns
     /// that choice. Reading `abilities_for` for a location instead is the bug
@@ -93,8 +93,8 @@ pub struct CardRegistry {
     /// declarative vocabulary can't express resolves here, whether it guards an
     /// effect or an ability's
     /// [`eligibility`](card_dsl::dsl::Ability::eligibility). See
-    /// [`Condition::Native`] for its consumers and `TODO(#609)`, the promotion
-    /// that retires the compound, target-referencing ones.
+    /// [`Condition::Native`] for its consumers. TODO(#609): promote the
+    /// compound, target-referencing ones to declarative vocabulary.
     ///
     /// [`Condition::Native`]: card_dsl::dsl::Condition::Native
     pub native_condition_for: fn(&str) -> Option<NativeConditionFn>,
@@ -139,8 +139,8 @@ impl CardRegistry {
     /// };
     /// ```
     ///
-    /// This exists because adding a slot used to mean editing **every literal
-    /// in the workspace**, each gaining one more `|_| None,`.
+    /// This exists because without it, adding a slot means editing **every
+    /// literal in the workspace**, each gaining one more `|_| None,`.
     /// That is churn no reviewer can read, and it buries the one or two
     /// literals where the new slot actually matters. With `EMPTY` as the base,
     /// a new slot touches only the literals that implement it.
@@ -150,9 +150,7 @@ impl CardRegistry {
     ///
     /// **Spread `EMPTY` only over a registry you are building from nothing.**
     /// A helper wrapping a *real* registry must spread that registry instead —
-    /// naming a slot it doesn't override silently switches the real lookup off,
-    /// which is exactly the bug #774's review caught in the helper that
-    /// composed the synthetic test cards into a real registry.
+    /// naming a slot it doesn't override silently switches the real lookup off.
     pub const EMPTY: Self = Self {
         metadata_for: |_| None,
         abilities_for: |_| None,

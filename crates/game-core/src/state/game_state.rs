@@ -23,8 +23,8 @@ use crate::state::{
 /// In the event-sourced model, the canonical state is *derived* by
 /// replaying the action log; `GameState` is the materialized cache.
 ///
-/// Phase-1 minimal shape; later phases will add e.g. persistent
-/// campaign-log facts and cross-scenario trauma tracking.
+/// It holds one scenario. TODO(#766): the campaign log and trauma that
+/// outlast it.
 ///
 /// Investigators and locations are stored in [`BTreeMap`]s keyed by ID
 /// rather than [`Vec`]s. This makes iteration order deterministic
@@ -58,7 +58,7 @@ pub struct GameState {
     /// Where roster-seated investigators are placed at scenario start.
     /// `setup()` sets it (e.g. The Gathering -> the Study); the
     /// scenario setup (via `seat_and_open`) reads it. `None` leaves seated
-    /// investigators unplaced (`current_location: None`) — the legacy
+    /// investigators unplaced (`current_location: None`) — the
     /// pre-seated test path, where `setup()` already placed them.
     pub starting_location: Option<LocationId>,
     /// All enemies currently in play, keyed by ID. Defeated enemies are
@@ -80,18 +80,17 @@ pub struct GameState {
     /// [`Investigation`]: Phase::Investigation
     pub active_investigator: Option<InvestigatorId>,
     /// Order in which investigators take their turns during the
-    /// Investigation phase, as decided by the lead investigator each
-    /// round. The first entry is the first to act.
+    /// Investigation phase. The first entry is the first to act.
+    ///
+    /// A fixed order stands in for a choice the rules leave open each turn:
+    /// *"The investigators may take their turns in any order. The
+    /// investigators choose among themselves who (among the investigators)
+    /// will take this turn"* (Appendix II, step 2.2).
     pub turn_order: Vec<InvestigatorId>,
     /// Deterministic RNG state. Carries `(seed, draws)` only; the
     /// underlying [`rand_chacha::ChaCha8Rng`] is reconstructed on
     /// demand by [`RngState`] methods.
     pub rng: RngState,
-    // The setup mulligan loop now lives on its `Continuation::Mulligan`
-    // frame (#348); read the prompted investigator via
-    // [`Self::current_mulligan`]. The former `mulligan_pending:
-    // Option<InvestigatorId>` cursor is removed — the continuation stack is the
-    // single source of truth (mirroring the `in_flight_skill_test` fold).
     /// Allocator for [`CardInstanceId`]s, minted when cards enter play.
     /// Deterministic across replays; serializes as a bare `u32`.
     pub card_instance_ids: Counter<CardInstanceId>,
@@ -129,34 +128,15 @@ pub struct GameState {
     ///
     /// [`ModifierScope`]: card_dsl::dsl::ModifierScope
     pub recorded_modifiers: Vec<RecordedModifier>,
-    // The in-flight skill test now lives on its `Continuation::SkillTest(_)`
-    // frame (#348); read it via [`Self::current_skill_test`]. The former
-    // `in_flight_skill_test: Option<InFlightSkillTest>` field is removed —
-    // the continuation stack is the single source of truth.
-    /// Stack of currently-open windows. The top (`last()`) is the
-    /// most recently-opened; closing pops the top. Carries pending
-    /// reaction triggers and the Fast-action gate for each window.
-    /// Replaced the earlier single-slot `in_flight_reaction_window:
-    /// Option<ReactionWindow>` shape — multi-window nesting is now
-    /// structural.
-    ///
-    /// Window kinds open at canonical timing points:
-    /// - `AfterEnemyDefeated` — queued by `damage_enemy` when an
-    ///   enemy reaches 0 health.
-    /// - `PlayerWindow` — a printed player window at a Rules-Reference
-    ///   timing step (e.g. `MythosAfterDraws`), opened by the phase
-    ///   machine; gates Fast actions and runs a per-step continuation.
-    ///
-    /// Multi-window queueing (one effect that queues two windows in
-    /// the same apply) is now structural — push twice, drive resumes
-    /// in reverse open order.
-    /// The single suspend/resume stack (umbrella §1 / Axis-B): the top
-    /// frame is resumed by `resolve_input`, taking priority over the
-    /// legacy `pending_*` modes. Open reaction/fast windows live here as
-    /// `TimingPointWindow` / `FastWindow` frames (the former `open_windows` Vec,
-    /// absorbed into the one stack). Required on the wire (#453). Inspect
-    /// windows via [`Self::open_windows`] / [`Self::top_window`]. The stack
-    /// checks its own invariants; see [`ContinuationStack`].
+    /// The single suspend/resume stack: the top frame is resumed by
+    /// `resolve_input`. The in-flight skill test, the setup mulligan and every
+    /// other pending prompt live here as frames, and so do open reaction and
+    /// fast windows, as `TimingPointWindow` / `FastWindow` frames. Window
+    /// nesting is therefore structural: one effect that queues two windows in
+    /// the same apply pushes twice, and drive resumes them in reverse open
+    /// order. Required on the wire. Inspect windows via
+    /// [`Self::open_windows`] / [`Self::top_window`]. The stack checks its own
+    /// invariants; see [`ContinuationStack`].
     pub continuations: ContinuationStack,
     /// Identifier of the scenario this state belongs to, if any.
     ///
@@ -170,25 +150,6 @@ pub struct GameState {
     /// Serializable so action-log replay reproduces the lookup
     /// deterministically across host restarts.
     pub scenario_id: Option<ScenarioId>,
-    // The Mythos step-1.4 encounter-draw loop now lives on its
-    // `Continuation::EncounterDraw` frame (#348); read the prompted drawer via
-    // [`Self::current_encounter_drawer`]. The former `mythos_draw_pending:
-    // Option<InvestigatorId>` cursor is removed — the continuation stack is the
-    // single source of truth (mirroring the `mulligan_pending` fold).
-    // The former `pending_revelation_discard: Option<CardCode>` side-channel is
-    // removed (#380): a drawn treachery's disposal now rides a
-    // `Continuation::EncounterCard` frame whose framework teardown discards it
-    // once the Revelation's whole sub-resolution completes — covering a
-    // Revelation that suspends into a choice, not just a skill test.
-    // The former `pending_played_event: Option<(InvestigatorId, CardCode)>`
-    // side-channel is removed (#604/#565): a card that has commenced being played
-    // (RR Appendix I step 3) but is not yet placed (step 4) now rides the frame
-    // driving its play — `Continuation::PlayFromHand`, and the
-    // `ActionResume::PlayCard` / `Continuation::SlotDiscard` frames that hand it
-    // on across a suspension. A single global slot could not model nesting, and
-    // plays nest: a Fast event played to cancel the attack of opportunity
-    // provoked by a non-fast event overwrote the slot and erased the first card
-    // from the game. See `docs/adr/0002-in-progress-play-lives-on-its-frame.md`.
     /// Active lasting effects that are not modifiers: each one a
     /// [`LastingEffectKind`] and the [`Lifetime`] that ends it.
     ///
@@ -200,7 +161,7 @@ pub struct GameState {
     /// (Mind over Matter 01036's skill substitution, On the Lam 01010's
     /// attack restriction) lives here. Dropped by
     /// [`expire_lasting_effects`](Self::expire_lasting_effects) when the
-    /// boundary its lifetime names is reached. Required on the wire (#453).
+    /// boundary its lifetime names is reached. Required on the wire.
     pub lasting_effects: Vec<LastingEffect>,
     /// Shared encounter deck (top = front). Built at scenario setup
     /// from encounter-set codes; drawn from during Mythos. When the
@@ -209,8 +170,7 @@ pub struct GameState {
     /// back in via the deterministic RNG path.
     ///
     /// Empty at the start of every scenario; populated by scenario
-    /// setup (the first wiring lands in #126 alongside the synthetic
-    /// fixture's encounter-set composition).
+    /// setup.
     pub encounter_deck: VecDeque<CardCode>,
     /// Encounter discard pile. Treacheries land here after Revelation
     /// resolves; defeated enemies (and other "discarded from play"
@@ -256,17 +216,16 @@ pub struct GameState {
     /// and lets mandatory resolution finish. *Has the ending finished?* is the
     /// `ScenarioEnd` frame's question, not this field's: the apply boundary pops
     /// that frame as it emits `Event::ScenarioResolved` and runs
-    /// `apply_resolution`, exactly once (the idempotency guard formerly tracked
-    /// as #131). See
+    /// `apply_resolution`, exactly once. See
     /// `docs/adr/0004-a-latched-resolution-cancels-opportunities-not-resolutions.md`.
     pub ending: Option<ScenarioEnding>,
     /// The victory display (Rules Reference p.21): an out-of-play zone of
     /// cards worth experience, scored at scenario end. Victory-point
     /// locations are placed here when the scenario resolves (in play +
-    /// revealed + no clues); victory-point enemies enter as defeated
-    /// (C3). Phase 9 sums these cards' corpus victory values for XP.
+    /// revealed + no clues); victory-point enemies enter as they are
+    /// defeated. Nothing scores them for experience yet.
     pub victory_display: Vec<CardCode>,
-    /// Cards removed from the game (#772) that no investigator owns —
+    /// Cards removed from the game that no investigator owns —
     /// scenario-owned and encounter cards — sitting beside
     /// [`victory_display`](Self::victory_display) because removal is a property
     /// of the *card* rather than of any player's area. The leave-play exits in
@@ -290,7 +249,7 @@ pub struct GameState {
     /// When set, the engine suspends with an `AwaitingInput { InputKind::Confirm }`
     /// at skill-test resolution (after the result events are emitted, before the
     /// ST.7 consequence resolves) so an interactive host can show the player the
-    /// result and wait for an acknowledgment (#478). A *cosmetic* pause — it
+    /// result and wait for an acknowledgment. A *cosmetic* pause — it
     /// makes no game decision — so it is gated: the server sets it for human play,
     /// while tests and non-interactive/headless consumers leave it `false` and
     /// resolve straight through. `#[serde(default)]` keeps already-persisted game
@@ -409,7 +368,7 @@ crate::state::define_id! {
 ///
 /// Lives here rather than in the query module because a
 /// [`RecordedModifier`] stores one: a row has to say *what* it modifies,
-/// and a row is state (and therefore on the wire, #453). The query module
+/// and a row is state (and therefore on the wire). The query module
 /// re-exports it as
 /// [`modified_value::ModifierTarget`](crate::engine::modified_value::ModifierTarget).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -427,7 +386,7 @@ pub enum ModifierTarget {
     /// the test is against rather than naming the test.
     ///
     /// What *does* target the test is a
-    /// [`Determination`] row (#685). An
+    /// [`Determination`] row. An
     /// automatic success substitutes the test's total difficulty, and an
     /// automatic failure the tester's total skill value; neither belongs
     /// to the location or the enemy, and the precedence between them is a
@@ -476,10 +435,9 @@ pub enum ModifierTarget {
 /// modifier rows expire, [`SkillTestEnded`](crate::event::Event::SkillTestEnded)
 /// fires, and no success or failure is ever declared. The gate is in
 /// `skill_test::advance`'s loop preamble, beside the eliminated-tester one it
-/// mirrors (#564). Reachable solo: Beat Cop 01018's *"\[fast\] Discard Beat
+/// mirrors. Reachable solo: Beat Cop 01018's *"\[fast\] Discard Beat
 /// Cop: Deal 1 damage to an enemy at your location"* can defeat a 1-health
-/// enemy at the ST.2 player window while the attack against it is in flight
-/// (#682).
+/// enemy at the ST.2 player window while the attack against it is in flight.
 ///
 /// **This is an engine decision, not a citation.** The vendored sources do not
 /// settle what becomes of a skill test whose target leaves play:
@@ -568,8 +526,9 @@ pub enum Lifetime {
     /// [`LastingEffect`]. The evaluator's `Modify` arm still refuses every
     /// scope but `ThisSkillTest`, so no [`RecordedModifier`] carries it yet;
     /// the remaining lifetimes ADR 0005 names — until end of turn
-    /// ([`ModifierScope::ThisTurn`], #572), until end of phase (Encyclopedia
-    /// 01042) — arrive with the effects that record them.
+    /// ([`ModifierScope::ThisTurn`]), until end of phase (Encyclopedia
+    /// 01042) — arrive with the effects that record them. TODO(#572): the
+    /// turn-scoped one.
     ///
     /// [`ModifierScope::ThisTurn`]: card_dsl::dsl::ModifierScope::ThisTurn
     Round,
@@ -778,7 +737,7 @@ impl RecordedModifier {
 impl GameState {
     /// The skill test currently in flight, if any; `None` outside a test. Reads
     /// the topmost `Continuation::SkillTest` frame — the continuation stack is
-    /// the single source of truth for "a test is mid-resolution" (#348). Topmost
+    /// the single source of truth for "a test is mid-resolution". Topmost
     /// (not the top) because a reaction window can sit above the test mid-
     /// resolution; "topmost `SkillTest` = the in-flight test".
     #[must_use]
@@ -827,8 +786,7 @@ impl GameState {
     /// The investigator currently prompted to mulligan, if a setup mulligan is
     /// in progress; `None` otherwise. Reads the top
     /// [`Continuation::Mulligan`] frame's `remaining[0]` — the continuation
-    /// stack is the single source of truth for "a mulligan is pending" (#348,
-    /// replacing the former `mulligan_pending` cursor). The frame is only ever
+    /// stack is the single source of truth for "a mulligan is pending". The frame is only ever
     /// the top during setup, so the top (not a topmost search) is correct.
     #[must_use]
     pub fn current_mulligan(&self) -> Option<InvestigatorId> {
@@ -853,8 +811,7 @@ impl GameState {
     /// encounter card, if an encounter-draw loop is in progress; `None`
     /// otherwise. Reads the topmost [`Continuation::EncounterDraw`] frame's
     /// `remaining[0]` — the continuation stack is the single source of truth
-    /// for "an encounter draw is pending" (#348, replacing the former
-    /// `mythos_draw_pending` cursor). Topmost (not the top) because the
+    /// for "an encounter draw is pending". Topmost (not the top) because the
     /// drawer's [`PlayerDraw`](Continuation::PlayerDraw) chain frame — and a
     /// mid-chain [`SpawnEngage`](Continuation::SpawnEngage) above it while a
     /// spawn-engagement tie is resolved — sit above the loop frame.
@@ -873,8 +830,7 @@ impl GameState {
     /// Innermost because plays nest — a Fast event played to cancel the attack
     /// of opportunity a non-fast play provoked runs while the first card is
     /// still mid-play — and the topmost frame is the one whose play the engine
-    /// is resolving right now. Replaces the former `pending_played_event` field
-    /// as the read view of that state (#604); see
+    /// is resolving right now. See
     /// [`Continuation::play_in_progress`].
     #[must_use]
     pub fn play_in_progress(&self) -> Option<(InvestigatorId, &CardCode)> {
@@ -898,10 +854,10 @@ impl GameState {
     ///
     /// The single reading of "engaged with you", shared by the kernel's
     /// [`Quantity::EngagedEnemies`](card_dsl::dsl::Quantity::EngagedEnemies) count
-    /// and by card predicates in the `cards` crate (Machete 01020). Two
-    /// hand-rolled copies of this filter drifting apart is what #592 was.
+    /// and by card predicates in the `cards` crate (Machete 01020), so the
+    /// filter has one copy to keep right.
     ///
-    /// `TODO(#579)`: **Massive** enemies are "considered" engaged with every
+    /// TODO(#579): **Massive** enemies are "considered" engaged with every
     /// investigator at their location, so they belong in this iterator — the
     /// keyword is unparsed corpus-wide today, so they are absent here and any
     /// caller inherits that gap.
@@ -915,10 +871,10 @@ impl GameState {
             .map(|(id, e)| (*id, e))
     }
 
-    /// Every open window/run frame on the stack, in stack order — legacy
+    /// Every open window/run frame on the stack, in stack order —
     /// [`FastWindow`](Continuation::FastWindow) framework windows **and**
     /// [`TimingPointWindow`](Continuation::TimingPointWindow) event windows /
-    /// forced runs (#433). A frame is a window/run iff it carries a candidate
+    /// forced runs. A frame is a window/run iff it carries a candidate
     /// list ([`Continuation::pending_candidates`]).
     fn windows(&self) -> impl DoubleEndedIterator<Item = &Continuation> {
         self.continuations
@@ -927,16 +883,15 @@ impl GameState {
     }
 
     /// The open windows as a `Vec` of references, in stack order. Read
-    /// accessor for callers (and tests) that inspect the window stack the
-    /// way they used to read the former `open_windows` field.
+    /// accessor for callers (and tests) that inspect the window stack.
     #[must_use]
     pub fn open_windows(&self) -> Vec<&Continuation> {
         self.windows().collect()
     }
 
-    /// The topmost open window regardless of pending triggers (the former
-    /// `open_windows.last()`), e.g. for the Fast-play `permissive_window`
-    /// timing gate — including a pure-Fast gate with empty `pending_triggers`.
+    /// The topmost open window regardless of its candidates, e.g. for the
+    /// Fast-play `permissive_window` timing gate — including a pure-Fast gate
+    /// with no candidates.
     #[must_use]
     pub fn top_window(&self) -> Option<&Continuation> {
         self.windows().next_back()

@@ -50,14 +50,13 @@ pub use outcome::{
 };
 pub use pathfinding::shortest_first_steps;
 
-// The unified trigger-dispatch chokepoint's key (Axis-B T5a).
+// The unified trigger-dispatch chokepoint's key.
 pub use dispatch::emit::TimingEvent;
 // `pub(crate)`: `apply` routes player actions through `apply_player_action`, and
 // `test_support`'s session drives turn actions and the loop directly.
 pub(crate) use dispatch::{apply_player_action, dispatch_turn_action, drive};
 // `pub(crate)` so `TestSession::test_skill` can start a plain skill test
-// directly (the synthetic entry point that replaced the retired
-// `PlayerAction::PerformSkillTest` wire variant, #447).
+// directly: a synthetic entry point, since no player action starts one.
 pub(crate) use dispatch::skill_test::perform_skill_test as start_plain_skill_test;
 
 use card_dsl::card_data::CardKind;
@@ -141,7 +140,7 @@ pub struct ApplyResult {
 /// left the scenario's
 /// [`ScenarioEnd`](crate::state::Continuation::ScenarioEnd) frame on top at its
 /// finalize step — i.e. the resolution latched *and* the game-end Forced
-/// abilities it queued have finished (#566).
+/// abilities it queued have finished.
 pub fn apply(state: GameState, action: Action, registries: Registries) -> ApplyResult {
     apply_via(state, registries, |cx| match action {
         Action::Player(p) => apply_player_action(cx, &p),
@@ -152,7 +151,7 @@ pub fn apply(state: GameState, action: Action, registries: Registries) -> ApplyR
 /// Create a freshly seated game: run scenario setup's roster seating over
 /// `setup_state` and drive to the first `AwaitingInput` (the setup mulligan).
 ///
-/// This is the non-logged seating path (#459). The returned
+/// This is the non-logged seating path. The returned
 /// [`ApplyResult::state`] is already seated, shuffled, and mulligan-pending —
 /// hosts persist it as the seed, so the action log is `ResolveInput`-only and
 /// replay never re-runs setup RNG. Validation mirrors a player action: an
@@ -228,7 +227,7 @@ pub(crate) fn apply_via(
             // an unrelated suspension can be surfaced by the same apply that
             // finalized nothing, and the check is cheap and self-guarding.
             finalize_scenario_end(&mut cx);
-            // The rest invariant (#938): `Done` means the game is over, so the
+            // The rest invariant: `Done` means the game is over, so the
             // stack is empty; `AwaitingInput` means a prompt is on top for the
             // next `apply` to answer. It holds because every prompt frame's push
             // site returns `AwaitingInput`, and every resume handler pops its
@@ -268,7 +267,7 @@ pub(crate) fn apply_via(
 }
 
 /// Post-dispatch hook: finish the scenario's ending if the `drive` loop left it
-/// ready (#566).
+/// ready.
 ///
 /// The ending is a [`ScenarioEnd`](crate::state::Continuation::ScenarioEnd)
 /// frame, pushed at the bottom of the continuation stack when the resolution
@@ -310,7 +309,7 @@ fn finalize_scenario_end(cx: &mut Cx) {
     // Place victory-point locations in the victory display. Runs BEFORE
     // `(module.apply_resolution)(...)` so the scan captures board state
     // at the moment the resolution latches, before any post-resolution
-    // cleanup (apply_resolution, Phase 9) runs. Generic across scenarios;
+    // cleanup (`apply_resolution`) runs. Generic across scenarios;
     // reads victory values from the card registry; a code it doesn't know
     // has no victory value and is not placed.
     //

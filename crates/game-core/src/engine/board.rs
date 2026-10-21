@@ -31,11 +31,10 @@
 //!
 //! [`find_instance`] and [`find_instance_mut`] answer *"where is the card with
 //! this instance id"* for the engine, for natives in `cards`, and for the web
-//! client. Before them, each caller searched its own subset of zones: the web
-//! client looked only among cards an investigator controls, so a prompt anchored
-//! on Lita Chantler 01117 lost its source, and Cover Up 01007's natives looked
-//! only in the triggering investigator's areas, so a co-located investigator
-//! could not use it (#974).
+//! client. Every caller searches the same zones through them, so a card is
+//! found wherever it sits: a prompt anchored on Lita Chantler 01117 at a
+//! location keeps its source, and Cover Up 01007's natives find it in a
+//! co-located investigator's threat area.
 //!
 //! The answer comes with a [`Placement`] — which zone, and whose or which
 //! location's — so a caller derives the investigator whose area holds the card,
@@ -59,7 +58,7 @@
 //! `place_in_victory_display` is the victory display's exit, which a defeated
 //! Victory enemy takes. `discard_drawn_card` files a card that never entered
 //! play through the same router, to its owner's pile: an encounter card that
-//! could not enter play, or a resolved one-shot, a weakness included (#1121).
+//! could not enter play, or a resolved one-shot, a weakness included.
 //!
 //! The exits are crate-private. A card-local native takes them as methods on
 //! [`NativeCx`](crate::engine::NativeCx), such as
@@ -156,7 +155,7 @@ impl Placement {
     /// eliminated — any status but `Active`. Rules Reference p.10 removes an
     /// eliminated investigator's cards from play, all but the investigator card,
     /// and this is the filter that keeps that card, and anything still on the
-    /// board in the step-0 window, from acting (#567).
+    /// board in the step-0 window, from acting.
     #[must_use]
     pub fn in_eliminated_area(self, state: &GameState) -> bool {
         self.investigator()
@@ -369,7 +368,7 @@ pub fn find_instance(
 /// The mutable twin of [`find_instance`]: the same instance, found by the same
 /// walk, then borrowed mutably out of the zone its placement names.
 ///
-/// Addressing by identity rather than by position is the #706 contract: a cost
+/// Addressing by identity rather than by position is the contract: a cost
 /// that removes a card mid-payment invalidates any position cached earlier, and
 /// this returns `None` in exactly that case.
 #[must_use]
@@ -406,7 +405,7 @@ pub(crate) fn remove_clues(cx: &mut Cx, instance_id: CardInstanceId, count: u8) 
 /// board. No threshold check: `glossary/Doom.md` — *"Unless a card otherwise
 /// specifies that it can advance the agenda, this is the only time at which
 /// the agenda can advance"* — puts the check at Mythos step 1.3. No event
-/// announces doom yet (#593).
+/// announces doom yet. TODO(#593): announce it.
 ///
 /// The exit a card-local native takes to place doom on a card (Arcane
 /// Initiate 01063's *"Place 1 doom on it."*).
