@@ -2,6 +2,7 @@
 //! investigator enters a location it is revealed and clues are placed
 //! (`PerInvestigator(n) → n × #investigators`, or `Fixed(n)`), *added* to
 //! any clues already sitting on the location rather than replacing them.
+//!
 //! Enemy movement does not reveal — only the investigator-entry call sites
 //! (seating, the Move action, and act-1's board-build native effect) call
 //! this.

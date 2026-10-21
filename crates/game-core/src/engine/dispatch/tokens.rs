@@ -1,5 +1,7 @@
 //! Moving tokens from one card to another: a move, neither a deal nor a
-//! heal, so it is its own exit (ADR 0009). The Necronomicon 01009's
+//! heal, so it is its own exit (ADR 0009).
+//!
+//! The Necronomicon 01009's
 //! *"Move 1 horror from The Necronomicon to Daisy Walker."* is the first
 //! caller, through [`NativeCx::move_horror`](crate::engine::NativeCx::move_horror).
 //!
