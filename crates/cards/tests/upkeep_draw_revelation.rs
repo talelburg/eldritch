@@ -1,23 +1,21 @@
-//! #509 regression: drawing a persistent treachery weakness (Cover Up 01007)
-//! during **Upkeep step 4.4** must not panic the engine.
+//! Drawing a persistent treachery weakness (Cover Up 01007) during **Upkeep
+//! step 4.4** does not panic the engine.
 //!
 //! `upkeep_resume` runs steps 4.2→4.6 synchronously, relying on the
 //! `UpkeepPhase` anchor staying on top of the continuation stack. The 4.4 draw
 //! resolving a drawn-weakness Revelation `push_effect`s onto the live stack,
-//! burying the anchor — so step 4.6's `set_upkeep_resume` used to find the
-//! pushed effect instead of the anchor and hit `unreachable!()`. The fix makes
-//! 4.4 cede to the drive loop when it pushed (since #1027, resuming at
-//! `Drawing` to run the next investigator's draw).
+//! burying the anchor, where step 4.6's `set_upkeep_resume` would find the
+//! pushed effect instead of the anchor and hit `unreachable!()`. So 4.4 cedes
+//! to the drive loop when it pushed, resuming at `Drawing` to run the next
+//! investigator's draw.
 //!
 //! Drives a solo game via the public `EndTurn` apply path so the Investigation
 //! → Enemy → Upkeep cascade actually engages the drive loop (unlike the
 //! registry-free `upkeep_resume` unit tests, which call the helper directly and
 //! so never exercise the cede). Uses the real `cards::REGISTRY` because only
-//! the real Cover Up 01007 self-places into the threat area with 3 clues. The
-//! synthetic fixture this file once contrasted against had no
-//! `Trigger::Revelation` at all, so it would have pushed nothing and never
-//! tripped the bug — which is the gap ADR 0016 was written from, and #878
-//! deleted the fixture.
+//! the real Cover Up 01007 self-places into the threat area with 3 clues: a
+//! synthetic card with no `Trigger::Revelation` would push nothing and never
+//! reach the cede (ADR 0016).
 use cards::TEST_REGISTRIES;
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
@@ -38,9 +36,9 @@ fn upkeep_draw_of_cover_up_does_not_panic_and_cedes_to_the_drive_loop() {
     // draw pulls it. Deck top is drawn first.
     //
     // The round-ending EndTurn cascades Investigation → Enemy → Upkeep. At
-    // step 4.4 the draw reveals Cover Up and pushes its Revelation. Before the
-    // fix this panics at `set_upkeep_resume`'s `unreachable!`; after, 4.4 cedes,
-    // the drive loop resolves the Revelation, and 4.5/4.6 run on re-exposure.
+    // step 4.4 the draw reveals Cover Up and pushes its Revelation. Rather than
+    // reaching `set_upkeep_resume`'s `unreachable!`, 4.4 cedes, the drive loop
+    // resolves the Revelation, and 4.5/4.6 run on re-exposure.
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE).deck([COVER_UP, HOLY_ROSARY, HOLY_ROSARY]))

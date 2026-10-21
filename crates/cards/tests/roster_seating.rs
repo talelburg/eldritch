@@ -25,7 +25,7 @@ fn seats_roland_with_corpus_stats_and_payload_deck() {
     let result = engine::seat_and_open(state, &roster, TEST_REGISTRIES);
 
     // seat_and_open seats the roster and opens the setup mulligan prompt
-    // (AwaitingInput) for the first investigator (#348).
+    // (AwaitingInput) for the first investigator.
     assert!(
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
         "seat_and_open opens the mulligan prompt, got {:?}",

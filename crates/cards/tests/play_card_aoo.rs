@@ -1,6 +1,6 @@
-//! Attacks of opportunity provoked by **playing an action-cost card** (#378, K3
-//! of the keystone arc), driven through the public [`apply`] API against the
-//! real card corpus.
+//! Regression for #378: **playing an action-cost card** provokes attacks of
+//! opportunity, driven through the public [`apply`] API against the real card
+//! corpus.
 //!
 //! Per the Rules Reference (p.5, "Attack of Opportunity"), playing a card is an
 //! action, so playing a **non-fast** card (asset or event) while engaged with a
@@ -11,12 +11,11 @@
 //! resolve — but only if you're still alive." Fast events/assets are not
 //! actions and never provoke.
 //!
-//! This also covers the missing non-fast play-action charge folded into #378:
-//! before this slice, playing a non-fast card spent no action at all.
+//! It also covers the one action a non-fast play spends.
 //!
 //! `game-core`'s unit tests can't reach `cards::REGISTRY`, so this lives in
 //! `crates/cards/tests/`. The `AoO` window/suspend mechanism is covered by
-//! `dodge_aoo.rs` / `guard_dog_soak.rs` (K1); these tests prove the **new
+//! `dodge_aoo.rs` / `guard_dog_soak.rs`; these tests prove the **play-card
 //! firing site** routes through it.
 //!
 //! ## Verified card text (`ArkhamDB`, 2026-06-21)
@@ -96,7 +95,7 @@ fn dog_damage(session: &TestSession) -> u8 {
 }
 
 // -----------------------------------------------------------------------
-// Playing a non-fast event provokes an AoO (the new #378 firing site).
+// Playing a non-fast event provokes an AoO.
 // -----------------------------------------------------------------------
 
 /// Playing Emergency Cache (a non-fast event) while engaged with a ready enemy
@@ -116,7 +115,7 @@ fn playing_a_non_fast_event_while_engaged_provokes_an_aoo() {
     let dog = session.state().card(INV, GUARD_DOG);
     let resources_before = session.state().investigators[&INV].resources;
 
-    // The AoO prompts for the soak distribution (#44/K5b), one prompt per point
+    // The AoO prompts for the soak distribution, one prompt per point
     // of damage: assign both onto Guard Dog.
     let session = session.take(&PLAY_FIRST).pick(dog.clone()).pick(dog);
     let state = session.state();
@@ -127,8 +126,8 @@ fn playing_a_non_fast_event_while_engaged_provokes_an_aoo() {
         "the AoO's damage window must suspend the play"
     );
     // Assigned to Guard Dog, not yet placed: the open window is its own `when`
-    // cell, between the rules' two steps (#727). This test is about the AoO
-    // suspending the play, which it now does one step earlier.
+    // cell, between the rules' two steps. This test is about the AoO
+    // suspending the play.
     assert_eq!(
         dog_damage(&session),
         0,
@@ -148,7 +147,7 @@ fn playing_a_non_fast_event_while_engaged_provokes_an_aoo() {
 }
 
 // -----------------------------------------------------------------------
-// Playing a non-fast card costs one action (the folded-in charge, #378).
+// Playing a non-fast card costs one action.
 // -----------------------------------------------------------------------
 
 /// Playing a non-fast event spends one action. With no engaged enemy the play
@@ -241,7 +240,7 @@ fn playing_a_fast_event_while_engaged_provokes_no_aoo_and_spends_no_action() {
 /// you're still alive"): if the play's `AoO` defeats the investigator, the event's
 /// effect does not resolve. The card was still played, but it never reaches a
 /// discard pile: elimination removes an eliminated investigator's owned cards
-/// from the game (RR p.10, step 1), and the mid-play event is one of them (#604).
+/// from the game (RR p.10, step 1), and the mid-play event is one of them.
 #[test]
 fn aoo_that_defeats_the_player_suppresses_the_event_effect() {
     // Lethal AoO, no soaker / no Dodge → the actor is defeated before the
@@ -298,7 +297,7 @@ fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
 
     // Step 1: play Machete → AoO soaks onto Guard Dog → soak window; Machete is
     // mid-play — it left hand when the play commenced and enters play only once
-    // the play completes. The AoO prompts for the soak distribution (#44/K5b),
+    // the play completes. The AoO prompts for the soak distribution,
     // one prompt per point of damage: assign both onto Guard Dog.
     let session = session
         .take(&PLAY_FIRST)

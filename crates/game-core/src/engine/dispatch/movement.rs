@@ -1,4 +1,4 @@
-//! Where a movement block bites, for both sides of the table (#651, #774).
+//! Where a movement block bites, for both sides of the table.
 //!
 //! Two predicates, deliberately not one. Barricade 01038 blocks **enemies**
 //! and not investigators (*"Non-\[\[Elite\]\] enemies cannot move into attached
@@ -16,7 +16,7 @@
 //! # The shared posture
 //!
 //! **A block is checked against the compelled step, never baked into the
-//! connection graph** (#651). `data/rules-reference/rules/glossary/Nearest.md`:
+//! connection graph**. `data/rules-reference/rules/glossary/Nearest.md`:
 //! *"Nearest refers to the entity of the specified kind at a location that can
 //! be reached in the fewest number of connections, **even if one or more of
 //! those connections are blocked by another card ability**."* So distances and
@@ -38,10 +38,10 @@
 //! through [`abilities_in_effect`](crate::engine::abilities_in_effect) rather
 //! than read straight off `abilities_for`.
 //!
-//! Those two are not every per-location collection: #771 added a third,
-//! `Location::cards_at_location`, and this module does **not** read it. See the
-//! `TODO(#826)` on [`location_carries_restriction`] for why that is a choice
-//! rather than an oversight.
+//! Those two are not every per-location collection: there is a third,
+//! `Location::cards_at_location`, and this module does **not** read it. The
+//! TODO on [`location_carries_restriction`] says why that is a choice rather
+//! than an oversight.
 
 use card_dsl::dsl::{Ability, CardFilter, Effect, Restriction, Trigger};
 
@@ -59,13 +59,13 @@ use crate::state::{Enemy, GameState, LocationId};
 ///
 /// **TODO(#826): this does not read
 /// [`Location::cards_at_location`](crate::state::Location::cards_at_location).**
-/// #771 gave a location a third per-location `Vec<CardInPlay>` — cards put into
-/// play *at* it under no controller — and copied the attachment arm at
-/// reachability, the modifier sweep and both instance walks, but not here. It is
+/// A location has a third per-location `Vec<CardInPlay>` — cards put into
+/// play *at* it under no controller — and reachability, the modifier sweep and
+/// both instance walks read it beside the attachments, but this does not. It is
 /// unreachable rather than latent-wrong: the zone's only occupant is Lita
 /// Chantler 01117, who carries no [`Effect::Restrict`], so no board state exists
 /// in which the two collections disagree about an answer anyone asks for. The
-/// open question #826 settles is whether a movement restriction is
+/// open question is whether a movement restriction is
 /// attachment-shaped by nature — Barricade 01038 is the corpus's only instance —
 /// or whether this walk should simply chain both collections. The first card
 /// that puts a restriction-carrying card into play at a location forces it.

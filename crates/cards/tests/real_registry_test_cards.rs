@@ -1,4 +1,4 @@
-//! The contract of `cards::TEST_REGISTRY` over the real corpus (#934): a test
+//! The contract of `cards::TEST_REGISTRY` over the real corpus: a test
 //! that names it can seat a plain [`test_support::test_investigator`], while
 //! every real card and the synthetic terminal acts/agendas still resolve.
 

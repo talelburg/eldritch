@@ -1,6 +1,6 @@
-//! #320 integration: Research Librarian 01032's `[reaction] After Research
-//! Librarian enters play: Search your deck for a Tome asset and add it to your
-//! hand. Shuffle your deck.` end-to-end against the real `cards::REGISTRY`.
+//! Research Librarian 01032's `[reaction] After Research Librarian enters play:
+//! Search your deck for a [[Tome]] asset and add it to your hand. Shuffle your
+//! deck.` end-to-end against the real `cards::REGISTRY`.
 //!
 //! Exercises the `EnteredPlay` reaction window (the card enters play → its
 //! self-referential reaction window opens) and the deck-search filter (entire
@@ -92,7 +92,7 @@ fn entering_play_tutors_the_only_tome_asset() {
     assert_event!(s.events(), Event::DeckShuffled { .. });
 }
 
-/// #639: the initiation gate reaches the reaction path too. `Effect::SearchDeck`
+/// The initiation gate reaches the reaction path too. `Effect::SearchDeck`
 /// against an **empty** deck is provably inert — nothing to find, nothing to
 /// shuffle — so RR "Ability" (*"a triggered ability can only be initiated if its
 /// effect has the potential to change the game state…"*) bars the reaction and
@@ -113,7 +113,7 @@ fn an_empty_deck_does_not_open_the_tutor_reaction() {
 
 /// A **non-empty** deck with no eligible Tome is deliberately *not* proven inert
 /// — the search's mandatory shuffle still reorders the deck — so the reaction is
-/// offered and simply finds nothing (#639's conservative posture).
+/// offered and simply finds nothing (the gate's conservative reading).
 #[test]
 fn a_tomeless_but_non_empty_deck_still_offers_the_reaction() {
     let s = play(board(&[GUTS, GUTS]));

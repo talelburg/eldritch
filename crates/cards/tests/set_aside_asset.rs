@@ -1,4 +1,4 @@
-//! #771 integration: a **set-aside asset** enters play *at* a location, under
+//! A **set-aside asset** enters play *at* a location, under
 //! no investigator's control, against the real `cards::REGISTRY`.
 //!
 //! ## Verified card text (`data/arkhamdb-snapshot`, 2026-08-30)
@@ -40,7 +40,7 @@
 //! ## What is *not* here
 //!
 //! Lita's **Parley** — the ability the Parlor grants her once she is on the
-//! board — is #772's, and lives in `lita_parley.rs`. This file drives
+//! board — is tested in `lita_parley.rs`. This file drives
 //! `put_set_aside_card_into_play` directly for the entry path, and asserts
 //! 01109b's own contract — printed order, and preconditions checked up front —
 //! separately.
@@ -235,7 +235,7 @@ fn a_set_aside_asset_named_at_a_location_not_in_play_is_rejected() {
     );
 }
 
-// ---- the acceptance clauses ------------------------------------------
+// ---- an uncontrolled asset in play --------------------------------------
 
 /// `glossary/Asset_Cards.md` limits assignment to assets an investigator
 /// *"controls"*, so an uncontrolled Lita is not an eligible soaker even for an
@@ -285,11 +285,11 @@ fn an_uncontrolled_asset_cannot_soak_damage_for_a_colocated_investigator() {
     );
 }
 
-/// She is nonetheless *in play* and swept: her location-scoped grant is not
-/// implemented until #772, but the collection she sits in is read by the
-/// modifier query, which is what makes the zone load-bearing rather than
-/// decorative. Read here as the printed baseline — no modifier reaches the
-/// investigator's combat through her yet.
+/// She is nonetheless *in play* and swept: her location-scoped grant applies
+/// only while an investigator controls her, and nobody does here, but the
+/// collection she sits in is read by the modifier query, which is what makes
+/// the zone load-bearing rather than decorative. Read here as the printed
+/// baseline — no modifier reaches the investigator's combat through her.
 #[test]
 fn a_card_at_a_location_is_swept_by_the_modifier_query() {
     let mut state = board();
@@ -363,10 +363,9 @@ fn the_reverse_spawns_the_ghoul_priest_owned_by_the_encounter_deck() {
 }
 
 /// Line 2 — *"Put the set-aside Lita Chantler into play in the Parlor."* — puts
-/// her into play there under nobody's control (#772). She waited on the
-/// granting hook: until the Parlor's *"While Lita Chantler is not controlled by
-/// a player, she gains: \[action\] **Parley.** …"* existed she would have
-/// arrived inert, which is a worse board than not having her.
+/// her into play there under nobody's control, where the Parlor's *"While Lita
+/// Chantler is not controlled by a player, she gains: "\[action\]: **Parley.**
+/// …"* gives her the ability that takes control of her.
 #[test]
 fn the_reverse_puts_lita_into_play_in_the_parlor() {
     let mut state = board();
@@ -409,8 +408,8 @@ fn the_reverse_rejects_when_lita_is_not_set_aside() {
 
 /// The preconditions are checked **up front**, not implied by the ordering:
 /// with the Hallway not in play the spawn cannot happen, and the reveal that
-/// now comes first must not have run. Without the up-front check this leaves
-/// the barrier lifted (#774 makes `revealed` its gate) on a board the reverse
+/// comes first must not have run. Without the up-front check this leaves
+/// the barrier lifted (`revealed` is its gate) on a board the reverse
 /// never finished.
 #[test]
 fn the_reverse_checks_its_preconditions_before_revealing() {

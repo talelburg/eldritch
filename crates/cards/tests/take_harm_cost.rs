@@ -1,4 +1,4 @@
-//! Harm paid as a cost: [`Cost::TakeHarm`] on an activated ability (#1029).
+//! Harm paid as a cost: [`Cost::TakeHarm`] on an activated ability.
 //!
 //! The cost is paid at Appendix I step 2 and the effect resolves at steps 3–4,
 //! so the harm — its soak prompt, its placement and every nested sequence it
@@ -143,7 +143,7 @@ fn a_harm_cost_offers_the_soak_and_the_effect_waits_for_the_horror() {
     assert_eq!(
         session.state().investigators[&INV].actions_remaining,
         3,
-        "a fast ability takes no action"
+        "a zero-action ability takes no action"
     );
 
     // The horror is placed before the effect resolves.

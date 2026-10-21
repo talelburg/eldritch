@@ -1,4 +1,4 @@
-//! PR-6 (#321) integration: Medical Texts 01035's `[action] Choose an
+//! Medical Texts 01035's `[action] Choose an
 //! investigator at your location and test [intellect] (2). If you succeed,
 //! heal 1 damage from that investigator. If you fail, deal 1 damage to that
 //! investigator.` end-to-end against the real `cards::REGISTRY`.
@@ -40,7 +40,7 @@ fn board(intellect: i8, damage: u8) -> TestSession {
             seat(1)
                 .at(HERE)
                 .skill(SkillKind::Intellect, intellect)
-                // Harm accumulates on the investigator card after #448 cp2a.
+                // Harm accumulates on the investigator card.
                 .harm(damage, 0)
                 .in_play([MEDICAL_TEXTS]),
         )
@@ -83,7 +83,7 @@ fn success_heals_one_damage_from_the_chosen_investigator() {
     );
 }
 
-/// #639: the heal's target eligibility bites at *resolution*, not initiation —
+/// The heal's target eligibility bites at *resolution*, not initiation —
 /// Medical Texts' effect is a skill test, which always has the potential to
 /// change the game state, so the ability initiates however healthy everyone is.
 /// Succeeding with nobody damaged leaves the `on_success` heal with no eligible

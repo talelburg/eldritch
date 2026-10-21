@@ -12,7 +12,8 @@
 //! > […] the auto-evade effect from Breaking and Entering can trigger the
 //! > reaction on Pickpocketing (0).
 //!
-//! The first ruling is #1082's; the second is why the trigger is on the shared
+//! The first ruling is not modelled. TODO(#1082): a card drawn mid-window is
+//! never offered in that window. The second ruling is why the trigger is on the shared
 //! evade exit rather than on the Evade action, which these tests reach through
 //! two different evades: the basic action and Blinding Light 01066's designated
 //! **Evade**.

@@ -1,5 +1,5 @@
-//! #774 integration: the Parlor 01115's movement barrier, end to end against
-//! the real `cards::REGISTRY`.
+//! Regression for #774: the Parlor 01115's movement barrier stops movement into
+//! the unrevealed Parlor, end to end against the real `cards::REGISTRY`.
 //!
 //! ## Verified card text (`data/arkhamdb-snapshot`, 2026-08-29)
 //!
@@ -11,7 +11,7 @@
 //!
 //! **The Barrier (01109)** is what lifts it — the first of its `back_text`'s
 //! three lines, verbatim (the other two put Lita Chantler into play and spawn
-//! the Ghoul Priest, and are #771 and #231):
+//! the Ghoul Priest):
 //!
 //! > The barrier blocking passage into the parlor has vanished. Reveal the
 //! > Parlor.
@@ -43,7 +43,7 @@
 //! entity of the specified kind at a location that can be reached in the fewest
 //! number of connections, **even if one or more of those connections are
 //! blocked by another card ability**."* — so the connection stays on the map and
-//! the block is checked against the step, never baked into the graph (#651).
+//! the block is checked against the step, never baked into the graph.
 //!
 //! Lives in `crates/cards/tests/` because every assertion needs the real
 //! corpus: the Parlor's front and back abilities, resolved through
@@ -119,7 +119,7 @@ fn move_to(destination: LocationId) -> TurnAction {
 /// The mechanism itself: a location's `back_text` abilities apply while it is
 /// unrevealed and its front's while it is revealed. Read through the two
 /// surfaces that observe the difference — the barrier (back) and the Resign
-/// **action designator** (front, #644/#805).
+/// **action designator** (front).
 #[test]
 fn unrevealed_parlor_shows_its_back_and_revealed_shows_its_front() {
     // Unrevealed: the barrier is in effect, the Resign is not offered.

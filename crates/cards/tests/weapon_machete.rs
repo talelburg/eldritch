@@ -1,13 +1,12 @@
-//! #300 / #592 behaviour test: Machete (01020) conditional extra damage.
+//! Machete (01020)'s conditional extra damage: the `+1` fires only when the
+//! **attacked** enemy is the sole enemy engaged with the actor.
 //!
-//! The `+1` fires only when the **attacked** enemy is the sole enemy engaged
-//! with the actor. Since #451 widened a Fight's candidates from
-//! engaged-only to every co-located enemy, "engaged with exactly one enemy" is
-//! not the same question as "the enemy I am attacking is that one" — the cases
-//! below pin both the bonus and each way of losing it:
+//! A Fight's candidates are every co-located enemy, so "engaged with exactly
+//! one enemy" is not the same question as "the enemy I am attacking is that
+//! one" — the cases below pin both the bonus and each way of losing it:
 //!
 //! - sole engaged enemy attacked → `1 + 1 = 2`;
-//! - two enemies engaged, one picked → `1 + 0 = 1` (multi-target path, #449);
+//! - two enemies engaged, one picked → `1 + 0 = 1` (multi-target path);
 //! - engaged enemy present but an unengaged co-located enemy attacked → `1`;
 //! - engaged with nothing → `1`;
 //! - enemy engaged with another investigator → `1` (both FAQ exclusions).
@@ -45,8 +44,7 @@ fn ghoul(id: u32, name: &str) -> Enemy {
 }
 
 /// Board with Machete in play, `engaged` enemies engaged with the actor and
-/// `unengaged` enemies merely *co-located* with them (the scope #451 widened
-/// a Fight to). Engaged enemies take ids `100+n`, unengaged `200+n`.
+/// `unengaged` enemies merely *co-located* with them (a Fight reaches both). Engaged enemies take ids `100+n`, unengaged `200+n`.
 fn board_with(engaged: u32, unengaged: u32) -> GameStateBuilder {
     let mut builder = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -161,7 +159,7 @@ fn two_enemies_engaged_suspends_for_pick_then_attacks_chosen() {
     );
 }
 
-/// #592: engaged with exactly one enemy, attacking a *different*, unengaged
+/// Regression for #592: engaged with exactly one enemy, attacking a *different*, unengaged
 /// co-located enemy gets **no** bonus — the attacked enemy is not "the only
 /// enemy engaged with you", it is not engaged with you at all.
 ///
@@ -193,13 +191,13 @@ fn unengaged_co_located_target_gets_no_bonus() {
     );
 }
 
-/// #592: with *no* enemy engaged with you at all, attacking a co-located enemy
+/// With *no* enemy engaged with you at all, attacking a co-located enemy
 /// gets no bonus either — "the only enemy engaged with you" is vacuously false
 /// when you are engaged with nothing.
 ///
-/// Unlike its two siblings this board does *not* discriminate against the #592
-/// bug (the old `EngagedEnemies == 1` encoding read 0 here and also withheld the
-/// bonus). It guards a different wrong answer: an encoding phrased as "no
+/// Unlike its two siblings this board does *not* discriminate against an
+/// `EngagedEnemies == 1` encoding, which reads 0 here and also withholds the
+/// bonus. It guards a different wrong answer: an encoding phrased as "no
 /// engaged enemy *other than* the target" would count 0 and grant the bonus.
 #[test]
 fn no_engaged_enemies_at_all_gets_no_bonus() {
@@ -221,14 +219,14 @@ fn no_engaged_enemies_at_all_gets_no_bonus() {
     );
 }
 
-/// #592: an enemy engaged with *another investigator* is not "engaged with
+/// Regression for #592: an enemy engaged with *another investigator* is not "engaged with
 /// you", so it gets no bonus — the second exclusion in the 01020 FAQ ("or an
 /// enemy engaged to another player").
 ///
 /// The actor is deliberately engaged with exactly one enemy of their own
-/// (enemy 100), so the old count-only encoding would read `EngagedEnemies == 1`
-/// and grant the bonus: this board discriminates against the #592 bug rather
-/// than merely agreeing with it.
+/// (enemy 100), so a count-only encoding would read `EngagedEnemies == 1` and
+/// grant the bonus: this board discriminates against that encoding rather than
+/// merely agreeing with it.
 #[test]
 fn enemy_engaged_with_another_investigator_gets_no_bonus() {
     const OTHER: InvestigatorId = InvestigatorId(2);

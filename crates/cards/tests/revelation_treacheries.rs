@@ -1,10 +1,10 @@
 //! Integration: The Gathering's four one-shot Revelation treacheries
-//! (C4b, #234) resolved through the real `cards` registry and the full
+//! resolved through the real `cards` registry and the full
 //! `apply` → commit-window → resolve → discard pipeline, against the real
 //! corpus.
 //!
 //! The skill-test margin math and the suspended-revelation discard
-//! mechanism are unit-tested in game-core (#286); here we prove the
+//! mechanism are unit-tested in game-core; here we prove the
 //! *card effects* resolve end-to-end against real corpus metadata.
 
 use cards::TEST_REGISTRIES;
@@ -82,11 +82,11 @@ fn grasping_hands_deals_one_damage_per_point_failed_then_discards() {
     assert!(!state.has_skill_test_in_flight());
 }
 
+/// Regression for #426: `Count(SkillTestFailedBy)` deals all N damage in one
+/// `Deal` evaluation, emitting a single `DamageTaken { amount: 2 }` event — not
+/// two separate `DamageTaken { amount: 1 }` events.
 #[test]
 fn grasping_hands_fail_by_two_is_single_deal_of_two_damage() {
-    // #426: Count(SkillTestFailedBy) deals all N damage in one Deal evaluation,
-    // emitting a single DamageTaken { amount: 2 } event — not two separate
-    // DamageTaken { amount: 1 } events.
     // Agility 3 + Numeric(-2) = 1 vs difficulty 3 → fail by 2.
     let session = reveal_committing_nothing(board_with("01162", ChaosToken::Numeric(-2)));
     assert_eq!(session.state().investigators[&INV].damage(), 2);
@@ -98,11 +98,11 @@ fn grasping_hands_fail_by_two_is_single_deal_of_two_damage() {
     );
 }
 
+/// Regression for #426: `Count(SkillTestFailedBy)` deals all N horror in one
+/// `Deal` evaluation, emitting a single `HorrorTaken { amount: 2 }` event — not
+/// two separate `HorrorTaken { amount: 1 }` events.
 #[test]
 fn rotting_remains_fail_by_two_is_single_deal_of_two_horror() {
-    // #426: Count(SkillTestFailedBy) deals all N horror in one Deal evaluation,
-    // emitting a single HorrorTaken { amount: 2 } event — not two separate
-    // HorrorTaken { amount: 1 } events.
     // Willpower 3 + Numeric(-2) = 1 vs difficulty 3 → fail by 2.
     let session = reveal_committing_nothing(board_with("01163", ChaosToken::Numeric(-2)));
     assert_eq!(session.state().investigators[&INV].horror(), 2);
@@ -114,7 +114,7 @@ fn rotting_remains_fail_by_two_is_single_deal_of_two_horror() {
     );
 }
 
-/// **A resolved one-shot is discarded with an event** (#1121): Rotting Remains
+/// **A resolved one-shot is discarded with an event**: Rotting Remains
 /// lands in the encounter discard pile, its owner's, and the client is told
 /// where it went. The card was in limbo while it resolved, so the event names
 /// the deck it was drawn from.
@@ -190,7 +190,7 @@ fn crypt_chill_with_two_assets() -> TestSession {
     )
 }
 
-/// The suspended discard pick names each asset by its card (#989), not by the
+/// The suspended discard pick names each asset by its card, not by the
 /// `Debug` form of its instance id.
 #[test]
 fn crypt_chill_discard_options_are_labelled_with_card_names() {
@@ -215,7 +215,7 @@ fn crypt_chill_discard_options_are_labelled_with_card_names() {
 #[test]
 fn crypt_chill_with_two_assets_suspends_and_discards_the_chosen_one() {
     // Two controlled assets ⇒ the fail branch suspends for the controller's
-    // choice (Axis A #334). AutoFail forces the failure.
+    // choice. AutoFail forces the failure.
     let session = crypt_chill_with_two_assets();
     let glass = session.state().card(INV, MAGNIFYING_GLASS);
 

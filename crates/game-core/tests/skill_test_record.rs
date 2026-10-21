@@ -2,8 +2,9 @@
 //! token with its resolution (`InFlightSkillTest::revealed`), and the ST.5
 //! total the ST.6 comparison used (`ResolvedTest::total`).
 //!
-//! The client reconstructs both from event latches today (#921 item 19). These
-//! fields let it read them off state. They are records only: the engine never
+//! The web client still reconstructs both from the store's event latches
+//! (`crates/web/src/skill_test_result.rs`). These fields let it read them off
+//! state. They are records only: the engine never
 //! reads either back (ADR 0005, ADR 0007).
 //!
 //! The frame is torn down at ST.8, so each test runs with
