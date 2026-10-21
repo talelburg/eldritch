@@ -233,9 +233,10 @@ pub enum AssetEntry {
     PutIntoThreatArea,
 }
 
-/// A frame on the [`GameState::continuations`](crate::state::game_state::GameState::continuations) suspend/resume stack:
-/// a typed resume point, not a closure, so it serializes for
-/// replay/persistence like every other state field.
+/// A frame on the
+/// [`GameState::continuations`](crate::state::game_state::GameState::continuations)
+/// suspend/resume stack: a typed resume point, not a closure, so it serializes
+/// for replay/persistence like every other state field.
 ///
 /// Open windows live here as [`TimingPointWindow`](Self::TimingPointWindow)
 /// (event windows and the forced-ability run) and [`FastWindow`](Self::FastWindow)
@@ -1337,17 +1338,16 @@ pub struct InFlightSkillTest {
     /// Only the active investigator's commits live here. TODO(#65): the
     /// rule "any investigator at the same location may commit".
     pub committed_by_active: Vec<CommittedCard>,
-    /// The location the test is associated with, snapshotted at
-    /// skill-test start (`engine::dispatch::start_skill_test`) from
-    /// the investigator's current location. Used by
+    /// The location the test is associated with, snapshotted at skill-test
+    /// start (`engine::dispatch::start_skill_test`) from the investigator's
+    /// current location. Used by
     /// [`LocationTarget::TestedLocation`](card_dsl::dsl::LocationTarget::TestedLocation)
     /// during
     /// [`Trigger::OnSkillTestResolution`](card_dsl::dsl::Trigger::OnSkillTestResolution)
-    /// firing so "at that location" resolves to the location the
-    /// test was originally taken against, even if the investigator
-    /// has since moved. `None` when
-    /// the investigator was between locations at test start —
-    /// only reachable via a bare plain skill test (the
+    /// firing so "at that location" resolves to the location the test was
+    /// originally taken against, even if the investigator has since moved.
+    /// `None` when the investigator was between locations at test start — only
+    /// reachable via a bare plain skill test (the
     /// [`TestSession::test_skill`](crate::test_support::TestSession::test_skill)
     /// synthetic entry point) from outside an Investigate path.
     pub tested_location: Option<LocationId>,

@@ -6,8 +6,9 @@
 //! **Parlor (01115):** "[action] <b>Resign.</b> \"This is too much for me!\"
 //! You run out the front door, fleeing in panic." (Shroud 2, 0 clues. The
 //! Parley the Parlor grants Lita Chantler is exercised in `lita_parley.rs`, not
-//! here. The back side's barrier lives in `parlor_barrier.rs`; the Parlor is **revealed** throughout this file, which
-//! is the side the Resign is printed on.)
+//! here. The back side's barrier lives in `parlor_barrier.rs`; the Parlor is
+//! **revealed** throughout this file, which is the side the Resign is printed
+//! on.)
 //!
 //! ## The rules being asserted
 //!

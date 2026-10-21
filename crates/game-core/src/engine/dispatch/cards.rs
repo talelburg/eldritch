@@ -1328,10 +1328,11 @@ pub(super) fn dispose_play_from_hand(cx: &mut Cx) -> EngineOutcome {
 /// play (the `AoO` damage + spent action) via `apply()`'s snapshot, rather than
 /// suppressing the primary only, as `resume_action_resolution` does for a
 /// defeated actor. `resume_activate_ability` shares the gap. Unreachable in the
-/// corpus — the only non-fast `OnPlay` cards never reject (Emergency Cache 01088's `GainResources`; Machete 01020 has no
-/// `OnPlay`); the rejecting `DiscoverClue` cards (Working a Hunch 01037,
-/// Evidence! 01022) are all Fast and never park. Give this suppress-on-lapse
-/// when a board-changing `AoO` reaction lands.
+/// corpus — the only non-fast `OnPlay` cards never reject (Emergency Cache
+/// 01088's `GainResources`; Machete 01020 has no `OnPlay`); the rejecting
+/// `DiscoverClue` cards (Working a Hunch 01037, Evidence! 01022) are all Fast
+/// and never park. Give this suppress-on-lapse when a board-changing `AoO`
+/// reaction lands.
 ///
 /// An event printing a bold designator on its `OnPlay` ability (Blinding Light
 /// 01066's **Evade**) performs that action when played, as an activated

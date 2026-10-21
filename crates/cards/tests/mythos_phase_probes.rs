@@ -200,8 +200,9 @@ fn registries() -> Registries {
 #[test]
 fn mythos_phase_surge_chains_into_next_card() {
     // TODO(#138): the pipeline hardcodes `surge: false` for every treachery, so
-    // no corpus card can carry the keyword. Once it parses surge, flip this test to a real Surge card — False Lead 01136 is the Core one — unless
-    // the probe is better tailored to what the test asks (ADR 0016).
+    // no corpus card can carry the keyword. Once it parses surge, flip this
+    // test to a real Surge card — False Lead 01136 is the Core one — unless the
+    // probe is better tailored to what the test asks (ADR 0016).
     //
     // Surge treachery on top, plain treachery below.
     let drawing = at_mythos_draw_of(1, &[PROBE_SURGE_TREACHERY, PROBE_TREACHERY]);
@@ -239,8 +240,9 @@ fn mythos_phase_surge_chains_into_next_card() {
 #[test]
 fn mythos_phase_multi_investigator_surge_does_not_spill() {
     // TODO(#138): the pipeline hardcodes `surge: false` for every treachery, so
-    // no corpus card can carry the keyword. Once it parses surge, flip this test to a real Surge card — False Lead 01136 is the Core one — unless
-    // the probe is better tailored to what the test asks (ADR 0016).
+    // no corpus card can carry the keyword. Once it parses surge, flip this
+    // test to a real Surge card — False Lead 01136 is the Core one — unless the
+    // probe is better tailored to what the test asks (ADR 0016).
     //
     // Verifies that a surge in inv1's draw chain resolves entirely within
     // inv1's encounter draw — consuming two cards from the shared encounter

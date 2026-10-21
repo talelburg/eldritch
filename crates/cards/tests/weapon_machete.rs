@@ -44,7 +44,8 @@ fn ghoul(id: u32, name: &str) -> Enemy {
 }
 
 /// Board with Machete in play, `engaged` enemies engaged with the actor and
-/// `unengaged` enemies merely *co-located* with them (a Fight reaches both). Engaged enemies take ids `100+n`, unengaged `200+n`.
+/// `unengaged` enemies merely *co-located* with them (a Fight reaches both).
+/// Engaged enemies take ids `100+n`, unengaged `200+n`.
 fn board_with(engaged: u32, unengaged: u32) -> GameStateBuilder {
     let mut builder = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)

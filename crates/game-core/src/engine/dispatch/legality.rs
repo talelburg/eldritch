@@ -61,9 +61,9 @@ pub(crate) struct PlayCheckResult {
 #[allow(dead_code)] // `source_exhausted` has no reader.
 pub(crate) struct ActivateCheckResult {
     /// The activation as the initiation gate checked it — the code of the card
-    /// printing the ability, the activating investigator, the ability's address and its source.
-    /// What `initiation::record_initiation` counts the use against, so the
-    /// handler records the very candidate the gate approved.
+    /// printing the ability, the activating investigator, the ability's address
+    /// and its source. What `initiation::record_initiation` counts the use
+    /// against, so the handler records the very candidate the gate approved.
     pub candidate: ResolutionCandidate,
     /// The action points the ability prints (its `Trigger::Activated` cost),
     /// without any surcharge. Taking the activation as an action adds the
@@ -452,11 +452,12 @@ fn check_activation_target_available(
 /// voice.
 ///
 /// The cost check already speaks it (`abilities::check_cost_payable`), and the
-/// change-state refusal cites the rule it enforces — `glossary/Ability.md`, "Triggered Abilities": *"A triggered
-/// ability can only be initiated if its effect has the potential to change the
-/// game state, and its cost (if any) has the potential to be paid in full,
-/// taking active cost modifiers into account."* Every other refusal takes the
-/// validator's `ActivateAbility:` prefix.
+/// change-state refusal cites the rule it enforces — `glossary/Ability.md`,
+/// "Triggered Abilities": *"A triggered ability can only be initiated if its
+/// effect has the potential to change the game state, and its cost (if any) has
+/// the potential to be paid in full, taking active cost modifiers into
+/// account."* Every other refusal takes the validator's `ActivateAbility:`
+/// prefix.
 fn activation_refusal(refusal: Refusal, code: &CardCode) -> Cow<'static, str> {
     match refusal {
         Refusal::CostUnpayable(reason) => reason,

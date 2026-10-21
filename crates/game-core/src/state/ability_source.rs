@@ -51,7 +51,7 @@ pub enum AbilitySource {
     /// [`CardInstanceId`], which is why this
     /// cannot fold into [`InPlay`](Self::InPlay).
     Location(LocationId),
-    /// An enemy in play — an *"encounter card placed at that location"*.
+    /// An enemy in play — one of the *"encounter cards placed at that location"*.
     /// The Parley abilities the corpus prints sit here: Herman Collins 01138,
     /// Peter Warren 01139, Victoria Devereux 01140, Mob Enforcer 01101.
     Enemy(EnemyId),

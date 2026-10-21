@@ -6,10 +6,11 @@
 //! [reaction] After you successfully investigate: Gain 1 resource.
 //! ```
 //!
-//! Two abilities: a `Constant` +1 intellect while in play, and an
-//! `OnEvent` reaction at the after-successful-investigate window that gains the controller 1 resource. "after **you**
-//! investigate" is enforced by the window being controller-scoped, so the
-//! pattern is bare and the effect's `You` resolves to the controller.
+//! Two abilities: a `Constant` +1 intellect while in play, and an `OnEvent`
+//! reaction at the after-successful-investigate window that gains the
+//! controller 1 resource. "after **you** investigate" is enforced by the window
+//! being controller-scoped, so the pattern is bare and the effect's `You`
+//! resolves to the controller.
 //!
 //! # Ally soak
 //!

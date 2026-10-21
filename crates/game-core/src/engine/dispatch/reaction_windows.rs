@@ -33,9 +33,11 @@ use crate::state::{
 /// behind [`open_reaction_run`] (which queues and then opens) and the coordinator's
 /// per-cell scan.
 ///
-/// Reaction windows admit any investigator's Fast actions (RR: Fast may be
-/// played at any player window) — encoded by `mode: Reaction`. Multi-window
-/// nesting is structural.
+/// A reaction window is a player window, so it admits any investigator's Fast
+/// plays and zero-action abilities — encoded by `mode: Reaction`.
+/// `glossary/Triggered_Abilities.md`: *"The \[free\] icon indicates a free
+/// triggered ability that does not cost an action and may be used during any
+/// player window."* Multi-window nesting is structural.
 fn push_reaction_window(
     cx: &mut Cx,
     event: &TimingEvent,
@@ -803,14 +805,15 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-/// Play the hand Fast-event `candidate` from the open resolution run — the [`CandidateSource::Hand`] resolution of [`fire_pending_trigger`].
-/// Commences the play via the shared [`super::cards::commence_play`] (emit
-/// [`crate::event::Event::CardPlayed`], leave hand — RR Appendix I step 3), then pushes a
-/// [`Continuation::PlayFromHand`] frame **holding that card** (above the live
-/// reaction window) and the `OnEvent` effect for the drive loop. On the effect's
-/// completion, [`super::cards::dispose_play_from_hand`] places the event in
-/// discard (RR Appendix I step 4) and the window beneath resumes its candidate
-/// scan.
+/// Play the hand Fast-event `candidate` from the open resolution run — the
+/// [`CandidateSource::Hand`] resolution of [`fire_pending_trigger`]. Commences
+/// the play via the shared [`super::cards::commence_play`] (emit
+/// [`crate::event::Event::CardPlayed`], leave hand — RR Appendix I step 3),
+/// then pushes a [`Continuation::PlayFromHand`] frame **holding that card**
+/// (above the live reaction window) and the `OnEvent` effect for the drive
+/// loop. On the effect's completion, [`super::cards::dispose_play_from_hand`]
+/// places the event in discard (RR Appendix I step 4) and the window beneath
+/// resumes its candidate scan.
 ///
 /// This is the nesting site: the window may itself belong to an attack of
 /// opportunity provoked by a *non-fast* play that is still mid-resolution
@@ -1086,8 +1089,9 @@ pub(super) fn after_enemy_phase_attacks(
 ///
 /// Returns the continuation's outcome on the auto-skip path
 /// ([`EngineOutcome::Done`], or [`EngineOutcome::AwaitingInput`] when the body
-/// suspends, as Upkeep step 4.5's hand-size discard can); returns [`EngineOutcome::Done`] immediately on
-/// the wait path (window left on the stack).
+/// suspends, as Upkeep step 4.5's hand-size discard can); returns
+/// [`EngineOutcome::Done`] immediately on the wait path (window left on the
+/// stack).
 pub(super) fn open_fast_window(cx: &mut Cx, kind: FastWindowKind) -> EngineOutcome {
     // Push first so any_fast_play_eligible's check_play_card call sees
     // this window in state.open_windows when evaluating permissive_window.
