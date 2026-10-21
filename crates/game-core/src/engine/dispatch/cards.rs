@@ -37,7 +37,7 @@ pub(super) const INITIAL_HAND_SIZE: u8 = 5;
 /// (`phases::hand_size_discard_count`) and the hand-discard cost
 /// (`hand_discard_cost::candidates`).
 /// Where a card goes when it leaves play is its owner's question, not this
-/// one's (#976).
+/// one's.
 pub(super) fn is_weakness_code(cards: &CardRegistry, code: &CardCode) -> bool {
     (cards.metadata_for)(code).is_some_and(CardMetadata::is_weakness)
 }
@@ -144,11 +144,11 @@ enum WeaknessResolution {
     /// A treachery or enemy weakness: it leaves the hand and resolves through
     /// the encounter-card path ([`encounter::begin_encounter_card`]), owned by
     /// its bearer — the same frame, `EncounterCardDrawn` timing point and
-    /// disposal as an encounter-deck draw (#1121). A one-shot treachery ends in
+    /// disposal as an encounter-deck draw. A one-shot treachery ends in
     /// the bearer's discard pile, a persistent one in their threat area, and an
     /// enemy spawns.
     EncounterCard,
-    /// An asset weakness with a Revelation (The Necronomicon 01009, #1090): its
+    /// An asset weakness with a Revelation (The Necronomicon 01009): its
     /// Revelation is pushed on its own, with no frame and no timing point.
     ///
     /// **Only the into-play shape is handled.** The card is removed from hand
@@ -213,10 +213,10 @@ fn weakness_resolution(
 ///
 /// **Kept narrowing: draw order, not the player's.** The FAQ gives the player
 /// *"an order of your choosing"* over the Revelations; this resolves them in
-/// draw order instead (#1130 tracks the choice).
+/// draw order instead. TODO(#1130): let the player choose the order.
 ///
 /// MUST NOT be called from the setup opening-hand / mulligan path — those *set
-/// aside* weaknesses (#508), they do not resolve them.
+/// aside* weaknesses, they do not resolve them.
 pub(in crate::engine) fn resolve_drawn_weaknesses(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -476,7 +476,7 @@ fn move_deck_top_to_hand(cx: &mut Cx, investigator: InvestigatorId, count: u8) -
 /// needed (see `EngineRecord`'s doc-comment). Card-local natives reach it as
 /// [`NativeCx::discard_random_from_hand`](crate::engine::NativeCx::discard_random_from_hand),
 /// so they drive "discard at random from hand" without reaching into the
-/// crate-private RNG (agenda 01105's random-discard branch, Axis A #334).
+/// crate-private RNG (agenda 01105's random-discard branch).
 ///
 /// # Panics
 ///
@@ -529,7 +529,7 @@ pub(crate) fn discard_from_hand(
 }
 
 /// Move the card `from` cards below the top of `deck` to `to` cards below the
-/// top, shifting the cards between them by one (#1047: Scrying 01061 returns
+/// top, shifting the cards between them by one (Scrying 01061 returns
 /// the cards it looked at *"to the top of that deck in any order"*). Returns
 /// whether it moved anything: an index past the bottom, or a missing
 /// investigator, is a no-op.
@@ -594,8 +594,8 @@ pub(crate) fn add_discarded_card_to_hand(
 /// The removal lasts only for the scenario. The ruling
 /// (<https://arkhamdb.com/card/01015>): *"Remove cards from the game for the
 /// duration of the current scenario only. They're still part of your deck
-/// during this campaign."* Nothing carries a deck between scenarios yet; that
-/// is phase 9's campaign work.
+/// during this campaign."* Nothing carries a deck between scenarios: campaign
+/// play is not modelled.
 pub(crate) fn remove_discard_pile_from_game(cx: &mut Cx, investigator: InvestigatorId) {
     let Some(inv) = cx.state.investigators.get_mut(&investigator) else {
         return;
@@ -742,7 +742,7 @@ pub(super) fn draw_one_with_deckout(cx: &mut Cx, investigator: InvestigatorId) -
 ///
 /// Every in-play draw routes here: the `Draw` action, Upkeep step 4.4,
 /// and [`Effect::DrawCards`](card_dsl::dsl::Effect::DrawCards) (Guts 01089
-/// and the other three Core skills, #636). The setup / mulligan paths
+/// and the other three Core skills). The setup / mulligan paths
 /// deliberately do not — they use [`draw_cards`].
 ///
 /// **Tail position** (ADR 0003): the deck-out horror is dealt through
@@ -796,9 +796,9 @@ pub(in crate::engine) fn draw_with_deckout(
         investigator,
         count: drawn,
     });
-    // RR Weakness keyword: a weakness drawn during play reveals + resolves
-    // (#509, #1121). Setup's opening-hand draw uses `draw_cards` directly, so
-    // it is unaffected (it sets aside instead, #508).
+    // RR Weakness keyword: a weakness drawn during play reveals + resolves.
+    // Setup's opening-hand draw uses `draw_cards` directly, so it is
+    // unaffected (it sets aside instead).
     //
     // **Kept narrowing: the deck-out horror comes first.** The weaknesses'
     // frames go on the stack *before* the deck-out horror's deal frame, so the
@@ -849,7 +849,7 @@ pub(super) fn mulligan_prompt() -> EngineOutcome {
 ///
 /// The set-aside step is what makes the redraw honest: the named cards are held
 /// out of every zone while the replacements are drawn, so a card cannot be
-/// redrawn as its own replacement (#637). They return to the **deck**, never
+/// redrawn as its own replacement. They return to the **deck**, never
 /// through the discard pile.
 ///
 /// The replacements come off the deck unshuffled because setup already shuffled
@@ -924,7 +924,7 @@ fn perform_mulligan_redraw(cx: &mut Cx, investigator: InvestigatorId, sorted: &[
     replace_opening_hand_weaknesses(cx, investigator);
 }
 
-/// Resume the setup mulligan loop (#348), driving the top
+/// Resume the setup mulligan loop, driving the top
 /// [`Continuation::Mulligan`](crate::state::Continuation::Mulligan) frame.
 ///
 /// The acting investigator is the frame's `remaining[0]` (Rules Reference p.16
@@ -935,7 +935,7 @@ fn perform_mulligan_redraw(cx: &mut Cx, investigator: InvestigatorId, sorted: &[
 /// **set aside**, and an equivalent number of cards are **drawn** and added to
 /// the player's starting hand. The set-aside cards are **then shuffled back**
 /// into the player's deck." — so a mulliganed card can never turn up among its
-/// own replacements (#637). The cards go back to the deck, never through the
+/// own replacements. The cards go back to the deck, never through the
 /// discard pile. Then emit [`Event::MulliganPerformed`] and pop the queue
 /// front. When the queue drains, setup ends — "the game begins"
 /// (Rules Reference p.27): round 1 skips Mythos (p.24), so
@@ -1138,7 +1138,7 @@ pub(super) fn resolve_play_target(
 /// (RR Appendix I step 3). Then the [`Trigger::OnPlay`]
 /// abilities are `push_effect`'d for the global `drive` loop beneath a
 /// [`PlayFromHand`](crate::state::Continuation::PlayFromHand) frame
-/// (Slice D #423) that holds the card; when that effect pops, the frame's
+/// that holds the card; when that effect pops, the frame's
 /// disposal places it — into `cards_in_play` for assets, or into `discard`
 /// (with an emitted [`Event::CardDiscarded`]) for events, or the deck's bottom
 /// when the owner's cards redirect it ([`Event::CardPlacedOnBottomOfDeck`],
@@ -1189,7 +1189,7 @@ pub(super) fn play_card(
     }
     // A non-fast play is taken as an action: the step pays its one action, and
     // provokes attacks of opportunity before the play completes on resume. Its
-    // hook pays the resource cost (RR p.22, before any attack resolves, #501)
+    // hook pays the resource cost (RR p.22, before any attack resolves)
     // and commences the play: `Event::CardPlayed` is logged and the card leaves hand
     // to ride the frames until it is placed (RR Appendix I step 3 → 4). The
     // card itself rides the `ActionResolution` frame through the attacks.
@@ -1208,14 +1208,14 @@ pub(super) fn play_card(
 /// discarded — the frame driving this call is already popped, so the `drive`
 /// loop opens any after-enters-play reaction window (Research Librarian 01032)
 /// itself. Called by `slots::enter_asset_making_room` once the asset's slots are
-/// clear, whether that took a discard or not (#498). The caller owns the card
-/// (it left hand at step 3), so there is no hand lookup here to go stale (#565).
+/// clear, whether that took a discard or not. The caller owns the card
+/// (it left hand at step 3), so there is no hand lookup here to go stale.
 ///
-/// **Takes the instance, not a code** (#772). A play from hand mints one on the
+/// **Takes the instance, not a code.** A play from hand mints one on the
 /// way in and a take-control moves the one already on the board, and only the
 /// second of those has anything to preserve — Lita Chantler 01117 keeps her
 /// accumulated damage and horror, her uses and her usage counters as she changes
-/// hands. Minting here would have re-created her instead.
+/// hands. Minting here would re-create her instead.
 pub(in crate::engine) fn enter_asset_into_play(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -1232,7 +1232,7 @@ pub(in crate::engine) fn enter_asset_into_play(
         .push(card);
     // Only a card that was out of play enters it. A card whose control changed
     // was already in play and stays there, so announcing it would fire every
-    // after-enters-play reaction a second time (#772).
+    // after-enters-play reaction a second time.
     if entry == AssetEntry::PlayedFromHand {
         // The play is complete (Appendix I step 4). Queued first so that
         // `EnteredPlay`'s sequence, pushed above it, resolves first.
@@ -1248,7 +1248,7 @@ pub(in crate::engine) fn enter_asset_into_play(
 }
 
 /// Dispose of a [`PlayFromHand`](crate::state::Continuation::PlayFromHand) frame
-/// once its pushed `OnPlay`/`OnEvent` effect has popped (Slice D #423) — RR
+/// once its pushed `OnPlay`/`OnEvent` effect has popped — RR
 /// Appendix I step 4, where the card "is regarded as played (and placed in play,
 /// or in its owner's discard pile if it's an event)". Pops the frame first (which
 /// takes the card off it), then places the card by destination: an **event** goes
@@ -1307,11 +1307,10 @@ pub(super) fn dispose_play_from_hand(cx: &mut Cx) -> EngineOutcome {
 /// holding `card` and the card's `OnPlay` effects for the drive loop — the tail
 /// shared by the fast path (inline) and the non-fast path (parked on an
 /// [`ActionResolution`](crate::state::Continuation::ActionResolution) frame and
-/// resumed after the `AoO` loop, #378). Re-derives the `OnPlay` abilities from
+/// resumed after the `AoO` loop). Re-derives the `OnPlay` abilities from
 /// the registry by code. The drive loop resolves the `OnPlay` effect, then
 /// disposes of the card via `dispose_play_from_hand` (event → discard; asset →
-/// enter play). (Slice D #423 — replaces the synchronous `apply_effect` + asset
-/// tail + manual window open.)
+/// enter play).
 ///
 /// **Disposal strictly after the whole `OnPlay` effect is the rule for an
 /// attaching event, not just tidiness.** Barricade 01038's `OnPlay` is
@@ -1324,13 +1323,12 @@ pub(super) fn dispose_play_from_hand(cx: &mut Cx) -> EngineOutcome {
 /// resolved — which is why the frame holds the played card across the effect
 /// walk and only then disposes of it.
 ///
-/// TODO(#417) (richer mid-action invalidation, shared with
-/// `resume_activate_ability`, #361): a resumed `OnPlay` effect that returns
-/// [`EngineOutcome::Rejected`] on
-/// a lapsed precondition rolls back the *whole* play (the `AoO` damage + spent
-/// action) via `apply()`'s snapshot, rather than suppressing the primary only
-/// (the §D contract). Unreachable in scope — the only non-fast `OnPlay` cards
-/// never reject (Emergency Cache 01088's `GainResources`; Machete 01020 has no
+/// TODO(#417): a resumed `OnPlay` effect that returns
+/// [`EngineOutcome::Rejected`] on a lapsed precondition rolls back the *whole*
+/// play (the `AoO` damage + spent action) via `apply()`'s snapshot, rather than
+/// suppressing the primary only, as `resume_action_resolution` does for a
+/// defeated actor. `resume_activate_ability` shares the gap. Unreachable in the
+/// corpus — the only non-fast `OnPlay` cards never reject (Emergency Cache 01088's `GainResources`; Machete 01020 has no
 /// `OnPlay`); the rejecting `DiscoverClue` cards (Working a Hunch 01037,
 /// Evidence! 01022) are all Fast and never park. Give this suppress-on-lapse
 /// when a board-changing `AoO` reaction lands.
@@ -1349,8 +1347,7 @@ fn complete_play(cx: &mut Cx, investigator: InvestigatorId, card: CardCode) -> E
     };
     // Combine the OnPlay effects into one Seq and push it for the drive loop,
     // below a PlayFromHand frame that holds the card and disposes of it (event →
-    // discard; asset → enter play) once the effect pops. (Slice D #423 — replaces
-    // the synchronous apply_effect + asset tail + manual window open.)
+    // discard; asset → enter play) once the effect pops.
     cx.state.continuations.push(PlayFromHandFrame {
         investigator,
         card: Some(card),
@@ -1383,7 +1380,7 @@ pub(super) fn play_designator(abilities: &[Ability]) -> Option<&ActionDesignator
         .find_map(|a| a.designator.as_ref())
 }
 
-/// Complete a non-fast card play after its `AoO` loop (#378). The actor-`Active`
+/// Complete a non-fast card play after its `AoO` loop. The actor-`Active`
 /// re-validation gate has already run in
 /// [`resume_action_resolution`](super::resume_action_resolution); delegates to
 /// [`complete_play`] to run the `OnPlay` effects + asset enter-play.
@@ -1413,9 +1410,9 @@ pub(super) fn resume_play_card(
 /// Asset and event alike: the step-3 wording draws no distinction, and carrying
 /// an asset on its frame is what keeps a mid-play hand shuffle (a Fast event
 /// played in the attack-of-opportunity window this play provokes) from
-/// invalidating the disposal (#565).
+/// invalidating the disposal.
 ///
-/// Shared by [`play_card`] and the Axis-C reaction-event play
+/// Shared by [`play_card`] and the reaction-window event play
 /// (`reaction_windows::play_fast_event`). Both callers pay the resource cost
 /// before calling and run the card's effect(s) after. The caller guarantees
 /// `investigator` exists and `source` holds a card.
@@ -1456,7 +1453,7 @@ pub(super) fn commence_play(
 /// checked here, inside step 4, because the Official FAQ puts it there; the
 /// helper's doc quotes it.
 ///
-/// An event played from the discard pile (Wendy's Amulet 01014, #1112) is
+/// An event played from the discard pile (Wendy's Amulet 01014) is
 /// placed by the same redirect: the Amulet that let it be played also sends it
 /// to the deck's bottom. Only if the Amulet left play mid-resolution would one
 /// reach the discard branch, where the event still says `from: Zone::Hand` —
@@ -1617,7 +1614,7 @@ mod draw_with_deckout_tests {
     use crate::test_support::{self, TEST_REGISTRIES};
 
     /// The deck-out horror is dealt, not placed: the draw's tail is one
-    /// `DealDamage { Effect }` frame for 1 horror (#1027), so the soak prompt
+    /// `DealDamage { Effect }` frame for 1 horror, so the soak prompt
     /// and both damage conditions run before anything lands.
     fn assert_deals_one_deckout_horror(state: &GameState, id: InvestigatorId) {
         let deals: Vec<_> = state
@@ -1655,10 +1652,10 @@ mod draw_with_deckout_tests {
         assert_deals_one_deckout_horror(&state, id);
     }
 
-    /// A multi-card draw that empties the deck partway through completes the
-    /// full count — "If a deck empties middraw, reset the deck and complete
-    /// the draw" — and takes the horror **once**, on completion of the
-    /// entire draw, not once per emptied deck (#636).
+    /// Regression for #636: a multi-card draw that empties the deck partway
+    /// through completes the full count — "If a deck empties middraw, reset the
+    /// deck and complete the draw" — and takes the horror **once**, on
+    /// completion of the entire draw, not once per emptied deck.
     #[test]
     fn draw_with_deckout_completes_the_count_across_a_midway_reshuffle() {
         let id = InvestigatorId(1);
