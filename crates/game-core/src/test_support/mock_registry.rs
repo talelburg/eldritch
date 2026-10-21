@@ -55,11 +55,10 @@ static TABLES: OnceLock<MockRegistry> = OnceLock::new();
 /// test-local — one per reader, defined in the file that reads them. So this
 /// module exposes no named probe cards and no library of them: every code and
 /// every `CardMetadata` here comes from the caller. A shared probe library would
-/// recreate, in a new location, the shared-fixture problem that the test-substrate
-/// migration ([#864]) exists to undo.
+/// recreate, in a new location, the shared-fixture problem that [ADR 0016]
+/// exists to prevent.
 ///
 /// [ADR 0016]: https://github.com/talelburg/eldritch/blob/main/docs/adr/0016-a-synthetic-fixture-models-a-primitive-never-a-printed-card.md
-/// [#864]: https://github.com/talelburg/eldritch/issues/864
 ///
 /// [`build`](Self::build) composes the two lookups every game-core mock
 /// needs anyway — [`metadata_for_test_inv`](super::metadata_for_test_inv) and
@@ -110,7 +109,7 @@ impl MockRegistry {
 
     /// Register the **reverse-side** abilities served for `code`
     /// ([`CardRegistry::back_abilities_for`]) — in effect exactly while a
-    /// location is unrevealed (#774), so a probe that models an unrevealed
+    /// location is unrevealed, so a probe that models an unrevealed
     /// location declares its barrier here and not on
     /// [`with_abilities`](Self::with_abilities).
     #[must_use]

@@ -24,10 +24,10 @@ fn choose_one_single_branch_auto_resolves() {
     assert!(state.continuations.is_empty(), "no choice frame for auto");
 }
 
+/// Regression for #664: a dead branch (discover at a 0-clue location) is not
+/// offered, leaving one live branch, which auto-resolves rather than prompting.
 #[test]
 fn choose_one_offers_only_its_live_branches() {
-    // #664: the dead branch (discover at a 0-clue location) is filtered out,
-    // leaving one live branch — which auto-resolves rather than prompting.
     let id = InvestigatorId(1);
     let mut state = state_with_clues_at_location(0);
     let before = state.investigators[&id].resources;
@@ -60,7 +60,7 @@ fn choose_one_offers_only_its_live_branches() {
 
 #[test]
 fn choose_one_with_every_branch_dead_skips() {
-    // #664 / #639: filtered-to-empty is a skip, not a reject — rejecting
+    // Filtered-to-empty is a skip, not a reject — rejecting
     // would unwind whatever already resolved above it (a skill test's draw).
     let mut state = state_with_clues_at_location(0);
     let mut events = Vec::new();
@@ -86,7 +86,7 @@ fn choose_one_with_every_branch_dead_skips() {
 #[test]
 fn choose_one_with_no_branches_still_rejects() {
     // A branchless ChooseOne is a malformed effect, not a board state — the
-    // #664 skip is for a list the *filter* emptied.
+    // dead-branch skip is for a list the *filter* emptied.
     let mut state = state_with_clues_at_location(0);
     let mut events = Vec::new();
     let outcome = run(
@@ -163,9 +163,8 @@ fn choose_one_resumes_the_pick() {
 #[test]
 fn choice_after_earlier_seq_step_no_longer_rejects() {
     // Seq[ GainResources(+1), ChooseOne[ +1, +3 ] ] — a choice *after* a
-    // mutating Seq step. The old single-pass replay model rejected this
-    // (#346); the frame model suspends on the choice (the +1 already
-    // applied) and resumes without double-applying the first step (#422).
+    // mutating Seq step. The frame model suspends on the choice (the +1
+    // already applied) and resumes without double-applying the first step.
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -208,9 +207,8 @@ fn choice_after_earlier_seq_step_no_longer_rejects() {
 #[test]
 fn choose_one_then_chosen_target_resumes_both_picks() {
     // Two suspensions in one effect (the First Aid shape): a ChooseOne
-    // branch pick, then the chosen branch's `*::Chosen` target pick — the
-    // case the old single-pass replay model rejected (#346). The parent
-    // ChooseOne pop leaves the branch's grounding to suspend independently.
+    // branch pick, then the chosen branch's `*::Chosen` target pick. The
+    // parent ChooseOne pop leaves the branch's grounding to suspend independently.
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))

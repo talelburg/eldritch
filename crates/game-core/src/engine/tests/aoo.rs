@@ -239,10 +239,10 @@ fn move_with_no_engaged_enemy_does_not_fire_aoo() {
 #[test]
 fn aoo_order_pick_resolves_attacks_in_chosen_order_for_multiple_attackers() {
     // 3 engaged ready enemies provoke an AoO on Move; with 2+ attackers the
-    // player picks the order one at a time (#143, RR p.25 step 3.3). Pick the
+    // player picks the order one at a time (RR p.25 step 3.3). Pick the
     // highest-damage enemy first to prove the pick overrides EnemyId order.
-    // TEST_INV has 8 health; total enemy damage = 1+2+4 = 7 < 8, so investigator survives.
-    // (max_health is now read from the registry, not a field — see #448 cp4.)
+    // TEST_INV has 8 health (read from the registry); total enemy damage =
+    // 1+2+4 = 7 < 8, so investigator survives.
     let board = [(300, 1), (301, 2), (302, 4)]
         .into_iter()
         .fold(move_board(seat(1).at(HERE)), |board, (id, dmg)| {

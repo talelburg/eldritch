@@ -47,11 +47,13 @@ fn engage_action_engages_unengaged_enemy_at_location() {
     );
 }
 
+/// Regression for #656: an Engage action that takes an enemy from another
+/// investigator announces the disengagement, then the engagement.
 #[test]
 fn engage_action_takes_an_enemy_from_another_investigator_disengaging_them_first() {
     // `glossary/Engage_Action.md`: "The enemy simultaneously disengages from
     // the previous investigator and engages the investigator performing the
-    // action." Both halves are announced, the disengagement first (#656).
+    // action." Both halves are announced, the disengagement first.
     let other = InvestigatorId(2);
     let session = engage_board(seat(1).at(HERE))
         .with_seat(seat(2).at(HERE))

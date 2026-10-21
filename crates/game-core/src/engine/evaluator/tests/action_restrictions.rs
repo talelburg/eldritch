@@ -20,8 +20,8 @@ fn fake_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             ModifierScope::WhileInPlay,
         ))]),
         // A standalone fake investigator card carrying a constant +2
-        // willpower — used to prove the unified `controlled_card_instances()`
-        // scan now sums the investigator card (not just `cards_in_play`).
+        // willpower, which proves the `controlled_card_instances()` scan sums
+        // the investigator card as well as `cards_in_play`.
         "inv-willpower-plus-2" => Some(vec![dsl::constant(dsl::modify(
             Stat::Willpower,
             2,

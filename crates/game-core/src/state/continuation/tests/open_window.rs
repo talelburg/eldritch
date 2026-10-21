@@ -3,7 +3,7 @@ use crate::test_support;
 
 #[test]
 fn open_window_serde_roundtrip() {
-    // A framework window is a `FastWindow` frame on the stack (#433); the
+    // A framework window is a `FastWindow` frame on the stack; the
     // whole `Continuation` serializes for replay.
     let window = Continuation::FastWindow(FastWindowFrame {
         candidates: Vec::new(),
@@ -17,8 +17,7 @@ fn open_window_serde_roundtrip() {
 
 /// The parked source rides the wire as the whole descriptor, not its
 /// instance projection — an act's `on_fail` would otherwise come back
-/// un-anchored on the far side of the chaos draw (#834). Same
-/// break-without-migration posture as #707 / #709 / #735.
+/// un-anchored on the far side of the chaos draw.
 #[test]
 fn an_in_flight_tests_parked_board_source_round_trips_through_serde() {
     let test = InFlightSkillTest {

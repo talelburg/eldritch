@@ -7,7 +7,7 @@ use crate::test_support::TEST_REGISTRIES;
 // here (`TEST_INV`-only registry yields no abilities for "01059", so the
 // menu never offers the activation). Reach the handler with
 // `submit_off_menu` and assert it rejects — the handler's defensive
-// validation, exactly as the pre-#447 typed-action tests did. The
+// validation. The
 // registry-backed activation flow lives in
 // crates/game-core/tests/activate_ability.rs.
 const ASSET: &str = "01059";

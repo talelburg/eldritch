@@ -106,7 +106,7 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             None,
             vec![dsl::elder_sign(IntExpr::Lit(5))],
         ))]),
-        // Lita Chantler 01117's exact shape (#773): the card prints no
+        // Lita Chantler 01117's exact shape: the card prints no
         // modifier of its own and **grants itself** one, gated on being
         // controlled by a player. The audience is location-scoped so the
         // same card can be asked from both placements — controlled, and

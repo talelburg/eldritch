@@ -113,7 +113,7 @@ fn last_end_turn_advances_to_mythos_and_pauses_for_draw_two_investigators() {
     // engine requires every investigator to mulligan before the turn opens.
     let session = session.choose_from_hand(&[]).choose_from_hand(&[]);
     // After the last mulligan, the Investigation phase begins and the
-    // lead investigator becomes active.
+    // first investigator in turn order becomes active.
     session.assert_at_turn_menu(inv1);
 
     // First EndTurn (inv1): rotates to inv2 within Investigation.
@@ -131,7 +131,7 @@ fn last_end_turn_advances_to_mythos_and_pauses_for_draw_two_investigators() {
         events,
         Event::TurnEnded { investigator } if *investigator == inv1
     );
-    // rotate no longer emits ActionsRemainingChanged (actions reset at Upkeep 4.2)
+    // rotate emits no ActionsRemainingChanged (actions reset at Upkeep 4.2)
     assert_no_event!(
         events,
         Event::ActionsRemainingChanged { investigator, .. } if *investigator == inv2
@@ -155,7 +155,7 @@ fn last_end_turn_advances_to_mythos_and_pauses_for_draw_two_investigators() {
     assert_eq!(
         state.current_encounter_drawer(),
         Some(inv1),
-        "lead investigator (inv1) draws first"
+        "the first investigator in turn order (inv1) draws first"
     );
     let events = &session.events()[before..];
 

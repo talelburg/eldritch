@@ -64,9 +64,9 @@ fn modify_with_this_skill_test_scope_records_a_row_stamped_with_the_test() {
     assert_eq!(m.source, None, "no source on a bare for_controller ctx");
 }
 
-/// The scope says "for **this** skill test", so with no test in flight
-/// there is no identity to stamp — the modifier is refused rather than
-/// banked onto whatever test comes next (#676).
+/// Regression for #676: the scope says "for **this** skill test", so with no
+/// test in flight there is no identity to stamp — the modifier is refused
+/// rather than banked onto whatever test comes next.
 #[test]
 fn modify_with_this_skill_test_scope_rejects_outside_a_test() {
     let mut state = GameStateBuilder::new()
