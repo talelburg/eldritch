@@ -1,8 +1,8 @@
 //! Threat-area and location zone helpers: placing a card into an
 //! investigator's threat area, attaching it to a location, or putting it into
-//! play at one. C4a (#233) ships the mechanism; which treacheries persist here
-//! (and the Revelation routing that places them) is C4c (#235). A card leaves
-//! these zones through the leave-play exits in
+//! play at one.
+//!
+//! A card leaves these zones through the leave-play exits in
 //! [`board::leave_play`](crate::engine::board::leave_play), never by hand.
 
 use card_dsl::card_data::CardKind;
@@ -23,15 +23,13 @@ use crate::state::{
 ///
 /// The single construction point shared by `place_in_threat_area`,
 /// `attach_to_location`, `put_into_play_at_location`, and `play_card`'s in-play
-/// branch ([#296]).
+/// branch.
 ///
-/// `owner` is the card's [`Owner`], which every caller states (#977): the
+/// `owner` is the card's [`Owner`], which every caller states: the
 /// player whose deck it came from, the encounter deck, or the scenario. **It is
 /// not "who controls it"**: control is which collection the instance ends up
 /// in, and it can change later while the owner does not
 /// (`glossary/Ownership_and_Control.md`).
-///
-/// [#296]: https://github.com/talelburg/eldritch/issues/296
 pub(super) fn new_in_play_instance(cx: &mut Cx, code: CardCode, owner: Owner) -> CardInPlay {
     let instance_id = cx.state.card_instance_ids.mint();
     let uses = (cx.cards.metadata_for)(&code).and_then(|m| match &m.kind {
@@ -80,7 +78,7 @@ pub fn place_in_threat_area(
 /// horror on it"*), not dealt: no `DealDamage` frame, so no harm event or
 /// `DamagePlaced` timing point fires for the horror.
 ///
-/// **A card with a slot symbol makes room as it enters** (#1097).
+/// **A card with a slot symbol makes room as it enters.**
 /// `glossary/Put_into_Play.md`: *"Unless otherwise stated by the put into play
 /// ability, cards that enter play in this manner must do so in a play area
 /// that satisfies the standard game rules associated with playing or drawing
@@ -195,7 +193,7 @@ pub fn attach_to_location(
 /// `glossary/Attach_To.md` gives an attachment a host-bound lifetime that a
 /// card put into play in a place does not have. Act 01109b's *"Put the
 /// set-aside Lita Chantler into play in the Parlor"* is the one caller
-/// shape (#771).
+/// shape.
 ///
 /// # Panics
 ///
