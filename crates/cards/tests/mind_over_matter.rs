@@ -1,4 +1,4 @@
-//! #322 integration: Mind over Matter 01036 — substituting Intellect for a
+//! Mind over Matter 01036 — substituting Intellect for a
 //! Combat/Agility test, the intellect-icon commit rule, the play-timing gate,
 //! and the weapon-bonus interaction, end-to-end against the real
 //! `cards::REGISTRY`.
@@ -48,7 +48,7 @@ fn board(investigator: Seat) -> TestSession {
         .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(investigator)
-        // Co-located (copied from the seat): Fight is location-gated (#401).
+        // Co-located (copied from the seat): Fight is location-gated.
         .with_enemy_engaged(enemy, INV)
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -122,7 +122,7 @@ fn fight_declining_substitution_fails_on_combat() {
 fn substituted_intellect_test_rejects_a_committed_combat_icon() {
     // FAQ: a substituted test *is* an Intellect test, so ST.2's icon
     // eligibility is judged against Intellect — Overpower's two [combat] icons
-    // are not appropriate and the commit is rejected outright (#763). This is
+    // are not appropriate and the commit is rejected outright. This is
     // the substitution's sharpest observable consequence at the commit window:
     // the same commit is legal on the un-substituted Combat test.
     // Hand: [MoM, Overpower]. Play MoM (idx 0) → hand becomes [Overpower].

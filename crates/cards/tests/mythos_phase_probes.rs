@@ -10,28 +10,28 @@
 //!
 //! # Why each probe is not a real card
 //!
-//! **The surge pair — provisional, terminal condition [#138].** The corpus
+//! **The surge pair — provisional.** The corpus
 //! contains no Surge card *at all*, and not because the content lacks one:
 //! `crates/card-data-pipeline/src/main.rs` hardcodes `surge: false` in both
 //! arms that can carry it, an unparsed stub. The snapshot has 156 cards whose
 //! printed text carries Surge, including False Lead 01136 in the Core set —
 //! *"**Revelation** - If you have no clues, False Lead gains surge. …"*
 //! (`data/arkhamdb-snapshot/pack/core/core_encounter.json`; no rulings, per
-//! `data/arkhamdb-faq/no-rulings.txt`). **When #138 lands, flip these two to a
-//! real card unless the probe is better tailored to what the test asks** —
-//! ADR 0016's substrate criterion, applied per test, not an automatic sweep.
+//! `data/arkhamdb-faq/no-rulings.txt`). TODO(#138): once the pipeline parses
+//! surge, **flip these two to a real card unless the probe is better tailored
+//! to what the test asks** — ADR 0016's substrate criterion, applied per test,
+//! not an automatic sweep.
 //!
 //! **The choice Revelation — not provisional.** No implemented card has a
 //! top-level choice Revelation. The nearest is Crypt Chill 01167 —
 //! *"**Revelation** - Test \[willpower\] (4). If you fail, choose and discard 1
 //! asset you control (if you cannot, take 2 damage instead)."* — whose choice
 //! sits *under* a skill test, and stripping that wrapper is the entire point of
-//! the probe (#380: before the `EncounterCard` frame, a choice-only
-//! Revelation's disposal was stranded, because only the skill-test driver's
-//! teardown flushed `pending_revelation_discard`). A real card that reaches the
-//! bug would have to be a card the game does not print.
+//! the probe: a choice-only Revelation's disposal has to wait out the pick with
+//! no skill-test teardown to run it, which the `EncounterCard` frame does. A
+//! real card that reaches that case would have to be a card the game does not
+//! print.
 //!
-//! [#138]: https://github.com/talelburg/eldritch/issues/138
 //! [MockRegistry]: game_core::test_support::MockRegistry
 
 use card_dsl::card_data::{CardKind, CardMetadata, CardType};
@@ -61,7 +61,7 @@ const PROBE_TREACHERY: &str = "_mpp_treachery";
 
 /// Probe: the same Revelation with `surge: true`. The load-bearing difference
 /// is the metadata bit, which drives the re-draw in the per-card sub-sequence
-/// (Rules Reference p.19, p.24 step 1.4.5). See the module docs for #138.
+/// (Rules Reference p.19, p.24 step 1.4.5). The module docs say why it is a probe.
 const PROBE_SURGE_TREACHERY: &str = "_mpp_surge_treachery";
 
 /// Probe: a treachery whose Revelation is a top-level `Effect::ChooseOne`
@@ -199,9 +199,8 @@ fn registries() -> Registries {
 
 #[test]
 fn mythos_phase_surge_chains_into_next_card() {
-    // PROVISIONAL against #138: the pipeline hardcodes `surge: false` for every
-    // treachery, so no corpus card can carry the keyword. When #138 lands, flip
-    // this test to a real Surge card — False Lead 01136 is the Core one — unless
+    // TODO(#138): the pipeline hardcodes `surge: false` for every treachery, so
+    // no corpus card can carry the keyword. Once it parses surge, flip this test to a real Surge card — False Lead 01136 is the Core one — unless
     // the probe is better tailored to what the test asks (ADR 0016).
     //
     // Surge treachery on top, plain treachery below.
@@ -239,9 +238,8 @@ fn mythos_phase_surge_chains_into_next_card() {
 
 #[test]
 fn mythos_phase_multi_investigator_surge_does_not_spill() {
-    // PROVISIONAL against #138: the pipeline hardcodes `surge: false` for every
-    // treachery, so no corpus card can carry the keyword. When #138 lands, flip
-    // this test to a real Surge card — False Lead 01136 is the Core one — unless
+    // TODO(#138): the pipeline hardcodes `surge: false` for every treachery, so
+    // no corpus card can carry the keyword. Once it parses surge, flip this test to a real Surge card — False Lead 01136 is the Core one — unless
     // the probe is better tailored to what the test asks (ADR 0016).
     //
     // Verifies that a surge in inv1's draw chain resolves entirely within
@@ -330,7 +328,7 @@ fn mythos_phase_multi_investigator_surge_does_not_spill() {
 }
 
 // ------------------------------------------------------------------
-// Revelation suspending directly into a choice (#380)
+// Revelation suspending directly into a choice
 // ------------------------------------------------------------------
 
 #[test]

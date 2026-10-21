@@ -1,5 +1,5 @@
 //! The Rules Reference's worked example of nested sequences, traced cell for
-//! cell against the real corpus (#727/#722).
+//! cell against the real corpus.
 //!
 //! `data/rules-reference/rules/glossary/Nested_Sequences.md`, verbatim:
 //!
@@ -46,7 +46,7 @@
 //! - Agnes Baker 01004 (`pack/core/core.json`), *"\[reaction\] After 1 or more
 //!   horror is placed on Agnes Baker: Deal 1 damage to an enemy at your
 //!   location. (Limit once per phase.)"* — the example's third nesting level.
-//!   She ships (#1045, `agnes_baker.rs`), but with no Goat Spawn horror to
+//!   She is implemented (`agnes_baker.rs`), but with no Goat Spawn horror to
 //!   react to, that level is not reproduced here: the LIFO discipline it
 //!   demonstrates is the same one asserted here one level up.
 //!
@@ -54,7 +54,8 @@
 //! depend on which ability the defeat spawns.
 //!
 //! Sibling files: `guard_dog_soak.rs` (the soak pipeline itself),
-//! `enemy_attack_cells.rs` (#704's condition), `clue_discovery_cells.rs` (#703's).
+//! `enemy_attack_cells.rs` (the enemy-attack condition), `clue_discovery_cells.rs`
+//! (clue discovery).
 
 use cards::TEST_REGISTRIES;
 use game_core::assert_event_sequence;

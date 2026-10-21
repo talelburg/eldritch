@@ -1,4 +1,4 @@
-//! #702: **every** triggering condition walks the `when → at → after` sequence,
+//! **Every** triggering condition walks the `when → at → after` sequence,
 //! not just the round end.
 //!
 //! `data/rules-reference/rules/glossary/Nested_Sequences.md`, verbatim:
@@ -23,8 +23,8 @@
 //! `theyre_getting_out.rs` and `the_barrier_eligibility.rs`. The **enemy
 //! defeat** — act 01110's `at` objective against Roland Banks 01001's
 //! *"\[reaction\] After you defeat an enemy: Discover 1 clue at your
-//! location."* — in `scenarios/tests/the_gathering_resolutions.rs`, whose C7b
-//! gate defeats the real Ghoul Priest and asserts Roland's window never opens,
+//! location."* — in `scenarios/tests/the_gathering_resolutions.rs`, which
+//! defeats the real Ghoul Priest and asserts Roland's window never opens,
 //! per 01110's ruling that the objective fires *"before any "After you defeat
 //! an enemy" reactions can be used."* None of those must move.
 //!
@@ -38,13 +38,11 @@
 //! the trigger scan's board walk reaches a card in the investigator's threat
 //! area for forced and reaction abilities alike, so one synthetic card there is
 //! the whole fixture.
-//! Since #773 it is **coordinator-owned** — ST.7 applies the results on the
-//! re-exposed `SkillTest` frame, and since #1111 the condition's own resolve
-//! step re-totals the test and logs the verdict — so all three of its cells are
-//! walked here. The
-//! caller-owned `when`-cell *reject* moved with it, and lives on a condition
-//! that has not migrated (`PhaseEnded { Upkeep }`, in
-//! `game-core/tests/timing_resolve_step.rs`).
+//! It is **coordinator-owned** — ST.7 applies the results on the re-exposed
+//! `SkillTest` frame, and the condition's own resolve step re-totals the test
+//! and logs the verdict — so all three of its cells are walked here. The
+//! caller-owned `when`-cell *reject* is covered on a caller-owned condition
+//! (`PhaseEnded { Upkeep }`, in `game-core/tests/timing_resolve_step.rs`).
 
 use card_dsl::dsl::{
     self, Ability, Effect, EventPattern, EventTiming, InvestigatorTarget, TestOutcome,
@@ -63,8 +61,8 @@ use std::sync::LazyLock;
 const AT: &str = "_tc_at";
 /// `after`-tagged forced: +2 resources.
 const AFTER: &str = "_tc_after";
-/// `when`-tagged forced: +4 resources. Reachable since #773 made
-/// `SkillTestResolved` coordinator-owned; before that it was rejected.
+/// `when`-tagged forced: +4 resources. Reachable because `SkillTestResolved` is
+/// coordinator-owned.
 const WHEN: &str = "_tc_when";
 /// `at`-tagged *reaction*: +7 resources.
 const REACT: &str = "_tc_react";
@@ -138,7 +136,7 @@ fn gains(events: &[Event]) -> Vec<u8> {
 /// Whether the test's determination — RR ST.6, logged as `SkillTestSucceeded`
 /// — precedes the first ability the sequence fired. True of the `at` and
 /// `after` cells: the verdict is logged by the condition's resolve step, which
-/// re-totals the test after the `when` cell (#1111), so a `when` ability fires
+/// re-totals the test after the `when` cell, so a `when` ability fires
 /// before the line is logged, against a verdict that is still provisional.
 ///
 /// The ST.7 application — *"Apply skill test results"* — comes later still,
@@ -191,8 +189,7 @@ fn registries() -> Registries {
 
 /// The headline claim: on a condition that is *not* the round end, an
 /// `at`-tagged forced ability resolves, and it resolves before the `after`
-/// cell. Before #702 the `at` cell was unreachable off the round end and the
-/// +1 never fired at all.
+/// cell.
 #[test]
 fn an_at_tagged_forced_resolves_before_the_after_cell() {
     let session = succeed_with(&[AT, AFTER]);
@@ -280,13 +277,11 @@ fn each_cell_is_scanned_fresh() {
     );
 }
 
-/// **All three cells, in order.** Until #773 this condition was caller-owned
-/// and the `when` card here was *rejected* rather than resolved; migrating it
-/// to a coordinator-owned bare milestone opened the cell, and the sequence is
-/// now the whole of `glossary/Nested_Sequences.md`'s walk.
+/// **All three cells, in order.** The condition is a coordinator-owned bare
+/// milestone, so the `when` card here resolves rather than being rejected, and
+/// the sequence is the whole of `glossary/Nested_Sequences.md`'s walk.
 ///
-/// The reject itself is still live scaffolding and still covered — on
-/// `PhaseEnded { Upkeep }`, which has not migrated, in
+/// The caller-owned reject is covered on `PhaseEnded { Upkeep }`, in
 /// `game-core/tests/timing_resolve_step.rs`.
 #[test]
 fn every_cell_resolves_in_order_when_at_after() {

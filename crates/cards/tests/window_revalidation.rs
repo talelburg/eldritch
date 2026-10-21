@@ -1,5 +1,5 @@
-//! Fire-time re-validation of reaction-window candidates (#568) against the
-//! real `cards::REGISTRY`.
+//! Regression for #568: reaction-window candidates are re-validated at fire
+//! time, against the real `cards::REGISTRY`.
 //!
 //! A window's candidate list is a snapshot of one scan, and resolving one of its
 //! options changes the board. The Rules Reference makes **initiation**, not
@@ -67,7 +67,7 @@ fn after_defeat_board(location_clues: u8, shape: impl FnOnce(Seat) -> Seat) -> G
         .with_round(0)
         .open_turn(INV)
         .with_seat(shape(investigator))
-        // Co-located: Fight is location-gated (#401).
+        // Co-located: Fight is location-gated.
         .with_enemy_engaged(enemy, INV)
         .with_location(loc)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -124,13 +124,13 @@ fn evidence_plays(events: &[Event]) -> usize {
 
 #[test]
 fn a_second_evidence_is_withdrawn_once_the_first_empties_the_wallet() {
-    // #568 acceptance 1. Two copies of Evidence! (cost 1 each) on a 1-resource
+    // Two copies of Evidence! (cost 1 each) on a 1-resource
     // wallet: the scan offers both, because at scan time either one is payable.
     // Playing the first empties the wallet, so the second can no longer be
     // initiated — RR p.22, the cost must have the potential to be paid in full.
     //
-    // Pre-fix, the window re-prompted the stored candidate unfiltered and
-    // `pay_play_cost`'s `saturating_sub` took 1 from 0, emitting a **false**
+    // Re-prompting the stored candidate unfiltered would let
+    // `pay_play_cost`'s `saturating_sub` take 1 from 0, emitting a **false**
     // `ResourcesPaid { amount: 1 }` and resolving the card for free.
     let state = after_defeat_board(2, |inv| inv.hand([EVIDENCE, EVIDENCE]).resources(1));
 
@@ -177,15 +177,15 @@ fn a_second_evidence_is_withdrawn_once_the_first_empties_the_wallet() {
 
 #[test]
 fn evidence_is_withdrawn_when_rolands_reaction_takes_the_last_clue() {
-    // #568 acceptance 2. Roland Banks and Evidence! both read "Discover 1 clue at
+    // Roland Banks and Evidence! both read "Discover 1 clue at
     // your location", and both are FAQ'd "You can only 'discover' a clue if there
     // is a clue on your location." At a 1-clue location the after-defeat window
     // offers both; firing Roland's reaction takes that clue, so Evidence! can no
     // longer change the game state and must not stay on offer.
     //
-    // Pre-fix it did: playing it paid a resource and discarded the card, then
-    // `discover_clue` found 0 clues and no-opped silently — one resource and one
-    // card spent for nothing, with no error.
+    // Were it to stay, playing it would pay a resource and discard the card,
+    // then `discover_clue` would find 0 clues and no-op silently — one resource
+    // and one card spent for nothing, with no error.
     //
     // Roland's investigator card in play → his after-defeat reaction matches
     // alongside the hand play.
@@ -252,16 +252,16 @@ fn a_still_payable_second_evidence_is_not_withdrawn() {
 
 #[test]
 fn firing_a_candidate_whose_card_left_hand_rejects_instead_of_panicking() {
-    // #568 acceptance 3. A hand candidate naming a card the investigator no
+    // A hand candidate naming a card the investigator no
     // longer holds is the shape a sibling option leaves behind when it removes
-    // that card from hand. The two prompt sites now withdraw such an option
+    // that card from hand. The two prompt sites withdraw such an option
     // before it can be picked, so the window is opened for real with Evidence!
     // in hand and the card is then taken out of hand behind the prompt's back —
     // what is under test is the fire-time gate itself, reachable by a client
     // replaying a stale option id.
     //
-    // Pre-fix this path was an `unreachable!` in `play_fast_event`: a reachable
-    // panic that would take the session down.
+    // The gate rejects rather than reaching an `unreachable!` in
+    // `play_fast_event`, a panic that would take the session down.
     let opened = defeat_the_enemy(after_defeat_board(2, |inv| inv.hand([EVIDENCE])));
     assert_eq!(
         (

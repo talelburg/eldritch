@@ -4,9 +4,9 @@
 //! *"\[reaction\] After you fail a skill test, exhaust Rabbit's Foot: Draw 1
 //! card."*
 //!
-//! The ruling (<https://arkhamdb.com/card/01075>) that a card drawn this way
-//! with the same triggering condition is playable in the same window is not
-//! modelled (the module's `# Module gap`, #1082), so nothing here tests it.
+//! TODO(#1082): the ruling (<https://arkhamdb.com/card/01075>) that a card drawn
+//! this way with the same triggering condition is playable in the same window
+//! is not modelled (the impl's `# Module gap`), so nothing here tests it.
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::OptionTarget;

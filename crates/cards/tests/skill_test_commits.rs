@@ -1,7 +1,7 @@
 //! End-to-end test that real-card skill icons contribute to a skill
 //! test's total when committed from hand.
 //!
-//! This is the Phase-3 acceptance demo for #63: commit Perception
+//! The tests commit Perception
 //! (`01090`, two intellect icons) and/or Unexpected Courage (`01093`,
 //! two wild icons) to a difficulty-5 intellect test for an
 //! investigator with base intellect 3. The bag is a single
@@ -26,7 +26,7 @@ const PERCEPTION: &str = "01090";
 const UNEXPECTED_COURAGE: &str = "01093";
 /// Overpower — `01091`, two combat icons and no wild. Used as the
 /// "no appropriate icon for this test" control: ST.2 rejects it outright
-/// on an intellect test (#763).
+/// on an intellect test.
 const OVERPOWER: &str = "01091";
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -37,7 +37,7 @@ const INV: InvestigatorId = InvestigatorId(1);
 /// rests at its commit window.
 fn test_with_hand(hand: &[&str]) -> TestSession {
     // Cards for the draw-skills' success draws to land on. Without them the
-    // draw hits an empty deck, which now applies the deck-out horror (#636) —
+    // draw hits an empty deck, which applies the deck-out horror —
     // irrelevant noise for tests about icon contributions.
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -115,8 +115,8 @@ fn committing_unexpected_courage_contributes_two_wild_icons() {
 
 #[test]
 fn committing_two_cards_sums_both_contributions_and_discards_both() {
-    // Phase-3 acceptance demo: commit two cards, verify icons
-    // counted, both discarded after the test.
+    // Commit two cards, verify icons counted, both discarded after the
+    // test.
     //
     // Base 3 + 0 + 2 (Perception intellect) + 2 (UC wild) = 7 vs
     // difficulty 5 → success with margin 2.
@@ -151,8 +151,8 @@ fn mixing_matching_and_non_matching_commits_is_rejected() {
     // Perception (intellect 2) + Overpower (combat 2, no wild) against an
     // intellect test. ST.2 admits cards one at a time, and Overpower prints
     // no appropriate icon for this test, so the batch is rejected — the
-    // matching card does not carry the non-matching one in with it (#763).
-    // The icon *arithmetic* that used to live here is covered by
+    // matching card does not carry the non-matching one in with it.
+    // The icon *arithmetic* is covered by
     // `committing_perception_contributes_two_intellect_icons`.
     let session = commit_from(&[PERCEPTION, OVERPOWER], &[PERCEPTION, OVERPOWER]);
     session.expect_rejected();
@@ -165,13 +165,14 @@ fn mixing_matching_and_non_matching_commits_is_rejected() {
     assert!(inv.discard.is_empty());
 }
 
+/// Regression for #763: a card with no matching or wild icon can't be
+/// committed, so the commit window is no free discard outlet.
 #[test]
 fn committing_overpower_to_an_intellect_test_is_rejected() {
     // RR Appendix II ST.2: *"Cards that lack an appropriate skill icon may
     // not be committed to a skill test."* Overpower's two combat icons are
     // not appropriate for an intellect test and it prints no wild, so the
-    // commit never happens — previously it was accepted as a zero-icon
-    // commit, which made the commit window a free discard outlet (#763).
+    // commit never happens.
     let session = commit_from(&[OVERPOWER], &[OVERPOWER]);
     session.expect_rejected();
     // Nothing moved: the card is still in hand rather than in the discard.

@@ -1,4 +1,4 @@
-//! The random basic weakness draw at scenario start (#1119): a roster entry's
+//! The random basic weakness draw at scenario start: a roster entry's
 //! `random_basic_weaknesses` count draws that many cards from the weakness
 //! pool, without replacement and shared across the roster, and shuffles them
 //! into that investigator's deck.

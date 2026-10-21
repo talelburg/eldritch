@@ -1,5 +1,5 @@
 //! Stubborn Detective 01103, a basic weakness enemy whose constant ability
-//! blanks the text box of each investigator at his location (#1127). Runs
+//! blanks the text box of each investigator at his location. Runs
 //! against `cards::TEST_REGISTRY`, with one probe granter composed in for the
 //! granted-ability case.
 //!
