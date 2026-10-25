@@ -39,9 +39,10 @@ pub fn pending_options(state: &ClientState) -> Vec<ChoiceOption> {
 
 /// The options anchored to `target`, in offered order. Pure; a linear scan
 /// (option counts are tiny, so `OptionTarget` needs no `Hash`).
-// Callers pass a freshly-constructed anchor (a temporary) which is only compared,
-// so by-value is natural even though `OptionTarget` is not `Copy`.
-#[allow(clippy::needless_pass_by_value)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "callers name the anchor inline as a temporary, which is only compared"
+)]
 #[must_use]
 pub fn options_for(options: &[ChoiceOption], target: OptionTarget) -> Vec<ChoiceOption> {
     options
@@ -53,6 +54,7 @@ pub fn options_for(options: &[ChoiceOption], target: OptionTarget) -> Vec<Choice
 
 /// The board surface the **live prompt itself** renders on, else `None` — either
 /// because no prompt is live or because the prompt is un-anchored (ADR 0011).
+///
 /// Read by the prompt banner, which suppresses the open-turn menu's *text* when
 /// this is a [`TurnControl`](OptionTarget::TurnControl) — structurally, rather
 /// than by matching the `"Choose an action"` string. The option-less counterpart
@@ -90,10 +92,12 @@ pub fn confirm_anchor(state: &ClientState) -> Option<OptionTarget> {
 #[derive(Clone)]
 pub struct ConfirmAnchor(pub Signal<Option<OptionTarget>>);
 
-/// The options actionable for a specific hand card: those anchored to its exact
-/// slot (`HandCard { investigator, hand_index }`, the Play menu) or to its code
-/// (`HandCardByCode { investigator, code }`, a Fast reaction event — every copy).
-/// Pure.
+/// The options actionable for a specific hand card.
+///
+/// Those are the options anchored to its exact slot
+/// (`HandCard { investigator, hand_index }`, the Play menu) or to its code
+/// (`HandCardByCode { investigator, code }`, a Fast reaction event — every
+/// copy). Pure.
 #[must_use]
 pub fn options_for_hand_card(
     options: &[ChoiceOption],
@@ -211,6 +215,7 @@ pub fn ContextMenu(
 }
 
 /// The interactive trigger for a board entity's context menu, wasm-only.
+///
 /// A transparent hit-layer covering the anchor captures the open click's viewport
 /// coords into `open`; the [`ContextMenu`] renders there. Embedded by each entity
 /// under `#[cfg(target_arch = "wasm32")]` so no `web_sys` touches the host build;

@@ -95,10 +95,12 @@ fn location_carries_restriction(
         .any(|att| (reg.abilities_for)(&att.code).is_some_and(|abilities| carries(&abilities)))
 }
 
-/// Whether `enemy` may move into `loc`. Blocked when `loc` carries a
-/// [`Restriction::EnemyMovementBlocked`] whose exemption the enemy's printed
-/// card does not pass — a `None` exemption blocks every enemy. Barricade 01038
-/// supplies its own *"Non-\[\[Elite\]\]"* as that exemption.
+/// Whether `enemy` may move into `loc`.
+///
+/// Blocked when `loc` carries a [`Restriction::EnemyMovementBlocked`] whose
+/// exemption the enemy's printed card does not pass — a `None` exemption blocks
+/// every enemy. Barricade 01038 supplies its own *"Non-\[\[Elite\]\]"* as that
+/// exemption.
 ///
 /// The exemption is checked by code through
 /// [`card_registry::card_matches`], so a code `cards` doesn't know fails

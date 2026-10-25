@@ -118,12 +118,14 @@ fn investigate_with_dangling_current_location_panics() {
     // corruption pattern used by end_turn / rotate_to_active. The
     // corruption is made at rest, without re-settling, so it reaches the
     // handler rather than the menu.
-    let _ = investigate_board(seat(1).at(HERE), 2, 2)
-        .session()
-        .edit_state(|state| {
-            state.locations.remove(&HERE);
-        })
-        .submit_off_menu(&INVESTIGATE);
+    drop(
+        investigate_board(seat(1).at(HERE), 2, 2)
+            .session()
+            .edit_state(|state| {
+                state.locations.remove(&HERE);
+            })
+            .submit_off_menu(&INVESTIGATE),
+    );
 }
 
 #[test]

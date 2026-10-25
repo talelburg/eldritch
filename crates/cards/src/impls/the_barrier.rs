@@ -86,9 +86,11 @@ use crate::impls::CardRecord;
 /// `ArkhamDB` code for Act 2, "The Barrier".
 pub const CODE: &str = "01109";
 
-/// This card's registration, listed in [`ALL`](super::ALL). The round-end
-/// advance is offered only when the Hallway (01112) group can afford the act's
-/// clue threshold, which is what its eligibility condition checks.
+/// This card's registration, listed in [`ALL`](super::ALL).
+///
+/// The round-end advance is offered only when the Hallway (01112) group can
+/// afford the act's clue threshold, which is what its eligibility condition
+/// checks.
 pub const CARD: CardRecord = CardRecord::new(CODE, abilities)
     .effects(&[
         (REVERSE, reverse),

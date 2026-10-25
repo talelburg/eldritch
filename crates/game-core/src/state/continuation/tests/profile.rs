@@ -236,8 +236,10 @@ fn a_reaction_window_cancels_and_its_forced_run_twin_completes() {
 ///
 /// Shared with the stack's wire-format test (`stack.rs`), whose fixture is
 /// these frames serialised.
-// One flat table reads better than splitting it by role across functions.
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one table row per `Continuation` variant, which reads better flat than split by role"
+)]
 pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
     let ctx = EvalContext::for_controller(InvestigatorId(1));
     vec![

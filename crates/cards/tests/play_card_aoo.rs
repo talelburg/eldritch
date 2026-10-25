@@ -23,7 +23,6 @@
 //! **Emergency Cache (01088):** "Gain 3 resources." A non-fast event → provokes.
 //! **Working a Hunch (01037):** "Fast. Play only during your turn. … discover 1
 //! clue …" A fast event → `AoO`-exempt.
-#![allow(clippy::too_many_lines)]
 
 use cards::TEST_REGISTRIES;
 use game_core::assert_no_event;

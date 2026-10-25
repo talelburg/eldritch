@@ -641,7 +641,6 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
 // ---------------------------------------------------------------------
 
 #[test]
-#[allow(clippy::too_many_lines)]
 fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
     // An investigator controlling Guard Dog, engaged by a ready enemy,
     // takes a Move action. The Move fires an attack of opportunity (through

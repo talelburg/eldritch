@@ -18,10 +18,11 @@ use leptos::prelude::*;
 use crate::interaction::{self, PendingOptions};
 use crate::{card, controls, registry};
 
-/// Which face of an act/agenda to show. During an advance the card flips from its
-/// front to its reverse (the "1b" side that carries the on-advance effect) once
-/// the flip is clicked. `pub` because it rides in the generated component
-/// props struct.
+/// Which face of an act/agenda to show.
+///
+/// During an advance the card flips from its front to its reverse (the "1b"
+/// side that carries the on-advance effect) once the flip is clicked. `pub`
+/// because it rides in the generated component props struct.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Face {
     /// The printed front (`name`/`text`).
@@ -89,8 +90,10 @@ fn name_and_text(code: &CardCode, face: Face) -> (String, Option<Vec<AnyView>>) 
 /// the live prompt anchors an option to the act (`OptionTarget::Act`) — both the
 /// open-turn Advance action and the round-end advance reaction. The
 /// agenda has the parallel [`AgendaCard`].
-// `act` is taken by value: Leptos `#[component]` generates an owned props struct.
-#[allow(clippy::needless_pass_by_value)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Leptos `#[component]` takes `act` by value into its owned props struct"
+)]
 #[component]
 pub fn ActCard(act: Act, face: Face) -> impl IntoView {
     let (name, text) = name_and_text(&act.code, face);
@@ -142,8 +145,10 @@ pub fn ActCard(act: Act, face: Face) -> impl IntoView {
 /// agenda-sourced forced effect (What's Going On?! 01105's on-advance reverse). The
 /// mirror of [`ActCard`]; the doom counter lives on `GameState`, not the `Agenda`
 /// struct, so it arrives as a second prop.
-// `agenda` is taken by value: Leptos `#[component]` generates an owned props struct.
-#[allow(clippy::needless_pass_by_value)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Leptos `#[component]` takes `agenda` by value into its owned props struct"
+)]
 #[component]
 pub fn AgendaCard(agenda: Agenda, doom: u8, face: Face) -> impl IntoView {
     let (name, text) = name_and_text(&agenda.code, face);

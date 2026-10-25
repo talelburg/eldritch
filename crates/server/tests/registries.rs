@@ -6,6 +6,15 @@
 //! from `common`. It also creates a game from every roster the picker can send:
 //! each default deck, with its fixed weakness and with a random one.
 
+#[expect(
+    clippy::allow_attributes,
+    reason = "every test binary takes the same attribute, so a binary that comes to use every \
+              helper doesn't fail an `expect(dead_code)`"
+)]
+#[allow(
+    dead_code,
+    reason = "each test binary uses only some of the shared helpers"
+)]
 mod common;
 
 use axum::body::Body;

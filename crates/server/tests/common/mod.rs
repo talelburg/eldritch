@@ -1,6 +1,5 @@
 //! Shared helpers for server integration tests: the mock registries, an in-memory pool, a spawned server, and a websocket
 //! client. Not every test binary uses every helper.
-#![allow(dead_code)]
 
 use std::net::SocketAddr;
 
@@ -20,7 +19,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 
-pub const TEST_SCENARIO_ID: &str = "test-scenario";
+pub(crate) const TEST_SCENARIO_ID: &str = "test-scenario";
 
 fn test_setup() -> GameState {
     // Bare scenario seed — seating runs at creation via `seat_and_open`,
@@ -47,13 +46,13 @@ fn module_for(id: &ScenarioId) -> Option<&'static ScenarioModule> {
 
 /// The mock scenario registry + game-core's synthetic card registry: what
 /// every test that creates a game hands the server.
-pub const REGISTRIES: Registries = Registries {
+pub(crate) const REGISTRIES: Registries = Registries {
     cards: &test_support::TEST_REGISTRY,
     scenarios: &ScenarioRegistry { module_for },
 };
 
 /// A one-investigator roster using the synthetic `TEST_INV` code.
-pub fn roster() -> Vec<RosterEntry> {
+pub(crate) fn roster() -> Vec<RosterEntry> {
     vec![RosterEntry {
         investigator: CardCode::new(test_support::TEST_INV),
         deck: vec![],
@@ -62,7 +61,7 @@ pub fn roster() -> Vec<RosterEntry> {
 }
 
 /// A migrated single-connection in-memory pool.
-pub async fn memory_pool() -> SqlitePool {
+pub(crate) async fn memory_pool() -> SqlitePool {
     let pool = SqlitePoolOptions::new()
         .max_connections(1)
         .connect("sqlite::memory:")
@@ -73,7 +72,7 @@ pub async fn memory_pool() -> SqlitePool {
 }
 
 /// Spawn the server on an ephemeral port; return its bound address.
-pub async fn spawn_server(pool: SqlitePool) -> SocketAddr {
+pub(crate) async fn spawn_server(pool: SqlitePool) -> SocketAddr {
     let app = server::app(AppState::new(pool, REGISTRIES));
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
@@ -85,23 +84,23 @@ pub async fn spawn_server(pool: SqlitePool) -> SocketAddr {
     addr
 }
 
-pub type Client = WebSocketStream<MaybeTlsStream<TcpStream>>;
+pub(crate) type Client = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 /// Open a websocket to a game.
-pub async fn connect(addr: SocketAddr, game_id: &str) -> Client {
+pub(crate) async fn connect(addr: SocketAddr, game_id: &str) -> Client {
     let url = format!("ws://{addr}/ws/{game_id}");
     let (ws, _response) = connect_async(url).await.expect("ws connect");
     ws
 }
 
 /// Send a client message as JSON text.
-pub async fn send(ws: &mut Client, msg: &ClientMessage) {
+pub(crate) async fn send(ws: &mut Client, msg: &ClientMessage) {
     let json = serde_json::to_string(msg).expect("serialize ClientMessage");
     ws.send(Message::Text(json.into())).await.expect("ws send");
 }
 
 /// Receive the next [`ServerMessage`], skipping ping/pong frames.
-pub async fn recv(ws: &mut Client) -> ServerMessage {
+pub(crate) async fn recv(ws: &mut Client) -> ServerMessage {
     loop {
         match ws.next().await.expect("stream open").expect("no ws error") {
             Message::Text(text) => {

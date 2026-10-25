@@ -69,11 +69,12 @@ pub(in crate::engine) struct InitiatorModifier {
     pub delta: IntExpr,
 }
 
-// Eleven args: the skill-test parameters are genuinely independent axes
-// (skill, kind, difficulty, success/fail follow-ups, source, the initiator's
-// modifier and reveal clause). A params struct would add indirection without
-// grouping anything cohesive.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the skill-test parameters are independent axes (skill, kind, difficulty, \
+              follow-ups, source, the initiator's modifier and reveal clause), which a params \
+              struct would only wrap"
+)]
 pub(in crate::engine) fn start_skill_test(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -248,7 +249,7 @@ pub(in crate::engine) fn start_skill_test(
 /// [`NativeCx::substitute_skill_until_end_of_round`](crate::engine::NativeCx::substitute_skill_until_end_of_round).
 /// Stamped [`Lifetime::Round`]: Mind over Matter's is the only substitution in
 /// scope, and it lasts *"Until the end of the round"*. No event announces it.
-pub fn substitute_skill_until_end_of_round(cx: &mut Cx, substitution: SkillSubstitution) {
+pub(crate) fn substitute_skill_until_end_of_round(cx: &mut Cx, substitution: SkillSubstitution) {
     cx.state.lasting_effects.push(LastingEffect {
         lifetime: Lifetime::Round,
         kind: LastingEffectKind::SkillSubstitution(substitution),
@@ -266,7 +267,7 @@ pub fn substitute_skill_until_end_of_round(cx: &mut Cx, substitution: SkillSubst
 ///
 /// A missing test or card is a caller bug: `debug_assert!`, and nothing
 /// changes in release.
-pub fn return_committed_card_to_hand(cx: &mut Cx, index: u8) {
+pub(crate) fn return_committed_card_to_hand(cx: &mut Cx, index: u8) {
     let card = cx
         .state
         .current_skill_test_mut()
@@ -289,7 +290,7 @@ pub fn return_committed_card_to_hand(cx: &mut Cx, index: u8) {
 ///
 /// A missing test is a caller bug: `debug_assert!`, and nothing changes in
 /// release.
-pub fn discard_after_this_test(cx: &mut Cx, card: CardInstanceId) {
+pub(crate) fn discard_after_this_test(cx: &mut Cx, card: CardInstanceId) {
     let test = cx.state.current_skill_test_mut();
     debug_assert!(
         test.is_some(),
@@ -623,6 +624,11 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
     // Queued in tail position: the driver's loop sees the coordinator on top
     // and yields to it, so the outcome (always a queued `Done`) has nothing
     // to carry.
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "this fn returns `()` and the driver loop owns the suspension channel: it yields \
+                  to the queued coordinator, so the outcome (always `Done`) has nothing to carry"
+    )]
     let _ = emit::queue_event(
         cx,
         &TimingEvent::ChaosTokenRevealed {
@@ -1412,9 +1418,10 @@ fn open_skill_test_player_window(
 ///   drain pending modifiers, tear down the frame, return `Done`.
 ///
 /// [`close_reaction_window`]: super::reaction_windows::close_reaction_window
-// One arm per `SkillTestStep` (RR ST.3–ST.8); the length is inherent to the
-// fixed step sequence, not extractable without scattering the driver.
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one arm per `SkillTestStep`, RR ST.3–ST.8, in the fixed step order"
+)]
 pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
     loop {
         // A sub-frame queued by the previous step sits *above* this `SkillTest`

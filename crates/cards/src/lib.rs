@@ -61,8 +61,10 @@ pub fn by_code(code: &str) -> Option<&'static CardMetadata> {
 }
 
 /// Whether the card with this `ArkhamDB` code prints `trait_name` — a
-/// [`CardMetadata::has_trait`] on the corpus entry, `false` for a code not
-/// in the corpus. Spell the trait with a [`generated::traits`] constant.
+/// [`CardMetadata::has_trait`] on the corpus entry, `false` for a code not in
+/// the corpus.
+///
+/// Spell the trait with a [`generated::traits`] constant.
 ///
 /// Reads the corpus directly, so card and scenario code asking about an
 /// entity's traits (an enemy's, through its code) needs no registry.
@@ -79,11 +81,12 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
     impls::abilities_for(code)
 }
 
-/// Whether a card has an effect implementation and can therefore be
-/// taken into a scenario: whether it has a record in [`impls::ALL`], the
-/// same list every registry lookup searches. Cards without an
-/// implementation still appear in [`all`] (deckbuilding tools list them)
-/// but are refused by the deck-import gate.
+/// Whether a card has an effect implementation and can therefore be taken into
+/// a scenario: whether it has a record in [`impls::ALL`], the same list every
+/// registry lookup searches.
+///
+/// Cards without an implementation still appear in [`all`] (deckbuilding tools
+/// list them) but are refused by the deck-import gate.
 #[must_use]
 pub fn is_playable(code: &str) -> bool {
     impls::record(code).is_some()
@@ -136,10 +139,11 @@ pub const REGISTRY: CardRegistry = CardRegistry {
     weakness_pool: decks::weakness_pool,
 };
 
-/// [`REGISTRY`] with game-core's synthetic test cards composed in: the
-/// investigator [`TEST_INV`](game_core::test_support::TEST_INV) in
+/// [`REGISTRY`] with game-core's synthetic test cards composed in.
+///
+/// The investigator [`TEST_INV`](game_core::test_support::TEST_INV) is in
 /// `metadata_for`, and the terminal acts/agendas
-/// ([`terminal_code`](game_core::test_support::terminal_code)) in
+/// ([`terminal_code`](game_core::test_support::terminal_code)) are in
 /// `abilities_for`. Every real card is served unchanged, so a test seats a
 /// plain [`test_investigator`](game_core::test_support::test_investigator)
 /// next to the corpus without borrowing a real investigator's code.
@@ -170,9 +174,11 @@ pub const TEST_REGISTRIES: Registries = Registries {
     scenarios: &ScenarioRegistry::EMPTY,
 };
 
-/// [`REGISTRY`] with no scenario modules: the registries a test of the
-/// playable gate or of the random basic weakness draw runs against, since
-/// [`TEST_REGISTRIES`] accepts every code and has an empty weakness pool.
+/// [`REGISTRY`] with no scenario modules.
+///
+/// These are the registries a test of the playable gate or of the random basic
+/// weakness draw runs against, since [`TEST_REGISTRIES`] accepts every code and
+/// has an empty weakness pool.
 #[cfg(feature = "test-support")]
 pub const REGISTRIES: Registries = Registries {
     cards: &REGISTRY,

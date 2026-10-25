@@ -484,7 +484,10 @@ fn move_deck_top_to_hand(cx: &mut Cx, investigator: InvestigatorId, count: u8) -
 /// re-`get`s the investigator already checked present above, so this is a
 /// state-corruption invariant, not a reachable input error (a missing
 /// investigator returns `None` at the top).
-pub fn discard_random_from_hand(cx: &mut Cx, investigator: InvestigatorId) -> Option<CardCode> {
+pub(crate) fn discard_random_from_hand(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+) -> Option<CardCode> {
     let inv = cx.state.investigators.get_mut(&investigator)?;
     if inv.hand.is_empty() {
         return None;
@@ -1158,14 +1161,11 @@ pub(super) fn play_card(
     investigator: InvestigatorId,
     source: PlaySource,
 ) -> EngineOutcome {
-    let PlayCheckResult {
-        abilities,
-        is_fast,
-        card_type: _,
-    } = match legality::check_play_card(cx.state, cx.cards, investigator, source) {
-        Ok(r) => r,
-        Err(reason) => return EngineOutcome::Rejected { reason },
-    };
+    let PlayCheckResult { abilities, is_fast } =
+        match legality::check_play_card(cx.state, cx.cards, investigator, source) {
+            Ok(r) => r,
+            Err(reason) => return EngineOutcome::Rejected { reason },
+        };
     // The code is re-read from state here so we don't pass it through
     // the result (avoiding the lifetime question). The validator already
     // confirmed the source holds a card and the investigator exists.
@@ -1236,7 +1236,17 @@ pub(in crate::engine) fn enter_asset_into_play(
     if entry == AssetEntry::PlayedFromHand {
         // The play is complete (Appendix I step 4). Queued first so that
         // `EnteredPlay`'s sequence, pushed above it, resolves first.
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "this fn returns `()` and its caller owns the suspension channel: the \
+                      frame driving it is already popped, and the `drive` loop runs what is queued"
+        )]
         let _ = emit::queue_event(cx, &TimingEvent::CardPlayed { investigator, code });
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "this fn returns `()` and its caller owns the suspension channel: the \
+                      frame driving it is already popped, and the `drive` loop runs what is queued"
+        )]
         let _ = emit::queue_event(
             cx,
             &TimingEvent::EnteredPlay {
@@ -1671,7 +1681,8 @@ mod draw_with_deckout_tests {
         let hand_before = state.investigators[&id].hand.len();
         let mut events = Vec::new();
 
-        let _ = draw_with_deckout(&mut Cx::for_test(&mut state, &mut events), id, 3);
+        let outcome = draw_with_deckout(&mut Cx::for_test(&mut state, &mut events), id, 3);
+        assert!(matches!(outcome, EngineOutcome::Done), "{outcome:?}");
 
         let inv = &state.investigators[&id];
         assert_eq!(inv.hand.len(), hand_before + 3, "drew the full count");

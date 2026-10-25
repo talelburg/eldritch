@@ -133,9 +133,10 @@ pub enum ScenarioEnding {
 }
 
 /// Read-only board view handed to a scenario's symbol-token hook
-/// ([`ScenarioModule::resolve_symbol`]). Carries the testing investigator
-/// and the live state so the hook can compute board-dependent values
-/// (e.g. "number of Ghoul enemies at your location").
+/// ([`ScenarioModule::resolve_symbol`]).
+///
+/// Carries the testing investigator and the live state so the hook can compute
+/// board-dependent values (e.g. "number of Ghoul enemies at your location").
 pub struct SymbolCtx<'a> {
     state: &'a GameState,
     investigator: InvestigatorId,
@@ -174,8 +175,9 @@ impl<'a> SymbolCtx<'a> {
 }
 
 /// A scenario's **location layout**: the connections printed as connection
-/// symbols on its location cards, as unordered pairs of card codes. Each
-/// pair is wired bidirectionally when the second of its two locations
+/// symbols on its location cards, as unordered pairs of card codes.
+///
+/// Each pair is wired bidirectionally when the second of its two locations
 /// enters play.
 ///
 /// The layout is scenario-owned rather than card-owned because the pinned
@@ -264,10 +266,12 @@ impl ScenarioRegistry {
     };
 }
 
-/// The active scenario's [`LocationLayout`], or `&[]` when the apply runs
-/// no scenario module (no active scenario, or an id the scenario registry
-/// doesn't know). `scenario` is the module the apply resolved once from
-/// `state.scenario_id`; mirrors [`resolve_symbol_token`].
+/// The active scenario's [`LocationLayout`], or `&[]` when the apply runs no
+/// scenario module (no active scenario, or an id the scenario registry doesn't
+/// know).
+///
+/// `scenario` is the module the apply resolved once from `state.scenario_id`;
+/// mirrors [`resolve_symbol_token`].
 ///
 /// An absent layout is not an error: a board with no set-aside locations
 /// never asks, and a scenario that laid its whole board out in `setup()`
@@ -278,10 +282,12 @@ pub fn scenario_layout(scenario: Option<&ScenarioModule>) -> LocationLayout {
 }
 
 /// Resolve a drawn chaos symbol token against the active scenario's
-/// reference-card effects, if any, through
-/// [`ScenarioModule::resolve_symbol`] on `scenario` — the module the apply
-/// resolved once from `state.scenario_id`. Returns `None` when the apply runs
-/// no scenario module, or the module has no symbol hook — callers then fall back to the static
+/// reference-card effects, if any.
+///
+/// Resolution goes through [`ScenarioModule::resolve_symbol`] on `scenario`,
+/// the module the apply resolved once from `state.scenario_id`. Returns `None`
+/// when the apply runs no scenario module, or the module has no symbol hook —
+/// callers then fall back to the static
 /// [`TokenModifiers`](crate::state::TokenModifiers) path.
 #[must_use]
 pub fn resolve_symbol_token(

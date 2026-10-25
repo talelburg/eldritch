@@ -65,7 +65,7 @@ pub enum SpendUsesError {
 /// [`SpendUsesError::NotInPlay`] when `instance` is not on the board;
 /// [`SpendUsesError::Undiscardable`] when the depletion discard has nowhere to
 /// take the card from. The caller decides what either means for it.
-pub fn spend_uses(
+pub(crate) fn spend_uses(
     cx: &mut Cx,
     investigator: InvestigatorId,
     instance: CardInstanceId,
@@ -127,7 +127,7 @@ pub enum MoveUsesError {
 /// [`MoveUsesError::NoSuchInvestigator`] when `investigator` is not in the
 /// game; [`MoveUsesError::Undiscardable`] when the depletion discard has
 /// nowhere to take the card from.
-pub fn move_uses_to_resource_pool(
+pub(crate) fn move_uses_to_resource_pool(
     cx: &mut Cx,
     investigator: InvestigatorId,
     instance: CardInstanceId,

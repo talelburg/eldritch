@@ -49,7 +49,7 @@ fn act_advances_at_round_end(state: &GameState, reg: &CardRegistry) -> bool {
 /// [`NativeCx::place_doom_on_agenda`](crate::engine::NativeCx::place_doom_on_agenda),
 /// so it gets the empty-agenda-deck guard rather than writing `agenda_doom`
 /// itself.
-pub fn place_doom_on_agenda(cx: &mut Cx, count: u8) {
+pub(crate) fn place_doom_on_agenda(cx: &mut Cx, count: u8) {
     if cx.state.agenda_deck.is_empty() {
         return;
     }
@@ -262,11 +262,13 @@ pub(crate) fn spend_clues_from(state: &mut GameState, ids: &[InvestigatorId], am
 
 /// Whether the current act's round-end group clue-spend advance is affordable:
 /// investigators at `contributor_location_code` hold at least the current act's
-/// `clue_threshold`. Shared by the offer-side eligibility condition (act 01109's
+/// `clue_threshold`.
+///
+/// Shared by the offer-side eligibility condition (act 01109's
 /// `01109:can-advance`) and the resolve-side
-/// [`NativeCx::round_end_advance`](crate::engine::NativeCx::round_end_advance), so the two
-/// can't drift. `false` when there is no current act or the location isn't in
-/// play (the "investigators in the Hallway" condition is subsumed — 0
+/// [`NativeCx::round_end_advance`](crate::engine::NativeCx::round_end_advance),
+/// so the two can't drift. `false` when there is no current act or the location
+/// isn't in play (the "investigators in the Hallway" condition is subsumed — 0
 /// contributors ⇒ 0 clues ⇒ not affordable).
 #[must_use]
 pub fn round_end_advance_affordable(state: &GameState, contributor_location_code: &str) -> bool {
@@ -299,7 +301,7 @@ pub fn round_end_advance_affordable(state: &GameState, contributor_location_code
 /// the location is present, so reaching the `expect` would mean
 /// [`round_end_advance_affordable`] and [`location_id_by_code`](crate::engine::location_id_by_code)
 /// disagree about the same code.
-pub fn round_end_advance(cx: &mut Cx, contributor_location_code: &str) -> EngineOutcome {
+pub(crate) fn round_end_advance(cx: &mut Cx, contributor_location_code: &str) -> EngineOutcome {
     if !round_end_advance_affordable(cx.state, contributor_location_code) {
         return EngineOutcome::Rejected {
             reason: "round_end_advance: contributors no longer hold enough clues".into(),

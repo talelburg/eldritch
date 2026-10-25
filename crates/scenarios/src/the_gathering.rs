@@ -187,9 +187,10 @@ fn resolve_symbol(token: ChaosToken, cx: &SymbolCtx) -> TokenOutcome {
     }
 }
 
-/// The Gathering's location layout: the Hallway (01112) is the hub, with
-/// the Attic (01113), Cellar (01114) and Parlor (01115) as spokes. Read
-/// from the connection symbols printed on the location cards — the pinned
+/// The Gathering's location layout: the Hallway (01112) is the hub, with the
+/// Attic (01113), Cellar (01114) and Parlor (01115) as spokes.
+///
+/// Read from the connection symbols printed on the location cards — the pinned
 /// snapshot carries no connection field, so the board's topology is the
 /// scenario's to own (see [`LocationLayout`]).
 ///
@@ -198,11 +199,12 @@ fn resolve_symbol(token: ChaosToken, cx: &SymbolCtx) -> TokenOutcome {
 /// of the house arrives.
 pub const LAYOUT: LocationLayout = &[("01112", "01113"), ("01112", "01114"), ("01112", "01115")];
 
-/// Build the initial [`GameState`]: the Study in play (isolated), the
-/// four set-aside rooms (Hallway/Attic/Cellar/Parlor, by code), the
-/// set-aside Ghoul Priest, the act/agenda decks, the Standard chaos bag,
-/// and `starting_location`.
-/// No investigators — they are seated via `seat_and_open` at scenario setup.
+/// Build The Gathering's initial [`GameState`], with no investigators seated.
+///
+/// The state holds the Study in play (isolated), the four set-aside rooms
+/// (Hallway/Attic/Cellar/Parlor, by code), the set-aside Ghoul Priest, the
+/// act/agenda decks, the Standard chaos bag, and `starting_location`. The
+/// investigators are seated via `seat_and_open` at scenario setup.
 ///
 /// # Panics
 ///

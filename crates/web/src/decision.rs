@@ -32,10 +32,11 @@ use crate::drag::Drag;
 use crate::registry;
 use crate::store::{self, ClientState};
 
-/// The card a decision came from, as the modal names it: the printed name and
-/// the printed text of the **face the board is showing** — an advancing act or
-/// agenda shows the reverse the player has just flipped to, a card instance its
-/// front.
+/// The card a decision came from, as the modal names it.
+///
+/// The modal shows the printed name and the printed text of the **face the
+/// board is showing**: an advancing act or agenda shows the reverse the player
+/// has just flipped to, a card instance its front.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecisionSource {
     /// The card's printed name, or its raw code when no metadata resolves.
@@ -68,8 +69,10 @@ fn live_decision_request(state: &ClientState) -> Option<&InputRequest> {
 }
 
 /// The live decision prompt, or `None` when the live prompt is a selection (or
-/// there is none). Reads the nature the engine attached — never the prompt's
-/// shape; the printed card's name and text come from `cards`. Pure.
+/// there is none).
+///
+/// Reads the nature the engine attached — never the prompt's shape; the printed
+/// card's name and text come from `cards`. Pure.
 #[must_use]
 pub fn live_decision(cards: &CardRegistry, state: &ClientState) -> Option<Decision> {
     let request = live_decision_request(state)?;
@@ -84,10 +87,12 @@ pub fn live_decision(cards: &CardRegistry, state: &ClientState) -> Option<Decisi
     })
 }
 
-/// True iff the decision modal is up. Public because the prompt banner and the
-/// board's cards consult it — the modal is the sole surface, so the rule lives
-/// here, with the view it governs, rather than being re-derived by each of them
-/// (the pattern [`crate::skill_test_result::modal_is_live`] already set). Pure.
+/// True iff the decision modal is up.
+///
+/// Public because the prompt banner and the board's cards consult it — the
+/// modal is the sole surface, so the rule lives here, with the view it governs,
+/// rather than being re-derived by each of them (the pattern
+/// [`crate::skill_test_result::modal_is_live`] already set). Pure.
 #[must_use]
 pub fn modal_is_live(state: &ClientState) -> bool {
     live_decision_request(state).is_some()
@@ -95,14 +100,16 @@ pub fn modal_is_live(state: &ClientState) -> bool {
 
 /// Context newtype carrying "a decision modal is up" as a signal, so a board
 /// card reads it without prop-drilling — the same idiom as
-/// [`PendingOptions`](crate::interaction::PendingOptions). A distinct type so it
-/// cannot collide with another `Signal<bool>` context.
+/// [`PendingOptions`](crate::interaction::PendingOptions).
+///
+/// A distinct type so it cannot collide with another `Signal<bool>` context.
 #[derive(Clone)]
 pub struct DecisionLive(pub Signal<bool>);
 
-/// True iff a live decision is taking the board's context menus away. The modal
-/// is the sole surface for a decision, so the card it came from keeps its glow
-/// but opens no menu; every other card is behind the scrim anyway.
+/// True iff a live decision is taking the board's context menus away.
+///
+/// The modal is the sole surface for a decision, so the card it came from keeps
+/// its glow but opens no menu; every other card is behind the scrim anyway.
 ///
 /// Absent context reads as `false` — a view mounted without [`DecisionLive`]
 /// (an isolated component test) keeps its context menus.

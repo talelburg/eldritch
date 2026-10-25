@@ -657,9 +657,6 @@ pub(super) fn resume_reaction_window(cx: &mut Cx, response: &InputResponse) -> E
 /// Fire the pending trigger at index `i` in the open reaction window.
 /// Rejects out-of-bounds; the window stays open so the client can
 /// retry with a corrected index.
-// Mostly invariant-violation `unreachable!` arms + the Resolution-frame
-// unwrapping; over the line limit but cohesive.
-#[allow(clippy::too_many_lines)]
 fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // The window being driven is the top frame — the prompt the player is
     // responding to. Operate on it directly; the stack-is-resolution-order

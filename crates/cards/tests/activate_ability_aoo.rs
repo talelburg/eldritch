@@ -34,7 +34,6 @@
 //! a `Seq`-wrapped Fight, and the **Parley** / **Resign** abilities that have no
 //! effect of their own — have no corpus card to exercise them and are covered by
 //! `crates/game-core/tests/action_designator_aoo.rs`.
-#![allow(clippy::too_many_lines)]
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;

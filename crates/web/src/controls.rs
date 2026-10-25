@@ -67,7 +67,6 @@ pub fn submit(response: InputResponse, label: impl Into<String>) {
 ///
 /// `class` is the control's stable hook (`turn-control`, `resource-control`,
 /// `draw-control`) so a test can find it whether or not it is live.
-#[allow(clippy::needless_pass_by_value)]
 #[component]
 pub fn AnchoredControl(
     /// The button's text — also the event-log header for the submitted batch.

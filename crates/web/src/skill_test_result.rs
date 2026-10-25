@@ -1,6 +1,7 @@
 //! Skill-test result panel: renders the just-resolved test — chaos token drawn,
-//! final total vs difficulty, pass/fail by N — from the three things the store
-//! latches for it:
+//! final total vs difficulty, pass/fail by N.
+//!
+//! It renders from the three things the store latches for it:
 //! [`last_skill_test_result`](crate::store::ClientState::last_skill_test_result),
 //! [`last_skill_test_difficulty`](crate::store::ClientState::last_skill_test_difficulty)
 //! and [`last_revealed_token`](crate::store::ClientState::last_revealed_token).
@@ -81,8 +82,9 @@ pub fn summarize(state: &ClientState) -> Option<SkillTestSummary> {
 }
 
 /// The in-flight test's **provisional** verdict, for a prompt that arrives
-/// before the verdict is logged: `"Failing by 2"`, `"Succeeding by 1"`. `None`
-/// once the store holds the logged result, and while no verdict has been
+/// before the verdict is logged: `"Failing by 2"`, `"Succeeding by 1"`.
+///
+/// `None` once the store holds the logged result, and while no verdict has been
 /// worked out yet.
 ///
 /// The `SkillTestSucceeded`/`SkillTestFailed` line is logged at

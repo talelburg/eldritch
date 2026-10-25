@@ -19,7 +19,7 @@ use crate::state::{InvestigatorId, LocationId};
 /// silently, and placing one where they already are announces nothing.
 ///
 /// No-op for an investigator not in the game.
-pub fn place_investigator(cx: &mut Cx, investigator: InvestigatorId, location: LocationId) {
+pub(crate) fn place_investigator(cx: &mut Cx, investigator: InvestigatorId, location: LocationId) {
     let Some(inv) = cx.state.investigators.get_mut(&investigator) else {
         return;
     };

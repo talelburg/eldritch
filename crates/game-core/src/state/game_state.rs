@@ -258,10 +258,12 @@ pub struct GameState {
     pub interactive_acknowledge: bool,
 }
 
-/// One agenda card's mechanically-relevant state: the doom needed to
-/// advance it. Card *effect* text is out of scope (per-scenario content),
-/// and so is the printed `(→R#)` resolution point on its reverse — a
-/// terminal agenda reaches its ending by *running*
+/// One agenda card's mechanically-relevant state: the doom needed to advance
+/// it.
+///
+/// Card *effect* text is out of scope (per-scenario content), and so is the
+/// printed `(→R#)` resolution point on its reverse — a terminal agenda reaches
+/// its ending by *running*
 /// [`Effect::ReachResolution`](card_dsl::dsl::Effect::ReachResolution) from
 /// that reverse, and it is terminal because it is the last card in
 /// [`GameState::agenda_deck`], not because it carries a flag. See
@@ -284,11 +286,12 @@ pub struct Agenda {
     pub doom_threshold: u8,
 }
 
-/// One act card's mechanically-relevant state: the clues the group must
-/// spend to advance it. Its `(→R#)` resolution point is printed on its
-/// reverse and reached by effect, exactly as [`Agenda`]'s is. Not
-/// `#[non_exhaustive]` for the same cross-crate-construction reason as
-/// [`Agenda`].
+/// One act card's mechanically-relevant state: the clues the group must spend
+/// to advance it.
+///
+/// Its `(→R#)` resolution point is printed on its reverse and reached by
+/// effect, exactly as [`Agenda`]'s is. Not `#[non_exhaustive]` for the same
+/// cross-crate-construction reason as [`Agenda`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Act {
     /// The encounter-card code this act is printed on (e.g. `01108`).
@@ -333,6 +336,7 @@ pub enum LastingEffectKind {
 }
 
 /// A "use X in place of Y" skill substitution (Mind over Matter 01036).
+///
 /// While it lasts, the owning `investigator` may make a `for_skills` test as
 /// a `use_skill` test instead — the choice is offered at test initiation. It
 /// lasts as a [`LastingEffect`] with [`Lifetime::Round`].

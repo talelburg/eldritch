@@ -97,9 +97,11 @@ pub fn moved_off_centre(offset: (f64, f64)) -> bool {
     offset.0 != 0.0 || offset.1 != 0.0
 }
 
-/// `transform` that layers `offset` over the CSS centring. Both modals centre
-/// with `translate(-50%, -50%)`, so the offset rides inside that same transform
-/// via `calc` rather than fighting it from a second property. Pure.
+/// `transform` that layers `offset` over the CSS centring.
+///
+/// Both modals centre with `translate(-50%, -50%)`, so the offset rides inside
+/// that same transform via `calc` rather than fighting it from a second
+/// property. Pure.
 #[must_use]
 pub fn transform_style(offset: (f64, f64)) -> String {
     let (x, y) = offset;
@@ -117,9 +119,11 @@ pub fn scrim_alpha(offset: (f64, f64)) -> f64 {
     }
 }
 
-/// The scrim's alpha under a centred modal. Both scrims are styled inline from
-/// here rather than from `style.css`, so the alpha has one home: it is a
-/// function of how far the modal has been dragged, not a constant.
+/// The scrim's alpha under a centred modal.
+///
+/// Both scrims are styled inline from here rather than from `style.css`, so the
+/// alpha has one home: it is a function of how far the modal has been dragged,
+/// not a constant.
 pub const FULL: f64 = 0.45;
 
 /// The scrim's alpha once its modal has been moved: enough tint that the board
@@ -134,7 +138,6 @@ pub struct Drag {
     offset: RwSignal<(f64, f64)>,
     /// The in-flight gesture, `None` between drags. Read by the pointer
     /// handlers, which are inert on the host build.
-    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     gesture: RwSignal<Option<Gesture>>,
 }
 

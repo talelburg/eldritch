@@ -186,9 +186,11 @@ pub mod what_have_you_done;
 pub mod whats_going_on;
 pub mod working_a_hunch;
 
-/// One card's whole registration: its code, the abilities on each side, and
-/// the native fns its abilities name by tag. Each card module exports one as
-/// `CARD`, listed once in [`ALL`]; every lookup below is a search over it.
+/// One card's whole registration: its code, the abilities on each side, and the
+/// native fns its abilities name by tag.
+///
+/// Each card module exports one as `CARD`, listed once in [`ALL`]; every lookup
+/// below is a search over it.
 ///
 /// The two native namespaces stay separate because the engine resolves them
 /// through separate [`CardRegistry`](game_core::card_registry::CardRegistry)

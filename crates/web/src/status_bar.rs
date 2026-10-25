@@ -1,5 +1,6 @@
 //! The app status bar: connection status, last rejection, and the New-game
 //! button — rendered inline with the page heading to keep the header compact.
+//!
 //! Reads the store; the New-game button is wasm-only (it drives the transport).
 
 use leptos::prelude::*;

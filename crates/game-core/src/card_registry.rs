@@ -33,8 +33,9 @@ use crate::engine::{EngineOutcome, NativeCx};
 use crate::state::{CardCode, GameState};
 
 /// A card-local Rust effect: reads the state and changes the game through the
-/// engine exits on [`NativeCx`], returning the resolution outcome. Provided by
-/// the `cards` crate and dispatched from [`Effect::Native`] via
+/// engine exits on [`NativeCx`], returning the resolution outcome.
+///
+/// Provided by the `cards` crate and dispatched from [`Effect::Native`] via
 /// [`CardRegistry::native_effect_for`].
 ///
 /// [`Effect::Native`]: card_dsl::dsl::Effect::Native
@@ -42,9 +43,10 @@ pub type NativeEffectFn = fn(&mut NativeCx, &EvalContext) -> EngineOutcome;
 
 /// A card-local read-only predicate backing a [`Condition::Native`] gate:
 /// returns whether the condition holds against the current board and evaluation
-/// context. Dispatched from `eval_condition` via
-/// [`CardRegistry::native_condition_for`], whether the condition guards an
-/// effect or an ability's
+/// context.
+///
+/// Dispatched from `eval_condition` via [`CardRegistry::native_condition_for`],
+/// whether the condition guards an effect or an ability's
 /// [`eligibility`](card_dsl::dsl::Ability::eligibility).
 ///
 /// [`Condition::Native`]: card_dsl::dsl::Condition::Native

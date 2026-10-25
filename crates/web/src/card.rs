@@ -291,10 +291,12 @@ fn use_kind_label(kind: UseKind) -> &'static str {
     }
 }
 
-/// Live per-instance state of an in-play card as chip strings: uses pools first
-/// (`"2 ammo"`), then soak (`"dmg 1/2"` / `"hor 0/2"`) for an `Asset` that has
-/// that capacity, then clues, doom and resources on the card when non-zero. Empty for a
-/// plain asset with no uses, no soak capacity and no tokens.
+/// Live per-instance state of an in-play card as chip strings.
+///
+/// Uses pools come first (`"2 ammo"`), then soak (`"dmg 1/2"` / `"hor 0/2"`)
+/// for an `Asset` that has that capacity, then clues, doom and resources on the
+/// card when non-zero. Empty for a plain asset with no uses, no soak capacity
+/// and no tokens.
 #[must_use]
 pub fn live_state_chips(inst: &CardInPlay, kind: &CardKind) -> Vec<String> {
     let mut chips = Vec::new();
@@ -328,13 +330,15 @@ pub fn live_state_chips(inst: &CardInPlay, kind: &CardKind) -> Vec<String> {
 /// raw code. Non-hand card kinds render as a
 /// generic rectangle (name/traits/text) — their detailed faces are later slices.
 /// Display-only: no click handlers.
-// `code` and `in_play` are taken by value: Leptos `#[component]` generates a
-// props struct requiring owned fields, so a reference would need a lifetime the
-// macro can't express.
-// `too_many_lines`: the component assembles many inline `view!` fragments
-// (head/traits/text/footer + the in-play overlays); splitting it would scatter
-// the markup without clarifying it.
-#[allow(clippy::needless_pass_by_value, clippy::too_many_lines)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Leptos `#[component]` takes `code` and `in_play` by value into its owned props struct"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one inline `view!` fragment per card part (head, traits, text, footer) and per \
+              in-play overlay"
+)]
 #[component]
 pub fn Card(code: CardCode, #[prop(optional)] in_play: Option<CardInPlay>) -> impl IntoView {
     let Some(meta) = (registry::use_cards().metadata_for)(&code) else {
@@ -502,7 +506,6 @@ pub fn HandCardView(code: CardCode, investigator: InvestigatorId, index: u8) -> 
 /// display-only: reads `PendingOptions` and, via the card's `CardInstance` anchor,
 /// offers an Activate (open-turn) / Trigger (reaction-window) menu. No selection
 /// mode — that is hand-only.
-#[allow(clippy::needless_pass_by_value)]
 #[component]
 pub fn InPlayCardView(instance: CardInPlay) -> impl IntoView {
     let code = instance.code.clone();

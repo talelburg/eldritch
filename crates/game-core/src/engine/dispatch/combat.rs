@@ -101,7 +101,7 @@ pub(crate) fn enemies_in_scope_before_exemption(
 /// Reusing `damage_enemy` means a card that defeats its target here runs
 /// the same defeat cascade (`EnemyDefeated`, victory display) as the Fight
 /// action — intended.
-pub fn deal_damage_to_enemy(
+pub(crate) fn deal_damage_to_enemy(
     cx: &mut Cx,
     enemy_id: EnemyId,
     amount: u8,
@@ -172,6 +172,11 @@ pub(super) fn damage_enemy(cx: &mut Cx, enemy_id: EnemyId, amount: u8, by: Optio
         // rather than returned: this helper's callers (`deal_damage_to_enemy`
         // and `fight::after_test`) have their own frames, and the loop drives
         // what was queued.
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "this fn returns `()` and its callers own the suspension channel: they have \
+                      their own frames, and the `drive` loop runs what is queued"
+        )]
         let _ = emit::queue_event(
             cx,
             &TimingEvent::EnemyDefeated {
@@ -694,7 +699,7 @@ pub(super) fn enemy_may_attack(
 ///
 /// [`Restriction::CannotAttack`] is the one restriction with a lasting reader
 /// ([`enemy_may_attack`]); registering any other would be a silent no-op.
-pub fn restrict_until_end_of_round(
+pub(crate) fn restrict_until_end_of_round(
     cx: &mut Cx,
     investigator: InvestigatorId,
     restriction: Restriction,

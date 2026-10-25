@@ -37,28 +37,22 @@ use crate::state::{
 ///
 /// `is_fast` is consumed by
 /// [`any_fast_play_eligible`](super::reaction_windows::any_fast_play_eligible);
-/// `abilities` is kept for future consumers (e.g. reaction-window dispatch).
+/// `abilities` is read by `play_card`, which takes the play's action designator
+/// from them.
 ///
 /// The card's destination is deliberately **not** here: commencing a play is
 /// destination-agnostic (asset and event alike leave hand at RR Appendix I step
 /// 3), and the disposal that needs it re-derives it from the code at step 4.
-///
-/// `#[allow(dead_code)]` covers `abilities` (not yet read outside validation)
-/// and suppresses the rustc `dead_code` lint on struct fields that are only read
-/// by a `pub(super)` function not yet wired up.
 #[derive(Debug)]
-#[allow(dead_code)]
 pub(crate) struct PlayCheckResult {
     pub abilities: Vec<Ability>,
     pub is_fast: bool,
-    pub card_type: CardType,
 }
 
 /// Validated payload returned by [`check_activate_ability`] on success.
 /// Carries the data `activate_ability`'s mutation step needs without
 /// re-running the validation.
 #[derive(Debug)]
-#[allow(dead_code)] // `source_exhausted` has no reader.
 pub(crate) struct ActivateCheckResult {
     /// The activation as the initiation gate checked it — the code of the card
     /// printing the ability, the activating investigator, the ability's address
@@ -81,10 +75,6 @@ pub(crate) struct ActivateCheckResult {
     /// The *"Limit X per \[period\]"* cap, if the ability prints one — what
     /// `initiation::record_initiation` counts the activation against.
     pub usage_limit: Option<UsageLimit>,
-    /// Whether the ability's card was exhausted at validation time —
-    /// load-bearing for activated abilities whose payment includes
-    /// `Cost::Exhaust`.
-    pub source_exhausted: bool,
 }
 
 /// Gates RR p.19 slot capacity: Assets only; the only hard slot reject — a merely-full
@@ -355,11 +345,7 @@ pub(crate) fn check_play_card(
         )
         .map_err(|why| Cow::from(format!("PlayCard: {why}")))?;
     }
-    Ok(PlayCheckResult {
-        abilities,
-        is_fast,
-        card_type,
-    })
+    Ok(PlayCheckResult { abilities, is_fast })
 }
 
 /// Why [`play_source_available`] found nothing to play at `source`.
@@ -658,7 +644,6 @@ pub(crate) fn check_activate_ability(
     // the moment a cost removes the source.
     let source_card = ability_source::resolve(state, cards, investigator, source)?;
     let source_code = source_card.code().clone();
-    let source_exhausted = source_card.exhausted();
 
     // Invariant: `resolve_activated_ability` currently returns only `Ok(...)`
     // (success) or `Err(EngineOutcome::Rejected { ... })` (validation failure).
@@ -749,7 +734,6 @@ pub(crate) fn check_activate_ability(
         costs,
         effect,
         usage_limit,
-        source_exhausted,
     })
 }
 

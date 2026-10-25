@@ -29,7 +29,6 @@
 //! FAQ: "You can use Guard Dog's ability when you assign lethal damage/
 //! horror to it." The trigger is 'when an enemy attack deals damage' with
 //! no `AoO` carve-out — Guard Dog retaliates against `AoO` attacks.
-#![allow(clippy::too_many_lines)]
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;

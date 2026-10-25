@@ -104,7 +104,6 @@ fn activate(
         costs,
         effect,
         usage_limit,
-        source_exhausted: _,
     } = match legality::check_activate_ability(cx.state, cx.cards, investigator, source, address) {
         Ok(r) => r,
         Err(reason) => return EngineOutcome::Rejected { reason },

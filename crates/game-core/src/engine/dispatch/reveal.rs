@@ -23,7 +23,7 @@ use crate::state::LocationId;
 /// native reaches it as
 /// [`NativeCx::reveal_location`](crate::engine::NativeCx::reveal_location), to
 /// reveal a location it moves investigators into.
-pub fn reveal_location(cx: &mut Cx, location_id: LocationId) {
+pub(crate) fn reveal_location(cx: &mut Cx, location_id: LocationId) {
     // "Number of investigators who started the scenario" — `len()` is
     // faithful because eliminated investigators stay in the map (status
     // flipped, never removed). If that invariant changes, per-investigator

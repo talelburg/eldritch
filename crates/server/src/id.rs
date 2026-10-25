@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 /// Generate a fresh random game id (UUID v4).
 #[must_use]
-pub fn random_game_id() -> GameId {
+pub(crate) fn random_game_id() -> GameId {
     GameId::new(Uuid::new_v4().to_string())
 }
 
@@ -24,7 +24,7 @@ pub fn random_game_id() -> GameId {
 /// bakes it into the game's setup state, whose post-shuffle `RngState` is
 /// persisted as the frozen seed, so replay stays deterministic.
 #[must_use]
-pub fn random_seed() -> u64 {
+pub(crate) fn random_seed() -> u64 {
     Uuid::new_v4().as_u64_pair().0
 }
 

@@ -69,10 +69,12 @@ pub const CODE: &str = "01014";
 /// This card's registration, listed in [`ALL`](super::ALL).
 pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
+/// Wendy's Amulet's two abilities, both constants the engine reads.
+///
 /// *"You may play the topmost event in your discard pile as if it were in
 /// your hand."*, then the Forced: *"After you play an event or discard an
 /// event from play: Place it on the bottom of your deck instead of in your
-/// discard pile."* Both are constants the engine reads.
+/// discard pile."*
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![

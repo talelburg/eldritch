@@ -67,9 +67,10 @@ use crate::event::Event;
 use crate::scenario::ScenarioRegistry;
 use crate::state::{CardCode, Continuation, GameState, ScenarioEndFrame, ScenarioEndStep};
 
-/// The card and scenario registries one [`apply`] runs against. The host
-/// hands them in; the engine carries them on its `Cx` for the length of the
-/// apply, looking the scenario module up once from `state.scenario_id`.
+/// The card and scenario registries one [`apply`] runs against.
+///
+/// The host hands them in; the engine carries them on its `Cx` for the length
+/// of the apply, looking the scenario module up once from `state.scenario_id`.
 ///
 /// `Copy`: both halves are shared references to fn-pointer bundles, and
 /// `'static` so a value can be stored on a builder or a host's state.
