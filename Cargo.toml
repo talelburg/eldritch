@@ -50,6 +50,14 @@ must_use_candidate = "allow"
 # marks itself with `#[expect(clippy::allow_attributes, …)]`.
 allow_attributes = "warn"
 allow_attributes_without_reason = "warn"
+# Considered and rejected (2026-10-18 architecture review, lint survey):
+# - `redundant_pub_crate`: contradicts `unreachable_pub`.
+# - `elided_lifetimes_in_paths`: style only, at 443 sites.
+# - `use_self`: its card-dsl sites map where adding a variant costs a walker
+#   arm.
+# - `missing_docs`: mostly fields whose names describe themselves.
+# - The restriction set as policy: `allow_attributes` and
+#   `allow_attributes_without_reason` are the only restriction lints adopted.
 
 [profile.release]
 lto = "thin"
