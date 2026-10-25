@@ -678,14 +678,14 @@ mod tests {
             },
         };
         let mut resolver = ScriptedResolver::new();
-        let _ = drive_with_applier(
+        drop(drive_with_applier(
             empty_state(),
             Action::Player(PlayerAction::ResolveInput {
                 response: InputResponse::Skip,
             }),
             &mut resolver,
             applier,
-        );
+        ));
     }
 
     #[test]

@@ -100,12 +100,14 @@ fn move_with_dangling_current_location_panics() {
     // state.locations. Surface loudly per the project pattern. The
     // corruption is made at rest, without re-settling, so it reaches the
     // handler rather than the menu.
-    let _ = move_board(seat(1).at(HERE))
-        .session()
-        .edit_state(|state| {
-            state.locations.remove(&HERE);
-        })
-        .submit_off_menu(&MOVE_TO_CONNECTED);
+    drop(
+        move_board(seat(1).at(HERE))
+            .session()
+            .edit_state(|state| {
+                state.locations.remove(&HERE);
+            })
+            .submit_off_menu(&MOVE_TO_CONNECTED),
+    );
 }
 
 #[test]

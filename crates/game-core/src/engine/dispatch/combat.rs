@@ -172,6 +172,11 @@ pub(super) fn damage_enemy(cx: &mut Cx, enemy_id: EnemyId, amount: u8, by: Optio
         // rather than returned: this helper's callers (`deal_damage_to_enemy`
         // and `fight::after_test`) have their own frames, and the loop drives
         // what was queued.
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "this fn returns `()` and its callers own the suspension channel: they have \
+                      their own frames, and the `drive` loop runs what is queued"
+        )]
         let _ = emit::queue_event(
             cx,
             &TimingEvent::EnemyDefeated {

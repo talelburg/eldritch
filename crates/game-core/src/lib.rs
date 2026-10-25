@@ -18,6 +18,12 @@
 //!
 //! Subsequent PRs add the RNG, phase machine, and test harness.
 
+// A `let _` discard of a `#[must_use]` value is how a queued event gets
+// dropped unresolved (ADR 0003), so in the kernel every such discard either
+// goes or says why it is safe. Here rather than in the workspace lints: the
+// pipeline's `let _ = writeln!(String, …)` discards are infallible.
+#![warn(clippy::let_underscore_must_use)]
+
 pub mod action;
 pub mod card_registry;
 pub mod engine;

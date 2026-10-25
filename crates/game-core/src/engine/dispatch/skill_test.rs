@@ -624,6 +624,11 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
     // Queued in tail position: the driver's loop sees the coordinator on top
     // and yields to it, so the outcome (always a queued `Done`) has nothing
     // to carry.
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "this fn returns `()` and the driver loop owns the suspension channel: it yields \
+                  to the queued coordinator, so the outcome (always `Done`) has nothing to carry"
+    )]
     let _ = emit::queue_event(
         cx,
         &TimingEvent::ChaosTokenRevealed {

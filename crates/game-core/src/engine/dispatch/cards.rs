@@ -1236,7 +1236,17 @@ pub(in crate::engine) fn enter_asset_into_play(
     if entry == AssetEntry::PlayedFromHand {
         // The play is complete (Appendix I step 4). Queued first so that
         // `EnteredPlay`'s sequence, pushed above it, resolves first.
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "this fn returns `()` and its caller owns the suspension channel: the \
+                      frame driving it is already popped, and the `drive` loop runs what is queued"
+        )]
         let _ = emit::queue_event(cx, &TimingEvent::CardPlayed { investigator, code });
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "this fn returns `()` and its caller owns the suspension channel: the \
+                      frame driving it is already popped, and the `drive` loop runs what is queued"
+        )]
         let _ = emit::queue_event(
             cx,
             &TimingEvent::EnteredPlay {
@@ -1671,7 +1681,8 @@ mod draw_with_deckout_tests {
         let hand_before = state.investigators[&id].hand.len();
         let mut events = Vec::new();
 
-        let _ = draw_with_deckout(&mut Cx::for_test(&mut state, &mut events), id, 3);
+        let outcome = draw_with_deckout(&mut Cx::for_test(&mut state, &mut events), id, 3);
+        assert!(matches!(outcome, EngineOutcome::Done), "{outcome:?}");
 
         let inv = &state.investigators[&id];
         assert_eq!(inv.hand.len(), hand_before + 3, "drew the full count");
