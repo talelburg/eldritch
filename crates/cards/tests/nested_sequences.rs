@@ -120,7 +120,6 @@ fn has_in_play(state: &GameState, code: &str) -> bool {
 }
 
 #[test]
-#[allow(clippy::too_many_lines)]
 fn the_damage_dealt_to_the_guard_dog_resolves_last() {
     // A clue at the location for Roland's reaction to discover — the marker
     // that tells us the nested sequence resolved, and when.

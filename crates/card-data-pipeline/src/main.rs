@@ -623,7 +623,11 @@ struct RawCard {
 // ---- normalized shape we emit -----------------------------------
 
 #[derive(Debug)]
-#[allow(clippy::struct_excessive_bools)] // mirrors ArkhamDB's flag fields
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "one flag per independent printed keyword or ArkhamDB flag: `clues_fixed` and \
+              `health_per_investigator` are ArkhamDB's, the rest are parsed from card text"
+)]
 struct NormalizedCard {
     code: String,
     name: String,
@@ -1367,7 +1371,10 @@ const GENERATED_HEADER: &str = "\
 //! snapshot at `data/arkhamdb-snapshot/`. To refresh, re-run the
 //! pipeline; review the diff in your PR.
 
-#![allow(clippy::too_many_lines, clippy::needless_raw_string_hashes)]
+#![expect(
+    clippy::too_many_lines,
+    reason = \"`all_cards` is one generated literal per corpus card\"
+)]
 
 ";
 

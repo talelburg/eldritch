@@ -257,9 +257,6 @@ pub(crate) fn drive(cx: &mut Cx, mut outcome: EngineOutcome) -> EngineOutcome {
 /// The pass also returns `Done` at terminal (empty stack) and when an anchor's
 /// advance makes no progress (a parked phase, e.g. Investigation with no active
 /// investigator).
-// A single exhaustive dispatch over every `Continuation` variant; splitting it
-// would only scatter the one place that says what each frame does.
-#[allow(clippy::too_many_lines)]
 fn drive_frames(cx: &mut Cx) -> EngineOutcome {
     loop {
         // A latched resolution cancels opportunities, not resolutions (ADR

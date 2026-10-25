@@ -166,35 +166,28 @@ macro_rules! assert_event_count {
 macro_rules! assert_event_sequence {
     ($events:expr, $($pat:pat $(if $guard:expr)?),+ $(,)?) => {{
         let events = &$events;
-        // The cursor advances past each match; the last iteration's
-        // assignment is naturally unused (there are no more patterns
-        // after it), so allow the dead-store warning that fires on
-        // that last assignment.
-        #[allow(unused_assignments)]
-        {
-            let mut cursor: usize = 0;
-            $(
-                let found = events
-                    .iter()
-                    .enumerate()
-                    .skip(cursor)
-                    .find(|(_, __event)| matches!(__event, $pat $(if $guard)?));
-                match found {
-                    Some((idx, _)) => {
-                        cursor = idx + 1;
-                    }
-                    None => {
-                        panic!(
-                            "assert_event_sequence!: no event matching `{}` found at or after \
-                             position {} in:\n{:#?}",
-                            stringify!($pat $(if $guard)?),
-                            cursor,
-                            events,
-                        );
-                    }
-                }
-            )+
-        }
+        // Each pattern shadows `cursor` with the position just past its match,
+        // so the next pattern searches from there.
+        let cursor: usize = 0;
+        $(
+            let cursor = match events
+                .iter()
+                .enumerate()
+                .skip(cursor)
+                .find(|(_, __event)| matches!(__event, $pat $(if $guard)?))
+            {
+                Some((idx, _)) => idx + 1,
+                None => panic!(
+                    "assert_event_sequence!: no event matching `{}` found at or after \
+                     position {} in:\n{:#?}",
+                    stringify!($pat $(if $guard)?),
+                    cursor,
+                    events,
+                ),
+            };
+        )+
+        // The last pattern's position has no next pattern to read it.
+        let _ = cursor;
     }};
 }
 

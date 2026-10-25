@@ -841,9 +841,10 @@ fn suspend_leaf_in_place(cx: &mut Cx, effect: &Effect, ctx: EvalContext) {
 /// with `ctx.chosen_option` set). Control nodes (`Seq`) are normally routed to
 /// their own frames by [`frame_of`]; if one reaches here it is pushed as its
 /// frame. The `Leaf` itself was already popped by the caller.
-// A single exhaustive dispatch over every `Effect` variant; splitting it would
-// only obscure the dispatch.
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one exhaustive match arm per `Effect` variant; deepening: card 09"
+)]
 fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutcome {
     // Ground any `Chosen` target this node carries before running it. On a 2+
     // candidate suspension, re-push this Leaf (the prompt) and surface the

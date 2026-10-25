@@ -134,7 +134,6 @@ pub struct Drag {
     offset: RwSignal<(f64, f64)>,
     /// The in-flight gesture, `None` between drags. Read by the pointer
     /// handlers, which are inert on the host build.
-    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     gesture: RwSignal<Option<Gesture>>,
 }
 

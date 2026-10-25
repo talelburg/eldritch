@@ -450,12 +450,15 @@ impl RevealClause {
 /// play — is an [`EventPattern`] under [`OnEvent`](Self::OnEvent), not a
 /// trigger of its own.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-// `allow`, not `expect`: the lint is pointer-width dependent and does not fire
-// on wasm32, where an unfulfilled `expect` would fail `wasm-clippy`.
-#[allow(
-    clippy::large_enum_variant,
-    reason = "the elder sign outcome was already the largest variant; the lint fired only \
-              when the designator moved off Activated (#1053), which shrank the runner-up"
+// Conditioned on pointer width: the lint fires on 64-bit hosts and not on
+// wasm32, where an unconditional `expect` would go unfulfilled.
+#[cfg_attr(
+    target_pointer_width = "64",
+    expect(
+        clippy::large_enum_variant,
+        reason = "the elder sign outcome was already the largest variant; the lint fired only \
+                  when the designator moved off Activated (#1053), which shrank the runner-up"
+    )
 )]
 pub enum Trigger {
     /// Always-on while the card is in play. The ability's `effect`

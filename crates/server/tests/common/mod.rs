@@ -1,6 +1,5 @@
 //! Shared helpers for server integration tests: the mock registries, an in-memory pool, a spawned server, and a websocket
 //! client. Not every test binary uses every helper.
-#![allow(dead_code)]
 
 use std::net::SocketAddr;
 

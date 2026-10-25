@@ -10,6 +10,15 @@
 //! 3. restarting the server (fresh in-memory rooms, same database) and
 //!    reconnecting reproduces the exact state via action-log replay.
 
+#[expect(
+    clippy::allow_attributes,
+    reason = "the workspace's one `allow`: an `expect` here would go unfulfilled in the test \
+              binaries that use every helper they compile"
+)]
+#[allow(
+    dead_code,
+    reason = "each test binary uses only some of the shared helpers"
+)]
 mod common;
 
 use game_core::action::{InputResponse, PlayerAction};

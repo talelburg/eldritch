@@ -500,7 +500,11 @@ pub(super) fn spawn_enemy_at(
 /// Mint an enemy from `metadata` at `location_id` and engage it as
 /// `engages` says: with its drawer, or by prey among the investigators
 /// there. The body of [`spawn_enemy`] and [`spawn_enemy_at`].
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "mints the enemy inline, as the only production `Enemy` constructor, then resolves \
+              its engagement on spawn; deepening: card 27"
+)]
 fn spawn_enemy_engaging(
     cx: &mut Cx,
     code: CardCode,

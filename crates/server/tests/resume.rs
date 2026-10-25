@@ -9,6 +9,15 @@
 //! outcome, `ResolveInput` is just another `Submit`). No new server code
 //! is needed — these prove the pieces compose.
 
+#[expect(
+    clippy::allow_attributes,
+    reason = "the workspace's one `allow`: an `expect` here would go unfulfilled in the test \
+              binaries that use every helper they compile"
+)]
+#[allow(
+    dead_code,
+    reason = "each test binary uses only some of the shared helpers"
+)]
 mod common;
 
 use game_core::action::{InputResponse, PlayerAction};

@@ -612,9 +612,6 @@ impl Continuation {
     /// is cancelled when it reaches the top; a frame that is **mandatory
     /// resolution already under way** completes. See
     /// `docs/adr/0004-a-latched-resolution-cancels-opportunities-not-resolutions.md`.
-    // One arm per variant (and per value-level split), each carrying the reason
-    // for its classification; splitting it would scatter the one decision.
-    #[allow(clippy::too_many_lines)]
     #[must_use]
     pub fn profile(&self) -> FrameProfile {
         let (activity, scenario_end) = match self {

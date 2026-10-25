@@ -8,6 +8,15 @@
 //! in-memory created session is not held), so the events must survive the
 //! round-trip through the persisted column — not just live in memory.
 
+#[expect(
+    clippy::allow_attributes,
+    reason = "the workspace's one `allow`: an `expect` here would go unfulfilled in the test \
+              binaries that use every helper they compile"
+)]
+#[allow(
+    dead_code,
+    reason = "each test binary uses only some of the shared helpers"
+)]
 mod common;
 
 use game_core::event::Event;

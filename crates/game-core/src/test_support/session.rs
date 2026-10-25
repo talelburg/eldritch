@@ -553,9 +553,11 @@ impl TestSession {
     ///
     /// Panics at the turn menu (take a turn action with [`take`](Self::take)),
     /// or unless exactly one option is anchored to `target`.
-    // By value so a call reads `pick(OptionTarget::Enemy(id))`, the anchor named
-    // inline like every other step's argument.
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "by value so a call names its anchor inline, `pick(OptionTarget::Enemy(id))`, \
+                  like every other step's argument"
+    )]
     pub fn pick(self, target: OptionTarget) -> Self {
         let id = self.sole_option_at(&target, "pick");
         self.respond(InputResponse::PickSingle(id))
@@ -629,8 +631,10 @@ impl TestSession {
     /// Panics at the turn menu, unless at least two options are anchored to
     /// `target` (pick a lone one with [`pick`](Self::pick)), or if there is no
     /// `n`th.
-    // By value, like `pick`.
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "by value so a call names its anchor inline, like `pick`"
+    )]
     pub fn pick_nth_at(self, target: OptionTarget, n: usize) -> Self {
         self.assert_off_turn_menu("pick_nth_at");
         let request = self.prompt();

@@ -69,11 +69,12 @@ pub(in crate::engine) struct InitiatorModifier {
     pub delta: IntExpr,
 }
 
-// Eleven args: the skill-test parameters are genuinely independent axes
-// (skill, kind, difficulty, success/fail follow-ups, source, the initiator's
-// modifier and reveal clause). A params struct would add indirection without
-// grouping anything cohesive.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the skill-test parameters are independent axes (skill, kind, difficulty, \
+              follow-ups, source, the initiator's modifier and reveal clause), which a params \
+              struct would only wrap"
+)]
 pub(in crate::engine) fn start_skill_test(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -1412,9 +1413,11 @@ fn open_skill_test_player_window(
 ///   drain pending modifiers, tear down the frame, return `Done`.
 ///
 /// [`close_reaction_window`]: super::reaction_windows::close_reaction_window
-// One arm per `SkillTestStep` (RR ST.3–ST.8); the length is inherent to the
-// fixed step sequence, not extractable without scattering the driver.
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one arm per `SkillTestStep`, RR ST.3–ST.8, in the fixed step order; deepening: \
+              cards 18 and 08"
+)]
 pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
     loop {
         // A sub-frame queued by the previous step sits *above* this `SkillTest`

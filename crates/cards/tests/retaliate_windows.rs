@@ -33,7 +33,6 @@
 //!   - "You can use Guard Dog's ability when you assign lethal damage/horror
 //!     to it."
 //!   - Guard Dog's ability triggers only on damage, not horror.
-#![allow(clippy::too_many_lines)]
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;

@@ -50,10 +50,10 @@ pub fn enemy_keyword_chips(enemy: &Enemy) -> Vec<String> {
 /// live state come from the `Enemy` state struct; traits and ability text come
 /// from its printed card, looked up by code via the registry.
 /// Display-only — no click handlers.
-// `enemy` is taken by value: Leptos `#[component]` generates a props struct
-// requiring owned fields, so a reference would need a lifetime the macro can't
-// express.
-#[allow(clippy::needless_pass_by_value)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Leptos `#[component]` takes `enemy` by value into its owned props struct"
+)]
 #[component]
 pub fn EnemyCard(enemy: Enemy) -> impl IntoView {
     let name = enemy.name.clone();

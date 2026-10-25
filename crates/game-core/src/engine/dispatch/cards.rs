@@ -1158,14 +1158,11 @@ pub(super) fn play_card(
     investigator: InvestigatorId,
     source: PlaySource,
 ) -> EngineOutcome {
-    let PlayCheckResult {
-        abilities,
-        is_fast,
-        card_type: _,
-    } = match legality::check_play_card(cx.state, cx.cards, investigator, source) {
-        Ok(r) => r,
-        Err(reason) => return EngineOutcome::Rejected { reason },
-    };
+    let PlayCheckResult { abilities, is_fast } =
+        match legality::check_play_card(cx.state, cx.cards, investigator, source) {
+            Ok(r) => r,
+            Err(reason) => return EngineOutcome::Rejected { reason },
+        };
     // The code is re-read from state here so we don't pass it through
     // the result (avoiding the lifetime question). The validator already
     // confirmed the source holds a card and the investigator exists.

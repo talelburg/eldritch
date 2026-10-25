@@ -4,7 +4,10 @@
 //! snapshot at `data/arkhamdb-snapshot/`. To refresh, re-run the
 //! pipeline; review the diff in your PR.
 
-#![allow(clippy::too_many_lines, clippy::needless_raw_string_hashes)]
+#![expect(
+    clippy::too_many_lines,
+    reason = "`all_cards` is one generated literal per corpus card"
+)]
 
 use card_dsl::card_data::{
     CardKind, CardMetadata, Class, ClueValue, HealthValue, Prey, PreyDirection, PreyMeasure,

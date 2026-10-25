@@ -25,9 +25,16 @@ use crate::{controls, decision, interaction, skill_test_result, store};
 
 /// The bottom-fixed prompt banner. See the module docs for what it renders and
 /// what it deliberately does not.
-// The per-control `view!` arms; the length is inherent to the control dispatch,
-// not extractable without fighting leptos's closure captures.
-#[allow(clippy::too_many_lines)]
+// Conditioned on the host: the `view!` expansion is longer there, and on
+// wasm32 the fn fits under the limit.
+#[cfg_attr(
+    not(target_arch = "wasm32"),
+    expect(
+        clippy::too_many_lines,
+        reason = "one `view!` arm per prompt control, each capturing its own signals; \
+                  deepening: card 06"
+    )
+)]
 #[component]
 pub fn PromptBanner() -> impl IntoView {
     let store = store::use_store();

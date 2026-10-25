@@ -969,9 +969,11 @@ fn run_mythos_draws(cx: &mut Cx) -> EngineOutcome {
 /// body. Suspension-agnostic: a body that itself suspends returns
 /// `AwaitingInput` unchanged. The `resume` is copied out before the body takes
 /// `&mut cx`.
-// A single exhaustive dispatch over every anchor × resume boundary; splitting it
-// would only obscure the phase-boundary map it draws.
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one exhaustive match over every phase anchor × resume boundary, the one map of \
+              phase boundaries; deepening: card 18"
+)]
 pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
     let anchor = cx.state.continuations.top().cloned();
     // `Entry` advances run the phase opening; delegated so this function stays

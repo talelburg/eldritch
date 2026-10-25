@@ -27,7 +27,10 @@ fn synth_enemy_metadata(spawn: Option<Spawn>) -> CardMetadata {
     )
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one argument per enemy stat a test varies, named at each call site"
+)]
 fn enemy_metadata(
     spawn: Option<Spawn>,
     health: HealthValue,

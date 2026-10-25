@@ -38,6 +38,15 @@ pedantic = { level = "warn", priority = -1 }
 # `missing_panics_doc`) are enforced — see the `# Errors` / `# Panics` sections.
 module_name_repetitions = "allow"
 must_use_candidate = "allow"
+# Every suppression is an `#[expect(…, reason = "…")]`: an `expect` that stops
+# firing fails the build, so a dead suppression can't linger, and the reason
+# says why the lint is wrong at that site. `allow_attributes` checks outer
+# `#[allow]` only, not inner `#![allow]`; `allow_attributes_without_reason`
+# covers both, so an inner `allow` still has to give its reason. The one
+# deliberate `allow` (server's shared test module, on each `mod common;`)
+# marks itself with `#[expect(clippy::allow_attributes, …)]`.
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
 
 [profile.release]
 lto = "thin"

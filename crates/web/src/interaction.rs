@@ -39,9 +39,10 @@ pub fn pending_options(state: &ClientState) -> Vec<ChoiceOption> {
 
 /// The options anchored to `target`, in offered order. Pure; a linear scan
 /// (option counts are tiny, so `OptionTarget` needs no `Hash`).
-// Callers pass a freshly-constructed anchor (a temporary) which is only compared,
-// so by-value is natural even though `OptionTarget` is not `Copy`.
-#[allow(clippy::needless_pass_by_value)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "callers name the anchor inline as a temporary, which is only compared"
+)]
 #[must_use]
 pub fn options_for(options: &[ChoiceOption], target: OptionTarget) -> Vec<ChoiceOption> {
     options

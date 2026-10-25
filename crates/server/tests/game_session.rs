@@ -6,6 +6,15 @@
 //! `ResolveInput(PickMultiple{selected:[]})` is accepted and a `ResolveInput`
 //! selecting a non-existent card is rejected).
 
+#[expect(
+    clippy::allow_attributes,
+    reason = "the workspace's one `allow`: an `expect` here would go unfulfilled in the test \
+              binaries that use every helper they compile"
+)]
+#[allow(
+    dead_code,
+    reason = "each test binary uses only some of the shared helpers"
+)]
 mod common;
 
 use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
