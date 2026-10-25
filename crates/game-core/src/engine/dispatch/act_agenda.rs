@@ -49,7 +49,7 @@ fn act_advances_at_round_end(state: &GameState, reg: &CardRegistry) -> bool {
 /// [`NativeCx::place_doom_on_agenda`](crate::engine::NativeCx::place_doom_on_agenda),
 /// so it gets the empty-agenda-deck guard rather than writing `agenda_doom`
 /// itself.
-pub fn place_doom_on_agenda(cx: &mut Cx, count: u8) {
+pub(crate) fn place_doom_on_agenda(cx: &mut Cx, count: u8) {
     if cx.state.agenda_deck.is_empty() {
         return;
     }
@@ -299,7 +299,7 @@ pub fn round_end_advance_affordable(state: &GameState, contributor_location_code
 /// the location is present, so reaching the `expect` would mean
 /// [`round_end_advance_affordable`] and [`location_id_by_code`](crate::engine::location_id_by_code)
 /// disagree about the same code.
-pub fn round_end_advance(cx: &mut Cx, contributor_location_code: &str) -> EngineOutcome {
+pub(crate) fn round_end_advance(cx: &mut Cx, contributor_location_code: &str) -> EngineOutcome {
     if !round_end_advance_affordable(cx.state, contributor_location_code) {
         return EngineOutcome::Rejected {
             reason: "round_end_advance: contributors no longer hold enough clues".into(),

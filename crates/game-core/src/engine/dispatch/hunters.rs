@@ -294,7 +294,7 @@ fn place_enemy_at(cx: &mut Cx, enemy_id: EnemyId, to: LocationId) {
 /// rather than suspending for a tie-break prompt. TODO(#151): make it an
 /// interactive tie-break, as `reengage_at_location` needs too. Solo play — the only mode
 /// that ships today — never ties.
-pub fn relocate_enemy(cx: &mut Cx, enemy_id: EnemyId, to: LocationId) {
+pub(crate) fn relocate_enemy(cx: &mut Cx, enemy_id: EnemyId, to: LocationId) {
     place_enemy_at(cx, enemy_id, to);
     if cx.state.enemies[&enemy_id].engaged_with.is_none() {
         engagement::reengage_at_location(cx, enemy_id);

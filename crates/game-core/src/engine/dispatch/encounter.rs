@@ -142,7 +142,7 @@ pub(crate) fn treachery_is_persistent(abilities: &[Ability]) -> bool {
 /// discard pile. The `EncounterCardDrawn` timing point doesn't carry it: no
 /// trigger reads it, and Ward of Protection 01065's *"non-weakness"* filter
 /// reads the card itself.
-pub fn resolve_encounter_card(
+pub(crate) fn resolve_encounter_card(
     cx: &mut Cx,
     investigator: InvestigatorId,
     code: CardCode,
@@ -674,7 +674,7 @@ pub(super) fn shuffle_encounter_deck(cx: &mut Cx) {
 /// player-deck pattern. The `EngineRecord` variant is reserved for
 /// explicit shuffle actions (future "shuffle X into the encounter
 /// deck" effects).
-pub fn reshuffle_encounter_discard(cx: &mut Cx) {
+pub(crate) fn reshuffle_encounter_discard(cx: &mut Cx) {
     cx.state
         .encounter_deck
         .extend(cx.state.encounter_discard.drain(..));
@@ -692,7 +692,7 @@ pub fn reshuffle_encounter_discard(cx: &mut Cx) {
 /// reject it, treat it as malformed scenario data, or draw nothing; each
 /// documents which. A card-local native reaches it as
 /// [`NativeCx::draw_encounter_top`](crate::engine::NativeCx::draw_encounter_top).
-pub fn draw_encounter_top(cx: &mut Cx) -> Option<CardCode> {
+pub(crate) fn draw_encounter_top(cx: &mut Cx) -> Option<CardCode> {
     if cx.state.encounter_deck.is_empty() {
         if cx.state.encounter_discard.is_empty() {
             return None;
@@ -712,7 +712,7 @@ pub fn draw_encounter_top(cx: &mut Cx) -> Option<CardCode> {
 /// owns the card it takes and must put it somewhere, as
 /// [`discard_drawn_card`](crate::engine::board::discard_drawn_card)
 /// does for a miss.
-pub fn take_encounter_top(cx: &mut Cx) -> Option<CardCode> {
+pub(crate) fn take_encounter_top(cx: &mut Cx) -> Option<CardCode> {
     cx.state.encounter_deck.pop_front()
 }
 

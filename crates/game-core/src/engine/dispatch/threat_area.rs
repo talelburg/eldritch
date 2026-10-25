@@ -56,7 +56,7 @@ pub(super) fn new_in_play_instance(cx: &mut Cx, code: CardCode, owner: Owner) ->
 /// helper stays total so a misuse can't panic.
 ///
 /// Makes no room: [`put_into_threat_area`] is the card-effect entry that does.
-pub fn place_in_threat_area(
+pub(crate) fn place_in_threat_area(
     cx: &mut Cx,
     investigator: InvestigatorId,
     code: CardCode,
@@ -157,7 +157,7 @@ pub(in crate::engine) fn enter_threat_area(
 /// Does not panic in practice: the `get_mut` re-fetches the location just
 /// confirmed present, with no intervening mutation, so the `expect` is a
 /// state-corruption invariant guard.
-pub fn attach_to_location(
+pub(crate) fn attach_to_location(
     cx: &mut Cx,
     location: LocationId,
     code: CardCode,

@@ -484,7 +484,10 @@ fn move_deck_top_to_hand(cx: &mut Cx, investigator: InvestigatorId, count: u8) -
 /// re-`get`s the investigator already checked present above, so this is a
 /// state-corruption invariant, not a reachable input error (a missing
 /// investigator returns `None` at the top).
-pub fn discard_random_from_hand(cx: &mut Cx, investigator: InvestigatorId) -> Option<CardCode> {
+pub(crate) fn discard_random_from_hand(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+) -> Option<CardCode> {
     let inv = cx.state.investigators.get_mut(&investigator)?;
     if inv.hand.is_empty() {
         return None;

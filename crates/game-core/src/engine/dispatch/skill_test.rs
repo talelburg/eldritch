@@ -249,7 +249,7 @@ pub(in crate::engine) fn start_skill_test(
 /// [`NativeCx::substitute_skill_until_end_of_round`](crate::engine::NativeCx::substitute_skill_until_end_of_round).
 /// Stamped [`Lifetime::Round`]: Mind over Matter's is the only substitution in
 /// scope, and it lasts *"Until the end of the round"*. No event announces it.
-pub fn substitute_skill_until_end_of_round(cx: &mut Cx, substitution: SkillSubstitution) {
+pub(crate) fn substitute_skill_until_end_of_round(cx: &mut Cx, substitution: SkillSubstitution) {
     cx.state.lasting_effects.push(LastingEffect {
         lifetime: Lifetime::Round,
         kind: LastingEffectKind::SkillSubstitution(substitution),
@@ -267,7 +267,7 @@ pub fn substitute_skill_until_end_of_round(cx: &mut Cx, substitution: SkillSubst
 ///
 /// A missing test or card is a caller bug: `debug_assert!`, and nothing
 /// changes in release.
-pub fn return_committed_card_to_hand(cx: &mut Cx, index: u8) {
+pub(crate) fn return_committed_card_to_hand(cx: &mut Cx, index: u8) {
     let card = cx
         .state
         .current_skill_test_mut()
@@ -290,7 +290,7 @@ pub fn return_committed_card_to_hand(cx: &mut Cx, index: u8) {
 ///
 /// A missing test is a caller bug: `debug_assert!`, and nothing changes in
 /// release.
-pub fn discard_after_this_test(cx: &mut Cx, card: CardInstanceId) {
+pub(crate) fn discard_after_this_test(cx: &mut Cx, card: CardInstanceId) {
     let test = cx.state.current_skill_test_mut();
     debug_assert!(
         test.is_some(),

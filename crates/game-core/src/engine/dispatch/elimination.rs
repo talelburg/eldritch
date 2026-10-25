@@ -514,7 +514,7 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
 /// The non-numeric counterpart of [`deal_harm`](super::combat::deal_harm): harm
 /// is distributed because damage and horror can be absorbed, and a card-ability
 /// defeat cannot be.
-pub fn defeat_investigator(cx: &mut Cx, investigator: InvestigatorId) {
+pub(crate) fn defeat_investigator(cx: &mut Cx, investigator: InvestigatorId) {
     apply_investigator_elimination(cx, investigator, EliminationCause::CardAbility);
 }
 
@@ -525,7 +525,12 @@ pub fn defeat_investigator(cx: &mut Cx, investigator: InvestigatorId) {
 ///
 /// **Announced, not recorded.** Nothing persists trauma yet, and this is the
 /// one place it will be recorded. TODO(#766): record it in the campaign log.
-pub fn suffer_trauma(cx: &mut Cx, investigator: InvestigatorId, kind: TraumaKind, amount: u8) {
+pub(crate) fn suffer_trauma(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    kind: TraumaKind,
+    amount: u8,
+) {
     cx.events.push(Event::TraumaSuffered {
         investigator,
         kind,

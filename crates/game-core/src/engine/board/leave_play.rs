@@ -146,7 +146,10 @@ impl From<EnemyId> for LeavingCard {
 /// in play, or names an investigator card, which never leaves play;
 /// [`NotLeft::Refused`] when the card cannot leave play right now (see the
 /// `leave_play` module docs).
-pub fn discard_from_play(cx: &mut Cx, card: impl Into<LeavingCard>) -> Result<Placement, NotLeft> {
+pub(crate) fn discard_from_play(
+    cx: &mut Cx,
+    card: impl Into<LeavingCard>,
+) -> Result<Placement, NotLeft> {
     leave_play(cx, card.into(), Exit::Discard, Prohibition::Honoured)
 }
 
@@ -162,7 +165,10 @@ pub fn discard_from_play(cx: &mut Cx, card: impl Into<LeavingCard>) -> Result<Pl
 ///
 /// [`NotLeft`], with nothing changed and no event, as for
 /// [`discard_from_play`].
-pub fn remove_from_game(cx: &mut Cx, card: impl Into<LeavingCard>) -> Result<Placement, NotLeft> {
+pub(crate) fn remove_from_game(
+    cx: &mut Cx,
+    card: impl Into<LeavingCard>,
+) -> Result<Placement, NotLeft> {
     leave_play(cx, card.into(), Exit::RemoveFromGame, Prohibition::Honoured)
 }
 
@@ -173,7 +179,7 @@ pub fn remove_from_game(cx: &mut Cx, card: impl Into<LeavingCard>) -> Result<Pla
 /// # Errors
 ///
 /// [`NotLeft::NotInPlay`] alone, as for [`discard_from_play`].
-pub fn remove_from_game_on_elimination(
+pub(crate) fn remove_from_game_on_elimination(
     cx: &mut Cx,
     card: impl Into<LeavingCard>,
 ) -> Result<Placement, NotLeft> {
@@ -192,7 +198,7 @@ pub fn remove_from_game_on_elimination(
 /// # Errors
 ///
 /// [`NotLeft::NotInPlay`] alone, as for [`discard_from_play`].
-pub fn discard_from_play_on_elimination(
+pub(crate) fn discard_from_play_on_elimination(
     cx: &mut Cx,
     card: impl Into<LeavingCard>,
 ) -> Result<Placement, NotLeft> {
@@ -216,7 +222,7 @@ pub fn discard_from_play_on_elimination(
 ///
 /// [`NotLeft`], with nothing changed and no event, as for
 /// [`discard_from_play`].
-pub fn place_in_victory_display(
+pub(crate) fn place_in_victory_display(
     cx: &mut Cx,
     card: impl Into<LeavingCard>,
     victory: u8,
@@ -246,7 +252,7 @@ pub fn place_in_victory_display(
 /// Returns whether `location` was in play; `false`, with nothing changed and no
 /// event, when it was not.
 #[must_use = "false means the location was not in play and nothing left"]
-pub fn remove_location_from_game(cx: &mut Cx, location: LocationId) -> bool {
+pub(crate) fn remove_location_from_game(cx: &mut Cx, location: LocationId) -> bool {
     let Some(location) = cx.state.locations.remove(&location) else {
         return false;
     };
@@ -282,7 +288,7 @@ pub fn remove_location_from_game(cx: &mut Cx, location: LocationId) -> bool {
 ///   [`Zone::EncounterDeck`]), both owned by the encounter deck. A native
 ///   reaches these through
 ///   [`NativeCx::discard_encounter_card`](crate::engine::NativeCx::discard_encounter_card).
-pub fn discard_drawn_card(cx: &mut Cx, code: CardCode, owner: Owner, from: Zone) {
+pub(crate) fn discard_drawn_card(cx: &mut Cx, code: CardCode, owner: Owner, from: Zone) {
     file(cx, code, owner, from, Exit::Discard);
 }
 

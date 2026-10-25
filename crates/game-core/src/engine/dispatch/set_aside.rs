@@ -54,7 +54,7 @@ use crate::state::{CardCode, GameState, LocationId, Owner};
 /// location isn't in play. A rejection is additionally rolled back
 /// wholesale by `apply_via`'s snapshot-restore, so validate-first here is
 /// about precise reasons, not state safety.
-pub fn put_set_aside_card_into_play(
+pub(crate) fn put_set_aside_card_into_play(
     cx: &mut Cx,
     code: &str,
     at: Option<&str>,

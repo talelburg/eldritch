@@ -174,7 +174,7 @@ fn turn_menu(state: &GameState, cards: &CardRegistry) -> InputRequest {
 /// permission on a window rather than granting it by the moment. A **Forced**
 /// ability is the exception the same FAQ states and the forced path implements:
 /// it needs no window and nests where it fires.
-pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome {
+pub(crate) fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome {
     let outcome = match action {
         PlayerAction::ResolveInput { response } => resolve_input(cx, response),
     };
@@ -503,7 +503,7 @@ pub(crate) fn seat_and_open(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutcom
 /// inverted. A record in a replay log only ever sits where the engine was at
 /// rest, never between a prompt and its answer; applied there, it would run
 /// beneath the prompt and leave it stranded.
-pub fn apply_engine_record(cx: &mut Cx, record: &EngineRecord) -> EngineOutcome {
+pub(super) fn apply_engine_record(cx: &mut Cx, record: &EngineRecord) -> EngineOutcome {
     if let Some(top) = cx.state.continuations.top().filter(|t| t.awaits_input()) {
         return EngineOutcome::Rejected {
             reason: format!(

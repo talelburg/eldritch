@@ -27,6 +27,9 @@ unsafe_code = "forbid"
 # import standard rather than enforcing it (`docs/agents/standards.md` → Import
 # types by full path; reach functions through their parent module).
 unused_qualifications = "warn"
+# An item is no more `pub` than it can be reached from outside its crate, so
+# its declared reach is its real reach.
+unreachable_pub = "warn"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
