@@ -381,10 +381,11 @@ impl ActionDesignator {
     }
 }
 
-/// The symbol on a chaos token: every token but a numeric one. The card-side
-/// name for `game_core::state::ChaosToken`'s symbol variants, which a card
-/// names without reaching into the kernel (`card-dsl` has no workspace
-/// dependencies).
+/// The symbol on a chaos token: every token but a numeric one.
+///
+/// The card-side name for `game_core::state::ChaosToken`'s symbol variants,
+/// which a card names without reaching into the kernel (`card-dsl` has no
+/// workspace dependencies).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ChaosSymbol {
     /// `[skull]`.
@@ -625,9 +626,11 @@ pub enum Trigger {
 }
 
 /// What a revealed chaos-symbol token does: one **chaos symbol effect**
-/// (`GLOSSARY.md`), whether it comes from the scenario reference card
-/// (`[skull]` / `[cultist]` / `[tablet]` / `[elder_thing]`) or from the
-/// performing investigator's elder-sign ability. ST.4
+/// (`GLOSSARY.md`).
+///
+/// It comes either from the scenario reference card (`[skull]` / `[cultist]` /
+/// `[tablet]` / `[elder_thing]`) or from the performing investigator's
+/// elder-sign ability. ST.4
 /// (`Appendix_II_Timing_and_Gameplay.md`):
 ///
 /// > Each of the following symbols indicates that an ability on the scenario
@@ -1289,10 +1292,11 @@ impl MarginScope {
 }
 
 /// A **triggering condition**: the one game occurrence an [`EventPattern`]
-/// listens to and a timing event announces. `glossary/Nested_Sequences.md`:
-/// *"Each time a triggering condition occurs, the following sequence is
-/// followed: …"*. Every condition has all three timing cells, so a condition
-/// is not a cell.
+/// listens to and a timing event announces.
+///
+/// `glossary/Nested_Sequences.md`: *"Each time a triggering condition occurs,
+/// the following sequence is followed: …"*. Every condition has all three
+/// timing cells, so a condition is not a cell.
 ///
 /// The meeting point of the two exhaustive maps, [`EventPattern::condition`]
 /// here and `TimingEvent::condition` in `game-core`, which is why it lives in
@@ -1358,6 +1362,7 @@ pub enum TriggeringCondition {
 
 /// The four game phases, mirrored in `card-dsl` so [`EventPattern`] can
 /// name a phase without `card-dsl` depending on `game-core` (layering).
+///
 /// `game-core` maps this to its own `state::Phase` at the dispatch
 /// boundary (see `engine::dispatch::trigger_scan`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -1370,11 +1375,13 @@ pub enum Phase {
 
 /// Which **timing cell** a [`Trigger::OnEvent`] ability resolves in — the
 /// three-part sequence the Rules Reference runs around every triggering
-/// condition. `glossary/Nested_Sequences.md`: *"Each time a triggering
-/// condition occurs, the following sequence is followed: 1) execute "when..."
-/// effects that interrupt that triggering condition, (2) resolve the triggering
-/// condition, and then, (3) execute "after..." effects in response to that
-/// triggering condition."*
+/// condition.
+///
+/// `glossary/Nested_Sequences.md`: *"Each time a triggering condition occurs,
+/// the following sequence is followed: 1) execute "when..." effects that
+/// interrupt that triggering condition, (2) resolve the triggering condition,
+/// and then, (3) execute "after..." effects in response to that triggering
+/// condition."*
 ///
 /// **Declare the trigger word the card prints.** Reading the card is meant to
 /// be enough to write the declaration; the cells are named after the words.
@@ -2610,10 +2617,12 @@ pub enum Effect {
     },
 }
 
-/// What an additional action ([`Effect::GainAdditionalAction`],
-/// [`Effect::AdditionalActionWhileInPlay`]) may be spent on — Daisy Walker
-/// 01002's *"You may take an additional action during your turn, which can
-/// only be used on \[\[Tome\]\] \[action\] abilities."*
+/// What an additional action may be spent on.
+///
+/// Carried by [`Effect::GainAdditionalAction`] and
+/// [`Effect::AdditionalActionWhileInPlay`], as on Daisy Walker 01002's *"You
+/// may take an additional action during your turn, which can only be used on
+/// \[\[Tome\]\] \[action\] abilities."*
 ///
 /// **Inspected, not executed**: the engine tests the action being taken against
 /// it each time it works out which additional actions can pay for that action.
@@ -2661,10 +2670,12 @@ pub enum SearchScope {
 }
 
 /// A predicate on a printed card: an optional trait, an optional card type, and
-/// whether weaknesses are excluded. Every narrowing set must hold; an empty
-/// filter matches every card. Used by [`Effect::SearchDeck`] and by the
-/// card-reading [`EventPattern`]s. `trait_` is owned (the
-/// [`Effect`] enum is serde-serializable, so no borrowed `&'static str`).
+/// whether weaknesses are excluded.
+///
+/// Every narrowing set must hold; an empty filter matches every card. Used by
+/// [`Effect::SearchDeck`] and by the card-reading [`EventPattern`]s. `trait_`
+/// is owned (the [`Effect`] enum is serde-serializable, so no borrowed
+/// `&'static str`).
 ///
 /// Build one from a generated trait constant with the constructors, e.g.
 /// `CardFilter::with_trait(TOME).and_kind(CardType::Asset)`.
@@ -2889,11 +2900,12 @@ pub enum Determination {
     AutomaticSuccess,
 }
 
-/// A restriction a card imposes: a constant one while the card is in play,
-/// carried by a [`Trigger::Constant`] [`Effect::Restrict`], or a lasting one
-/// a card-local native registers for a duration
-/// ([`CannotAttack`](Restriction::CannotAttack)). The engine inspects these
-/// at decision points rather than executing them.
+/// A restriction a card imposes, which the engine inspects at decision points
+/// rather than executing.
+///
+/// It is either a constant one while the card is in play, carried by a
+/// [`Trigger::Constant`] [`Effect::Restrict`], or a lasting one a card-local
+/// native registers for a duration ([`CannotAttack`](Restriction::CannotAttack)).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Restriction {
     /// The controller cannot play cards of this type (Dissonant Voices
@@ -3038,18 +3050,21 @@ pub enum SkillTestKind {
 
 // ---- targets --------------------------------------------------
 
-/// A controller-facing choice of a board entity or location. Generic over its
-/// `scope` (the candidate filter). `chooser` is deferred — every choice is the
-/// controller's today; agenda 01105's "lead" choice already works via the
-/// forced-dispatch `controller = lead` binding. The wrapper reserves its home.
+/// A controller-facing choice of a board entity or location.
+///
+/// Generic over its `scope` (the candidate filter). `chooser` is deferred —
+/// every choice is the controller's today; agenda 01105's "lead" choice already
+/// works via the forced-dispatch `controller = lead` binding. The wrapper
+/// reserves its home.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Choose<S> {
     /// The candidate filter (an [`EnemyScope`] or a [`LocationSet`]).
     pub scope: S,
 }
 
-/// The chooser-relative set of locations a choice is measured against — shared
-/// by location-picks (which locations may I pick?) and entity-position filters
+/// The chooser-relative set of locations a choice is measured against.
+///
+/// Shared by location-picks (which locations may I pick?) and entity-position filters
 /// (where must the entity be?), so "your location" is defined once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum LocationSet {
@@ -3063,12 +3078,14 @@ pub enum LocationSet {
 }
 
 /// An enemy-choice filter: a conjunction of constraints a candidate enemy must
-/// meet. A card that narrows the choice further (Stray Cat 01076's trait
-/// exclusion, [`exempt`](Self::exempt)) adds a field here rather than an arm,
-/// so the constraints compose — *"an exhausted enemy at your location"* is one
-/// scope with two fields set. A new field is optional, so [`EnemyScope::at`]
-/// keeps reading as "no further constraint", touching neither [`LocationSet`]
-/// nor location-picks.
+/// meet.
+///
+/// A card that narrows the choice further (Stray Cat 01076's trait exclusion,
+/// [`exempt`](Self::exempt)) adds a field here rather than an arm, so the
+/// constraints compose — *"an exhausted enemy at your location"* is one scope
+/// with two fields set. A new field is optional, so [`EnemyScope::at`] keeps
+/// reading as "no further constraint", touching neither [`LocationSet`] nor
+/// location-picks.
 ///
 /// Enemy choices only: an investigator choice is scoped by a bare
 /// [`LocationSet`] (see [`InvestigatorTarget::Chosen`]), since an investigator
@@ -3181,9 +3198,10 @@ pub enum EnemySet {
 }
 
 /// What an [`Effect::ForEach`] fans out over: one arm per kind of entity, so
-/// the walk is the same whatever it walks. The body reads the current one
-/// through that kind's `Each` target ([`InvestigatorTarget::Each`],
-/// [`EnemyTarget::Each`]).
+/// the walk is the same whatever it walks.
+///
+/// The body reads the current one through that kind's `Each` target
+/// ([`InvestigatorTarget::Each`], [`EnemyTarget::Each`]).
 ///
 /// [`for_each`] takes anything that converts into this, so a call site names
 /// the set alone: `for_each(InvestigatorTargetSet::All, body)`.
@@ -3457,9 +3475,10 @@ pub enum CmpOp {
     Ge,
 }
 
-/// An integer computed at effect-evaluation time. Lets a numeric field
-/// carry a condition-gated value without duplicating the surrounding
-/// effect — ".38 Special" reads its combat modifier as
+/// An integer computed at effect-evaluation time.
+///
+/// Lets a numeric field carry a condition-gated value without duplicating the
+/// surrounding effect — ".38 Special" reads its combat modifier as
 /// `IntExpr::cond(Condition::Compare { quantity: Quantity::CluesAtControllerLocation, op: CmpOp::Gt, value: 0 }, 3, 1)`
 /// rather than an [`Effect::If`] wrapping two near-identical `fight(…)` nodes.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -3532,10 +3551,12 @@ pub fn constant(effect: Effect) -> Ability {
     }
 }
 
-/// Construct a [`Trigger::OnPlay`]-driven [`Ability`] wrapping the
-/// given effect. Costs are empty — the card's play cost (resources to
-/// play, action point) is a play-time concern handled elsewhere; the
-/// on-play *ability* itself doesn't pay anything additional.
+/// Construct a [`Trigger::OnPlay`]-driven [`Ability`] wrapping the given
+/// effect.
+///
+/// Costs are empty — the card's play cost (resources to play, action point) is
+/// a play-time concern handled elsewhere; the on-play *ability* itself doesn't
+/// pay anything additional.
 #[must_use]
 pub fn on_play(effect: Effect) -> Ability {
     Ability {
@@ -3581,10 +3602,11 @@ pub fn on_commit(effect: Effect) -> Ability {
     }
 }
 
-/// Construct a [`Trigger::OnSkillTestResolution`] ability gated on
-/// the given outcome. Costs are empty — resolution-time triggers fire
-/// automatically as part of the test's machinery, not via player
-/// activation.
+/// Construct a [`Trigger::OnSkillTestResolution`] ability gated on the given
+/// outcome.
+///
+/// Costs are empty — resolution-time triggers fire automatically as part of the
+/// test's machinery, not via player activation.
 #[must_use]
 pub fn on_skill_test_resolution(outcome: TestOutcome, effect: Effect) -> Ability {
     Ability {
@@ -3637,11 +3659,12 @@ pub fn reaction_on_event(pattern: EventPattern, timing: EventTiming, effect: Eff
     on_event(pattern, timing, TriggerKind::Reaction, effect)
 }
 
-/// Construct a [`Trigger::Revelation`]-driven [`Ability`] wrapping
-/// the given effect. Mirrors [`on_play`] / [`on_commit`]; costs and
-/// usage limits are empty (Revelation effects pay nothing and have
-/// no per-period cap — the rules treat each draw as a fresh
-/// occurrence).
+/// Construct a [`Trigger::Revelation`]-driven [`Ability`] wrapping the given
+/// effect.
+///
+/// Mirrors [`on_play`] / [`on_commit`]; costs and usage limits are empty
+/// (Revelation effects pay nothing and have no per-period cap — the rules treat
+/// each draw as a fresh occurrence).
 #[must_use]
 pub fn revelation(effect: Effect) -> Ability {
     Ability {
@@ -3680,10 +3703,11 @@ pub fn activated(action_cost: u8, costs: Vec<Cost>, effect: Effect) -> Ability {
     }
 }
 
-/// [`activated`], for an ability that prints a bold
-/// [`ActionDesignator`] — Machete 01020's *"\[action\]: **Fight.**"*,
-/// Flashlight 01087's *"\[action\] Spend 1 supply: **Investigate.**"*, the
-/// Parlor 01115's *"\[action\] **Resign.**"*.
+/// [`activated`], for an ability that prints a bold [`ActionDesignator`].
+///
+/// Machete 01020's *"\[action\]: **Fight.**"*, Flashlight 01087's *"\[action\]
+/// Spend 1 supply: **Investigate.**"* and the Parlor 01115's *"\[action\]
+/// **Resign.**"* are such abilities.
 ///
 /// **The designator performs the action; `effect` is the residual** the printed
 /// text prints *beside* the designated action, and is empty (`seq([])`) for
@@ -3711,6 +3735,7 @@ pub fn activated_as(
 
 /// Construct a modifier-only [`Trigger::ElderSign`]-driven [`Ability`]: its
 /// [`TokenOutcome`] carries `modifier` and no effects (Roland Banks 01001).
+///
 /// [`elder_sign_with`] builds a sign that also has effects.
 ///
 /// Called by investigator card impls in the `cards` crate and by tests in
@@ -3724,9 +3749,10 @@ pub fn elder_sign(modifier: IntExpr) -> Ability {
 
 /// Construct a [`Trigger::ElderSign`]-driven [`Ability`] carrying the whole
 /// `outcome`: its modifier and its `immediate` / `on_success` / `on_fail`
-/// effects. The ability's own `effect` slot is the inert empty `Seq` for
-/// every elder sign; a sign's effects belong in its outcome's arms, never in
-/// that slot.
+/// effects.
+///
+/// The ability's own `effect` slot is the inert empty `Seq` for every elder
+/// sign; a sign's effects belong in its outcome's arms, never in that slot.
 #[must_use]
 pub fn elder_sign_with(outcome: TokenOutcome) -> Ability {
     Ability {
@@ -4030,9 +4056,10 @@ pub fn reach_resolution(n: u8) -> Effect {
 }
 
 /// Build an [`Effect::PlaceDoomOnCurrentAgenda`] for a card that prints the
-/// placement **alone** — Silver Twilight Acolyte 01102, Saracenic Script
-/// 02240, Blood on the Altar 02195. The doom waits for the Mythos phase's
-/// threshold check.
+/// placement **alone** — Silver Twilight Acolyte 01102, Saracenic Script 02240,
+/// Blood on the Altar 02195.
+///
+/// The doom waits for the Mythos phase's threshold check.
 #[must_use]
 pub fn place_doom_on_current_agenda(count: impl Into<IntExpr>) -> Effect {
     Effect::PlaceDoomOnCurrentAgenda {
@@ -4043,8 +4070,9 @@ pub fn place_doom_on_current_agenda(count: impl Into<IntExpr>) -> Effect {
 
 /// Build an [`Effect::PlaceDoomOnCurrentAgenda`] for a card that also prints
 /// *"this effect can cause the current agenda to advance"* — Ancient Evils
-/// 01166, Dark Memory 01013, Offer of Power 01178. The threshold is checked as
-/// soon as the doom lands.
+/// 01166, Dark Memory 01013, Offer of Power 01178.
+///
+/// The threshold is checked as soon as the doom lands.
 #[must_use]
 pub fn place_doom_that_can_advance_the_agenda(count: impl Into<IntExpr>) -> Effect {
     Effect::PlaceDoomOnCurrentAgenda {
@@ -4061,9 +4089,11 @@ pub fn native(tag: impl Into<String>) -> Effect {
 }
 
 /// *"If you succeed by `n` or more"*: [`Quantity::SkillTestSucceededBy`] at
-/// least `n`. Switchblade 01044 and .41 Derringer 01047 (*"If you succeed by 2
-/// or more, this attack deals +1 damage."*), Opportunist 01053 (*"If you
-/// succeed by 3 or more"*).
+/// least `n`.
+///
+/// Switchblade 01044 and .41 Derringer 01047 (*"If you succeed by 2 or more,
+/// this attack deals +1 damage."*), Opportunist 01053 (*"If you succeed by 3 or
+/// more"*).
 #[must_use]
 pub fn succeeded_by(n: i8) -> Condition {
     Condition::Compare {
@@ -4121,7 +4151,9 @@ pub fn put_into_threat_area_with_horror(code: impl Into<String>, horror: u8) -> 
 }
 
 /// Build an [`ActionDesignator::Fight`] carrying the modification the card
-/// prints on its attack — the combat modifier and the bonus damage beyond the
+/// prints on its attack.
+///
+/// The modification is the combat modifier and the bonus damage beyond the
 /// base 1 (.38 Special: `fight(IntExpr::cond(Condition::Compare { quantity: Quantity::CluesAtControllerLocation, op: CmpOp::Gt, value: 0 }, 3, 1), 1u8)`).
 /// The fight itself is the designator's; this only says how it differs from a
 /// basic one. It tests `[combat]` and carries no reveal clause; chain
@@ -4141,9 +4173,12 @@ pub fn fight(
 }
 
 /// Build an [`ActionDesignator::Evade`]: a basic evasion, testing `[agility]`
-/// with no reveal or success clause. Chain [`ActionDesignator::testing`],
-/// [`ActionDesignator::with_reveal_clause`] and [`ActionDesignator::on_success`]
-/// for what a card prints (Blinding Light 01066).
+/// with no reveal or success clause.
+///
+/// Chain [`ActionDesignator::testing`],
+/// [`ActionDesignator::with_reveal_clause`] and
+/// [`ActionDesignator::on_success`] for what a card prints (Blinding Light
+/// 01066).
 #[must_use]
 pub fn evade() -> ActionDesignator {
     ActionDesignator::Evade {
@@ -4155,7 +4190,9 @@ pub fn evade() -> ActionDesignator {
 
 /// Build an [`ActionDesignator::Investigate`] applying `shroud_modifier` to the
 /// controller's location difficulty for this investigation (Flashlight 01087:
-/// `investigate(-2i8)`). A success discovers clues as the action does; chain
+/// `investigate(-2i8)`).
+///
+/// A success discovers clues as the action does; chain
 /// [`ActionDesignator::instead_of_discovery`] for a card that replaces that
 /// (Burglary 01045).
 #[must_use]
@@ -4204,10 +4241,12 @@ pub fn control_status(code: impl Into<String>, status: ControlStatus) -> Conditi
 }
 
 /// Build an [`Effect::SkillTest`] initiating a `skill` test against
-/// `difficulty`. `on_success` runs after a passing draw, `on_fail` after a
-/// failing one (with the margin in the evaluator context's `failed_by`);
-/// either may be `None`. Most cards branch on exactly one side — failure
-/// (the one-shot Revelation treacheries) or success (Frozen in Fear 01164).
+/// `difficulty`.
+///
+/// `on_success` runs after a passing draw, `on_fail` after a failing one (with
+/// the margin in the evaluator context's `failed_by`); either may be `None`.
+/// Most cards branch on exactly one side — failure (the one-shot Revelation
+/// treacheries) or success (Frozen in Fear 01164).
 #[must_use]
 pub fn skill_test(
     skill: SkillKind,

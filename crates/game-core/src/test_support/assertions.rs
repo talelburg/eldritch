@@ -139,10 +139,11 @@ macro_rules! assert_event_count {
     }};
 }
 
-/// Assert that the listed patterns each match at least one event in
-/// the slice **and** that a matching event for the first pattern
-/// precedes a matching event for the second, the second precedes the
-/// third, and so on.
+/// Assert that the listed patterns match events in the slice, in order.
+///
+/// Each pattern matches at least one event **and** a matching event for
+/// the first pattern precedes a matching event for the second, the
+/// second precedes the third, and so on.
 ///
 /// Other events may appear before, between, or after the matched
 /// ones — this is a *subsequence* check, not a contiguous-sequence

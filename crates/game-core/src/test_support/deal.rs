@@ -3,8 +3,9 @@
 use crate::state::{Continuation, DamageSource, DealDamageFrame, DealDamageStep, InvestigatorId};
 
 /// Assert that `frame` is an effect's deal of `damage` + `horror` to
-/// `investigator`, none of it assigned yet: a
-/// [`DealDamage`](Continuation::DealDamage) frame with source
+/// `investigator`, none of it assigned yet.
+///
+/// That is a [`DealDamage`](Continuation::DealDamage) frame with source
 /// [`Effect`](DamageSource::Effect) at its
 /// [`Distribute`](DealDamageStep::Distribute) step.
 ///

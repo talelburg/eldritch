@@ -18,10 +18,11 @@ use leptos::prelude::*;
 use crate::interaction::{self, PendingOptions};
 use crate::{card, controls, registry};
 
-/// Which face of an act/agenda to show. During an advance the card flips from its
-/// front to its reverse (the "1b" side that carries the on-advance effect) once
-/// the flip is clicked. `pub` because it rides in the generated component
-/// props struct.
+/// Which face of an act/agenda to show.
+///
+/// During an advance the card flips from its front to its reverse (the "1b"
+/// side that carries the on-advance effect) once the flip is clicked. `pub`
+/// because it rides in the generated component props struct.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Face {
     /// The printed front (`name`/`text`).

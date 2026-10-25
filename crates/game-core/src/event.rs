@@ -22,9 +22,11 @@ use crate::state::{
     UseKind, Zone,
 };
 
-/// Which trauma track an [`Event::TraumaSuffered`] applies to. The engine
-/// keeps no trauma state, so the event is the whole record: campaign play,
-/// where trauma persists and lowers max health or sanity, is not modelled.
+/// Which trauma track an [`Event::TraumaSuffered`] applies to.
+///
+/// The engine keeps no trauma state, so the event is the whole record: campaign
+/// play, where trauma persists and lowers max health or sanity, is not
+/// modelled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TraumaKind {
     /// Physical trauma (reduces max health in campaign play).

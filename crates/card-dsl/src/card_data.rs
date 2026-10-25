@@ -336,7 +336,9 @@ pub enum WeaknessKind {
     Other,
 }
 
-/// A location's printed clue value. `PerInvestigator(n)` places
+/// A location's printed clue value.
+///
+/// `PerInvestigator(n)` places
 /// `n × (number of investigators who started the scenario)` on reveal;
 /// `Fixed(n)` places exactly `n`. Distinguishes `ArkhamDB`'s `clues_fixed`
 /// (absent/false → per-investigator; `true` → fixed).
@@ -348,12 +350,13 @@ pub enum ClueValue {
     Fixed(u8),
 }
 
-/// An enemy's printed health. Mirrors [`ClueValue`]: `PerInvestigator(n)`
-/// scales by the number of investigators in the game (Rules Reference
-/// p.12); `Fixed(n)` is a flat value. Distinguishes `ArkhamDB`'s
-/// `health_per_investigator` (absent/false → fixed; `true` →
-/// per-investigator). Note the polarity is the opposite of [`ClueValue`],
-/// whose clues default to per-investigator.
+/// An enemy's printed health.
+///
+/// Mirrors [`ClueValue`]: `PerInvestigator(n)` scales by the number of
+/// investigators in the game (Rules Reference p.12); `Fixed(n)` is a flat
+/// value. Distinguishes `ArkhamDB`'s `health_per_investigator` (absent/false →
+/// fixed; `true` → per-investigator). Note the polarity is the opposite of
+/// [`ClueValue`], whose clues default to per-investigator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HealthValue {
     /// Exactly `value`, regardless of investigator count.
@@ -363,6 +366,7 @@ pub enum HealthValue {
 }
 
 /// Limited-use tokens an asset enters play with ("Uses (4 ammo)").
+///
 /// Spending them is a [`Cost::SpendUses`](crate::dsl::Cost::SpendUses);
 /// depletion blocks the ability that pays in them. Pipeline-parsed from
 /// card text. The engine's runtime uses-pool is seeded from this on
@@ -406,9 +410,11 @@ pub enum UseKind {
     Supplies,
 }
 
-/// Per-card-type data. The discriminant mirrors [`CardType`] — read it
-/// via [`CardMetadata::card_type`]. Player variants carry a [`Class`];
-/// encounter variants do not (encounter cards have no player class).
+/// Per-card-type data.
+///
+/// The discriminant mirrors [`CardType`] — read it via
+/// [`CardMetadata::card_type`]. Player variants carry a [`Class`]; encounter
+/// variants do not (encounter cards have no player class).
 ///
 /// One variant per card type in the corpus. Not `#[non_exhaustive]` for the same reason as
 /// [`CardMetadata`] — the generated corpus constructs these variants.

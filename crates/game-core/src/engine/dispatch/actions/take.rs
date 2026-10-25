@@ -358,8 +358,10 @@ fn additional_actions(
 
 /// How many actions `investigator` can still take this turn: their standard
 /// actions plus every additional action they hold, whatever it is restricted
-/// to. What a client shows as "actions remaining". `0` for an investigator not
-/// in state.
+/// to.
+///
+/// What a client shows as "actions remaining". `0` for an investigator not in
+/// state.
 ///
 /// Whether a particular action can be afforded is the take step's question, not
 /// this count's: a restricted additional action counts here but pays only for

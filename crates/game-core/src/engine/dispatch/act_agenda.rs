@@ -262,11 +262,13 @@ pub(crate) fn spend_clues_from(state: &mut GameState, ids: &[InvestigatorId], am
 
 /// Whether the current act's round-end group clue-spend advance is affordable:
 /// investigators at `contributor_location_code` hold at least the current act's
-/// `clue_threshold`. Shared by the offer-side eligibility condition (act 01109's
+/// `clue_threshold`.
+///
+/// Shared by the offer-side eligibility condition (act 01109's
 /// `01109:can-advance`) and the resolve-side
-/// [`NativeCx::round_end_advance`](crate::engine::NativeCx::round_end_advance), so the two
-/// can't drift. `false` when there is no current act or the location isn't in
-/// play (the "investigators in the Hallway" condition is subsumed — 0
+/// [`NativeCx::round_end_advance`](crate::engine::NativeCx::round_end_advance),
+/// so the two can't drift. `false` when there is no current act or the location
+/// isn't in play (the "investigators in the Hallway" condition is subsumed — 0
 /// contributors ⇒ 0 clues ⇒ not affordable).
 #[must_use]
 pub fn round_end_advance_affordable(state: &GameState, contributor_location_code: &str) -> bool {

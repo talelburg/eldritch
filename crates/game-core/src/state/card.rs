@@ -299,8 +299,9 @@ pub enum Owner {
     Scenario,
 }
 
-/// A reading of the clock a [`UsagePeriod`] is measured on: the
-/// [`GameState::round`](crate::state::GameState::round), the
+/// A reading of the clock a [`UsagePeriod`] is measured on.
+///
+/// It reads the [`GameState::round`](crate::state::GameState::round), the
 /// [`GameState::phase`](crate::state::GameState::phase), and whose turn it is
 /// ([`GameState::active_investigator`](crate::state::GameState::active_investigator)).
 ///
@@ -413,12 +414,13 @@ impl AbilityUsageRecord {
 
 /// Whether `investigator` has used the ability at `ability_index` up to its
 /// [`UsageLimit::count`] for the period containing the clock reading `now`,
-/// reading their firing record out of `usage`. Another investigator's uses do
-/// not count (limits are player specific; see [`CardInPlay::ability_usage`]).
-/// Shared by [`CardInPlay`] and [`Investigator`](crate::state::Investigator) so
-/// both usage-bearing sources apply the same lazy-reset semantics (see the
-/// field docs on [`CardInPlay::ability_usage`]). `None` limit ⇒ no cap ⇒
-/// `false`.
+/// reading their firing record out of `usage`.
+///
+/// Another investigator's uses do not count (limits are player specific; see
+/// [`CardInPlay::ability_usage`]). Shared by [`CardInPlay`] and
+/// [`Investigator`](crate::state::Investigator) so both usage-bearing sources
+/// apply the same lazy-reset semantics (see the field docs on
+/// [`CardInPlay::ability_usage`]). `None` limit ⇒ no cap ⇒ `false`.
 #[must_use]
 pub fn usage_exhausted(
     usage: &BTreeMap<u8, BTreeMap<InvestigatorId, AbilityUsageRecord>>,
@@ -439,9 +441,10 @@ pub fn usage_exhausted(
 }
 
 /// Record one firing of the ability at `ability_index` by `investigator`
-/// against the `period` containing the clock reading `now`, into their record
-/// in `usage` (lazy reset when the stored record is for a stale period).
-/// Shared by [`CardInPlay`] and [`Investigator`](crate::state::Investigator).
+/// against the `period` containing the clock reading `now`.
+///
+/// The firing goes into their record in `usage`, which resets lazily when the
+/// stored record is for a stale period. Shared by [`CardInPlay`] and [`Investigator`](crate::state::Investigator).
 pub fn bump_usage(
     usage: &mut BTreeMap<u8, BTreeMap<InvestigatorId, AbilityUsageRecord>>,
     ability_index: u8,

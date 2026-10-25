@@ -52,18 +52,20 @@ pub enum EngineOutcome {
 }
 
 /// Stable id for one offered option, scoped to a single
-/// [`AwaitingInput`](EngineOutcome::AwaitingInput) prompt: the index into
-/// the request's [`options`](InputRequest::options) (and the matching
-/// `ChoiceFrame` offered set). A `u32` newtype for a
+/// [`AwaitingInput`](EngineOutcome::AwaitingInput) prompt.
+///
+/// It is the index into the request's [`options`](InputRequest::options) (and
+/// the matching `ChoiceFrame` offered set). A `u32` newtype for a
 /// host-pointer-width-independent wire format; resume validates membership
 /// rather than trusting it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct OptionId(pub u32);
 
 /// The board surface a prompt or an offered [`ChoiceOption`] acts on, letting a
-/// host render it on the entity it targets rather than in a flat list. Anchors
-/// are derived from the engine's own action / candidate targets, so a host never
-/// re-computes legality. **Un-anchored is spelled `None` at the
+/// host render it on the entity it targets rather than in a flat list.
+///
+/// Anchors are derived from the engine's own action / candidate targets, so a
+/// host never re-computes legality. **Un-anchored is spelled `None` at the
 /// [`Option`] wrapping this enum**, not a variant here — see ADR 0011; a host
 /// that reads a `None` anchor falls back to the prompt banner.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -211,9 +213,11 @@ impl ChoiceOption {
 }
 
 /// Which [`InputResponse`](crate::action::InputResponse) variant the host must
-/// echo back for a prompt. The variant names mirror `InputResponse` 1:1, so the
-/// `kind` *is* the expected response — the host renders the matching control
-/// without inspecting the prompt text.
+/// echo back for a prompt.
+///
+/// The variant names mirror `InputResponse` 1:1, so the `kind` *is* the
+/// expected response — the host renders the matching control without inspecting
+/// the prompt text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum InputKind {
