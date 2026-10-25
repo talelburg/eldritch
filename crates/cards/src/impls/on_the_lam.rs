@@ -52,9 +52,11 @@ pub const CARD: CardRecord = CardRecord::new(CODE, abilities).effects(&[(PROTECT
 
 const PROTECT: &str = "01010:cannot-attack";
 
+/// On the Lam's ability: played after the controller's turn begins, it protects
+/// them from non-Elite attacks for the round.
+///
 /// *"Play after your turn begins. / Until the end of the round, non-\[\[Elite\]\]
-/// enemies cannot attack you."* — played after the controller's turn begins,
-/// protecting them from non-Elite attacks for the round.
+/// enemies cannot attack you."*
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![dsl::reaction_on_event(

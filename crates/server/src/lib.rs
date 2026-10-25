@@ -59,9 +59,10 @@ impl AppState {
     }
 }
 
-/// The registries the production server creates and plays games against:
-/// the real `scenarios::REGISTRY` (which includes The Gathering) and the
-/// real `cards::REGISTRY` (the corpus + hand-written abilities). `main`
+/// The registries the production server creates and plays games against.
+///
+/// They are the real `scenarios::REGISTRY` (which includes The Gathering) and
+/// the real `cards::REGISTRY` (the corpus + hand-written abilities). `main`
 /// hands them to [`AppState::new`]. Tests pass their own pairing instead and
 /// build any mock scenario module locally
 /// (`crates/server/tests/common/mod.rs`); there is no shared fixture

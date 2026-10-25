@@ -8,8 +8,9 @@ use crate::state::GameState;
 
 /// Run `native` once against `state` in `eval_ctx`, with `cards` as the card
 /// registry [`NativeCx::cards`] answers with and no scenario module, returning
-/// its outcome and the events it emitted. `state` keeps whatever the native
-/// wrote.
+/// its outcome and the events it emitted.
+///
+/// `state` keeps whatever the native wrote.
 ///
 /// A direct call, for a unit test of one native's resolution: no apply, so no
 /// rollback on `Rejected`, and none of the evaluator's handling of a suspend

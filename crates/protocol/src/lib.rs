@@ -70,14 +70,15 @@ pub enum ServerMessage {
     },
 }
 
-/// Stable identifier for a persisted game. Part of the client/server
-/// contract: returned by `POST /games` and used in the WebSocket path
-/// `/ws/{game_id}`. Lives here (not in `game-core`) because it is a
-/// host/transport concept, not a kernel domain id like `ScenarioId`.
-/// Transparent over `String` — serializes as a bare JSON string, binds to
-/// a `SQLite` TEXT column, and extracts from a URL path segment. Id
-/// *minting* (`random_game_id`) lives server-side to keep `uuid` out of
-/// this wasm-safe crate.
+/// Stable identifier for a persisted game.
+///
+/// Part of the client/server contract: returned by `POST /games` and used in
+/// the WebSocket path `/ws/{game_id}`. Lives here (not in `game-core`) because
+/// it is a host/transport concept, not a kernel domain id like `ScenarioId`.
+/// Transparent over `String` — serializes as a bare JSON string, binds to a
+/// `SQLite` TEXT column, and extracts from a URL path segment. Id *minting*
+/// (`random_game_id`) lives server-side to keep `uuid` out of this wasm-safe
+/// crate.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct GameId(String);

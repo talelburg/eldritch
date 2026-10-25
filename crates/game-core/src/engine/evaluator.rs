@@ -61,8 +61,10 @@ use crate::state::{
 };
 
 /// Margin of the just-resolved skill test, bound only while running one of its
-/// RR ST.7 results: the failure margin for an `on_fail` effect, the success
-/// margin for the attack's damage and an `on_success` effect. Innermost-only:
+/// RR ST.7 results.
+///
+/// It is the failure margin for an `on_fail` effect, and the success margin for
+/// the attack's damage and an `on_success` effect. Innermost-only:
 /// same-kind test nesting is carried by the per-frame snapshot stack, not
 /// multiple slots here (corpus-verified moot — no card reads a non-innermost
 /// margin).
@@ -80,10 +82,11 @@ pub enum SkillTestBinding {
     },
 }
 
-/// The clue count of the discovery an ability is responding to (bound only
-/// while resolving a `DiscoverClues` ability's effect, in any of the three
-/// cells — a `when` replacement reads it to know how many clues it is
-/// replacing).
+/// The clue count of the discovery an ability is responding to.
+///
+/// Bound only while resolving a `DiscoverClues` ability's effect, in any of the
+/// three cells: a `when` replacement reads it to know how many clues it is
+/// replacing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DiscoveryBinding {
     /// Clues the discovery moves — what a `when` replacement is replacing.
@@ -91,7 +94,9 @@ pub struct DiscoveryBinding {
 }
 
 /// The owner of the card whose Revelation is resolving (bound only while
-/// resolving a Revelation). A Revelation that puts its own card into play —
+/// resolving a Revelation).
+///
+/// A Revelation that puts its own card into play —
 /// [`Effect::PutIntoThreatArea`] — reads it to state the instance's owner,
 /// because the effect is shared by encounter treacheries (the encounter deck's)
 /// and weaknesses like Cover Up 01007 (their bearer's), and only the site that
@@ -120,9 +125,10 @@ pub struct EnemyAttackBinding {
     pub attacking_enemy: EnemyId,
 }
 
-/// Controller picks bound while grounding `*::Chosen` targets. Cohesive: the
-/// four `*::Chosen` kinds compose on one binding (a single effect may pick an
-/// investigator *and* a location). `Default` is all-`None`.
+/// Controller picks bound while grounding `*::Chosen` targets.
+///
+/// Cohesive: the four `*::Chosen` kinds compose on one binding (a single effect
+/// may pick an investigator *and* a location). `Default` is all-`None`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct ChoiceBinding {
     /// `InvestigatorTarget::Chosen` pick.
@@ -136,9 +142,11 @@ pub struct ChoiceBinding {
 }
 
 /// The target an [`Effect::ForEach`] body is currently running for, bound per
-/// iteration by the walking frame ([`EffectFrame::ForEach`]). One arm per kind
-/// of entity a fan-out can walk; the body names it through that kind's `Each`
-/// target ([`InvestigatorTarget::Each`], [`EnemyTarget::Each`]).
+/// iteration by the walking frame ([`EffectFrame::ForEach`]).
+///
+/// One arm per kind of entity a fan-out can walk; the body names it through
+/// that kind's `Each` target ([`InvestigatorTarget::Each`],
+/// [`EnemyTarget::Each`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EachBinding {
     /// An investigator, from an
@@ -2758,7 +2766,9 @@ fn resolve_enemy_target(ctx: EvalContext, target: &EnemyTarget) -> Result<EnemyI
 }
 
 /// Whether `investigator` is currently forbidden from playing a card of
-/// `card_type` by an active `Restriction::CannotPlay` constant ability on
+/// `card_type`.
+///
+/// The prohibition is an active `Restriction::CannotPlay` constant ability on
 /// any of their controlled instances (Dissonant Voices 01165: assets and
 /// events). Checked in `play_card` validation.
 ///

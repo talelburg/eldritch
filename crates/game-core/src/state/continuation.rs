@@ -102,10 +102,11 @@ impl Assignment {
 }
 
 /// What is dealing the damage/horror a [`Continuation::DealDamage`] frame is
-/// walking — carried on the frame and snapshotted into both of its triggering
-/// conditions, and read at
-/// [`DealDamageStep::Finish`] to decide how the frame
-/// resumes its caller.
+/// walking.
+///
+/// Carried on the frame and snapshotted into both of its triggering conditions,
+/// and read at [`DealDamageStep::Finish`] to decide how the frame resumes its
+/// caller.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DamageSource {
     /// An enemy attack. Guard Dog 01021's *"When an enemy attack deals damage to
@@ -127,9 +128,10 @@ pub enum DamageSource {
 }
 
 /// Where a [`Continuation::DealDamage`] frame stands in the Rules Reference's
-/// two-step procedure for dealing damage/horror
-/// (`glossary/Dealing_Damage_Horror.md`), plus the bookends that get it there
-/// and hand back to the caller.
+/// two-step procedure for dealing damage/horror.
+///
+/// The steps are `glossary/Dealing_Damage_Horror.md`'s, plus the bookends that
+/// get the frame there and hand back to the caller.
 ///
 /// The two steps are two triggering conditions with a named window between
 /// them, the second nested in the first's resolve step. ADR 0003 forbids
@@ -235,8 +237,10 @@ pub enum AssetEntry {
 
 /// A frame on the
 /// [`GameState::continuations`](crate::state::game_state::GameState::continuations)
-/// suspend/resume stack: a typed resume point, not a closure, so it serializes
-/// for replay/persistence like every other state field.
+/// suspend/resume stack.
+///
+/// A frame is a typed resume point, not a closure, so it serializes for
+/// replay/persistence like every other state field.
 ///
 /// Open windows live here as [`TimingPointWindow`](Self::TimingPointWindow)
 /// (event windows and the forced-ability run) and [`FastWindow`](Self::FastWindow)
@@ -379,8 +383,9 @@ pub enum ScenarioEndStep {
 }
 
 /// How the framework disposes of a drawn encounter card after its Revelation's
-/// whole sub-resolution completes. Carried by
-/// [`Continuation::EncounterCard`] so the unified disposal step
+/// whole sub-resolution completes.
+///
+/// Carried by [`Continuation::EncounterCard`] so the unified disposal step
 /// (`dispose_encounter_card_if_top`) handles both encounter card types from one
 /// frame, regardless of which path revealed the card (engine-record draw,
 /// Mythos chain, or an agenda reverse-draw — the last two having no
@@ -481,13 +486,14 @@ pub enum EffectFrame {
     },
 }
 
-/// The rest of an action once its costs are paid: what a parked
-/// [`Continuation::ActionResolution`] frame runs once its attack-of-opportunity
-/// loop completes, or what taking an action that provokes none performs
-/// at once. The
-/// basic-action variants carry only the action's *parameters*; board-dependent
-/// values (Investigate difficulty, enemy presence) are re-derived live on
-/// resume so a mid-action board change is reflected. The exception is
+/// The rest of an action once its costs are paid.
+///
+/// It is what a parked [`Continuation::ActionResolution`] frame runs once its
+/// attack-of-opportunity loop completes, or what taking an action that provokes
+/// none performs at once. The basic-action variants carry only the action's
+/// *parameters*; board-dependent values (Investigate difficulty, enemy
+/// presence) are re-derived live on resume so a mid-action board change is
+/// reflected. The exception is
 /// [`ActivateAbility`](ActionResume::ActivateAbility), which snapshots its
 /// resolved effect (fixed at activation, not board-dependent) — see its docs.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1221,6 +1227,7 @@ impl EmitStep {
 }
 
 /// The forced-then-reaction sub-cursor of a [`Continuation::TimingPoint`].
+///
 /// `Forced` fires the bucket's forced abilities (0/1 inline, 2+ via the
 /// ordered forced run), `Reaction` opens the bucket's reaction window, `Done`
 /// finishes the bucket (advance the parent `EmitEvent`'s cursor + pop).
@@ -1468,10 +1475,12 @@ pub struct InFlightSkillTest {
 
 /// The outcome of a skill test's chaos-token resolution (RR ST.6), stored on
 /// [`InFlightSkillTest::resolved`] once computed and read by every subsequent
-/// driver step. One source of truth, rather than routing the same fields
-/// through each [`SkillTestStep`] payload. `Copy` (all scalar fields) so the
-/// driver reads it cheaply; the revealed token's result-conditional *effects*
-/// are looked up again at ST.7 from [`InFlightSkillTest::revealed`].
+/// driver step.
+///
+/// One source of truth, rather than routing the same fields through each
+/// [`SkillTestStep`] payload. `Copy` (all scalar fields) so the driver reads it
+/// cheaply; the revealed token's result-conditional *effects* are looked up
+/// again at ST.7 from [`InFlightSkillTest::revealed`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResolvedTest {
     /// Whether the test passed: the test's determination where it has one,
@@ -1874,9 +1883,10 @@ impl FastActorScope {
 }
 
 /// Whether a [`TimingPointWindow`](Continuation::TimingPointWindow) is a
-/// skippable reaction window or the mandatory forced-ability run. A forced
-/// run admits no Fast plays and drains all candidates. It carries **no** resume
-/// continuation: on close it returns `Done` and the `drive` loop
+/// skippable reaction window or the mandatory forced-ability run.
+///
+/// A forced run admits no Fast plays and drains all candidates. It carries
+/// **no** resume continuation: on close it returns `Done` and the `drive` loop
 /// re-dispatches whatever frame is exposed beneath it (the coordinator's
 /// `TimingPoint`, the `InvestigatorTurn { ending }` frame, the move's
 /// `ActionResolution`, …). The invariant is that any emit site capable of a
@@ -1890,9 +1900,11 @@ pub enum TimingMode {
     Forced,
 }
 
-/// The Rules-Reference timing step a [`FastWindowKind::Phase`] window sits
-/// at. Each step uniquely determines its phase, so the phase is not
-/// carried separately (the engine reads [`GameState::phase`](crate::state::game_state::GameState::phase)).
+/// The Rules-Reference timing step a [`FastWindowKind::Phase`] window sits at.
+///
+/// Each step uniquely determines its phase, so the phase is not carried
+/// separately (the engine reads
+/// [`GameState::phase`](crate::state::game_state::GameState::phase)).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum PhaseStep {
@@ -1953,12 +1965,13 @@ pub enum PhaseStep {
     InvestigatorTurnBegins,
 }
 
-/// A suspended Hunter-movement choice awaiting input during Enemy-phase
-/// step 3.2 (Rules Reference p.12 / p.10 / p.17). The rules give a tie to
-/// the lead: *"If multiple equidistant investigators meet the prey criteria,
-/// the lead investigator decides among those investigators"*
-/// (`glossary/Prey.md`). The engine does not model the lead; see
-/// `GLOSSARY.md`.
+/// A suspended Hunter-movement choice awaiting input during Enemy-phase step
+/// 3.2 (Rules Reference p.12 / p.10 / p.17).
+///
+/// The rules give a tie to the lead: *"If multiple equidistant investigators
+/// meet the prey criteria, the lead investigator decides among those
+/// investigators"* (`glossary/Prey.md`). The engine does not model the lead;
+/// see `GLOSSARY.md`.
 ///
 /// Two shapes because the two choice points need different input:
 /// movement is a `PickSingle` over a prey-filtered destination set
@@ -1987,10 +2000,11 @@ pub enum HunterChoice {
 }
 
 /// A suspended engagement-on-spawn choice: a multi-investigator spawn tie
-/// awaiting a `PickSingle`. `glossary/Prey.md` gives the tie to the lead:
-/// *"if multiple investigators are tied in meeting these instructions, the
-/// lead investigator may decide among them"*. The engine does not model the
-/// lead; see `GLOSSARY.md`.
+/// awaiting a `PickSingle`.
+///
+/// `glossary/Prey.md` gives the tie to the lead: *"if multiple investigators
+/// are tied in meeting these instructions, the lead investigator may decide
+/// among them"*. The engine does not model the lead; see `GLOSSARY.md`.
 ///
 /// Distinct from [`HunterChoice`] because spawn engagement is not a
 /// hunter move (it never picks a location) and its resume just engages
@@ -2166,14 +2180,15 @@ impl ResolutionCandidate {
 
 // --- Phase, turn and action frame payloads ---
 
-/// The entered-location half of a Move, parked beneath the whole
-/// `LeftLocation` sequence. Pushed by `move::perform`
-/// immediately before it emits `LeftLocation`. That emit
-/// carries the relocation too, which the coordinator performs at the
+/// The entered-location half of a Move, parked beneath the whole `LeftLocation`
+/// sequence.
+///
+/// Pushed by `move::perform` immediately before it emits `LeftLocation`. That
+/// emit carries the relocation too, which the coordinator performs at the
 /// condition's own resolve step *above* this frame, so Barricade 01038's
-/// self-discard resolves before the departure lands. When the loop
-/// re-exposes this frame it pops, reveals the destination, auto-engages its
-/// ready enemies, and emits `EnteredLocation` in tail position.
+/// self-discard resolves before the departure lands. When the loop re-exposes
+/// this frame it pops, reveals the destination, auto-engages its ready enemies,
+/// and emits `EnteredLocation` in tail position.
 ///
 /// Exists because the emit queues rather than resolves (ADR 0003): running
 /// the engage + entered-location emit inline after it would push them *above*
@@ -2191,10 +2206,12 @@ pub struct MoveEnterFrame {
     pub destination: LocationId,
 }
 
-/// The Mythos phase anchor. Pushed at Mythos entry; sits
-/// beneath the phase's framework windows. On a child window's close the
-/// framework routes to the anchor's `on_child_pop` (keyed by `resume`).
-/// Never awaits input; popped when the phase transitions away.
+/// The Mythos phase anchor.
+///
+/// Pushed at Mythos entry; sits beneath the phase's framework windows. On a
+/// child window's close the framework routes to the anchor's `on_child_pop`
+/// (keyed by `resume`). Never awaits input; popped when the phase transitions
+/// away.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MythosPhaseFrame {
     /// Which child-pop boundary the anchor resumes at.
@@ -2229,6 +2246,7 @@ pub struct UpkeepPhaseFrame {
 }
 
 /// The active investigator's open turn — Rules Reference step 2.2.1.
+///
 /// Pushed *above* the [`Continuation::InvestigationPhase`]
 /// anchor once the `InvestigatorTurnBegins` window closes; the anchor spans the
 /// whole phase beneath it. The player takes basic actions (each a typed
@@ -2276,15 +2294,16 @@ pub struct ActionResolutionFrame {
 
 // --- Combat, damage and resolution frame payloads ---
 
-/// An act/agenda is advancing. A small resumable sub-process that
-/// pushes the observable `…Advanced` event, for a forced advance in
-/// interactive mode pauses for a one-option on-card flip pick, fires
-/// the leaving card's Forced on-advance reverse (which may itself suspend —
-/// 01105's interactive `ChooseOne`), then bumps the deck cursor *after* the
-/// reverse resolves (RR order). Driven by the `drive` loop and resumed via
-/// `resolve_input` (mirrors the `SkillTest` frame). A frame rather than an
-/// emit-then-bump, because bookkeeping run after the emit would strand a
-/// suspending reverse.
+/// An act/agenda is advancing.
+///
+/// A small resumable sub-process that pushes the observable `…Advanced` event,
+/// for a forced advance in interactive mode pauses for a one-option on-card
+/// flip pick, fires the leaving card's Forced on-advance reverse (which may
+/// itself suspend — 01105's interactive `ChooseOne`), then bumps the deck
+/// cursor *after* the reverse resolves (RR order). Driven by the `drive` loop
+/// and resumed via `resolve_input` (mirrors the `SkillTest` frame). A frame
+/// rather than an emit-then-bump, because bookkeeping run after the emit would
+/// strand a suspending reverse.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AdvanceReverseFrame {
     /// Which deck is advancing.
@@ -2300,14 +2319,15 @@ pub struct AdvanceReverseFrame {
     pub trigger: AdvanceTrigger,
 }
 
-/// A parked enemy-attack loop: the attackers of one investigator, resolved
-/// one at a time (RR p.25 step 3.3). The loop parks itself on
-/// this frame around **every** attack rather than only around a reaction
-/// window: the head attacker's `EnemyAttacks` condition walks the
-/// [`EmitEvent`](Continuation::EmitEvent) coordinator pushed above this frame, and
-/// the `drive` loop re-exposes this one when that coordinator pops. So the
-/// loop never reads the stack after emitting (ADR 0003) and an attack may
-/// suspend anywhere inside its own sequence.
+/// A parked enemy-attack loop: the attackers of one investigator, resolved one
+/// at a time (RR p.25 step 3.3).
+///
+/// The loop parks itself on this frame around **every** attack rather than only
+/// around a reaction window: the head attacker's `EnemyAttacks` condition walks
+/// the [`EmitEvent`](Continuation::EmitEvent) coordinator pushed above this
+/// frame, and the `drive` loop re-exposes this one when that coordinator pops.
+/// So the loop never reads the stack after emitting (ADR 0003) and an attack
+/// may suspend anywhere inside its own sequence.
 ///
 /// Never awaits player input at [`AttackLoopStage::Attacking`] — the
 /// coordinator above it owns any prompt; at
@@ -2327,9 +2347,10 @@ pub struct AttackLoopFrame {
     pub stage: AttackLoopStage,
 }
 
-/// One deal of damage and/or horror, in progress — the Rules Reference's
-/// two numbered steps and the window between them
-/// (`glossary/Dealing_Damage_Horror.md`), walked by the
+/// One deal of damage and/or horror, in progress.
+///
+/// It walks the Rules Reference's two numbered steps and the window between
+/// them (`glossary/Dealing_Damage_Horror.md`) with the
 /// [`step`](DealDamageStep) cursor `Distribute → Announce → Finish`.
 ///
 /// **This frame owns the live assignment**; each of the two conditions
@@ -2363,13 +2384,14 @@ pub struct DealDamageFrame {
     pub step: DealDamageStep,
 }
 
-/// The scenario's ending, in progress. Pushed at the **bottom** of the
-/// stack by the engine's `end_scenario` the moment the resolution
-/// latches, so it is reached only once every frame above it has either
-/// completed or been cancelled
-/// ([`cancelled_by_scenario_end`](Continuation::cancelled_by_scenario_end)). It then
-/// emits the [`GameEnd`](crate::engine::TimingEvent::GameEnd) timing point —
-/// Cover Up 01007's *"Forced – When the game ends, if there are any clues on
+/// The scenario's ending, in progress.
+///
+/// Pushed at the **bottom** of the stack by the engine's `end_scenario` the
+/// moment the resolution latches, so it is reached only once every frame above
+/// it has either completed or been cancelled
+/// ([`cancelled_by_scenario_end`](Continuation::cancelled_by_scenario_end)). It
+/// then emits the [`GameEnd`](crate::engine::TimingEvent::GameEnd) timing point
+/// — Cover Up 01007's *"Forced – When the game ends, if there are any clues on
 /// Cover Up: You suffer 1 mental trauma"* — whose forced abilities drain
 /// *above* it, possibly across an `apply` boundary (the interactive
 /// acknowledge). When it is exposed again at
@@ -2395,10 +2417,11 @@ pub struct ScenarioEndFrame {
     pub step: ScenarioEndStep,
 }
 
-/// An investigator's elimination, in progress. Pushed by
-/// `apply_investigator_elimination` **only** when the investigator owns an in-play
-/// weakness carrying a *"when the game ends"* Forced ability — Rules
-/// Reference p.10 Elimination **step 0**:
+/// An investigator's elimination, in progress.
+///
+/// Pushed by `apply_investigator_elimination` **only** when the investigator
+/// owns an in-play weakness carrying a *"when the game ends"* Forced ability —
+/// Rules Reference p.10 Elimination **step 0**:
 ///
 /// > For the purpose of resolving weakness cards, the game has ended for the
 /// > eliminated investigator. Trigger any "when the game ends" abilities on
@@ -2452,12 +2475,13 @@ pub struct EliminationFrame {
 // --- Window and timing frame payloads ---
 
 /// An event reaction window or the forced-ability run, keyed by the
-/// [`TimingEvent`] that opened it. The [`mode`](TimingMode) distinguishes a
-/// skippable reaction window from the mandatory forced run (which carries no
-/// resume continuation — on close the `drive` loop re-dispatches the exposed
-/// parent frame). The `TimingEvent` is referenced in place rather than
-/// relocated — [`Effect`](Continuation::Effect) already holds a `crate::engine`
-/// type ([`EvalContext`]).
+/// [`TimingEvent`] that opened it.
+///
+/// The [`mode`](TimingMode) distinguishes a skippable reaction window from the
+/// mandatory forced run (which carries no resume continuation — on close the
+/// `drive` loop re-dispatches the exposed parent frame). The `TimingEvent` is
+/// referenced in place rather than relocated — [`Effect`](Continuation::Effect)
+/// already holds a `crate::engine` type ([`EvalContext`]).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TimingPointWindowFrame {
     /// The timing event that opened this window/run.
@@ -2478,6 +2502,7 @@ pub struct TimingPointWindowFrame {
 
 /// A framework "red-box" player window — a Rules-Reference timing step
 /// that gates Fast actions and runs a per-step continuation on close.
+///
 /// The [`FastWindowKind`] discriminant
 /// routes the close continuation (`Phase` → the `*Phase`
 /// anchor's `on_child_pop`; `SkillTest` → the skill-test driver). Carries no
@@ -2496,12 +2521,14 @@ pub struct FastWindowFrame {
 
 /// A no-choice forced ability is about to resolve and the game is in
 /// interactive mode (`interactive_acknowledge`): surface it as a one-option
-/// pick so the player "performs" it before it lands. Pushed by
-/// `queue_forced_triggers` (the single-hit path) *above* the forced effect's
-/// root frame; the `drive` loop suspends here, and on resume pops, letting the
-/// effect frame beneath resolve. `candidate` is the forced ability's
-/// [`ResolutionCandidate`] — its `code` names the prompt and its `source`
-/// anchors the option to its ability source (an in-play instance, or the act).
+/// pick so the player "performs" it before it lands.
+///
+/// Pushed by `queue_forced_triggers` (the single-hit path) *above* the forced
+/// effect's root frame; the `drive` loop suspends here, and on resume pops,
+/// letting the effect frame beneath resolve. `candidate` is the forced
+/// ability's [`ResolutionCandidate`] — its `code` names the prompt and its
+/// `source` anchors the option to its ability source (an in-play instance, or
+/// the act).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AcknowledgeForcedFrame {
     /// The forced ability being acknowledged.
@@ -2509,13 +2536,14 @@ pub struct AcknowledgeForcedFrame {
 }
 
 /// Coordinator: walk one triggering condition's timing sequence — the three
-/// cells `When → At → After` with the condition's *own* resolution between
-/// the first two. `step` is the cursor. Pushed by `queue_event` for **every**
-/// triggering condition, with no exceptions;
-/// the `drive` loop dispatches it, pushing a
-/// [`TimingPoint`](TimingPointFrame) per populated cell and re-scanning
-/// each cell fresh. Suspends wherever a cell opens a window — the round-end
-/// `when` act-advance, a clue discovery's `when` replacement.
+/// cells `When → At → After` with the condition's *own* resolution between the
+/// first two.
+///
+/// `step` is the cursor. Pushed by `queue_event` for **every** triggering
+/// condition, with no exceptions; the `drive` loop dispatches it, pushing a
+/// [`TimingPoint`](TimingPointFrame) per populated cell and re-scanning each
+/// cell fresh. Suspends wherever a cell opens a window — the round-end `when`
+/// act-advance, a clue discovery's `when` replacement.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EmitEventFrame {
     /// The game event whose timing cells are being walked.
@@ -2589,24 +2617,27 @@ pub struct TimingPointFrame {
 
 // --- Draw, encounter and play frame payloads ---
 
-/// A skill test paused on its Mind-over-Matter "use X in place of Y?" prompt
-/// at initiation. Pushed *above* the
-/// `SkillTest` frame, so top-frame dispatch routes it before the commit
-/// window; resumed by [`resume_substitution_choice`](crate::engine).
+/// A skill test paused on its Mind-over-Matter "use X in place of Y?" prompt at
+/// initiation.
+///
+/// Pushed *above* the `SkillTest` frame, so top-frame dispatch routes it before
+/// the commit window; resumed by [`resume_substitution_choice`](crate::engine).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SubstitutionPromptFrame {
     /// The investigator taking the test.
     pub investigator: InvestigatorId,
 }
 
-/// The setup mulligan loop (Rules Reference p.27). `remaining[0]` is the
-/// investigator currently prompted to mulligan; the queue is the Active
-/// investigators in [`turn_order`](crate::state::game_state::GameState::turn_order). Pushed by
-/// `start_scenario`, advanced by `resume_mulligan` as each investigator
-/// submits their `PickMultiple` redraw indices, popped when drained — at
-/// which point setup ends and the Investigation phase begins. While present,
-/// the engine rejects every non-`ResolveInput` action. Read the prompted
-/// investigator via [`GameState::current_mulligan`](crate::state::game_state::GameState::current_mulligan).
+/// The setup mulligan loop (Rules Reference p.27).
+///
+/// `remaining[0]` is the investigator currently prompted to mulligan; the queue
+/// is the Active investigators in
+/// [`turn_order`](crate::state::game_state::GameState::turn_order). Pushed by
+/// `start_scenario`, advanced by `resume_mulligan` as each investigator submits
+/// their `PickMultiple` redraw indices, popped when drained — at which point
+/// setup ends and the Investigation phase begins. While present, the engine
+/// rejects every non-`ResolveInput` action. Read the prompted investigator via
+/// [`GameState::current_mulligan`](crate::state::game_state::GameState::current_mulligan).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MulliganFrame {
     /// Active investigators yet to mulligan, in player order; front =
@@ -2615,6 +2646,7 @@ pub struct MulliganFrame {
 }
 
 /// The Mythos step-1.4 encounter-draw loop (Rules Reference p.24).
+///
 /// `remaining[0]` is the investigator currently prompted to draw; the queue
 /// is the Active investigators in [`turn_order`](crate::state::game_state::GameState::turn_order).
 /// Pushed by `mythos_phase`, advanced by `resume_encounter_draw` as each
@@ -2630,13 +2662,14 @@ pub struct EncounterDrawFrame {
     pub remaining: Vec<InvestigatorId>,
 }
 
-/// One drawer's Mythos surge chain. Pushed by
-/// [`EncounterDraw`](Continuation::EncounterDraw)'s `Confirm` for the current
-/// drawer (above the loop frame); owns the surge cap budget across input
-/// round-trips. The `drive` loop's `PlayerDraw` arm drives it: on the first
-/// step (`chain_count == 0`) or when `surge_pending`, it draws the next card
-/// — bumping `chain_count`, enforcing [`MAX_SURGE_CHAIN`](crate::engine), and
-/// pushing an [`EncounterCard`](Continuation::EncounterCard) frame whose
+/// One drawer's Mythos surge chain.
+///
+/// Pushed by [`EncounterDraw`](Continuation::EncounterDraw)'s `Confirm` for the
+/// current drawer (above the loop frame); owns the surge cap budget across
+/// input round-trips. The `drive` loop's `PlayerDraw` arm drives it: on the
+/// first step (`chain_count == 0`) or when `surge_pending`, it draws the next
+/// card — bumping `chain_count`, enforcing [`MAX_SURGE_CHAIN`](crate::engine),
+/// and pushing an [`EncounterCard`](Continuation::EncounterCard) frame whose
 /// disposal exposes this one again; otherwise it pops itself and advances the
 /// loop to the next drawer. A mid-chain spawn-engagement tie pushes a
 /// [`SpawnEngage`](Continuation::SpawnEngage) frame *above* this one. Never
@@ -2655,15 +2688,16 @@ pub struct PlayerDrawFrame {
     pub surge_pending: bool,
 }
 
-/// A drawn encounter card whose Revelation is mid-resolution, tagged
-/// with how the framework disposes of it once the Revelation's whole
-/// sub-resolution completes. Pushed by `resolve_encounter_card`
-/// *before* it announces the draw, whose resolve step runs the Revelation;
-/// sits beneath the draw condition's sequence and any suspension the
-/// Revelation opens (a skill test, a choice, a nested effect). When that
-/// sequence completes and this frame is top again, the **framework**
-/// disposes of the card per its [`EncounterDisposition`] and pops:
-/// a treachery (`Discard`) goes to its owner's discard pile (or — if
+/// A drawn encounter card whose Revelation is mid-resolution, tagged with how
+/// the framework disposes of it once the Revelation's whole sub-resolution
+/// completes.
+///
+/// Pushed by `resolve_encounter_card` *before* it announces the draw, whose
+/// resolve step runs the Revelation; sits beneath the draw condition's sequence
+/// and any suspension the Revelation opens (a skill test, a choice, a nested
+/// effect). When that sequence completes and this frame is top again, the
+/// **framework** disposes of the card per its [`EncounterDisposition`] and
+/// pops: a treachery (`Discard`) goes to its owner's discard pile (or — if
 /// persistent and its Revelation ran — is skipped, having placed itself); an
 /// enemy (`Spawn`) is minted into play, owned by `owner`.
 /// Suspension-reason-agnostic. Never emits `AwaitingInput`.
@@ -2695,14 +2729,15 @@ pub struct EncounterCardFrame {
     pub revelation_resolved: bool,
 }
 
-/// A card being played from hand, mid-resolution. Pushed
-/// **below** the card's pushed `OnPlay`/`OnEvent` effect; when that effect
-/// pops, the drive loop's `PlayFromHand` arm runs `dispose_play_from_hand`
-/// (event → discard the held card; asset → enter play, emit `EnteredPlay`).
-/// Single-shot: `dispose_play_from_hand` pops the frame before emitting
-/// `EnteredPlay`, so the loop opens any after-enters-play window itself.
-/// Framework-internal: [Driven](FrameActivity::Driven), so it never awaits
-/// input, as for `EncounterCard`.
+/// A card being played from hand, mid-resolution.
+///
+/// Pushed **below** the card's pushed `OnPlay`/`OnEvent` effect; when that
+/// effect pops, the drive loop's `PlayFromHand` arm runs
+/// `dispose_play_from_hand` (event → discard the held card; asset → enter play,
+/// emit `EnteredPlay`). Single-shot: `dispose_play_from_hand` pops the frame
+/// before emitting `EnteredPlay`, so the loop opens any after-enters-play
+/// window itself. Framework-internal: [Driven](FrameActivity::Driven), so it
+/// never awaits input, as for `EncounterCard`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlayFromHandFrame {
     /// The playing investigator.
@@ -2712,15 +2747,16 @@ pub struct PlayFromHandFrame {
 }
 
 /// A slot-conflicting asset entry paused for the player to choose which
-/// occupying asset to discard to make room (RR p.19). Pushed by
-/// `slots::enter_asset_making_room` when 2+ co-controlled assets occupy a
-/// slot type the new asset needs; the asset stays mid-entry, riding this
-/// frame until the deficit is cleared, then enters the area its
+/// occupying asset to discard to make room (RR p.19).
+///
+/// Pushed by `slots::enter_asset_making_room` when 2+ co-controlled assets
+/// occupy a slot type the new asset needs; the asset stays mid-entry, riding
+/// this frame until the deficit is cleared, then enters the area its
 /// [`entry`](Self::entry) names. Pushed from a play, from a take-control, or
-/// from inside a Revelation putting the card into the threat area;
-/// the frames below it resume once it pops. Resumed by
-/// `slots::resume_slot_discard` via a `PickSingle(OptionId)` indexing the
-/// candidate list. A [Prompt](FrameActivity::Prompt); not a phase anchor.
+/// from inside a Revelation putting the card into the threat area; the frames
+/// below it resume once it pops. Resumed by `slots::resume_slot_discard` via a
+/// `PickSingle(OptionId)` indexing the candidate list. A
+/// [Prompt](FrameActivity::Prompt); not a phase anchor.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SlotDiscardFrame {
     /// The investigator playing the asset, taking control of it, or having it
@@ -2741,14 +2777,15 @@ pub struct SlotDiscardFrame {
     pub entry: AssetEntry,
 }
 
-/// An action-cost activation paused, before anything is paid, for the player
-/// to choose which additional action pays for it. FAQ 1.10
-/// (`glossary/Action.md`): *"If an action qualifies as more than one of an
-/// investigator’s additional actions, he or she may choose which additional
-/// action is used."* Pushed by the take step when the additional actions the
-/// activation qualifies as carry more than one restriction; resumed by a
-/// `PickSingle(OptionId)` that re-runs the activation paid for with the chosen
-/// one. A [Prompt](FrameActivity::Prompt); not a phase anchor.
+/// An action-cost activation paused, before anything is paid, for the player to
+/// choose which additional action pays for it.
+///
+/// FAQ 1.10 (`glossary/Action.md`): *"If an action qualifies as more than one
+/// of an investigator’s additional actions, he or she may choose which
+/// additional action is used."* Pushed by the take step when the additional
+/// actions the activation qualifies as carry more than one restriction; resumed
+/// by a `PickSingle(OptionId)` that re-runs the activation paid for with the
+/// chosen one. A [Prompt](FrameActivity::Prompt); not a phase anchor.
 ///
 /// It holds an activation because only an activation can be asked: the one
 /// restriction an additional action carries,
@@ -2766,12 +2803,14 @@ pub struct AdditionalActionChoiceFrame {
 }
 
 /// A [`Cost::DiscardCardFromHand`](card_dsl::dsl::Cost::DiscardCardFromHand)
-/// being paid: Wendy Adams 01005's *"choose and discard 1 card from
-/// your hand"*. Pushed **above** the ability's effect, which is parked beneath
-/// it with its event bindings already in its context, so the cost is paid
-/// before the effect resolves — Appendix I step 2, *"Pay the cost(s)"*, ahead
-/// of the effect at step 4. A triggered ability and a zero-action activated
-/// one both park this way.
+/// being paid: Wendy Adams 01005's *"choose and discard 1 card from your
+/// hand"*.
+///
+/// Pushed **above** the ability's effect, which is parked beneath it with its
+/// event bindings already in its context, so the cost is paid before the effect
+/// resolves — Appendix I step 2, *"Pay the cost(s)"*, ahead of the effect at
+/// step 4. A triggered ability and a zero-action activated one both park this
+/// way.
 ///
 /// The `drive` loop meets it on top and offers the investigator's hand cards
 /// that are not weaknesses, or discards the lone one with no prompt

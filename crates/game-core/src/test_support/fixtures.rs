@@ -239,10 +239,11 @@ pub fn from_frames_unchecked(frames: impl IntoIterator<Item = Continuation>) -> 
 }
 
 /// A sample skill-test commit [`AwaitingInput`](EngineOutcome::AwaitingInput)
-/// outcome, for client/UI fixtures. This is the only `AwaitingInput`
-/// shape the engine emits today (the skill-test commit window). The
-/// `ResumeToken` value is irrelevant to rendering — routing keys off
-/// `state.in_flight_skill_test`, not the token.
+/// outcome, for client/UI fixtures.
+///
+/// This is the only `AwaitingInput` shape the engine emits today (the
+/// skill-test commit window). The `ResumeToken` value is irrelevant to
+/// rendering — routing keys off `state.in_flight_skill_test`, not the token.
 #[must_use]
 pub fn awaiting_commit_input(prompt: impl Into<String>) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
@@ -264,8 +265,10 @@ pub fn awaiting_skippable_commit_input(prompt: impl Into<String>) -> EngineOutco
 
 /// An [`AwaitingInput`](EngineOutcome::AwaitingInput) around an arbitrary
 /// `request`, for a UI fixture that needs a prompt shape the named helpers do
-/// not build — an anchored decision, say. [`ResumeToken`]'s field is
-/// `pub(crate)`, so a host crate cannot wrap its own request without this.
+/// not build — an anchored decision, say.
+///
+/// [`ResumeToken`]'s field is `pub(crate)`, so a host crate cannot wrap its own
+/// request without this.
 #[must_use]
 pub fn awaiting_request(request: InputRequest) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
@@ -297,7 +300,9 @@ pub fn awaiting_pick_single_input(prompt: impl Into<String>) -> EngineOutcome {
 }
 
 /// An [`AwaitingInput`](EngineOutcome::AwaitingInput) `PickSingle` outcome over
-/// caller-supplied `options` — for host/UI tests that need a specific
+/// caller-supplied `options`.
+///
+/// For host/UI tests that need a specific
 /// [`OptionTarget`](crate::engine::OptionTarget) anchor (the no-arg
 /// [`awaiting_pick_single_input`] fixture is un-anchored only). `ResumeToken(0)`
 /// matches the other fixtures (the UI never inspects it).
@@ -325,8 +330,9 @@ pub fn awaiting_confirm_input(prompt: impl Into<String>) -> EngineOutcome {
 
 /// A sample skippable [`PickSingle`](crate::engine::InputKind::PickSingle)
 /// [`AwaitingInput`](EngineOutcome::AwaitingInput) outcome, for client/UI
-/// fixtures. Models a non-forced reaction window: one option plus a Skip
-/// affordance.
+/// fixtures.
+///
+/// Models a non-forced reaction window: one option plus a Skip affordance.
 #[must_use]
 pub fn awaiting_skippable_pick_single_input(prompt: impl Into<String>) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
@@ -337,9 +343,11 @@ pub fn awaiting_skippable_pick_single_input(prompt: impl Into<String>) -> Engine
 }
 
 /// A skippable [`PickSingle`](crate::engine::InputKind::PickSingle)
-/// [`AwaitingInput`](EngineOutcome::AwaitingInput) over caller-supplied `options`
-/// (so a test can mix anchored and un-anchored options). Like
-/// [`awaiting_pick_single_with`] but with the Skip affordance a window carries.
+/// [`AwaitingInput`](EngineOutcome::AwaitingInput) over caller-supplied
+/// `options` (so a test can mix anchored and un-anchored options).
+///
+/// Like [`awaiting_pick_single_with`] but with the Skip affordance a window
+/// carries.
 #[must_use]
 pub fn awaiting_skippable_pick_single_with(
     prompt: impl Into<String>,

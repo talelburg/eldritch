@@ -291,10 +291,12 @@ fn use_kind_label(kind: UseKind) -> &'static str {
     }
 }
 
-/// Live per-instance state of an in-play card as chip strings: uses pools first
-/// (`"2 ammo"`), then soak (`"dmg 1/2"` / `"hor 0/2"`) for an `Asset` that has
-/// that capacity, then clues, doom and resources on the card when non-zero. Empty for a
-/// plain asset with no uses, no soak capacity and no tokens.
+/// Live per-instance state of an in-play card as chip strings.
+///
+/// Uses pools come first (`"2 ammo"`), then soak (`"dmg 1/2"` / `"hor 0/2"`)
+/// for an `Asset` that has that capacity, then clues, doom and resources on the
+/// card when non-zero. Empty for a plain asset with no uses, no soak capacity
+/// and no tokens.
 #[must_use]
 pub fn live_state_chips(inst: &CardInPlay, kind: &CardKind) -> Vec<String> {
     let mut chips = Vec::new();

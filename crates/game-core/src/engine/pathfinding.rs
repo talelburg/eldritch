@@ -45,13 +45,14 @@ pub(crate) fn bfs_distance(state: &GameState, from: LocationId, to: LocationId) 
     None
 }
 
-/// Every neighbor of `from` that lies on *a* shortest path to `to`,
-/// i.e. each connected location `n` with
-/// `bfs_distance(n, to) == bfs_distance(from, to) - 1`. Empty when `to`
-/// is unreachable or `from == to` (no step needed). Result order
-/// follows `from`'s `connections` order; callers that need determinism
-/// across that should sort. Public so card-local native effects (agenda
-/// 01107's Ghoul movement) can pathfind toward a target location.
+/// Every neighbor of `from` that lies on *a* shortest path to `to`, i.e. each
+/// connected location `n` with
+/// `bfs_distance(n, to) == bfs_distance(from, to) - 1`.
+///
+/// Empty when `to` is unreachable or `from == to` (no step needed). Result
+/// order follows `from`'s `connections` order; callers that need determinism
+/// across that should sort. Public so card-local native effects (agenda 01107's
+/// Ghoul movement) can pathfind toward a target location.
 pub fn shortest_first_steps(
     state: &GameState,
     from: LocationId,

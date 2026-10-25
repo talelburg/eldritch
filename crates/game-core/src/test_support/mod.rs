@@ -79,9 +79,11 @@ fn test_inv_metadata() -> &'static CardMetadata {
 /// registry of their own. Integration binaries define their own.
 pub const TEST_ASSET: &str = "TEST_ASSET";
 
-/// Synthetic **encounter-cardtype** card code for unit tests: a treachery,
-/// with one `[action]` ability. Served by [`TEST_REGISTRY`]. The
-/// encounter counterpart of [`TEST_ASSET`], and shared for the same reason.
+/// Synthetic **encounter-cardtype** card code for unit tests: a treachery, with
+/// one `[action]` ability.
+///
+/// Served by [`TEST_REGISTRY`]. The encounter counterpart of [`TEST_ASSET`],
+/// and shared for the same reason.
 pub const TEST_TREACHERY: &str = "TEST_TREACHERY";
 
 /// Metadata for the synthetic cardtype cards, [`TEST_ASSET`] and
@@ -164,8 +166,10 @@ fn abilities_for_test_cardtypes(code: &CardCode) -> Option<Vec<Ability>> {
 pub const TEST_TERMINAL_PREFIX: &str = "_TEST_TERM_R";
 
 /// The synthetic terminal card that reaches printed resolution point `n`, e.g.
-/// `terminal_code(1)` → `_TEST_TERM_R1`. Put it last in an act or agenda deck
-/// and advancing it ends the scenario at `Resolution(n)`.
+/// `terminal_code(1)` → `_TEST_TERM_R1`.
+///
+/// Put it last in an act or agenda deck and advancing it ends the scenario at
+/// `Resolution(n)`.
 #[must_use]
 pub fn terminal_code(n: u8) -> CardCode {
     CardCode::new(format!("{TEST_TERMINAL_PREFIX}{n}"))
@@ -232,9 +236,11 @@ pub fn metadata_for_test_inv(code: &CardCode) -> Option<&'static CardMetadata> {
 
 /// game-core's test registry: it knows `TEST_INV`, the synthetic cardtype cards
 /// ([`TEST_ASSET`], [`TEST_TREACHERY`]) and the synthetic terminal cards
-/// ([`terminal_code`]), and nothing else. Capacity-reading code
-/// (`max_health` / `max_sanity` / soak / defeat) needs `TEST_INV`, and a
-/// fixture whose act/agenda deck ends in a terminal card needs its reverse.
+/// ([`terminal_code`]), and nothing else.
+///
+/// Capacity-reading code (`max_health` / `max_sanity` / soak / defeat) needs
+/// `TEST_INV`, and a fixture whose act/agenda deck ends in a terminal card
+/// needs its reverse.
 pub const TEST_REGISTRY: CardRegistry = CardRegistry {
     metadata_for: test_registry_metadata_for,
     abilities_for: test_registry_abilities_for,

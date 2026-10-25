@@ -97,10 +97,11 @@ pub(super) fn next_active_investigator_after(
         })
 }
 
-/// Whether it is `investigator`'s turn and the turn is not yet ending: the
-/// Investigation phase, with them the active investigator, and their
-/// [`InvestigatorTurn`](crate::state::Continuation::InvestigatorTurn) frame not
-/// armed to end.
+/// Whether it is `investigator`'s turn and the turn is not yet ending.
+///
+/// That is the Investigation phase, with them the active investigator, and
+/// their [`InvestigatorTurn`](crate::state::Continuation::InvestigatorTurn)
+/// frame not armed to end.
 ///
 /// The turn starts before its frame does. Rules Reference Appendix II step 2.2
 /// begins the turn and opens a player window, and the frame is pushed when that

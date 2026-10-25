@@ -290,11 +290,13 @@ fn active_investigator(state: &GameState) -> Option<InvestigatorId> {
         .map(|turn| turn.investigator)
 }
 
-/// The legal [`TurnAction`]s the active investigator may take at the open
-/// turn, in stable order (position = the `OptionId` accepted by
-/// `ResolveInput(PickSingle(OptionId))`). Empty unless an
-/// [`InvestigatorTurn`](crate::state::Continuation::InvestigatorTurn) frame is on top — the
-/// only point gameplay actions are taken.
+/// The legal [`TurnAction`]s the active investigator may take at the open turn,
+/// in stable order (position = the `OptionId` accepted by
+/// `ResolveInput(PickSingle(OptionId))`).
+///
+/// Empty unless an
+/// [`InvestigatorTurn`](crate::state::Continuation::InvestigatorTurn) frame is
+/// on top — the only point gameplay actions are taken.
 ///
 /// Covers the full open-turn surface: `EndTurn`, `Resource`, `Draw`,
 /// `Investigate`, `Move` (basic); `Fight`, `Evade`, `Engage` (combat/engage);

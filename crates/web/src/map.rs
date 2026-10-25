@@ -265,10 +265,11 @@ fn rail_has_options(loc: &Location, pending: &[ChoiceOption]) -> bool {
         })
 }
 
-/// The map panel: one absolutely-positioned container node per in-play location,
-/// holding the investigators and unengaged enemies in it. Connection lines are
-/// drawn by a private helper; SVG lines sit behind the nodes. Read-only —
-/// pure derivation of `game`.
+/// The map panel: one absolutely-positioned container node per in-play
+/// location, holding the investigators and unengaged enemies in it.
+///
+/// Connection lines are drawn by a private helper; SVG lines sit behind the
+/// nodes. Read-only — pure derivation of `game`.
 #[allow(clippy::too_many_lines)]
 pub fn location_map(game: &GameState) -> impl IntoView {
     let locs: Vec<_> = game
