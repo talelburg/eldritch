@@ -457,8 +457,7 @@ impl RevealClause {
     target_pointer_width = "64",
     expect(
         clippy::large_enum_variant,
-        reason = "the elder sign outcome was already the largest variant; the lint fired only \
-                  when the designator moved off Activated (#1053), which shrank the runner-up"
+        reason = "`ElderSign` holds its `outcome` inline, which makes it the largest variant"
     )
 )]
 pub enum Trigger {

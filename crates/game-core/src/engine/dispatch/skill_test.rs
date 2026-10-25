@@ -1420,8 +1420,7 @@ fn open_skill_test_player_window(
 /// [`close_reaction_window`]: super::reaction_windows::close_reaction_window
 #[expect(
     clippy::too_many_lines,
-    reason = "one arm per `SkillTestStep`, RR ST.3–ST.8, in the fixed step order; deepening: \
-              cards 18 and 08"
+    reason = "one arm per `SkillTestStep`, RR ST.3–ST.8, in the fixed step order"
 )]
 pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
     loop {

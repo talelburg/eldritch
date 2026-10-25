@@ -273,7 +273,7 @@ fn rail_has_options(loc: &Location, pending: &[ChoiceOption]) -> bool {
 #[expect(
     clippy::too_many_lines,
     reason = "derives every node's occupants and option anchors inline, one `view!` per \
-              location; deepening: card 06"
+              location"
 )]
 pub fn location_map(game: &GameState) -> impl IntoView {
     let locs: Vec<_> = game

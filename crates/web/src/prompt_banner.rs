@@ -31,8 +31,7 @@ use crate::{controls, decision, interaction, skill_test_result, store};
     not(target_arch = "wasm32"),
     expect(
         clippy::too_many_lines,
-        reason = "one `view!` arm per prompt control, each capturing its own signals; \
-                  deepening: card 06"
+        reason = "one `view!` arm per prompt control, each capturing its own signals"
     )
 )]
 #[component]

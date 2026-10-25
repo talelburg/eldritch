@@ -851,7 +851,7 @@ fn suspend_leaf_in_place(cx: &mut Cx, effect: &Effect, ctx: EvalContext) {
 /// frame. The `Leaf` itself was already popped by the caller.
 #[expect(
     clippy::too_many_lines,
-    reason = "one exhaustive match arm per `Effect` variant; deepening: card 09"
+    reason = "one exhaustive match arm per `Effect` variant"
 )]
 fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutcome {
     // Ground any `Chosen` target this node carries before running it. On a 2+

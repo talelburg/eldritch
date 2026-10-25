@@ -503,7 +503,7 @@ pub(super) fn spawn_enemy_at(
 #[expect(
     clippy::too_many_lines,
     reason = "mints the enemy inline, as the only production `Enemy` constructor, then resolves \
-              its engagement on spawn; deepening: card 27"
+              its engagement on spawn"
 )]
 fn spawn_enemy_engaging(
     cx: &mut Cx,

@@ -12,8 +12,8 @@
 
 #[expect(
     clippy::allow_attributes,
-    reason = "the workspace's one `allow`: an `expect` here would go unfulfilled in the test \
-              binaries that use every helper they compile"
+    reason = "every test binary takes the same attribute, so a binary that comes to use every \
+              helper doesn't fail an `expect(dead_code)`"
 )]
 #[allow(
     dead_code,

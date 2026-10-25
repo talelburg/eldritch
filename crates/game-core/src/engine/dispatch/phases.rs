@@ -972,7 +972,7 @@ fn run_mythos_draws(cx: &mut Cx) -> EngineOutcome {
 #[expect(
     clippy::too_many_lines,
     reason = "one exhaustive match over every phase anchor × resume boundary, the one map of \
-              phase boundaries; deepening: card 18"
+              phase boundaries"
 )]
 pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
     let anchor = cx.state.continuations.top().cloned();
