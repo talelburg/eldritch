@@ -317,7 +317,7 @@ pub enum Continuation {
     /// A node of an in-progress card-effect walk. The effect evaluator is
     /// frame-driven: each control-flow node parks here while its children
     /// resolve; the global `drive` loop steps the top frame. A node that needs a controller pick
-    /// suspends *in place* (its `Leaf` step returns `AwaitingInput` and the frame
+    /// suspends *in place* (its `Leaf` is re-pushed carrying what it asks and
     /// stays on top — it *is* the prompt), so this variant can await input
     /// (routed in `resolve_input`, like [`Self::DealDamage`]). Carries its
     /// own [`EvalContext`] snapshot (its grouped
@@ -639,6 +639,11 @@ impl Continuation {
     /// all derived from it, so they cannot disagree. Exhaustive with no wildcard,
     /// so a new [`Continuation`] variant does not compile until it is classified.
     ///
+    /// What a Prompt frame *asks* is the other per-frame decision, and lives
+    /// beside the engine code it needs: the prompt table,
+    /// `engine::dispatch::prompt::request`, the same exhaustive match over
+    /// every kind, which builds the request from the frame.
+    ///
     /// Computed from the frame's *value*, not just its variant: an event window
     /// is a prompt only while it has candidates, the open turn only while it is
     /// not ending, a deal of damage only while it distributes, an attack loop
@@ -678,8 +683,9 @@ impl Continuation {
                     TimingMode::Forced => ScenarioEndDisposition::Complete,
                 },
             ),
-            // Mandatory resolution that surfaces its own prompt (the `drive`
-            // loop steps it until it does): the advance's flip acknowledge, the
+            // Mandatory resolution that rests as its own prompt (the `drive`
+            // loop surfaces it, or steps it until it rests): the advance's flip
+            // acknowledge, the
             // forced acknowledge, the skill test's commit window and result
             // pause, a substitution choice, a slot make-room pick, an effect
             // node's controller pick.
@@ -2020,6 +2026,16 @@ pub struct SpawnEngagePending {
     pub enemy: EnemyId,
     /// Co-located investigators to choose among.
     pub candidates: Vec<InvestigatorId>,
+}
+
+impl SpawnEngagePending {
+    /// `enemy`'s pending engagement among `candidates`. The constructor for
+    /// code outside the crate, such as a test staging the prompt, where
+    /// `#[non_exhaustive]` blocks the struct literal.
+    #[must_use]
+    pub fn new(enemy: EnemyId, candidates: Vec<InvestigatorId>) -> Self {
+        Self { enemy, candidates }
+    }
 }
 
 /// Suspended upkeep maximum-hand-size discard. `Some` only while

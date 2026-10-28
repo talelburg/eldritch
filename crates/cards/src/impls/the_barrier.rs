@@ -68,7 +68,7 @@
 //! `data/arkhamdb-faq/no-rulings.txt`).
 //!
 //! **The Priest's engagement.** With one investigator in the Hallway, his
-//! *"**Prey** - Highest [combat]."* resolves to that investigator and the spawn
+//! *"**Prey** - Highest \[combat\]."* resolves to that investigator and the spawn
 //! engages inline. Two investigators tied on combat leave the choice to the
 //! lead investigator (`glossary/Prey.md`): the spawn pushes its engagement
 //! prompt and returns, so the reverse completes and the prompt surfaces after

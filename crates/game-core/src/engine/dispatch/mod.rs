@@ -180,14 +180,14 @@ pub(crate) fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineO
 ///
 /// A `Rejected` outcome, and any suspension, passes straight through — unless
 /// it is the prompt of a frame the scenario's ending has cancelled, in
-/// which case the prompt is dropped and driving resumes. That covers both a
-/// suspension the action itself raised (Mythos step 1.3's doom crossing the
+/// which case the prompt is dropped and driving resumes. That covers a
+/// suspension a step raised by resting its frame and suspending on it rather
+/// than returning to the loop head (Mythos step 1.3's doom crossing the
 /// terminal agenda's threshold before step 1.4 parks on the encounter-draw
-/// prompt) and one raised by a step *inside* the loop that surfaced its own
-/// prompt rather than returning to the loop head (a mid-chain spawn-engagement
-/// tie). Asking the player to draw an encounter card, or to choose what a
-/// newly-spawned enemy engages, for a scenario that has already ended is the
-/// defect either way, so both go through the same predicate.
+/// prompt). A frame a step pushes and returns from (a spawn-engagement tie)
+/// reaches the loop head instead, where the same predicate pops it. Asking the
+/// player to draw an encounter card, or to choose what a newly-spawned enemy
+/// engages, for a scenario that has already ended is the defect either way.
 ///
 /// Terminates: each re-entry discards at least the cancelled top frame, and the
 /// [`ScenarioEnd`](crate::state::Continuation::ScenarioEnd) frame at the bottom

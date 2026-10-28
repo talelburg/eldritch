@@ -232,24 +232,30 @@ pub(crate) fn apply_via(
             finalize_scenario_end(&mut cx);
             // The rest invariant: `Done` means the game is over, so the
             // stack is empty; `AwaitingInput` means a prompt is on top for the
-            // next `apply` to answer. It holds because every prompt frame's push
-            // site returns `AwaitingInput`, and every resume handler pops its
-            // frame before doing more work — so a prompt is never exposed
-            // without being surfaced, and nothing else may rest. A `Done` over a
-            // non-empty stack is a frame nothing will ever advance, or a prompt
-            // nobody was asked.
+            // next `apply` to answer, asking what the prompt table reads off
+            // it. It holds because every suspension is `prompt::suspend` on the
+            // frame at rest on top, the `drive` loop surfaces any prompt frame
+            // it meets, and every resume handler pops its frame before doing
+            // more work — so a prompt is never exposed without being surfaced,
+            // and nothing else may rest. A `Done` over a non-empty stack is a
+            // frame nothing will ever advance, or a prompt nobody was asked.
             debug_assert!(
-                match outcome {
+                match &outcome {
                     EngineOutcome::Done => cx.state.continuations.is_empty(),
-                    _ => cx
-                        .state
-                        .continuations
-                        .top()
-                        .is_some_and(Continuation::awaits_input),
+                    EngineOutcome::AwaitingInput { request, .. } => {
+                        cx.state.continuations.top().is_some_and(|top| {
+                            top.awaits_input()
+                                && dispatch::prompt::request(top, cx.state, cx.cards).as_ref()
+                                    == Some(request)
+                        })
+                    }
+                    EngineOutcome::Rejected { .. } => {
+                        unreachable!("a rejected outcome takes the branch above")
+                    }
                 },
                 "`apply` returned {outcome:?} with {:?} on top of the continuation \
-                 stack: `Done` must leave it empty, `AwaitingInput` must leave a \
-                 prompt on top",
+                 stack: `Done` must leave it empty, `AwaitingInput` must leave on \
+                 top the prompt that asks it",
                 cx.state.continuations.top(),
             );
         }

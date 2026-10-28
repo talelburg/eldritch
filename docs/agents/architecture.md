@@ -39,7 +39,7 @@ The engine looks the scenario module up once per apply and carries both on `Cx`;
 
 Backstopped structurally: `apply_via` (`crates/game-core/src/engine/mod.rs`) snapshots the pristine state before dispatch and restores it (state, events, and RNG position) whenever the outcome is `Rejected` — no handler, including the mutating DSL evaluator, can leak partial state past a rejection. Handlers still follow validate-first as a convention (it keeps rejection cheap and reasons precise; canonical shape: `actions::move::handle`, `actions::investigate::handle`, `cards::play_card`), but mid-resolution mutations before a reject are rolled back at the apply boundary, not merely event-cleared.
 
-Every `apply` ends in an `EngineOutcome` (`crates/game-core/src/engine/outcome.rs`); read its variants there rather than a list here. `AwaitingInput` round-trips via `PlayerAction::ResolveInput`.
+Every `apply` ends in an `EngineOutcome` (`crates/game-core/src/engine/outcome.rs`); read its variants there rather than a list here. `AwaitingInput` round-trips via `PlayerAction::ResolveInput`. Its request is built from the frame on top by the prompt table (`crates/game-core/src/engine/dispatch/prompt.rs`), and nowhere else: a step that suspends rests its frame and returns `prompt::suspend`, and a step that pushes a prompt frame returns `Done` for the `drive` loop to surface it.
 
 ## Hybrid card-effect DSL
 

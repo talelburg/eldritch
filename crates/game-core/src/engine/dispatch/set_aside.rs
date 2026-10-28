@@ -11,10 +11,10 @@
 //! minted on entry. [`put_set_aside_card_into_play`] brings back a card of
 //! any cardtype, dispatching on the metadata's
 //! [`CardKind`](card_dsl::card_data::CardKind), and returns an
-//! [`EngineOutcome`], because an enemy can suspend for a prey-tie pick
-//! before its id exists. [`put_set_aside_location_into_play`] is its
-//! location-only sibling: a location never suspends, so it returns the
-//! minted [`LocationId`].
+//! [`EngineOutcome`], because an enemy's spawn can be rejected, and a prey tie
+//! leaves its engagement prompt pushed rather than an engaged id to hand back.
+//! [`put_set_aside_location_into_play`] is its location-only sibling: a
+//! location never asks anything, so it returns the minted [`LocationId`].
 //!
 //! A location's connections come with it: they are printed as connection
 //! symbols on the cards, which the pinned snapshot has no field for, so

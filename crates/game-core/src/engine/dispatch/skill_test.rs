@@ -315,10 +315,10 @@ pub(in crate::engine) fn start_skill_test(
     let id = cx.state.skill_test_ids.mint();
     // Push the SkillTest frame up front (carrying the test's data), so the
     // in-flight test has a home from test start. Safe: all validation precedes
-    // this point, and the only outcomes below are `AwaitingInput` (the
-    // Mind-over-Matter substitution prompt, or the commit window). During the
-    // substitution prompt this frame sits beneath the `SubstitutionPrompt`
-    // frame, which top-frame dispatch routes first.
+    // this point, and what follows only asks (the Mind-over-Matter
+    // substitution prompt, pushed for the loop to surface, or the commit
+    // window). During the substitution prompt this frame sits beneath the
+    // `SubstitutionPrompt` frame, which top-frame dispatch routes first.
     cx.state
         .continuations
         .push(Continuation::SkillTest(InFlightSkillTest {

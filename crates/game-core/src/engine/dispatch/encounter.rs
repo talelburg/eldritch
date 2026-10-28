@@ -340,9 +340,9 @@ pub(super) fn push_revelation(
 /// no drawing-investigator location → `Rejected` with `state`/`events`
 /// unchanged (a state-corruption invariant, not the RR "no legal location"
 /// case). Engagement resolution never rejects: it either resolves inline or
-/// suspends (`AwaitingInput`) with the enemy already minted into `state.enemies`
-/// and `Event::EnemySpawned` pushed (the pending choice carries the rest of the
-/// work to [`resume_spawn_engage`]).
+/// pushes its tie-break prompt and returns `Done`, with the enemy already minted
+/// into `state.enemies` and `Event::EnemySpawned` pushed (the pending choice
+/// carries the rest of the work to [`resume_spawn_engage`]).
 ///
 /// # Unmodelled spawn instructions block the draw
 ///
@@ -914,8 +914,8 @@ pub(super) fn advance_encounter_draw(cx: &mut Cx) -> EngineOutcome {
 /// - `Spawn` (enemy, RR p.24 step 4): re-derive the enemy metadata from the
 ///   registry and [`spawn_enemy`] at the drawer's location, owned by the
 ///   frame's owner. The spawn may
-///   suspend on an engagement tie ([`EngineOutcome::AwaitingInput`]) or reject;
-///   either is returned immediately (the loop does not continue). It may also
+///   push an engagement tie, which ends the loop because the tie is then on
+///   top, or reject, which is returned immediately. It may also
 ///   return `Done` *without* minting an enemy — a `Specific` spawn location not
 ///   in play discards the card to its owner's pile (RR p.24) — in which
 ///   case the loop continues past the (already-popped) frame as usual.
@@ -974,13 +974,14 @@ pub(super) fn dispose_encounter_card_if_top(cx: &mut Cx) -> EngineOutcome {
                             .into(),
                     };
                 };
+                // An engagement tie pushes its `SpawnEngage` frame and returns
+                // `Done`: the loop guard then finds it on top rather than an
+                // `EncounterCard`, so the loop ends and the `drive` loop
+                // surfaces the tie. A mid-Mythos tie sits above the drawer's
+                // `PlayerDraw`, and `resume_spawn_engage` continues the chain
+                // after the pick. A reject propagates.
                 match spawn_enemy(cx, investigator, card, metadata, owner) {
                     EngineOutcome::Done => {}
-                    // An engagement tie suspended (or a reject): propagate
-                    // immediately rather than continue the loop. A mid-Mythos
-                    // tie leaves a `SpawnEngage` frame above the drawer's
-                    // `PlayerDraw`, and `resume_spawn_engage` continues the chain
-                    // after the pick.
                     other => return other,
                 }
             }
