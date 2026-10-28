@@ -17,9 +17,9 @@
 //! The four rooms are
 //! set aside by the scenario's `setup()` as bare card codes; this ability
 //! puts each into play through
-//! [`put_set_aside_card_into_play`](NativeCx::put_set_aside_card_into_play),
-//! which mints its `LocationId` and wires its printed connections from the
-//! scenario's layout table, then relocates investigators to the Hallway
+//! [`put_set_aside_location_into_play`](NativeCx::put_set_aside_location_into_play),
+//! which mints its `LocationId`, wires its printed connections from the
+//! scenario's layout table, and returns the id, then relocates investigators to the Hallway
 //! (01112) and removes the Study (01111) through
 //! [`remove_location_from_game`](NativeCx::remove_location_from_game), which
 //! discards whatever is attached to it by owner.
@@ -44,7 +44,7 @@
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::evaluator::{self, EvalContext};
 use game_core::engine::{EngineOutcome, NativeCx};
-use game_core::state::{Owner, Status};
+use game_core::state::Status;
 
 use crate::impls::CardRecord;
 
@@ -63,9 +63,11 @@ const HALLWAY: &str = "01112";
 
 /// The set-aside rooms this reverse puts into play, in printed order:
 /// *"Put into play the set-aside Hallway, Cellar, Attic, and Parlor."*
-/// The order is cosmetic — each room's connections are wired from the
-/// scenario's layout as it enters, and a connection is made by whichever
-/// of its two endpoints enters second.
+/// The order is otherwise cosmetic — each room's connections are wired
+/// from the scenario's layout as it enters, and a connection is made by
+/// whichever of its two endpoints enters second — but the Hallway must stay
+/// first: the board build keeps the first room's id as the place every
+/// investigator goes.
 const ROOMS: [&str; 4] = [HALLWAY, "01114", "01113", "01115"];
 
 /// Native-effect tag for this act's reverse board build.
@@ -101,24 +103,25 @@ fn board_build(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
             };
         }
     }
-    if evaluator::location_id_by_code(cx.state(), STUDY).is_none() {
+    let Some(study) = evaluator::location_id_by_code(cx.state(), STUDY) else {
         return EngineOutcome::Rejected {
             reason: format!("01108 board-build: no in-play Study ({STUDY})").into(),
         };
-    }
+    };
     // Put the set-aside rooms into play; each mints its id and wires its
-    // printed connections to the rooms already there.
-    for code in ROOMS {
-        // A location records no owner, so the owner argument is unused here.
-        match cx.put_set_aside_card_into_play(code, None, Owner::Scenario) {
-            EngineOutcome::Done => {}
-            other => return other,
+    // printed connections to the rooms already there. The Hallway enters
+    // first and its id is kept: it is where every investigator is placed.
+    let [hallway, other_rooms @ ..] = ROOMS;
+    let dest = match cx.put_set_aside_location_into_play(hallway) {
+        Ok(id) => id,
+        Err(reason) => return EngineOutcome::Rejected { reason },
+    };
+    for code in other_rooms {
+        if let Err(reason) = cx.put_set_aside_location_into_play(code) {
+            return EngineOutcome::Rejected { reason };
         }
     }
     // Relocate all investigators to the Hallway (01112).
-    let Some(dest) = evaluator::location_id_by_code(cx.state(), HALLWAY) else {
-        unreachable!("01108 board-build: the Hallway just entered play");
-    };
     // A placement, not a move: no engaged enemy follows and no move trigger
     // fires. "Each investigator" is each one still in the game: a resigned or
     // defeated investigator has left the board and is not placed back onto it.
@@ -135,9 +138,6 @@ fn board_build(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
     cx.reveal_location(dest);
     // Remove the Study (01111) from the game. Its attachments go with it, each
     // discarded by its owner (`glossary/Leaves_Play.md`).
-    let Some(study) = evaluator::location_id_by_code(cx.state(), STUDY) else {
-        unreachable!("01108 board-build: the Study was validated in play above");
-    };
     let removed = cx.remove_location_from_game(study);
     debug_assert!(
         removed,

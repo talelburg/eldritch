@@ -47,7 +47,7 @@ use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, DiscardPile, EliminationCause,
     EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind,
-    TokenModifiers, TokenResolution, UseKind, Zone,
+    TokenResolution, UseKind, Zone,
 };
 use game_core::test_support::{self, horror, seat, uses, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
@@ -182,7 +182,6 @@ fn daisy_drawing_the_elder_sign(in_threat_area: &[&str]) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_chaos_bag(ChaosBag::new([ChaosToken::ElderSign]))
-        .with_token_modifiers(TokenModifiers::default())
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(
             seat(1)
@@ -258,7 +257,6 @@ fn a_reveal_clause_keyed_on_auto_fail_fires_on_her_elder_sign() {
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_chaos_bag(ChaosBag::new([ChaosToken::ElderSign]))
-        .with_token_modifiers(TokenModifiers::default())
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(
             seat(1)

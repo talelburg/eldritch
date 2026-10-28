@@ -12,8 +12,8 @@
 
 use card_dsl::card_data::CardKind;
 
-use super::{combat, elimination};
 use crate::engine::board::{find_instance, find_instance_mut, Placement};
+use crate::engine::dispatch::{combat, elimination};
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{CardInstanceId, EliminationCause};

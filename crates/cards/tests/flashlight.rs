@@ -16,8 +16,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameState, GameStateBuilder, InvestigatorId, Location, LocationId, Owner, SkillKind,
-    TokenModifiers, UseKind,
+    GameState, GameStateBuilder, InvestigatorId, Location, LocationId, Owner, SkillKind, UseKind,
 };
 use game_core::test_support::{self, seat, uses, SeatLookup as _, TestSession};
 
@@ -54,7 +53,6 @@ fn board_at(location: Location, intellect: i8) -> GameStateBuilder {
         .with_location(location)
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
 }
 
 fn supplies(state: &GameState) -> Option<u8> {

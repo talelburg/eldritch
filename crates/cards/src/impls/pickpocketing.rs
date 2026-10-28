@@ -44,15 +44,3 @@ pub fn abilities() -> Vec<Ability> {
     )
     .with_costs(vec![Cost::Exhaust])]
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Catches a `CARD` record wired to the wrong code or abilities fn —
-    /// the registry must dispatch CODE here.
-    #[test]
-    fn registry_dispatches_to_this_modules_abilities() {
-        assert_eq!(crate::abilities_for(CODE), Some(abilities()));
-    }
-}

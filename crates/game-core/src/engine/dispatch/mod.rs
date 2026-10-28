@@ -65,8 +65,9 @@ pub(super) mod phases;
 // pub(super): `NativeCx::place_investigator` forwards to it (Trapped 01108's
 // reverse).
 pub(super) mod placement;
-// `NativeCx::put_set_aside_card_into_play` forwards to it (The Gathering's
-// Act-1 and Act-2 reverses).
+// `NativeCx::put_set_aside_card_into_play` and
+// `NativeCx::put_set_aside_location_into_play` forward to it (The Gathering's
+// Act-2 and Act-1 reverses).
 pub(crate) mod set_aside;
 // `pub(crate)` so the evaluator can reach `open_queued_reaction_window`; other
 // items stay `pub(super)`-to-dispatch.

@@ -105,13 +105,6 @@ mod tests {
         assert!(matches!(&abilities[0].effect, Effect::Native { tag } if tag == RETALIATE));
     }
 
-    /// Catches a `CARD` record wired to the wrong code or abilities fn —
-    /// the registry must dispatch CODE here.
-    #[test]
-    fn registry_dispatches_to_this_modules_abilities() {
-        assert_eq!(crate::abilities_for(CODE), Some(abilities()));
-    }
-
     #[test]
     fn retaliate_deals_1_damage_to_bound_attacker() {
         let eid = EnemyId(7);

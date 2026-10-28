@@ -11,7 +11,7 @@
 use cards::TEST_REGISTRIES;
 use game_core::engine::OptionTarget;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, SkillKind, TokenModifiers,
+    CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, SkillKind,
 };
 use game_core::test_support::{seat, SeatLookup as _, TestSession};
 
@@ -35,7 +35,6 @@ fn board() -> TestSession {
         .with_seat(seat(2))
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .session()
 }
 

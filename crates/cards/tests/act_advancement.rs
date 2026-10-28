@@ -14,7 +14,7 @@ use game_core::event::Event;
 use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::state::{
     Act, CardCode, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId,
-    LocationId, TokenModifiers,
+    LocationId,
 };
 use game_core::test_support::{self, seat, Seat, TestSession};
 
@@ -33,8 +33,7 @@ fn act3_state(
             .with_registries(TEST_REGISTRIES)
             .with_location(test_support::test_location(HERE.0, "Study"))
             .with_seat(investigator)
-            .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-            .with_token_modifiers(TokenModifiers::default()),
+            .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)])),
     )
     .open_turn(INV)
     .build();

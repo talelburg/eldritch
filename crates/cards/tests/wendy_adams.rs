@@ -25,7 +25,7 @@ use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, DiscardPile, EnemyId,
-    GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenModifiers, Zone,
+    GameStateBuilder, InvestigatorId, LocationId, SkillKind, Zone,
 };
 use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
@@ -63,7 +63,6 @@ fn board(wendy: Seat, bag: impl IntoIterator<Item = ChaosToken>) -> GameStateBui
         .with_seat(wendy)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_chaos_bag(ChaosBag::new(bag))
-        .with_token_modifiers(TokenModifiers::default())
         .with_rng_seed(FIRST_THEN_SECOND)
         .open_turn(INV)
 }

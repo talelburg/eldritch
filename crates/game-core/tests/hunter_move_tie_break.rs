@@ -12,26 +12,13 @@
 //! hunter movement at large. The spawn-engagement tie is tested on real cards
 //! under `crates/cards/tests/`.
 
-use std::sync::LazyLock;
-
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{OptionTarget, Registries};
-use game_core::scenario::ScenarioRegistry;
+use game_core::engine::OptionTarget;
 use game_core::state::{EnemyId, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support::{self, seat, MockRegistry};
+use game_core::test_support::{self, seat, TEST_REGISTRIES};
 
 /// D, where the investigator the hunter moves toward stands.
 const HERE: LocationId = LocationId(4);
-
-fn registries() -> Registries {
-    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
-        // No probe cards: the diamond is pure topology. `build`'s composed
-        // `metadata_for_test_inv` is what `test_investigator`'s capacity reads want.
-        cards: MockRegistry::new().build(),
-        scenarios: &ScenarioRegistry::EMPTY,
-    });
-    *REGISTRIES
-}
 
 #[test]
 fn hunter_move_tie_break_replays_identically() {
@@ -48,7 +35,7 @@ fn hunter_move_tie_break_replays_identically() {
         hunter.hunter = true;
         hunter.current_location = Some(LocationId(1));
         GameStateBuilder::new()
-            .with_registries(registries())
+            .with_registries(TEST_REGISTRIES)
             .with_location(loc_a)
             .with_location(loc_b)
             .with_location(loc_c)

@@ -26,7 +26,7 @@
 //! Lita Chantler at R1 are campaign machinery, and the cards record each gap.
 
 use card_dsl::card_data::CardKind;
-use card_dsl::dsl::{Effect, HarmKind, IntExpr, InvestigatorTarget, TokenOutcome};
+use card_dsl::dsl::{self, IntExpr, InvestigatorTarget, TokenOutcome};
 use cards::generated::traits::GHOUL;
 use game_core::event::Event;
 use game_core::scenario::{LocationLayout, ScenarioEnding, ScenarioId, ScenarioModule, SymbolCtx};
@@ -145,7 +145,7 @@ fn ghoul_count_at_investigator_location(cx: &SymbolCtx) -> u8 {
 ///
 /// Each symbol is a [`TokenOutcome`]: the cultist's horror is its `on_fail`
 /// part and the tablet's damage its `immediate` part, both plain
-/// [`Effect::Deal`]s on the tester. The hook runs once at reveal, so the
+/// [`Effect::Deal`](card_dsl::dsl::Effect::Deal)s on the tester. The hook runs once at reveal, so the
 /// tablet's Ghoul gate and the skull's X are decided then; every modifier is
 /// an `IntExpr::Lit` computed at reveal. The Gathering's Standard bag has no
 /// Elder Thing token.
@@ -162,12 +162,6 @@ fn ghoul_count_at_investigator_location(cx: &SymbolCtx) -> u8 {
 /// express.
 fn resolve_symbol(token: ChaosToken, cx: &SymbolCtx) -> TokenOutcome {
     let ghouls = ghoul_count_at_investigator_location(cx);
-    let deal_to_tester = |kind| Effect::Deal {
-        kind,
-        target: InvestigatorTarget::You,
-        amount: IntExpr::Lit(1),
-        direct: false,
-    };
     match token {
         // TODO(#1138): the live-read candidate. X is frozen at reveal here; once
         // a `Quantity` can count the Ghouls at the tester's location, the
@@ -176,11 +170,11 @@ fn resolve_symbol(token: ChaosToken, cx: &SymbolCtx) -> TokenOutcome {
             TokenOutcome::modifier(IntExpr::Lit(-(i8::try_from(ghouls).unwrap_or(i8::MAX))))
         }
         ChaosToken::Cultist => TokenOutcome {
-            on_fail: Some(deal_to_tester(HarmKind::Horror)),
+            on_fail: Some(dsl::deal_horror(InvestigatorTarget::You, 1u8)),
             ..TokenOutcome::modifier(IntExpr::Lit(-1))
         },
         ChaosToken::Tablet => TokenOutcome {
-            immediate: (ghouls > 0).then(|| deal_to_tester(HarmKind::Damage)),
+            immediate: (ghouls > 0).then(|| dsl::deal_damage(InvestigatorTarget::You, 1u8)),
             ..TokenOutcome::modifier(IntExpr::Lit(-2))
         },
         _ => TokenOutcome::default(),

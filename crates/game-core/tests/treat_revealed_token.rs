@@ -23,7 +23,7 @@ use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId, RevealedToken,
-    SkillKind, TokenModifiers, TokenResolution,
+    SkillKind, TokenResolution,
 };
 use game_core::test_support::{self, seat, MockRegistry, Seat, TestSession, TEST_INV};
 use game_core::{assert_event, assert_no_event};
@@ -82,8 +82,7 @@ fn board(token: ChaosToken, seats: impl IntoIterator<Item = Seat>) -> GameState 
     let mut builder = GameStateBuilder::new()
         .with_registries(registries())
         .with_location(test_support::test_location(HERE.0, "Here"))
-        .with_chaos_bag(ChaosBag::new([token]))
-        .with_token_modifiers(TokenModifiers::default());
+        .with_chaos_bag(ChaosBag::new([token]));
     for seat in seats {
         builder = builder.with_seat(seat);
     }

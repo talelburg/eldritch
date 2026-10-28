@@ -16,7 +16,6 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
-    TokenModifiers,
 };
 use game_core::test_support::{self, seat, TestSession};
 
@@ -43,7 +42,6 @@ fn board(intellect: i8, clues: u8) -> TestSession {
         )
         .with_location(study)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .open_turn(INV)
         .session()
 }

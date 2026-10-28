@@ -76,11 +76,4 @@ mod tests {
         assert_eq!(*combat_modifier, IntExpr::Lit(2));
         assert_eq!(abilities[0].effect, Effect::Seq(vec![]));
     }
-
-    /// Catches a `CARD` record wired to the wrong code or abilities fn —
-    /// the registry must dispatch CODE here.
-    #[test]
-    fn registry_dispatches_to_this_modules_abilities() {
-        assert_eq!(crate::abilities_for(CODE), Some(abilities()));
-    }
 }

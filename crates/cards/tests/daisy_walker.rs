@@ -23,7 +23,7 @@ use game_core::engine::{self, EngineOutcome, OptionId, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, ChaosBag, ChaosToken, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, SkillKind, TokenModifiers, UseKind,
+    InvestigatorId, LocationId, SkillKind, UseKind,
 };
 use game_core::test_support::{self, seat, uses, CardSetup, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -305,7 +305,6 @@ fn willpower_test_on_the_elder_sign(daisy: Seat, difficulty: i8) -> TestSession 
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_chaos_bag(ChaosBag::new([ChaosToken::ElderSign]))
-        .with_token_modifiers(TokenModifiers::default())
         .with_location(test_support::test_location(HERE.0, "Library"))
         .with_seat(daisy)
         .open_turn(INV)

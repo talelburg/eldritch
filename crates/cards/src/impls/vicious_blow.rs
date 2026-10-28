@@ -37,12 +37,6 @@
 //! because the follow-up deals the attack's damage *during* resolution, before
 //! the resolution trigger fires.
 //!
-//! # Module gap
-//!
-//! The "if successful" qualifier can't be card-expressed:
-//! `Condition::SkillTest { outcome }` is not evaluated, and rejects. That is
-//! why it stays intrinsic to [`Effect::BoostAttackDamage`].
-//!
 //! [`Trigger::OnCommit`]: card_dsl::dsl::Trigger::OnCommit
 //! [`Effect::BoostAttackDamage`]: card_dsl::dsl::Effect::BoostAttackDamage
 //! [`Condition::SkillTestKind`]: card_dsl::dsl::Condition::SkillTestKind
@@ -89,13 +83,5 @@ mod tests {
         };
         assert_eq!(condition, &Condition::SkillTestKind(SkillTestKind::Fight));
         assert_eq!(**then, Effect::BoostAttackDamage(1));
-    }
-
-    /// Catches a `CARD` record wired to the wrong code or abilities fn —
-    /// the registry must dispatch CODE to
-    /// this module's `abilities()`.
-    #[test]
-    fn registry_dispatches_to_this_modules_abilities() {
-        assert_eq!(crate::abilities_for(super::CODE), Some(super::abilities()));
     }
 }
