@@ -89,7 +89,7 @@ fn keep_one(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     ) {
         Grounded::Picked(kept) => usize::from(kept),
         Grounded::Empty => return EngineOutcome::Done,
-        Grounded::Suspend(outcome) => return outcome,
+        Grounded::Suspend(suspension) => return cx.suspend(suspension),
     };
     let hand_len = cx
         .state()

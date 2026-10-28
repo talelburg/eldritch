@@ -43,7 +43,7 @@ pub(crate) fn deck_face(game: &GameState, deck: AdvanceDeck) -> Face {
         .filter_map(AdvanceReverseFrame::downcast_ref)
         .find(|frame| frame.deck == deck);
     match advancing.map(|frame| frame.step) {
-        None | Some(AdvanceStep::AwaitAck) => Face::Front,
+        None | Some(AdvanceStep::Announce | AdvanceStep::AwaitAck) => Face::Front,
         Some(AdvanceStep::FireReverse | AdvanceStep::Finalize) => Face::Reverse,
     }
 }

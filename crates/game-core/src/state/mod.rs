@@ -32,7 +32,7 @@ pub use continuation::{
     AdvanceDeck, AdvanceReverseFrame, AdvanceStep, AdvanceTrigger, AssetEntry, Assignment,
     AttackLoopFrame, AttackLoopStage, CandidateSource, CommittedCard, CommittedCardDestination,
     Continuation, ContinuationStack, DamageSource, DealDamageFrame, DealDamageStep, EffectFrame,
-    EliminationFrame, EliminationStep, EmitEventFrame, EmitStep, EncounterCardFrame,
+    EffectPrompt, EliminationFrame, EliminationStep, EmitEventFrame, EmitStep, EncounterCardFrame,
     EncounterDisposition, EncounterDrawFrame, EnemyAttackSource, EnemyPhaseFrame, EnemyResume,
     FastWindowFrame, FastWindowKind, Frame, FrameActivity, FrameProfile, HandDiscardCostFrame,
     HandSizeDiscard, HunterChoice, InFlightSkillTest, InvestigationPhaseFrame, InvestigationResume,

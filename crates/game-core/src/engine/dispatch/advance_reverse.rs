@@ -2,11 +2,9 @@
 //! act or agenda resumably (see the `Continuation::AdvanceReverse` doc).
 
 use crate::action::InputResponse;
-use crate::engine::dispatch::emit;
 use crate::engine::dispatch::emit::TimingEvent;
-use crate::engine::outcome::{
-    ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
-};
+use crate::engine::dispatch::{emit, prompt};
+use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget};
 use crate::engine::{board, Cx};
 use crate::event::Event;
 use crate::state::{AdvanceDeck, AdvanceReverseFrame, AdvanceStep, AdvanceTrigger, CardCode};
@@ -39,13 +37,14 @@ fn ack_prompt(deck: AdvanceDeck, from: usize) -> String {
     format!("{what} {} advanced — acknowledge.", from + 1)
 }
 
-/// Drive the top `AdvanceReverse` frame one step. `AwaitAck` pushes the
+/// Drive the top `AdvanceReverse` frame one step. `Announce` pushes the
 /// observable `…Advanced` event and, for a **forced** advance in interactive
-/// mode, suspends with a one-option on-card `PickSingle` anchored to the
-/// act/agenda (the flip pick — cursor stays at `AwaitAck` until `resume`); a
-/// **deliberate** advance skips the ack and falls through. `FireReverse`
-/// fires the leaving card's Forced reverse via `queue_event` (queued; may
-/// suspend). `Finalize` bumps the deck cursor and pops the frame.
+/// mode, moves to `AwaitAck` and rests there on the flip pick ([`ack_request`]
+/// — the cursor stays until `resume`); a **deliberate** advance skips the ack
+/// and moves to `FireReverse`. A frame met at `AwaitAck` rests on its pick
+/// without announcing again. `FireReverse` fires the leaving card's Forced
+/// reverse via `queue_event` (queued; may suspend). `Finalize` bumps the deck
+/// cursor and pops the frame.
 pub(super) fn drive(cx: &mut Cx) -> EngineOutcome {
     let AdvanceReverseFrame {
         deck,
@@ -59,28 +58,20 @@ pub(super) fn drive(cx: &mut Cx) -> EngineOutcome {
         .top_expect::<AdvanceReverseFrame>()
         .clone();
     match step {
-        AdvanceStep::AwaitAck => {
+        AdvanceStep::Announce => {
             cx.events.push(advanced_event(deck, from));
             // Fire-once, on-card: a FORCED advance surfaces the flip as a
             // one-option pick anchored to the act/agenda; a DELIBERATE advance was
             // already the player's choice (the `AdvanceAct` action / round-end
             // objective), so skip the ack and fall through to fire the reverse.
             if cx.state.interactive_acknowledge && matches!(trigger, AdvanceTrigger::Forced) {
-                let anchor = match deck {
-                    AdvanceDeck::Act => OptionTarget::Act,
-                    AdvanceDeck::Agenda => OptionTarget::Agenda,
-                };
-                return EngineOutcome::AwaitingInput {
-                    request: InputRequest::pick_single(
-                        ack_prompt(deck, from),
-                        vec![ChoiceOption::new(OptionId(0), "Advance").at(anchor)],
-                    ),
-                    resume_token: ResumeToken(0),
-                };
+                set_step(cx, AdvanceStep::AwaitAck);
+                return prompt::suspend(cx.state, cx.cards);
             }
             set_step(cx, AdvanceStep::FireReverse);
             EngineOutcome::Done
         }
+        AdvanceStep::AwaitAck => prompt::suspend(cx.state, cx.cards),
         AdvanceStep::FireReverse => {
             // Pre-advance BEFORE emitting so a suspending reverse resumes at
             // Finalize once its frames pop.
@@ -92,6 +83,23 @@ pub(super) fn drive(cx: &mut Cx) -> EngineOutcome {
             EngineOutcome::Done
         }
     }
+}
+
+/// What an advance asks: at [`AwaitAck`](AdvanceStep::AwaitAck), the one-option
+/// flip pick, anchored to the act or agenda; at every other step, nothing. One
+/// of the [prompt table](prompt::request)'s helpers.
+pub(super) fn ack_request(frame: &AdvanceReverseFrame) -> Option<InputRequest> {
+    if frame.step != AdvanceStep::AwaitAck {
+        return None;
+    }
+    let anchor = match frame.deck {
+        AdvanceDeck::Act => OptionTarget::Act,
+        AdvanceDeck::Agenda => OptionTarget::Agenda,
+    };
+    Some(InputRequest::pick_single(
+        ack_prompt(frame.deck, frame.from),
+        vec![ChoiceOption::new(OptionId(0), "Advance").at(anchor)],
+    ))
 }
 
 /// Bump the deck cursor (RR order: after the reverse resolved) and pop the frame.
@@ -199,7 +207,7 @@ mod tests {
             deck: AdvanceDeck::Agenda,
             from: 0,
             leaving_code: CardCode("_a1".into()),
-            step: AdvanceStep::AwaitAck,
+            step: AdvanceStep::Announce,
             trigger: AdvanceTrigger::Forced,
         });
         state
@@ -225,7 +233,7 @@ mod tests {
             deck: AdvanceDeck::Act,
             from: 0,
             leaving_code: CardCode("_c1".into()),
-            step: AdvanceStep::AwaitAck,
+            step: AdvanceStep::Announce,
             trigger,
         });
         state
@@ -328,7 +336,7 @@ mod tests {
             deck: AdvanceDeck::Act,
             from: 0,
             leaving_code: test_support::terminal_code(1),
-            step: AdvanceStep::AwaitAck,
+            step: AdvanceStep::Announce,
             trigger: AdvanceTrigger::Forced,
         });
 

@@ -73,6 +73,9 @@ pub struct GameStateBuilder {
     phase_anchor: Option<Continuation>,
     investigator_turn: Option<InvestigatorId>,
     engagements: Vec<(EnemyId, InvestigatorId)>,
+    /// Frames staged on top of everything else, bottom first
+    /// ([`with_frame`](Self::with_frame)).
+    frames: Vec<Continuation>,
     scenario_id: Option<ScenarioId>,
     /// The registries a test named with
     /// [`with_registries`](Self::with_registries), which the test-only
@@ -106,6 +109,7 @@ impl GameStateBuilder {
             phase_anchor: None,
             investigator_turn: None,
             engagements: Vec::new(),
+            frames: Vec::new(),
             scenario_id: None,
             registries: None,
         }
@@ -406,6 +410,19 @@ impl GameStateBuilder {
         self
     }
 
+    /// Stage `frame` on top of everything else the builder stages, above any
+    /// frame staged before it — the state the engine rests in with that frame
+    /// pending. Settled into a session, a prompt frame staged this way shows its
+    /// prompt, which is how a test reaches a prompt without driving into it.
+    ///
+    /// The frame is pushed with the stack's usual checks, so a second skill
+    /// test or a phase anchor above a queued ability panics at
+    /// [`build`](Self::build) in debug builds.
+    pub fn with_frame(mut self, frame: impl Into<Continuation>) -> Self {
+        self.frames.push(frame.into());
+        self
+    }
+
     /// Set the scenario id this state belongs to. `None` (the
     /// default from [`GameStateBuilder::new`]) means the engine's post-apply
     /// resolution hook will short-circuit. Passing a `ScenarioId`
@@ -527,6 +544,11 @@ impl GameStateBuilder {
         // Disjoint from setup/upkeep, so push order is immaterial.
         if let Some(remaining) = self.mythos_draw_remaining {
             continuations.push(EncounterDrawFrame { remaining });
+        }
+        // Frames staged with `with_frame` go on top of everything else, in the
+        // order they were staged.
+        for frame in self.frames {
+            continuations.push(frame);
         }
         GameState {
             investigators: self.investigators,

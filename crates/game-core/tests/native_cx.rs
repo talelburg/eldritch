@@ -67,7 +67,7 @@ fn write_then_suspend(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
             EngineOutcome::Done
         }
         Grounded::Empty => EngineOutcome::Done,
-        Grounded::Suspend(outcome) => outcome,
+        Grounded::Suspend(suspension) => cx.suspend(suspension),
     }
 }
 
@@ -81,7 +81,7 @@ fn suspend_then_write(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
             EngineOutcome::Done
         }
         Grounded::Empty => EngineOutcome::Done,
-        Grounded::Suspend(outcome) => outcome,
+        Grounded::Suspend(suspension) => cx.suspend(suspension),
     }
 }
 

@@ -156,7 +156,7 @@ fn move_to_connecting_location(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOu
         Grounded::Picked(destination) => cx.move_investigator(investigator, destination),
         // No connecting location may be entered: nothing moves.
         Grounded::Empty => EngineOutcome::Done,
-        Grounded::Suspend(outcome) => outcome,
+        Grounded::Suspend(suspension) => cx.suspend(suspension),
     }
 }
 

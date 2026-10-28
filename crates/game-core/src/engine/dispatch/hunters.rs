@@ -8,7 +8,7 @@ use crate::action::InputResponse;
 use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::{choice, cursor, engagement, movement, phases};
 use crate::engine::modified_value::{self, ModifiedQuantity, ModifierTarget, ReadContext};
-use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken};
+use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId, OptionTarget};
 use crate::engine::{pathfinding, Cx};
 use crate::event::Event;
 use crate::state::{
@@ -374,9 +374,10 @@ fn next_eligible_hunter(state: &GameState, after: Option<EnemyId>) -> Option<Ene
 }
 
 /// Drive Enemy-phase step 3.2: process eligible hunters in ascending
-/// `EnemyId` order until none remain ([`EngineOutcome::Done`]) or one
-/// suspends on a lead-investigator tie
-/// ([`EngineOutcome::AwaitingInput`]).
+/// `EnemyId` order until none remain or one parks on a lead-investigator tie.
+/// Returns `Done` either way: a tie leaves its
+/// [`HunterMove`](Continuation::HunterMove) frame on top for the `drive` loop
+/// to surface, so a caller with work after step 3.2 checks the top frame.
 pub(crate) fn drive_hunter_moves(cx: &mut Cx) -> EngineOutcome {
     let mut cursor: Option<EnemyId> = None;
     while let Some(id) = next_eligible_hunter(cx.state, cursor) {
@@ -388,38 +389,44 @@ pub(crate) fn drive_hunter_moves(cx: &mut Cx) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-/// Store the pending hunter choice and return `AwaitingInput` for the tie-break,
-/// which the rules give the lead investigator. The request carries no
-/// recipient: the candidates ride it as structured options, and the resume
-/// comes back as `PickSingle(OptionId)` indexing the candidate list.
+/// Park the pending hunter choice for the tie-break, which the rules give the
+/// lead investigator: push its frame and return `Done`, for the `drive` loop to
+/// surface ([`choice_request`]).
 fn suspend_hunter_choice(cx: &mut Cx, choice: HunterChoice) -> EngineOutcome {
-    let (prompt, options) = match &choice {
+    cx.state
+        .continuations
+        .push(Continuation::HunterMove(choice));
+    EngineOutcome::Done
+}
+
+/// What a [`HunterMove`](Continuation::HunterMove) frame asks. The request
+/// carries no recipient: the candidates ride it as structured options, and the
+/// resume comes back as `PickSingle(OptionId)` indexing the candidate list. One
+/// of the [prompt table](super::prompt::request)'s helpers.
+pub(super) fn choice_request(
+    state: &GameState,
+    cards: &CardRegistry,
+    choice: &HunterChoice,
+) -> InputRequest {
+    let (prompt, options) = match choice {
         HunterChoice::Move { enemy, candidates } => (
             format!(
                 "Hunter {enemy:?} movement: the first Active investigator in turn order \
                  picks a destination among {candidates:?}"
             ),
-            choice::candidate_options(cx.state, cx.cards, candidates, |l| {
-                OptionTarget::Location(*l)
-            }),
+            choice::candidate_options(state, cards, candidates, |l| OptionTarget::Location(*l)),
         ),
         HunterChoice::Engage { enemy, candidates } => (
             format!(
                 "Hunter {enemy:?} engagement: the first Active investigator in turn order \
                  picks whom to engage among {candidates:?}"
             ),
-            choice::candidate_options(cx.state, cx.cards, candidates, |i| {
-                cx.state.investigators[i].card_anchor()
+            choice::candidate_options(state, cards, candidates, |i| {
+                state.investigators[i].card_anchor()
             }),
         ),
     };
-    cx.state
-        .continuations
-        .push(Continuation::HunterMove(choice));
-    EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_single(prompt, options),
-        resume_token: ResumeToken(0),
-    }
+    InputRequest::pick_single(prompt, options)
 }
 
 /// Resume a suspended Hunter-movement choice with the tie-break response,

@@ -20,12 +20,12 @@ use crate::engine::dispatch::actions::evade::{self, EvadeModification};
 use crate::engine::dispatch::actions::fight::{self, FightModification};
 use crate::engine::dispatch::actions::investigate::{self, InvestigateModification};
 use crate::engine::dispatch::emit::TimingEvent;
-use crate::engine::dispatch::{choice, coordinator, emit, reaction_windows};
+use crate::engine::dispatch::{choice, coordinator, emit, prompt, reaction_windows};
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::modified_value::{
     self, ContributionSource, ModifiedQuantity, ModifierBreakdown, ModifierTarget, ReadContext,
 };
-use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId, ResumeToken};
+use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId};
 use crate::engine::{abilities_in_effect, Cx};
 use crate::event::{Event, FailureReason};
 use crate::scenario;
@@ -387,23 +387,12 @@ pub(in crate::engine) fn start_skill_test(
     // created) is the parking; `resume_substitution_choice` rewrites its skill
     // on "yes". Routed via a `SubstitutionPrompt` frame above the `SkillTest`.
     if substitution_covers(cx.state, investigator, skill) {
+        // The `drive` loop surfaces the choice from the frame
+        // ([`substitution_request`]).
         cx.state
             .continuations
             .push(SubstitutionPromptFrame { investigator });
-        // A decision, not a selection (ADR 0015): the two options are the
-        // alternatives Mind over Matter 01036 offers, not board entities. It is
-        // un-anchored because the event has left play by now — the ruling has
-        // it played "before the skill test begins"
-        // (https://arkhamdb.com/card/01036).
-        let use_skill = SkillKind::Intellect; // sole substitution in scope
-        return choice::awaiting_decision(
-            format!(
-                "{investigator:?}: use {use_skill:?} in place of {skill:?} for this test? \
-                 (PickSingle(0) = use {use_skill:?}, PickSingle(1) = keep {skill:?})",
-            ),
-            vec![format!("Use {use_skill:?}"), format!("Keep {skill:?}")],
-            None,
-        );
+        return EngineOutcome::Done;
     }
     // No substitution: drive the test. `advance` parks at `AwaitingCommit`,
     // emitting the commit prompt (which propagates up to here).
@@ -496,6 +485,39 @@ fn substitution_covers(state: &GameState, investigator: InvestigatorId, skill: S
         }
         _ => false,
     })
+}
+
+/// What a [`SubstitutionPromptFrame`] asks: whether to use Intellect in place of
+/// the skill of the test beneath it. One of the
+/// [prompt table](super::prompt::request)'s helpers.
+///
+/// A decision, not a selection (ADR 0015): the two options are the
+/// alternatives Mind over Matter 01036 offers, not board entities. It is
+/// un-anchored because the event has left play by now — the ruling has it
+/// played "before the skill test begins" (<https://arkhamdb.com/card/01036>).
+///
+/// # Panics
+///
+/// If no skill test is in flight. The frame is pushed above the test it
+/// substitutes in, so one always is.
+pub(super) fn substitution_request(
+    state: &GameState,
+    frame: &SubstitutionPromptFrame,
+) -> InputRequest {
+    let investigator = frame.investigator;
+    let skill = state
+        .current_skill_test()
+        .expect("substitution_request: a substitution prompt sits above its skill test")
+        .skill;
+    let use_skill = SkillKind::Intellect; // sole substitution in scope
+    choice::effect_request(&choice::decision_prompt(
+        format!(
+            "{investigator:?}: use {use_skill:?} in place of {skill:?} for this test? \
+             (PickSingle(0) = use {use_skill:?}, PickSingle(1) = keep {skill:?})",
+        ),
+        vec![format!("Use {use_skill:?}"), format!("Keep {skill:?}")],
+        None,
+    ))
 }
 
 /// Resume the Mind over Matter substitution prompt: `PickSingle(0)`
@@ -1487,28 +1509,30 @@ fn fire_on_resolution_step(
     }
 }
 
-/// Emit the commit-window prompt (the `AwaitingCommit` step's `awaiting()`). The
-/// test parks here for the active investigator's commit; a Resolution frame
-/// pushed *above* it is a mid-test window. Reached from `start_skill_test` and
-/// `resume_substitution_choice` (which call `advance`), so the commit
-/// `AwaitingInput` propagates up the call stack, halting any enclosing forced run
-/// (the commit `ResolveInput` resumes via `finish_skill_test`).
-fn emit_commit_window(cx: &Cx, _investigator: InvestigatorId) -> EngineOutcome {
-    let skill = cx
-        .state
+/// What a skill test at its commit window asks (the `AwaitingCommit` step). The
+/// test parks there for the active investigator's commit; a Resolution frame
+/// pushed *above* it is a mid-test window. The commit `ResolveInput` resumes
+/// via `finish_skill_test`. One of the [prompt table](super::prompt::request)'s
+/// helpers.
+pub(super) fn commit_request(state: &GameState, cards: &CardRegistry) -> InputRequest {
+    let skill = state
         .current_skill_test()
-        .expect("emit_commit_window: in-flight test must exist")
+        .expect("commit_request: in-flight test must exist")
         .skill;
     // The difficulty as it stands at the commit window — what a player
     // decides how many cards to commit against. ST.6 re-reads it.
-    let difficulty = current_difficulty(cx.state, cx.cards);
-    EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_multiple(format!(
-            "Commit cards to the {skill:?} test (difficulty {difficulty}). \
-             An empty selection commits no cards.",
-        )),
-        resume_token: ResumeToken(0),
-    }
+    let difficulty = current_difficulty(state, cards);
+    InputRequest::pick_multiple(format!(
+        "Commit cards to the {skill:?} test (difficulty {difficulty}). \
+         An empty selection commits no cards.",
+    ))
+}
+
+/// What a skill test at its result pause asks (the `AcknowledgeOutcome` step,
+/// under `interactive_acknowledge`): a cosmetic `Confirm`. One of the
+/// [prompt table](super::prompt::request)'s helpers.
+pub(super) fn acknowledge_request() -> InputRequest {
+    InputRequest::confirm("Acknowledge the skill-test result.")
 }
 
 /// Open one of the RR p.26 skill-test framework player windows and return
@@ -1663,7 +1687,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
             SkillTestStep::AwaitingCommit => {
                 // The frame's `awaiting()`: emit the commit prompt. (See
                 // `emit_commit_window` for the propagation rationale.)
-                return emit_commit_window(cx, investigator);
+                return prompt::suspend(cx.state, cx.cards);
             }
             SkillTestStep::PreTokenWindow => {
                 // RR p.26 player window after ST.2.
@@ -1720,10 +1744,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 // finish_skill_test handshake). When off, advance straight to
                 // FireOnCommit so non-interactive drives are unchanged.
                 if cx.state.interactive_acknowledge {
-                    return EngineOutcome::AwaitingInput {
-                        request: InputRequest::confirm("Acknowledge the skill-test result."),
-                        resume_token: ResumeToken(0),
-                    };
+                    return prompt::suspend(cx.state, cx.cards);
                 }
                 cx.state
                     .current_skill_test_mut()

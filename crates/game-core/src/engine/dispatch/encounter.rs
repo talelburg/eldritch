@@ -6,17 +6,20 @@ use card_dsl::card_data::{CardKind, CardMetadata, CardType, Spawn, SpawnLocation
 use card_dsl::dsl::{Ability, Effect, Trigger};
 
 use crate::action::InputResponse;
+use crate::card_registry::CardRegistry;
 use crate::engine::board;
 use crate::engine::dispatch::emit::{self, TimingEvent};
 use crate::engine::dispatch::hunters::PreyResolution;
-use crate::engine::dispatch::{choice, cursor, engagement, hunters, reaction_windows, skill_test};
+use crate::engine::dispatch::{
+    choice, cursor, engagement, hunters, prompt, reaction_windows, skill_test,
+};
 use crate::engine::evaluator::{self, EvalContext};
-use crate::engine::outcome::{EngineOutcome, InputRequest, OptionTarget, ResumeToken};
+use crate::engine::outcome::{EngineOutcome, InputRequest, OptionTarget};
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
     CardCode, Continuation, EncounterCardFrame, EncounterDisposition, EncounterDrawFrame, Enemy,
-    FastWindowKind, InvestigatorId, LocationId, Owner, PhaseStep, PlayerDrawFrame,
+    FastWindowKind, GameState, InvestigatorId, LocationId, Owner, PhaseStep, PlayerDrawFrame,
     SpawnEngagePending, Status, Zone,
 };
 
@@ -308,9 +311,9 @@ pub(super) fn push_revelation(
 /// A `Specific` spawn routes through the shared [`resolve_prey`] resolver:
 /// the co-located set is narrowed by the enemy's
 /// prey. `None`/`One` resolve inline (no engagement, or engage the
-/// sole/best candidate); `Tie` suspends via
-/// [`SpawnEngagePending`](crate::state::SpawnEngagePending) and returns
-/// [`EngineOutcome::AwaitingInput`] for a tie-break `PickSingle`, which the
+/// sole/best candidate); `Tie` pushes a
+/// [`SpawnEngagePending`](crate::state::SpawnEngagePending) frame and returns
+/// `Done`, and the `drive` loop surfaces its tie-break `PickSingle`, which the
 /// rules give the lead investigator (**Lead investigator** in `GLOSSARY.md`);
 /// the request carries no recipient. When the spawn happens inside a Mythos
 /// encounter-draw chain, [`resume_spawn_engage`] continues the drawer's
@@ -555,27 +558,39 @@ fn spawn_enemy_engaging(
             // The surge/chain state lives on the drawer's `PlayerDraw` frame
             // beneath; this frame holds only the engagement pick.
             // `resume_spawn_engage` engages + pops, and the loop continues the
-            // chain through the exposed `PlayerDraw`.
+            // chain through the exposed `PlayerDraw`. Pushed and returned from:
+            // the `drive` loop surfaces it, so a native whose exit spawned the
+            // enemy just returns and the prompt follows it.
             cx.state
                 .continuations
                 .push(Continuation::SpawnEngage(SpawnEngagePending {
                     enemy: enemy_id,
-                    candidates: tied.clone(),
+                    candidates: tied,
                 }));
-            EngineOutcome::AwaitingInput {
-                request: InputRequest::pick_single(
-                    format!(
-                        "Enemy {enemy_id:?} spawn engagement: the first Active investigator \
-                         in turn order picks whom to engage among {tied:?}"
-                    ),
-                    choice::candidate_options(cx.state, cx.cards, &tied, |i| {
-                        cx.state.investigators[i].card_anchor()
-                    }),
-                ),
-                resume_token: ResumeToken(0),
-            }
+            EngineOutcome::Done
         }
     }
+}
+
+/// What a [`SpawnEngage`](Continuation::SpawnEngage) frame asks: whom the
+/// spawned enemy engages among its tied candidates, each anchored to the
+/// investigator's card. One of the [prompt table](prompt::request)'s helpers.
+pub(super) fn spawn_engage_request(
+    state: &GameState,
+    cards: &CardRegistry,
+    pending: &SpawnEngagePending,
+) -> InputRequest {
+    let SpawnEngagePending {
+        enemy: enemy_id,
+        candidates: tied,
+    } = pending;
+    InputRequest::pick_single(
+        format!(
+            "Enemy {enemy_id:?} spawn engagement: the first Active investigator \
+             in turn order picks whom to engage among {tied:?}"
+        ),
+        choice::candidate_options(state, cards, tied, |i| state.investigators[i].card_anchor()),
+    )
 }
 
 /// Fisher-Yates shuffle of the shared encounter deck using the
@@ -647,27 +662,21 @@ pub(crate) fn take_encounter_top(cx: &mut Cx) -> Option<CardCode> {
     cx.state.encounter_deck.pop_front()
 }
 
-/// Push the prompt for the topmost [`Continuation::EncounterDraw`] frame's
-/// current drawer (`remaining[0]`): an [`EngineOutcome::AwaitingInput`] whose
-/// response is a binary [`Confirm`](InputResponse::Confirm) (the draw carries
-/// no choice). Used by `mythos_phase` (first prompt) and
-/// [`advance_encounter_draw`] (re-prompt after a queue pop). The frame must
-/// already be on the stack; callers ensure this.
-pub(super) fn prompt_encounter_draw(cx: &Cx) -> EngineOutcome {
-    let drawer = cx
-        .state
+/// What the topmost [`Continuation::EncounterDraw`] frame asks of its current
+/// drawer (`remaining[0]`): a binary [`Confirm`](InputResponse::Confirm) (the
+/// draw carries no choice). One of the [prompt table](prompt::request)'s
+/// helpers.
+pub(super) fn encounter_draw_request(state: &GameState) -> InputRequest {
+    let drawer = state
         .current_encounter_drawer()
-        .expect("prompt_encounter_draw: no EncounterDraw frame on the stack");
-    EngineOutcome::AwaitingInput {
-        // Anchored to the encounter deck, which is what distinguishes this prompt
-        // from the cosmetic skill-test acknowledge on the wire — both are
-        // option-less `Confirm`s otherwise (ADR 0011).
-        request: InputRequest::confirm(format!(
-            "Mythos step 1.4: {drawer:?} draws an encounter card; submit InputResponse::Confirm.",
-        ))
-        .at(OptionTarget::EncounterDeck),
-        resume_token: ResumeToken(0),
-    }
+        .expect("encounter_draw_request: no EncounterDraw frame on the stack");
+    // Anchored to the encounter deck, which is what distinguishes this prompt
+    // from the cosmetic skill-test acknowledge on the wire — both are
+    // option-less `Confirm`s otherwise (ADR 0011).
+    InputRequest::confirm(format!(
+        "Mythos step 1.4: {drawer:?} draws an encounter card; submit InputResponse::Confirm.",
+    ))
+    .at(OptionTarget::EncounterDeck)
 }
 
 /// Resume the Mythos step-1.4 encounter-draw loop, driving the topmost
@@ -883,7 +892,7 @@ pub(super) fn advance_encounter_draw(cx: &mut Cx) -> EngineOutcome {
             .continuations
             .top_mut::<EncounterDrawFrame>()
             .remaining = queue;
-        prompt_encounter_draw(cx)
+        prompt::suspend(cx.state, cx.cards)
     }
 }
 

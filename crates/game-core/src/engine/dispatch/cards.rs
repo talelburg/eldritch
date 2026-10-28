@@ -12,11 +12,11 @@ use crate::engine::dispatch::actions::take::{self, ActionDescription};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::legality::PlayCheckResult;
 use crate::engine::dispatch::{
-    combat, emit, encounter, legality, phases, slots, threat_area, PlayDestination,
+    combat, emit, encounter, legality, phases, prompt, slots, threat_area, PlayDestination,
 };
 use crate::engine::enumerate::PlaySource;
 use crate::engine::evaluator::{self, EvalContext};
-use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
+use crate::engine::outcome::{EngineOutcome, InputRequest};
 use crate::engine::{board, Cx};
 use crate::event::Event;
 use crate::state::{
@@ -798,25 +798,21 @@ pub(in crate::engine) fn draw_with_deckout(
 }
 
 /// Push a [`Continuation::Mulligan`](crate::state::Continuation::Mulligan)
-/// frame over `remaining` and return the [`EngineOutcome::AwaitingInput`] that
-/// prompts `remaining[0]` to mulligan. Used by `start_scenario` (first prompt)
-/// and [`resume_mulligan`] (re-prompt after a queue pop). `remaining` must be
-/// non-empty; callers ensure this.
+/// frame over `remaining` and suspend on it, prompting `remaining[0]` to
+/// mulligan. Used by `start_scenario` (first prompt) and [`resume_mulligan`]
+/// (re-prompt after a queue pop). `remaining` must be non-empty; callers ensure
+/// this.
 pub(super) fn prompt_mulligan(cx: &mut Cx, remaining: Vec<InvestigatorId>) -> EngineOutcome {
     cx.state.continuations.push(MulliganFrame { remaining });
-    mulligan_prompt()
+    prompt::suspend(cx.state, cx.cards)
 }
 
-/// The [`EngineOutcome::AwaitingInput`] a [`MulliganFrame`] on top waits on:
-/// shown by [`prompt_mulligan`] when it pushes the frame, and again by the main
-/// loop when it meets the frame on top.
-pub(super) fn mulligan_prompt() -> EngineOutcome {
-    EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_multiple(
-            "Mulligan: choose cards to redraw (an empty selection keeps your hand).",
-        ),
-        resume_token: ResumeToken(0),
-    }
+/// What a [`MulliganFrame`] on top asks. One of the
+/// [prompt table](prompt::request)'s helpers.
+pub(super) fn mulligan_request() -> InputRequest {
+    InputRequest::pick_multiple(
+        "Mulligan: choose cards to redraw (an empty selection keeps your hand).",
+    )
 }
 
 /// Swap the hand cards at `sorted` (ascending, in-bounds, unique hand indices)

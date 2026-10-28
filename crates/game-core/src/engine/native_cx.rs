@@ -9,18 +9,19 @@ use card_dsl::dsl::Restriction;
 use crate::card_registry::CardRegistry;
 use crate::engine::board::{self, LeavingCard, MoveResourcesError, NotLeft, Placement};
 use crate::engine::dispatch::actions::{r#move, take};
+use crate::engine::dispatch::choice::{self, Suspension};
 use crate::engine::dispatch::tokens::{self, MoveHorrorError};
 use crate::engine::dispatch::{
     act_agenda, cards, combat, elimination, encounter, engagement, hunters, placement, reveal,
     set_aside, skill_test, threat_area,
     uses::{self, MoveUsesError, SpendUsesError},
 };
-use crate::engine::outcome::EngineOutcome;
+use crate::engine::outcome::{EngineOutcome, ResumeToken};
 use crate::engine::Cx;
 use crate::event::TraumaKind;
 use crate::state::{
-    CardCode, CardInstanceId, DamageSource, Deck, EnemyId, GameState, InvestigatorId, LocationId,
-    Owner, SkillSubstitution, UseKind, Zone,
+    CardCode, CardInstanceId, DamageSource, Deck, EffectPrompt, EnemyId, GameState, InvestigatorId,
+    LocationId, Owner, SkillSubstitution, UseKind, Zone,
 };
 
 /// What a [`NativeEffectFn`](crate::card_registry::NativeEffectFn) gets: full
@@ -46,12 +47,12 @@ use crate::state::{
 ///
 /// # Choose before you write
 ///
-/// A native that suspends for a choice (returns
-/// [`EngineOutcome::AwaitingInput`]) is re-run from the top when the choice is
-/// answered, so it must ask before it writes. Every exit marks the context as
-/// written to when it is called, even when it turns out to change nothing, and
-/// a native that suspends after any exit call is `Rejected` in every build. The
-/// apply's snapshot rollback then undoes what it wrote.
+/// A native that suspends for a choice (returns what [`suspend`](Self::suspend)
+/// returns) is re-run from the top when the choice is answered, so it must ask
+/// before it writes. Every exit marks the context as written to when it is
+/// called, even when it turns out to change nothing, and a native that suspends
+/// after any exit call is `Rejected` in every build. The apply's snapshot
+/// rollback then undoes what it wrote.
 ///
 /// Read-only helpers, such as
 /// [`resolve_grounded_choice`](crate::engine::resolve_grounded_choice),
@@ -59,22 +60,60 @@ use crate::state::{
 /// [`enemy_can_enter_location`](crate::engine::enemy_can_enter_location), are
 /// free functions called on [`state`](Self::state), so asking never counts as
 /// writing. No exit suspends by itself: one that needs a later step, such as an
-/// encounter card's resolution, defers it through a continuation frame and
-/// returns.
+/// encounter card's resolution or a spawned enemy's engagement tie, defers it
+/// through a continuation frame and returns, and the frame's prompt surfaces
+/// after the native.
 pub struct NativeCx<'a> {
     cx: Cx<'a>,
     written: bool,
+    /// The prompt the native suspended on through [`suspend`](Self::suspend),
+    /// for the evaluator to store on the native's frame.
+    asked: Option<EffectPrompt>,
 }
 
 impl<'a> NativeCx<'a> {
     /// Wrap `cx` for one native call, not yet written to.
     pub(crate) fn new(cx: Cx<'a>) -> Self {
-        Self { cx, written: false }
+        Self {
+            cx,
+            written: false,
+            asked: None,
+        }
     }
 
     /// Whether any exit has been called since [`new`](Self::new).
     pub(crate) fn written(&self) -> bool {
         self.written
+    }
+
+    /// The prompt the native suspended on, if it called
+    /// [`suspend`](Self::suspend).
+    pub(crate) fn take_asked(&mut self) -> Option<EffectPrompt> {
+        self.asked.take()
+    }
+
+    /// Suspend the native on what a grounding helper could not settle: the
+    /// controller's pick, or the rejection of a pick out of range. **Return its
+    /// outcome.**
+    ///
+    /// A pick suspends the native's effect frame in place, carrying the prompt,
+    /// and the native is re-run with the pick threaded into its context
+    /// ([`EvalContext::chosen_option`](crate::engine::evaluator::EvalContext::chosen_option))
+    /// once it is answered.
+    #[must_use = "suspend returns the outcome the native must return"]
+    pub fn suspend(&mut self, suspension: Suspension) -> EngineOutcome {
+        match suspension.into_prompt() {
+            Ok(prompt) => {
+                let request = choice::effect_request(&prompt);
+                self.asked = Some(prompt);
+                EngineOutcome::AwaitingInput {
+                    request,
+                    // TODO(#458): deterministic resume tokens.
+                    resume_token: ResumeToken(0),
+                }
+            }
+            Err(rejected) => rejected,
+        }
     }
 
     /// The game state, read-only.

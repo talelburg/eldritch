@@ -110,6 +110,6 @@ fn take_item(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
             EngineOutcome::Done
         }
         Grounded::Empty => EngineOutcome::Done,
-        Grounded::Suspend(outcome) => outcome,
+        Grounded::Suspend(suspension) => cx.suspend(suspension),
     }
 }

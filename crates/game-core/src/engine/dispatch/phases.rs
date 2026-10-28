@@ -11,15 +11,15 @@ use crate::card_registry::CardRegistry;
 use crate::engine::dispatch;
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{
-    act_agenda, cards, combat, cursor, emit, encounter, engagement, hunters, reaction_windows,
-    reveal,
+    act_agenda, cards, combat, cursor, emit, encounter, engagement, hunters, prompt,
+    reaction_windows, reveal,
 };
-use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
+use crate::engine::outcome::{EngineOutcome, InputRequest};
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
     CardCode, CardInPlay, Continuation, DiscardPile, EncounterDrawFrame, EnemyId, EnemyPhaseFrame,
-    EnemyResume, FastWindowKind, GameState, HandSizeDiscard, InvestigationPhaseFrame,
+    EnemyResume, FastWindowKind, GameState, HandSizeDiscard, HunterChoice, InvestigationPhaseFrame,
     InvestigationResume, Investigator, InvestigatorId, InvestigatorTurnFrame, Lifetime,
     MythosPhaseFrame, MythosResume, Owner, Phase, PhaseStep, Skills, Status, UpkeepPhaseFrame,
     UpkeepResume, Zone,
@@ -756,10 +756,10 @@ fn enemy_phase(cx: &mut Cx) -> EngineOutcome {
 /// [`AfterPhaseStartForced`](crate::state::EnemyResume::AfterPhaseStartForced)
 /// resume once step 3.1's queued forced abilities have resolved.
 ///
-/// If hunter movement suspends on a lead-investigator tie, this returns the
-/// [`EngineOutcome::AwaitingInput`] unchanged — the attack-loop kickoff is
-/// deferred to [`resume_hunter_choice`], which runs it once the last hunter
-/// resolves.
+/// If hunter movement parks on a lead-investigator tie, its
+/// [`HunterMove`](crate::state::Continuation::HunterMove) prompt is left on top
+/// for the `drive` loop to surface, and the attack-loop kickoff is deferred to
+/// [`resume_hunter_choice`], which runs it once the last hunter resolves.
 fn enemy_after_phase_start(cx: &mut Cx) -> EngineOutcome {
     // Advance the anchor off `AfterPhaseStartForced`: step 3.2 is running.
     // No investigator is selected yet, since the kickoff runs after hunter
@@ -768,14 +768,15 @@ fn enemy_after_phase_start(cx: &mut Cx) -> EngineOutcome {
     set_enemy_anchor(cx, EnemyResume::HuntersMoving);
 
     // 3.2 Hunter enemies move. Park on a lead-investigator tie; the
-    //     attack-loop kickoff then happens on resume.
-    match hunters::drive_hunter_moves(cx) {
-        outcome @ EngineOutcome::AwaitingInput { .. } => return outcome,
-        // drive_hunter_moves only ever returns Done or AwaitingInput, never Rejected.
-        EngineOutcome::Rejected { reason } => {
-            unreachable!("enemy_after_phase_start: hunter movement rejected unexpectedly: {reason}")
-        }
-        EngineOutcome::Done => {}
+    //     attack-loop kickoff then happens on resume. A tie pushes its
+    //     `HunterMove` prompt and returns `Done`, so the frame on top, not the
+    //     outcome, says whether movement finished.
+    let outcome = hunters::drive_hunter_moves(cx);
+    if let EngineOutcome::Rejected { reason } = outcome {
+        unreachable!("enemy_after_phase_start: hunter movement rejected unexpectedly: {reason}")
+    }
+    if cx.state.continuations.top_of::<HunterChoice>().is_some() {
+        return EngineOutcome::Done;
     }
 
     // 3.3 Kick off the per-investigator attack loop.
@@ -947,7 +948,7 @@ fn run_mythos_draws(cx: &mut Cx) -> EngineOutcome {
     cx.state
         .continuations
         .push(EncounterDrawFrame { remaining });
-    encounter::prompt_encounter_draw(cx)
+    prompt::suspend(cx.state, cx.cards)
 }
 
 /// Run the top `*Phase` anchor's continuation after one of its framework
@@ -1397,41 +1398,37 @@ pub(super) fn over_cap_investigators(state: &GameState) -> Vec<InvestigatorId> {
         .collect()
 }
 
-/// Pushes a `HandSizeDiscard(remaining)` frame and returns the
-/// [`EngineOutcome::AwaitingInput`] that prompts `remaining[0]` to discard.
-/// Used by both [`check_hand_size`] (first suspension) and
-/// [`resume_hand_size_discard`] (re-prompt after a queue pop).
+/// Pushes a `HandSizeDiscard(remaining)` frame and suspends on it, prompting
+/// `remaining[0]` to discard. Used by both [`check_hand_size`] (first
+/// suspension) and [`resume_hand_size_discard`] (re-prompt after a queue pop).
 ///
 /// `remaining` must be non-empty; callers ensure this before calling.
 fn park_hand_size_discard(cx: &mut Cx, remaining: Vec<InvestigatorId>) -> EngineOutcome {
     cx.state
         .continuations
         .push(Continuation::HandSizeDiscard(HandSizeDiscard { remaining }));
-    hand_size_discard_prompt(cx)
+    prompt::suspend(cx.state, cx.cards)
 }
 
-/// The [`EngineOutcome::AwaitingInput`] a [`HandSizeDiscard`] frame on top
-/// waits on: shown by [`park_hand_size_discard`] when it pushes the frame, and
-/// again by the main loop when it meets the frame on top. It names the count
-/// the pick must hold ([`hand_size_discard_count`] for the investigator
-/// prompted), which falls short of reaching the cap when weaknesses fill the
-/// overflow, and says that weaknesses can't be chosen.
-pub(super) fn hand_size_discard_prompt(cx: &Cx) -> EngineOutcome {
-    let count = cx
-        .state
-        .continuations
-        .top_expect::<HandSizeDiscard>()
+/// What a [`HandSizeDiscard`] frame on top asks. It names the count the pick
+/// must hold ([`hand_size_discard_count`] for the investigator prompted), which
+/// falls short of reaching the cap when weaknesses fill the overflow, and says
+/// that weaknesses can't be chosen. One of the
+/// [prompt table](prompt::request)'s helpers.
+pub(super) fn hand_size_discard_request(
+    state: &GameState,
+    cards: &CardRegistry,
+    queue: &HandSizeDiscard,
+) -> InputRequest {
+    let count = queue
         .remaining
         .first()
-        .map_or(0, |id| hand_size_discard_count(cx, *id));
-    let cards = if count == 1 { "card" } else { "cards" };
-    EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_multiple(format!(
-            "You have more than {HAND_SIZE_LIMIT} cards in hand — choose {count} {cards} to \
-             discard. Weaknesses can't be chosen.",
-        )),
-        resume_token: ResumeToken(0),
-    }
+        .map_or(0, |id| hand_size_discard_count(state, cards, *id));
+    let noun = if count == 1 { "card" } else { "cards" };
+    InputRequest::pick_multiple(format!(
+        "You have more than {HAND_SIZE_LIMIT} cards in hand — choose {count} {noun} to \
+         discard. Weaknesses can't be chosen.",
+    ))
 }
 
 /// How many cards `id` must discard at step 4.5: the overflow over
@@ -1444,12 +1441,16 @@ pub(super) fn hand_size_discard_prompt(cx: &Cx) -> EngineOutcome {
 /// Forced Learning) answers the same shortfall that way: *"Weaknesses cannot be
 /// chosen to be discarded from your hand. … If you draw 2 weaknesses, you cannot
 /// discard either one, and must resolve both of them."*
-fn hand_size_discard_count(cx: &Cx, id: InvestigatorId) -> usize {
-    let hand = &cx.state.investigators[&id].hand;
+fn hand_size_discard_count(
+    state: &GameState,
+    registry: &CardRegistry,
+    id: InvestigatorId,
+) -> usize {
+    let hand = &state.investigators[&id].hand;
     let overflow = hand.len().saturating_sub(HAND_SIZE_LIMIT as usize);
     let discardable = hand
         .iter()
-        .filter(|code| !cards::is_weakness_code(cx.cards, code))
+        .filter(|code| !cards::is_weakness_code(registry, code))
         .count();
     overflow.min(discardable)
 }
@@ -1463,7 +1464,7 @@ fn hand_size_discard_count(cx: &Cx, id: InvestigatorId) -> usize {
 fn check_hand_size(cx: &mut Cx) -> EngineOutcome {
     let remaining: Vec<InvestigatorId> = over_cap_investigators(cx.state)
         .into_iter()
-        .filter(|&id| hand_size_discard_count(cx, id) > 0)
+        .filter(|&id| hand_size_discard_count(cx.state, cx.cards, id) > 0)
         .collect();
     if remaining.is_empty() {
         return EngineOutcome::Done;
@@ -1503,7 +1504,7 @@ pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) ->
         unreachable!("resume_hand_size_discard: prompted investigator {current:?} vanished")
     });
     let hand_len = inv.hand.len();
-    let target = hand_size_discard_count(cx, current);
+    let target = hand_size_discard_count(cx.state, cx.cards, current);
     if indices.len() != target {
         return EngineOutcome::Rejected {
             reason: format!(

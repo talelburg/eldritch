@@ -102,7 +102,7 @@ pub(super) fn advance_agenda(cx: &mut Cx) {
         deck: AdvanceDeck::Agenda,
         from,
         leaving_code,
-        step: AdvanceStep::AwaitAck,
+        step: AdvanceStep::Announce,
         // Agenda advances are always game-forced (a doom threshold).
         trigger: AdvanceTrigger::Forced,
     });
@@ -345,7 +345,7 @@ pub(crate) fn advance_act(cx: &mut Cx, trigger: AdvanceTrigger) {
         deck: AdvanceDeck::Act,
         from,
         leaving_code,
-        step: AdvanceStep::AwaitAck,
+        step: AdvanceStep::Announce,
         trigger,
     });
 }

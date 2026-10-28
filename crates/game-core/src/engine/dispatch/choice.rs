@@ -3,19 +3,22 @@
 //!
 //! The evaluator leaves the node's
 //! [`EffectFrame::Leaf`](crate::state::EffectFrame::Leaf) on top of the
-//! continuation stack as the prompt. [`resume_effect_choice`] sets the pick on
-//! that frame and re-steps it. A choice among board entities goes through
+//! continuation stack as the prompt, carrying the [`EffectPrompt`] the node
+//! asked, which the prompt table reads back ([`effect_request`]).
+//! [`resume_effect_choice`] sets the pick on that frame and re-steps it. A choice among board entities goes through
 //! [`resolve_grounded_choice`] (`0 ⇒ empty · 1 ⇒ auto · 2+ ⇒ suspend`, plus the
 //! resume re-indexing), which the evaluator's `Chosen` arms and card-local
 //! natives share. There is no separate choice frame.
 
+use std::borrow::Cow;
+
 use crate::action::InputResponse;
 use crate::card_registry::CardRegistry;
 use crate::engine::outcome::{
-    ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
+    ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, PromptNature,
 };
 use crate::engine::{board, Cx, EvalContext};
-use crate::state::{CardCode, Continuation, EffectFrame, GameState};
+use crate::state::{CardCode, Continuation, EffectFrame, EffectPrompt, GameState};
 
 /// Outcome of applying the uniform resolve convention to a count of legal
 /// options. Crate-private: an entity selection goes
@@ -51,10 +54,45 @@ pub enum Grounded<T> {
     /// There were no candidates. The caller decides what that means: a printed
     /// fallback (Crypt Chill 01167 deals 2 damage), a skip, or a rejection.
     Empty,
-    /// Return this outcome unchanged. It is the `AwaitingInput` prompt when the
-    /// controller must pick, or `Rejected` when a threaded pick indexes past the
-    /// candidate list.
-    Suspend(EngineOutcome),
+    /// The controller must pick, or a threaded pick indexed past the candidate
+    /// list. A native hands it to
+    /// [`NativeCx::suspend`](crate::engine::NativeCx::suspend) and returns
+    /// what that returns.
+    Suspend(Suspension),
+}
+
+/// Why a grounding stopped short of a pick: the prompt the controller must
+/// answer, or the rejection of a threaded pick out of range.
+///
+/// Opaque on purpose. The prompt it carries is stored on the suspending effect
+/// frame, where the prompt table reads it, so the one way to surface it is to
+/// hand it back to the engine: a native through
+/// [`NativeCx::suspend`](crate::engine::NativeCx::suspend), the evaluator
+/// through its own suspend-in-place.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Suspension(Result<EffectPrompt, Cow<'static, str>>);
+
+impl Suspension {
+    fn ask(prompt: EffectPrompt) -> Self {
+        Self(Ok(prompt))
+    }
+
+    fn reject(reason: String) -> Self {
+        Self(Err(reason.into()))
+    }
+
+    /// The request this suspension puts to the controller, or `None` when it is
+    /// a rejection. For a test reading what a grounding would ask.
+    #[must_use]
+    pub fn request(&self) -> Option<InputRequest> {
+        self.0.as_ref().ok().map(effect_request)
+    }
+
+    /// The prompt to store on the suspending frame, or the `Rejected` outcome to
+    /// return in its place.
+    pub(crate) fn into_prompt(self) -> Result<EffectPrompt, EngineOutcome> {
+        self.0.map_err(|reason| EngineOutcome::Rejected { reason })
+    }
 }
 
 /// Offer the controller a choice among board entities: the one way
@@ -88,9 +126,10 @@ pub fn resolve_grounded_choice<T: Clone>(
     if let Some(OptionId(i)) = ctx.chosen_option() {
         return match candidates.get(i as usize) {
             Some(c) => Grounded::Picked(c.clone()),
-            None => Grounded::Suspend(EngineOutcome::Rejected {
-                reason: format!("{prompt}: pick {i} out of range (0..{})", candidates.len()).into(),
-            }),
+            None => Grounded::Suspend(Suspension::reject(format!(
+                "{prompt}: pick {i} out of range (0..{})",
+                candidates.len()
+            ))),
         };
     }
     match resolve_choice_count(candidates.len(), state.interactive_acknowledge) {
@@ -98,7 +137,9 @@ pub fn resolve_grounded_choice<T: Clone>(
         ChoiceResolution::Auto(i) => Grounded::Picked(candidates[i].clone()),
         ChoiceResolution::Suspend => {
             let anchors: Vec<_> = candidates.iter().map(anchor).collect();
-            Grounded::Suspend(awaiting_selection(state, cards, prompt, &anchors))
+            Grounded::Suspend(Suspension::ask(selection_prompt(
+                state, cards, prompt, &anchors,
+            )))
         }
     }
 }
@@ -132,9 +173,10 @@ pub fn resolve_card_choice(
         return if i < codes.len() {
             Grounded::Picked(i)
         } else {
-            Grounded::Suspend(EngineOutcome::Rejected {
-                reason: format!("{prompt}: pick {i} out of range (0..{})", codes.len()).into(),
-            })
+            Grounded::Suspend(Suspension::reject(format!(
+                "{prompt}: pick {i} out of range (0..{})",
+                codes.len()
+            )))
         };
     }
     match resolve_choice_count(codes.len(), state.interactive_acknowledge) {
@@ -142,43 +184,53 @@ pub fn resolve_card_choice(
         ChoiceResolution::Auto(i) => Grounded::Picked(i),
         ChoiceResolution::Suspend => {
             let labels = codes.iter().map(|code| card_name(cards, code)).collect();
-            Grounded::Suspend(awaiting_choice(prompt, labels))
+            Grounded::Suspend(Suspension::ask(card_prompt(prompt, labels)))
         }
     }
 }
 
-/// Build the `AwaitingInput` for a controller pick among board entities, one
-/// anchor per offered option in offered order (`OptionId(i)` is the index).
-/// Each option renders on the entity its anchor names, and its label
-/// is derived from that anchor by [`anchor_label`], so the two cannot disagree
-/// and no caller can leave an option unlabelled. Pushes **nothing**: the
-/// suspending effect node's own `Leaf` frame stays on the stack as the prompt,
-/// and resume re-derives the option set and validates the pick by
-/// checked indexing.
-fn awaiting_selection(
+/// The prompt for a controller pick among board entities, one anchor per
+/// offered option in offered order (`OptionId(i)` is the index). Each option
+/// renders on the entity its anchor names, and its label is derived from that
+/// anchor by [`anchor_label`], so the two cannot disagree and no caller can
+/// leave an option unlabelled. Pushes **nothing**: the suspending effect node's
+/// own `Leaf` frame stays on the stack as the prompt, and resume re-derives the
+/// option set and validates the pick by checked indexing.
+fn selection_prompt(
     state: &GameState,
     cards: &CardRegistry,
-    prompt: impl Into<String>,
+    text: impl Into<String>,
     anchors: &[OptionTarget],
-) -> EngineOutcome {
-    EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_single(
-            prompt,
-            candidate_options(state, cards, anchors, OptionTarget::clone),
-        ),
-        resume_token: ResumeToken(0),
+) -> EffectPrompt {
+    EffectPrompt {
+        text: text.into(),
+        options: anchors
+            .iter()
+            .map(|anchor| (anchor_label(state, cards, anchor), Some(anchor.clone())))
+            .collect(),
+        target: None,
+        nature: PromptNature::Selection,
     }
 }
 
-/// One `(label, anchor)` per offered option to the `ChoiceOption` list a request
-/// carries, `OptionId(i)` being the offered index. Shared by the un-anchored and
-/// decision builders below.
-fn choice_options(options: Vec<(String, Option<OptionTarget>)>) -> Vec<ChoiceOption> {
-    options
-        .into_iter()
+/// What a suspended effect node asks, as the request a host renders: the
+/// [`EffectPrompt`] it stored on its frame, `OptionId(i)` being the offered
+/// index. One of the [prompt table](super::prompt::request)'s helpers.
+pub(crate) fn effect_request(prompt: &EffectPrompt) -> InputRequest {
+    let options = prompt
+        .options
+        .iter()
         .enumerate()
-        .map(|(i, (label, target))| ChoiceOption::new(option_id(i), label).maybe_at(target))
-        .collect()
+        .map(|(i, (label, target))| {
+            ChoiceOption::new(option_id(i), label.clone()).maybe_at(target.clone())
+        })
+        .collect();
+    let request =
+        InputRequest::pick_single(prompt.text.clone(), options).maybe_at(prompt.target.clone());
+    match prompt.nature {
+        PromptNature::Decision => request.deciding(),
+        PromptNature::Selection => request,
+    }
 }
 
 /// The [`OptionId`] of the option offered at index `i`: the index convention's
@@ -264,12 +316,12 @@ pub(crate) fn card_name(cards: &CardRegistry, code: &CardCode) -> String {
     (cards.metadata_for)(code).map_or_else(|| code.0.clone(), |m| m.name.clone())
 }
 
-/// Build the `AwaitingInput` for a **decision** — a choice among alternatives
-/// printed on one card, rather than among board entities (ADR 0015). Every
-/// branch shares `anchor`, so it rides on the request as well as on each option:
-/// the options keep it because that is what makes the card printing the choice
-/// glow, and the request carries it because the surface presenting the choice
-/// reads one anchor to name where the text is printed.
+/// The prompt for a **decision** — a choice among alternatives printed on one
+/// card, rather than among board entities (ADR 0015). Every branch shares
+/// `anchor`, so it rides on the request as well as on each option: the options
+/// keep it because that is what makes the card printing the choice glow, and
+/// the request carries it because the surface presenting the choice reads one
+/// anchor to name where the text is printed.
 ///
 /// `anchor` is already **liveness-checked** by the caller — `None` means
 /// the card left play during cost payment, and the prompt falls back to the
@@ -279,37 +331,35 @@ pub(crate) fn card_name(cards: &CardRegistry, code: &CardCode) -> String {
 /// substitution offer (Mind over Matter 01036), whose source has left play and
 /// so passes no anchor. Every other suspend keeps the
 /// [`Selection`](crate::engine::PromptNature::Selection) default, whether it is
-/// built by [`awaiting_selection`], [`awaiting_choice`], or a builder of its own.
-pub(crate) fn awaiting_decision(
-    prompt: impl Into<String>,
+/// built by [`selection_prompt`], [`card_prompt`], or a builder of its own.
+pub(crate) fn decision_prompt(
+    text: impl Into<String>,
     labels: Vec<String>,
     anchor: Option<OptionTarget>,
-) -> EngineOutcome {
-    let options = labels
-        .into_iter()
-        .map(|label| (label, anchor.clone()))
-        .collect();
-    EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_single(prompt, choice_options(options))
-            .maybe_at(anchor)
-            .deciding(),
-        resume_token: ResumeToken(0),
+) -> EffectPrompt {
+    EffectPrompt {
+        text: text.into(),
+        options: labels
+            .into_iter()
+            .map(|label| (label, anchor.clone()))
+            .collect(),
+        target: anchor,
+        nature: PromptNature::Decision,
     }
 }
 
-/// Build the `AwaitingInput` for a controller choice from one render label per
-/// offered option, each **un-anchored** (no board home, so the host renders it in
-/// the prompt banner). Used by [`resolve_card_choice`], whose options are cards
-/// in a deck with no board surface (ADR 0015 excludes them), labelled by
-/// [`card_name`]. A choice among board entities goes the other way:
-/// through [`resolve_grounded_choice`], with an anchor per option.
-fn awaiting_choice(prompt: impl Into<String>, labels: Vec<String>) -> EngineOutcome {
-    EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_single(
-            prompt,
-            choice_options(labels.into_iter().map(|l| (l, None)).collect()),
-        ),
-        resume_token: ResumeToken(0),
+/// The prompt for a controller choice from one render label per offered
+/// option, each **un-anchored** (no board home, so the host renders it in the
+/// prompt banner). Used by [`resolve_card_choice`], whose options are cards in a
+/// deck with no board surface (ADR 0015 excludes them), labelled by
+/// [`card_name`]. A choice among board entities goes the other way: through
+/// [`resolve_grounded_choice`], with an anchor per option.
+fn card_prompt(text: impl Into<String>, labels: Vec<String>) -> EffectPrompt {
+    EffectPrompt {
+        text: text.into(),
+        options: labels.into_iter().map(|label| (label, None)).collect(),
+        target: None,
+        nature: PromptNature::Selection,
     }
 }
 
@@ -328,9 +378,12 @@ pub(crate) fn resume_effect_choice(cx: &mut Cx, response: &InputResponse) -> Eng
     };
     match cx.state.continuations.top_frame_mut() {
         Some(Continuation::Effect(
-            EffectFrame::Leaf { ctx, .. } | EffectFrame::Designated { ctx, .. },
+            EffectFrame::Leaf { ctx, prompt, .. } | EffectFrame::Designated { ctx, prompt, .. },
         )) => {
+            // The pick answers the stored prompt: clear it, so the `drive`
+            // loop re-steps the node with the pick rather than asking again.
             ctx.set_chosen_option(Some(*picked));
+            *prompt = None;
         }
         _ => {
             return EngineOutcome::Rejected {
@@ -497,9 +550,9 @@ mod tests {
     }
 
     #[test]
-    fn awaiting_selection_anchors_and_names_each_option() {
+    fn selection_prompt_anchors_and_names_each_option() {
         let state = labelled_board();
-        let out = awaiting_selection(
+        let request = effect_request(&selection_prompt(
             &state,
             &TEST_REGISTRY,
             "Choose a target",
@@ -507,10 +560,7 @@ mod tests {
                 OptionTarget::Enemy(EnemyId(1)),
                 OptionTarget::Location(HERE),
             ],
-        );
-        let EngineOutcome::AwaitingInput { request, .. } = out else {
-            panic!("expected AwaitingInput");
-        };
+        ));
         assert_eq!(request.options[0].id, OptionId(0));
         assert_eq!(
             request.options[0].target,
@@ -522,15 +572,12 @@ mod tests {
     }
 
     #[test]
-    fn awaiting_decision_marks_the_request_and_anchors_both_levels() {
-        let out = awaiting_decision(
+    fn decision_prompt_marks_the_request_and_anchors_both_levels() {
+        let request = effect_request(&decision_prompt(
             "Choose one",
             vec!["Burn it down".into(), "Do not".into()],
             Some(OptionTarget::Act),
-        );
-        let EngineOutcome::AwaitingInput { request, .. } = out else {
-            panic!("expected AwaitingInput");
-        };
+        ));
         assert_eq!(request.nature, PromptNature::Decision);
         assert_eq!(
             request.target,
@@ -550,11 +597,12 @@ mod tests {
     /// decision un-anchored at both levels rather than pointing at a card no
     /// board surface renders.
     #[test]
-    fn awaiting_decision_with_no_live_source_is_unanchored_but_still_a_decision() {
-        let out = awaiting_decision("Choose one", vec!["A".into(), "B".into()], None);
-        let EngineOutcome::AwaitingInput { request, .. } = out else {
-            panic!("expected AwaitingInput");
-        };
+    fn decision_prompt_with_no_live_source_is_unanchored_but_still_a_decision() {
+        let request = effect_request(&decision_prompt(
+            "Choose one",
+            vec!["A".into(), "B".into()],
+            None,
+        ));
         assert_eq!(request.nature, PromptNature::Decision);
         assert_eq!(request.target, None);
         assert!(request.options.iter().all(|o| o.target.is_none()));
@@ -687,7 +735,10 @@ mod tests {
             "Choose a location",
             |id| OptionTarget::Location(*id),
         );
-        let Grounded::Suspend(EngineOutcome::AwaitingInput { request, .. }) = out else {
+        let Some(request) = (match out {
+            Grounded::Suspend(suspension) => suspension.request(),
+            _ => None,
+        }) else {
             panic!("expected a one-option suspend");
         };
         assert_eq!(request.options.len(), 1);
@@ -723,7 +774,10 @@ mod tests {
             "Choose an enemy",
             |id| OptionTarget::Enemy(*id),
         );
-        let Grounded::Suspend(EngineOutcome::AwaitingInput { request, .. }) = out else {
+        let Some(request) = (match out {
+            Grounded::Suspend(suspension) => suspension.request(),
+            _ => None,
+        }) else {
             panic!("2 candidates suspend for a pick");
         };
         assert_eq!(request.prompt, "Choose an enemy");
@@ -761,7 +815,10 @@ mod tests {
             "Choose an investigator",
             |id| state.investigators[id].card_anchor(),
         );
-        let Grounded::Suspend(EngineOutcome::AwaitingInput { request, .. }) = out else {
+        let Some(request) = (match out {
+            Grounded::Suspend(suspension) => suspension.request(),
+            _ => None,
+        }) else {
             panic!("2 candidates suspend for a pick");
         };
         assert_eq!(request.options.len(), 2);
@@ -801,7 +858,7 @@ mod tests {
                 |id| OptionTarget::Enemy(*id),
             );
             assert!(
-                matches!(out, Grounded::Suspend(EngineOutcome::Rejected { .. })),
+                matches!(&out, Grounded::Suspend(suspension) if suspension.request().is_none()),
                 "pick 2 of {} candidates must be rejected",
                 candidates.len(),
             );
@@ -809,11 +866,8 @@ mod tests {
     }
 
     #[test]
-    fn awaiting_choice_leaves_every_option_unanchored() {
-        let out = awaiting_choice("Pick", vec!["x".into(), "y".into()]);
-        let EngineOutcome::AwaitingInput { request, .. } = out else {
-            panic!("expected AwaitingInput");
-        };
+    fn card_prompt_leaves_every_option_unanchored() {
+        let request = effect_request(&card_prompt("Pick", vec!["x".into(), "y".into()]));
         assert!(request.options.iter().all(|o| o.target.is_none()));
     }
 }

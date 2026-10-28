@@ -29,10 +29,11 @@ use crate::test_support::resolver::{
 ///   phase anchor staged at its phase end
 ///   ([`ending_enemy_phase`](crate::state::GameStateBuilder::ending_enemy_phase),
 ///   [`ending_upkeep_phase`](crate::state::GameStateBuilder::ending_upkeep_phase))
-///   runs that phase end, and play goes on from it. A staged mulligan,
-///   encounter draw or hand-size discard shows its prompt. A
-///   fixture whose top frame cannot re-surface its prompt is a stack the engine
-///   never rests at, and construction panics.
+///   runs that phase end, and play goes on from it. Any prompt frame staged on
+///   top ([`with_frame`](crate::state::GameStateBuilder::with_frame), or a
+///   staged mulligan, encounter draw or hand-size discard) shows its prompt,
+///   built from the frame. A fixture that settles on a frame that is not a
+///   prompt is a stack the engine never rests at, and construction panics.
 /// - **Every step applies once, then drains to the next rest.** The steps are
 ///   the methods whose doc starts "Step:", and each says where it applies.
 ///   The drain answers prompts through the session's
@@ -163,18 +164,17 @@ impl TestSession {
     ///
     /// # Panics
     ///
-    /// Panics if the top frame cannot re-surface its prompt — a stack the
-    /// engine never rests at. Build the state before the prompt and drive into
-    /// it instead.
+    /// Panics if the state settles with a frame on top that is not a prompt —
+    /// a stack the engine never rests at, such as a phase anchor with nothing
+    /// to advance it.
     pub fn new(state: GameState, registries: Registries) -> Self {
         let settled = engine::apply_via(state, registries, |cx| {
             let outcome = engine::drive(cx, EngineOutcome::Done);
             if matches!(outcome, EngineOutcome::Done) {
                 if let Some(top) = cx.state.continuations.top() {
                     panic!(
-                        "TestSession::new: the fixture's top frame cannot re-surface its \
-                         prompt ({top:?}). The engine never rests at this stack; build the \
-                         state before the prompt and drive into it instead",
+                        "TestSession::new: the fixture settled on a frame that is not a \
+                         prompt ({top:?}). The engine never rests at this stack",
                     );
                 }
             }

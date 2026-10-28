@@ -238,10 +238,10 @@ pub fn test_skill_test(
 ///
 /// **Render-only.** A state built with it is for reading — a view, a decision
 /// label, an eligibility condition — and is never applied. The stack may be one
-/// the engine could never produce, and nothing re-establishes the prompt such a
-/// state is waiting on: a [`TestSession`](crate::test_support::TestSession)
-/// settling it panics if its top frame cannot re-surface its prompt. To drive a
-/// state, reach it through the session instead.
+/// the engine could never produce. To drive a state with a frame on top, stage
+/// it with [`GameStateBuilder::with_frame`](crate::state::GameStateBuilder::with_frame),
+/// which pushes it with the stack's checks, and settle it into a
+/// [`TestSession`](crate::test_support::TestSession).
 ///
 /// To stack a frame on a state the builder already staged, rebuild from its
 /// frames: `from_frames_unchecked(state.continuations.iter().cloned().chain([frame]))`.

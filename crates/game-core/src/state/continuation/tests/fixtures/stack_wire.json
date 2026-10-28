@@ -174,7 +174,8 @@
           "choice": null,
           "ability_source": null,
           "each": null
-        }
+        },
+        "prompt": null
       }
     }
   },

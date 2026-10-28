@@ -77,7 +77,7 @@ fn crypt_chill_fail(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
         // Cannot discard an asset → take 2 damage instead (the printed
         // fallback), dealt as the native's tail.
         Grounded::Empty => cx.deal_harm(controller, 2, 0),
-        Grounded::Suspend(outcome) => outcome,
+        Grounded::Suspend(suspension) => cx.suspend(suspension),
     }
 }
 

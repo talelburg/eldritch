@@ -22,8 +22,8 @@ use card_dsl::dsl::Cost;
 
 use crate::action::InputResponse;
 use crate::card_registry::CardRegistry;
-use crate::engine::dispatch::{cards, choice};
-use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken};
+use crate::engine::dispatch::{cards, choice, prompt};
+use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId, OptionTarget};
 use crate::engine::Cx;
 use crate::state::{CardCode, GameState, HandDiscardCostFrame, Investigator, InvestigatorId};
 
@@ -88,23 +88,30 @@ pub(super) fn drive(cx: &mut Cx) -> EngineOutcome {
             .into(),
         },
         choice::ChoiceResolution::Auto(i) => pay(cx, investigator, candidates[i]),
-        choice::ChoiceResolution::Suspend => {
-            let anchors: Vec<OptionTarget> = candidates
-                .iter()
-                .map(|&hand_index| hand_card(investigator, hand_index))
-                .collect();
-            EngineOutcome::AwaitingInput {
-                request: InputRequest::pick_single(
-                    format!(
-                        "{}: choose a card from your hand to discard. Weaknesses can't be chosen.",
-                        choice::card_name(cx.cards, &code),
-                    ),
-                    choice::candidate_options(cx.state, cx.cards, &anchors, OptionTarget::clone),
-                ),
-                resume_token: ResumeToken(0),
-            }
-        }
+        choice::ChoiceResolution::Suspend => prompt::suspend(cx.state, cx.cards),
     }
+}
+
+/// What a [`HandDiscardCostFrame`] asks: which of the investigator's hand cards
+/// that are not weaknesses to discard. One of the
+/// [prompt table](prompt::request)'s helpers.
+pub(super) fn request(
+    state: &GameState,
+    cards: &CardRegistry,
+    frame: &HandDiscardCostFrame,
+) -> InputRequest {
+    let HandDiscardCostFrame { investigator, code } = frame;
+    let anchors: Vec<OptionTarget> = candidates(state, cards, *investigator)
+        .into_iter()
+        .map(|hand_index| hand_card(*investigator, hand_index))
+        .collect();
+    InputRequest::pick_single(
+        format!(
+            "{}: choose a card from your hand to discard. Weaknesses can't be chosen.",
+            choice::card_name(cards, code),
+        ),
+        choice::candidate_options(state, cards, &anchors, OptionTarget::clone),
+    )
 }
 
 /// Resume a [`HandDiscardCostFrame`] with the player's pick: a

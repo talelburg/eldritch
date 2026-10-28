@@ -92,7 +92,7 @@ fn dynamite_blast(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
         Grounded::Empty => EngineOutcome::Rejected {
             reason: "01024 blast: controller has no location to target".into(),
         },
-        Grounded::Suspend(outcome) => outcome,
+        Grounded::Suspend(suspension) => cx.suspend(suspension),
     }
 }
 
