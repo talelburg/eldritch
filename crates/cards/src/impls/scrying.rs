@@ -182,11 +182,4 @@ mod tests {
         let labels: Vec<_> = branches.iter().map(|b| b.label.as_str()).collect();
         assert_eq!(labels, ["Your deck", "The encounter deck"]);
     }
-
-    /// Catches a `CARD` record wired to the wrong code or abilities fn —
-    /// the registry must dispatch CODE here.
-    #[test]
-    fn registry_dispatches_to_this_modules_abilities() {
-        assert_eq!(crate::abilities_for(CODE), Some(abilities()));
-    }
 }

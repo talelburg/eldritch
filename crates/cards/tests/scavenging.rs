@@ -27,7 +27,6 @@ use game_core::engine::OptionId;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
-    TokenModifiers,
 };
 use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
 
@@ -61,7 +60,6 @@ fn board(investigator: Seat) -> TestSession {
         .with_seat(investigator)
         .with_location(study)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .open_turn(INV)
         .session()
 }

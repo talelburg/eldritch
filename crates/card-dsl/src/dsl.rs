@@ -1948,8 +1948,7 @@ impl Condition {
                 kind: NativeKind::Condition,
                 tag,
             }),
-            Condition::SkillTest { .. }
-            | Condition::SkillTestKind(_)
+            Condition::SkillTestKind(_)
             | Condition::Compare { .. }
             | Condition::ControlStatus { .. } => {}
         }
@@ -3303,12 +3302,6 @@ impl EnemyTarget {
 /// [`Native`](Self::Native) holds what it can't yet say.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Condition {
-    /// Outcome of the most recent skill test in the current
-    /// resolution stack. Failure-triggered cards (some Survivor
-    /// cards) use [`TestOutcome::Failure`]; success-side card text
-    /// typically gates via [`Trigger::OnSkillTestResolution`] instead,
-    /// so this variant is rarely paired with `Success`.
-    SkillTest { outcome: TestOutcome },
     /// Kind of the currently-resolving skill test. Used to narrow
     /// effects whose printed text qualifies on the action that
     /// initiated the test — Deduction's "if this skill test is
@@ -4113,6 +4106,54 @@ pub fn native_condition(tag: impl Into<String>) -> Condition {
 #[must_use]
 pub fn discard_self() -> Effect {
     Effect::DiscardSelf
+}
+
+/// Build an [`Effect::Cancel`]: cancel the impact whose `when` cell this
+/// effect resolves inside.
+#[must_use]
+pub fn cancel() -> Effect {
+    Effect::Cancel
+}
+
+/// Build an [`Effect::RevealChaosToken`]: reveal a new chaos token for the
+/// skill test in flight.
+#[must_use]
+pub fn reveal_chaos_token() -> Effect {
+    Effect::RevealChaosToken
+}
+
+/// Build an [`Effect::AdditionalSlots`]: `count` more slots of type `slot`.
+///
+/// The slots hold only assets `only` matches (`None` is any asset of the
+/// type), for as long as the card is in play. The constant marker; wrap it in
+/// [`constant`].
+#[must_use]
+pub fn additional_slots(slot: Slot, count: u8, only: Option<CardFilter>) -> Effect {
+    Effect::AdditionalSlots { slot, count, only }
+}
+
+/// Build an [`Effect::PlaceEventsOnBottomOfDeck`]: the controller's events go
+/// to the bottom of their deck instead of their discard pile. The constant
+/// marker; wrap it in [`constant`].
+#[must_use]
+pub fn place_events_on_bottom_of_deck() -> Effect {
+    Effect::PlaceEventsOnBottomOfDeck
+}
+
+/// Build an [`Effect::PlayTopmostEventInDiscardPile`]: the controller may play
+/// the topmost event in their discard pile as if it were in their hand. The
+/// constant marker; wrap it in [`constant`].
+#[must_use]
+pub fn play_topmost_event_in_discard_pile() -> Effect {
+    Effect::PlayTopmostEventInDiscardPile
+}
+
+/// Build an [`Effect::BlankText`]: treat each investigator `target` names as
+/// if their printed text box were blank, except for traits. The constant
+/// marker; wrap it in [`constant`].
+#[must_use]
+pub fn blank_text(target: BlankTarget) -> Effect {
+    Effect::BlankText { target }
 }
 
 /// Build an [`Effect::PutIntoThreatArea`] that enters clue-less.

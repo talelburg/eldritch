@@ -31,6 +31,16 @@ pub struct LogBatch {
     pub events: Vec<Event>,
 }
 
+/// The chaos token a reveal drew, with how it resolved — the pair
+/// `Event::ChaosTokenRevealed` carries, latched for the result panel.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RevealedToken {
+    /// The token drawn from the bag.
+    pub token: ChaosToken,
+    /// How that token resolved for this test.
+    pub resolution: TokenResolution,
+}
+
 /// Everything the UI renders. `game`/`outcome`/`last_rejection` come
 /// from `reduce`; `status` is driven by the transport.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -50,7 +60,7 @@ pub struct ClientState {
     /// reason as the difficulty: a symbol token whose ST.4 effect suspends for
     /// input puts the reveal in an earlier batch than the outcome.
     /// Cleared by a new test's `SkillTestStarted` and by `Hello`.
-    pub last_revealed_token: Option<(ChaosToken, TokenResolution)>,
+    pub last_revealed_token: Option<RevealedToken>,
     /// The most recent skill test's resolution — the `SkillTestSucceeded` or
     /// `SkillTestFailed` event itself — held from the batch that determined it
     /// until the batch that tears the test down. Latched for the same reason as
@@ -147,7 +157,10 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
                         state.last_skill_test_result = None;
                     }
                     Event::ChaosTokenRevealed { token, resolution } => {
-                        state.last_revealed_token = Some((*token, *resolution));
+                        state.last_revealed_token = Some(RevealedToken {
+                            token: *token,
+                            resolution: *resolution,
+                        });
                     }
                     Event::SkillTestSucceeded { .. } | Event::SkillTestFailed { .. } => {
                         state.last_skill_test_result = Some(event.clone());
@@ -314,7 +327,10 @@ mod tests {
         );
         assert_eq!(
             s.last_revealed_token,
-            Some((ChaosToken::Tablet, TokenResolution::Modifier(-2)))
+            Some(RevealedToken {
+                token: ChaosToken::Tablet,
+                resolution: TokenResolution::Modifier(-2),
+            })
         );
         // The next batch carries the outcome and no reveal; the latch survives.
         reduce(
@@ -332,7 +348,10 @@ mod tests {
         );
         assert_eq!(
             s.last_revealed_token,
-            Some((ChaosToken::Tablet, TokenResolution::Modifier(-2))),
+            Some(RevealedToken {
+                token: ChaosToken::Tablet,
+                resolution: TokenResolution::Modifier(-2),
+            }),
             "a batch without a reveal leaves the latch alone"
         );
     }
@@ -342,7 +361,10 @@ mod tests {
     #[test]
     fn a_new_test_clears_the_previous_tests_token() {
         let mut s = ClientState {
-            last_revealed_token: Some((ChaosToken::Tablet, TokenResolution::Modifier(-2))),
+            last_revealed_token: Some(RevealedToken {
+                token: ChaosToken::Tablet,
+                resolution: TokenResolution::Modifier(-2),
+            }),
             ..Default::default()
         };
         reduce(
@@ -388,7 +410,10 @@ mod tests {
         );
         assert_eq!(
             s.last_revealed_token,
-            Some((ChaosToken::Numeric(1), TokenResolution::Modifier(1)))
+            Some(RevealedToken {
+                token: ChaosToken::Numeric(1),
+                resolution: TokenResolution::Modifier(1),
+            })
         );
     }
 
@@ -396,7 +421,10 @@ mod tests {
     fn hello_clears_the_retained_latches() {
         let mut s = ClientState {
             last_skill_test_difficulty: Some(3),
-            last_revealed_token: Some((ChaosToken::Tablet, TokenResolution::Modifier(-2))),
+            last_revealed_token: Some(RevealedToken {
+                token: ChaosToken::Tablet,
+                resolution: TokenResolution::Modifier(-2),
+            }),
             last_skill_test_result: Some(succeeded(1)),
             ..Default::default()
         };

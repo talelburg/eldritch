@@ -1,6 +1,8 @@
 //! The context a card-local native effect resolves in: read the whole state,
 //! change the game only through the engine's exits.
 
+use std::borrow::Cow;
+
 use card_dsl::card_data::CardMetadata;
 use card_dsl::dsl::Restriction;
 
@@ -146,6 +148,20 @@ impl<'a> NativeCx<'a> {
         owner: Owner,
     ) -> EngineOutcome {
         set_aside::put_set_aside_card_into_play(self.write_access(), code, at, owner)
+    }
+
+    /// Put the set-aside location `code` into play and return its minted
+    /// id, wired to its in-play neighbours from the scenario's layout.
+    ///
+    /// # Errors
+    ///
+    /// The rejection reason, changing nothing, when `code` is not set aside,
+    /// has no metadata, or is not a location.
+    pub fn put_set_aside_location_into_play(
+        &mut self,
+        code: &str,
+    ) -> Result<LocationId, Cow<'static, str>> {
+        set_aside::put_set_aside_location_into_play(self.write_access(), code)
     }
 
     /// Reveal `location` if it is unrevealed, placing its printed clues.

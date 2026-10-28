@@ -17,7 +17,7 @@ use game_core::engine::Registries;
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
-    ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenModifiers,
+    ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
 };
 use game_core::test_support::{self, seat, MockRegistry, TestSession};
 
@@ -62,7 +62,6 @@ fn session_with_threat_area(threat: &[&str]) -> TestSession {
         .with_seat(seat(1).at(HERE).threat_area(threat.iter().copied()))
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .open_turn(INV)
         .session()
 }

@@ -101,7 +101,7 @@ pub fn ActCard(act: Act, face: Face) -> impl IntoView {
     let pending = use_context::<PendingOptions>()
         .map(|p| p.0.get())
         .unwrap_or_default();
-    let menu_opts = interaction::options_for(&pending, OptionTarget::Act);
+    let menu_opts = interaction::options_for(&pending, &OptionTarget::Act);
     let actionable = !menu_opts.is_empty();
     #[cfg(target_arch = "wasm32")]
     let open = RwSignal::new(None::<(i32, i32)>);
@@ -156,7 +156,7 @@ pub fn AgendaCard(agenda: Agenda, doom: u8, face: Face) -> impl IntoView {
     let pending = use_context::<PendingOptions>()
         .map(|p| p.0.get())
         .unwrap_or_default();
-    let menu_opts = interaction::options_for(&pending, OptionTarget::Agenda);
+    let menu_opts = interaction::options_for(&pending, &OptionTarget::Agenda);
     let actionable = !menu_opts.is_empty();
     #[cfg(target_arch = "wasm32")]
     let open = RwSignal::new(None::<(i32, i32)>);

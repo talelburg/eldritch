@@ -20,7 +20,7 @@ use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, ChaosBag, ChaosToken, Enemy, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenModifiers,
+    GameStateBuilder, InvestigatorId, LocationId, SkillKind,
 };
 use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
 
@@ -57,8 +57,7 @@ fn board_with(engaged: u32, unengaged: u32) -> GameStateBuilder {
         )
         .with_location(test_support::test_location(HERE.0, "Study"))
         .open_turn(INV)
-        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default());
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]));
 
     for n in 0..engaged {
         // Co-located: weapon Fight targets enemies at your location.

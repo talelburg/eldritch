@@ -153,13 +153,6 @@ mod tests {
         );
     }
 
-    /// Catches a `CARD` record wired to the wrong code or abilities fn —
-    /// the registry must dispatch CODE here.
-    #[test]
-    fn registry_dispatches_to_this_modules_abilities() {
-        assert_eq!(crate::abilities_for(CODE), Some(abilities()));
-    }
-
     #[test]
     fn single_location_blast_surfaces_under_interactive_flag() {
         // Sole candidate (controller's location, no connections). With

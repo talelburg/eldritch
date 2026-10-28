@@ -58,8 +58,11 @@
 //!
 //! "Wendy Adams deck only." is a deckbuilding restriction the engine does not
 //! police.
+//!
+//! [`Effect::PlaceEventsOnBottomOfDeck`]: card_dsl::dsl::Effect::PlaceEventsOnBottomOfDeck
+//! [`Effect::PlayTopmostEventInDiscardPile`]: card_dsl::dsl::Effect::PlayTopmostEventInDiscardPile
 
-use card_dsl::dsl::{self, Ability, Effect};
+use card_dsl::dsl::{self, Ability};
 
 use crate::impls::CardRecord;
 
@@ -78,17 +81,7 @@ pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![
-        dsl::constant(Effect::PlayTopmostEventInDiscardPile),
-        dsl::constant(Effect::PlaceEventsOnBottomOfDeck),
+        dsl::constant(dsl::play_topmost_event_in_discard_pile()),
+        dsl::constant(dsl::place_events_on_bottom_of_deck()),
     ]
-}
-
-#[cfg(test)]
-mod tests {
-    /// Catches a `CARD` record wired to the wrong code or abilities fn — the
-    /// registry must dispatch CODE to this module's `abilities()`.
-    #[test]
-    fn registry_dispatches_to_this_modules_abilities() {
-        assert_eq!(crate::abilities_for(super::CODE), Some(super::abilities()));
-    }
 }

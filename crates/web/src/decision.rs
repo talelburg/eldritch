@@ -249,7 +249,7 @@ mod tests {
 
     use super::*;
     use crate::skill_test_result;
-    use crate::store::ConnStatus;
+    use crate::store::{ConnStatus, RevealedToken};
 
     const FIRST_AID: &str = "01019";
     const AGENDA_1: &str = "01105";
@@ -464,7 +464,10 @@ mod tests {
 
         let mut ack = ClientState {
             last_skill_test_difficulty: Some(3),
-            last_revealed_token: Some((ChaosToken::Numeric(0), TokenResolution::Modifier(0))),
+            last_revealed_token: Some(RevealedToken {
+                token: ChaosToken::Numeric(0),
+                resolution: TokenResolution::Modifier(0),
+            }),
             last_skill_test_result: Some(Event::SkillTestSucceeded {
                 investigator: InvestigatorId(1),
                 skill: SkillKind::Willpower,

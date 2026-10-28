@@ -12,15 +12,16 @@
 //!    Chain [`back`](CardRecord::back) for a printed reverse, and
 //!    [`effects`](CardRecord::effects) / [`conditions`](CardRecord::conditions)
 //!    for each native tag an ability names — an eligibility's included. The native fns stay private to the module.
-//! 2. Declare `pub mod <name>;` below.
-//! 3. Add `<name>::CARD` to [`ALL`].
+//! 2. Add `<name>` to the `cards!` list below, in alphabetical order. The
+//!    list declares the module and adds its `CARD` to [`ALL`].
 //!
 //! Spell a native tag `<code>:<kebab-case>`, prefixed with the card's own
 //! code. The crate's corpus tests then check the registration: every tag an
 //! ability names resolves in its own namespace, every registered native is
-//! referenced, no code or tag is listed twice, and every module file here has
-//! an `ALL` entry. [`is_playable`](super::is_playable) is membership in
-//! `ALL`, so playability and registration cannot disagree.
+//! referenced, no code or tag is listed twice, and the `cards!` list names
+//! exactly the module files here, alphabetically.
+//! [`is_playable`](super::is_playable) is membership in `ALL`, so
+//! playability and registration cannot disagree.
 //!
 //! # Module-naming convention
 //!
@@ -87,104 +88,123 @@
 use card_dsl::dsl::Ability;
 use game_core::card_registry::{NativeConditionFn, NativeEffectFn};
 
-pub mod abandoned_and_alone;
-pub mod agnes_baker;
-pub mod amnesia;
-pub mod ancient_evils;
-pub mod arcane_initiate;
-pub mod arcane_studies;
-pub mod attic;
-pub mod automatic_45;
-pub mod backstab;
-pub mod barricade;
-pub mod baseball_bat;
-pub mod beat_cop;
-pub mod blinding_light;
-pub mod burglary;
-pub mod cellar;
-pub mod cover_up;
-pub mod crypt_chill;
-pub mod cunning_distraction;
-pub mod daisy_walker;
-pub mod daisys_tote_bag;
-pub mod dark_memory;
-pub mod deduction;
-pub mod derringer_41;
-pub mod dig_deep;
-pub mod dissonant_voices;
-pub mod dodge;
-pub mod dr_milan_christopher;
-pub mod drawn_to_the_flame;
-pub mod dynamite_blast;
-pub mod elusive;
-pub mod emergency_cache;
-pub mod evidence;
-pub mod fearless;
-pub mod first_aid;
-pub mod flashlight;
-pub mod forbidden_knowledge;
-pub mod frozen_in_fear;
-pub mod grasping_hands;
-pub mod guard_dog;
-pub mod guts;
-pub mod hard_knocks;
-pub mod haunted;
-pub mod heirloom_of_hyperborea;
-pub mod holy_rosary;
-pub mod hospital_debts;
-pub mod hyperawareness;
-pub mod hypochondria;
-pub mod knife;
-pub mod leather_coat;
-pub mod leo_de_luca;
-pub mod lita_chantler;
-pub mod look_what_i_found;
-pub mod lucky;
-pub mod machete;
-pub mod magnifying_glass;
-pub mod manual_dexterity;
-pub mod medical_texts;
-pub mod mind_over_matter;
-pub mod mob_enforcer;
-pub mod obscuring_fog;
-pub mod old_book_of_lore;
-pub mod on_the_lam;
-pub mod opportunist;
-pub mod overpower;
-pub mod paranoia;
-pub mod parlor;
-pub mod perception;
-pub mod physical_training;
-pub mod pickpocketing;
-pub mod psychosis;
-pub mod rabbits_foot;
-pub mod research_librarian;
-pub mod rise_of_the_ghouls;
-pub mod roland_38_special;
-pub mod roland_banks;
-pub mod rotting_remains;
-pub mod scavenging;
-pub mod scrying;
-pub mod shrivelling;
-pub mod silver_twilight_acolyte;
-pub mod skids_otoole;
-pub mod sneak_attack;
-pub mod stray_cat;
-pub mod stubborn_detective;
-pub mod survival_instinct;
-pub mod switchblade;
-pub mod the_barrier;
-pub mod the_necronomicon;
-pub mod theyre_getting_out;
-pub mod trapped;
-pub mod unexpected_courage;
-pub mod vicious_blow;
-pub mod ward_of_protection;
-pub mod wendy_adams;
-pub mod wendys_amulet;
-pub mod what_have_you_done;
-pub mod whats_going_on;
-pub mod working_a_hunch;
+/// Declares every card module, and builds [`ALL`] and `MODULES` from the same
+/// list, so a module name is written once.
+macro_rules! cards {
+    ($($name:ident),* $(,)?) => {
+        $(pub mod $name;)*
+
+        /// Every implemented card's registration, one entry per card module.
+        /// A card is playable iff it is listed here.
+        pub const ALL: &[CardRecord] = &[$($name::CARD),*];
+
+        /// Every card module's name, in list order, for the corpus test that
+        /// checks the list against the module files.
+        #[cfg(test)]
+        pub(crate) const MODULES: &[&str] = &[$(stringify!($name)),*];
+    };
+}
+
+cards! {
+    abandoned_and_alone,
+    agnes_baker,
+    amnesia,
+    ancient_evils,
+    arcane_initiate,
+    arcane_studies,
+    attic,
+    automatic_45,
+    backstab,
+    barricade,
+    baseball_bat,
+    beat_cop,
+    blinding_light,
+    burglary,
+    cellar,
+    cover_up,
+    crypt_chill,
+    cunning_distraction,
+    daisy_walker,
+    daisys_tote_bag,
+    dark_memory,
+    deduction,
+    derringer_41,
+    dig_deep,
+    dissonant_voices,
+    dodge,
+    dr_milan_christopher,
+    drawn_to_the_flame,
+    dynamite_blast,
+    elusive,
+    emergency_cache,
+    evidence,
+    fearless,
+    first_aid,
+    flashlight,
+    forbidden_knowledge,
+    frozen_in_fear,
+    grasping_hands,
+    guard_dog,
+    guts,
+    hard_knocks,
+    haunted,
+    heirloom_of_hyperborea,
+    holy_rosary,
+    hospital_debts,
+    hyperawareness,
+    hypochondria,
+    knife,
+    leather_coat,
+    leo_de_luca,
+    lita_chantler,
+    look_what_i_found,
+    lucky,
+    machete,
+    magnifying_glass,
+    manual_dexterity,
+    medical_texts,
+    mind_over_matter,
+    mob_enforcer,
+    obscuring_fog,
+    old_book_of_lore,
+    on_the_lam,
+    opportunist,
+    overpower,
+    paranoia,
+    parlor,
+    perception,
+    physical_training,
+    pickpocketing,
+    psychosis,
+    rabbits_foot,
+    research_librarian,
+    rise_of_the_ghouls,
+    roland_38_special,
+    roland_banks,
+    rotting_remains,
+    scavenging,
+    scrying,
+    shrivelling,
+    silver_twilight_acolyte,
+    skids_otoole,
+    sneak_attack,
+    stray_cat,
+    stubborn_detective,
+    survival_instinct,
+    switchblade,
+    the_barrier,
+    the_necronomicon,
+    theyre_getting_out,
+    trapped,
+    unexpected_courage,
+    vicious_blow,
+    ward_of_protection,
+    wendy_adams,
+    wendys_amulet,
+    what_have_you_done,
+    whats_going_on,
+    working_a_hunch,
+}
 
 /// One card's whole registration: its code, the abilities on each side, and the
 /// native fns its abilities name by tag.
@@ -258,109 +278,6 @@ impl CardRecord {
         self
     }
 }
-
-/// Every implemented card's registration, one entry per card module. A card
-/// is playable iff it is listed here.
-pub const ALL: &[CardRecord] = &[
-    abandoned_and_alone::CARD,
-    agnes_baker::CARD,
-    amnesia::CARD,
-    ancient_evils::CARD,
-    arcane_initiate::CARD,
-    arcane_studies::CARD,
-    attic::CARD,
-    automatic_45::CARD,
-    backstab::CARD,
-    barricade::CARD,
-    baseball_bat::CARD,
-    beat_cop::CARD,
-    blinding_light::CARD,
-    burglary::CARD,
-    cellar::CARD,
-    cover_up::CARD,
-    crypt_chill::CARD,
-    cunning_distraction::CARD,
-    daisy_walker::CARD,
-    daisys_tote_bag::CARD,
-    dark_memory::CARD,
-    deduction::CARD,
-    derringer_41::CARD,
-    dig_deep::CARD,
-    dissonant_voices::CARD,
-    dodge::CARD,
-    dr_milan_christopher::CARD,
-    drawn_to_the_flame::CARD,
-    dynamite_blast::CARD,
-    elusive::CARD,
-    emergency_cache::CARD,
-    evidence::CARD,
-    fearless::CARD,
-    first_aid::CARD,
-    flashlight::CARD,
-    forbidden_knowledge::CARD,
-    frozen_in_fear::CARD,
-    grasping_hands::CARD,
-    guard_dog::CARD,
-    guts::CARD,
-    haunted::CARD,
-    hard_knocks::CARD,
-    heirloom_of_hyperborea::CARD,
-    hospital_debts::CARD,
-    holy_rosary::CARD,
-    hypochondria::CARD,
-    hyperawareness::CARD,
-    knife::CARD,
-    leather_coat::CARD,
-    leo_de_luca::CARD,
-    lita_chantler::CARD,
-    look_what_i_found::CARD,
-    lucky::CARD,
-    machete::CARD,
-    magnifying_glass::CARD,
-    manual_dexterity::CARD,
-    medical_texts::CARD,
-    mind_over_matter::CARD,
-    mob_enforcer::CARD,
-    obscuring_fog::CARD,
-    old_book_of_lore::CARD,
-    on_the_lam::CARD,
-    opportunist::CARD,
-    overpower::CARD,
-    paranoia::CARD,
-    parlor::CARD,
-    perception::CARD,
-    physical_training::CARD,
-    pickpocketing::CARD,
-    psychosis::CARD,
-    rabbits_foot::CARD,
-    research_librarian::CARD,
-    rise_of_the_ghouls::CARD,
-    roland_38_special::CARD,
-    roland_banks::CARD,
-    rotting_remains::CARD,
-    scavenging::CARD,
-    scrying::CARD,
-    shrivelling::CARD,
-    silver_twilight_acolyte::CARD,
-    skids_otoole::CARD,
-    sneak_attack::CARD,
-    stray_cat::CARD,
-    stubborn_detective::CARD,
-    survival_instinct::CARD,
-    switchblade::CARD,
-    the_barrier::CARD,
-    the_necronomicon::CARD,
-    theyre_getting_out::CARD,
-    trapped::CARD,
-    unexpected_courage::CARD,
-    vicious_blow::CARD,
-    ward_of_protection::CARD,
-    wendy_adams::CARD,
-    wendys_amulet::CARD,
-    what_have_you_done::CARD,
-    whats_going_on::CARD,
-    working_a_hunch::CARD,
-];
 
 /// The record registered for `code`.
 pub(crate) fn record(code: &str) -> Option<&'static CardRecord> {

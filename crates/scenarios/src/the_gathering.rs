@@ -26,8 +26,13 @@
 //! Lita Chantler at R1 are campaign machinery, and the cards record each gap.
 
 use card_dsl::card_data::CardKind;
-use card_dsl::dsl::{Effect, HarmKind, IntExpr, InvestigatorTarget, TokenOutcome};
+use card_dsl::dsl::{self, IntExpr, InvestigatorTarget, TokenOutcome};
 use cards::generated::traits::GHOUL;
+use cards::impls::{
+    ancient_evils, attic, cellar, crypt_chill, dissonant_voices, frozen_in_fear, grasping_hands,
+    lita_chantler, obscuring_fog, parlor, rise_of_the_ghouls, rotting_remains, the_barrier,
+    theyre_getting_out, trapped, what_have_you_done, whats_going_on,
+};
 use game_core::event::Event;
 use game_core::scenario::{LocationLayout, ScenarioEnding, ScenarioId, ScenarioModule, SymbolCtx};
 use game_core::state::{Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder};
@@ -72,16 +77,16 @@ const ENCOUNTER_DECK_CODES: &[&str] = &[
     // Ghouls
     "01160", // Ghoul Minion
     "01161", // Ravenous Ghoul
-    "01162", // Grasping Hands
+    grasping_hands::CODE,
     // Striking Fear
-    "01163", // Rotting Remains
-    "01164", // Frozen in Fear
-    "01165", // Dissonant Voices
+    rotting_remains::CODE,
+    frozen_in_fear::CODE,
+    dissonant_voices::CODE,
     // Ancient Evils
-    "01166", // Ancient Evils
+    ancient_evils::CODE,
     // Chilling Cold
-    "01167", // Crypt Chill
-    "01168", // Obscuring Fog
+    crypt_chill::CODE,
+    obscuring_fog::CODE,
 ];
 
 /// Read an encounter card's printed quantity (how many copies the
@@ -97,6 +102,10 @@ fn encounter_quantity(code: &str) -> u8 {
 
 /// String id used to look this module up in [`crate::REGISTRY`].
 pub const ID: &str = "the-gathering";
+
+/// The Hallway (01112). It has no card module yet, so its code is named here
+/// rather than taken from one.
+const HALLWAY: &str = "01112";
 
 /// The verified Standard-difficulty Night of the Zealot chaos bag (16
 /// tokens). Source: `data/campaign-guides/SOURCE.md` (campaign guide
@@ -160,14 +169,10 @@ fn ghoul_count_at_investigator_location(cx: &SymbolCtx) -> u8 {
 /// Difficulty selection gives this fn a difficulty parameter, and the
 /// Hard/Expert cultist needs a token-re-draw shape `TokenOutcome` can't
 /// express.
+///
+/// [`Effect::Deal`]: card_dsl::dsl::Effect::Deal
 fn resolve_symbol(token: ChaosToken, cx: &SymbolCtx) -> TokenOutcome {
     let ghouls = ghoul_count_at_investigator_location(cx);
-    let deal_to_tester = |kind| Effect::Deal {
-        kind,
-        target: InvestigatorTarget::You,
-        amount: IntExpr::Lit(1),
-        direct: false,
-    };
     match token {
         // TODO(#1138): the live-read candidate. X is frozen at reveal here; once
         // a `Quantity` can count the Ghouls at the tester's location, the
@@ -176,11 +181,11 @@ fn resolve_symbol(token: ChaosToken, cx: &SymbolCtx) -> TokenOutcome {
             TokenOutcome::modifier(IntExpr::Lit(-(i8::try_from(ghouls).unwrap_or(i8::MAX))))
         }
         ChaosToken::Cultist => TokenOutcome {
-            on_fail: Some(deal_to_tester(HarmKind::Horror)),
+            on_fail: Some(dsl::deal_horror(InvestigatorTarget::You, 1u8)),
             ..TokenOutcome::modifier(IntExpr::Lit(-1))
         },
         ChaosToken::Tablet => TokenOutcome {
-            immediate: (ghouls > 0).then(|| deal_to_tester(HarmKind::Damage)),
+            immediate: (ghouls > 0).then(|| dsl::deal_damage(InvestigatorTarget::You, 1u8)),
             ..TokenOutcome::modifier(IntExpr::Lit(-2))
         },
         _ => TokenOutcome::default(),
@@ -197,7 +202,11 @@ fn resolve_symbol(token: ChaosToken, cx: &SymbolCtx) -> TokenOutcome {
 /// The Study (01111) appears in no pair: Act 1 is *"trapped in the
 /// Study"*, and the act's reverse removes it from the game when the rest
 /// of the house arrives.
-pub const LAYOUT: LocationLayout = &[("01112", "01113"), ("01112", "01114"), ("01112", "01115")];
+pub const LAYOUT: LocationLayout = &[
+    (HALLWAY, attic::CODE),
+    (HALLWAY, cellar::CODE),
+    (HALLWAY, parlor::CODE),
+];
 
 /// Build The Gathering's initial [`GameState`], with no investigators seated.
 ///
@@ -234,7 +243,14 @@ pub fn setup() -> GameState {
     // per-investigator health is minted with the investigator count known,
     // then Lita Chantler (01117), whom the same reverse puts into play in the
     // Parlor under no investigator's control.
-    for code in ["01112", "01113", "01114", "01115", "01116", "01117"] {
+    for code in [
+        HALLWAY,
+        attic::CODE,
+        cellar::CODE,
+        parlor::CODE,
+        "01116",
+        lita_chantler::CODE,
+    ] {
         state.add_set_aside_card(meta(code));
     }
 
@@ -251,12 +267,12 @@ pub fn setup() -> GameState {
     // cards::rise_of_the_ghouls).
     state.act_deck = vec![
         Act {
-            code: CardCode("01108".into()),
-            clue_threshold: act_clue_threshold("01108"),
+            code: CardCode(trapped::CODE.into()),
+            clue_threshold: act_clue_threshold(trapped::CODE),
         },
         Act {
-            code: CardCode("01109".into()),
-            clue_threshold: act_clue_threshold("01109"),
+            code: CardCode(the_barrier::CODE.into()),
+            clue_threshold: act_clue_threshold(the_barrier::CODE),
             // "When the round ends, investigators in the hallway may, as a
             // group, spend the requisite number of clues to advance."
         },
@@ -265,8 +281,8 @@ pub fn setup() -> GameState {
             // Terminal because it is last here; its reverse — *"The lead
             // investigator must decide (choose one):"* between R1 and R2 — is
             // an ability on the card (cards::what_have_you_done).
-            code: CardCode("01110".into()),
-            clue_threshold: act_clue_threshold("01110"),
+            code: CardCode(what_have_you_done::CODE.into()),
+            clue_threshold: act_clue_threshold(what_have_you_done::CODE),
         },
     ];
 
@@ -276,16 +292,16 @@ pub fn setup() -> GameState {
     // (cards::theyre_getting_out).
     state.agenda_deck = vec![
         Agenda {
-            code: CardCode("01105".into()),
-            doom_threshold: agenda_doom("01105"),
+            code: CardCode(whats_going_on::CODE.into()),
+            doom_threshold: agenda_doom(whats_going_on::CODE),
         },
         Agenda {
-            code: CardCode("01106".into()),
-            doom_threshold: agenda_doom("01106"),
+            code: CardCode(rise_of_the_ghouls::CODE.into()),
+            doom_threshold: agenda_doom(rise_of_the_ghouls::CODE),
         },
         Agenda {
-            code: CardCode("01107".into()),
-            doom_threshold: agenda_doom("01107"),
+            code: CardCode(theyre_getting_out::CODE.into()),
+            doom_threshold: agenda_doom(theyre_getting_out::CODE),
         },
     ];
 

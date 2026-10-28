@@ -17,7 +17,7 @@ use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
     AbilityUsageRecord, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId,
-    LocationId, Phase, SkillTestId, TokenModifiers, UsageClock,
+    LocationId, Phase, SkillTestId, UsageClock,
 };
 use game_core::test_support::{self, seat, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -45,7 +45,6 @@ fn seated_roland_with_enemy() -> GameState {
         .with_enemy_engaged(enemy, INV)
         .with_location(loc)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .open_turn(INV)
         .build();
     assert!(

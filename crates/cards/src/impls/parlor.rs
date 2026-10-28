@@ -101,16 +101,13 @@
 use card_dsl::card_data::SkillKind;
 use card_dsl::dsl::{self, Ability, ActionDesignator, ControlStatus, GrantTarget, Restriction};
 
-use crate::impls::CardRecord;
+use crate::impls::{lita_chantler, CardRecord};
 
 /// `ArkhamDB` code for the Parlor.
 pub const CODE: &str = "01115";
 
 /// This card's registration, listed in [`ALL`](super::ALL).
 pub const CARD: CardRecord = CardRecord::new(CODE, abilities).back(back_abilities);
-
-/// `ArkhamDB` code for Lita Chantler, the card this location grants to.
-const LITA_CHANTLER: &str = "01117";
 
 /// The Parlor's front — its `[action]` **Resign**, and the Parley it grants
 /// Lita Chantler while nobody controls her. In effect while the location is
@@ -120,9 +117,9 @@ pub fn abilities() -> Vec<Ability> {
     vec![
         dsl::activated_as(ActionDesignator::Resign, 1, vec![], dsl::seq([])),
         dsl::constant(dsl::grant(
-            GrantTarget::Card(LITA_CHANTLER.to_owned()),
+            GrantTarget::Card(lita_chantler::CODE.to_owned()),
             Some(dsl::control_status(
-                LITA_CHANTLER,
+                lita_chantler::CODE,
                 ControlStatus::ByNoPlayer,
             )),
             vec![lita_parley()],
@@ -146,7 +143,7 @@ fn lita_parley() -> Ability {
         dsl::skill_test(
             SkillKind::Intellect,
             4,
-            Some(dsl::take_control(LITA_CHANTLER)),
+            Some(dsl::take_control(lita_chantler::CODE)),
             None,
         ),
     )

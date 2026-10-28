@@ -26,7 +26,7 @@ use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, TokenModifiers,
+    GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind,
 };
 use game_core::test_support::{self, seat, MockRegistry, Seat, TestSession};
 
@@ -151,7 +151,6 @@ fn board_of(me: Seat, teammate: Seat) -> GameStateBuilder {
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_location(test_support::test_location(THERE.0, "Hallway"))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
 }
 
 /// [`board_of`] with [`me`], and my teammate wherever `teammate_at` says.

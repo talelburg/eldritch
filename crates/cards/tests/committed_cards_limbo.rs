@@ -21,8 +21,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, DiscardPile, GameStateBuilder, InvestigatorId, LocationId,
-    TokenModifiers, Zone,
+    CardCode, ChaosBag, ChaosToken, DiscardPile, GameStateBuilder, InvestigatorId, LocationId, Zone,
 };
 use game_core::test_support::{self, seat, TestSession};
 use game_core::{assert_event, assert_event_count};
@@ -56,7 +55,6 @@ fn board(hand: &[&str], resources: u8) -> TestSession {
         )
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .session()
 }
 

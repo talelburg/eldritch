@@ -17,7 +17,7 @@ use card_dsl::dsl::{
 use game_core::engine::Registries;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
-    ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenModifiers,
+    ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
 };
 use game_core::test_support::{self, seat, MockRegistry, SeatLookup, TestSession};
 
@@ -145,7 +145,6 @@ fn horror_after_test(listener: &str, difficulty: i8) -> u8 {
         .with_seat(seat(1).at(HERE).threat_area([listener]))
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .open_turn(INV)
         .session()
         .test_skill(INV, SkillKind::Intellect, difficulty)
@@ -208,7 +207,6 @@ fn session_after_flip(flip: &str, spare: &str, reaction: &str, difficulty: i8) -
         .with_seat(seat(1).at(HERE).threat_area([flip, spare, reaction]))
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .open_turn(INV)
         .session()
         .test_skill(INV, SkillKind::Intellect, difficulty)

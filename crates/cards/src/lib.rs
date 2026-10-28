@@ -300,8 +300,8 @@ mod tests {
     //
     // Each test walks every `impls::ALL` record and asserts what the engine
     // will see through `REGISTRY`, so a card left out of a namespace, a
-    // misspelt tag or a module missing from `ALL` fails here rather than when
-    // a player first plays the card.
+    // misspelt tag or a module missing from the `cards!` list fails here
+    // rather than when a player first plays the card.
 
     /// Every ability on both sides of `record`.
     fn record_abilities(record: &CardRecord) -> Vec<Ability> {
@@ -442,38 +442,39 @@ mod tests {
         }
     }
 
-    /// Reads `src/impls/` at test time: every card module's `CODE` must be in
-    /// `ALL`. A module with no `pub mod` line is not compiled at all, so this
-    /// also catches that half of the two edits.
+    /// Lists `src/impls/` at test time: every card module file must be named
+    /// in the `cards!` list, which must be alphabetical. The other direction
+    /// needs no test, since a listed module with no file fails to compile.
+    /// Only file names are read, and subdirectories are ignored.
     #[test]
-    fn every_card_module_has_an_all_entry() {
+    fn cards_list_matches_the_module_files_in_order() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/impls");
-        let mut modules = 0;
-        for entry in fs::read_dir(&dir).expect("src/impls is readable") {
-            let path = entry.expect("directory entry").path();
-            let Some(module) = path.file_stem().and_then(|s| s.to_str()) else {
-                continue;
-            };
-            if path.extension().is_none_or(|e| e != "rs") || module == "mod" {
-                continue;
-            }
-            let source = fs::read_to_string(&path).expect("card module is readable");
-            let code = source
-                .lines()
-                .find_map(|line| line.strip_prefix("pub const CODE: &str = \""))
-                .and_then(|rest| rest.strip_suffix("\";"))
-                .unwrap_or_else(|| panic!("impls/{module}.rs declares no `pub const CODE`"));
-            assert!(
-                impls::record(code).is_some(),
-                "impls/{module}.rs ({code}) has no entry in impls::ALL"
-            );
-            modules += 1;
-        }
-        assert_eq!(
-            modules,
-            impls::ALL.len(),
-            "ALL lists a record no module file declares"
+        let files: Vec<String> = fs::read_dir(&dir)
+            .expect("src/impls is readable")
+            .map(|entry| entry.expect("directory entry").path())
+            .filter(|path| path.is_file() && path.extension().is_some_and(|e| e == "rs"))
+            .filter_map(|path| Some(path.file_stem()?.to_str()?.to_owned()))
+            .filter(|module| module != "mod")
+            .collect();
+
+        let unlisted: Vec<&str> = files
+            .iter()
+            .map(String::as_str)
+            .filter(|module| !impls::MODULES.contains(module))
+            .collect();
+        assert!(
+            unlisted.is_empty(),
+            "impls/ has module files missing from the `cards!` list: {unlisted:?}"
         );
+        for pair in impls::MODULES.windows(2) {
+            let [earlier, later] = pair else {
+                unreachable!("windows(2) yields pairs")
+            };
+            assert!(
+                earlier < later,
+                "the `cards!` list is out of alphabetical order: `{earlier}` comes before `{later}`"
+            );
+        }
     }
 
     #[test]

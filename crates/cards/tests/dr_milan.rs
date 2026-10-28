@@ -9,7 +9,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId,
-    Location, LocationId, Owner, SkillKind, TokenModifiers,
+    Location, LocationId, Owner, SkillKind,
 };
 use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
 
@@ -40,7 +40,6 @@ fn board(intellect: i8, study: impl FnOnce(&mut Location)) -> TestSession {
         )
         .with_location(loc)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .open_turn(INV)
         .session()
 }

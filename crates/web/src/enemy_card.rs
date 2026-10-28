@@ -73,7 +73,7 @@ pub fn EnemyCard(enemy: Enemy) -> impl IntoView {
     let pending = use_context::<PendingOptions>()
         .map(|p| p.0.get())
         .unwrap_or_default();
-    let menu_opts = interaction::options_for(&pending, OptionTarget::Enemy(enemy.id));
+    let menu_opts = interaction::options_for(&pending, &OptionTarget::Enemy(enemy.id));
     let actionable = !menu_opts.is_empty();
     #[cfg(target_arch = "wasm32")]
     let open = RwSignal::new(None::<(i32, i32)>);

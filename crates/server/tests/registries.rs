@@ -82,7 +82,7 @@ async fn post_games_seats_every_default_deck_in_both_weakness_modes() {
     for deck in decks::DEFAULT_DECKS {
         for choice in [WeaknessChoice::Fixed, WeaknessChoice::Random] {
             let body = CreateGameRequest {
-                scenario_id: GATHERING_SCENARIO_ID.to_string(),
+                scenario_id: ScenarioId::new(GATHERING_SCENARIO_ID),
                 roster: vec![deck.roster_entry(choice)],
             };
             let request = Request::builder()

@@ -48,7 +48,7 @@ use game_core::engine::ApplyResult;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, ChaosBag, ChaosToken, DiscardPile, EnemyId, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, Owner, SkillKind, TokenModifiers, Zone,
+    InvestigatorId, LocationId, Owner, SkillKind, Zone,
 };
 use game_core::test_support::{self, seat, TestSession};
 use game_core::{assert_event, assert_event_sequence};
@@ -94,7 +94,6 @@ fn solo_investigator_facing(
         .with_enemy_engaged(enemy, INV)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .open_turn(INV)
         .build()
 }

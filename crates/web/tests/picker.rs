@@ -66,7 +66,7 @@ async fn create_button_sends_rolands_fixed_roster_by_default() {
     let (_, mut rx) = mount_picker();
     let req = create(&mut rx).await;
 
-    assert_eq!(req.scenario_id, "the-gathering");
+    assert_eq!(req.scenario_id.as_str(), "the-gathering");
     assert_eq!(
         req.roster,
         vec![decks::ROLAND.roster_entry(WeaknessChoice::Fixed)]
