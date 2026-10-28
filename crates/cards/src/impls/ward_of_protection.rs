@@ -26,9 +26,7 @@
 //! [`Effect::Cancel`]: card_dsl::dsl::Effect::Cancel
 
 use card_dsl::card_data::CardType;
-use card_dsl::dsl::{
-    self, Ability, CardFilter, Effect, EventPattern, EventTiming, InvestigatorTarget,
-};
+use card_dsl::dsl::{self, Ability, CardFilter, EventPattern, EventTiming, InvestigatorTarget};
 
 use crate::impls::CardRecord;
 
@@ -47,8 +45,8 @@ pub fn abilities() -> Vec<Ability> {
             filter: CardFilter::of_kind(CardType::Treachery).and_non_weakness(),
         },
         EventTiming::When,
-        Effect::Seq(vec![
-            Effect::Cancel,
+        dsl::seq([
+            dsl::cancel(),
             dsl::deal_horror(InvestigatorTarget::You, 1u8),
         ]),
     )]

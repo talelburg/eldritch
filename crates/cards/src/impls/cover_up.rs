@@ -41,7 +41,7 @@
 //! effect is opaque, so without the tag nothing could tell that it would change
 //! nothing, and interactive play would prompt the player to resolve it.
 
-use card_dsl::dsl::{self, Ability, Effect, EventPattern, EventTiming};
+use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{board, EngineOutcome, NativeCx};
 use game_core::event::TraumaKind;
@@ -83,7 +83,7 @@ pub fn abilities() -> Vec<Ability> {
             // "would" replacement changes the nature of the triggering
             // condition, so *"No further abilities referencing the original
             // triggering condition may be used."*
-            Effect::Seq(vec![dsl::native(DISCARD_TAG), Effect::Cancel]),
+            dsl::seq([dsl::native(DISCARD_TAG), dsl::cancel()]),
         )
         .with_eligibility(dsl::native_condition(HAS_CLUES_TAG)),
         // "if there are any clues on Cover Up" is an initiation condition, not

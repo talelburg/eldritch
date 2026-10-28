@@ -37,12 +37,6 @@
 //! because the follow-up deals the attack's damage *during* resolution, before
 //! the resolution trigger fires.
 //!
-//! # Module gap
-//!
-//! The "if successful" qualifier can't be card-expressed:
-//! `Condition::SkillTest { outcome }` is not evaluated, and rejects. That is
-//! why it stays intrinsic to [`Effect::BoostAttackDamage`].
-//!
 //! [`Trigger::OnCommit`]: card_dsl::dsl::Trigger::OnCommit
 //! [`Effect::BoostAttackDamage`]: card_dsl::dsl::Effect::BoostAttackDamage
 //! [`Condition::SkillTestKind`]: card_dsl::dsl::Condition::SkillTestKind

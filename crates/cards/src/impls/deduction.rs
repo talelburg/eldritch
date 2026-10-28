@@ -54,12 +54,6 @@
 //! additional clue, not you"* holds structurally. The bonus is a property of the
 //! test, not of the committer.
 //!
-//! # Module gap
-//!
-//! The "if this skill test is successful" qualifier can't be card-expressed:
-//! `Condition::SkillTest { outcome }` is not evaluated, and rejects. That is
-//! why it stays intrinsic to [`Effect::DiscoverAdditionalClues`].
-//!
 //! [`Trigger::OnCommit`]: card_dsl::dsl::Trigger::OnCommit
 //! [`Effect::DiscoverAdditionalClues`]: card_dsl::dsl::Effect::DiscoverAdditionalClues
 //! [`if_`]: card_dsl::dsl::if_

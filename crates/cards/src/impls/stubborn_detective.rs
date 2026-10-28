@@ -31,8 +31,10 @@
 //! **The elder sign is blanked with the rest**, by the user's decision rather
 //! than the sources'. `modified_value::elder_sign_outcome` in `game-core` has
 //! the reasoning.
+//!
+//! [`Effect::BlankText`]: card_dsl::dsl::Effect::BlankText
 
-use card_dsl::dsl::{self, Ability, BlankTarget, Effect};
+use card_dsl::dsl::{self, Ability, BlankTarget};
 
 use crate::impls::CardRecord;
 
@@ -44,7 +46,7 @@ pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![dsl::constant(Effect::BlankText {
-        target: BlankTarget::InvestigatorsAtThisLocation,
-    })]
+    vec![dsl::constant(dsl::blank_text(
+        BlankTarget::InvestigatorsAtThisLocation,
+    ))]
 }
