@@ -3,7 +3,6 @@
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;
-use game_core::scenario::ScenarioId;
 use protocol::{CreateGameRequest, CreateGameResponse};
 
 use crate::session::{GameSession, SessionError};
@@ -18,12 +17,11 @@ pub(crate) async fn create_game(
     State(state): State<AppState>,
     Json(request): Json<CreateGameRequest>,
 ) -> Result<(StatusCode, Json<CreateGameResponse>), StatusCode> {
-    let scenario_id = ScenarioId::new(request.scenario_id);
     match GameSession::create(
         state.db.clone(),
         state.registries,
         id::random_game_id(),
-        scenario_id,
+        request.scenario_id,
         request.roster,
     )
     .await
