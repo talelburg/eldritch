@@ -14,13 +14,12 @@
 //! TODO(#1159): "Discard each enemy in the Study" is not modelled: an enemy
 //! in the Study when the act advances is left at the removed location.
 //!
-//! The four rooms are
-//! set aside by the scenario's `setup()` as bare card codes; this ability
-//! puts each into play through
+//! The four rooms are set aside by the scenario's `setup()` as bare card
+//! codes. This ability puts each into play through
 //! [`put_set_aside_location_into_play`](NativeCx::put_set_aside_location_into_play),
 //! which mints its `LocationId`, wires its printed connections from the
-//! scenario's layout table, and returns the id, then relocates investigators to the Hallway
-//! (01112) and removes the Study (01111) through
+//! scenario's layout table, and returns the id. The ability then relocates
+//! investigators to the Hallway (01112) and removes the Study (01111) through
 //! [`remove_location_from_game`](NativeCx::remove_location_from_game), which
 //! discards whatever is attached to it by owner.
 //!
