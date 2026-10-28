@@ -22,10 +22,10 @@ const LEAD: InvestigatorId = InvestigatorId(2);
 fn lead_on_the_second_seat() -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
-        .with_seat(seat(1).deck([test_support::TEST_ASSET]))
-        .with_seat(seat(2).deck([test_support::TEST_ASSET]))
-        .with_turn_order([FIRST_SEAT, LEAD])
-        .with_lead(LEAD)
+        .with_two_seats_led_by_the_second(
+            seat(1).deck([test_support::TEST_ASSET]),
+            seat(2).deck([test_support::TEST_ASSET]),
+        )
 }
 
 /// Settle `board`, with the two treacheries on the encounter deck (no builder

@@ -446,6 +446,17 @@ impl GameStateBuilder {
         }
         self.with_investigator(investigator)
     }
+
+    /// Seat `first` then `second`, with `second` the lead, so player order
+    /// runs `second`, `first`: the table a test needs to tell the lead from
+    /// the first seat.
+    pub fn with_two_seats_led_by_the_second(self, first: Seat, second: Seat) -> Self {
+        let order = [first.investigator.id, second.investigator.id];
+        self.with_seat(first)
+            .with_seat(second)
+            .with_turn_order(order)
+            .with_lead(order[1])
+    }
 }
 
 /// Find a seated card by what it is. Import it as `SeatLookup as _`.
@@ -470,6 +481,14 @@ pub trait SeatLookup {
     fn card(&self, investigator: InvestigatorId, code: impl Into<CardCode>) -> OptionTarget {
         OptionTarget::CardInstance(self.in_play(investigator, code))
     }
+
+    /// The name `investigator` is shown by, as their investigator card prints
+    /// it.
+    ///
+    /// # Panics
+    ///
+    /// If `investigator` is not seated.
+    fn name_of(&self, investigator: InvestigatorId) -> String;
 }
 
 impl SeatLookup for GameState {
@@ -496,5 +515,13 @@ impl SeatLookup for GameState {
             matches.len(),
             there.join(", "),
         );
+    }
+
+    fn name_of(&self, investigator: InvestigatorId) -> String {
+        self.investigators
+            .get(&investigator)
+            .unwrap_or_else(|| panic!("name_of: no investigator {investigator:?}"))
+            .name
+            .clone()
     }
 }

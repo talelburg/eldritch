@@ -5,8 +5,8 @@
 #![cfg(target_arch = "wasm32")]
 
 use game_core::engine::{ChoiceOption, EngineOutcome, InputRequest, OptionId, Responder};
-use game_core::state::{GameStateBuilder, InvestigatorId};
-use game_core::test_support::{self, seat};
+use game_core::state::{GameState, GameStateBuilder, InvestigatorId};
+use game_core::test_support::{self, seat, SeatLookup as _};
 use leptos::prelude::{document, provide_context, RwSignal, Update};
 use leptos::{mount, task};
 use wasm_bindgen::JsCast as _;
@@ -82,13 +82,8 @@ const SECOND: InvestigatorId = InvestigatorId(2);
 /// the text of its "waiting on" line, if it renders one.
 async fn waiting_on(outcome: Option<EngineOutcome>) -> Option<String> {
     let store = mount();
-    let game = GameStateBuilder::new()
-        .with_seat(seat(FIRST.0))
-        .with_seat(seat(SECOND.0))
-        .with_turn_order([FIRST, SECOND])
-        .build();
     store.update(|s| {
-        s.game = Some(game);
+        s.game = Some(two_seats());
         s.outcome = outcome;
     });
     task::tick().await;
@@ -104,9 +99,18 @@ async fn waiting_on(outcome: Option<EngineOutcome>) -> Option<String> {
         .map(|line| line.text_content().unwrap_or_default())
 }
 
-/// The name a seat's test investigator is shown by.
+/// The two-seat game [`waiting_on`] mounts.
+fn two_seats() -> GameState {
+    GameStateBuilder::new()
+        .with_seat(seat(FIRST.0))
+        .with_seat(seat(SECOND.0))
+        .with_turn_order([FIRST, SECOND])
+        .build()
+}
+
+/// The name `id` is shown by in [`two_seats`].
 fn name(id: InvestigatorId) -> String {
-    test_support::test_investigator(id.0).name
+    two_seats().name_of(id)
 }
 
 #[wasm_bindgen_test]

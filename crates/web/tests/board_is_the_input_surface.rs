@@ -23,7 +23,7 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, GameStateBuilder,
     InvestigatorId, LocationId, Owner as CardOwner, Phase, UseKind,
 };
-use game_core::test_support;
+use game_core::test_support::{self, seat, Seat};
 use leptos::prelude::*;
 use leptos::task;
 use protocol::{ClientMessage, ServerMessage};
@@ -355,21 +355,13 @@ async fn a_choice_printed_on_one_card_presents_itself_without_a_second_click() {
 const DAISY: &str = "01002";
 const INV2: InvestigatorId = InvestigatorId(2);
 
-/// An investigator seated with `card` as their investigator card and `hand`,
-/// over a deck of real cards a mulligan can draw.
-fn seated(id: u32, card: &str, hand: &[&str]) -> game_core::state::Investigator {
-    let mut inv = test_support::test_investigator(id);
-    inv.investigator_card = CardInPlay::enter_play(
-        CardCode::new(card),
-        CardInstanceId(u32::MAX - id),
-        CardOwner::Investigator(InvestigatorId(id)),
-    );
-    inv.hand = hand.iter().copied().map(CardCode::new).collect();
-    inv.deck = ["01024", "01025", "01026", "01027"]
-        .into_iter()
-        .map(CardCode::new)
-        .collect();
-    inv
+/// Seat `id` as the printed investigator `card`, holding `hand`, over a deck
+/// of real cards a mulligan can draw.
+fn seated(id: u32, card: &str, hand: &[&str]) -> Seat {
+    seat(id)
+        .as_card(card)
+        .hand(hand.iter().copied())
+        .deck(["01024", "01025", "01026", "01027"])
 }
 
 /// The hand slots on the `n`th investigator panel, in seat order.
@@ -394,9 +386,10 @@ fn hand_slots(n: u32, sel: &str) -> Vec<HtmlElement> {
 /// and Confirm sends seat 2's pick, which the engine redraws from seat 2's hand.
 #[wasm_bindgen_test]
 async fn a_mulligan_selects_from_the_responders_hand_alone() {
-    let state = GameStateBuilder::default()
-        .with_investigator(seated(1, ROLAND, &["01020", "01021"]))
-        .with_investigator(seated(2, DAISY, &["01022", "01023"]))
+    let state = GameStateBuilder::new()
+        .with_registries(cards::TEST_REGISTRIES)
+        .with_seat(seated(1, ROLAND, &["01020", "01021"]))
+        .with_seat(seated(2, DAISY, &["01022", "01023"]))
         .with_turn_order([INV, INV2])
         .with_mulligan_remaining([INV2, INV])
         .build();

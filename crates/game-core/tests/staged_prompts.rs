@@ -128,24 +128,27 @@ fn table(in_play: &[&str]) -> GameStateBuilder {
 
 /// [`table`] with `me` seated as `INV`.
 fn table_with(me: Seat) -> GameStateBuilder {
+    board().with_seat(me).open_turn(INV)
+}
+
+/// [`HERE`], with [`NORTH`] and [`SOUTH`] beside it, and nobody seated.
+fn board() -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(registries())
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_location(test_support::test_location(NORTH.0, "Attic"))
         .with_location(test_support::test_location(SOUTH.0, "Cellar"))
-        .with_seat(me)
-        .open_turn(INV)
+}
+
+/// `me` seated as `INV` and `other` as `OTHER`, with `OTHER` the lead, so
+/// player order is `[OTHER, INV]` and the first seat is not the lead. No turn
+/// is open.
+fn led_by_other(me: Seat, other: Seat) -> GameStateBuilder {
+    board().with_two_seats_led_by_the_second(me, other)
 }
 
 /// The instance id staged cards take, where a frame must name one.
 const STAGED: CardInstanceId = CardInstanceId(40);
-
-/// [`table`] with a second investigator at [`HERE`].
-fn two_seat_table() -> GameStateBuilder {
-    table(&[])
-        .with_seat(seat(2).at(HERE))
-        .with_turn_order([INV, OTHER])
-}
 
 /// The anchors of the prompt's options, in offered order.
 fn anchors(session: &TestSession) -> Vec<Option<OptionTarget>> {
@@ -190,11 +193,6 @@ fn assert_reads_as_a_game(session: &TestSession) {
     }
 }
 
-/// `id`'s name, as its investigator card prints it.
-fn name_of(session: &TestSession, id: InvestigatorId) -> String {
-    session.state().investigators[&id].name.clone()
-}
-
 // ---- the kinds a step pushes and returns from --------------------------
 
 /// A hunter's tie between two destinations asks where it moves, on the map.
@@ -228,8 +226,8 @@ fn a_staged_hunter_move_asks_for_its_destination() {
 /// options"*. The lead sits in the second seat, so the first seat is not it.
 #[test]
 fn a_staged_hunter_engagement_asks_the_lead_whom_it_engages() {
-    let session = two_seat_table()
-        .with_lead(OTHER)
+    let session = led_by_other(seat(1).at(HERE), seat(2).at(HERE))
+        .open_turn(INV)
         .with_enemy(test_support::test_enemy(GHOUL.0, "Ghoul"))
         .with_frame(Continuation::HunterMove(HunterChoice::Engage {
             enemy: GHOUL,
@@ -258,8 +256,8 @@ fn a_staged_hunter_engagement_asks_the_lead_whom_it_engages() {
 fn a_staged_spawn_engagement_asks_the_lead_and_engages_the_chosen_investigator() {
     let mut ghoul = test_support::test_enemy(GHOUL.0, "Ghoul");
     ghoul.current_location = Some(HERE);
-    let session = two_seat_table()
-        .with_lead(OTHER)
+    let session = led_by_other(seat(1).at(HERE), seat(2).at(HERE))
+        .open_turn(INV)
         .with_enemy(ghoul)
         .with_frame(SpawnEngagePending::new(GHOUL, vec![INV, OTHER]))
         .session();
@@ -300,7 +298,7 @@ fn a_staged_slot_discard_asks_which_occupier_makes_room() {
         session.prompt().prompt,
         format!(
             "{}: choose an asset to discard to make room for Lamp.",
-            name_of(&session, INV)
+            session.state().name_of(INV)
         )
     );
     let torch = OptionTarget::CardInstance(session.state().in_play(INV, TORCH));
@@ -334,7 +332,7 @@ fn a_staged_additional_action_choice_asks_which_pays() {
         session.prompt().prompt,
         format!(
             "{}: choose which additional action to use for this action.",
-            name_of(&session, INV)
+            session.state().name_of(INV)
         )
     );
     let labels: Vec<&str> = session
@@ -369,7 +367,7 @@ fn a_staged_attack_order_pick_asks_which_enemy_attacks_next() {
         session.prompt().prompt,
         format!(
             "{} is engaged with 2 enemies: choose which attacks next.",
-            name_of(&session, INV)
+            session.state().name_of(INV)
         )
     );
     assert_eq!(
@@ -389,8 +387,8 @@ fn a_staged_attack_order_pick_asks_which_enemy_attacks_next() {
 /// The lead acknowledges it, since the flip names no one.
 #[test]
 fn a_staged_advance_acknowledge_asks_the_lead_without_announcing_again() {
-    let mut state = two_seat_table()
-        .with_lead(OTHER)
+    let mut state = led_by_other(seat(1).at(HERE), seat(2).at(HERE))
+        .open_turn(INV)
         .with_frame(AdvanceReverseFrame {
             deck: AdvanceDeck::Act,
             from: 0,
@@ -422,21 +420,18 @@ fn a_staged_advance_acknowledge_asks_the_lead_without_announcing_again() {
 /// eliminated. Nobody is Active to lead then, and the stored lead answers.
 #[test]
 fn an_advance_acknowledge_with_everyone_eliminated_asks_the_stored_lead() {
-    let mut state = GameStateBuilder::new()
-        .with_registries(registries())
-        .with_location(test_support::test_location(HERE.0, "Study"))
-        .with_seat(seat(1).at(HERE).status(Status::Defeated))
-        .with_seat(seat(2).at(HERE).status(Status::Resigned))
-        .with_turn_order([INV, OTHER])
-        .with_lead(OTHER)
-        .with_frame(AdvanceReverseFrame {
-            deck: AdvanceDeck::Act,
-            from: 0,
-            leaving_code: CardCode::new("_sp_act_1"),
-            step: AdvanceStep::AwaitAck,
-            trigger: AdvanceTrigger::Forced,
-        })
-        .build();
+    let mut state = led_by_other(
+        seat(1).at(HERE).status(Status::Defeated),
+        seat(2).at(HERE).status(Status::Resigned),
+    )
+    .with_frame(AdvanceReverseFrame {
+        deck: AdvanceDeck::Act,
+        from: 0,
+        leaving_code: CardCode::new("_sp_act_1"),
+        step: AdvanceStep::AwaitAck,
+        trigger: AdvanceTrigger::Forced,
+    })
+    .build();
     state.act_deck = vec![
         Act {
             code: CardCode::new("_sp_act_1"),
@@ -458,10 +453,8 @@ fn an_advance_acknowledge_with_everyone_eliminated_asks_the_stored_lead() {
 #[test]
 fn a_staged_forced_acknowledge_asks_its_controller_to_resolve_on_its_card() {
     let torch = STAGED;
-    let session = table_with(seat(1).at(HERE).in_play_as(torch, TORCH))
-        .with_seat(seat(2).at(HERE))
-        .with_turn_order([INV, OTHER])
-        .with_lead(OTHER)
+    let session = led_by_other(seat(1).at(HERE).in_play_as(torch, TORCH), seat(2).at(HERE))
+        .open_turn(INV)
         .with_frame(AcknowledgeForcedFrame {
             candidate: ResolutionCandidate::new(
                 CardCode::new(TORCH),
@@ -498,7 +491,7 @@ fn a_staged_damage_distribution_asks_where_the_point_goes() {
         session.prompt().prompt,
         format!(
             "{}: assign 1 damage to which target? (1 damage / 0 horror left)",
-            name_of(&session, INV)
+            session.state().name_of(INV)
         )
     );
     let soaker = OptionTarget::CardInstance(session.state().in_play(INV, SOAKER));
@@ -643,17 +636,18 @@ fn a_staged_forced_run_asks_the_lead_to_order_it() {
             CandidateSource::Ability(AbilitySource::InPlay(card)),
         )
     };
-    let session = table_with(seat(1).at(HERE).in_play_as(mine, FORCED_ROUND_END))
-        .with_seat(seat(2).at(HERE).in_play_as(theirs, FORCED_ROUND_END))
-        .with_turn_order([INV, OTHER])
-        .with_lead(OTHER)
-        .with_frame(TimingPointWindowFrame {
-            event: TimingEvent::RoundEnded,
-            bucket: EventTiming::When,
-            mode: TimingMode::Forced,
-            candidates: vec![candidate(INV, mine), candidate(OTHER, theirs)],
-        })
-        .session();
+    let session = led_by_other(
+        seat(1).at(HERE).in_play_as(mine, FORCED_ROUND_END),
+        seat(2).at(HERE).in_play_as(theirs, FORCED_ROUND_END),
+    )
+    .open_turn(INV)
+    .with_frame(TimingPointWindowFrame {
+        event: TimingEvent::RoundEnded,
+        bucket: EventTiming::When,
+        mode: TimingMode::Forced,
+        candidates: vec![candidate(INV, mine), candidate(OTHER, theirs)],
+    })
+    .session();
     assert_eq!(session.prompt().options.len(), 2, "{:?}", session.prompt());
     assert_eq!(session.prompt().responder, Responder::Lead(OTHER));
     assert!(session
@@ -665,29 +659,19 @@ fn a_staged_forced_run_asks_the_lead_to_order_it() {
 
 // ---- who answers the queue frames and the turn -------------------------
 
-/// Two seats at [`HERE`], the second seat the lead, so player order is
-/// `[OTHER, INV]`. `OTHER` holds `other_hand`.
-fn two_seats_led_by_other(other_hand: &[&str]) -> GameStateBuilder {
-    GameStateBuilder::new()
-        .with_registries(registries())
-        .with_location(test_support::test_location(HERE.0, "Study"))
-        .with_seat(seat(1).at(HERE))
-        .with_seat(seat(2).at(HERE).hand(other_hand.iter().copied()))
-        .with_turn_order([INV, OTHER])
-        .with_lead(OTHER)
-}
-
 /// The open turn is asked of the investigator whose turn it is.
 #[test]
 fn the_open_turn_is_asked_of_whoever_takes_it() {
-    let session = two_seats_led_by_other(&[]).open_turn(INV).session();
+    let session = led_by_other(seat(1).at(HERE), seat(2).at(HERE))
+        .open_turn(INV)
+        .session();
     assert_eq!(session.prompt().responder, Responder::Investigator(INV));
 }
 
 /// A mulligan queue asks its head.
 #[test]
 fn a_staged_mulligan_asks_the_head_of_its_queue() {
-    let session = two_seats_led_by_other(&[])
+    let session = led_by_other(seat(1).at(HERE), seat(2).at(HERE))
         .with_mulligan_remaining([OTHER, INV])
         .session();
     assert_eq!(session.prompt().responder, Responder::Investigator(OTHER));
@@ -696,7 +680,7 @@ fn a_staged_mulligan_asks_the_head_of_its_queue() {
 /// A hand-size discard queue asks its head.
 #[test]
 fn a_staged_hand_size_discard_asks_the_head_of_its_queue() {
-    let session = two_seats_led_by_other(&[FILLER; 9])
+    let session = led_by_other(seat(1).at(HERE), seat(2).at(HERE).hand([FILLER; 9]))
         .with_hand_size_discard_pending([OTHER])
         .session();
     assert!(matches!(session.prompt().kind, InputKind::PickMultiple(_)));
@@ -706,7 +690,7 @@ fn a_staged_hand_size_discard_asks_the_head_of_its_queue() {
 /// The Mythos encounter-draw queue asks its head.
 #[test]
 fn a_staged_encounter_draw_asks_the_head_of_its_queue() {
-    let session = two_seats_led_by_other(&[])
+    let session = led_by_other(seat(1).at(HERE), seat(2).at(HERE))
         .with_mythos_draw_remaining([OTHER, INV])
         .session();
     session.assert_at_encounter_draw();
@@ -732,7 +716,7 @@ fn a_staged_substitution_names_the_investigator_and_the_skills() {
         session.prompt().prompt,
         format!(
             "{}: use Intellect in place of Combat for this test?",
-            name_of(&session, INV)
+            session.state().name_of(INV)
         )
     );
 }
@@ -748,7 +732,7 @@ fn a_staged_encounter_draw_names_its_drawer() {
     assert_reads_as_a_game(&session);
     assert_eq!(
         session.prompt().prompt,
-        format!("{} draws an encounter card.", name_of(&session, INV))
+        format!("{} draws an encounter card.", session.state().name_of(INV))
     );
 }
 
