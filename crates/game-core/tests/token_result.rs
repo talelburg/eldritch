@@ -111,7 +111,7 @@ fn a_symbols_failure_part_reads_the_failure_margin() {
     let session = perform(ChaosToken::Cultist, 0, 5);
     assert_event!(
         session.events(),
-        Event::HorrorTaken {
+        Event::HorrorPlacedOnInvestigator {
             investigator: INV,
             amount: 2,
         }

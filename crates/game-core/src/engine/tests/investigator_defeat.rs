@@ -24,7 +24,7 @@ fn aoo_lethal_damage_defeats_investigator_during_move_and_cancels_move() {
     // Damage applied + defeat event fired.
     assert_event!(
         result.events,
-        Event::DamageTaken { investigator, amount: 1 } if *investigator == INV
+        Event::DamagePlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV
     );
     assert_event!(
         result.events,
@@ -68,7 +68,7 @@ fn aoo_lethal_horror_defeats_investigator_during_investigate_and_cancels_test() 
     assert_eq!(result.outcome, EngineOutcome::Done);
     assert_event!(
         result.events,
-        Event::HorrorTaken { investigator, amount: 1 } if *investigator == INV
+        Event::HorrorPlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV
     );
     assert_event!(
         result.events,
@@ -126,9 +126,9 @@ fn defeated_investigator_does_not_take_further_damage() {
         "no stranded frames after the ending: {:?}",
         r2.state.continuations,
     );
-    // Exactly one DamageTaken event (from the chosen first AoO) and one
+    // Exactly one DamagePlacedOnInvestigator event (from the chosen first AoO) and one
     // InvestigatorEliminated; the second enemy never attacks (early-break).
-    assert_event_count!(r2.events, 1, Event::DamageTaken { .. });
+    assert_event_count!(r2.events, 1, Event::DamagePlacedOnInvestigator { .. });
     assert_event_count!(r2.events, 1, Event::InvestigatorEliminated { .. });
     // Only one AoO fired: pre-loaded 7 + first AoO's 5 = 12; if the
     // second AoO had fired too, damage() would be 17 instead.
@@ -151,11 +151,11 @@ fn aoo_with_lethal_damage_and_sublethal_horror_applies_both_numerically() {
     // Both events fire and both numeric fields land.
     assert_event!(
         result.events,
-        Event::DamageTaken { investigator, amount: 5 } if *investigator == INV
+        Event::DamagePlacedOnInvestigator { investigator, amount: 5 } if *investigator == INV
     );
     assert_event!(
         result.events,
-        Event::HorrorTaken { investigator, amount: 1 } if *investigator == INV
+        Event::HorrorPlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV
     );
     // Pre-loaded 3 + attack 5 = 8; horror 0 + 1 = 1.
     assert_eq!(result.state.investigators[&INV].damage(), 8);
@@ -182,11 +182,11 @@ fn aoo_with_sublethal_damage_and_lethal_horror_applies_both_numerically() {
     assert_eq!(result.outcome, EngineOutcome::Done);
     assert_event!(
         result.events,
-        Event::DamageTaken { investigator, amount: 1 } if *investigator == INV
+        Event::DamagePlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV
     );
     assert_event!(
         result.events,
-        Event::HorrorTaken { investigator, amount: 5 } if *investigator == INV
+        Event::HorrorPlacedOnInvestigator { investigator, amount: 5 } if *investigator == INV
     );
     // damage: 0 + 1 = 1; horror: pre-loaded 3 + attack 5 = 8.
     assert_eq!(result.state.investigators[&INV].damage(), 1);

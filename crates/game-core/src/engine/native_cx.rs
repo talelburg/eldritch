@@ -19,8 +19,8 @@ use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::event::TraumaKind;
 use crate::state::{
-    CardCode, CardInstanceId, Deck, EnemyId, GameState, InvestigatorId, LocationId, Owner,
-    SkillSubstitution, UseKind, Zone,
+    CardCode, CardInstanceId, DamageSource, Deck, EnemyId, GameState, InvestigatorId, LocationId,
+    Owner, SkillSubstitution, UseKind, Zone,
 };
 
 /// What a [`NativeEffectFn`](crate::card_registry::NativeEffectFn) gets: full
@@ -114,7 +114,14 @@ impl<'a> NativeCx<'a> {
         damage: u8,
         horror: u8,
     ) -> EngineOutcome {
-        combat::deal_harm(self.write_access(), investigator, damage, horror)
+        combat::deal_harm(
+            self.write_access(),
+            investigator,
+            damage,
+            horror,
+            DamageSource::Effect,
+            false,
+        )
     }
 
     /// Defeat `investigator` by a card ability and run elimination. A no-op
@@ -178,24 +185,6 @@ impl<'a> NativeCx<'a> {
         owner: Owner,
     ) -> Option<CardInstanceId> {
         threat_area::attach_to_location(self.write_access(), location, code, owner)
-    }
-
-    /// Put `code` into `investigator`'s threat area under `owner`, returning
-    /// its new instance id, or `None` when the investigator is not in the game.
-    ///
-    /// **Makes no room.** A card with a slot symbol lands even when its slot is
-    /// full, and no occupier is discarded. [`Effect::PutIntoThreatArea`] is the
-    /// entry that makes room first, and can suspend on the make-room prompt.
-    /// Use this one only for a card that holds no slot.
-    ///
-    /// [`Effect::PutIntoThreatArea`]: card_dsl::dsl::Effect::PutIntoThreatArea
-    pub fn place_in_threat_area(
-        &mut self,
-        investigator: InvestigatorId,
-        code: CardCode,
-        owner: Owner,
-    ) -> Option<CardInstanceId> {
-        threat_area::place_in_threat_area(self.write_access(), investigator, code, owner)
     }
 
     // --- Movement and placement ---
@@ -276,6 +265,12 @@ impl<'a> NativeCx<'a> {
     /// pool the card prints as discard-when-empty, the card is discarded to
     /// its owner's pile at once.
     ///
+    /// The discard is not deferred to the end of the ability. The
+    /// discard-when-empty text is a constant ability, and *"Constant abilities
+    /// have no point of initiation"* (Rules Reference, Ability), so it fires
+    /// wherever uses change: a native's effect spending them here, as much as a
+    /// `Cost::SpendUses` payment.
+    ///
     /// # Errors
     ///
     /// [`SpendUsesError::NotInPlay`] when `instance` is not on the board;
@@ -355,7 +350,7 @@ impl<'a> NativeCx<'a> {
     /// instance `to`, wherever each is on the board (The Necronomicon 01009),
     /// emitting [`Event::HorrorMoved`](crate::event::Event::HorrorMoved) with
     /// the number moved. A move, neither a deal nor a heal, so
-    /// [`Event::HorrorTaken`](crate::event::Event::HorrorTaken) stays silent
+    /// [`Event::HorrorPlacedOnInvestigator`](crate::event::Event::HorrorPlacedOnInvestigator) stays silent
     /// and no harm window opens. A source with no horror moves nothing and
     /// announces nothing.
     ///

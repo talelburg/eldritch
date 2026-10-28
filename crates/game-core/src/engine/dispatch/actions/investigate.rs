@@ -1,18 +1,15 @@
 //! The Investigate basic action, its candidates, the investigate perform
 //! shared with the designated Investigate, and its after-test clue discovery.
 
-use card_dsl::dsl::{self, Effect, IntExpr, LocationTarget, SkillTestKind, Stat};
+use card_dsl::dsl::{self, Effect, IntExpr, LocationTarget};
 
 use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
 use crate::engine::dispatch::skill_test;
-use crate::engine::dispatch::skill_test::InitiatorModifier;
+use crate::engine::dispatch::skill_test::SkillTestSpec;
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
-use crate::state::{
-    AbilitySource, ActionResume, DifficultyBasis, GameState, InvestigatorId, LocationId,
-    ModifierTarget, SkillKind, SkillTestFollowUp,
-};
+use crate::state::{AbilitySource, ActionResume, GameState, InvestigatorId, LocationId};
 
 /// The location an Investigate would test: `investigator`'s current location,
 /// if it exists and is revealed. `glossary/Investigate_Action.md`: *"he or she
@@ -108,6 +105,40 @@ pub(in crate::engine::dispatch) fn handle(
     })
 }
 
+/// How an investigation differs from a basic Investigate: the modification an
+/// **Investigate** designator carries (`glossary/Ability.md`: *"performs the
+/// designated action as described in the rules, but modified in the manner
+/// described by the ability"*). [`Default`] is the basic Investigate action's:
+/// no shroud modifier, and a success discovers a clue. The twin of
+/// [`FightModification`](super::fight::FightModification) and
+/// [`EvadeModification`](super::evade::EvadeModification).
+#[derive(Debug, Clone, Default)]
+pub(crate) struct InvestigateModification {
+    /// Flashlight 01087's *"Your location gets -2 shroud for this
+    /// investigation"*. It adjusts the **location difficulty** (shroud), not
+    /// the investigator's total, and it is one contribution among however many
+    /// the location carries: Flashlight's `-2` composes with Obscuring Fog
+    /// 01168's `+2` into a single shroud, clamped at 0 once at the end (RR p.4:
+    /// game values can never be reduced below 0). It travels into the test
+    /// unevaluated so the row it becomes is recalculated at every read (ADR
+    /// 0005).
+    pub shroud_modifier: Option<IntExpr>,
+    /// What a success does **in place of** the discovery (Burglary 01045's
+    /// *"If you succeed, instead of discovering clues, gain 3 resources."*).
+    /// With one, the test carries no follow-up at all — the discovery *is* the
+    /// Investigate follow-up, so there is nothing left of it to run — and the
+    /// replacement rides the test's `on_success`, resolving at ST.7 with the
+    /// source's context as Blinding Light 01066's evasion clause does. The test
+    /// stays an [`SkillTestKind::Investigate`](card_dsl::dsl::SkillTestKind::Investigate)
+    /// test, so ST.6's "after you
+    /// successfully investigate" timing point (Dr. Milan Christopher 01033)
+    /// fires as for any investigation. Deduction 01039's
+    /// `bonus_clues_discovered` only ever raises the discovery's count, so with
+    /// the discovery gone it raises nothing, which is its ruling: *"does not
+    /// stack with Burglary"*.
+    pub instead_of_discovery: Option<Effect>,
+}
+
 /// Perform an **investigate**: an Intellect test against `investigator`'s
 /// location whose difficulty *is* that location's modified shroud, read live at
 /// ST.6 rather than snapshotted here, with the base Investigate follow-up
@@ -119,27 +150,7 @@ pub(in crate::engine::dispatch) fn handle(
 /// `glossary/Ability.md` is what makes them the same procedure: *"Activating
 /// such an ability **performs the designated action** as described in the
 /// rules, but modified in the manner described by the ability."* The
-/// modification is `shroud_modifier`, and it is the *only* thing that differs.
-///
-/// `shroud_modifier` adjusts the **location difficulty** (shroud), not the
-/// investigator's total, and it is one contribution among however many the
-/// location carries: Flashlight's `-2` composes with Obscuring Fog 01168's `+2`
-/// into a single shroud, clamped at 0 once at the end (RR p.4: game values can
-/// never be reduced below 0). It travels into the test unevaluated so the row
-/// it becomes is recalculated at every read (ADR 0005).
-///
-/// `instead_of_discovery` is the other modification a designator can carry:
-/// what a success does **in place of** the discovery (Burglary 01045's *"If
-/// you succeed, instead of discovering clues, gain 3 resources."*). With one,
-/// the test carries no follow-up at all — the discovery *is* the Investigate
-/// follow-up, so there is nothing left of it to run — and the replacement
-/// rides the test's `on_success`, resolving at ST.7 with the source's context
-/// as Blinding Light 01066's evasion clause does. The test stays an
-/// [`SkillTestKind::Investigate`] test, so ST.6's "after you successfully
-/// investigate" timing point (Dr. Milan Christopher 01033) fires as for any
-/// investigation. Deduction 01039's `bonus_clues_discovered` only ever raises
-/// the discovery's count, so with the discovery gone it raises nothing, which
-/// is its ruling: *"does not stack with Burglary"*.
+/// [`InvestigateModification`] is the *only* thing that differs.
 ///
 /// The location is re-read here through [`candidates`] — the precondition
 /// re-check after the basic action's attacks of opportunity. If the
@@ -154,8 +165,7 @@ pub(in crate::engine::dispatch) fn handle(
 pub(crate) fn perform(
     cx: &mut Cx,
     investigator: InvestigatorId,
-    shroud_modifier: Option<IntExpr>,
-    instead_of_discovery: Option<Effect>,
+    modification: InvestigateModification,
     source: Option<AbilitySource>,
 ) -> EngineOutcome {
     assert!(
@@ -166,29 +176,14 @@ pub(crate) fn perform(
     let Some(location_id) = candidates(cx.state, investigator) else {
         return EngineOutcome::Done;
     };
-    let follow_up = if instead_of_discovery.is_some() {
-        SkillTestFollowUp::None
-    } else {
-        SkillTestFollowUp::Investigate
-    };
     skill_test::start_skill_test(
         cx,
         investigator,
-        SkillKind::Intellect,
-        SkillTestKind::Investigate,
-        DifficultyBasis::Shroud(location_id),
-        follow_up,
-        instead_of_discovery,
-        None,
+        SkillTestSpec::Investigate {
+            location: location_id,
+            modification,
+        },
         source,
-        // "Your location gets -2 shroud for this investigation" — a row over
-        // the *location*, scoped to the test about to start.
-        shroud_modifier.map(|delta| InitiatorModifier {
-            target: ModifierTarget::Location(location_id),
-            stat: Stat::Shroud,
-            delta,
-        }),
-        None,
     )
 }
 
@@ -214,8 +209,8 @@ pub(crate) fn perform(
 /// **default** target, not an invariant: several cards replace or redirect
 /// this discovery. Burglary 01045 (Core): "If you succeed, instead of
 /// discovering clues, gain 3 resources." (that one never reaches this step;
-/// see [`perform`]'s `instead_of_discovery`). Seeking Answers 02023 (Dunwich)
-/// discovers at a *connecting* location instead. It differs from
+/// see [`InvestigateModification::instead_of_discovery`]). Seeking Answers
+/// 02023 (Dunwich) discovers at a *connecting* location instead. It differs from
 /// `YourLocation` only if the investigator moves mid-test — no in-corpus path
 /// does today, but the snapshot is what "at that location" means for every
 /// card that reads it.
@@ -237,11 +232,12 @@ pub(in crate::engine::dispatch) fn after_test(cx: &mut Cx, investigator: Investi
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::Effect;
+    use card_dsl::dsl::{Effect, SkillTestKind};
 
     use super::*;
     use crate::state::{
-        Continuation, EffectFrame, GameStateBuilder, InFlightSkillTest, SkillTestId,
+        Continuation, EffectFrame, GameStateBuilder, InFlightSkillTest, SkillKind,
+        SkillTestFollowUp, SkillTestId,
     };
     use crate::test_support::{self, TEST_REGISTRIES};
 

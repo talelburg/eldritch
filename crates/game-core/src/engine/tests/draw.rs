@@ -62,7 +62,7 @@ fn draw_with_empty_deck_reshuffles_discard_draws_and_takes_one_horror() {
     );
     assert_event!(
         events,
-        Event::HorrorTaken { investigator, amount: 1 } if *investigator == INV
+        Event::HorrorPlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV
     );
     let shuffle_idx = events
         .iter()
@@ -74,12 +74,12 @@ fn draw_with_empty_deck_reshuffles_discard_draws_and_takes_one_horror() {
         .expect("CardsDrawn missing");
     let horror_idx = events
         .iter()
-        .position(|e| matches!(e, Event::HorrorTaken { .. }))
-        .expect("HorrorTaken missing");
+        .position(|e| matches!(e, Event::HorrorPlacedOnInvestigator { .. }))
+        .expect("HorrorPlacedOnInvestigator missing");
     assert!(
         shuffle_idx < draw_idx && draw_idx < horror_idx,
         "Expected order DeckShuffled ({shuffle_idx}) < CardsDrawn ({draw_idx}) < \
-         HorrorTaken ({horror_idx})"
+         HorrorPlacedOnInvestigator ({horror_idx})"
     );
     let inv = &session.state().investigators[&INV];
     assert_eq!(inv.hand.len(), 1);
@@ -97,7 +97,7 @@ fn draw_with_both_empty_deals_one_horror_no_shuffle_no_card() {
     session.assert_at_turn_menu(INV);
     assert_event!(
         session.events(),
-        Event::HorrorTaken { investigator, amount: 1 } if *investigator == INV
+        Event::HorrorPlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV
     );
     assert_event!(
         session.events(),
@@ -159,7 +159,7 @@ fn draw_with_low_sanity_investigator_defeated_by_reshuffle_horror() {
     assert_eq!(result.outcome, EngineOutcome::Done);
     assert_event!(
         result.events,
-        Event::HorrorTaken { investigator, amount: 1 } if *investigator == INV
+        Event::HorrorPlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV
     );
     assert_event!(
         result.events,

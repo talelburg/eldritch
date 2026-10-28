@@ -312,8 +312,8 @@ pub(super) fn defeat_asset(cx: &mut Cx, inst: CardInstanceId) {
 /// 2. Place the investigator card's share (the mandatory remainder — RR:
 ///    "all damage/horror that cannot be assigned to an asset must be
 ///    assigned to the investigator") via the numeric helpers, which write
-///    `investigator_card.accumulated_*` and emit [`Event::DamageTaken`] /
-///    [`Event::HorrorTaken`], then apply investigator defeat if either
+///    `investigator_card.accumulated_*` and emit [`Event::DamagePlacedOnInvestigator`] /
+///    [`Event::HorrorPlacedOnInvestigator`], then apply investigator defeat if either
 ///    crossed (`accumulated >= max_health()/max_sanity()` — the same
 ///    `accumulated >= printed capacity` rule as an asset, but the
 ///    consequence is *elimination*, not discard). Both stats land before
@@ -353,8 +353,8 @@ pub(super) fn place_assignment(cx: &mut Cx, investigator: InvestigatorId, assign
     }
 
     // 2. Place the investigator's share (both before any defeat check).
-    let dmg_lethal = apply_damage_numeric(cx, investigator, assignment.investigator_damage);
-    let hor_lethal = apply_horror_numeric(cx, investigator, assignment.investigator_horror);
+    let dmg_lethal = place_damage(cx, investigator, assignment.investigator_damage);
+    let hor_lethal = place_horror(cx, investigator, assignment.investigator_horror);
     if dmg_lethal || hor_lethal {
         let cause = if dmg_lethal {
             EliminationCause::Damage
@@ -383,8 +383,8 @@ pub(super) fn place_assignment(cx: &mut Cx, investigator: InvestigatorId, assign
     defeat_overflowed_assets(cx, investigator);
 }
 
-/// Add `amount` to the investigator's `damage` and emit
-/// [`Event::DamageTaken`]. Returns `true` iff the new total reaches
+/// Place `amount` damage on the investigator card (GLOSSARY "Assign / Place")
+/// and emit [`Event::DamagePlacedOnInvestigator`]. Returns `true` iff the new total reaches
 /// `max_health` (i.e. the investigator now qualifies for defeat under
 /// [`EliminationCause::Damage`]).
 ///
@@ -402,7 +402,7 @@ pub(super) fn place_assignment(cx: &mut Cx, investigator: InvestigatorId, assign
 /// don't accumulate more damage.
 ///
 /// [`Status`]: crate::state::Status
-pub(super) fn apply_damage_numeric(cx: &mut Cx, investigator: InvestigatorId, amount: u8) -> bool {
+pub(super) fn place_damage(cx: &mut Cx, investigator: InvestigatorId, amount: u8) -> bool {
     if amount == 0 {
         return false;
     }
@@ -412,7 +412,7 @@ pub(super) fn apply_damage_numeric(cx: &mut Cx, investigator: InvestigatorId, am
         .get_mut(&investigator)
         .unwrap_or_else(|| {
             unreachable!(
-                "apply_damage_numeric: investigator {investigator:?} is not in the investigators map; \
+                "place_damage: investigator {investigator:?} is not in the investigators map; \
              this is a state-corruption invariant violation"
             )
         });
@@ -424,18 +424,18 @@ pub(super) fn apply_damage_numeric(cx: &mut Cx, investigator: InvestigatorId, am
         .accumulated_damage
         .saturating_add(amount);
     let lethal = inv.damage() >= inv.max_health(cx.cards);
-    cx.events.push(Event::DamageTaken {
+    cx.events.push(Event::DamagePlacedOnInvestigator {
         investigator,
         amount,
     });
     lethal
 }
 
-/// Symmetric to [`apply_damage_numeric`] but against `horror` /
+/// Symmetric to [`place_damage`] but against `horror` /
 /// `max_sanity`. Returns `true` iff the new total reaches the
 /// max-sanity threshold; defeat application is the caller's
 /// responsibility (see [`super::elimination::apply_investigator_elimination`]).
-pub(super) fn apply_horror_numeric(cx: &mut Cx, investigator: InvestigatorId, amount: u8) -> bool {
+pub(super) fn place_horror(cx: &mut Cx, investigator: InvestigatorId, amount: u8) -> bool {
     if amount == 0 {
         return false;
     }
@@ -445,7 +445,7 @@ pub(super) fn apply_horror_numeric(cx: &mut Cx, investigator: InvestigatorId, am
         .get_mut(&investigator)
         .unwrap_or_else(|| {
             unreachable!(
-                "apply_horror_numeric: investigator {investigator:?} is not in the investigators map; \
+                "place_horror: investigator {investigator:?} is not in the investigators map; \
              this is a state-corruption invariant violation"
             )
         });
@@ -457,7 +457,7 @@ pub(super) fn apply_horror_numeric(cx: &mut Cx, investigator: InvestigatorId, am
         .accumulated_horror
         .saturating_add(amount);
     let lethal = sanity_reached(inv, cx.cards);
-    cx.events.push(Event::HorrorTaken {
+    cx.events.push(Event::HorrorPlacedOnInvestigator {
         investigator,
         amount,
     });
@@ -473,22 +473,30 @@ pub(super) fn sanity_reached(inv: &Investigator, cards: &CardRegistry) -> bool {
     inv.status == Status::Active && inv.horror() >= inv.max_sanity(cards)
 }
 
-/// Begin one deal of `damage` + `horror` to `investigator`: push the
-/// [`Continuation::DealDamage`] frame at its first step and return `Done`, which
-/// hands the `drive` loop a frame it dispatches on sight.
+/// Deal `damage` + `horror` to `investigator` from `source`: the one harm
+/// adapter, for an enemy attack and an effect alike. It pushes the
+/// [`Continuation::DealDamage`] frame at its first step and returns `Done`,
+/// which hands the `drive` loop a frame it dispatches on sight.
 ///
 /// The whole of the Rules Reference's two-step procedure runs on that frame —
-/// distribution, then the `DamageDealt` condition with `DamagePlaced` nested in
-/// its resolve step, then the resume — so **this is a tail-position call** (ADR 0003) exactly like an
-/// emit: a caller with work to do afterwards puts it on a frame beneath, and the
-/// two that do (the enemy attack's coordinator, and `Effect::Deal`'s parked
-/// effect walk) already have one. See
+/// distribution through the interactive soak prompt, then the `DamageDealt`
+/// condition with `DamagePlaced` nested in its resolve step, then the resume —
+/// so **this is a tail-position call** (ADR 0003) exactly like an emit: nothing
+/// is placed when this returns. A caller with work to do afterwards puts it on a
+/// frame beneath, and the two that do (the enemy attack's coordinator, and
+/// `Effect::Deal`'s parked effect walk) already have one. See
 /// `docs/adr/0009-damage-is-assigned-then-placed.md`.
 ///
 /// A `direct` deal offers no asset the soak: every point lands on the
 /// investigator card (`glossary/Direct_Damage_Direct_Horror.md`), with no
 /// prompt, and both conditions are still announced.
-pub(crate) fn begin_deal_damage(
+///
+/// A deal of 0 damage and 0 horror deals nothing and pushes no frame, on every
+/// path, so no condition announces an empty assignment
+/// (`glossary/Dealing_Damage_Horror.md`): *"If no damage/horror is applied in
+/// this step, no damage/horror has been successfully dealt."*
+#[must_use = "deal_harm only pushes the deal frame: return its outcome (ADR 0003)"]
+pub(crate) fn deal_harm(
     cx: &mut Cx,
     investigator: InvestigatorId,
     damage: u8,
@@ -496,6 +504,9 @@ pub(crate) fn begin_deal_damage(
     source: DamageSource,
     direct: bool,
 ) -> EngineOutcome {
+    if damage == 0 && horror == 0 {
+        return EngineOutcome::Done;
+    }
     cx.state.continuations.push(DealDamageFrame {
         investigator,
         source,
@@ -507,35 +518,6 @@ pub(crate) fn begin_deal_damage(
         },
     });
     EngineOutcome::Done
-}
-
-/// Deal `damage` + `horror` to `investigator` from anything that is not an enemy
-/// attack: the one harm adapter. It begins a deal with
-/// [`DamageSource::Effect`], so the harm is distributed through the interactive
-/// soak prompt and announces `DamageDealt` with `DamagePlaced` nested inside it,
-/// exactly as an enemy attack's does.
-///
-/// **Tail position** (ADR 0003), like [`begin_deal_damage`]: nothing is placed
-/// when this returns. A caller with work to do afterwards parks it on a frame
-/// beneath first. `deal_harm(.., 0, 0)` deals nothing and pushes no frame.
-#[must_use = "deal_harm only pushes the deal frame: return its outcome (ADR 0003)"]
-pub(crate) fn deal_harm(
-    cx: &mut Cx,
-    investigator: InvestigatorId,
-    damage: u8,
-    horror: u8,
-) -> EngineOutcome {
-    if damage == 0 && horror == 0 {
-        return EngineOutcome::Done;
-    }
-    begin_deal_damage(
-        cx,
-        investigator,
-        damage,
-        horror,
-        DamageSource::Effect,
-        false,
-    )
 }
 
 /// Build the eligible soakers for an enemy attack against `investigator`.
@@ -1065,17 +1047,15 @@ pub(crate) fn drive_deal_damage(cx: &mut Cx) -> EngineOutcome {
         }
         DealDamageStep::Finish => {
             cx.state.continuations.pop_expect::<DealDamageFrame>();
-            match source {
-                // The attack's own sequence continues on the frames beneath: its
-                // `at` and `after` cells on the coordinator, then the parked
-                // `AttackLoop`'s exhaust and the next attacker.
-                DamageSource::EnemyAttack { .. } => EngineOutcome::Done,
-                // Resume the parked effect walk, so subsequent effects
-                // run (and may prompt again) with no point lost. A
-                // `deal_harm` caller's own work (a native's enclosing frames, a
-                // drawn weakness's Revelation) is likewise on the frames beneath.
-                DamageSource::Effect => choice::resume_effect_walk(cx),
-            }
+            // Whatever dealt the damage continues on the frames beneath, so
+            // `Done` cedes to `drive`. For an attack, that is its `at` and
+            // `after` cells on the coordinator, then the parked `AttackLoop`'s
+            // exhaust and the next attacker. For an effect, `drive`'s
+            // `Continuation::Effect` arm resumes the parked effect walk, so
+            // subsequent effects run (and may prompt again) with no point lost;
+            // a `deal_harm` caller's own work (a native's enclosing frames, a
+            // drawn weakness's Revelation) is likewise on the frames beneath.
+            EngineOutcome::Done
         }
     }
 }
@@ -1085,7 +1065,7 @@ pub(crate) fn drive_deal_damage(cx: &mut Cx) -> EngineOutcome {
 /// without preventing it.
 ///
 /// The attack's impact is the damage and horror it deals, so this is one call to
-/// [`begin_deal_damage`] with the attacker's printed values — and dealing them
+/// [`deal_harm`] with the attacker's printed values — and dealing them
 /// is itself the two-step procedure of ADR 0009, walked on the
 /// [`Continuation::DealDamage`] frame this pushes above the coordinator. So the
 /// attack's `at` and `after` cells run after the whole deal, placement included, and
@@ -1108,7 +1088,7 @@ pub(super) fn deal_enemy_attack(
         )
     });
     let (damage, horror) = (enemy.attack_damage, enemy.attack_horror);
-    begin_deal_damage(
+    deal_harm(
         cx,
         investigator,
         damage,

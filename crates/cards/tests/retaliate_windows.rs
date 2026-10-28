@@ -292,7 +292,7 @@ fn dodge_cancels_retaliate_and_skill_test_ends() {
         "Dodge cancelled the retaliate: no horror to the investigator"
     );
     // A Dodge-cancelled retaliate deals no damage.
-    assert_no_event!(result.events, Event::DamageTaken { .. });
+    assert_no_event!(result.events, Event::DamagePlacedOnInvestigator { .. });
 
     // The retaliating enemy did NOT exhaust: a retaliate attacker never
     // exhausts, regardless of a cancel (RR p.18).

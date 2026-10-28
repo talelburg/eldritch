@@ -23,7 +23,6 @@ fn timing_point_window(candidates: Vec<ResolutionCandidate>) -> Continuation {
 fn fast_window(candidates: Vec<ResolutionCandidate>) -> Continuation {
     Continuation::FastWindow(FastWindowFrame {
         candidates,
-        fast_actors: FastActorScope::Any,
         kind: FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
     })
 }
@@ -115,7 +114,7 @@ fn the_timing_point_coordinator_does_not_await_input() {
     let f = Continuation::TimingPoint(TimingPointFrame {
         event: TimingEvent::RoundEnded,
         bucket: EventTiming::When,
-        sub: TimingSub::Forced,
+        sub: TimingSub::Forced(Vec::new()),
     });
     assert!(!f.awaits_input());
 }
@@ -514,8 +513,7 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
         ),
         (
             Continuation::EnemyPhase(EnemyPhaseFrame {
-                resume: EnemyResume::BeforeInvestigatorAttacked,
-                attacking: None,
+                resume: EnemyResume::HuntersMoving,
             }),
             profile(INERT, CANCEL),
         ),

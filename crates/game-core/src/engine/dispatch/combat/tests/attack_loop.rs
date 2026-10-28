@@ -25,8 +25,7 @@ fn drive_parked_attack_loop_exhausts_the_head_then_advances_the_cursor() {
         .with_turn_order([inv_id])
         .with_enemy(enemy)
         .with_phase_anchor(EnemyPhaseFrame {
-            resume: EnemyResume::BeforeInvestigatorAttacked,
-            attacking: Some(inv_id),
+            resume: EnemyResume::BeforeInvestigatorAttacked(inv_id),
         })
         .build();
     state.continuations.push(AttackLoopFrame {
@@ -60,8 +59,7 @@ fn drive_parked_attack_loop_exhausts_the_head_then_advances_the_cursor() {
         !state.continuations.iter().any(|c| matches!(
             c,
             Continuation::EnemyPhase(EnemyPhaseFrame {
-                attacking: Some(_),
-                ..
+                resume: EnemyResume::BeforeInvestigatorAttacked(_),
             })
         )),
         "cursor advanced past the sole investigator (no anchor still attacking)"
@@ -89,8 +87,7 @@ fn a_head_attacker_that_dealt_nothing_still_exhausts() {
         .with_turn_order([inv_id])
         .with_enemy(enemy)
         .with_phase_anchor(EnemyPhaseFrame {
-            resume: EnemyResume::BeforeInvestigatorAttacked,
-            attacking: Some(inv_id),
+            resume: EnemyResume::BeforeInvestigatorAttacked(inv_id),
         })
         .build();
     state.continuations.push(AttackLoopFrame {
@@ -109,7 +106,7 @@ fn a_head_attacker_that_dealt_nothing_still_exhausts() {
         0,
         "no damage: the attack's impact never ran"
     );
-    assert_no_event!(events, Event::DamageTaken { .. });
+    assert_no_event!(events, Event::DamagePlacedOnInvestigator { .. });
     assert!(
         state.enemies[&attacker].exhausted,
         "a cancelled attack still exhausts the attacker (01023 ruling)"
@@ -181,7 +178,7 @@ fn drive_retaliate_deals_damage_but_does_not_exhaust_the_attacker() {
         1,
         "retaliate dealt 1 damage"
     );
-    assert_event!(events, Event::DamageTaken { .. });
+    assert_event!(events, Event::DamagePlacedOnInvestigator { .. });
     assert_no_event!(events, Event::EnemyExhausted { .. });
 }
 
@@ -214,9 +211,9 @@ fn drive_aoo_deals_damage_but_does_not_exhaust_the_attacker() {
         1,
         "AoO damage landed on the investigator"
     );
-    // Enemy attack fires DamageTaken (no EnemyAttacked event exists); verify
+    // Enemy attack fires DamagePlacedOnInvestigator (no EnemyAttacked event exists); verify
     // damage landed on the investigator and no exhaust event was emitted.
-    assert_event!(events, Event::DamageTaken { .. });
+    assert_event!(events, Event::DamagePlacedOnInvestigator { .. });
     assert_no_event!(events, Event::EnemyExhausted { .. });
 }
 
@@ -274,7 +271,7 @@ fn drive_aoo_offers_order_pick_for_two_engaged_enemies() {
         .events()
         .iter()
         .filter_map(|e| match e {
-            Event::DamageTaken { amount, .. } => Some(*amount),
+            Event::DamagePlacedOnInvestigator { amount, .. } => Some(*amount),
             _ => None,
         })
         .collect();

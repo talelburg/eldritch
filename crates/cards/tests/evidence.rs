@@ -179,7 +179,7 @@ fn picking_evidence_plays_it_and_discovers_a_clue() {
     let events = session.events();
     assert_event!(
         events,
-        Event::CardPlayed { investigator, code } if *investigator == INV && code.as_str() == EVIDENCE
+        Event::PlayCommenced { investigator, code } if *investigator == INV && code.as_str() == EVIDENCE
     );
     assert_event!(
         events,
@@ -290,7 +290,7 @@ fn window_offers_both_in_play_reaction_and_hand_evidence() {
     session.assert_at_turn_menu(INV);
     assert_event!(
         session.events(),
-        Event::CardPlayed { investigator, code } if *investigator == INV && code.as_str() == EVIDENCE
+        Event::PlayCommenced { investigator, code } if *investigator == INV && code.as_str() == EVIDENCE
     );
     // Evidence! discovered its clue; Roland's reaction was skipped.
     assert_event!(session.events(), Event::CluePlaced { investigator, count: 1 } if *investigator == INV);

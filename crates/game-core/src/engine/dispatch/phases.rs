@@ -529,7 +529,6 @@ fn investigation_phase_end_transition(cx: &mut Cx) -> EngineOutcome {
     cx.state.phase = Phase::Enemy;
     cx.state.continuations.push(EnemyPhaseFrame {
         resume: EnemyResume::Entry,
-        attacking: None,
     });
     EngineOutcome::Done
 }
@@ -639,7 +638,6 @@ fn step_phase(cx: &mut Cx) -> EngineOutcome {
         }),
         Phase::Enemy => Continuation::EnemyPhase(EnemyPhaseFrame {
             resume: EnemyResume::Entry,
-            attacking: None,
         }),
         Phase::Upkeep => Continuation::UpkeepPhase(UpkeepPhaseFrame {
             resume: UpkeepResume::Entry,
@@ -688,13 +686,14 @@ pub(super) fn enemy_attack_kickoff(cx: &mut Cx) -> EngineOutcome {
     open_attack_window(cx, cursor::first_active_investigator(cx.state))
 }
 
-/// Point the Enemy phase anchor at the next step-3.3 window and open it. The
-/// `attacking` cursor is the single source of truth: `Some(inv)` opens
-/// that investigator's `BeforeInvestigatorAttacked` window and the anchor
-/// resumes into resolving their attacks; `None` means no investigator remains,
-/// so open the terminal `AfterAllInvestigatorsAttacked` window and the anchor
-/// resumes into `enemy_phase_end`. Deriving the resume, the window, and the
-/// cursor from one `Option` here makes a mismatched pairing unrepresentable.
+/// Point the Enemy phase anchor at the next step-3.3 window and open it.
+/// `Some(inv)` opens that investigator's `BeforeInvestigatorAttacked` window
+/// and the anchor resumes into resolving their attacks
+/// ([`EnemyResume::BeforeInvestigatorAttacked`] carries `inv`); `None` means no
+/// investigator remains, so open the terminal `AfterAllInvestigatorsAttacked`
+/// window and the anchor resumes into `enemy_phase_end`. Deriving the resume
+/// and the window from one `Option` here makes a mismatched pairing
+/// unrepresentable.
 ///
 /// Shared by [`enemy_attack_kickoff`] (step 3.3 entry, cursor =
 /// [`cursor::first_active_investigator`](super::cursor::first_active_investigator))
@@ -703,8 +702,8 @@ pub(super) fn enemy_attack_kickoff(cx: &mut Cx) -> EngineOutcome {
 /// [`cursor::next_active_investigator_after`](super::cursor::next_active_investigator_after)).
 pub(super) fn open_attack_window(cx: &mut Cx, attacking: Option<InvestigatorId>) -> EngineOutcome {
     let (resume, step) = match attacking {
-        Some(_) => (
-            EnemyResume::BeforeInvestigatorAttacked,
+        Some(investigator) => (
+            EnemyResume::BeforeInvestigatorAttacked(investigator),
             PhaseStep::BeforeInvestigatorAttacked,
         ),
         None => (
@@ -712,22 +711,17 @@ pub(super) fn open_attack_window(cx: &mut Cx, attacking: Option<InvestigatorId>)
             PhaseStep::AfterAllInvestigatorsAttacked,
         ),
     };
-    set_enemy_anchor(cx, resume, attacking);
+    set_enemy_anchor(cx, resume);
     reaction_windows::open_fast_window(cx, FastWindowKind::Phase(step))
 }
 
-/// Set the Enemy phase anchor's `resume` and `attacking` cursor together so
-/// neither is dropped. The low-level primitive behind
+/// Set the Enemy phase anchor's `resume`. The low-level primitive behind
 /// [`open_attack_window`]; the anchor is the bottom-most Enemy frame, and this
 /// is a no-op if it is absent (only in tests that drive the attack loop in
 /// isolation).
-pub(super) fn set_enemy_anchor(
-    cx: &mut Cx,
-    resume: EnemyResume,
-    attacking: Option<InvestigatorId>,
-) {
+pub(super) fn set_enemy_anchor(cx: &mut Cx, resume: EnemyResume) {
     if let Some(anchor) = cx.state.continuations.topmost_of_mut::<EnemyPhaseFrame>() {
-        *anchor = EnemyPhaseFrame { resume, attacking };
+        anchor.resume = resume;
     }
 }
 
@@ -749,7 +743,6 @@ fn enemy_phase(cx: &mut Cx) -> EngineOutcome {
     // cursor and runs 3.2/3.3 on re-exposure.
     cx.state.continuations.push(EnemyPhaseFrame {
         resume: EnemyResume::AfterPhaseStartForced,
-        attacking: None,
     });
     emit::queue_event(
         cx,
@@ -768,12 +761,11 @@ fn enemy_phase(cx: &mut Cx) -> EngineOutcome {
 /// deferred to [`resume_hunter_choice`], which runs it once the last hunter
 /// resolves.
 fn enemy_after_phase_start(cx: &mut Cx) -> EngineOutcome {
-    // Advance the anchor off `AfterPhaseStartForced` onto the phase's running
-    // cursor. `attacking` stays `None`: the kickoff runs after hunter movement,
-    // so no investigator is selected yet. `enemy_attack_kickoff` /
-    // `after_enemy_phase_attacks` set both fields again before opening each
-    // attack window.
-    set_enemy_anchor(cx, EnemyResume::BeforeInvestigatorAttacked, None);
+    // Advance the anchor off `AfterPhaseStartForced`: step 3.2 is running.
+    // No investigator is selected yet, since the kickoff runs after hunter
+    // movement; `enemy_attack_kickoff` / `after_enemy_phase_attacks` re-point
+    // the anchor before opening each attack window.
+    set_enemy_anchor(cx, EnemyResume::HuntersMoving);
 
     // 3.2 Hunter enemies move. Park on a lead-investigator tie; the
     //     attack-loop kickoff then happens on resume.
@@ -817,9 +809,6 @@ pub(crate) fn enemy_phase_end(cx: &mut Cx) -> EngineOutcome {
     // hits — the loop re-dispatches this anchor in every case.
     *cx.state.continuations.top_mut::<EnemyPhaseFrame>() = EnemyPhaseFrame {
         resume: EnemyResume::AfterPhaseEndForced,
-        // The per-investigator attack cursor is spent by step 3.4; carrying it
-        // into the transition would misreport the phase's state.
-        attacking: None,
     };
     emit::queue_event(
         cx,
@@ -917,7 +906,6 @@ fn advance_phase_entry(cx: &mut Cx, anchor: Option<&Continuation>) -> Option<Eng
         }
         Some(Continuation::EnemyPhase(EnemyPhaseFrame {
             resume: EnemyResume::Entry,
-            ..
         })) => {
             cx.state.continuations.pop_expect::<EnemyPhaseFrame>();
             Some(enemy_phase(cx))
@@ -1027,11 +1015,15 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
         // resolved, re-exposing this anchor: run 3.2 + 3.3.
         Some(Continuation::EnemyPhase(EnemyPhaseFrame {
             resume: EnemyResume::AfterPhaseStartForced,
-            ..
         })) => enemy_after_phase_start(cx),
+        // Never re-exposed: see `EnemyResume::HuntersMoving`.
         Some(Continuation::EnemyPhase(EnemyPhaseFrame {
-            resume: EnemyResume::BeforeInvestigatorAttacked,
-            attacking,
+            resume: EnemyResume::HuntersMoving,
+        })) => {
+            unreachable!("the EnemyPhase anchor was re-exposed during hunter movement (step 3.2)")
+        }
+        Some(Continuation::EnemyPhase(EnemyPhaseFrame {
+            resume: EnemyResume::BeforeInvestigatorAttacked(investigator),
         })) => {
             // Structurally impossible under the main loop: a skill
             // test in flight sits above its phase anchor, so `drive` never
@@ -1040,15 +1032,6 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
                 cx.state.current_skill_test().is_none(),
                 "BeforeInvestigatorAttacked advanced with a skill test in flight",
             );
-            // Cursor expect-Some: BeforeInvestigatorAttacked is only ever opened
-            // after the anchor's `attacking` cursor is set to Some(_). A None
-            // here is a state-corruption invariant violation.
-            let investigator = attacking.unwrap_or_else(|| {
-                unreachable!(
-                    "BeforeInvestigatorAttacked closed with the EnemyPhase anchor's \
-                     `attacking` cursor == None; state-corruption invariant violation"
-                )
-            });
             // Tail position (see `emit::queue_event`): the attack loop parks
             // itself on a `Continuation::AttackLoop` frame and hands each attack
             // to the timing coordinator, so a `Done` here does not mean the
@@ -1059,7 +1042,6 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
         }
         Some(Continuation::EnemyPhase(EnemyPhaseFrame {
             resume: EnemyResume::AfterAllAttacked,
-            ..
         })) => {
             // Structurally impossible under the main loop: see the
             // BeforeInvestigatorAttacked arm above.
@@ -1073,7 +1055,6 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
         // resolved, re-exposing this anchor: transition to Upkeep.
         Some(Continuation::EnemyPhase(EnemyPhaseFrame {
             resume: EnemyResume::AfterPhaseEndForced,
-            ..
         })) => enemy_phase_end_transition(cx),
         // Step 2.1's queued `PhaseStarted { Investigation }` forced abilities
         // have resolved, re-exposing this anchor: open the post-2.1

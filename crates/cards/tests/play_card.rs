@@ -116,7 +116,7 @@ fn play_holy_rosary_emits_card_played_and_lands_in_play() {
     assert_event_count!(
         result.events,
         1,
-        Event::CardPlayed { investigator, code }
+        Event::PlayCommenced { investigator, code }
             if *investigator == INV && code.as_str() == HOLY_ROSARY
     );
     assert_no_event!(result.events, Event::CardDiscarded { .. });
@@ -206,7 +206,7 @@ fn play_working_a_hunch_resolves_on_play_and_discards() {
     assert_event_count!(
         result.events,
         1,
-        Event::CardPlayed { code, .. } if code.as_str() == WORKING_A_HUNCH
+        Event::PlayCommenced { code, .. } if code.as_str() == WORKING_A_HUNCH
     );
     assert_event_count!(
         result.events,
@@ -220,12 +220,12 @@ fn play_working_a_hunch_resolves_on_play_and_discards() {
             if *investigator == INV && code.as_str() == WORKING_A_HUNCH
     );
 
-    // Ordering: CardPlayed < CluePlaced < CardDiscarded. Matters
+    // Ordering: PlayCommenced < CluePlaced < CardDiscarded. Matters
     // because event listeners building causal chains (reaction
     // windows) key off the order.
     assert_event_sequence!(
         result.events,
-        Event::CardPlayed { .. },
+        Event::PlayCommenced { .. },
         Event::CluePlaced { .. },
         Event::CardDiscarded { .. },
     );
@@ -251,7 +251,7 @@ fn play_working_a_hunch_on_empty_location_is_rejected() {
     );
     assert!(inv.discard.is_empty(), "rejected play discards nothing");
     assert_no_event!(result.events, Event::CluePlaced { .. });
-    assert_no_event!(result.events, Event::CardPlayed { .. });
+    assert_no_event!(result.events, Event::PlayCommenced { .. });
 }
 
 #[test]

@@ -12,9 +12,9 @@ use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::{InputKind, OptionTarget, PromptNature};
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, EnemyId, FastActorScope,
-    FastWindowKind, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame, MythosResume,
-    Phase, PhaseStep, SkillKind,
+    AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, EnemyId, FastWindowKind,
+    GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame, MythosResume, Phase, PhaseStep,
+    SkillKind,
 };
 use game_core::test_support::{self, seat, uses, Seat, SeatLookup as _, TestSession};
 
@@ -168,10 +168,7 @@ fn mind_over_matter_rejected_outside_your_turn() {
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
         })
-        .with_open_window(
-            FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
-            FastActorScope::Any,
-        )
+        .with_open_window(FastWindowKind::Phase(PhaseStep::MythosAfterDraws))
         .session();
     assert_eq!(
         window.offered_at(&OptionTarget::HandCard {

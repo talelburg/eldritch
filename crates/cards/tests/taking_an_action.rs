@@ -284,7 +284,7 @@ fn play_rows() -> Vec<Row> {
             seated: |seat| seat.hand([MAGNIFYING_GLASS]),
             setup: |_| {},
             take: PLAY_FROM_HAND,
-            effect: |e| matches!(e, Event::CardPlayed { .. }),
+            effect: |e| matches!(e, Event::PlayCommenced { .. }),
             actions_spent: 0,
             provokes: false,
         },
@@ -426,7 +426,7 @@ fn a_ready_engaged_enemy_attacks_every_action_but_the_exempt_ones() {
         let attacks: Vec<usize> = events
             .iter()
             .enumerate()
-            .filter(|(_, e)| matches!(e, Event::DamageTaken { investigator, .. } if *investigator == INV))
+            .filter(|(_, e)| matches!(e, Event::DamagePlacedOnInvestigator { investigator, .. } if *investigator == INV))
             .map(|(i, _)| i)
             .collect();
         let payment = |e: &Event| matches!(e, Event::ActionsRemainingChanged { investigator, .. } if *investigator == INV);

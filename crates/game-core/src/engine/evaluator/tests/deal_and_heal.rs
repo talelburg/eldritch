@@ -44,7 +44,7 @@ fn deal_damage_adds_damage_and_emits_event() {
     assert_eq!(state.investigators[&InvestigatorId(1)].damage(), 2);
     assert_event!(
         events,
-        Event::DamageTaken { investigator, amount: 2 } if *investigator == InvestigatorId(1)
+        Event::DamagePlacedOnInvestigator { investigator, amount: 2 } if *investigator == InvestigatorId(1)
     );
 }
 
@@ -66,7 +66,7 @@ fn deal_horror_adds_horror_and_emits_event() {
     assert_eq!(state.investigators[&InvestigatorId(1)].horror(), 1);
     assert_event!(
         events,
-        Event::HorrorTaken { investigator, amount: 1 } if *investigator == InvestigatorId(1)
+        Event::HorrorPlacedOnInvestigator { investigator, amount: 1 } if *investigator == InvestigatorId(1)
     );
 }
 
@@ -115,6 +115,6 @@ fn deal_amount_can_be_a_count_of_failure_margin() {
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(state.investigators[&InvestigatorId(1)].damage(), 2);
     // Deal evaluates the IntExpr once and applies the result in a single hit;
-    // fail-by 2 → amount 2 → one DamageTaken event with amount 2.
-    assert_event!(events, Event::DamageTaken { investigator, amount: 2 } if *investigator == InvestigatorId(1));
+    // fail-by 2 → amount 2 → one DamagePlacedOnInvestigator event with amount 2.
+    assert_event!(events, Event::DamagePlacedOnInvestigator { investigator, amount: 2 } if *investigator == InvestigatorId(1));
 }

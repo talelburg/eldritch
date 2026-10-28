@@ -83,34 +83,42 @@ fn grasping_hands_deals_one_damage_per_point_failed_then_discards() {
 }
 
 /// Regression for #426: `Count(SkillTestFailedBy)` deals all N damage in one
-/// `Deal` evaluation, emitting a single `DamageTaken { amount: 2 }` event — not
-/// two separate `DamageTaken { amount: 1 }` events.
+/// `Deal` evaluation, emitting a single `DamagePlacedOnInvestigator { amount: 2 }` event — not
+/// two separate `DamagePlacedOnInvestigator { amount: 1 }` events.
 #[test]
 fn grasping_hands_fail_by_two_is_single_deal_of_two_damage() {
     // Agility 3 + Numeric(-2) = 1 vs difficulty 3 → fail by 2.
     let session = reveal_committing_nothing(board_with("01162", ChaosToken::Numeric(-2)));
     assert_eq!(session.state().investigators[&INV].damage(), 2);
-    // Exactly one DamageTaken event, with amount == 2.
-    assert_event_count!(session.events(), 1, Event::DamageTaken { .. });
+    // Exactly one DamagePlacedOnInvestigator event, with amount == 2.
+    assert_event_count!(
+        session.events(),
+        1,
+        Event::DamagePlacedOnInvestigator { .. }
+    );
     assert_event!(
         session.events(),
-        Event::DamageTaken { investigator, amount: 2 } if *investigator == INV
+        Event::DamagePlacedOnInvestigator { investigator, amount: 2 } if *investigator == INV
     );
 }
 
 /// Regression for #426: `Count(SkillTestFailedBy)` deals all N horror in one
-/// `Deal` evaluation, emitting a single `HorrorTaken { amount: 2 }` event — not
-/// two separate `HorrorTaken { amount: 1 }` events.
+/// `Deal` evaluation, emitting a single `HorrorPlacedOnInvestigator { amount: 2 }` event — not
+/// two separate `HorrorPlacedOnInvestigator { amount: 1 }` events.
 #[test]
 fn rotting_remains_fail_by_two_is_single_deal_of_two_horror() {
     // Willpower 3 + Numeric(-2) = 1 vs difficulty 3 → fail by 2.
     let session = reveal_committing_nothing(board_with("01163", ChaosToken::Numeric(-2)));
     assert_eq!(session.state().investigators[&INV].horror(), 2);
-    // Exactly one HorrorTaken event, with amount == 2.
-    assert_event_count!(session.events(), 1, Event::HorrorTaken { .. });
+    // Exactly one HorrorPlacedOnInvestigator event, with amount == 2.
+    assert_event_count!(
+        session.events(),
+        1,
+        Event::HorrorPlacedOnInvestigator { .. }
+    );
     assert_event!(
         session.events(),
-        Event::HorrorTaken { investigator, amount: 2 } if *investigator == INV
+        Event::HorrorPlacedOnInvestigator { investigator, amount: 2 } if *investigator == INV
     );
 }
 

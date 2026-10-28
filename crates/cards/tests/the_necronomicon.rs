@@ -108,8 +108,8 @@ fn assert_entered_with_three_horror(session: &TestSession) {
     );
     // The horror is placed, not dealt: no harm event fires, and the
     // investigator takes none.
-    assert_no_event!(session.events(), Event::HorrorTaken { .. });
-    assert_no_event!(session.events(), Event::DamageTaken { .. });
+    assert_no_event!(session.events(), Event::HorrorPlacedOnInvestigator { .. });
+    assert_no_event!(session.events(), Event::DamagePlacedOnInvestigator { .. });
     assert_eq!(session.state().investigators[&INV].horror(), 0);
 }
 
@@ -281,7 +281,7 @@ fn a_reveal_clause_keyed_on_auto_fail_fires_on_her_elder_sign() {
     assert_event_count!(
         session.events(),
         1,
-        Event::HorrorTaken { investigator, amount: 1 } if *investigator == INV
+        Event::HorrorPlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV
     );
     assert_eq!(session.state().investigators[&INV].horror(), 1);
 }
@@ -610,8 +610,8 @@ fn its_action_moves_one_horror_to_daisy() {
         session.events(),
         Event::HorrorMoved { from, to, amount: 1 } if *from == necronomicon && *to == daisy
     );
-    assert_no_event!(session.events(), Event::HorrorTaken { .. });
-    assert_no_event!(session.events(), Event::DamageTaken { .. });
+    assert_no_event!(session.events(), Event::HorrorPlacedOnInvestigator { .. });
+    assert_no_event!(session.events(), Event::DamagePlacedOnInvestigator { .. });
     assert_eq!(
         session.state().investigators[&INV].actions_remaining,
         3,
@@ -677,5 +677,5 @@ fn a_move_that_reaches_her_sanity_defeats_her() {
             cause: EliminationCause::Horror
         }
     );
-    assert_no_event!(session.events(), Event::HorrorTaken { .. });
+    assert_no_event!(session.events(), Event::HorrorPlacedOnInvestigator { .. });
 }

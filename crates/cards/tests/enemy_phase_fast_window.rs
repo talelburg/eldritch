@@ -128,7 +128,7 @@ fn before_investigator_attacked_pauses_when_a_fast_play_is_eligible() {
     );
 
     // The pause is *before* the attack — nothing has been dealt yet.
-    assert_no_event!(session.events(), Event::DamageTaken { .. });
+    assert_no_event!(session.events(), Event::DamagePlacedOnInvestigator { .. });
     assert!(
         !session.state().enemies[&ATTACKER].exhausted,
         "the attacker has not attacked, so it has not exhausted",
@@ -149,7 +149,7 @@ fn skipping_the_pause_resumes_into_the_attack() {
     // Passing the window resolves step 3.3's attack…
     assert_event!(
         events,
-        Event::DamageTaken { investigator, amount: 1 } if *investigator == INV
+        Event::DamagePlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV
     );
     // …and the attacker exhausts on completing its attack.
     assert_event!(
@@ -176,7 +176,7 @@ fn taking_the_fast_play_resolves_before_the_attack() {
     // With its attacker gone, the investigator takes no attack damage.
     assert_no_event!(
         played.events(),
-        Event::DamageTaken { investigator, .. } if *investigator == INV
+        Event::DamagePlacedOnInvestigator { investigator, .. } if *investigator == INV
     );
     let inv = &played.state().investigators[&INV];
     assert!(
@@ -204,7 +204,7 @@ fn the_window_auto_skips_when_nothing_is_fast_eligible() {
     // The attack resolves in the same cascade…
     assert_event!(
         session.events(),
-        Event::DamageTaken { investigator, amount: 1 } if *investigator == INV
+        Event::DamagePlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV
     );
     // …and the attacker exhausts.
     assert_event!(

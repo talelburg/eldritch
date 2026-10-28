@@ -48,8 +48,10 @@ use crate::action::InputResponse;
 use crate::card_registry::{self, CardRegistry};
 use crate::engine::dispatch::actions::evade::EvadeModification;
 use crate::engine::dispatch::actions::fight::FightModification;
+use crate::engine::dispatch::actions::investigate::InvestigateModification;
 use crate::engine::dispatch::actions::{draw, engage, evade, fight, investigate, r#move, resource};
-use crate::engine::dispatch::{abilities, cards, choice, combat, cursor};
+use crate::engine::dispatch::cursor::{self, NotYourTurn};
+use crate::engine::dispatch::{abilities, cards, choice, combat};
 use crate::engine::outcome::{
     ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
 };
@@ -58,7 +60,7 @@ use crate::event::Event;
 use crate::state::{
     AbilityAddress, AbilitySource, ActionResolutionFrame, ActionResume,
     AdditionalActionChoiceFrame, AdditionalActionGrant, CardCode, CardInstanceId, GameState,
-    InvestigatorId, Phase, Status,
+    InvestigatorId, Status,
 };
 
 /// What kind of action is being taken: one of the seven basic actions
@@ -517,19 +519,20 @@ fn quote(
         )
         .into());
     }
-    if state.phase != Phase::Investigation {
-        return Err(format!(
-            "{name} is only valid during the Investigation phase (was {:?})",
-            state.phase
-        )
-        .into());
-    }
-    if state.active_investigator != Some(investigator) {
-        return Err(format!(
-            "{name}: {investigator:?} is not the active investigator ({:?})",
-            state.active_investigator
-        )
-        .into());
+    match cursor::your_turn(state, investigator) {
+        Ok(()) => {}
+        Err(NotYourTurn::WrongPhase(phase)) => {
+            return Err(format!(
+                "{name} is only valid during the Investigation phase (was {phase:?})"
+            )
+            .into());
+        }
+        Err(NotYourTurn::NotActive(active)) => {
+            return Err(format!(
+                "{name}: {investigator:?} is not the active investigator ({active:?})"
+            )
+            .into());
+        }
     }
     // The `ExtraActionCost` surcharge, plus the `first_each_round` sources to
     // mark spent once the action is paid; no card data for a code means no
@@ -674,7 +677,7 @@ pub(crate) fn take(
     }
 
     // TODO(#649): the hook runs ahead of the attacks, and for a play it
-    // commences the play: `CardPlayed` is emitted and the card leaves hand. So
+    // commences the play: `PlayCommenced` is emitted and the card leaves hand. So
     // the engine's order is pay action → pay resources → commence play →
     // attacks of opportunity. The rules' order commences after the attacks:
     // `glossary/Limbo.md`, *"An event card enters limbo during step 3 of the
@@ -860,7 +863,9 @@ pub(in crate::engine::dispatch) fn perform(
         ActionResume::Move { destination } => r#move::perform(cx, investigator, destination),
         // A basic investigation carries no modification. A designated one
         // (Flashlight 01087) reaches the same perform with its shroud modifier.
-        ActionResume::Investigate => investigate::perform(cx, investigator, None, None, None),
+        ActionResume::Investigate => {
+            investigate::perform(cx, investigator, InvestigateModification::default(), None)
+        }
         ActionResume::Resource => resource::perform(cx, investigator),
         ActionResume::Engage { enemy } => engage::perform(cx, investigator, enemy),
         ActionResume::Draw => draw::perform(cx, investigator),

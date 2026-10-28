@@ -4,8 +4,8 @@
 //! Per the Arkham Horror LCG Rules Reference (page 11):
 //!
 //! - "A fast event card may be played from a player's hand any time its
-//!   play instructions specify." → permitted by any investigator a
-//!   window's `fast_actors` scope allows.
+//!   play instructions specify." → permitted by any investigator while an
+//!   open window admits Fast plays.
 //! - "A fast asset may be played by an investigator during any player
 //!   window on his or her turn." → restricted to the OWNER (the active
 //!   investigator); non-owner plays remain illegal even in a window.
@@ -39,9 +39,9 @@ use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::{InputKind, OptionTarget};
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, EnemyId, FastActorScope,
-    FastWindowKind, GameState, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume,
-    InvestigatorId, LocationId, MythosPhaseFrame, MythosResume, Phase, PhaseStep, SkillKind,
+    AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, EnemyId, FastWindowKind,
+    GameState, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume, InvestigatorId,
+    LocationId, MythosPhaseFrame, MythosResume, Phase, PhaseStep, SkillKind,
 };
 use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
 
@@ -72,10 +72,7 @@ fn mythos_after_draws_window(builder: GameStateBuilder) -> GameStateBuilder {
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
         })
-        .with_open_window(
-            FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
-            FastActorScope::Any,
-        )
+        .with_open_window(FastWindowKind::Phase(PhaseStep::MythosAfterDraws))
 }
 
 /// The Mythos phase at step 1.4, A to draw an encounter card, A active: a
@@ -108,10 +105,7 @@ fn a_turn_begins_window(b: Seat) -> TestSession {
         .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
         })
-        .with_open_window(
-            FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
-            FastActorScope::Any,
-        )
+        .with_open_window(FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins))
         .session()
 }
 
@@ -169,8 +163,8 @@ fn fast_asset_playable_by_owner_during_permissive_window() {
 fn fast_asset_rejected_by_non_owner_even_with_permissive_window() {
     // Per Rules Reference p. 11: a Fast asset may only be played by its
     // owner (i.e. on the owner's turn — the active investigator). A
-    // non-owner attempting the Fast play remains illegal even if an
-    // open window's `fast_actors` scope permits the actor. The window does not
+    // non-owner attempting the Fast play remains illegal even while an
+    // open window admits Fast plays. The window does not
     // offer it, so it goes straight to the handler, as a client can send it.
     let window = a_turn_begins_window(seat(2).resources(5).hand([MAGNIFYING_GLASS]));
     assert_window_offers_as_glass(&window);

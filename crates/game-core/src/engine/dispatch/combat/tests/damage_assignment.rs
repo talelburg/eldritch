@@ -40,7 +40,7 @@ fn place_assignment_accumulates_on_asset_and_investigator() {
         1,
         "investigator took overflow damage"
     );
-    assert_event!(events, Event::DamageTaken { investigator, amount: 1 } if *investigator == id);
+    assert_event!(events, Event::DamagePlacedOnInvestigator { investigator, amount: 1 } if *investigator == id);
 }
 
 #[test]
@@ -52,7 +52,7 @@ fn damage_application_accumulates_on_the_investigator_card() {
         .build();
     let mut events = Vec::new();
     let mut cx = Cx::for_test(&mut state, &mut events);
-    let defeated = apply_damage_numeric(&mut cx, id, 3);
+    let defeated = place_damage(&mut cx, id, 3);
     assert_eq!(
         state.investigators[&id]
             .investigator_card

@@ -149,7 +149,7 @@ fn a_harm_cost_offers_the_soak_and_the_effect_waits_for_the_horror() {
     // The horror is placed before the effect resolves.
     assert_event_sequence!(
         session.events(),
-        Event::HorrorTaken {
+        Event::HorrorPlacedOnInvestigator {
             investigator: INV,
             amount: 1
         },

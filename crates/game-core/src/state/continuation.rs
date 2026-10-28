@@ -2,7 +2,7 @@
 //! and step types that exist only to serve a frame, and the per-frame
 //! classifiers.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::{iter, mem};
 
 use card_dsl::card_data::SkillKind;
@@ -536,7 +536,7 @@ pub enum ActionResume {
     },
     /// Complete a non-fast card play after its `AoO` loop: run the card's
     /// `OnPlay` effects and, for an asset, move it into play. The card has
-    /// already been announced (`CardPlayed`) and has left hand — it rides this
+    /// already been announced (`PlayCommenced`) and has left hand — it rides this
     /// frame across the whole `AoO` suspension, and its code re-derives the
     /// destination + `OnPlay` abilities from the registry on resume.
     PlayCard {
@@ -971,23 +971,21 @@ impl Continuation {
         }
     }
 
-    /// Whether `investigator` may submit a Fast action into this open window. A
-    /// [`FastWindow`](Self::FastWindow) delegates to its [`FastActorScope`]; a
-    /// [`TimingPointWindow`](Self::TimingPointWindow) reaction window admits any
-    /// investigator, as `FastActorScope::Any` would. Forced
-    /// runs and non-window frames admit none.
+    /// Whether this frame is an open window that admits Fast plays: a
+    /// [`FastWindow`](Self::FastWindow) player window or a
+    /// [`TimingPointWindow`](Self::TimingPointWindow) reaction window. Forced
+    /// runs and non-window frames admit none. It does not depend on who asks:
+    /// who may act is the turn checks' question, in legality.
     #[must_use]
-    pub fn permits_fast(&self, investigator: InvestigatorId) -> bool {
-        match self {
-            Continuation::FastWindow(FastWindowFrame { fast_actors, .. }) => {
-                fast_actors.permits(investigator)
-            }
-            Continuation::TimingPointWindow(TimingPointWindowFrame {
-                mode: TimingMode::Reaction,
-                ..
-            }) => true,
-            _ => false,
-        }
+    pub fn permits_fast(&self) -> bool {
+        matches!(
+            self,
+            Continuation::FastWindow(_)
+                | Continuation::TimingPointWindow(TimingPointWindowFrame {
+                    mode: TimingMode::Reaction,
+                    ..
+                })
+        )
     }
 }
 
@@ -1092,9 +1090,16 @@ pub enum EnemyResume {
     /// movement) and the step-3.3 attack-loop kickoff. Set by `enemy_phase`
     /// before it emits, per ADR 0003.
     AfterPhaseStartForced,
-    /// Before-investigator-attacked window closed; resolve this investigator's
-    /// attacks (step 3.3).
-    BeforeInvestigatorAttacked,
+    /// Step 3.2: hunter enemies are moving. Set by `enemy_after_phase_start`
+    /// before it moves them. Hunter movement either completes synchronously or
+    /// suspends on a lead-investigator tie whose resume runs the step-3.3
+    /// kickoff directly, and the kickoff re-points the anchor; so nothing
+    /// re-exposes the anchor at this value, and its dispatch arm is
+    /// `unreachable!`.
+    HuntersMoving,
+    /// This investigator's before-attacked window closed; resolve their
+    /// engaged enemies' attacks (step 3.3). Set by `open_attack_window`.
+    BeforeInvestigatorAttacked(InvestigatorId),
     /// After-all-investigators-attacked window closed; run `enemy_phase_end`.
     AfterAllAttacked,
     /// Step 3.4's `PhaseEnded { Enemy }` forced abilities (agenda 01107's Ghoul
@@ -1228,10 +1233,15 @@ impl EmitStep {
 /// `Forced` fires the bucket's forced abilities (0/1 inline, 2+ via the
 /// ordered forced run), `Reaction` opens the bucket's reaction window, `Done`
 /// finishes the bucket (advance the parent `EmitEvent`'s cursor + pop).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TimingSub {
-    /// Fire the bucket's forced abilities.
-    Forced,
+    /// Fire these forced abilities: the ones the coordinator's scan found when
+    /// it decided to push the point. Nothing can change state between that
+    /// scan and this sub-step (the drive loop dispatches the pushed frame
+    /// next), so they are the cell's forced answer, not a guess at it; the
+    /// `Reaction` sub-step scans afresh, since a forced ability resolved in
+    /// between can change what reacts.
+    Forced(Vec<ResolutionCandidate>),
     /// Open the bucket's reaction window.
     Reaction,
     /// Bucket resolved; advance the parent `EmitEvent` cursor and pop.
@@ -1821,32 +1831,6 @@ pub enum SkillTestFollowUp {
     },
 }
 
-/// Which investigators may submit Fast `PlayCard` / `ActivateAbility`
-/// actions while a window frame is the top of the window stack.
-///
-/// Modeled per Rules Reference: a reaction window allows any
-/// investigator to fire a triggered reaction or play a Fast card.
-/// `ActiveInvestigator` bounds a window to the turn's owner; concrete
-/// window kinds choose the right scope at the open-window site.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[non_exhaustive]
-pub enum FastActorScope {
-    /// Only the named investigator may submit Fast actions during
-    /// this window. Used for narrow Investigation-phase windows (the
-    /// turn's owner) where Fast actions are still bounded to one
-    /// actor; pair with `Any` for windows where other investigators
-    /// may interject.
-    ActiveInvestigator(InvestigatorId),
-    /// Any investigator may submit Fast actions. Used for reaction
-    /// windows and between-phase windows.
-    Any,
-    /// Only the named set may submit Fast actions. Reserved for
-    /// scenario-specific windows that restrict actors by criterion
-    /// (e.g. only investigators at a given location). Nothing
-    /// constructs this variant today.
-    Specific(BTreeSet<InvestigatorId>),
-}
-
 /// The framework step a [`FastWindow`](Continuation::FastWindow) gates — the
 /// discriminant for the engine's framework player windows. Routes the close
 /// continuation.
@@ -1864,19 +1848,6 @@ pub enum FastWindowKind {
         /// skill-test windows for routing.
         before_token: bool,
     },
-}
-
-impl FastActorScope {
-    /// True if `investigator` is permitted to submit a Fast action
-    /// during the window carrying this scope.
-    #[must_use]
-    pub fn permits(&self, investigator: InvestigatorId) -> bool {
-        match self {
-            Self::ActiveInvestigator(id) => *id == investigator,
-            Self::Any => true,
-            Self::Specific(set) => set.contains(&investigator),
-        }
-    }
 }
 
 /// Whether a [`TimingPointWindow`](Continuation::TimingPointWindow) is a
@@ -1922,17 +1893,16 @@ pub enum PhaseStep {
     /// enemies resolve their attacks (Rules Reference p.25 step 3.3,
     /// the "previous player window" investigators "return to" between
     /// resolutions). The investigator to be attacked next is carried
-    /// on the [`EnemyPhase`](Continuation::EnemyPhase) anchor's `attacking`
-    /// cursor, not in the variant — mirror of [`MythosAfterDraws`] (the
-    /// encounter-draw loop's analog lives on the
-    /// [`EncounterDraw`](Continuation::EncounterDraw) frame).
+    /// on the [`EnemyPhase`](Continuation::EnemyPhase) anchor's resume,
+    /// [`EnemyResume::BeforeInvestigatorAttacked`], not in this variant —
+    /// mirror of [`MythosAfterDraws`] (the encounter-draw loop's analog lives
+    /// on the [`EncounterDraw`](Continuation::EncounterDraw) frame).
     ///
-    /// Continuation (in `anchor_on_child_pop`): read the cursor,
-    /// resolve the pending investigator's engaged ready enemies in
-    /// [`EnemyId`] order, exhaust each, advance the cursor to the next
-    /// Active investigator in [`turn_order`] (or `None`), open the next
-    /// window (`BeforeInvestigatorAttacked` if Some,
-    /// `AfterAllInvestigatorsAttacked` if None).
+    /// Continuation (in `anchor_on_child_pop`): read the investigator off
+    /// the resume, resolve their engaged ready enemies in [`EnemyId`] order,
+    /// exhaust each, find the next Active investigator in [`turn_order`]
+    /// (or none), open the next window (`BeforeInvestigatorAttacked` if
+    /// one remains, `AfterAllInvestigatorsAttacked` if not).
     ///
     /// One window per Active investigator in `turn_order`.
     ///
@@ -2040,7 +2010,7 @@ pub struct HandSizeDiscard {
 /// An [`Ability`](Self::Ability) candidate **fires an ability's effect** in
 /// place, from the [`AbilitySource`] it names; a [`Hand`](Self::Hand) candidate
 /// is a Fast event **played** from hand (RR Appendix I —
-/// `CardPlayed`, run the matched ability's effect, discard), not fired in
+/// `PlayCommenced`, run the matched ability's effect, discard), not fired in
 /// place, and a [`TopOfDiscardPile`](Self::TopOfDiscardPile) candidate is the
 /// same play made from the top of the discard pile under a permission
 /// (Wendy's Amulet 01014). [`is_play`](Self::is_play) names the two
@@ -2226,13 +2196,10 @@ pub struct InvestigationPhaseFrame {
 /// The Enemy phase anchor. See [`MythosPhaseFrame`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EnemyPhaseFrame {
-    /// Which child-pop boundary the anchor resumes at.
+    /// Which child-pop boundary the anchor resumes at. During step 3.3 it
+    /// carries the investigator whose engaged enemies attack next
+    /// ([`EnemyResume::BeforeInvestigatorAttacked`]).
     pub resume: EnemyResume,
-    /// The investigator whose engaged enemies are currently attacking
-    /// (Enemy step 3.3), or `None` before kickoff (the anchor is pushed
-    /// ahead of hunter movement) and after the last investigator. The
-    /// per-investigator cursor.
-    pub attacking: Option<InvestigatorId>,
 }
 
 /// The Upkeep phase anchor. See [`MythosPhaseFrame`].
@@ -2510,8 +2477,6 @@ pub struct FastWindowFrame {
     /// Usually empty (a pure Fast-gate) — non-empty only for a
     /// hand play offered at a framework step.
     pub candidates: Vec<ResolutionCandidate>,
-    /// Which investigators may submit Fast actions here.
-    pub fast_actors: FastActorScope,
     /// The framework step this window gates (and its event-payload kind).
     pub kind: FastWindowKind,
 }

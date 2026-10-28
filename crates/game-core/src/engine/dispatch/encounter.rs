@@ -2,14 +2,14 @@
 
 use std::mem;
 
-use card_dsl::card_data::{CardKind, CardMetadata, CardType, HealthValue, Spawn, SpawnLocation};
+use card_dsl::card_data::{CardKind, CardMetadata, CardType, Spawn, SpawnLocation};
 use card_dsl::dsl::{Ability, Effect, Trigger};
 
 use crate::action::InputResponse;
 use crate::engine::board;
 use crate::engine::dispatch::emit::{self, TimingEvent};
 use crate::engine::dispatch::hunters::PreyResolution;
-use crate::engine::dispatch::{choice, engagement, hunters, reaction_windows, skill_test};
+use crate::engine::dispatch::{choice, cursor, engagement, hunters, reaction_windows, skill_test};
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::{EngineOutcome, InputRequest, OptionTarget, ResumeToken};
 use crate::engine::Cx;
@@ -500,11 +500,6 @@ pub(super) fn spawn_enemy_at(
 /// Mint an enemy from `metadata` at `location_id` and engage it as
 /// `engages` says: with its drawer, or by prey among the investigators
 /// there. The body of [`spawn_enemy`] and [`spawn_enemy_at`].
-#[expect(
-    clippy::too_many_lines,
-    reason = "mints the enemy inline, as the only production `Enemy` constructor, then resolves \
-              its engagement on spawn"
-)]
 fn spawn_enemy_engaging(
     cx: &mut Cx,
     code: CardCode,
@@ -513,64 +508,19 @@ fn spawn_enemy_engaging(
     owner: Owner,
     engages: SpawnEngagement,
 ) -> EngineOutcome {
-    // spawn_enemy_at is only reached for Enemy cards; pull the
-    // enemy-specific stats out of the kind.
-    let CardKind::Enemy {
-        health,
-        fight,
-        evade,
-        damage,
-        horror,
-        hunter,
-        retaliate,
-        prey,
-        victory,
-        ..
-    } = &metadata.kind
+    // Mint and place. The enemy is inserted unengaged; the engagement
+    // below goes through `engagement::engage`, so the `EnemyEngaged` event
+    // always pairs with the mutation. Only an enemy card reaches here, and a
+    // rejection rolls the minted id back with the rest of the state.
+    let enemy_id = cx.state.enemy_ids.mint();
+    let count = cursor::investigator_count(cx.state);
+    let Some(enemy) = Enemy::from_metadata(enemy_id, metadata, Some(location_id), owner, count)
     else {
         return EngineOutcome::Rejected {
             reason: format!("spawn_enemy_at: card {code} is not an enemy").into(),
         };
     };
-    let prey = *prey;
-
-    // Resolve health. PerInvestigator scales by the number of investigators
-    // in the game (Rules Reference p.12); matches the per-investigator clue
-    // path in reveal.rs (its future started-count caveat applies here too).
-    let max_health = match health {
-        Some(HealthValue::Fixed(n)) => *n,
-        Some(HealthValue::PerInvestigator(n)) => {
-            let count = u8::try_from(cx.state.investigators.len()).unwrap_or(u8::MAX);
-            n.saturating_mul(count)
-        }
-        None => 1,
-    };
-
-    // Mint and place. The enemy is inserted unengaged; the engagement
-    // below goes through `engagement::engage`, so the `EnemyEngaged` event
-    // always pairs with the mutation.
-    let enemy_id = cx.state.enemy_ids.mint();
-
-    let enemy = Enemy {
-        id: enemy_id,
-        name: metadata.name.clone(),
-        code: CardCode::new(metadata.code.clone()),
-        fight: i8::try_from(*fight).unwrap_or(i8::MAX),
-        evade: i8::try_from(*evade).unwrap_or(i8::MAX),
-        max_health,
-        damage: 0,
-        attack_damage: *damage,
-        attack_horror: *horror,
-        current_location: Some(location_id),
-        exhausted: false,
-        engaged_with: None,
-        hunter: *hunter,
-        prey,
-        retaliate: *retaliate,
-        victory: *victory,
-        attachments: Vec::new(),
-        owner,
-    };
+    let prey = enemy.prey;
     cx.state.enemies.insert(enemy_id, enemy);
 
     // Resolve engagement-on-spawn. A drawer is engaged outright. Otherwise the
@@ -583,33 +533,25 @@ fn spawn_enemy_engaging(
             hunters::resolve_prey(cx.state, cx.cards, prey, &candidates)
         }
     };
+    // The spawn is logged before the engagement or the tie-break suspension
+    // that follows it.
+    let engaged_with = match &resolution {
+        PreyResolution::One(target) => Some(*target),
+        PreyResolution::None | PreyResolution::Tie(_) => None,
+    };
+    cx.events.push(Event::EnemySpawned {
+        enemy: enemy_id,
+        code,
+        location: location_id,
+        engaged_with,
+    });
     match resolution {
-        PreyResolution::None => {
-            cx.events.push(Event::EnemySpawned {
-                enemy: enemy_id,
-                code,
-                location: location_id,
-                engaged_with: None,
-            });
-            EngineOutcome::Done
-        }
+        PreyResolution::None => EngineOutcome::Done,
         PreyResolution::One(target) => {
-            cx.events.push(Event::EnemySpawned {
-                enemy: enemy_id,
-                code,
-                location: location_id,
-                engaged_with: Some(target),
-            });
             engagement::engage(cx, enemy_id, target);
             EngineOutcome::Done
         }
         PreyResolution::Tie(tied) => {
-            cx.events.push(Event::EnemySpawned {
-                enemy: enemy_id,
-                code,
-                location: location_id,
-                engaged_with: None,
-            });
             // The surge/chain state lives on the drawer's `PlayerDraw` frame
             // beneath; this frame holds only the engagement pick.
             // `resume_spawn_engage` engages + pops, and the loop continues the
@@ -643,24 +585,13 @@ fn spawn_enemy_engaging(
 /// Emits [`Event::EncounterDeckShuffled`] iff the deck had at least
 /// 2 cards (a 0- or 1-card deck has nothing to permute).
 pub(super) fn shuffle_encounter_deck(cx: &mut Cx) {
-    let deck_len = cx.state.encounter_deck.len();
-    if deck_len < 2 {
-        return;
+    if cx
+        .state
+        .rng
+        .shuffle(cx.state.encounter_deck.make_contiguous())
+    {
+        cx.events.push(Event::EncounterDeckShuffled);
     }
-    // Mirror shuffle_player_deck's "collect swaps then apply" pattern:
-    // RngState::next_index borrows &mut state.rng, which would conflict
-    // with a &mut borrow on state.encounter_deck inline.
-    let mut swaps: Vec<(usize, usize)> = Vec::with_capacity(deck_len - 1);
-    let mut i = deck_len - 1;
-    while i >= 1 {
-        let j = cx.state.rng.next_index(i + 1);
-        swaps.push((i, j));
-        i -= 1;
-    }
-    for (a, b) in swaps {
-        cx.state.encounter_deck.swap(a, b);
-    }
-    cx.events.push(Event::EncounterDeckShuffled);
 }
 
 /// Drain `state.encounter_discard` into `state.encounter_deck` and

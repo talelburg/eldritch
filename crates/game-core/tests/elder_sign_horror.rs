@@ -112,7 +112,7 @@ fn horror_placed_at_st4_counts_at_st5() {
     let session = willpower_test(TAKES_THEN_COUNTS, 0);
     assert_event!(
         session.events(),
-        Event::HorrorTaken {
+        Event::HorrorPlacedOnInvestigator {
             investigator: INV,
             amount: 2,
         }

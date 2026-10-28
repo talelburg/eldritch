@@ -3,17 +3,17 @@
 //! investigator, which on success evades it — and [`evade_enemy`], the one
 //! evade exit every way of evading reaches.
 
-use card_dsl::dsl::{Effect, RevealClause, SkillTestKind};
+use card_dsl::dsl::{Effect, RevealClause};
 
 use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
 use crate::engine::dispatch::emit::{self, TimingEvent};
+use crate::engine::dispatch::skill_test::SkillTestSpec;
 use crate::engine::dispatch::{engagement, skill_test};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
-    AbilitySource, ActionResume, DifficultyBasis, Enemy, EnemyId, GameState, InvestigatorId,
-    SkillKind, SkillTestFollowUp,
+    AbilitySource, ActionResume, Enemy, EnemyId, GameState, InvestigatorId, SkillKind,
 };
 
 /// The enemies an Evade may target: every enemy engaged with `investigator`, in
@@ -130,26 +130,14 @@ pub(crate) fn perform(
     modification: EvadeModification,
     source: Option<AbilitySource>,
 ) -> EngineOutcome {
-    let EvadeModification {
-        skill_override,
-        reveal_clause,
-        on_success,
-    } = modification;
     skill_test::start_skill_test(
         cx,
         investigator,
-        skill_override.unwrap_or(SkillKind::Agility),
-        SkillTestKind::Evade,
-        // The difficulty *is* the enemy's modified evade value, read at
-        // ST.6 — Cold Spring Glen 02244's "Each enemy in Cold Spring Glen
-        // gets -1 evade" reaches this test.
-        DifficultyBasis::Evade(enemy_id),
-        SkillTestFollowUp::Evade { enemy: enemy_id },
-        on_success,
-        None,
+        SkillTestSpec::Evade {
+            enemy: enemy_id,
+            modification,
+        },
         source,
-        None, // no Evade designator prints a skill modifier yet
-        reveal_clause,
     )
 }
 

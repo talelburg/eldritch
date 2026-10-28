@@ -631,7 +631,7 @@ fn a_skipped_draw_pushes_no_chaos_symbol_effects() {
     let session = test_activating(state, card, 9);
 
     assert_no_event!(session.events(), Event::ChaosTokenRevealed { .. });
-    assert_no_event!(session.events(), Event::DamageTaken { .. });
+    assert_no_event!(session.events(), Event::DamagePlacedOnInvestigator { .. });
     assert_event!(session.events(), Event::SkillTestSucceeded { .. });
 }
 
@@ -650,7 +650,10 @@ fn the_symbol_effects_still_run_when_nothing_is_latched() {
             ..
         }
     );
-    assert_event!(session.events(), Event::DamageTaken { amount: 1, .. });
+    assert_event!(
+        session.events(),
+        Event::DamagePlacedOnInvestigator { amount: 1, .. }
+    );
 }
 
 /// *"If a chaos token effect causes an investigator to automatically

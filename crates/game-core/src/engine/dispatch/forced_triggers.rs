@@ -1,24 +1,25 @@
 //! The lone forced hit's firing path and its interactive acknowledge.
 //!
 //! Which forced abilities a timing event reaches is the one trigger scan's
-//! answer ([`trigger_scan::collect_forced`]); two or more simultaneous hits
-//! go to the ordered run (`open_forced_resolution`). What is left here
-//! is the single hit: fire it through [`initiation::initiate`], the path the
+//! answer ([`trigger_scan::collect_forced`](super::trigger_scan::collect_forced)),
+//! taken once by the coordinator when it pushes a timing point; two or more
+//! simultaneous hits go to the ordered run (`open_forced_resolution`). What is
+//! left here is the single hit: fire it through [`initiation::initiate`], the path the
 //! ordered run and reactions share, and in interactive play surface it as a
 //! one-option acknowledge before it resolves.
 
 use std::borrow::Cow;
 
-use card_dsl::dsl::{Effect, EventTiming};
+use card_dsl::dsl::Effect;
 
 use crate::action::InputResponse;
 use crate::engine::dispatch::emit::TimingEvent;
-use crate::engine::dispatch::{choice, initiation, reaction_windows, trigger_scan};
+use crate::engine::dispatch::{choice, initiation, reaction_windows};
 use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 use crate::engine::Cx;
-use crate::state::AcknowledgeForcedFrame;
+use crate::state::{AcknowledgeForcedFrame, ResolutionCandidate};
 
-/// Queue the lone forced ability `event` reaches in the `bucket` cell: push its
+/// Queue `hit`, the lone forced ability its timing point reached: push its
 /// effect frame (plus an
 /// [`AcknowledgeForced`](crate::state::Continuation::AcknowledgeForced) above it
 /// in interactive mode) for the `drive` loop to resolve.
@@ -30,41 +31,21 @@ use crate::state::AcknowledgeForcedFrame;
 /// chokepoint this backs, and
 /// `docs/adr/0003-emitting-a-timing-point-queues-abilities.md`.
 ///
-/// At most one hit reaches here: 2+ simultaneous forced abilities route to the
-/// ordered run (`open_forced_resolution`, Rules Reference p.17 — the
-/// order is chosen even in solo), so this path has no
-/// ordering to choose. It fires through [`initiation::initiate`], the path the
-/// ordered run and reactions share, so `event` supplies the same bindings
-/// either way. Never returns `AwaitingInput`; an ability that no longer
-/// resolves at its address returns `Rejected`.
+/// The one caller is the coordinator's `Forced` sub-step, which hands over the
+/// candidate its scan found. 2+ simultaneous forced abilities route to the
+/// ordered run instead (`open_forced_resolution`, Rules Reference p.17 — the
+/// order is chosen even in solo), so this path has no ordering to choose. It
+/// fires through [`initiation::initiate`], the path the ordered run and
+/// reactions share, so `event` supplies the same bindings either way. Never
+/// returns `AwaitingInput`; an ability that no longer resolves at its address
+/// returns `Rejected`.
 #[must_use = "queue_forced_triggers only pushes the forced effect's frame; the \
               effect has not run when this returns (ADR 0003)"]
 pub(crate) fn queue_forced_triggers(
     cx: &mut Cx,
     event: &TimingEvent,
-    bucket: EventTiming,
+    hit: &ResolutionCandidate,
 ) -> EngineOutcome {
-    // Frame-driven forced run: `initiate` pushes the
-    // candidate's effect root frame for the global `drive` loop to own; this
-    // function does not drive. Callers under the loop (effect-eval emits) get the
-    // forced effect driven next; callers with post-forced work (`end_turn`'s
-    // rotation, the `GameEnd` resolution finalization) arm a resumption frame
-    // before emitting and let the loop drive the forced frame then re-dispatch
-    // the resumption.
-    //
-    // At most one hit reaches here: the coordinator / emit `<2` guard routes 2+
-    // simultaneous forced abilities to the ordered forced-run frame
-    // (`open_forced_resolution`), so there is no ordering to preserve.
-    let hits = trigger_scan::collect_forced(cx.state, cx.cards, event, bucket);
-    debug_assert!(
-        hits.len() <= 1,
-        "queue_forced_triggers: expected 0/1 forced hit (2+ routes through \
-         open_forced_resolution); got {}",
-        hits.len(),
-    );
-    let Some(hit) = hits.first() else {
-        return EngineOutcome::Done;
-    };
     // The one firing path: the lone hit resolves, binds from `event`
     // and records its use exactly as it would had a sibling triggered alongside
     // it and sent both to the ordered run.

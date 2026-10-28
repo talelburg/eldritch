@@ -48,7 +48,7 @@ fn resource_action_fires_aoo_from_ready_engaged_enemy() {
     assert_eq!(session.state().investigators[&INV].resources, 6);
     assert_event!(
         session.events(),
-        Event::DamageTaken { investigator, amount: 1 } if *investigator == INV
+        Event::DamagePlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV
     );
 }
 
@@ -119,7 +119,7 @@ fn resource_action_aoo_that_eliminates_suppresses_the_gain() {
     // Lethal AoO landed.
     assert_event!(
         result.events,
-        Event::DamageTaken { investigator, amount: 8 } if *investigator == INV
+        Event::DamagePlacedOnInvestigator { investigator, amount: 8 } if *investigator == INV
     );
     // ...but the resource gain was suppressed.
     assert_no_event!(result.events, Event::ResourcesGained { .. });

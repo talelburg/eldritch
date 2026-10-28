@@ -89,7 +89,7 @@ fn deck_out_horror_lands_before_the_drawn_weakness_revelation_resolves() {
     // The horror completes the draw before the Revelation resolves.
     assert_event_sequence!(
         session.events(),
-        Event::HorrorTaken {
+        Event::HorrorPlacedOnInvestigator {
             investigator: INV,
             amount: 1
         },
@@ -120,7 +120,7 @@ fn upkeep_resolves_each_investigators_draw_completely_in_player_order() {
             investigator: INV,
             ..
         },
-        Event::HorrorTaken {
+        Event::HorrorPlacedOnInvestigator {
             investigator: INV,
             ..
         },
@@ -132,7 +132,7 @@ fn upkeep_resolves_each_investigators_draw_completely_in_player_order() {
             investigator: INV2,
             ..
         },
-        Event::HorrorTaken {
+        Event::HorrorPlacedOnInvestigator {
             investigator: INV2,
             ..
         },

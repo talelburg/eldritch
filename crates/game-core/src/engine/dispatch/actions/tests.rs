@@ -112,7 +112,7 @@ fn move_with_nonlethal_aoo_relocates_after_the_attack() {
     // AoO damage landed.
     assert_event!(
         result.events,
-        Event::DamageTaken { investigator, amount: 1 }
+        Event::DamagePlacedOnInvestigator { investigator, amount: 1 }
             if *investigator == inv_id
     );
     // Move proceeded: investigator is at L2.
@@ -319,7 +319,7 @@ fn investigate_scenario_with_enemy(
 fn investigate_with_nonlethal_aoo_starts_the_test_after_the_attack() {
     // Engaged enemy deals 1 damage, investigator has 8 health (survives).
     // After the AoO, the Investigate skill test starts (AwaitingInput at
-    // the commit window). Assert DamageTaken precedes the test start,
+    // the commit window). Assert DamagePlacedOnInvestigator precedes the test start,
     // the investigator is still Active, and took 1 damage.
     let (inv_id, _loc_id, enemy_id, state) = investigate_scenario_with_enemy(8, 1);
 
@@ -338,7 +338,7 @@ fn investigate_with_nonlethal_aoo_starts_the_test_after_the_attack() {
     // AoO damage landed before the test started — prove ordering.
     assert_event_sequence!(
         session.events(),
-        Event::DamageTaken { .. },
+        Event::DamagePlacedOnInvestigator { .. },
         Event::SkillTestStarted { .. }
     );
     // Investigator is still Active.
@@ -595,7 +595,7 @@ fn engage_scenario_with_aoo_enemy(
 #[test]
 fn engage_with_nonlethal_aoo_engages_after_the_attack() {
     // A second engaged enemy AoOs (1 damage); the target (co-located, not yet
-    // engaged) is then engaged. Assert DamageTaken (the AoO) precedes EnemyEngaged, the
+    // engaged) is then engaged. Assert DamagePlacedOnInvestigator (the AoO) precedes EnemyEngaged, the
     // target's engaged_with == Some(investigator), investigator survived.
     let (inv_id, target_id, aoo_enemy_id, state) = engage_scenario_with_aoo_enemy(8, 1);
 
@@ -609,7 +609,7 @@ fn engage_with_nonlethal_aoo_engages_after_the_attack() {
     // AoO damage landed.
     assert_event!(
         result.events,
-        Event::DamageTaken { investigator, amount: 1 }
+        Event::DamagePlacedOnInvestigator { investigator, amount: 1 }
             if *investigator == inv_id
     );
     // EnemyEngaged fired (target is now engaged).
@@ -618,10 +618,10 @@ fn engage_with_nonlethal_aoo_engages_after_the_attack() {
         Event::EnemyEngaged { enemy, investigator }
             if *enemy == target_id && *investigator == inv_id
     );
-    // AoO damage (DamageTaken) precedes the engagement.
+    // AoO damage (DamagePlacedOnInvestigator) precedes the engagement.
     assert_event_sequence!(
         result.events,
-        Event::DamageTaken { .. },
+        Event::DamagePlacedOnInvestigator { .. },
         Event::EnemyEngaged { .. }
     );
     // Target is now engaged with the investigator.

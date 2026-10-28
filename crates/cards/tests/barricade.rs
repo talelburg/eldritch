@@ -234,7 +234,7 @@ fn the_attack_of_opportunity_resolves_before_the_disengage() {
     let r = take(engaged_map_with_barricade_at_b(GHOUL_MINION), &MOVE_TO_B).finish();
     assert_event_sequence!(
         r.events,
-        Event::DamageTaken { .. },
+        Event::DamagePlacedOnInvestigator { .. },
         Event::EnemyDisengaged { .. },
         Event::InvestigatorMoved { .. },
     );

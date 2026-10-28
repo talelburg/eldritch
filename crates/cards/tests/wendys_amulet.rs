@@ -107,7 +107,7 @@ fn a_played_event_goes_to_the_bottom_of_the_deck() {
         Event::CardPlacedOnBottomOfDeck { investigator: INV, code } if code == &CardCode::new(EMERGENCY_CACHE)
     );
     assert_no_event!(s.events(), Event::CardDiscarded { .. });
-    assert_event!(s.events(), Event::CardPlayed { .. });
+    assert_event!(s.events(), Event::PlayCommenced { .. });
 }
 
 #[test]
@@ -290,7 +290,7 @@ fn in_her_turn_she_plays_the_top_event_of_her_discard_pile() {
     );
     assert_event!(
         s.events(),
-        Event::CardPlayed { investigator: INV, code } if code == &CardCode::new(EMERGENCY_CACHE)
+        Event::PlayCommenced { investigator: INV, code } if code == &CardCode::new(EMERGENCY_CACHE)
     );
 }
 
@@ -332,7 +332,7 @@ fn playing_from_the_discard_pile_while_engaged_provokes_an_attack_of_opportunity
     assert_eq!(inv.resources, resources + 3, "Emergency Cache resolved");
     assert_event_sequence!(
         s.events(),
-        Event::DamageTaken {
+        Event::DamagePlacedOnInvestigator {
             investigator: INV,
             amount: 1
         },

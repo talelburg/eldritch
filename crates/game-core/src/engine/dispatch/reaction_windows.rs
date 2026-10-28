@@ -25,8 +25,8 @@ use crate::engine::outcome::{
 use crate::engine::{abilities_in_effect, ability_source, Cx};
 use crate::event::{Event, LapseReason};
 use crate::state::{
-    CandidateSource, Continuation, FastActorScope, FastWindowFrame, FastWindowKind, GameState,
-    InvestigatorId, PlayFromHandFrame, ResolutionCandidate, TimingMode, TimingPointWindowFrame,
+    CandidateSource, Continuation, FastWindowFrame, FastWindowKind, GameState, InvestigatorId,
+    PlayFromHandFrame, ResolutionCandidate, TimingMode, TimingPointWindowFrame,
 };
 
 /// Push a reaction window frame for `candidates` at `bucket`. The shared push
@@ -805,7 +805,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
 /// Play the hand Fast-event `candidate` from the open resolution run — the
 /// [`CandidateSource::Hand`] resolution of [`fire_pending_trigger`]. Commences
 /// the play via the shared [`super::cards::commence_play`] (emit
-/// [`crate::event::Event::CardPlayed`], leave hand — RR Appendix I step 3),
+/// [`crate::event::Event::PlayCommenced`], leave hand — RR Appendix I step 3),
 /// then pushes a [`Continuation::PlayFromHand`] frame **holding that card**
 /// (above the live reaction window) and the `OnEvent` effect for the drive
 /// loop. On the effect's completion, [`super::cards::dispose_play_from_hand`]
@@ -1041,15 +1041,14 @@ pub(super) fn run_fast_continuation(cx: &mut Cx, kind: FastWindowKind) -> Engine
 /// There is one caller: `combat::finish_attack_loop`, run when the
 /// attack loop's list drains. The [`PhaseStep::BeforeInvestigatorAttacked`]
 /// continuation does not call it: the loop only *queues* its attacks (see
-/// `emit::queue_event`), so they are not finished when it returns. Advances the
-/// `EnemyPhase` anchor's `attacking`
-/// cursor to the next Active investigator AFTER `investigator` via
+/// `emit::queue_event`), so they are not finished when it returns. Finds the
+/// next Active investigator AFTER `investigator` via
 /// [`cursor::next_active_investigator_after`](super::cursor::next_active_investigator_after)
 /// — the helper indexes off `turn_order` (not the filtered-Active
 /// list), so `investigator` itself can have been defeated mid-loop and
-/// the right successor is still found. Then opens
-/// [`PhaseStep::BeforeInvestigatorAttacked`] again if the cursor
-/// advanced to `Some`, otherwise [`PhaseStep::AfterAllInvestigatorsAttacked`].
+/// the right successor is still found. Then points the `EnemyPhase` anchor at
+/// them and opens [`PhaseStep::BeforeInvestigatorAttacked`] again if there is
+/// one, otherwise [`PhaseStep::AfterAllInvestigatorsAttacked`].
 pub(super) fn after_enemy_phase_attacks(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -1099,11 +1098,9 @@ pub(super) fn open_fast_window(cx: &mut Cx, kind: FastWindowKind) -> EngineOutco
     // the candidate list is always empty; the Fast-play opportunity is gated by
     // `any_fast_play_eligible` below.
     let candidates = Vec::new();
-    cx.state.continuations.push(FastWindowFrame {
-        candidates,
-        fast_actors: FastActorScope::Any,
-        kind,
-    });
+    cx.state
+        .continuations
+        .push(FastWindowFrame { candidates, kind });
 
     let has_pending = !cx
         .state

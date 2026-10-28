@@ -104,14 +104,14 @@ fn playing_a_second_ally_auto_discards_the_first() {
     );
 
     // The displaced Beat Cop emitted CardDiscarded { from: InPlay }; Guard Dog
-    // emitted EnteredPlay-side CardPlayed earlier. Assert the make-room discard.
+    // emitted EnteredPlay-side PlayCommenced earlier. Assert the make-room discard.
     assert_event!(
         r2.events,
         Event::CardDiscarded { code, from: Zone::InPlay, to: DiscardPile::Investigator(investigator) }
             if *investigator == id && code.as_str() == BEAT_COP
     );
 
-    // Ordering: CardPlayed (announcement) fires before CardDiscarded (make-room).
+    // Ordering: PlayCommenced (announcement) fires before CardDiscarded (make-room).
     // There is no separate Event::EnteredPlay game event; the asset's entry is
     // witnessed by its presence in cards_in_play (asserted above). This ordering
     // assertion verifies that the play was announced before the slot was cleared,
@@ -119,8 +119,8 @@ fn playing_a_second_ally_auto_discards_the_first() {
     let played_pos = r2
         .events
         .iter()
-        .position(|e| matches!(e, Event::CardPlayed { code, .. } if code.as_str() == GUARD_DOG))
-        .expect("CardPlayed Guard Dog not found");
+        .position(|e| matches!(e, Event::PlayCommenced { code, .. } if code.as_str() == GUARD_DOG))
+        .expect("PlayCommenced Guard Dog not found");
     let discard_pos = r2
         .events
         .iter()
@@ -134,7 +134,7 @@ fn playing_a_second_ally_auto_discards_the_first() {
         .expect("CardDiscarded Beat Cop not found");
     assert!(
         played_pos < discard_pos,
-        "CardPlayed (announcement) must precede CardDiscarded (make-room, RR p.19)"
+        "PlayCommenced (announcement) must precede CardDiscarded (make-room, RR p.19)"
     );
 }
 

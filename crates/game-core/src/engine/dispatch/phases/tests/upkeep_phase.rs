@@ -2,9 +2,7 @@ use super::*;
 use crate::engine::enumerate::TurnAction;
 use crate::engine::outcome::EngineOutcome;
 use crate::event::Event;
-use crate::state::{
-    EnemyId, FastActorScope, GameStateBuilder, InvestigatorId, LocationId, Phase, Status,
-};
+use crate::state::{EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase, Status};
 use crate::test_support::{self, SeatLookup as _, TestSession, TEST_REGISTRIES};
 use crate::{assert_event, assert_event_sequence, assert_no_event};
 
@@ -240,10 +238,7 @@ fn run_upkeep(builder: GameStateBuilder) -> TestSession {
         .with_phase_anchor(UpkeepPhaseFrame {
             resume: UpkeepResume::Begins,
         })
-        .with_open_window(
-            FastWindowKind::Phase(PhaseStep::UpkeepBegins),
-            FastActorScope::Any,
-        )
+        .with_open_window(FastWindowKind::Phase(PhaseStep::UpkeepBegins))
         .session()
         .skip()
 }

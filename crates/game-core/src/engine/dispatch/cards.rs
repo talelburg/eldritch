@@ -20,8 +20,8 @@ use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
 use crate::engine::{board, Cx};
 use crate::event::Event;
 use crate::state::{
-    ActionResume, AssetEntry, CardCode, CardInPlay, Deck, DiscardPile, InvestigatorId,
-    MulliganFrame, Owner, PlayFromHandFrame, Zone,
+    ActionResume, AssetEntry, CardCode, CardInPlay, DamageSource, Deck, DiscardPile,
+    InvestigatorId, MulliganFrame, Owner, PlayFromHandFrame, Zone,
 };
 
 /// Starting hand size at scenario setup. Per the Rules Reference,
@@ -393,32 +393,9 @@ pub(in crate::engine) fn shuffle_player_deck(cx: &mut Cx, investigator: Investig
              this is a state-corruption invariant violation"
         )
         });
-    if inv.deck.len() < 2 {
-        return;
+    if cx.state.rng.shuffle(&mut inv.deck) {
+        cx.events.push(Event::DeckShuffled { investigator });
     }
-    // Fisher-Yates: walk from the end, swap each element with one in
-    // [0, i]. `next_index(n)` returns `[0, n)`, so we pass i+1.
-    let deck_len = inv.deck.len();
-    // Collect swap indices first, then apply — avoids holding a
-    // mutable borrow on `inv.deck` across the RNG calls. (next_index
-    // takes &mut state.rng, which conflicts with the &mut borrow we
-    // already have on the investigator if we did this inline.)
-    let mut swaps: Vec<(usize, usize)> = Vec::with_capacity(deck_len - 1);
-    let mut i = deck_len - 1;
-    while i >= 1 {
-        let j = cx.state.rng.next_index(i + 1);
-        swaps.push((i, j));
-        i -= 1;
-    }
-    let inv = cx
-        .state
-        .investigators
-        .get_mut(&investigator)
-        .expect("checked");
-    for (a, b) in swaps {
-        inv.deck.swap(a, b);
-    }
-    cx.events.push(Event::DeckShuffled { investigator });
 }
 
 /// Draw up to `count` cards from the named investigator's deck top
@@ -815,7 +792,7 @@ pub(in crate::engine) fn draw_with_deckout(
         return outcome;
     }
     if deck_ran_out {
-        return combat::deal_harm(cx, investigator, 0, 1);
+        return combat::deal_harm(cx, investigator, 0, 1, DamageSource::Effect, false);
     }
     EngineOutcome::Done
 }
@@ -1115,11 +1092,9 @@ pub(super) fn resolve_play_target(
 /// - **Fast events** (Rules Reference p. 11: *"A fast event card may be
 ///   played from a player's hand any time its play instructions
 ///   specify"*): permitted when `active_during_investigation` OR when
-///   the top open window's `fast_actors` scope permits the acting
-///   investigator. Any eligible investigator in a permissive window
-///   qualifies — card-level "Play only during your turn" constraints
-///   (e.g. Working a Hunch 01037) are a separate per-card concern
-///   **not** enforced here.
+///   the top open window admits Fast plays. Any eligible investigator in a
+///   permissive window qualifies, unless the card says "Play only during
+///   your turn" (below).
 ///
 /// - **Fast assets** (Rules Reference p. 11: *"A fast asset may be
 ///   played by an investigator during any player window on his or her
@@ -1129,13 +1104,18 @@ pub(super) fn resolve_play_target(
 ///   investigator AND the top open window permits them. Non-owner plays
 ///   remain illegal even in a permissive window.
 ///
-/// Card-level play constraints (e.g. "Play only during your turn",
-/// "Play only if …") are **not** enforced by this gate; they are a
-/// future per-card concern.
+/// - **"Play only during your turn"** (Working a Hunch 01037: *"Fast. Play
+///   only during your turn."*), read from
+///   [`CardMetadata::play_only_during_turn`](card_dsl::card_data::CardMetadata::play_only_during_turn):
+///   a Fast asset or event with this clause is permitted only when
+///   `active_during_investigation`, never in an out-of-turn permissive window.
+///
+/// Other card-level play constraints ("Play only if …") are **not**
+/// enforced by this gate; they are a per-card concern.
 ///
 /// # Ordering
 ///
-/// [`Event::CardPlayed`] fires first (the play *causes* any on-play
+/// [`Event::PlayCommenced`] fires first (the play *causes* any on-play
 /// effects, so it's correct for the play event to precede the
 /// effects' own events in the stream), and the card leaves hand with it
 /// (RR Appendix I step 3). Then the [`Trigger::OnPlay`]
@@ -1148,12 +1128,12 @@ pub(super) fn resolve_play_target(
 /// Wendy's Amulet 01014). Only then, at step 4,
 /// is the completed play announced to the timing system as
 /// `TimingEvent::CardPlayed` (Heirloom of Hyperborea 01012); the step-3
-/// [`Event::CardPlayed`] is the log entry, not that announcement.
+/// [`Event::PlayCommenced`] is the log entry, not that announcement.
 ///
 /// # State-mutation contract
 ///
 /// A mid-resolution reject here (an `OnPlay` effect returning non-`Done`
-/// after [`Event::CardPlayed`] and earlier effects have committed) is
+/// after [`Event::PlayCommenced`] and earlier effects have committed) is
 /// rolled back at the `apply` boundary — see [`apply`](crate::engine::apply)'s
 /// "Handler contract". No per-handler rollback is needed.
 pub(super) fn play_card(
@@ -1190,7 +1170,7 @@ pub(super) fn play_card(
     // A non-fast play is taken as an action: the step pays its one action, and
     // provokes attacks of opportunity before the play completes on resume. Its
     // hook pays the resource cost (RR p.22, before any attack resolves)
-    // and commences the play: `Event::CardPlayed` is logged and the card leaves hand
+    // and commences the play: `Event::PlayCommenced` is logged and the card leaves hand
     // to ride the frames until it is placed (RR Appendix I step 3 → 4). The
     // card itself rides the `ActionResolution` frame through the attacks.
     let description = ActionDescription::play(code.clone(), play_designator(&abilities).cloned());
@@ -1397,7 +1377,7 @@ pub(super) fn play_designator(abilities: &[Ability]) -> Option<&ActionDesignator
 /// [`complete_play`] to run the `OnPlay` effects + asset enter-play.
 ///
 /// On a mid-play defeat the gate suppresses this before it runs, so the card
-/// was *announced* (`CardPlayed`, action spent) but does not resolve — and the
+/// was *announced* (`PlayCommenced`, action spent) but does not resolve — and the
 /// card itself, still riding the `ActionResolution` frame, was removed from the
 /// game by elimination's sweep (RR p.10 step 1). Neither an event nor an asset
 /// reaches a discard pile or the play area: you don't gain the asset if you die
@@ -1413,7 +1393,7 @@ pub(super) fn resume_play_card(
 
 /// Commence playing the card at `source` among `investigator`'s zones (RR
 /// Appendix I, step 3: "The card commences being played"): emit
-/// [`Event::CardPlayed`], remove the card from its zone, and hand it back to the
+/// [`Event::PlayCommenced`], remove the card from its zone, and hand it back to the
 /// caller, which parks it on the frame driving the play. Between here and
 /// step 4 the card is in no zone at all — see
 /// [`Continuation::play_in_progress`](crate::state::Continuation::play_in_progress).
@@ -1445,7 +1425,7 @@ pub(super) fn commence_play(
             .pop()
             .expect("commence_play: caller guarantees the discard pile holds a card"),
     };
-    cx.events.push(Event::CardPlayed {
+    cx.events.push(Event::PlayCommenced {
         investigator,
         code: card.clone(),
     });
@@ -1725,7 +1705,7 @@ mod draw_with_deckout_tests {
         assert_eq!(inv.discard.len(), 1, "discard untouched");
         assert_eq!(inv.horror(), 0, "no deck-out, no horror");
         crate::assert_no_event!(events, Event::DeckShuffled { .. });
-        crate::assert_no_event!(events, Event::HorrorTaken { .. });
+        crate::assert_no_event!(events, Event::HorrorPlacedOnInvestigator { .. });
         crate::assert_event!(events, Event::CardsDrawn { count: 2, .. });
     }
 }

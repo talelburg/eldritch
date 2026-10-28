@@ -35,6 +35,9 @@ fn substitution_state(inv: InvestigatorId) -> GameState {
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_active_investigator(inv)
+        // The Fight's difficulty target: a test whose enemy is not in play is
+        // abandoned before its commit window.
+        .with_enemy(test_support::test_enemy(GHOUL.0, "Ghoul"))
         .build();
     state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
     state.lasting_effects.push(LastingEffect {
@@ -59,18 +62,13 @@ fn combat_test_with_substitution_prompts_then_becomes_intellect_on_yes() {
         start_skill_test(
             &mut cx,
             inv,
-            SkillKind::Combat,
-            SkillTestKind::Fight,
-            DifficultyBasis::Fixed(3),
-            SkillTestFollowUp::None,
-            None,
-            None,
-            None,
-            Some(InitiatorModifier {
-                target: ModifierTarget::Investigator(inv),
-                stat: Stat::Combat,
-                delta: IntExpr::Lit(2),
-            }),
+            SkillTestSpec::Fight {
+                enemy: GHOUL,
+                modification: FightModification {
+                    combat_modifier: Some(IntExpr::Lit(2)),
+                    ..FightModification::default()
+                },
+            },
             None,
         )
     };
@@ -139,14 +137,10 @@ fn substitution_prompt_keeps_the_test_on_its_frame() {
         start_skill_test(
             &mut cx,
             inv,
-            SkillKind::Combat,
-            SkillTestKind::Fight,
-            DifficultyBasis::Fixed(3),
-            SkillTestFollowUp::None,
-            None,
-            None,
-            None,
-            None,
+            SkillTestSpec::Fight {
+                enemy: GHOUL,
+                modification: FightModification::default(),
+            },
             None,
         )
     };
@@ -206,14 +200,10 @@ fn resume_substitution_choice_parks_for_the_loop() {
         start_skill_test(
             &mut cx,
             inv,
-            SkillKind::Combat,
-            SkillTestKind::Fight,
-            DifficultyBasis::Fixed(3),
-            SkillTestFollowUp::None,
-            None,
-            None,
-            None,
-            None,
+            SkillTestSpec::Fight {
+                enemy: GHOUL,
+                modification: FightModification::default(),
+            },
             None,
         )
     };

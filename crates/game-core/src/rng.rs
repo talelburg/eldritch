@@ -99,6 +99,25 @@ impl RngState {
         // fits in usize on every target.
         usize::try_from(v_mod).expect("v_mod < n which fits in usize")
     }
+
+    /// Fisher–Yates shuffle of `items` in place, returning whether it drew.
+    ///
+    /// Fewer than 2 items have nothing to permute, so the stream is left
+    /// untouched and this returns `false`. Otherwise it walks `i` from the
+    /// last index down to 1, swapping `items[i]` with `items[j]` for
+    /// `j = next_index(i + 1)`, one draw per step. The player-deck and
+    /// encounter-deck shuffles both go through here, so a seed fixes both
+    /// orders.
+    pub(crate) fn shuffle<T>(&mut self, items: &mut [T]) -> bool {
+        if items.len() < 2 {
+            return false;
+        }
+        for i in (1..items.len()).rev() {
+            let j = self.next_index(i + 1);
+            items.swap(i, j);
+        }
+        true
+    }
 }
 
 #[cfg(test)]

@@ -120,7 +120,7 @@ fn holding_dark_memory_at_the_end_of_your_turn_deals_two_horror() {
     );
     assert_event!(
         session.events(),
-        Event::HorrorTaken { investigator, amount: 2 } if *investigator == INV
+        Event::HorrorPlacedOnInvestigator { investigator, amount: 2 } if *investigator == INV
     );
 }
 
@@ -170,7 +170,7 @@ fn dark_memory_beside_another_end_of_turn_forced_ability_fires_in_place() {
     assert_eq!(inv.resources, 2, "Dark Memory was not played");
     assert_eq!(inv.hand, vec![CardCode::new(DARK_MEMORY)]);
     assert_eq!(session.state().agenda_doom, 0);
-    assert_no_event!(session.events(), Event::CardPlayed { .. });
+    assert_no_event!(session.events(), Event::PlayCommenced { .. });
 
     // Frozen in Fear, the run's last option, resolves next; the turn then
     // passes.

@@ -319,7 +319,7 @@ fn forced_on_enter_resolves_immediately() {
     );
     assert_event!(
         session.events(),
-        Event::HorrorTaken { investigator, amount: 1 } if *investigator == INV
+        Event::HorrorPlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV
     );
 }
 
@@ -335,7 +335,7 @@ fn forced_on_enter_no_op_when_location_has_no_abilities() {
         "the investigator entered the location",
     );
     assert_eq!(horror(&session), 0);
-    assert_no_event!(session.events(), Event::HorrorTaken { .. });
+    assert_no_event!(session.events(), Event::HorrorPlacedOnInvestigator { .. });
 }
 
 // ── PhaseEnded tests ──────────────────────────────────────────────────────────
@@ -453,7 +453,7 @@ fn forced_on_enemy_phase_end_fires_agenda_ability() {
     );
     assert_event!(
         session.events(),
-        Event::HorrorTaken { investigator, amount: 1 } if *investigator == INV
+        Event::HorrorPlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV
     );
 }
 
@@ -463,7 +463,7 @@ fn forced_on_phase_end_wrong_phase_fires_nothing() {
     let session = end_the_mythos_phase();
 
     assert_eq!(horror(&session), 0, "no horror for a non-matching phase");
-    assert_no_event!(session.events(), Event::HorrorTaken { .. });
+    assert_no_event!(session.events(), Event::HorrorPlacedOnInvestigator { .. });
 }
 
 /// The three non-Enemy phases do not fire an Enemy-keyed forced ability —
@@ -484,7 +484,7 @@ fn dsl_phase_mapping_non_enemy_phases_produce_no_hits() {
             0,
             "no horror for phase {phase:?} (agenda keyed to Enemy only)"
         );
-        assert_no_event!(session.events(), Event::HorrorTaken { .. });
+        assert_no_event!(session.events(), Event::HorrorPlacedOnInvestigator { .. });
     }
 }
 
@@ -494,7 +494,7 @@ fn forced_on_phase_end_no_op_when_agenda_has_no_abilities() {
     let session = end_the_enemy_phase(None, Some("plain-agenda"));
 
     assert_eq!(horror(&session), 0);
-    assert_no_event!(session.events(), Event::HorrorTaken { .. });
+    assert_no_event!(session.events(), Event::HorrorPlacedOnInvestigator { .. });
 }
 
 #[test]
@@ -504,7 +504,7 @@ fn forced_on_phase_end_no_op_when_no_act_or_agenda() {
     let session = end_the_enemy_phase(None, None);
 
     assert_eq!(horror(&session), 0);
-    assert_no_event!(session.events(), Event::HorrorTaken { .. });
+    assert_no_event!(session.events(), Event::HorrorPlacedOnInvestigator { .. });
 }
 
 #[test]
@@ -539,7 +539,7 @@ fn forced_on_phase_end_fires_act_ability() {
     );
     assert_event!(
         session.events(),
-        Event::HorrorTaken { investigator, amount: 1 } if *investigator == INV
+        Event::HorrorPlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV
     );
 }
 
@@ -575,7 +575,7 @@ fn end_of_turn_forced_resolves_threat_area_ability() {
     assert_eq!(horror(&session), 1);
     assert_event!(
         session.events(),
-        Event::HorrorTaken { investigator, amount: 1 } if *investigator == INV
+        Event::HorrorPlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV
     );
 }
 
@@ -585,7 +585,7 @@ fn end_of_turn_forced_no_op_without_threat_area_card() {
 
     assert_event!(session.events(), Event::TurnEnded { investigator } if *investigator == INV);
     assert_eq!(horror(&session), 0);
-    assert_no_event!(session.events(), Event::HorrorTaken { .. });
+    assert_no_event!(session.events(), Event::HorrorPlacedOnInvestigator { .. });
 }
 
 // ── AfterLocationInvestigated tests ───────────────────────────────────────────
@@ -623,7 +623,7 @@ fn after_investigate_forced_resolves_threat_area_ability() {
     assert_eq!(horror(&session), 1);
     assert_event!(
         session.events(),
-        Event::HorrorTaken { investigator, amount: 1 } if *investigator == INV
+        Event::HorrorPlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV
     );
 }
 
@@ -633,7 +633,7 @@ fn after_investigate_forced_no_op_without_threat_area_card() {
 
     session.assert_at_turn_menu(INV);
     assert_eq!(horror(&session), 0);
-    assert_no_event!(session.events(), Event::HorrorTaken { .. });
+    assert_no_event!(session.events(), Event::HorrorPlacedOnInvestigator { .. });
 }
 
 /// `INV`'s turn in the Hallway, next to the Double-Forced Room (two forced
@@ -819,7 +819,7 @@ fn suspending_left_location_forced_still_engages_and_fires_entered_location() {
         .events
         .iter()
         .enumerate()
-        .filter(|(_, e)| matches!(e, Event::HorrorTaken { .. }))
+        .filter(|(_, e)| matches!(e, Event::HorrorPlacedOnInvestigator { .. }))
         .map(|(i, _)| i)
         .collect();
     let engaged = done
@@ -872,10 +872,10 @@ fn a_when_cell_left_location_forced_resolves_before_the_departure_lands() {
     // impact, then the arrival's engage, then the entered location's forced.
     assert_event_sequence!(
         r.events,
-        Event::HorrorTaken { .. },
+        Event::HorrorPlacedOnInvestigator { .. },
         Event::InvestigatorMoved { .. },
         Event::EnemyEngaged { .. },
-        Event::HorrorTaken { .. },
+        Event::HorrorPlacedOnInvestigator { .. },
     );
     assert_eq!(
         r.state.investigators[&INV].horror(),
@@ -907,10 +907,10 @@ fn the_destination_reveal_belongs_to_the_arrival_not_the_departure() {
         .take(&MOVE_TO_ATTIC);
     assert_event_sequence!(
         session.events(),
-        Event::HorrorTaken { .. },
+        Event::HorrorPlacedOnInvestigator { .. },
         Event::InvestigatorMoved { .. },
         Event::LocationRevealed { .. },
-        Event::HorrorTaken { .. },
+        Event::HorrorPlacedOnInvestigator { .. },
     );
     assert!(
         session.state().locations[&ATTIC].revealed,
@@ -1006,11 +1006,11 @@ fn upkeep_phase_end_forced_resolves_before_the_round_end() {
 
     let phase_end = events
         .iter()
-        .position(|e| matches!(e, Event::HorrorTaken { amount: 1, .. }))
+        .position(|e| matches!(e, Event::HorrorPlacedOnInvestigator { amount: 1, .. }))
         .expect("the PhaseEnded(Upkeep) forced ability must resolve");
     let round_end = events
         .iter()
-        .position(|e| matches!(e, Event::HorrorTaken { amount: 2, .. }))
+        .position(|e| matches!(e, Event::HorrorPlacedOnInvestigator { amount: 2, .. }))
         .expect("the RoundEnded forced ability must resolve");
     assert!(
         phase_end < round_end,

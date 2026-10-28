@@ -19,7 +19,7 @@ use crate::engine::{abilities_in_effect, ability_source, Cx};
 use crate::event::Event;
 use crate::state::{
     AbilityAddress, AbilitySource, ActionResolutionFrame, ActionResume, CandidateSource, CardCode,
-    CardInPlay, CardInstanceId, GameState, Investigator, InvestigatorId, UseKind,
+    CardInPlay, CardInstanceId, DamageSource, GameState, Investigator, InvestigatorId, UseKind,
 };
 
 /// Handler for `TurnAction::ActivateAbility`: validates the activation, pays
@@ -58,8 +58,8 @@ use crate::state::{
 /// The Rules Reference's free triggered ability *"does not cost an action and
 /// may be used during any player window"* (`glossary/Triggered_Abilities.md`).
 /// So validation permits one when the acting investigator is the active
-/// investigator during the Investigation phase, or when an open window's
-/// `fast_actors` permits them. A moment inside another ability's resolution is
+/// investigator during the Investigation phase, or when an open window admits
+/// Fast plays. A moment inside another ability's resolution is
 /// not itself a window. Asked whether Lola Hayes may switch roles while another
 /// ability resolves, the official FAQ answers *"As long as it is during a
 /// \[fast\] player window, yes."*
@@ -160,7 +160,14 @@ fn activate(
                 effect,
             },
         });
-        return combat::deal_harm(cx, investigator, damage, horror);
+        return combat::deal_harm(
+            cx,
+            investigator,
+            damage,
+            horror,
+            DamageSource::Effect,
+            false,
+        );
     }
 
     // An action-cost ability is taken as an action. The step pays the actions,

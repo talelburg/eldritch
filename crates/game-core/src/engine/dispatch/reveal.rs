@@ -14,6 +14,7 @@
 
 use card_dsl::card_data::ClueValue;
 
+use crate::engine::dispatch::cursor;
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::LocationId;
@@ -24,22 +25,22 @@ use crate::state::LocationId;
 /// [`NativeCx::reveal_location`](crate::engine::NativeCx::reveal_location), to
 /// reveal a location it moves investigators into.
 pub(crate) fn reveal_location(cx: &mut Cx, location_id: LocationId) {
-    // "Number of investigators who started the scenario" — `len()` is
-    // faithful because eliminated investigators stay in the map (status
-    // flipped, never removed). If that invariant changes, per-investigator
-    // math here must switch to a stored started-count.
-    let count = u8::try_from(cx.state.investigators.len()).unwrap_or(u8::MAX);
-    let Some(loc) = cx.state.locations.get_mut(&location_id) else {
+    let Some(loc) = cx.state.locations.get(&location_id) else {
         return;
     };
     if loc.revealed {
         return;
     }
-    loc.revealed = true;
     let clues = match loc.printed_clues {
-        ClueValue::PerInvestigator(n) => n.saturating_mul(count),
+        ClueValue::PerInvestigator(n) => cursor::per_investigator(cx.state, n),
         ClueValue::Fixed(n) => n,
     };
+    let loc = cx
+        .state
+        .locations
+        .get_mut(&location_id)
+        .expect("looked up above");
+    loc.revealed = true;
     // Additive, not assignment: the Official FAQ holds that "[c]lues that
     // are placed on the newly revealed location from its clue value are
     // simply added to the clues that were already on that location when it

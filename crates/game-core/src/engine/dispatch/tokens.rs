@@ -36,7 +36,7 @@ pub enum MoveHorrorError {
 /// walk), and emit [`Event::HorrorMoved`] with the number moved. A source with
 /// no horror moves none, which changes nothing and announces nothing.
 ///
-/// A move, not a deal: no [`Event::HorrorTaken`] and no `DamagePlaced`
+/// A move, not a deal: no [`Event::HorrorPlacedOnInvestigator`] and no `DamagePlaced`
 /// window, so nothing keyed on harm sees it (ADR 0009; the 01009 ruling,
 /// *"Moving damage or horror is different from 'dealing' or 'taking' damage or
 /// horror, so does not trigger effects […]"*).

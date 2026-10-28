@@ -45,12 +45,12 @@ pub(super) fn active_investigators_in_turn_order(state: &GameState) -> Vec<Inves
 ///
 /// Used by per-investigator phase loops to seed their cursor:
 /// Mythos 1.4 draws ([`mythos_phase`] seeds `mythos_draw_pending`),
-/// Enemy 3.3 attacks ([`enemy_phase`] seeds the `EnemyPhase` anchor's
-/// `attacking` cursor).
+/// Enemy 3.3 attacks ([`enemy_attack_kickoff`] points the `EnemyPhase`
+/// anchor's `BeforeInvestigatorAttacked` resume at it).
 ///
 /// [`turn_order`]: GameState::turn_order
 /// [`mythos_phase`]: super::phases::mythos_phase
-/// [`enemy_phase`]: super::phases::enemy_phase
+/// [`enemy_attack_kickoff`]: super::phases::enemy_attack_kickoff
 pub(super) fn first_active_investigator(state: &GameState) -> Option<InvestigatorId> {
     state.turn_order.iter().copied().find(|id| {
         state
@@ -97,6 +97,60 @@ pub(super) fn next_active_investigator_after(
         })
 }
 
+/// `n` per investigator: [`scale_per_investigator`] by [`investigator_count`].
+/// A location's per-investigator clue value scales by it.
+pub(super) fn per_investigator(state: &GameState, n: u8) -> u8 {
+    scale_per_investigator(n, investigator_count(state))
+}
+
+/// `n` times `count`, saturating at `u8::MAX`: the one per-investigator
+/// scaling. [`per_investigator`] calls it with [`investigator_count`], and
+/// [`Enemy::from_metadata`](crate::state::Enemy::from_metadata) with the count
+/// its caller read from the same function, to scale a per-investigator health
+/// value.
+pub(crate) fn scale_per_investigator(n: u8, count: u8) -> u8 {
+    n.saturating_mul(count)
+}
+
+/// The number of investigators who started the scenario, saturating at
+/// `u8::MAX`.
+///
+/// Eliminated investigators count, as the rules' "started the scenario" asks:
+/// the investigators map never drops one (an elimination flips its status), so
+/// its length is that count. If that invariant changes, this must switch to a
+/// stored started-count.
+pub(super) fn investigator_count(state: &GameState) -> u8 {
+    u8::try_from(state.investigators.len()).unwrap_or(u8::MAX)
+}
+
+/// Why it is not `investigator`'s turn, as [`your_turn`] reports it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NotYourTurn {
+    /// The game is not in the Investigation phase; carries the phase it is in.
+    WrongPhase(Phase),
+    /// Another investigator, or none, is active; carries who is.
+    NotActive(Option<InvestigatorId>),
+}
+
+/// Whether it is `investigator`'s turn: the Investigation phase, with them the
+/// active investigator.
+///
+/// The phase is checked first, so outside the Investigation phase the answer is
+/// [`NotYourTurn::WrongPhase`] whoever is active. Whether the turn is ending is
+/// not asked here; [`turn_open`] adds that.
+pub(crate) fn your_turn(
+    state: &GameState,
+    investigator: InvestigatorId,
+) -> Result<(), NotYourTurn> {
+    if state.phase != Phase::Investigation {
+        return Err(NotYourTurn::WrongPhase(state.phase));
+    }
+    if state.active_investigator != Some(investigator) {
+        return Err(NotYourTurn::NotActive(state.active_investigator));
+    }
+    Ok(())
+}
+
 /// Whether it is `investigator`'s turn and the turn is not yet ending.
 ///
 /// That is the Investigation phase, with them the active investigator, and
@@ -115,8 +169,7 @@ pub(super) fn next_active_investigator_after(
 /// would be forfeited at once.
 #[must_use]
 pub fn turn_open(state: &GameState, investigator: InvestigatorId) -> bool {
-    state.phase == Phase::Investigation
-        && state.active_investigator == Some(investigator)
+    your_turn(state, investigator).is_ok()
         && !state
             .continuations
             .topmost_of::<InvestigatorTurnFrame>()

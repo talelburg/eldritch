@@ -104,18 +104,22 @@ pub enum Event {
         /// New clue count.
         new_count: u8,
     },
-    /// An investigator suffered physical damage.
-    DamageTaken {
-        /// Who was damaged.
+    /// Damage was placed on the investigator card. Only the share that lands
+    /// on the investigator card counts, never the share an asset they control
+    /// soaks: see GLOSSARY "Taken by you / placed on your investigator".
+    DamagePlacedOnInvestigator {
+        /// Whose investigator card the damage was placed on.
         investigator: InvestigatorId,
-        /// Amount of damage.
+        /// Amount of damage placed.
         amount: u8,
     },
-    /// An investigator suffered horror.
-    HorrorTaken {
-        /// Who took horror.
+    /// Horror was placed on the investigator card. Only the share that lands
+    /// on the investigator card counts, never the share an asset they control
+    /// soaks: see GLOSSARY "Taken by you / placed on your investigator".
+    HorrorPlacedOnInvestigator {
+        /// Whose investigator card the horror was placed on.
         investigator: InvestigatorId,
-        /// Amount of horror.
+        /// Amount of horror placed.
         amount: u8,
     },
     /// An investigator suffered trauma. Emitted by Cover Up 01007's
@@ -213,7 +217,7 @@ pub enum Event {
     /// *"Move 1 horror from The Necronomicon to Daisy Walker."*), through
     /// [`NativeCx::move_horror`](crate::engine::NativeCx::move_horror).
     ///
-    /// Deliberately neither [`Event::HorrorTaken`] nor a
+    /// Deliberately neither [`Event::HorrorPlacedOnInvestigator`] nor a
     /// [`TimingEvent::DamagePlaced`](crate::engine::TimingEvent::DamagePlaced)
     /// window: the 01009 ruling (<https://arkhamdb.com/card/01009>) reads
     /// *"Moving damage or horror is different from 'dealing' or 'taking'
@@ -557,12 +561,16 @@ pub enum Event {
     ///
     /// [`InvestigatorEliminated`]: Event::InvestigatorEliminated
     AllInvestigatorsEliminated,
-    /// An investigator played a card from their hand. Fires before
-    /// any `Trigger::OnPlay` effects resolve (the play *causes* the
-    /// effects), and before the card lands in its destination zone.
-    /// State inspection has the post-play hand / `cards_in_play` /
-    /// discard contents.
-    CardPlayed {
+    /// An investigator began playing a card: Rules Reference Appendix I step 3,
+    /// *"The card commences being played"*, from hand or, under a permission
+    /// such as Wendy's Amulet 01014, from their discard pile. Fires as the card
+    /// leaves that zone, before any `Trigger::OnPlay` effects resolve (the play
+    /// *causes* the effects) and before the card lands in its destination zone.
+    ///
+    /// Not the play's completion. Step 4, where *"The card is regarded as
+    /// played"*, is the `CardPlayed` triggering condition, which "after you
+    /// play" reactions listen to (Heirloom of Hyperborea 01012).
+    PlayCommenced {
         /// Who played the card.
         investigator: InvestigatorId,
         /// The card code that was played.

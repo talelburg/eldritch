@@ -230,12 +230,12 @@ fn activating_a_fast_ability_while_engaged_provokes_no_aoo() {
     session.assert_at_turn_menu(INV);
 
     // No AoO fired: outcome-independent proof. An AoO would deal the attacker's
-    // 2 damage to the investigator, surfacing as a `DamageTaken`/`HorrorTaken`
+    // 2 damage to the investigator, surfacing as a `DamagePlacedOnInvestigator`/`HorrorPlacedOnInvestigator`
     // event for `INV` (Beat Cop's own effect damages the *enemy*, not the
     // investigator). None firing ⇒ no attack of opportunity.
     assert_no_event!(
         session.events(),
-        Event::DamageTaken { investigator, .. } | Event::HorrorTaken { investigator, .. }
+        Event::DamagePlacedOnInvestigator { investigator, .. } | Event::HorrorPlacedOnInvestigator { investigator, .. }
             if *investigator == INV
     );
     assert_eq!(

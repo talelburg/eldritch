@@ -129,7 +129,7 @@ fn as_an_evade_it_provokes_no_attack_of_opportunity() {
         2,
         "the play is the one action spent",
     );
-    assert_no_event!(s.events(), Event::DamageTaken { .. });
+    assert_no_event!(s.events(), Event::DamagePlacedOnInvestigator { .. });
 }
 
 #[test]

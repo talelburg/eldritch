@@ -21,7 +21,7 @@ use crate::state::{
 /// pushes it into `cards_in_play` / `threat_area` / a location's
 /// attachments and emits the zone-specific event.
 ///
-/// The single construction point shared by `place_in_threat_area`,
+/// The single construction point shared by `put_into_threat_area`,
 /// `attach_to_location`, `put_into_play_at_location`, and `play_card`'s in-play
 /// branch.
 ///
@@ -43,34 +43,6 @@ pub(super) fn new_in_play_instance(cx: &mut Cx, code: CardCode, owner: Owner) ->
     card
 }
 
-/// Place `code`, owned by `owner`, into `investigator`'s threat area as a fresh
-/// in-play instance, minting an instance id from the per-state counter, and
-/// emit [`Event::CardEnteredThreatArea`]. Returns the minted id.
-///
-/// The owner is the caller's to state, because a threat area holds both kinds:
-/// an encounter treachery is the encounter deck's, and a weakness such as Cover
-/// Up 01007 is its bearer's.
-///
-/// No-op (returns `None`) if the investigator isn't in state — callers
-/// in dispatch have already validated the investigator exists, but the
-/// helper stays total so a misuse can't panic.
-///
-/// Makes no room: [`put_into_threat_area`] is the card-effect entry that does.
-pub(crate) fn place_in_threat_area(
-    cx: &mut Cx,
-    investigator: InvestigatorId,
-    code: CardCode,
-    owner: Owner,
-) -> Option<CardInstanceId> {
-    if !cx.state.investigators.contains_key(&investigator) {
-        return None;
-    }
-    let card = new_in_play_instance(cx, code, owner);
-    let instance_id = card.instance_id;
-    enter_threat_area(cx, investigator, card);
-    Some(instance_id)
-}
-
 /// Resolve [`Effect::PutIntoThreatArea`](card_dsl::dsl::Effect::PutIntoThreatArea):
 /// put `code`, owned by `owner`, into `investigator`'s threat area with
 /// `clues` and `horror` on it. Both are placed as the card enters play
@@ -89,8 +61,7 @@ pub(crate) fn place_in_threat_area(
 /// resolving the Revelation, which resumes once the card has entered. A card
 /// with no slot symbol (Cover Up, Frozen in Fear 01164, …) enters directly.
 ///
-/// A no-op `Done` if the investigator isn't in state, as for
-/// [`place_in_threat_area`].
+/// A no-op `Done` if the investigator isn't in state.
 pub(crate) fn put_into_threat_area(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -229,7 +200,7 @@ pub(super) fn put_into_play_at_location(
 mod tests {
     use super::*;
     use crate::state::GameStateBuilder;
-    use crate::test_support::{self, TEST_REGISTRIES};
+    use crate::test_support;
 
     #[test]
     fn attach_mints_id_pushes_to_location_and_emits_event() {
@@ -254,32 +225,6 @@ mod tests {
             e,
             Event::CardAttachedToLocation { code, location, .. }
                 if code.as_str() == "01168" && *location == LocationId(7)
-        )));
-    }
-
-    #[test]
-    fn place_mints_id_pushes_instance_and_emits_event() {
-        let mut state = GameStateBuilder::new()
-            .with_registries(TEST_REGISTRIES)
-            .with_seat(test_support::seat(1))
-            .build();
-        let mut events = Vec::new();
-        let id = {
-            let mut cx = Cx::for_test(&mut state, &mut events);
-            place_in_threat_area(
-                &mut cx,
-                InvestigatorId(1),
-                CardCode::new("01164"),
-                Owner::EncounterDeck,
-            )
-        };
-        assert_eq!(id, Some(CardInstanceId(0)));
-        let inv = &state.investigators[&InvestigatorId(1)];
-        assert_eq!(inv.threat_area.len(), 1);
-        assert_eq!(inv.threat_area[0].code.as_str(), "01164");
-        assert!(events.iter().any(|e| matches!(
-            e,
-            Event::CardEnteredThreatArea { code, .. } if code.as_str() == "01164"
         )));
     }
 }
