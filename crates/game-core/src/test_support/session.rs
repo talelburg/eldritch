@@ -6,12 +6,12 @@ use crate::action::{Action, InputResponse, PlayerAction};
 use crate::engine::enumerate::TurnAction;
 use crate::engine::{
     self, ApplyResult, Cx, EngineOutcome, InputKind, InputRequest, OptionId, OptionTarget,
-    PromptNature, Registries, TimingEvent,
+    PromptNature, Registries, Responder, TimingEvent,
 };
 use crate::event::Event;
 use crate::state::{
-    Continuation, DamageSource, DealDamageFrame, DealDamageStep, EmitEventFrame, EmitStep,
-    GameState, GameStateBuilder, HandSizeDiscard, InvestigatorId, MulliganFrame, SkillKind,
+    DamageSource, DealDamageFrame, DealDamageStep, EmitEventFrame, EmitStep, GameState,
+    GameStateBuilder, InvestigatorId, SkillKind,
 };
 use crate::test_support::resolver::{
     card_codes, drain_with_applier, hand_indices_of, is_turn_menu, options_at,
@@ -419,23 +419,15 @@ impl TestSession {
              commit cards with `commit(&[code])`",
         );
         let request = self.prompt();
-        // The prompt names no investigator; the frame that asks it does. This
-        // reads the stack to translate codes, never to decide where the
-        // session rests.
-        let prompted = match self.state.continuations.top() {
-            Some(
-                Continuation::Mulligan(MulliganFrame { remaining })
-                | Continuation::HandSizeDiscard(HandSizeDiscard { remaining }),
-            ) => remaining.first().copied(),
-            _ => None,
-        }
-        .unwrap_or_else(|| {
+        let (InputKind::PickMultiple, Responder::Investigator(prompted)) =
+            (request.kind, request.responder)
+        else {
             panic!(
                 "TestSession::choose_from_hand: the session is not at a mulligan or a \
                  hand-size discard; it rests at {:?}",
                 request.prompt,
             )
-        });
+        };
         let selected = hand_indices_of(
             &card_codes(codes),
             &self.state,
@@ -622,11 +614,12 @@ impl TestSession {
     /// - several abilities printed on one card (two reactions, or two forced
     ///   abilities), where `n` names the ability in the order the card prints
     ///   them;
-    /// - one ability offered to several investigators, where `n` follows the
-    ///   prompt's order (assert first that each option's label names the
-    ///   investigator it is offered to);
     /// - identical copies of one card in hand, which anchor to the same
     ///   `HandCardByCode`.
+    ///
+    /// One ability offered to several investigators is not among them: each
+    /// option names its investigator, so pick it with
+    /// [`pick_for`](Self::pick_for).
     ///
     /// # Panics
     ///
@@ -657,6 +650,39 @@ impl TestSession {
                 anchored.len(),
             )
         });
+        self.respond(InputResponse::PickSingle(id))
+    }
+
+    /// Step: choose the option anchored to `target` that is offered to
+    /// `investigator`, then drain. For a window several answer (a reaction
+    /// window, a framework Fast window), where one ability can be offered to
+    /// several investigators on one anchor and each option names whose it is
+    /// ([`ChoiceOption::investigator`](crate::engine::ChoiceOption::investigator)).
+    ///
+    /// # Panics
+    ///
+    /// Panics at the turn menu, or unless exactly one option is anchored to
+    /// `target` and offered to `investigator`.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "by value so a call names its anchor inline, like `pick`"
+    )]
+    pub fn pick_for(self, investigator: InvestigatorId, target: OptionTarget) -> Self {
+        self.assert_off_turn_menu("pick_for");
+        let request = self.prompt();
+        let offered: Vec<OptionId> = options_at(request, &target)
+            .filter(|option| option.investigator == Some(investigator))
+            .map(|option| option.id)
+            .collect();
+        let [id] = offered[..] else {
+            panic!(
+                "TestSession::pick_for: {} option(s) anchored to {target:?} are offered to \
+                 {investigator:?}, not one. Prompt {:?} offers {:?}",
+                offered.len(),
+                request.prompt,
+                request.options,
+            );
+        };
         self.respond(InputResponse::PickSingle(id))
     }
 

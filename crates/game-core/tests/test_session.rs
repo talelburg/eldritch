@@ -19,6 +19,7 @@ use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{
     EngineOutcome, InputKind, InputRequest, OptionId, OptionTarget, PromptNature, Registries,
+    Responder,
 };
 use game_core::event::Event;
 use game_core::state::{
@@ -218,6 +219,7 @@ fn settling_a_staged_substitution_prompt_shows_its_decision() {
     assert_eq!(prompt.nature, PromptNature::Decision, "{prompt:?}");
     let labels: Vec<&str> = prompt.options.iter().map(|o| o.label.as_str()).collect();
     assert_eq!(labels, ["Use Intellect", "Keep Combat"]);
+    assert_eq!(prompt.responder, Responder::Investigator(INV), "the tester");
 
     let session = session.pick_nth(0);
     assert_eq!(
@@ -738,6 +740,11 @@ fn confirm_acknowledges_a_pause() {
         })
         .take(&TurnAction::Investigate { investigator: INV });
     assert_eq!(session.prompt().kind, InputKind::Confirm);
+    assert_eq!(
+        session.prompt().responder,
+        Responder::Investigator(INV),
+        "the tester acknowledges the result"
+    );
 
     let session = session.confirm();
 
@@ -753,6 +760,7 @@ fn confirm_acknowledges_a_pause() {
 #[test]
 fn skip_passes_a_fast_window_and_pick_plays_from_it() {
     let session = turn_begins_window().session();
+    assert_eq!(session.prompt().responder, Responder::Several);
     let free = session.state().card(INV, FREE);
     let session = session.pick(free);
     assert_eq!(resources(&session), 6);

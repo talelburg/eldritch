@@ -18,7 +18,9 @@ use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Slot};
 use card_dsl::dsl::{self, EventPattern, EventTiming, InvestigatorTarget, SkillTestKind};
 use game_core::assert_event_count;
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{InputKind, OptionTarget, PromptNature, Registries, TimingEvent};
+use game_core::engine::{
+    InputKind, OptionTarget, PromptNature, Registries, Responder, TimingEvent,
+};
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
@@ -46,6 +48,9 @@ const SOAKER: &str = "_sp_soaker";
 const ROUND_END: &str = "_sp_round_end";
 /// A plain card to hold in hand.
 const FILLER: &str = "_sp_filler";
+/// `Forced - When the round ends: Gain 1 resource.` — a forced ability a
+/// round-end run resolves.
+const FORCED_ROUND_END: &str = "_sp_forced_round_end";
 
 const INV: InvestigatorId = InvestigatorId(1);
 const OTHER: InvestigatorId = InvestigatorId(2);
@@ -90,8 +95,16 @@ fn registries() -> Registries {
             .with_card(asset(SOAKER, vec![Slot::Ally], Some(2)))
             .with_card(asset(ROUND_END, vec![], None))
             .with_card(asset(FILLER, vec![], None))
+            .with_card(asset(FORCED_ROUND_END, vec![], None))
             .with_abilities(ROUND_END, || {
                 vec![dsl::reaction_on_event(
+                    EventPattern::RoundEnded,
+                    EventTiming::When,
+                    dsl::gain_resources(InvestigatorTarget::You, 1),
+                )]
+            })
+            .with_abilities(FORCED_ROUND_END, || {
+                vec![dsl::forced_on_event(
                     EventPattern::RoundEnded,
                     EventTiming::When,
                     dsl::gain_resources(InvestigatorTarget::You, 1),
@@ -159,13 +172,17 @@ fn a_staged_hunter_move_asks_for_its_destination() {
             Some(OptionTarget::Location(SOUTH))
         ],
     );
+    assert_eq!(session.prompt().responder, Responder::Lead(INV));
 }
 
 /// A hunter's tie between two investigators asks whom it engages, on their
-/// investigator cards.
+/// investigator cards, and the lead answers it: `glossary/Lead_Investigator.md`,
+/// *"the lead investigator is the final arbiter in choosing among those
+/// options"*. The lead sits in the second seat, so the first seat is not it.
 #[test]
-fn a_staged_hunter_engagement_asks_whom_it_engages() {
+fn a_staged_hunter_engagement_asks_the_lead_whom_it_engages() {
     let session = two_seat_table()
+        .with_lead(OTHER)
         .with_enemy(test_support::test_enemy(GHOUL.0, "Ghoul"))
         .with_frame(Continuation::HunterMove(HunterChoice::Engage {
             enemy: GHOUL,
@@ -180,20 +197,24 @@ fn a_staged_hunter_engagement_asks_whom_it_engages() {
             Some(investigators[&OTHER].card_anchor())
         ],
     );
+    assert_eq!(session.prompt().responder, Responder::Lead(OTHER));
 }
 
-/// A spawn's tie asks whom the enemy engages, and the answer engages them.
+/// A spawn's tie asks the lead whom the enemy engages, and the answer engages
+/// them.
 #[test]
-fn a_staged_spawn_engagement_asks_and_engages_the_chosen_investigator() {
+fn a_staged_spawn_engagement_asks_the_lead_and_engages_the_chosen_investigator() {
     let mut ghoul = test_support::test_enemy(GHOUL.0, "Ghoul");
     ghoul.current_location = Some(HERE);
     let session = two_seat_table()
+        .with_lead(OTHER)
         .with_enemy(ghoul)
         .with_frame(SpawnEngagePending::new(GHOUL, vec![INV, OTHER]))
         .session();
     let other = session.state().investigators[&OTHER].card_anchor();
     assert_eq!(session.offered_at(&other), 1, "{:?}", session.prompt());
     assert_eq!(session.prompt().options.len(), 2);
+    assert_eq!(session.prompt().responder, Responder::Lead(OTHER));
 
     let session = session.pick(other);
     assert_eq!(session.state().enemies[&GHOUL].engaged_with, Some(OTHER));
@@ -220,6 +241,7 @@ fn a_staged_slot_discard_asks_which_occupier_makes_room() {
     let torch = OptionTarget::CardInstance(session.state().in_play(INV, TORCH));
     let grip = OptionTarget::CardInstance(session.state().in_play(INV, GRIP));
     assert_eq!(anchors(&session), [Some(torch.clone()), Some(grip)]);
+    assert_eq!(session.prompt().responder, Responder::Investigator(INV));
 
     let session = session.pick(torch);
     session.assert_at_turn_menu(INV);
@@ -253,6 +275,7 @@ fn a_staged_additional_action_choice_asks_which_pays() {
         anchors(&session),
         [Some(OptionTarget::CardInstance(torch)), None]
     );
+    assert_eq!(session.prompt().responder, Responder::Investigator(INV));
 }
 
 /// An attack-order pick asks which engaged enemy attacks next.
@@ -275,15 +298,18 @@ fn a_staged_attack_order_pick_asks_which_enemy_attacks_next() {
             Some(OptionTarget::Enemy(RAT))
         ],
     );
+    assert_eq!(session.prompt().responder, Responder::Investigator(INV));
 }
 
 // ---- the kinds that do work before they rest ---------------------------
 
 /// An advance staged at its acknowledge shows the flip pick on the act without
 /// announcing the advance again: the event was emitted when it was announced.
+/// The lead acknowledges it, since the flip names no one.
 #[test]
-fn a_staged_advance_acknowledge_asks_without_announcing_again() {
-    let mut state = table(&[])
+fn a_staged_advance_acknowledge_asks_the_lead_without_announcing_again() {
+    let mut state = two_seat_table()
+        .with_lead(OTHER)
         .with_frame(AdvanceReverseFrame {
             deck: AdvanceDeck::Act,
             from: 0,
@@ -305,14 +331,19 @@ fn a_staged_advance_acknowledge_asks_without_announcing_again() {
     state.interactive_acknowledge = true;
     let session = TestSession::new(state, registries());
     assert_eq!(anchors(&session), [Some(OptionTarget::Act)]);
+    assert_eq!(session.prompt().responder, Responder::Lead(OTHER));
     assert_event_count!(session.events(), 0, Event::ActAdvanced { .. });
 }
 
-/// A lone forced ability's acknowledge names its card.
+/// A lone forced ability's acknowledge names its card, and is asked of its
+/// controller, not of the lead.
 #[test]
-fn a_staged_forced_acknowledge_asks_to_resolve_on_its_card() {
+fn a_staged_forced_acknowledge_asks_its_controller_to_resolve_on_its_card() {
     let torch = STAGED;
     let session = table_with(seat(1).at(HERE).in_play_as(torch, TORCH))
+        .with_seat(seat(2).at(HERE))
+        .with_turn_order([INV, OTHER])
+        .with_lead(OTHER)
         .with_frame(AcknowledgeForcedFrame {
             candidate: ResolutionCandidate::new(
                 CardCode::new(TORCH),
@@ -324,6 +355,7 @@ fn a_staged_forced_acknowledge_asks_to_resolve_on_its_card() {
         .session();
     assert_eq!(session.prompt().prompt, format!("Forced — {TORCH}"));
     assert_eq!(anchors(&session), [Some(OptionTarget::CardInstance(torch))]);
+    assert_eq!(session.prompt().responder, Responder::Investigator(INV));
 }
 
 /// A deal of damage staged at its distribution asks where the contested point
@@ -346,6 +378,7 @@ fn a_staged_damage_distribution_asks_where_the_point_goes() {
     let me = session.state().investigators[&INV].card_anchor();
     assert_eq!(session.offered_at(&soaker), 1, "{:?}", session.prompt());
     assert_eq!(session.offered_at(&me), 1, "{:?}", session.prompt());
+    assert_eq!(session.prompt().responder, Responder::Investigator(INV));
 }
 
 /// A hand-discard cost asks which hand card to discard, on the cards in hand.
@@ -374,6 +407,7 @@ fn a_staged_hand_discard_cost_asks_which_hand_card() {
             }),
         ],
     );
+    assert_eq!(session.prompt().responder, Responder::Investigator(INV));
 }
 
 /// An effect node staged resting at its pick shows the prompt it stored, not
@@ -409,6 +443,7 @@ fn a_staged_effect_choice_shows_its_stored_prompt_and_resolves_the_pick() {
     let prompt = session.prompt();
     assert_eq!(prompt.prompt, "The stored question");
     assert_eq!(prompt.nature, PromptNature::Decision);
+    assert_eq!(prompt.responder, Responder::Investigator(INV));
     let before = session.state().investigators[&INV].resources;
 
     let session = session.pick_nth(1);
@@ -430,11 +465,13 @@ fn a_staged_skill_test_asks_for_its_commit() {
         .session();
     assert_eq!(session.prompt().kind, InputKind::PickMultiple);
     assert!(session.prompt().prompt.starts_with("Commit cards"));
+    assert_eq!(session.prompt().responder, Responder::Investigator(INV));
 }
 
-/// A reaction window staged with a candidate offers it, skippable.
+/// A reaction window staged with a candidate offers it, skippable. Several may
+/// answer a window, so each option names the investigator it is offered to.
 #[test]
-fn a_staged_reaction_window_offers_its_candidate() {
+fn a_staged_reaction_window_offers_its_candidate_to_its_controller() {
     let card = STAGED;
     let session = table_with(seat(1).at(HERE).in_play_as(card, ROUND_END))
         .with_frame(TimingPointWindowFrame {
@@ -451,4 +488,92 @@ fn a_staged_reaction_window_offers_its_candidate() {
         .session();
     assert!(session.prompt().skippable);
     assert_eq!(anchors(&session), [Some(OptionTarget::CardInstance(card))]);
+    assert_eq!(session.prompt().responder, Responder::Several);
+    assert_eq!(session.prompt().options[0].investigator, Some(INV));
+}
+
+/// A forced run of two or more is ordered by the lead:
+/// `glossary/Priority_of_Simultaneous_Resolution.md`, *"the lead investigator
+/// determines the order in which the abilities resolve"*. The lead sits in the
+/// second seat, and the options name no investigator of their own.
+#[test]
+fn a_staged_forced_run_asks_the_lead_to_order_it() {
+    let mine = STAGED;
+    let theirs = CardInstanceId(41);
+    let candidate = |controller, card| {
+        ResolutionCandidate::new(
+            CardCode::new(FORCED_ROUND_END),
+            controller,
+            AbilityAddress::Printed(0),
+            CandidateSource::Ability(AbilitySource::InPlay(card)),
+        )
+    };
+    let session = table_with(seat(1).at(HERE).in_play_as(mine, FORCED_ROUND_END))
+        .with_seat(seat(2).at(HERE).in_play_as(theirs, FORCED_ROUND_END))
+        .with_turn_order([INV, OTHER])
+        .with_lead(OTHER)
+        .with_frame(TimingPointWindowFrame {
+            event: TimingEvent::RoundEnded,
+            bucket: EventTiming::When,
+            mode: TimingMode::Forced,
+            candidates: vec![candidate(INV, mine), candidate(OTHER, theirs)],
+        })
+        .session();
+    assert_eq!(session.prompt().options.len(), 2, "{:?}", session.prompt());
+    assert_eq!(session.prompt().responder, Responder::Lead(OTHER));
+    assert!(session
+        .prompt()
+        .options
+        .iter()
+        .all(|o| o.investigator.is_none()));
+}
+
+// ---- who answers the queue frames and the turn -------------------------
+
+/// Two seats at [`HERE`], the second seat the lead, so player order is
+/// `[OTHER, INV]`. `OTHER` holds `other_hand`.
+fn two_seats_led_by_other(other_hand: &[&str]) -> GameStateBuilder {
+    GameStateBuilder::new()
+        .with_registries(registries())
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_seat(seat(1).at(HERE))
+        .with_seat(seat(2).at(HERE).hand(other_hand.iter().copied()))
+        .with_turn_order([INV, OTHER])
+        .with_lead(OTHER)
+}
+
+/// The open turn is asked of the investigator whose turn it is.
+#[test]
+fn the_open_turn_is_asked_of_whoever_takes_it() {
+    let session = two_seats_led_by_other(&[]).open_turn(INV).session();
+    assert_eq!(session.prompt().responder, Responder::Investigator(INV));
+}
+
+/// A mulligan queue asks its head.
+#[test]
+fn a_staged_mulligan_asks_the_head_of_its_queue() {
+    let session = two_seats_led_by_other(&[])
+        .with_mulligan_remaining([OTHER, INV])
+        .session();
+    assert_eq!(session.prompt().responder, Responder::Investigator(OTHER));
+}
+
+/// A hand-size discard queue asks its head.
+#[test]
+fn a_staged_hand_size_discard_asks_the_head_of_its_queue() {
+    let session = two_seats_led_by_other(&[FILLER; 9])
+        .with_hand_size_discard_pending([OTHER])
+        .session();
+    assert_eq!(session.prompt().kind, InputKind::PickMultiple);
+    assert_eq!(session.prompt().responder, Responder::Investigator(OTHER));
+}
+
+/// The Mythos encounter-draw queue asks its head.
+#[test]
+fn a_staged_encounter_draw_asks_the_head_of_its_queue() {
+    let session = two_seats_led_by_other(&[])
+        .with_mythos_draw_remaining([OTHER, INV])
+        .session();
+    session.assert_at_encounter_draw();
+    assert_eq!(session.prompt().responder, Responder::Investigator(OTHER));
 }

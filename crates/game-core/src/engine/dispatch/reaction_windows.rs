@@ -175,7 +175,14 @@ fn build_resolution_options(
                 }
                 CandidateSource::Ability(_) => format!("Resolve reaction: {}", cand.code),
             };
-            ChoiceOption::new(id, label).at(candidate_anchor(cand))
+            let option = ChoiceOption::new(id, label).at(candidate_anchor(cand));
+            // A reaction is offered to its controller, and several may answer
+            // the window; a forced run is the lead's to order (ADR 0019).
+            if forced {
+                option
+            } else {
+                option.offered_to(cand.controller)
+            }
         })
         .collect()
 }
@@ -1142,11 +1149,15 @@ pub(super) fn fast_window_request(state: &GameState, cards: &CardRegistry) -> In
         .iter()
         .enumerate()
         .map(|(i, a)| {
-            ChoiceOption::new(
+            let mut option = ChoiceOption::new(
                 OptionId(u32::try_from(i).unwrap_or(u32::MAX)),
                 a.label(state, cards),
             )
-            .maybe_at(a.target(state))
+            .maybe_at(a.target(state));
+            // Each play is its investigator's, and several may answer the
+            // window (ADR 0019).
+            option.investigator = a.investigator();
+            option
         })
         .collect::<Vec<_>>();
     InputRequest::pick_single("Fast window — play a card or pass", options).skippable()

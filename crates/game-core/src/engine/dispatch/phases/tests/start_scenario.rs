@@ -2,6 +2,7 @@ use card_dsl::card_data::SkillKind;
 
 use super::*;
 use crate::action::RosterEntry;
+use crate::engine::Responder;
 use crate::state::{
     CardCode, GameStateBuilder, LastingEffect, LastingEffectKind, Lifetime, SkillSubstitution,
 };
@@ -144,9 +145,15 @@ fn seating_with_the_second_seat_as_lead_mulligans_it_first() {
 
     assert_eq!(result.state.lead, Some(InvestigatorId(2)));
     let session = TestSession::new(result.state, TEST_REGISTRIES);
-    assert_eq!(session.state().current_mulligan(), Some(InvestigatorId(2)));
+    assert_eq!(
+        session.prompt().responder,
+        Responder::Investigator(InvestigatorId(2))
+    );
     let session = session.choose_from_hand(&[]);
-    assert_eq!(session.state().current_mulligan(), Some(InvestigatorId(1)));
+    assert_eq!(
+        session.prompt().responder,
+        Responder::Investigator(InvestigatorId(1))
+    );
 }
 
 /// A lead index past the roster's end names no investigator: seating rejects

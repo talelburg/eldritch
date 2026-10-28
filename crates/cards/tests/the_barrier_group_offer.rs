@@ -78,27 +78,24 @@ fn barrier_table(
     TestSession::new(state, TEST_REGISTRIES)
 }
 
-/// The investigator the round-end window's one act option is bound to.
+/// The investigator the round-end window's one act option is offered to, as
+/// the prompt names them.
 fn offered_to(window: &TestSession) -> InvestigatorId {
-    assert_eq!(
-        window.offered_at(&OptionTarget::Act),
-        1,
-        "the round end offers The Barrier's clue spend once: {:?}",
-        window.prompt(),
-    );
-    let candidates = window
-        .state()
-        .continuations
-        .top()
-        .and_then(|top| top.pending_candidates())
-        .expect("the round-end reaction window is open");
-    let act: Vec<InvestigatorId> = candidates
+    let act: Vec<_> = window
+        .prompt()
+        .options
         .iter()
-        .filter(|c| c.code.as_str() == "01109")
-        .map(|c| c.controller)
+        .filter(|o| o.target == Some(OptionTarget::Act))
         .collect();
-    assert_eq!(act.len(), 1, "one act candidate: {candidates:?}");
-    act[0]
+    let [option] = act[..] else {
+        panic!(
+            "the round end offers The Barrier's clue spend once: {:?}",
+            window.prompt()
+        );
+    };
+    option
+        .investigator
+        .expect("a reaction window's option names whom it is offered to")
 }
 
 fn clues(session: &TestSession, id: InvestigatorId) -> u8 {

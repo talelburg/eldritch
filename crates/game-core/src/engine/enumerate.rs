@@ -148,6 +148,25 @@ impl fmt::Display for PlaySource {
 }
 
 impl TurnAction {
+    /// The investigator taking this action, or `None` for
+    /// [`EndTurn`](Self::EndTurn), which names none.
+    #[must_use]
+    pub fn investigator(&self) -> Option<InvestigatorId> {
+        match self {
+            Self::EndTurn => None,
+            Self::Move { investigator, .. }
+            | Self::Investigate { investigator }
+            | Self::Resource { investigator }
+            | Self::Draw { investigator }
+            | Self::Fight { investigator, .. }
+            | Self::Evade { investigator, .. }
+            | Self::Engage { investigator, .. }
+            | Self::PlayCard { investigator, .. }
+            | Self::ActivateAbility { investigator, .. }
+            | Self::AdvanceAct { investigator } => Some(*investigator),
+        }
+    }
+
     /// Plain human-readable menu label; [`target`](Self::target) is the
     /// structured anchor.
     ///

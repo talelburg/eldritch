@@ -1,9 +1,12 @@
-//! Headless render tests for the app status bar (status / rejection / New game),
-//! which lives in the page header.
+//! Headless render tests for the app status bar (status / rejection / waiting
+//! on / New game), which lives in the page header.
 //!
 //! wasm32-only.
 #![cfg(target_arch = "wasm32")]
 
+use game_core::engine::{ChoiceOption, EngineOutcome, InputRequest, OptionId, Responder};
+use game_core::state::{GameStateBuilder, InvestigatorId};
+use game_core::test_support::{self, seat};
 use leptos::prelude::{document, provide_context, RwSignal, Update};
 use leptos::{mount, task};
 use wasm_bindgen::JsCast as _;
@@ -70,4 +73,84 @@ async fn status_bar_renders_a_new_game_button() {
         last.query_selector(".new-game").expect("query").is_some(),
         "status bar must render a .new-game button"
     );
+}
+
+const FIRST: InvestigatorId = InvestigatorId(1);
+const SECOND: InvestigatorId = InvestigatorId(2);
+
+/// Mount `StatusBarView` over a two-seat game resting at `outcome`, and return
+/// the text of its "waiting on" line, if it renders one.
+async fn waiting_on(outcome: Option<EngineOutcome>) -> Option<String> {
+    let store = mount();
+    let game = GameStateBuilder::new()
+        .with_seat(seat(FIRST.0))
+        .with_seat(seat(SECOND.0))
+        .with_turn_order([FIRST, SECOND])
+        .build();
+    store.update(|s| {
+        s.game = Some(game);
+        s.outcome = outcome;
+    });
+    task::tick().await;
+    let bars = document()
+        .query_selector_all(".status-bar")
+        .expect("query_selector_all");
+    bars.item(bars.length() - 1)
+        .expect("at least one .status-bar")
+        .dyn_into::<Element>()
+        .expect("Element")
+        .query_selector(".waiting-on")
+        .expect("query")
+        .map(|line| line.text_content().unwrap_or_default())
+}
+
+/// The name a seat's test investigator is shown by.
+fn name(id: InvestigatorId) -> String {
+    test_support::test_investigator(id.0).name
+}
+
+#[wasm_bindgen_test]
+async fn the_status_bar_names_the_investigator_a_prompt_waits_on() {
+    let line = waiting_on(Some(test_support::awaiting_confirm_input_for(
+        "Draw an encounter card",
+        SECOND,
+    )))
+    .await
+    .expect("a prompt shows who it waits on");
+    assert!(line.contains(&name(SECOND)), "{line}");
+    assert!(!line.contains(&name(FIRST)), "{line}");
+}
+
+#[wasm_bindgen_test]
+async fn the_status_bar_says_when_the_lead_is_deciding() {
+    let request = InputRequest::pick_single("Choose whom the enemy engages", vec![])
+        .answered_by(Responder::Lead(SECOND));
+    let line = waiting_on(Some(test_support::awaiting_request(request)))
+        .await
+        .expect("a prompt shows who it waits on");
+    assert!(line.contains(&name(SECOND)), "{line}");
+    assert!(line.contains("lead"), "{line}");
+}
+
+#[wasm_bindgen_test]
+async fn a_window_several_answer_waits_on_each_investigator_offered_an_option() {
+    let request = InputRequest::pick_single(
+        "Resolution window",
+        vec![
+            ChoiceOption::new(OptionId(0), "Resolve").offered_to(FIRST),
+            ChoiceOption::new(OptionId(1), "Resolve").offered_to(SECOND),
+        ],
+    )
+    .skippable()
+    .answered_by(Responder::Several);
+    let line = waiting_on(Some(test_support::awaiting_request(request)))
+        .await
+        .expect("a window shows who it waits on");
+    assert!(line.contains(&name(FIRST)), "{line}");
+    assert!(line.contains(&name(SECOND)), "{line}");
+}
+
+#[wasm_bindgen_test]
+async fn with_no_prompt_the_status_bar_waits_on_nobody() {
+    assert_eq!(waiting_on(None).await, None);
 }
