@@ -15,7 +15,7 @@ use std::collections::BTreeSet;
 use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::choice;
 use crate::engine::outcome::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
-use crate::state::{GameState, InvestigatorId};
+use crate::state::{CardCode, GameState, InvestigatorId};
 
 /// The offered options for `investigator`'s hand cards at `candidates`: option
 /// `i` anchored to the hand card at `candidates[i]` and labelled with its name.
@@ -69,7 +69,7 @@ pub(super) fn picked(
 pub(super) fn candidates(
     state: &GameState,
     investigator: InvestigatorId,
-    mut eligible: impl FnMut(&crate::state::CardCode) -> bool,
+    mut eligible: impl FnMut(&CardCode) -> bool,
 ) -> Vec<u8> {
     state
         .investigators

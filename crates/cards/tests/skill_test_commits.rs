@@ -144,7 +144,7 @@ fn committing_two_cards_sums_both_contributions_and_discards_both() {
     assert_event_count!(session.events(), 2, Event::CardDiscarded { .. });
 }
 
-/// Regression for #763 and #788: a card with no matching or wild icon is not
+/// Regression for #763: a card with no matching or wild icon is not
 /// offered, so the commit window is no free discard outlet.
 #[test]
 fn overpower_is_not_offered_to_an_intellect_test() {

@@ -1,11 +1,10 @@
 //! Every prompt is a function of its frame: a prompt frame staged on top of a
 //! state settles into a session showing its prompt.
 //!
-//! The six kinds a step used to build only at the moment it pushed them —
-//! a hunter's tie, a spawn's tie, a slot make-room pick, an additional-action
-//! choice, an attack-order pick, and the substitution offer (in
-//! `test_session.rs`) — are staged here first, then the kinds that do work
-//! before they rest. Each test stages the frame with
+//! The kinds a step pushes and then returns from — a hunter's tie, a spawn's
+//! tie, a slot make-room pick, an additional-action choice, an attack-order
+//! pick, and the substitution offer (in `test_session.rs`) — are staged here
+//! first, then the kinds that do work before they rest. Each test stages the frame with
 //! [`GameStateBuilder::with_frame`] and reads only the prompt and the board.
 //!
 //! Synthetic probes only (ADR 0016): the `_sp_*` codes model one primitive
@@ -196,7 +195,7 @@ fn name_of(session: &TestSession, id: InvestigatorId) -> String {
     session.state().investigators[&id].name.clone()
 }
 
-// ---- the six kinds built only when pushed ------------------------------
+// ---- the kinds a step pushes and returns from --------------------------
 
 /// A hunter's tie between two destinations asks where it moves, on the map.
 #[test]

@@ -73,8 +73,8 @@ use crate::state::{
 /// a prompt an earlier exit pushed is still pending makes the native
 /// `Rejected`, and the apply rolls back. A push after it is still allowed, so
 /// a native may fold several [`deal_harm`](Self::deal_harm)s. Exits that both
-/// write and may push count as direct writes. Scaffolding: deleted when
-/// natives defer their tail (#1184).
+/// write and may push count as direct writes. TODO(#1184): delete this
+/// scaffolding once natives defer their tail.
 pub struct NativeCx<'a> {
     cx: Cx<'a>,
     written: bool,
@@ -116,7 +116,7 @@ pub struct NativeCx<'a> {
 /// [`deal_damage_to_enemy`](NativeCx::deal_damage_to_enemy)) is allowed, though
 /// it lands before that event's reaction window opens.
 ///
-/// Scaffolding: deleted when natives defer their tail (#1184).
+/// TODO(#1184): delete this scaffolding once natives defer their tail.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ExitKind {
     /// Changes the game before returning, even if it then also pushes a frame

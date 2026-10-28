@@ -10,7 +10,7 @@ use std::fmt;
 use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
 use crate::engine::dispatch::actions::{engage, evade, fight, investigate, r#move};
-use crate::engine::dispatch::{act_agenda, legality};
+use crate::engine::dispatch::{act_agenda, choice, legality};
 use crate::engine::outcome::OptionTarget;
 use crate::engine::{abilities_in_effect, ability_source, board};
 use crate::state::{
@@ -295,15 +295,13 @@ pub(crate) fn play_under_permission_label(
     )
 }
 
-/// The name a menu label shows for `card`: its printed name, the code where the
-/// registry does not know it, and `"?"` where the label's source no longer
-/// holds a card.
+/// The name a menu label shows for `card`: [`choice::card_name`], and
+/// `"A card"` where the label's source no longer holds one, in the readable
+/// form `choice::investigator_name` falls back to.
 fn card_name(cards: &CardRegistry, card: Option<&CardCode>) -> String {
     card.map_or_else(
-        || "?".to_owned(),
-        |code| {
-            (cards.metadata_for)(code).map_or_else(|| code.to_string(), |meta| meta.name.clone())
-        },
+        || "A card".to_owned(),
+        |code| choice::card_name(cards, code),
     )
 }
 

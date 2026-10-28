@@ -1,5 +1,5 @@
 //! The Barrier 01109's round-end clue spend is offered to an investigator in
-//! the Hallway, not to a lead standing elsewhere (#1193).
+//! the Hallway, not to a lead standing elsewhere.
 //!
 //! 01109, `text` verbatim (`data/arkhamdb-snapshot/pack/core/core_encounter.json`):
 //! *"**Objective** - When the round ends, investigators in the hallway may, as

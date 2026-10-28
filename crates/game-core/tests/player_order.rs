@@ -61,7 +61,7 @@ fn mythos_draws_start_at_the_lead() {
 }
 
 /// Investigation 2.2 walks player order as a stand-in for the investigators'
-/// choice of who takes the next turn (#1185): the lead's turn, then seat 1's,
+/// choice of who takes the next turn: the lead's turn, then seat 1's,
 /// and seat 1's ending ends the phase.
 #[test]
 fn investigation_turns_start_at_the_lead() {

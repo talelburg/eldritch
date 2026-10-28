@@ -166,12 +166,9 @@ fn can_advance(state: &GameState, ctx: &EvalContext) -> bool {
     let Some(hallway) = evaluator::location_id_by_code(state, HALLWAY) else {
         return false;
     };
-    let first_in_hallway = engine::player_order(state).into_iter().find(|id| {
-        state
-            .investigators
-            .get(id)
-            .is_some_and(|inv| inv.current_location == Some(hallway))
-    });
+    let first_in_hallway = engine::active_investigators_at(state, hallway)
+        .first()
+        .copied();
     first_in_hallway == Some(ctx.controller)
         && engine::round_end_advance_affordable(state, HALLWAY)
 }

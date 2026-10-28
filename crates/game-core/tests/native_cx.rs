@@ -5,7 +5,7 @@
 //! writes. The apply's snapshot rollback undoes the rejected native's write. One
 //! that suspends before any write suspends and resumes normally.
 //!
-//! And #1189: a native whose exit left a prompt pending (a deal of harm) and
+//! And a native whose exit left a prompt pending (a deal of harm) and
 //! that then writes directly is `Rejected` and rolled back; one that pushes
 //! again instead resolves.
 //!

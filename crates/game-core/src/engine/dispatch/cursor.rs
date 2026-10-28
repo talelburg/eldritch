@@ -1,4 +1,5 @@
-//! Shared leaf helpers for investigator-cursor navigation and stat mapping.
+//! Shared leaf helpers for the lead, player order, investigator-cursor
+//! navigation and per-investigator scaling.
 //!
 //! These are pure lookup functions with no side effects; they call only into
 //! `crate::state` / `card_dsl::dsl` and are called by multiple dispatch handlers.
@@ -7,7 +8,8 @@ use crate::state::{GameState, InvestigatorId, InvestigatorTurnFrame, LocationId,
 
 /// Investigators (Active, on the map) at `loc`, in [`player_order`], so a
 /// prey tie's candidate list starts at the lead.
-pub(super) fn active_investigators_at(state: &GameState, loc: LocationId) -> Vec<InvestigatorId> {
+#[must_use]
+pub fn active_investigators_at(state: &GameState, loc: LocationId) -> Vec<InvestigatorId> {
     player_order(state)
         .into_iter()
         .filter(|id| {
@@ -52,7 +54,7 @@ fn is_active(state: &GameState, id: InvestigatorId) -> bool {
 /// attacks, Upkeep 4.2's action reset and 4.4's draws and resources, the
 /// setup mulligan, hand size, and an "each investigator" `Effect::ForEach`.
 /// Investigation 2.2's turns walk it as a stand-in for the investigators'
-/// choice (#1185).
+/// choice. TODO(#1185): let the investigators choose who takes each turn.
 #[must_use]
 pub fn player_order(state: &GameState) -> Vec<InvestigatorId> {
     seating_from_lead(state)

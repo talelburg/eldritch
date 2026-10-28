@@ -1,4 +1,4 @@
-//! Regression for #763 and #788: the commit window offers no card that prints
+//! Regression for #763: the commit window offers no card that prints
 //! no appropriate skill icon, as RR Appendix II ST.2 forbids — *"An appropriate
 //! skill icon is either one that matches the skill being tested, or a wild
 //! icon. […] Cards that lack an appropriate skill icon may not be committed to
@@ -73,7 +73,7 @@ fn assert_committed(session: &TestSession, card: &str) {
     );
 }
 
-/// The commit window lists only the cards that may be committed (#788):
+/// The commit window lists only the cards that may be committed:
 /// holding Perception and Overpower at an [intellect] test, it offers
 /// Perception and leaves Overpower out, since Overpower's two [combat] icons
 /// are not appropriate and it prints no wild.

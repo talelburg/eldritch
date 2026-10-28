@@ -365,8 +365,8 @@ pub(super) fn resume_end_turn(cx: &mut Cx, active_id: InvestigatorId) -> EngineO
     );
 
     // 2.2.2 decision: "return to 2.2" for the next investigator in player
-    // order (a stand-in for the investigators' choice, #1185), or proceed to
-    // 2.3. `next_in_player_order` skips eliminated investigators (Rules
+    // order (a stand-in for the investigators' choice; TODO(#1185): let them
+    // choose), or proceed to 2.3. `next_in_player_order` skips eliminated investigators (Rules
     // Reference p.10) — the same shared helper the Enemy phase uses.
     if let Some(next_id) = cursor::next_in_player_order(cx.state, active_id) {
         begin_investigator_turn(cx, next_id)
