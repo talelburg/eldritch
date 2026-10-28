@@ -32,7 +32,6 @@ use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, Status,
-    TokenModifiers,
 };
 use game_core::test_support::{self, seat, Seat, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -56,7 +55,6 @@ fn board(investigator: Seat, clues: u8, deck: &[&str], discard: &[&str]) -> Test
         .with_seat(investigator.at(HERE).hand([DRAWN_TO_THE_FLAME]))
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::AutoFail]))
-        .with_token_modifiers(TokenModifiers::default())
         .build();
     // The builder has no encounter-deck setter.
     state.encounter_deck = deck.iter().map(|&c| CardCode::new(c)).collect();

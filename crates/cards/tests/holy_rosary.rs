@@ -12,7 +12,7 @@ use game_core::assert_event;
 use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, SkillKind, TokenModifiers,
+    CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, SkillKind,
 };
 use game_core::test_support::{seat, TestSession};
 
@@ -33,7 +33,6 @@ fn rosary_in_hand() -> TestSession {
         // test outcome is decided entirely by the base + constant
         // contribution vs. difficulty.
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .session()
 }
 

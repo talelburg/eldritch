@@ -10,7 +10,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, TokenModifiers, UseKind,
+    InvestigatorId, LocationId, UseKind,
 };
 use game_core::test_support::{self, seat, uses, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -44,7 +44,6 @@ fn board(loc_clues: u8) -> GameState {
         .with_enemy_engaged(enemy, INV)
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .build()
 }
 

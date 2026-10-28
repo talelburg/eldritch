@@ -16,7 +16,7 @@ use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, ChaosBag, ChaosToken, Enemy, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenModifiers, UseKind,
+    GameStateBuilder, InvestigatorId, LocationId, SkillKind, UseKind,
 };
 use game_core::test_support::{self, seat, uses, Seat, SeatLookup as _, TestSession};
 
@@ -44,7 +44,6 @@ fn board(seat: Seat) -> TestSession {
         .with_enemy_engaged(ghoul(), INV)
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .session()
 }
 

@@ -24,7 +24,7 @@ use game_core::scenario::{
 };
 use game_core::state::{
     ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId, RevealedToken,
-    SkillKind, TokenModifiers, TokenResolution,
+    SkillKind, TokenResolution,
 };
 use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession, TEST_INV};
 
@@ -100,7 +100,6 @@ fn board(token: ChaosToken, in_play: &[&str]) -> GameState {
         )
         .with_location(here)
         .with_chaos_bag(ChaosBag::new([token]))
-        .with_token_modifiers(TokenModifiers::default())
         .with_scenario_id(ScenarioId::new(SCENARIO))
         .open_turn(INV)
         .build();

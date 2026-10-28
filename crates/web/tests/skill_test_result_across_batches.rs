@@ -46,7 +46,7 @@ use game_core::engine::{self, EngineOutcome, InputKind, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Owner as CardOwner, SkillKind, TokenModifiers,
+    GameStateBuilder, InvestigatorId, LocationId, Owner as CardOwner, SkillKind,
 };
 use game_core::test_support;
 use protocol::ServerMessage;
@@ -101,7 +101,6 @@ fn board(lita_in_play: bool) -> GameState {
         .with_turn_order([KEEPER, OTHER])
         .open_turn(OTHER)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .build();
     // The server's default, and the only setting under which the modal exists
     // at all: without it the acknowledge pause never surfaces.
@@ -152,7 +151,6 @@ fn investigate_with_milan() -> Vec<Pause> {
         .with_turn_order([KEEPER])
         .open_turn(KEEPER)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .build();
     state.interactive_acknowledge = true;
     drive(

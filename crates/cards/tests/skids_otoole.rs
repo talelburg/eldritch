@@ -22,7 +22,7 @@ use game_core::engine::{self, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, Agenda, CardCode, ChaosBag, ChaosToken, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Phase, TokenModifiers,
+    GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
 use game_core::test_support::{self, seat, Seat, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
@@ -228,7 +228,6 @@ fn the_ability_is_not_offered_in_the_enemy_phase() {
 fn the_ability_is_not_offered_once_his_turn_is_ending() {
     let session = staged(skids().threat_area([FROZEN_IN_FEAR]))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .session()
         .take(&TurnAction::EndTurn);
     assert!(
@@ -360,7 +359,6 @@ fn investigate_on_the_elder_sign(shroud: u8) -> TestSession {
         .with_seat(skids())
         .with_location(here)
         .with_chaos_bag(ChaosBag::new([ChaosToken::ElderSign]))
-        .with_token_modifiers(TokenModifiers::default())
         .open_turn(INV)
         .session()
         .take(&TurnAction::Investigate { investigator: INV })

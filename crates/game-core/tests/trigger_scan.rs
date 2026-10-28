@@ -22,7 +22,7 @@ use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, Location, LocationId, Owner, Phase, Status, TokenModifiers,
+    GameStateBuilder, InvestigatorId, Location, LocationId, Owner, Phase, Status,
 };
 use game_core::test_support::{self, seat, MockRegistry, Seat, SeatLookup as _, TestSession};
 
@@ -441,7 +441,6 @@ fn investigating_a_location_fires_only_its_attachments_ability() {
             HALLWAY_ATTACHMENT,
         ))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .open_turn(ONE)
         .session()
         .take(&TurnAction::Investigate { investigator: ONE })

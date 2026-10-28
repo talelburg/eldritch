@@ -51,9 +51,7 @@ use card_dsl::dsl::{
 use game_core::engine::Registries;
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
-use game_core::state::{
-    ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, SkillKind, TokenModifiers,
-};
+use game_core::state::{ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, SkillKind};
 use game_core::test_support::{seat, MockRegistry, SeatLookup as _, TestSession};
 use std::sync::LazyLock;
 
@@ -102,7 +100,6 @@ fn board_with(codes: &[&str]) -> TestSession {
         .with_registries(registries())
         .with_seat(seat(1).resources(0).threat_area(codes.iter().copied()))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .open_turn(INV)
         .session()
 }

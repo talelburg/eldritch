@@ -16,8 +16,7 @@ use cards::TEST_REGISTRIES;
 use game_core::engine::InputKind;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, DiscardPile, GameStateBuilder, InvestigatorId, SkillKind,
-    TokenModifiers, Zone,
+    CardCode, ChaosBag, ChaosToken, DiscardPile, GameStateBuilder, InvestigatorId, SkillKind, Zone,
 };
 use game_core::test_support::{seat, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
@@ -47,7 +46,6 @@ fn test_with_hand(hand: &[&str]) -> TestSession {
                 .deck(["spare-1", "spare-2", "spare-3"]),
         )
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .open_turn(INV)
         .session()
         .test_skill(INV, SkillKind::Intellect, 5)
