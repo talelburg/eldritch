@@ -11,10 +11,10 @@ use crate::card_registry::CardRegistry;
 use crate::engine::dispatch;
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{
-    act_agenda, cards, combat, cursor, emit, encounter, engagement, hunters, prompt,
+    act_agenda, cards, combat, cursor, emit, encounter, engagement, hand_pick, hunters, prompt,
     reaction_windows, reveal,
 };
-use crate::engine::outcome::{EngineOutcome, InputRequest};
+use crate::engine::outcome::{EngineOutcome, InputRequest, PickCount};
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
@@ -1428,25 +1428,42 @@ fn park_hand_size_discard(cx: &mut Cx, remaining: Vec<InvestigatorId>) -> Engine
     prompt::suspend(cx.state, cx.cards)
 }
 
-/// What a [`HandSizeDiscard`] frame on top asks. It names the count the pick
-/// must hold ([`hand_size_discard_count`] for the investigator prompted), which
-/// falls short of reaching the cap when weaknesses fill the overflow, and says
-/// that weaknesses can't be chosen. One of the
+/// What a [`HandSizeDiscard`] frame on top asks of `investigator`, its queue's
+/// head. It offers the hand cards that are not weaknesses
+/// ([`hand_size_discard_candidates`]) and asks for exactly
+/// [`hand_size_discard_count`] of them, which falls short of reaching the cap
+/// when weaknesses fill the overflow. One of the
 /// [prompt table](prompt::request)'s helpers.
 pub(super) fn hand_size_discard_request(
     state: &GameState,
     cards: &CardRegistry,
-    queue: &HandSizeDiscard,
+    investigator: InvestigatorId,
 ) -> InputRequest {
-    let count = queue
-        .remaining
-        .first()
-        .map_or(0, |id| hand_size_discard_count(state, cards, *id));
+    let count = hand_size_discard_count(state, cards, investigator);
+    let candidates = hand_size_discard_candidates(state, cards, investigator);
     let noun = if count == 1 { "card" } else { "cards" };
-    InputRequest::pick_multiple(format!(
-        "You have more than {HAND_SIZE_LIMIT} cards in hand — choose {count} {noun} to \
-         discard. Weaknesses can't be chosen.",
-    ))
+    InputRequest::pick_multiple(
+        format!(
+            "You have more than {HAND_SIZE_LIMIT} cards in hand — choose {count} {noun} to \
+             discard. Weaknesses can't be chosen.",
+        ),
+        hand_pick::options(state, cards, investigator, &candidates),
+        PickCount::exactly(count),
+    )
+}
+
+/// The hand indices of `investigator`'s cards step 4.5 may discard — every one
+/// that is not a weakness — in hand order. `glossary/Weakness.md`: *"A player
+/// may not optionally choose to discard a weakness card from hand, unless a
+/// card explicitly specifies otherwise."*
+fn hand_size_discard_candidates(
+    state: &GameState,
+    registry: &CardRegistry,
+    investigator: InvestigatorId,
+) -> Vec<u8> {
+    hand_pick::candidates(state, investigator, |code| {
+        !cards::is_weakness_code(registry, code)
+    })
 }
 
 /// How many cards `id` must discard at step 4.5: the overflow over
@@ -1492,8 +1509,9 @@ fn check_hand_size(cx: &mut Cx) -> EngineOutcome {
 
 /// Resume a parked upkeep hand-size discard. Validates the
 /// `PickMultiple` response against the currently-prompted investigator
-/// (`remaining[0]`): the indices must be unique, in-bounds, name no weakness,
-/// and be exactly [`hand_size_discard_count`] in count. On success, discards the
+/// (`remaining[0]`): each option must be one [`hand_size_discard_request`]
+/// offered, none twice, and there must be exactly [`hand_size_discard_count`]
+/// of them. On success, discards the
 /// chosen cards (emitting [`Event::CardDiscarded`] per card), pops the
 /// queue front, and either re-prompts the next over-cap investigator or
 /// — when the queue drains — runs [`upkeep_phase_end`] (4.6 + transition
@@ -1514,51 +1532,24 @@ pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) ->
             .into(),
         };
     };
-    // Each OptionId is a hand index.
-    let indices: Vec<u32> = selected.iter().map(|o| o.0).collect();
-
     // ---- validate (state untouched on any failure) ----
-    let inv = cx.state.investigators.get(&current).unwrap_or_else(|| {
-        unreachable!("resume_hand_size_discard: prompted investigator {current:?} vanished")
-    });
-    let hand_len = inv.hand.len();
+    let hand_len = cx.state.investigators[&current].hand.len();
     let target = hand_size_discard_count(cx.state, cx.cards, current);
-    if indices.len() != target {
+    if selected.len() != target {
         return EngineOutcome::Rejected {
             reason: format!(
                 "hand-size discard: {current:?} must discard exactly {target} card(s) \
                  (hand {hand_len}, cap {HAND_SIZE_LIMIT}, weaknesses excluded), got {}",
-                indices.len(),
+                selected.len(),
             )
             .into(),
         };
     }
-    let mut seen = BTreeSet::new();
-    for &i in &indices {
-        if !seen.insert(i) {
-            return EngineOutcome::Rejected {
-                reason: format!("hand-size discard: duplicate hand index {i}").into(),
-            };
-        }
-        if i as usize >= hand_len {
-            return EngineOutcome::Rejected {
-                reason: format!(
-                    "hand-size discard: hand index {i} out of bounds (hand size {hand_len})",
-                )
-                .into(),
-            };
-        }
-        let code = &inv.hand[i as usize];
-        if cards::is_weakness_code(cx.cards, code) {
-            return EngineOutcome::Rejected {
-                reason: format!(
-                    "hand-size discard: {code} at hand index {i} is a weakness, which may not \
-                     be chosen to be discarded",
-                )
-                .into(),
-            };
-        }
-    }
+    let candidates = hand_size_discard_candidates(cx.state, cx.cards, current);
+    let indices = match hand_pick::picked(selected, &candidates, "hand-size discard") {
+        Ok(indices) => indices,
+        Err(rejected) => return rejected,
+    };
 
     // ---- mutate ----
     let discarded: Vec<CardCode> = {
@@ -1567,14 +1558,14 @@ pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) ->
             .investigators
             .get_mut(&current)
             .expect("validated above");
-        let mut sorted: Vec<u32> = indices.clone();
+        let mut sorted = indices;
         sorted.sort_unstable();
         let codes: Vec<CardCode> = sorted
             .iter()
-            .map(|&i| inv.hand[i as usize].clone())
+            .map(|&i| inv.hand[usize::from(i)].clone())
             .collect();
         for &i in sorted.iter().rev() {
-            inv.hand.remove(i as usize);
+            inv.hand.remove(usize::from(i));
         }
         inv.discard.extend(codes.iter().cloned());
         codes

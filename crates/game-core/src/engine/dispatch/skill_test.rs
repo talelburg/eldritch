@@ -5,7 +5,7 @@
 //! the resolution driver ([`advance`]), and all supporting
 //! helpers.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use card_dsl::card_data::CardKind;
 use card_dsl::dsl::{
@@ -20,12 +20,12 @@ use crate::engine::dispatch::actions::evade::{self, EvadeModification};
 use crate::engine::dispatch::actions::fight::{self, FightModification};
 use crate::engine::dispatch::actions::investigate::{self, InvestigateModification};
 use crate::engine::dispatch::emit::TimingEvent;
-use crate::engine::dispatch::{choice, coordinator, emit, prompt, reaction_windows};
+use crate::engine::dispatch::{choice, coordinator, emit, hand_pick, prompt, reaction_windows};
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::modified_value::{
     self, ContributionSource, ModifiedQuantity, ModifierBreakdown, ModifierTarget, ReadContext,
 };
-use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId};
+use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId, PickCount};
 use crate::engine::{abilities_in_effect, Cx};
 use crate::event::{Event, FailureReason};
 use crate::scenario;
@@ -581,16 +581,17 @@ pub(in crate::engine) fn resume_substitution_choice(
 /// Commit-stage entry to the skill-test resolution driver. Handles the
 /// response to the
 /// [`AwaitingInput`](crate::engine::EngineOutcome::AwaitingInput) the engine emitted at
-/// the commit window: validate the supplied indices, persist them onto the
-/// in-flight record, pre-advance the cursor to [`SkillTestStep::PreTokenWindow`],
-/// and return [`EngineOutcome::Done`] so the `drive` loop's `SkillTest` arm runs
+/// the commit window: map the selected options back to the hand cards
+/// [`commit_request`] offered, validate the set, persist it onto the in-flight
+/// record, pre-advance the cursor to [`SkillTestStep::PreTokenWindow`], and
+/// return [`EngineOutcome::Done`] so the `drive` loop's `SkillTest` arm runs
 /// the resolution body ([`run_resolution`]) and the remaining steps.
 ///
-/// On invalid input (no in-flight test, malformed indices, or continuation
-/// already advanced) returns [`EngineOutcome::Rejected`] with no state change
-/// and no events pushed — the engine stays paused so the caller can submit a
-/// fixed-up response.
-pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
+/// On invalid input (no in-flight test, an option not offered or named twice,
+/// a set over a card's commit limit, or continuation already advanced) returns
+/// [`EngineOutcome::Rejected`] with no state change and no events pushed — the
+/// engine stays paused so the caller can submit a fixed-up response.
+pub(super) fn finish_skill_test(cx: &mut Cx, selected: &[OptionId]) -> EngineOutcome {
     let Some(in_flight) = cx.state.current_skill_test() else {
         return EngineOutcome::Rejected {
             reason: "skill-test commit: no in-flight skill test to resume".into(),
@@ -612,22 +613,20 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
     // against the skill actually being tested.
     let skill = in_flight.skill;
 
-    // Validate the commit indices against the resolving
-    // investigator's hand. On Err, state is untouched and the engine
-    // stays paused so the client can retry.
+    // Map the selection back to the hand cards the window offered, and check
+    // the set against the commit limits. On Err, state is untouched and the
+    // engine stays paused so the client can retry.
     //
     // The committer is the investigator performing the test: only they commit
     // today. TODO(#65): let another investigator at the same location commit.
-    let indices_u8 = match validate_commit_indices(
-        cx.state,
-        cx.cards,
-        CommitBy {
-            committer: investigator,
-            performer: investigator,
-        },
-        skill,
-        indices,
-    ) {
+    let by = CommitBy {
+        committer: investigator,
+        performer: investigator,
+    };
+    let candidates = commit_candidates(cx.state, cx.cards, by, skill);
+    let indices_u8 = match hand_pick::picked(selected, &candidates, "skill-test commit")
+        .and_then(|indices| check_commit_limits(cx.state, cx.cards, investigator, indices))
+    {
         Ok(v) => v,
         Err(rejected) => return rejected,
     };
@@ -640,8 +639,8 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
     // order the ST.7 `OnCommit` / `OnSkillTestResolution` collectors fire in and
     // the order ST.8 discards in, so it is the player's to choose. The drain
     // then walks descending, which keeps the still-pending positions stable.
-    // Both steps are index-safe: `validate_commit_indices` proved every index
-    // unique and in bounds against this same, so-far-unmutated hand.
+    // Both steps are index-safe: `hand_pick::picked` proved every index unique
+    // and one the window offered from this same, so-far-unmutated hand.
     //
     // From here on nothing re-indexes the hand for a committed card, so the
     // ST.2→ST.3 player window is free to mutate it.
@@ -649,7 +648,7 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
         .state
         .investigators
         .get_mut(&investigator)
-        .expect("validate_commit_indices proved the investigator exists");
+        .expect("the window offered cards from the investigator's hand");
     let committed: Vec<CommittedCard> = indices_u8
         .iter()
         .map(|&i| CommittedCard::new(inv.hand[usize::from(i)].clone()))
@@ -1525,19 +1524,37 @@ fn fire_on_resolution_step(
 /// pushed *above* it is a mid-test window. The commit `ResolveInput` resumes
 /// via `finish_skill_test`. One of the [prompt table](super::prompt::request)'s
 /// helpers.
+///
+/// It offers only the cards that may be committed ([`commit_candidates`]), so
+/// a card ST.2 forbids is never offered rather than rejected once chosen. A
+/// skill's "Max N committed per skill test" limits a set rather than a card, so
+/// the count admits every offered card and the limit is checked on resume.
 pub(super) fn commit_request(state: &GameState, cards: &CardRegistry) -> InputRequest {
-    let skill = state
+    let test = state
         .current_skill_test()
-        .expect("commit_request: in-flight test must exist")
-        .skill;
+        .expect("commit_request: in-flight test must exist");
+    let (investigator, skill) = (test.investigator, test.skill);
+    let candidates = commit_candidates(
+        state,
+        cards,
+        CommitBy {
+            committer: investigator,
+            performer: investigator,
+        },
+        skill,
+    );
     // The difficulty as it stands at the commit window — what a player
     // decides how many cards to commit against. ST.6 re-reads it.
     let difficulty = current_difficulty(state, cards);
-    InputRequest::pick_multiple(format!(
-        "Commit cards to the {} test (difficulty {difficulty}). \
-         An empty selection commits no cards.",
-        skill_name(skill),
-    ))
+    InputRequest::pick_multiple(
+        format!(
+            "Commit cards to the {} test (difficulty {difficulty}). \
+             An empty selection commits no cards.",
+            skill_name(skill),
+        ),
+        hand_pick::options(state, cards, investigator, &candidates),
+        PickCount::up_to(candidates.len()),
+    )
 }
 
 /// What a skill test at its result pause asks (the `AcknowledgeOutcome` step,
@@ -1936,107 +1953,65 @@ struct CommitBy {
     performer: InvestigatorId,
 }
 
-/// Validate that every entry in `indices` is a unique in-bounds hand
-/// index for the committer whose card may legally be committed to a test of
-/// `skill`, and return them downcast to `u8` (the width hand indices use
-/// elsewhere in state).
-fn validate_commit_indices(
+/// The hand indices of the committer's cards that may be committed to a test
+/// of `skill`, in hand order: the commit window's candidates ([`may_commit`]).
+fn commit_candidates(
     state: &GameState,
     cards: &CardRegistry,
     by: CommitBy,
     skill: SkillKind,
-    indices: &[u32],
+) -> Vec<u8> {
+    hand_pick::candidates(state, by.committer, |code| {
+        may_commit(cards, code, by, skill)
+    })
+}
+
+/// Whether the card `code` may be committed to a test of `skill`, on its own.
+///
+/// RR Appendix II ST.2: *"An appropriate skill icon is either one that matches
+/// the skill being tested, or a wild icon. […] Cards that lack an appropriate
+/// skill icon may not be committed to a skill test."* Without this, commit is a
+/// free discard outlet for any card in hand — a weakness included.
+///
+/// `skill` is the test's skill *as it stands at the commit window*, so a
+/// substitution that already rewrote it (Mind over Matter 01036 makes the test
+/// an Intellect test) is what the icons are matched against.
+///
+/// A card with no registry entry is unconstrained, matching
+/// [`check_commit_limits`] and `push_committed_icons`: engine-only tests run
+/// against a registry that knows no real cards.
+fn may_commit(cards: &CardRegistry, code: &CardCode, by: CommitBy, skill: SkillKind) -> bool {
+    let Some(meta) = (cards.metadata_for)(code) else {
+        return true;
+    };
+    // Opportunist 01053: *"Commit only to a skill test you are performing."*
+    // TODO(#65): unreachable through `apply` until another investigator can
+    // commit; test it then.
+    let own_test_only = matches!(
+        meta.kind,
+        CardKind::Skill {
+            commit_only_to_own_test: true,
+            ..
+        }
+    );
+    meta.skill_icons().appropriate_for(skill) && !(own_test_only && by.committer != by.performer)
+}
+
+/// Check a commit of the `committer`'s hand cards at `indices` against each
+/// card's printed "Max N committed per skill test" (`CardKind::Skill`'s
+/// `commit_limit`, Guts 01089), and return `indices` if it holds. A card with
+/// no cap, or no registry entry, is unconstrained. The limit binds a set, not
+/// a card, so the window offers every copy and this rejects the response.
+fn check_commit_limits(
+    state: &GameState,
+    cards: &CardRegistry,
+    committer: InvestigatorId,
+    indices: Vec<u8>,
 ) -> Result<Vec<u8>, EngineOutcome> {
-    let investigator = by.committer;
-    let inv = state.investigators.get(&investigator).unwrap_or_else(|| {
-        unreachable!(
-            "validate_commit_indices: investigator {investigator:?} disappeared while test \
-             was in flight; this is a state-corruption invariant violation"
-        )
-    });
-    // Arkham's upkeep hand-size limit caps hands well below 256 cards
-    // in practice (the Upkeep discard-to-max-hand-size step enforces it),
-    // so the `u8::try_from` below
-    // succeeds for every index that passed the bounds check. No
-    // defensive overflow-rejection branch needed.
-    let hand_len = inv.hand.len();
-    let mut indices_u8: Vec<u8> = Vec::with_capacity(indices.len());
-    let mut seen: BTreeSet<u32> = BTreeSet::new();
-    for &i in indices {
-        if !seen.insert(i) {
-            return Err(EngineOutcome::Rejected {
-                reason: format!("skill-test commit: duplicate hand index {i}").into(),
-            });
-        }
-        if (i as usize) >= hand_len {
-            return Err(EngineOutcome::Rejected {
-                reason: format!(
-                    "skill-test commit: hand index {i} out of bounds (hand size {hand_len})"
-                )
-                .into(),
-            });
-        }
-        indices_u8.push(
-            u8::try_from(i)
-                .expect("bounds check above guarantees i < hand_len <= u8::MAX (see #111)"),
-        );
-    }
-
-    // Enforce per-card "Max N committed per skill test" caps. The
-    // limit is printed metadata (`CardKind::Skill.commit_limit`); a card
-    // with no cap, or no registry entry, is unconstrained.
-    // RR Appendix II ST.2: *"An appropriate skill icon is either one that
-    // matches the skill being tested, or a wild icon. […] Cards that lack
-    // an appropriate skill icon may not be committed to a skill test."*
-    // Without this, commit is a free discard outlet for any card in hand
-    // — a weakness included.
-    //
-    // `skill` is the test's skill *as it stands at the commit window*, so
-    // a substitution that already rewrote it (Mind over Matter 01036 makes
-    // the test an Intellect test) is what the icons are matched against.
-    //
-    // A card with no registry entry is unconstrained, matching the cap
-    // check below and `push_committed_icons`: engine-only tests run
-    // against a registry that knows no real cards.
-    for &i in &indices_u8 {
-        let code = &inv.hand[usize::from(i)];
-        let Some(meta) = (cards.metadata_for)(code) else {
-            continue;
-        };
-        if !meta.skill_icons().appropriate_for(skill) {
-            return Err(EngineOutcome::Rejected {
-                reason: format!(
-                    "skill-test commit: {code} prints no {skill:?} icon and no wild icon, \
-                     so it may not be committed to this {skill:?} test (RR ST.2)"
-                )
-                .into(),
-            });
-        }
-        // Opportunist 01053: *"Commit only to a skill test you are
-        // performing."*
-        // TODO(#65): unreachable through `apply` until another investigator
-        // can commit; test it then.
-        if matches!(
-            meta.kind,
-            CardKind::Skill {
-                commit_only_to_own_test: true,
-                ..
-            }
-        ) && by.committer != by.performer
-        {
-            return Err(EngineOutcome::Rejected {
-                reason: format!(
-                    "skill-test commit: {code} may be committed only to a skill test its \
-                     committer is performing"
-                )
-                .into(),
-            });
-        }
-    }
-
+    let hand = &state.investigators[&committer].hand;
     let mut counts: BTreeMap<&CardCode, u8> = BTreeMap::new();
-    for &i in &indices_u8 {
-        *counts.entry(&inv.hand[usize::from(i)]).or_insert(0) += 1;
+    for &i in &indices {
+        *counts.entry(&hand[usize::from(i)]).or_insert(0) += 1;
     }
     for (code, count) in counts {
         let cap = (cards.metadata_for)(code).and_then(|m| match m.kind {
@@ -2055,8 +2030,7 @@ fn validate_commit_indices(
             }
         }
     }
-
-    Ok(indices_u8)
+    Ok(indices)
 }
 
 /// The in-flight test's **modified difficulty**, recalculated from the
@@ -2251,7 +2225,7 @@ fn collect_on_skill_test_resolution(
 
     let mut effects = Vec::new();
     for (index, CommittedCard { code, .. }) in committed.iter().enumerate() {
-        // Committed cards come out of a hand, which `validate_commit_indices`
+        // Committed cards come out of a hand, which `hand_pick::picked`
         // already indexes by `u8`.
         let index = u8::try_from(index).expect("committed cards are hand-indexed by u8");
         let Some(abilities) = (cards.abilities_for)(code) else {

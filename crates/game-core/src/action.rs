@@ -137,12 +137,13 @@ pub enum InputResponse {
     /// whose offered options index the candidate list.
     PickSingle(OptionId),
     /// Select a subset of the offered options, echoing back their
-    /// [`OptionId`]s. The multi-selection
-    /// family — the skill-test commit window and the upkeep hand-size discard
-    /// fold into this; min/exact-count constraints live on the request/frame,
-    /// not here. For those windows an `OptionId(i)` denotes hand index `i`.
+    /// [`OptionId`]s
+    /// ([`InputRequest::pick_multiple`](crate::engine::InputRequest::pick_multiple)).
+    /// The multi-selection family: the skill-test commit window, the setup
+    /// mulligan and the upkeep hand-size discard. How many may be selected is
+    /// the request's [`pick_count`](crate::engine::InputRequest::pick_count).
     PickMultiple {
-        /// The chosen option ids (hand indices, for commit/discard windows).
+        /// The chosen option ids, each naming one of the request's options.
         selected: Vec<OptionId>,
     },
 }

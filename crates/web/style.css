@@ -262,6 +262,7 @@
 .hand-slot { position: relative; }
 .hand-slot.actionable { box-shadow: 0 0 0 2px #e0b84c; cursor: pointer; }
 .hand-slot.selected { box-shadow: 0 0 0 3px #4a90d9; cursor: pointer; }
+.hand-slot.selectable { cursor: pointer; }
 /* The multi-select prompt banner is a required decision, so it's styled to be
    hard to miss: a warm amber bar that slides up with a one-shot glow pulse, a
    bold prompt, and a high-contrast primary Confirm. */

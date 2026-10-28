@@ -50,6 +50,9 @@ pub(super) mod forced_triggers;
 // The hand-discard cost's choice frame, which activated and triggered
 // abilities both park their effect beneath.
 mod hand_discard_cost;
+// The subset pick from one investigator's hand that the commit window, the
+// mulligan and the hand-size discard share.
+mod hand_pick;
 pub(crate) mod hunters;
 // Play and activate legality: the validators the handlers, the turn menu and
 // the Fast-window enumeration ask.
@@ -583,18 +586,17 @@ fn resume_window(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
 
 /// Resume a skill test parked at one of its two suspension points: the commit
 /// window (the active investigator submits their commit list via
-/// [`InputResponse::PickMultiple`], each [`OptionId`](crate::engine::OptionId) a
-/// hand index) or the acknowledgment pause (the player dismisses the result
+/// [`InputResponse::PickMultiple`], each [`OptionId`](crate::engine::OptionId) one
+/// of the hand cards the window offered) or the acknowledgment pause (the player dismisses the result
 /// with [`InputResponse::Confirm`]). Each resume validates the cursor it expects.
 fn resume_skill_test_commit(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
     match response {
         InputResponse::PickMultiple { selected } => {
-            let indices: Vec<u32> = selected.iter().map(|o| o.0).collect();
             // The teardown tail (forced-run-sibling re-drive / end-of-turn
             // resume) lives in `advance`'s `PostOnResolution` arm, so it
             // fires from teardown regardless of which resume re-entered the
             // driver.
-            skill_test::finish_skill_test(cx, &indices)
+            skill_test::finish_skill_test(cx, selected)
         }
         // The cosmetic acknowledgment pause is the SkillTest frame's other
         // suspension point; a Confirm advances past it into the ST.7 consequences.

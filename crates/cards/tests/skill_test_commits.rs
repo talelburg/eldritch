@@ -13,7 +13,7 @@
 //! corpus and would see `metadata_for == None`, contributing zero icons.
 
 use cards::TEST_REGISTRIES;
-use game_core::engine::InputKind;
+use game_core::engine::{InputKind, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, DiscardPile, GameStateBuilder, InvestigatorId, SkillKind, Zone,
@@ -24,8 +24,8 @@ use game_core::{assert_event, assert_event_count, assert_no_event};
 const PERCEPTION: &str = "01090";
 const UNEXPECTED_COURAGE: &str = "01093";
 /// Overpower — `01091`, two combat icons and no wild. Used as the
-/// "no appropriate icon for this test" control: ST.2 rejects it outright
-/// on an intellect test.
+/// "no appropriate icon for this test" control: the commit window does not
+/// offer it to an intellect test.
 const OVERPOWER: &str = "01091";
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -144,39 +144,23 @@ fn committing_two_cards_sums_both_contributions_and_discards_both() {
     assert_event_count!(session.events(), 2, Event::CardDiscarded { .. });
 }
 
+/// Regression for #763 and #788: a card with no matching or wild icon is not
+/// offered, so the commit window is no free discard outlet.
 #[test]
-fn mixing_matching_and_non_matching_commits_is_rejected() {
-    // Perception (intellect 2) + Overpower (combat 2, no wild) against an
-    // intellect test. ST.2 admits cards one at a time, and Overpower prints
-    // no appropriate icon for this test, so the batch is rejected — the
-    // matching card does not carry the non-matching one in with it.
-    // The icon *arithmetic* is covered by
-    // `committing_perception_contributes_two_intellect_icons`.
-    let session = commit_from(&[PERCEPTION, OVERPOWER], &[PERCEPTION, OVERPOWER]);
-    session.expect_rejected();
-    let inv = &session.state().investigators[&INV];
-    assert_eq!(
-        inv.hand,
-        vec![CardCode::new(PERCEPTION), CardCode::new(OVERPOWER)],
-        "a rejected commit leaves the hand untouched",
-    );
-    assert!(inv.discard.is_empty());
-}
-
-/// Regression for #763: a card with no matching or wild icon can't be
-/// committed, so the commit window is no free discard outlet.
-#[test]
-fn committing_overpower_to_an_intellect_test_is_rejected() {
+fn overpower_is_not_offered_to_an_intellect_test() {
     // RR Appendix II ST.2: *"Cards that lack an appropriate skill icon may
     // not be committed to a skill test."* Overpower's two combat icons are
-    // not appropriate for an intellect test and it prints no wild, so the
-    // commit never happens.
-    let session = commit_from(&[OVERPOWER], &[OVERPOWER]);
-    session.expect_rejected();
-    // Nothing moved: the card is still in hand rather than in the discard.
-    let inv = &session.state().investigators[&INV];
-    assert_eq!(inv.hand, vec![CardCode::new(OVERPOWER)]);
-    assert!(inv.discard.is_empty());
+    // not appropriate for an intellect test and it prints no wild. ST.2 admits
+    // cards one at a time, so Perception beside it is offered and Overpower
+    // is not. The icon *arithmetic* is covered by
+    // `committing_perception_contributes_two_intellect_icons`.
+    let session = test_with_hand(&[PERCEPTION, OVERPOWER]);
+    let in_hand = |hand_index| OptionTarget::HandCard {
+        investigator: INV,
+        hand_index,
+    };
+    assert_eq!(session.offered_at(&in_hand(0)), 1, "Perception is offered");
+    assert_eq!(session.offered_at(&in_hand(1)), 0, "Overpower is not");
 }
 
 #[test]

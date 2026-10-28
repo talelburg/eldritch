@@ -1625,7 +1625,7 @@ impl ResolvedTest {
 ///   emits the commit-window
 ///   [`ResolveInput`](crate::action::PlayerAction::ResolveInput)
 ///   prompt with a [`PickMultiple`](crate::action::InputResponse::PickMultiple)
-///   response (each `OptionId` a hand index).
+///   response (each `OptionId` one of the hand cards the window offers).
 /// - [`PreTokenWindow`](Self::PreTokenWindow) — set after the commit; `advance`
 ///   opens the ST.2→ST.3 player window, then pre-advances to `Resolving`.
 /// - [`Resolving`](Self::Resolving) — set by `finish_skill_test` once the

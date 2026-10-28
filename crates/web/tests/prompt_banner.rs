@@ -74,8 +74,12 @@ fn click(sel: &str) {
 }
 
 #[wasm_bindgen_test]
-async fn confirm_submits_the_selected_indices() {
-    let mut rx = mount(test_support::awaiting_commit_input("Commit"), &[0, 2]).await;
+async fn confirm_submits_the_selected_options() {
+    let mut rx = mount(
+        test_support::awaiting_commit_input("Commit", &[0, 1, 2]),
+        &[0, 2],
+    )
+    .await;
     click(".confirm");
     task::tick().await;
     let msg = rx.try_recv().expect("a frame after tick");
@@ -94,7 +98,7 @@ async fn confirm_submits_the_selected_indices() {
 
 #[wasm_bindgen_test]
 async fn confirm_with_no_selection_submits_empty() {
-    let mut rx = mount(test_support::awaiting_commit_input("Commit"), &[]).await;
+    let mut rx = mount(test_support::awaiting_commit_input("Commit", &[0]), &[]).await;
     click(".confirm");
     task::tick().await;
     let msg = rx.try_recv().expect("a frame after tick");
@@ -108,7 +112,11 @@ async fn confirm_with_no_selection_submits_empty() {
 
 #[wasm_bindgen_test]
 async fn skippable_prompt_shows_pass_that_submits_skip() {
-    let mut rx = mount(test_support::awaiting_skippable_commit_input("Commit"), &[]).await;
+    let mut rx = mount(
+        test_support::awaiting_skippable_commit_input("Commit", &[0]),
+        &[],
+    )
+    .await;
     click(".pass");
     task::tick().await;
     let msg = rx.try_recv().expect("a frame after tick");
@@ -123,7 +131,7 @@ async fn skippable_prompt_shows_pass_that_submits_skip() {
 #[wasm_bindgen_test]
 async fn renders_the_prompt_text() {
     let _rx = mount(
-        test_support::awaiting_commit_input("Redraw your opening hand"),
+        test_support::awaiting_commit_input("Redraw your opening hand", &[0]),
         &[],
     )
     .await;

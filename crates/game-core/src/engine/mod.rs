@@ -47,8 +47,8 @@ pub use modified_value::{
     ModifierTarget, ReadContext,
 };
 pub use outcome::{
-    ChoiceOption, EngineOutcome, InputKind, InputRequest, OptionId, OptionTarget, PromptNature,
-    Responder, ResumeToken,
+    ChoiceOption, EngineOutcome, InputKind, InputRequest, OptionId, OptionTarget, PickCount,
+    PromptNature, Responder, ResumeToken,
 };
 pub use pathfinding::shortest_first_steps;
 

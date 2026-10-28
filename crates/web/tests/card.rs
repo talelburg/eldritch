@@ -277,24 +277,51 @@ async fn playable_hand_card_opens_a_play_menu_and_submits() {
     }
 }
 
+/// The mounted card (investigator 1's hand index 0) is offered as option 1, so
+/// a click selects option 1 — the option's id, not the hand index.
 #[wasm_bindgen_test]
-async fn multi_select_active_makes_hand_card_toggle_selected() {
-    let (selected, _rx) = mount_hand(test_support::awaiting_commit_input("Commit cards")).await;
+async fn an_offered_hand_card_toggles_its_option_in_select_mode() {
+    let (selected, _rx) =
+        mount_hand(test_support::awaiting_commit_input("Commit cards", &[3, 0])).await;
     let slot = last_slot();
     assert!(
         !slot.class_name().contains("actionable"),
         "no Play menu in select mode"
+    );
+    assert!(
+        slot.class_name().contains("selectable"),
+        "the card is offered"
     );
     slot.clone()
         .dyn_into::<HtmlElement>()
         .expect("HtmlElement")
         .click();
     task::tick().await;
-    assert!(selected.get_untracked().contains(&0), "index 0 selected");
+    assert_eq!(
+        selected.get_untracked(),
+        BTreeSet::from([1]),
+        "the card's option is selected"
+    );
     assert!(
         last_slot().class_name().contains("selected"),
         "selected ring shown"
     );
+}
+
+/// A hand card the pick does not offer stays inert in select mode: no ring to
+/// toggle, nothing selected on a click.
+#[wasm_bindgen_test]
+async fn a_hand_card_the_pick_does_not_offer_is_inert() {
+    let (selected, _rx) =
+        mount_hand(test_support::awaiting_commit_input("Commit cards", &[2])).await;
+    let slot = last_slot();
+    assert!(!slot.class_name().contains("selectable"), "not offered");
+    slot.clone()
+        .dyn_into::<HtmlElement>()
+        .expect("HtmlElement")
+        .click();
+    task::tick().await;
+    assert!(selected.get_untracked().is_empty(), "nothing selected");
 }
 
 #[wasm_bindgen_test]

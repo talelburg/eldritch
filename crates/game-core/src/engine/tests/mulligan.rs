@@ -378,6 +378,34 @@ fn multi_investigator_mulligan_advances_in_player_order() {
     assert_eq!(after_second.state().current_mulligan(), None);
 }
 
+/// Each mulligan offers its own investigator's whole hand, anchored to their
+/// hand cards, and any number of them: seat 2's prompt names seat 2's two
+/// cards and none of seat 1's.
+#[test]
+fn a_mulligan_offers_the_prompted_investigators_hand() {
+    let inv2 = InvestigatorId(2);
+    let in_hand = |investigator, hand_index| OptionTarget::HandCard {
+        investigator,
+        hand_index,
+    };
+    let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(seat(1).hand(["a-0"]))
+        .with_seat(seat(2).hand(["b-0", "b-1"]))
+        .with_turn_order([INV, inv2])
+        .with_mulligan_remaining([inv2, INV])
+        .session();
+
+    let request = session.prompt();
+    let anchors: Vec<_> = request.options.iter().map(|o| o.target.clone()).collect();
+    assert_eq!(
+        anchors,
+        vec![Some(in_hand(inv2, 0)), Some(in_hand(inv2, 1))],
+        "seat 2's hand, in hand order",
+    );
+    assert_eq!(request.pick_count, Some(PickCount { min: 0, max: 2 }));
+}
+
 #[test]
 fn multi_investigator_real_redraw_plus_empty_mulligan_combo() {
     // One investigator does a real redraw, the other keeps their

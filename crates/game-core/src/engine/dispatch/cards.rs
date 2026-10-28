@@ -12,15 +12,16 @@ use crate::engine::dispatch::actions::take::{self, ActionDescription};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::legality::PlayCheckResult;
 use crate::engine::dispatch::{
-    combat, emit, encounter, legality, phases, prompt, slots, threat_area, PlayDestination,
+    combat, emit, encounter, hand_pick, legality, phases, prompt, slots, threat_area,
+    PlayDestination,
 };
 use crate::engine::enumerate::PlaySource;
 use crate::engine::evaluator::{self, EvalContext};
-use crate::engine::outcome::{EngineOutcome, InputRequest};
+use crate::engine::outcome::{EngineOutcome, InputRequest, PickCount};
 use crate::engine::{board, Cx};
 use crate::event::Event;
 use crate::state::{
-    ActionResume, AssetEntry, CardCode, CardInPlay, DamageSource, Deck, DiscardPile,
+    ActionResume, AssetEntry, CardCode, CardInPlay, DamageSource, Deck, DiscardPile, GameState,
     InvestigatorId, MulliganFrame, Owner, PlayFromHandFrame, Zone,
 };
 
@@ -807,12 +808,28 @@ pub(super) fn prompt_mulligan(cx: &mut Cx, remaining: Vec<InvestigatorId>) -> En
     prompt::suspend(cx.state, cx.cards)
 }
 
-/// What a [`MulliganFrame`] on top asks. One of the
+/// What a [`MulliganFrame`] on top asks of `investigator`, its queue's head:
+/// which of their hand cards to redraw, any number of them. Every card in hand
+/// is a candidate ([`mulligan_candidates`]). One of the
 /// [prompt table](prompt::request)'s helpers.
-pub(super) fn mulligan_request() -> InputRequest {
+pub(super) fn mulligan_request(
+    state: &GameState,
+    cards: &CardRegistry,
+    investigator: InvestigatorId,
+) -> InputRequest {
+    let candidates = mulligan_candidates(state, investigator);
     InputRequest::pick_multiple(
         "Mulligan: choose cards to redraw (an empty selection keeps your hand).",
+        hand_pick::options(state, cards, investigator, &candidates),
+        PickCount::up_to(candidates.len()),
     )
+}
+
+/// The mulligan's candidates: every card in `investigator`'s hand, in hand
+/// order (the `Mulligan` glossary entry, *"any number of cards in his or her
+/// opening hand"*).
+fn mulligan_candidates(state: &GameState, investigator: InvestigatorId) -> Vec<u8> {
+    hand_pick::candidates(state, investigator, |_| true)
 }
 
 /// Swap the hand cards at `sorted` (ascending, in-bounds, unique hand indices)
@@ -905,8 +922,8 @@ fn perform_mulligan_redraw(cx: &mut Cx, investigator: InvestigatorId, sorted: &[
 ///
 /// The acting investigator is the frame's `remaining[0]` (Rules Reference p.16
 /// player order) — the response carries no investigator. Validates the
-/// `PickMultiple` redraw indices (each [`OptionId`](crate::engine::OptionId) is
-/// a hand index) are in bounds and unique. On success the three steps of the
+/// `PickMultiple` selection: each [`OptionId`](crate::engine::OptionId) names
+/// one of the hand cards [`mulligan_request`] offered, none twice. On success the three steps of the
 /// Rules Reference `Mulligan` glossary entry run in order — "These cards are
 /// **set aside**, and an equivalent number of cards are **drawn** and added to
 /// the player's starting hand. The set-aside cards are **then shuffled back**
@@ -935,36 +952,14 @@ pub(super) fn resume_mulligan(cx: &mut Cx, response: &InputResponse) -> EngineOu
             .into(),
         };
     };
-    // Each OptionId is a hand index to redraw.
-    let indices: Vec<u32> = selected.iter().map(|o| o.0).collect();
-
     // ---- validate (state untouched on any failure) ----
-    let inv = cx
-        .state
-        .investigators
-        .get(&investigator)
-        .unwrap_or_else(|| {
-            unreachable!(
-            "resume_mulligan: prompted investigator {investigator:?} is not in the investigators \
-             map; this is a state-corruption invariant violation"
-        )
-        });
-    let hand_len = inv.hand.len();
-    for &idx in &indices {
-        if idx as usize >= hand_len {
-            return EngineOutcome::Rejected {
-                reason: format!("Mulligan: hand_index {idx} out of bounds (hand size {hand_len})")
-                    .into(),
-            };
-        }
-    }
-    let mut sorted: Vec<u32> = indices.clone();
+    let candidates = mulligan_candidates(cx.state, investigator);
+    let indices = match hand_pick::picked(selected, &candidates, "Mulligan") {
+        Ok(indices) => indices,
+        Err(rejected) => return rejected,
+    };
+    let mut sorted: Vec<u32> = indices.iter().copied().map(u32::from).collect();
     sorted.sort_unstable();
-    if sorted.windows(2).any(|w| w[0] == w[1]) {
-        return EngineOutcome::Rejected {
-            reason: format!("Mulligan: duplicate index in {indices:?}").into(),
-        };
-    }
 
     // ---- mutate ----
     let redrawn_count =

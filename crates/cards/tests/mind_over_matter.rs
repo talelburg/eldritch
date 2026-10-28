@@ -119,30 +119,38 @@ fn fight_declining_substitution_fails_on_combat() {
 }
 
 #[test]
-fn substituted_intellect_test_rejects_a_committed_combat_icon() {
+fn substituted_intellect_test_does_not_offer_a_combat_icon() {
     // FAQ: a substituted test *is* an Intellect test, so ST.2's icon
     // eligibility is judged against Intellect — Overpower's two [combat] icons
-    // are not appropriate and the commit is rejected outright. This is
+    // are not appropriate and the commit window does not offer it. This is
     // the substitution's sharpest observable consequence at the commit window:
-    // the same commit is legal on the un-substituted Combat test.
+    // the same card is offered to the un-substituted Combat test.
     // Hand: [MoM, Overpower]. Play MoM (idx 0) → hand becomes [Overpower].
+    let overpower = OptionTarget::HandCard {
+        investigator: INV,
+        hand_index: 0,
+    };
+    let combat = substitute(
+        fight(play_card(board(fighter(4, 2).hand([MOM, OVERPOWER])), 0)),
+        false,
+    );
+    assert_eq!(
+        combat.prompt().kind,
+        InputKind::PickMultiple,
+        "commit window"
+    );
+    assert_eq!(combat.offered_at(&overpower), 1, "offered to a Combat test");
+
     let s = play_card(board(fighter(4, 2).hand([MOM, OVERPOWER])), 0);
     let s = substitute(fight(s), true); // use Intellect → it's now an Intellect test
     assert_eq!(s.prompt().kind, InputKind::PickMultiple, "commit window");
-    let s = s.commit(&[OVERPOWER]); // combat icons
-    assert!(!s.expect_rejected().is_empty());
-    // Validate-first: the card is still in hand and the test still paused.
     assert_eq!(
-        s.state().investigators[&INV].hand,
-        vec![CardCode::new(OVERPOWER)],
-    );
-    assert_eq!(
-        s.prompt().kind,
-        InputKind::PickMultiple,
-        "still at the commit window"
+        s.offered_at(&overpower),
+        0,
+        "not offered to an Intellect test"
     );
 
-    // Retrying with an empty commit resolves the test: intellect 2 < fight 3.
+    // Committing nothing resolves the test: intellect 2 < fight 3.
     let s = s.commit(&[]);
     s.assert_at_turn_menu(INV);
     assert_event!(s.events(), Event::SkillTestFailed { .. });

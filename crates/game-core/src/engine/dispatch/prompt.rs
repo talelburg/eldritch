@@ -139,11 +139,18 @@ fn table(
             encounter::spawn_engage_request(state, cards, pending),
             lead(state),
         )),
-        Continuation::HandSizeDiscard(queue) => head(&queue.remaining)
-            .map(|head| (phases::hand_size_discard_request(state, cards, queue), head)),
-        Continuation::Mulligan(queue) => {
-            head(&queue.remaining).map(|head| (cards::mulligan_request(), head))
-        }
+        Continuation::HandSizeDiscard(queue) => queue.remaining.first().map(|&head| {
+            (
+                phases::hand_size_discard_request(state, cards, head),
+                Investigator(head),
+            )
+        }),
+        Continuation::Mulligan(queue) => queue.remaining.first().map(|&head| {
+            (
+                cards::mulligan_request(state, cards, head),
+                Investigator(head),
+            )
+        }),
         Continuation::EncounterDraw(queue) => {
             head(&queue.remaining).map(|head| (encounter::encounter_draw_request(state), head))
         }

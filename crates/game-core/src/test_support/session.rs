@@ -14,7 +14,7 @@ use crate::state::{
     GameStateBuilder, InvestigatorId, SkillKind,
 };
 use crate::test_support::resolver::{
-    card_codes, drain_with_applier, hand_indices_of, is_turn_menu, options_at,
+    card_codes, drain_with_applier, hand_options_of, is_turn_menu, options_at,
     resolve_commit_codes, sole_option_at, turn_action_option, ChoiceResolver, ScriptedResolver,
 };
 
@@ -375,7 +375,7 @@ impl TestSession {
     /// Panics at the turn menu, away from a skill test's commit window (a
     /// mulligan or hand-size discard is a `PickMultiple` too — answer it with
     /// [`choose_from_hand`](Self::choose_from_hand)), or if a code is not in
-    /// the hand.
+    /// the hand or the window does not offer it.
     pub fn commit(self, codes: &[&str]) -> Self {
         self.assert_off_turn_menu("commit");
         let request = self.prompt();
@@ -388,12 +388,9 @@ impl TestSession {
         let selected = resolve_commit_codes(
             &card_codes(codes),
             &self.state,
-            &request.prompt,
+            request,
             "TestSession::commit",
-        )
-        .into_iter()
-        .map(OptionId)
-        .collect();
+        );
         self.respond(InputResponse::PickMultiple { selected })
     }
 
@@ -410,7 +407,7 @@ impl TestSession {
     ///
     /// Panics at the turn menu, at a skill test's commit window (commit cards
     /// with [`commit`](Self::commit)), at any other prompt, or if a code is not
-    /// in the hand.
+    /// in the hand or the prompt does not offer it.
     pub fn choose_from_hand(self, codes: &[&str]) -> Self {
         self.assert_off_turn_menu("choose_from_hand");
         assert!(
@@ -428,16 +425,13 @@ impl TestSession {
                 request.prompt,
             )
         };
-        let selected = hand_indices_of(
+        let selected = hand_options_of(
             &card_codes(codes),
             &self.state,
             prompted,
-            &request.prompt,
+            request,
             "TestSession::choose_from_hand",
-        )
-        .into_iter()
-        .map(OptionId)
-        .collect();
+        );
         self.respond(InputResponse::PickMultiple { selected })
     }
 

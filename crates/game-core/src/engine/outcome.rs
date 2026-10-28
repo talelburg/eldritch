@@ -268,6 +268,58 @@ pub enum PromptNature {
     Decision,
 }
 
+/// How many of a [`PickMultiple`](InputKind::PickMultiple) prompt's options a
+/// response may select: `min..=max`, both inclusive.
+///
+/// A skill-test commit and a setup mulligan take any number of their options,
+/// none included ([`up_to`](Self::up_to) the option count). A hand-size
+/// discard takes exactly the number it must discard
+/// ([`exactly`](Self::exactly)). A host can hold its Confirm until the
+/// selection is in range. A constraint no count expresses — a skill's printed
+/// "Max N committed per skill test" (Guts 01089) — is still checked when the
+/// response arrives, and a response breaking it is rejected.
+///
+/// `u32` for the reason [`OptionId`] is: a host-pointer-width-independent wire
+/// format.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PickCount {
+    /// The fewest options a response may select.
+    pub min: u32,
+    /// The most options a response may select.
+    pub max: u32,
+}
+
+impl PickCount {
+    /// Any number from none to `max`.
+    #[must_use]
+    pub fn up_to(max: usize) -> Self {
+        Self {
+            min: 0,
+            max: Self::wire(max),
+        }
+    }
+
+    /// Exactly `count`.
+    #[must_use]
+    pub fn exactly(count: usize) -> Self {
+        let count = Self::wire(count);
+        Self {
+            min: count,
+            max: count,
+        }
+    }
+
+    /// Whether selecting `selected` options is in range.
+    #[must_use]
+    pub fn admits(self, selected: usize) -> bool {
+        u32::try_from(selected).is_ok_and(|n| (self.min..=self.max).contains(&n))
+    }
+
+    fn wire(count: usize) -> u32 {
+        u32::try_from(count).expect("an offered option count fits in u32")
+    }
+}
+
 /// Who answers a prompt (ADR 0019), read off the frame that asks it.
 ///
 /// A host shows who the game is waiting on from this, and a seat check (#581)
@@ -305,9 +357,10 @@ pub enum Responder {
 pub struct InputRequest {
     /// Human-readable text describing what the player must choose.
     pub prompt: String,
-    /// Offered options for a [`PickSingle`](InputKind::PickSingle) prompt.
-    /// Empty for [`PickMultiple`](InputKind::PickMultiple) (host derives
-    /// hand-card candidates) and [`Confirm`](InputKind::Confirm).
+    /// The offered options: the one a [`PickSingle`](InputKind::PickSingle)
+    /// response names, or the candidates a
+    /// [`PickMultiple`](InputKind::PickMultiple) response selects a subset of.
+    /// Empty for [`Confirm`](InputKind::Confirm).
     pub options: Vec<ChoiceOption>,
     /// Which response variant the host must send back.
     pub kind: InputKind,
@@ -340,6 +393,10 @@ pub struct InputRequest {
     /// responder to every request it surfaces, so no request the engine
     /// returns carries the placeholder unless several really do answer.
     pub responder: Responder,
+    /// How many [`options`](Self::options) a
+    /// [`PickMultiple`](InputKind::PickMultiple) response may select. `None`
+    /// for every other kind.
+    pub pick_count: Option<PickCount>,
 }
 
 impl InputRequest {
@@ -355,30 +412,31 @@ impl InputRequest {
             target: None,
             nature: PromptNature::Selection,
             responder: Responder::Several,
+            pick_count: None,
         }
     }
 
-    /// A subset-selection prompt →
+    /// A subset-selection prompt over `options`, selecting `count` of them →
     /// [`InputResponse::PickMultiple`](crate::action::InputResponse::PickMultiple).
     ///
-    /// `options` is left empty: every current consumer (skill-test commit,
-    /// setup mulligan, hand-size discard) picks a subset of the *prompted
-    /// investigator's hand*, and the host derives candidates from the hand,
-    /// treating each `OptionId(i)` as hand index `i`. This hand-index
-    /// convention only holds while `PickMultiple` decisions are hand-scoped; a
-    /// future subset-pick over non-hand candidates (e.g. revealed cards,
-    /// enemies) would need to carry them in `options` and render from there,
-    /// like [`pick_single`](Self::pick_single).
+    /// Each selected [`OptionId`] names one of `options`, exactly as a
+    /// [`PickSingle`](InputKind::PickSingle) response does, and the host
+    /// renders each candidate on the surface its option anchors to.
     #[must_use]
-    pub fn pick_multiple(text: impl Into<String>) -> Self {
+    pub fn pick_multiple(
+        text: impl Into<String>,
+        options: Vec<ChoiceOption>,
+        count: PickCount,
+    ) -> Self {
         Self {
             prompt: text.into(),
-            options: Vec::new(),
+            options,
             kind: InputKind::PickMultiple,
             skippable: false,
             target: None,
             nature: PromptNature::Selection,
             responder: Responder::Several,
+            pick_count: Some(count),
         }
     }
 
@@ -394,6 +452,7 @@ impl InputRequest {
             target: None,
             nature: PromptNature::Selection,
             responder: Responder::Several,
+            pick_count: None,
         }
     }
 
@@ -472,11 +531,34 @@ mod tests {
     }
 
     #[test]
-    fn pick_multiple_sets_kind_and_empty_options() {
-        let req = InputRequest::pick_multiple("Commit cards");
+    fn pick_multiple_carries_its_options_and_count() {
+        let req = InputRequest::pick_multiple(
+            "Discard",
+            vec![
+                ChoiceOption::new(OptionId(0), "A"),
+                ChoiceOption::new(OptionId(1), "B"),
+            ],
+            PickCount::exactly(1),
+        );
         assert_eq!(req.kind, InputKind::PickMultiple);
         assert!(!req.skippable);
-        assert!(req.options.is_empty());
+        assert_eq!(req.options.len(), 2);
+        assert_eq!(req.pick_count, Some(PickCount { min: 1, max: 1 }));
+    }
+
+    #[test]
+    fn only_a_pick_multiple_carries_a_count() {
+        assert_eq!(InputRequest::pick_single("w", vec![]).pick_count, None);
+        assert_eq!(InputRequest::confirm("w").pick_count, None);
+    }
+
+    #[test]
+    fn a_pick_count_admits_the_selections_in_its_range() {
+        assert!(PickCount::up_to(2).admits(0));
+        assert!(PickCount::up_to(2).admits(2));
+        assert!(!PickCount::up_to(2).admits(3));
+        assert!(!PickCount::exactly(2).admits(1));
+        assert!(PickCount::exactly(2).admits(2));
     }
 
     #[test]
@@ -496,7 +578,7 @@ mod tests {
             PromptNature::Selection
         );
         assert_eq!(
-            InputRequest::pick_multiple("w").nature,
+            InputRequest::pick_multiple("w", vec![], PickCount::up_to(0)).nature,
             PromptNature::Selection
         );
         assert_eq!(InputRequest::confirm("w").nature, PromptNature::Selection);
@@ -602,7 +684,10 @@ mod tests {
     #[test]
     fn request_constructors_are_unanchored_and_at_anchors() {
         assert_eq!(InputRequest::confirm("Draw").target, None);
-        assert_eq!(InputRequest::pick_multiple("Commit").target, None);
+        assert_eq!(
+            InputRequest::pick_multiple("Commit", vec![], PickCount::up_to(0)).target,
+            None
+        );
         assert_eq!(InputRequest::pick_single("Choose", vec![]).target, None);
 
         let req = InputRequest::confirm("Draw").at(OptionTarget::EncounterDeck);

@@ -22,7 +22,10 @@ use std::collections::BTreeSet;
 use card_dsl::card_data::{CardKind, CardMetadata, Class, ClueValue, HealthValue, Prey};
 use card_dsl::dsl::SkillTestKind;
 
-use crate::engine::{ChoiceOption, EngineOutcome, InputRequest, OptionId, Responder, ResumeToken};
+use crate::engine::{
+    ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, PickCount, Responder,
+    ResumeToken,
+};
 use crate::state::{
     CardCode, CardInPlay, CardInstanceId, Continuation, ContinuationStack, DifficultyBasis, Enemy,
     EnemyId, InFlightSkillTest, Investigator, InvestigatorId, Location, LocationId, Owner,
@@ -257,13 +260,23 @@ const SEAT_ONE: Responder = Responder::Investigator(InvestigatorId(1));
 /// A sample skill-test commit [`AwaitingInput`](EngineOutcome::AwaitingInput)
 /// outcome, for client/UI fixtures.
 ///
-/// This is the only `AwaitingInput` shape the engine emits today (the
-/// skill-test commit window). The `ResumeToken` value is irrelevant to
-/// rendering — routing keys off `state.in_flight_skill_test`, not the token.
+/// Seat 1 picks any number of their hand cards at `hand_indices`, option `i`
+/// anchored to `hand_indices[i]`. The `ResumeToken` value is irrelevant to
+/// rendering.
 #[must_use]
-pub fn awaiting_commit_input(prompt: impl Into<String>) -> EngineOutcome {
+pub fn awaiting_commit_input(prompt: impl Into<String>, hand_indices: &[u8]) -> EngineOutcome {
+    awaiting_commit_input_for(prompt, InvestigatorId(1), hand_indices)
+}
+
+/// [`awaiting_commit_input`] answered by `investigator`, from their hand.
+#[must_use]
+pub fn awaiting_commit_input_for(
+    prompt: impl Into<String>,
+    investigator: InvestigatorId,
+    hand_indices: &[u8],
+) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_multiple(prompt).answered_by(SEAT_ONE),
+        request: hand_pick(prompt, investigator, hand_indices),
         resume_token: ResumeToken(0),
     }
 }
@@ -271,14 +284,43 @@ pub fn awaiting_commit_input(prompt: impl Into<String>) -> EngineOutcome {
 /// A skippable [`PickMultiple`](crate::engine::InputKind::PickMultiple)
 /// [`AwaitingInput`](EngineOutcome::AwaitingInput) outcome — for UI tests of the
 /// Pass/Skip control on a multi-select prompt.
+///
+/// Offers seat 1's hand cards at `hand_indices`, as [`awaiting_commit_input`]
+/// does.
 #[must_use]
-pub fn awaiting_skippable_commit_input(prompt: impl Into<String>) -> EngineOutcome {
+pub fn awaiting_skippable_commit_input(
+    prompt: impl Into<String>,
+    hand_indices: &[u8],
+) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_multiple(prompt)
-            .skippable()
-            .answered_by(SEAT_ONE),
+        request: hand_pick(prompt, InvestigatorId(1), hand_indices).skippable(),
         resume_token: ResumeToken(0),
     }
+}
+
+/// A `PickMultiple` answered by `investigator` over their hand cards at
+/// `hand_indices`, any number of them.
+fn hand_pick(
+    prompt: impl Into<String>,
+    investigator: InvestigatorId,
+    hand_indices: &[u8],
+) -> InputRequest {
+    let options = hand_indices
+        .iter()
+        .enumerate()
+        .map(|(i, &hand_index)| {
+            ChoiceOption::new(
+                OptionId(u32::try_from(i).expect("a hand fits in u32")),
+                format!("hand card {hand_index}"),
+            )
+            .at(OptionTarget::HandCard {
+                investigator,
+                hand_index,
+            })
+        })
+        .collect();
+    InputRequest::pick_multiple(prompt, options, PickCount::up_to(hand_indices.len()))
+        .answered_by(Responder::Investigator(investigator))
 }
 
 /// An [`AwaitingInput`](EngineOutcome::AwaitingInput) around an arbitrary
@@ -397,7 +439,7 @@ mod tests {
 
     #[test]
     fn awaiting_commit_input_carries_the_prompt() {
-        let outcome = awaiting_commit_input("Commit cards for the test");
+        let outcome = awaiting_commit_input("Commit cards for the test", &[0]);
         match outcome {
             EngineOutcome::AwaitingInput { request, .. } => {
                 assert_eq!(request.prompt, "Commit cards for the test");
