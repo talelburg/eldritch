@@ -1,8 +1,9 @@
 use super::*;
 use crate::test_support::{TEST_REGISTRIES, TEST_REGISTRY};
 
-/// A raw setup-mulligan answer: `indices` are the hand indices to redraw
-/// (empty = keep the hand). Only for the tests whose subject is the wire
+/// A raw setup-mulligan answer: `indices` are the ids of the options to
+/// redraw (empty = keep the hand). The mulligan offers the whole hand in
+/// order, so option `i` is the hand card at `i`. Only for the tests whose subject is the wire
 /// action itself — a malformed answer, an answer with no mulligan to
 /// resume, or a replayed log; every other test answers with
 /// `choose_from_hand`.
