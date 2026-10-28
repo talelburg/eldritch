@@ -46,7 +46,7 @@ use game_core::engine::evaluator::{self, EvalContext};
 use game_core::engine::{EngineOutcome, NativeCx};
 use game_core::state::Status;
 
-use crate::impls::CardRecord;
+use crate::impls::{attic, cellar, parlor, CardRecord};
 
 /// `ArkhamDB` code for Act 1, "Trapped".
 pub const CODE: &str = "01108";
@@ -68,7 +68,7 @@ const HALLWAY: &str = "01112";
 /// whichever of its two endpoints enters second — but the Hallway must stay
 /// first: the board build keeps the first room's id as the place every
 /// investigator goes.
-const ROOMS: [&str; 4] = [HALLWAY, "01114", "01113", "01115"];
+const ROOMS: [&str; 4] = [HALLWAY, cellar::CODE, attic::CODE, parlor::CODE];
 
 /// Native-effect tag for this act's reverse board build.
 const BOARD_BUILD: &str = "01108:board-build";

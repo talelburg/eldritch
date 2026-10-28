@@ -81,7 +81,7 @@ use game_core::engine::evaluator::{self, EvalContext};
 use game_core::engine::{self, EngineOutcome, NativeCx};
 use game_core::state::{GameState, Owner};
 
-use crate::impls::CardRecord;
+use crate::impls::{lita_chantler, parlor, CardRecord};
 
 /// `ArkhamDB` code for Act 2, "The Barrier".
 pub const CODE: &str = "01109";
@@ -119,8 +119,6 @@ const CAN_ADVANCE: &str = "01109:can-advance";
 /// Printed codes the reverse touches.
 const GHOUL_PRIEST: &str = "01116";
 const HALLWAY: &str = "01112";
-const LITA_CHANTLER: &str = "01117";
-const PARLOR: &str = "01115";
 
 /// 01109's two abilities:
 /// - the **front objective** — "When the round ends, investigators in the
@@ -184,7 +182,7 @@ fn advance_via_clue_spend(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcom
 /// Parlor's own printed grant is written against: *"While Lita Chantler is not
 /// controlled by a player, she gains: '\[action\]: **Parley.** …'"*.
 fn reverse(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
-    let Some(parlor) = evaluator::location_id_by_code(cx.state(), PARLOR) else {
+    let Some(parlor) = evaluator::location_id_by_code(cx.state(), parlor::CODE) else {
         return EngineOutcome::Rejected {
             reason: "01109 reverse: Parlor (01115) not in play".into(),
         };
@@ -203,7 +201,7 @@ fn reverse(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
         .state()
         .set_aside_cards
         .iter()
-        .any(|c| c.as_str() == LITA_CHANTLER)
+        .any(|c| c.as_str() == lita_chantler::CODE)
     {
         return EngineOutcome::Rejected {
             reason: "01109 reverse: Lita Chantler (01117) is not set aside".into(),
@@ -219,7 +217,8 @@ fn reverse(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
     // Lita has no pile to return to, so she is the scenario's; the Ghoul
     // Priest is an encounter-set enemy, so he is the encounter deck's
     // (`GLOSSARY.md`, **Owner / Controller**).
-    let lita = cx.put_set_aside_card_into_play(LITA_CHANTLER, Some(PARLOR), Owner::Scenario);
+    let lita =
+        cx.put_set_aside_card_into_play(lita_chantler::CODE, Some(parlor::CODE), Owner::Scenario);
     if !matches!(lita, EngineOutcome::Done) {
         return lita;
     }
