@@ -2050,6 +2050,9 @@ fn deal_effect(
     amount: u8,
     direct: bool,
 ) -> EngineOutcome {
+    // Dealing nothing is a no-op before the target is resolved, so a 0-amount
+    // deal at a target that cannot be resolved stays a no-op rather than a
+    // rejection. It is the same rule `combat::deal_harm` applies to a 0/0 deal.
     if amount == 0 {
         return EngineOutcome::Done;
     }
@@ -2075,7 +2078,7 @@ fn deal_effect(
         HarmKind::Damage => (amount, 0),
         HarmKind::Horror => (0, amount),
     };
-    combat::begin_deal_damage(cx, target_id, damage, horror, DamageSource::Effect, direct)
+    combat::deal_harm(cx, target_id, damage, horror, DamageSource::Effect, direct)
 }
 
 /// Resolve [`Effect::DealDamageToEnemy`]: ground the chosen enemy (already bound

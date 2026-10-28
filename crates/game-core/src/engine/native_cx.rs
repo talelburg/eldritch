@@ -17,8 +17,8 @@ use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::event::TraumaKind;
 use crate::state::{
-    CardCode, CardInstanceId, Deck, EnemyId, GameState, InvestigatorId, LocationId, Owner,
-    SkillSubstitution, UseKind, Zone,
+    CardCode, CardInstanceId, DamageSource, Deck, EnemyId, GameState, InvestigatorId, LocationId,
+    Owner, SkillSubstitution, UseKind, Zone,
 };
 
 /// What a [`NativeEffectFn`](crate::card_registry::NativeEffectFn) gets: full
@@ -112,7 +112,14 @@ impl<'a> NativeCx<'a> {
         damage: u8,
         horror: u8,
     ) -> EngineOutcome {
-        combat::deal_harm(self.write_access(), investigator, damage, horror)
+        combat::deal_harm(
+            self.write_access(),
+            investigator,
+            damage,
+            horror,
+            DamageSource::Effect,
+            false,
+        )
     }
 
     /// Defeat `investigator` by a card ability and run elimination. A no-op

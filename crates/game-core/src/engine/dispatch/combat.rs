@@ -473,22 +473,30 @@ pub(super) fn sanity_reached(inv: &Investigator, cards: &CardRegistry) -> bool {
     inv.status == Status::Active && inv.horror() >= inv.max_sanity(cards)
 }
 
-/// Begin one deal of `damage` + `horror` to `investigator`: push the
-/// [`Continuation::DealDamage`] frame at its first step and return `Done`, which
-/// hands the `drive` loop a frame it dispatches on sight.
+/// Deal `damage` + `horror` to `investigator` from `source`: the one harm
+/// adapter, for an enemy attack and an effect alike. It pushes the
+/// [`Continuation::DealDamage`] frame at its first step and returns `Done`,
+/// which hands the `drive` loop a frame it dispatches on sight.
 ///
 /// The whole of the Rules Reference's two-step procedure runs on that frame —
-/// distribution, then the `DamageDealt` condition with `DamagePlaced` nested in
-/// its resolve step, then the resume — so **this is a tail-position call** (ADR 0003) exactly like an
-/// emit: a caller with work to do afterwards puts it on a frame beneath, and the
-/// two that do (the enemy attack's coordinator, and `Effect::Deal`'s parked
-/// effect walk) already have one. See
+/// distribution through the interactive soak prompt, then the `DamageDealt`
+/// condition with `DamagePlaced` nested in its resolve step, then the resume —
+/// so **this is a tail-position call** (ADR 0003) exactly like an emit: nothing
+/// is placed when this returns. A caller with work to do afterwards puts it on a
+/// frame beneath, and the two that do (the enemy attack's coordinator, and
+/// `Effect::Deal`'s parked effect walk) already have one. See
 /// `docs/adr/0009-damage-is-assigned-then-placed.md`.
 ///
 /// A `direct` deal offers no asset the soak: every point lands on the
 /// investigator card (`glossary/Direct_Damage_Direct_Horror.md`), with no
 /// prompt, and both conditions are still announced.
-pub(crate) fn begin_deal_damage(
+///
+/// A deal of 0 damage and 0 horror deals nothing and pushes no frame, on every
+/// path, so no condition announces an empty assignment
+/// (`glossary/Dealing_Damage_Horror.md`): *"If no damage/horror is applied in
+/// this step, no damage/horror has been successfully dealt."*
+#[must_use = "deal_harm only pushes the deal frame: return its outcome (ADR 0003)"]
+pub(crate) fn deal_harm(
     cx: &mut Cx,
     investigator: InvestigatorId,
     damage: u8,
@@ -496,6 +504,9 @@ pub(crate) fn begin_deal_damage(
     source: DamageSource,
     direct: bool,
 ) -> EngineOutcome {
+    if damage == 0 && horror == 0 {
+        return EngineOutcome::Done;
+    }
     cx.state.continuations.push(DealDamageFrame {
         investigator,
         source,
@@ -507,35 +518,6 @@ pub(crate) fn begin_deal_damage(
         },
     });
     EngineOutcome::Done
-}
-
-/// Deal `damage` + `horror` to `investigator` from anything that is not an enemy
-/// attack: the one harm adapter. It begins a deal with
-/// [`DamageSource::Effect`], so the harm is distributed through the interactive
-/// soak prompt and announces `DamageDealt` with `DamagePlaced` nested inside it,
-/// exactly as an enemy attack's does.
-///
-/// **Tail position** (ADR 0003), like [`begin_deal_damage`]: nothing is placed
-/// when this returns. A caller with work to do afterwards parks it on a frame
-/// beneath first. `deal_harm(.., 0, 0)` deals nothing and pushes no frame.
-#[must_use = "deal_harm only pushes the deal frame: return its outcome (ADR 0003)"]
-pub(crate) fn deal_harm(
-    cx: &mut Cx,
-    investigator: InvestigatorId,
-    damage: u8,
-    horror: u8,
-) -> EngineOutcome {
-    if damage == 0 && horror == 0 {
-        return EngineOutcome::Done;
-    }
-    begin_deal_damage(
-        cx,
-        investigator,
-        damage,
-        horror,
-        DamageSource::Effect,
-        false,
-    )
 }
 
 /// Build the eligible soakers for an enemy attack against `investigator`.
@@ -1085,7 +1067,7 @@ pub(crate) fn drive_deal_damage(cx: &mut Cx) -> EngineOutcome {
 /// without preventing it.
 ///
 /// The attack's impact is the damage and horror it deals, so this is one call to
-/// [`begin_deal_damage`] with the attacker's printed values — and dealing them
+/// [`deal_harm`] with the attacker's printed values — and dealing them
 /// is itself the two-step procedure of ADR 0009, walked on the
 /// [`Continuation::DealDamage`] frame this pushes above the coordinator. So the
 /// attack's `at` and `after` cells run after the whole deal, placement included, and
@@ -1108,7 +1090,7 @@ pub(super) fn deal_enemy_attack(
         )
     });
     let (damage, horror) = (enemy.attack_damage, enemy.attack_horror);
-    begin_deal_damage(
+    deal_harm(
         cx,
         investigator,
         damage,

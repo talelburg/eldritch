@@ -14,8 +14,8 @@ use crate::engine::{
 };
 use crate::event::Event;
 use crate::state::{
-    Continuation, DealDamageFrame, DealDamageStep, EmitEventFrame, EmitStep, GameState,
-    GameStateBuilder, HandSizeDiscard, InvestigatorId, MulliganFrame, SkillKind,
+    Continuation, DamageSource, DealDamageFrame, DealDamageStep, EmitEventFrame, EmitStep,
+    GameState, GameStateBuilder, HandSizeDiscard, InvestigatorId, MulliganFrame, SkillKind,
 };
 
 /// Step-wise test driver: drive the real engine one step at a time, reading the
@@ -310,7 +310,8 @@ impl TestSession {
     /// the scenario ending once no investigator is left.
     pub fn take_damage(self, investigator: InvestigatorId, amount: u8) -> Self {
         self.framework_step(|cx| {
-            let outcome = engine::deal_harm(cx, investigator, amount, 0);
+            let outcome =
+                engine::deal_harm(cx, investigator, amount, 0, DamageSource::Effect, false);
             engine::drive(cx, outcome)
         })
     }
@@ -321,7 +322,8 @@ impl TestSession {
     /// placement opens its window), and the same drain.
     pub fn take_horror(self, investigator: InvestigatorId, amount: u8) -> Self {
         self.framework_step(|cx| {
-            let outcome = engine::deal_harm(cx, investigator, 0, amount);
+            let outcome =
+                engine::deal_harm(cx, investigator, 0, amount, DamageSource::Effect, false);
             engine::drive(cx, outcome)
         })
     }

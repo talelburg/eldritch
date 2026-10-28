@@ -19,7 +19,7 @@ use crate::engine::{abilities_in_effect, ability_source, Cx};
 use crate::event::Event;
 use crate::state::{
     AbilityAddress, AbilitySource, ActionResolutionFrame, ActionResume, CandidateSource, CardCode,
-    CardInPlay, CardInstanceId, GameState, Investigator, InvestigatorId, UseKind,
+    CardInPlay, CardInstanceId, DamageSource, GameState, Investigator, InvestigatorId, UseKind,
 };
 
 /// Handler for `TurnAction::ActivateAbility`: validates the activation, pays
@@ -160,7 +160,14 @@ fn activate(
                 effect,
             },
         });
-        return combat::deal_harm(cx, investigator, damage, horror);
+        return combat::deal_harm(
+            cx,
+            investigator,
+            damage,
+            horror,
+            DamageSource::Effect,
+            false,
+        );
     }
 
     // An action-cost ability is taken as an action. The step pays the actions,

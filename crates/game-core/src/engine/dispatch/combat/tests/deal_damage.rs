@@ -117,7 +117,7 @@ fn deal_damage_cursor_walks_distribute_announce_finish() {
 
     // Entry parks the frame at the top of the cursor and returns `Done`:
     // dealing damage is tail position, like an emit.
-    let out = begin_deal_damage(
+    let out = deal_harm(
         &mut cx,
         id,
         2,
@@ -212,7 +212,10 @@ fn damage_dealt_places_the_live_assignment_not_the_announced_one() {
         .build();
     let mut events = Vec::new();
     let mut cx = Cx::for_test(&mut state, &mut events);
-    assert_eq!(deal_harm(&mut cx, id, 2, 0), EngineOutcome::Done);
+    assert_eq!(
+        deal_harm(&mut cx, id, 2, 0, DamageSource::Effect, false),
+        EngineOutcome::Done
+    );
     assert_eq!(drive_deal_damage(&mut cx), EngineOutcome::Done);
     assert_eq!(drive_deal_damage(&mut cx), EngineOutcome::Done);
     let dealt = top_emitted(&cx, "DamageDealt");
@@ -321,7 +324,10 @@ fn deal_harm_walks_distribute_announce_finish_from_an_effect() {
     let mut events = Vec::new();
     let mut cx = Cx::for_test(&mut state, &mut events);
 
-    assert_eq!(deal_harm(&mut cx, id, 0, 1), EngineOutcome::Done);
+    assert_eq!(
+        deal_harm(&mut cx, id, 0, 1, DamageSource::Effect, false),
+        EngineOutcome::Done
+    );
     test_support::assert_effect_deal(cx.state.continuations.top(), id, 0, 1);
 
     // Distribute drains (no soaker), then Announce emits DamageDealt.
@@ -359,8 +365,9 @@ fn deal_harm_walks_distribute_announce_finish_from_an_effect() {
     );
 }
 
-/// No harm, no deal: `deal_harm(.., 0, 0)` pushes nothing, so no condition
-/// announces an empty assignment.
+/// No harm, no deal: `deal_harm(.., 0, 0)` pushes nothing on any path (an
+/// effect, an enemy attack, a direct deal), so no condition announces an
+/// empty assignment.
 #[test]
 fn deal_harm_of_nothing_pushes_no_frame() {
     let mut state = GameStateBuilder::new()
@@ -369,9 +376,18 @@ fn deal_harm_of_nothing_pushes_no_frame() {
         .build();
     let mut events = Vec::new();
     let mut cx = Cx::for_test(&mut state, &mut events);
-    assert_eq!(
-        deal_harm(&mut cx, InvestigatorId(1), 0, 0),
-        EngineOutcome::Done
-    );
-    assert!(cx.state.continuations.top().is_none());
+    for (source, direct) in [
+        (DamageSource::Effect, false),
+        (DamageSource::EnemyAttack { enemy: EnemyId(7) }, false),
+        (DamageSource::Effect, true),
+    ] {
+        assert_eq!(
+            deal_harm(&mut cx, InvestigatorId(1), 0, 0, source, direct),
+            EngineOutcome::Done
+        );
+        assert!(
+            cx.state.continuations.top().is_none(),
+            "{source:?}, direct: {direct}"
+        );
+    }
 }

@@ -20,8 +20,8 @@ use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
 use crate::engine::{board, Cx};
 use crate::event::Event;
 use crate::state::{
-    ActionResume, AssetEntry, CardCode, CardInPlay, Deck, DiscardPile, InvestigatorId,
-    MulliganFrame, Owner, PlayFromHandFrame, Zone,
+    ActionResume, AssetEntry, CardCode, CardInPlay, DamageSource, Deck, DiscardPile,
+    InvestigatorId, MulliganFrame, Owner, PlayFromHandFrame, Zone,
 };
 
 /// Starting hand size at scenario setup. Per the Rules Reference,
@@ -815,7 +815,7 @@ pub(in crate::engine) fn draw_with_deckout(
         return outcome;
     }
     if deck_ran_out {
-        return combat::deal_harm(cx, investigator, 0, 1);
+        return combat::deal_harm(cx, investigator, 0, 1, DamageSource::Effect, false);
     }
     EngineOutcome::Done
 }
