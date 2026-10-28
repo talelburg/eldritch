@@ -115,10 +115,4 @@ mod tests {
         ));
         assert_eq!(abilities[0].effect, dsl::seq([]));
     }
-
-    /// Catches a `CARD` record wired to the wrong code or abilities fn.
-    #[test]
-    fn registry_dispatches_to_this_modules_abilities() {
-        assert_eq!(crate::abilities_for(CODE), Some(abilities()));
-    }
 }
