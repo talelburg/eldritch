@@ -97,7 +97,7 @@ impl GameSession {
     /// - [`SessionError::UnknownScenario`] if no module is registered for
     ///   `scenario_id`.
     /// - [`SessionError::Seating`] if the engine rejects the roster (empty
-    ///   roster, unknown investigator code, unimplemented deck card, more
+    ///   roster, a `lead` index past its end, unknown investigator code, unimplemented deck card, more
     ///   random basic weaknesses than the weakness pool holds, etc.).
     /// - [`SessionError::Serde`] / [`SessionError::Db`] if persisting the seed
     ///   state fails.
@@ -107,6 +107,7 @@ impl GameSession {
         game_id: impl Into<GameId>,
         scenario_id: ScenarioId,
         roster: Vec<RosterEntry>,
+        lead: usize,
     ) -> Result<Self, SessionError> {
         let module = (registries.scenarios.module_for)(&scenario_id)
             .ok_or_else(|| SessionError::UnknownScenario(scenario_id.clone()))?;
@@ -124,7 +125,7 @@ impl GameSession {
         // step; the engine gates that pause on this flag (default off for tests
         // and non-interactive consumers). The flag persists through seating.
         setup.interactive_acknowledge = true;
-        let result = engine::seat_and_open(setup, &roster, registries);
+        let result = engine::seat_and_open(setup, &roster, lead, registries);
         let outcome = match result.outcome {
             EngineOutcome::Rejected { reason } => {
                 return Err(SessionError::Seating(reason.to_string()))

@@ -38,6 +38,7 @@ async fn hello_carries_setup_events_after_reload_from_db() {
         "g-setup-events",
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
+        0,
     )
     .await
     .expect("seed game");

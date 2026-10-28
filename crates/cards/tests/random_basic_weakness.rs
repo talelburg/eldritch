@@ -41,7 +41,7 @@ fn setup(seed: u64, registries: Registries) -> GameState {
 }
 
 fn seat(seed: u64, roster: &[RosterEntry]) -> ApplyResult {
-    let result = engine::seat_and_open(setup(seed, REGISTRIES), roster, REGISTRIES);
+    let result = engine::seat_and_open(setup(seed, REGISTRIES), roster, 0, REGISTRIES);
     assert!(
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
         "seating opens the mulligan prompt, got {:?}",
@@ -148,7 +148,7 @@ fn a_count_of_zero_seats_exactly_as_with_no_pool() {
 
     let with_pool = seat(3, &roster);
     let without_pool =
-        engine::seat_and_open(setup(3, NO_POOL_REGISTRIES), &roster, NO_POOL_REGISTRIES);
+        engine::seat_and_open(setup(3, NO_POOL_REGISTRIES), &roster, 0, NO_POOL_REGISTRIES);
 
     assert_eq!(with_pool.state, without_pool.state);
     assert_eq!(with_pool.events, without_pool.events);
@@ -165,7 +165,7 @@ fn a_roster_asking_for_more_weaknesses_than_the_pool_holds_is_refused() {
     let state = setup(0, REGISTRIES);
     let roster = [entry(ROLAND, 6), entry(DAISY, 6)];
 
-    let result = engine::seat_and_open(state.clone(), &roster, REGISTRIES);
+    let result = engine::seat_and_open(state.clone(), &roster, 0, REGISTRIES);
 
     let EngineOutcome::Rejected { reason } = &result.outcome else {
         panic!(

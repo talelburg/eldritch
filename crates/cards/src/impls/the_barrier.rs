@@ -104,10 +104,19 @@ const REVERSE: &str = "01109:reverse";
 /// spend the requisite number of clues to advance").
 const ROUND_END_ADVANCE: &str = "01109:round-end-advance";
 
-/// Native-condition tag, the round-end advance's eligibility: it may be offered
-/// only when the Hallway group can afford the act's clue threshold.
-/// `glossary/Ability.md`: *"A triggered ability can only be initiated if its
-/// effect has the potential to change the game state"*.
+/// Native-condition tag, the round-end advance's eligibility: it is offered
+/// to the first investigator in the Hallway in player order, and only when the
+/// Hallway group can afford the act's clue threshold.
+///
+/// The first half names who may act. *"investigators in the hallway may, as a
+/// group, spend"* is the group's one offer, so the trigger scan tries the act's
+/// reaction for each investigator in player order and keeps the first whose
+/// eligibility passes (ADR 0019): this condition passes only for the first
+/// Hallway investigator, so a lead standing elsewhere is not offered it.
+///
+/// The second half is the change-state check. `glossary/Ability.md`: *"A
+/// triggered ability can only be initiated if its effect has the potential to
+/// change the game state"*.
 ///
 /// A **stand-in** for the change-state check: that check reads an ability's
 /// effect, and [`ROUND_END_ADVANCE`] is an opaque native whose group clue spend
@@ -122,9 +131,11 @@ const HALLWAY: &str = "01112";
 /// - the **front objective** — "When the round ends, investigators in the
 ///   Hallway may, as a group, spend the requisite number of clues to advance":
 ///   a `When`-timed `RoundEnded` reaction. The round-end `When` window offers
-///   this as a single candidate (`PickSingle` = advance, Skip = decline); the
-///   native spends + advances. Affordability is gated by the `01109:can-advance`
-///   eligibility condition (shared with the resolve-side
+///   this as a single candidate (`PickSingle` = advance, Skip = decline),
+///   bound to the first Hallway investigator in player order; the native
+///   spends + advances. Who is offered it and affordability are both gated by
+///   the `01109:can-advance` eligibility condition (affordability shared with
+///   the resolve-side
 ///   [`round_end_advance_affordable`](engine::round_end_advance_affordable)),
 ///   so the candidate isn't offered when the
 ///   Hallway group can't afford the clue threshold.
@@ -147,10 +158,22 @@ pub fn abilities() -> Vec<Ability> {
     ]
 }
 
-/// True when the Hallway group can afford the current act's clue threshold —
-/// the offer-side gate shared with the resolve-side `round_end_advance`.
-fn can_advance(state: &GameState, _ctx: &EvalContext) -> bool {
-    engine::round_end_advance_affordable(state, HALLWAY)
+/// True when `ctx.controller` is the first investigator in the Hallway in
+/// player order, and the Hallway group can afford the current act's clue
+/// threshold — the affordability half is the offer-side gate shared with the
+/// resolve-side `round_end_advance`.
+fn can_advance(state: &GameState, ctx: &EvalContext) -> bool {
+    let Some(hallway) = evaluator::location_id_by_code(state, HALLWAY) else {
+        return false;
+    };
+    let first_in_hallway = engine::player_order(state).into_iter().find(|id| {
+        state
+            .investigators
+            .get(id)
+            .is_some_and(|inv| inv.current_location == Some(hallway))
+    });
+    first_in_hallway == Some(ctx.controller)
+        && engine::round_end_advance_affordable(state, HALLWAY)
 }
 
 /// Front-objective native: spend the act's `clue_threshold` from Hallway

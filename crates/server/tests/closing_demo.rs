@@ -65,6 +65,7 @@ async fn phase_5_closing_demo() {
         "demo",
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
+        0,
     )
     .await
     .expect("create the demo game");

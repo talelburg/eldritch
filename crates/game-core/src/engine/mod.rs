@@ -32,7 +32,7 @@ pub(crate) mod pathfinding;
 pub use dispatch::act_agenda::round_end_advance_affordable;
 pub use dispatch::actions::take::actions_available;
 pub use dispatch::choice::{resolve_card_choice, resolve_grounded_choice, Grounded, Suspension};
-pub use dispatch::cursor::turn_open;
+pub use dispatch::cursor::{player_order, the_lead, turn_open};
 pub use dispatch::movement::{enemy_can_enter_location, investigator_can_enter_location};
 pub use dispatch::tokens::MoveHorrorError;
 pub use dispatch::uses::{MoveUsesError, SpendUsesError};
@@ -162,14 +162,20 @@ pub fn apply(state: GameState, action: Action, registries: Registries) -> ApplyR
 /// code the registry's [`is_playable`](crate::card_registry::CardRegistry::is_playable)
 /// refuses (the reason names every such code), a roster whose total
 /// `random_basic_weaknesses` exceeds the registry's weakness pool, or an
-/// already-started state rejects with state unchanged.
+/// already-started state rejects with state unchanged, as does a `lead` that
+/// is not an index into `roster`.
+///
+/// `lead` is the roster index of the lead investigator, Appendix III step 3:
+/// *"Choose one of those investigators to be the lead investigator for this
+/// game."* Player order starts there.
 pub fn seat_and_open(
     setup_state: GameState,
     roster: &[RosterEntry],
+    lead: usize,
     registries: Registries,
 ) -> ApplyResult {
     apply_via(setup_state, registries, |cx| {
-        dispatch::seat_and_open(cx, roster)
+        dispatch::seat_and_open(cx, roster, lead)
     })
 }
 

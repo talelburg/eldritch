@@ -117,7 +117,7 @@ pub(super) fn pursues(enemy: &Enemy, investigator: InvestigatorId) -> bool {
 
 /// The investigators a ready, unengaged `enemy_id` may engage where it stands:
 /// the active investigators at its location that its prey pursues
-/// ([`pursues`]), in turn order. Empty for an enemy with no location.
+/// ([`pursues`]), in player order. Empty for an enemy with no location.
 ///
 /// The set the enemy's prey then narrows. Every application of the engagement
 /// rule reads it, so a bearer-only enemy beside only investigators other than

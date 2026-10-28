@@ -114,7 +114,7 @@ const INV: InvestigatorId = InvestigatorId(1);
 /// Where investigator 1 starts on the placement board.
 const HERE: LocationId = LocationId(10);
 
-/// `seated` as the lead-investigator proxy on their open turn (the
+/// `seated` as the lead investigator on their open turn (the
 /// `PhaseEnded` forced dispatch binds the controller to it). A filler
 /// deck keeps Upkeep 4.4's draw from dealing empty-deck horror once the enemy
 /// phase has ended.

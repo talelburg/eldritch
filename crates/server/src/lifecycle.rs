@@ -23,6 +23,7 @@ pub(crate) async fn create_game(
         id::random_game_id(),
         request.scenario_id,
         request.roster,
+        request.lead,
     )
     .await
     {

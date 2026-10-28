@@ -844,7 +844,7 @@ fn draw_encounter_card_into_frame(cx: &mut Cx, investigator: InvestigatorId) -> 
 /// drawer from the topmost [`Continuation::EncounterDraw`] frame, then skip any
 /// now-eliminated investigators (an encounter card may have eliminated a later
 /// drawer — Rules Reference p.10: eliminated investigators do not draw,
-/// mirroring `next_active_investigator_after`'s skip). When a drawer remains,
+/// mirroring `next_in_player_order`'s skip). When a drawer remains,
 /// re-prompt them ([`EngineOutcome::AwaitingInput`]); when the queue drains, pop
 /// the frame and open the post-1.4 `MythosAfterDraws` window. Called only after
 /// a chain completes, with the just-popped drawer's `PlayerDraw` frame already

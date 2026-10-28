@@ -153,7 +153,7 @@ const INV: InvestigatorId = InvestigatorId(1);
 /// `INV`'s turn menu. Neither test asserts on the events the close emits.
 fn opened() -> TestSession {
     let session = TestSession::new(
-        game_core::engine::seat_and_open(setup(), &roster(), registries()).state,
+        game_core::engine::seat_and_open(setup(), &roster(), 0, registries()).state,
         registries(),
     )
     .choose_from_hand(&[]);

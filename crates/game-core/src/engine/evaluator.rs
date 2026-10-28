@@ -564,9 +564,10 @@ fn start_for_each(cx: &mut Cx, targets: ForEachTargets, body: &Effect, ctx: Eval
 /// as it stands, in walk order. Read-only, so the change-state gate
 /// ([`effect_can_change_state`]) and the walk agree on the set.
 ///
-/// **Investigators walk in turn order**, the engine's player order — the same
-/// proxy the upkeep, mulligan and hand-size steps walk (`GLOSSARY.md`, *Lead
-/// investigator*). **Enemies walk in id order**: no card in the corpus orders
+/// **Investigators walk in player order** ([`player_order`](crate::engine::player_order)),
+/// starting at the lead, as the upkeep, mulligan and hand-size steps do:
+/// `glossary/Priority_of_Simultaneous_Resolution.md`, *"these choices are made
+/// in player order."* **Enemies walk in id order**: no card in the corpus orders
 /// an enemy fan-out, and id order is deterministic for replay.
 fn for_each_targets(
     state: &GameState,
@@ -594,21 +595,17 @@ fn for_each_targets(
                 .investigators
                 .get(&ctx.controller)
                 .and_then(|i| i.current_location);
-            state
-                .turn_order
-                .iter()
+            crate::engine::player_order(state)
+                .into_iter()
                 .filter(|id| {
-                    state.investigators.get(id).is_some_and(|i| {
-                        i.status == Status::Active
-                            && match set {
-                                InvestigatorTargetSet::All => true,
-                                InvestigatorTargetSet::AtControllerLocation => {
-                                    here.is_some() && i.current_location == here
-                                }
-                            }
+                    state.investigators.get(id).is_some_and(|i| match set {
+                        InvestigatorTargetSet::All => true,
+                        InvestigatorTargetSet::AtControllerLocation => {
+                            here.is_some() && i.current_location == here
+                        }
                     })
                 })
-                .map(|&id| EachBinding::Investigator(id))
+                .map(EachBinding::Investigator)
                 .collect()
         }
         ForEachTargets::Enemies(EnemySet::EngagedWithYou) => state

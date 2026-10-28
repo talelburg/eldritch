@@ -1,6 +1,6 @@
 //! `Effect::ForEach`: the walking frame.
 //!
-//! The body runs once per target, in turn order, with the target bound as
+//! The body runs once per target, in player order, with the target bound as
 //! `InvestigatorTarget::Each`.
 
 use card_dsl::dsl::InvestigatorTargetSet;
@@ -10,7 +10,8 @@ use super::*;
 /// A second location, away from [`HERE`].
 const HALL: LocationId = LocationId(11);
 
-/// Investigators 1, 2 and 3 seated in turn order `order`, all at [`HERE`].
+/// Investigators 1, 2 and 3 seated in `order`, all at [`HERE`]. The lead is
+/// the first of `order`, so player order is `order`.
 fn three_at_here(order: [u32; 3]) -> GameState {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
@@ -33,11 +34,11 @@ fn gainers(events: &[Event]) -> Vec<InvestigatorId> {
         .collect()
 }
 
-/// The body runs once per investigator, **in turn order** rather than seat
+/// The body runs once per investigator, **in player order** rather than id
 /// order, each time naming the iterated investigator through `Each` — while
 /// `You` stays the controller.
 #[test]
-fn for_each_runs_the_body_once_per_investigator_in_turn_order() {
+fn for_each_runs_the_body_once_per_investigator_in_player_order() {
     let mut state = three_at_here([3, 1, 2]);
     let mut events = Vec::new();
 

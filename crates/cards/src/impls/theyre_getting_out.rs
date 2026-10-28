@@ -52,9 +52,9 @@
 //! [`defeat_investigator`](NativeCx::defeat_investigator) and announcing the
 //! trauma for the one investigator it runs for. The defeat-and-trauma body has
 //! one consumer, so it fails the DSL-primitive threshold and stays native (ADR
-//! 0013). The walk runs in **turn order**, and the order is observable on a
-//! defeat body: the lead-investigator proxy moves to the next Active seat as
-//! each one falls, and step 6's no-remaining-players check fires on whoever
+//! 0013). The walk runs in **player order**, and the order is observable on a
+//! defeat body: the lead passes to the next Active investigator in player order
+//! as each one falls, and step 6's no-remaining-players check fires on whoever
 //! falls last. Each investigator's Elimination — including one a *"when the game
 //! ends"* weakness such as Cover Up 01007 routes onto a
 //! `Continuation::Elimination` frame — drains before the walk reaches
@@ -117,7 +117,7 @@
 //! simultaneously (`glossary/Priority_of_Simultaneous_Resolution.md`: *"Once all
 //! necessary choices have been made, the effect resolves simultaneously upon
 //! all affected entities."*), while the walk defeats one investigator at a time,
-//! so the lead-investigator proxy and the step-6 check above see a table that
+//! so the lead investigator and the step-6 check above see a table that
 //! is part defeated.
 //!
 //! TODO(#766): the physical trauma is announced but not recorded in the
@@ -205,7 +205,7 @@ fn at_act_three(state: &GameState, _ctx: &EvalContext) -> bool {
 /// *"If the investigators are at Act 3, they barely escape with their lives,
 /// allowing the ghouls to run rampant. Each investigator that has not resigned
 /// is defeated and suffers 1 physical trauma."* — the body the reverse's
-/// `ForEach` runs for each investigator, in turn order.
+/// `ForEach` runs for each investigator, in player order.
 ///
 /// **No resolution point.** This branch prints no `(→R#)`, and this function
 /// latches nothing: defeating the last active investigator drains Rules

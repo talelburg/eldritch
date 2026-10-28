@@ -72,7 +72,7 @@ fn seated(seed: u64) -> (TestSession, CardCode) {
         deck: DECK.iter().map(|c| CardCode::new(*c)).collect(),
         random_basic_weaknesses: 1,
     }];
-    let opened = engine::seat_and_open(board(seed), &roster, REGISTRIES);
+    let opened = engine::seat_and_open(board(seed), &roster, 0, REGISTRIES);
     assert!(
         matches!(opened.outcome, EngineOutcome::AwaitingInput { .. }),
         "seed {seed}: seating opens the mulligan prompt, got {:?}",

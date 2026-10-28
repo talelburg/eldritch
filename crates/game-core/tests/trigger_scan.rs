@@ -220,8 +220,8 @@ fn attaching(mut location: Location, code: &str, id: CardInstanceId) -> Location
 }
 
 /// Investigators `one` and `two` seated at the Study, with `study` and
-/// `hallway` on the map and `turn_order` `[1, 2]` — so the lead-investigator proxy is
-/// investigator 1.
+/// `hallway` on the map and `turn_order` `[1, 2]` — so, unless a test names
+/// another, the lead investigator is investigator 1.
 fn board(one: Seat, two: Seat, study: Location, hallway: Location) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(registries())
@@ -307,10 +307,10 @@ fn end_the_round(state: GameState) -> TestSession {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn an_agendas_forced_ability_fires_on_an_enemy_defeat_bound_to_the_lead_proxy() {
+fn an_agendas_forced_ability_fires_on_an_enemy_defeat_bound_to_the_lead() {
     let state = with_agenda(table().open_turn(ONE).build(), ON_DEFEAT);
     let session = fire(state, defeat(Some(TWO)));
-    assert_eq!(horror(session.state(), ONE), 1, "the lead proxy takes it");
+    assert_eq!(horror(session.state(), ONE), 1, "the lead takes it");
     assert_eq!(horror(session.state(), TWO), 0);
 }
 
@@ -351,7 +351,7 @@ fn a_locations_forced_ability_fires_on_an_enemy_defeat_bound_to_the_defeating_in
 }
 
 #[test]
-fn an_uncontrolled_cards_forced_ability_with_no_subject_binds_to_the_lead_proxy() {
+fn an_uncontrolled_cards_forced_ability_with_no_subject_binds_to_the_lead() {
     let state = board(
         seat(ONE.0),
         seat(TWO.0),
@@ -364,17 +364,37 @@ fn an_uncontrolled_cards_forced_ability_with_no_subject_binds_to_the_lead_proxy(
     assert_eq!(
         horror(session.state(), ONE),
         1,
-        "an uncredited defeat has no subject, so the lead proxy takes it"
+        "an uncredited defeat has no subject, so the lead takes it"
     );
     assert_eq!(horror(session.state(), TWO), 0);
 }
 
 #[test]
-fn the_lead_proxy_is_the_first_active_seat() {
-    // Investigator 1 is defeated, so the open turn is investigator 2's.
+fn an_agendas_forced_ability_binds_to_the_stored_lead_not_the_first_seat() {
+    let state = with_agenda(table().with_lead(TWO).open_turn(ONE).build(), ON_DEFEAT);
+    let session = fire(state, defeat(None));
+    assert_eq!(horror(session.state(), TWO), 1, "seat 2 is the lead");
+    assert_eq!(horror(session.state(), ONE), 0);
+}
+
+#[test]
+fn an_eliminated_lead_passes_the_lead_to_the_next_seat() {
+    // Investigator 1 leads and is defeated, so the open turn is investigator 2's.
     let state = defeated(with_agenda(table().open_turn(TWO).build(), ON_DEFEAT), ONE);
     let session = fire(state, defeat(None));
     assert_eq!(horror(session.state(), TWO), 1);
+}
+
+/// The seating is `[1, 2]` and seat 2 leads, so player order is `[2, 1]`.
+/// With seat 2 defeated the lead passes on to seat 1, wrapping the seating.
+#[test]
+fn an_eliminated_lead_on_the_last_seat_passes_the_lead_round_to_the_first() {
+    let state = defeated(
+        with_agenda(table().with_lead(TWO).open_turn(ONE).build(), ON_DEFEAT),
+        TWO,
+    );
+    let session = fire(state, defeat(None));
+    assert_eq!(horror(session.state(), ONE), 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -525,7 +545,7 @@ fn an_advance_fires_only_the_advancing_cards_ability() {
             code: CardCode::new(ON_AGENDA_ADVANCED),
         },
     );
-    assert_eq!(horror(own.state(), ONE), 1, "the lead proxy takes it");
+    assert_eq!(horror(own.state(), ONE), 1, "the lead takes it");
 }
 
 #[test]
@@ -755,7 +775,7 @@ fn a_reaction_on_an_enemy_elsewhere_is_not_offered() {
 }
 
 #[test]
-fn a_reaction_on_the_agenda_is_offered_once_bound_to_the_lead_proxy() {
+fn a_reaction_on_the_agenda_is_offered_once_bound_to_the_lead() {
     let state = with_agenda(table().open_turn(ONE).build(), REACT_ON_DEFEAT);
     assert_eq!(
         offered(state.clone(), defeat(None)),

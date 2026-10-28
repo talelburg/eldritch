@@ -11,8 +11,8 @@
 //! from `advance_agenda` (the mirror of the act path).
 //!
 //! **Interactive choice.** The printed "choose one" is an `Effect::ChooseOne`
-//! over the two printed branches, offered to the lead-investigator proxy, each
-//! carrying the label the proxy reads. **Those labels split one printed
+//! over the two printed branches, offered to the lead investigator, each
+//! carrying the label the lead reads. **Those labels split one printed
 //! sentence** — 01105
 //! prints its options in prose, `back_text` verbatim
 //! (`data/arkhamdb-snapshot/pack/core/core_encounter.json`):
@@ -26,10 +26,10 @@
 //! investigator takes 2 horror"*. Nothing is added. The choice
 //! suspends inside the Forced run (auto-resolving only if one branch is the
 //! sole legal option — both always are here, so it round-trips), and the
-//! reentrant forced loop resumes after the proxy picks.
+//! reentrant forced loop resumes after the lead picks.
 //!
 //! The random-discard branch is an `Effect::ForEach` over every investigator,
-//! in turn order, whose body is a card-local `Effect::Native` discarding one
+//! in player order, whose body is a card-local `Effect::Native` discarding one
 //! card at random from the investigator it is running for, via
 //! [`NativeCx::discard_random_from_hand`]. The order shows only in which
 //! investigator's discard draws from the RNG first. The randomness replays
@@ -72,8 +72,8 @@ const DISCARD_EACH_LABEL: &str = "Each investigator discards 1 card at random fr
 /// Label for its second half.
 const LEAD_TAKES_HORROR_LABEL: &str = "The lead investigator takes 2 horror";
 
-/// 01105's Forced on-advance reverse: the proxy's "choose one" between each
-/// investigator discarding 1 random card or the proxy taking 2 horror.
+/// 01105's Forced on-advance reverse: the lead's "choose one" between each
+/// investigator discarding 1 random card or the lead taking 2 horror.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![dsl::forced_on_event(
@@ -88,8 +88,8 @@ pub fn abilities() -> Vec<Ability> {
                 DISCARD_EACH_LABEL,
                 dsl::for_each(InvestigatorTargetSet::All, dsl::native(RANDOM_DISCARD)),
             ),
-            // Branch B: the proxy (`You`, which `AgendaAdvanced` binds to the
-            // lead-investigator proxy) takes 2 horror.
+            // Branch B: the lead (`You`, which `AgendaAdvanced` binds to the
+            // lead investigator) takes 2 horror.
             (
                 LEAD_TAKES_HORROR_LABEL,
                 dsl::deal_horror(InvestigatorTarget::You, 2u8),
@@ -158,7 +158,7 @@ mod tests {
             ),
             "branch B is the lead taking 2 horror",
         );
-        // The labels are what the proxy reads, not the branches' `Debug` form.
+        // The labels are what the lead reads, not the branches' `Debug` form.
         // Asserted as literals — a const checked against itself would pass
         // through a typo in the split.
         assert_eq!(

@@ -2,7 +2,7 @@
 //! Mythos doom-to-threshold cascade lets its suspending Forced reverse resolve
 //! before the 1.4 draws.
 //!
-//! The reverse is an interactive `ChooseOne` for the lead-investigator proxy;
+//! The reverse is an interactive `ChooseOne` for the lead investigator;
 //! the cascade leaves no stranded `Effect` frame and does not panic in
 //! `anchor_on_child_pop`.
 
@@ -30,6 +30,7 @@ fn drive_to_mythos_advance(interactive: bool) -> TestSession {
         game_core::engine::seat_and_open(
             the_gathering::setup(),
             &roster,
+            0,
             scenarios::TEST_REGISTRIES,
         )
         .state,

@@ -31,6 +31,7 @@ fn to_fast_window() -> TestSession {
         game_core::engine::seat_and_open(
             the_gathering::setup(),
             &roster,
+            0,
             scenarios::TEST_REGISTRIES,
         )
         .state,
