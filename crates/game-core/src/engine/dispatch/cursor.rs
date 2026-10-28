@@ -97,6 +97,34 @@ pub(super) fn next_active_investigator_after(
         })
 }
 
+/// Why it is not `investigator`'s turn, as [`your_turn`] reports it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NotYourTurn {
+    /// The game is not in the Investigation phase; carries the phase it is in.
+    WrongPhase(Phase),
+    /// Another investigator, or none, is active; carries who is.
+    NotActive(Option<InvestigatorId>),
+}
+
+/// Whether it is `investigator`'s turn: the Investigation phase, with them the
+/// active investigator.
+///
+/// The phase is checked first, so outside the Investigation phase the answer is
+/// [`NotYourTurn::WrongPhase`] whoever is active. Whether the turn is ending is
+/// not asked here; [`turn_open`] adds that.
+pub(crate) fn your_turn(
+    state: &GameState,
+    investigator: InvestigatorId,
+) -> Result<(), NotYourTurn> {
+    if state.phase != Phase::Investigation {
+        return Err(NotYourTurn::WrongPhase(state.phase));
+    }
+    if state.active_investigator != Some(investigator) {
+        return Err(NotYourTurn::NotActive(state.active_investigator));
+    }
+    Ok(())
+}
+
 /// Whether it is `investigator`'s turn and the turn is not yet ending.
 ///
 /// That is the Investigation phase, with them the active investigator, and
@@ -115,8 +143,7 @@ pub(super) fn next_active_investigator_after(
 /// would be forfeited at once.
 #[must_use]
 pub fn turn_open(state: &GameState, investigator: InvestigatorId) -> bool {
-    state.phase == Phase::Investigation
-        && state.active_investigator == Some(investigator)
+    your_turn(state, investigator).is_ok()
         && !state
             .continuations
             .topmost_of::<InvestigatorTurnFrame>()

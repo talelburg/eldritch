@@ -50,7 +50,8 @@ use crate::engine::dispatch::actions::evade::EvadeModification;
 use crate::engine::dispatch::actions::fight::FightModification;
 use crate::engine::dispatch::actions::investigate::InvestigateModification;
 use crate::engine::dispatch::actions::{draw, engage, evade, fight, investigate, r#move, resource};
-use crate::engine::dispatch::{abilities, cards, choice, combat, cursor};
+use crate::engine::dispatch::cursor::{self, NotYourTurn};
+use crate::engine::dispatch::{abilities, cards, choice, combat};
 use crate::engine::outcome::{
     ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
 };
@@ -59,7 +60,7 @@ use crate::event::Event;
 use crate::state::{
     AbilityAddress, AbilitySource, ActionResolutionFrame, ActionResume,
     AdditionalActionChoiceFrame, AdditionalActionGrant, CardCode, CardInstanceId, GameState,
-    InvestigatorId, Phase, Status,
+    InvestigatorId, Status,
 };
 
 /// What kind of action is being taken: one of the seven basic actions
@@ -518,19 +519,20 @@ fn quote(
         )
         .into());
     }
-    if state.phase != Phase::Investigation {
-        return Err(format!(
-            "{name} is only valid during the Investigation phase (was {:?})",
-            state.phase
-        )
-        .into());
-    }
-    if state.active_investigator != Some(investigator) {
-        return Err(format!(
-            "{name}: {investigator:?} is not the active investigator ({:?})",
-            state.active_investigator
-        )
-        .into());
+    match cursor::your_turn(state, investigator) {
+        Ok(()) => {}
+        Err(NotYourTurn::WrongPhase(phase)) => {
+            return Err(format!(
+                "{name} is only valid during the Investigation phase (was {phase:?})"
+            )
+            .into());
+        }
+        Err(NotYourTurn::NotActive(active)) => {
+            return Err(format!(
+                "{name}: {investigator:?} is not the active investigator ({active:?})"
+            )
+            .into());
+        }
     }
     // The `ExtraActionCost` surcharge, plus the `first_each_round` sources to
     // mark spent once the action is paid; no card data for a code means no

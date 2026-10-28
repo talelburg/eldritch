@@ -22,13 +22,13 @@ use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::abilities::{self, ActivatedAbility};
 use crate::engine::dispatch::actions::take::{self, ActionDescription};
 use crate::engine::dispatch::initiation::{self, InitiationKind, Refusal};
-use crate::engine::dispatch::{cards, combat, slots};
+use crate::engine::dispatch::{cards, combat, cursor, slots};
 use crate::engine::enumerate::PlaySource;
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::{abilities_in_effect, ability_source, designator};
 use crate::state::{
     AbilityAddress, AbilitySource, CandidateSource, CardCode, Continuation, GameState,
-    Investigator, InvestigatorId, Phase, ResolutionCandidate,
+    Investigator, InvestigatorId, ResolutionCandidate,
 };
 
 /// Validated payload returned by [`check_play_card`] on success.
@@ -263,8 +263,7 @@ pub(crate) fn check_play_card(
     // refused here (`slots::unsatisfiable_slot`; `tests/cannot_leave_play.rs`).
     check_play_slot_satisfiable(state, cards, investigator, card_type, &code)?;
     // Timing gate — see play_card doc-comment "# Timing gate" section.
-    let active_during_investigation =
-        state.phase == Phase::Investigation && state.active_investigator == Some(investigator);
+    let active_during_investigation = cursor::your_turn(state, investigator).is_ok();
     let owner_is_active = state.active_investigator == Some(investigator);
     let permissive_window = state.top_window().is_some_and(Continuation::permits_fast);
     // "Play only during your turn" (Mind over Matter 01036, Working a Hunch
@@ -668,8 +667,7 @@ pub(crate) fn check_activate_ability(
 
     // Gate: branch on action_cost now that we have it.
     // Zero-action abilities (action_cost == 0) may be used at any player window.
-    let active_during_investigation =
-        state.phase == Phase::Investigation && state.active_investigator == Some(investigator);
+    let active_during_investigation = cursor::your_turn(state, investigator).is_ok();
     let in_permissive_window = state.top_window().is_some_and(Continuation::permits_fast);
     if action_cost > 0 {
         // Action-cost ability: requires Investigation phase + active investigator.
