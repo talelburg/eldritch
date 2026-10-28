@@ -257,7 +257,7 @@ fn is_ghoul(enemy: &Enemy) -> bool {
 /// scenario unplayable. Same reading as the barricaded first step
 /// below: no move available means no move, never an error.
 fn move_ghouls_toward_parlor(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
-    let Some(parlor) = evaluator::location_id_by_code(cx.state(), parlor::CODE) else {
+    let Some(parlor_id) = evaluator::location_id_by_code(cx.state(), parlor::CODE) else {
         return EngineOutcome::Done;
     };
     // Scan first (shared borrows), then mutate. Deterministic lowest-
@@ -280,7 +280,7 @@ fn move_ghouls_toward_parlor(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOut
         // enemy with patrol would be compelled to move to a location which is
         // blocked by a card ability, the enemy does not move."* So a
         // barricaded first step is a non-move, never a detour.
-        let mut steps: Vec<LocationId> = engine::shortest_first_steps(cx.state(), from, parlor)
+        let mut steps: Vec<LocationId> = engine::shortest_first_steps(cx.state(), from, parlor_id)
             .into_iter()
             .filter(|&loc| engine::enemy_can_enter_location(cx.state(), cx.cards(), e, loc))
             .collect();

@@ -182,7 +182,7 @@ fn advance_via_clue_spend(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcom
 /// Parlor's own printed grant is written against: *"While Lita Chantler is not
 /// controlled by a player, she gains: '\[action\]: **Parley.** …'"*.
 fn reverse(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
-    let Some(parlor) = evaluator::location_id_by_code(cx.state(), parlor::CODE) else {
+    let Some(parlor_id) = evaluator::location_id_by_code(cx.state(), parlor::CODE) else {
         return EngineOutcome::Rejected {
             reason: "01109 reverse: Parlor (01115) not in play".into(),
         };
@@ -213,7 +213,7 @@ fn reverse(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
         };
     }
     // All checks passed — mutate, in the order the card prints.
-    cx.reveal_location(parlor);
+    cx.reveal_location(parlor_id);
     // Lita has no pile to return to, so she is the scenario's; the Ghoul
     // Priest is an encounter-set enemy, so he is the encounter deck's
     // (`GLOSSARY.md`, **Owner / Controller**).
