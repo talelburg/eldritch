@@ -101,7 +101,8 @@ pub(in crate::engine) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
     let caller_owned = matches!(resolution, ConditionResolution::Caller);
     // Per-cell re-scan: the prior cell may have changed board state.
     let asked = reaction_windows::condition_as_it_now_stands(cx.state, cx.cards, &event, bucket);
-    let has_forced = !trigger_scan::collect_forced(cx.state, cx.cards, &asked, bucket).is_empty();
+    let forced = trigger_scan::collect_forced(cx.state, cx.cards, &asked, bucket);
+    let has_forced = !forced.is_empty();
     let has_reaction =
         !trigger_scan::collect_reactions(cx.state, cx.cards, &asked, bucket).is_empty();
     if caller_owned && step == EmitStep::When {
@@ -126,7 +127,7 @@ pub(in crate::engine) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
         cx.state.continuations.push(TimingPointFrame {
             event,
             bucket,
-            sub: TimingSub::Forced,
+            sub: TimingSub::Forced(forced),
         });
     } else {
         advance_or_finish_emit(cx);
@@ -137,9 +138,10 @@ pub(in crate::engine) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
 /// Dispatch the [`Continuation::TimingPoint`](crate::state::Continuation::TimingPoint) on top of the stack (called only
 /// by the `drive` loop). Runs the `sub` cursor `Forced → Reaction → Done`:
 ///
-/// - **`Forced`** — fire the bucket's forced abilities (0/1 inline; 2+ via the
-///   ordered run). The cursor advances to `Reaction` *before* firing, so a
-///   suspending 2+ run resumes at `Reaction`, not by re-scanning forced.
+/// - **`Forced`** — fire the forced candidates the coordinator's scan cached on
+///   the cursor (0/1 inline; 2+ via the ordered run). The cursor advances to
+///   `Reaction` *before* firing, so a suspending 2+ run resumes at `Reaction`
+///   rather than firing forced again.
 /// - **`Reaction`** — open the bucket's reaction window if any candidate; else
 ///   finish the bucket. The cursor advances to `Done` before opening, so the
 ///   re-dispatch after the window closes finishes (never re-opens).
@@ -170,23 +172,26 @@ pub(in crate::engine) fn dispatch_timing_point(cx: &mut Cx) -> EngineOutcome {
         finish_timing_point(cx);
         return EngineOutcome::Done;
     }
-    // Both sub-steps ask about the condition as it now stands: a forced `when`
-    // ability resolved in the `Forced` step can have flipped a skill test's
-    // verdict before the `Reaction` step scans.
+    // Both sub-steps work from the condition as it now stands: the `Forced`
+    // step binds its candidates from it, and a forced `when` ability resolved
+    // in that step can have flipped a skill test's verdict before the
+    // `Reaction` step scans.
     let event = reaction_windows::condition_as_it_now_stands(cx.state, cx.cards, &event, bucket);
     match sub {
-        TimingSub::Forced => {
+        TimingSub::Forced(candidates) => {
             // Advance our own cursor first (see the `Reaction`-resumes-correctly
-            // note above), then fire forced.
+            // note above), then fire the forced candidates the scan that pushed
+            // this point found.
             set_timing_sub(cx, TimingSub::Reaction);
-            let candidates = trigger_scan::collect_forced(cx.state, cx.cards, &event, bucket);
             if candidates.len() >= 2 {
                 // 2+ forced: an ordered run (Rules Reference p.17). The run
                 // carries no continuation — when it closes the loop re-dispatches the
                 // parent `TimingPoint` (now at `Reaction`).
                 reaction_windows::open_forced_resolution(cx, &event, bucket, candidates)
+            } else if let Some(hit) = candidates.first() {
+                forced_triggers::queue_forced_triggers(cx, &event, hit)
             } else {
-                forced_triggers::queue_forced_triggers(cx, &event, bucket)
+                EngineOutcome::Done
             }
         }
         TimingSub::Reaction => {

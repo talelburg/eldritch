@@ -115,7 +115,7 @@ fn the_timing_point_coordinator_does_not_await_input() {
     let f = Continuation::TimingPoint(TimingPointFrame {
         event: TimingEvent::RoundEnded,
         bucket: EventTiming::When,
-        sub: TimingSub::Forced,
+        sub: TimingSub::Forced(Vec::new()),
     });
     assert!(!f.awaits_input());
 }

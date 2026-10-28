@@ -1228,10 +1228,15 @@ impl EmitStep {
 /// `Forced` fires the bucket's forced abilities (0/1 inline, 2+ via the
 /// ordered forced run), `Reaction` opens the bucket's reaction window, `Done`
 /// finishes the bucket (advance the parent `EmitEvent`'s cursor + pop).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TimingSub {
-    /// Fire the bucket's forced abilities.
-    Forced,
+    /// Fire these forced abilities: the ones the coordinator's scan found when
+    /// it decided to push the point. Nothing can change state between that
+    /// scan and this sub-step (the drive loop dispatches the pushed frame
+    /// next), so they are the cell's forced answer, not a guess at it; the
+    /// `Reaction` sub-step scans afresh, since a forced ability resolved in
+    /// between can change what reacts.
+    Forced(Vec<ResolutionCandidate>),
     /// Open the bucket's reaction window.
     Reaction,
     /// Bucket resolved; advance the parent `EmitEvent` cursor and pop.
