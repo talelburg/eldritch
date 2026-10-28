@@ -235,7 +235,8 @@ fn card_token(
 ) -> impl IntoView {
     let name = names::card_name(cards, &card.code);
     let exhausted = card.exhausted;
-    let menu_opts = interaction::options_for(pending, OptionTarget::CardInstance(card.instance_id));
+    let menu_opts =
+        interaction::options_for(pending, &OptionTarget::CardInstance(card.instance_id));
     let actionable = !menu_opts.is_empty();
     #[cfg(target_arch = "wasm32")]
     let open = RwSignal::new(None::<(i32, i32)>);
@@ -261,7 +262,8 @@ fn rail_has_options(loc: &Location, pending: &[ChoiceOption]) -> bool {
         .iter()
         .chain(loc.attachments.iter())
         .any(|c| {
-            !interaction::options_for(pending, OptionTarget::CardInstance(c.instance_id)).is_empty()
+            !interaction::options_for(pending, &OptionTarget::CardInstance(c.instance_id))
+                .is_empty()
         })
 }
 
@@ -344,7 +346,7 @@ pub fn location_map(game: &GameState) -> impl IntoView {
             );
             let menu_opts = interaction::options_for(
                 &pending,
-                OptionTarget::Location(loc.id),
+                &OptionTarget::Location(loc.id),
             );
             let actionable = !menu_opts.is_empty();
             #[cfg(target_arch = "wasm32")]
