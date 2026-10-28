@@ -46,7 +46,7 @@
 //! [`ControlStatus::ByAPlayer`]: card_dsl::dsl::ControlStatus::ByAPlayer
 
 use card_dsl::dsl::{
-    self, Ability, ControlStatus, Cost, Determination, Effect, EventPattern, EventTiming, IntExpr,
+    self, Ability, ControlStatus, Cost, Determination, EventPattern, EventTiming, IntExpr,
     TokenOutcome, UsageLimit, UsagePeriod,
 };
 
@@ -71,7 +71,7 @@ pub fn abilities() -> Vec<Ability> {
         dsl::reaction_on_event(
             EventPattern::ChaosTokenRevealed,
             EventTiming::When,
-            dsl::seq([Effect::Cancel, Effect::RevealChaosToken]),
+            dsl::seq([dsl::cancel(), dsl::reveal_chaos_token()]),
         )
         .with_costs(vec![Cost::DiscardCardFromHand])
         .with_usage_limit(UsageLimit {

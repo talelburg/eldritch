@@ -30,7 +30,7 @@
 //! [`Trigger::OnEvent`]: card_dsl::dsl::Trigger::OnEvent
 //! [`Effect::Cancel`]: card_dsl::dsl::Effect::Cancel
 
-use card_dsl::dsl::{self, Ability, AttackerScope, Effect, EventPattern, EventTiming, TargetScope};
+use card_dsl::dsl::{self, Ability, AttackerScope, EventPattern, EventTiming, TargetScope};
 
 use crate::impls::CardRecord;
 
@@ -50,7 +50,7 @@ pub fn abilities() -> Vec<Ability> {
             target: TargetScope::AtYourLocation,
         },
         EventTiming::When,
-        Effect::Cancel,
+        dsl::cancel(),
     )]
 }
 

@@ -4115,6 +4115,52 @@ pub fn discard_self() -> Effect {
     Effect::DiscardSelf
 }
 
+/// Build an [`Effect::Cancel`]: cancel the impact whose `when` cell this
+/// effect resolves inside.
+#[must_use]
+pub fn cancel() -> Effect {
+    Effect::Cancel
+}
+
+/// Build an [`Effect::RevealChaosToken`]: reveal a new chaos token for the
+/// skill test in flight.
+#[must_use]
+pub fn reveal_chaos_token() -> Effect {
+    Effect::RevealChaosToken
+}
+
+/// Build an [`Effect::AdditionalSlots`]: `count` more slots of type `slot`
+/// while its card is in play, holding only assets `only` matches (`None` is
+/// any asset of the type). The constant marker; wrap it in [`constant`].
+#[must_use]
+pub fn additional_slots(slot: Slot, count: u8, only: Option<CardFilter>) -> Effect {
+    Effect::AdditionalSlots { slot, count, only }
+}
+
+/// Build an [`Effect::PlaceEventsOnBottomOfDeck`]: the controller's events go
+/// to the bottom of their deck instead of their discard pile. The constant
+/// marker; wrap it in [`constant`].
+#[must_use]
+pub fn place_events_on_bottom_of_deck() -> Effect {
+    Effect::PlaceEventsOnBottomOfDeck
+}
+
+/// Build an [`Effect::PlayTopmostEventInDiscardPile`]: the controller may play
+/// the topmost event in their discard pile as if it were in their hand. The
+/// constant marker; wrap it in [`constant`].
+#[must_use]
+pub fn play_topmost_event_in_discard_pile() -> Effect {
+    Effect::PlayTopmostEventInDiscardPile
+}
+
+/// Build an [`Effect::BlankText`]: treat each investigator `target` names as
+/// if their printed text box were blank, except for traits. The constant
+/// marker; wrap it in [`constant`].
+#[must_use]
+pub fn blank_text(target: BlankTarget) -> Effect {
+    Effect::BlankText { target }
+}
+
 /// Build an [`Effect::PutIntoThreatArea`] that enters clue-less.
 #[must_use]
 pub fn put_into_threat_area(code: impl Into<String>) -> Effect {
