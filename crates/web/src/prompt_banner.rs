@@ -17,7 +17,9 @@
 use std::collections::BTreeSet;
 
 use game_core::action::InputResponse;
-use game_core::engine::{ChoiceOption, EngineOutcome, InputKind, OptionId, OptionTarget};
+use game_core::engine::{
+    ChoiceOption, EngineOutcome, InputKind, OptionId, OptionTarget, PickCount,
+};
 use leptos::prelude::*;
 
 use crate::interaction::MultiSelect;
@@ -44,7 +46,6 @@ pub fn PromptBanner() -> impl IntoView {
             let Some(EngineOutcome::AwaitingInput { request, .. }) = state.outcome.clone() else {
                 return ().into_any();
             };
-            let is_multi = matches!(request.kind, InputKind::PickMultiple(_));
             // A decision has its own modal, and that modal is its *sole*
             // surface: the banner renders neither its text nor its branches. The
             // predicate lives with the view it governs, exactly as the skill-test
@@ -101,17 +102,12 @@ pub fn PromptBanner() -> impl IntoView {
                 .collect();
 
             // Confirm — PickMultiple only (submits the MultiSelect selection).
-            let confirm_btn = is_multi.then(|| ms.clone()).flatten().map(|ms| {
-                let selected = ms.selected;
-                let confirm = move |_| {
-                    let sel: Vec<OptionId> =
-                        selected.get_untracked().into_iter().map(OptionId).collect();
-                    let label = format!("Commit {} card(s)", sel.len());
-                    controls::submit(InputResponse::PickMultiple { selected: sel }, label);
-                    selected.set(BTreeSet::new());
-                };
-                view! { <button class="confirm" on:click=confirm>"Confirm"</button> }
-            });
+            let confirm_btn = match request.kind {
+                InputKind::PickMultiple(count) => ms
+                    .clone()
+                    .map(|ms| multi_select_confirm(count, ms.selected)),
+                _ => None,
+            };
 
             // Confirm — a fallback for an un-anchored `Confirm` the skill-test
             // result modal is not already carrying its own button for. The
@@ -158,4 +154,19 @@ pub fn PromptBanner() -> impl IntoView {
             .into_any()
         }}
     }
+}
+
+/// A `PickMultiple`'s Confirm: submits the `selected` options, and is disabled
+/// until the selection is a size `count` admits. The engine rejects any other
+/// size (a hand-size discard of exactly the excess), so an enabled Confirm
+/// there would only bounce.
+fn multi_select_confirm(count: PickCount, selected: RwSignal<BTreeSet<u32>>) -> impl IntoView {
+    let confirm = move |_| {
+        let sel: Vec<OptionId> = selected.get_untracked().into_iter().map(OptionId).collect();
+        let label = format!("Commit {} card(s)", sel.len());
+        controls::submit(InputResponse::PickMultiple { selected: sel }, label);
+        selected.set(BTreeSet::new());
+    };
+    let out_of_range = move || !count.admits(selected.with(BTreeSet::len));
+    view! { <button class="confirm" disabled=out_of_range on:click=confirm>"Confirm"</button> }
 }
