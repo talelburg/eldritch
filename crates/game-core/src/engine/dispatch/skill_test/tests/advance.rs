@@ -42,14 +42,12 @@ fn skill_test_runs_on_success_effect_on_a_passing_draw() {
     let out = start_skill_test(
         &mut cx,
         inv,
-        SkillKind::Willpower,
-        SkillTestKind::Plain,
-        DifficultyBasis::Fixed(2),
-        SkillTestFollowUp::None,
-        Some(dsl::deal_horror(InvestigatorTarget::You, 1u8)),
-        None,
-        None,
-        None,
+        SkillTestSpec::Plain {
+            skill: SkillKind::Willpower,
+            difficulty: 2,
+            on_success: Some(dsl::deal_horror(InvestigatorTarget::You, 1u8)),
+            on_fail: None,
+        },
         None,
     );
     assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
@@ -270,14 +268,12 @@ fn finish_skill_test_parks_the_resolution_for_the_loop() {
     let out = start_skill_test(
         &mut cx,
         inv,
-        SkillKind::Willpower,
-        SkillTestKind::Plain,
-        DifficultyBasis::Fixed(2),
-        SkillTestFollowUp::None,
-        None,
-        None,
-        None,
-        None,
+        SkillTestSpec::Plain {
+            skill: SkillKind::Willpower,
+            difficulty: 2,
+            on_success: None,
+            on_fail: None,
+        },
         None,
     );
     assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));

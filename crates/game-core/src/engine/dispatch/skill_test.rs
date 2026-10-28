@@ -16,7 +16,9 @@ use card_dsl::dsl::{
 use crate::action::InputResponse;
 use crate::card_registry::CardRegistry;
 use crate::engine::board::{self, NotLeft};
-use crate::engine::dispatch::actions::{evade, fight, investigate};
+use crate::engine::dispatch::actions::evade::{self, EvadeModification};
+use crate::engine::dispatch::actions::fight::{self, FightModification};
+use crate::engine::dispatch::actions::investigate::{self, InvestigateModification};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{choice, coordinator, emit, reaction_windows};
 use crate::engine::evaluator::{self, EvalContext};
@@ -29,10 +31,10 @@ use crate::event::{Event, FailureReason};
 use crate::scenario;
 use crate::state::{
     self, AbilitySource, CardCode, CardInstanceId, ChaosToken, CommittedCard,
-    CommittedCardDestination, Continuation, DifficultyBasis, DiscardPile, FastWindowKind,
+    CommittedCardDestination, Continuation, DifficultyBasis, DiscardPile, EnemyId, FastWindowKind,
     GameState, InFlightSkillTest, InvestigatorId, LastingEffect, LastingEffectKind, Lifetime,
-    RecordedModifier, ResolvedTest, RevealedToken, SkillKind, SkillSubstitution, SkillTestFollowUp,
-    SkillTestStep, Status, SubstitutionPromptFrame, TokenResolution, Zone,
+    LocationId, RecordedModifier, ResolvedTest, RevealedToken, SkillKind, SkillSubstitution,
+    SkillTestFollowUp, SkillTestStep, Status, SubstitutionPromptFrame, TokenResolution, Zone,
 };
 
 /// The one-shot modifier an initiator grants the test it starts: a weapon's
@@ -43,8 +45,8 @@ use crate::state::{
 /// [`Investigate`](card_dsl::dsl::ActionDesignator::Investigate) designator's
 /// shroud modifier).
 ///
-/// Handed to [`start_skill_test`] **unstamped**: the test it belongs to has
-/// no identity until initiation mints one, and it becomes a
+/// Derived from the [`SkillTestSpec`] **unstamped**: the test it belongs to
+/// has no identity until initiation mints one, and it becomes a
 /// [`RecordedModifier`](crate::state::RecordedModifier) with
 /// [`Lifetime::SkillTest`](crate::state::Lifetime::SkillTest) there. The
 /// delta stays an [`IntExpr`](card_dsl::dsl::IntExpr) — a row is evaluated at
@@ -59,35 +61,201 @@ use crate::state::{
 /// can write one today: both DSL modifiers carry literals, and the only
 /// other `IntExpr` in reach is a `Count`, which always resolves.
 #[derive(Debug, Clone)]
-pub(in crate::engine) struct InitiatorModifier {
+struct InitiatorModifier {
     /// What it modifies — the controller for a combat bonus, the
     /// investigated location for a shroud reduction.
-    pub target: ModifierTarget,
+    target: ModifierTarget,
     /// Which quantity of that target.
-    pub stat: Stat,
+    stat: Stat,
     /// The signed magnitude, evaluated at every read.
-    pub delta: IntExpr,
+    delta: IntExpr,
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "the skill-test parameters are independent axes (skill, kind, difficulty, \
-              follow-ups, source, the initiator's modifier and reveal clause), which a params \
-              struct would only wrap"
-)]
-pub(in crate::engine) fn start_skill_test(
-    cx: &mut Cx,
-    investigator: InvestigatorId,
+/// The skill test to start, named by its kind. Each variant carries only what
+/// that kind can vary, and [`start_skill_test`] derives the rest from it: the
+/// tested skill, the [`SkillTestKind`], the [`DifficultyBasis`], the
+/// [`SkillTestFollowUp`], the initiator's one-shot modifier and the reveal
+/// clause. A Fight against a shroud, or an Investigate with a Fight
+/// follow-up, cannot be written.
+#[derive(Debug, Clone)]
+pub(in crate::engine) enum SkillTestSpec {
+    /// An attack on `enemy`: a Combat test (or the skill the modification
+    /// tests instead) against that enemy's modified fight value, dealing
+    /// damage on success.
+    Fight {
+        /// The attacked enemy, whose fight value is the difficulty.
+        enemy: EnemyId,
+        /// How the attack differs from a basic Fight.
+        modification: FightModification,
+    },
+    /// An evasion attempt on `enemy`: an Agility test (or the skill the
+    /// modification tests instead) against that enemy's modified evade value,
+    /// evading it on success.
+    Evade {
+        /// The enemy being evaded, whose evade value is the difficulty.
+        enemy: EnemyId,
+        /// How the attempt differs from a basic Evade.
+        modification: EvadeModification,
+    },
+    /// An investigation of `location`: an Intellect test against its
+    /// modified shroud, discovering a clue on success unless the modification
+    /// replaces the discovery.
+    Investigate {
+        /// The investigated location, whose shroud is the difficulty.
+        location: LocationId,
+        /// How the investigation differs from a basic Investigate.
+        modification: InvestigateModification,
+    },
+    /// A test of `skill` against a printed difficulty, with no action
+    /// follow-up: a Revelation's printed test ([`Effect::SkillTest`]), and
+    /// [`perform_skill_test`]'s.
+    Plain {
+        /// The tested skill.
+        skill: SkillKind,
+        /// The printed difficulty; a negative one is rejected.
+        difficulty: i8,
+        /// Resolved at ST.7 on success.
+        on_success: Option<Effect>,
+        /// Resolved at ST.7 on failure.
+        on_fail: Option<Effect>,
+    },
+}
+
+/// Everything [`start_skill_test`] derives from a [`SkillTestSpec`].
+struct DerivedSkillTest {
     skill: SkillKind,
     kind: SkillTestKind,
     difficulty_basis: DifficultyBasis,
     follow_up: SkillTestFollowUp,
     on_success: Option<Effect>,
     on_fail: Option<Effect>,
-    source: Option<AbilitySource>,
     initiator_modifier: Option<InitiatorModifier>,
     reveal_clause: Option<RevealClause>,
+}
+
+impl SkillTestSpec {
+    /// Derive the test this spec names, for `investigator` to make.
+    fn derive(self, investigator: InvestigatorId) -> DerivedSkillTest {
+        match self {
+            Self::Fight {
+                enemy,
+                modification:
+                    FightModification {
+                        combat_modifier,
+                        extra_damage,
+                        skill_override,
+                        reveal_clause,
+                    },
+            } => {
+                let skill = skill_override.unwrap_or(SkillKind::Combat);
+                DerivedSkillTest {
+                    skill,
+                    kind: SkillTestKind::Fight,
+                    difficulty_basis: DifficultyBasis::Fight(enemy),
+                    follow_up: SkillTestFollowUp::Fight {
+                        enemy,
+                        extra_damage,
+                    },
+                    on_success: None,
+                    on_fail: None,
+                    // "+N [combat] for this attack" — a row over the
+                    // controller's tested skill, scoped to the test about to
+                    // start.
+                    initiator_modifier: combat_modifier.map(|delta| InitiatorModifier {
+                        target: ModifierTarget::Investigator(investigator),
+                        stat: modified_value::stat_for_skill(skill),
+                        delta,
+                    }),
+                    reveal_clause,
+                }
+            }
+            Self::Evade {
+                enemy,
+                modification:
+                    EvadeModification {
+                        skill_override,
+                        reveal_clause,
+                        on_success,
+                    },
+            } => DerivedSkillTest {
+                skill: skill_override.unwrap_or(SkillKind::Agility),
+                kind: SkillTestKind::Evade,
+                // The difficulty *is* the enemy's modified evade value, read at
+                // ST.6 — Cold Spring Glen 02244's "Each enemy in Cold Spring
+                // Glen gets -1 evade" reaches this test.
+                difficulty_basis: DifficultyBasis::Evade(enemy),
+                follow_up: SkillTestFollowUp::Evade { enemy },
+                on_success,
+                on_fail: None,
+                initiator_modifier: None, // no Evade designator prints a skill modifier yet
+                reveal_clause,
+            },
+            Self::Investigate {
+                location,
+                modification:
+                    InvestigateModification {
+                        shroud_modifier,
+                        instead_of_discovery,
+                    },
+            } => DerivedSkillTest {
+                skill: SkillKind::Intellect,
+                kind: SkillTestKind::Investigate,
+                difficulty_basis: DifficultyBasis::Shroud(location),
+                // The discovery *is* the Investigate follow-up, so a
+                // replacement for it leaves no follow-up to run.
+                follow_up: if instead_of_discovery.is_some() {
+                    SkillTestFollowUp::None
+                } else {
+                    SkillTestFollowUp::Investigate
+                },
+                on_success: instead_of_discovery,
+                on_fail: None,
+                // "Your location gets -2 shroud for this investigation" — a row
+                // over the *location*, scoped to the test about to start.
+                initiator_modifier: shroud_modifier.map(|delta| InitiatorModifier {
+                    target: ModifierTarget::Location(location),
+                    stat: Stat::Shroud,
+                    delta,
+                }),
+                reveal_clause: None,
+            },
+            Self::Plain {
+                skill,
+                difficulty,
+                on_success,
+                on_fail,
+            } => DerivedSkillTest {
+                skill,
+                kind: SkillTestKind::Plain,
+                difficulty_basis: DifficultyBasis::Fixed(difficulty),
+                follow_up: SkillTestFollowUp::None,
+                on_success,
+                on_fail,
+                initiator_modifier: None,
+                reveal_clause: None,
+            },
+        }
+    }
+}
+
+/// Start the skill test `spec` names, for `investigator` to make, from
+/// `source` (the ability that initiated it, if any).
+pub(in crate::engine) fn start_skill_test(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    spec: SkillTestSpec,
+    source: Option<AbilitySource>,
 ) -> EngineOutcome {
+    let DerivedSkillTest {
+        skill,
+        kind,
+        difficulty_basis,
+        follow_up,
+        on_success,
+        on_fail,
+        initiator_modifier,
+        reveal_clause,
+    } = spec.derive(investigator);
     // Validate-first: investigator must exist and be Active; chaos
     // bag must be non-empty so we can draw; difficulty must be non-
     // negative (FFG difficulties are always ≥ 0). Defeated
@@ -1623,44 +1791,22 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 // Obscuring Fog forced + Dr. Milan reaction) already fired at
                 // the DetermineOutcome step via `queue_event` —
                 // forced-before-reaction.
-                discard_committed_cards(cx, investigator, &committed);
-                // A card the test was marked to discard (Baseball Bat 01074's
-                // *"discard Baseball Bat after the attack resolves"*) goes
-                // now, past ST.7's damage and retaliate.
-                discard_marked_card(cx);
-                cx.events.push(Event::SkillTestEnded { investigator });
-                // ModifierScope::ThisSkillTest contributions expire when the
-                // test they were bought for ends. Keyed on this test's
-                // identity, so it takes every row bought for it and
-                // leaves any other test's alone. The frame is still on the
-                // stack here (`take_skill_test` below removes it); a missing
-                // one would leak rows into the next test, so say so loudly in
-                // debug rather than skipping in silence.
-                expire_this_tests_modifiers(cx);
+                //
                 // Encounter-treachery disposal is not the skill-test
                 // driver's concern: a treachery whose Revelation
                 // suspended into this test parks an `EncounterCard` frame
                 // beneath it, which the framework disposes of at the
                 // `resolve_input` chokepoint once this test completes.
-                // Tear down the test's SkillTest frame, which also
-                // carries the test data. `take_skill_test` removes the
-                // (unique — no nesting today) frame by position, so a player-
-                // window gate legitimately sitting above it is
-                // unaffected.
-                let taken = cx.state.take_skill_test();
-                debug_assert!(
-                    taken.is_some(),
-                    "skill-test teardown: no SkillTest frame on the continuation stack",
-                );
-                // Teardown tail. The test is fully torn down; cede to the `drive`
-                // loop, which re-dispatches whatever it was nested within. A
-                // suspending `EndOfTurn` forced stranded `end_turn` before
-                // rotation and flagged the `InvestigatorTurn { ending: true }`
-                // frame beneath (a single Frozen in Fear, or a 2+ forced run);
-                // the loop's `InvestigatorTurn { ending: true }` arm runs
-                // `resume_end_turn` once this returns — no reach-down here
-                // (the same path a 2+ forced run takes).
-                return EngineOutcome::Done;
+                //
+                // Teardown tail. Once the test is torn down, `Done` cedes to the
+                // `drive` loop, which re-dispatches whatever it was nested
+                // within. A suspending `EndOfTurn` forced stranded `end_turn`
+                // before rotation and flagged the `InvestigatorTurn { ending:
+                // true }` frame beneath (a single Frozen in Fear, or a 2+ forced
+                // run); the loop's `InvestigatorTurn { ending: true }` arm runs
+                // `resume_end_turn` once this returns — no reach-down here (the
+                // same path a 2+ forced run takes).
+                return abandon_test(cx, investigator, Some(&committed));
             }
         }
     }
@@ -1698,13 +1844,14 @@ fn difficulty_target_left_play(state: &GameState, basis: DifficultyBasis) -> boo
     }
 }
 
-/// Tear down an in-flight skill test that cannot be resolved, and pop its
-/// frame. Two callers, both in [`advance`]'s loop preamble: the tester was
-/// eliminated mid-resolution, or the test's difficulty target left play.
+/// Tear down the in-flight skill test, and pop its frame. Named for the
+/// abandoned case, whose two callers are in [`advance`]'s loop preamble: the
+/// tester was eliminated mid-resolution, or the test's difficulty target left
+/// play. RR ST.8's normal end, at
+/// [`PostOnResolution`](SkillTestStep::PostOnResolution), runs through it too.
 ///
-/// Mirrors the [`PostOnResolution`](SkillTestStep::PostOnResolution) teardown,
-/// and `committed` is where the two callers part company — it names the cards
-/// to discard out of limbo, or `None` to drop them with the frame:
+/// `committed` is where the abandoned callers part company — it names the
+/// cards to discard out of limbo, or `None` to drop them with the frame:
 ///
 /// - **Eliminated tester** passes `None`. Rules Reference p.10 Elimination
 ///   step 1 ("The cards he or she controls in play and all of the cards in his
@@ -1740,7 +1887,7 @@ fn abandon_test(
     let taken = cx.state.take_skill_test();
     debug_assert!(
         taken.is_some(),
-        "abandon_test: no SkillTest frame on the continuation stack",
+        "skill-test teardown: no SkillTest frame on the continuation stack",
     );
     EngineOutcome::Done
 }
@@ -2136,14 +2283,12 @@ pub(crate) fn perform_skill_test(
     start_skill_test(
         cx,
         investigator,
-        skill,
-        SkillTestKind::Plain,
-        DifficultyBasis::Fixed(difficulty),
-        SkillTestFollowUp::None,
-        None,
-        None,
-        None,
-        None, // bare PerformSkillTest: no effect modifier
+        SkillTestSpec::Plain {
+            skill,
+            difficulty,
+            on_success: None,
+            on_fail: None,
+        },
         None,
     )
 }

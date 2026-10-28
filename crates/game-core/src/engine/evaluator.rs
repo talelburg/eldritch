@@ -32,7 +32,7 @@ use card_dsl::dsl::{
     ActionClass, ActionDesignator, CardFilter, ChoiceBranch, CmpOp, Condition, ControlStatus,
     Determination, Effect, EnemyScope, EnemySet, EnemyTarget, ForEachTargets, HarmKind, IntExpr,
     InvestigatorTarget, InvestigatorTargetSet, LocationSet, LocationTarget, ModifierAudience,
-    ModifierScope, Quantity, Restriction, RevealClause, SearchScope, SkillTestKind, Stat,
+    ModifierScope, Quantity, Restriction, RevealClause, SearchScope, Stat,
 };
 use serde::{Deserialize, Serialize};
 
@@ -41,9 +41,11 @@ use crate::engine::abilities_in_effect;
 use crate::engine::board::{self, LeavingCard, NotLeft, Placement};
 use crate::engine::dispatch::actions::evade::EvadeModification;
 use crate::engine::dispatch::actions::fight::FightModification;
+use crate::engine::dispatch::actions::investigate::InvestigateModification;
 use crate::engine::dispatch::actions::take;
 use crate::engine::dispatch::choice::{ChoiceResolution, Grounded};
 use crate::engine::dispatch::emit::TimingEvent;
+use crate::engine::dispatch::skill_test::SkillTestSpec;
 use crate::engine::dispatch::{
     self, act_agenda, actions, cards, choice, combat, elimination, emit, engagement, skill_test,
     threat_area,
@@ -55,9 +57,8 @@ use crate::event::Event;
 use crate::scenario::{ResolutionId, ScenarioEnding};
 use crate::state::{
     AbilitySource, AdvanceTrigger, CardCode, CardInstanceId, Continuation, DamageSource,
-    DifficultyBasis, EffectFrame, EmitStep, EnemyId, GameState, InvestigatorId, Lifetime,
-    LocationId, Owner, PlayFromHandFrame, RecordedModifier, ResolvedTest, SkillTestFollowUp,
-    Status,
+    EffectFrame, EmitStep, EnemyId, GameState, InvestigatorId, Lifetime, LocationId, Owner,
+    PlayFromHandFrame, RecordedModifier, ResolvedTest, Status,
 };
 
 /// Margin of the just-resolved skill test, bound only while running one of its
@@ -735,8 +736,10 @@ fn perform_designated(
             actions::investigate::perform(
                 cx,
                 eval_ctx.controller,
-                Some(shroud_modifier.clone()),
-                instead_of_discovery.as_deref().cloned(),
+                InvestigateModification {
+                    shroud_modifier: Some(shroud_modifier.clone()),
+                    instead_of_discovery: instead_of_discovery.as_deref().cloned(),
+                },
                 eval_ctx.ability_source,
             )
         }
@@ -970,18 +973,16 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
         } => skill_test::start_skill_test(
             cx,
             eval_ctx.controller,
-            *skill,
-            SkillTestKind::Plain,
-            // A Revelation skill test takes its difficulty as printed: the
-            // number is a base value on the card, not a snapshot of
-            // anything on the board.
-            DifficultyBasis::Fixed(i8::try_from(*difficulty).unwrap_or(i8::MAX)),
-            SkillTestFollowUp::None,
-            on_success.as_ref().map(|b| (**b).clone()),
-            on_fail.as_ref().map(|b| (**b).clone()),
+            SkillTestSpec::Plain {
+                skill: *skill,
+                // A Revelation skill test takes its difficulty as printed:
+                // the number is a base value on the card, not a snapshot of
+                // anything on the board.
+                difficulty: i8::try_from(*difficulty).unwrap_or(i8::MAX),
+                on_success: on_success.as_ref().map(|b| (**b).clone()),
+                on_fail: on_fail.as_ref().map(|b| (**b).clone()),
+            },
             eval_ctx.ability_source,
-            None,
-            None,
         ),
         Effect::DiscardSelf => discard_self(cx, &eval_ctx),
         Effect::Cancel => cancel_current_impact(cx),

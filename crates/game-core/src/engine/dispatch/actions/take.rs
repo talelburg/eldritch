@@ -48,6 +48,7 @@ use crate::action::InputResponse;
 use crate::card_registry::{self, CardRegistry};
 use crate::engine::dispatch::actions::evade::EvadeModification;
 use crate::engine::dispatch::actions::fight::FightModification;
+use crate::engine::dispatch::actions::investigate::InvestigateModification;
 use crate::engine::dispatch::actions::{draw, engage, evade, fight, investigate, r#move, resource};
 use crate::engine::dispatch::{abilities, cards, choice, combat, cursor};
 use crate::engine::outcome::{
@@ -860,7 +861,9 @@ pub(in crate::engine::dispatch) fn perform(
         ActionResume::Move { destination } => r#move::perform(cx, investigator, destination),
         // A basic investigation carries no modification. A designated one
         // (Flashlight 01087) reaches the same perform with its shroud modifier.
-        ActionResume::Investigate => investigate::perform(cx, investigator, None, None, None),
+        ActionResume::Investigate => {
+            investigate::perform(cx, investigator, InvestigateModification::default(), None)
+        }
         ActionResume::Resource => resource::perform(cx, investigator),
         ActionResume::Engage { enemy } => engage::perform(cx, investigator, enemy),
         ActionResume::Draw => draw::perform(cx, investigator),

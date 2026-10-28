@@ -2,18 +2,17 @@
 //! primary shared with the designated Fight, its after-test damage, and the
 //! retaliate attack a failed fight provokes.
 
-use card_dsl::dsl::{IntExpr, RevealClause, SkillTestKind};
+use card_dsl::dsl::{IntExpr, RevealClause};
 
 use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
-use crate::engine::dispatch::skill_test::InitiatorModifier;
+use crate::engine::dispatch::skill_test::SkillTestSpec;
 use crate::engine::dispatch::{combat, skill_test};
 use crate::engine::evaluator::{self, EvalContext};
-use crate::engine::modified_value;
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::state::{
-    AbilitySource, ActionResume, DifficultyBasis, Enemy, EnemyId, GameState, InvestigatorId,
-    ModifierTarget, SkillKind, SkillTestFollowUp,
+    AbilitySource, ActionResume, Enemy, EnemyId, GameState, InvestigatorId, SkillKind,
+    SkillTestFollowUp,
 };
 
 /// The enemies a Fight may target: every enemy at `investigator`'s location, in
@@ -169,32 +168,14 @@ pub(crate) fn perform(
     modification: FightModification,
     source: Option<AbilitySource>,
 ) -> EngineOutcome {
-    let FightModification {
-        combat_modifier,
-        extra_damage,
-        skill_override,
-        reveal_clause,
-    } = modification;
-    let skill = skill_override.unwrap_or(SkillKind::Combat);
     skill_test::start_skill_test(
         cx,
         investigator,
-        skill,
-        SkillTestKind::Fight,
-        DifficultyBasis::Fight(enemy_id),
-        SkillTestFollowUp::Fight {
+        SkillTestSpec::Fight {
             enemy: enemy_id,
-            extra_damage,
+            modification,
         },
-        None,
-        None,
         source,
-        combat_modifier.map(|delta| InitiatorModifier {
-            target: ModifierTarget::Investigator(investigator),
-            stat: modified_value::stat_for_skill(skill),
-            delta,
-        }),
-        reveal_clause,
     )
 }
 
@@ -319,6 +300,8 @@ pub(in crate::engine::dispatch) fn fire_retaliate_if_any(
 
 #[cfg(test)]
 mod tests {
+    use card_dsl::dsl::SkillTestKind;
+
     use super::*;
     use crate::state::{Continuation, GameStateBuilder, InFlightSkillTest, SkillTestId};
     use crate::test_support::{self, TEST_REGISTRIES};
