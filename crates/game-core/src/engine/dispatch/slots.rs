@@ -406,17 +406,19 @@ pub(super) fn slot_discard_request(
     frame: &SlotDiscardFrame,
 ) -> InputRequest {
     let investigator = frame.investigator;
-    let (candidates, deficit) = frame.card.as_ref().map_or_else(
-        || (Vec::new(), SlotCounts::default()),
+    let candidates = frame.card.as_ref().map_or_else(Vec::new, |card| {
+        let deficit = slot_deficit(state, cards, investigator, &card.code);
+        make_room_candidates(state, cards, investigator, &card.code, &deficit)
+    });
+    let who = choice::investigator_name(state, investigator);
+    let prompt = frame.card.as_ref().map_or_else(
+        || format!("{who}: choose an asset to discard to make room."),
         |card| {
-            let deficit = slot_deficit(state, cards, investigator, &card.code);
-            let candidates = make_room_candidates(state, cards, investigator, &card.code, &deficit);
-            (candidates, deficit)
+            format!(
+                "{who}: choose an asset to discard to make room for {}.",
+                choice::card_name(cards, &card.code),
+            )
         },
-    );
-    let prompt = format!(
-        "Investigator {investigator:?}: choose an asset to discard to make room \
-         (slots needed: {deficit:?})."
     );
     InputRequest::pick_single(
         prompt,

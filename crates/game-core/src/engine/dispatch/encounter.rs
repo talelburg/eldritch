@@ -586,8 +586,8 @@ pub(super) fn spawn_engage_request(
     } = pending;
     InputRequest::pick_single(
         format!(
-            "Enemy {enemy_id:?} spawn engagement: the first Active investigator \
-             in turn order picks whom to engage among {tied:?}"
+            "The lead investigator chooses whom {} engages.",
+            choice::enemy_name(state, *enemy_id),
         ),
         choice::candidate_options(state, cards, tied, |i| state.investigators[i].card_anchor()),
     )
@@ -674,7 +674,8 @@ pub(super) fn encounter_draw_request(state: &GameState) -> InputRequest {
     // from the cosmetic skill-test acknowledge on the wire — both are
     // option-less `Confirm`s otherwise (ADR 0011).
     InputRequest::confirm(format!(
-        "Mythos step 1.4: {drawer:?} draws an encounter card; submit InputResponse::Confirm.",
+        "{} draws an encounter card.",
+        choice::investigator_name(state, drawer),
     ))
     .at(OptionTarget::EncounterDeck)
 }

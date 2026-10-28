@@ -177,6 +177,12 @@ pub struct ChoiceOption {
     /// The board surface this option acts on; `None` is un-anchored — the host
     /// renders it in the prompt banner (ADR 0011).
     pub target: Option<OptionTarget>,
+    /// The investigator this option is offered to, in a prompt
+    /// [answered by several](Responder::Several): a reaction window or a
+    /// framework Fast window. Two options on one anchor offered to two
+    /// investigators differ here (#1024). `None` everywhere else, where the
+    /// request's [`responder`](InputRequest::responder) answers every option.
+    pub investigator: Option<InvestigatorId>,
 }
 
 impl ChoiceOption {
@@ -187,7 +193,16 @@ impl ChoiceOption {
             id,
             label: label.into(),
             target: None,
+            investigator: None,
         }
+    }
+
+    /// Name the investigator this option is offered to, in a window several
+    /// answer.
+    #[must_use]
+    pub fn offered_to(mut self, investigator: InvestigatorId) -> Self {
+        self.investigator = Some(investigator);
+        self
     }
 
     /// Anchor this option to `target` — the same `.at(…)` idiom
@@ -253,6 +268,29 @@ pub enum PromptNature {
     Decision,
 }
 
+/// Who answers a prompt (ADR 0019), read off the frame that asks it.
+///
+/// A host shows who the game is waiting on from this, and a seat check (#581)
+/// compares the answering seat against it, so neither matches over engine
+/// frames.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum Responder {
+    /// One named investigator: the one whose turn, test, cost, queue slot or
+    /// effect the prompt belongs to.
+    Investigator(InvestigatorId),
+    /// The lead investigator, resolved to who that is now, answering a group
+    /// decision: `glossary/Lead_Investigator.md`, *"the lead investigator is
+    /// the final arbiter in choosing among those options"*. Kept apart from
+    /// [`Investigator`](Self::Investigator) so a host can show that the lead
+    /// is the one deciding.
+    Lead(InvestigatorId),
+    /// Several answerers: a reaction window or a framework Fast window, where
+    /// each option names the investigator it is offered to
+    /// ([`ChoiceOption::investigator`]).
+    Several,
+}
+
 /// A prompt the engine emits when it needs player input.
 ///
 /// Carries free-form [`prompt`](Self::prompt) text, a [`kind`](Self::kind)
@@ -295,6 +333,13 @@ pub struct InputRequest {
     /// written under.
     #[serde(default)]
     pub nature: PromptNature,
+    /// Who answers this prompt (ADR 0019).
+    ///
+    /// The constructors leave it [`Several`](Responder::Several) as a
+    /// placeholder. The engine's prompt table attaches the asking frame's
+    /// responder to every request it surfaces, so no request the engine
+    /// returns carries the placeholder unless several really do answer.
+    pub responder: Responder,
 }
 
 impl InputRequest {
@@ -309,6 +354,7 @@ impl InputRequest {
             skippable: false,
             target: None,
             nature: PromptNature::Selection,
+            responder: Responder::Several,
         }
     }
 
@@ -332,6 +378,7 @@ impl InputRequest {
             skippable: false,
             target: None,
             nature: PromptNature::Selection,
+            responder: Responder::Several,
         }
     }
 
@@ -346,6 +393,7 @@ impl InputRequest {
             skippable: false,
             target: None,
             nature: PromptNature::Selection,
+            responder: Responder::Several,
         }
     }
 
@@ -384,6 +432,15 @@ impl InputRequest {
     #[must_use]
     pub fn deciding(mut self) -> Self {
         self.nature = PromptNature::Decision;
+        self
+    }
+
+    /// Name who answers this prompt. The engine's prompt table attaches the
+    /// asking frame's responder itself; a host calls this only to build a
+    /// request in a test.
+    #[must_use]
+    pub fn answered_by(mut self, responder: Responder) -> Self {
+        self.responder = responder;
         self
     }
 }
@@ -459,14 +516,36 @@ mod tests {
         );
     }
 
-    /// A seed outcome persisted before `nature` existed still deserializes, and
-    /// lands on the behaviour it was written under.
+    /// A request serialized without a `nature` still deserializes, and lands on
+    /// the behaviour it was written under.
     #[test]
     fn a_request_serialized_without_a_nature_reads_back_as_selection() {
-        let json =
-            r#"{"prompt":"w","options":[],"kind":"PickSingle","skippable":false,"target":null}"#;
+        let json = r#"{"prompt":"w","options":[],"kind":"PickSingle","skippable":false,
+            "target":null,"responder":"Several"}"#;
         let back: InputRequest = serde_json::from_str(json).expect("deserialize");
         assert_eq!(back.nature, PromptNature::Selection);
+    }
+
+    /// A request with no `responder` does not deserialize: the field has no
+    /// default, and a game persisted before it existed is discarded (ADR 0010).
+    #[test]
+    fn a_request_serialized_without_a_responder_does_not_read_back() {
+        let json =
+            r#"{"prompt":"w","options":[],"kind":"PickSingle","skippable":false,"target":null}"#;
+        assert!(serde_json::from_str::<InputRequest>(json).is_err());
+    }
+
+    #[test]
+    fn a_responder_and_an_option_investigator_round_trip() {
+        let request = InputRequest::pick_single(
+            "w",
+            vec![ChoiceOption::new(OptionId(0), "A").offered_to(InvestigatorId(2))],
+        )
+        .answered_by(Responder::Lead(InvestigatorId(2)));
+        let back: InputRequest =
+            serde_json::from_str(&serde_json::to_string(&request).expect("serialize"))
+                .expect("deserialize");
+        assert_eq!(back, request);
     }
 
     #[test]

@@ -22,7 +22,7 @@ use std::collections::BTreeSet;
 use card_dsl::card_data::{CardKind, CardMetadata, Class, ClueValue, HealthValue, Prey};
 use card_dsl::dsl::SkillTestKind;
 
-use crate::engine::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
+use crate::engine::{ChoiceOption, EngineOutcome, InputRequest, OptionId, Responder, ResumeToken};
 use crate::state::{
     CardCode, CardInPlay, CardInstanceId, Continuation, ContinuationStack, DifficultyBasis, Enemy,
     EnemyId, InFlightSkillTest, Investigator, InvestigatorId, Location, LocationId, Owner,
@@ -250,6 +250,10 @@ pub fn from_frames_unchecked(frames: impl IntoIterator<Item = Continuation>) -> 
     ContinuationStack::from_frames_unchecked(frames.into_iter().collect())
 }
 
+/// Who answers the `AwaitingInput` fixtures below, unless a `_for` variant
+/// names someone else: seat 1.
+const SEAT_ONE: Responder = Responder::Investigator(InvestigatorId(1));
+
 /// A sample skill-test commit [`AwaitingInput`](EngineOutcome::AwaitingInput)
 /// outcome, for client/UI fixtures.
 ///
@@ -259,7 +263,7 @@ pub fn from_frames_unchecked(frames: impl IntoIterator<Item = Continuation>) -> 
 #[must_use]
 pub fn awaiting_commit_input(prompt: impl Into<String>) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_multiple(prompt),
+        request: InputRequest::pick_multiple(prompt).answered_by(SEAT_ONE),
         resume_token: ResumeToken(0),
     }
 }
@@ -270,7 +274,9 @@ pub fn awaiting_commit_input(prompt: impl Into<String>) -> EngineOutcome {
 #[must_use]
 pub fn awaiting_skippable_commit_input(prompt: impl Into<String>) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_multiple(prompt).skippable(),
+        request: InputRequest::pick_multiple(prompt)
+            .skippable()
+            .answered_by(SEAT_ONE),
         resume_token: ResumeToken(0),
     }
 }
@@ -306,7 +312,8 @@ pub fn awaiting_pick_single_input(prompt: impl Into<String>) -> EngineOutcome {
                 ChoiceOption::new(OptionId(0), "End turn"),
                 ChoiceOption::new(OptionId(1), "Investigate"),
             ],
-        ),
+        )
+        .answered_by(SEAT_ONE),
         resume_token: ResumeToken(0),
     }
 }
@@ -324,18 +331,28 @@ pub fn awaiting_pick_single_with(
     options: Vec<ChoiceOption>,
 ) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_single(prompt, options),
+        request: InputRequest::pick_single(prompt, options).answered_by(SEAT_ONE),
         resume_token: ResumeToken(0),
     }
 }
 
 /// A sample [`Confirm`](crate::engine::InputKind::Confirm)
 /// [`AwaitingInput`](EngineOutcome::AwaitingInput) outcome, for client/UI
-/// fixtures. Models the Mythos encounter-draw prompt.
+/// fixtures. Models the Mythos encounter-draw prompt, asked of seat 1.
 #[must_use]
 pub fn awaiting_confirm_input(prompt: impl Into<String>) -> EngineOutcome {
+    awaiting_confirm_input_for(prompt, InvestigatorId(1))
+}
+
+/// [`awaiting_confirm_input`] asked of `investigator`, for a UI test of who
+/// the game is waiting on.
+#[must_use]
+pub fn awaiting_confirm_input_for(
+    prompt: impl Into<String>,
+    investigator: InvestigatorId,
+) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
-        request: InputRequest::confirm(prompt),
+        request: InputRequest::confirm(prompt).answered_by(Responder::Investigator(investigator)),
         resume_token: ResumeToken(0),
     }
 }
@@ -349,7 +366,8 @@ pub fn awaiting_confirm_input(prompt: impl Into<String>) -> EngineOutcome {
 pub fn awaiting_skippable_pick_single_input(prompt: impl Into<String>) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_single(prompt, vec![ChoiceOption::new(OptionId(0), "Resolve")])
-            .skippable(),
+            .skippable()
+            .answered_by(SEAT_ONE),
         resume_token: ResumeToken(0),
     }
 }
@@ -366,7 +384,9 @@ pub fn awaiting_skippable_pick_single_with(
     options: Vec<ChoiceOption>,
 ) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_single(prompt, options).skippable(),
+        request: InputRequest::pick_single(prompt, options)
+            .skippable()
+            .answered_by(SEAT_ONE),
         resume_token: ResumeToken(0),
     }
 }

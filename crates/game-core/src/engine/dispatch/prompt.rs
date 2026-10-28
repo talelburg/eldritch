@@ -1,4 +1,5 @@
-//! The prompt table: what a prompt frame asks, read from the frame.
+//! The prompt table: what a prompt frame asks and who answers it (ADR 0019),
+//! read from the frame.
 //!
 //! Every [`InputRequest`] the engine surfaces is built here, from the frame on
 //! top of the continuation stack, by [`request`] and the per-kind helpers it
@@ -21,13 +22,14 @@
 
 use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::actions::take;
+use crate::engine::dispatch::cursor::the_lead;
 use crate::engine::dispatch::{
     advance_reverse, cards, choice, combat, encounter, forced_triggers, hand_discard_cost, hunters,
     phases, reaction_windows, skill_test, slots,
 };
 use crate::engine::enumerate;
 use crate::engine::outcome::{
-    ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
+    ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, Responder, ResumeToken,
 };
 use crate::state::{
     AttackLoopFrame, AttackLoopStage, Continuation, DealDamageFrame, DealDamageStep, EffectFrame,
@@ -35,99 +37,153 @@ use crate::state::{
     TimingPointWindowFrame,
 };
 
-/// What `frame` asks when it rests on top of `state`, or `None` when it asks
-/// nothing: a Driven or Inert frame, or a Prompt-profile frame at a step that
-/// is not a question (a skill test between its commit window and its result
-/// pause, an effect node not yet stepped).
+/// What `frame` asks when it rests on top of `state`, answered by whom ADR
+/// 0019's responder table names, or `None` when it asks nothing: a Driven or
+/// Inert frame, or a Prompt-profile frame at a step that is not a question (a
+/// skill test between its commit window and its result pause, an effect node
+/// not yet stepped).
 ///
-/// One exhaustive arm per [`Continuation`] kind with no wildcard, so a new
-/// frame kind does not compile until it says what it asks. It sits beside the
-/// frame's [profile](Continuation::profile), which says whether the frame may
-/// rest at all; this says what it asks when it does.
+/// This is where a request gets its [`Responder`]: the table pairs each
+/// question with who answers it, and this attaches the one to the other.
 ///
 /// Reads `state` as well as the frame where the question depends on the board:
 /// the turn menu's legal actions, a window's resolution options, the skill-test
-/// under a substitution prompt.
+/// under a substitution prompt, who the lead is now.
 pub(crate) fn request(
     frame: &Continuation,
     state: &GameState,
     cards: &CardRegistry,
 ) -> Option<InputRequest> {
+    table(frame, state, cards).map(|(request, responder)| request.answered_by(responder))
+}
+
+/// The prompt table: what `frame` asks and who answers it (ADR 0019), or
+/// `None` when it asks nothing.
+///
+/// One exhaustive arm per [`Continuation`] kind with no wildcard, so a new
+/// frame kind does not compile until it says what it asks and who answers. It
+/// sits beside the frame's [profile](Continuation::profile), which says whether
+/// the frame may rest at all; this says what it asks when it does.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one exhaustive match arm per `Continuation` kind"
+)]
+fn table(
+    frame: &Continuation,
+    state: &GameState,
+    cards: &CardRegistry,
+) -> Option<(InputRequest, Responder)> {
+    use Responder::{Investigator, Several};
     match frame {
         Continuation::InvestigatorTurn(InvestigatorTurnFrame {
             investigator,
             ending,
-        }) => (!ending).then(|| turn_menu(state, cards, *investigator)),
+        }) => (!ending).then(|| {
+            (
+                turn_menu(state, cards, *investigator),
+                Investigator(*investigator),
+            )
+        }),
         // An empty event window or forced run is closed on sight, never shown.
+        // A forced run's order is the lead's (`Priority_of_Simultaneous_Resolution.md`:
+        // *"the lead investigator determines the order in which the abilities
+        // resolve"*); a reaction window's options each belong to the
+        // investigator they are offered to.
         Continuation::TimingPointWindow(TimingPointWindowFrame { candidates, .. }) => {
-            if candidates.is_empty() {
-                None
-            } else {
-                Some(reaction_windows::resolution_request(
-                    state, cards, frame, candidates,
-                ))
-            }
+            (!candidates.is_empty()).then(|| {
+                let responder = if frame.is_forced() {
+                    lead(state)
+                } else {
+                    Several
+                };
+                (
+                    reaction_windows::resolution_request(state, cards, frame, candidates),
+                    responder,
+                )
+            })
         }
         // A framework Fast window holding reaction candidates resolves them like
-        // any window; without, it offers the eligible fast plays.
-        Continuation::FastWindow(FastWindowFrame { candidates, .. }) => {
-            Some(if candidates.is_empty() {
+        // any window; without, it offers the eligible fast plays. Either way
+        // each option belongs to the investigator it is offered to.
+        Continuation::FastWindow(FastWindowFrame { candidates, .. }) => Some((
+            if candidates.is_empty() {
                 reaction_windows::fast_window_request(state, cards)
             } else {
                 reaction_windows::resolution_request(state, cards, frame, candidates)
-            })
+            },
+            Several,
+        )),
+        Continuation::AdvanceReverse(advance) => {
+            advance_reverse::ack_request(advance).map(|request| (request, lead(state)))
         }
-        Continuation::AdvanceReverse(advance) => advance_reverse::ack_request(advance),
-        Continuation::AcknowledgeForced(acknowledge) => {
-            Some(forced_triggers::acknowledge_request(cards, acknowledge))
-        }
+        Continuation::AcknowledgeForced(acknowledge) => Some((
+            forced_triggers::acknowledge_request(cards, acknowledge),
+            Investigator(acknowledge.candidate.controller),
+        )),
         Continuation::SkillTest(test) => match test.continuation {
             SkillTestStep::AwaitingCommit => Some(skill_test::commit_request(state, cards)),
             SkillTestStep::AcknowledgeOutcome if state.interactive_acknowledge => {
                 Some(skill_test::acknowledge_request())
             }
             _ => None,
-        },
-        Continuation::SubstitutionPrompt(substitution) => {
-            Some(skill_test::substitution_request(state, substitution))
         }
-        Continuation::HunterMove(choice) => Some(hunters::choice_request(state, cards, choice)),
-        Continuation::SpawnEngage(pending) => {
-            Some(encounter::spawn_engage_request(state, cards, pending))
+        .map(|request| (request, Investigator(test.investigator))),
+        Continuation::SubstitutionPrompt(substitution) => Some((
+            skill_test::substitution_request(state, substitution),
+            Investigator(substitution.investigator),
+        )),
+        Continuation::HunterMove(choice) => {
+            Some((hunters::choice_request(state, cards, choice), lead(state)))
         }
-        Continuation::HandSizeDiscard(queue) => {
-            Some(phases::hand_size_discard_request(state, cards, queue))
+        Continuation::SpawnEngage(pending) => Some((
+            encounter::spawn_engage_request(state, cards, pending),
+            lead(state),
+        )),
+        Continuation::HandSizeDiscard(queue) => head(&queue.remaining)
+            .map(|head| (phases::hand_size_discard_request(state, cards, queue), head)),
+        Continuation::Mulligan(queue) => {
+            head(&queue.remaining).map(|head| (cards::mulligan_request(), head))
         }
-        Continuation::Mulligan(_) => Some(cards::mulligan_request()),
-        Continuation::EncounterDraw(_) => Some(encounter::encounter_draw_request(state)),
-        Continuation::SlotDiscard(slot) => Some(slots::slot_discard_request(state, cards, slot)),
-        Continuation::AdditionalActionChoice(pending) => {
-            Some(take::additional_action_request(state, cards, pending))
+        Continuation::EncounterDraw(queue) => {
+            head(&queue.remaining).map(|head| (encounter::encounter_draw_request(state), head))
         }
-        Continuation::HandDiscardCost(cost) => Some(hand_discard_cost::request(state, cards, cost)),
+        Continuation::SlotDiscard(slot) => Some((
+            slots::slot_discard_request(state, cards, slot),
+            Investigator(slot.investigator),
+        )),
+        Continuation::AdditionalActionChoice(pending) => Some((
+            take::additional_action_request(state, cards, pending),
+            Investigator(pending.investigator),
+        )),
+        Continuation::HandDiscardCost(cost) => Some((
+            hand_discard_cost::request(state, cards, cost),
+            Investigator(cost.investigator),
+        )),
         Continuation::AttackLoop(AttackLoopFrame {
             investigator,
             remaining_attackers,
             stage,
             ..
         }) => match stage {
-            AttackLoopStage::PickOrder => Some(combat::order_pick_request(
-                state,
-                cards,
-                *investigator,
-                remaining_attackers,
+            AttackLoopStage::PickOrder => Some((
+                combat::order_pick_request(state, cards, *investigator, remaining_attackers),
+                Investigator(*investigator),
             )),
             AttackLoopStage::Attacking => None,
         },
         Continuation::DealDamage(deal @ DealDamageFrame { step, .. }) => match step {
-            DealDamageStep::Distribute { .. } => {
-                Some(combat::distribution_request(state, cards, deal))
-            }
+            DealDamageStep::Distribute { .. } => Some((
+                combat::distribution_request(state, cards, deal),
+                Investigator(deal.investigator),
+            )),
             DealDamageStep::Announce | DealDamageStep::Finish => None,
         },
+        // An effect's choice is its controller's.
         Continuation::Effect(
-            EffectFrame::Leaf { prompt, .. } | EffectFrame::Designated { prompt, .. },
-        ) => prompt.as_ref().map(choice::effect_request),
+            EffectFrame::Leaf { prompt, ctx, .. } | EffectFrame::Designated { prompt, ctx, .. },
+        ) => prompt
+            .as_ref()
+            .map(|prompt| (choice::effect_request(prompt), Investigator(ctx.controller))),
         Continuation::Effect(EffectFrame::Seq { .. } | EffectFrame::ForEach { .. })
         | Continuation::EmitEvent(_)
         | Continuation::TimingPoint(_)
@@ -143,6 +199,24 @@ pub(crate) fn request(
         | Continuation::EnemyPhase(_)
         | Continuation::UpkeepPhase(_) => None,
     }
+}
+
+/// The lead now, answering a group decision.
+///
+/// # Panics
+///
+/// If no investigator is Active. A group decision then has nobody to make it,
+/// and the game is over before one is asked.
+fn lead(state: &GameState) -> Responder {
+    Responder::Lead(
+        the_lead(state).expect("a group decision is asked while no investigator is Active"),
+    )
+}
+
+/// A queue frame's head: the investigator it is asking now. `None` for an
+/// empty queue, which asks nothing.
+fn head(remaining: &[InvestigatorId]) -> Option<Responder> {
+    remaining.first().copied().map(Responder::Investigator)
 }
 
 /// Suspend on the frame on top of `state`: the `AwaitingInput` carrying what

@@ -188,7 +188,11 @@ mod tests {
     use crate::test_support::{self, TestSession, TEST_REGISTRIES};
 
     fn state_advancing_agenda(interactive: bool) -> GameState {
-        let mut state = GameStateBuilder::new().build();
+        // A seated lead, who acknowledges the advance.
+        let mut state = GameStateBuilder::new()
+            .with_seat(test_support::seat(1))
+            .with_turn_order([InvestigatorId(1)])
+            .build();
         state.agenda_deck = vec![
             Agenda {
                 code: CardCode("_a1".into()),
@@ -216,7 +220,11 @@ mod tests {
     /// An act mid-advance with the given `trigger`, `interactive_acknowledge` per
     /// the arg. Mirrors `state_advancing_agenda` for the act deck.
     fn state_advancing_act(interactive: bool, trigger: AdvanceTrigger) -> GameState {
-        let mut state = GameStateBuilder::new().build();
+        // A seated lead, who acknowledges the advance.
+        let mut state = GameStateBuilder::new()
+            .with_seat(test_support::seat(1))
+            .with_turn_order([InvestigatorId(1)])
+            .build();
         state.act_deck = vec![
             Act {
                 code: CardCode("_c1".into()),

@@ -20,7 +20,13 @@ fn hand_size_discard_prompt_is_player_facing() {
     let EngineOutcome::AwaitingInput { request, .. } = outcome else {
         panic!("park_hand_size_discard suspends on the discard prompt");
     };
-    for forbidden in ["InputResponse", "option ids", "InvestigatorId("] {
+    for forbidden in [
+        "InputResponse",
+        "option ids",
+        "InvestigatorId(",
+        "OptionId",
+        "PickSingle(",
+    ] {
         assert!(
             !request.prompt.contains(forbidden),
             "prompt must be player-facing, found {forbidden:?} in: {}",

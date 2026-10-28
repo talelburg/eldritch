@@ -509,15 +509,26 @@ pub(super) fn substitution_request(
         .current_skill_test()
         .expect("substitution_request: a substitution prompt sits above its skill test")
         .skill;
-    let use_skill = SkillKind::Intellect; // sole substitution in scope
+    let use_skill = skill_name(SkillKind::Intellect); // sole substitution in scope
+    let skill = skill_name(skill);
     choice::effect_request(&choice::decision_prompt(
         format!(
-            "{investigator:?}: use {use_skill:?} in place of {skill:?} for this test? \
-             (PickSingle(0) = use {use_skill:?}, PickSingle(1) = keep {skill:?})",
+            "{}: use {use_skill} in place of {skill} for this test?",
+            choice::investigator_name(state, investigator),
         ),
-        vec![format!("Use {use_skill:?}"), format!("Keep {skill:?}")],
+        vec![format!("Use {use_skill}"), format!("Keep {skill}")],
         None,
     ))
+}
+
+/// A skill's name as prompt text prints it.
+fn skill_name(skill: SkillKind) -> &'static str {
+    match skill {
+        SkillKind::Willpower => "Willpower",
+        SkillKind::Intellect => "Intellect",
+        SkillKind::Combat => "Combat",
+        SkillKind::Agility => "Agility",
+    }
 }
 
 /// Resume the Mind over Matter substitution prompt: `PickSingle(0)`
@@ -1523,8 +1534,9 @@ pub(super) fn commit_request(state: &GameState, cards: &CardRegistry) -> InputRe
     // decides how many cards to commit against. ST.6 re-reads it.
     let difficulty = current_difficulty(state, cards);
     InputRequest::pick_multiple(format!(
-        "Commit cards to the {skill:?} test (difficulty {difficulty}). \
+        "Commit cards to the {} test (difficulty {difficulty}). \
          An empty selection commits no cards.",
+        skill_name(skill),
     ))
 }
 

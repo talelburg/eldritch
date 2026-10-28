@@ -24,14 +24,13 @@
 //! `NativeCx::put_set_aside_card_into_play` after the reverse has revealed the
 //! Parlor and placed Lita. The tie pushes its engagement prompt and the native
 //! returns, so the prompt surfaces after the reverse with the board already
-//! showing what the act did. Who is asked is asserted once the responder
-//! exists (#1191).
+//! showing what the act did. The lead is asked, wherever they sit.
 //!
 //! Runs against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{InputKind, OptionTarget};
+use game_core::engine::{InputKind, OptionTarget, Responder};
 use game_core::state::{Act, CardCode, GameStateBuilder, InvestigatorId, Location, LocationId};
 use game_core::test_support::{seat, TestSession};
 
@@ -44,11 +43,17 @@ const LITA: &str = "01117";
 
 /// Daisy Walker and Agnes Baker in the Hallway, the Parlor unrevealed beside
 /// it, the Ghoul Priest and Lita Chantler set aside, and The Barrier the
-/// current act, with Daisy holding its 3 clues. It is Agnes's turn, the round's
-/// last, so ending it runs on to the round end, where the act's objective is
-/// offered: *"When the round ends, investigators in the hallway may, as a
-/// group, spend the requisite number of clues to advance."*
+/// current act, with Daisy holding its 3 clues. It is the round's last turn,
+/// the one after the lead's, so ending it runs on to the round end, where the
+/// act's objective is offered: *"When the round ends, investigators in the
+/// hallway may, as a group, spend the requisite number of clues to advance."*
+/// Daisy, in the first seat, is the lead.
 fn barrier_with_two_tied_in_the_hallway() -> TestSession {
+    barrier_with_two_tied_in_the_hallway_led_by(DAISY)
+}
+
+/// [`barrier_with_two_tied_in_the_hallway`] with `lead` the lead investigator.
+fn barrier_with_two_tied_in_the_hallway_led_by(lead: InvestigatorId) -> TestSession {
     let mut parlor = Location::new(PARLOR, CardCode::new("01115"), "Parlor", 2, 0);
     parlor.revealed = false;
     let mut state = GameStateBuilder::new()
@@ -72,7 +77,8 @@ fn barrier_with_two_tied_in_the_hallway() -> TestSession {
         ))
         .with_location(parlor)
         .with_turn_order([DAISY, AGNES])
-        .open_turn(AGNES)
+        .with_lead(lead)
+        .open_turn(if lead == DAISY { AGNES } else { DAISY })
         .build();
     state.set_aside_cards = vec![CardCode::new(GHOUL_PRIEST), CardCode::new(LITA)];
     // The act deck needs a next card: a terminal act's reverse must end the
@@ -93,9 +99,12 @@ fn barrier_with_two_tied_in_the_hallway() -> TestSession {
 /// Advance The Barrier from the round end's objective, and stop at whatever
 /// the advance asks next.
 fn advance_the_barrier() -> TestSession {
-    barrier_with_two_tied_in_the_hallway()
-        .take(&TurnAction::EndTurn)
-        .pick(OptionTarget::Act)
+    advance(barrier_with_two_tied_in_the_hallway())
+}
+
+/// Advance The Barrier on `session` from the round end's objective.
+fn advance(session: TestSession) -> TestSession {
+    session.take(&TurnAction::EndTurn).pick(OptionTarget::Act)
 }
 
 /// The reverse has done everything it prints by the time the tie is asked: the
@@ -164,4 +173,22 @@ fn the_answer_engages_the_chosen_investigator_and_the_act_advances() {
         .expect("the Ghoul Priest is in play");
     assert_eq!(priest.engaged_with, Some(AGNES));
     assert_eq!(state.act_index, 1, "The Barrier advanced to act 3");
+}
+
+/// The lead is asked whom the Ghoul Priest engages: `glossary/Prey.md`, *"the
+/// lead investigator may decide among them"*. Daisy, in the first seat, is the
+/// lead.
+#[test]
+fn the_lead_is_asked_whom_the_ghoul_priest_engages() {
+    let session = advance_the_barrier();
+    assert_eq!(session.prompt().responder, Responder::Lead(DAISY));
+}
+
+/// With the lead in the second seat, that seat is asked, not the first.
+#[test]
+fn a_lead_in_the_second_seat_is_asked_whom_the_ghoul_priest_engages() {
+    let session = advance(barrier_with_two_tied_in_the_hallway_led_by(AGNES));
+    let agnes = session.state().investigators[&AGNES].card_anchor();
+    assert_eq!(session.offered_at(&agnes), 1, "{:?}", session.prompt());
+    assert_eq!(session.prompt().responder, Responder::Lead(AGNES));
 }

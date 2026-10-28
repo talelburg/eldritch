@@ -17,7 +17,7 @@ use card_dsl::dsl::{
 };
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{OptionTarget, Registries, TimingEvent};
+use game_core::engine::{OptionTarget, Registries, Responder, TimingEvent};
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
@@ -682,20 +682,27 @@ fn a_reaction_on_a_co_located_location_is_offered_to_each_investigator_there() {
         ],
         "both investigators stand at the Study"
     );
-    // The two options share the Study's anchor and label; nothing in them names
-    // the investigator each is offered to. So they are picked by position, and
-    // the horror assertions pin whose option each position is.
-    // TODO(#1024): name the investigator an option is offered to.
-    let react_nth = |n| {
+    // The two options share the Study's anchor and label; each names the
+    // investigator it is offered to, so each is picked by its investigator.
+    let session = window(state.clone(), defeat(None));
+    assert_eq!(session.prompt().responder, Responder::Several);
+    let offered_to: Vec<_> = session
+        .prompt()
+        .options
+        .iter()
+        .map(|o| o.investigator)
+        .collect();
+    assert_eq!(offered_to, [Some(ONE), Some(TWO)]);
+    let react_for = |investigator| {
         window(state.clone(), defeat(None))
-            .pick_nth_at(OptionTarget::Location(STUDY), n)
+            .pick_for(investigator, OptionTarget::Location(STUDY))
             .state()
             .clone()
     };
-    let first = react_nth(0);
-    assert_eq!((horror(&first, ONE), horror(&first, TWO)), (1, 0));
-    let second = react_nth(1);
-    assert_eq!((horror(&second, ONE), horror(&second, TWO)), (0, 1));
+    let one = react_for(ONE);
+    assert_eq!((horror(&one, ONE), horror(&one, TWO)), (1, 0));
+    let two = react_for(TWO);
+    assert_eq!((horror(&two, ONE), horror(&two, TWO)), (0, 1));
 }
 
 #[test]
