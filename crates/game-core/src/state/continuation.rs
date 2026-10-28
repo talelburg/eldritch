@@ -1092,9 +1092,16 @@ pub enum EnemyResume {
     /// movement) and the step-3.3 attack-loop kickoff. Set by `enemy_phase`
     /// before it emits, per ADR 0003.
     AfterPhaseStartForced,
-    /// Before-investigator-attacked window closed; resolve this investigator's
-    /// attacks (step 3.3).
-    BeforeInvestigatorAttacked,
+    /// Step 3.2: hunter enemies are moving. Set by `enemy_after_phase_start`
+    /// before it moves them. Hunter movement either completes synchronously or
+    /// suspends on a lead-investigator tie whose resume runs the step-3.3
+    /// kickoff directly, and the kickoff re-points the anchor; so nothing
+    /// re-exposes the anchor at this value, and its dispatch arm is
+    /// `unreachable!`.
+    HuntersMoving,
+    /// This investigator's before-attacked window closed; resolve their
+    /// engaged enemies' attacks (step 3.3). Set by `open_attack_window`.
+    BeforeInvestigatorAttacked(InvestigatorId),
     /// After-all-investigators-attacked window closed; run `enemy_phase_end`.
     AfterAllAttacked,
     /// Step 3.4's `PhaseEnded { Enemy }` forced abilities (agenda 01107's Ghoul
@@ -1927,17 +1934,16 @@ pub enum PhaseStep {
     /// enemies resolve their attacks (Rules Reference p.25 step 3.3,
     /// the "previous player window" investigators "return to" between
     /// resolutions). The investigator to be attacked next is carried
-    /// on the [`EnemyPhase`](Continuation::EnemyPhase) anchor's `attacking`
-    /// cursor, not in the variant — mirror of [`MythosAfterDraws`] (the
-    /// encounter-draw loop's analog lives on the
-    /// [`EncounterDraw`](Continuation::EncounterDraw) frame).
+    /// on the [`EnemyPhase`](Continuation::EnemyPhase) anchor's resume,
+    /// [`EnemyResume::BeforeInvestigatorAttacked`], not in this variant —
+    /// mirror of [`MythosAfterDraws`] (the encounter-draw loop's analog lives
+    /// on the [`EncounterDraw`](Continuation::EncounterDraw) frame).
     ///
-    /// Continuation (in `anchor_on_child_pop`): read the cursor,
-    /// resolve the pending investigator's engaged ready enemies in
-    /// [`EnemyId`] order, exhaust each, advance the cursor to the next
-    /// Active investigator in [`turn_order`] (or `None`), open the next
-    /// window (`BeforeInvestigatorAttacked` if Some,
-    /// `AfterAllInvestigatorsAttacked` if None).
+    /// Continuation (in `anchor_on_child_pop`): read the investigator off
+    /// the resume, resolve their engaged ready enemies in [`EnemyId`] order,
+    /// exhaust each, find the next Active investigator in [`turn_order`]
+    /// (or none), open the next window (`BeforeInvestigatorAttacked` if
+    /// one remains, `AfterAllInvestigatorsAttacked` if not).
     ///
     /// One window per Active investigator in `turn_order`.
     ///
@@ -2231,13 +2237,10 @@ pub struct InvestigationPhaseFrame {
 /// The Enemy phase anchor. See [`MythosPhaseFrame`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EnemyPhaseFrame {
-    /// Which child-pop boundary the anchor resumes at.
+    /// Which child-pop boundary the anchor resumes at. During step 3.3 it
+    /// carries the investigator whose engaged enemies attack next
+    /// ([`EnemyResume::BeforeInvestigatorAttacked`]).
     pub resume: EnemyResume,
-    /// The investigator whose engaged enemies are currently attacking
-    /// (Enemy step 3.3), or `None` before kickoff (the anchor is pushed
-    /// ahead of hunter movement) and after the last investigator. The
-    /// per-investigator cursor.
-    pub attacking: Option<InvestigatorId>,
 }
 
 /// The Upkeep phase anchor. See [`MythosPhaseFrame`].

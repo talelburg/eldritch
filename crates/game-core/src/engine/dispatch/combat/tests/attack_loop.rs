@@ -25,8 +25,7 @@ fn drive_parked_attack_loop_exhausts_the_head_then_advances_the_cursor() {
         .with_turn_order([inv_id])
         .with_enemy(enemy)
         .with_phase_anchor(EnemyPhaseFrame {
-            resume: EnemyResume::BeforeInvestigatorAttacked,
-            attacking: Some(inv_id),
+            resume: EnemyResume::BeforeInvestigatorAttacked(inv_id),
         })
         .build();
     state.continuations.push(AttackLoopFrame {
@@ -60,8 +59,7 @@ fn drive_parked_attack_loop_exhausts_the_head_then_advances_the_cursor() {
         !state.continuations.iter().any(|c| matches!(
             c,
             Continuation::EnemyPhase(EnemyPhaseFrame {
-                attacking: Some(_),
-                ..
+                resume: EnemyResume::BeforeInvestigatorAttacked(_),
             })
         )),
         "cursor advanced past the sole investigator (no anchor still attacking)"
@@ -89,8 +87,7 @@ fn a_head_attacker_that_dealt_nothing_still_exhausts() {
         .with_turn_order([inv_id])
         .with_enemy(enemy)
         .with_phase_anchor(EnemyPhaseFrame {
-            resume: EnemyResume::BeforeInvestigatorAttacked,
-            attacking: Some(inv_id),
+            resume: EnemyResume::BeforeInvestigatorAttacked(inv_id),
         })
         .build();
     state.continuations.push(AttackLoopFrame {

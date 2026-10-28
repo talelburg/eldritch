@@ -364,7 +364,6 @@ impl GameStateBuilder {
         self.phase_anchor = Some(
             EnemyPhaseFrame {
                 resume: EnemyResume::AfterAllAttacked,
-                attacking: None,
             }
             .into(),
         );

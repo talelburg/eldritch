@@ -560,8 +560,7 @@ fn enemy_phase_resumes_via_skip_input() {
         .with_phase(Phase::Enemy)
         .with_turn_order([inv_id])
         .with_phase_anchor(EnemyPhaseFrame {
-            resume: EnemyResume::BeforeInvestigatorAttacked,
-            attacking: Some(inv_id),
+            resume: EnemyResume::BeforeInvestigatorAttacked(inv_id),
         })
         .with_open_window(
             FastWindowKind::Phase(PhaseStep::BeforeInvestigatorAttacked),
@@ -590,7 +589,7 @@ fn enemy_phase_resumes_via_skip_input() {
             .continuations
             .iter()
             .any(|c| matches!(c, Continuation::EnemyPhase(_))),
-        "the EnemyPhase anchor (with its `attacking` cursor) is gone after the \
+        "the EnemyPhase anchor is gone after the \
          continuation advances past the last Active investigator and the AfterAll \
          window auto-skips"
     );

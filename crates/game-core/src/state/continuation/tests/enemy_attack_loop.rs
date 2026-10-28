@@ -5,8 +5,7 @@ use crate::state::GameStateBuilder;
 fn enemy_phase_anchor_attacking_round_trips_through_serde() {
     let mut state = GameStateBuilder::new().build();
     state.continuations.push(EnemyPhaseFrame {
-        resume: EnemyResume::BeforeInvestigatorAttacked,
-        attacking: Some(InvestigatorId(7)),
+        resume: EnemyResume::BeforeInvestigatorAttacked(InvestigatorId(7)),
     });
     let json = serde_json::to_string(&state).expect("serialize");
     let back: GameState = serde_json::from_str(&json).expect("deserialize");

@@ -45,12 +45,12 @@ pub(super) fn active_investigators_in_turn_order(state: &GameState) -> Vec<Inves
 ///
 /// Used by per-investigator phase loops to seed their cursor:
 /// Mythos 1.4 draws ([`mythos_phase`] seeds `mythos_draw_pending`),
-/// Enemy 3.3 attacks ([`enemy_phase`] seeds the `EnemyPhase` anchor's
-/// `attacking` cursor).
+/// Enemy 3.3 attacks ([`enemy_attack_kickoff`] points the `EnemyPhase`
+/// anchor's `BeforeInvestigatorAttacked` resume at it).
 ///
 /// [`turn_order`]: GameState::turn_order
 /// [`mythos_phase`]: super::phases::mythos_phase
-/// [`enemy_phase`]: super::phases::enemy_phase
+/// [`enemy_attack_kickoff`]: super::phases::enemy_attack_kickoff
 pub(super) fn first_active_investigator(state: &GameState) -> Option<InvestigatorId> {
     state.turn_order.iter().copied().find(|id| {
         state

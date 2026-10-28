@@ -514,8 +514,7 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
         ),
         (
             Continuation::EnemyPhase(EnemyPhaseFrame {
-                resume: EnemyResume::BeforeInvestigatorAttacked,
-                attacking: None,
+                resume: EnemyResume::HuntersMoving,
             }),
             profile(INERT, CANCEL),
         ),

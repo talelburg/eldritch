@@ -76,8 +76,7 @@ fn phase_anchor_variants_round_trip_and_are_not_resolution_windows() {
             resume: InvestigationResume::TurnBegins,
         }),
         Continuation::EnemyPhase(EnemyPhaseFrame {
-            resume: EnemyResume::BeforeInvestigatorAttacked,
-            attacking: Some(InvestigatorId(3)),
+            resume: EnemyResume::BeforeInvestigatorAttacked(InvestigatorId(3)),
         }),
         Continuation::UpkeepPhase(UpkeepPhaseFrame {
             resume: UpkeepResume::Begins,

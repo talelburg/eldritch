@@ -432,8 +432,7 @@
   },
   {
     "EnemyPhase": {
-      "resume": "BeforeInvestigatorAttacked",
-      "attacking": null
+      "resume": "HuntersMoving"
     }
   },
   {
