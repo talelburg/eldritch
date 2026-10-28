@@ -17,7 +17,7 @@ use crate::engine::dispatch::emit::{ConditionResolution, TimingEvent};
 use crate::engine::dispatch::initiation::{self, InitiationKind, Refusal};
 use crate::engine::dispatch::legality::{self, check_activate_ability, check_play_card};
 use crate::engine::dispatch::{
-    cards, coordinator, cursor, phases, prompt, skill_test, trigger_scan,
+    cards, choice, coordinator, cursor, phases, prompt, skill_test, trigger_scan,
 };
 use crate::engine::enumerate::{self, PlaySource, TurnAction};
 use crate::engine::evaluator::EvalContext;
@@ -162,9 +162,10 @@ fn build_resolution_options(
             let id = OptionId(u32::try_from(i).expect("option count fits in u32"));
             // Label distinguishes a hand Fast-event play from an ability fired
             // in place; the anchor is the shared `candidate_anchor`.
+            let name = || choice::card_name(cards, &cand.code);
             let label = match cand.source {
-                CandidateSource::Hand if forced => format!("Resolve {} in hand", cand.code),
-                CandidateSource::Hand => format!("Play {} from hand", cand.code),
+                CandidateSource::Hand if forced => format!("Resolve {} in hand", name()),
+                CandidateSource::Hand => format!("Play {} from hand", name()),
                 CandidateSource::TopOfDiscardPile { permission } => {
                     enumerate::play_under_permission_label(
                         state,
@@ -173,7 +174,7 @@ fn build_resolution_options(
                         permission,
                     )
                 }
-                CandidateSource::Ability(_) => format!("Resolve reaction: {}", cand.code),
+                CandidateSource::Ability(_) => format!("Resolve reaction: {}", name()),
             };
             let option = ChoiceOption::new(id, label).at(candidate_anchor(cand));
             // A reaction is offered to its controller, and several may answer
@@ -595,20 +596,13 @@ pub(super) fn resolution_request(
     window: &Continuation,
     candidates: &[ResolutionCandidate],
 ) -> InputRequest {
-    let skip_hint = if window.is_forced() {
-        " (forced — cannot skip; the lead orders them)"
+    let text = if window.is_forced() {
+        "Forced abilities: the lead investigator chooses which resolves next."
     } else {
-        ", or InputResponse::Skip to close"
+        "Choose one to resolve, or pass."
     };
     let options = build_resolution_options(state, cards, candidates, window.is_forced());
-    let request = InputRequest::pick_single(
-        format!(
-            "Resolution window: {} option(s). \
-             Submit InputResponse::PickSingle(OptionId) to resolve one{skip_hint}.",
-            options.len(),
-        ),
-        options,
-    );
+    let request = InputRequest::pick_single(text, options);
     if window.is_forced() {
         request
     } else {

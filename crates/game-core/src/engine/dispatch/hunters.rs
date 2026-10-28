@@ -411,15 +411,15 @@ pub(super) fn choice_request(
     let (prompt, options) = match choice {
         HunterChoice::Move { enemy, candidates } => (
             format!(
-                "Hunter {enemy:?} movement: the first Active investigator in turn order \
-                 picks a destination among {candidates:?}"
+                "The lead investigator chooses where {} moves.",
+                choice::enemy_name(state, *enemy),
             ),
             choice::candidate_options(state, cards, candidates, |l| OptionTarget::Location(*l)),
         ),
         HunterChoice::Engage { enemy, candidates } => (
             format!(
-                "Hunter {enemy:?} engagement: the first Active investigator in turn order \
-                 picks whom to engage among {candidates:?}"
+                "The lead investigator chooses whom {} engages.",
+                choice::enemy_name(state, *enemy),
             ),
             choice::candidate_options(state, cards, candidates, |i| {
                 state.investigators[i].card_anchor()
