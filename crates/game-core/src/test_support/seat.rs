@@ -1,19 +1,18 @@
 //! The [`Seat`] fixture: a seated investigator built in one expression.
 //!
-//! ```ignore
+//! ```
+//! use game_core::state::{GameStateBuilder, InvestigatorId};
+//! use game_core::test_support::{seat, SeatLookup as _, TEST_ASSET, TEST_REGISTRIES};
+//!
 //! let state = GameStateBuilder::new()
-//!     .with_location(test_support::test_location(10, "Study"))
-//!     .with_seat(
-//!         seat(1)
-//!             .at(LocationId(10))
-//!             .as_card("01001")
-//!             .hand([GUTS])
-//!             .in_play([(FIRST_AID, uses(UseKind::Supplies, 3))])
-//!             .harm(2, 2),
-//!     )
-//!     .open_turn(InvestigatorId(1))
+//!     .with_registries(TEST_REGISTRIES)
+//!     .with_seat(seat(1).in_play([TEST_ASSET]))
 //!     .build();
-//! let first_aid = state.in_play(InvestigatorId(1), FIRST_AID);
+//! let asset = state.in_play(InvestigatorId(1), TEST_ASSET);
+//! assert_eq!(
+//!     state.investigators[&InvestigatorId(1)].cards_in_play[0].instance_id,
+//!     asset,
+//! );
 //! ```
 //!
 //! Cards a seat puts in play or in a threat area get instance ids minted by
