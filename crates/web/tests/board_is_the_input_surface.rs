@@ -400,8 +400,10 @@ async fn a_mulligan_selects_from_the_responders_hand_alone() {
         .with_turn_order([INV, INV2])
         .with_mulligan_remaining([INV2, INV])
         .build();
-    let seeded = test_support::TestSession::new(state, cards::TEST_REGISTRIES).finish();
-    let mut h = Harness::mount(seeded.state, seeded.outcome).await;
+    // Settle through the engine, so the prompt is the one it actually builds.
+    let seeded = test_support::TestSession::new(state, cards::TEST_REGISTRIES);
+    let outcome = test_support::awaiting_request(seeded.prompt().clone());
+    let mut h = Harness::mount(seeded.state().clone(), outcome).await;
 
     assert!(
         hand_slots(0, ".hand-slot.selectable").is_empty(),
