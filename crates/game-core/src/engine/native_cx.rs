@@ -20,8 +20,8 @@ use crate::engine::outcome::{EngineOutcome, ResumeToken};
 use crate::engine::Cx;
 use crate::event::TraumaKind;
 use crate::state::{
-    CardCode, CardInstanceId, Continuation, DamageSource, Deck, EffectPrompt, EnemyId, GameState,
-    InvestigatorId, LocationId, Owner, SkillSubstitution, UseKind, Zone,
+    CardCode, CardInstanceId, DamageSource, Deck, EffectPrompt, EnemyId, GameState, InvestigatorId,
+    LocationId, Owner, SkillSubstitution, UseKind, Zone,
 };
 
 /// What a [`NativeEffectFn`](crate::card_registry::NativeEffectFn) gets: full
@@ -77,9 +77,17 @@ use crate::state::{
 pub struct NativeCx<'a> {
     cx: Cx<'a>,
     written: bool,
-    /// The stack depth when the native was entered: frames above it are the
-    /// ones its exits pushed.
-    entry_depth: usize,
+    /// How many Prompt-profile frames were on the stack when the native was
+    /// entered. More than that later means one of its exits pushed a prompt.
+    ///
+    /// A count rather than a stack depth, because an exit can shift what lies
+    /// beneath the native: an elimination that ends the scenario inserts the
+    /// ending frame at the bottom of the stack, which would lift the native's
+    /// own effect frame, itself a Prompt, above a recorded depth (They're
+    /// Getting Out 01107's act-3 defeat, then trauma). The count can miss a
+    /// pushed prompt only if the same native's exits also removed one beneath
+    /// it.
+    prompts_at_entry: usize,
     /// Set when a direct-write exit runs while a pushed prompt is pending.
     wrote_past_prompt: bool,
     /// The prompt the native suspended on through [`suspend`](Self::suspend),
@@ -116,14 +124,23 @@ enum ExitKind {
     Push,
 }
 
+/// How many frames on the stack are Prompt-profile.
+fn prompt_frames(state: &GameState) -> usize {
+    state
+        .continuations
+        .iter()
+        .filter(|frame| frame.awaits_input())
+        .count()
+}
+
 impl<'a> NativeCx<'a> {
     /// Wrap `cx` for one native call, not yet written to.
     pub(crate) fn new(cx: Cx<'a>) -> Self {
-        let entry_depth = cx.state.continuations.len();
+        let prompts_at_entry = prompt_frames(cx.state);
         Self {
             cx,
             written: false,
-            entry_depth,
+            prompts_at_entry,
             wrote_past_prompt: false,
             asked: None,
         }
@@ -193,15 +210,10 @@ impl<'a> NativeCx<'a> {
         &mut self.cx
     }
 
-    /// Whether a frame an exit pushed during this call, above the stack depth
-    /// the native was entered at, is a Prompt-profile frame.
+    /// Whether an exit called during this native pushed a Prompt-profile frame
+    /// that is still on the stack.
     fn prompt_pending(&self) -> bool {
-        self.cx
-            .state
-            .continuations
-            .iter()
-            .skip(self.entry_depth)
-            .any(Continuation::awaits_input)
+        prompt_frames(self.cx.state) > self.prompts_at_entry
     }
 
     // --- Harm and defeat ---
