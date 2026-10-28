@@ -843,7 +843,7 @@ fn perform_designated_fight(
 /// Re-push a suspended `Leaf` carrying the `prompt` it asks, so resume re-steps
 /// it with `ctx.chosen_option` set, and suspend on it. The frame *is* the
 /// prompt, and the prompt table reads what it asks off the frame.
-fn suspend_leaf_in_place(
+pub(crate) fn suspend_leaf_in_place(
     cx: &mut Cx,
     effect: &Effect,
     ctx: EvalContext,
@@ -1192,8 +1192,8 @@ fn step_choose_one(
 
 /// The [`Effect::Native`] step: dispatch to the card-local handler (threading
 /// `ctx.chosen_option` so a resumed native receives its pick). If the native
-/// suspends for a choice, **suspend in place** (re-push `node` so resume
-/// re-invokes the native with the pick). The native must choose *before* any
+/// suspends for a choice, [`NativeCx::suspend`] **suspends in place** (re-pushes
+/// `node` so resume re-invokes the native with the pick). The native must choose *before* any
 /// side effect (standalone contract) so re-invocation is idempotent up to the
 /// suspension — no double-apply.
 ///
@@ -1206,15 +1206,19 @@ fn step_native(cx: &mut Cx, tag: &str, eval_ctx: EvalContext, node: &Effect) -> 
             reason: format!("Native effect {tag:?}: no handler registered").into(),
         };
     };
-    let mut native_cx = NativeCx::new(Cx {
-        state: &mut *cx.state,
-        events: &mut *cx.events,
-        cards: cx.cards,
-        scenario: cx.scenario,
-    });
+    let mut native_cx = NativeCx::new(
+        Cx {
+            state: &mut *cx.state,
+            events: &mut *cx.events,
+            cards: cx.cards,
+            scenario: cx.scenario,
+        },
+        node,
+        eval_ctx,
+    );
     let outcome = f(&mut native_cx, &eval_ctx);
     let written = native_cx.written();
-    let asked = native_cx.take_asked();
+    let suspended = native_cx.suspended();
     if native_cx.wrote_past_prompt() {
         return EngineOutcome::Rejected {
             reason: format!(
@@ -1236,16 +1240,15 @@ fn step_native(cx: &mut Cx, tag: &str, eval_ctx: EvalContext, node: &Effect) -> 
             };
         }
         // No exit suspends, so a native's `AwaitingInput` is its own
-        // `NativeCx::suspend`, which recorded what it asks.
-        let Some(prompt) = asked else {
+        // `NativeCx::suspend`, which re-pushed this node as the prompt.
+        if !suspended {
             return EngineOutcome::Rejected {
                 reason: format!(
                     "Native effect {tag:?} suspended without asking through NativeCx::suspend"
                 )
                 .into(),
             };
-        };
-        return suspend_leaf_in_place(cx, node, eval_ctx, prompt);
+        }
     }
     outcome
 }

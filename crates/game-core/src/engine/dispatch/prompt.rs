@@ -3,10 +3,9 @@
 //!
 //! Every [`InputRequest`] the engine surfaces is built here, from the frame on
 //! top of the continuation stack, by [`request`] and the per-kind helpers it
-//! calls. Nothing else assembles one; the one request built away from a frame
-//! is a native's own pick, which `NativeCx::suspend` builds through the same
-//! helper ([`choice::effect_request`]) the table reads a stored pick back with.
-//! A step that suspends leaves its frame at
+//! calls. Nothing else assembles one: a native's own pick is stored on the
+//! effect frame `NativeCx::suspend` re-pushes, and suspends through [`suspend`]
+//! like any step. A step that suspends leaves its frame at
 //! rest on top and returns [`suspend`], and a frame pushed by a step that then
 //! returns `Done` is surfaced the same way when the `drive` loop meets it. So
 //! every prompt can be shown again from the state alone: a state settled with

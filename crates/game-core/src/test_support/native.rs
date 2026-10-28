@@ -1,5 +1,7 @@
 //! Calling a card-local native directly, outside the evaluator.
 
+use card_dsl::dsl;
+
 use crate::card_registry::CardRegistry;
 use crate::engine::evaluator::EvalContext;
 use crate::engine::{Cx, EngineOutcome, NativeCx};
@@ -10,11 +12,13 @@ use crate::state::GameState;
 /// registry [`NativeCx::cards`] answers with and no scenario module, returning
 /// its outcome and the events it emitted.
 ///
-/// `state` keeps whatever the native wrote.
+/// `state` keeps whatever the native wrote. A native that suspends leaves its
+/// prompt resting on an effect frame for a stand-in `Effect::Native` node
+/// whose tag no registry knows, so the state can be read but not resumed.
 ///
 /// A direct call, for a unit test of one native's resolution: no apply, so no
-/// rollback on `Rejected`, and none of the evaluator's handling of a suspend
-/// (no re-push of the effect, no choose-before-write check). To test a native
+/// rollback on `Rejected`, and none of the evaluator's checks around a native
+/// (no choose-before-write check). To test a native
 /// as the game runs it, register it in a mock registry and drive it through a
 /// [`TestSession`](crate::test_support::TestSession).
 pub fn run_native(
@@ -24,12 +28,17 @@ pub fn run_native(
     eval_ctx: &EvalContext,
 ) -> (EngineOutcome, Vec<Event>) {
     let mut events = Vec::new();
-    let mut cx = NativeCx::new(Cx {
-        state,
-        events: &mut events,
-        cards,
-        scenario: None,
-    });
+    let node = dsl::native("test_support::run_native");
+    let mut cx = NativeCx::new(
+        Cx {
+            state,
+            events: &mut events,
+            cards,
+            scenario: None,
+        },
+        &node,
+        *eval_ctx,
+    );
     let outcome = native(&mut cx, eval_ctx);
     (outcome, events)
 }

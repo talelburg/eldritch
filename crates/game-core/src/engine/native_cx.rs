@@ -4,24 +4,25 @@
 use std::borrow::Cow;
 
 use card_dsl::card_data::CardMetadata;
-use card_dsl::dsl::Restriction;
+use card_dsl::dsl::{Effect, Restriction};
 
 use crate::card_registry::CardRegistry;
 use crate::engine::board::{self, LeavingCard, MoveResourcesError, NotLeft, Placement};
 use crate::engine::dispatch::actions::{r#move, take};
-use crate::engine::dispatch::choice::{self, Suspension};
+use crate::engine::dispatch::choice::Suspension;
 use crate::engine::dispatch::tokens::{self, MoveHorrorError};
 use crate::engine::dispatch::{
     act_agenda, cards, combat, elimination, encounter, engagement, hunters, placement, reveal,
     set_aside, skill_test, threat_area,
     uses::{self, MoveUsesError, SpendUsesError},
 };
-use crate::engine::outcome::{EngineOutcome, ResumeToken};
+use crate::engine::evaluator::{self, EvalContext};
+use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::event::TraumaKind;
 use crate::state::{
-    CardCode, CardInstanceId, DamageSource, Deck, EffectPrompt, EnemyId, GameState, InvestigatorId,
-    LocationId, Owner, SkillSubstitution, UseKind, Zone,
+    CardCode, CardInstanceId, DamageSource, Deck, EnemyId, GameState, InvestigatorId, LocationId,
+    Owner, SkillSubstitution, UseKind, Zone,
 };
 
 /// What a [`NativeEffectFn`](crate::card_registry::NativeEffectFn) gets: full
@@ -90,9 +91,13 @@ pub struct NativeCx<'a> {
     prompts_at_entry: usize,
     /// Set when a direct-write exit runs while a pushed prompt is pending.
     wrote_past_prompt: bool,
-    /// The prompt the native suspended on through [`suspend`](Self::suspend),
-    /// for the evaluator to store on the native's frame.
-    asked: Option<EffectPrompt>,
+    /// The `Effect::Native` node being resolved and the context it resolves
+    /// in: what [`suspend`](Self::suspend) re-pushes as the effect frame the
+    /// native's prompt rests on.
+    node: &'a Effect,
+    eval_ctx: EvalContext,
+    /// Set when the native suspended through [`suspend`](Self::suspend).
+    suspended: bool,
 }
 
 /// How an exit changes the game, which decides whether it may run after an
@@ -134,15 +139,18 @@ fn prompt_frames(state: &GameState) -> usize {
 }
 
 impl<'a> NativeCx<'a> {
-    /// Wrap `cx` for one native call, not yet written to.
-    pub(crate) fn new(cx: Cx<'a>) -> Self {
+    /// Wrap `cx` for one call of the native `node` resolves to, in
+    /// `eval_ctx`, not yet written to.
+    pub(crate) fn new(cx: Cx<'a>, node: &'a Effect, eval_ctx: EvalContext) -> Self {
         let prompts_at_entry = prompt_frames(cx.state);
         Self {
             cx,
             written: false,
             prompts_at_entry,
             wrote_past_prompt: false,
-            asked: None,
+            node,
+            eval_ctx,
+            suspended: false,
         }
     }
 
@@ -151,31 +159,26 @@ impl<'a> NativeCx<'a> {
         self.written
     }
 
-    /// The prompt the native suspended on, if it called
-    /// [`suspend`](Self::suspend).
-    pub(crate) fn take_asked(&mut self) -> Option<EffectPrompt> {
-        self.asked.take()
+    /// Whether the native suspended through [`suspend`](Self::suspend).
+    pub(crate) fn suspended(&self) -> bool {
+        self.suspended
     }
 
     /// Suspend the native on what a grounding helper could not settle: the
     /// controller's pick, or the rejection of a pick out of range. **Return its
     /// outcome.**
     ///
-    /// A pick suspends the native's effect frame in place, carrying the prompt,
-    /// and the native is re-run with the pick threaded into its context
-    /// ([`EvalContext::chosen_option`](crate::engine::evaluator::EvalContext::chosen_option))
-    /// once it is answered.
+    /// A pick re-pushes the native's effect frame carrying the prompt, and
+    /// suspends on it the one way the engine suspends (`prompt::suspend`), so
+    /// the prompt table builds the request. The native is re-run with the pick
+    /// threaded into its context
+    /// ([`EvalContext::chosen_option`]) once it is answered.
     #[must_use = "suspend returns the outcome the native must return"]
     pub fn suspend(&mut self, suspension: Suspension) -> EngineOutcome {
         match suspension.into_prompt() {
             Ok(prompt) => {
-                let request = choice::effect_request(&prompt);
-                self.asked = Some(prompt);
-                EngineOutcome::AwaitingInput {
-                    request,
-                    // TODO(#458): deterministic resume tokens.
-                    resume_token: ResumeToken(0),
-                }
+                self.suspended = true;
+                evaluator::suspend_leaf_in_place(&mut self.cx, self.node, self.eval_ctx, prompt)
             }
             Err(rejected) => rejected,
         }
