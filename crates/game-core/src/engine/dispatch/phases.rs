@@ -1016,17 +1016,12 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
         Some(Continuation::EnemyPhase(EnemyPhaseFrame {
             resume: EnemyResume::AfterPhaseStartForced,
         })) => enemy_after_phase_start(cx),
-        // Hunter movement (step 3.2) pushes no frame of its own above the
-        // anchor except a lead-tie `HunterMove`, whose resume runs the
-        // step-3.3 kickoff directly, and the kickoff re-points the anchor. So
-        // nothing re-exposes the anchor mid-3.2.
+        // Never re-exposed: see `EnemyResume::HuntersMoving`.
         Some(Continuation::EnemyPhase(EnemyPhaseFrame {
             resume: EnemyResume::HuntersMoving,
-        })) => unreachable!(
-            "the EnemyPhase anchor was re-exposed during hunter movement (step 3.2), \
-             which nothing does: hunter movement completes synchronously or resumes \
-             into the step-3.3 kickoff"
-        ),
+        })) => {
+            unreachable!("the EnemyPhase anchor was re-exposed during hunter movement (step 3.2)")
+        }
         Some(Continuation::EnemyPhase(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked(investigator),
         })) => {

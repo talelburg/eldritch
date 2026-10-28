@@ -134,7 +134,9 @@ impl Enemy {
         };
         let max_health = match health {
             Some(HealthValue::Fixed(n)) => *n,
-            Some(HealthValue::PerInvestigator(n)) => n.saturating_mul(investigator_count),
+            Some(HealthValue::PerInvestigator(n)) => {
+                crate::engine::scale_per_investigator(*n, investigator_count)
+            }
             None => 1,
         };
         Some(Self {

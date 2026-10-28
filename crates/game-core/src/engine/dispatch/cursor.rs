@@ -97,12 +97,19 @@ pub(super) fn next_active_investigator_after(
         })
 }
 
-/// `n` per investigator: `n` times [`investigator_count`], saturating at
-/// `u8::MAX`. A location's per-investigator clue value scales by it, and
-/// [`Enemy::from_metadata`](crate::state::Enemy::from_metadata) scales a
-/// per-investigator health value by the same count.
+/// `n` per investigator: [`scale_per_investigator`] by [`investigator_count`].
+/// A location's per-investigator clue value scales by it.
 pub(super) fn per_investigator(state: &GameState, n: u8) -> u8 {
-    n.saturating_mul(investigator_count(state))
+    scale_per_investigator(n, investigator_count(state))
+}
+
+/// `n` times `count`, saturating at `u8::MAX`: the one per-investigator
+/// scaling. [`per_investigator`] calls it with [`investigator_count`], and
+/// [`Enemy::from_metadata`](crate::state::Enemy::from_metadata) with the count
+/// its caller read from the same function, to scale a per-investigator health
+/// value.
+pub(crate) fn scale_per_investigator(n: u8, count: u8) -> u8 {
+    n.saturating_mul(count)
 }
 
 /// The number of investigators who started the scenario, saturating at

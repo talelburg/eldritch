@@ -129,7 +129,8 @@ pub(crate) struct InvestigateModification {
     /// Investigate follow-up, so there is nothing left of it to run — and the
     /// replacement rides the test's `on_success`, resolving at ST.7 with the
     /// source's context as Blinding Light 01066's evasion clause does. The test
-    /// stays an [`SkillTestKind::Investigate`] test, so ST.6's "after you
+    /// stays an [`SkillTestKind::Investigate`](card_dsl::dsl::SkillTestKind::Investigate)
+    /// test, so ST.6's "after you
     /// successfully investigate" timing point (Dr. Milan Christopher 01033)
     /// fires as for any investigation. Deduction 01039's
     /// `bonus_clues_discovered` only ever raises the discovery's count, so with

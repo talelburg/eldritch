@@ -187,7 +187,7 @@ impl SkillTestSpec {
                 follow_up: SkillTestFollowUp::Evade { enemy },
                 on_success,
                 on_fail: None,
-                initiator_modifier: None, // no Evade designator prints a skill modifier yet
+                initiator_modifier: None, // no Evade designator prints a skill modifier
                 reveal_clause,
             },
             Self::Investigate {
@@ -471,8 +471,8 @@ pub(crate) fn discard_after_this_test(cx: &mut Cx, card: CardInstanceId) {
 
 /// Discard the card the test being torn down was marked to discard
 /// ([`InFlightSkillTest::discard_after`]), if any, through the leave-play
-/// router. Called by the ST.8 teardown and by the target-left-play
-/// [`abandon_test`], with the frame still on the stack.
+/// router. Called by [`tear_down_test`] at the ST.8 end and at the
+/// target-left-play abandonment, with the frame still on the stack.
 ///
 /// A card already gone from play (an effect discarded it earlier in the test)
 /// is left where it went; one that cannot leave play right now stays in play
@@ -1637,7 +1637,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
             .get(&investigator)
             .is_some_and(|inv| inv.status != Status::Active)
         {
-            return abandon_test(cx, investigator, None);
+            return tear_down_test(cx, investigator, None);
         }
 
         // The test's difficulty *is* a quantity of some entity on the
@@ -1652,7 +1652,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
         // what defeats the enemy. Only a test that has not yet been compared
         // can still be abandoned.
         if !past_st6 && difficulty_target_left_play(cx.state, difficulty_basis) {
-            return abandon_test(cx, investigator, Some(&committed));
+            return tear_down_test(cx, investigator, Some(&committed));
         }
 
         match continuation {
@@ -1806,7 +1806,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 // run); the loop's `InvestigatorTurn { ending: true }` arm runs
                 // `resume_end_turn` once this returns — no reach-down here (the
                 // same path a 2+ forced run takes).
-                return abandon_test(cx, investigator, Some(&committed));
+                return tear_down_test(cx, investigator, Some(&committed));
             }
         }
     }
@@ -1815,7 +1815,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
 /// Expire every [`RecordedModifier`](crate::state::RecordedModifier) bought for
 /// the test being torn down.
 ///
-/// Called from both teardowns — the ST.8 one and [`abandon_test`] — with the
+/// Called from [`tear_down_test`], however the test ended, with the
 /// `SkillTest` frame still on the stack, since the id it keys on lives there.
 /// A missing frame is a teardown bug that would leak test-scoped rows into the
 /// next test — the failure a test's identity exists to prevent — so it trips
@@ -1844,15 +1844,16 @@ fn difficulty_target_left_play(state: &GameState, basis: DifficultyBasis) -> boo
     }
 }
 
-/// Tear down the in-flight skill test, and pop its frame. Named for the
-/// abandoned case, whose two callers are in [`advance`]'s loop preamble: the
-/// tester was eliminated mid-resolution, or the test's difficulty target left
-/// play. RR ST.8's normal end, at
-/// [`PostOnResolution`](SkillTestStep::PostOnResolution), runs through it too.
+/// Tear down the in-flight skill test, and pop its frame. Three callers: RR
+/// ST.8's normal end, at [`PostOnResolution`](SkillTestStep::PostOnResolution),
+/// and the two abandoned cases in [`advance`]'s loop preamble, where the tester
+/// was eliminated mid-resolution or the test's difficulty target left play.
 ///
-/// `committed` is where the abandoned callers part company — it names the
-/// cards to discard out of limbo, or `None` to drop them with the frame:
+/// `committed` names the cards to discard out of limbo, or is `None` to drop
+/// them with the frame:
 ///
+/// - **ST.8** passes `Some`: *"Discard all cards that were committed to this
+///   skill test"* (Appendix II, ST.8).
 /// - **Eliminated tester** passes `None`. Rules Reference p.10 Elimination
 ///   step 1 ("The cards he or she controls in play and all of the cards in his
 ///   or her out-of-play areas (such as hand, deck, discard pile) are removed
@@ -1866,7 +1867,7 @@ fn difficulty_target_left_play(state: &GameState, basis: DifficultyBasis) -> boo
 ///
 /// [`Event::SkillTestEnded`] still fires either way: the test *is* over, and it
 /// is the documented "test is fully over" signal downstream listeners key on.
-fn abandon_test(
+fn tear_down_test(
     cx: &mut Cx,
     investigator: InvestigatorId,
     committed: Option<&[CommittedCard]>,
