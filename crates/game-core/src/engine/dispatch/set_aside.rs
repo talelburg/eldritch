@@ -24,7 +24,7 @@
 
 use std::borrow::Cow;
 
-use card_dsl::card_data::CardKind;
+use card_dsl::card_data::{CardKind, CardMetadata};
 
 use crate::engine::dispatch::{encounter, threat_area};
 use crate::engine::outcome::EngineOutcome;
@@ -66,21 +66,9 @@ pub(crate) fn put_set_aside_card_into_play(
     at: Option<&str>,
     owner: Owner,
 ) -> EngineOutcome {
-    let Some(pos) = cx
-        .state
-        .set_aside_cards
-        .iter()
-        .position(|c| c.as_str() == code)
-    else {
-        return EngineOutcome::Rejected {
-            reason: format!("put_set_aside_card_into_play: {code} is not set aside").into(),
-        };
-    };
-    let registry = cx.cards;
-    let Some(metadata) = (registry.metadata_for)(&CardCode::new(code)) else {
-        return EngineOutcome::Rejected {
-            reason: format!("put_set_aside_card_into_play: no metadata for {code}").into(),
-        };
+    let (pos, metadata) = match find_set_aside(cx, code, "put_set_aside_card_into_play") {
+        Ok(found) => found,
+        Err(reason) => return EngineOutcome::Rejected { reason },
     };
     match metadata.kind {
         CardKind::Location { .. } => {
@@ -93,10 +81,9 @@ pub(crate) fn put_set_aside_card_into_play(
                     .into(),
                 };
             }
-            match put_set_aside_location_into_play(cx, code) {
-                Ok(_) => EngineOutcome::Done,
-                Err(reason) => EngineOutcome::Rejected { reason },
-            }
+            // All checks passed — mutate.
+            enter_location(cx, pos, metadata);
+            EngineOutcome::Done
         }
         CardKind::Enemy { .. } => {
             let Some(location_code) = at else {
@@ -167,26 +154,46 @@ pub(crate) fn put_set_aside_location_into_play(
     cx: &mut Cx,
     code: &str,
 ) -> Result<LocationId, Cow<'static, str>> {
+    let (pos, metadata) = find_set_aside(cx, code, "put_set_aside_location_into_play")?;
+    if !matches!(metadata.kind, CardKind::Location { .. }) {
+        return Err(format!("put_set_aside_location_into_play: {code} is not a location").into());
+    }
+    // All checks passed — mutate.
+    Ok(enter_location(cx, pos, metadata))
+}
+
+/// Find the set-aside card `code`: its position in the set-aside zone and
+/// its printed metadata.
+///
+/// Returns the rejection reason, prefixed with `caller`, if `code` isn't in
+/// the zone or has no metadata. Mutates nothing.
+fn find_set_aside(
+    cx: &Cx,
+    code: &str,
+    caller: &str,
+) -> Result<(usize, &'static CardMetadata), Cow<'static, str>> {
     let Some(pos) = cx
         .state
         .set_aside_cards
         .iter()
         .position(|c| c.as_str() == code)
     else {
-        return Err(format!("put_set_aside_location_into_play: {code} is not set aside").into());
+        return Err(format!("{caller}: {code} is not set aside").into());
     };
-    let registry = cx.cards;
-    let Some(metadata) = (registry.metadata_for)(&CardCode::new(code)) else {
-        return Err(format!("put_set_aside_location_into_play: no metadata for {code}").into());
+    let Some(metadata) = (cx.cards.metadata_for)(&CardCode::new(code)) else {
+        return Err(format!("{caller}: no metadata for {code}").into());
     };
-    if !matches!(metadata.kind, CardKind::Location { .. }) {
-        return Err(format!("put_set_aside_location_into_play: {code} is not a location").into());
-    }
-    // All checks passed — mutate.
+    Ok((pos, metadata))
+}
+
+/// Move the set-aside location at `pos` into play, mint its [`LocationId`],
+/// and wire it to its in-play neighbours. The caller has already validated
+/// that `metadata` is a location's.
+fn enter_location(cx: &mut Cx, pos: usize, metadata: &CardMetadata) -> LocationId {
     cx.state.set_aside_cards.remove(pos);
     let id = cx.state.add_location(metadata);
     wire_layout_connections(cx.state, cx.scenario, id);
-    Ok(id)
+    id
 }
 
 /// Wire `id`'s printed connections from the active scenario's
