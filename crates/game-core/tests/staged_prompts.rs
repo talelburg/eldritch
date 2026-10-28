@@ -30,7 +30,7 @@ use game_core::state::{
     Continuation, DamageSource, DealDamageFrame, DealDamageStep, EffectFrame, EffectPrompt,
     EncounterDrawFrame, EnemyAttackSource, EnemyId, GameStateBuilder, HandDiscardCostFrame,
     HunterChoice, InvestigatorId, LocationId, MulliganFrame, Owner, ResolutionCandidate, SkillKind,
-    SkillTestId, SlotDiscardFrame, SpawnEngagePending, SubstitutionPromptFrame, TimingMode,
+    SkillTestId, SlotDiscardFrame, SpawnEngagePending, Status, SubstitutionPromptFrame, TimingMode,
     TimingPointWindowFrame,
 };
 use game_core::test_support::{self, seat, MockRegistry, Seat, SeatLookup as _, TestSession};
@@ -416,6 +416,42 @@ fn a_staged_advance_acknowledge_asks_the_lead_without_announcing_again() {
     assert_eq!(anchors(&session), [Some(OptionTarget::Act)]);
     assert_eq!(session.prompt().responder, Responder::Lead(OTHER));
     assert_event_count!(session.events(), 0, Event::ActAdvanced { .. });
+}
+
+/// An advance acknowledge still runs after the scenario ends (it is part of
+/// the ending's resolution), so it can surface with every investigator
+/// eliminated. Nobody is Active to lead then, and the stored lead answers.
+#[test]
+fn an_advance_acknowledge_with_everyone_eliminated_asks_the_stored_lead() {
+    let mut state = GameStateBuilder::new()
+        .with_registries(registries())
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_seat(seat(1).at(HERE).status(Status::Defeated))
+        .with_seat(seat(2).at(HERE).status(Status::Resigned))
+        .with_turn_order([INV, OTHER])
+        .with_lead(OTHER)
+        .with_frame(AdvanceReverseFrame {
+            deck: AdvanceDeck::Act,
+            from: 0,
+            leaving_code: CardCode::new("_sp_act_1"),
+            step: AdvanceStep::AwaitAck,
+            trigger: AdvanceTrigger::Forced,
+        })
+        .build();
+    state.act_deck = vec![
+        Act {
+            code: CardCode::new("_sp_act_1"),
+            clue_threshold: 1,
+        },
+        Act {
+            code: CardCode::new("_sp_act_2"),
+            clue_threshold: 1,
+        },
+    ];
+    state.interactive_acknowledge = true;
+    let session = TestSession::new(state, registries());
+    assert_eq!(anchors(&session), [Some(OptionTarget::Act)]);
+    assert_eq!(session.prompt().responder, Responder::Lead(OTHER));
 }
 
 /// A lone forced ability's acknowledge names its card, and is asked of its
