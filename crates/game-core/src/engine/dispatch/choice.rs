@@ -18,7 +18,9 @@ use crate::engine::outcome::{
     ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, PromptNature,
 };
 use crate::engine::{board, Cx, EvalContext};
-use crate::state::{CardCode, Continuation, EffectFrame, EffectPrompt, GameState};
+use crate::state::{
+    CardCode, Continuation, EffectFrame, EffectPrompt, EnemyId, GameState, InvestigatorId,
+};
 
 /// Outcome of applying the uniform resolve convention to a count of legal
 /// options. Crate-private: an entity selection goes
@@ -307,6 +309,31 @@ fn anchor_label(state: &GameState, cards: &CardRegistry, anchor: &OptionTarget) 
         );
         "unknown card".to_owned()
     })
+}
+
+/// An investigator's name, as their investigator card prints it, for prompt
+/// text. Total like [`anchor_label`]: an id not in `state` is an engine bug that
+/// trips a `debug_assert!` in tests and reads as a neutral placeholder in a live
+/// game, never as the id's `Debug` form.
+pub(crate) fn investigator_name(state: &GameState, id: InvestigatorId) -> String {
+    state.investigators.get(&id).map_or_else(
+        || {
+            debug_assert!(false, "prompt names {id:?}, who is not in the game state");
+            "An investigator".to_owned()
+        },
+        |inv| inv.name.clone(),
+    )
+}
+
+/// An enemy's name, for prompt text. Total like [`investigator_name`].
+pub(crate) fn enemy_name(state: &GameState, id: EnemyId) -> String {
+    state.enemies.get(&id).map_or_else(
+        || {
+            debug_assert!(false, "prompt names {id:?}, which is not in the game state");
+            "An enemy".to_owned()
+        },
+        |enemy| enemy.name.clone(),
+    )
 }
 
 /// A card's printed name, looked up through the card registry's metadata.

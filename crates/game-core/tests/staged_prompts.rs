@@ -26,9 +26,10 @@ use game_core::state::{
     AdvanceDeck, AdvanceReverseFrame, AdvanceStep, AdvanceTrigger, AssetEntry, Assignment,
     AttackLoopFrame, AttackLoopStage, CandidateSource, CardCode, CardInPlay, CardInstanceId,
     Continuation, DamageSource, DealDamageFrame, DealDamageStep, EffectFrame, EffectPrompt,
-    EnemyAttackSource, EnemyId, GameStateBuilder, HandDiscardCostFrame, HunterChoice,
-    InvestigatorId, LocationId, Owner, ResolutionCandidate, SkillKind, SkillTestId,
-    SlotDiscardFrame, SpawnEngagePending, TimingMode, TimingPointWindowFrame,
+    EncounterDrawFrame, EnemyAttackSource, EnemyId, GameStateBuilder, HandDiscardCostFrame,
+    HunterChoice, InvestigatorId, LocationId, MulliganFrame, Owner, ResolutionCandidate, SkillKind,
+    SkillTestId, SlotDiscardFrame, SpawnEngagePending, SubstitutionPromptFrame, TimingMode,
+    TimingPointWindowFrame,
 };
 use game_core::test_support::{self, seat, MockRegistry, Seat, SeatLookup as _, TestSession};
 
@@ -55,10 +56,12 @@ const SOUTH: LocationId = LocationId(12);
 const GHOUL: EnemyId = EnemyId(7);
 const RAT: EnemyId = EnemyId(8);
 
-fn asset(code: &str, slots: Vec<Slot>, health: Option<u8>) -> CardMetadata {
+/// An asset whose printed name differs from its code, so a prompt that shows
+/// the code where it should show the name is caught.
+fn asset(code: &str, name: &str, slots: Vec<Slot>, health: Option<u8>) -> CardMetadata {
     CardMetadata {
         code: code.to_owned(),
-        name: code.to_owned(),
+        name: name.to_owned(),
         text: None,
         traits: vec![],
         back_name: None,
@@ -84,12 +87,12 @@ fn asset(code: &str, slots: Vec<Slot>, health: Option<u8>) -> CardMetadata {
 fn registries() -> Registries {
     static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
         cards: MockRegistry::new()
-            .with_card(asset(TORCH, vec![Slot::Hand], None))
-            .with_card(asset(GRIP, vec![Slot::Hand], None))
-            .with_card(asset(LAMP, vec![Slot::Hand], None))
-            .with_card(asset(SOAKER, vec![Slot::Ally], Some(2)))
-            .with_card(asset(ROUND_END, vec![], None))
-            .with_card(asset(FILLER, vec![], None))
+            .with_card(asset(TORCH, "Torch", vec![Slot::Hand], None))
+            .with_card(asset(GRIP, "Grip", vec![Slot::Hand], None))
+            .with_card(asset(LAMP, "Lamp", vec![Slot::Hand], None))
+            .with_card(asset(SOAKER, "Soaker", vec![Slot::Ally], Some(2)))
+            .with_card(asset(ROUND_END, "Round End", vec![], None))
+            .with_card(asset(FILLER, "Filler", vec![], None))
             .with_abilities(ROUND_END, || {
                 vec![dsl::reaction_on_event(
                     EventPattern::RoundEnded,
@@ -97,6 +100,8 @@ fn registries() -> Registries {
                     dsl::gain_resources(InvestigatorTarget::You, 1),
                 )]
             })
+            // Implemented with no abilities, so the turn menu offers its play.
+            .with_abilities(FILLER, Vec::new)
             .build(),
         scenarios: &ScenarioRegistry::EMPTY,
     });
@@ -140,6 +145,44 @@ fn anchors(session: &TestSession) -> Vec<Option<OptionTarget>> {
         .collect()
 }
 
+/// What a player must never read in a prompt or an option label: an id's
+/// `Debug` form (`InvestigatorId(1)`, `EnemyId(7)`, `[LocationId(11), …]`), a
+/// struct's (`SlotCounts { … }`), a raw card code where the card has a name
+/// (every `_sp_*` probe here is named differently from its code), or a
+/// developer's hint about the wire (`Submit InputResponse::PickSingle(OptionId)`,
+/// a rules-reference page cite).
+const UNREADABLE: [&str; 9] = [
+    "Id(",
+    "{",
+    "[",
+    "InputResponse",
+    "OptionId",
+    "PickSingle(",
+    "_sp_",
+    "RR p.",
+    "turn order",
+];
+
+/// The prompt reads as a game: its text and every option label are free of
+/// [`UNREADABLE`].
+fn assert_reads_as_a_game(session: &TestSession) {
+    let prompt = session.prompt();
+    let texts = std::iter::once(&prompt.prompt).chain(prompt.options.iter().map(|o| &o.label));
+    for text in texts {
+        for forbidden in UNREADABLE {
+            assert!(
+                !text.contains(forbidden),
+                "prompt must read as a game, found {forbidden:?} in {text:?}: {prompt:?}"
+            );
+        }
+    }
+}
+
+/// `id`'s name, as its investigator card prints it.
+fn name_of(session: &TestSession, id: InvestigatorId) -> String {
+    session.state().investigators[&id].name.clone()
+}
+
 // ---- the six kinds built only when pushed ------------------------------
 
 /// A hunter's tie between two destinations asks where it moves, on the map.
@@ -152,6 +195,11 @@ fn a_staged_hunter_move_asks_for_its_destination() {
             candidates: vec![NORTH, SOUTH],
         }))
         .session();
+    assert_reads_as_a_game(&session);
+    assert_eq!(
+        session.prompt().prompt,
+        "The lead investigator chooses where Ghoul moves."
+    );
     assert_eq!(
         anchors(&session),
         [
@@ -172,6 +220,11 @@ fn a_staged_hunter_engagement_asks_whom_it_engages() {
             candidates: vec![INV, OTHER],
         }))
         .session();
+    assert_reads_as_a_game(&session);
+    assert_eq!(
+        session.prompt().prompt,
+        "The lead investigator chooses whom Ghoul engages."
+    );
     let investigators = session.state().investigators.clone();
     assert_eq!(
         anchors(&session),
@@ -191,6 +244,11 @@ fn a_staged_spawn_engagement_asks_and_engages_the_chosen_investigator() {
         .with_enemy(ghoul)
         .with_frame(SpawnEngagePending::new(GHOUL, vec![INV, OTHER]))
         .session();
+    assert_reads_as_a_game(&session);
+    assert_eq!(
+        session.prompt().prompt,
+        "The lead investigator chooses whom Ghoul engages."
+    );
     let other = session.state().investigators[&OTHER].card_anchor();
     assert_eq!(session.offered_at(&other), 1, "{:?}", session.prompt());
     assert_eq!(session.prompt().options.len(), 2);
@@ -217,6 +275,14 @@ fn a_staged_slot_discard_asks_which_occupier_makes_room() {
             entry: AssetEntry::PlayedFromHand,
         })
         .session();
+    assert_reads_as_a_game(&session);
+    assert_eq!(
+        session.prompt().prompt,
+        format!(
+            "{}: choose an asset to discard to make room for Lamp.",
+            name_of(&session, INV)
+        )
+    );
     let torch = OptionTarget::CardInstance(session.state().in_play(INV, TORCH));
     let grip = OptionTarget::CardInstance(session.state().in_play(INV, GRIP));
     assert_eq!(anchors(&session), [Some(torch.clone()), Some(grip)]);
@@ -242,13 +308,21 @@ fn a_staged_additional_action_choice_asks_which_pays() {
             offered: vec![Some(torch), None],
         })
         .session();
+    assert_reads_as_a_game(&session);
+    assert_eq!(
+        session.prompt().prompt,
+        format!(
+            "{}: choose which additional action to use for this action.",
+            name_of(&session, INV)
+        )
+    );
     let labels: Vec<&str> = session
         .prompt()
         .options
         .iter()
         .map(|o| o.label.as_str())
         .collect();
-    assert_eq!(labels, [TORCH, "Additional action gained this turn"]);
+    assert_eq!(labels, ["Torch", "Additional action gained this turn"]);
     assert_eq!(
         anchors(&session),
         [Some(OptionTarget::CardInstance(torch)), None]
@@ -268,6 +342,14 @@ fn a_staged_attack_order_pick_asks_which_enemy_attacks_next() {
             stage: AttackLoopStage::PickOrder,
         })
         .session();
+    assert_reads_as_a_game(&session);
+    assert_eq!(
+        session.prompt().prompt,
+        format!(
+            "{} is engaged with 2 enemies: choose which attacks next.",
+            name_of(&session, INV)
+        )
+    );
     assert_eq!(
         anchors(&session),
         [
@@ -304,6 +386,7 @@ fn a_staged_advance_acknowledge_asks_without_announcing_again() {
     ];
     state.interactive_acknowledge = true;
     let session = TestSession::new(state, registries());
+    assert_reads_as_a_game(&session);
     assert_eq!(anchors(&session), [Some(OptionTarget::Act)]);
     assert_event_count!(session.events(), 0, Event::ActAdvanced { .. });
 }
@@ -322,7 +405,8 @@ fn a_staged_forced_acknowledge_asks_to_resolve_on_its_card() {
             ),
         })
         .session();
-    assert_eq!(session.prompt().prompt, format!("Forced — {TORCH}"));
+    assert_reads_as_a_game(&session);
+    assert_eq!(session.prompt().prompt, "Forced — Torch");
     assert_eq!(anchors(&session), [Some(OptionTarget::CardInstance(torch))]);
 }
 
@@ -342,6 +426,14 @@ fn a_staged_damage_distribution_asks_where_the_point_goes() {
             },
         })
         .session();
+    assert_reads_as_a_game(&session);
+    assert_eq!(
+        session.prompt().prompt,
+        format!(
+            "{}: assign 1 damage to which target? (1 damage / 0 horror left)",
+            name_of(&session, INV)
+        )
+    );
     let soaker = OptionTarget::CardInstance(session.state().in_play(INV, SOAKER));
     let me = session.state().investigators[&INV].card_anchor();
     assert_eq!(session.offered_at(&soaker), 1, "{:?}", session.prompt());
@@ -361,6 +453,7 @@ fn a_staged_hand_discard_cost_asks_which_hand_card() {
             code: CardCode::new(TORCH),
         })
         .session();
+    assert_reads_as_a_game(&session);
     assert_eq!(
         anchors(&session),
         [
@@ -406,6 +499,7 @@ fn a_staged_effect_choice_shows_its_stored_prompt_and_resolves_the_pick() {
             }),
         }))
         .session();
+    assert_reads_as_a_game(&session);
     let prompt = session.prompt();
     assert_eq!(prompt.prompt, "The stored question");
     assert_eq!(prompt.nature, PromptNature::Decision);
@@ -428,6 +522,7 @@ fn a_staged_skill_test_asks_for_its_commit() {
             2,
         ))
         .session();
+    assert_reads_as_a_game(&session);
     assert_eq!(session.prompt().kind, InputKind::PickMultiple);
     assert!(session.prompt().prompt.starts_with("Commit cards"));
 }
@@ -449,6 +544,82 @@ fn a_staged_reaction_window_offers_its_candidate() {
             )],
         })
         .session();
+    assert_reads_as_a_game(&session);
     assert!(session.prompt().skippable);
     assert_eq!(anchors(&session), [Some(OptionTarget::CardInstance(card))]);
+    assert_eq!(
+        session.prompt().options[0].label,
+        "Resolve reaction: Round End"
+    );
+}
+
+/// A substitution offer staged above its skill test names the investigator it
+/// asks and the two skills, with no wire hint.
+#[test]
+fn a_staged_substitution_names_the_investigator_and_the_skills() {
+    let session = table(&[])
+        .with_frame(test_support::test_skill_test(
+            SkillTestId(0),
+            INV,
+            SkillKind::Combat,
+            SkillTestKind::Plain,
+            2,
+        ))
+        .with_frame(SubstitutionPromptFrame { investigator: INV })
+        .session();
+    assert_reads_as_a_game(&session);
+    assert_eq!(
+        session.prompt().prompt,
+        format!(
+            "{}: use Intellect in place of Combat for this test?",
+            name_of(&session, INV)
+        )
+    );
+}
+
+/// The Mythos encounter draw names its drawer.
+#[test]
+fn a_staged_encounter_draw_names_its_drawer() {
+    let session = table(&[])
+        .with_frame(Continuation::EncounterDraw(EncounterDrawFrame {
+            remaining: vec![INV],
+        }))
+        .session();
+    assert_reads_as_a_game(&session);
+    assert_eq!(
+        session.prompt().prompt,
+        format!("{} draws an encounter card.", name_of(&session, INV))
+    );
+}
+
+/// The mulligan and the hand-size discard read as a game.
+#[test]
+fn a_staged_mulligan_and_hand_size_discard_read_as_a_game() {
+    let mulligan = table(&[])
+        .with_frame(Continuation::Mulligan(MulliganFrame {
+            remaining: vec![INV],
+        }))
+        .session();
+    assert_reads_as_a_game(&mulligan);
+
+    let hand_size = table_with(seat(1).at(HERE).hand([FILLER; 9]))
+        .with_hand_size_discard_pending([INV])
+        .session();
+    assert_reads_as_a_game(&hand_size);
+}
+
+/// The turn menu offers a card in hand by its name.
+#[test]
+fn the_turn_menu_offers_a_hand_card_by_name() {
+    let session = table_with(seat(1).at(HERE).hand([FILLER])).session();
+    assert_reads_as_a_game(&session);
+    assert!(
+        session
+            .prompt()
+            .options
+            .iter()
+            .any(|o| o.label == "Play Filler"),
+        "{:?}",
+        session.prompt()
+    );
 }
