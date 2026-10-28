@@ -34,7 +34,7 @@ use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     AbilityAddress, AbilitySource, ChaosBag, ChaosToken, Enemy, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenModifiers, TokenResolution,
+    GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenResolution,
 };
 use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession, TEST_INV};
 use game_core::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
@@ -134,7 +134,6 @@ fn board(in_play: &[&str], bag: impl IntoIterator<Item = ChaosToken>, seed: u64)
                 .in_play(in_play.iter().copied()),
         )
         .with_chaos_bag(ChaosBag::new(bag))
-        .with_token_modifiers(TokenModifiers::default())
         .with_rng_seed(seed)
         .open_turn(INV)
         .build()

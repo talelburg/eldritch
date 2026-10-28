@@ -22,7 +22,7 @@ use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId, ModifierTarget,
-    SkillKind, TokenModifiers,
+    SkillKind,
 };
 use game_core::test_support::{self, seat, test_investigator_card, MockRegistry, TestSession};
 
@@ -74,7 +74,6 @@ fn board(code: &str, horror: u8) -> GameState {
         .with_seat(seat(1).as_card(code).at(HERE).harm(0, horror))
         .with_location(test_support::test_location(HERE.0, "Here"))
         .with_chaos_bag(ChaosBag::new([ChaosToken::ElderSign]))
-        .with_token_modifiers(TokenModifiers::default())
         .open_turn(INV)
         .build()
 }

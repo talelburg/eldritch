@@ -18,7 +18,7 @@ use game_core::engine::Registries;
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
-    ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenModifiers,
+    ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
 };
 use game_core::test_support::{
     self, seat, test_investigator_card, MockRegistry, Seat, TestSession,
@@ -104,7 +104,6 @@ fn pass_on_the_elder_sign(investigator: Seat) -> TestSession {
         .with_seat(investigator)
         .with_location(test_support::test_location(HERE.0, "Here"))
         .with_chaos_bag(ChaosBag::new([ChaosToken::ElderSign]))
-        .with_token_modifiers(TokenModifiers::default())
         .open_turn(INV)
         .build();
     let session = TestSession::new(state, registries())

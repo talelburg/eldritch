@@ -21,7 +21,7 @@ use game_core::assert_event;
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, SkillKind, TokenModifiers,
+    ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, SkillKind,
 };
 use game_core::test_support::{seat, SeatLookup as _, TestSession};
 
@@ -40,7 +40,6 @@ fn with_arcane_studies(resources: u8) -> TestSession {
         .with_seat(seat(1).resources(resources).in_play([ARCANE_STUDIES]))
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .session()
 }
 
