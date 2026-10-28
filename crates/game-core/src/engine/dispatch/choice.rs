@@ -338,19 +338,12 @@ pub(crate) fn resume_effect_choice(cx: &mut Cx, response: &InputResponse) -> Eng
             }
         }
     }
-    resume_effect_walk(cx)
-}
-
-/// Resume a parked effect walk after a player input by ceding to the global
-/// `drive` loop. The caller ([`resume_effect_choice`] / the
-/// effect-path arm of the `DealDamage` frame's `Finish` step) has already recorded
-/// the input on the suspended top `Effect` leaf; returning `Done` hands the
-/// parked frames to `apply_player_action`'s `drive(cx, outcome)`, whose
-/// `Continuation::Effect` arm steps them via `step_effect_frame`, then
-/// dispatches whatever frame the
-/// walk was nested within (a `SkillTest` mid-resolution, a window with remaining
-/// candidates). No bounded re-entry, no reach-down.
-pub(crate) fn resume_effect_walk(_cx: &mut Cx) -> EngineOutcome {
+    // The pick is recorded on the suspended top `Effect` frame; returning
+    // `Done` cedes to `apply_player_action`'s `drive(cx, outcome)`, whose
+    // `Continuation::Effect` arm steps the parked frames via
+    // `step_effect_frame`, then dispatches whatever frame the walk was nested
+    // within (a `SkillTest` mid-resolution, a window with remaining candidates).
+    // No bounded re-entry, no reach-down.
     EngineOutcome::Done
 }
 

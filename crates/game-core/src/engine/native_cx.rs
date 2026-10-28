@@ -267,6 +267,12 @@ impl<'a> NativeCx<'a> {
     /// pool the card prints as discard-when-empty, the card is discarded to
     /// its owner's pile at once.
     ///
+    /// The discard is not deferred to the end of the ability (#353). The
+    /// discard-when-empty text is a constant ability, and *"Constant abilities
+    /// have no point of initiation"* (Rules Reference, Ability), so it fires
+    /// wherever uses change: a native's effect spending them here, as much as a
+    /// `Cost::SpendUses` payment.
+    ///
     /// # Errors
     ///
     /// [`SpendUsesError::NotInPlay`] when `instance` is not on the board;

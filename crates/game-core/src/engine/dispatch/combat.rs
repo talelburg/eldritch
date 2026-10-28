@@ -1047,17 +1047,15 @@ pub(crate) fn drive_deal_damage(cx: &mut Cx) -> EngineOutcome {
         }
         DealDamageStep::Finish => {
             cx.state.continuations.pop_expect::<DealDamageFrame>();
-            match source {
-                // The attack's own sequence continues on the frames beneath: its
-                // `at` and `after` cells on the coordinator, then the parked
-                // `AttackLoop`'s exhaust and the next attacker.
-                DamageSource::EnemyAttack { .. } => EngineOutcome::Done,
-                // Resume the parked effect walk, so subsequent effects
-                // run (and may prompt again) with no point lost. A
-                // `deal_harm` caller's own work (a native's enclosing frames, a
-                // drawn weakness's Revelation) is likewise on the frames beneath.
-                DamageSource::Effect => choice::resume_effect_walk(cx),
-            }
+            // Whatever dealt the damage continues on the frames beneath, so
+            // `Done` cedes to `drive`. For an attack, that is its `at` and
+            // `after` cells on the coordinator, then the parked `AttackLoop`'s
+            // exhaust and the next attacker. For an effect, `drive`'s
+            // `Continuation::Effect` arm resumes the parked effect walk, so
+            // subsequent effects run (and may prompt again) with no point lost;
+            // a `deal_harm` caller's own work (a native's enclosing frames, a
+            // drawn weakness's Revelation) is likewise on the frames beneath.
+            EngineOutcome::Done
         }
     }
 }
