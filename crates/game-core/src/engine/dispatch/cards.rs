@@ -1092,10 +1092,9 @@ pub(super) fn resolve_play_target(
 /// - **Fast events** (Rules Reference p. 11: *"A fast event card may be
 ///   played from a player's hand any time its play instructions
 ///   specify"*): permitted when `active_during_investigation` OR when
-///   the top open window admits Fast plays. Any eligible investigator in a permissive window
-///   qualifies — card-level "Play only during your turn" constraints
-///   (e.g. Working a Hunch 01037) are a separate per-card concern
-///   **not** enforced here.
+///   the top open window admits Fast plays. Any eligible investigator in a
+///   permissive window qualifies, unless the card says "Play only during
+///   your turn" (below).
 ///
 /// - **Fast assets** (Rules Reference p. 11: *"A fast asset may be
 ///   played by an investigator during any player window on his or her
@@ -1105,9 +1104,14 @@ pub(super) fn resolve_play_target(
 ///   investigator AND the top open window permits them. Non-owner plays
 ///   remain illegal even in a permissive window.
 ///
-/// Card-level play constraints (e.g. "Play only during your turn",
-/// "Play only if …") are **not** enforced by this gate; they are a
-/// future per-card concern.
+/// - **"Play only during your turn"** (Working a Hunch 01037: *"Fast. Play
+///   only during your turn."*), read from
+///   [`CardMetadata::play_only_during_turn`](card_dsl::card_data::CardMetadata::play_only_during_turn):
+///   a Fast asset or event with this clause is permitted only when
+///   `active_during_investigation`, never in an out-of-turn permissive window.
+///
+/// Other card-level play constraints ("Play only if …") are **not**
+/// enforced by this gate; they are a per-card concern.
 ///
 /// # Ordering
 ///
