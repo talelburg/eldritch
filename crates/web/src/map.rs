@@ -7,6 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use card_dsl::card_data::CardKind;
+use cards::impls::{attic, cellar, parlor};
 use game_core::card_registry::CardRegistry;
 use game_core::engine::{ChoiceOption, OptionTarget};
 use game_core::state::{CardCode, CardInPlay, GameState, Location, LocationId};
@@ -24,9 +25,9 @@ pub(crate) fn location_grid_pos(code: &str) -> Option<(u16, u16)> {
     match code {
         "01111" => Some((0, 1)), // Study (isolated)
         "01112" => Some((2, 1)), // Hallway (hub)
-        "01113" => Some((2, 0)), // Attic
-        "01114" => Some((3, 1)), // Cellar
-        "01115" => Some((2, 2)), // Parlor
+        attic::CODE => Some((2, 0)),
+        cellar::CODE => Some((3, 1)),
+        parlor::CODE => Some((2, 2)),
         _ => None,
     }
 }

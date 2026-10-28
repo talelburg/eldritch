@@ -134,7 +134,7 @@ use game_core::event::TraumaKind;
 use game_core::state::{Enemy, EnemyId, GameState, LocationId, Status};
 
 use crate::generated::traits::GHOUL;
-use crate::impls::CardRecord;
+use crate::impls::{parlor, CardRecord};
 
 /// `ArkhamDB` code for Agenda 3, "They're Getting Out!".
 pub const CODE: &str = "01107";
@@ -158,9 +158,8 @@ const DEFEATED_WITH_TRAUMA: &str = "01107:defeated-with-trauma";
 /// act 3 is index 2.
 const ACT_THREE_INDEX: usize = 2;
 
-/// The Parlor and Hallway printed codes (the doom-counting locations;
-/// the Parlor is also the movement target).
-const PARLOR: &str = "01115";
+/// The Hallway's printed code. It and the Parlor are the doom-counting
+/// locations; the Parlor is also the movement target.
 const HALLWAY: &str = "01112";
 
 #[must_use]
@@ -258,7 +257,7 @@ fn is_ghoul(enemy: &Enemy) -> bool {
 /// scenario unplayable. Same reading as the barricaded first step
 /// below: no move available means no move, never an error.
 fn move_ghouls_toward_parlor(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
-    let Some(parlor) = evaluator::location_id_by_code(cx.state(), PARLOR) else {
+    let Some(parlor) = evaluator::location_id_by_code(cx.state(), parlor::CODE) else {
         return EngineOutcome::Done;
     };
     // Scan first (shared borrows), then mutate. Deterministic lowest-
@@ -305,7 +304,7 @@ fn move_ghouls_toward_parlor(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOut
 /// check — RR p.24 checks doom in Mythos step 1.3. Placed through the
 /// engine's `place_doom_on_agenda`, so an empty agenda deck takes none.
 fn place_round_end_doom(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
-    let counted: Vec<LocationId> = [HALLWAY, PARLOR]
+    let counted: Vec<LocationId> = [HALLWAY, parlor::CODE]
         .iter()
         .filter_map(|c| evaluator::location_id_by_code(cx.state(), c))
         .collect();
