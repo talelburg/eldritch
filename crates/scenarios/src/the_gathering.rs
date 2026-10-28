@@ -103,6 +103,10 @@ fn encounter_quantity(code: &str) -> u8 {
 /// String id used to look this module up in [`crate::REGISTRY`].
 pub const ID: &str = "the-gathering";
 
+/// The Hallway (01112). It has no card module yet, so its code is named here
+/// rather than taken from one.
+const HALLWAY: &str = "01112";
+
 /// The verified Standard-difficulty Night of the Zealot chaos bag (16
 /// tokens). Source: `data/campaign-guides/SOURCE.md` (campaign guide
 /// p.1, "Assemble the campaign chaos bag", Standard).
@@ -150,7 +154,7 @@ fn ghoul_count_at_investigator_location(cx: &SymbolCtx) -> u8 {
 ///
 /// Each symbol is a [`TokenOutcome`]: the cultist's horror is its `on_fail`
 /// part and the tablet's damage its `immediate` part, both plain
-/// [`Effect::Deal`](card_dsl::dsl::Effect::Deal)s on the tester. The hook runs once at reveal, so the
+/// [`Effect::Deal`]s on the tester. The hook runs once at reveal, so the
 /// tablet's Ghoul gate and the skull's X are decided then; every modifier is
 /// an `IntExpr::Lit` computed at reveal. The Gathering's Standard bag has no
 /// Elder Thing token.
@@ -165,6 +169,8 @@ fn ghoul_count_at_investigator_location(cx: &SymbolCtx) -> u8 {
 /// Difficulty selection gives this fn a difficulty parameter, and the
 /// Hard/Expert cultist needs a token-re-draw shape `TokenOutcome` can't
 /// express.
+///
+/// [`Effect::Deal`]: card_dsl::dsl::Effect::Deal
 fn resolve_symbol(token: ChaosToken, cx: &SymbolCtx) -> TokenOutcome {
     let ghouls = ghoul_count_at_investigator_location(cx);
     match token {
@@ -197,9 +203,9 @@ fn resolve_symbol(token: ChaosToken, cx: &SymbolCtx) -> TokenOutcome {
 /// Study"*, and the act's reverse removes it from the game when the rest
 /// of the house arrives.
 pub const LAYOUT: LocationLayout = &[
-    ("01112", attic::CODE),
-    ("01112", cellar::CODE),
-    ("01112", parlor::CODE),
+    (HALLWAY, attic::CODE),
+    (HALLWAY, cellar::CODE),
+    (HALLWAY, parlor::CODE),
 ];
 
 /// Build The Gathering's initial [`GameState`], with no investigators seated.
@@ -238,7 +244,7 @@ pub fn setup() -> GameState {
     // then Lita Chantler (01117), whom the same reverse puts into play in the
     // Parlor under no investigator's control.
     for code in [
-        "01112",
+        HALLWAY,
         attic::CODE,
         cellar::CODE,
         parlor::CODE,
