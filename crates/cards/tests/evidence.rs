@@ -15,7 +15,7 @@ use game_core::engine::{InputKind, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, DiscardPile, EnemyId, GameStateBuilder, InvestigatorId,
-    LocationId, SkillKind, TokenModifiers, Zone,
+    LocationId, SkillKind, Zone,
 };
 use game_core::test_support::{self, seat, Seat, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
@@ -61,7 +61,6 @@ fn fight_board(investigator: Seat, location_clues: u8) -> GameStateBuilder {
         .with_enemy_engaged(enemy, INV)
         .with_location(loc)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .open_turn(INV)
 }
 

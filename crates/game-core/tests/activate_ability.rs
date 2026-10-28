@@ -23,7 +23,7 @@ use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
     GameState, GameStateBuilder, InvestigatorId, Lifetime, LocationId, Owner, RecordedModifierKind,
-    SkillKind, Status, TokenModifiers,
+    SkillKind, Status,
 };
 use game_core::test_support::{self, seat, MockRegistry, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
@@ -172,7 +172,6 @@ fn state_seated(seated: Seat, code: &str) -> (GameState, InvestigatorId, CardIns
         .open_turn(INV)
         // Chaos bag content doesn't matter here — no skill test fires.
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .build();
     let instance_id = state.in_play(INV, code);
     (state, INV, instance_id)

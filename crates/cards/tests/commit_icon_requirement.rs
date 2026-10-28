@@ -13,7 +13,7 @@
 
 use cards::TEST_REGISTRIES;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, SkillKind, TokenModifiers,
+    CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, SkillKind,
 };
 use game_core::test_support::{seat, TestSession};
 
@@ -41,7 +41,6 @@ fn commit_to(hand: &[&str], skill: SkillKind, commits: &[&str]) -> TestSession {
                 .deck(["spare-1", "spare-2"]),
         )
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .open_turn(INV)
         .session()
         .test_skill(INV, skill, 1)

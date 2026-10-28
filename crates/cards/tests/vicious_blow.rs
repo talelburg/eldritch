@@ -10,7 +10,7 @@ use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
-    ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId, LocationId, TokenModifiers,
+    ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId, LocationId,
 };
 use game_core::test_support::{self, seat, TestSession};
 
@@ -36,7 +36,6 @@ fn fight_committing(commit: &[&str]) -> TestSession {
         .with_enemy_engaged(enemy, INV)
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .session()
         .take(&TurnAction::Fight {
             investigator: INV,

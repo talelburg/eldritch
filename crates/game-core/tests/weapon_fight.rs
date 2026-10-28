@@ -22,7 +22,7 @@ use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardInstanceId, ChaosBag, ChaosToken, Enemy, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, TokenModifiers,
+    GameStateBuilder, InvestigatorId, LocationId,
 };
 use game_core::test_support::{
     self, seat, uses, MockRegistry, SeatCard, SeatLookup as _, TestSession,
@@ -162,7 +162,6 @@ fn board(asset: SeatCard, enemy_count: u32, engaged: bool) -> GameStateBuilder {
         .with_seat(seat(INV.0).at(HERE).in_play([asset]))
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .open_turn(INV)
 }
 

@@ -25,7 +25,7 @@ use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, Enemy, EnemyId, GameStateBuilder, InvestigatorId, Location,
-    LocationId, TokenModifiers,
+    LocationId,
 };
 use game_core::test_support::{self, seat, MockRegistry, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -174,7 +174,6 @@ fn fight_board(seats: impl IntoIterator<Item = Seat>, location_clues: u8) -> Gam
         .with_enemy_engaged(ghoul(), INV)
         .with_location(location)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .open_turn(INV)
 }
 
@@ -711,7 +710,6 @@ fn investigate_to_success_scenario(in_play: &[&str]) -> GameStateBuilder {
         .with_seat(seat(1).at(HERE).in_play(in_play.iter().copied()))
         .with_location(one_clue_study())
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .open_turn(INV)
 }
 
@@ -730,7 +728,6 @@ fn investigate_with_a_bystander(bystander_card: &str) -> GameStateBuilder {
         .with_location(one_clue_study())
         .with_location(test_support::test_location(ELSEWHERE.0, "Hallway"))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .with_turn_order([INV, OTHER])
         .open_turn(INV)
 }

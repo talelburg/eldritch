@@ -14,11 +14,7 @@
 //! in the same ST.7 step for a scenario symbol as for a card's own result, so
 //! it reads the failure margin the same way.
 //!
-//! Its own integration-test binary, so its `MockRegistry` and mock scenario
-//! registry get a process to themselves. Every assertion is on events crossing
-//! the `apply` boundary.
-
-use std::sync::LazyLock;
+//! Every assertion is on events crossing the `apply` boundary.
 
 use card_dsl::dsl::{self, Effect, HarmKind, IntExpr, InvestigatorTarget, Quantity, TokenOutcome};
 use game_core::engine::Registries;
@@ -28,9 +24,9 @@ use game_core::scenario::{
 };
 use game_core::state::{
     ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
-    TokenModifiers, TokenResolution,
+    TokenResolution,
 };
-use game_core::test_support::{self, seat, MockRegistry, TestSession};
+use game_core::test_support::{self, seat, TestSession, TEST_REGISTRY};
 use game_core::{assert_event, assert_no_event};
 
 const SCENARIO: &str = "token-result-mock";
@@ -81,15 +77,13 @@ fn module_for(id: &ScenarioId) -> Option<&'static ScenarioModule> {
     (id.as_str() == SCENARIO).then_some(&MODULE)
 }
 
-fn registries() -> Registries {
-    static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
-        // `build` composes `metadata_for_test_inv`, so the horror the cultist
-        // deals reads the fixture investigator's sanity through the registry.
-        cards: MockRegistry::new().build(),
-        scenarios: &ScenarioRegistry { module_for },
-    });
-    *REGISTRIES
-}
+/// [`TEST_REGISTRY`] beside the mock scenario module. The test registry knows
+/// `TEST_INV`, so the horror the cultist deals reads the fixture
+/// investigator's sanity through the registry.
+const REGISTRIES: Registries = Registries {
+    cards: &TEST_REGISTRY,
+    scenarios: &ScenarioRegistry { module_for },
+};
 
 /// A willpower-3 investigator at `HERE` (holding `clues` clues), drawing only
 /// `token`, takes a difficulty-`difficulty` willpower test and commits nothing.
@@ -97,15 +91,14 @@ fn perform(token: ChaosToken, clues: u8, difficulty: i8) -> TestSession {
     let mut here = test_support::test_location(HERE.0, "Here");
     here.clues = clues;
     let state = GameStateBuilder::new()
-        .with_registries(registries())
+        .with_registries(REGISTRIES)
         .with_seat(seat(1).skill(SkillKind::Willpower, 3).at(HERE))
         .with_location(here)
         .with_chaos_bag(ChaosBag::new([token]))
-        .with_token_modifiers(TokenModifiers::default())
         .with_scenario_id(ScenarioId::new(SCENARIO))
         .open_turn(INV)
         .build();
-    let session = TestSession::new(state, registries())
+    let session = TestSession::new(state, REGISTRIES)
         .test_skill(INV, SkillKind::Willpower, difficulty)
         .commit(&[]);
     session.assert_at_turn_menu(INV);

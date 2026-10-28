@@ -19,7 +19,6 @@ use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
-    TokenModifiers,
 };
 use game_core::test_support::{self, seat, MockRegistry, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
@@ -83,7 +82,6 @@ fn session_with_hand(hand: &[&str]) -> TestSession {
         .with_seat(seat(1).at(HERE).hand(hand.iter().copied()))
         .with_location(location)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .open_turn(INV)
         .session()
 }
