@@ -11,7 +11,7 @@ use super::*;
 use crate::REGISTRY;
 
 mod ghoul_move;
-mod other;
+mod reverse;
 mod round_end_doom;
 
 /// Ghoul Minion 01160 (Humanoid. Monster. Ghoul.), not Elite.
