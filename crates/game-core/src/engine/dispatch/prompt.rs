@@ -2,7 +2,10 @@
 //!
 //! Every [`InputRequest`] the engine surfaces is built here, from the frame on
 //! top of the continuation stack, by [`request`] and the per-kind helpers it
-//! calls. Nothing else assembles one. A step that suspends leaves its frame at
+//! calls. Nothing else assembles one; the one request built away from a frame
+//! is a native's own pick, which `NativeCx::suspend` builds through the same
+//! helper ([`choice::effect_request`]) the table reads a stored pick back with.
+//! A step that suspends leaves its frame at
 //! rest on top and returns [`suspend`], and a frame pushed by a step that then
 //! returns `Done` is surfaced the same way when the `drive` loop meets it. So
 //! every prompt can be shown again from the state alone: a state settled with
@@ -56,9 +59,15 @@ pub(crate) fn request(
             ending,
         }) => (!ending).then(|| turn_menu(state, cards, *investigator)),
         // An empty event window or forced run is closed on sight, never shown.
-        Continuation::TimingPointWindow(TimingPointWindowFrame { candidates, .. }) => (!candidates
-            .is_empty())
-        .then(|| reaction_windows::resolution_request(state, cards, frame, candidates)),
+        Continuation::TimingPointWindow(TimingPointWindowFrame { candidates, .. }) => {
+            if candidates.is_empty() {
+                None
+            } else {
+                Some(reaction_windows::resolution_request(
+                    state, cards, frame, candidates,
+                ))
+            }
+        }
         // A framework Fast window holding reaction candidates resolves them like
         // any window; without, it offers the eligible fast plays.
         Continuation::FastWindow(FastWindowFrame { candidates, .. }) => {
