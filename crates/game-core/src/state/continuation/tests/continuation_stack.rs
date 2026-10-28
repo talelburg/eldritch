@@ -108,6 +108,9 @@ fn omitting_any_required_field_is_rejected() {
         // would silently drop every test-scoped buff in flight.
         "skill_test_ids",
         "recorded_modifiers",
+        // An `Option`, but required all the same: a defaulted `lead` would
+        // load a persisted game with player order unrotated.
+        "lead",
     ] {
         let mut v = full.clone();
         v.as_object_mut()

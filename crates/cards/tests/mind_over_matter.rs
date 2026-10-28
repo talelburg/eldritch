@@ -95,7 +95,10 @@ fn play_then_fight_substituting_succeeds_via_intellect() {
         "substitution prompt"
     );
     let s = substitute(s, true); // use Intellect
-    assert_eq!(s.prompt().kind, InputKind::PickMultiple, "commit window");
+    assert!(
+        matches!(s.prompt().kind, InputKind::PickMultiple(_)),
+        "commit window"
+    );
     let s = s.commit(&[]);
     s.assert_at_turn_menu(INV);
     assert_event!(s.events(), Event::SkillTestSucceeded { .. });
@@ -134,16 +137,18 @@ fn substituted_intellect_test_does_not_offer_a_combat_icon() {
         fight(play_card(board(fighter(4, 2).hand([MOM, OVERPOWER])), 0)),
         false,
     );
-    assert_eq!(
-        combat.prompt().kind,
-        InputKind::PickMultiple,
+    assert!(
+        matches!(combat.prompt().kind, InputKind::PickMultiple(_)),
         "commit window"
     );
     assert_eq!(combat.offered_at(&overpower), 1, "offered to a Combat test");
 
     let s = play_card(board(fighter(4, 2).hand([MOM, OVERPOWER])), 0);
     let s = substitute(fight(s), true); // use Intellect → it's now an Intellect test
-    assert_eq!(s.prompt().kind, InputKind::PickMultiple, "commit window");
+    assert!(
+        matches!(s.prompt().kind, InputKind::PickMultiple(_)),
+        "commit window"
+    );
     assert_eq!(
         s.offered_at(&overpower),
         0,

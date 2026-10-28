@@ -142,7 +142,7 @@ pub fn is_multi_select(state: &ClientState) -> bool {
     matches!(
         &state.outcome,
         Some(EngineOutcome::AwaitingInput { request, .. })
-            if request.kind == InputKind::PickMultiple
+            if matches!(request.kind, InputKind::PickMultiple(_))
     )
 }
 

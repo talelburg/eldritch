@@ -130,9 +130,11 @@ fn upkeep_prompts_and_discards_down_to_eight() {
     // The +1 draw pushes the hand to 12 (> cap), so 4.5 suspends.
     let paused = opened.take(&TurnAction::EndTurn);
 
-    assert_eq!(
-        (paused.state().phase, paused.prompt().kind),
-        (Phase::Upkeep, InputKind::PickMultiple),
+    assert!(
+        matches!(
+            (paused.state().phase, paused.prompt().kind),
+            (Phase::Upkeep, InputKind::PickMultiple(_))
+        ),
         "upkeep 4.5 must prompt for a discard, got {:?}",
         paused.prompt(),
     );

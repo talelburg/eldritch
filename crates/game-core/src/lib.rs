@@ -33,3 +33,4 @@ pub mod scenario;
 pub mod state;
 
 pub mod test_support;
+mod wire;

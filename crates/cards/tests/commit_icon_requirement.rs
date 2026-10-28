@@ -12,7 +12,7 @@
 //! mirroring `commit_cap.rs`.
 
 use cards::TEST_REGISTRIES;
-use game_core::engine::{OptionTarget, PickCount};
+use game_core::engine::{InputKind, OptionTarget, PickCount};
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, SkillKind,
 };
@@ -98,8 +98,8 @@ fn the_commit_window_offers_only_cards_with_an_appropriate_icon() {
         "Overpower is not offered"
     );
     assert_eq!(
-        request.pick_count,
-        Some(PickCount { min: 0, max: 1 }),
+        request.kind,
+        InputKind::PickMultiple(PickCount { min: 0, max: 1 }),
         "any number of the offered cards, none included",
     );
 }

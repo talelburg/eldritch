@@ -380,7 +380,8 @@ impl TestSession {
         self.assert_off_turn_menu("commit");
         let request = self.prompt();
         assert!(
-            request.kind == InputKind::PickMultiple && self.state.current_skill_test().is_some(),
+            matches!(request.kind, InputKind::PickMultiple(_))
+                && self.state.current_skill_test().is_some(),
             "TestSession::commit: the session is not at a skill test's commit window; it \
              rests at {:?}",
             request.prompt,
@@ -416,7 +417,7 @@ impl TestSession {
              commit cards with `commit(&[code])`",
         );
         let request = self.prompt();
-        let (InputKind::PickMultiple, Responder::Investigator(prompted)) =
+        let (InputKind::PickMultiple(_), Responder::Investigator(prompted)) =
             (request.kind, request.responder)
         else {
             panic!(

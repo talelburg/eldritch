@@ -14,7 +14,7 @@ fn hand(prefix: &str, n: usize) -> Vec<String> {
 /// in the Upkeep phase that is not a skill test's commit window.
 #[track_caller]
 fn assert_at_hand_size_discard(session: &TestSession) {
-    assert_eq!(session.prompt().kind, InputKind::PickMultiple);
+    assert!(matches!(session.prompt().kind, InputKind::PickMultiple(_)));
     assert!(session.state().current_skill_test().is_none());
     assert_eq!(session.state().phase, Phase::Upkeep);
 }
@@ -51,7 +51,10 @@ fn the_hand_size_discard_offers_the_hand_and_asks_for_exactly_the_overflow() {
         })
         .collect();
     assert_eq!(anchors, expected);
-    assert_eq!(request.pick_count, Some(PickCount { min: 2, max: 2 }));
+    assert_eq!(
+        request.kind,
+        InputKind::PickMultiple(PickCount { min: 2, max: 2 })
+    );
 }
 
 #[test]

@@ -44,7 +44,7 @@ pub fn PromptBanner() -> impl IntoView {
             let Some(EngineOutcome::AwaitingInput { request, .. }) = state.outcome.clone() else {
                 return ().into_any();
             };
-            let is_multi = request.kind == InputKind::PickMultiple;
+            let is_multi = matches!(request.kind, InputKind::PickMultiple(_));
             // A decision has its own modal, and that modal is its *sole*
             // surface: the banner renders neither its text nor its branches. The
             // predicate lives with the view it governs, exactly as the skill-test

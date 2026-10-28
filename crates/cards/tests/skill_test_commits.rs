@@ -169,7 +169,7 @@ fn awaiting_input_emits_between_started_and_revealed_for_real_card_state() {
     // the registry is the real one and the hand has real cards. Starting the
     // test rests at the commit window; the chaos token hasn't been drawn yet.
     let paused = test_with_hand(&[PERCEPTION]);
-    assert_eq!(paused.prompt().kind, InputKind::PickMultiple);
+    assert!(matches!(paused.prompt().kind, InputKind::PickMultiple(_)));
     assert_event!(
         paused.events(),
         Event::SkillTestStarted { investigator, .. } if *investigator == INV

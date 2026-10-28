@@ -141,7 +141,8 @@ pub enum InputResponse {
     /// ([`InputRequest::pick_multiple`](crate::engine::InputRequest::pick_multiple)).
     /// The multi-selection family: the skill-test commit window, the setup
     /// mulligan and the upkeep hand-size discard. How many may be selected is
-    /// the request's [`pick_count`](crate::engine::InputRequest::pick_count).
+    /// the [`PickCount`](crate::engine::PickCount) its
+    /// [`kind`](crate::engine::InputKind::PickMultiple) carries.
     PickMultiple {
         /// The chosen option ids, each naming one of the request's options.
         selected: Vec<OptionId>,

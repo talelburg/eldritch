@@ -180,8 +180,11 @@ pub struct ChoiceOption {
     /// The investigator this option is offered to, in a prompt
     /// [answered by several](Responder::Several): a reaction window or a
     /// framework Fast window. Two options on one anchor offered to two
-    /// investigators differ here (#1024). `None` everywhere else, where the
+    /// investigators differ here. `None` everywhere else, where the
     /// request's [`responder`](InputRequest::responder) answers every option.
+    ///
+    /// Required on the wire, `null` for `None`.
+    #[serde(deserialize_with = "crate::wire::required_option")]
     pub investigator: Option<InvestigatorId>,
 }
 
@@ -239,9 +242,10 @@ pub enum InputKind {
     /// Pick exactly one offered [`option`](InputRequest::options) →
     /// [`InputResponse::PickSingle`](crate::action::InputResponse::PickSingle).
     PickSingle,
-    /// Pick a subset (possibly empty) →
+    /// Pick a subset of the offered options, as many as the
+    /// [`PickCount`] says →
     /// [`InputResponse::PickMultiple`](crate::action::InputResponse::PickMultiple).
-    PickMultiple,
+    PickMultiple(PickCount),
     /// A binary acknowledge with no choice →
     /// [`InputResponse::Confirm`](crate::action::InputResponse::Confirm).
     Confirm,
@@ -322,9 +326,9 @@ impl PickCount {
 
 /// Who answers a prompt (ADR 0019), read off the frame that asks it.
 ///
-/// A host shows who the game is waiting on from this, and a seat check (#581)
-/// compares the answering seat against it, so neither matches over engine
-/// frames.
+/// A host shows who the game is waiting on from this, without matching over
+/// engine frames. TODO(#581): a seat check compares the answering seat against
+/// it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum Responder {
@@ -380,11 +384,7 @@ pub struct InputRequest {
     /// What this prompt asks the player to choose between (ADR 0015).
     ///
     /// It rides on the request rather than on each option because every branch
-    /// of one choice shares it. `#[serde(default)]` so a seed outcome persisted
-    /// before this field existed still deserializes — and lands on
-    /// [`Selection`](PromptNature::Selection), which is the behaviour it was
-    /// written under.
-    #[serde(default)]
+    /// of one choice shares it.
     pub nature: PromptNature,
     /// Who answers this prompt (ADR 0019).
     ///
@@ -393,15 +393,16 @@ pub struct InputRequest {
     /// responder to every request it surfaces, so no request the engine
     /// returns carries the placeholder unless several really do answer.
     pub responder: Responder,
-    /// How many [`options`](Self::options) a
-    /// [`PickMultiple`](InputKind::PickMultiple) response may select. `None`
-    /// for every other kind.
-    pub pick_count: Option<PickCount>,
 }
 
 impl InputRequest {
     /// A single-selection choice over `options` →
     /// [`InputResponse::PickSingle`](crate::action::InputResponse::PickSingle).
+    ///
+    /// Its [`responder`](Self::responder) is a placeholder, as every
+    /// constructor's is: the prompt table (`prompt::request`, which
+    /// `prompt::suspend` calls) overwrites it with the asking frame's, so
+    /// every request the engine returns carries the table's responder.
     #[must_use]
     pub fn pick_single(text: impl Into<String>, options: Vec<ChoiceOption>) -> Self {
         Self {
@@ -412,7 +413,6 @@ impl InputRequest {
             target: None,
             nature: PromptNature::Selection,
             responder: Responder::Several,
-            pick_count: None,
         }
     }
 
@@ -422,6 +422,9 @@ impl InputRequest {
     /// Each selected [`OptionId`] names one of `options`, exactly as a
     /// [`PickSingle`](InputKind::PickSingle) response does, and the host
     /// renders each candidate on the surface its option anchors to.
+    ///
+    /// Its [`responder`](Self::responder) is a placeholder the prompt table
+    /// overwrites, as for [`pick_single`](Self::pick_single).
     #[must_use]
     pub fn pick_multiple(
         text: impl Into<String>,
@@ -431,17 +434,19 @@ impl InputRequest {
         Self {
             prompt: text.into(),
             options,
-            kind: InputKind::PickMultiple,
+            kind: InputKind::PickMultiple(count),
             skippable: false,
             target: None,
             nature: PromptNature::Selection,
             responder: Responder::Several,
-            pick_count: Some(count),
         }
     }
 
     /// A binary acknowledge prompt →
     /// [`InputResponse::Confirm`](crate::action::InputResponse::Confirm).
+    ///
+    /// Its [`responder`](Self::responder) is a placeholder the prompt table
+    /// overwrites, as for [`pick_single`](Self::pick_single).
     #[must_use]
     pub fn confirm(text: impl Into<String>) -> Self {
         Self {
@@ -452,7 +457,6 @@ impl InputRequest {
             target: None,
             nature: PromptNature::Selection,
             responder: Responder::Several,
-            pick_count: None,
         }
     }
 
@@ -540,16 +544,12 @@ mod tests {
             ],
             PickCount::exactly(1),
         );
-        assert_eq!(req.kind, InputKind::PickMultiple);
+        assert_eq!(
+            req.kind,
+            InputKind::PickMultiple(PickCount { min: 1, max: 1 })
+        );
         assert!(!req.skippable);
         assert_eq!(req.options.len(), 2);
-        assert_eq!(req.pick_count, Some(PickCount { min: 1, max: 1 }));
-    }
-
-    #[test]
-    fn only_a_pick_multiple_carries_a_count() {
-        assert_eq!(InputRequest::pick_single("w", vec![]).pick_count, None);
-        assert_eq!(InputRequest::confirm("w").pick_count, None);
     }
 
     #[test]
@@ -598,23 +598,37 @@ mod tests {
         );
     }
 
-    /// A request serialized without a `nature` still deserializes, and lands on
-    /// the behaviour it was written under.
+    /// A request missing its `nature` or its `responder` does not deserialize:
+    /// neither field has a default, and a game persisted before one existed
+    /// is discarded (ADR 0010).
     #[test]
-    fn a_request_serialized_without_a_nature_reads_back_as_selection() {
-        let json = r#"{"prompt":"w","options":[],"kind":"PickSingle","skippable":false,
+    fn a_request_serialized_without_a_nature_or_a_responder_does_not_read_back() {
+        let full = r#"{"prompt":"w","options":[],"kind":"PickSingle","skippable":false,
+            "target":null,"nature":"Selection","responder":"Several"}"#;
+        assert_eq!(
+            serde_json::from_str::<InputRequest>(full).expect("deserialize"),
+            InputRequest::pick_single("w", vec![])
+        );
+        let no_nature = r#"{"prompt":"w","options":[],"kind":"PickSingle","skippable":false,
             "target":null,"responder":"Several"}"#;
-        let back: InputRequest = serde_json::from_str(json).expect("deserialize");
-        assert_eq!(back.nature, PromptNature::Selection);
+        assert!(serde_json::from_str::<InputRequest>(no_nature).is_err());
+        let no_responder = r#"{"prompt":"w","options":[],"kind":"PickSingle","skippable":false,
+            "target":null,"nature":"Selection"}"#;
+        assert!(serde_json::from_str::<InputRequest>(no_responder).is_err());
     }
 
-    /// A request with no `responder` does not deserialize: the field has no
-    /// default, and a game persisted before it existed is discarded (ADR 0010).
+    /// An option with no `investigator` does not deserialize: `None` is
+    /// written out as `null`, and a missing field is refused rather than
+    /// read as `None` (ADR 0010).
     #[test]
-    fn a_request_serialized_without_a_responder_does_not_read_back() {
-        let json =
-            r#"{"prompt":"w","options":[],"kind":"PickSingle","skippable":false,"target":null}"#;
-        assert!(serde_json::from_str::<InputRequest>(json).is_err());
+    fn an_option_serialized_without_an_investigator_does_not_read_back() {
+        let json = r#"{"id":0,"label":"A","target":null}"#;
+        assert!(serde_json::from_str::<ChoiceOption>(json).is_err());
+        let json = r#"{"id":0,"label":"A","target":null,"investigator":null}"#;
+        assert_eq!(
+            serde_json::from_str::<ChoiceOption>(json).expect("deserialize"),
+            ChoiceOption::new(OptionId(0), "A")
+        );
     }
 
     #[test]

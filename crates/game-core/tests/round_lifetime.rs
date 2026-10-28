@@ -168,7 +168,10 @@ fn a_round_scoped_substitution_has_expired_when_a_round_end_ability_initiates() 
     let session = board(ROUND_END_AGENDA).take(&TurnAction::EndTurn);
     assert_eq!(session.state().phase, Phase::Upkeep);
     let prompt = session.prompt();
-    assert_eq!(prompt.kind, InputKind::PickMultiple, "{prompt:?}");
+    assert!(
+        matches!(prompt.kind, InputKind::PickMultiple(_)),
+        "{prompt:?}"
+    );
     assert_eq!(
         success_margin(session),
         BY_COMBAT,

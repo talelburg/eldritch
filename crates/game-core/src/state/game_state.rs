@@ -92,7 +92,8 @@ pub struct GameState {
     /// standing in for a choice the rules leave open each turn: *"The
     /// investigators may take their turns in any order. The investigators
     /// choose among themselves who (among the investigators) will take this
-    /// turn"* (Appendix II, step 2.2). Turn choice is #1185.
+    /// turn"* (Appendix II, step 2.2). TODO(#1185): let the investigators
+    /// choose who takes each turn.
     pub turn_order: Vec<InvestigatorId>,
     /// The lead investigator chosen at game creation, Appendix III step 3:
     /// *"Choose one of those investigators to be the lead investigator for
@@ -104,6 +105,10 @@ pub struct GameState {
     /// so a player-order walk in flight keeps its rotation when the lead is
     /// eliminated. `None` only before seating, and in a hand-built state with
     /// no seats.
+    ///
+    /// Required on the wire, `null` for `None`: a payload without it is
+    /// refused rather than loaded with player order unrotated.
+    #[serde(deserialize_with = "crate::wire::required_option")]
     pub lead: Option<InvestigatorId>,
     /// Deterministic RNG state. Carries `(seed, draws)` only; the
     /// underlying [`rand_chacha::ChaCha8Rng`] is reconstructed on

@@ -216,7 +216,7 @@ fn in_hand(hand_index: u8) -> OptionTarget {
 #[test]
 fn the_hand_size_discard_does_not_offer_dark_memory() {
     let session = ending_upkeep_holding(&filler_and_dark_memory());
-    assert_eq!(session.prompt().kind, InputKind::PickMultiple);
+    assert!(matches!(session.prompt().kind, InputKind::PickMultiple(_)));
 
     assert_eq!(session.prompt().options.len(), 8, "the eight filler cards");
     assert_eq!(
@@ -266,8 +266,8 @@ fn an_overflow_partly_of_weaknesses_discards_only_the_non_weaknesses() {
     );
 
     assert_eq!(
-        session.prompt().pick_count,
-        Some(PickCount::exactly(1)),
+        session.prompt().kind,
+        InputKind::PickMultiple(PickCount::exactly(1)),
         "the pick holds the one card that is not a weakness",
     );
     assert_eq!(session.prompt().options.len(), 1, "only 01086 is offered");

@@ -210,7 +210,7 @@ fn drive(state: GameState, action: &TurnAction) -> Vec<Pause> {
         let response = match request.kind {
             InputKind::Confirm => InputResponse::Confirm,
             // The commit window: commit nothing.
-            InputKind::PickMultiple => InputResponse::PickMultiple { selected: vec![] },
+            InputKind::PickMultiple(_) => InputResponse::PickMultiple { selected: vec![] },
             // Lita's reaction window: fire it.
             InputKind::PickSingle => InputResponse::PickSingle(OptionId(0)),
             other => panic!("unexpected prompt kind {other:?}"),

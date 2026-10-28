@@ -594,7 +594,7 @@ fn a_staged_skill_test_asks_for_its_commit() {
         ))
         .session();
     assert_reads_as_a_game(&session);
-    assert_eq!(session.prompt().kind, InputKind::PickMultiple);
+    assert!(matches!(session.prompt().kind, InputKind::PickMultiple(_)));
     assert!(session.prompt().prompt.starts_with("Commit cards"));
     assert_eq!(session.prompt().responder, Responder::Investigator(INV));
 }
@@ -700,7 +700,7 @@ fn a_staged_hand_size_discard_asks_the_head_of_its_queue() {
     let session = two_seats_led_by_other(&[FILLER; 9])
         .with_hand_size_discard_pending([OTHER])
         .session();
-    assert_eq!(session.prompt().kind, InputKind::PickMultiple);
+    assert!(matches!(session.prompt().kind, InputKind::PickMultiple(_)));
     assert_eq!(session.prompt().responder, Responder::Investigator(OTHER));
 }
 

@@ -404,7 +404,10 @@ fn a_mulligan_offers_the_prompted_investigators_hand() {
         vec![Some(in_hand(inv2, 0)), Some(in_hand(inv2, 1))],
         "seat 2's hand, in hand order",
     );
-    assert_eq!(request.pick_count, Some(PickCount { min: 0, max: 2 }));
+    assert_eq!(
+        request.kind,
+        InputKind::PickMultiple(PickCount { min: 0, max: 2 })
+    );
 }
 
 #[test]

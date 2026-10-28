@@ -361,7 +361,7 @@ fn substitute_skill_until_end_of_round_is_offered_at_the_next_skill_test() {
     // Control: before the native runs, the test goes straight to its commit
     // window and is made with Combat.
     let control = start_combat_test(board());
-    assert_eq!(control.prompt().kind, InputKind::PickMultiple);
+    assert!(matches!(control.prompt().kind, InputKind::PickMultiple(_)));
     assert_eq!(success_margin(control), BY_COMBAT);
 
     // After it, the test first asks whether to substitute: two alternatives.

@@ -76,10 +76,9 @@ fn rejected_resolve_input_rewinds_to_pause_state_not_pre_action() {
         .open_turn(INV)
         .session()
         .test_skill(INV, SkillKind::Willpower, 2);
-    assert_eq!(
-        paused.prompt().kind,
-        InputKind::PickMultiple,
-        "skill test should pause at the commit window",
+    assert!(
+        matches!(paused.prompt().kind, InputKind::PickMultiple(_)),
+        "skill test should pause at the commit window"
     );
     assert!(paused.state().has_skill_test_in_flight());
     let s1 = paused.state().clone();

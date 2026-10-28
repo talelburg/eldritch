@@ -178,7 +178,7 @@ fn substitution_choice_no_keeps_the_printed_skill() {
     let session = session.pick_nth(1);
     assert!(
         session.state().current_skill_test().is_some()
-            && session.prompt().kind == InputKind::PickMultiple,
+            && matches!(session.prompt().kind, InputKind::PickMultiple(_)),
         "commit window"
     );
     assert_eq!(
@@ -261,7 +261,7 @@ fn no_active_substitution_opens_commit_window_directly() {
         enemy: GHOUL,
     });
     // No prompt: straight to the commit window.
-    assert_eq!(session.prompt().kind, InputKind::PickMultiple);
+    assert!(matches!(session.prompt().kind, InputKind::PickMultiple(_)));
     assert_eq!(
         session.state().current_skill_test().unwrap().skill,
         SkillKind::Combat,

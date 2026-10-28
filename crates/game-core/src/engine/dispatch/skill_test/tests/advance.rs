@@ -77,7 +77,7 @@ fn skill_test_opens_and_auto_skips_both_player_windows() {
     let session = TestSession::new(state, TEST_REGISTRIES).test_skill(inv, SkillKind::Willpower, 2);
     assert!(
         session.state().current_skill_test().is_some()
-            && session.prompt().kind == InputKind::PickMultiple,
+            && matches!(session.prompt().kind, InputKind::PickMultiple(_)),
         "commit prompt (window 1 before commit opened and auto-skipped to it)"
     );
 
@@ -175,9 +175,8 @@ fn interactive_acknowledge_pauses_for_confirm_then_resolves() {
     state.interactive_acknowledge = true;
 
     let session = TestSession::new(state, TEST_REGISTRIES).test_skill(inv, SkillKind::Willpower, 2);
-    assert_eq!(
-        session.prompt().kind,
-        InputKind::PickMultiple,
+    assert!(
+        matches!(session.prompt().kind, InputKind::PickMultiple(_)),
         "commit prompt"
     );
 
@@ -222,9 +221,8 @@ fn no_acknowledge_pause_when_flag_off() {
         .build();
 
     let session = TestSession::new(state, TEST_REGISTRIES).test_skill(inv, SkillKind::Willpower, 2);
-    assert_eq!(
-        session.prompt().kind,
-        InputKind::PickMultiple,
+    assert!(
+        matches!(session.prompt().kind, InputKind::PickMultiple(_)),
         "commit prompt"
     );
     // No acknowledge pause when the flag is off: straight back to the menu.

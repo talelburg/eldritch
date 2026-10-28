@@ -416,9 +416,8 @@ fn a_designated_fight_is_a_fight_action() {
     /// and the comparison would be vacuous.
     fn rows_mid_test(session: TestSession, action: &TurnAction) -> usize {
         let session = session.take(action);
-        assert_eq!(
-            session.prompt().kind,
-            InputKind::PickMultiple,
+        assert!(
+            matches!(session.prompt().kind, InputKind::PickMultiple(_)),
             "expected the commit window with the test in flight; got {:?}",
             session.prompt(),
         );

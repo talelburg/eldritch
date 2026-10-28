@@ -226,9 +226,8 @@ fn settling_a_staged_substitution_prompt_shows_its_decision() {
         session.state().current_skill_test().map(|t| t.skill),
         Some(SkillKind::Intellect),
     );
-    assert_eq!(
-        session.prompt().kind,
-        InputKind::PickMultiple,
+    assert!(
+        matches!(session.prompt().kind, InputKind::PickMultiple(_)),
         "commit window"
     );
 }
@@ -261,7 +260,7 @@ fn settling_a_staged_mulligan_shows_its_prompt() {
         .with_turn_order([INV])
         .with_mulligan_remaining([INV])
         .session();
-    assert_eq!(session.prompt().kind, InputKind::PickMultiple);
+    assert!(matches!(session.prompt().kind, InputKind::PickMultiple(_)));
 
     let session = session.choose_from_hand(&["_ts_kept_out"]);
 
@@ -332,7 +331,7 @@ fn settling_a_staged_hand_size_discard_shows_its_prompt() {
         })
         .with_hand_size_discard_pending([INV])
         .session();
-    assert_eq!(session.prompt().kind, InputKind::PickMultiple);
+    assert!(matches!(session.prompt().kind, InputKind::PickMultiple(_)));
 
     let session = session.choose_from_hand(&["_ts_filler"]);
 
@@ -345,7 +344,7 @@ fn settling_a_staged_hand_size_discard_shows_its_prompt() {
 /// The commit window a skill test opens: a `PickMultiple` that holds the test
 /// open, so the test has not ended yet.
 fn assert_at_commit_window(session: &TestSession) {
-    assert_eq!(session.prompt().kind, InputKind::PickMultiple);
+    assert!(matches!(session.prompt().kind, InputKind::PickMultiple(_)));
     assert_event_count!(session.events(), 0, Event::SkillTestEnded { .. });
 }
 
@@ -477,7 +476,7 @@ impl ChoiceResolver for CommitNothing {
     fn next(&mut self, request: &InputRequest, _state: &GameState) -> InputResponse {
         self.answered.set(self.answered.get() + 1);
         match request.kind {
-            InputKind::PickMultiple => InputResponse::PickMultiple { selected: vec![] },
+            InputKind::PickMultiple(_) => InputResponse::PickMultiple { selected: vec![] },
             InputKind::Confirm => InputResponse::Confirm,
             _ => InputResponse::Skip,
         }
