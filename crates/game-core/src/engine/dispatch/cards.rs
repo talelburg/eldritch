@@ -393,32 +393,9 @@ pub(in crate::engine) fn shuffle_player_deck(cx: &mut Cx, investigator: Investig
              this is a state-corruption invariant violation"
         )
         });
-    if inv.deck.len() < 2 {
-        return;
+    if cx.state.rng.shuffle(&mut inv.deck) {
+        cx.events.push(Event::DeckShuffled { investigator });
     }
-    // Fisher-Yates: walk from the end, swap each element with one in
-    // [0, i]. `next_index(n)` returns `[0, n)`, so we pass i+1.
-    let deck_len = inv.deck.len();
-    // Collect swap indices first, then apply — avoids holding a
-    // mutable borrow on `inv.deck` across the RNG calls. (next_index
-    // takes &mut state.rng, which conflicts with the &mut borrow we
-    // already have on the investigator if we did this inline.)
-    let mut swaps: Vec<(usize, usize)> = Vec::with_capacity(deck_len - 1);
-    let mut i = deck_len - 1;
-    while i >= 1 {
-        let j = cx.state.rng.next_index(i + 1);
-        swaps.push((i, j));
-        i -= 1;
-    }
-    let inv = cx
-        .state
-        .investigators
-        .get_mut(&investigator)
-        .expect("checked");
-    for (a, b) in swaps {
-        inv.deck.swap(a, b);
-    }
-    cx.events.push(Event::DeckShuffled { investigator });
 }
 
 /// Draw up to `count` cards from the named investigator's deck top

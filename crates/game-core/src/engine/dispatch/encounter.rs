@@ -643,24 +643,13 @@ fn spawn_enemy_engaging(
 /// Emits [`Event::EncounterDeckShuffled`] iff the deck had at least
 /// 2 cards (a 0- or 1-card deck has nothing to permute).
 pub(super) fn shuffle_encounter_deck(cx: &mut Cx) {
-    let deck_len = cx.state.encounter_deck.len();
-    if deck_len < 2 {
-        return;
+    if cx
+        .state
+        .rng
+        .shuffle(cx.state.encounter_deck.make_contiguous())
+    {
+        cx.events.push(Event::EncounterDeckShuffled);
     }
-    // Mirror shuffle_player_deck's "collect swaps then apply" pattern:
-    // RngState::next_index borrows &mut state.rng, which would conflict
-    // with a &mut borrow on state.encounter_deck inline.
-    let mut swaps: Vec<(usize, usize)> = Vec::with_capacity(deck_len - 1);
-    let mut i = deck_len - 1;
-    while i >= 1 {
-        let j = cx.state.rng.next_index(i + 1);
-        swaps.push((i, j));
-        i -= 1;
-    }
-    for (a, b) in swaps {
-        cx.state.encounter_deck.swap(a, b);
-    }
-    cx.events.push(Event::EncounterDeckShuffled);
 }
 
 /// Drain `state.encounter_discard` into `state.encounter_deck` and
