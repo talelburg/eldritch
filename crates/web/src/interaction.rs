@@ -39,15 +39,11 @@ pub fn pending_options(state: &ClientState) -> Vec<ChoiceOption> {
 
 /// The options anchored to `target`, in offered order. Pure; a linear scan
 /// (option counts are tiny, so `OptionTarget` needs no `Hash`).
-#[expect(
-    clippy::needless_pass_by_value,
-    reason = "callers name the anchor inline as a temporary, which is only compared"
-)]
 #[must_use]
-pub fn options_for(options: &[ChoiceOption], target: OptionTarget) -> Vec<ChoiceOption> {
+pub fn options_for(options: &[ChoiceOption], target: &OptionTarget) -> Vec<ChoiceOption> {
     options
         .iter()
-        .filter(|o| o.target.as_ref() == Some(&target))
+        .filter(|o| o.target.as_ref() == Some(target))
         .cloned()
         .collect()
 }
@@ -288,7 +284,7 @@ mod tests {
             loose(2),
             opt(3, OptionTarget::Location(LocationId(11))),
         ];
-        let got = options_for(&opts, OptionTarget::Location(LocationId(10)));
+        let got = options_for(&opts, &OptionTarget::Location(LocationId(10)));
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].id, OptionId(0));
     }
@@ -303,7 +299,7 @@ mod tests {
             opt(3, OptionTarget::EncounterDeck),
             opt(4, OptionTarget::PlayerDeck(InvestigatorId(2))),
         ];
-        let ids = |t| -> Vec<u32> { options_for(&opts, t).iter().map(|o| o.id.0).collect() };
+        let ids = |t| -> Vec<u32> { options_for(&opts, &t).iter().map(|o| o.id.0).collect() };
         assert_eq!(ids(OptionTarget::TurnControl(inv)), vec![0]);
         assert_eq!(ids(OptionTarget::ResourcePool(inv)), vec![1]);
         assert_eq!(
