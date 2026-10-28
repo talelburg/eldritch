@@ -20,7 +20,7 @@ use game_core::engine::Registries;
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
-    ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId, LocationId, TokenModifiers,
+    ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId, LocationId,
 };
 use game_core::test_support::{self, seat, MockRegistry, TestSession};
 
@@ -84,7 +84,6 @@ fn board() -> GameStateBuilder {
         // Co-located: Fight is location-gated.
         .with_enemy_engaged(enemy, INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .open_turn(INV)
 }
 

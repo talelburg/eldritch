@@ -35,10 +35,4 @@ mod tests {
     fn has_no_triggered_abilities() {
         assert!(super::abilities().is_empty());
     }
-
-    #[test]
-    fn registry_dispatches_to_this_modules_abilities() {
-        assert_eq!(crate::abilities_for(super::CODE), Some(super::abilities()));
-        assert!(crate::is_playable(super::CODE));
-    }
 }

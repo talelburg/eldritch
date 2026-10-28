@@ -65,7 +65,7 @@ use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, ModifierTarget, Owner, SkillKind, TokenModifiers,
+    GameStateBuilder, InvestigatorId, LocationId, ModifierTarget, Owner, SkillKind,
 };
 use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
 
@@ -157,7 +157,6 @@ impl Board {
             .with_turn_order([KEEPER, OTHER])
             .open_turn(self.actor)
             .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-            .with_token_modifiers(TokenModifiers::default())
             .build();
         // Lita is the scenario's card wherever she is, so she is placed on the
         // built state rather than seated (a seat's cards are its

@@ -15,9 +15,7 @@
 use card_dsl::dsl::HarmKind;
 use cards::TEST_REGISTRIES;
 use game_core::event::Event;
-use game_core::state::{
-    ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, SkillKind, TokenModifiers,
-};
+use game_core::state::{ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, SkillKind};
 use game_core::test_support::{seat, Seat, TestSession};
 use game_core::{assert_event, assert_no_event};
 
@@ -30,7 +28,6 @@ fn board(investigator: Seat, token: ChaosToken) -> TestSession {
         .with_registries(TEST_REGISTRIES)
         .with_seat(investigator)
         .with_chaos_bag(ChaosBag::new([token]))
-        .with_token_modifiers(TokenModifiers::default())
         .open_turn(INV)
         .session()
 }

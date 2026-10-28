@@ -5,6 +5,7 @@
 
 use cards::decks::{self, DefaultDeck, WeaknessChoice};
 use futures::channel::mpsc::UnboundedSender;
+use game_core::scenario::ScenarioId;
 use leptos::prelude::*;
 use protocol::CreateGameRequest;
 
@@ -91,7 +92,7 @@ pub fn PickerView() -> impl IntoView {
                         on:click=move |_| {
                             if let Some(tx) = tx.clone() {
                                 let _ = tx.unbounded_send(CreateGameRequest {
-                                    scenario_id: "the-gathering".to_string(),
+                                    scenario_id: ScenarioId::new("the-gathering"),
                                     roster: vec![decks::DEFAULT_DECKS[picked.get_untracked()]
                                         .roster_entry(weakness.get_untracked())],
                                 });

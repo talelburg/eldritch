@@ -40,7 +40,7 @@ use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, Continuation, Enemy, EnemyId, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, SkillKind, TokenModifiers,
+    InvestigatorId, LocationId, SkillKind,
 };
 use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -88,7 +88,6 @@ fn fight_board(investigator: Seat, enemy: Enemy) -> TestSession {
         .with_enemy_engaged(enemy, INV)
         // Single `Numeric(0)` token → total = combat(1) + 0 = 1 < fight(5) → fail.
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .session()
 }
 

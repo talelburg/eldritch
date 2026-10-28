@@ -30,7 +30,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, Agenda, CardCode, ChaosBag, ChaosToken, DiscardPile, Enemy,
-    EnemyId, GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, TokenModifiers, Zone,
+    EnemyId, GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, Zone,
 };
 use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
 
@@ -170,7 +170,6 @@ fn defeated_in_a_two_investigator_game_it_goes_to_its_bearers_discard() {
         .with_turn_order([bearer, fighter])
         .open_turn(bearer)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .session();
     let session = draw_the_acolyte(session, bearer);
     let acolyte = spawned_acolyte(&session).id;
@@ -259,7 +258,6 @@ fn readied_beside_only_the_other_investigator_it_engages_no_one() {
         .with_turn_order([bearer, other])
         .open_turn(bearer)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .session();
     let session = draw_the_acolyte(session, bearer);
     let acolyte = spawned_acolyte(&session).id;

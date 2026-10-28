@@ -20,8 +20,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
     AbilityUsageRecord, CardCode, CardInPlay, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind, SkillTestId, TokenModifiers,
-    UsageClock,
+    GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind, SkillTestId, UsageClock,
 };
 use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -65,7 +64,6 @@ fn roland_at_location_with_enemy(location_clues: u8, round: u32) -> GameState {
         .with_enemy_engaged(enemy, INV)
         .with_location(loc)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .open_turn(INV)
         .build()
 }
