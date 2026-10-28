@@ -73,7 +73,6 @@
   {
     "FastWindow": {
       "candidates": [],
-      "fast_actors": "Any",
       "kind": {
         "Phase": "MythosAfterDraws"
       }
@@ -91,7 +90,6 @@
           "source": "Hand"
         }
       ],
-      "fast_actors": "Any",
       "kind": {
         "Phase": "MythosAfterDraws"
       }

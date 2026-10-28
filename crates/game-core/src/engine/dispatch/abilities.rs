@@ -58,8 +58,8 @@ use crate::state::{
 /// The Rules Reference's free triggered ability *"does not cost an action and
 /// may be used during any player window"* (`glossary/Triggered_Abilities.md`).
 /// So validation permits one when the acting investigator is the active
-/// investigator during the Investigation phase, or when an open window's
-/// `fast_actors` permits them. A moment inside another ability's resolution is
+/// investigator during the Investigation phase, or when an open window admits
+/// Fast plays. A moment inside another ability's resolution is
 /// not itself a window. Asked whether Lola Hayes may switch roles while another
 /// ability resolves, the official FAQ answers *"As long as it is during a
 /// \[fast\] player window, yes."*

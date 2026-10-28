@@ -2,7 +2,7 @@
 //! and step types that exist only to serve a frame, and the per-frame
 //! classifiers.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::{iter, mem};
 
 use card_dsl::card_data::SkillKind;
@@ -971,23 +971,21 @@ impl Continuation {
         }
     }
 
-    /// Whether `investigator` may submit a Fast action into this open window. A
-    /// [`FastWindow`](Self::FastWindow) delegates to its [`FastActorScope`]; a
-    /// [`TimingPointWindow`](Self::TimingPointWindow) reaction window admits any
-    /// investigator, as `FastActorScope::Any` would. Forced
-    /// runs and non-window frames admit none.
+    /// Whether this frame is an open window that admits Fast plays: a
+    /// [`FastWindow`](Self::FastWindow) player window or a
+    /// [`TimingPointWindow`](Self::TimingPointWindow) reaction window. Forced
+    /// runs and non-window frames admit none. It does not depend on who asks:
+    /// who may act is the turn checks' question, in legality.
     #[must_use]
-    pub fn permits_fast(&self, investigator: InvestigatorId) -> bool {
-        match self {
-            Continuation::FastWindow(FastWindowFrame { fast_actors, .. }) => {
-                fast_actors.permits(investigator)
-            }
-            Continuation::TimingPointWindow(TimingPointWindowFrame {
-                mode: TimingMode::Reaction,
-                ..
-            }) => true,
-            _ => false,
-        }
+    pub fn permits_fast(&self) -> bool {
+        matches!(
+            self,
+            Continuation::FastWindow(_)
+                | Continuation::TimingPointWindow(TimingPointWindowFrame {
+                    mode: TimingMode::Reaction,
+                    ..
+                })
+        )
     }
 }
 
@@ -1833,32 +1831,6 @@ pub enum SkillTestFollowUp {
     },
 }
 
-/// Which investigators may submit Fast `PlayCard` / `ActivateAbility`
-/// actions while a window frame is the top of the window stack.
-///
-/// Modeled per Rules Reference: a reaction window allows any
-/// investigator to fire a triggered reaction or play a Fast card.
-/// `ActiveInvestigator` bounds a window to the turn's owner; concrete
-/// window kinds choose the right scope at the open-window site.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[non_exhaustive]
-pub enum FastActorScope {
-    /// Only the named investigator may submit Fast actions during
-    /// this window. Used for narrow Investigation-phase windows (the
-    /// turn's owner) where Fast actions are still bounded to one
-    /// actor; pair with `Any` for windows where other investigators
-    /// may interject.
-    ActiveInvestigator(InvestigatorId),
-    /// Any investigator may submit Fast actions. Used for reaction
-    /// windows and between-phase windows.
-    Any,
-    /// Only the named set may submit Fast actions. Reserved for
-    /// scenario-specific windows that restrict actors by criterion
-    /// (e.g. only investigators at a given location). Nothing
-    /// constructs this variant today.
-    Specific(BTreeSet<InvestigatorId>),
-}
-
 /// The framework step a [`FastWindow`](Continuation::FastWindow) gates — the
 /// discriminant for the engine's framework player windows. Routes the close
 /// continuation.
@@ -1876,19 +1848,6 @@ pub enum FastWindowKind {
         /// skill-test windows for routing.
         before_token: bool,
     },
-}
-
-impl FastActorScope {
-    /// True if `investigator` is permitted to submit a Fast action
-    /// during the window carrying this scope.
-    #[must_use]
-    pub fn permits(&self, investigator: InvestigatorId) -> bool {
-        match self {
-            Self::ActiveInvestigator(id) => *id == investigator,
-            Self::Any => true,
-            Self::Specific(set) => set.contains(&investigator),
-        }
-    }
 }
 
 /// Whether a [`TimingPointWindow`](Continuation::TimingPointWindow) is a
@@ -2518,8 +2477,6 @@ pub struct FastWindowFrame {
     /// Usually empty (a pure Fast-gate) — non-empty only for a
     /// hand play offered at a framework step.
     pub candidates: Vec<ResolutionCandidate>,
-    /// Which investigators may submit Fast actions here.
-    pub fast_actors: FastActorScope,
     /// The framework step this window gates (and its event-payload kind).
     pub kind: FastWindowKind,
 }

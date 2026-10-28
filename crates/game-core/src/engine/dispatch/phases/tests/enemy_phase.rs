@@ -1,9 +1,7 @@
 use super::*;
 use crate::engine::enumerate::TurnAction;
 use crate::engine::outcome::{EngineOutcome, OptionTarget};
-use crate::state::{
-    Enemy, EnemyId, FastActorScope, GameStateBuilder, InvestigatorId, LocationId, Phase, Status,
-};
+use crate::state::{Enemy, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase, Status};
 use crate::test_support::{self, Seat, TEST_REGISTRIES};
 use crate::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
 
@@ -562,10 +560,7 @@ fn enemy_phase_resumes_via_skip_input() {
         .with_phase_anchor(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked(inv_id),
         })
-        .with_open_window(
-            FastWindowKind::Phase(PhaseStep::BeforeInvestigatorAttacked),
-            FastActorScope::Any,
-        )
+        .with_open_window(FastWindowKind::Phase(PhaseStep::BeforeInvestigatorAttacked))
         .session()
         .skip();
 

@@ -7,7 +7,6 @@ fn open_window_serde_roundtrip() {
     // whole `Continuation` serializes for replay.
     let window = Continuation::FastWindow(FastWindowFrame {
         candidates: Vec::new(),
-        fast_actors: FastActorScope::Any,
         kind: FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
     });
     let json = serde_json::to_string(&window).expect("serialize");

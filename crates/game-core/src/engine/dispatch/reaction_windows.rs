@@ -25,8 +25,8 @@ use crate::engine::outcome::{
 use crate::engine::{abilities_in_effect, ability_source, Cx};
 use crate::event::{Event, LapseReason};
 use crate::state::{
-    CandidateSource, Continuation, FastActorScope, FastWindowFrame, FastWindowKind, GameState,
-    InvestigatorId, PlayFromHandFrame, ResolutionCandidate, TimingMode, TimingPointWindowFrame,
+    CandidateSource, Continuation, FastWindowFrame, FastWindowKind, GameState, InvestigatorId,
+    PlayFromHandFrame, ResolutionCandidate, TimingMode, TimingPointWindowFrame,
 };
 
 /// Push a reaction window frame for `candidates` at `bucket`. The shared push
@@ -1098,11 +1098,9 @@ pub(super) fn open_fast_window(cx: &mut Cx, kind: FastWindowKind) -> EngineOutco
     // the candidate list is always empty; the Fast-play opportunity is gated by
     // `any_fast_play_eligible` below.
     let candidates = Vec::new();
-    cx.state.continuations.push(FastWindowFrame {
-        candidates,
-        fast_actors: FastActorScope::Any,
-        kind,
-    });
+    cx.state
+        .continuations
+        .push(FastWindowFrame { candidates, kind });
 
     let has_pending = !cx
         .state

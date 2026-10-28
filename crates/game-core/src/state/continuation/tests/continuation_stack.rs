@@ -16,7 +16,6 @@ fn awaits_input_gates_suspensions_but_not_anchors() {
     // `ResolveInput::Skip` closes it.
     assert!(Continuation::FastWindow(FastWindowFrame {
         candidates: Vec::new(),
-        fast_actors: FastActorScope::Any,
         kind: FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
     })
     .awaits_input());
@@ -127,10 +126,7 @@ fn open_window_lives_on_the_continuation_stack_as_a_fast_window() {
     // A framework window is a `Continuation::FastWindow` frame on the one
     // stack — there is no separate `open_windows` Vec.
     let state = GameStateBuilder::new()
-        .with_open_window(
-            FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
-            FastActorScope::Any,
-        )
+        .with_open_window(FastWindowKind::Phase(PhaseStep::MythosAfterDraws))
         .build();
     assert_eq!(state.continuations.len(), 1);
     assert!(matches!(

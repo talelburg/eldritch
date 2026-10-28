@@ -22,10 +22,10 @@ use game_core::engine::{
 };
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, EnemyId, FastActorScope,
-    FastWindowKind, GameState, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume,
-    InvestigatorId, LocationId, Phase, PhaseStep, SkillKind, SubstitutionPromptFrame,
-    UpkeepPhaseFrame, UpkeepResume,
+    AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, EnemyId, FastWindowKind,
+    GameState, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume, InvestigatorId,
+    LocationId, Phase, PhaseStep, SkillKind, SubstitutionPromptFrame, UpkeepPhaseFrame,
+    UpkeepResume,
 };
 use game_core::test_support::{
     self, seat, ChoiceResolver, MockRegistry, SeatLookup as _, TestSession,
@@ -126,10 +126,7 @@ fn turn_begins_window_with(code: &str) -> GameStateBuilder {
         .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
         })
-        .with_open_window(
-            FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
-            FastActorScope::Any,
-        )
+        .with_open_window(FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins))
 }
 
 fn board_with(in_play: &[&str]) -> GameStateBuilder {

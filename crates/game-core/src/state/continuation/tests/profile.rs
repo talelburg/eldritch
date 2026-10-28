@@ -23,7 +23,6 @@ fn timing_point_window(candidates: Vec<ResolutionCandidate>) -> Continuation {
 fn fast_window(candidates: Vec<ResolutionCandidate>) -> Continuation {
     Continuation::FastWindow(FastWindowFrame {
         candidates,
-        fast_actors: FastActorScope::Any,
         kind: FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
     })
 }

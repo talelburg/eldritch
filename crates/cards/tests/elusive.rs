@@ -21,9 +21,9 @@ use game_core::engine::enumerate::{self, PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, FastActorScope, FastWindowKind,
-    GameStateBuilder, InvestigationPhaseFrame, InvestigationResume, InvestigatorId, Location,
-    LocationId, Owner, Phase, PhaseStep,
+    CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, FastWindowKind, GameStateBuilder,
+    InvestigationPhaseFrame, InvestigationResume, InvestigatorId, Location, LocationId, Owner,
+    Phase, PhaseStep,
 };
 use game_core::test_support::{self, seat, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
@@ -255,10 +255,7 @@ fn not_playable_in_another_investigators_turn() {
         .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
         })
-        .with_open_window(
-            FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
-            FastActorScope::Any,
-        )
+        .with_open_window(FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins))
         .session();
     let glass = OptionTarget::HandCard {
         investigator: other,

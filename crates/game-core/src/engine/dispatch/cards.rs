@@ -1115,8 +1115,7 @@ pub(super) fn resolve_play_target(
 /// - **Fast events** (Rules Reference p. 11: *"A fast event card may be
 ///   played from a player's hand any time its play instructions
 ///   specify"*): permitted when `active_during_investigation` OR when
-///   the top open window's `fast_actors` scope permits the acting
-///   investigator. Any eligible investigator in a permissive window
+///   the top open window admits Fast plays. Any eligible investigator in a permissive window
 ///   qualifies — card-level "Play only during your turn" constraints
 ///   (e.g. Working a Hunch 01037) are a separate per-card concern
 ///   **not** enforced here.
