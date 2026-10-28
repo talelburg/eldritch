@@ -9,7 +9,7 @@ use crate::action::InputResponse;
 use crate::engine::board;
 use crate::engine::dispatch::emit::{self, TimingEvent};
 use crate::engine::dispatch::hunters::PreyResolution;
-use crate::engine::dispatch::{choice, engagement, hunters, reaction_windows, skill_test};
+use crate::engine::dispatch::{choice, cursor, engagement, hunters, reaction_windows, skill_test};
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::{EngineOutcome, InputRequest, OptionTarget, ResumeToken};
 use crate::engine::Cx;
@@ -500,11 +500,6 @@ pub(super) fn spawn_enemy_at(
 /// Mint an enemy from `metadata` at `location_id` and engage it as
 /// `engages` says: with its drawer, or by prey among the investigators
 /// there. The body of [`spawn_enemy`] and [`spawn_enemy_at`].
-#[expect(
-    clippy::too_many_lines,
-    reason = "mints the enemy inline, as the only production `Enemy` constructor, then resolves \
-              its engagement on spawn"
-)]
 fn spawn_enemy_engaging(
     cx: &mut Cx,
     code: CardCode,
@@ -535,14 +530,10 @@ fn spawn_enemy_engaging(
     let prey = *prey;
 
     // Resolve health. PerInvestigator scales by the number of investigators
-    // in the game (Rules Reference p.12); matches the per-investigator clue
-    // path in reveal.rs (its future started-count caveat applies here too).
+    // in the game (Rules Reference p.12), as a per-investigator clue value does.
     let max_health = match health {
         Some(HealthValue::Fixed(n)) => *n,
-        Some(HealthValue::PerInvestigator(n)) => {
-            let count = u8::try_from(cx.state.investigators.len()).unwrap_or(u8::MAX);
-            n.saturating_mul(count)
-        }
+        Some(HealthValue::PerInvestigator(n)) => cursor::per_investigator(cx.state, *n),
         None => 1,
     };
 

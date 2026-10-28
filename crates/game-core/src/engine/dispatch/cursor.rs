@@ -97,6 +97,19 @@ pub(super) fn next_active_investigator_after(
         })
 }
 
+/// `n` per investigator: `n` times the number of investigators who started the
+/// scenario, saturating at `u8::MAX`. A location's per-investigator clue value
+/// and an enemy's per-investigator health both scale by it.
+///
+/// Eliminated investigators count, as the rules' "started the scenario" asks:
+/// the investigators map never drops one (an elimination flips its status), so
+/// its length is that count. If that invariant changes, this must switch to a
+/// stored started-count.
+pub(super) fn per_investigator(state: &GameState, n: u8) -> u8 {
+    let count = u8::try_from(state.investigators.len()).unwrap_or(u8::MAX);
+    n.saturating_mul(count)
+}
+
 /// Why it is not `investigator`'s turn, as [`your_turn`] reports it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NotYourTurn {
