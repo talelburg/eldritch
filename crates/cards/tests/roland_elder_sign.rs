@@ -12,7 +12,7 @@ use cards::TEST_REGISTRIES;
 use game_core::assert_event;
 use game_core::event::Event;
 use game_core::state::{
-    ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenModifiers,
+    ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
 };
 use game_core::test_support::{self, clues, seat, Seat};
 
@@ -48,7 +48,6 @@ fn run_elder_sign_test_seated(roland: Seat, clues_here: u8) -> Vec<Event> {
         .with_seat(roland)
         .with_location(study)
         .with_chaos_bag(ChaosBag::new([ChaosToken::ElderSign]))
-        .with_token_modifiers(TokenModifiers::default())
         .open_turn(INV)
         .session()
         .test_skill(INV, SkillKind::Willpower, 3)

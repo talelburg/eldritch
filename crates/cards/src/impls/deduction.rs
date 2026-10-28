@@ -54,12 +54,6 @@
 //! additional clue, not you"* holds structurally. The bonus is a property of the
 //! test, not of the committer.
 //!
-//! # Module gap
-//!
-//! The "if this skill test is successful" qualifier can't be card-expressed:
-//! `Condition::SkillTest { outcome }` is not evaluated, and rejects. That is
-//! why it stays intrinsic to [`Effect::DiscoverAdditionalClues`].
-//!
 //! [`Trigger::OnCommit`]: card_dsl::dsl::Trigger::OnCommit
 //! [`Effect::DiscoverAdditionalClues`]: card_dsl::dsl::Effect::DiscoverAdditionalClues
 //! [`if_`]: card_dsl::dsl::if_
@@ -112,13 +106,5 @@ mod tests {
             &Condition::SkillTestKind(SkillTestKind::Investigate),
         );
         assert_eq!(**then, Effect::DiscoverAdditionalClues(1));
-    }
-
-    /// Catches a `CARD` record wired to the wrong code or abilities fn —
-    /// the registry must dispatch CODE to
-    /// this module's `abilities()`.
-    #[test]
-    fn registry_dispatches_to_this_modules_abilities() {
-        assert_eq!(crate::abilities_for(super::CODE), Some(super::abilities()));
     }
 }

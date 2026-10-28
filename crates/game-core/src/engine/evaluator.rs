@@ -1546,21 +1546,6 @@ pub(crate) fn eval_condition(
                 .ok_or_else(|| format!("Native condition {tag:?}: no predicate registered"))?;
             Ok(predicate(state, eval_ctx))
         }
-        Condition::SkillTest { outcome } => {
-            // TODO(#1147): delete Condition::SkillTest, which no card uses.
-            //
-            // Inside an [`Trigger::OnSkillTestResolution`] effect, the
-            // outcome is already gated by the trigger; using this
-            // condition there is redundant. The determination lives on
-            // [`InFlightSkillTest::resolved`], so an `OnCommit` effect
-            // could read it, but nothing wires this condition to that
-            // field, and outside an in-flight test there is no such frame
-            // to read. So it rejects, naming the trigger to use instead.
-            Err(format!(
-                "Condition::SkillTest {{ outcome: {outcome:?} }} is not evaluated; \
-                 gate on the outcome with Trigger::OnSkillTestResolution instead."
-            ))
-        }
     }
 }
 

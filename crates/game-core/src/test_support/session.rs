@@ -1,11 +1,7 @@
 //! The step-wise [`TestSession`] driver: settle a built state, then
 //! apply one step at a time and drain to the next rest through the one drain
-//! loop in [`resolver`](super::resolver).
+//! loop in [`resolver`](crate::test_support::resolver).
 
-use super::resolver::{
-    card_codes, drain_with_applier, hand_indices_of, is_turn_menu, options_at,
-    resolve_commit_codes, sole_option_at, turn_action_option, ChoiceResolver, ScriptedResolver,
-};
 use crate::action::{Action, InputResponse, PlayerAction};
 use crate::engine::enumerate::TurnAction;
 use crate::engine::{
@@ -16,6 +12,10 @@ use crate::event::Event;
 use crate::state::{
     Continuation, DamageSource, DealDamageFrame, DealDamageStep, EmitEventFrame, EmitStep,
     GameState, GameStateBuilder, HandSizeDiscard, InvestigatorId, MulliganFrame, SkillKind,
+};
+use crate::test_support::resolver::{
+    card_codes, drain_with_applier, hand_indices_of, is_turn_menu, options_at,
+    resolve_commit_codes, sole_option_at, turn_action_option, ChoiceResolver, ScriptedResolver,
 };
 
 /// Step-wise test driver: drive the real engine one step at a time, reading the

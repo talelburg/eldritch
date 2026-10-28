@@ -14,7 +14,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag,
     ChaosToken, Continuation, DiscardPile, EnemyId, GameState, GameStateBuilder, InvestigatorId,
     InvestigatorTurnFrame, Location, LocationId, ModifierTarget, MythosPhaseFrame, MythosResume,
-    Owner, Phase, SkillKind, TokenModifiers, UseKind, Zone,
+    Owner, Phase, SkillKind, UseKind, Zone,
 };
 use game_core::test_support::{self, seat, uses, Seat, SeatLookup as _, TestSession};
 
@@ -150,7 +150,6 @@ fn obscuring_fog_attaches_raises_shroud_and_discards_on_investigate() {
         .with_location(loc)
         .with_seat(seat(1).at(HERE))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .open_turn(INV)
         .session()
         .take(&TurnAction::Investigate { investigator: INV })
@@ -618,7 +617,6 @@ fn frozen_in_fear_with_weapon_board(actions: u8) -> TestSession {
         .with_enemy_engaged(enemy, INV)
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .session()
 }
 

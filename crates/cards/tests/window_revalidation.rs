@@ -33,7 +33,7 @@ use game_core::engine::OptionTarget;
 use game_core::event::{Event, LapseReason};
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId,
-    LocationId, SkillKind, Status, TokenModifiers, UsageClock,
+    LocationId, SkillKind, Status, UsageClock,
 };
 use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
@@ -71,7 +71,6 @@ fn after_defeat_board(location_clues: u8, shape: impl FnOnce(Seat) -> Seat) -> G
         .with_enemy_engaged(enemy, INV)
         .with_location(loc)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .build()
 }
 

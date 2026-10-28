@@ -47,7 +47,7 @@ fn the_amulets_menu_entry_plays_the_top_event() {
         .session();
     let amulet = s.state().in_play(INV, AMULET);
 
-    let menu = interaction::options_for(&s.prompt().options, OptionTarget::CardInstance(amulet));
+    let menu = interaction::options_for(&s.prompt().options, &OptionTarget::CardInstance(amulet));
     let [entry] = menu.as_slice() else {
         panic!("one entry on the Amulet's menu: {menu:?}");
     };

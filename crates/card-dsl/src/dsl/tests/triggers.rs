@@ -5,9 +5,7 @@ use super::*;
 #[test]
 fn on_commit_distinct_from_on_play() {
     let ability = on_commit(if_(
-        Condition::SkillTest {
-            outcome: TestOutcome::Success,
-        },
+        Condition::SkillTestKind(SkillTestKind::Investigate),
         discover_clue(LocationTarget::YourLocation, 1),
     ));
     assert_eq!(ability.trigger, Trigger::OnCommit);

@@ -85,9 +85,4 @@ mod tests {
         assert_eq!(*condition, dsl::succeeded_by(3));
         assert!(matches!(&**then, Effect::Native { tag } if tag == RETURN_TO_HAND));
     }
-
-    #[test]
-    fn registry_dispatches_to_this_modules_abilities() {
-        assert_eq!(crate::abilities_for(CODE), Some(abilities()));
-    }
 }

@@ -26,7 +26,7 @@ use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     self, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation,
     Enemy, EnemyId, GameState, GameStateBuilder, InvestigatorId, Location, LocationId,
-    MythosPhaseFrame, MythosResume, Owner, TokenModifiers,
+    MythosPhaseFrame, MythosResume, Owner,
 };
 use game_core::test_support::{self, seat, MockRegistry, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
@@ -607,7 +607,6 @@ fn investigate_successfully(threat_area: &[&str]) -> TestSession {
         )
         .with_location(study)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .open_turn(INV)
         .session()
         .take(&TurnAction::Investigate { investigator: INV })

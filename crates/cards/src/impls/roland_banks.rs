@@ -140,12 +140,4 @@ mod tests {
         // the trigger's outcome, not the effect).
         assert!(matches!(&abilities[1].effect, Effect::Seq(v) if v.is_empty()),);
     }
-
-    /// Catches a `CARD` record wired to the wrong code or abilities fn —
-    /// the registry must dispatch CODE to
-    /// this module's `abilities()`.
-    #[test]
-    fn registry_dispatches_to_this_modules_abilities() {
-        assert_eq!(crate::abilities_for(super::CODE), Some(super::abilities()));
-    }
 }

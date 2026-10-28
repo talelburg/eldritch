@@ -21,7 +21,7 @@ use leptos::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use crate::controls;
 use crate::drag::Drag;
-use crate::store::{self, ClientState};
+use crate::store::{self, ClientState, RevealedToken};
 
 /// The data the result panel renders: a display string for the drawn token, the
 /// final total vs difficulty, and a player-facing outcome line.
@@ -55,7 +55,7 @@ pub fn summarize(state: &ClientState) -> Option<SkillTestSummary> {
     let difficulty = state.last_skill_test_difficulty?;
     let token = state
         .last_revealed_token
-        .map(|(token, resolution)| token_display(token, resolution));
+        .map(|RevealedToken { token, resolution }| token_display(token, resolution));
     match state.last_skill_test_result.as_ref()? {
         Event::SkillTestSucceeded { margin, .. } => Some(SkillTestSummary {
             token: token.unwrap_or_else(|| "—".to_string()),
@@ -230,7 +230,7 @@ mod tests {
     /// except here.
     fn holding(
         difficulty: Option<i8>,
-        token: Option<(ChaosToken, TokenResolution)>,
+        token: Option<RevealedToken>,
         result: Option<Event>,
     ) -> ClientState {
         ClientState {
@@ -242,11 +242,11 @@ mod tests {
     }
 
     /// The store's latch for a numeric token of `modifier`.
-    fn latched(modifier: i8) -> (ChaosToken, TokenResolution) {
-        (
-            ChaosToken::Numeric(modifier),
-            TokenResolution::Modifier(modifier),
-        )
+    fn latched(modifier: i8) -> RevealedToken {
+        RevealedToken {
+            token: ChaosToken::Numeric(modifier),
+            resolution: TokenResolution::Modifier(modifier),
+        }
     }
 
     fn succeeded(margin: i8) -> Event {
@@ -291,7 +291,10 @@ mod tests {
     fn summarizes_an_autofail() {
         let s = summarize(&holding(
             Some(3),
-            Some((ChaosToken::AutoFail, TokenResolution::AutoFail)),
+            Some(RevealedToken {
+                token: ChaosToken::AutoFail,
+                resolution: TokenResolution::AutoFail,
+            }),
             Some(Event::SkillTestFailed {
                 investigator: InvestigatorId(1),
                 skill: SkillKind::Agility,
@@ -324,7 +327,10 @@ mod tests {
     fn names_a_token_revealed_in_an_earlier_batch() {
         let s = summarize(&holding(
             Some(3),
-            Some((ChaosToken::Tablet, TokenResolution::Modifier(-2))),
+            Some(RevealedToken {
+                token: ChaosToken::Tablet,
+                resolution: TokenResolution::Modifier(-2),
+            }),
             Some(failed(FailureReason::Total, 1)),
         ))
         .expect("a failure summary");

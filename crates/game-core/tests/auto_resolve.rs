@@ -55,8 +55,7 @@ use game_core::scenario::{
 };
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInstanceId, ChaosBag, ChaosToken, DiscardPile,
-    GameState, GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenModifiers,
-    TokenResolution, Zone,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenResolution, Zone,
 };
 use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
@@ -248,7 +247,6 @@ fn board_with(in_play: &[&str], hand: &[&str], bag: ChaosBag) -> (GameState, Inv
         )
         .open_turn(INV)
         .with_chaos_bag(bag)
-        .with_token_modifiers(TokenModifiers::default())
         // Named so the mock module's symbol hook is reachable; only a
         // `[skull]` in the bag actually consults it.
         .with_scenario_id(ScenarioId::new(SYMBOL_SCENARIO))
@@ -269,7 +267,6 @@ fn investigate_board(hand: &[&str], shroud: u8) -> (GameState, InvestigatorId, L
         .open_turn(INV)
         .with_location(location)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .with_scenario_id(ScenarioId::new(SYMBOL_SCENARIO))
         .build();
     (state, INV, HERE)

@@ -32,7 +32,7 @@ use crate::transport::OutboundTx;
 
 /// The first option the live prompt anchors to `target`, else `None`. The three
 /// named controls carry at most one option each, so "the option" is well-defined.
-fn live_option(target: OptionTarget) -> Option<ChoiceOption> {
+fn live_option(target: &OptionTarget) -> Option<ChoiceOption> {
     let pending = use_context::<PendingOptions>()
         .map(|p| p.0.get())
         .unwrap_or_default();
@@ -67,6 +67,10 @@ pub fn submit(response: InputResponse, label: impl Into<String>) {
 ///
 /// `class` is the control's stable hook (`turn-control`, `resource-control`,
 /// `draw-control`) so a test can find it whether or not it is live.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Leptos #[component] props are owned; the anchor is only compared"
+)]
 #[component]
 pub fn AnchoredControl(
     /// The button's text — also the event-log header for the submitted batch.
@@ -76,7 +80,7 @@ pub fn AnchoredControl(
     /// The surface the engine anchors this control's option to.
     target: OptionTarget,
 ) -> impl IntoView {
-    let option = live_option(target);
+    let option = live_option(&target);
     let live = option.is_some();
     #[cfg(target_arch = "wasm32")]
     let on_click = {

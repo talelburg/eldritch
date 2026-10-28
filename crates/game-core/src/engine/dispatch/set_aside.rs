@@ -8,9 +8,13 @@
 //! — printed codes, one collection for every cardtype. Nothing is built at
 //! `setup()`, because nothing *can* be: an enemy's per-investigator health
 //! needs the live investigator count, and a location's [`LocationId`] is
-//! minted on entry. [`put_set_aside_card_into_play`] is the single door
-//! back in, and it dispatches on the metadata's
-//! [`CardKind`](card_dsl::card_data::CardKind).
+//! minted on entry. [`put_set_aside_card_into_play`] brings back a card of
+//! any cardtype, dispatching on the metadata's
+//! [`CardKind`](card_dsl::card_data::CardKind), and returns an
+//! [`EngineOutcome`], because an enemy can suspend for a prey-tie pick
+//! before its id exists. [`put_set_aside_location_into_play`] is its
+//! location-only sibling: a location never suspends, so it returns the
+//! minted [`LocationId`].
 //!
 //! A location's connections come with it: they are printed as connection
 //! symbols on the cards, which the pinned snapshot has no field for, so
@@ -18,7 +22,9 @@
 //! [`LocationLayout`](crate::scenario::LocationLayout) and are wired at
 //! entry — the only moment both endpoints of a connection have ids.
 
-use card_dsl::card_data::CardKind;
+use std::borrow::Cow;
+
+use card_dsl::card_data::{CardKind, CardMetadata};
 
 use crate::engine::dispatch::{encounter, threat_area};
 use crate::engine::outcome::EngineOutcome;
@@ -60,21 +66,9 @@ pub(crate) fn put_set_aside_card_into_play(
     at: Option<&str>,
     owner: Owner,
 ) -> EngineOutcome {
-    let Some(pos) = cx
-        .state
-        .set_aside_cards
-        .iter()
-        .position(|c| c.as_str() == code)
-    else {
-        return EngineOutcome::Rejected {
-            reason: format!("put_set_aside_card_into_play: {code} is not set aside").into(),
-        };
-    };
-    let registry = cx.cards;
-    let Some(metadata) = (registry.metadata_for)(&CardCode::new(code)) else {
-        return EngineOutcome::Rejected {
-            reason: format!("put_set_aside_card_into_play: no metadata for {code}").into(),
-        };
+    let (pos, metadata) = match find_set_aside(cx, code, "put_set_aside_card_into_play") {
+        Ok(found) => found,
+        Err(reason) => return EngineOutcome::Rejected { reason },
     };
     match metadata.kind {
         CardKind::Location { .. } => {
@@ -88,9 +82,7 @@ pub(crate) fn put_set_aside_card_into_play(
                 };
             }
             // All checks passed — mutate.
-            cx.state.set_aside_cards.remove(pos);
-            let id = cx.state.add_location(metadata);
-            wire_layout_connections(cx.state, cx.scenario, id);
+            enter_location(cx, pos, metadata);
             EngineOutcome::Done
         }
         CardKind::Enemy { .. } => {
@@ -145,6 +137,63 @@ pub(crate) fn put_set_aside_card_into_play(
             .into(),
         },
     }
+}
+
+/// Bring the set-aside location `code` into play and return its minted
+/// [`LocationId`], wiring it to every in-play neighbour the active
+/// scenario's layout pairs it with.
+///
+/// The location-only sibling of [`put_set_aside_card_into_play`]. A
+/// location never suspends on entry, so the id exists by the time this
+/// returns and the caller need not search the board for it.
+///
+/// Validate-first: returns the rejection reason, mutating nothing, if
+/// `code` isn't in the set-aside zone, has no metadata, or isn't a
+/// location.
+pub(crate) fn put_set_aside_location_into_play(
+    cx: &mut Cx,
+    code: &str,
+) -> Result<LocationId, Cow<'static, str>> {
+    let (pos, metadata) = find_set_aside(cx, code, "put_set_aside_location_into_play")?;
+    if !matches!(metadata.kind, CardKind::Location { .. }) {
+        return Err(format!("put_set_aside_location_into_play: {code} is not a location").into());
+    }
+    // All checks passed — mutate.
+    Ok(enter_location(cx, pos, metadata))
+}
+
+/// Find the set-aside card `code`: its position in the set-aside zone and
+/// its printed metadata.
+///
+/// Returns the rejection reason, prefixed with `caller`, if `code` isn't in
+/// the zone or has no metadata. Mutates nothing.
+fn find_set_aside(
+    cx: &Cx,
+    code: &str,
+    caller: &str,
+) -> Result<(usize, &'static CardMetadata), Cow<'static, str>> {
+    let Some(pos) = cx
+        .state
+        .set_aside_cards
+        .iter()
+        .position(|c| c.as_str() == code)
+    else {
+        return Err(format!("{caller}: {code} is not set aside").into());
+    };
+    let Some(metadata) = (cx.cards.metadata_for)(&CardCode::new(code)) else {
+        return Err(format!("{caller}: no metadata for {code}").into());
+    };
+    Ok((pos, metadata))
+}
+
+/// Move the set-aside location at `pos` into play, mint its [`LocationId`],
+/// and wire it to its in-play neighbours. The caller has already validated
+/// that `metadata` is a location's.
+fn enter_location(cx: &mut Cx, pos: usize, metadata: &CardMetadata) -> LocationId {
+    cx.state.set_aside_cards.remove(pos);
+    let id = cx.state.add_location(metadata);
+    wire_layout_connections(cx.state, cx.scenario, id);
+    id
 }
 
 /// Wire `id`'s printed connections from the active scenario's

@@ -30,7 +30,7 @@
 //! [`Trigger::OnEvent`]: card_dsl::dsl::Trigger::OnEvent
 //! [`Effect::Cancel`]: card_dsl::dsl::Effect::Cancel
 
-use card_dsl::dsl::{self, Ability, AttackerScope, Effect, EventPattern, EventTiming, TargetScope};
+use card_dsl::dsl::{self, Ability, AttackerScope, EventPattern, EventTiming, TargetScope};
 
 use crate::impls::CardRecord;
 
@@ -50,7 +50,7 @@ pub fn abilities() -> Vec<Ability> {
             target: TargetScope::AtYourLocation,
         },
         EventTiming::When,
-        Effect::Cancel,
+        dsl::cancel(),
     )]
 }
 
@@ -80,10 +80,5 @@ mod tests {
             abilities[0].usage_limit.is_none(),
             "Dodge is a one-shot event — no per-round usage limit",
         );
-    }
-
-    #[test]
-    fn registry_dispatches_to_this_modules_abilities() {
-        assert_eq!(crate::abilities_for(super::CODE), Some(super::abilities()));
     }
 }

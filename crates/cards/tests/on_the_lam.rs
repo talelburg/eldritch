@@ -24,7 +24,7 @@ use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
     Act, CardCode, ChaosBag, ChaosToken, Enemy, EnemyId, GameState, GameStateBuilder,
-    InvestigatorId, Location, LocationId, Phase, SkillKind, TokenModifiers,
+    InvestigatorId, Location, LocationId, Phase, SkillKind,
 };
 use game_core::test_support::{self, seat, Seat, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -354,8 +354,7 @@ fn failed_fight_against(code: &str, on_the_lam: bool) -> TestSession {
         seat(1).at(HERE)
     };
     let builder = study_board(fighter.skill(SkillKind::Combat, 1), vec![e])
-        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default());
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]));
     let session = if on_the_lam {
         play_on_the_lam(turn_began(builder, seat(2).at(HALLWAY)))
     } else {

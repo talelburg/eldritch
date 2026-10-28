@@ -18,7 +18,7 @@ use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
     ChaosBag, ChaosToken, Enemy, EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase,
-    SkillKind, TokenModifiers,
+    SkillKind,
 };
 use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -176,7 +176,6 @@ fn elder_sign_adds_one_per_horror_on_her() {
             .with_seat(agnes().harm(0, horror))
             .with_location(test_support::test_location(HERE.0, "Here"))
             .with_chaos_bag(ChaosBag::new([ChaosToken::ElderSign]))
-            .with_token_modifiers(TokenModifiers::default())
             .open_turn(INV)
             .session()
             .test_skill(INV, SkillKind::Willpower, 5)

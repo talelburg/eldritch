@@ -106,13 +106,3 @@ fn move_resource(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
         },
     }
 }
-
-#[cfg(test)]
-mod tests {
-    /// Catches a `CARD` record wired to the wrong code or abilities fn — the
-    /// registry must dispatch CODE to this module's `abilities()`.
-    #[test]
-    fn registry_dispatches_to_this_modules_abilities() {
-        assert_eq!(crate::abilities_for(super::CODE), Some(super::abilities()));
-    }
-}

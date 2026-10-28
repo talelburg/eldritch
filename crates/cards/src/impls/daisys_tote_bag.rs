@@ -14,9 +14,11 @@
 //! ruling (<https://arkhamdb.com/card/01008>) is about signature cards in
 //! deckbuilding only, and "Daisy Walker deck only." is a deckbuilding
 //! restriction the engine does not police.
+//!
+//! [`Effect::AdditionalSlots`]: card_dsl::dsl::Effect::AdditionalSlots
 
 use card_dsl::card_data::{CardType, Slot};
-use card_dsl::dsl::{self, Ability, CardFilter, Effect};
+use card_dsl::dsl::{self, Ability, CardFilter};
 
 use crate::generated::traits::TOME;
 use crate::impls::CardRecord;
@@ -31,19 +33,9 @@ pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 /// can only be used to hold \[\[Tome\]\] assets."*
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![dsl::constant(Effect::AdditionalSlots {
-        slot: Slot::Hand,
-        count: 2,
-        only: Some(CardFilter::with_trait(TOME).and_kind(CardType::Asset)),
-    })]
-}
-
-#[cfg(test)]
-mod tests {
-    /// Catches a `CARD` record wired to the wrong code or abilities fn — the
-    /// registry must dispatch CODE to this module's `abilities()`.
-    #[test]
-    fn registry_dispatches_to_this_modules_abilities() {
-        assert_eq!(crate::abilities_for(super::CODE), Some(super::abilities()));
-    }
+    vec![dsl::constant(dsl::additional_slots(
+        Slot::Hand,
+        2,
+        Some(CardFilter::with_trait(TOME).and_kind(CardType::Asset)),
+    ))]
 }

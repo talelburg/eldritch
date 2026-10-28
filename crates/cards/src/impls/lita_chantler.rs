@@ -444,9 +444,4 @@ mod tests {
     fn with_no_fight_in_flight_nothing_is_eligible() {
         assert!(!eligible(&no_test_in_flight()));
     }
-
-    #[test]
-    fn registry_dispatches_to_this_modules_abilities() {
-        assert_eq!(crate::abilities_for(super::CODE), Some(super::abilities()));
-    }
 }

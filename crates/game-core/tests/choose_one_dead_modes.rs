@@ -25,7 +25,7 @@ use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
     AbilityAddress, AbilitySource, ChaosBag, ChaosToken, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, SkillKind, TokenModifiers,
+    InvestigatorId, LocationId, SkillKind,
 };
 use game_core::test_support::{self, seat, MockRegistry, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -85,7 +85,6 @@ fn board(damage: u8, horror: u8) -> GameState {
         .with_location(test_support::test_location(HERE.0, "Study"))
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .build()
 }
 

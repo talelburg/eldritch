@@ -15,7 +15,7 @@ use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId,
-    LocationId, SkillKind, TokenModifiers,
+    LocationId, SkillKind,
 };
 use game_core::test_support::{self, seat, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -57,7 +57,6 @@ fn board(agility: i8) -> GameState {
         .with_enemy_engaged(enemy, INV)
         .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .build()
 }
 

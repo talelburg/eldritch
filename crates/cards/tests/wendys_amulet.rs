@@ -30,7 +30,7 @@ use game_core::engine::OptionId;
 use game_core::event::Event;
 use game_core::state::{
     Agenda, CardCode, ChaosBag, ChaosToken, EnemyId, GameStateBuilder, InvestigatorId, Location,
-    LocationId, SkillKind, TokenModifiers,
+    LocationId, SkillKind,
 };
 use game_core::test_support::{self, seat, Seat, SeatLookup as _, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
@@ -382,7 +382,6 @@ fn failed_investigation_board(investigator: Seat) -> TestSession {
         .with_seat(investigator)
         .with_location(study)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
         .open_turn(INV)
         .session()
 }

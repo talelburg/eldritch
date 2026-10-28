@@ -104,32 +104,6 @@ fn if_skill_test_kind_rejects_without_in_flight_test() {
 }
 
 #[test]
-fn if_on_a_skill_test_condition_rejects_with_a_reason_naming_it() {
-    // `Condition::SkillTest { outcome }` is not evaluated: it rejects, and
-    // an outcome-gated effect uses Trigger::OnSkillTestResolution.
-    let mut state = state_with_in_flight_kind(SkillTestKind::Investigate);
-    let mut events = Vec::new();
-    let effect = dsl::if_(
-        Condition::SkillTest {
-            outcome: TestOutcome::Success,
-        },
-        dsl::discover_clue(LocationTarget::TestedLocation, 1),
-    );
-
-    let outcome = run(&mut Cx::for_test(&mut state, &mut events), &effect, ctx(1));
-
-    match outcome {
-        EngineOutcome::Rejected { reason } => {
-            assert!(
-                reason.contains("Condition::SkillTest"),
-                "reason should mention Condition::SkillTest: {reason:?}",
-            );
-        }
-        _ => panic!("expected Rejected for stubbed condition, got {outcome:?}"),
-    }
-}
-
-#[test]
 fn seq_runs_effects_in_order_then_done() {
     let inv_id = InvestigatorId(1);
     let mut state = state_with_clues_at_location(1);

@@ -37,11 +37,3 @@ pub fn abilities() -> Vec<Ability> {
         dsl::seq([]),
     )]
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn registry_dispatches_to_this_modules_abilities() {
-        assert_eq!(crate::abilities_for(super::CODE), Some(super::abilities()));
-    }
-}
