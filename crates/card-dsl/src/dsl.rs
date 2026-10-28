@@ -4122,9 +4122,11 @@ pub fn reveal_chaos_token() -> Effect {
     Effect::RevealChaosToken
 }
 
-/// Build an [`Effect::AdditionalSlots`]: `count` more slots of type `slot`
-/// while its card is in play, holding only assets `only` matches (`None` is
-/// any asset of the type). The constant marker; wrap it in [`constant`].
+/// Build an [`Effect::AdditionalSlots`]: `count` more slots of type `slot`.
+///
+/// The slots hold only assets `only` matches (`None` is any asset of the
+/// type), for as long as the card is in play. The constant marker; wrap it in
+/// [`constant`].
 #[must_use]
 pub fn additional_slots(slot: Slot, count: u8, only: Option<CardFilter>) -> Effect {
     Effect::AdditionalSlots { slot, count, only }
