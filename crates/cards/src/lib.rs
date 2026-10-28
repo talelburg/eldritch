@@ -442,20 +442,20 @@ mod tests {
         }
     }
 
-    /// Lists `src/impls/` at test time: the card module files must be exactly
-    /// the names in the `cards!` list, which must be alphabetical. Only file
-    /// names are read, and subdirectories are ignored.
+    /// Lists `src/impls/` at test time: every card module file must be named
+    /// in the `cards!` list, which must be alphabetical. The other direction
+    /// needs no test, since a listed module with no file fails to compile.
+    /// Only file names are read, and subdirectories are ignored.
     #[test]
-    fn every_card_module_has_an_all_entry() {
+    fn cards_list_matches_the_module_files_in_order() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/impls");
-        let mut files: Vec<String> = fs::read_dir(&dir)
+        let files: Vec<String> = fs::read_dir(&dir)
             .expect("src/impls is readable")
             .map(|entry| entry.expect("directory entry").path())
             .filter(|path| path.is_file() && path.extension().is_some_and(|e| e == "rs"))
             .filter_map(|path| Some(path.file_stem()?.to_str()?.to_owned()))
             .filter(|module| module != "mod")
             .collect();
-        files.sort();
 
         let unlisted: Vec<&str> = files
             .iter()
@@ -465,15 +465,6 @@ mod tests {
         assert!(
             unlisted.is_empty(),
             "impls/ has module files missing from the `cards!` list: {unlisted:?}"
-        );
-        let fileless: Vec<&str> = impls::MODULES
-            .iter()
-            .copied()
-            .filter(|module| !files.iter().any(|file| file == module))
-            .collect();
-        assert!(
-            fileless.is_empty(),
-            "the `cards!` list names modules with no file in impls/: {fileless:?}"
         );
         for pair in impls::MODULES.windows(2) {
             let [earlier, later] = pair else {
