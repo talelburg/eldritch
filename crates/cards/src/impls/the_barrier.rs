@@ -67,14 +67,12 @@
 //! against, nothing contests the cell. This act has no rulings (recorded in
 //! `data/arkhamdb-faq/no-rulings.txt`).
 //!
-//! # Module gap
-//!
-//! With one investigator in the Hallway the Priest's `Prey - Highest
-//! [combat]` resolves to that lone investigator and the spawn engages inline
-//! (`Done`). Two investigators in the Hallway tied on combat make the spawn
-//! suspend (`AwaitingInput`) after the reverse has written, so the native is
-//! rejected and the act does not advance. TODO(#1139): advance, and ask whom
-//! the Priest engages.
+//! **The Priest's engagement.** With one investigator in the Hallway, his
+//! *"**Prey** - Highest [combat]."* resolves to that investigator and the spawn
+//! engages inline. Two investigators tied on combat leave the choice to the
+//! lead investigator (`glossary/Prey.md`): the spawn pushes its engagement
+//! prompt and returns, so the reverse completes and the prompt surfaces after
+//! it, with the Parlor revealed and Lita in it.
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::evaluator::{self, EvalContext};
