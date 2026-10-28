@@ -20,8 +20,8 @@ use crate::engine::outcome::{EngineOutcome, ResumeToken};
 use crate::engine::Cx;
 use crate::event::TraumaKind;
 use crate::state::{
-    CardCode, CardInstanceId, Continuation, DamageSource, Deck, EffectPrompt, EnemyId, GameState, InvestigatorId,
-    LocationId, Owner, SkillSubstitution, UseKind, Zone,
+    CardCode, CardInstanceId, Continuation, DamageSource, Deck, EffectPrompt, EnemyId, GameState,
+    InvestigatorId, LocationId, Owner, SkillSubstitution, UseKind, Zone,
 };
 
 /// What a [`NativeEffectFn`](crate::card_registry::NativeEffectFn) gets: full
@@ -242,7 +242,12 @@ impl<'a> NativeCx<'a> {
     /// [`Event::TraumaSuffered`](crate::event::Event::TraumaSuffered); nothing
     /// records it yet. TODO(#766): record it in the campaign log.
     pub fn suffer_trauma(&mut self, investigator: InvestigatorId, kind: TraumaKind, amount: u8) {
-        elimination::suffer_trauma(self.write_access(ExitKind::DirectWrite), investigator, kind, amount);
+        elimination::suffer_trauma(
+            self.write_access(ExitKind::DirectWrite),
+            investigator,
+            kind,
+            amount,
+        );
     }
 
     /// Deal `amount` damage to `enemy`, defeating it if that is lethal. `by`
@@ -262,7 +267,12 @@ impl<'a> NativeCx<'a> {
         at: Option<&str>,
         owner: Owner,
     ) -> EngineOutcome {
-        set_aside::put_set_aside_card_into_play(self.write_access(ExitKind::DirectWrite), code, at, owner)
+        set_aside::put_set_aside_card_into_play(
+            self.write_access(ExitKind::DirectWrite),
+            code,
+            at,
+            owner,
+        )
     }
 
     /// Put the set-aside location `code` into play and return its minted
@@ -292,7 +302,12 @@ impl<'a> NativeCx<'a> {
         code: CardCode,
         owner: Owner,
     ) -> Option<CardInstanceId> {
-        threat_area::attach_to_location(self.write_access(ExitKind::DirectWrite), location, code, owner)
+        threat_area::attach_to_location(
+            self.write_access(ExitKind::DirectWrite),
+            location,
+            code,
+            owner,
+        )
     }
 
     // --- Movement and placement ---
@@ -308,7 +323,11 @@ impl<'a> NativeCx<'a> {
     /// only when the investigator was at a location and it differs from
     /// `location`.
     pub fn place_investigator(&mut self, investigator: InvestigatorId, location: LocationId) {
-        placement::place_investigator(self.write_access(ExitKind::DirectWrite), investigator, location);
+        placement::place_investigator(
+            self.write_access(ExitKind::DirectWrite),
+            investigator,
+            location,
+        );
     }
 
     /// Move `investigator` to `destination` by a card effect: a move, not a
@@ -391,7 +410,13 @@ impl<'a> NativeCx<'a> {
         kind: UseKind,
         amount: u8,
     ) -> Result<(), SpendUsesError> {
-        uses::spend_uses(self.write_access(ExitKind::DirectWrite), investigator, instance, kind, amount)
+        uses::spend_uses(
+            self.write_access(ExitKind::DirectWrite),
+            investigator,
+            instance,
+            kind,
+            amount,
+        )
     }
 
     /// Move up to `amount` uses of `kind` off `instance` into
@@ -418,7 +443,13 @@ impl<'a> NativeCx<'a> {
         kind: UseKind,
         amount: u8,
     ) -> Result<(), MoveUsesError> {
-        uses::move_uses_to_resource_pool(self.write_access(ExitKind::DirectWrite), investigator, instance, kind, amount)
+        uses::move_uses_to_resource_pool(
+            self.write_access(ExitKind::DirectWrite),
+            investigator,
+            instance,
+            kind,
+            amount,
+        )
     }
 
     /// Move up to `amount` resources out of `investigator`'s resource pool onto
@@ -441,7 +472,12 @@ impl<'a> NativeCx<'a> {
         instance: CardInstanceId,
         amount: u8,
     ) -> Result<(), MoveResourcesError> {
-        board::move_resources_to_card(self.write_access(ExitKind::DirectWrite), investigator, instance, amount)
+        board::move_resources_to_card(
+            self.write_access(ExitKind::DirectWrite),
+            investigator,
+            instance,
+            amount,
+        )
     }
 
     /// Discard every resource in `investigator`'s resource pool (Paranoia
@@ -517,7 +553,12 @@ impl<'a> NativeCx<'a> {
     /// [`Event::CardDiscarded`](crate::event::Event::CardDiscarded) naming
     /// `from`.
     pub fn discard_encounter_card(&mut self, code: CardCode, from: Zone) {
-        board::discard_drawn_card(self.write_access(ExitKind::DirectWrite), code, Owner::EncounterDeck, from);
+        board::discard_drawn_card(
+            self.write_access(ExitKind::DirectWrite),
+            code,
+            Owner::EncounterDeck,
+            from,
+        );
     }
 
     /// Discard a random card from `investigator`'s hand, returning it, or
@@ -543,7 +584,11 @@ impl<'a> NativeCx<'a> {
             .get(&investigator)
             .is_some_and(|inv| hand_index < inv.hand.len());
         if in_hand {
-            cards::discard_from_hand(self.write_access(ExitKind::DirectWrite), investigator, hand_index);
+            cards::discard_from_hand(
+                self.write_access(ExitKind::DirectWrite),
+                investigator,
+                hand_index,
+            );
         }
     }
 
@@ -552,7 +597,10 @@ impl<'a> NativeCx<'a> {
     /// [`Event::DiscardPileRemovedFromGame`](crate::event::Event::DiscardPileRemovedFromGame).
     /// An empty pile changes nothing and emits nothing.
     pub fn remove_discard_pile_from_game(&mut self, investigator: InvestigatorId) {
-        cards::remove_discard_pile_from_game(self.write_access(ExitKind::DirectWrite), investigator);
+        cards::remove_discard_pile_from_game(
+            self.write_access(ExitKind::DirectWrite),
+            investigator,
+        );
     }
 
     /// Move the card at `index` of `investigator`'s discard pile to their
@@ -563,7 +611,11 @@ impl<'a> NativeCx<'a> {
         investigator: InvestigatorId,
         index: usize,
     ) -> Option<CardCode> {
-        cards::add_discarded_card_to_hand(self.write_access(ExitKind::DirectWrite), investigator, index)
+        cards::add_discarded_card_to_hand(
+            self.write_access(ExitKind::DirectWrite),
+            investigator,
+            index,
+        )
     }
 
     // --- Decks ---
@@ -628,7 +680,11 @@ impl<'a> NativeCx<'a> {
     /// [`Event::ActionsRemainingChanged`](crate::event::Event::ActionsRemainingChanged)
     /// when the count changes.
     pub fn lose_actions(&mut self, investigator: InvestigatorId, count: u8) {
-        take::lose_actions(self.write_access(ExitKind::DirectWrite), investigator, count);
+        take::lose_actions(
+            self.write_access(ExitKind::DirectWrite),
+            investigator,
+            count,
+        );
     }
 
     // --- Acts and skill tests ---
@@ -637,13 +693,19 @@ impl<'a> NativeCx<'a> {
     /// threshold needs from investigators at the location coded
     /// `contributor_location_code`. `Rejected` when they can't afford it.
     pub fn round_end_advance(&mut self, contributor_location_code: &str) -> EngineOutcome {
-        act_agenda::round_end_advance(self.write_access(ExitKind::DirectWrite), contributor_location_code)
+        act_agenda::round_end_advance(
+            self.write_access(ExitKind::DirectWrite),
+            contributor_location_code,
+        )
     }
 
     /// Register `substitution` for the rest of the round. No event announces
     /// it.
     pub fn substitute_skill_until_end_of_round(&mut self, substitution: SkillSubstitution) {
-        skill_test::substitute_skill_until_end_of_round(self.write_access(ExitKind::DirectWrite), substitution);
+        skill_test::substitute_skill_until_end_of_round(
+            self.write_access(ExitKind::DirectWrite),
+            substitution,
+        );
     }
 
     /// Register `restriction` protecting `investigator` for the rest of the
@@ -654,7 +716,11 @@ impl<'a> NativeCx<'a> {
         investigator: InvestigatorId,
         restriction: Restriction,
     ) {
-        combat::restrict_until_end_of_round(self.write_access(ExitKind::DirectWrite), investigator, restriction);
+        combat::restrict_until_end_of_round(
+            self.write_access(ExitKind::DirectWrite),
+            investigator,
+            restriction,
+        );
     }
 
     /// Return the committed card at `index` — the one an
