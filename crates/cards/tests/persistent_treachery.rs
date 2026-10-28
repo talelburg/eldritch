@@ -752,5 +752,5 @@ fn dissonant_voices_keeps_a_fast_event_out_of_a_player_window() {
     );
     let session = session.commit(&[]);
     session.assert_at_turn_menu(INV);
-    assert_no_event!(session.events(), Event::CardPlayed { .. });
+    assert_no_event!(session.events(), Event::PlayCommenced { .. });
 }

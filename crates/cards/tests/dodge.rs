@@ -250,7 +250,7 @@ fn dissonant_voices_keeps_dodge_out_of_the_attack_window() {
         session.events(),
         Event::DamagePlacedOnInvestigator { investigator, amount: 2 } if *investigator == INV
     );
-    assert_no_event!(session.events(), Event::CardPlayed { .. });
+    assert_no_event!(session.events(), Event::PlayCommenced { .. });
     assert!(
         session.state().investigators[&INV]
             .hand
@@ -312,7 +312,7 @@ fn dodge_lapses_when_dissonant_voices_arrives_before_the_pick() {
         Event::ReactionOptionLapsed { investigator, code, reason: LapseReason::PlayBanned }
             if *investigator == INV && code.as_str() == DODGE
     );
-    assert_no_event!(events, Event::CardPlayed { .. });
+    assert_no_event!(events, Event::PlayCommenced { .. });
     assert_event!(
         events,
         Event::DamagePlacedOnInvestigator { investigator, amount: 2 } if *investigator == INV
@@ -367,5 +367,5 @@ fn dodge_lapses_as_out_of_scope_once_its_holder_leaves_the_attacked_location() {
         Event::ReactionOptionLapsed { investigator, code, reason: LapseReason::OutOfScope }
             if *investigator == dodger && code.as_str() == DODGE
     );
-    assert_no_event!(resurfaced.events(), Event::CardPlayed { .. });
+    assert_no_event!(resurfaced.events(), Event::PlayCommenced { .. });
 }

@@ -239,7 +239,7 @@ pub enum TimingEvent {
     /// Hyperborea's *"After you play a \[\[Spell\]\] card"* here: *"This trigger
     /// occurs after the Spell card has resolved in full."*
     ///
-    /// Not the logged [`Event::CardPlayed`](crate::event::Event::CardPlayed),
+    /// Not the logged [`Event::PlayCommenced`](crate::event::Event::PlayCommenced),
     /// which records step 3, the card *commencing* being played. A **bare
     /// milestone** (ADR 0008): the placement precedes it, so its resolve step
     /// is a no-op.

@@ -677,7 +677,7 @@ pub(crate) fn take(
     }
 
     // TODO(#649): the hook runs ahead of the attacks, and for a play it
-    // commences the play: `CardPlayed` is emitted and the card leaves hand. So
+    // commences the play: `PlayCommenced` is emitted and the card leaves hand. So
     // the engine's order is pay action → pay resources → commence play →
     // attacks of opportunity. The rules' order commences after the attacks:
     // `glossary/Limbo.md`, *"An event card enters limbo during step 3 of the

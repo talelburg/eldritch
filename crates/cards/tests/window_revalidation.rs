@@ -118,7 +118,7 @@ fn play_one_of_two_evidence(window: TestSession) -> TestSession {
 fn evidence_plays(events: &[Event]) -> usize {
     events
         .iter()
-        .filter(|e| matches!(e, Event::CardPlayed { code, .. } if code.as_str() == EVIDENCE))
+        .filter(|e| matches!(e, Event::PlayCommenced { code, .. } if code.as_str() == EVIDENCE))
         .count()
 }
 
@@ -212,7 +212,7 @@ fn evidence_is_withdrawn_when_rolands_reaction_takes_the_last_clue() {
     );
     assert_eq!(lapse_count(events, EVIDENCE), 1);
     // Roland's clue moved; Evidence! never resolved.
-    assert_no_event!(events, Event::CardPlayed { .. });
+    assert_no_event!(events, Event::PlayCommenced { .. });
     assert_no_event!(events, Event::ResourcesPaid { .. });
     assert_event_count!(events, 1, Event::CluePlaced { .. });
 
@@ -295,7 +295,7 @@ fn firing_a_candidate_whose_card_left_hand_rejects_instead_of_panicking() {
     // nothing paid, nothing played, no clue moved.
     let result = result.finish();
     assert_no_event!(result.events, Event::ResourcesPaid { .. });
-    assert_no_event!(result.events, Event::CardPlayed { .. });
+    assert_no_event!(result.events, Event::PlayCommenced { .. });
     assert_eq!(result.state.investigators[&INV].resources, 5);
     assert_eq!(result.state.locations[&HERE].clues, 2);
 }

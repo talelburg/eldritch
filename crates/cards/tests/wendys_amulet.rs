@@ -107,7 +107,7 @@ fn a_played_event_goes_to_the_bottom_of_the_deck() {
         Event::CardPlacedOnBottomOfDeck { investigator: INV, code } if code == &CardCode::new(EMERGENCY_CACHE)
     );
     assert_no_event!(s.events(), Event::CardDiscarded { .. });
-    assert_event!(s.events(), Event::CardPlayed { .. });
+    assert_event!(s.events(), Event::PlayCommenced { .. });
 }
 
 #[test]
@@ -290,7 +290,7 @@ fn in_her_turn_she_plays_the_top_event_of_her_discard_pile() {
     );
     assert_event!(
         s.events(),
-        Event::CardPlayed { investigator: INV, code } if code == &CardCode::new(EMERGENCY_CACHE)
+        Event::PlayCommenced { investigator: INV, code } if code == &CardCode::new(EMERGENCY_CACHE)
     );
 }
 

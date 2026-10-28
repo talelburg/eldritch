@@ -561,12 +561,16 @@ pub enum Event {
     ///
     /// [`InvestigatorEliminated`]: Event::InvestigatorEliminated
     AllInvestigatorsEliminated,
-    /// An investigator played a card from their hand. Fires before
-    /// any `Trigger::OnPlay` effects resolve (the play *causes* the
-    /// effects), and before the card lands in its destination zone.
-    /// State inspection has the post-play hand / `cards_in_play` /
-    /// discard contents.
-    CardPlayed {
+    /// An investigator began playing a card: Rules Reference Appendix I step 3,
+    /// *"The card commences being played"*, from hand or, under a permission
+    /// such as Wendy's Amulet 01014, from their discard pile. Fires as the card
+    /// leaves that zone, before any `Trigger::OnPlay` effects resolve (the play
+    /// *causes* the effects) and before the card lands in its destination zone.
+    ///
+    /// Not the play's completion. Step 4, where *"The card is regarded as
+    /// played"*, is the `CardPlayed` triggering condition, which "after you
+    /// play" reactions listen to (Heirloom of Hyperborea 01012).
+    PlayCommenced {
         /// Who played the card.
         investigator: InvestigatorId,
         /// The card code that was played.

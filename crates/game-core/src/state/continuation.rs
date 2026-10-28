@@ -536,7 +536,7 @@ pub enum ActionResume {
     },
     /// Complete a non-fast card play after its `AoO` loop: run the card's
     /// `OnPlay` effects and, for an asset, move it into play. The card has
-    /// already been announced (`CardPlayed`) and has left hand — it rides this
+    /// already been announced (`PlayCommenced`) and has left hand — it rides this
     /// frame across the whole `AoO` suspension, and its code re-derives the
     /// destination + `OnPlay` abilities from the registry on resume.
     PlayCard {
@@ -2010,7 +2010,7 @@ pub struct HandSizeDiscard {
 /// An [`Ability`](Self::Ability) candidate **fires an ability's effect** in
 /// place, from the [`AbilitySource`] it names; a [`Hand`](Self::Hand) candidate
 /// is a Fast event **played** from hand (RR Appendix I —
-/// `CardPlayed`, run the matched ability's effect, discard), not fired in
+/// `PlayCommenced`, run the matched ability's effect, discard), not fired in
 /// place, and a [`TopOfDiscardPile`](Self::TopOfDiscardPile) candidate is the
 /// same play made from the top of the discard pile under a permission
 /// (Wendy's Amulet 01014). [`is_play`](Self::is_play) names the two

@@ -14,7 +14,7 @@
 //! easy-to-miss `_` pattern.
 //!
 //! **When event order matters** between a few specific events with
-//! others interleaved (e.g. "`CardPlayed` precedes `CluePlaced`
+//! others interleaved (e.g. "`PlayCommenced` precedes `CluePlaced`
 //! precedes `CardDiscarded`, with arbitrary events in between"), use
 //! [`assert_event_sequence!`](crate::assert_event_sequence). When you
 //! need an exact sequence with no events allowed between or around,
@@ -158,7 +158,7 @@ macro_rules! assert_event_count {
 /// ```ignore
 /// assert_event_sequence!(
 ///     result.events,
-///     Event::CardPlayed { .. },
+///     Event::PlayCommenced { .. },
 ///     Event::CluePlaced { .. },
 ///     Event::CardDiscarded { .. },
 /// );

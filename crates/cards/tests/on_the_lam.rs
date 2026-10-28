@@ -196,7 +196,7 @@ fn played_after_the_turn_begins() {
     let session = play_on_the_lam(window);
     assert_event!(
         session.events(),
-        Event::CardPlayed { investigator: INV, code } if code.as_str() == ON_THE_LAM
+        Event::PlayCommenced { investigator: INV, code } if code.as_str() == ON_THE_LAM
     );
     assert_eq!(
         session.state().investigators[&INV].actions_remaining,

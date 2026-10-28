@@ -1111,7 +1111,7 @@ pub(super) fn resolve_play_target(
 ///
 /// # Ordering
 ///
-/// [`Event::CardPlayed`] fires first (the play *causes* any on-play
+/// [`Event::PlayCommenced`] fires first (the play *causes* any on-play
 /// effects, so it's correct for the play event to precede the
 /// effects' own events in the stream), and the card leaves hand with it
 /// (RR Appendix I step 3). Then the [`Trigger::OnPlay`]
@@ -1124,12 +1124,12 @@ pub(super) fn resolve_play_target(
 /// Wendy's Amulet 01014). Only then, at step 4,
 /// is the completed play announced to the timing system as
 /// `TimingEvent::CardPlayed` (Heirloom of Hyperborea 01012); the step-3
-/// [`Event::CardPlayed`] is the log entry, not that announcement.
+/// [`Event::PlayCommenced`] is the log entry, not that announcement.
 ///
 /// # State-mutation contract
 ///
 /// A mid-resolution reject here (an `OnPlay` effect returning non-`Done`
-/// after [`Event::CardPlayed`] and earlier effects have committed) is
+/// after [`Event::PlayCommenced`] and earlier effects have committed) is
 /// rolled back at the `apply` boundary — see [`apply`](crate::engine::apply)'s
 /// "Handler contract". No per-handler rollback is needed.
 pub(super) fn play_card(
@@ -1166,7 +1166,7 @@ pub(super) fn play_card(
     // A non-fast play is taken as an action: the step pays its one action, and
     // provokes attacks of opportunity before the play completes on resume. Its
     // hook pays the resource cost (RR p.22, before any attack resolves)
-    // and commences the play: `Event::CardPlayed` is logged and the card leaves hand
+    // and commences the play: `Event::PlayCommenced` is logged and the card leaves hand
     // to ride the frames until it is placed (RR Appendix I step 3 → 4). The
     // card itself rides the `ActionResolution` frame through the attacks.
     let description = ActionDescription::play(code.clone(), play_designator(&abilities).cloned());
@@ -1373,7 +1373,7 @@ pub(super) fn play_designator(abilities: &[Ability]) -> Option<&ActionDesignator
 /// [`complete_play`] to run the `OnPlay` effects + asset enter-play.
 ///
 /// On a mid-play defeat the gate suppresses this before it runs, so the card
-/// was *announced* (`CardPlayed`, action spent) but does not resolve — and the
+/// was *announced* (`PlayCommenced`, action spent) but does not resolve — and the
 /// card itself, still riding the `ActionResolution` frame, was removed from the
 /// game by elimination's sweep (RR p.10 step 1). Neither an event nor an asset
 /// reaches a discard pile or the play area: you don't gain the asset if you die
@@ -1389,7 +1389,7 @@ pub(super) fn resume_play_card(
 
 /// Commence playing the card at `source` among `investigator`'s zones (RR
 /// Appendix I, step 3: "The card commences being played"): emit
-/// [`Event::CardPlayed`], remove the card from its zone, and hand it back to the
+/// [`Event::PlayCommenced`], remove the card from its zone, and hand it back to the
 /// caller, which parks it on the frame driving the play. Between here and
 /// step 4 the card is in no zone at all — see
 /// [`Continuation::play_in_progress`](crate::state::Continuation::play_in_progress).
@@ -1421,7 +1421,7 @@ pub(super) fn commence_play(
             .pop()
             .expect("commence_play: caller guarantees the discard pile holds a card"),
     };
-    cx.events.push(Event::CardPlayed {
+    cx.events.push(Event::PlayCommenced {
         investigator,
         code: card.clone(),
     });

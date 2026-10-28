@@ -284,7 +284,7 @@ fn play_rows() -> Vec<Row> {
             seated: |seat| seat.hand([MAGNIFYING_GLASS]),
             setup: |_| {},
             take: PLAY_FROM_HAND,
-            effect: |e| matches!(e, Event::CardPlayed { .. }),
+            effect: |e| matches!(e, Event::PlayCommenced { .. }),
             actions_spent: 0,
             provokes: false,
         },
