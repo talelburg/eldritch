@@ -5,6 +5,10 @@
 //! writes. The apply's snapshot rollback undoes the rejected native's write. One
 //! that suspends before any write suspends and resumes normally.
 //!
+//! And #1189: a native whose exit left a prompt pending (a deal of harm) and
+//! that then writes directly is `Rejected` and rolled back; one that pushes
+//! again instead resolves.
+//!
 //! Each native sits on its own mock act as a forced ability at the end of the
 //! enemy phase, the `native_effect.rs` idiom. The natives model the contract,
 //! not printed cards (ADR 0016).
@@ -29,7 +33,11 @@ use game_core::test_support::{self, seat, MockRegistry, TestSession};
 const WRITE_THEN_SUSPEND_ACT: &str = "_ncx_act_write_then_suspend";
 const SUSPEND_THEN_WRITE_ACT: &str = "_ncx_act_suspend_then_write";
 
+const HARM_THEN_WRITE_ACT: &str = "_ncx_act_harm_then_write";
+const HARM_THEN_HARM_ACT: &str = "_ncx_act_harm_then_harm";
+
 const WRITE_THEN_SUSPEND: &str = "test:write-then-suspend";
+const HARM_THEN_WRITE: &str = "test:harm-then-write";
 
 /// The two locations the natives offer as a choice.
 const NEAR: LocationId = LocationId(10);
@@ -85,9 +93,29 @@ fn suspend_then_write(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     }
 }
 
+/// The tail-order violation: deal harm, which leaves its deal pending as a
+/// prompt, *then* place doom, which would land before the deal is answered.
+fn harm_then_write(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
+    let pushed = cx.deal_harm(ctx.controller, 1, 0);
+    cx.place_doom_on_agenda(3);
+    pushed
+}
+
+/// The order kept: two deals, each a push, so both resolve after the native
+/// returns. Folded in reverse, Dynamite Blast 01024's idiom, so the first
+/// pushed resolves last.
+fn harm_then_harm(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
+    let _first = cx.deal_harm(ctx.controller, 0, 1);
+    cx.deal_harm(ctx.controller, 1, 0)
+}
+
 fn registries() -> Registries {
     static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
         cards: MockRegistry::new()
+            .with_abilities(HARM_THEN_WRITE_ACT, || forced_native(HARM_THEN_WRITE))
+            .with_native_effect(HARM_THEN_WRITE, harm_then_write)
+            .with_abilities(HARM_THEN_HARM_ACT, || forced_native("test:harm-then-harm"))
+            .with_native_effect("test:harm-then-harm", harm_then_harm)
             .with_abilities(WRITE_THEN_SUSPEND_ACT, || forced_native(WRITE_THEN_SUSPEND))
             .with_native_effect(WRITE_THEN_SUSPEND, write_then_suspend)
             .with_abilities(SUSPEND_THEN_WRITE_ACT, || {
@@ -179,4 +207,35 @@ fn a_native_that_suspends_before_writing_suspends_and_resumes() {
         session.state().investigators[&INV].current_location,
         Some(FAR)
     );
+}
+
+#[test]
+fn a_native_that_writes_after_an_exit_left_a_prompt_pending_is_rejected_and_rolled_back() {
+    let session = TestSession::new(state_with_act(HARM_THEN_WRITE_ACT), registries());
+    let before = session.state().clone();
+
+    let session = end_enemy_phase(session);
+
+    let reason = session.expect_rejected();
+    assert!(
+        reason.contains(HARM_THEN_WRITE),
+        "the rejection names the native: {reason}"
+    );
+    assert_eq!(
+        session.state(),
+        &before,
+        "the doom placed ahead of the pending deal is rolled back"
+    );
+}
+
+#[test]
+fn a_native_that_pushes_after_an_exit_left_a_prompt_pending_resolves() {
+    let session = end_enemy_phase(TestSession::new(
+        state_with_act(HARM_THEN_HARM_ACT),
+        registries(),
+    ));
+    assert!(session.rejection().is_none(), "{:?}", session.rejection());
+    // With no asset to soak, each deal resolves without asking: both land.
+    let inv = &session.state().investigators[&INV];
+    assert_eq!((inv.damage(), inv.horror()), (1, 1));
 }

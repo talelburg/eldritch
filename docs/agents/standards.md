@@ -40,6 +40,8 @@ A native in `cards` gets a `game_core::engine::NativeCx`. It reads the whole sta
 
 A native also **asks before it writes**. One that suspends for a choice is re-run from the top when the choice is answered, so an exit called before the suspend would apply twice. Any exit call marks the context written, and a native that suspends after one is `Rejected` in every build (#571). Read-only helpers such as `resolve_grounded_choice` are free functions on `state()`, so asking never counts as writing.
 
+Nor does a native **write past a pending prompt**. An exit that pushes a frame returns before the frame runs, so a prompt it raises (`deal_harm`'s soak, a spawned enemy's engagement tie) surfaces after the native. Each exit is classified, in `NativeCx::write_access`, as a direct write or a push; a direct-write exit called while a prompt an earlier exit pushed is still pending is `Rejected`, since it would land before the prompt is answered (#1189). Another push is fine, as in Dynamite Blast 01024's folded deals. This is scaffolding until natives defer their tail (#1184).
+
 **Why:** each exit owns a rule a hand-rolled write gets wrong. A card leaving play goes where its **owner** says, with its attachments, and emits one event: Crypt Chill 01167 routed its discarded asset by **controller**, so a Parleyed Lita Chantler 01117 landed in the investigator's discard instead of leaving the game, as her ruling requires (#918). Doom is not placed on an empty agenda deck: They're Getting Out 01107 wrote `agenda_doom` itself and skipped that guard while the rule was only a convention (#1008). And a card with uses is discarded the moment they run out, wherever they were spent from (#353).
 
 ### Never hand-edit `crates/cards/src/generated/cards.rs`
