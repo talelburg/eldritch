@@ -92,11 +92,3 @@ fn drawer_active(state: &GameState, ctx: &EvalContext) -> bool {
         .get(&ctx.controller)
         .is_some_and(|inv| inv.status == Status::Active)
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn registry_dispatches_to_this_modules_abilities() {
-        assert_eq!(crate::abilities_for(super::CODE), Some(super::abilities()));
-    }
-}

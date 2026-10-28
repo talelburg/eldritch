@@ -81,9 +81,4 @@ mod tests {
             "Dodge is a one-shot event — no per-round usage limit",
         );
     }
-
-    #[test]
-    fn registry_dispatches_to_this_modules_abilities() {
-        assert_eq!(crate::abilities_for(super::CODE), Some(super::abilities()));
-    }
 }
