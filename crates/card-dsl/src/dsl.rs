@@ -1948,8 +1948,7 @@ impl Condition {
                 kind: NativeKind::Condition,
                 tag,
             }),
-            Condition::SkillTest { .. }
-            | Condition::SkillTestKind(_)
+            Condition::SkillTestKind(_)
             | Condition::Compare { .. }
             | Condition::ControlStatus { .. } => {}
         }
@@ -3303,12 +3302,6 @@ impl EnemyTarget {
 /// [`Native`](Self::Native) holds what it can't yet say.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Condition {
-    /// Outcome of the most recent skill test in the current
-    /// resolution stack. Failure-triggered cards (some Survivor
-    /// cards) use [`TestOutcome::Failure`]; success-side card text
-    /// typically gates via [`Trigger::OnSkillTestResolution`] instead,
-    /// so this variant is rarely paired with `Success`.
-    SkillTest { outcome: TestOutcome },
     /// Kind of the currently-resolving skill test. Used to narrow
     /// effects whose printed text qualifies on the action that
     /// initiated the test — Deduction's "if this skill test is

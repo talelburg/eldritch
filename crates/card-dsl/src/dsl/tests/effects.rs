@@ -18,15 +18,11 @@ fn seq_composition_nests_two_effects() {
 #[test]
 fn conditional_branches_box_the_inner_effects() {
     let bare = if_(
-        Condition::SkillTest {
-            outcome: TestOutcome::Success,
-        },
+        Condition::SkillTestKind(SkillTestKind::Investigate),
         discover_clue(LocationTarget::YourLocation, 1),
     );
     let with_else = if_else(
-        Condition::SkillTest {
-            outcome: TestOutcome::Success,
-        },
+        Condition::SkillTestKind(SkillTestKind::Investigate),
         discover_clue(LocationTarget::YourLocation, 1),
         gain_resources(InvestigatorTarget::You, 1),
     );
@@ -109,9 +105,7 @@ fn investigator_target_controller_and_active_are_distinct() {
 fn deeply_nested_effect_round_trips_through_serde_json() {
     let original = seq([
         if_else(
-            Condition::SkillTest {
-                outcome: TestOutcome::Success,
-            },
+            Condition::SkillTestKind(SkillTestKind::Investigate),
             for_each(
                 InvestigatorTargetSet::AtControllerLocation,
                 gain_resources(InvestigatorTarget::Active, 1),
@@ -341,9 +335,7 @@ fn barricade_dsl_variants_round_trip() {
 fn deeply_nested_effect_clones() {
     let original = seq([
         if_else(
-            Condition::SkillTest {
-                outcome: TestOutcome::Success,
-            },
+            Condition::SkillTestKind(SkillTestKind::Investigate),
             for_each(
                 InvestigatorTargetSet::AtControllerLocation,
                 gain_resources(InvestigatorTarget::Active, 1),
