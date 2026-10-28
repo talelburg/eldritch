@@ -19,7 +19,7 @@
 
 use std::collections::BTreeSet;
 
-use card_dsl::card_data::{CardKind, CardMetadata, Class, ClueValue, Prey};
+use card_dsl::card_data::{CardKind, CardMetadata, Class, ClueValue, HealthValue, Prey};
 use card_dsl::dsl::SkillTestKind;
 
 use crate::engine::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
@@ -142,32 +142,44 @@ pub fn test_location(id: u32, name: impl Into<String>) -> Location {
 ///   weakness comes from. A test about a weakness enemy sets
 ///   [`owner`](Enemy::owner) to its bearer.
 ///
-/// Mutate fields directly after construction to customize. The
-/// `#[non_exhaustive]` interaction note from the module-level docs
-/// applies to `Enemy` as well — adding a field to the struct requires
-/// updating this fixture in the same PR.
+/// Mutate fields directly after construction to customize. It is built by
+/// `Enemy::from_metadata`, the constructor a spawn uses, so a field added
+/// there reaches this fixture too.
+///
+/// # Panics
+///
+/// Never: the metadata it builds is an enemy card's.
 #[must_use]
 pub fn test_enemy(id: u32, name: impl Into<String>) -> Enemy {
-    Enemy {
-        id: EnemyId(id),
+    let code = format!("_test_enemy_{id}");
+    let metadata = CardMetadata {
+        code: code.clone(),
         name: name.into(),
-        code: CardCode::new(format!("_test_enemy_{id}")),
-        fight: 2,
-        evade: 2,
-        max_health: 2,
-        damage: 0,
-        attack_damage: 1,
-        attack_horror: 0,
-        current_location: None,
-        exhausted: false,
-        engaged_with: None,
-        hunter: false,
-        prey: Prey::Default,
-        retaliate: false,
-        victory: None,
-        attachments: Vec::new(),
-        owner: Owner::EncounterDeck,
-    }
+        traits: vec![],
+        text: None,
+        back_name: None,
+        back_text: None,
+        pack_code: "_mock".to_owned(),
+        weakness: None,
+        kind: CardKind::Enemy {
+            fight: 2,
+            evade: 2,
+            damage: 1,
+            horror: 0,
+            health: Some(HealthValue::Fixed(2)),
+            victory: None,
+            spawn: None,
+            surge: false,
+            peril: false,
+            hunter: false,
+            retaliate: false,
+            prey: Prey::Default,
+            quantity: 1,
+        },
+    };
+    // A fixed health ignores the investigator count.
+    Enemy::from_metadata(EnemyId(id), &metadata, None, Owner::EncounterDeck, 1)
+        .expect("the metadata is an enemy's")
 }
 
 /// A stock [`InFlightSkillTest`] parked at its commit window.

@@ -2,7 +2,7 @@
 
 use std::mem;
 
-use card_dsl::card_data::{CardKind, CardMetadata, CardType, HealthValue, Spawn, SpawnLocation};
+use card_dsl::card_data::{CardKind, CardMetadata, CardType, Spawn, SpawnLocation};
 use card_dsl::dsl::{Ability, Effect, Trigger};
 
 use crate::action::InputResponse;
@@ -508,60 +508,19 @@ fn spawn_enemy_engaging(
     owner: Owner,
     engages: SpawnEngagement,
 ) -> EngineOutcome {
-    // spawn_enemy_at is only reached for Enemy cards; pull the
-    // enemy-specific stats out of the kind.
-    let CardKind::Enemy {
-        health,
-        fight,
-        evade,
-        damage,
-        horror,
-        hunter,
-        retaliate,
-        prey,
-        victory,
-        ..
-    } = &metadata.kind
+    // Mint and place. The enemy is inserted unengaged; the engagement
+    // below goes through `engagement::engage`, so the `EnemyEngaged` event
+    // always pairs with the mutation. Only an enemy card reaches here, and a
+    // rejection rolls the minted id back with the rest of the state.
+    let enemy_id = cx.state.enemy_ids.mint();
+    let count = cursor::investigator_count(cx.state);
+    let Some(enemy) = Enemy::from_metadata(enemy_id, metadata, Some(location_id), owner, count)
     else {
         return EngineOutcome::Rejected {
             reason: format!("spawn_enemy_at: card {code} is not an enemy").into(),
         };
     };
-    let prey = *prey;
-
-    // Resolve health. PerInvestigator scales by the number of investigators
-    // in the game (Rules Reference p.12), as a per-investigator clue value does.
-    let max_health = match health {
-        Some(HealthValue::Fixed(n)) => *n,
-        Some(HealthValue::PerInvestigator(n)) => cursor::per_investigator(cx.state, *n),
-        None => 1,
-    };
-
-    // Mint and place. The enemy is inserted unengaged; the engagement
-    // below goes through `engagement::engage`, so the `EnemyEngaged` event
-    // always pairs with the mutation.
-    let enemy_id = cx.state.enemy_ids.mint();
-
-    let enemy = Enemy {
-        id: enemy_id,
-        name: metadata.name.clone(),
-        code: CardCode::new(metadata.code.clone()),
-        fight: i8::try_from(*fight).unwrap_or(i8::MAX),
-        evade: i8::try_from(*evade).unwrap_or(i8::MAX),
-        max_health,
-        damage: 0,
-        attack_damage: *damage,
-        attack_horror: *horror,
-        current_location: Some(location_id),
-        exhausted: false,
-        engaged_with: None,
-        hunter: *hunter,
-        prey,
-        retaliate: *retaliate,
-        victory: *victory,
-        attachments: Vec::new(),
-        owner,
-    };
+    let prey = enemy.prey;
     cx.state.enemies.insert(enemy_id, enemy);
 
     // Resolve engagement-on-spawn. A drawer is engaged outright. Otherwise the
@@ -574,33 +533,25 @@ fn spawn_enemy_engaging(
             hunters::resolve_prey(cx.state, cx.cards, prey, &candidates)
         }
     };
+    // The spawn is logged before the engagement or the tie-break suspension
+    // that follows it.
+    let engaged_with = match &resolution {
+        PreyResolution::One(target) => Some(*target),
+        PreyResolution::None | PreyResolution::Tie(_) => None,
+    };
+    cx.events.push(Event::EnemySpawned {
+        enemy: enemy_id,
+        code,
+        location: location_id,
+        engaged_with,
+    });
     match resolution {
-        PreyResolution::None => {
-            cx.events.push(Event::EnemySpawned {
-                enemy: enemy_id,
-                code,
-                location: location_id,
-                engaged_with: None,
-            });
-            EngineOutcome::Done
-        }
+        PreyResolution::None => EngineOutcome::Done,
         PreyResolution::One(target) => {
-            cx.events.push(Event::EnemySpawned {
-                enemy: enemy_id,
-                code,
-                location: location_id,
-                engaged_with: Some(target),
-            });
             engagement::engage(cx, enemy_id, target);
             EngineOutcome::Done
         }
         PreyResolution::Tie(tied) => {
-            cx.events.push(Event::EnemySpawned {
-                enemy: enemy_id,
-                code,
-                location: location_id,
-                engaged_with: None,
-            });
             // The surge/chain state lives on the drawer's `PlayerDraw` frame
             // beneath; this frame holds only the engagement pick.
             // `resume_spawn_engage` engages + pops, and the loop continues the

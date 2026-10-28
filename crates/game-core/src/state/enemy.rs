@@ -1,7 +1,7 @@
 //! Enemies: hostile creatures that engage investigators, attack, and
 //! are defeated through combat.
 
-use card_dsl::card_data::Prey;
+use card_dsl::card_data::{CardKind, CardMetadata, HealthValue, Prey};
 use serde::{Deserialize, Serialize};
 
 use crate::state::{CardCode, CardInPlay, InvestigatorId, LocationId, Owner};
@@ -99,6 +99,65 @@ pub struct Enemy {
     /// investigator who started the game with the weakness in his or her deck
     /// or play area."*). Required on the wire.
     pub owner: Owner,
+}
+
+impl Enemy {
+    /// The enemy `metadata` prints, as it enters play: undamaged, ready,
+    /// unengaged, with nothing attached. `None` when `metadata` is not an
+    /// enemy card.
+    ///
+    /// A per-investigator health value scales by `investigator_count`, the
+    /// investigators who started the scenario (Rules Reference p.12). A card
+    /// that prints no health gets 1. A fight or evade above `i8::MAX`
+    /// saturates.
+    pub(crate) fn from_metadata(
+        id: EnemyId,
+        metadata: &CardMetadata,
+        location: Option<LocationId>,
+        owner: Owner,
+        investigator_count: u8,
+    ) -> Option<Self> {
+        let CardKind::Enemy {
+            health,
+            fight,
+            evade,
+            damage,
+            horror,
+            hunter,
+            retaliate,
+            prey,
+            victory,
+            ..
+        } = &metadata.kind
+        else {
+            return None;
+        };
+        let max_health = match health {
+            Some(HealthValue::Fixed(n)) => *n,
+            Some(HealthValue::PerInvestigator(n)) => n.saturating_mul(investigator_count),
+            None => 1,
+        };
+        Some(Self {
+            id,
+            name: metadata.name.clone(),
+            code: CardCode::new(metadata.code.clone()),
+            fight: i8::try_from(*fight).unwrap_or(i8::MAX),
+            evade: i8::try_from(*evade).unwrap_or(i8::MAX),
+            max_health,
+            damage: 0,
+            attack_damage: *damage,
+            attack_horror: *horror,
+            current_location: location,
+            exhausted: false,
+            engaged_with: None,
+            hunter: *hunter,
+            prey: *prey,
+            retaliate: *retaliate,
+            victory: *victory,
+            attachments: Vec::new(),
+            owner,
+        })
+    }
 }
 
 #[cfg(test)]
