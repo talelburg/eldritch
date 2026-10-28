@@ -61,14 +61,12 @@ const STUDY: &str = "01111";
 /// The Hallway (01112), where this reverse places each investigator.
 const HALLWAY: &str = "01112";
 
-/// The set-aside rooms this reverse puts into play, in printed order:
-/// *"Put into play the set-aside Hallway, Cellar, Attic, and Parlor."*
-/// The order is otherwise cosmetic — each room's connections are wired
-/// from the scenario's layout as it enters, and a connection is made by
-/// whichever of its two endpoints enters second — but the Hallway must stay
-/// first: the board build keeps the first room's id as the place every
-/// investigator goes.
-const ROOMS: [&str; 4] = [HALLWAY, cellar::CODE, attic::CODE, parlor::CODE];
+/// The set-aside rooms this reverse puts into play after the [`HALLWAY`], in
+/// printed order: *"Put into play the set-aside Hallway, Cellar, Attic, and
+/// Parlor."* The order is cosmetic: each room's connections are wired from
+/// the scenario's layout as it enters, and a connection is made by whichever
+/// of its two endpoints enters second.
+const OTHER_ROOMS: [&str; 3] = [cellar::CODE, attic::CODE, parlor::CODE];
 
 /// Native-effect tag for this act's reverse board build.
 const BOARD_BUILD: &str = "01108:board-build";
@@ -91,7 +89,7 @@ pub fn abilities() -> Vec<Ability> {
 /// here is about precise reasons, not state safety.
 fn board_build(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
     // Validate-first: all four rooms set aside, and 01111 in play.
-    for code in ROOMS {
+    for code in [HALLWAY].into_iter().chain(OTHER_ROOMS) {
         if !cx
             .state()
             .set_aside_cards
@@ -109,14 +107,13 @@ fn board_build(cx: &mut NativeCx, _ctx: &EvalContext) -> EngineOutcome {
         };
     };
     // Put the set-aside rooms into play; each mints its id and wires its
-    // printed connections to the rooms already there. The Hallway enters
-    // first and its id is kept: it is where every investigator is placed.
-    let [hallway, other_rooms @ ..] = ROOMS;
-    let dest = match cx.put_set_aside_location_into_play(hallway) {
+    // printed connections to the rooms already there. The Hallway's id is
+    // kept: it is where every investigator is placed.
+    let dest = match cx.put_set_aside_location_into_play(HALLWAY) {
         Ok(id) => id,
         Err(reason) => return EngineOutcome::Rejected { reason },
     };
-    for code in other_rooms {
+    for code in OTHER_ROOMS {
         if let Err(reason) = cx.put_set_aside_location_into_play(code) {
             return EngineOutcome::Rejected { reason };
         }
