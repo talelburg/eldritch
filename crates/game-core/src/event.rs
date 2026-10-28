@@ -104,18 +104,22 @@ pub enum Event {
         /// New clue count.
         new_count: u8,
     },
-    /// An investigator suffered physical damage.
-    DamageTaken {
-        /// Who was damaged.
+    /// Damage was placed on the investigator card. Only the share that lands
+    /// on the investigator card counts, never the share an asset they control
+    /// soaks: see GLOSSARY "Taken by you / placed on your investigator".
+    DamagePlacedOnInvestigator {
+        /// Whose investigator card the damage was placed on.
         investigator: InvestigatorId,
-        /// Amount of damage.
+        /// Amount of damage placed.
         amount: u8,
     },
-    /// An investigator suffered horror.
-    HorrorTaken {
-        /// Who took horror.
+    /// Horror was placed on the investigator card. Only the share that lands
+    /// on the investigator card counts, never the share an asset they control
+    /// soaks: see GLOSSARY "Taken by you / placed on your investigator".
+    HorrorPlacedOnInvestigator {
+        /// Whose investigator card the horror was placed on.
         investigator: InvestigatorId,
-        /// Amount of horror.
+        /// Amount of horror placed.
         amount: u8,
     },
     /// An investigator suffered trauma. Emitted by Cover Up 01007's
@@ -213,7 +217,7 @@ pub enum Event {
     /// *"Move 1 horror from The Necronomicon to Daisy Walker."*), through
     /// [`NativeCx::move_horror`](crate::engine::NativeCx::move_horror).
     ///
-    /// Deliberately neither [`Event::HorrorTaken`] nor a
+    /// Deliberately neither [`Event::HorrorPlacedOnInvestigator`] nor a
     /// [`TimingEvent::DamagePlaced`](crate::engine::TimingEvent::DamagePlaced)
     /// window: the 01009 ruling (<https://arkhamdb.com/card/01009>) reads
     /// *"Moving damage or horror is different from 'dealing' or 'taking'

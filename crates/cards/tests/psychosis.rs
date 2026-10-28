@@ -221,7 +221,7 @@ fn agnes_reaction_resolves_before_the_forced_damage() {
     let psychosis_hit = session
         .events()
         .iter()
-        .position(|e| matches!(e, Event::DamageTaken { investigator, .. } if *investigator == INV))
+        .position(|e| matches!(e, Event::DamagePlacedOnInvestigator { investigator, .. } if *investigator == INV))
         .expect("Psychosis dealt the damage");
     assert!(enemy_hit < psychosis_hit, "events = {:?}", session.events());
 }

@@ -272,7 +272,7 @@ fn two_blasted_investigators_are_dealt_one_at_a_time_in_ascending_order() {
         .events()
         .iter()
         .filter_map(|e| match e {
-            Event::DamageTaken { investigator, .. } => Some(*investigator),
+            Event::DamagePlacedOnInvestigator { investigator, .. } => Some(*investigator),
             _ => None,
         })
         .collect();

@@ -19,8 +19,8 @@
 //! after-attack doom in `dodge.rs`.
 //!
 //! The cell order is the event order, so that is what these assert on: each
-//! synthetic ability gains a distinct number of resources, and `DamageTaken` /
-//! `HorrorTaken` mark the condition's own resolution.
+//! synthetic ability gains a distinct number of resources, and `DamagePlacedOnInvestigator` /
+//! `HorrorPlacedOnInvestigator` mark the condition's own resolution.
 
 use card_dsl::dsl::{
     self, Ability, AttackerScope, Effect, EventPattern, EventTiming, InvestigatorTarget,
@@ -161,7 +161,9 @@ fn timeline(events: &[Event]) -> Vec<Option<u8>> {
         })
         .filter_map(|e| match e {
             Event::ResourcesGained { amount, .. } => Some(Some(*amount)),
-            Event::DamageTaken { .. } | Event::HorrorTaken { .. } => Some(None),
+            Event::DamagePlacedOnInvestigator { .. } | Event::HorrorPlacedOnInvestigator { .. } => {
+                Some(None)
+            }
             _ => None,
         })
         .collect()

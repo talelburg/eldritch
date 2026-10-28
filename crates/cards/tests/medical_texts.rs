@@ -115,7 +115,7 @@ fn failure_deals_one_damage_to_the_chosen_investigator() {
     assert_event!(session.events(), Event::SkillTestFailed { .. });
     assert_event!(
         session.events(),
-        Event::DamageTaken {
+        Event::DamagePlacedOnInvestigator {
             investigator: INV,
             amount: 1,
         }

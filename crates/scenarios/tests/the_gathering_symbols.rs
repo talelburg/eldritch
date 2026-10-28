@@ -87,15 +87,18 @@ fn cultist_is_minus_one_and_horror_only_on_failure() {
             resolution: TokenResolution::Modifier(-1),
         }
     );
-    assert_event!(fail.events(), Event::HorrorTaken { amount: 1, .. });
+    assert_event!(
+        fail.events(),
+        Event::HorrorPlacedOnInvestigator { amount: 1, .. }
+    );
     // Win: difficulty 0 ≤ skill 3 + (-1) = 2
     let win = perform(gathering_state(ChaosToken::Cultist, 0), 0);
-    assert_no_event!(win.events(), Event::HorrorTaken { .. });
+    assert_no_event!(win.events(), Event::HorrorPlacedOnInvestigator { .. });
 }
 
 #[test]
 fn tablet_is_minus_two_and_damage_iff_ghoul_present() {
-    // Ghoul present: Tablet → Modifier(-2) + DamageTaken(1)
+    // Ghoul present: Tablet → Modifier(-2) + DamagePlacedOnInvestigator(1)
     let with_ghoul = perform(gathering_state(ChaosToken::Tablet, 1), 0);
     assert_event!(
         with_ghoul.events(),
@@ -104,10 +107,13 @@ fn tablet_is_minus_two_and_damage_iff_ghoul_present() {
             resolution: TokenResolution::Modifier(-2),
         }
     );
-    assert_event!(with_ghoul.events(), Event::DamageTaken { amount: 1, .. });
-    // No ghoul: Tablet → Modifier(-2), NO DamageTaken
+    assert_event!(
+        with_ghoul.events(),
+        Event::DamagePlacedOnInvestigator { amount: 1, .. }
+    );
+    // No ghoul: Tablet → Modifier(-2), NO DamagePlacedOnInvestigator
     let no_ghoul = perform(gathering_state(ChaosToken::Tablet, 0), 0);
-    assert_no_event!(no_ghoul.events(), Event::DamageTaken { .. });
+    assert_no_event!(no_ghoul.events(), Event::DamagePlacedOnInvestigator { .. });
 }
 
 #[test]
@@ -120,7 +126,7 @@ fn tablet_immediate_damage_precedes_the_determination() {
     let damage = session
         .events()
         .iter()
-        .position(|e| matches!(e, Event::DamageTaken { amount: 1, .. }))
+        .position(|e| matches!(e, Event::DamagePlacedOnInvestigator { amount: 1, .. }))
         .expect("Tablet+ghoul deals immediate damage");
     let determined = session
         .events()
@@ -169,7 +175,7 @@ fn cultist_on_fail_horror_follows_the_determination() {
     let horror = session
         .events()
         .iter()
-        .position(|e| matches!(e, Event::HorrorTaken { amount: 1, .. }))
+        .position(|e| matches!(e, Event::HorrorPlacedOnInvestigator { amount: 1, .. }))
         .expect("Cultist on_fail deals horror");
     assert!(
         failed < horror,

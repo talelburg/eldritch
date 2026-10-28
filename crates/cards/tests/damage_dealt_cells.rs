@@ -16,7 +16,7 @@
 //! `DamageDealt` `when` cell in `guard_dog_soak.rs`, and Agnes Baker 01004's
 //! `DamagePlaced` `after` cell in `agnes_baker.rs`. This file mirrors
 //! `enemy_attack_cells.rs`: each synthetic ability gains a distinct number of
-//! resources, and `HorrorTaken` marks the placement.
+//! resources, and `HorrorPlacedOnInvestigator` marks the placement.
 //!
 //! The `DamageDealt` probes declare [`EventPattern::EnemyAttackDamagedSelf`] —
 //! Guard Dog's — on a soaking asset, and the attack assigns its damage there.
@@ -195,7 +195,7 @@ fn timeline(events: &[Event]) -> Vec<Option<u8>> {
         })
         .filter_map(|e| match e {
             Event::ResourcesGained { amount, .. } => Some(Some(*amount)),
-            Event::HorrorTaken { .. } => Some(None),
+            Event::HorrorPlacedOnInvestigator { .. } => Some(None),
             _ => None,
         })
         .collect()

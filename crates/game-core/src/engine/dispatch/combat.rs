@@ -312,8 +312,8 @@ pub(super) fn defeat_asset(cx: &mut Cx, inst: CardInstanceId) {
 /// 2. Place the investigator card's share (the mandatory remainder — RR:
 ///    "all damage/horror that cannot be assigned to an asset must be
 ///    assigned to the investigator") via the numeric helpers, which write
-///    `investigator_card.accumulated_*` and emit [`Event::DamageTaken`] /
-///    [`Event::HorrorTaken`], then apply investigator defeat if either
+///    `investigator_card.accumulated_*` and emit [`Event::DamagePlacedOnInvestigator`] /
+///    [`Event::HorrorPlacedOnInvestigator`], then apply investigator defeat if either
 ///    crossed (`accumulated >= max_health()/max_sanity()` — the same
 ///    `accumulated >= printed capacity` rule as an asset, but the
 ///    consequence is *elimination*, not discard). Both stats land before
@@ -353,8 +353,8 @@ pub(super) fn place_assignment(cx: &mut Cx, investigator: InvestigatorId, assign
     }
 
     // 2. Place the investigator's share (both before any defeat check).
-    let dmg_lethal = apply_damage_numeric(cx, investigator, assignment.investigator_damage);
-    let hor_lethal = apply_horror_numeric(cx, investigator, assignment.investigator_horror);
+    let dmg_lethal = place_damage(cx, investigator, assignment.investigator_damage);
+    let hor_lethal = place_horror(cx, investigator, assignment.investigator_horror);
     if dmg_lethal || hor_lethal {
         let cause = if dmg_lethal {
             EliminationCause::Damage
@@ -383,8 +383,8 @@ pub(super) fn place_assignment(cx: &mut Cx, investigator: InvestigatorId, assign
     defeat_overflowed_assets(cx, investigator);
 }
 
-/// Add `amount` to the investigator's `damage` and emit
-/// [`Event::DamageTaken`]. Returns `true` iff the new total reaches
+/// Place `amount` damage on the investigator card (GLOSSARY "Assign / Place")
+/// and emit [`Event::DamagePlacedOnInvestigator`]. Returns `true` iff the new total reaches
 /// `max_health` (i.e. the investigator now qualifies for defeat under
 /// [`EliminationCause::Damage`]).
 ///
@@ -402,7 +402,7 @@ pub(super) fn place_assignment(cx: &mut Cx, investigator: InvestigatorId, assign
 /// don't accumulate more damage.
 ///
 /// [`Status`]: crate::state::Status
-pub(super) fn apply_damage_numeric(cx: &mut Cx, investigator: InvestigatorId, amount: u8) -> bool {
+pub(super) fn place_damage(cx: &mut Cx, investigator: InvestigatorId, amount: u8) -> bool {
     if amount == 0 {
         return false;
     }
@@ -412,7 +412,7 @@ pub(super) fn apply_damage_numeric(cx: &mut Cx, investigator: InvestigatorId, am
         .get_mut(&investigator)
         .unwrap_or_else(|| {
             unreachable!(
-                "apply_damage_numeric: investigator {investigator:?} is not in the investigators map; \
+                "place_damage: investigator {investigator:?} is not in the investigators map; \
              this is a state-corruption invariant violation"
             )
         });
@@ -424,18 +424,18 @@ pub(super) fn apply_damage_numeric(cx: &mut Cx, investigator: InvestigatorId, am
         .accumulated_damage
         .saturating_add(amount);
     let lethal = inv.damage() >= inv.max_health(cx.cards);
-    cx.events.push(Event::DamageTaken {
+    cx.events.push(Event::DamagePlacedOnInvestigator {
         investigator,
         amount,
     });
     lethal
 }
 
-/// Symmetric to [`apply_damage_numeric`] but against `horror` /
+/// Symmetric to [`place_damage`] but against `horror` /
 /// `max_sanity`. Returns `true` iff the new total reaches the
 /// max-sanity threshold; defeat application is the caller's
 /// responsibility (see [`super::elimination::apply_investigator_elimination`]).
-pub(super) fn apply_horror_numeric(cx: &mut Cx, investigator: InvestigatorId, amount: u8) -> bool {
+pub(super) fn place_horror(cx: &mut Cx, investigator: InvestigatorId, amount: u8) -> bool {
     if amount == 0 {
         return false;
     }
@@ -445,7 +445,7 @@ pub(super) fn apply_horror_numeric(cx: &mut Cx, investigator: InvestigatorId, am
         .get_mut(&investigator)
         .unwrap_or_else(|| {
             unreachable!(
-                "apply_horror_numeric: investigator {investigator:?} is not in the investigators map; \
+                "place_horror: investigator {investigator:?} is not in the investigators map; \
              this is a state-corruption invariant violation"
             )
         });
@@ -457,7 +457,7 @@ pub(super) fn apply_horror_numeric(cx: &mut Cx, investigator: InvestigatorId, am
         .accumulated_horror
         .saturating_add(amount);
     let lethal = sanity_reached(inv, cx.cards);
-    cx.events.push(Event::HorrorTaken {
+    cx.events.push(Event::HorrorPlacedOnInvestigator {
         investigator,
         amount,
     });

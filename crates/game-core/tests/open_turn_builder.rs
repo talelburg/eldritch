@@ -101,7 +101,7 @@ fn an_engaged_enemy_attacks_of_opportunity_when_a_provoking_action_is_taken() {
 
     assert_event_sequence!(
         session.events(),
-        Event::DamageTaken {
+        Event::DamagePlacedOnInvestigator {
             investigator: MINE,
             amount: 2
         },

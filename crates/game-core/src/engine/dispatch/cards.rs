@@ -1725,7 +1725,7 @@ mod draw_with_deckout_tests {
         assert_eq!(inv.discard.len(), 1, "discard untouched");
         assert_eq!(inv.horror(), 0, "no deck-out, no horror");
         crate::assert_no_event!(events, Event::DeckShuffled { .. });
-        crate::assert_no_event!(events, Event::HorrorTaken { .. });
+        crate::assert_no_event!(events, Event::HorrorPlacedOnInvestigator { .. });
         crate::assert_event!(events, Event::CardsDrawn { count: 2, .. });
     }
 }

@@ -267,7 +267,7 @@ fn not_playable_in_the_enemy_phase() {
 #[test]
 fn a_non_elite_enemy_makes_no_attack_of_opportunity() {
     let session = move_to_hallway(on_the_lam_played(vec![enemy(ATTACKER, GHOUL_MINION)]));
-    assert_no_event!(session.events(), Event::DamageTaken { .. });
+    assert_no_event!(session.events(), Event::DamagePlacedOnInvestigator { .. });
     assert_eq!(
         session.state().investigators[&INV].current_location,
         Some(HALLWAY),
@@ -281,7 +281,7 @@ fn an_elite_enemy_still_makes_an_attack_of_opportunity() {
     let session = move_to_hallway(on_the_lam_played(vec![enemy(ATTACKER, GHOUL_PRIEST)]));
     assert_event!(
         session.events(),
-        Event::DamageTaken {
+        Event::DamagePlacedOnInvestigator {
             investigator: INV,
             amount: 1
         }
@@ -293,7 +293,7 @@ fn without_on_the_lam_a_non_elite_enemy_attacks_of_opportunity() {
     let session = move_to_hallway(board(vec![enemy(ATTACKER, GHOUL_MINION)]));
     assert_event!(
         session.events(),
-        Event::DamageTaken {
+        Event::DamagePlacedOnInvestigator {
             investigator: INV,
             amount: 1
         }
@@ -312,7 +312,7 @@ fn a_non_elite_enemy_makes_no_enemy_phase_attack_and_stays_ready() {
             phase: Phase::Enemy
         }
     );
-    assert_no_event!(events, Event::DamageTaken { .. });
+    assert_no_event!(events, Event::DamagePlacedOnInvestigator { .. });
     assert_no_event!(events, Event::EnemyExhausted { .. });
 }
 
@@ -327,7 +327,7 @@ fn an_elite_enemy_still_attacks_in_the_enemy_phase() {
     let events = enemy_phase_events(&session);
     let damage: Vec<_> = events
         .iter()
-        .filter(|e| matches!(e, Event::DamageTaken { .. }))
+        .filter(|e| matches!(e, Event::DamagePlacedOnInvestigator { .. }))
         .collect();
     assert_eq!(damage.len(), 1, "only the Elite attacks: {events:?}");
     assert_event!(events, Event::EnemyExhausted { enemy: ATTACKER });
@@ -373,7 +373,7 @@ fn failed_fight_against(code: &str, on_the_lam: bool) -> TestSession {
 fn retaliate_is_suppressed_for_a_non_elite_enemy() {
     let session = failed_fight_against(WIZARD_OF_THE_ORDER, true);
     assert_event!(session.events(), Event::SkillTestEnded { .. });
-    assert_no_event!(session.events(), Event::DamageTaken { .. });
+    assert_no_event!(session.events(), Event::DamagePlacedOnInvestigator { .. });
 }
 
 #[test]
@@ -381,7 +381,7 @@ fn without_on_the_lam_a_non_elite_enemy_retaliates() {
     let session = failed_fight_against(WIZARD_OF_THE_ORDER, false);
     assert_event!(
         session.events(),
-        Event::DamageTaken {
+        Event::DamagePlacedOnInvestigator {
             investigator: INV,
             amount: 1
         }
@@ -393,7 +393,7 @@ fn an_elite_enemy_still_retaliates() {
     let session = failed_fight_against(GHOUL_PRIEST, true);
     assert_event!(
         session.events(),
-        Event::DamageTaken {
+        Event::DamagePlacedOnInvestigator {
             investigator: INV,
             amount: 1
         }

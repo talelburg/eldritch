@@ -184,7 +184,7 @@ fn deal_damage_cursor_walks_distribute_announce_finish() {
     cx.state.continuations.pop();
     assert_eq!(resolve_condition(&mut cx, &placed), EngineOutcome::Done);
     assert_eq!(cx.state.investigators[&id].damage(), 2, "placed at last");
-    assert_event!(cx.events, Event::DamageTaken { investigator, amount: 2 } if *investigator == id);
+    assert_event!(cx.events, Event::DamagePlacedOnInvestigator { investigator, amount: 2 } if *investigator == id);
 
     // Finish: pop and hand back to the caller. An enemy attack's own
     // sequence continues on the frames beneath, so this is just `Done`.
@@ -354,7 +354,7 @@ fn deal_harm_walks_distribute_announce_finish_from_an_effect() {
     cx.state.continuations.pop();
     assert_eq!(resolve_condition(&mut cx, &placed), EngineOutcome::Done);
     assert_eq!(cx.state.investigators[&id].horror(), 1, "placed at last");
-    assert_event!(cx.events, Event::HorrorTaken { investigator, amount: 1 } if *investigator == id);
+    assert_event!(cx.events, Event::HorrorPlacedOnInvestigator { investigator, amount: 1 } if *investigator == id);
 
     // Finish pops the frame and hands back `Done`: nothing to resume.
     cx.state.continuations.pop();

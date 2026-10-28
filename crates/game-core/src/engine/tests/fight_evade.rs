@@ -96,8 +96,8 @@ fn failed_fight_against_ready_retaliate_enemy_triggers_attack() {
     let events = session.events();
     assert_event!(events, Event::SkillTestFailed { .. });
     // Retaliate attack lands (damage + horror, simultaneously).
-    assert_event!(events, Event::DamageTaken { investigator, amount: 1 } if *investigator == INV);
-    assert_event!(events, Event::HorrorTaken { investigator, amount: 1 } if *investigator == INV);
+    assert_event!(events, Event::DamagePlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV);
+    assert_event!(events, Event::HorrorPlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV);
     assert_eq!(session.state().investigators[&INV].damage(), 1);
     assert_eq!(session.state().investigators[&INV].horror(), 1);
     // Enemy does NOT exhaust after a retaliate attack (RR p.18).
@@ -118,8 +118,8 @@ fn successful_fight_against_retaliate_enemy_does_not_trigger_attack() {
 
     session.assert_at_turn_menu(INV);
     assert_event!(session.events(), Event::SkillTestSucceeded { .. });
-    assert_no_event!(session.events(), Event::DamageTaken { .. });
-    assert_no_event!(session.events(), Event::HorrorTaken { .. });
+    assert_no_event!(session.events(), Event::DamagePlacedOnInvestigator { .. });
+    assert_no_event!(session.events(), Event::HorrorPlacedOnInvestigator { .. });
     assert_eq!(session.state().investigators[&INV].damage(), 0);
 }
 
@@ -133,7 +133,7 @@ fn failed_fight_against_exhausted_retaliate_enemy_does_not_trigger_attack() {
 
     session.assert_at_turn_menu(INV);
     assert_event!(session.events(), Event::SkillTestFailed { .. });
-    assert_no_event!(session.events(), Event::DamageTaken { .. });
+    assert_no_event!(session.events(), Event::DamagePlacedOnInvestigator { .. });
     assert_eq!(session.state().investigators[&INV].damage(), 0);
 }
 
@@ -148,7 +148,7 @@ fn failed_fight_against_non_retaliate_enemy_does_not_trigger_attack() {
 
     session.assert_at_turn_menu(INV);
     assert_event!(session.events(), Event::SkillTestFailed { .. });
-    assert_no_event!(session.events(), Event::DamageTaken { .. });
+    assert_no_event!(session.events(), Event::DamagePlacedOnInvestigator { .. });
     assert_eq!(session.state().investigators[&INV].damage(), 0);
 }
 
@@ -163,7 +163,7 @@ fn failed_evade_against_retaliate_enemy_does_not_trigger_attack() {
 
     session.assert_at_turn_menu(INV);
     assert_event!(session.events(), Event::SkillTestFailed { .. });
-    assert_no_event!(session.events(), Event::DamageTaken { .. });
+    assert_no_event!(session.events(), Event::DamagePlacedOnInvestigator { .. });
     assert_eq!(session.state().investigators[&INV].damage(), 0);
 }
 

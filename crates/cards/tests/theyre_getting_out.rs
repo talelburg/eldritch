@@ -187,7 +187,7 @@ fn ghoul_moved_into_the_investigator_engages_then_attacks_next_enemy_phase() {
     assert!(
         events.iter().any(|e| matches!(
             e,
-            Event::DamageTaken { investigator, amount: 1 } if *investigator == INV
+            Event::DamagePlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV
         )),
         "the now-engaged Ghoul attacks in the next Enemy phase: {events:?}",
     );

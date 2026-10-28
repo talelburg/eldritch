@@ -23,22 +23,22 @@ fn move_with_ready_engaged_enemy_fires_aoo_and_enemy_follows() {
     let events = session.events();
     assert_event!(
         events,
-        Event::DamageTaken { investigator, amount: 1 } if *investigator == INV
+        Event::DamagePlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV
     );
     // AoO damage must fire BEFORE the move resolves per the Rules
     // Reference. assert_event! is existence-only, so check the
     // positions explicitly.
     let damage_idx = events
         .iter()
-        .position(|e| matches!(e, Event::DamageTaken { .. }))
-        .expect("DamageTaken event missing");
+        .position(|e| matches!(e, Event::DamagePlacedOnInvestigator { .. }))
+        .expect("DamagePlacedOnInvestigator event missing");
     let moved_idx = events
         .iter()
         .position(|e| matches!(e, Event::InvestigatorMoved { .. }))
         .expect("InvestigatorMoved event missing");
     assert!(
         damage_idx < moved_idx,
-        "AoO DamageTaken (idx {damage_idx}) must precede InvestigatorMoved (idx {moved_idx})"
+        "AoO DamagePlacedOnInvestigator (idx {damage_idx}) must precede InvestigatorMoved (idx {moved_idx})"
     );
     let state = session.state();
     // Investigator damaged.
@@ -67,8 +67,8 @@ fn move_with_exhausted_engaged_enemy_does_not_fire_aoo() {
         .take(&MOVE_TO_CONNECTED);
 
     session.assert_at_turn_menu(INV);
-    assert_no_event!(session.events(), Event::DamageTaken { .. });
-    assert_no_event!(session.events(), Event::HorrorTaken { .. });
+    assert_no_event!(session.events(), Event::DamagePlacedOnInvestigator { .. });
+    assert_no_event!(session.events(), Event::HorrorPlacedOnInvestigator { .. });
     assert_eq!(session.state().investigators[&INV].damage(), 0);
     // Exhausted enemy still follows the investigator.
     assert_eq!(
@@ -88,7 +88,7 @@ fn draw_action_fires_aoo_from_ready_engaged_enemy() {
     assert_eq!(session.state().investigators[&INV].damage(), 1);
     assert_event!(
         session.events(),
-        Event::DamageTaken { investigator, amount: 1 } if *investigator == INV
+        Event::DamagePlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV
     );
 }
 
@@ -109,7 +109,7 @@ fn draw_with_lethal_aoo_suppresses_the_draw() {
     assert_eq!(result.outcome, EngineOutcome::Done);
     assert_event!(
         result.events,
-        Event::DamageTaken { investigator, amount: 8 } if *investigator == INV
+        Event::DamagePlacedOnInvestigator { investigator, amount: 8 } if *investigator == INV
     );
     // Action was spent before the lethal AoO (3 → 2).
     assert_event!(
@@ -140,7 +140,7 @@ fn draw_with_no_engaged_enemy_draws_normally() {
         session.events(),
         Event::CardsDrawn { investigator, count: 1 } if *investigator == INV
     );
-    assert_no_event!(session.events(), Event::DamageTaken { .. });
+    assert_no_event!(session.events(), Event::DamagePlacedOnInvestigator { .. });
 }
 
 #[test]
@@ -180,7 +180,7 @@ fn investigate_with_ready_engaged_enemy_fires_aoo() {
     session.assert_at_turn_menu(INV);
     assert_event!(
         session.events(),
-        Event::HorrorTaken { investigator, amount: 1 } if *investigator == INV
+        Event::HorrorPlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV
     );
     // Skill test still runs after AoO.
     assert_event!(session.events(), Event::SkillTestStarted { .. });
@@ -202,8 +202,8 @@ fn fight_does_not_fire_aoo_from_other_engaged_enemy() {
     );
 
     session.assert_at_turn_menu(INV);
-    assert_no_event!(session.events(), Event::DamageTaken { .. });
-    assert_no_event!(session.events(), Event::HorrorTaken { .. });
+    assert_no_event!(session.events(), Event::DamagePlacedOnInvestigator { .. });
+    assert_no_event!(session.events(), Event::HorrorPlacedOnInvestigator { .. });
     assert_eq!(session.state().investigators[&INV].damage(), 0);
     assert_eq!(session.state().investigators[&INV].horror(), 0);
 }
@@ -219,8 +219,8 @@ fn evade_does_not_fire_aoo_from_other_engaged_enemy() {
     );
 
     session.assert_at_turn_menu(INV);
-    assert_no_event!(session.events(), Event::DamageTaken { .. });
-    assert_no_event!(session.events(), Event::HorrorTaken { .. });
+    assert_no_event!(session.events(), Event::DamagePlacedOnInvestigator { .. });
+    assert_no_event!(session.events(), Event::HorrorPlacedOnInvestigator { .. });
     assert_eq!(session.state().investigators[&INV].damage(), 0);
 }
 
@@ -233,7 +233,7 @@ fn move_with_no_engaged_enemy_does_not_fire_aoo() {
         .session()
         .take(&MOVE_TO_CONNECTED);
     session.assert_at_turn_menu(INV);
-    assert_no_event!(session.events(), Event::DamageTaken { .. });
+    assert_no_event!(session.events(), Event::DamagePlacedOnInvestigator { .. });
 }
 
 #[test]
@@ -265,7 +265,7 @@ fn aoo_order_pick_resolves_attacks_in_chosen_order_for_multiple_attackers() {
         .events()
         .iter()
         .filter_map(|e| match e {
-            Event::DamageTaken { amount, .. } => Some(*amount),
+            Event::DamagePlacedOnInvestigator { amount, .. } => Some(*amount),
             _ => None,
         })
         .collect();
@@ -289,8 +289,8 @@ fn aoo_from_zero_damage_zero_horror_enemy_emits_no_events() {
         .session()
         .take(&MOVE_TO_CONNECTED);
     session.assert_at_turn_menu(INV);
-    assert_no_event!(session.events(), Event::DamageTaken { .. });
-    assert_no_event!(session.events(), Event::HorrorTaken { .. });
+    assert_no_event!(session.events(), Event::DamagePlacedOnInvestigator { .. });
+    assert_no_event!(session.events(), Event::HorrorPlacedOnInvestigator { .. });
     assert_eq!(session.state().investigators[&INV].damage(), 0);
     assert_eq!(session.state().investigators[&INV].horror(), 0);
 }

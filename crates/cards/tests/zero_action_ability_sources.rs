@@ -553,8 +553,8 @@ fn a_zero_action_ability_on_a_new_source_provokes_no_attack_of_opportunity() {
         );
         // An attack of opportunity lands as damage/horror on the activator and
         // exhausts the attacker; none of the three appears.
-        assert_no_event!(events, Event::DamageTaken { .. });
-        assert_no_event!(events, Event::HorrorTaken { .. });
+        assert_no_event!(events, Event::DamagePlacedOnInvestigator { .. });
+        assert_no_event!(events, Event::HorrorPlacedOnInvestigator { .. });
         assert_no_event!(events, Event::EnemyExhausted { .. });
         assert_eq!(
             session.state().investigators[&MINE].actions_remaining,

@@ -199,7 +199,7 @@ fn horror_moved_to_the_watcher_offers_no_reaction() {
         session.events(),
         Event::HorrorMoved { from, to, amount: 1 } if *from == vessel && *to == watcher
     );
-    assert_no_event!(session.events(), Event::HorrorTaken { .. });
+    assert_no_event!(session.events(), Event::HorrorPlacedOnInvestigator { .. });
     assert_eq!(session.state().investigators[&INV].horror(), 1);
 }
 

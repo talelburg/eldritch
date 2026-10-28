@@ -103,7 +103,7 @@ fn using_it_moves_one_secret_to_the_resource_pool_for_one_horror() {
     let fk = session.state().in_play(INV, FORBIDDEN_KNOWLEDGE);
     assert_event_sequence!(
         session.events(),
-        Event::HorrorTaken {
+        Event::HorrorPlacedOnInvestigator {
             investigator: INV,
             amount: 1
         },

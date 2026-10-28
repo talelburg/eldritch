@@ -97,7 +97,7 @@ fn the_attack_tests_agility_against_fight_and_deals_two_extra_damage() {
     // The play is the one action spent, it provokes no attack of opportunity,
     // and the event is discarded.
     assert_eq!(session.state().investigators[&INV].actions_remaining, 2);
-    assert_no_event!(session.events(), Event::DamageTaken { .. });
+    assert_no_event!(session.events(), Event::DamagePlacedOnInvestigator { .. });
     assert_eq!(
         session.state().investigators[&INV].discard,
         vec![CardCode::new(BACKSTAB)]

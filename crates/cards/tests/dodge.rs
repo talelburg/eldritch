@@ -159,7 +159,7 @@ fn an_undodged_silver_twilight_acolyte_places_its_doom_after_the_damage() {
         1,
         "the attack landed its 1 damage"
     );
-    assert_event!(session.events(), Event::DamageTaken { .. });
+    assert_event!(session.events(), Event::DamagePlacedOnInvestigator { .. });
 }
 
 #[test]
@@ -180,7 +180,7 @@ fn dodge_cancels_enemy_phase_attack_no_damage_attacker_exhausts() {
     assert_eq!(inv.horror(), 0, "…and no horror");
     assert_no_event!(
         session.events(),
-        Event::DamageTaken { .. } | Event::HorrorTaken { .. }
+        Event::DamagePlacedOnInvestigator { .. } | Event::HorrorPlacedOnInvestigator { .. }
     );
     // The attacker still exhausts (RR p.6 + p.25) — asserted via the event,
     // since the enemy-phase cascade re-readies it at upkeep step 4.3.
@@ -207,7 +207,7 @@ fn declining_the_before_attack_window_lets_the_attack_land() {
 
     assert_event!(
         session.events(),
-        Event::DamageTaken { investigator, amount: 2 } if *investigator == INV
+        Event::DamagePlacedOnInvestigator { investigator, amount: 2 } if *investigator == INV
     );
     assert_eq!(inv.damage(), 2, "investigator carries the 2 damage");
     assert_event!(
@@ -248,7 +248,7 @@ fn dissonant_voices_keeps_dodge_out_of_the_attack_window() {
 
     assert_event!(
         session.events(),
-        Event::DamageTaken { investigator, amount: 2 } if *investigator == INV
+        Event::DamagePlacedOnInvestigator { investigator, amount: 2 } if *investigator == INV
     );
     assert_no_event!(session.events(), Event::CardPlayed { .. });
     assert!(
@@ -315,7 +315,7 @@ fn dodge_lapses_when_dissonant_voices_arrives_before_the_pick() {
     assert_no_event!(events, Event::CardPlayed { .. });
     assert_event!(
         events,
-        Event::DamageTaken { investigator, amount: 2 } if *investigator == INV
+        Event::DamagePlacedOnInvestigator { investigator, amount: 2 } if *investigator == INV
     );
 }
 

@@ -38,7 +38,7 @@ Apart from Guard Dog, Psychosis and Hypochondria, which are implemented, none of
 
 ## Consequences
 
-**A soak reaction now precedes the damage it reacts to, in the event log.** Guard Dog's `EnemyDamaged` lands before the investigator's `DamageTaken` for the same attack, where it used to follow it. This is the visible shape of the fix, and the enemy-attack event-order tests assert it.
+**A soak reaction now precedes the damage it reacts to, in the event log.** Guard Dog's `EnemyDamaged` lands before the investigator's `DamagePlacedOnInvestigator` for the same attack, where it used to follow it. This is the visible shape of the fix, and the enemy-attack event-order tests assert it.
 
 **Every investigator harm rides the frame.** An enemy attack begins its deal directly; everything else — `Effect::Deal`, and the harm a native or the engine deals outside the DSL (Crypt Chill 01167's fallback, the deck-out horror, Dynamite Blast 01024) — begins one through `deal_harm` with `DamageSource::Effect`. So every harm offers the soak and announces both conditions, and an ability keyed to either fires whatever dealt it. `deal_harm` is tail position like any emit: a caller with work after the harm parks it on a frame beneath (ADR 0003). Dynamite Blast deals each investigator at the chosen location separately, pushing one frame per investigator in reverse id order so the deals resolve ascending, each — its soak prompt, both conditions, any reaction — completing before the next frame is exposed.
 

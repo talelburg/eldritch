@@ -118,7 +118,11 @@ fn each_listed_symbol_deals_one_horror_at_reveal() {
         ChaosToken::AutoFail,
     ] {
         let session = attack(token);
-        assert_event_count!(session.events(), 1, Event::HorrorTaken { amount: 1, .. });
+        assert_event_count!(
+            session.events(),
+            1,
+            Event::HorrorPlacedOnInvestigator { amount: 1, .. }
+        );
         assert_eq!(
             session.state().investigators[&INV].horror(),
             1,
@@ -129,7 +133,7 @@ fn each_listed_symbol_deals_one_horror_at_reveal() {
         assert_event_sequence!(
             session.events(),
             Event::ChaosTokenRevealed { token: t, .. } if *t == token,
-            Event::HorrorTaken { .. },
+            Event::HorrorPlacedOnInvestigator { .. },
             Event::SkillTestEnded { .. },
         );
     }
@@ -141,7 +145,7 @@ fn the_horror_is_taken_before_the_result_is_determined() {
     let session = attack(ChaosToken::AutoFail);
     assert_event_sequence!(
         session.events(),
-        Event::HorrorTaken { .. },
+        Event::HorrorPlacedOnInvestigator { .. },
         Event::SkillTestFailed { .. },
     );
     assert_no_event!(session.events(), Event::EnemyDamaged { .. });
@@ -151,7 +155,7 @@ fn the_horror_is_taken_before_the_result_is_determined() {
 fn any_other_token_deals_no_horror() {
     for token in [ChaosToken::Numeric(0), ChaosToken::ElderSign] {
         let session = attack(token);
-        assert_no_event!(session.events(), Event::HorrorTaken { .. });
+        assert_no_event!(session.events(), Event::HorrorPlacedOnInvestigator { .. });
         assert_eq!(
             session.state().investigators[&INV].horror(),
             0,

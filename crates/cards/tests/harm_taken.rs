@@ -174,7 +174,7 @@ fn timeline(events: &[Event]) -> Vec<Option<u8>> {
         .iter()
         .filter_map(|e| match e {
             Event::ResourcesGained { amount, .. } => Some(Some(*amount)),
-            Event::HorrorTaken { .. } => Some(None),
+            Event::HorrorPlacedOnInvestigator { .. } => Some(None),
             _ => None,
         })
         .collect()
@@ -234,6 +234,6 @@ fn prevented_horror_does_not_fire_psychosis() {
     let inv = &session.state().investigators[&INV];
     assert_eq!(inv.horror(), 0, "the horror was prevented");
     assert_eq!(inv.damage(), 0, "Psychosis did not fire");
-    assert_no_event!(session.events(), Event::HorrorTaken { .. });
-    assert_no_event!(session.events(), Event::DamageTaken { .. });
+    assert_no_event!(session.events(), Event::HorrorPlacedOnInvestigator { .. });
+    assert_no_event!(session.events(), Event::DamagePlacedOnInvestigator { .. });
 }

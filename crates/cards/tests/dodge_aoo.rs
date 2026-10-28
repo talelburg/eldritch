@@ -153,7 +153,7 @@ fn dodge_cancels_attack_of_opportunity_no_damage_move_completes_attacker_not_exh
         "the cancelled AoO dealt no horror"
     );
     // A cancelled attack deals no damage.
-    assert_no_event!(result.events, Event::DamageTaken { .. });
+    assert_no_event!(result.events, Event::DamagePlacedOnInvestigator { .. });
 
     // The attacker did NOT exhaust (AoO: RR p.7 — Dodge FAQ says the enemy
     // still exhausts for an Enemy-phase cancel, but AoO attackers are exempt
@@ -231,7 +231,7 @@ fn skipping_before_attack_window_lets_aoo_land_and_move_still_completes() {
     // The AoO landed: the un-cancelled AoO dealt its 2 damage.
     assert_event!(
         result.events,
-        Event::DamageTaken { investigator, amount: 2 } if *investigator == INV
+        Event::DamagePlacedOnInvestigator { investigator, amount: 2 } if *investigator == INV
     );
     assert_eq!(state.investigators[&INV].damage(), 2);
 

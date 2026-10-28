@@ -120,7 +120,7 @@ fn holding_dark_memory_at_the_end_of_your_turn_deals_two_horror() {
     );
     assert_event!(
         session.events(),
-        Event::HorrorTaken { investigator, amount: 2 } if *investigator == INV
+        Event::HorrorPlacedOnInvestigator { investigator, amount: 2 } if *investigator == INV
     );
 }
 

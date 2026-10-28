@@ -174,11 +174,11 @@ fn an_elder_signs_failure_part_resolves_only_on_failure() {
     // Willpower 3 + 0 against 3 passes; against 4 it fails.
     let pass = willpower_test(ON_FAIL, 3);
     assert_event!(pass.events(), Event::SkillTestSucceeded { .. });
-    assert_no_event!(pass.events(), Event::HorrorTaken { .. });
+    assert_no_event!(pass.events(), Event::HorrorPlacedOnInvestigator { .. });
     let fail = willpower_test(ON_FAIL, 4);
     assert_event!(
         fail.events(),
-        Event::HorrorTaken {
+        Event::HorrorPlacedOnInvestigator {
             investigator: INV,
             amount: 1,
         }

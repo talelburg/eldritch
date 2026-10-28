@@ -346,7 +346,7 @@ impl<'a> NativeCx<'a> {
     /// instance `to`, wherever each is on the board (The Necronomicon 01009),
     /// emitting [`Event::HorrorMoved`](crate::event::Event::HorrorMoved) with
     /// the number moved. A move, neither a deal nor a heal, so
-    /// [`Event::HorrorTaken`](crate::event::Event::HorrorTaken) stays silent
+    /// [`Event::HorrorPlacedOnInvestigator`](crate::event::Event::HorrorPlacedOnInvestigator) stays silent
     /// and no harm window opens. A source with no horror moves nothing and
     /// announces nothing.
     ///

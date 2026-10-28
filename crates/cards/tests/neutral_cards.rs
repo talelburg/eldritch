@@ -97,7 +97,10 @@ fn guts_on_an_empty_deck_reshuffles_the_discard_and_takes_one_horror() {
     let r = s.finish();
     assert_event!(r.events, Event::DeckShuffled { .. });
     assert_event!(r.events, Event::CardsDrawn { count: 1, .. });
-    assert_event!(r.events, Event::HorrorTaken { amount: 1, .. });
+    assert_event!(
+        r.events,
+        Event::HorrorPlacedOnInvestigator { amount: 1, .. }
+    );
     let inv = &r.state.investigators[&INV];
     assert_eq!(
         inv.discard,

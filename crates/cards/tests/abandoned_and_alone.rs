@@ -78,7 +78,7 @@ fn drawn_it_takes_two_direct_horror_and_removes_the_discard_pile() {
     assert_event_sequence!(
         session.events(),
         Event::CardRevealed { code, .. } if code.as_str() == ABANDONED_AND_ALONE,
-        Event::HorrorTaken { .. },
+        Event::HorrorPlacedOnInvestigator { .. },
         Event::DiscardPileRemovedFromGame { .. },
         Event::CardDiscarded {
             code,

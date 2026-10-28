@@ -121,17 +121,17 @@ fn resolve_attacks_for_investigator_fires_engaged_ready_enemy_and_exhausts() {
     let events = session.events();
 
     // Damage placed.
-    assert_event!(events, Event::DamageTaken { investigator, amount: 1 } if *investigator == INV);
+    assert_event!(events, Event::DamagePlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV);
 
     // Exhaust asserted on the event, not on post-drive state: the cascade
     // past the attack step runs on into Upkeep, which readies every
     // exhausted enemy again. The event is the record of the moment.
     assert_event!(events, Event::EnemyExhausted { enemy } if *enemy == enemy_id);
 
-    // Ordering: DamageTaken precedes EnemyExhausted (post-attack exhaust).
+    // Ordering: DamagePlacedOnInvestigator precedes EnemyExhausted (post-attack exhaust).
     assert_event_sequence!(
         events,
-        Event::DamageTaken { .. },
+        Event::DamagePlacedOnInvestigator { .. },
         Event::EnemyExhausted { .. },
     );
 }
@@ -153,9 +153,9 @@ fn resolve_attacks_for_investigator_excludes_exhausted_and_unengaged_enemies() {
         .take(&TurnAction::EndTurn);
     let events = session.events();
 
-    // Exactly one DamageTaken (from e3, amount 1).
-    assert_event_count!(events, 1, Event::DamageTaken { .. });
-    assert_event!(events, Event::DamageTaken { amount: 1, .. });
+    // Exactly one DamagePlacedOnInvestigator (from e3, amount 1).
+    assert_event_count!(events, 1, Event::DamagePlacedOnInvestigator { .. });
+    assert_event!(events, Event::DamagePlacedOnInvestigator { amount: 1, .. });
 
     // Only e3 exhausted (e1 was already, and does not re-emit; e2 never
     // attacked). Asserted on events rather than post-drive state — the
@@ -203,7 +203,7 @@ fn resolve_attacks_for_investigator_pick_overrides_enemy_id_order() {
         .events()
         .iter()
         .filter_map(|e| match e {
-            Event::DamageTaken { amount, .. } => Some(*amount),
+            Event::DamagePlacedOnInvestigator { amount, .. } => Some(*amount),
             _ => None,
         })
         .collect();
@@ -260,7 +260,7 @@ fn resolve_attacks_for_investigator_early_breaks_when_target_defeated_mid_loop()
         "the ended scenario cancels the rest of the loop"
     );
 
-    assert_event_count!(events, 1, Event::DamageTaken { .. });
+    assert_event_count!(events, 1, Event::DamagePlacedOnInvestigator { .. });
 
     // No exhaust at all: e1's attack ended the scenario before its own
     // post-attack exhaust step ran (see the assertions above), and e2 never
@@ -334,7 +334,7 @@ fn enemy_phase_emits_phase_started_and_cascades_to_mythos_in_no_eligibility_case
 fn enemy_phase_with_two_investigators_iterates_in_turn_order() {
     // Each investigator is engaged with a ready enemy; the per-investigator
     // attack step must fire for both, in turn order — observable as a
-    // DamageTaken per investigator (id1 before id2).
+    // DamagePlacedOnInvestigator per investigator (id1 before id2).
     let id1 = InvestigatorId(1);
     let id2 = InvestigatorId(2);
     let mut e1 = test_support::test_enemy(1, "Enemy 1");
@@ -359,11 +359,11 @@ fn enemy_phase_with_two_investigators_iterates_in_turn_order() {
     // One per-investigator attack landed for each, in turn order.
     let dmg1 = events
         .iter()
-        .position(|e| matches!(e, Event::DamageTaken { investigator, .. } if *investigator == id1))
+        .position(|e| matches!(e, Event::DamagePlacedOnInvestigator { investigator, .. } if *investigator == id1))
         .expect("id1 attacked");
     let dmg2 = events
         .iter()
-        .position(|e| matches!(e, Event::DamageTaken { investigator, .. } if *investigator == id2))
+        .position(|e| matches!(e, Event::DamagePlacedOnInvestigator { investigator, .. } if *investigator == id2))
         .expect("id2 attacked");
     assert!(
         dmg1 < dmg2,
@@ -375,7 +375,7 @@ fn enemy_phase_with_two_investigators_iterates_in_turn_order() {
 fn enemy_phase_skips_eliminated_investigator_in_advance() {
     // All three investigators are engaged with a ready enemy, but id2 is
     // Defeated (eliminated). The per-investigator attack step must skip id2 —
-    // observable as DamageTaken for id1 and id3 only, none for id2.
+    // observable as DamagePlacedOnInvestigator for id1 and id3 only, none for id2.
     let id1 = InvestigatorId(1);
     let id2 = InvestigatorId(2);
     let id3 = InvestigatorId(3);
@@ -407,19 +407,19 @@ fn enemy_phase_skips_eliminated_investigator_in_advance() {
     assert!(
         events
             .iter()
-            .any(|e| matches!(e, Event::DamageTaken { investigator, .. } if *investigator == id1)),
+            .any(|e| matches!(e, Event::DamagePlacedOnInvestigator { investigator, .. } if *investigator == id1)),
         "id1 attacked"
     );
     assert!(
         events
             .iter()
-            .any(|e| matches!(e, Event::DamageTaken { investigator, .. } if *investigator == id3)),
+            .any(|e| matches!(e, Event::DamagePlacedOnInvestigator { investigator, .. } if *investigator == id3)),
         "id3 attacked"
     );
     assert!(
         !events
             .iter()
-            .any(|e| matches!(e, Event::DamageTaken { investigator, .. } if *investigator == id2)),
+            .any(|e| matches!(e, Event::DamagePlacedOnInvestigator { investigator, .. } if *investigator == id2)),
         "Defeated id2 must be skipped (no attack against it); events = {events:?}"
     );
 }
@@ -472,12 +472,12 @@ fn enemy_phase_attack_lands_in_full_cascade() {
     // `exhausted` flag is reset by Upkeep step 4.3 later in the
     // cascade (ready_exhausted_cards), so checking the post-cascade
     // state directly would race the readying step. The
-    // DamageTaken + EnemyExhausted events emitted inside the
+    // DamagePlacedOnInvestigator + EnemyExhausted events emitted inside the
     // BeforeInvestigatorAttacked continuation are the authoritative
     // signal that the attack landed.
     assert!(events.iter().any(|e| matches!(
         e,
-        Event::DamageTaken { investigator, amount: 1 } if *investigator == inv_id
+        Event::DamagePlacedOnInvestigator { investigator, amount: 1 } if *investigator == inv_id
     )));
     assert!(events.iter().any(|e| matches!(
         e,
@@ -581,7 +581,7 @@ fn enemy_phase_resumes_via_skip_input() {
     );
     assert_event!(
         session.events(),
-        Event::DamageTaken { investigator, amount: 1 } if *investigator == inv_id
+        Event::DamagePlacedOnInvestigator { investigator, amount: 1 } if *investigator == inv_id
     );
     assert_event!(session.events(), Event::EnemyExhausted { enemy } if *enemy == enemy_id);
     // No stranded frame: a stack invariant, so read the stack.

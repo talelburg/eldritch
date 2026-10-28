@@ -88,7 +88,7 @@ fn engage_action_provokes_aoo_from_other_engaged_enemy_not_the_target() {
     assert_eq!(session.state().enemies[&TARGET].engaged_with, Some(INV));
     assert_event!(
         session.events(),
-        Event::DamageTaken { investigator, amount: 1 } if *investigator == INV
+        Event::DamagePlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV
     );
 }
 
