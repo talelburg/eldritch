@@ -33,8 +33,8 @@ fn deck_shuffle_is_deterministic_across_replay() {
         }]
     };
 
-    let result_a = seat_and_open(state_a, &make_roster(), TEST_REGISTRIES);
-    let result_b = seat_and_open(state_b, &make_roster(), TEST_REGISTRIES);
+    let result_a = seat_and_open(state_a, &make_roster(), 0, TEST_REGISTRIES);
+    let result_b = seat_and_open(state_b, &make_roster(), 0, TEST_REGISTRIES);
     let id = InvestigatorId(1);
 
     assert_eq!(

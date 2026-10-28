@@ -19,8 +19,7 @@
 //! `cards::theyre_getting_out` and `cards::what_have_you_done`. Both are the
 //! last card in their deck, which is the only thing that makes them terminal.
 //! 01107's reverse branches on the current act, and 01110's offers its choice
-//! to the lead investigator's proxy, the first Active investigator in
-//! `turn_order`.
+//! to the lead investigator.
 //!
 //! TODO(#766): apply what each ending means. The trauma, the campaign log, and
 //! Lita Chantler at R1 are campaign machinery, and the cards record each gap.

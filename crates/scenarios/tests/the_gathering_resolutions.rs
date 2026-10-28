@@ -46,7 +46,7 @@ fn seated_roland() -> GameState {
     }];
     // seat_and_open opens the mulligan prompt; the session settles at it, and
     // Roland keeps his opening hand before the turn's actions begin.
-    let started = game_core::engine::seat_and_open(state, &roster, scenarios::TEST_REGISTRIES);
+    let started = game_core::engine::seat_and_open(state, &roster, 0, scenarios::TEST_REGISTRIES);
     let session = TestSession::new(started.state, scenarios::TEST_REGISTRIES);
     assert_eq!(
         session.prompt().kind,

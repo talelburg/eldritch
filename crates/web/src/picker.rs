@@ -95,6 +95,8 @@ pub fn PickerView() -> impl IntoView {
                                     scenario_id: ScenarioId::new("the-gathering"),
                                     roster: vec![decks::DEFAULT_DECKS[picked.get_untracked()]
                                         .roster_entry(weakness.get_untracked())],
+                                    // One seat, so the lead can only be the first.
+                                    lead: 0,
                                 });
                             }
                         }

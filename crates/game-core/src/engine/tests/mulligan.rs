@@ -314,7 +314,7 @@ fn start_scenario_seeds_mulligan_loop() {
         deck: make_test_deck(10),
         random_basic_weaknesses: 0,
     }];
-    let result = seat_and_open(state, &roster, TEST_REGISTRIES);
+    let result = seat_and_open(state, &roster, 0, TEST_REGISTRIES);
     assert!(
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
         "seat_and_open opens the mulligan prompt, got {:?}",

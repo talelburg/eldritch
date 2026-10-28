@@ -4,9 +4,9 @@
 //! investigators interact with the game is when establishing "per investigator"
 //! values"* — so an eliminated investigator is never offered a reaction, and
 //! the initiation gate refuses a controller who is not Active (ADR 0017). The
-//! act's and agenda's reactions bind the lead-investigator proxy, the first Active
-//! investigator in `turn_order` (GLOSSARY "Lead investigator"), so they survive
-//! the first seat's elimination.
+//! act's and agenda's reactions bind the lead investigator, who is the first
+//! Active investigator in player order (GLOSSARY "Lead investigator"), so they
+//! survive the lead's elimination.
 //!
 //! Integration test so it can run against `cards::TEST_REGISTRIES`.
 

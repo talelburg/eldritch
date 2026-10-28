@@ -465,11 +465,13 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
         board::discard_from_play_on_elimination(cx, id)
     });
 
-    // Step 5: lead-investigator transfer. No-op by construction: the engine
-    // stores no lead, and its proxy (`first_active_investigator`, the first
-    // Active investigator in `turn_order`) passes to the next seat when this
-    // one is defeated. The remaining players' choice of a new lead is not
-    // modelled; see the proxy under **Lead investigator** in `GLOSSARY.md`.
+    // Step 5: "If the lead investigator is eliminated, the remaining players
+    // (if any) choose a new lead investigator." No write, by design: the stored
+    // `GameState::lead` never changes, and `cursor::the_lead` derives who leads
+    // now as the first Active investigator in player order, so the next seat
+    // after this one takes over. That stands in for the remaining players'
+    // choice (ADR 0019), and leaving the field alone keeps a player-order walk
+    // in flight on the same rotation.
 
     // Step 6 (no remaining players => scenario ends) is signaled by
     // `check_all_eliminated` (caller) emitting AllInvestigatorsEliminated

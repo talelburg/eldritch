@@ -35,7 +35,7 @@ async fn post_games_creates_game_and_returns_id() {
         .uri("/games")
         .header("content-type", "application/json")
         .body(Body::from(format!(
-            r#"{{"scenario_id":"{TEST_SCENARIO_ID}","roster":[{{"investigator":"{TEST_INV}","deck":[],"random_basic_weaknesses":0}}]}}"#
+            r#"{{"scenario_id":"{TEST_SCENARIO_ID}","roster":[{{"investigator":"{TEST_INV}","deck":[],"random_basic_weaknesses":0}}],"lead":0}}"#
         )))
         .unwrap();
     let response = app.oneshot(request).await.unwrap();
@@ -67,10 +67,30 @@ async fn post_games_unknown_scenario_is_bad_request() {
         .uri("/games")
         .header("content-type", "application/json")
         .body(Body::from(
-            r#"{"scenario_id":"no-such-scenario","roster":[]}"#,
+            r#"{"scenario_id":"no-such-scenario","roster":[],"lead":0}"#,
         ))
         .unwrap();
     let response = app.oneshot(request).await.unwrap();
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+/// A lead index past the roster names no investigator: the engine rejects the
+/// seating, which creation reports as unprocessable.
+#[tokio::test]
+async fn post_games_with_a_lead_past_the_roster_is_unprocessable() {
+    let pool = common::memory_pool().await;
+    let app = server::app(AppState::new(pool, common::REGISTRIES));
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/games")
+        .header("content-type", "application/json")
+        .body(Body::from(format!(
+            r#"{{"scenario_id":"{TEST_SCENARIO_ID}","roster":[{{"investigator":"{TEST_INV}","deck":[],"random_basic_weaknesses":0}}],"lead":1}}"#
+        )))
+        .unwrap();
+    let response = app.oneshot(request).await.unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }

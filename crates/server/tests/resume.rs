@@ -36,6 +36,7 @@ async fn seed(pool: &SqlitePool, game_id: &str) {
         game_id,
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
+        0,
     )
     .await
     .expect("seed game");

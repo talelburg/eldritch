@@ -30,7 +30,13 @@ fn setup_and_seat() -> GameState {
     }];
     // seat_and_open rests at the mulligan; the session settles there.
     let session = TestSession::new(
-        engine::seat_and_open(the_gathering::setup(), &roster, scenarios::TEST_REGISTRIES).state,
+        engine::seat_and_open(
+            the_gathering::setup(),
+            &roster,
+            0,
+            scenarios::TEST_REGISTRIES,
+        )
+        .state,
         scenarios::TEST_REGISTRIES,
     )
     .choose_from_hand(&[]);

@@ -24,7 +24,7 @@ fn seats_roland_with_corpus_stats_and_payload_deck() {
         .with_registries(TEST_REGISTRIES)
         .build();
 
-    let result = engine::seat_and_open(state, &roster, TEST_REGISTRIES);
+    let result = engine::seat_and_open(state, &roster, 0, TEST_REGISTRIES);
 
     // seat_and_open seats the roster and opens the setup mulligan prompt
     // (AwaitingInput) for the first investigator.
@@ -69,7 +69,7 @@ fn seats_agnes_with_corpus_stats_and_payload_deck() {
         .with_registries(TEST_REGISTRIES)
         .build();
 
-    let result = engine::seat_and_open(state, &roster, TEST_REGISTRIES);
+    let result = engine::seat_and_open(state, &roster, 0, TEST_REGISTRIES);
 
     assert!(
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
@@ -108,7 +108,7 @@ fn rejects_non_investigator_code() {
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .build();
-    let result = engine::seat_and_open(state, &roster, TEST_REGISTRIES);
+    let result = engine::seat_and_open(state, &roster, 0, TEST_REGISTRIES);
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert_eq!(result.state.round, 0);
     assert!(result.events.is_empty());
@@ -124,7 +124,7 @@ fn seated_investigator_carries_its_card_code() {
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .build();
-    let result = engine::seat_and_open(state, &roster, TEST_REGISTRIES);
+    let result = engine::seat_and_open(state, &roster, 0, TEST_REGISTRIES);
     let inv = result
         .state
         .investigators
@@ -152,7 +152,7 @@ fn refused_reason(deck: &[&str]) -> String {
         random_basic_weaknesses: 0,
     }];
     let state = GameStateBuilder::new().with_registries(REGISTRIES).build();
-    let result = engine::seat_and_open(state.clone(), &roster, REGISTRIES);
+    let result = engine::seat_and_open(state.clone(), &roster, 0, REGISTRIES);
     let EngineOutcome::Rejected { reason } = result.outcome else {
         panic!(
             "a deck with unimplemented cards is refused, got {:?}",
@@ -198,7 +198,7 @@ fn rejects_unknown_code() {
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .build();
-    let result = engine::seat_and_open(state, &roster, TEST_REGISTRIES);
+    let result = engine::seat_and_open(state, &roster, 0, TEST_REGISTRIES);
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert_eq!(result.state.round, 0);
     assert!(result.events.is_empty());

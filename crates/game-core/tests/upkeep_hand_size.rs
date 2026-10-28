@@ -96,7 +96,7 @@ const INV: InvestigatorId = InvestigatorId(1);
 /// Investigation, round 1, at the turn menu. The padding has no step that
 /// makes it, so the opened state is edited and settled again.
 fn opened_with_a_padded_hand() -> TestSession {
-    let opened = game_core::engine::seat_and_open(setup(), &roster(), TEST_REGISTRIES);
+    let opened = game_core::engine::seat_and_open(setup(), &roster(), 0, TEST_REGISTRIES);
     let mut state = TestSession::new(opened.state, TEST_REGISTRIES)
         .choose_from_hand(&[])
         .state()

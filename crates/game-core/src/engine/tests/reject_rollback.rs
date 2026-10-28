@@ -116,6 +116,7 @@ fn engine_record_applied_while_a_prompt_is_outstanding_is_rejected() {
     let opened = seat_and_open(
         GameStateBuilder::new().with_rng_seed(7).build(),
         &roster,
+        0,
         TEST_REGISTRIES,
     );
     assert!(

@@ -64,7 +64,7 @@ async fn post_games_creates_the_gathering_against_the_production_registries() {
         .uri("/games")
         .header("content-type", "application/json")
         .body(Body::from(format!(
-            r#"{{"scenario_id":"{GATHERING_SCENARIO_ID}","roster":[{{"investigator":"01001","deck":[],"random_basic_weaknesses":0}}]}}"#
+            r#"{{"scenario_id":"{GATHERING_SCENARIO_ID}","roster":[{{"investigator":"01001","deck":[],"random_basic_weaknesses":0}}],"lead":0}}"#
         )))
         .unwrap();
     let response = app.oneshot(request).await.unwrap();
@@ -84,6 +84,7 @@ async fn post_games_seats_every_default_deck_in_both_weakness_modes() {
             let body = CreateGameRequest {
                 scenario_id: ScenarioId::new(GATHERING_SCENARIO_ID),
                 roster: vec![deck.roster_entry(choice)],
+                lead: 0,
             };
             let request = Request::builder()
                 .method("POST")

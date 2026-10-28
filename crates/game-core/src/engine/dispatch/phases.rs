@@ -96,11 +96,27 @@ fn draw_random_basic_weaknesses(cx: &mut Cx, roster: &[RosterEntry]) -> Vec<Vec<
         .collect()
 }
 
+/// Why a roster of `seats` cannot be seated with the lead at roster index
+/// `lead`, or `None` when it can.
+///
+/// A scenario requires at least one investigator: seating is the sole seater,
+/// so the roster is mandatory and an empty one rejects. The lead is a roster
+/// index the players chose before the game exists (Appendix III step 3:
+/// *"Choose one of those investigators to be the lead investigator for this
+/// game."*), so one past the roster names nobody.
+fn unseatable_lead(seats: usize, lead: usize) -> Option<String> {
+    if seats == 0 {
+        return Some("a scenario requires a non-empty roster".to_owned());
+    }
+    (lead >= seats)
+        .then(|| format!("lead index {lead} names no investigator in a roster of {seats}"))
+}
+
 /// Internal scenario setup: seat the roster, shuffle decks, push the initial
 /// phase anchors. Called by [`super::seat_and_open`] (the non-logged engine
 /// entry point); never reached via a `PlayerAction` — the action log is
 /// `ResolveInput`-only.
-pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutcome {
+pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry], lead: usize) -> EngineOutcome {
     // Replaying on an already-started state is a bug, not a no-op — reject so
     // callers notice rather than silently double-emitting `ScenarioStarted`.
     if cx.state.round != 0 {
@@ -146,11 +162,9 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
         };
     }
 
-    // A scenario requires at least one investigator. Seating is the sole
-    // seater: the roster is mandatory, an empty roster rejects.
-    if resolved.is_empty() {
+    if let Some(reason) = unseatable_lead(roster.len(), lead) {
         return EngineOutcome::Rejected {
-            reason: "a scenario requires a non-empty roster".into(),
+            reason: reason.into(),
         };
     }
 
@@ -197,6 +211,9 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
             },
         );
         cx.state.turn_order.push(id);
+        if idx == lead {
+            cx.state.lead = Some(id);
+        }
     }
     // Reveal the starting location on first entry (Rules Reference p.14).
     // investigators.len() is now final (all roster entries seated), so
@@ -243,7 +260,7 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
     // the `Mulligan` frame is on the stack, every non-`ResolveInput` action is
     // rejected. An empty/all-eliminated `turn_order` skips the loop entirely:
     // setup ends immediately and we begin Investigation here.
-    let remaining = cursor::active_investigators_in_turn_order(cx.state);
+    let remaining = cursor::player_order(cx.state);
     if remaining.is_empty() {
         return investigation_phase(cx);
     }
@@ -347,11 +364,11 @@ pub(super) fn resume_end_turn(cx: &mut Cx, active_id: InvestigatorId) -> EngineO
         "resume_end_turn: the turn on top is not the active investigator's",
     );
 
-    // 2.2.2 decision: "return to 2.2" for the next investigator, or
-    // proceed to 2.3. next_active_investigator_after skips eliminated
-    // investigators (Rules Reference p.10) — the same shared helper the
-    // Enemy phase uses.
-    if let Some(next_id) = cursor::next_active_investigator_after(cx.state, active_id) {
+    // 2.2.2 decision: "return to 2.2" for the next investigator in player
+    // order (a stand-in for the investigators' choice, #1185), or proceed to
+    // 2.3. `next_in_player_order` skips eliminated investigators (Rules
+    // Reference p.10) — the same shared helper the Enemy phase uses.
+    if let Some(next_id) = cursor::next_in_player_order(cx.state, active_id) {
         begin_investigator_turn(cx, next_id)
     } else {
         cx.state.active_investigator = None;
@@ -368,7 +385,7 @@ pub(super) fn resume_end_turn(cx: &mut Cx, active_id: InvestigatorId) -> EngineO
 /// the post-2.1 player window once they have resolved. Rotation to the
 /// first active investigator (step 2.2) runs in the
 /// [`PhaseStep::InvestigationBegins`] continuation via
-/// [`begin_investigator_turn`], the first Active investigator in turn order
+/// [`begin_investigator_turn`], the first investigator in player order
 /// first. TODO(#146): let the players choose who takes the first turn.
 pub(super) fn investigation_phase(cx: &mut Cx) -> EngineOutcome {
     // 2.1 Investigation phase begins.
@@ -405,7 +422,7 @@ pub(super) fn investigation_phase(cx: &mut Cx) -> EngineOutcome {
 /// in this window's continuation (`anchor_on_child_pop` →
 /// [`Begins`](crate::state::InvestigationResume::Begins)), so the printed order
 /// 2.1 → window → 2.2 holds. Auto-skips inline when nothing is Fast-eligible, so
-/// single-investigator entry still makes the first investigator in turn order
+/// single-investigator entry still makes the first investigator in player order
 /// active within the same `apply()` call.
 fn investigation_after_phase_start(cx: &mut Cx) -> EngineOutcome {
     set_investigation_resume(cx, InvestigationResume::Begins);
@@ -448,7 +465,8 @@ fn set_investigation_resume(cx: &mut Cx, resume: InvestigationResume) {
 /// the emit, so the window cannot be pushed above what the emit queues.
 ///
 /// `who` must be an `Active` investigator in `turn_order`; callers
-/// resolve it via `first_active_investigator` / `next_active_investigator_after`.
+/// resolve it as the first in [`cursor::player_order`] or via
+/// [`cursor::next_in_player_order`].
 pub(super) fn begin_investigator_turn(cx: &mut Cx, who: InvestigatorId) -> EngineOutcome {
     rotate_to_active(cx, who);
     // A new turn: every card in play grants its additional action again (Leo
@@ -669,11 +687,11 @@ fn rotate_to_active(cx: &mut Cx, id: InvestigatorId) {
 /// from [`enemy_phase`] on the no-tie path, and from
 /// [`resume_hunter_choice`] once all hunters resolve.
 ///
-/// Seeds the cursor to the first Active investigator in `turn_order`.
-/// Eliminated investigators (Defeated / Resigned) are skipped per
-/// Rules Reference p.10 (Elimination); [`cursor::first_active_investigator`] is
-/// the shared helper used by Mythos 1.4 for the same semantics.
-/// The loop body runs in [`anchor_on_child_pop`]'s arms.
+/// Seeds the cursor to the first investigator in [`cursor::player_order`],
+/// Appendix II 3.3: *"Resolve engaged enemy attacks in player order"*.
+/// Eliminated investigators (Defeated / Resigned) are skipped per Rules
+/// Reference p.10 (Elimination). Mythos 1.4 seeds its draw queue from the same
+/// list. The loop body runs in [`anchor_on_child_pop`]'s arms.
 ///
 /// Returns the opened window's [`EngineOutcome`]. The no-active-investigator
 /// path opens `AfterAllInvestigatorsAttacked`, whose continuation cascades
@@ -683,7 +701,7 @@ fn rotate_to_active(cx: &mut Cx, id: InvestigatorId) {
 pub(super) fn enemy_attack_kickoff(cx: &mut Cx) -> EngineOutcome {
     // No Active investigators (turn_order empty or all eliminated) → `None`
     // opens the final window directly, mirroring mythos_phase's no-drawer path.
-    open_attack_window(cx, cursor::first_active_investigator(cx.state))
+    open_attack_window(cx, cursor::player_order(cx.state).first().copied())
 }
 
 /// Point the Enemy phase anchor at the next step-3.3 window and open it.
@@ -695,11 +713,11 @@ pub(super) fn enemy_attack_kickoff(cx: &mut Cx) -> EngineOutcome {
 /// and the window from one `Option` here makes a mismatched pairing
 /// unrepresentable.
 ///
-/// Shared by [`enemy_attack_kickoff`] (step 3.3 entry, cursor =
-/// [`cursor::first_active_investigator`](super::cursor::first_active_investigator))
+/// Shared by [`enemy_attack_kickoff`] (step 3.3 entry, cursor = the first in
+/// [`cursor::player_order`](super::cursor::player_order))
 /// and [`after_enemy_phase_attacks`](super::reaction_windows::after_enemy_phase_attacks)
 /// (per-investigator advance, cursor =
-/// [`cursor::next_active_investigator_after`](super::cursor::next_active_investigator_after)).
+/// [`cursor::next_in_player_order`](super::cursor::next_in_player_order)).
 pub(super) fn open_attack_window(cx: &mut Cx, attacking: Option<InvestigatorId>) -> EngineOutcome {
     let (resume, step) = match attacking {
         Some(investigator) => (
@@ -929,7 +947,7 @@ fn run_mythos_draws(cx: &mut Cx) -> EngineOutcome {
     set_mythos_resume(cx, MythosResume::AfterDraws);
     // Per Rules Reference p.10 (Elimination), eliminated investigators (Defeated,
     // Resigned) do not draw — seed Active only.
-    let remaining = cursor::active_investigators_in_turn_order(cx.state);
+    let remaining = cursor::player_order(cx.state);
     if remaining.is_empty() {
         // No Active drawers: open + auto-skip the post-1.4 window inline (its
         // continuation runs mythos_phase_end → Investigation).
@@ -1076,7 +1094,7 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
             // None branch: no active investigator can take a turn — the
             // cascade-breaker park (the loss already resolved at the defeat
             // site). See the former anchor_on_child_pop arm.
-            match cursor::first_active_investigator(cx.state) {
+            match cursor::player_order(cx.state).first().copied() {
                 Some(id) => begin_investigator_turn(cx, id),
                 None => EngineOutcome::Done,
             }
@@ -1209,8 +1227,8 @@ pub(super) fn upkeep_resume(cx: &mut Cx) -> EngineOutcome {
 /// 1 resource and 4.5/4.6 run.
 fn upkeep_draws_after(cx: &mut Cx, drew: Option<InvestigatorId>) -> EngineOutcome {
     let mut next = match drew {
-        None => cursor::first_active_investigator(cx.state),
-        Some(prev) => cursor::next_active_investigator_after(cx.state, prev),
+        None => cursor::player_order(cx.state).first().copied(),
+        Some(prev) => cursor::next_in_player_order(cx.state, prev),
     };
     while let Some(id) = next {
         // Park the cursor before the draw (ADR 0003): the frames it may push
@@ -1226,9 +1244,9 @@ fn upkeep_draws_after(cx: &mut Cx, drew: Option<InvestigatorId>) -> EngineOutcom
         if cx.state.continuations.top() != top_before.as_ref() {
             return outcome;
         }
-        next = cursor::next_active_investigator_after(cx.state, id);
+        next = cursor::next_in_player_order(cx.state, id);
     }
-    for id in cursor::active_investigators_in_turn_order(cx.state) {
+    for id in cursor::player_order(cx.state) {
         cards::grant_resources(cx, id, 1);
     }
     upkeep_after_draw(cx)
@@ -1391,7 +1409,7 @@ pub(super) const HAND_SIZE_LIMIT: u8 = 8;
 /// Active investigators, in player order, whose hand exceeds
 /// [`HAND_SIZE_LIMIT`]. Empty when nobody is over the cap.
 pub(super) fn over_cap_investigators(state: &GameState) -> Vec<InvestigatorId> {
-    cursor::active_investigators_in_turn_order(state)
+    cursor::player_order(state)
         .into_iter()
         .filter(|id| state.investigators[id].hand.len() > HAND_SIZE_LIMIT as usize)
         .collect()
@@ -1590,12 +1608,12 @@ pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) ->
 /// `start_scenario` seeds round 1. Eliminated investigators are skipped
 /// (Rules Reference p.10).
 fn reset_actions(cx: &mut Cx) {
-    for id in cursor::active_investigators_in_turn_order(cx.state) {
+    for id in cursor::player_order(cx.state) {
         let inv = cx
             .state
             .investigators
             .get_mut(&id)
-            .expect("id from active_investigators_in_turn_order");
+            .expect("id from player_order");
         if inv.actions_remaining != ACTIONS_PER_TURN {
             inv.actions_remaining = ACTIONS_PER_TURN;
             cx.events.push(Event::ActionsRemainingChanged {

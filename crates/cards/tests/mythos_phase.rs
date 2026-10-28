@@ -50,11 +50,8 @@
 //! no agenda ever advances — the advance path is `issue_482_advance.rs`'s. No
 //! act deck: nothing here discovers a clue.
 //!
-//! "The lead" below always means the first Active investigator in
-//! `turn_order`, the proxy the engine actually binds — not the lead investigator of
-//! `glossary/Lead_Investigator.md`, which we do not model (`GLOSSARY.md`, *Lead
-//! investigator*). The two coincide in the solo tests and are not guaranteed to
-//! in the two-investigator ones; nothing here turns on the difference.
+//! "The lead" below is the lead investigator: every board here leaves the lead
+//! on the first seat, so player order is the seating as built.
 //!
 //! The two surge tests and the choice-Revelation probe that also lived in this
 //! group need card shapes the corpus cannot supply; they are in
@@ -147,7 +144,7 @@ fn seat_keeping_hands(state: GameState, investigators: &[&str]) -> TestSession {
         })
         .collect();
     let session = TestSession::new(
-        engine::seat_and_open(state, &roster, TEST_REGISTRIES).state,
+        engine::seat_and_open(state, &roster, 0, TEST_REGISTRIES).state,
         TEST_REGISTRIES,
     );
     investigators

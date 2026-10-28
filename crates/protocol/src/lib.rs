@@ -111,6 +111,12 @@ pub struct CreateGameRequest {
     /// player chose. Seated into the persisted seed; a rejected
     /// seating fails creation with no game row.
     pub roster: Vec<RosterEntry>,
+    /// The lead investigator, as an index into [`roster`](Self::roster):
+    /// Appendix III step 3, *"Choose one of those investigators to be the lead
+    /// investigator for this game."* Required on the wire; a client with no
+    /// choice to offer sends `0`, the first seat. An index past the roster
+    /// fails creation as a rejected seating.
+    pub lead: usize,
 }
 
 /// Response to a successful `POST /games`.
@@ -227,15 +233,26 @@ mod tests {
                 deck: vec![],
                 random_basic_weaknesses: 0,
             }],
+            lead: 0,
         };
         let json = serde_json::to_string(&req).expect("serialize");
         assert_eq!(
             json,
-            r#"{"scenario_id":"the-gathering","roster":[{"investigator":"01001","deck":[],"random_basic_weaknesses":0}]}"#,
+            r#"{"scenario_id":"the-gathering","roster":[{"investigator":"01001","deck":[],"random_basic_weaknesses":0}],"lead":0}"#,
             "the scenario id is a bare string on the wire"
         );
         let back: CreateGameRequest = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back.roster.len(), 1);
         assert_eq!(back.scenario_id.as_str(), "the-gathering");
+        assert_eq!(back.lead, 0);
+    }
+
+    #[test]
+    fn create_game_request_without_a_lead_is_refused() {
+        let json = r#"{"scenario_id":"the-gathering","roster":[]}"#;
+        assert!(
+            serde_json::from_str::<CreateGameRequest>(json).is_err(),
+            "the lead is required on the wire, with no default"
+        );
     }
 }

@@ -357,7 +357,7 @@ impl TimingEvent {
     /// The forced-binding rule's third arm (ADR 0018): a forced ability on an
     /// uncontrolled card other than the act or agenda — a location, an enemy,
     /// an encounter attachment — is bound to the subject, falling back to the
-    /// lead-investigator proxy when there is none. An **exhaustive** match, so a new timing
+    /// lead investigator when there is none. An **exhaustive** match, so a new timing
     /// event cannot compile without saying who it is about.
     pub(crate) fn subject(&self) -> Option<InvestigatorId> {
         match self {

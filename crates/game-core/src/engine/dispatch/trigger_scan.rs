@@ -205,14 +205,13 @@ pub(super) fn board_walk<'a>(
 /// rule:
 ///
 /// - a **controlled** card → its controller;
-/// - the current **act** or **agenda** → the lead-investigator proxy, the first Active
-///   investigator in `turn_order` (`cursor::first_active_investigator`; see
-///   GLOSSARY.md for how the proxy differs from the rules' role);
+/// - the current **act** or **agenda** → the lead investigator
+///   ([`cursor::the_lead`]);
 /// - any other **uncontrolled** card → the condition's
-///   [`subject`](TimingEvent::subject), or the lead-investigator proxy when it has none;
+///   [`subject`](TimingEvent::subject), or the lead investigator when it has none;
 /// - a card in **hand** → the investigator holding it.
 ///
-/// A hit with no one to bind (no lead-investigator proxy and no subject) is not collected.
+/// A hit with no one to bind (no lead investigator and no subject) is not collected.
 ///
 /// A card's forced abilities are read where they are live
 /// ([`Ability::active_in`](dsl::Ability::active_in)) — `glossary/Ability.md`:
@@ -228,7 +227,7 @@ pub(super) fn collect_forced(
     event: &TimingEvent,
     bucket: EventTiming,
 ) -> Vec<ResolutionCandidate> {
-    let lead = cursor::first_active_investigator(state);
+    let lead = cursor::the_lead(state);
     let mut hits = Vec::new();
     for walked in board_walk(state, cards, event, TriggerKind::Forced) {
         // A hand card's controller is the investigator holding it.
@@ -298,7 +297,7 @@ pub(super) fn collect_forced(
 /// - a location, a card attached to or put into play at it, an enemy and its
 ///   attachments → each investigator at that location;
 /// - the current **act** or **agenda** → **one** candidate, bound to the lead
-///   proxy: every investigator reaches it, and its corpus reaction (The Barrier
+///   investigator ([`cursor::the_lead`]): every investigator reaches it, and its corpus reaction (The Barrier
 ///   01109's round-end advance) is the group's one offer, not one per seat;
 /// - a **Fast event in hand**, or on top of a discard pile a permission lets
 ///   its owner play from → that investigator, gated as a
@@ -312,7 +311,7 @@ pub(super) fn collect_reactions(
     event: &TimingEvent,
     bucket: EventTiming,
 ) -> Vec<ResolutionCandidate> {
-    let lead = cursor::first_active_investigator(state);
+    let lead = cursor::the_lead(state);
     // Each investigator's reachable sources, asked once per scan and only if a
     // board hit needs them.
     let mut reach: Option<Vec<(InvestigatorId, Vec<AbilitySource>)>> = None;

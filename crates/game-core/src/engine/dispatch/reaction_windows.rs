@@ -1043,8 +1043,8 @@ pub(super) fn run_fast_continuation(cx: &mut Cx, kind: FastWindowKind) -> Engine
 /// continuation does not call it: the loop only *queues* its attacks (see
 /// `emit::queue_event`), so they are not finished when it returns. Finds the
 /// next Active investigator AFTER `investigator` via
-/// [`cursor::next_active_investigator_after`](super::cursor::next_active_investigator_after)
-/// — the helper indexes off `turn_order` (not the filtered-Active
+/// [`cursor::next_in_player_order`](super::cursor::next_in_player_order)
+/// — the helper indexes off the whole seating (not the filtered-Active
 /// list), so `investigator` itself can have been defeated mid-loop and
 /// the right successor is still found. Then points the `EnemyPhase` anchor at
 /// them and opens [`PhaseStep::BeforeInvestigatorAttacked`] again if there is
@@ -1053,7 +1053,7 @@ pub(super) fn after_enemy_phase_attacks(
     cx: &mut Cx,
     investigator: InvestigatorId,
 ) -> EngineOutcome {
-    let next = cursor::next_active_investigator_after(cx.state, investigator);
+    let next = cursor::next_in_player_order(cx.state, investigator);
     phases::open_attack_window(cx, next)
 }
 

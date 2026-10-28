@@ -65,6 +65,7 @@ pub struct GameStateBuilder {
     round: u32,
     active_investigator: Option<InvestigatorId>,
     turn_order: Vec<InvestigatorId>,
+    lead: Option<InvestigatorId>,
     rng: RngState,
     mulligan_remaining: Option<Vec<InvestigatorId>>,
     mythos_draw_remaining: Option<Vec<InvestigatorId>>,
@@ -98,6 +99,7 @@ impl GameStateBuilder {
             round: 0,
             active_investigator: None,
             turn_order: Vec::new(),
+            lead: None,
             rng: RngState::new(0),
             mulligan_remaining: None,
             mythos_draw_remaining: None,
@@ -223,10 +225,18 @@ impl GameStateBuilder {
         self
     }
 
-    /// Set the turn order (lead-investigator-decided sequence in which
-    /// investigators take their turns during the Investigation phase).
+    /// Set the seating, [`GameState::turn_order`]. Unless
+    /// [`with_lead`](Self::with_lead) names another, its first entry is the
+    /// lead, so player order is the seating as given.
     pub fn with_turn_order(mut self, order: impl IntoIterator<Item = InvestigatorId>) -> Self {
         self.turn_order = order.into_iter().collect();
+        self
+    }
+
+    /// Set the lead investigator, [`GameState::lead`], so player order starts
+    /// at `id` rather than at the seating's first entry.
+    pub fn with_lead(mut self, id: InvestigatorId) -> Self {
+        self.lead = Some(id);
         self
     }
 
@@ -539,6 +549,7 @@ impl GameStateBuilder {
             phase: self.phase,
             round: self.round,
             active_investigator: self.active_investigator,
+            lead: self.lead.or_else(|| self.turn_order.first().copied()),
             turn_order: self.turn_order,
             rng: self.rng,
             card_instance_ids,

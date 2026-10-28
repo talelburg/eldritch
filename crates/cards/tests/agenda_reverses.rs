@@ -51,7 +51,7 @@ fn ending_the_round_on(index: usize, lead: Seat, encounter_deck: &[&str]) -> Gam
     state
 }
 
-/// 01105's reverse is an interactive `ChooseOne`, made by the lead-investigator proxy:
+/// 01105's reverse is an interactive `ChooseOne`, made by the lead investigator:
 /// it suspends with a two-option prompt, and picking branch 1 (the printed
 /// "the lead investigator takes 2 horror") resolves it.
 #[test]
@@ -73,7 +73,7 @@ fn agenda_01105_reverse_choice_lead_takes_two_horror() {
     assert_eq!(
         session.state().investigators[&LEAD].horror(),
         2,
-        "branch 1 deals 2 horror to the lead-investigator proxy",
+        "branch 1 deals 2 horror to the lead investigator",
     );
 }
 
