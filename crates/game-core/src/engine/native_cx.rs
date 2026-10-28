@@ -171,24 +171,6 @@ impl<'a> NativeCx<'a> {
         threat_area::attach_to_location(self.write_access(), location, code, owner)
     }
 
-    /// Put `code` into `investigator`'s threat area under `owner`, returning
-    /// its new instance id, or `None` when the investigator is not in the game.
-    ///
-    /// **Makes no room.** A card with a slot symbol lands even when its slot is
-    /// full, and no occupier is discarded. [`Effect::PutIntoThreatArea`] is the
-    /// entry that makes room first, and can suspend on the make-room prompt.
-    /// Use this one only for a card that holds no slot.
-    ///
-    /// [`Effect::PutIntoThreatArea`]: card_dsl::dsl::Effect::PutIntoThreatArea
-    pub fn place_in_threat_area(
-        &mut self,
-        investigator: InvestigatorId,
-        code: CardCode,
-        owner: Owner,
-    ) -> Option<CardInstanceId> {
-        threat_area::place_in_threat_area(self.write_access(), investigator, code, owner)
-    }
-
     // --- Movement and placement ---
 
     /// Move `enemy` to `to` and, if it is unengaged, engage it there.
