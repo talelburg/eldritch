@@ -156,6 +156,10 @@ async fn handle_client_message(room: &GameRoom, message: Message) -> Option<Disp
                         }))
                     }
                     Ok((events, outcome)) => {
+                        // A broadcast send fails only when no receiver exists.
+                        // This task subscribed before its loop and holds that
+                        // receiver throughout, so the send cannot fail here, and
+                        // `apply` has already persisted the action either way.
                         let _ = room.tx.send(ServerMessage::Applied {
                             state: Box::new(session.state.clone()),
                             events,
