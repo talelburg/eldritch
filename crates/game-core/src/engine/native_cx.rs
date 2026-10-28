@@ -151,9 +151,12 @@ impl<'a> NativeCx<'a> {
     }
 
     /// Put the set-aside location `code` into play and return its minted
-    /// id, wired to its in-play neighbours from the scenario's layout. `Err`
-    /// with the reason, changing nothing, when the card is not set aside or
-    /// is not a location.
+    /// id, wired to its in-play neighbours from the scenario's layout.
+    ///
+    /// # Errors
+    ///
+    /// The rejection reason, changing nothing, when `code` is not set aside,
+    /// has no metadata, or is not a location.
     pub fn put_set_aside_location_into_play(
         &mut self,
         code: &str,
