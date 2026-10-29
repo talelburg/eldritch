@@ -249,7 +249,7 @@ fn not_playable_in_another_investigators_turn() {
     let other = InvestigatorId(2);
     let window = board([location(THERE, "There")], [])
         .with_seat(seat(2).at(HERE).hand([MAGNIFYING_GLASS]).resources(1))
-        .with_turn_order([INV, other])
+        .with_seating([INV, other])
         .with_phase(Phase::Investigation)
         .with_active_investigator(other)
         .with_phase_anchor(InvestigationPhaseFrame {

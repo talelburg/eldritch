@@ -24,7 +24,7 @@ fn play_card_outside_investigation_phase_is_rejected() {
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).hand([CARD]))
-        .with_turn_order([INV])
+        .with_seating([INV])
         .with_phase(Phase::Mythos)
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
@@ -41,7 +41,7 @@ fn play_card_by_non_active_investigator_is_rejected() {
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).hand([CARD]))
         .with_seat(seat(2))
-        .with_turn_order([INV, InvestigatorId(2)])
+        .with_seating([INV, InvestigatorId(2)])
         .open_turn(InvestigatorId(2))
         .session();
     session.assert_rejects(|s| s.submit_off_menu(&play(0)));

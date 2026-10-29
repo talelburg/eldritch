@@ -34,7 +34,7 @@ fn board_with_soaker(treachery: &str, soaker: &str, token: ChaosToken) -> TestSe
         .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Here"))
         .with_seat(seat(1).at(HERE).in_play([soaker]))
-        .with_turn_order([INV])
+        .with_seating([INV])
         .with_phase(Phase::Mythos)
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,

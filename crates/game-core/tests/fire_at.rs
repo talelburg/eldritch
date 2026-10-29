@@ -116,7 +116,7 @@ fn session_holding(codes: &[&str]) -> TestSession {
     GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(holding(codes))
-        .with_turn_order([INV])
+        .with_seating([INV])
         .session()
 }
 
@@ -270,7 +270,7 @@ fn acting(act: &str, held: &[&str], builder: GameStateBuilder) -> TestSession {
     let mut state = builder
         .with_registries(registries())
         .with_seat(holding(held))
-        .with_turn_order([INV])
+        .with_seating([INV])
         .build();
     state.act_deck = vec![Act {
         code: CardCode::new(act),

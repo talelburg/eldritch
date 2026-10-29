@@ -199,7 +199,7 @@ fn mulligan_redraw_weakness_is_set_aside() {
         // guarantees the mulligan redraw draws it.
         .with_seat(seat(1).hand([filler(1)]).deck([COVER_UP]))
         .with_phase(Phase::Investigation)
-        .with_turn_order([INV])
+        .with_seating([INV])
         .with_mulligan_remaining([INV])
         .session();
 

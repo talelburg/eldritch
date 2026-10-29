@@ -3,7 +3,7 @@ use super::*;
 /// A two-agenda fixture with the given doom threshold on the current one.
 fn state_with_agenda(threshold: u8) -> GameState {
     let mut state = GameStateBuilder::new()
-        .with_turn_order([InvestigatorId(1)])
+        .with_seating([InvestigatorId(1)])
         .build();
     state.agenda_deck = vec![
         Agenda {
@@ -227,7 +227,7 @@ fn place_doom_of_zero_does_not_run_the_threshold_check() {
 #[test]
 fn place_doom_without_an_agenda_deck_is_a_no_op() {
     let mut state = GameStateBuilder::new()
-        .with_turn_order([InvestigatorId(1)])
+        .with_seating([InvestigatorId(1)])
         .build();
     assert!(state.agenda_deck.is_empty());
     let mut events = Vec::new();

@@ -65,7 +65,7 @@ fn start_scenario_advances_to_investigation_with_round_one() {
     );
 
     // After the sole investigator mulligans (keeping their hand), the phase
-    // begins and the first investigator in turn order becomes active.
+    // begins and the first investigator in player order becomes active.
     let mulligan_result = TestSession::new(start_result.state, TEST_REGISTRIES)
         .choose_from_hand(&[])
         .finish();
@@ -77,7 +77,7 @@ fn start_scenario_advances_to_investigation_with_round_one() {
     assert_eq!(
         mulligan_result.state.active_investigator,
         Some(id),
-        "the first investigator in turn order becomes active after mulligan window closes"
+        "the first investigator in player order becomes active after mulligan window closes"
     );
     assert_event!(
         mulligan_result.events,

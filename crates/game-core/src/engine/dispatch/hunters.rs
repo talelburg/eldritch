@@ -293,7 +293,7 @@ fn place_enemy_at(cx: &mut Cx, enemy_id: EnemyId, to: LocationId) {
 /// `EnemyEngaged` one and a spawn-time tie can suspend interactively.
 ///
 /// Synchronous by construction, unlike the Hunter path: a prey tie
-/// among co-located investigators auto-picks the turn-order-first of them
+/// among co-located investigators auto-picks the player-order-first of them
 /// rather than suspending for a tie-break prompt. TODO(#151): make it an
 /// interactive tie-break, as `reengage_at_location` needs too. Solo play — the only mode
 /// that ships today — never ties.

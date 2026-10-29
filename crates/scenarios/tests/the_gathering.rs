@@ -471,7 +471,7 @@ fn advancing_act_1_does_not_place_a_resigned_investigator() {
     let mut gone = test_support::test_investigator(resigned.0);
     gone.status = Status::Resigned;
     state.investigators.insert(resigned, gone);
-    state.turn_order.push(resigned);
+    state.seating.push(resigned);
 
     let session = TestSession::new(state, scenarios::TEST_REGISTRIES)
         .take(&TurnAction::AdvanceAct { investigator: INV });

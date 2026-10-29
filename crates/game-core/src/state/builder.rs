@@ -18,7 +18,7 @@
 //! let state = GameStateBuilder::new()
 //!     .with_investigator(test_support::test_investigator(1))
 //!     .with_investigator(test_support::test_investigator(2))
-//!     .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+//!     .with_seating([InvestigatorId(1), InvestigatorId(2)])
 //!     .with_location(test_support::test_location(10, "Study"))
 //!     // Investigation phase, investigator 1 active, their turn menu up.
 //!     .open_turn(InvestigatorId(1))
@@ -64,7 +64,7 @@ pub struct GameStateBuilder {
     phase: Phase,
     round: u32,
     active_investigator: Option<InvestigatorId>,
-    turn_order: Vec<InvestigatorId>,
+    seating: Vec<InvestigatorId>,
     lead: Option<InvestigatorId>,
     rng: RngState,
     mulligan_remaining: Option<Vec<InvestigatorId>>,
@@ -101,7 +101,7 @@ impl GameStateBuilder {
             phase: Phase::Mythos,
             round: 0,
             active_investigator: None,
-            turn_order: Vec::new(),
+            seating: Vec::new(),
             lead: None,
             rng: RngState::new(0),
             mulligan_remaining: None,
@@ -229,11 +229,11 @@ impl GameStateBuilder {
         self
     }
 
-    /// Set the seating, [`GameState::turn_order`]. Unless
+    /// Set the seating, [`GameState::seating`]. Unless
     /// [`with_lead`](Self::with_lead) names another, its first entry is the
     /// lead, so player order is the seating as given.
-    pub fn with_turn_order(mut self, order: impl IntoIterator<Item = InvestigatorId>) -> Self {
-        self.turn_order = order.into_iter().collect();
+    pub fn with_seating(mut self, order: impl IntoIterator<Item = InvestigatorId>) -> Self {
+        self.seating = order.into_iter().collect();
         self
     }
 
@@ -262,8 +262,9 @@ impl GameStateBuilder {
     /// tests don't accidentally exercise Mulligan paths; opt in when a test
     /// wants to resume the mulligan loop directly via `ResolveInput` without
     /// going through scenario setup (via `seat_and_open`). The queue must list
-    /// the investigators in `turn_order` (set via [`with_turn_order`](Self::with_turn_order))
-    /// so the loop advances correctly. Stages a [`Continuation::Mulligan`] frame at
+    /// the investigators in player order (the seating set via
+    /// [`with_seating`](Self::with_seating), from the lead) so the loop advances
+    /// correctly. Stages a [`Continuation::Mulligan`] frame at
     /// [`build`](Self::build).
     pub fn with_mulligan_remaining(
         mut self,
@@ -277,9 +278,9 @@ impl GameStateBuilder {
     /// player-order queue (front = currently prompted). By default none is
     /// staged; opt in when a test wants to resume the encounter-draw loop
     /// directly via `ResolveInput(Confirm)` without driving the full Mythos
-    /// cascade. The queue must list the investigators in `turn_order` (set via
-    /// [`with_turn_order`](Self::with_turn_order)) so the loop advances
-    /// correctly. Stages a [`Continuation::EncounterDraw`] frame at
+    /// cascade. The queue must list the investigators in player order (the
+    /// seating set via [`with_seating`](Self::with_seating), from the lead) so
+    /// the loop advances correctly. Stages a [`Continuation::EncounterDraw`] frame at
     /// [`build`](Self::build).
     pub fn with_mythos_draw_remaining(
         mut self,
@@ -347,11 +348,11 @@ impl GameStateBuilder {
     ///
     /// Sets the Investigation phase, makes `investigator` active, stages the
     /// Investigation phase anchor at turn-begins and the open turn above it.
-    /// A turn order already set is kept; with none set, it defaults to
+    /// A seating already set is kept; with none set, it defaults to
     /// `[investigator]`.
     pub fn open_turn(mut self, investigator: InvestigatorId) -> Self {
-        if self.turn_order.is_empty() {
-            self.turn_order = vec![investigator];
+        if self.seating.is_empty() {
+            self.seating = vec![investigator];
         }
         self.phase = Phase::Investigation;
         self.active_investigator = Some(investigator);
@@ -571,8 +572,8 @@ impl GameStateBuilder {
             phase: self.phase,
             round: self.round,
             active_investigator: self.active_investigator,
-            lead: self.lead.or_else(|| self.turn_order.first().copied()),
-            turn_order: self.turn_order,
+            lead: self.lead.or_else(|| self.seating.first().copied()),
+            seating: self.seating,
             rng: self.rng,
             card_instance_ids,
             enemy_ids: Counter::new(),

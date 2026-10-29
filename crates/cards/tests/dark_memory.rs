@@ -43,7 +43,7 @@ fn turn_holding(hand: &[&str]) -> TestSession {
         .with_seat(seat(1).hand(hand.iter().copied()))
         .with_seat(seat(2))
         .with_seat(seat(3))
-        .with_turn_order([INV, INV2, INV3])
+        .with_seating([INV, INV2, INV3])
         .open_turn(INV)
         .session()
 }
@@ -57,7 +57,7 @@ fn turn_to_play_it(doom: u8) -> TestSession {
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).hand([DARK_MEMORY]).resources(2))
-        .with_turn_order([INV])
+        .with_seating([INV])
         .open_turn(INV)
         .build();
     // The builder stages no agenda.
@@ -155,7 +155,7 @@ fn dark_memory_beside_another_end_of_turn_forced_ability_fires_in_place() {
                 .resources(2),
         )
         .with_seat(seat(2))
-        .with_turn_order([INV, INV2])
+        .with_seating([INV, INV2])
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(INV)
         .session()
@@ -195,7 +195,7 @@ fn ending_upkeep_holding(hand: &[&str]) -> TestSession {
     GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).hand(hand.iter().copied()))
-        .with_turn_order([INV])
+        .with_seating([INV])
         .ending_upkeep_phase()
         .session()
 }

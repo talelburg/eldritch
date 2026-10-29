@@ -20,7 +20,7 @@ fn assert_at_hand_size_discard(session: &TestSession) {
 }
 
 /// Step 4.5's hand-size discard, the moment it is asked: the Upkeep phase
-/// ending (after step 4.4's draw) with each of `hands` seated in turn order.
+/// ending (after step 4.4's draw) with each of `hands` seated in the order given.
 fn ending_upkeep_with_hands(hands: &[(u32, Vec<String>)]) -> TestSession {
     hands
         .iter()
@@ -30,7 +30,7 @@ fn ending_upkeep_with_hands(hands: &[(u32, Vec<String>)]) -> TestSession {
                 builder.with_seat(test_support::seat(*id).hand(hand.iter().map(String::as_str)))
             },
         )
-        .with_turn_order(hands.iter().map(|(id, _)| InvestigatorId(*id)))
+        .with_seating(hands.iter().map(|(id, _)| InvestigatorId(*id)))
         .ending_upkeep_phase()
         .session()
 }
@@ -66,12 +66,12 @@ fn over_cap_investigators_lists_only_over_eight_in_player_order() {
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).hand(["x"; 9]))
         .with_seat(test_support::seat(2).hand(["x"; 8]))
-        .with_turn_order([inv2, inv1]) // player order: inv2 first
+        .with_seating([inv2, inv1]) // player order: inv2 first
         .build();
 
     assert_eq!(over_cap_investigators(&state), vec![inv1]);
 
-    // Push inv2 over too: order must follow turn_order (inv2 then inv1).
+    // Push inv2 over too: order must follow player order (inv2 then inv1).
     state.investigators.get_mut(&inv2).unwrap().hand = vec![CardCode("x".into()); 10];
     assert_eq!(over_cap_investigators(&state), vec![inv2, inv1]);
 }
@@ -86,7 +86,7 @@ fn upkeep_anchor_present_while_suspended_at_hand_size() {
         .with_registries(TEST_REGISTRIES)
         // Step 4.4 draws 1.
         .with_seat(test_support::seat(1).hand(["x"; 10]).deck(["y"]))
-        .with_turn_order([id])
+        .with_seating([id])
         .with_phase(Phase::Upkeep)
         .build();
     let mut events = Vec::new();
@@ -152,7 +152,7 @@ fn upkeep_resume_parks_at_hand_size_discard() {
                 .hand(hand("h", 12).iter().map(String::as_str))
                 .deck(hand("d", 3).iter().map(String::as_str)),
         )
-        .with_turn_order([id])
+        .with_seating([id])
         .with_phase(Phase::Upkeep)
         // The post-4.1 window has closed: steps 4.2–4.6 run next.
         .with_phase_anchor(UpkeepPhaseFrame {

@@ -210,7 +210,7 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry], lead: usize) -
                 investigator_card,
             },
         );
-        cx.state.turn_order.push(id);
+        cx.state.seating.push(id);
         if idx == lead {
             cx.state.lead = Some(id);
         }
@@ -258,7 +258,7 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry], lead: usize) -
     // advances after each and drains once all have gone, at which point setup
     // ends and the Investigation phase begins (see `resume_mulligan`). While
     // the `Mulligan` frame is on the stack, every non-`ResolveInput` action is
-    // rejected. An empty/all-eliminated `turn_order` skips the loop entirely:
+    // rejected. An empty/all-eliminated `seating` skips the loop entirely:
     // setup ends immediately and we begin Investigation here.
     let remaining = cursor::player_order(cx.state);
     if remaining.is_empty() {
@@ -464,7 +464,7 @@ fn set_investigation_resume(cx: &mut Cx, resume: InvestigationResume) {
 /// [`AfterTurnBegan`](crate::state::InvestigationResume::AfterTurnBegan) before
 /// the emit, so the window cannot be pushed above what the emit queues.
 ///
-/// `who` must be an `Active` investigator in `turn_order`; callers
+/// `who` must be an `Active` investigator in `seating`; callers
 /// resolve it as the first in [`cursor::player_order`] or via
 /// [`cursor::next_in_player_order`].
 pub(super) fn begin_investigator_turn(cx: &mut Cx, who: InvestigatorId) -> EngineOutcome {
@@ -672,7 +672,7 @@ fn step_phase(cx: &mut Cx) -> EngineOutcome {
 /// this round's allotment.
 ///
 /// `id` must refer to an investigator in `state.investigators` (a
-/// whole-program invariant for ids drawn from `turn_order`).
+/// whole-program invariant for ids drawn from `seating`).
 fn rotate_to_active(cx: &mut Cx, id: InvestigatorId) {
     debug_assert!(
         cx.state.investigators.contains_key(&id),
@@ -699,7 +699,7 @@ fn rotate_to_active(cx: &mut Cx, id: InvestigatorId) {
 /// (hand-size discard), so the outcome propagates rather than being
 /// discarded.
 pub(super) fn enemy_attack_kickoff(cx: &mut Cx) -> EngineOutcome {
-    // No Active investigators (turn_order empty or all eliminated) → `None`
+    // No Active investigators (seating empty or all eliminated) → `None`
     // opens the final window directly, mirroring mythos_phase's no-drawer path.
     open_attack_window(cx, cursor::player_order(cx.state).first().copied())
 }

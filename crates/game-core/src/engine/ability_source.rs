@@ -581,7 +581,7 @@ mod tests {
                     .threat_area([test_support::TEST_ASSET, test_support::TEST_TREACHERY]),
             )
             .with_seat(seat(2).at(STUDY))
-            .with_turn_order(vec![InvestigatorId(1), InvestigatorId(2)])
+            .with_seating(vec![InvestigatorId(1), InvestigatorId(2)])
             .open_turn(turn)
             .build()
     }

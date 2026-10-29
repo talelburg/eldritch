@@ -19,7 +19,7 @@ fn three_at_here(order: [u32; 3]) -> GameState {
         .with_seat(seat(1).at(HERE))
         .with_seat(seat(2).at(HERE))
         .with_seat(seat(3).at(HERE))
-        .with_turn_order(order.map(InvestigatorId))
+        .with_seating(order.map(InvestigatorId))
         .build()
 }
 

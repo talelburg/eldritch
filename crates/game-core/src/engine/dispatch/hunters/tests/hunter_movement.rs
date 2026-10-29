@@ -53,7 +53,7 @@ fn hunter_moves_one_step_toward_investigator_two_hops_away_no_engage() {
         .with_location(b)
         .with_location(c)
         .with_seat(test_support::seat(1).at(C))
-        .with_turn_order([InvestigatorId(1)])
+        .with_seating([InvestigatorId(1)])
         .with_enemy(ghoul)
         .build();
     let mut events = Vec::new();
@@ -81,7 +81,7 @@ fn hunter_engages_when_it_moves_into_investigators_location() {
         .with_location(a)
         .with_location(b)
         .with_seat(test_support::seat(1).at(B))
-        .with_turn_order([InvestigatorId(1)])
+        .with_seating([InvestigatorId(1)])
         .with_enemy(h)
         .build();
     let mut events = Vec::new();
@@ -108,7 +108,7 @@ fn hunter_with_no_path_does_not_move() {
         .with_location(a)
         .with_location(island)
         .with_seat(test_support::seat(1).at(A))
-        .with_turn_order([InvestigatorId(1)])
+        .with_seating([InvestigatorId(1)])
         .with_enemy(h)
         .build();
     let mut events = Vec::new();
@@ -133,7 +133,7 @@ fn exhausted_hunter_is_skipped() {
         .with_location(a)
         .with_location(b)
         .with_seat(test_support::seat(1).at(B))
-        .with_turn_order([InvestigatorId(1)])
+        .with_seating([InvestigatorId(1)])
         .with_enemy(h)
         .build();
     let mut events = Vec::new();
@@ -157,7 +157,7 @@ fn non_hunter_enemy_does_not_move() {
         .with_location(a)
         .with_location(b)
         .with_seat(test_support::seat(1).at(B))
-        .with_turn_order([InvestigatorId(1)])
+        .with_seating([InvestigatorId(1)])
         .with_enemy(e)
         .build();
     let mut events = Vec::new();
@@ -183,7 +183,7 @@ fn hunter_already_co_located_does_not_move_but_engages() {
         .with_location(a)
         .with_location(b)
         .with_seat(test_support::seat(1).at(A))
-        .with_turn_order([InvestigatorId(1)])
+        .with_seating([InvestigatorId(1)])
         .with_enemy(h)
         .build();
     let mut events = Vec::new();
@@ -241,7 +241,7 @@ fn hunt(enemy: Enemy, bearer_at: LocationId, other_at: LocationId) -> GameState 
         .with_location(d)
         .with_seat(test_support::seat(BEARER.0).at(bearer_at))
         .with_seat(test_support::seat(OTHER.0).at(other_at))
-        .with_turn_order([BEARER, OTHER])
+        .with_seating([BEARER, OTHER])
         .with_enemy(enemy)
         .build();
     let mut events = Vec::new();
@@ -261,7 +261,7 @@ fn bearer_only_hunter_steps_toward_its_farther_bearer() {
 }
 
 /// Arriving where both investigators stand, it engages the bearer, not the
-/// turn-order-first lead (the bearer is second in turn order here).
+/// player-order-first lead (the bearer is second in player order here).
 #[test]
 fn bearer_only_hunter_arriving_engages_its_bearer_not_the_lead() {
     let [a, b, c, d] = line();
@@ -274,7 +274,7 @@ fn bearer_only_hunter_arriving_engages_its_bearer_not_the_lead() {
         .with_location(d)
         .with_seat(test_support::seat(BEARER.0).at(C))
         .with_seat(test_support::seat(OTHER.0).at(C))
-        .with_turn_order([OTHER, BEARER])
+        .with_seating([OTHER, BEARER])
         .with_enemy(bearer_only_hunter(B))
         .build();
     let mut events = Vec::new();
@@ -296,7 +296,7 @@ fn bearer_only_hunter_ignores_everyone_else() {
         .with_location(c)
         .with_location(d)
         .with_seat(test_support::seat(OTHER.0).at(C))
-        .with_turn_order([OTHER])
+        .with_seating([OTHER])
         .with_enemy(bearer_only_hunter(B))
         .build();
     let mut events = Vec::new();

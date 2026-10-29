@@ -26,7 +26,7 @@ fn activate_ability_outside_investigation_phase_is_rejected() {
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).in_play([ASSET]))
-        .with_turn_order([INV])
+        .with_seating([INV])
         .with_phase(Phase::Mythos)
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
@@ -44,7 +44,7 @@ fn activate_ability_by_non_active_investigator_is_rejected() {
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).in_play([ASSET]))
         .with_seat(seat(2))
-        .with_turn_order([INV, InvestigatorId(2)])
+        .with_seating([INV, InvestigatorId(2)])
         .open_turn(InvestigatorId(2))
         .session();
     let asset = session.state().in_play(INV, ASSET);

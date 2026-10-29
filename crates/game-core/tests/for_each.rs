@@ -60,7 +60,7 @@ fn registries() -> Registries {
     *REGISTRIES
 }
 
-/// Three investigators in turn order 1, 2, 3; the first's body defeats the
+/// Three investigators in player order 1, 2, 3; the first's body defeats the
 /// second before the walk reaches them, so the second gains nothing and the
 /// walk goes on to the third.
 #[test]
@@ -70,7 +70,7 @@ fn an_investigator_eliminated_partway_through_the_walk_is_skipped() {
         .with_seat(seat(1))
         .with_seat(seat(2))
         .with_seat(seat(3))
-        .with_turn_order([FIRST, SECOND, THIRD])
+        .with_seating([FIRST, SECOND, THIRD])
         .ending_enemy_phase()
         .build();
     // No builder setter stages the act deck.
@@ -118,7 +118,7 @@ fn investigators_walk_in_player_order_from_the_lead() {
         .with_seat(seat(1))
         .with_seat(seat(2))
         .with_seat(seat(3))
-        .with_turn_order([FIRST, SECOND, THIRD])
+        .with_seating([FIRST, SECOND, THIRD])
         .with_lead(SECOND)
         .ending_enemy_phase()
         .build();

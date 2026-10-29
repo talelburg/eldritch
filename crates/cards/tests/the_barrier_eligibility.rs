@@ -23,7 +23,7 @@ fn board(clues: u8) -> GameState {
         .with_registries(TEST_REGISTRIES)
         .with_location(hall)
         .with_seat(seat(1).at(HALLWAY).clues(clues))
-        .with_turn_order([INV])
+        .with_seating([INV])
         .build();
     state.act_deck = vec![Act {
         code: CardCode("01109".into()),

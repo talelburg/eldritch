@@ -152,7 +152,7 @@ fn another_investigators_spell_offers_nothing() {
             .with_location(test_support::test_location(HERE.0, "Study"))
             .with_seat(seat(1).at(HERE).hand([SCRYING]).resources(5))
             .with_seat(seat(2).at(HERE).in_play([HEIRLOOM]).deck([GUTS]))
-            .with_turn_order([INV, INV2])
+            .with_seating([INV, INV2])
             .open_turn(INV)
             .build(),
         TEST_REGISTRIES,

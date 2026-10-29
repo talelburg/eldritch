@@ -38,7 +38,7 @@ fn roland_defeats_an_enemy(status: Status) -> TestSession {
         .with_seat(seat(1).as_card("01001").at(HERE).status(status))
         .with_seat(seat(2).at(HERE))
         .with_location(study)
-        .with_turn_order([SEAT_1, SEAT_2])
+        .with_seating([SEAT_1, SEAT_2])
         .open_turn(SEAT_2)
         .session()
         .fire_at(TimingEvent::EnemyDefeated {
@@ -91,7 +91,7 @@ fn barrier_table_with_seat_1_eliminated() -> TestSession {
             1,
             0,
         ))
-        .with_turn_order([SEAT_1, SEAT_2])
+        .with_seating([SEAT_1, SEAT_2])
         .open_turn(SEAT_2)
         .build();
     // The builder stages no act deck.

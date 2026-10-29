@@ -21,7 +21,7 @@ fn drawing() -> GameState {
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
         })
-        .with_turn_order([InvestigatorId(1)])
+        .with_seating([InvestigatorId(1)])
         .with_mythos_draw_remaining([InvestigatorId(1)])
         .build()
 }

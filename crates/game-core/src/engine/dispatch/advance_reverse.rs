@@ -191,7 +191,7 @@ mod tests {
         // A seated lead, who acknowledges the advance.
         let mut state = GameStateBuilder::new()
             .with_seat(test_support::seat(1))
-            .with_turn_order([InvestigatorId(1)])
+            .with_seating([InvestigatorId(1)])
             .build();
         state.agenda_deck = vec![
             Agenda {
@@ -223,7 +223,7 @@ mod tests {
         // A seated lead, who acknowledges the advance.
         let mut state = GameStateBuilder::new()
             .with_seat(test_support::seat(1))
-            .with_turn_order([InvestigatorId(1)])
+            .with_seating([InvestigatorId(1)])
             .build();
         state.act_deck = vec![
             Act {
@@ -329,7 +329,7 @@ mod tests {
         let mut state = GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
-            .with_turn_order([InvestigatorId(1)])
+            .with_seating([InvestigatorId(1)])
             .build();
         // One act, and it is the one advancing — so it is the terminal one. The
         // frame is pushed as 01110's forced advance would push it: the real

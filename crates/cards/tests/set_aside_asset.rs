@@ -94,7 +94,7 @@ fn act_two_board(staged: GameStateBuilder) -> GameState {
     parlor.revealed = false;
 
     let mut state = staged
-        .with_turn_order([INV])
+        .with_seating([INV])
         .with_seat(seat(1).at(HALLWAY_ID))
         .with_location(hallway)
         .with_location(parlor)

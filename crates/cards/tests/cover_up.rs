@@ -52,7 +52,7 @@ fn revelation_puts_cover_up_in_threat_area_with_three_clues() {
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
         .with_location(test_support::test_location(HERE.0, "Study"))
-        .with_turn_order([INV])
+        .with_seating([INV])
         .with_phase(Phase::Mythos)
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
@@ -448,7 +448,7 @@ fn two_simultaneous_game_end_forceds_both_resolve() {
             // 1 clue meets the act's clue threshold.
             .with_seat(seat(1).clues(1).threat_area([(COVER_UP, clues(3))]))
             .with_seat(seat(2).threat_area([(COVER_UP, clues(2))]))
-            .with_turn_order([INV, INV2])
+            .with_seating([INV, INV2])
             .open_turn(INV)
             .with_scenario_id(ScenarioId::new("unknown"))
             .build(),
@@ -509,7 +509,7 @@ fn colocated_investigate_board(other: Seat) -> GameStateBuilder {
         .with_seat(holding_cover_up(3))
         .with_seat(other.at(HERE))
         .with_location(location)
-        .with_turn_order([INV, OTHER])
+        .with_seating([INV, OTHER])
         .open_turn(OTHER)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_rng_seed(1)
@@ -560,7 +560,7 @@ fn game_end_trauma_goes_to_the_investigator_holding_cover_up() {
             // 1 clue meets the act's clue threshold.
             .with_seat(seat(2).at(HERE).clues(1))
             .with_location(test_support::test_location(HERE.0, "Study"))
-            .with_turn_order([INV, OTHER])
+            .with_seating([INV, OTHER])
             .open_turn(OTHER)
             .with_scenario_id(ScenarioId::new("unknown"))
             .build(),

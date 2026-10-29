@@ -38,7 +38,7 @@ fn a_drawn_enemy_without_a_spawn_instruction_engages_its_drawer_whatever_its_pre
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(seat(1).at(HERE).harm(2, 0))
         .with_seat(seat(2).at(HERE))
-        .with_turn_order([LEAD, DRAWER])
+        .with_seating([LEAD, DRAWER])
         .with_phase(Phase::Mythos)
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,

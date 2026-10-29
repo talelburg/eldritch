@@ -98,7 +98,7 @@ fn board(lita_in_play: bool) -> GameState {
         .with_investigator(other)
         .with_location(test_support::test_location(1, "Parlor"))
         .with_enemy(ghoul)
-        .with_turn_order([KEEPER, OTHER])
+        .with_seating([KEEPER, OTHER])
         .open_turn(OTHER)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
@@ -148,7 +148,7 @@ fn investigate_with_milan() -> Vec<Pause> {
     let mut state = GameStateBuilder::new()
         .with_investigator(keeper)
         .with_location(parlor)
-        .with_turn_order([KEEPER])
+        .with_seating([KEEPER])
         .open_turn(KEEPER)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();

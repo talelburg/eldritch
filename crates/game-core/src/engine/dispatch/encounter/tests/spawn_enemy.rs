@@ -84,7 +84,7 @@ fn spawn_enemy_at_places_enemy_at_the_given_location_not_the_drawers() {
         .with_seat(test_support::seat(1).at(HERE))
         .with_location(here)
         .with_location(there)
-        .with_turn_order([InvestigatorId(1)])
+        .with_seating([InvestigatorId(1)])
         .build();
 
     let metadata = synth_enemy_metadata(None);
@@ -117,7 +117,7 @@ fn spawn_enemy_reads_combat_stats_and_keywords_from_metadata() {
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(HERE))
         .with_location(loc)
-        .with_turn_order([InvestigatorId(1)])
+        .with_seating([InvestigatorId(1)])
         .build();
 
     let metadata = enemy_metadata(
@@ -160,7 +160,7 @@ fn spawn_enemy_scales_per_investigator_health_by_investigator_count() {
         .with_seat(test_support::seat(1).at(HERE))
         .with_seat(test_support::seat(2).at(HERE))
         .with_location(loc)
-        .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+        .with_seating([InvestigatorId(1), InvestigatorId(2)])
         .build();
 
     let metadata = enemy_metadata(
@@ -196,7 +196,7 @@ fn spawn_enemy_reads_victory_from_metadata() {
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(HERE))
         .with_location(loc)
-        .with_turn_order([InvestigatorId(1)])
+        .with_seating([InvestigatorId(1)])
         .build();
 
     let metadata = enemy_metadata(
@@ -232,7 +232,7 @@ fn spawn_at_specific_location_with_one_investigator_engages_them() {
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(HERE))
         .with_location(loc)
-        .with_turn_order([InvestigatorId(1)])
+        .with_seating([InvestigatorId(1)])
         .build();
     // Place investigator 1 at location 10.
 
@@ -343,7 +343,7 @@ fn spawn_with_unrepresented_instruction_rejects_without_mutating() {
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(HERE))
         .with_location(loc)
-        .with_turn_order([InvestigatorId(1)])
+        .with_seating([InvestigatorId(1)])
         .build();
     let metadata = synth_enemy_metadata(Some(Spawn {
         location: SpawnLocation::Unrepresented("Any empty location".into()),
@@ -384,7 +384,7 @@ fn spawn_with_no_instruction_places_at_drawing_investigators_location() {
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).at(HERE))
         .with_location(loc)
-        .with_turn_order([InvestigatorId(1)])
+        .with_seating([InvestigatorId(1)])
         .build();
     let metadata = synth_enemy_metadata(None);
     let mut events = Vec::new();
@@ -447,7 +447,7 @@ fn spawn_engages_sole_colocated_investigator() {
         .with_phase(Phase::Mythos)
         .with_location(loc)
         .with_seat(test_support::seat(1).at(HALL))
-        .with_turn_order([InvestigatorId(1)])
+        .with_seating([InvestigatorId(1)])
         .build();
     let metadata = synth_enemy_metadata(None);
     let mut events = Vec::new();
@@ -479,7 +479,7 @@ fn no_instruction_spawn_engages_the_drawer_without_resolving_prey() {
         .with_location(loc)
         .with_seat(test_support::seat(1).at(HALL))
         .with_seat(test_support::seat(2).at(HALL))
-        .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+        .with_seating([InvestigatorId(1), InvestigatorId(2)])
         .with_mythos_draw_remaining([InvestigatorId(2)])
         .build();
     let metadata = synth_enemy_metadata(None);
@@ -521,7 +521,7 @@ fn spawn_tie_suspends_for_lead_pick() {
         .with_location(loc)
         .with_seat(test_support::seat(1).at(HALL))
         .with_seat(test_support::seat(2).at(HALL))
-        .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+        .with_seating([InvestigatorId(1), InvestigatorId(2)])
         .with_mythos_draw_remaining([InvestigatorId(1)])
         .build();
     // A `Specific` spawn: only an enemy that spawns *at a location* resolves
@@ -560,7 +560,7 @@ fn resume_spawn_engage_rejects_bad_pick_and_preserves_pending() {
         .with_location(loc)
         .with_seat(test_support::seat(1).at(HALL))
         .with_seat(test_support::seat(2).at(HALL))
-        .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+        .with_seating([InvestigatorId(1), InvestigatorId(2)])
         .with_mythos_draw_remaining([InvestigatorId(1)])
         .build();
     // A `Specific` spawn: only an enemy that spawns *at a location* resolves

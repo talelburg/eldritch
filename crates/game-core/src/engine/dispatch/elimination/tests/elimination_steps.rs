@@ -95,7 +95,7 @@ fn elimination_step3_disengages_then_reengages_ready_enemy_onto_survivor() {
         .with_seat(test_support::seat(2).at(loc))
         .with_location(test_support::test_location(1, "Study"))
         .with_enemy(enemy)
-        .with_turn_order([dead, surv])
+        .with_seating([dead, surv])
         .build();
     let mut events = Vec::new();
 
@@ -138,7 +138,7 @@ fn elimination_step3_solo_defeat_leaves_enemy_unengaged() {
         .with_seat(test_support::seat(1).at(loc))
         .with_location(test_support::test_location(1, "Study"))
         .with_enemy(enemy)
-        .with_turn_order([dead])
+        .with_seating([dead])
         .build();
     let mut events = Vec::new();
 
@@ -207,7 +207,7 @@ fn elimination_runs_on_horror_defeat_too() {
         .with_seat(test_support::seat(2).at(loc))
         .with_location(test_support::test_location(1, "Study"))
         .with_enemy(enemy)
-        .with_turn_order([dead, surv])
+        .with_seating([dead, surv])
         .build();
     let mut events = Vec::new();
 
@@ -247,7 +247,7 @@ fn elimination_step3_exhausted_engaged_enemy_disengages_but_does_not_reengage() 
         .with_seat(test_support::seat(2).at(loc))
         .with_location(test_support::test_location(1, "Study"))
         .with_enemy(enemy)
-        .with_turn_order([dead, surv])
+        .with_seating([dead, surv])
         .build();
     let mut events = Vec::new();
 

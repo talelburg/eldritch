@@ -111,7 +111,7 @@ fn lead_alone() -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(INV.0))
-        .with_turn_order([INV])
+        .with_seating([INV])
 }
 
 /// Build `board` with `act` current — the card whose declared timing is on
@@ -228,7 +228,7 @@ fn the_game_ending_is_a_bare_milestone_that_walks_its_when_cell() {
     let board = GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(INV.0).clues(1).threat_area([GAME_END_CARD]))
-        .with_turn_order([INV])
+        .with_seating([INV])
         .open_turn(INV);
     let session = TestSession::new(
         with_act(board, test_support::terminal_code(1), 1),

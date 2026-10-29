@@ -325,7 +325,7 @@ fn by_controller_filter_excludes_unrelated_investigators() {
         ],
         3,
     )
-    .with_turn_order([INV, OTHER]);
+    .with_seating([INV, OTHER]);
 
     let session = fight_through_commit_window(board);
 
@@ -347,7 +347,7 @@ fn unqualified_pattern_matches_any_defeat() {
         ],
         0,
     )
-    .with_turn_order([INV, OTHER]);
+    .with_seating([INV, OTHER]);
 
     let paused = fight_through_commit_window(board);
     let byst_resources_before = paused.state().investigators[&OTHER].resources;
@@ -562,13 +562,13 @@ fn reaction_window_closes_before_on_skill_test_resolution_fires() {
 }
 
 #[test]
-fn pending_triggers_order_active_investigator_first_then_turn_order() {
+fn pending_triggers_order_active_investigator_first_then_seating() {
     // Two investigators both carry a `by_controller: false` reaction
     // (so the defeat — credited to the active investigator — matches
     // for both). The pending list must put the active investigator's
-    // trigger first, followed by the other investigator's, per
-    // Arkham's active-investigator-first / turn-order priority for
-    // reaction windows.
+    // trigger first, followed by the other investigator's, per the
+    // trigger scan's order for reaction windows: the active investigator
+    // first, then the seating.
     let board = fight_board(
         [
             seat(1).at(HERE).in_play([BYSTANDER_REACTION]),
@@ -576,7 +576,7 @@ fn pending_triggers_order_active_investigator_first_then_turn_order() {
         ],
         0,
     )
-    .with_turn_order([INV, OTHER]);
+    .with_seating([INV, OTHER]);
 
     let paused = fight_through_commit_window(board);
     // Each reaction is offered on the card in its controller's play area, so
@@ -595,7 +595,7 @@ fn pending_triggers_order_active_investigator_first_then_turn_order() {
             Some(paused.state().card(OTHER, BYSTANDER_REACTION)),
         ],
         "the active investigator's trigger comes first, then the non-active \
-         investigator's, in turn order",
+         investigator's, in seating order",
     );
 }
 
@@ -717,7 +717,7 @@ fn investigate_to_success_scenario(in_play: &[&str]) -> GameStateBuilder {
 /// holds `bystander_card` and stands elsewhere. The first investigator takes
 /// the test; the second is the one whose card may or may not react to it.
 ///
-/// The second is seated in `turn_order`, as in a real game, so the reaction
+/// The second is seated in `seating`, as in a real game, so the reaction
 /// scan walks their cards for the reason the tests below are about rather than
 /// by the walk's fallback for an unseated fixture investigator.
 fn investigate_with_a_bystander(bystander_card: &str) -> GameStateBuilder {
@@ -728,7 +728,7 @@ fn investigate_with_a_bystander(bystander_card: &str) -> GameStateBuilder {
         .with_location(one_clue_study())
         .with_location(test_support::test_location(ELSEWHERE.0, "Hallway"))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_turn_order([INV, OTHER])
+        .with_seating([INV, OTHER])
         .open_turn(INV)
 }
 

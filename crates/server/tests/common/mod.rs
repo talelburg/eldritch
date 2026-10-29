@@ -23,7 +23,7 @@ pub(crate) const TEST_SCENARIO_ID: &str = "test-scenario";
 
 fn test_setup() -> GameState {
     // Bare scenario seed — seating runs at creation via `seat_and_open`,
-    // so the pre-seeded investigator and turn order are NOT injected here.
+    // so the pre-seeded investigator and its seating are NOT injected here.
     GameStateBuilder::new()
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_scenario_id(ScenarioId::new(TEST_SCENARIO_ID))

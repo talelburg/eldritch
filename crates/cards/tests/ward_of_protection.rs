@@ -87,7 +87,7 @@ fn mythos_draw_with(
             GameStateBuilder::with_seat,
         )
         .with_location(test_support::test_location(HERE.0, "Here"))
-        .with_turn_order(ids.clone())
+        .with_seating(ids.clone())
         .with_phase(Phase::Mythos)
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,

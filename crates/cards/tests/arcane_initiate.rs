@@ -72,7 +72,7 @@ fn ending_the_round(investigator: Seat, agenda_doom: u8) -> TestSession {
         .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(investigator.at(HERE))
-        .with_turn_order([INV])
+        .with_seating([INV])
         .ending_upkeep_phase()
         .build();
     TestSession::new(with_agendas(state, agenda_doom), TEST_REGISTRIES)

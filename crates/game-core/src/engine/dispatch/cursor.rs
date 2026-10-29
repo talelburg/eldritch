@@ -21,15 +21,15 @@ pub fn active_investigators_at(state: &GameState, loc: LocationId) -> Vec<Invest
         .collect()
 }
 
-/// The seating, [`GameState::turn_order`], rotated to start at the stored
+/// The seating, [`GameState::seating`], rotated to start at the stored
 /// [`GameState::lead`], eliminated investigators included. Unrotated when the
 /// state names no lead, or one not seated.
 fn seating_from_lead(state: &GameState) -> impl Iterator<Item = InvestigatorId> + '_ {
     let start = state
         .lead
-        .and_then(|lead| state.turn_order.iter().position(|id| *id == lead))
+        .and_then(|lead| state.seating.iter().position(|id| *id == lead))
         .unwrap_or(0);
-    let (before, from_lead) = state.turn_order.split_at(start);
+    let (before, from_lead) = state.seating.split_at(start);
     from_lead.iter().chain(before).copied()
 }
 
@@ -47,7 +47,7 @@ fn is_active(state: &GameState, id: InvestigatorId) -> bool {
 /// `glossary/In_Player_Order.md`: *"the lead investigator performs his or her
 /// part of the sequence first, followed by the other players in clockwise
 /// order."* That is the seating,
-/// [`GameState::turn_order`], rotated to start at the stored lead, with the
+/// [`GameState::seating`], rotated to start at the stored lead, with the
 /// eliminated left out.
 ///
 /// Every *"in player order"* step walks it: Mythos 1.4's draws, Enemy 3.3's
@@ -220,7 +220,7 @@ mod tests {
             .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1).status(Status::Defeated))
             .with_seat(test_support::seat(2))
-            .with_turn_order([inv1, inv2])
+            .with_seating([inv1, inv2])
             .build();
         assert_eq!(
             player_order(&state),
@@ -238,7 +238,7 @@ mod tests {
             .with_seat(test_support::seat(1).status(s1))
             .with_seat(test_support::seat(2).status(s2))
             .with_seat(test_support::seat(3).status(s3))
-            .with_turn_order([InvestigatorId(1), InvestigatorId(2), InvestigatorId(3)])
+            .with_seating([InvestigatorId(1), InvestigatorId(2), InvestigatorId(3)])
             .with_lead(InvestigatorId(lead))
             .build()
     }

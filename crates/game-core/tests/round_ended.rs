@@ -76,7 +76,7 @@ fn round_ended_fires_agenda_forced_ability() {
             .with_registries(registries())
             .with_seat(seat(1).at(HERE))
             .with_location(test_support::test_location(HERE.0, "Study"))
-            .with_turn_order([INV])
+            .with_seating([INV])
             .ending_upkeep_phase()
             .build(),
     );

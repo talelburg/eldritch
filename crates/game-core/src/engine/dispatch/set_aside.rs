@@ -245,7 +245,7 @@ mod tests {
         let mut state = GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
-            .with_turn_order([InvestigatorId(1)])
+            .with_seating([InvestigatorId(1)])
             .build();
         let mut events = Vec::new();
         let outcome = set_aside::put_set_aside_card_into_play(
@@ -270,7 +270,7 @@ mod tests {
         let mut state = GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
-            .with_turn_order([InvestigatorId(1)])
+            .with_seating([InvestigatorId(1)])
             .build();
         state.set_aside_cards.push(CardCode::new("01116"));
         let mut events = Vec::new();

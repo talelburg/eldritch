@@ -123,7 +123,7 @@ fn turn_begins_window_with(code: &str) -> GameStateBuilder {
     board_with(&[code])
         .with_phase(Phase::Investigation)
         .with_active_investigator(INV)
-        .with_turn_order([INV])
+        .with_seating([INV])
         .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
         })
@@ -257,7 +257,7 @@ fn settling_a_staged_mulligan_shows_its_prompt() {
         .with_registries(registries())
         .with_seat(seat(1).at(HERE).hand(["_ts_kept_out"]).deck(["_ts_drawn"]))
         .with_location(test_support::test_location(HERE.0, "Study"))
-        .with_turn_order([INV])
+        .with_seating([INV])
         .with_mulligan_remaining([INV])
         .session();
     assert!(matches!(session.prompt().kind, InputKind::PickMultiple(_)));
@@ -285,7 +285,7 @@ fn choose_from_hand_names_duplicate_copies_by_repeating_the_code() {
                 .deck([drawn, drawn]),
         )
         .with_location(test_support::test_location(HERE.0, "Study"))
-        .with_turn_order([INV])
+        .with_seating([INV])
         .with_mulligan_remaining([INV])
         .session()
         .choose_from_hand(&[twin, twin]);
@@ -308,7 +308,7 @@ fn choose_from_hand_at_another_prompt_panics() {
 #[test]
 fn settling_a_staged_encounter_draw_shows_its_prompt() {
     let session = board()
-        .with_turn_order([INV])
+        .with_seating([INV])
         .with_mythos_draw_remaining([INV])
         .session();
     let prompt = session.prompt();
@@ -324,7 +324,7 @@ fn settling_a_staged_hand_size_discard_shows_its_prompt() {
         .with_registries(registries())
         .with_seat(seat(1).at(HERE).hand(["_ts_filler"; 9]))
         .with_location(test_support::test_location(HERE.0, "Study"))
-        .with_turn_order([INV])
+        .with_seating([INV])
         .with_phase(Phase::Upkeep)
         .with_phase_anchor(UpkeepPhaseFrame {
             resume: UpkeepResume::Begins,
@@ -415,7 +415,7 @@ fn commit_at_the_turn_menu_panics() {
 #[should_panic(expected = "not at a skill test's commit window")]
 fn commit_at_another_pick_multiple_panics() {
     let _ = board()
-        .with_turn_order([INV])
+        .with_seating([INV])
         .with_mulligan_remaining([INV])
         .session()
         .commit(&[]);
@@ -709,7 +709,7 @@ fn assert_at_turn_menu_of_another_investigator_panics() {
 #[test]
 fn assert_at_encounter_draw_passes_at_the_encounter_draw() {
     board()
-        .with_turn_order([INV])
+        .with_seating([INV])
         .with_mythos_draw_remaining([INV])
         .session()
         .assert_at_encounter_draw();

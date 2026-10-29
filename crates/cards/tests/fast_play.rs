@@ -99,7 +99,7 @@ fn a_turn_begins_window(b: Seat) -> TestSession {
         .with_location(study)
         .with_seat(seat(1).hand([MAGNIFYING_GLASS]))
         .with_seat(b)
-        .with_turn_order([A, B])
+        .with_seating([A, B])
         .with_phase(Phase::Investigation)
         .with_active_investigator(A)
         .with_phase_anchor(InvestigationPhaseFrame {
@@ -143,7 +143,7 @@ fn fast_asset_playable_by_owner_during_permissive_window() {
         GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
             .with_seat(seat(1).resources(5).hand([MAGNIFYING_GLASS]))
-            .with_turn_order([A]),
+            .with_seating([A]),
     )
     .session();
     // The window offers the play, and picking it plays the card.
@@ -239,7 +239,7 @@ fn board_with_beat_cop(moment: fn(GameStateBuilder) -> GameStateBuilder) -> Game
             .with_registries(TEST_REGISTRIES)
             .with_seat(seat(1))
             .with_seat(seat(2).at(HERE).in_play([BEAT_COP]))
-            .with_turn_order([A, B])
+            .with_seating([A, B])
             .with_location(test_support::test_location(HERE.0, "Study"))
             .with_enemy(enemy)
             .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)])),
@@ -328,7 +328,7 @@ fn fast_event_play_only_during_turn_rejected_outside_investigation() {
                     .hand([WORKING_A_HUNCH, MAGNIFYING_GLASS]),
             )
             .with_location(location)
-            .with_turn_order([A]),
+            .with_seating([A]),
     )
     .session();
     assert_eq!(
@@ -382,7 +382,7 @@ fn fast_asset_rejected_by_owner_outside_investigation_with_no_window() {
         GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
             .with_seat(seat(1).resources(5).hand([MAGNIFYING_GLASS]))
-            .with_turn_order([A]),
+            .with_seating([A]),
     )
     .session();
     // No window is open: the Mythos phase rests at the encounter draw.
@@ -503,7 +503,7 @@ fn corpus_zero_action_abilities_are_offered_once_per_ability_not_once_per_card()
                     .resources(5)
                     .in_play([HYPERAWARENESS, PHYSICAL_TRAINING]),
             )
-            .with_turn_order([A])
+            .with_seating([A])
             .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)])),
     )
     .session()

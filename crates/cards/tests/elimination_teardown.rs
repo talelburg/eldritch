@@ -88,9 +88,9 @@ fn drawing_grasping_hands(investigator: Seat, survivor: bool) -> GameState {
         builder
             .with_location(test_support::test_location(ELSEWHERE.0, "Elsewhere"))
             .with_seat(seat(2).at(ELSEWHERE).deck(["01088"]))
-            .with_turn_order([INV, SURVIVOR])
+            .with_seating([INV, SURVIVOR])
     } else {
-        builder.with_turn_order([INV])
+        builder.with_seating([INV])
     };
     let mut state = builder
         .with_phase(Phase::Mythos)

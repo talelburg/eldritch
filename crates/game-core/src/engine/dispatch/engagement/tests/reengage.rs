@@ -20,7 +20,7 @@ fn reengage_at_location_engages_sole_co_located_survivor() {
         .with_seat(survivor)
         .with_location(test_support::test_location(1, "Study"))
         .with_enemy(enemy)
-        .with_turn_order([surv])
+        .with_seating([surv])
         .build();
     let mut events = Vec::new();
 
@@ -43,7 +43,7 @@ fn reengage_at_location_no_co_located_investigator_leaves_unengaged() {
     let mut state = GameStateBuilder::default()
         .with_location(test_support::test_location(1, "Study"))
         .with_enemy(enemy)
-        .with_turn_order([])
+        .with_seating([])
         .build();
     let mut events = Vec::new();
 
@@ -54,8 +54,8 @@ fn reengage_at_location_no_co_located_investigator_leaves_unengaged() {
 }
 
 #[test]
-fn reengage_at_location_tie_auto_picks_lead_first_in_turn_order() {
-    // Two co-located survivors, Prey::Default → tie → engage turn_order-first (lead).
+fn reengage_at_location_tie_auto_picks_lead_first_in_player_order() {
+    // Two co-located survivors, Prey::Default → tie → engage player-order-first (lead).
     let lead = InvestigatorId(2);
     let other = InvestigatorId(3);
     let loc = LocationId(1);
@@ -72,7 +72,7 @@ fn reengage_at_location_tie_auto_picks_lead_first_in_turn_order() {
         .with_seat(test_support::seat(3).at(loc))
         .with_location(test_support::test_location(1, "Study"))
         .with_enemy(enemy)
-        .with_turn_order([lead, other]) // lead first
+        .with_seating([lead, other]) // lead first
         .build();
     let mut events = Vec::new();
 
@@ -81,7 +81,7 @@ fn reengage_at_location_tie_auto_picks_lead_first_in_turn_order() {
     assert_eq!(
         state.enemies[&EnemyId(1)].engaged_with,
         Some(lead),
-        "tie engages the lead (turn_order-first)"
+        "tie engages the lead (player-order-first)"
     );
     assert_event!(events, Event::EnemyEngaged { enemy, investigator }
         if *enemy == EnemyId(1) && *investigator == lead);
@@ -104,7 +104,7 @@ fn reengage_at_location_exhausted_enemy_does_not_engage() {
         .with_seat(survivor)
         .with_location(test_support::test_location(1, "Study"))
         .with_enemy(enemy)
-        .with_turn_order([surv])
+        .with_seating([surv])
         .build();
     let mut events = Vec::new();
 
@@ -130,7 +130,7 @@ fn reengage_at_location_enemy_without_location_is_noop() {
 }
 
 /// A `Prey::BearerOnly` enemy re-engaging (readying, relocation, elimination)
-/// skips the turn-order-first lead for its bearer. `glossary/Prey.md`:
+/// skips the player-order-first lead for its bearer. `glossary/Prey.md`:
 /// *"that enemy only moves towards and engages that investigator (as if it were
 /// the only investigator in play), and ignores all other investigators while
 /// moving and engaging."* That it engages no one beside only non-bearers is
@@ -153,7 +153,7 @@ fn reengage_at_location_bearer_only_picks_the_bearer_over_the_lead() {
         .with_seat(test_support::seat(lead.0).at(loc))
         .with_seat(test_support::seat(bearer.0).at(loc))
         .with_enemy(enemy)
-        .with_turn_order([lead, bearer])
+        .with_seating([lead, bearer])
         .build();
     let mut events = Vec::new();
 

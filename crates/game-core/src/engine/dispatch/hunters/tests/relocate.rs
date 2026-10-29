@@ -8,7 +8,7 @@ use crate::test_support::TEST_REGISTRIES;
 use crate::{assert_event, assert_no_event, test_support};
 
 /// Two adjacent locations: investigator 1 in the Hallway (2), a ready
-/// unengaged enemy in the Attic (1). No turn order yet.
+/// unengaged enemy in the Attic (1). No seating yet.
 fn two_rooms() -> GameStateBuilder {
     let enemy = {
         let mut e = test_support::test_enemy(1, "Ghoul");
@@ -33,7 +33,7 @@ fn connected(board: GameStateBuilder) -> GameState {
 
 /// [`two_rooms`] with investigator 1 alone.
 fn two_room_board() -> GameState {
-    connected(two_rooms().with_turn_order([InvestigatorId(1)]))
+    connected(two_rooms().with_seating([InvestigatorId(1)]))
 }
 
 /// [`two_room_board`] with the enemy exhausted (evaded).
@@ -126,7 +126,7 @@ fn relocate_enemy_keeps_an_existing_engagement() {
     let mut state = connected(
         two_rooms()
             .with_seat(test_support::seat(2).at(LocationId(1)))
-            .with_turn_order([InvestigatorId(1), other]),
+            .with_seating([InvestigatorId(1), other]),
     );
     state
         .enemies

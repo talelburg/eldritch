@@ -12,7 +12,7 @@ fn mythos_phase_emits_phase_started_and_prompts_first_drawer() {
         .with_seat(test_support::seat(1))
         .with_seat(test_support::seat(2))
         .with_phase(Phase::Mythos)
-        .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+        .with_seating([InvestigatorId(1), InvestigatorId(2)])
         .build();
     let mut events = Vec::new();
 
@@ -55,7 +55,7 @@ fn mythos_drives_from_entry_via_the_loop() {
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::Entry,
         })
-        .with_turn_order([InvestigatorId(1)])
+        .with_seating([InvestigatorId(1)])
         .session();
     // The loop advances the Entry anchor and suspends at the draw prompt.
     session.assert_at_encounter_draw();
@@ -79,7 +79,7 @@ fn mythos_anchor_pushed_during_phase() {
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_phase(Phase::Mythos)
-        .with_turn_order([InvestigatorId(1)])
+        .with_seating([InvestigatorId(1)])
         .build();
     let mut events = Vec::new();
     mythos_phase(&mut Cx::for_test(&mut state, &mut events));
@@ -100,7 +100,7 @@ fn mythos_anchor_pushed_during_phase() {
 }
 
 #[test]
-fn mythos_phase_with_empty_turn_order_opens_after_draws_window_inline() {
+fn mythos_phase_with_empty_seating_opens_after_draws_window_inline() {
     let mut state = GameStateBuilder::default()
         .with_phase(Phase::Mythos)
         .build();
@@ -144,7 +144,7 @@ fn mythos_phase_end_emits_phase_ended_and_steps_to_investigation() {
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_phase(Phase::Mythos)
-        .with_turn_order([InvestigatorId(1)])
+        .with_seating([InvestigatorId(1)])
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
         })
@@ -187,9 +187,9 @@ fn mythos_phase_end_emits_phase_ended_and_steps_to_investigation() {
     );
 }
 
-/// Rules Reference p.10: when the first investigator in `turn_order` is
+/// Rules Reference p.10: when the first investigator in `seating` is
 /// eliminated, `mythos_phase` seeds the encounter-draw queue from the first
-/// Active investigator rather than blindly taking `turn_order.first()`.
+/// Active investigator rather than blindly taking `seating.first()`.
 #[test]
 fn mythos_phase_skips_eliminated_lead_when_seeding_queue() {
     let mut state = GameStateBuilder::default()
@@ -197,7 +197,7 @@ fn mythos_phase_skips_eliminated_lead_when_seeding_queue() {
         .with_seat(test_support::seat(1))
         .with_seat(test_support::seat(2))
         .with_phase(Phase::Mythos)
-        .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+        .with_seating([InvestigatorId(1), InvestigatorId(2)])
         .build();
     state
         .investigators
@@ -220,20 +220,20 @@ fn mythos_phase_skips_eliminated_lead_when_seeding_queue() {
     );
 }
 
-/// All investigators in `turn_order` are eliminated. `mythos_phase`
-/// must treat this the same as an empty `turn_order`: seed to None
+/// All investigators in `seating` are eliminated. `mythos_phase`
+/// must treat this the same as an empty `seating`: seed to None
 /// and open `MythosAfterDraws` inline, which auto-skips and drives
 /// `mythos_phase_end`, transitioning to Investigation.
 ///
-/// This is the non-empty-`turn_order` analogue of
-/// `mythos_phase_with_empty_turn_order_opens_after_draws_window_inline`.
+/// This is the non-empty-`seating` analogue of
+/// `mythos_phase_with_empty_seating_opens_after_draws_window_inline`.
 #[test]
 fn mythos_phase_with_all_investigators_eliminated_opens_after_draws_window() {
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_phase(Phase::Mythos)
-        .with_turn_order([InvestigatorId(1)])
+        .with_seating([InvestigatorId(1)])
         .build();
     state
         .investigators
@@ -273,7 +273,7 @@ fn advance_encounter_draw_skips_eliminated_middle_investigator() {
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
         })
-        .with_turn_order([InvestigatorId(1), InvestigatorId(2), InvestigatorId(3)])
+        .with_seating([InvestigatorId(1), InvestigatorId(2), InvestigatorId(3)])
         .with_mythos_draw_remaining([InvestigatorId(1), InvestigatorId(2), InvestigatorId(3)])
         .build();
     // The card inv1 draws.

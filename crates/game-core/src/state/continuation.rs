@@ -1940,14 +1940,14 @@ pub enum PhaseStep {
     ///
     /// Continuation (in `anchor_on_child_pop`): read the investigator off
     /// the resume, resolve their engaged ready enemies in [`EnemyId`] order,
-    /// exhaust each, find the next Active investigator in [`turn_order`]
+    /// exhaust each, find the next Active investigator in [player order]
     /// (or none), open the next window (`BeforeInvestigatorAttacked` if
     /// one remains, `AfterAllInvestigatorsAttacked` if not).
     ///
-    /// One window per Active investigator in `turn_order`.
+    /// One window per Active investigator, in player order.
     ///
     /// [`MythosAfterDraws`]: PhaseStep::MythosAfterDraws
-    /// [`turn_order`]: crate::state::game_state::GameState::turn_order
+    /// [player order]: crate::engine::player_order
     BeforeInvestigatorAttacked,
     /// The player window after all investigators have resolved their
     /// engaged enemies' attacks (Rules Reference p.25 step 3.3, the
@@ -2644,7 +2644,7 @@ pub struct SubstitutionPromptFrame {
 ///
 /// `remaining[0]` is the investigator currently prompted to mulligan; the queue
 /// is the Active investigators in
-/// [`turn_order`](crate::state::game_state::GameState::turn_order). Pushed by
+/// [player order](crate::engine::player_order). Pushed by
 /// `start_scenario`, advanced by `resume_mulligan` as each investigator submits
 /// their `PickMultiple` redraw indices, popped when drained — at which point
 /// setup ends and the Investigation phase begins. While present, the engine
@@ -2660,7 +2660,7 @@ pub struct MulliganFrame {
 /// The Mythos step-1.4 encounter-draw loop (Rules Reference p.24).
 ///
 /// `remaining[0]` is the investigator currently prompted to draw; the queue
-/// is the Active investigators in [`turn_order`](crate::state::game_state::GameState::turn_order).
+/// is the Active investigators in [player order](crate::engine::player_order).
 /// Pushed by `mythos_phase`, advanced by `resume_encounter_draw` as each
 /// investigator confirms (pushing a [`PlayerDraw`](Continuation::PlayerDraw)
 /// frame that owns that drawer's surge chain), popped when drained — at which

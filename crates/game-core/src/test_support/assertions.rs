@@ -33,7 +33,7 @@
 //! let state = GameStateBuilder::new()
 //!     .with_investigator(test_support::test_investigator(1))
 //!     .with_investigator(test_support::test_investigator(2))
-//!     .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+//!     .with_seating([InvestigatorId(1), InvestigatorId(2)])
 //!     .open_turn(InvestigatorId(1))
 //!     .build();
 //! let session = TestSession::new(state, registries).take(&TurnAction::EndTurn);

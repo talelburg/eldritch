@@ -107,7 +107,7 @@ fn upkeep_resolves_each_investigators_draw_completely_in_player_order() {
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(seat(1).at(HERE).discard([COVER_UP]))
         .with_seat(seat(2).at(HERE).discard([COVER_UP]))
-        .with_turn_order([INV, INV2])
+        .with_seating([INV, INV2])
         .with_phase(Phase::Upkeep)
         .with_phase_anchor(UpkeepPhaseFrame {
             resume: UpkeepResume::Begins,
@@ -166,7 +166,7 @@ fn upkeep_deck_out_soak_prompt_holds_the_next_investigators_draw() {
                 .discard([HOLY_ROSARY]),
         )
         .with_seat(seat(2).at(HERE).deck([HOLY_ROSARY]))
-        .with_turn_order([INV, INV2])
+        .with_seating([INV, INV2])
         .with_phase(Phase::Upkeep)
         .with_phase_anchor(UpkeepPhaseFrame {
             resume: UpkeepResume::Begins,

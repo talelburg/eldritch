@@ -49,7 +49,7 @@ fn board_from(builder: GameStateBuilder, investigator: Seat) -> GameState {
     let loc = |id: LocationId, code: &str, name| Location::new(id, CardCode::new(code), name, 1, 0);
     let mut state = builder
         .with_seat(investigator)
-        .with_turn_order([INV])
+        .with_seating([INV])
         .with_location(loc(HALLWAY, "01112", "Hallway"))
         .with_location(loc(PARLOR, "01115", "Parlor"))
         .build();
@@ -282,7 +282,7 @@ fn round_end_act_when_window_opens_before_agenda_at_doom() {
 // The reverse's branch
 // ---------------------------------------------------------------------------
 
-/// A table of `n` seated investigators in turn order, the first's turn open,
+/// A table of `n` investigators seated in id order, the first's turn open,
 /// with The Gathering's three-card act deck and 01107 as the sole (and
 /// therefore terminal) agenda, one doom short of its threshold — so the next
 /// Mythos phase's step 1.2 doom tips it at 1.3 and its reverse fires.
@@ -294,7 +294,7 @@ fn table_at_act(n: u32, act_index: usize) -> GameState {
             GameStateBuilder::new().with_registries(TEST_REGISTRIES),
             GameStateBuilder::with_seat,
         )
-        .with_turn_order((1..=n).map(InvestigatorId))
+        .with_seating((1..=n).map(InvestigatorId))
         .open_turn(INV)
         .build();
     state.act_deck = ["01108", "01109", "01110"]
@@ -364,14 +364,14 @@ fn agenda_01107_reverse_at_act_1_or_2_reaches_resolution_3() {
 /// allowing the ghouls to run rampant. Each investigator that has not resigned
 /// is defeated and suffers 1 physical trauma."*
 ///
-/// Three seats with the middle one resigned. The fan-out runs in **turn order**
+/// Three seats with the middle one resigned. The fan-out runs in **player order**
 /// — observable here, where the solo end-to-end cannot see it — skips the
 /// resigned investigator entirely, and ends the scenario at **no resolution
 /// point**: the card prints no `(→R#)` on this bullet, and the ending arrives
 /// via Rules Reference p.10 Elimination step 6, *"If there are no remaining
 /// players, the scenario ends."*
 #[test]
-fn agenda_01107_reverse_at_act_3_defeats_the_unresigned_in_turn_order() {
+fn agenda_01107_reverse_at_act_3_defeats_the_unresigned_in_player_order() {
     let (a, b, c) = (InvestigatorId(1), InvestigatorId(2), InvestigatorId(3));
     let mut state = table_at_act(3, 2);
     state.investigators.get_mut(&b).expect("seated").status = Status::Resigned;
@@ -381,7 +381,7 @@ fn agenda_01107_reverse_at_act_3_defeats_the_unresigned_in_turn_order() {
     assert_eq!(
         defeat_order(events),
         vec![a, c],
-        "turn order, and the resigned investigator is left alone",
+        "player order, and the resigned investigator is left alone",
     );
     for id in [a, c] {
         assert_eq!(

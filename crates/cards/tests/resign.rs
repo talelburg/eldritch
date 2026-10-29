@@ -86,12 +86,12 @@ fn board(solo: bool) -> GameStateBuilder {
         .open_turn(RESIGNER);
 
     if solo {
-        builder.with_turn_order([RESIGNER])
+        builder.with_seating([RESIGNER])
     } else {
         builder
             .with_seat(seat(SURVIVOR.0).at(HALLWAY))
             .with_location(test_support::test_location(HALLWAY.0, "Hallway"))
-            .with_turn_order([RESIGNER, SURVIVOR])
+            .with_seating([RESIGNER, SURVIVOR])
     }
 }
 
