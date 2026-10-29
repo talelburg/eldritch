@@ -18,7 +18,9 @@ use crate::state::GameState;
 ///
 /// A direct call, for a unit test of one native's resolution: no apply, so no
 /// rollback on `Rejected`, and none of the evaluator's checks around a native
-/// (no choose-before-write check). To test a native
+/// (no choose-before-write check, no refusal of a read after a deferral). Exits
+/// deferred behind pending work are parked on the stack as the evaluator parks
+/// them, but nothing drives them. To test a native
 /// as the game runs it, register it in a mock registry and drive it through a
 /// [`TestSession`](crate::test_support::TestSession).
 pub fn run_native(
@@ -40,5 +42,6 @@ pub fn run_native(
         *eval_ctx,
     );
     let outcome = native(&mut cx, eval_ctx);
+    cx.park_tail();
     (outcome, events)
 }

@@ -11,7 +11,7 @@ use crate::action::{EngineRecord, InputResponse, PlayerAction, RosterEntry};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::enumerate::TurnAction;
 use crate::engine::outcome::EngineOutcome;
-use crate::engine::{enumerate, evaluator, Cx};
+use crate::engine::{enumerate, evaluator, native_tail, Cx};
 use crate::state::{
     ActionResolutionFrame, ActionResume, Continuation, EffectFrame, FastWindowFrame, FrameActivity,
     GameState, InvestigatorTurnFrame, ScenarioEndFrame, ScenarioEndStep, Status,
@@ -384,6 +384,10 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // — ADR 0003), so Cover Up 01007's trauma resolves above this frame;
             // the loop re-exposes it and steps 1–6 run.
             Continuation::Elimination(_) => elimination::drive_elimination(cx),
+            // The rest of a native's effect, re-exposed once the work its
+            // earlier exits pushed has resolved: run its deferred exits in
+            // call order (ADR 0020).
+            Continuation::NativeTail(_) => native_tail::drive_native_tail(cx),
             // The ending at rest (Inert at `Finalize`): the loop has nothing to
             // drive, and hands the frame to the apply boundary, which holds the
             // `ScenarioRegistry`.
@@ -726,6 +730,7 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         | Continuation::TimingPoint(_)
         | Continuation::ActionResolution(_)
         | Continuation::Elimination(_)
+        | Continuation::NativeTail(_)
         | Continuation::ScenarioEnd(_)
         | Continuation::MythosPhase(_)
         | Continuation::InvestigationPhase(_)

@@ -278,3 +278,44 @@ fn two_blasted_investigators_are_dealt_one_at_a_time_in_ascending_order() {
         .collect();
     assert_eq!(taken, vec![INV, INV2]);
 }
+
+/// Roland Banks 01001, seated as the controller.
+const ROLAND: &str = "01001";
+
+/// A regression guard: the blast's damage to every enemy at the location lands
+/// before Roland's *"After you defeat an enemy"* reaction is offered.
+/// `glossary/Effects.md`: *"All aspects of an effect have timing priority over
+/// all "after..." triggering conditions that might arise as a consequence of
+/// that effect."* The location holds a clue, or the reaction could not
+/// discover one and would never be offered (ruling,
+/// <https://arkhamdb.com/card/01001>: *"You can only 'discover' a clue if there
+/// is a clue on your location."*).
+#[test]
+fn both_blasted_enemies_take_their_damage_before_rolands_reaction_is_offered() {
+    let mut cellar = test_support::test_location(HERE.0, "Cellar");
+    cellar.clues = 1;
+    let mut enemy_a = test_support::test_enemy(ENEMY_A.0, "Ghoul A");
+    enemy_a.current_location = Some(HERE);
+    enemy_a.max_health = 3;
+    let mut enemy_b = test_support::test_enemy(ENEMY_B.0, "Ghoul B");
+    enemy_b.current_location = Some(HERE);
+    enemy_b.max_health = 3;
+    let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(seat(1).as_card(ROLAND).at(HERE).hand([DYNAMITE]))
+        .with_location(cellar)
+        .with_enemy(enemy_a)
+        .with_enemy(enemy_b)
+        .open_turn(INV)
+        .build();
+    let rolands_card =
+        OptionTarget::CardInstance(state.investigators[&INV].investigator_card.instance_id);
+
+    let s = play(state);
+
+    assert_eq!(s.offered_at(&rolands_card), 1, "{:?}", s.prompt());
+    assert!(
+        !s.state().enemies.contains_key(&ENEMY_A) && !s.state().enemies.contains_key(&ENEMY_B),
+        "both enemies were defeated before the reaction is offered"
+    );
+}

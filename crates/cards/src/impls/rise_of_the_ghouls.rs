@@ -93,8 +93,7 @@ fn reverse(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     // iteration, so this terminates.
     while let Some(code) = cx.take_encounter_top() {
         if is_ghoul_enemy(code.as_str()) {
-            let metadata = crate::by_code(code.as_str()).expect("is_ghoul_enemy looked it up");
-            return cx.resolve_encounter_card(ctx.controller, code, metadata);
+            return cx.resolve_encounter_card(ctx.controller, code);
         }
         cx.discard_encounter_card(code, Zone::EncounterDeck);
     }

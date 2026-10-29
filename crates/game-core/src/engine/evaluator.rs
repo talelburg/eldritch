@@ -1199,7 +1199,10 @@ fn step_choose_one(
 ///
 /// The contract is enforced in every build: the native gets a fresh
 /// [`NativeCx`], which notes any exit call, and a native that suspends after
-/// one is `Rejected`. The apply's snapshot rollback then undoes its writes.
+/// one is `Rejected`. So is one that read the game after an exit left work
+/// pending. The apply's snapshot rollback then undoes its writes. Otherwise
+/// the exits it called after that work are parked beneath it as the native's
+/// tail (ADR 0020).
 fn step_native(cx: &mut Cx, tag: &str, eval_ctx: EvalContext, node: &Effect) -> EngineOutcome {
     let Some(f) = (cx.cards.native_effect_for)(tag) else {
         return EngineOutcome::Rejected {
@@ -1219,16 +1222,16 @@ fn step_native(cx: &mut Cx, tag: &str, eval_ctx: EvalContext, node: &Effect) -> 
     let outcome = f(&mut native_cx, &eval_ctx);
     let written = native_cx.written();
     let suspended = native_cx.suspended();
-    if native_cx.wrote_past_prompt() {
+    if native_cx.read_after_deferral() {
         return EngineOutcome::Rejected {
             reason: format!(
-                "Native effect {tag:?} changed the game directly while a prompt one of its \
-                 exits pushed was still pending; the change would land before the prompt \
-                 is answered"
+                "Native effect {tag:?} read the game after one of its exits left work \
+                 pending; the board it read is not yet the board that work will leave"
             )
             .into(),
         };
     }
+    native_cx.park_tail();
     if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
         if written {
             return EngineOutcome::Rejected {

@@ -488,6 +488,20 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             profile(DRIVEN, COMPLETE),
         ),
         (
+            Continuation::NativeTail(NativeTailFrame {
+                native: "test:native".to_owned(),
+                ops: vec![
+                    NativeOp::ResolveEncounterCard {
+                        investigator: InvestigatorId(1),
+                        code: CardCode::new("_synth_treachery"),
+                    },
+                    NativeOp::PlaceDoomOnAgenda { count: 1 },
+                ],
+                next: 1,
+            }),
+            profile(DRIVEN, COMPLETE),
+        ),
+        (
             Continuation::ScenarioEnd(ScenarioEndFrame {
                 step: ScenarioEndStep::EmitGameEnd,
             }),

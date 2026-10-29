@@ -12,7 +12,7 @@ use card_dsl::dsl::{
 use serde::{Deserialize, Serialize};
 
 use crate::engine::evaluator::{EachBinding, EvalContext};
-use crate::engine::{OptionTarget, PromptNature, TimingEvent};
+use crate::engine::{NativeOp, OptionTarget, PromptNature, TimingEvent};
 use crate::event::FailureReason;
 use crate::state::ability_source::{AbilityAddress, AbilitySource};
 use crate::state::card::{CardCode, CardInPlay, CardInstanceId, Owner};
@@ -327,6 +327,8 @@ pub enum Continuation {
     ScenarioEnd(ScenarioEndFrame),
     /// See [`EliminationFrame`].
     Elimination(EliminationFrame),
+    /// See [`NativeTailFrame`].
+    NativeTail(NativeTailFrame),
 }
 
 // One `impl_frame!` per variant, in declaration order: the `Frame` downcasts
@@ -362,6 +364,7 @@ impl_frame!(DealDamage, DealDamageFrame);
 impl_frame!(Effect, EffectFrame);
 impl_frame!(ScenarioEnd, ScenarioEndFrame);
 impl_frame!(Elimination, EliminationFrame);
+impl_frame!(NativeTail, NativeTailFrame);
 
 /// Step cursor for the [`Elimination`](Continuation::Elimination) frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -627,6 +630,9 @@ impl Continuation {
                 // frame); it is included so that stays true by assertion rather
                 // than by luck.
                 | Continuation::Elimination(_)
+                // Not queued by an emit either, but the rest of a native's
+                // effect is owed work the same way (ADR 0020).
+                | Continuation::NativeTail(_)
         )
     }
 
@@ -777,7 +783,10 @@ impl Continuation {
             // its steps "any time a player is eliminated", and the weaknesses
             // whose game-end abilities drain above it are still in play until it
             // resumes.
-            | Continuation::Elimination(_) => (
+            | Continuation::Elimination(_)
+            // The rest of a native's effect, waiting on what its earlier exits
+            // pushed: the effect is under way, and its prompts sit above it.
+            | Continuation::NativeTail(_) => (
                 FrameActivity::Driven,
                 ScenarioEndDisposition::Complete,
             ),
@@ -2484,6 +2493,26 @@ pub struct EliminationFrame {
     pub investigator: InvestigatorId,
     /// Where in the elimination we are.
     pub step: EliminationStep,
+}
+
+/// The rest of a card-local native's effect: the exits it called after an
+/// earlier exit left work pending, held as ops to run in the order it called
+/// them (ADR 0020).
+///
+/// Sits directly beneath the frame that started the deferral, so it is
+/// re-exposed once that work has resolved. The `drive` loop then runs the ops
+/// from `next` on; one that leaves work pending again re-parks the frame
+/// beneath that work, with `next` advanced. Driven, never a prompt, and never
+/// cancelled by a latched resolution: the effect is already under way (ADR
+/// 0004).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NativeTailFrame {
+    /// The native's tag, for a rejection to name.
+    pub native: String,
+    /// The deferred exit calls, in call order.
+    pub ops: Vec<NativeOp>,
+    /// The index in `ops` of the next one to run.
+    pub next: usize,
 }
 
 // --- Window and timing frame payloads ---

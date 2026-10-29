@@ -211,6 +211,7 @@ fn table(
         | Continuation::MoveEnter(_)
         | Continuation::ActionResolution(_)
         | Continuation::Elimination(_)
+        | Continuation::NativeTail(_)
         | Continuation::ScenarioEnd(_)
         | Continuation::MythosPhase(_)
         | Continuation::InvestigationPhase(_)

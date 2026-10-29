@@ -410,6 +410,25 @@
     }
   },
   {
+    "NativeTail": {
+      "native": "test:native",
+      "ops": [
+        {
+          "ResolveEncounterCard": {
+            "investigator": 1,
+            "code": "_synth_treachery"
+          }
+        },
+        {
+          "PlaceDoomOnAgenda": {
+            "count": 1
+          }
+        }
+      ],
+      "next": 1
+    }
+  },
+  {
     "ScenarioEnd": {
       "step": "EmitGameEnd"
     }
