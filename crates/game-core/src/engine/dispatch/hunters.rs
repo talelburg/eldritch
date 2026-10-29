@@ -13,7 +13,7 @@ use crate::engine::{pathfinding, Cx};
 use crate::event::Event;
 use crate::state::{
     Continuation, Enemy, EnemyId, GameState, HunterChoice, Investigator, InvestigatorId,
-    LocationId, SpawnEngagePending, Status,
+    LocationId, SpawnEngagePending,
 };
 
 /// Result of narrowing a candidate investigator set by a prey
@@ -181,13 +181,16 @@ fn hunter_destinations(
 ) -> Vec<LocationId> {
     let mut reachable: Vec<(InvestigatorId, u32)> = Vec::new();
     let mut min_dist: Option<u32> = None;
-    for id in &state.turn_order {
-        let Some(inv) = state.investigators.get(id) else {
+    // Player order rather than the seating (**Player order** in
+    // `GLOSSARY.md`). The walk order never reaches the prompt: `dests` is
+    // sorted below.
+    for id in cursor::player_order(state) {
+        let Some(inv) = state.investigators.get(&id) else {
             continue;
         };
         // Before the distance, so a nearer non-bearer cannot hide a farther
         // bearer from a bearer-only hunter (`engagement::pursues`).
-        if inv.status != Status::Active || !engagement::pursues(enemy, *id) {
+        if !engagement::pursues(enemy, id) {
             continue;
         }
         let Some(loc) = inv.current_location else {
@@ -197,7 +200,7 @@ fn hunter_destinations(
             continue;
         };
         min_dist = Some(min_dist.map_or(d, |m| m.min(d)));
-        reachable.push((*id, d));
+        reachable.push((id, d));
     }
     let Some(min) = min_dist else {
         return Vec::new();
