@@ -22,6 +22,8 @@ pub mod evaluator;
 pub mod modified_value;
 mod native_cx;
 pub use native_cx::NativeCx;
+mod native_op;
+pub use native_op::NativeOp;
 mod outcome;
 pub(crate) mod pathfinding;
 

@@ -77,12 +77,7 @@ fn draw(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     let Some(code) = cx.draw_encounter_top() else {
         return EngineOutcome::Done;
     };
-    let Some(metadata) = crate::by_code(code.as_str()) else {
-        return EngineOutcome::Rejected {
-            reason: format!("Drawn to the Flame: unknown encounter card {code:?}").into(),
-        };
-    };
-    cx.resolve_encounter_card(ctx.controller, code, metadata)
+    cx.resolve_encounter_card(ctx.controller, code)
 }
 
 /// `true` while the controller is still in the game (not eliminated).

@@ -3,26 +3,24 @@
 
 use std::borrow::Cow;
 
-use card_dsl::card_data::CardMetadata;
 use card_dsl::dsl::{Effect, Restriction};
 
 use crate::card_registry::CardRegistry;
 use crate::engine::board::{self, LeavingCard, MoveResourcesError, NotLeft, Placement};
-use crate::engine::dispatch::actions::{r#move, take};
 use crate::engine::dispatch::choice::Suspension;
 use crate::engine::dispatch::tokens::{self, MoveHorrorError};
 use crate::engine::dispatch::{
-    act_agenda, cards, combat, elimination, encounter, engagement, hunters, placement, reveal,
-    set_aside, skill_test, threat_area,
+    cards, encounter, set_aside, threat_area,
     uses::{self, MoveUsesError, SpendUsesError},
 };
 use crate::engine::evaluator::{self, EvalContext};
+use crate::engine::native_op::NativeOp;
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::event::TraumaKind;
 use crate::state::{
-    CardCode, CardInstanceId, DamageSource, Deck, EnemyId, GameState, InvestigatorId, LocationId,
-    Owner, SkillSubstitution, UseKind, Zone,
+    CardCode, CardInstanceId, Deck, EnemyId, GameState, InvestigatorId, LocationId, Owner,
+    SkillSubstitution, UseKind, Zone,
 };
 
 /// What a [`NativeEffectFn`](crate::card_registry::NativeEffectFn) gets: full
@@ -129,6 +127,38 @@ enum ExitKind {
     Push,
 }
 
+impl ExitKind {
+    /// How the exit that builds `op` changes the game.
+    fn of(op: &NativeOp) -> Self {
+        match op {
+            NativeOp::DealHarm { .. } | NativeOp::MoveInvestigator { .. } => Self::Push,
+            NativeOp::DefeatInvestigator { .. }
+            | NativeOp::SufferTrauma { .. }
+            | NativeOp::DealDamageToEnemy { .. }
+            | NativeOp::PutSetAsideCardIntoPlay { .. }
+            | NativeOp::RevealLocation { .. }
+            | NativeOp::RelocateEnemy { .. }
+            | NativeOp::PlaceInvestigator { .. }
+            | NativeOp::EngageReadyEnemies
+            | NativeOp::PlaceDoomOnAgenda { .. }
+            | NativeOp::PlaceDoomOnCard { .. }
+            | NativeOp::RemoveClues { .. }
+            | NativeOp::DiscardAllResources { .. }
+            | NativeOp::DiscardEncounterCard { .. }
+            | NativeOp::DiscardFromHand { .. }
+            | NativeOp::RemoveDiscardPileFromGame { .. }
+            | NativeOp::ReshuffleEncounterDiscard
+            | NativeOp::ResolveEncounterCard { .. }
+            | NativeOp::LoseActions { .. }
+            | NativeOp::RoundEndAdvance { .. }
+            | NativeOp::SubstituteSkillUntilEndOfRound { .. }
+            | NativeOp::RestrictUntilEndOfRound { .. }
+            | NativeOp::ReturnCommittedCardToHand { .. }
+            | NativeOp::DiscardAfterThisTest { .. } => Self::DirectWrite,
+        }
+    }
+}
+
 /// How many frames on the stack are Prompt-profile.
 fn prompt_frames(state: &GameState) -> usize {
     state
@@ -219,6 +249,14 @@ impl<'a> NativeCx<'a> {
         prompt_frames(self.cx.state) > self.prompts_at_entry
     }
 
+    /// Run `op`, the call of an exit that returns `()` or an
+    /// [`EngineOutcome`]: every such exit builds its op and runs it here.
+    /// What an op of a `()` exit returns is always `Done`.
+    fn run_op(&mut self, op: NativeOp) -> EngineOutcome {
+        let kind = ExitKind::of(&op);
+        op.run(self.write_access(kind))
+    }
+
     // --- Harm and defeat ---
 
     /// Deal `damage` + `horror` to `investigator`: the one way a native deals
@@ -237,38 +275,34 @@ impl<'a> NativeCx<'a> {
         damage: u8,
         horror: u8,
     ) -> EngineOutcome {
-        combat::deal_harm(
-            self.write_access(ExitKind::Push),
+        self.run_op(NativeOp::DealHarm {
             investigator,
             damage,
             horror,
-            DamageSource::Effect,
-            false,
-        )
+        })
     }
 
     /// Defeat `investigator` by a card ability and run elimination. A no-op
     /// for an investigator who is not active.
     pub fn defeat_investigator(&mut self, investigator: InvestigatorId) {
-        elimination::defeat_investigator(self.write_access(ExitKind::DirectWrite), investigator);
+        self.run_op(NativeOp::DefeatInvestigator { investigator });
     }
 
     /// `investigator` suffers `amount` trauma of `kind`. Emits
     /// [`Event::TraumaSuffered`](crate::event::Event::TraumaSuffered); nothing
     /// records it yet. TODO(#766): record it in the campaign log.
     pub fn suffer_trauma(&mut self, investigator: InvestigatorId, kind: TraumaKind, amount: u8) {
-        elimination::suffer_trauma(
-            self.write_access(ExitKind::DirectWrite),
+        self.run_op(NativeOp::SufferTrauma {
             investigator,
             kind,
             amount,
-        );
+        });
     }
 
     /// Deal `amount` damage to `enemy`, defeating it if that is lethal. `by`
     /// names the investigator dealing it, if any.
     pub fn deal_damage_to_enemy(&mut self, enemy: EnemyId, amount: u8, by: Option<InvestigatorId>) {
-        combat::deal_damage_to_enemy(self.write_access(ExitKind::DirectWrite), enemy, amount, by);
+        self.run_op(NativeOp::DealDamageToEnemy { enemy, amount, by });
     }
 
     // --- Cards entering play ---
@@ -282,12 +316,11 @@ impl<'a> NativeCx<'a> {
         at: Option<&str>,
         owner: Owner,
     ) -> EngineOutcome {
-        set_aside::put_set_aside_card_into_play(
-            self.write_access(ExitKind::DirectWrite),
-            code,
-            at,
+        self.run_op(NativeOp::PutSetAsideCardIntoPlay {
+            code: CardCode::from(code),
+            at: at.map(CardCode::from),
             owner,
-        )
+        })
     }
 
     /// Put the set-aside location `code` into play and return its minted
@@ -306,7 +339,7 @@ impl<'a> NativeCx<'a> {
 
     /// Reveal `location` if it is unrevealed, placing its printed clues.
     pub fn reveal_location(&mut self, location: LocationId) {
-        reveal::reveal_location(self.write_access(ExitKind::DirectWrite), location);
+        self.run_op(NativeOp::RevealLocation { location });
     }
 
     /// Attach `code` to `location` under `owner`, returning its new instance
@@ -329,7 +362,7 @@ impl<'a> NativeCx<'a> {
 
     /// Move `enemy` to `to` and, if it is unengaged, engage it there.
     pub fn relocate_enemy(&mut self, enemy: EnemyId, to: LocationId) {
-        hunters::relocate_enemy(self.write_access(ExitKind::DirectWrite), enemy, to);
+        self.run_op(NativeOp::RelocateEnemy { enemy, to });
     }
 
     /// Place `investigator` at `location`. A placement, not a move: no move
@@ -338,11 +371,10 @@ impl<'a> NativeCx<'a> {
     /// only when the investigator was at a location and it differs from
     /// `location`.
     pub fn place_investigator(&mut self, investigator: InvestigatorId, location: LocationId) {
-        placement::place_investigator(
-            self.write_access(ExitKind::DirectWrite),
+        self.run_op(NativeOp::PlaceInvestigator {
             investigator,
             location,
-        );
+        });
     }
 
     /// Move `investigator` to `destination` by a card effect: a move, not a
@@ -367,7 +399,10 @@ impl<'a> NativeCx<'a> {
         investigator: InvestigatorId,
         destination: LocationId,
     ) -> EngineOutcome {
-        r#move::move_by_effect(self.write_access(ExitKind::Push), investigator, destination)
+        self.run_op(NativeOp::MoveInvestigator {
+            investigator,
+            destination,
+        })
     }
 
     /// Apply the engagement rule: each ready, unengaged enemy at a location
@@ -376,7 +411,7 @@ impl<'a> NativeCx<'a> {
     /// investigator, it engages that investigator, …"*). For an effect that leaves
     /// enemies ready and unengaged beside an investigator, once it has resolved.
     pub fn engage_ready_enemies(&mut self) {
-        engagement::engage_ready_enemies(self.write_access(ExitKind::DirectWrite));
+        self.run_op(NativeOp::EngageReadyEnemies);
     }
 
     // --- Tokens ---
@@ -384,7 +419,7 @@ impl<'a> NativeCx<'a> {
     /// Place `count` doom on the current agenda. A no-op on an empty agenda
     /// deck. No event announces doom yet. TODO(#593): announce it.
     pub fn place_doom_on_agenda(&mut self, count: u8) {
-        act_agenda::place_doom_on_agenda(self.write_access(ExitKind::DirectWrite), count);
+        self.run_op(NativeOp::PlaceDoomOnAgenda { count });
     }
 
     /// Place `count` doom on the card instance `instance`, wherever it is on
@@ -392,14 +427,14 @@ impl<'a> NativeCx<'a> {
     /// agenda's threshold at the next check, not at once. No event announces
     /// doom yet. TODO(#593): announce it.
     pub fn place_doom_on_card(&mut self, instance: CardInstanceId, count: u8) {
-        board::place_doom(self.write_access(ExitKind::DirectWrite), instance, count);
+        self.run_op(NativeOp::PlaceDoomOnCard { instance, count });
     }
 
     /// Remove up to `count` clues from the card instance `instance`, wherever
     /// it is on the board, saturating at zero. No event names clues leaving a
     /// card.
     pub fn remove_clues(&mut self, instance: CardInstanceId, count: u8) {
-        board::remove_clues(self.write_access(ExitKind::DirectWrite), instance, count);
+        self.run_op(NativeOp::RemoveClues { instance, count });
     }
 
     /// `investigator` spends `amount` uses of `kind` from `instance`, emitting
@@ -502,7 +537,7 @@ impl<'a> NativeCx<'a> {
     /// [`Event::ResourcesPaid`](crate::event::Event::ResourcesPaid) stays
     /// silent. An empty pool discards nothing and announces nothing.
     pub fn discard_all_resources(&mut self, investigator: InvestigatorId) {
-        cards::discard_all_resources(self.write_access(ExitKind::DirectWrite), investigator);
+        self.run_op(NativeOp::DiscardAllResources { investigator });
     }
 
     /// Move up to `amount` horror from the card instance `from` onto the card
@@ -568,12 +603,7 @@ impl<'a> NativeCx<'a> {
     /// [`Event::CardDiscarded`](crate::event::Event::CardDiscarded) naming
     /// `from`.
     pub fn discard_encounter_card(&mut self, code: CardCode, from: Zone) {
-        board::discard_drawn_card(
-            self.write_access(ExitKind::DirectWrite),
-            code,
-            Owner::EncounterDeck,
-            from,
-        );
+        self.run_op(NativeOp::DiscardEncounterCard { code, from });
     }
 
     /// Discard a random card from `investigator`'s hand, returning it, or
@@ -593,18 +623,10 @@ impl<'a> NativeCx<'a> {
     /// be chosen is the caller's rule: `glossary/Weakness.md`, *"A player may
     /// not optionally choose to discard a weakness card from hand."*
     pub fn discard_from_hand(&mut self, investigator: InvestigatorId, hand_index: usize) {
-        let in_hand = self
-            .state()
-            .investigators
-            .get(&investigator)
-            .is_some_and(|inv| hand_index < inv.hand.len());
-        if in_hand {
-            cards::discard_from_hand(
-                self.write_access(ExitKind::DirectWrite),
-                investigator,
-                hand_index,
-            );
-        }
+        self.run_op(NativeOp::DiscardFromHand {
+            investigator,
+            hand_index,
+        });
     }
 
     /// Remove every card in `investigator`'s discard pile from the game, into
@@ -612,10 +634,7 @@ impl<'a> NativeCx<'a> {
     /// [`Event::DiscardPileRemovedFromGame`](crate::event::Event::DiscardPileRemovedFromGame).
     /// An empty pile changes nothing and emits nothing.
     pub fn remove_discard_pile_from_game(&mut self, investigator: InvestigatorId) {
-        cards::remove_discard_pile_from_game(
-            self.write_access(ExitKind::DirectWrite),
-            investigator,
-        );
+        self.run_op(NativeOp::RemoveDiscardPileFromGame { investigator });
     }
 
     /// Move the card at `index` of `investigator`'s discard pile to their
@@ -662,14 +681,15 @@ impl<'a> NativeCx<'a> {
 
     /// Shuffle the encounter discard back into the encounter deck.
     pub fn reshuffle_encounter_discard(&mut self) {
-        encounter::reshuffle_encounter_discard(self.write_access(ExitKind::DirectWrite));
+        self.run_op(NativeOp::ReshuffleEncounterDiscard);
     }
 
     /// Resolve the already-drawn encounter card `code` for `investigator`: it
     /// is revealed, and the draw — whose resolve step is the Revelation, which
     /// a `when` ability may cancel — and the card's disposal (discard or spawn)
     /// are pushed as frames for the drive loop to step. `Rejected` for a
-    /// cardtype that cannot be drawn this way.
+    /// cardtype that cannot be drawn this way, or a code the card registry
+    /// doesn't know.
     ///
     /// The card is the encounter deck's: both callers draw from it. A weakness
     /// drawn from a player deck takes the engine's own draw path instead.
@@ -677,15 +697,8 @@ impl<'a> NativeCx<'a> {
         &mut self,
         investigator: InvestigatorId,
         code: CardCode,
-        metadata: &CardMetadata,
     ) -> EngineOutcome {
-        encounter::resolve_encounter_card(
-            self.write_access(ExitKind::DirectWrite),
-            investigator,
-            code,
-            metadata,
-            Owner::EncounterDeck,
-        )
+        self.run_op(NativeOp::ResolveEncounterCard { investigator, code })
     }
 
     // --- Actions ---
@@ -695,11 +708,10 @@ impl<'a> NativeCx<'a> {
     /// [`Event::ActionsRemainingChanged`](crate::event::Event::ActionsRemainingChanged)
     /// when the count changes.
     pub fn lose_actions(&mut self, investigator: InvestigatorId, count: u8) {
-        take::lose_actions(
-            self.write_access(ExitKind::DirectWrite),
+        self.run_op(NativeOp::LoseActions {
             investigator,
             count,
-        );
+        });
     }
 
     // --- Acts and skill tests ---
@@ -708,19 +720,15 @@ impl<'a> NativeCx<'a> {
     /// threshold needs from investigators at the location coded
     /// `contributor_location_code`. `Rejected` when they can't afford it.
     pub fn round_end_advance(&mut self, contributor_location_code: &str) -> EngineOutcome {
-        act_agenda::round_end_advance(
-            self.write_access(ExitKind::DirectWrite),
-            contributor_location_code,
-        )
+        self.run_op(NativeOp::RoundEndAdvance {
+            contributor_location_code: CardCode::from(contributor_location_code),
+        })
     }
 
     /// Register `substitution` for the rest of the round. No event announces
     /// it.
     pub fn substitute_skill_until_end_of_round(&mut self, substitution: SkillSubstitution) {
-        skill_test::substitute_skill_until_end_of_round(
-            self.write_access(ExitKind::DirectWrite),
-            substitution,
-        );
+        self.run_op(NativeOp::SubstituteSkillUntilEndOfRound { substitution });
     }
 
     /// Register `restriction` protecting `investigator` for the rest of the
@@ -731,11 +739,10 @@ impl<'a> NativeCx<'a> {
         investigator: InvestigatorId,
         restriction: Restriction,
     ) {
-        combat::restrict_until_end_of_round(
-            self.write_access(ExitKind::DirectWrite),
+        self.run_op(NativeOp::RestrictUntilEndOfRound {
             investigator,
             restriction,
-        );
+        });
     }
 
     /// Return the committed card at `index` — the one an
@@ -746,7 +753,7 @@ impl<'a> NativeCx<'a> {
     /// [`Event::CommittedCardReturnedToHand`](crate::event::Event::CommittedCardReturnedToHand)
     /// at RR ST.8, in place of the discard.
     pub fn return_committed_card_to_hand(&mut self, index: u8) {
-        skill_test::return_committed_card_to_hand(self.write_access(ExitKind::DirectWrite), index);
+        self.run_op(NativeOp::ReturnCommittedCardToHand { index });
     }
 
     /// Discard `card` from play when the in-flight skill test ends (RR ST.8),
@@ -755,6 +762,6 @@ impl<'a> NativeCx<'a> {
     /// discard's own
     /// [`Event::CardDiscarded`](crate::event::Event::CardDiscarded) at ST.8.
     pub fn discard_after_this_test(&mut self, card: CardInstanceId) {
-        skill_test::discard_after_this_test(self.write_access(ExitKind::DirectWrite), card);
+        self.run_op(NativeOp::DiscardAfterThisTest { card });
     }
 }
