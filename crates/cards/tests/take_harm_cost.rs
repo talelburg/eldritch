@@ -176,7 +176,7 @@ fn a_lethal_harm_cost_eliminates_the_payer_and_the_effect_does_not_resolve() {
                 .in_play([FAST_PROBE]),
         )
         .with_seat(seat(2).at(HERE))
-        .with_turn_order([INV, INV2])
+        .with_seating([INV, INV2])
         .open_turn(INV)
         .build();
     let probe = state.in_play(INV, FAST_PROBE);

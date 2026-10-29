@@ -68,7 +68,7 @@ fn drawing(encounter_deck: &[&str]) -> TestSession {
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
-        .with_turn_order([INV])
+        .with_seating([INV])
         .with_phase(Phase::Mythos)
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,

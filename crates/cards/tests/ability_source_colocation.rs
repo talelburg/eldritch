@@ -146,7 +146,7 @@ fn board() -> GameState {
         .with_location(there)
         .with_enemy(nearby_cultist)
         .with_enemy(distant_cultist)
-        .with_turn_order([MINE, NEIGHBOUR, STRANGER])
+        .with_seating([MINE, NEIGHBOUR, STRANGER])
         .open_turn(MINE)
         .build()
 }

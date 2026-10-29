@@ -36,9 +36,9 @@ fn an_open_turn_resumes_at_the_turn_menu_after_an_action() {
     assert_eq!(session.state().active_investigator, Some(MINE));
 }
 
-/// With no turn order set, `open_turn` seats the investigator alone.
+/// With no seating set, `open_turn` seats the investigator alone.
 #[test]
-fn open_turn_defaults_the_turn_order_to_the_investigator() {
+fn open_turn_defaults_the_seating_to_the_investigator() {
     let state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
@@ -46,19 +46,19 @@ fn open_turn_defaults_the_turn_order_to_the_investigator() {
         .open_turn(MINE)
         .build();
 
-    assert_eq!(state.turn_order, vec![MINE]);
+    assert_eq!(state.seating, vec![MINE]);
 }
 
-/// A turn order set before `open_turn` stands: ending the first investigator's
+/// A seating set before `open_turn` stands: ending the first investigator's
 /// turn hands the turn to the second, whose menu comes up next.
 #[test]
-fn open_turn_respects_a_turn_order_already_set() {
+fn open_turn_respects_a_seating_already_set() {
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
         .with_seat(seat(2).at(HERE))
         .with_location(test_support::test_location(HERE.0, "Study"))
-        .with_turn_order([MINE, OTHER])
+        .with_seating([MINE, OTHER])
         .open_turn(MINE)
         .session()
         .take(&TurnAction::EndTurn);

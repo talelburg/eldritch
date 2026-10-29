@@ -177,7 +177,7 @@ fn mind_over_matter_rejected_outside_your_turn() {
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(seat(1).at(HERE).hand([MOM, MAGNIFYING_GLASS]))
         .with_active_investigator(INV)
-        .with_turn_order([INV])
+        .with_seating([INV])
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
         })

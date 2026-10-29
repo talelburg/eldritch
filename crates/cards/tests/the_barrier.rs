@@ -67,7 +67,7 @@ const LITA: &str = "01117";
 /// the act's objective is offered.
 fn barrier_table(
     seats: Vec<Seat>,
-    turn_order: &[InvestigatorId],
+    seating: &[InvestigatorId],
     lead: InvestigatorId,
     last: InvestigatorId,
 ) -> TestSession {
@@ -87,7 +87,7 @@ fn barrier_table(
         ))
         .with_location(parlor)
         .with_location(Location::new(ATTIC, CardCode::new("01113"), "Attic", 1, 0))
-        .with_turn_order(turn_order.iter().copied())
+        .with_seating(seating.iter().copied())
         .with_lead(lead)
         .open_turn(last)
         .build();

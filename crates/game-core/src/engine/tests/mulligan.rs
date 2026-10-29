@@ -28,7 +28,7 @@ fn mulligan_board() -> GameStateBuilder {
                 .deck(["d-0", "d-1", "d-2", "d-3", "d-4"]),
         )
         .with_rng_seed(2026)
-        .with_turn_order([INV])
+        .with_seating([INV])
         .with_mulligan_remaining([INV])
 }
 
@@ -339,7 +339,7 @@ fn non_resolve_input_action_while_mulligan_pending_is_rejected() {
         .with_location(test_support::test_location(CONNECTED.0, "B"))
         .with_phase(Phase::Investigation)
         .with_active_investigator(INV)
-        .with_turn_order([INV])
+        .with_seating([INV])
         .with_mulligan_remaining([INV])
         .build();
     // Mulligan frame gates all open-turn actions → Move is not legal.
@@ -366,7 +366,7 @@ fn multi_investigator_mulligan_advances_in_player_order() {
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).hand(["a-0"]))
         .with_seat(seat(2).hand(["b-0"]))
-        .with_turn_order([INV, inv2])
+        .with_seating([INV, inv2])
         .with_mulligan_remaining([INV, inv2])
         .session();
 
@@ -393,7 +393,7 @@ fn a_mulligan_offers_the_prompted_investigators_hand() {
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).hand(["a-0"]))
         .with_seat(seat(2).hand(["b-0", "b-1"]))
-        .with_turn_order([INV, inv2])
+        .with_seating([INV, inv2])
         .with_mulligan_remaining([inv2, INV])
         .session();
 
@@ -423,7 +423,7 @@ fn multi_investigator_real_redraw_plus_empty_mulligan_combo() {
                 .deck(["a-d-0", "a-d-1", "a-d-2"]),
         )
         .with_seat(seat(2).hand(["b-h-0", "b-h-1"]).deck(["b-d-0"]))
-        .with_turn_order([INV, inv2])
+        .with_seating([INV, inv2])
         .with_mulligan_remaining([INV, inv2])
         .with_rng_seed(99)
         .session();

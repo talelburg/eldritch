@@ -231,7 +231,7 @@ fn state() -> GameState {
                 .hand([COSTED_EVENT]),
         )
         .with_location(test_support::test_location(LOCATION.0, "Clueless"))
-        .with_turn_order([CONTROLLER])
+        .with_seating([CONTROLLER])
         .with_round(1)
         .build()
 }

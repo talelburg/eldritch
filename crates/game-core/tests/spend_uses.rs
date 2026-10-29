@@ -120,7 +120,7 @@ fn registries() -> Registries {
     *REGISTRIES
 }
 
-/// [`HOLDER`] (first in turn order, so the forced dispatch binds the
+/// [`HOLDER`] (first in player order, so the forced dispatch binds the
 /// controller to them) and [`OWNER`], each with a filler deck so Upkeep 4.4's
 /// draw deals no empty-deck horror, staged by `staging`; then `act` as the
 /// current act and — when `pool` is `Some` — [`HELD`] in the holder's play
@@ -140,7 +140,7 @@ fn board(
             .with_registries(registries())
             .with_seat(holder.deck(["filler-card"]))
             .with_seat(seat(OWNER.0).deck(["filler-card"]))
-            .with_turn_order([HOLDER, OWNER]),
+            .with_seating([HOLDER, OWNER]),
     )
     .build();
     // The act deck has no builder setter.

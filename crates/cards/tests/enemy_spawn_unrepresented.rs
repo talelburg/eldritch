@@ -46,7 +46,7 @@ fn state_with_top_encounter(top: &str) -> GameState {
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
         .with_location(study)
-        .with_turn_order([INV])
+        .with_seating([INV])
         .with_phase(Phase::Mythos)
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,

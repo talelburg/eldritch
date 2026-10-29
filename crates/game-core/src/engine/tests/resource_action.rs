@@ -71,7 +71,7 @@ fn resource_action_rejects_when_not_active_investigator() {
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .with_seat(seat(2))
-        .with_turn_order([INV, other])
+        .with_seating([INV, other])
         .open_turn(other)
         .build();
     // Non-active investigator → their Resource is not legal.

@@ -29,9 +29,9 @@ use crate::state::{
 /// Investigators and locations are stored in [`BTreeMap`]s keyed by ID
 /// rather than [`Vec`]s. This makes iteration order deterministic
 /// (sorted by ID) regardless of insertion order — important for replay
-/// equality — and gives O(log n) lookup. Turn order is tracked
-/// separately in [`turn_order`](Self::turn_order); the storage map's
-/// iteration order is *not* turn order.
+/// equality — and gives O(log n) lookup. The seating is tracked
+/// separately in [`seating`](Self::seating); the storage map's
+/// iteration order is *not* the seating, nor player order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct GameState {
@@ -94,10 +94,10 @@ pub struct GameState {
     /// choose among themselves who (among the investigators) will take this
     /// turn"* (Appendix II, step 2.2). TODO(#1185): let the investigators
     /// choose who takes each turn.
-    pub turn_order: Vec<InvestigatorId>,
+    pub seating: Vec<InvestigatorId>,
     /// The lead investigator chosen at game creation, Appendix III step 3:
     /// *"Choose one of those investigators to be the lead investigator for
-    /// this game."* Player order is [`turn_order`](Self::turn_order) rotated to
+    /// this game."* Player order is [`seating`](Self::seating) rotated to
     /// start here.
     ///
     /// Never rewritten after creation, elimination included: who leads *now*

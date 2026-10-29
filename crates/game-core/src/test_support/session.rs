@@ -891,7 +891,7 @@ mod tests {
             .with_investigator(test_support::test_investigator(1))
             .with_investigator(test_support::test_investigator(2))
             .with_location(test_support::test_location(10, "Study"))
-            .with_turn_order([id, InvestigatorId(2)])
+            .with_seating([id, InvestigatorId(2)])
             .open_turn(id)
             .session()
             .resolve_choices(|c| {

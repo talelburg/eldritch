@@ -54,7 +54,7 @@ fn upkeep_phase_emits_phase_started_and_auto_skips_to_mythos() {
         // so an empty deck applies the deckout horror penalty, which this test
         // isn't about.
         .with_seat(test_support::seat(1).deck(["filler0"]))
-        .with_turn_order([id])
+        .with_seating([id])
         .with_phase(Phase::Enemy)
         .build();
 
@@ -144,7 +144,7 @@ fn ready_exhausted_cards_reengages_co_located_unengaged_enemy() {
         .with_seat(test_support::seat(1).at(LocationId(10)))
         .with_location(loc)
         .with_enemy(enemy)
-        .with_turn_order([inv_id])
+        .with_seating([inv_id])
         .build();
     let mut events = Vec::new();
 
@@ -197,7 +197,7 @@ fn ready_exhausted_cards_no_engage_when_no_co_located_investigator() {
         .with_seat(test_support::seat(1)) // current_location stays None — NOT co-located
         .with_location(loc)
         .with_enemy(enemy)
-        .with_turn_order([inv_id])
+        .with_seating([inv_id])
         .build();
     let mut events = Vec::new();
 
@@ -262,7 +262,7 @@ fn upkeep_draws_and_grants_a_resource_to_each_active_investigator_only() {
                 .deck(["filler2"])
                 .status(Status::Resigned),
         )
-        .with_turn_order([a, b, c]);
+        .with_seating([a, b, c]);
     let before = builder.clone().build();
     let res_a = before.investigators[&a].resources;
     let res_b = before.investigators[&b].resources;
@@ -297,7 +297,7 @@ fn upkeep_draws_in_player_order_then_grants_resources() {
             .with_seat(test_support::seat(1).deck(["filler0"]))
             .with_seat(test_support::seat(2).deck(["filler1"]))
             // Investigator 2 leads, so draws first.
-            .with_turn_order([b, a]),
+            .with_seating([b, a]),
     );
 
     assert_event_sequence!(
@@ -316,7 +316,7 @@ fn reset_actions_sets_active_to_per_turn_and_skips_eliminated() {
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).actions(0))
         .with_seat(test_support::seat(2).actions(0).status(Status::Defeated))
-        .with_turn_order([a, b])
+        .with_seating([a, b])
         .build();
     let mut events = Vec::new();
 
@@ -343,7 +343,7 @@ fn reset_actions_emits_nothing_for_already_full() {
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1).actions(ACTIONS_PER_TURN))
-        .with_turn_order([id])
+        .with_seating([id])
         .build();
     let mut events = Vec::new();
 
@@ -384,7 +384,7 @@ fn round_increments_on_mythos_entry_via_driver() {
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
-        .with_turn_order([id])
+        .with_seating([id])
         .with_phase(Phase::Upkeep)
         .with_round(4)
         .build();

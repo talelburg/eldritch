@@ -22,8 +22,8 @@ use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 pub(crate) const TEST_SCENARIO_ID: &str = "test-scenario";
 
 fn test_setup() -> GameState {
-    // Bare scenario seed — seating runs at creation via `seat_and_open`,
-    // so the pre-seeded investigator and turn order are NOT injected here.
+    // Bare scenario seed — `seat_and_open` seats the investigators at creation,
+    // so neither the pre-seeded investigator nor the seating is injected here.
     GameStateBuilder::new()
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_scenario_id(ScenarioId::new(TEST_SCENARIO_ID))

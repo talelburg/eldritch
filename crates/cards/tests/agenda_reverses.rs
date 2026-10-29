@@ -33,7 +33,7 @@ fn ending_the_round_on(index: usize, lead: Seat, encounter_deck: &[&str]) -> Gam
         .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Here"))
         .with_seat(lead.at(HERE))
-        .with_turn_order([LEAD])
+        .with_seating([LEAD])
         .ending_upkeep_phase()
         .build();
     state.agenda_deck = AGENDAS

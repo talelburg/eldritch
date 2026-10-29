@@ -171,7 +171,7 @@ fn setup_two_investigators_at_mythos_draw(state: GameState) -> TestSession {
     seat_keeping_hands(state, &[ROLAND, test_support::TEST_INV])
         // inv1 ends turn → rotates to inv2.
         .take(&TurnAction::EndTurn)
-        // inv2 is the last in turn_order → ticks through phases into Mythos.
+        // inv2 is the last in player order → ticks through phases into Mythos.
         .take(&TurnAction::EndTurn)
 }
 

@@ -110,12 +110,12 @@ pub(super) fn advance_agenda(cx: &mut Cx) {
 
 /// The investigators who may contribute clues to advance the act, in the
 /// deterministic spend order: the acting investigator first, then the rest
-/// of `turn_order`. Shared by [`advance_act_action`]'s clue-sufficiency
+/// of `seating`. Shared by [`advance_act_action`]'s clue-sufficiency
 /// check and [`spend_clues`] so the validation domain and the spend domain
 /// can never diverge.
 fn clue_contributors(state: &GameState, acting: InvestigatorId) -> Vec<InvestigatorId> {
     iter::once(acting)
-        .chain(state.turn_order.iter().copied().filter(|id| *id != acting))
+        .chain(state.seating.iter().copied().filter(|id| *id != acting))
         .collect()
 }
 
@@ -182,7 +182,7 @@ pub(crate) fn check_advance_act(
 
 /// Handler for `TurnAction::AdvanceAct`:
 /// validate via [`check_advance_act`], then (on success) spend exactly the act's
-/// clue threshold (acting investigator first, then the rest in `turn_order`) and
+/// clue threshold (acting investigator first, then the rest in `seating`) and
 /// advance the act — terminal or not (ADR 0013); a terminal act's ending comes
 /// from the reverse the advance fires, not from this handler.
 pub(super) fn advance_act_action(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
@@ -200,7 +200,7 @@ pub(super) fn advance_act_action(cx: &mut Cx, investigator: InvestigatorId) -> E
 
 /// Spend `amount` clues from the group, deterministically: the acting
 /// investigator's clues first, then the remaining investigators in
-/// `turn_order`. Callers must have already validated the group holds at
+/// `seating`. Callers must have already validated the group holds at
 /// least `amount` clues, so the spend always completes.
 ///
 /// TODO(#153): let players choose who contributes when the group holds a
@@ -478,7 +478,7 @@ mod doom_agenda_tests {
         let mut state = GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1))
-            .with_turn_order([inv])
+            .with_seating([inv])
             .build();
         state.agenda_deck = vec![Agenda {
             code: test_support::terminal_code(3),
@@ -551,7 +551,7 @@ mod advance_act_tests {
             .with_registries(TEST_REGISTRIES)
             .with_location(hall)
             .with_seat(test_support::seat(1).at(LocationId(1)))
-            .with_turn_order([InvestigatorId(1)])
+            .with_seating([InvestigatorId(1)])
             .build();
         state.act_deck = vec![Act {
             code: CardCode("_act".into()),
@@ -744,14 +744,14 @@ mod advance_act_tests {
     }
 
     #[test]
-    fn advance_act_spends_acting_investigator_first_then_turn_order() {
+    fn advance_act_spends_acting_investigator_first_then_seating() {
         let acting = InvestigatorId(1);
         let other = InvestigatorId(2);
         let mut state = GameStateBuilder::new()
             .with_registries(TEST_REGISTRIES)
             .with_seat(test_support::seat(1).clues(1))
             .with_seat(test_support::seat(2).clues(2))
-            .with_turn_order([acting, other])
+            .with_seating([acting, other])
             .open_turn(acting)
             .build();
         // Two acts so the first is non-terminal and its advance bumps the cursor
@@ -781,7 +781,7 @@ mod advance_act_tests {
         );
         assert_eq!(
             state.investigators[&other].clues, 1,
-            "remainder taken from turn_order"
+            "remainder taken from seating"
         );
         assert_eq!(state.act_index, 1);
     }

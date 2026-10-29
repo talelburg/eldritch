@@ -104,7 +104,7 @@ fn two_seats() -> GameState {
     GameStateBuilder::new()
         .with_seat(seat(FIRST.0))
         .with_seat(seat(SECOND.0))
-        .with_turn_order([FIRST, SECOND])
+        .with_seating([FIRST, SECOND])
         .build()
 }
 

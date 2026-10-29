@@ -107,7 +107,7 @@ fn turn_began_with(
 ) -> TestSession {
     let mut state = builder
         .with_seat(other.deck([FILLER]))
-        .with_turn_order([OTHER, INV])
+        .with_seating([OTHER, INV])
         .open_turn(OTHER)
         .build();
     edit(&mut state);

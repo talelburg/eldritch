@@ -2,7 +2,7 @@
 
 Take a two-seat Gathering in which Daisy Walker 01002 and Agnes Baker 01004 are both in the Hallway when The Barrier 01109 advances. Its reverse ends *"Spawn the set-aside Ghoul Priest in the Hallway."*, and Ghoul Priest 01116 prints *"**Prey** - Highest [combat]."* Both investigators print combat 2. `glossary/Prey.md` settles the tie: *"if multiple investigators are tied in meeting these instructions, the lead investigator may decide among them"*. Neither card has rulings (`data/arkhamdb-faq/no-rulings.txt`).
 
-So the engine has to ask someone, and it had no answer to *whom*. Every prompt frame's payload knew who must answer it, and every `InputRequest` dropped that. The engine also did not model the lead: the first Active investigator in `turn_order` stood in for them, and that one proxy was read both as "the lead" and as "first in player order".
+So the engine has to ask someone, and it had no answer to *whom*. Every prompt frame's payload knew who must answer it, and every `InputRequest` dropped that. The engine also did not model the lead: the first Active investigator in the seating (`GameState::seating`) stood in for them, and that one proxy was read both as "the lead" and as "first in player order".
 
 **So every prompt names its responder, and the lead investigator is game state.**
 
@@ -52,7 +52,7 @@ This is [ADR 0014](0014-a-granted-ability-is-a-constant-effect-swept-off-the-boa
 
 ## Considered options
 
-**Rotate `turn_order` at seating so the lead is its first entry**, and keep the first-active proxy. It is the smallest change, but it makes the lead field redundant with `turn_order[0]`: two sources of truth for one fact.
+**Rotate the seating at creation so the lead is its first entry**, and keep the first-active proxy. It is the smallest change, but it makes the lead field redundant with `seating[0]`: two sources of truth for one fact.
 
 **A declarative `offered_to` field on the ability** for The Barrier's group. It has one consumer, which falls under `standards.md`'s threshold, and a card-local eligibility already expresses it.
 

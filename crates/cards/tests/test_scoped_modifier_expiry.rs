@@ -59,7 +59,7 @@ fn board(damage: u8, soakers: &[&str]) -> GameState {
                 .in_play(soakers.iter().copied()),
         )
         .with_location(test_support::test_location(HERE.0, "Here"))
-        .with_turn_order([INV])
+        .with_seating([INV])
         .with_phase(Phase::Mythos)
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,

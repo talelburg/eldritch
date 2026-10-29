@@ -221,7 +221,7 @@ fn board_seating(mine: Seat) -> GameState {
         .with_enemy_engaged(nearby, MINE)
         .with_enemy(distant)
         .with_active_investigator(MINE)
-        .with_turn_order([MINE, NEIGHBOUR, STRANGER])
+        .with_seating([MINE, NEIGHBOUR, STRANGER])
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
     state.act_deck = vec![Act {

@@ -109,7 +109,7 @@ fn board_with(mine: Seat) -> GameState {
         .with_seat(seat(2).at(THERE))
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_location(test_support::test_location(THERE.0, "Hallway"))
-        .with_turn_order([MINE, NEIGHBOUR])
+        .with_seating([MINE, NEIGHBOUR])
         .open_turn(MINE)
         .build();
     state.act_deck = vec![

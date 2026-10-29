@@ -6,7 +6,7 @@ fn star_board_with_investigator_in_hallway() -> GameState {
         GameStateBuilder::new()
             .with_registries(crate::TEST_REGISTRIES)
             .with_seat(test_support::seat(1).at(LocationId(2)))
-            .with_turn_order([InvestigatorId(1)]),
+            .with_seating([InvestigatorId(1)]),
     )
 }
 

@@ -60,7 +60,7 @@ const INV: InvestigatorId = InvestigatorId(1);
 
 /// The board every test starts from: Mythos step 1.4 with investigator 1 to
 /// draw, one Flesh-Eater on the encounter deck, and the Attic in play with
-/// the `seated` investigators (in turn order) standing in it. Returns the
+/// the `seated` investigators (seated in that order) standing in it. Returns the
 /// minted [`LocationId`] alongside, since `add_location` mints it on the built
 /// state, which is also why the investigators are placed there afterwards.
 fn drawing_flesh_eater(seated: &[InvestigatorId]) -> (TestSession, LocationId) {
@@ -70,7 +70,7 @@ fn drawing_flesh_eater(seated: &[InvestigatorId]) -> (TestSession, LocationId) {
             GameStateBuilder::new().with_registries(TEST_REGISTRIES),
             |builder, id| builder.with_seat(seat(id.0)),
         )
-        .with_turn_order(seated.iter().copied())
+        .with_seating(seated.iter().copied())
         .with_phase(Phase::Mythos)
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,

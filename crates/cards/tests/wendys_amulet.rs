@@ -141,7 +141,7 @@ fn another_investigators_amulet_does_not_redirect_your_event() {
             .with_location(test_support::test_location(HERE.0, "Study"))
             .with_seat(seat(1).at(HERE).hand([EMERGENCY_CACHE]))
             .with_seat(seat(2).at(HERE).in_play([AMULET]))
-            .with_turn_order([INV, INV2])
+            .with_seating([INV, INV2])
             .open_turn(INV)
             .build(),
         TEST_REGISTRIES,

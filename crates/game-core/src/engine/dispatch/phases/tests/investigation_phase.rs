@@ -30,7 +30,7 @@ fn open_turn_leaves_investigator_turn_frame_on_top() {
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
-        .with_turn_order([InvestigatorId(1)])
+        .with_seating([InvestigatorId(1)])
         .with_phase(Phase::Investigation)
         .build();
 
@@ -72,7 +72,7 @@ fn mulligan_completion_kicks_off_investigation_phase() {
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_phase(Phase::Investigation)
-        .with_turn_order([InvestigatorId(1)])
+        .with_seating([InvestigatorId(1)])
         .with_mulligan_remaining([InvestigatorId(1)])
         .session()
         // Keep the hand.
@@ -109,7 +109,7 @@ fn investigation_anchor_pushed_and_persists_through_turn() {
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
-        .with_turn_order([id])
+        .with_seating([id])
         .with_phase(Phase::Investigation)
         .build();
     let mut events = Vec::new();
@@ -129,13 +129,13 @@ fn investigation_phase_emits_phase_started_and_rotates_to_lead() {
     // Two investigators; investigation_phase should emit
     // PhaseStarted(Investigation), open the post-2.1 InvestigationBegins
     // window (which auto-skips in tests — the test registry serves no ability),
-    // and then rotate to the first investigator in turn_order
+    // and then rotate to the first investigator in player order
     // (Rules Reference p.24 step 2.1 → window → step 2.2 lead-first).
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_seat(test_support::seat(2))
-        .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+        .with_seating([InvestigatorId(1), InvestigatorId(2)])
         .with_phase(Phase::Mythos)
         .build();
 
@@ -147,7 +147,7 @@ fn investigation_phase_emits_phase_started_and_rotates_to_lead() {
     assert_eq!(
         state.active_investigator,
         Some(InvestigatorId(1)),
-        "investigation_phase must rotate to the lead (first in turn_order)"
+        "investigation_phase must rotate to the lead (first in player order)"
     );
     assert!(
         events.iter().any(|e| matches!(
@@ -167,7 +167,7 @@ fn investigation_phase_emits_phase_started_and_rotates_to_lead() {
 }
 
 #[test]
-fn investigation_phase_with_empty_turn_order_parks() {
+fn investigation_phase_with_empty_seating_parks() {
     // Degenerate (cannot occur in real gameplay): no investigators.
     // The InvestigationBegins continuation finds no active
     // investigator and PARKS — active stays None, no PhaseEnded, no
@@ -208,7 +208,7 @@ fn investigation_phase_skips_defeated_lead_and_picks_first_active() {
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_seat(test_support::seat(2))
-        .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+        .with_seating([InvestigatorId(1), InvestigatorId(2)])
         .with_phase(Phase::Mythos)
         .build();
     state
@@ -289,7 +289,7 @@ fn end_turn_rotates_to_next_active_and_opens_turn_window() {
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_seat(test_support::seat(2))
-        .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+        .with_seating([InvestigatorId(1), InvestigatorId(2)])
         .open_turn(InvestigatorId(1))
         .session()
         .take(&TurnAction::EndTurn);
@@ -327,7 +327,7 @@ fn step_phase_emits_no_phase_ended() {
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
-        .with_turn_order([InvestigatorId(1)])
+        .with_seating([InvestigatorId(1)])
         .with_phase(Phase::Investigation)
         .build();
 
@@ -352,7 +352,7 @@ fn investigation_entry_emits_phase_started_then_windows_then_lead_active() {
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
-        .with_turn_order([InvestigatorId(1)])
+        .with_seating([InvestigatorId(1)])
         .with_phase(Phase::Mythos)
         .build();
 

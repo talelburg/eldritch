@@ -51,7 +51,7 @@ fn upkeep_round_end_state(clues: u8) -> GameState {
     let mut state = GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(1).at(HERE).clues(clues))
-        .with_turn_order([INV])
+        .with_seating([INV])
         .ending_upkeep_phase()
         .with_location(Location::new(
             HERE,

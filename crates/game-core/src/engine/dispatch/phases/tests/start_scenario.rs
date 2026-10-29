@@ -28,7 +28,7 @@ fn round_end_clears_round_lifetime_lasting_effects() {
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
-        .with_turn_order([id])
+        .with_seating([id])
         .with_round(1)
         .ending_upkeep_phase()
         .build();

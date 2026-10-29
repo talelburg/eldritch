@@ -277,7 +277,7 @@ fn enemy_phase_emits_phase_started_and_cascades_to_mythos_in_no_eligibility_case
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
-        .with_turn_order([inv_id])
+        .with_seating([inv_id])
         .with_phase(Phase::Investigation)
         .build();
     let mut events = Vec::new();
@@ -329,9 +329,9 @@ fn enemy_phase_emits_phase_started_and_cascades_to_mythos_in_no_eligibility_case
 }
 
 #[test]
-fn enemy_phase_with_two_investigators_iterates_in_turn_order() {
+fn enemy_phase_with_two_investigators_iterates_in_player_order() {
     // Each investigator is engaged with a ready enemy; the per-investigator
-    // attack step must fire for both, in turn order — observable as a
+    // attack step must fire for both, in player order — observable as a
     // DamagePlacedOnInvestigator per investigator (id1 before id2).
     let id1 = InvestigatorId(1);
     let id2 = InvestigatorId(2);
@@ -347,14 +347,14 @@ fn enemy_phase_with_two_investigators_iterates_in_turn_order() {
         .with_seat(test_support::seat(2))
         .with_enemy(e1)
         .with_enemy(e2)
-        .with_turn_order([id1, id2])
+        .with_seating([id1, id2])
         .with_phase(Phase::Investigation)
         .build();
     let mut events = Vec::new();
 
     step_phase(&mut Cx::for_test(&mut state, &mut events)); // Investigation → Enemy
 
-    // One per-investigator attack landed for each, in turn order.
+    // One per-investigator attack landed for each, in player order.
     let dmg1 = events
         .iter()
         .position(|e| matches!(e, Event::DamagePlacedOnInvestigator { investigator, .. } if *investigator == id1))
@@ -365,7 +365,7 @@ fn enemy_phase_with_two_investigators_iterates_in_turn_order() {
         .expect("id2 attacked");
     assert!(
         dmg1 < dmg2,
-        "investigators attacked in turn order (id1 before id2); events = {events:?}"
+        "investigators attacked in player order (id1 before id2); events = {events:?}"
     );
 }
 
@@ -394,7 +394,7 @@ fn enemy_phase_skips_eliminated_investigator_in_advance() {
         .with_enemy(e1)
         .with_enemy(e2)
         .with_enemy(e3)
-        .with_turn_order([id1, id2, id3])
+        .with_seating([id1, id2, id3])
         .with_phase(Phase::Investigation)
         .build();
     state.investigators.get_mut(&id2).unwrap().status = Status::Defeated;
@@ -428,7 +428,7 @@ fn enemy_phase_with_all_eliminated_opens_after_all_directly() {
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
-        .with_turn_order([id1])
+        .with_seating([id1])
         .with_phase(Phase::Investigation)
         .build();
     state.investigators.get_mut(&id1).unwrap().status = Status::Defeated;
@@ -459,7 +459,7 @@ fn enemy_phase_attack_lands_in_full_cascade() {
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_enemy(enemy)
-        .with_turn_order([inv_id])
+        .with_seating([inv_id])
         .with_phase(Phase::Investigation)
         .build();
     let mut events = Vec::new();
@@ -494,7 +494,7 @@ fn step_phase_from_enemy_does_not_emit_phase_ended_enemy() {
     let mut state = GameStateBuilder::default()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
-        .with_turn_order([InvestigatorId(1)])
+        .with_seating([InvestigatorId(1)])
         .with_phase(Phase::Enemy)
         .build();
     // Use a state where Upkeep's cascade can complete (Active investigator exists).
@@ -556,7 +556,7 @@ fn enemy_phase_resumes_via_skip_input() {
         .with_seat(test_support::seat(1))
         .with_enemy(enemy)
         .with_phase(Phase::Enemy)
-        .with_turn_order([inv_id])
+        .with_seating([inv_id])
         .with_phase_anchor(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked(inv_id),
         })

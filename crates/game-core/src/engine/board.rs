@@ -6,7 +6,7 @@
 //! `walk` visits every card on the board, each with its [`Placement`], in this
 //! order, which is written here and nowhere else:
 //!
-//! 1. each investigator — the active one first, then the rest of `turn_order`,
+//! 1. each investigator — the active one first, then the rest of `seating`,
 //!    then anyone else by id — their investigator card, the cards in their play
 //!    area, then their threat area;
 //! 2. each location by [`LocationId`] — the location, its attachments, then the
@@ -332,11 +332,11 @@ pub(crate) fn walk_active(state: &GameState) -> Vec<BoardCard<'_>> {
 }
 
 /// The order the [`walk`] visits investigators in: the active investigator,
-/// then the rest of `turn_order`, then every other investigator by id — so an
-/// investigator a fixture never seated in `turn_order` is still walked, last.
+/// then the rest of `seating`, then every other investigator by id — so an
+/// investigator a fixture never put in `seating` is still walked, last.
 pub(crate) fn investigator_order(state: &GameState) -> Vec<InvestigatorId> {
     let mut order: Vec<InvestigatorId> = state.active_investigator.into_iter().collect();
-    for id in state.turn_order.iter().chain(state.investigators.keys()) {
+    for id in state.seating.iter().chain(state.investigators.keys()) {
         if !order.contains(id) {
             order.push(*id);
         }
@@ -678,7 +678,7 @@ mod tests {
         const SECOND: InvestigatorId = InvestigatorId(2);
         let mut state = board_builder()
             .with_seat(seat(SECOND.0))
-            .with_turn_order([ROLAND, SECOND])
+            .with_seating([ROLAND, SECOND])
             .with_active_investigator(SECOND)
             .build();
         // No builder setter loads the act or agenda deck.

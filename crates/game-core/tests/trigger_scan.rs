@@ -220,7 +220,7 @@ fn attaching(mut location: Location, code: &str, id: CardInstanceId) -> Location
 }
 
 /// Investigators `one` and `two` seated at the Study, with `study` and
-/// `hallway` on the map and `turn_order` `[1, 2]` — so, unless a test names
+/// `hallway` on the map and `seating` `[1, 2]` — so, unless a test names
 /// another, the lead investigator is investigator 1.
 fn board(one: Seat, two: Seat, study: Location, hallway: Location) -> GameStateBuilder {
     GameStateBuilder::new()
@@ -229,7 +229,7 @@ fn board(one: Seat, two: Seat, study: Location, hallway: Location) -> GameStateB
         .with_seat(two.at(STUDY))
         .with_location(study)
         .with_location(hallway)
-        .with_turn_order([ONE, TWO])
+        .with_seating([ONE, TWO])
 }
 
 /// [`board`] with nothing seated or printed.

@@ -337,7 +337,7 @@ fn dodge_lapses_as_out_of_scope_once_its_holder_leaves_the_attacked_location() {
         .with_location(test_support::test_location(HALLWAY.0, "Hallway"))
         .with_seat(seat(1).at(HERE))
         .with_seat(seat(2).at(HERE).hand([DODGE]))
-        .with_turn_order([attacked, dodger])
+        .with_seating([attacked, dodger])
         .with_enemy_engaged(ready_attacker(), attacked)
         .open_turn(attacked)
         .session()

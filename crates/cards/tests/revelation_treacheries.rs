@@ -38,7 +38,7 @@ fn board_seating(
         .with_registries(TEST_REGISTRIES)
         .with_seat(investigator)
         .with_location(test_support::test_location(HERE.0, "Here"))
-        .with_turn_order([INV])
+        .with_seating([INV])
         .with_phase(Phase::Mythos)
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,

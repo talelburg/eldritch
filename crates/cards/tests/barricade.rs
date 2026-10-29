@@ -433,20 +433,20 @@ fn board(
             builder = builder.with_location(loc);
         }
     }
-    let mut turn_order = Vec::new();
+    let mut seating = Vec::new();
     for (i, inv) in investigators.into_iter().enumerate() {
-        turn_order.push(InvestigatorId(
+        seating.push(InvestigatorId(
             u32::try_from(i + 1).expect("seat count fits u32"),
         ));
         builder = builder.with_seat(inv);
     }
     builder
-        .with_turn_order(turn_order.clone())
-        .open_turn(turn_order[0])
+        .with_seating(seating.clone())
+        .open_turn(seating[0])
         .session()
 }
 
-/// Take `EndTurn` once per investigator in turn order, which cascades the
+/// Take `EndTurn` once per investigator in player order, which cascades the
 /// Investigation phase into the Enemy phase and its step-3.2 hunter movement.
 fn end_the_investigation_phase(mut session: TestSession, turns: usize) -> TestSession {
     for _ in 0..turns {

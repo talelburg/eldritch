@@ -42,7 +42,7 @@ const HERE: LocationId = LocationId(10);
 const THERE: LocationId = LocationId(11);
 
 /// Skids at `HERE` with Hospital Debts in his threat area and 5 resources, and
-/// `FRIEND` at `friend_at` with 5 resources; turn order Skids then the friend,
+/// `FRIEND` at `friend_at` with 5 resources; seating Skids then the friend,
 /// with `active`'s turn open.
 fn board(friend_at: LocationId, active: InvestigatorId) -> TestSession {
     GameStateBuilder::new()
@@ -57,7 +57,7 @@ fn board(friend_at: LocationId, active: InvestigatorId) -> TestSession {
                 .threat_area([HOSPITAL_DEBTS]),
         )
         .with_seat(seat(2).at(friend_at).actions(3).resources(5))
-        .with_turn_order([SKIDS, FRIEND])
+        .with_seating([SKIDS, FRIEND])
         .open_turn(active)
         .session()
 }
@@ -117,7 +117,7 @@ fn revelation_puts_it_into_the_drawers_threat_area() {
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).at(HERE))
         .with_location(test_support::test_location(HERE.0, "Study"))
-        .with_turn_order([SKIDS])
+        .with_seating([SKIDS])
         .with_phase(Phase::Mythos)
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,

@@ -56,7 +56,7 @@ fn mythos_draw(seats: Vec<Seat>, treacheries: &[&str]) -> TestSession {
             GameStateBuilder::with_seat,
         )
         .with_location(test_support::test_location(HERE.0, "Here"))
-        .with_turn_order(ids.clone())
+        .with_seating(ids.clone())
         .with_phase(Phase::Mythos)
         .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
@@ -260,7 +260,7 @@ fn dissonant_voices_round_end_coexists_with_agenda_01107_doom() {
         .with_registries(TEST_REGISTRIES)
         .ending_upkeep_phase()
         .with_seat(seat(1).threat_area([DISSONANT_VOICES]))
-        .with_turn_order([INV])
+        .with_seating([INV])
         .with_location(loc(2, "01112", "Hallway"))
         .with_location(loc(5, "01115", "Parlor"))
         .with_enemy(ghoul)
@@ -432,7 +432,7 @@ fn frozen_in_fear_board(copies: usize, tokens: Vec<ChaosToken>) -> TestSession {
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1).threat_area(vec![FROZEN_IN_FEAR; copies]))
         .with_seat(seat(2))
-        .with_turn_order([INV, INV2])
+        .with_seating([INV, INV2])
         .with_chaos_bag(ChaosBag::new(tokens))
         .open_turn(INV)
         .session()
@@ -733,7 +733,7 @@ fn dissonant_voices_keeps_a_fast_event_out_of_a_player_window() {
                 .threat_area([DISSONANT_VOICES]),
         )
         .with_location(loc)
-        .with_turn_order([INV])
+        .with_seating([INV])
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .open_turn(INV)
         .session()

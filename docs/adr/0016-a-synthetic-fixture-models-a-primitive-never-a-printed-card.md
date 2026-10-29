@@ -99,8 +99,8 @@ so where several tests in one crate need it, it is shared *there*, in that crate
 own `tests/common/`. The `setup()` *state* is local, composed per test with
 `GameStateBuilder`. `crates/server/tests/common/mod.rs` demonstrates this: a
 ten-line mock scenario, with a comment naming exactly where the shared
-fixture's shape was wrong for it — *"seating runs at creation via `seat_and_open`,
-so the pre-seeded investigator and turn order are NOT injected here."*
+fixture's shape was wrong for it — *"`seat_and_open` seats the investigators at creation,
+so neither the pre-seeded investigator nor the seating is injected here."*
 
 ## The `test_fixtures` feature is deleted, not narrowed
 

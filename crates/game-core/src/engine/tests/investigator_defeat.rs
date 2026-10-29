@@ -236,7 +236,7 @@ fn all_investigators_eliminated_fires_only_when_last_active_falls() {
     let session = move_board(seat(1).at(HERE).harm(7, 0))
         .with_seat(seat(2))
         .with_chaos_bag(bag_only_zero())
-        .with_turn_order([INV, inv2])
+        .with_seating([INV, inv2])
         .with_enemy_engaged(attacker(500, 1, 0), INV)
         .session();
 
@@ -307,7 +307,7 @@ fn defeated_investigator_cannot_perform_skill_test() {
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .with_seat(seat(2))
-        .with_turn_order([INV, inv2])
+        .with_seating([INV, inv2])
         .with_chaos_bag(bag_only_zero())
         .open_turn(inv2)
         .build();

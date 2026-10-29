@@ -106,8 +106,8 @@ fn drawn_by_its_bearer_it_spawns_engaged_with_them() {
 }
 
 /// **Drawn in the Upkeep phase's step-4.4 draw, it spawns engaged with its
-/// bearer too**, though another investigator stands with them and leads the
-/// turn order: the drawer, not the lead, is who it engages.
+/// bearer too**, though another investigator stands with them and heads
+/// player order: the drawer, not the lead, is who it engages.
 #[test]
 fn drawn_in_upkeep_it_spawns_engaged_with_its_bearer() {
     let session = GameStateBuilder::new()
@@ -115,7 +115,7 @@ fn drawn_in_upkeep_it_spawns_engaged_with_its_bearer() {
         .with_location(test_support::test_location(A.0, "Study"))
         .with_seat(seat(OTHER.0).at(A).deck([FILLER, FILLER]))
         .with_seat(seat(BEARER.0).at(A).deck([MOB_ENFORCER, FILLER]))
-        .with_turn_order([OTHER, BEARER])
+        .with_seating([OTHER, BEARER])
         .ending_enemy_phase()
         .session();
 
@@ -229,7 +229,7 @@ fn two_seats(
         .with_location(linked(D, "D", &[C]))
         .with_seat(seat(BEARER.0).at(bearer_at).deck([FILLER, FILLER]))
         .with_seat(seat(OTHER.0).at(other_at).deck([FILLER, FILLER]))
-        .with_turn_order([BEARER, OTHER])
+        .with_seating([BEARER, OTHER])
         .with_enemy(on_the_board(enforcer_at))
         .open_turn(turn)
         .session()

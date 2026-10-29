@@ -23,7 +23,7 @@ fn end_turn_drains_actions_and_emits_turn_ended() {
         .with_registries(TEST_REGISTRIES)
         .with_seat(seat(1))
         .with_seat(seat(2))
-        .with_turn_order([INV, inv2])
+        .with_seating([INV, inv2])
         .open_turn(INV)
         .session()
         .take(&TurnAction::EndTurn);
@@ -113,7 +113,7 @@ fn last_end_turn_advances_to_mythos_and_pauses_for_draw_two_investigators() {
     // engine requires every investigator to mulligan before the turn opens.
     let session = session.choose_from_hand(&[]).choose_from_hand(&[]);
     // After the last mulligan, the Investigation phase begins and the
-    // first investigator in turn order becomes active.
+    // first investigator in player order becomes active.
     session.assert_at_turn_menu(inv1);
 
     // First EndTurn (inv1): rotates to inv2 within Investigation.
@@ -141,7 +141,7 @@ fn last_end_turn_advances_to_mythos_and_pauses_for_draw_two_investigators() {
     assert_no_event!(events, Event::PhaseStarted { .. });
     assert_no_event!(events, Event::ScenarioStarted);
 
-    // Second EndTurn (inv2, last in turn_order): auto-advances through
+    // Second EndTurn (inv2, last in player order): auto-advances through
     // Investigation → Enemy → Upkeep → Mythos and then PAUSES at the
     // step-1.4 encounter-draw prompt for inv1. The phase chain does NOT
     // continue to Investigation — that waits for the encounter draws.
@@ -155,7 +155,7 @@ fn last_end_turn_advances_to_mythos_and_pauses_for_draw_two_investigators() {
     assert_eq!(
         state.current_encounter_drawer(),
         Some(inv1),
-        "the first investigator in turn order (inv1) draws first"
+        "the first investigator in player order (inv1) draws first"
     );
     let events = &session.events()[before..];
 
@@ -189,7 +189,7 @@ fn last_end_turn_advances_to_mythos_and_pauses_for_draw_two_investigators() {
 
 #[test]
 fn last_end_turn_advances_to_mythos_and_pauses_for_draw_solo() {
-    // Degenerate edge: with only one investigator in turn_order,
+    // Degenerate edge: with only one investigator seated,
     // their single EndTurn is also the *last* EndTurn of the round.
     // It must auto-advance Investigation → Enemy → Upkeep → Mythos,
     // bump the round, prompt the encounter draw for id, and then
@@ -212,7 +212,7 @@ fn last_end_turn_advances_to_mythos_and_pauses_for_draw_solo() {
     );
 
     // Mulligan past the setup loop. After completion, the first investigator in
-    // turn order becomes active.
+    // player order becomes active.
     let session = session.choose_from_hand(&[]);
     session.assert_at_turn_menu(INV);
 

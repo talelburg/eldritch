@@ -144,7 +144,7 @@ fn me() -> Seat {
 fn board_of(me: Seat, teammate: Seat) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(registries())
-        .with_turn_order([ME, TEAMMATE])
+        .with_seating([ME, TEAMMATE])
         .open_turn(ME)
         .with_seat(me)
         .with_seat(teammate)

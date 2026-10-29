@@ -21,13 +21,13 @@ fn defeat_order(events: &[Event]) -> Vec<InvestigatorId> {
         .collect()
 }
 
-/// Investigators 1 and 2, seated in that turn order.
+/// Investigators 1 and 2, seated in that order.
 fn two_investigators() -> GameState {
     GameStateBuilder::new()
         .with_registries(crate::TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
         .with_seat(test_support::seat(2))
-        .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+        .with_seating([InvestigatorId(1), InvestigatorId(2)])
         .build()
 }
 
@@ -119,7 +119,7 @@ fn the_act_three_predicate_reads_the_zero_based_cursor() {
 
 /// The act-3 body, for the investigator it runs for: defeated by a card
 /// ability, announcing 1 physical trauma, and nobody else touched. The walk
-/// over the table — turn order, the resigned seat skipped, and the
+/// over the table — player order, the resigned seat skipped, and the
 /// no-resolution ending — is pinned end to end in
 /// `tests/theyre_getting_out.rs`.
 #[test]

@@ -154,7 +154,7 @@ impl Board {
             .with_location(test_support::test_location(HALLWAY.0, "Hallway"))
             .with_enemy_engaged(ghoul, self.actor)
             .with_enemy(acolyte)
-            .with_turn_order([KEEPER, OTHER])
+            .with_seating([KEEPER, OTHER])
             .open_turn(self.actor)
             .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
             .build();

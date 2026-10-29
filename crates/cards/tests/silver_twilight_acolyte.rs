@@ -167,7 +167,7 @@ fn defeated_in_a_two_investigator_game_it_goes_to_its_bearers_discard() {
                 .skill(SkillKind::Combat, 8)
                 .in_play([MACHETE]),
         )
-        .with_turn_order([bearer, fighter])
+        .with_seating([bearer, fighter])
         .open_turn(bearer)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .session();
@@ -255,7 +255,7 @@ fn readied_beside_only_the_other_investigator_it_engages_no_one() {
                 .deck([ACOLYTE, FILLER, FILLER]),
         )
         .with_seat(seat(2).at(HERE).deck([FILLER, FILLER]))
-        .with_turn_order([bearer, other])
+        .with_seating([bearer, other])
         .open_turn(bearer)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .session();
@@ -338,7 +338,7 @@ fn in_the_enemy_phase_it_hunts_its_bearer_past_the_investigator_beside_it() {
         .with_location(hallway)
         .with_seat(seat(1).at(THERE).deck([FILLER, FILLER]))
         .with_seat(seat(2).at(HERE).deck([FILLER, FILLER]))
-        .with_turn_order([bearer, other])
+        .with_seating([bearer, other])
         .with_enemy(enemy)
         .open_turn(other)
         .session()

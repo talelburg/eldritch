@@ -390,7 +390,7 @@ async fn a_mulligan_selects_from_the_responders_hand_alone() {
         .with_registries(cards::TEST_REGISTRIES)
         .with_seat(seated(1, ROLAND, &["01020", "01021"]))
         .with_seat(seated(2, DAISY, &["01022", "01023"]))
-        .with_turn_order([INV, INV2])
+        .with_seating([INV, INV2])
         .with_mulligan_remaining([INV2, INV])
         .build();
     // Settle through the engine, so the prompt is the one it actually builds.

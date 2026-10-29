@@ -52,23 +52,23 @@ fn ready_attacker() -> Enemy {
 }
 
 /// Investigator 1 on 7 damage (one attack of opportunity from dead), engaged,
-/// holding Emergency Cache, with the open turn. `turn_order` decides whether the
+/// holding Emergency Cache, with the open turn. `seating` decides whether the
 /// rotation has anyone left to hand the turn to; the survivor is seated only
 /// when it names them.
-fn board(turn_order: &[InvestigatorId]) -> GameStateBuilder {
+fn board(seating: &[InvestigatorId]) -> GameStateBuilder {
     let builder = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_location(test_support::test_location(ELSEWHERE.0, "Hallway"))
         // 7 + 3 ≥ 8 = max_health
         .with_seat(seat(1).at(HERE).hand([EMERGENCY_CACHE]).harm(7, 0));
-    let builder = if turn_order.contains(&SURVIVOR) {
+    let builder = if seating.contains(&SURVIVOR) {
         builder.with_seat(seat(2).at(ELSEWHERE))
     } else {
         builder
     };
     builder
-        .with_turn_order(turn_order.iter().copied())
+        .with_seating(seating.iter().copied())
         .open_turn(DYING)
         .with_enemy_engaged(ready_attacker(), DYING)
 }
@@ -130,7 +130,7 @@ fn a_defeated_investigator_is_never_prompted_for_an_action() {
 #[test]
 fn defeat_on_the_last_turn_of_the_round_ends_the_investigation_phase() {
     // The survivor has already taken their turn (they come first in
-    // `turn_order`), so 2.2.2 finds nobody left and proceeds to 2.3 → Enemy.
+    // player order), so 2.2.2 finds nobody left and proceeds to 2.3 → Enemy.
     let session = play_into_the_lethal_aoo(board(&[SURVIVOR, DYING]));
 
     assert_eq!(

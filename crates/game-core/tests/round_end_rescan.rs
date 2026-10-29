@@ -85,7 +85,7 @@ fn round_end_window() -> TestSession {
         // `TESTX` is a code the registry doesn't know, so the encounter deck
         // owns it.
         .with_seat(seat(1).threat_area([TEST_X]))
-        .with_turn_order([InvestigatorId(1)])
+        .with_seating([InvestigatorId(1)])
         .build();
     state.act_deck = vec![Act {
         code: CardCode::new(TEST_ACT),

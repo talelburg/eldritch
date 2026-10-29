@@ -136,7 +136,7 @@ fn with_encounter_deck(state: &mut GameState, codes: &[&str]) {
 
 /// Seat `seats` test investigators through `seat_and_open`, keep every opening
 /// hand at the mulligan, and end every turn — the last `EndTurn` in
-/// `turn_order` ticks through Investigation → Enemy → Upkeep into Mythos
+/// player order ticks through Investigation → Enemy → Upkeep into Mythos
 /// (round 2), pausing with the encounter-draw cursor on inv1.
 fn at_mythos_draw(seats: usize) -> TestSession {
     let roster: Vec<RosterEntry> = (0..seats)

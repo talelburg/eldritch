@@ -79,7 +79,7 @@ fn round_ends_holding(codes: &[&str]) -> TestSession {
         .with_registries(registries())
         .with_location(location)
         .with_seat(seat(1).at(LOCATION).threat_area(codes.iter().copied()))
-        .with_turn_order([INV])
+        .with_seating([INV])
         .with_round(1)
         .ending_upkeep_phase()
         .session()

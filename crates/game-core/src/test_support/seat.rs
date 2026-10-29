@@ -454,7 +454,7 @@ impl GameStateBuilder {
         let order = [first.investigator.id, second.investigator.id];
         self.with_seat(first)
             .with_seat(second)
-            .with_turn_order(order)
+            .with_seating(order)
             .with_lead(order[1])
     }
 }

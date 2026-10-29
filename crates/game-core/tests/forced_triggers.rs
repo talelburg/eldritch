@@ -368,7 +368,7 @@ fn lead_alone() -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(registries())
         .with_seat(seat(1).deck(["filler-card"]))
-        .with_turn_order([INV])
+        .with_seating([INV])
 }
 
 /// End the Enemy phase for real — step 3.4, staged with
@@ -514,7 +514,7 @@ fn forced_on_phase_end_no_op_when_no_lead_investigator() {
     // fired on its own, over a staged turn.
     let mut state =
         with_act_and_agenda(lead_alone().open_turn(INV).build(), None, Some(DOOM_AGENDA));
-    state.turn_order.clear();
+    state.seating.clear();
     state.lead = None;
 
     let session = TestSession::new(state, registries()).fire_at(TimingEvent::PhaseEnded {
@@ -995,7 +995,7 @@ fn upkeep_phase_end_forced_resolves_before_the_round_end() {
             .with_registries(registries())
             .with_seat(seat(1).at(HERE))
             .with_location(test_support::test_location(HERE.0, "Study"))
-            .with_turn_order([INV])
+            .with_seating([INV])
             .ending_upkeep_phase()
             .build(),
         Some(UPKEEP_END_ACT),

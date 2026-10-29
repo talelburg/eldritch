@@ -158,7 +158,7 @@ fn it_chains_with_psychosis_until_defeat() {
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_seat(seat(1).at(HERE).threat_area([PSYCHOSIS, HYPOCHONDRIA]))
         .with_seat(seat(2).at(HERE))
-        .with_turn_order([INV, NEIGHBOUR])
+        .with_seating([INV, NEIGHBOUR])
         .open_turn(INV)
         .session()
         .take_horror(INV, 1);

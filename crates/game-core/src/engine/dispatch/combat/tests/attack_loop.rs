@@ -22,7 +22,7 @@ fn drive_parked_attack_loop_exhausts_the_head_then_advances_the_cursor() {
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
-        .with_turn_order([inv_id])
+        .with_seating([inv_id])
         .with_enemy(enemy)
         .with_phase_anchor(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked(inv_id),
@@ -84,7 +84,7 @@ fn a_head_attacker_that_dealt_nothing_still_exhausts() {
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
-        .with_turn_order([inv_id])
+        .with_seating([inv_id])
         .with_enemy(enemy)
         .with_phase_anchor(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked(inv_id),
@@ -125,7 +125,7 @@ fn an_attack_of_opportunity_attacker_never_exhausts() {
     let mut state = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_seat(test_support::seat(1))
-        .with_turn_order([inv_id])
+        .with_seating([inv_id])
         .with_enemy(enemy)
         .build();
     state.continuations.push(AttackLoopFrame {
