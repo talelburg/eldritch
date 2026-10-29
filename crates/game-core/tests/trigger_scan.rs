@@ -17,7 +17,7 @@ use card_dsl::dsl::{
 };
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{OptionTarget, Registries, TimingEvent};
+use game_core::engine::{OptionTarget, Registries, Responder, TimingEvent};
 use game_core::event::Event;
 use game_core::scenario::ScenarioRegistry;
 use game_core::state::{
@@ -220,8 +220,8 @@ fn attaching(mut location: Location, code: &str, id: CardInstanceId) -> Location
 }
 
 /// Investigators `one` and `two` seated at the Study, with `study` and
-/// `hallway` on the map and `turn_order` `[1, 2]` — so the lead-investigator proxy is
-/// investigator 1.
+/// `hallway` on the map and `turn_order` `[1, 2]` — so, unless a test names
+/// another, the lead investigator is investigator 1.
 fn board(one: Seat, two: Seat, study: Location, hallway: Location) -> GameStateBuilder {
     GameStateBuilder::new()
         .with_registries(registries())
@@ -307,10 +307,10 @@ fn end_the_round(state: GameState) -> TestSession {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn an_agendas_forced_ability_fires_on_an_enemy_defeat_bound_to_the_lead_proxy() {
+fn an_agendas_forced_ability_fires_on_an_enemy_defeat_bound_to_the_lead() {
     let state = with_agenda(table().open_turn(ONE).build(), ON_DEFEAT);
     let session = fire(state, defeat(Some(TWO)));
-    assert_eq!(horror(session.state(), ONE), 1, "the lead proxy takes it");
+    assert_eq!(horror(session.state(), ONE), 1, "the lead takes it");
     assert_eq!(horror(session.state(), TWO), 0);
 }
 
@@ -351,7 +351,7 @@ fn a_locations_forced_ability_fires_on_an_enemy_defeat_bound_to_the_defeating_in
 }
 
 #[test]
-fn an_uncontrolled_cards_forced_ability_with_no_subject_binds_to_the_lead_proxy() {
+fn an_uncontrolled_cards_forced_ability_with_no_subject_binds_to_the_lead() {
     let state = board(
         seat(ONE.0),
         seat(TWO.0),
@@ -364,17 +364,37 @@ fn an_uncontrolled_cards_forced_ability_with_no_subject_binds_to_the_lead_proxy(
     assert_eq!(
         horror(session.state(), ONE),
         1,
-        "an uncredited defeat has no subject, so the lead proxy takes it"
+        "an uncredited defeat has no subject, so the lead takes it"
     );
     assert_eq!(horror(session.state(), TWO), 0);
 }
 
 #[test]
-fn the_lead_proxy_is_the_first_active_seat() {
-    // Investigator 1 is defeated, so the open turn is investigator 2's.
+fn an_agendas_forced_ability_binds_to_the_stored_lead_not_the_first_seat() {
+    let state = with_agenda(table().with_lead(TWO).open_turn(ONE).build(), ON_DEFEAT);
+    let session = fire(state, defeat(None));
+    assert_eq!(horror(session.state(), TWO), 1, "seat 2 is the lead");
+    assert_eq!(horror(session.state(), ONE), 0);
+}
+
+#[test]
+fn an_eliminated_lead_passes_the_lead_to_the_next_seat() {
+    // Investigator 1 leads and is defeated, so the open turn is investigator 2's.
     let state = defeated(with_agenda(table().open_turn(TWO).build(), ON_DEFEAT), ONE);
     let session = fire(state, defeat(None));
     assert_eq!(horror(session.state(), TWO), 1);
+}
+
+/// The seating is `[1, 2]` and seat 2 leads, so player order is `[2, 1]`.
+/// With seat 2 defeated the lead passes on to seat 1, wrapping the seating.
+#[test]
+fn an_eliminated_lead_on_the_last_seat_passes_the_lead_round_to_the_first() {
+    let state = defeated(
+        with_agenda(table().with_lead(TWO).open_turn(ONE).build(), ON_DEFEAT),
+        TWO,
+    );
+    let session = fire(state, defeat(None));
+    assert_eq!(horror(session.state(), ONE), 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -525,7 +545,7 @@ fn an_advance_fires_only_the_advancing_cards_ability() {
             code: CardCode::new(ON_AGENDA_ADVANCED),
         },
     );
-    assert_eq!(horror(own.state(), ONE), 1, "the lead proxy takes it");
+    assert_eq!(horror(own.state(), ONE), 1, "the lead takes it");
 }
 
 #[test]
@@ -662,20 +682,27 @@ fn a_reaction_on_a_co_located_location_is_offered_to_each_investigator_there() {
         ],
         "both investigators stand at the Study"
     );
-    // The two options share the Study's anchor and label; nothing in them names
-    // the investigator each is offered to. So they are picked by position, and
-    // the horror assertions pin whose option each position is.
-    // TODO(#1024): name the investigator an option is offered to.
-    let react_nth = |n| {
+    // The two options share the Study's anchor and label; each names the
+    // investigator it is offered to, so each is picked by its investigator.
+    let session = window(state.clone(), defeat(None));
+    assert_eq!(session.prompt().responder, Responder::Several);
+    let offered_to: Vec<_> = session
+        .prompt()
+        .options
+        .iter()
+        .map(|o| o.investigator)
+        .collect();
+    assert_eq!(offered_to, [Some(ONE), Some(TWO)]);
+    let react_for = |investigator| {
         window(state.clone(), defeat(None))
-            .pick_nth_at(OptionTarget::Location(STUDY), n)
+            .pick_for(investigator, OptionTarget::Location(STUDY))
             .state()
             .clone()
     };
-    let first = react_nth(0);
-    assert_eq!((horror(&first, ONE), horror(&first, TWO)), (1, 0));
-    let second = react_nth(1);
-    assert_eq!((horror(&second, ONE), horror(&second, TWO)), (0, 1));
+    let one = react_for(ONE);
+    assert_eq!((horror(&one, ONE), horror(&one, TWO)), (1, 0));
+    let two = react_for(TWO);
+    assert_eq!((horror(&two, ONE), horror(&two, TWO)), (0, 1));
 }
 
 #[test]
@@ -755,7 +782,7 @@ fn a_reaction_on_an_enemy_elsewhere_is_not_offered() {
 }
 
 #[test]
-fn a_reaction_on_the_agenda_is_offered_once_bound_to_the_lead_proxy() {
+fn a_reaction_on_the_agenda_is_offered_once_bound_to_the_lead() {
     let state = with_agenda(table().open_turn(ONE).build(), REACT_ON_DEFEAT);
     assert_eq!(
         offered(state.clone(), defeat(None)),

@@ -324,6 +324,7 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             Continuation::Effect(EffectFrame::Leaf {
                 effect: Box::new(Effect::Seq(vec![])),
                 ctx,
+                prompt: None,
             }),
             profile(PROMPT, COMPLETE),
         ),

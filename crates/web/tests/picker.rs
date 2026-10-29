@@ -71,6 +71,7 @@ async fn create_button_sends_rolands_fixed_roster_by_default() {
         req.roster,
         vec![decks::ROLAND.roster_entry(WeaknessChoice::Fixed)]
     );
+    assert_eq!(req.lead, 0, "the one seat is the lead");
 }
 
 #[wasm_bindgen_test]

@@ -8,16 +8,13 @@
 //! themselves live in the submodules.
 
 use crate::action::{EngineRecord, InputResponse, PlayerAction, RosterEntry};
-use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::enumerate::TurnAction;
-use crate::engine::outcome::{
-    ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
-};
+use crate::engine::outcome::EngineOutcome;
 use crate::engine::{enumerate, evaluator, Cx};
 use crate::state::{
-    ActionResolutionFrame, ActionResume, Continuation, FastWindowFrame, FrameActivity, GameState,
-    InvestigatorTurnFrame, ScenarioEndFrame, ScenarioEndStep, Status,
+    ActionResolutionFrame, ActionResume, Continuation, EffectFrame, FastWindowFrame, FrameActivity,
+    GameState, InvestigatorTurnFrame, ScenarioEndFrame, ScenarioEndStep, Status,
 };
 pub(crate) use control::take_control;
 
@@ -53,6 +50,9 @@ pub(super) mod forced_triggers;
 // The hand-discard cost's choice frame, which activated and triggered
 // abilities both park their effect beneath.
 mod hand_discard_cost;
+// The subset pick from one investigator's hand that the commit window, the
+// mulligan and the hand-size discard share.
+mod hand_pick;
 pub(crate) mod hunters;
 // Play and activate legality: the validators the handlers, the turn menu and
 // the Fast-window enumeration ask.
@@ -69,6 +69,9 @@ pub(super) mod placement;
 // `NativeCx::put_set_aside_location_into_play` forward to it (The Gathering's
 // Act-2 and Act-1 reverses).
 pub(crate) mod set_aside;
+// The prompt table: what every prompt frame asks, and the one way the engine
+// suspends.
+pub(crate) mod prompt;
 // `pub(crate)` so the evaluator can reach `open_queued_reaction_window`; other
 // items stay `pub(super)`-to-dispatch.
 pub(crate) mod reaction_windows;
@@ -126,32 +129,6 @@ pub(crate) fn dispatch_turn_action(cx: &mut Cx, action: &TurnAction) -> EngineOu
     }
 }
 
-/// Build the open-turn action menu: the legal-action enumeration
-/// surfaced as a structured [`InputRequest`](crate::engine::InputRequest).
-/// `OptionId(i)` indexes [`legal_actions`](crate::engine::enumerate::legal_actions);
-/// the `InvestigatorTurn` arm of [`resolve_input`] re-enumerates and dispatches.
-fn turn_menu(state: &GameState, cards: &CardRegistry) -> InputRequest {
-    let options = enumerate::legal_actions(state, cards)
-        .iter()
-        .enumerate()
-        .map(|(i, a)| {
-            ChoiceOption::new(
-                OptionId(u32::try_from(i).unwrap_or(u32::MAX)),
-                a.label(state, cards),
-            )
-            .maybe_at(a.target(state))
-        })
-        .collect();
-    let request = InputRequest::pick_single("Choose an action", options);
-    // The prompt itself is anchored to the acting investigator's turn control, so
-    // a host can suppress its "Choose an action" text structurally rather than by
-    // matching the string (ADR 0011).
-    match state.continuations.top_of::<InvestigatorTurnFrame>() {
-        Some(turn) => request.at(OptionTarget::TurnControl(turn.investigator)),
-        None => request,
-    }
-}
-
 /// Apply a [`PlayerAction`] to the state, pushing events.
 ///
 /// The wire surface is a single variant:
@@ -206,14 +183,14 @@ pub(crate) fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineO
 ///
 /// A `Rejected` outcome, and any suspension, passes straight through — unless
 /// it is the prompt of a frame the scenario's ending has cancelled, in
-/// which case the prompt is dropped and driving resumes. That covers both a
-/// suspension the action itself raised (Mythos step 1.3's doom crossing the
+/// which case the prompt is dropped and driving resumes. That covers a
+/// suspension a step raised by resting its frame and suspending on it rather
+/// than returning to the loop head (Mythos step 1.3's doom crossing the
 /// terminal agenda's threshold before step 1.4 parks on the encounter-draw
-/// prompt) and one raised by a step *inside* the loop that surfaced its own
-/// prompt rather than returning to the loop head (a mid-chain spawn-engagement
-/// tie). Asking the player to draw an encounter card, or to choose what a
-/// newly-spawned enemy engages, for a scenario that has already ended is the
-/// defect either way, so both go through the same predicate.
+/// prompt). A frame a step pushes and returns from (a spawn-engagement tie)
+/// reaches the loop head instead, where the same predicate pops it. Asking the
+/// player to draw an encounter card, or to choose what a newly-spawned enemy
+/// engages, for a scenario that has already ended is the defect either way.
 ///
 /// Terminates: each re-entry discards at least the cancelled top frame, and the
 /// [`ScenarioEnd`](crate::state::Continuation::ScenarioEnd) frame at the bottom
@@ -244,11 +221,11 @@ pub(crate) fn drive(cx: &mut Cx, mut outcome: EngineOutcome) -> EngineOutcome {
 ///
 /// - a **Driven** frame is always stepped: its driver advances or pops it, and
 ///   the loop continues on whatever is then on top;
-/// - a **Prompt** frame is either stepped by a driver that surfaces or advances
-///   it (the open turn's menu, a skill test's commit window, a window's next
-///   candidate, a mulligan / encounter-draw / hand-size queue's prompt), or
-///   left on top — its handler already surfaced the prompt, and the loop
-///   returns `Done`;
+/// - a **Prompt** frame is either surfaced as it stands, its request built by
+///   the [prompt table](prompt::request) (the open turn's menu, a queue's
+///   prompt, a push-time choice), or stepped by a driver that does its writes
+///   first and then rests it there (a window's lapse sweep, a skill test's
+///   steps up to its commit window, a deal of damage's uncontested points);
 /// - an **Inert** frame is a phase anchor, woken via
 ///   [`phases::anchor_on_child_pop`] (which at a phase boundary pops itself and
 ///   pushes the next phase's anchor), or the ending frame at
@@ -293,7 +270,49 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // runs the action's primary effect (or suppresses it if the actor
             // was defeated) and pops; the `InvestigatorTurn` beneath is then top.
             Continuation::ActionResolution(_) => resume_action_resolution(cx),
-            // An effect-walk frame: step it via the shared effect driver
+            // Prompts that rest as they stand, asking what the prompt table
+            // reads off the frame: nothing to drive until `resolve_input`
+            // answers. They are
+            //
+            // - an effect node resting at its pick, carrying the prompt it
+            //   stored when it suspended;
+            // - the one-option forced acknowledge, which pops on resume so the
+            //   effect beneath resolves;
+            // - the attack loop at its order pick, and the open turn, whose
+            //   legal-action menu is re-enumerated at resolve rather than
+            //   cached (see the open-turn arm of `resolve_input`);
+            // - the queue prompts (mulligan, encounter draw, hand size);
+            // - the choices a step pushes and then returns from (a
+            //   substitution, a hunter's or a spawn's tie, a slot make-room
+            //   pick, an additional-action choice).
+            //
+            // Each is a prompt only at its Prompt profile value, which the
+            // guard checks: an attack loop past its pick, or an ending turn,
+            // falls through to its driver below.
+            Continuation::Effect(
+                EffectFrame::Leaf {
+                    prompt: Some(_), ..
+                }
+                | EffectFrame::Designated {
+                    prompt: Some(_), ..
+                },
+            )
+            | Continuation::AcknowledgeForced(_)
+            | Continuation::AttackLoop(_)
+            | Continuation::InvestigatorTurn(_)
+            | Continuation::Mulligan(_)
+            | Continuation::EncounterDraw(_)
+            | Continuation::HandSizeDiscard(_)
+            | Continuation::SubstitutionPrompt(_)
+            | Continuation::HunterMove(_)
+            | Continuation::SpawnEngage(_)
+            | Continuation::SlotDiscard(_)
+            | Continuation::AdditionalActionChoice(_)
+                if top.awaits_input() =>
+            {
+                return prompt::suspend(cx.state, cx.cards)
+            }
+            // Any other effect-walk frame: step it via the shared effect driver
             // — push a child, pop, or suspend in place for a controller pick.
             Continuation::Effect(_) => evaluator::step_effect_frame(cx),
             // An event window or forced run: advance one resume step —
@@ -317,11 +336,6 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // above this frame and the loop drives it first; the frame is
             // re-exposed at Finalize when the reverse pops.
             Continuation::AdvanceReverse(_) => advance_reverse::drive(cx),
-            // A one-option forced-effect acknowledge always suspends; on
-            // resume it pops and the effect frame beneath resolves.
-            Continuation::AcknowledgeForced(_) => {
-                return forced_triggers::drive_acknowledge_forced(cx)
-            }
             // A skill test re-exposed on top (a mid-test window/effect closed):
             // step its driver. By the invariant it is top.
             Continuation::SkillTest(_) => skill_test::advance(cx),
@@ -353,26 +367,12 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // distribute (surfacing the per-point prompt while a point is
             // contested), announce the assignment, place it, resume the caller.
             Continuation::DealDamage(_) => combat::drive_deal_damage(cx),
-            // The attack loop at its order pick is a prompt its handler already
-            // surfaced: leave it on top for `resolve_input`.
-            Continuation::AttackLoop(_) if top.awaits_input() => return EngineOutcome::Done,
-            // Otherwise it was re-exposed once the head attacker's
+            // An attack loop past its order pick was re-exposed once the head attacker's
             // `EnemyAttacks` coordinator popped: take the head off,
             // exhaust it (enemy phase), and either begin the next attack, prompt
             // for the order, or run the loop's source-keyed tail.
             Continuation::AttackLoop(_) => combat::drive_parked_attack_loop(cx),
-            // The open turn surfaces its legal-action enumeration as an
-            // `AwaitingInput` menu, re-enumerated at resolve rather
-            // than cached — see the open-turn arm of `resolve_input`.
-            Continuation::InvestigatorTurn(_) if top.awaits_input() => {
-                return EngineOutcome::AwaitingInput {
-                    request: turn_menu(cx.state, cx.cards),
-                    // TODO(#458): deterministic resume tokens; 0 is the
-                    // placeholder every `AwaitingInput` site uses.
-                    resume_token: ResumeToken(0),
-                };
-            }
-            // Otherwise the open turn is ending: a suspending `EndOfTurn` forced
+            // An open turn that is not a prompt is ending: a suspending `EndOfTurn` forced
             // stranded `end_turn` before rotation and flagged this frame.
             // Re-exposed now that the suspension resolved, drive the rotation
             // tail.
@@ -400,22 +400,25 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
                     ScenarioEndStep::Finalize;
                 emit::queue_event(cx, &TimingEvent::GameEnd)
             }
-            // Queue prompts whose request is rebuilt from the frame alone: show
-            // it again, through the builder the handler that pushed the frame
-            // uses. Reached when a state is settled with one of them on top.
-            Continuation::Mulligan(_) => return cards::mulligan_prompt(),
-            Continuation::EncounterDraw(_) => return encounter::prompt_encounter_draw(cx),
-            Continuation::HandSizeDiscard(_) => return phases::hand_size_discard_prompt(cx),
             // A hand-discard cost being paid: prompt for the card, or
             // discard a lone candidate and pop, exposing the parked effect.
             Continuation::HandDiscardCost(_) => hand_discard_cost::drive(cx),
-            // Prompts whose handler surfaced `AwaitingInput` when it pushed
-            // them: nothing to drive until `resolve_input` answers.
-            Continuation::SubstitutionPrompt(_)
+            // Every one of these is always a prompt, so the resting arm above
+            // takes it; named rather than wildcarded so a new kind must be
+            // placed.
+            Continuation::AcknowledgeForced(_)
+            | Continuation::Mulligan(_)
+            | Continuation::EncounterDraw(_)
+            | Continuation::HandSizeDiscard(_)
+            | Continuation::SubstitutionPrompt(_)
             | Continuation::HunterMove(_)
             | Continuation::SpawnEngage(_)
             | Continuation::SlotDiscard(_)
-            | Continuation::AdditionalActionChoice(_) => return EngineOutcome::Done,
+            | Continuation::AdditionalActionChoice(_) => {
+                unreachable!(
+                    "drive_frames: a prompt-only frame reached past the resting arm: {top:?}"
+                )
+            }
         };
         // A stepped frame: `Done` means it advanced (child pushed, frame
         // popped, cursor moved) and the loop re-dispatches the new top; any
@@ -488,8 +491,8 @@ fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
 /// [`crate::engine::seat_and_open`] wraps this in the shared `apply_via` scaffolding.
 /// Used at game creation (server `GameSession::create`); the action log that
 /// follows is `ResolveInput`-only.
-pub(crate) fn seat_and_open(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutcome {
-    let outcome = phases::start_scenario(cx, roster);
+pub(crate) fn seat_and_open(cx: &mut Cx, roster: &[RosterEntry], lead: usize) -> EngineOutcome {
+    let outcome = phases::start_scenario(cx, roster, lead);
     drive(cx, outcome)
 }
 
@@ -583,18 +586,17 @@ fn resume_window(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
 
 /// Resume a skill test parked at one of its two suspension points: the commit
 /// window (the active investigator submits their commit list via
-/// [`InputResponse::PickMultiple`], each [`OptionId`](crate::engine::OptionId) a
-/// hand index) or the acknowledgment pause (the player dismisses the result
+/// [`InputResponse::PickMultiple`], each [`OptionId`](crate::engine::OptionId) one
+/// of the hand cards the window offered) or the acknowledgment pause (the player dismisses the result
 /// with [`InputResponse::Confirm`]). Each resume validates the cursor it expects.
 fn resume_skill_test_commit(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
     match response {
         InputResponse::PickMultiple { selected } => {
-            let indices: Vec<u32> = selected.iter().map(|o| o.0).collect();
             // The teardown tail (forced-run-sibling re-drive / end-of-turn
             // resume) lives in `advance`'s `PostOnResolution` arm, so it
             // fires from teardown regardless of which resume re-entered the
             // driver.
-            skill_test::finish_skill_test(cx, &indices)
+            skill_test::finish_skill_test(cx, selected)
         }
         // The cosmetic acknowledgment pause is the SkillTest frame's other
         // suspension point; a Confirm advances past it into the ST.7 consequences.
@@ -757,7 +759,12 @@ mod turn_menu_tests {
             .build();
 
         let actions = enumerate::legal_actions(&state, &test_support::TEST_REGISTRY);
-        let menu = dispatch::turn_menu(&state, &test_support::TEST_REGISTRY);
+        let menu = dispatch::prompt::request(
+            state.continuations.top().expect("the open turn is on top"),
+            &state,
+            &test_support::TEST_REGISTRY,
+        )
+        .expect("the open turn asks for an action");
         assert_eq!(menu.options.len(), actions.len());
         for (i, action) in actions.iter().enumerate() {
             assert_eq!(menu.options[i].target, action.target(&state));

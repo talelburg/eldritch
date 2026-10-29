@@ -20,7 +20,7 @@
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{PlaySource, TurnAction};
-use game_core::engine::{InputKind, OptionTarget};
+use game_core::engine::{InputKind, OptionTarget, PickCount};
 use game_core::event::Event;
 use game_core::state::{Agenda, CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId};
 use game_core::test_support::{seat, TestSession};
@@ -96,7 +96,7 @@ fn playing_dark_memory_places_one_doom_on_the_current_agenda() {
 fn playing_dark_memory_can_advance_the_agenda() {
     // 2 of 3 doom: Dark Memory's doom meets the threshold, and "This effect can
     // cause the current agenda to advance" advances it now, not at Mythos 1.3.
-    // 01105's reverse is the lead-investigator proxy's choice; branch 1 is "the lead
+    // 01105's reverse is the lead investigator's choice; branch 1 is "the lead
     // investigator takes 2 horror".
     let session = turn_to_play_it(2).take(&PLAY_IT).pick_nth(1);
 
@@ -205,14 +205,25 @@ fn filler_and_dark_memory() -> Vec<&'static str> {
     FILLER.iter().copied().chain([DARK_MEMORY]).collect()
 }
 
-#[test]
-fn the_hand_size_discard_rejects_dark_memory() {
-    let session = ending_upkeep_holding(&filler_and_dark_memory());
-    assert_eq!(session.prompt().kind, InputKind::PickMultiple);
+/// `INV`'s hand card at `hand_index`.
+fn in_hand(hand_index: u8) -> OptionTarget {
+    OptionTarget::HandCard {
+        investigator: INV,
+        hand_index,
+    }
+}
 
-    let session = session.choose_from_hand(&[DARK_MEMORY]);
-    session.expect_rejected();
-    assert_eq!(session.state().investigators[&INV].hand.len(), 9);
+#[test]
+fn the_hand_size_discard_does_not_offer_dark_memory() {
+    let session = ending_upkeep_holding(&filler_and_dark_memory());
+    assert!(matches!(session.prompt().kind, InputKind::PickMultiple(_)));
+
+    assert_eq!(session.prompt().options.len(), 8, "the eight filler cards");
+    assert_eq!(
+        session.offered_at(&in_hand(8)),
+        0,
+        "Dark Memory is not offered"
+    );
 }
 
 #[test]
@@ -254,9 +265,12 @@ fn an_overflow_partly_of_weaknesses_discards_only_the_non_weaknesses() {
         "the prompt asks for the one discard the pick must hold",
     );
 
-    // Rejected, the same prompt stays pending for a legal answer.
-    let session = session.choose_from_hand(&["01086", DARK_MEMORY]);
-    session.expect_rejected();
+    assert_eq!(
+        session.prompt().kind,
+        InputKind::PickMultiple(PickCount::exactly(1)),
+        "the pick holds the one card that is not a weakness",
+    );
+    assert_eq!(session.prompt().options.len(), 1, "only 01086 is offered");
 
     let session = session.choose_from_hand(&["01086"]);
     session.assert_at_encounter_draw();

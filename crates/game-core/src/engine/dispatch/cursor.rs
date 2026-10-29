@@ -1,100 +1,97 @@
-//! Shared leaf helpers for investigator-cursor navigation and stat mapping.
+//! Shared leaf helpers for the lead, player order, investigator-cursor
+//! navigation and per-investigator scaling.
 //!
 //! These are pure lookup functions with no side effects; they call only into
 //! `crate::state` / `card_dsl::dsl` and are called by multiple dispatch handlers.
 
 use crate::state::{GameState, InvestigatorId, InvestigatorTurnFrame, LocationId, Phase, Status};
 
-/// Investigators (Active, on the map) at `loc`, in `turn_order` order
-/// so prey ties carry a deterministic, lead-first candidate list.
-pub(super) fn active_investigators_at(state: &GameState, loc: LocationId) -> Vec<InvestigatorId> {
-    state
-        .turn_order
-        .iter()
-        .copied()
-        .filter(|id| {
-            state.investigators.get(id).is_some_and(|inv| {
-                inv.status == Status::Active && inv.current_location == Some(loc)
-            })
-        })
-        .collect()
-}
-
-/// `turn_order` entries whose status is `Active`, in turn order. Shared
-/// by per-investigator Upkeep steps (4.2 reset, 4.4 draw + resource).
-/// Eliminated investigators (Defeated / Resigned) are excluded
-/// per Rules Reference p.10.
-pub(super) fn active_investigators_in_turn_order(state: &GameState) -> Vec<InvestigatorId> {
-    state
-        .turn_order
-        .iter()
-        .copied()
+/// Investigators (Active, on the map) at `loc`, in [`player_order`], so a
+/// prey tie's candidate list starts at the lead.
+#[must_use]
+pub fn active_investigators_at(state: &GameState, loc: LocationId) -> Vec<InvestigatorId> {
+    player_order(state)
+        .into_iter()
         .filter(|id| {
             state
                 .investigators
                 .get(id)
-                .is_some_and(|inv| inv.status == Status::Active)
+                .is_some_and(|inv| inv.current_location == Some(loc))
         })
         .collect()
 }
 
-/// First investigator in [`turn_order`] whose status is
-/// [`Status::Active`]. Eliminated investigators
-/// ([`Status::Defeated`] / [`Status::Resigned`]) are skipped per Rules
-/// Reference p.10 (Elimination).
-///
-/// Used by per-investigator phase loops to seed their cursor:
-/// Mythos 1.4 draws ([`mythos_phase`] seeds `mythos_draw_pending`),
-/// Enemy 3.3 attacks ([`enemy_attack_kickoff`] points the `EnemyPhase`
-/// anchor's `BeforeInvestigatorAttacked` resume at it).
-///
-/// [`turn_order`]: GameState::turn_order
-/// [`mythos_phase`]: super::phases::mythos_phase
-/// [`enemy_attack_kickoff`]: super::phases::enemy_attack_kickoff
-pub(super) fn first_active_investigator(state: &GameState) -> Option<InvestigatorId> {
-    state.turn_order.iter().copied().find(|id| {
-        state
-            .investigators
-            .get(id)
-            .is_some_and(|inv| inv.status == Status::Active)
-    })
+/// The seating, [`GameState::turn_order`], rotated to start at the stored
+/// [`GameState::lead`], eliminated investigators included. Unrotated when the
+/// state names no lead, or one not seated.
+fn seating_from_lead(state: &GameState) -> impl Iterator<Item = InvestigatorId> + '_ {
+    let start = state
+        .lead
+        .and_then(|lead| state.turn_order.iter().position(|id| *id == lead))
+        .unwrap_or(0);
+    let (before, from_lead) = state.turn_order.split_at(start);
+    from_lead.iter().chain(before).copied()
 }
 
-/// First investigator in [`turn_order`] whose status is
-/// [`Status::Active`], positioned strictly after `current`. Returns
-/// `None` when no Active investigator follows `current` in
-/// `turn_order`, or when `current` is not in `turn_order` at all.
+/// Whether `id` is seated and [`Status::Active`]. Eliminated investigators
+/// (Defeated / Resigned) are not, per Rules Reference p.10 (Elimination).
+fn is_active(state: &GameState, id: InvestigatorId) -> bool {
+    state
+        .investigators
+        .get(&id)
+        .is_some_and(|inv| inv.status == Status::Active)
+}
+
+/// The Active investigators in player order, starting at the lead.
 ///
-/// Eliminated investigators are skipped per Rules Reference p.10
-/// (same predicate as [`first_active_investigator`]).
+/// `glossary/In_Player_Order.md`: *"the lead investigator performs his or her
+/// part of the sequence first, followed by the other players in clockwise
+/// order."* That is the seating,
+/// [`GameState::turn_order`], rotated to start at the stored lead, with the
+/// eliminated left out.
 ///
-/// Used by per-investigator phase loops to advance their cursor:
-/// `advance_mythos_draw_pending` after a draw chain completes, and
-/// `anchor_on_child_pop`'s `BeforeInvestigatorAttacked` arm after
-/// one investigator's engaged-enemy attacks resolve.
+/// Every *"in player order"* step walks it: Mythos 1.4's draws, Enemy 3.3's
+/// attacks, Upkeep 4.2's action reset and 4.4's draws and resources, the
+/// setup mulligan, hand size, and an "each investigator" `Effect::ForEach`.
+/// Investigation 2.2's turns walk it as a stand-in for the investigators'
+/// choice. TODO(#1185): let the investigators choose who takes each turn.
+#[must_use]
+pub fn player_order(state: &GameState) -> Vec<InvestigatorId> {
+    seating_from_lead(state)
+        .filter(|id| is_active(state, *id))
+        .collect()
+}
+
+/// The lead investigator now: the first investigator in [`player_order`].
 ///
-/// Notable: `current` may itself be non-Active (e.g. defeated mid-loop
-/// in Enemy phase) — using `turn_order` as the index basis (rather
-/// than the filtered-Active list) makes this case the same single-pass
-/// lookup.
+/// That is the stored lead while they are Active. Once they are eliminated, it
+/// is the next Active investigator after them in player order, a stand-in for
+/// `glossary/Elimination.md` step 5's *"If the lead investigator is
+/// eliminated, the remaining players (if any) choose a new lead
+/// investigator."* (ADR 0019). `None` when nobody is Active.
+#[must_use]
+pub fn the_lead(state: &GameState) -> Option<InvestigatorId> {
+    seating_from_lead(state).find(|id| is_active(state, *id))
+}
+
+/// The next Active investigator after `current` in player order, or `None`
+/// when no Active investigator follows them before the rotation ends, or when
+/// `current` is not seated.
 ///
-/// [`turn_order`]: GameState::turn_order
-pub(super) fn next_active_investigator_after(
+/// Advances a per-investigator loop's cursor: the Investigation turns, Enemy
+/// 3.3's attacks, Upkeep 4.4's draws. `current` may itself have been
+/// eliminated mid-loop (defeated by an attack in Enemy 3.3); indexing the
+/// whole seating rather than the Active list finds their successor anyway. The
+/// rotation is taken at the *stored* lead, which never changes, so eliminating
+/// the lead mid-loop cannot shift the walk.
+pub(super) fn next_in_player_order(
     state: &GameState,
     current: InvestigatorId,
 ) -> Option<InvestigatorId> {
-    state
-        .turn_order
-        .iter()
-        .position(|id| *id == current)
-        .and_then(|idx| {
-            state.turn_order.iter().skip(idx + 1).copied().find(|id| {
-                state
-                    .investigators
-                    .get(id)
-                    .is_some_and(|inv| inv.status == Status::Active)
-            })
-        })
+    seating_from_lead(state)
+        .skip_while(|id| *id != current)
+        .skip(1)
+        .find(|id| is_active(state, *id))
 }
 
 /// `n` per investigator: [`scale_per_investigator`] by [`investigator_count`].
@@ -213,7 +210,7 @@ mod tests {
     use crate::test_support::{self, TEST_REGISTRIES};
 
     #[test]
-    fn active_investigators_in_turn_order_excludes_eliminated() {
+    fn player_order_excludes_eliminated() {
         // The setup mulligan queue (phases.rs) is seeded from this filter, so a
         // Defeated/Resigned investigator is structurally excluded — it never
         // gets prompted. inv1 is Defeated, inv2 is Active; only inv2 survives.
@@ -226,9 +223,100 @@ mod tests {
             .with_turn_order([inv1, inv2])
             .build();
         assert_eq!(
-            active_investigators_in_turn_order(&state),
+            player_order(&state),
             vec![inv2],
-            "the eliminated inv1 is excluded; only the Active inv2 remains in turn order"
+            "the eliminated inv1 is excluded; only the Active inv2 remains in player order"
         );
+    }
+
+    /// Three seats, with `statuses[i]` for seat `i + 1`, seated `[1, 2, 3]`
+    /// with the lead at `lead`.
+    fn three_seats(lead: u32, statuses: [Status; 3]) -> GameState {
+        let [s1, s2, s3] = statuses;
+        GameStateBuilder::new()
+            .with_registries(TEST_REGISTRIES)
+            .with_seat(test_support::seat(1).status(s1))
+            .with_seat(test_support::seat(2).status(s2))
+            .with_seat(test_support::seat(3).status(s3))
+            .with_turn_order([InvestigatorId(1), InvestigatorId(2), InvestigatorId(3)])
+            .with_lead(InvestigatorId(lead))
+            .build()
+    }
+
+    const ALL_ACTIVE: [Status; 3] = [Status::Active, Status::Active, Status::Active];
+
+    #[test]
+    fn player_order_starts_at_the_lead_and_wraps_the_seating() {
+        let state = three_seats(2, ALL_ACTIVE);
+        assert_eq!(
+            player_order(&state),
+            vec![InvestigatorId(2), InvestigatorId(3), InvestigatorId(1)],
+        );
+        assert_eq!(the_lead(&state), Some(InvestigatorId(2)));
+    }
+
+    #[test]
+    fn the_successor_walks_the_rotation_and_stops_at_its_end() {
+        let state = three_seats(2, ALL_ACTIVE);
+        assert_eq!(
+            next_in_player_order(&state, InvestigatorId(2)),
+            Some(InvestigatorId(3))
+        );
+        assert_eq!(
+            next_in_player_order(&state, InvestigatorId(3)),
+            Some(InvestigatorId(1)),
+            "seat 1 follows seat 3 once the rotation wraps"
+        );
+        assert_eq!(
+            next_in_player_order(&state, InvestigatorId(1)),
+            None,
+            "seat 1 is last in a rotation that started at seat 2"
+        );
+    }
+
+    #[test]
+    fn the_successor_skips_an_eliminated_seat() {
+        let state = three_seats(1, [Status::Active, Status::Defeated, Status::Active]);
+        assert_eq!(
+            next_in_player_order(&state, InvestigatorId(1)),
+            Some(InvestigatorId(3))
+        );
+    }
+
+    #[test]
+    fn the_successor_of_a_seat_not_seated_is_none() {
+        let state = three_seats(1, ALL_ACTIVE);
+        assert_eq!(next_in_player_order(&state, InvestigatorId(99)), None);
+    }
+
+    /// Seat 2 leads and is defeated mid-walk. The rotation stays at the
+    /// stored lead, so seat 3 still follows them, and seat 3 now leads.
+    #[test]
+    fn an_eliminated_lead_keeps_the_rotation_and_passes_the_lead_on() {
+        let state = three_seats(2, [Status::Active, Status::Defeated, Status::Active]);
+        assert_eq!(
+            next_in_player_order(&state, InvestigatorId(2)),
+            Some(InvestigatorId(3)),
+            "the defeated current still finds their successor"
+        );
+        assert_eq!(the_lead(&state), Some(InvestigatorId(3)));
+        assert_eq!(
+            player_order(&state),
+            vec![InvestigatorId(3), InvestigatorId(1)]
+        );
+    }
+
+    #[test]
+    fn nobody_leads_when_every_seat_is_eliminated() {
+        let state = three_seats(1, [Status::Defeated, Status::Resigned, Status::Defeated]);
+        assert_eq!(the_lead(&state), None);
+        assert!(player_order(&state).is_empty());
+    }
+
+    #[test]
+    fn nobody_leads_an_unseated_state() {
+        let state = GameStateBuilder::new().build();
+        assert_eq!(state.lead, None);
+        assert_eq!(the_lead(&state), None);
     }
 }

@@ -96,7 +96,7 @@ const INV: InvestigatorId = InvestigatorId(1);
 /// Investigation, round 1, at the turn menu. The padding has no step that
 /// makes it, so the opened state is edited and settled again.
 fn opened_with_a_padded_hand() -> TestSession {
-    let opened = game_core::engine::seat_and_open(setup(), &roster(), TEST_REGISTRIES);
+    let opened = game_core::engine::seat_and_open(setup(), &roster(), 0, TEST_REGISTRIES);
     let mut state = TestSession::new(opened.state, TEST_REGISTRIES)
         .choose_from_hand(&[])
         .state()
@@ -130,9 +130,11 @@ fn upkeep_prompts_and_discards_down_to_eight() {
     // The +1 draw pushes the hand to 12 (> cap), so 4.5 suspends.
     let paused = opened.take(&TurnAction::EndTurn);
 
-    assert_eq!(
-        (paused.state().phase, paused.prompt().kind),
-        (Phase::Upkeep, InputKind::PickMultiple),
+    assert!(
+        matches!(
+            (paused.state().phase, paused.prompt().kind),
+            (Phase::Upkeep, InputKind::PickMultiple(_))
+        ),
         "upkeep 4.5 must prompt for a discard, got {:?}",
         paused.prompt(),
     );

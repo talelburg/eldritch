@@ -20,8 +20,8 @@ The matcher is split by what it reads. `trigger_matches` reads only the event, t
 A forced hit is one candidate, and it is not filtered by reachability. ADR 0010: *"a forced ability is not restricted to the sources its controller could legally use"*. Its controller is:
 
 - a **controlled** card → its controller;
-- the current **act** or **agenda** → the lead proxy, the first Active investigator in `turn_order` (GLOSSARY "Lead investigator");
-- any other **uncontrolled** card — a location, an enemy, an attachment on either → the condition's **subject**, falling back to the lead proxy when there is none;
+- the current **act** or **agenda** → the lead ([ADR 0019](0019-every-prompt-names-who-answers-it.md));
+- any other **uncontrolled** card — a location, an enemy, an attachment on either → the condition's **subject**, falling back to the lead when there is none;
 - a card in **hand** → the investigator holding it.
 
 The subject is `TimingEvent::subject`, another exhaustive match: the investigator who entered, left, was attacked, tested, discovered, was dealt harm, ended their turn or was eliminated, and `by` for an enemy defeat. Phase boundaries, advances and the round's and game's end have none. The rule reproduces every binding the per-point arms made. It also reaches cards they never did: a location's *"after an enemy is defeated"* binds the investigator who defeated it.
@@ -34,7 +34,7 @@ The two kinds share the walk and the matcher, and differ only in how a hit becom
 
 - a controlled card → its controller. An encounter card in a threat area also goes to each other investigator at that location, the clause Haunted 01098's ruling settles (ADR 0010);
 - a location, a card attached to it or put into play at it, an enemy and its attachments → each investigator at that location;
-- the current act or agenda → **one** candidate, bound to the lead proxy. Every investigator reaches it, and the corpus reaction printed there is a group's single offer: The Barrier 01109's *"When the round ends, investigators in the hallway may, as a group, spend the requisite number of clues to advance."*;
+- the current act or agenda → **one** candidate, bound to the lead, unless the ability names who may act. Every investigator reaches it, and the corpus reaction printed there is a group's single offer: The Barrier 01109's *"When the round ends, investigators in the hallway may, as a group, spend the requisite number of clues to advance."* That offer goes to the first investigator in the Hallway in player order, not to the lead ([ADR 0019](0019-every-prompt-names-who-answers-it.md));
 - a Fast event in hand, or on top of a discard pile a permission lets its owner play from → that investigator, gated as a play. Whether the card may be played from where it is (the zone check `legality::play_source_available`) stays with the play paths, as ADR 0017 keeps a play's source zone there.
 
 Before this, the reaction scans reached only the investigators' controlled cards and the act and agenda, so a reaction on a location or an encounter card at your location was never offered. That contradicted ADR 0010's list of sources.
@@ -63,4 +63,4 @@ Each caller filters the walk to what it needs:
 
 ---
 
-*Folded: #975, #983, #1046, #1112, #1151.*
+*Folded: #975, #983, #1046, #1112, #1151, #1186.*

@@ -7,10 +7,8 @@ use crate::action::InputResponse;
 use crate::card_registry::{self, CardRegistry};
 use crate::engine::board;
 use crate::engine::dispatch::emit::TimingEvent;
-use crate::engine::dispatch::{choice, elimination, emit, reaction_windows};
-use crate::engine::outcome::{
-    ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
-};
+use crate::engine::dispatch::{choice, elimination, emit, prompt, reaction_windows};
+use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget};
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
@@ -848,44 +846,48 @@ fn soak_options(
     })
 }
 
-/// Build the `PickSingle` over the eligible targets for the next point (the top
-/// `DealDamage` frame must already be at [`DealDamageStep::Distribute`]). Damage
-/// points precede horror.
-fn prompt_current_point(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
+/// What a `DealDamage` frame at [`DealDamageStep::Distribute`] asks: the
+/// `PickSingle` over the eligible targets for the next point. Damage points
+/// precede horror. One of the [prompt table](super::prompt::request)'s helpers.
+///
+/// # Panics
+///
+/// If `frame` is not at `Distribute`; the table asks only there.
+pub(super) fn distribution_request(
+    state: &GameState,
+    cards: &CardRegistry,
+    frame: &DealDamageFrame,
+) -> InputRequest {
     let DealDamageFrame {
-        assignment, step, ..
-    } = cx
-        .state
-        .continuations
-        .top_expect::<DealDamageFrame>()
-        .clone();
+        investigator,
+        assignment,
+        step,
+        ..
+    } = frame;
     let DealDamageStep::Distribute {
         remaining_damage: rd,
         remaining_horror: rh,
-    } = step
+    } = *step
     else {
-        unreachable!("prompt_current_point: the DealDamage frame is not at Distribute");
+        unreachable!("distribution_request: the DealDamage frame is not at Distribute");
     };
-    let soakers = build_soakers(cx.state, cx.cards, investigator);
+    let soakers = build_soakers(state, cards, *investigator);
     let damage_point = rd > 0;
-    let targets = eligible_targets(&soakers, &assignment, damage_point);
+    let targets = eligible_targets(&soakers, assignment, damage_point);
     let kind = if damage_point { "damage" } else { "horror" };
     let prompt = format!(
-        "Investigator {investigator:?}: assign 1 {kind} to which target? \
-         ({rd} damage / {rh} horror left)"
+        "{}: assign 1 {kind} to which target? ({rd} damage / {rh} horror left)",
+        choice::investigator_name(state, *investigator),
     );
-    EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_single(
-            prompt,
-            soak_options(
-                cx.state,
-                cx.cards,
-                &targets,
-                &cx.state.investigators[&investigator].card_anchor(),
-            ),
+    InputRequest::pick_single(
+        prompt,
+        soak_options(
+            state,
+            cards,
+            &targets,
+            &state.investigators[investigator].card_anchor(),
         ),
-        resume_token: ResumeToken(0),
-    }
+    )
 }
 
 /// Resume a soak distribution with the player's `PickSingle`: credit one point
@@ -1029,7 +1031,7 @@ pub(crate) fn drive_deal_damage(cx: &mut Cx) -> EngineOutcome {
                         remaining_horror,
                     },
                 );
-                return prompt_current_point(cx, investigator);
+                return prompt::suspend(cx.state, cx.cards);
             }
             set_deal_damage(cx, assignment, DealDamageStep::Announce);
             EngineOutcome::Done
@@ -1153,35 +1155,43 @@ pub(super) fn drive_parked_attack_loop(cx: &mut Cx) -> EngineOutcome {
     drive_attack_loop(cx, investigator, remaining_attackers, source)
 }
 
-/// Park the loop on its order-pick `PickSingle`: push the `AttackLoop`
-/// frame as the **top** frame (no window above — it *is* the prompt) at
-/// [`AttackLoopStage::PickOrder`], and return `AwaitingInput` offering the
-/// remaining attackers (option `i` = `remaining_attackers[i]`, `EnemyId` order).
-/// `resume_attack_order_pick` resolves the `PickSingle` back. Called only with
-/// `attackers.len() >= 2`.
+/// Park the loop on its order pick: push the `AttackLoop` frame as the **top**
+/// frame (no window above — it *is* the prompt) at
+/// [`AttackLoopStage::PickOrder`] and return `Done`, for the `drive` loop to
+/// surface ([`order_pick_request`]). `resume_attack_order_pick` resolves the
+/// `PickSingle` back. Called only with `attackers.len() >= 2`.
 fn suspend_order_pick(
     cx: &mut Cx,
     investigator: InvestigatorId,
     attackers: Vec<EnemyId>,
     source: EnemyAttackSource,
 ) -> EngineOutcome {
-    let prompt = format!(
-        "Investigator {investigator:?} is engaged with {} enemies: pick which attacks \
-         next (RR p.25 step 3.3)",
-        attackers.len()
-    );
-    let options =
-        choice::candidate_options(cx.state, cx.cards, &attackers, |e| OptionTarget::Enemy(*e));
     cx.state.continuations.push(AttackLoopFrame {
         investigator,
         remaining_attackers: attackers,
         source,
         stage: AttackLoopStage::PickOrder,
     });
-    EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_single(prompt, options),
-        resume_token: ResumeToken(0),
-    }
+    EngineOutcome::Done
+}
+
+/// What an `AttackLoop` frame at [`AttackLoopStage::PickOrder`] asks: which of
+/// the remaining `attackers` attacks next (option `i` = `attackers[i]`,
+/// `EnemyId` order). One of the [prompt table](super::prompt::request)'s
+/// helpers.
+pub(super) fn order_pick_request(
+    state: &GameState,
+    cards: &CardRegistry,
+    investigator: InvestigatorId,
+    attackers: &[EnemyId],
+) -> InputRequest {
+    let prompt = format!(
+        "{} is engaged with {} enemies: choose which attacks next.",
+        choice::investigator_name(state, investigator),
+        attackers.len()
+    );
+    let options = choice::candidate_options(state, cards, attackers, |e| OptionTarget::Enemy(*e));
+    InputRequest::pick_single(prompt, options)
 }
 
 /// One step of the attack loop: pick what happens to the remaining `attackers`,

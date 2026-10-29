@@ -72,7 +72,8 @@ fn combat_test_with_substitution_prompts_then_becomes_intellect_on_yes() {
             None,
         )
     };
-    assert!(matches!(out, EngineOutcome::AwaitingInput { .. }), "prompt");
+    // The prompt is pushed for the `drive` loop to surface.
+    assert_eq!(out, EngineOutcome::Done, "prompt pushed");
     assert!(
         matches!(state.continuations.top(), Some(Continuation::SubstitutionPrompt(SubstitutionPromptFrame { investigator })) if *investigator == inv)
     );
@@ -144,9 +145,10 @@ fn substitution_prompt_keeps_the_test_on_its_frame() {
             None,
         )
     };
-    assert!(
-        matches!(out, EngineOutcome::AwaitingInput { .. }),
-        "substitution prompt should suspend",
+    assert_eq!(
+        out,
+        EngineOutcome::Done,
+        "the substitution prompt is pushed for the loop to surface",
     );
     assert!(
         matches!(state.continuations.top(), Some(Continuation::SubstitutionPrompt(SubstitutionPromptFrame { investigator })) if *investigator == inv)
@@ -176,7 +178,7 @@ fn substitution_choice_no_keeps_the_printed_skill() {
     let session = session.pick_nth(1);
     assert!(
         session.state().current_skill_test().is_some()
-            && session.prompt().kind == InputKind::PickMultiple,
+            && matches!(session.prompt().kind, InputKind::PickMultiple(_)),
         "commit window"
     );
     assert_eq!(
@@ -207,10 +209,7 @@ fn resume_substitution_choice_parks_for_the_loop() {
             None,
         )
     };
-    assert!(
-        matches!(out, EngineOutcome::AwaitingInput { .. }),
-        "substitution prompt"
-    );
+    assert_eq!(out, EngineOutcome::Done, "substitution prompt pushed");
 
     // Choose the substitution (the Decision's first option, "yes"): the resume
     // PARKS — it does not itself open the commit window. The resume handler's
@@ -262,7 +261,7 @@ fn no_active_substitution_opens_commit_window_directly() {
         enemy: GHOUL,
     });
     // No prompt: straight to the commit window.
-    assert_eq!(session.prompt().kind, InputKind::PickMultiple);
+    assert!(matches!(session.prompt().kind, InputKind::PickMultiple(_)));
     assert_eq!(
         session.state().current_skill_test().unwrap().skill,
         SkillKind::Combat,

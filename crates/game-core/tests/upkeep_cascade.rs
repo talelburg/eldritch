@@ -94,7 +94,7 @@ const INV: InvestigatorId = InvestigatorId(1);
 /// to ready — and close the mulligan keeping the hand: Investigation, round 1,
 /// at the turn menu.
 fn opened_with_an_exhausted_asset() -> TestSession {
-    let opened = game_core::engine::seat_and_open(setup(), &roster(), TEST_REGISTRIES);
+    let opened = game_core::engine::seat_and_open(setup(), &roster(), 0, TEST_REGISTRIES);
     // The roster seats the investigator, so the asset goes onto the seated
     // board, with an id minted from the state's counter.
     let mut state = opened.state;

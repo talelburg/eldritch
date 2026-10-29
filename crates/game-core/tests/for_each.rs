@@ -107,3 +107,45 @@ fn an_investigator_eliminated_partway_through_the_walk_is_skipped() {
         Status::Defeated
     );
 }
+
+/// `glossary/Priority_of_Simultaneous_Resolution.md`: *"these choices are made
+/// in player order."* With the second seat the lead, the walk starts there
+/// and wraps to the first seat last.
+#[test]
+fn investigators_walk_in_player_order_from_the_lead() {
+    let mut state = GameStateBuilder::new()
+        .with_registries(registries())
+        .with_seat(seat(1))
+        .with_seat(seat(2))
+        .with_seat(seat(3))
+        .with_turn_order([FIRST, SECOND, THIRD])
+        .with_lead(SECOND)
+        .ending_enemy_phase()
+        .build();
+    state.act_deck = vec![Act {
+        code: CardCode::new(ACT),
+        clue_threshold: 99,
+    }];
+
+    let session = TestSession::new(state, registries());
+
+    let gainers: Vec<InvestigatorId> = session
+        .events()
+        .iter()
+        .take_while(|e| {
+            !matches!(
+                e,
+                Event::PhaseStarted {
+                    phase: state::Phase::Upkeep
+                }
+            )
+        })
+        .filter_map(|e| match e {
+            Event::ResourcesGained { investigator, .. } => Some(*investigator),
+            _ => None,
+        })
+        .collect();
+    // The first seat's body defeats the second, but the walk has already
+    // passed them.
+    assert_eq!(gainers, vec![SECOND, THIRD, FIRST]);
+}

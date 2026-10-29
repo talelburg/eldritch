@@ -205,14 +205,13 @@ pub(super) fn board_walk<'a>(
 /// rule:
 ///
 /// - a **controlled** card → its controller;
-/// - the current **act** or **agenda** → the lead-investigator proxy, the first Active
-///   investigator in `turn_order` (`cursor::first_active_investigator`; see
-///   GLOSSARY.md for how the proxy differs from the rules' role);
+/// - the current **act** or **agenda** → the lead investigator
+///   ([`cursor::the_lead`]);
 /// - any other **uncontrolled** card → the condition's
-///   [`subject`](TimingEvent::subject), or the lead-investigator proxy when it has none;
+///   [`subject`](TimingEvent::subject), or the lead investigator when it has none;
 /// - a card in **hand** → the investigator holding it.
 ///
-/// A hit with no one to bind (no lead-investigator proxy and no subject) is not collected.
+/// A hit with no one to bind (no lead investigator and no subject) is not collected.
 ///
 /// A card's forced abilities are read where they are live
 /// ([`Ability::active_in`](dsl::Ability::active_in)) — `glossary/Ability.md`:
@@ -228,7 +227,7 @@ pub(super) fn collect_forced(
     event: &TimingEvent,
     bucket: EventTiming,
 ) -> Vec<ResolutionCandidate> {
-    let lead = cursor::first_active_investigator(state);
+    let lead = cursor::the_lead(state);
     let mut hits = Vec::new();
     for walked in board_walk(state, cards, event, TriggerKind::Forced) {
         // A hand card's controller is the investigator holding it.
@@ -297,9 +296,17 @@ pub(super) fn collect_forced(
 ///   area, every other investigator at that location (Haunted 01098's ruling);
 /// - a location, a card attached to or put into play at it, an enemy and its
 ///   attachments → each investigator at that location;
-/// - the current **act** or **agenda** → **one** candidate, bound to the lead
-///   proxy: every investigator reaches it, and its corpus reaction (The Barrier
-///   01109's round-end advance) is the group's one offer, not one per seat;
+/// - the current **act** or **agenda** → **one** candidate: every investigator
+///   reaches it, and its corpus reaction (The Barrier 01109's round-end
+///   advance) is the group's one offer, not one per seat. The investigators are
+///   tried in [`player_order`](cursor::player_order), and the first whose
+///   candidate passes the matcher and the initiation gate is bound (ADR 0019).
+///   A reaction that names no group passes for the first, the lead; one that
+///   names who may act says so in its eligibility, as 01109's does for the
+///   Hallway. The cost: an act or agenda reaction whose lead fails eligibility
+///   for any other reason falls through to the next investigator rather than
+///   to nobody, so such an eligibility must not depend on the controller
+///   unless it means to name the group;
 /// - a **Fast event in hand**, or on top of a discard pile a permission lets
 ///   its owner play from → that investigator, gated as a
 ///   [`Play`](InitiationKind::Play), and offered once per copy however many of
@@ -312,7 +319,6 @@ pub(super) fn collect_reactions(
     event: &TimingEvent,
     bucket: EventTiming,
 ) -> Vec<ResolutionCandidate> {
-    let lead = cursor::first_active_investigator(state);
     // Each investigator's reachable sources, asked once per scan and only if a
     // board hit needs them.
     let mut reach: Option<Vec<(InvestigatorId, Vec<AbilitySource>)>> = None;
@@ -335,7 +341,7 @@ pub(super) fn collect_reactions(
                 InitiationKind::Play,
             ),
             Some(AbilitySource::Act | AbilitySource::Agenda) => {
-                (lead.into_iter().collect(), InitiationKind::Reaction)
+                (cursor::player_order(state), InitiationKind::Reaction)
             }
             Some(source) => {
                 let reach = reach.get_or_insert_with(|| {
@@ -358,7 +364,14 @@ pub(super) fn collect_reactions(
                 (reachers, InitiationKind::Reaction)
             }
         };
+        // The act's or agenda's one offer goes to the first investigator it
+        // binds; every other source offers to each reacher.
+        let first_only = matches!(
+            walked.source.ability(),
+            Some(AbilitySource::Act | AbilitySource::Agenda)
+        );
         for controller in reachers {
+            let before = hits.len();
             for (address, pattern) in &reactions {
                 if !pattern_matches(
                     state,
@@ -394,6 +407,9 @@ pub(super) fn collect_reactions(
                 if walked.source.is_play() {
                     break;
                 }
+            }
+            if first_only && hits.len() > before {
+                break;
             }
         }
     }

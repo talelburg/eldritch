@@ -147,7 +147,7 @@ fn move_to_destination(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
         Grounded::Picked(destination) => cx.move_investigator(investigator, destination),
         // No legal place to move to: the card resolves without the move.
         Grounded::Empty => EngineOutcome::Done,
-        Grounded::Suspend(outcome) => outcome,
+        Grounded::Suspend(suspension) => cx.suspend(suspension),
     }
 }
 

@@ -328,9 +328,8 @@ fn investigate_with_nonlethal_aoo_starts_the_test_after_the_attack() {
     });
 
     // The session rests at the skill test's commit window.
-    assert_eq!(
-        session.prompt().kind,
-        InputKind::PickMultiple,
+    assert!(
+        matches!(session.prompt().kind, InputKind::PickMultiple(_)),
         "expected the commit window after nonlethal AoO, got {:?}",
         session.prompt()
     );

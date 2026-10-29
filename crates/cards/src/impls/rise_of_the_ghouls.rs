@@ -84,7 +84,7 @@ fn is_ghoul_enemy(code: &str) -> bool {
 
 /// Shuffle the encounter discard into the deck, then dig from the top —
 /// discarding each non-`Ghoul`-enemy — until a `Ghoul` enemy is found, and
-/// have the lead-investigator proxy draw it. A deck exhausted without a Ghoul is
+/// have the lead investigator draw it. A deck exhausted without a Ghoul is
 /// a no-op (nothing to draw).
 fn reverse(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     cx.reshuffle_encounter_discard();

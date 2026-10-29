@@ -56,6 +56,7 @@ fn effect() -> EffectFrame {
     EffectFrame::Leaf {
         effect: Box::new(Effect::Seq(vec![])),
         ctx: EvalContext::for_controller(InvestigatorId(1)),
+        prompt: None,
     }
 }
 

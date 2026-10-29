@@ -11,7 +11,9 @@ use std::collections::BTreeSet;
 
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::{InputResponse, PlayerAction};
-use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
+use game_core::engine::{
+    ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, PickCount,
+};
 use game_core::state::InvestigatorId;
 use game_core::test_support;
 use leptos::prelude::*;
@@ -74,8 +76,12 @@ fn click(sel: &str) {
 }
 
 #[wasm_bindgen_test]
-async fn confirm_submits_the_selected_indices() {
-    let mut rx = mount(test_support::awaiting_commit_input("Commit"), &[0, 2]).await;
+async fn confirm_submits_the_selected_options() {
+    let mut rx = mount(
+        test_support::awaiting_commit_input("Commit", &[0, 1, 2]),
+        &[0, 2],
+    )
+    .await;
     click(".confirm");
     task::tick().await;
     let msg = rx.try_recv().expect("a frame after tick");
@@ -94,7 +100,7 @@ async fn confirm_submits_the_selected_indices() {
 
 #[wasm_bindgen_test]
 async fn confirm_with_no_selection_submits_empty() {
-    let mut rx = mount(test_support::awaiting_commit_input("Commit"), &[]).await;
+    let mut rx = mount(test_support::awaiting_commit_input("Commit", &[0]), &[]).await;
     click(".confirm");
     task::tick().await;
     let msg = rx.try_recv().expect("a frame after tick");
@@ -108,7 +114,11 @@ async fn confirm_with_no_selection_submits_empty() {
 
 #[wasm_bindgen_test]
 async fn skippable_prompt_shows_pass_that_submits_skip() {
-    let mut rx = mount(test_support::awaiting_skippable_commit_input("Commit"), &[]).await;
+    let mut rx = mount(
+        test_support::awaiting_skippable_commit_input("Commit", &[0]),
+        &[],
+    )
+    .await;
     click(".pass");
     task::tick().await;
     let msg = rx.try_recv().expect("a frame after tick");
@@ -120,10 +130,60 @@ async fn skippable_prompt_shows_pass_that_submits_skip() {
     }
 }
 
+/// A hand-size discard that must discard exactly one card, offering two.
+fn discard_exactly_one() -> EngineOutcome {
+    test_support::awaiting_request(InputRequest::pick_multiple(
+        "Choose 1 card to discard",
+        vec![
+            ChoiceOption::new(OptionId(0), "Flashlight"),
+            ChoiceOption::new(OptionId(1), "Knife"),
+        ],
+        PickCount::exactly(1),
+    ))
+}
+
+fn confirm_disabled() -> bool {
+    last_banner()
+        .query_selector(".confirm")
+        .expect("query")
+        .expect("a Confirm")
+        .has_attribute("disabled")
+}
+
+/// The engine rejects a discard of the wrong size, so Confirm holds until the
+/// selection is one the count admits.
+#[wasm_bindgen_test]
+async fn confirm_holds_until_the_selection_is_the_count_asked() {
+    let mut rx = mount(discard_exactly_one(), &[]).await;
+    assert!(confirm_disabled(), "no card chosen of the one asked");
+    click(".confirm");
+    task::tick().await;
+    assert!(rx.try_recv().is_err(), "a disabled Confirm submits nothing");
+
+    let _rx = mount(discard_exactly_one(), &[0, 1]).await;
+    assert!(confirm_disabled(), "two cards chosen of the one asked");
+
+    let mut rx = mount(discard_exactly_one(), &[1]).await;
+    assert!(!confirm_disabled(), "the one card asked is chosen");
+    click(".confirm");
+    task::tick().await;
+    match rx.try_recv().expect("a frame after tick") {
+        ClientMessage::Submit {
+            action: PlayerAction::ResolveInput { response },
+        } => assert_eq!(
+            response,
+            InputResponse::PickMultiple {
+                selected: vec![OptionId(1)]
+            }
+        ),
+        other @ ClientMessage::Submit { .. } => panic!("expected PickMultiple, got {other:?}"),
+    }
+}
+
 #[wasm_bindgen_test]
 async fn renders_the_prompt_text() {
     let _rx = mount(
-        test_support::awaiting_commit_input("Redraw your opening hand"),
+        test_support::awaiting_commit_input("Redraw your opening hand", &[0]),
         &[],
     )
     .await;

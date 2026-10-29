@@ -65,6 +65,7 @@ pub struct GameStateBuilder {
     round: u32,
     active_investigator: Option<InvestigatorId>,
     turn_order: Vec<InvestigatorId>,
+    lead: Option<InvestigatorId>,
     rng: RngState,
     mulligan_remaining: Option<Vec<InvestigatorId>>,
     mythos_draw_remaining: Option<Vec<InvestigatorId>>,
@@ -73,6 +74,9 @@ pub struct GameStateBuilder {
     phase_anchor: Option<Continuation>,
     investigator_turn: Option<InvestigatorId>,
     engagements: Vec<(EnemyId, InvestigatorId)>,
+    /// Frames staged on top of everything else, bottom first
+    /// ([`with_frame`](Self::with_frame)).
+    frames: Vec<Continuation>,
     scenario_id: Option<ScenarioId>,
     /// The registries a test named with
     /// [`with_registries`](Self::with_registries), which the test-only
@@ -98,6 +102,7 @@ impl GameStateBuilder {
             round: 0,
             active_investigator: None,
             turn_order: Vec::new(),
+            lead: None,
             rng: RngState::new(0),
             mulligan_remaining: None,
             mythos_draw_remaining: None,
@@ -106,6 +111,7 @@ impl GameStateBuilder {
             phase_anchor: None,
             investigator_turn: None,
             engagements: Vec::new(),
+            frames: Vec::new(),
             scenario_id: None,
             registries: None,
         }
@@ -223,10 +229,18 @@ impl GameStateBuilder {
         self
     }
 
-    /// Set the turn order (lead-investigator-decided sequence in which
-    /// investigators take their turns during the Investigation phase).
+    /// Set the seating, [`GameState::turn_order`]. Unless
+    /// [`with_lead`](Self::with_lead) names another, its first entry is the
+    /// lead, so player order is the seating as given.
     pub fn with_turn_order(mut self, order: impl IntoIterator<Item = InvestigatorId>) -> Self {
         self.turn_order = order.into_iter().collect();
+        self
+    }
+
+    /// Set the lead investigator, [`GameState::lead`], so player order starts
+    /// at `id` rather than at the seating's first entry.
+    pub fn with_lead(mut self, id: InvestigatorId) -> Self {
+        self.lead = Some(id);
         self
     }
 
@@ -406,6 +420,19 @@ impl GameStateBuilder {
         self
     }
 
+    /// Stage `frame` on top of everything else the builder stages, above any
+    /// frame staged before it — the state the engine rests in with that frame
+    /// pending. Settled into a session, a prompt frame staged this way shows its
+    /// prompt, which is how a test reaches a prompt without driving into it.
+    ///
+    /// The frame is pushed with the stack's usual checks, so a second skill
+    /// test or a phase anchor above a queued ability panics at
+    /// [`build`](Self::build) in debug builds.
+    pub fn with_frame(mut self, frame: impl Into<Continuation>) -> Self {
+        self.frames.push(frame.into());
+        self
+    }
+
     /// Set the scenario id this state belongs to. `None` (the
     /// default from [`GameStateBuilder::new`]) means the engine's post-apply
     /// resolution hook will short-circuit. Passing a `ScenarioId`
@@ -528,6 +555,11 @@ impl GameStateBuilder {
         if let Some(remaining) = self.mythos_draw_remaining {
             continuations.push(EncounterDrawFrame { remaining });
         }
+        // Frames staged with `with_frame` go on top of everything else, in the
+        // order they were staged.
+        for frame in self.frames {
+            continuations.push(frame);
+        }
         GameState {
             investigators: self.investigators,
             locations: self.locations,
@@ -539,6 +571,7 @@ impl GameStateBuilder {
             phase: self.phase,
             round: self.round,
             active_investigator: self.active_investigator,
+            lead: self.lead.or_else(|| self.turn_order.first().copied()),
             turn_order: self.turn_order,
             rng: self.rng,
             card_instance_ids,

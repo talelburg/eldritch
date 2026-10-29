@@ -23,7 +23,7 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, GameStateBuilder,
     InvestigatorId, LocationId, Owner as CardOwner, Phase, UseKind,
 };
-use game_core::test_support;
+use game_core::test_support::{self, seat, Seat};
 use leptos::prelude::*;
 use leptos::task;
 use protocol::{ClientMessage, ServerMessage};
@@ -349,5 +349,89 @@ async fn a_choice_printed_on_one_card_presents_itself_without_a_second_click() {
         h.state().investigators[&INV].damage(),
         1,
         "the first branch healed 1 damage",
+    );
+}
+
+const DAISY: &str = "01002";
+const INV2: InvestigatorId = InvestigatorId(2);
+
+/// Seat `id` as the printed investigator `card`, holding `hand`, over a deck
+/// of real cards a mulligan can draw.
+fn seated(id: u32, card: &str, hand: &[&str]) -> Seat {
+    seat(id)
+        .as_card(card)
+        .hand(hand.iter().copied())
+        .deck(["01024", "01025", "01026", "01027"])
+}
+
+/// The hand slots on the `n`th investigator panel, in seat order.
+fn hand_slots(n: u32, sel: &str) -> Vec<HtmlElement> {
+    let panel = root()
+        .query_selector_all(".investigator")
+        .expect("query")
+        .item(n)
+        .and_then(|node| node.dyn_into::<Element>().ok())
+        .expect("an investigator panel");
+    let slots = panel.query_selector_all(sel).expect("query");
+    (0..slots.length())
+        .filter_map(|i| slots.item(i))
+        .filter_map(|node| node.dyn_into::<HtmlElement>().ok())
+        .collect()
+}
+
+/// **A subset pick selects from its responder's hand alone.**
+///
+/// Two seats are at the setup mulligan, and seat 2 is asked first. Only seat
+/// 2's hand enters selection mode; a click on seat 1's hand selects nothing;
+/// and Confirm sends seat 2's pick, which the engine redraws from seat 2's hand.
+#[wasm_bindgen_test]
+async fn a_mulligan_selects_from_the_responders_hand_alone() {
+    let state = GameStateBuilder::new()
+        .with_registries(cards::TEST_REGISTRIES)
+        .with_seat(seated(1, ROLAND, &["01020", "01021"]))
+        .with_seat(seated(2, DAISY, &["01022", "01023"]))
+        .with_turn_order([INV, INV2])
+        .with_mulligan_remaining([INV2, INV])
+        .build();
+    // Settle through the engine, so the prompt is the one it actually builds.
+    let seeded = test_support::TestSession::new(state, cards::TEST_REGISTRIES);
+    let outcome = test_support::awaiting_request(seeded.prompt().clone());
+    let mut h = Harness::mount(seeded.state().clone(), outcome).await;
+
+    assert!(
+        hand_slots(0, ".hand-slot.selectable").is_empty(),
+        "seat 1's hand is not in selection mode"
+    );
+    assert_eq!(
+        hand_slots(1, ".hand-slot.selectable").len(),
+        2,
+        "seat 2's whole hand is"
+    );
+
+    // A click on seat 1's card selects nothing; seat 2 picks their second card.
+    hand_slots(0, ".hand-slot")[0].click();
+    task::tick().await;
+    hand_slots(1, ".hand-slot")[1].click();
+    task::tick().await;
+    assert!(hand_slots(0, ".hand-slot.selected").is_empty());
+    assert_eq!(hand_slots(1, ".hand-slot.selected").len(), 1);
+
+    find(".prompt-banner .confirm").click();
+    h.pump().await;
+
+    let seat2 = &h.state().investigators[&INV2].hand;
+    assert!(
+        seat2.contains(&CardCode::new("01022")) && !seat2.contains(&CardCode::new("01023")),
+        "seat 2 redrew their second card and kept their first: {seat2:?}"
+    );
+    assert_eq!(
+        h.state().investigators[&INV].hand,
+        vec![CardCode::new("01020"), CardCode::new("01021")],
+        "seat 1's hand is untouched"
+    );
+    assert_eq!(
+        h.state().current_mulligan(),
+        Some(INV),
+        "seat 1 is asked next"
     );
 }

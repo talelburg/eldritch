@@ -102,7 +102,7 @@ pub(super) fn advance_agenda(cx: &mut Cx) {
         deck: AdvanceDeck::Agenda,
         from,
         leaving_code,
-        step: AdvanceStep::AwaitAck,
+        step: AdvanceStep::Announce,
         // Agenda advances are always game-forced (a doom threshold).
         trigger: AdvanceTrigger::Forced,
     });
@@ -224,13 +224,14 @@ fn spend_clues(state: &mut GameState, acting: InvestigatorId, amount: u8) {
     );
 }
 
-/// Investigators currently at `location`, in `turn_order` (deterministic).
-/// Used by the act round-end clue-spend window (01109: Hallway investigators).
+/// Investigators currently at `location`, in
+/// [`player_order`](super::cursor::player_order). Used by the act round-end
+/// clue-spend window (01109: Hallway investigators), so the group spends in the
+/// order the offer was made in: its first contributor is the investigator the
+/// trigger scan bound the offer to.
 pub(crate) fn investigators_at(state: &GameState, location: LocationId) -> Vec<InvestigatorId> {
-    state
-        .turn_order
-        .iter()
-        .copied()
+    super::cursor::player_order(state)
+        .into_iter()
         .filter(|id| state.investigators.get(id).and_then(|i| i.current_location) == Some(location))
         .collect()
 }
@@ -286,7 +287,7 @@ pub fn round_end_advance_affordable(state: &GameState, contributor_location_code
 /// 01109's "investigators in the Hallway may, as a group, spend the requisite
 /// number of clues to advance" (the only card-specific datum is the contributor
 /// location, passed in). If [`round_end_advance_affordable`], spends the act's
-/// `clue_threshold` from the contributors (turn order) and advances the act.
+/// `clue_threshold` from the contributors (player order) and advances the act.
 ///
 /// Affordability is gated at the offer side by act 01109's `01109:can-advance`
 /// eligibility condition (which calls [`round_end_advance_affordable`]), so the
@@ -345,7 +346,7 @@ pub(crate) fn advance_act(cx: &mut Cx, trigger: AdvanceTrigger) {
         deck: AdvanceDeck::Act,
         from,
         leaving_code,
-        step: AdvanceStep::AwaitAck,
+        step: AdvanceStep::Announce,
         trigger,
     });
 }

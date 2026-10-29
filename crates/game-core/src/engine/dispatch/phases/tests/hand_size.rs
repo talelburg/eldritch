@@ -1,6 +1,6 @@
 use super::*;
 use crate::action::{Action, PlayerAction};
-use crate::engine::outcome::{InputKind, OptionId};
+use crate::engine::outcome::{InputKind, OptionId, OptionTarget, PickCount};
 use crate::state::{CardCode, GameStateBuilder, InvestigatorId};
 use crate::test_support::{self, TestSession, TEST_REGISTRIES};
 use crate::{assert_event_count, assert_no_event};
@@ -14,7 +14,7 @@ fn hand(prefix: &str, n: usize) -> Vec<String> {
 /// in the Upkeep phase that is not a skill test's commit window.
 #[track_caller]
 fn assert_at_hand_size_discard(session: &TestSession) {
-    assert_eq!(session.prompt().kind, InputKind::PickMultiple);
+    assert!(matches!(session.prompt().kind, InputKind::PickMultiple(_)));
     assert!(session.state().current_skill_test().is_none());
     assert_eq!(session.state().phase, Phase::Upkeep);
 }
@@ -33,6 +33,28 @@ fn ending_upkeep_with_hands(hands: &[(u32, Vec<String>)]) -> TestSession {
         .with_turn_order(hands.iter().map(|(id, _)| InvestigatorId(*id)))
         .ending_upkeep_phase()
         .session()
+}
+
+/// The discard offers the prompted investigator's hand cards, anchored to
+/// them, and asks for exactly the overflow: ten cards, two to discard.
+#[test]
+fn the_hand_size_discard_offers_the_hand_and_asks_for_exactly_the_overflow() {
+    let session = ending_upkeep_with_hands(&[(1, hand("c", 10))]);
+    let request = session.prompt();
+    let anchors: Vec<_> = request.options.iter().map(|o| o.target.clone()).collect();
+    let expected: Vec<_> = (0..10)
+        .map(|hand_index| {
+            Some(OptionTarget::HandCard {
+                investigator: InvestigatorId(1),
+                hand_index,
+            })
+        })
+        .collect();
+    assert_eq!(anchors, expected);
+    assert_eq!(
+        request.kind,
+        InputKind::PickMultiple(PickCount { min: 2, max: 2 })
+    );
 }
 
 #[test]

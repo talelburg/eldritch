@@ -31,8 +31,8 @@ pub(crate) mod pathfinding;
 
 pub use dispatch::act_agenda::round_end_advance_affordable;
 pub use dispatch::actions::take::actions_available;
-pub use dispatch::choice::{resolve_card_choice, resolve_grounded_choice, Grounded};
-pub use dispatch::cursor::turn_open;
+pub use dispatch::choice::{resolve_card_choice, resolve_grounded_choice, Grounded, Suspension};
+pub use dispatch::cursor::{active_investigators_at, player_order, the_lead, turn_open};
 pub use dispatch::movement::{enemy_can_enter_location, investigator_can_enter_location};
 pub use dispatch::tokens::MoveHorrorError;
 pub use dispatch::uses::{MoveUsesError, SpendUsesError};
@@ -47,8 +47,8 @@ pub use modified_value::{
     ModifierTarget, ReadContext,
 };
 pub use outcome::{
-    ChoiceOption, EngineOutcome, InputKind, InputRequest, OptionId, OptionTarget, PromptNature,
-    ResumeToken,
+    ChoiceOption, EngineOutcome, InputKind, InputRequest, OptionId, OptionTarget, PickCount,
+    PromptNature, Responder, ResumeToken,
 };
 pub use pathfinding::shortest_first_steps;
 
@@ -162,14 +162,20 @@ pub fn apply(state: GameState, action: Action, registries: Registries) -> ApplyR
 /// code the registry's [`is_playable`](crate::card_registry::CardRegistry::is_playable)
 /// refuses (the reason names every such code), a roster whose total
 /// `random_basic_weaknesses` exceeds the registry's weakness pool, or an
-/// already-started state rejects with state unchanged.
+/// already-started state rejects with state unchanged, as does a `lead` that
+/// is not an index into `roster`.
+///
+/// `lead` is the roster index of the lead investigator, Appendix III step 3:
+/// *"Choose one of those investigators to be the lead investigator for this
+/// game."* Player order starts there.
 pub fn seat_and_open(
     setup_state: GameState,
     roster: &[RosterEntry],
+    lead: usize,
     registries: Registries,
 ) -> ApplyResult {
     apply_via(setup_state, registries, |cx| {
-        dispatch::seat_and_open(cx, roster)
+        dispatch::seat_and_open(cx, roster, lead)
     })
 }
 
@@ -232,24 +238,30 @@ pub(crate) fn apply_via(
             finalize_scenario_end(&mut cx);
             // The rest invariant: `Done` means the game is over, so the
             // stack is empty; `AwaitingInput` means a prompt is on top for the
-            // next `apply` to answer. It holds because every prompt frame's push
-            // site returns `AwaitingInput`, and every resume handler pops its
-            // frame before doing more work — so a prompt is never exposed
-            // without being surfaced, and nothing else may rest. A `Done` over a
-            // non-empty stack is a frame nothing will ever advance, or a prompt
-            // nobody was asked.
+            // next `apply` to answer, asking what the prompt table reads off
+            // it. It holds because every suspension is `prompt::suspend` on the
+            // frame at rest on top, the `drive` loop surfaces any prompt frame
+            // it meets, and every resume handler pops its frame before doing
+            // more work — so a prompt is never exposed without being surfaced,
+            // and nothing else may rest. A `Done` over a non-empty stack is a
+            // frame nothing will ever advance, or a prompt nobody was asked.
             debug_assert!(
-                match outcome {
+                match &outcome {
                     EngineOutcome::Done => cx.state.continuations.is_empty(),
-                    _ => cx
-                        .state
-                        .continuations
-                        .top()
-                        .is_some_and(Continuation::awaits_input),
+                    EngineOutcome::AwaitingInput { request, .. } => {
+                        cx.state.continuations.top().is_some_and(|top| {
+                            top.awaits_input()
+                                && dispatch::prompt::request(top, cx.state, cx.cards).as_ref()
+                                    == Some(request)
+                        })
+                    }
+                    EngineOutcome::Rejected { .. } => {
+                        unreachable!("a rejected outcome takes the branch above")
+                    }
                 },
                 "`apply` returned {outcome:?} with {:?} on top of the continuation \
-                 stack: `Done` must leave it empty, `AwaitingInput` must leave a \
-                 prompt on top",
+                 stack: `Done` must leave it empty, `AwaitingInput` must leave on \
+                 top the prompt that asks it",
                 cx.state.continuations.top(),
             );
         }

@@ -19,7 +19,7 @@ Why the direction matters: editing the engine must not recompile 5600 lines of g
 
 ## CardRegistry — the only cross-crate bridge
 
-`game_core::card_registry::CardRegistry` is a `Copy` bundle of function pointers. The struct's fields are the list, and each field's doc says what it looks up. `native_condition_for` is the one read-only native slot: a `Condition::Native` resolves there whether it guards an effect or an ability's eligibility. A native *effect* gets a `NativeCx`, not the engine's `Cx`: full read access to the state, and the engine's exits as its only way to change the game. A native that suspends for a choice after calling an exit is `Rejected`, so its writes roll back with the apply (standards.md, "A native changes the game only through an engine exit"). `cards` provides `pub const REGISTRY`, whose slots are searches over `cards::impls::ALL`, one registration record per card (#986). The host hands it, with `scenarios::REGISTRY`, to every `apply` and `seat_and_open`:
+`game_core::card_registry::CardRegistry` is a `Copy` bundle of function pointers. The struct's fields are the list, and each field's doc says what it looks up. `native_condition_for` is the one read-only native slot: a `Condition::Native` resolves there whether it guards an effect or an ability's eligibility. A native *effect* gets a `NativeCx`, not the engine's `Cx`: full read access to the state, and the engine's exits as its only way to change the game. A native that suspends for a choice after calling an exit, or writes directly after an exit left a prompt pending, is `Rejected`, so its writes roll back with the apply (standards.md, "A native changes the game only through an engine exit"). `cards` provides `pub const REGISTRY`, whose slots are searches over `cards::impls::ALL`, one registration record per card (#986). The host hands it, with `scenarios::REGISTRY`, to every `apply` and `seat_and_open`:
 
 ```rust
 const REGISTRIES: Registries = Registries { cards: &cards::REGISTRY, scenarios: &scenarios::REGISTRY };
@@ -39,7 +39,7 @@ The engine looks the scenario module up once per apply and carries both on `Cx`;
 
 Backstopped structurally: `apply_via` (`crates/game-core/src/engine/mod.rs`) snapshots the pristine state before dispatch and restores it (state, events, and RNG position) whenever the outcome is `Rejected` — no handler, including the mutating DSL evaluator, can leak partial state past a rejection. Handlers still follow validate-first as a convention (it keeps rejection cheap and reasons precise; canonical shape: `actions::move::handle`, `actions::investigate::handle`, `cards::play_card`), but mid-resolution mutations before a reject are rolled back at the apply boundary, not merely event-cleared.
 
-Every `apply` ends in an `EngineOutcome` (`crates/game-core/src/engine/outcome.rs`); read its variants there rather than a list here. `AwaitingInput` round-trips via `PlayerAction::ResolveInput`.
+Every `apply` ends in an `EngineOutcome` (`crates/game-core/src/engine/outcome.rs`); read its variants there rather than a list here. `AwaitingInput` round-trips via `PlayerAction::ResolveInput`. Its request is built from the frame on top by the prompt table (`crates/game-core/src/engine/dispatch/prompt.rs`), and nowhere else: a step that suspends rests its frame and returns `prompt::suspend`, and a step that pushes a prompt frame returns `Done` for the `drive` loop to surface it.
 
 ## Hybrid card-effect DSL
 

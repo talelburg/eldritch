@@ -127,7 +127,7 @@ fn place_next(cx: &mut NativeCx, ctx: &EvalContext, deck: Deck, position: usize)
             EngineOutcome::Done
         }
         Grounded::Empty => EngineOutcome::Done,
-        Grounded::Suspend(outcome) => outcome,
+        Grounded::Suspend(suspension) => cx.suspend(suspension),
     }
 }
 

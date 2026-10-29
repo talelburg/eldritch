@@ -741,9 +741,8 @@ fn dissonant_voices_keeps_a_fast_event_out_of_a_player_window() {
 
     // With nothing eligible the ST.1 window auto-skips: the test rests at its
     // commit window rather than at a Fast window offering Working a Hunch.
-    assert_eq!(
-        session.prompt().kind,
-        InputKind::PickMultiple,
+    assert!(
+        matches!(session.prompt().kind, InputKind::PickMultiple(_)),
         "Dissonant Voices forbids events, so the window must not offer Working a \
          Hunch; it stayed open: {:?}",
         session.prompt(),

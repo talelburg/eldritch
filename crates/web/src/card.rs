@@ -456,23 +456,34 @@ pub fn Card(code: CardCode, #[prop(optional)] in_play: Option<CardInPlay>) -> im
 }
 
 /// Interactive wrapper for a hand card. Keeps [`Card`] display-only:
-/// reads `PendingOptions` + `MultiSelect` and either enters selection mode (a
-/// `PickMultiple` is live — click toggles `.hand-slot.selected`) or offers a
-/// "Play …" [`menu_layer`](crate::interaction::menu_layer) via the card's
-/// `HandCard` anchor. The two modes are mutually exclusive.
+/// reads `PendingOptions` + `MultiSelect` and either takes part in a live
+/// `PickMultiple` or offers a "Play …"
+/// [`menu_layer`](crate::interaction::menu_layer) via the card's `HandCard`
+/// anchor. The two modes are mutually exclusive.
+///
+/// While a `PickMultiple` is live, a card the request offers (an option anchored
+/// to it) is `.selectable` and a click toggles its option in the selection
+/// (`.selected`). A card it does not offer — another investigator's hand, or a
+/// card the pick may not take — renders inert.
 #[component]
 pub fn HandCardView(code: CardCode, investigator: InvestigatorId, index: u8) -> impl IntoView {
-    let idx = u32::from(index);
+    let pending = use_context::<PendingOptions>()
+        .map(|p| p.0.get())
+        .unwrap_or_default();
+    let menu_opts = interaction::options_for_hand_card(&pending, investigator, index, &code);
     if let Some(ms) = use_context::<MultiSelect>() {
         if ms.active.get() {
+            let Some(id) = menu_opts.first().map(|opt| opt.id.0) else {
+                return view! { <div class="hand-slot"><Card code=code/></div> }.into_any();
+            };
             let selected = ms.selected;
             return view! {
                 <div
-                    class="hand-slot"
-                    class:selected=move || selected.get().contains(&idx)
+                    class="hand-slot selectable"
+                    class:selected=move || selected.get().contains(&id)
                     on:click=move |_| selected.update(|s| {
-                        if !s.remove(&idx) {
-                            s.insert(idx);
+                        if !s.remove(&id) {
+                            s.insert(id);
                         }
                     })
                 >
@@ -482,10 +493,6 @@ pub fn HandCardView(code: CardCode, investigator: InvestigatorId, index: u8) -> 
             .into_any();
         }
     }
-    let pending = use_context::<PendingOptions>()
-        .map(|p| p.0.get())
-        .unwrap_or_default();
-    let menu_opts = interaction::options_for_hand_card(&pending, investigator, index, &code);
     let actionable = !menu_opts.is_empty();
     #[cfg(target_arch = "wasm32")]
     let open = RwSignal::new(None::<(i32, i32)>);

@@ -18,7 +18,7 @@ fn start_scenario_advances_to_investigation_with_round_one() {
         deck: vec![],
         random_basic_weaknesses: 0,
     }];
-    let start_result = seat_and_open(state, &roster, TEST_REGISTRIES);
+    let start_result = seat_and_open(state, &roster, 0, TEST_REGISTRIES);
     let id = InvestigatorId(1);
 
     assert!(
@@ -94,7 +94,7 @@ fn start_scenario_on_already_started_state_is_rejected() {
     // seat_and_open calls start_scenario which rejects when round != 0;
     // the roster check never runs, so an empty slice is enough.
     let state = GameStateBuilder::new().with_round(7).build();
-    let result = seat_and_open(state, &[], TEST_REGISTRIES);
+    let result = seat_and_open(state, &[], 0, TEST_REGISTRIES);
 
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert_eq!(result.state.round, 7);
@@ -109,7 +109,7 @@ fn start_scenario_shuffles_each_deck_and_deals_initial_hand() {
         deck: make_test_deck(10),
         random_basic_weaknesses: 0,
     }];
-    let result = seat_and_open(state, &roster, TEST_REGISTRIES);
+    let result = seat_and_open(state, &roster, 0, TEST_REGISTRIES);
     let id = InvestigatorId(1);
 
     // seat_and_open deals hands, then opens the mulligan prompt
@@ -149,7 +149,7 @@ fn start_scenario_with_empty_deck_yields_empty_hand_and_no_events() {
         deck: vec![],
         random_basic_weaknesses: 0,
     }];
-    let result = seat_and_open(state, &roster, TEST_REGISTRIES);
+    let result = seat_and_open(state, &roster, 0, TEST_REGISTRIES);
     let id = InvestigatorId(1);
 
     assert!(matches!(
@@ -178,7 +178,7 @@ fn start_scenario_with_short_deck_draws_only_what_remains() {
         deck: make_test_deck(3),
         random_basic_weaknesses: 0,
     }];
-    let result = seat_and_open(state, &roster, TEST_REGISTRIES);
+    let result = seat_and_open(state, &roster, 0, TEST_REGISTRIES);
     let id = InvestigatorId(1);
 
     assert!(matches!(
@@ -207,7 +207,7 @@ fn start_scenario_handles_multiple_investigators_deterministically() {
             random_basic_weaknesses: 0,
         })
         .collect();
-    let result = seat_and_open(state, &roster, TEST_REGISTRIES);
+    let result = seat_and_open(state, &roster, 0, TEST_REGISTRIES);
     assert!(matches!(
         result.outcome,
         EngineOutcome::AwaitingInput { .. }
@@ -233,7 +233,7 @@ fn seat_and_open_opens_mulligan_for_a_synthetic_roster() {
         random_basic_weaknesses: 0,
     }];
 
-    let result = seat_and_open(setup, &roster, TEST_REGISTRIES);
+    let result = seat_and_open(setup, &roster, 0, TEST_REGISTRIES);
 
     assert!(
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
@@ -253,7 +253,7 @@ fn seat_and_open_rejects_an_unknown_investigator_code() {
         random_basic_weaknesses: 0,
     }];
 
-    let result = seat_and_open(setup, &roster, TEST_REGISTRIES);
+    let result = seat_and_open(setup, &roster, 0, TEST_REGISTRIES);
 
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert_eq!(

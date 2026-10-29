@@ -130,7 +130,8 @@ pub struct PendingOptions(pub Signal<Vec<ChoiceOption>>);
 pub struct MultiSelect {
     /// True iff the live outcome is `AwaitingInput { kind: PickMultiple }`.
     pub active: Signal<bool>,
-    /// The chosen hand indices (each `OptionId(i)` = hand index `i`).
+    /// The ids of the chosen options, each anchored to a hand card the request
+    /// offers.
     pub selected: RwSignal<BTreeSet<u32>>,
 }
 
@@ -141,7 +142,7 @@ pub fn is_multi_select(state: &ClientState) -> bool {
     matches!(
         &state.outcome,
         Some(EngineOutcome::AwaitingInput { request, .. })
-            if request.kind == InputKind::PickMultiple
+            if matches!(request.kind, InputKind::PickMultiple(_))
     )
 }
 
@@ -370,7 +371,7 @@ mod tests {
         state.outcome = Some(EngineOutcome::Done);
         assert!(!is_multi_select(&state));
 
-        state.outcome = Some(test_support::awaiting_commit_input("Commit"));
+        state.outcome = Some(test_support::awaiting_commit_input("Commit", &[0]));
         assert!(is_multi_select(&state));
 
         state.outcome = Some(test_support::awaiting_pick_single_with("x", vec![loose(0)]));

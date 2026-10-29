@@ -537,7 +537,8 @@ fn spawn_tie_suspends_for_lead_pick() {
         &metadata,
         Owner::EncounterDeck,
     );
-    assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
+    // The tie is pushed for the `drive` loop to surface, so the spawn returns.
+    assert_eq!(outcome, EngineOutcome::Done);
     assert!(matches!(
         state.continuations.top(),
         Some(Continuation::SpawnEngage(_))

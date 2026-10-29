@@ -37,6 +37,7 @@ async fn load_restores_awaiting_input_seed_with_empty_log() {
         "seeded",
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
+        0,
     )
     .await
     .expect("create");
@@ -72,6 +73,7 @@ async fn create_persists_seed_and_exposes_setup_state() {
         "game-1",
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
+        0,
     )
     .await
     .expect("create session");
@@ -100,6 +102,7 @@ async fn create_rejects_unknown_scenario() {
         "game-x",
         ScenarioId::new("no-such-scenario"),
         vec![],
+        0,
     )
     .await;
 
@@ -124,6 +127,7 @@ async fn create_rejects_bad_roster() {
         "bad",
         ScenarioId::new(TEST_SCENARIO_ID),
         bad_roster,
+        0,
     )
     .await;
 
@@ -150,6 +154,7 @@ async fn apply_persists_accepted_action_and_advances_state() {
         "g2",
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
+        0,
     )
     .await
     .unwrap();
@@ -188,6 +193,7 @@ async fn apply_rejects_invalid_action_without_persisting() {
         "g3",
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
+        0,
     )
     .await
     .unwrap();
@@ -233,6 +239,7 @@ async fn load_replays_log_to_reproduce_live_state() {
         "g4",
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
+        0,
     )
     .await
     .unwrap();
@@ -276,6 +283,7 @@ async fn load_fails_loudly_on_a_log_it_cannot_replay() {
         "stale",
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
+        0,
     )
     .await
     .unwrap();
@@ -319,6 +327,7 @@ async fn create_randomizes_the_setup_seed_per_game() {
         "g1",
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
+        0,
     )
     .await
     .expect("create g1");
@@ -328,6 +337,7 @@ async fn create_randomizes_the_setup_seed_per_game() {
         "g2",
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
+        0,
     )
     .await
     .expect("create g2");
@@ -346,6 +356,7 @@ async fn create_enables_interactive_acknowledge() {
         "ack",
         ScenarioId::new(TEST_SCENARIO_ID),
         common::roster(),
+        0,
     )
     .await
     .expect("create");

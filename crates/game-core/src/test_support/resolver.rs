@@ -17,9 +17,10 @@
 //!
 //! The skill-test commit window is the prompt tests answer most: the
 //! active investigator replies with [`InputResponse::PickMultiple`] (each
-//! `OptionId` a hand index). [`ScriptedResolver::commit_cards`] is the
-//! ergonomic helper: tests pass card codes, the resolver translates them to
-//! hand indices using [`GameState`] at resolve time. Other prompts are
+//! `OptionId` one of the hand cards the window offers).
+//! [`ScriptedResolver::commit_cards`] is the ergonomic helper: tests pass card
+//! codes, the resolver finds those cards in the hand using [`GameState`] at
+//! resolve time and names the options anchored to them. Other prompts are
 //! answered by the board entity an option anchors to
 //! ([`ScriptedResolver::pick`]) or by a literal response.
 //!
@@ -91,8 +92,8 @@ pub struct ScriptedResolver {
 enum ScriptedStep {
     Response(InputResponse),
     /// Commit a set of cards from the active investigator's hand to a
-    /// skill test. A by-`CardCode` convenience over the real index-based
-    /// commit flow (resolves codes to hand indices at replay time).
+    /// skill test. A by-`CardCode` convenience over the option-id commit
+    /// flow (resolves codes to the options anchored to them at replay time).
     CommitCards(Vec<CardCode>),
     /// Pick the one offered option anchored to this target, resolved to
     /// `PickSingle(option.id)` at replay time.
@@ -137,10 +138,11 @@ impl ScriptedResolver {
 
     /// Commit cards (by code) from the in-flight skill test's
     /// investigator's hand. The resolver translates each code to the
-    /// first matching not-yet-committed hand index at resolve time
-    /// using the [`GameState`] passed into [`next`](Self::next).
-    /// Duplicate codes pick distinct indices in left-to-right order;
-    /// a missing code panics.
+    /// first matching not-yet-committed hand card at resolve time
+    /// using the [`GameState`] passed into [`next`](Self::next), and
+    /// names the commit window's option anchored to it. Duplicate codes
+    /// pick distinct cards in left-to-right order; a code missing from
+    /// the hand, or a card the window does not offer, panics.
     ///
     /// Pass `&[]` to commit nothing — the canonical empty-commit
     /// helper for tests that aren't exercising the commit-window
@@ -173,12 +175,9 @@ impl ChoiceResolver for ScriptedResolver {
                 selected: resolve_commit_codes(
                     &codes,
                     state,
-                    &request.prompt,
+                    request,
                     "ScriptedResolver::commit_cards",
-                )
-                .into_iter()
-                .map(OptionId)
-                .collect(),
+                ),
             },
             ScriptedStep::Pick(target) => InputResponse::PickSingle(sole_option_at(
                 request,
@@ -196,44 +195,47 @@ pub(super) fn card_codes(codes: &[&str]) -> Vec<CardCode> {
     codes.iter().copied().map(CardCode::new).collect()
 }
 
-/// Translate scripted commit-card codes to hand indices using the
-/// in-flight skill test's investigator on `state`, through
-/// [`hand_indices_of`].
+/// Translate scripted commit-card codes to the commit window's options, for
+/// the in-flight skill test's investigator on `state`, through
+/// [`hand_options_of`].
 pub(super) fn resolve_commit_codes(
     codes: &[CardCode],
     state: &GameState,
-    prompt: &str,
+    request: &InputRequest,
     caller: &str,
-) -> Vec<u32> {
+) -> Vec<OptionId> {
     if codes.is_empty() {
         return Vec::new();
     }
     let in_flight = state.current_skill_test().unwrap_or_else(|| {
         panic!(
             "{caller}: state has no in-flight skill test at \
-             resolve time; prompt was: {prompt:?}",
+             resolve time; prompt was: {:?}",
+            request.prompt,
         )
     });
-    hand_indices_of(codes, state, in_flight.investigator, prompt, caller)
+    hand_options_of(codes, state, in_flight.investigator, request, caller)
 }
 
-/// Translate card codes to indices into `investigator`'s hand — the one
-/// code-to-hand-index translation behind a commit by code and a mulligan or
-/// hand-size discard by code.
+/// Translate card codes to the options of `request` anchored to those cards in
+/// `investigator`'s hand — the one by-code translation behind a commit, a
+/// mulligan and a hand-size discard.
 ///
 /// Returns an empty vec for an empty code list (the canonical
 /// choose-nothing case). Each code is matched against the
 /// investigator's hand left-to-right; duplicate codes claim distinct
-/// indices so `&[CardCode("X"), CardCode("X")]` against a hand with
-/// two `X`s yields `[i, j]`. Panics with the prompt and remaining
-/// state if any code can't be matched — that's a test-author error.
-pub(super) fn hand_indices_of(
+/// hand cards so `&[CardCode("X"), CardCode("X")]` against a hand with
+/// two `X`s names both. Panics with the prompt and remaining state if any
+/// code can't be matched, or if the card it matches is not offered — that's a
+/// test-author error.
+pub(super) fn hand_options_of(
     codes: &[CardCode],
     state: &GameState,
     investigator: InvestigatorId,
-    prompt: &str,
+    request: &InputRequest,
     caller: &str,
-) -> Vec<u32> {
+) -> Vec<OptionId> {
+    let prompt = &request.prompt;
     let inv = state.investigators.get(&investigator).unwrap_or_else(|| {
         panic!(
             "{caller}: investigator {investigator:?} not in \
@@ -241,7 +243,7 @@ pub(super) fn hand_indices_of(
         )
     });
     let mut used = vec![false; inv.hand.len()];
-    let mut indices = Vec::with_capacity(codes.len());
+    let mut selected = Vec::with_capacity(codes.len());
     for code in codes {
         let idx = inv
             .hand
@@ -257,9 +259,20 @@ pub(super) fn hand_indices_of(
                 )
             });
         used[idx] = true;
-        indices.push(u32::try_from(idx).expect("hand index fits in u32"));
+        let target = OptionTarget::HandCard {
+            investigator,
+            hand_index: u8::try_from(idx).expect("a hand fits in u8"),
+        };
+        let option = options_at(request, &target).next().unwrap_or_else(|| {
+            panic!(
+                "{caller}: {code:?} at hand index {idx} is not offered; \
+                 prompt was: {prompt:?}, options: {:?}",
+                request.options,
+            )
+        });
+        selected.push(option.id);
     }
-    indices
+    selected
 }
 
 /// Whether `request` is the open-turn action menu: the prompt the
@@ -440,6 +453,15 @@ mod tests {
         InputRequest::confirm(prompt)
     }
 
+    /// A commit window offering seat 1's hand cards at `hand_indices`, option
+    /// `i` anchored to `hand_indices[i]`.
+    fn commit_offering(hand_indices: &[u8]) -> InputRequest {
+        match test_support::awaiting_commit_input("commit", hand_indices) {
+            EngineOutcome::AwaitingInput { request, .. } => request,
+            other => panic!("the fixture awaits input, got {other:?}"),
+        }
+    }
+
     #[test]
     fn scripted_resolver_returns_responses_in_fifo_order() {
         let mut r = ScriptedResolver::new();
@@ -497,11 +519,27 @@ mod tests {
     }
 
     #[test]
-    fn commit_cards_translates_codes_to_hand_indices_in_order() {
+    fn commit_cards_translates_codes_to_the_options_anchored_to_them() {
+        // Z at hand index 2 is not offered, so Y's option is 1 and X's 0, in
+        // the order the codes name them.
         let mut r = ScriptedResolver::new();
-        r.commit_cards(&["X", "Y"]);
-        let state = state_with_in_flight_hand(&["X", "Y", "Z"]);
-        let response = r.next(&req("commit"), &state);
+        r.commit_cards(&["Y", "X"]);
+        let state = state_with_in_flight_hand(&["Z", "X", "Y"]);
+        let response = r.next(&commit_offering(&[1, 2]), &state);
+        assert_eq!(
+            response,
+            InputResponse::PickMultiple {
+                selected: vec![OptionId(1), OptionId(0)]
+            }
+        );
+    }
+
+    #[test]
+    fn commit_cards_duplicate_code_picks_distinct_cards_left_to_right() {
+        let mut r = ScriptedResolver::new();
+        r.commit_cards(&["X", "X"]);
+        let state = state_with_in_flight_hand(&["A", "X", "B", "X"]);
+        let response = r.next(&commit_offering(&[1, 3]), &state);
         assert_eq!(
             response,
             InputResponse::PickMultiple {
@@ -511,17 +549,12 @@ mod tests {
     }
 
     #[test]
-    fn commit_cards_duplicate_code_picks_distinct_indices_left_to_right() {
+    #[should_panic(expected = "is not offered")]
+    fn commit_cards_panics_when_the_card_is_not_offered() {
         let mut r = ScriptedResolver::new();
-        r.commit_cards(&["X", "X"]);
-        let state = state_with_in_flight_hand(&["A", "X", "B", "X"]);
-        let response = r.next(&req("commit"), &state);
-        assert_eq!(
-            response,
-            InputResponse::PickMultiple {
-                selected: vec![OptionId(1), OptionId(3)]
-            }
-        );
+        r.commit_cards(&["Y"]);
+        let state = state_with_in_flight_hand(&["X", "Y"]);
+        let _ = r.next(&commit_offering(&[0]), &state);
     }
 
     #[test]

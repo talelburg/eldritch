@@ -37,15 +37,13 @@
 //! card in the act deck, so advancing it flips it and its reverse ends the
 //! scenario. **Which** point it reaches is the printed *"lead investigator"*'s
 //! to decide, so the reverse is an `Effect::ChooseOne` of the two printed
-//! bullets, offered to the proxy (below). Each is
+//! bullets, offered to the lead (below). Each is
 //! copied verbatim as its branch's label, `(→R1)` / `(→R2)` markers included —
 //! a player choosing an ending should see which ending it is — and the two
 //! branches are `reach_resolution(1)` and `reach_resolution(2)`.
 //!
-//! The controller of a Forced ability declared on the act is the first Active
-//! investigator in `turn_order`, which stands in for the printed *"lead investigator"*;
-//! the two coincide in solo. `GLOSSARY.md` says where the proxy diverges in
-//! multiplayer.
+//! The controller of a Forced ability declared on the act is the lead
+//! investigator (`GLOSSARY.md`, *Lead investigator*).
 //!
 //! The options anchor to `OptionTarget::Act`, so the host renders them on the
 //! act card — whose reverse face is already what the advance shows at
@@ -93,7 +91,7 @@ const BURN_IT_DOWN_LABEL: &str = "It was never much of a home. Burn it down! (�
 const MY_HOME_LABEL: &str = "This hell-pit is my home! No way are we burning it! (→R2)";
 
 /// 01110's Forced objective (advance when the Ghoul Priest is defeated) and its
-/// on-advance reverse (the resolution point the lead-investigator proxy picks).
+/// on-advance reverse (the resolution point the lead investigator picks).
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![
@@ -140,7 +138,7 @@ mod tests {
         assert!(matches!(abilities[0].effect, Effect::AdvanceCurrentAct));
     }
 
-    /// The reverse offers the lead-investigator proxy the two printed resolution
+    /// The reverse offers the lead investigator the two printed resolution
     /// points on the `after` cell of the act's own advance (ADR 0013). Both
     /// bullets are reachable; the labels are the printed text, markers and all.
     #[test]

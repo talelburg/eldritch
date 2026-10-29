@@ -177,6 +177,15 @@ pub struct ChoiceOption {
     /// The board surface this option acts on; `None` is un-anchored — the host
     /// renders it in the prompt banner (ADR 0011).
     pub target: Option<OptionTarget>,
+    /// The investigator this option is offered to, in a prompt
+    /// [answered by several](Responder::Several): a reaction window or a
+    /// framework Fast window. Two options on one anchor offered to two
+    /// investigators differ here. `None` everywhere else, where the
+    /// request's [`responder`](InputRequest::responder) answers every option.
+    ///
+    /// Required on the wire, `null` for `None`.
+    #[serde(deserialize_with = "crate::wire::required_option")]
+    pub investigator: Option<InvestigatorId>,
 }
 
 impl ChoiceOption {
@@ -187,7 +196,16 @@ impl ChoiceOption {
             id,
             label: label.into(),
             target: None,
+            investigator: None,
         }
+    }
+
+    /// Name the investigator this option is offered to, in a window several
+    /// answer.
+    #[must_use]
+    pub fn offered_to(mut self, investigator: InvestigatorId) -> Self {
+        self.investigator = Some(investigator);
+        self
     }
 
     /// Anchor this option to `target` — the same `.at(…)` idiom
@@ -224,9 +242,10 @@ pub enum InputKind {
     /// Pick exactly one offered [`option`](InputRequest::options) →
     /// [`InputResponse::PickSingle`](crate::action::InputResponse::PickSingle).
     PickSingle,
-    /// Pick a subset (possibly empty) →
+    /// Pick a subset of the offered options, as many as the
+    /// [`PickCount`] says →
     /// [`InputResponse::PickMultiple`](crate::action::InputResponse::PickMultiple).
-    PickMultiple,
+    PickMultiple(PickCount),
     /// A binary acknowledge with no choice →
     /// [`InputResponse::Confirm`](crate::action::InputResponse::Confirm).
     Confirm,
@@ -253,6 +272,81 @@ pub enum PromptNature {
     Decision,
 }
 
+/// How many of a [`PickMultiple`](InputKind::PickMultiple) prompt's options a
+/// response may select: `min..=max`, both inclusive.
+///
+/// A skill-test commit and a setup mulligan take any number of their options,
+/// none included ([`up_to`](Self::up_to) the option count). A hand-size
+/// discard takes exactly the number it must discard
+/// ([`exactly`](Self::exactly)). A host can hold its Confirm until the
+/// selection is in range. A constraint no count expresses — a skill's printed
+/// "Max N committed per skill test" (Guts 01089) — is still checked when the
+/// response arrives, and a response breaking it is rejected.
+///
+/// `u32` for the reason [`OptionId`] is: a host-pointer-width-independent wire
+/// format.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PickCount {
+    /// The fewest options a response may select.
+    pub min: u32,
+    /// The most options a response may select.
+    pub max: u32,
+}
+
+impl PickCount {
+    /// Any number from none to `max`.
+    #[must_use]
+    pub fn up_to(max: usize) -> Self {
+        Self {
+            min: 0,
+            max: Self::wire(max),
+        }
+    }
+
+    /// Exactly `count`.
+    #[must_use]
+    pub fn exactly(count: usize) -> Self {
+        let count = Self::wire(count);
+        Self {
+            min: count,
+            max: count,
+        }
+    }
+
+    /// Whether selecting `selected` options is in range.
+    #[must_use]
+    pub fn admits(self, selected: usize) -> bool {
+        u32::try_from(selected).is_ok_and(|n| (self.min..=self.max).contains(&n))
+    }
+
+    fn wire(count: usize) -> u32 {
+        u32::try_from(count).expect("an offered option count fits in u32")
+    }
+}
+
+/// Who answers a prompt (ADR 0019), read off the frame that asks it.
+///
+/// A host shows who the game is waiting on from this, without matching over
+/// engine frames. TODO(#581): a seat check compares the answering seat against
+/// it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum Responder {
+    /// One named investigator: the one whose turn, test, cost, queue slot or
+    /// effect the prompt belongs to.
+    Investigator(InvestigatorId),
+    /// The lead investigator, resolved to who that is now, answering a group
+    /// decision: `glossary/Lead_Investigator.md`, *"the lead investigator is
+    /// the final arbiter in choosing among those options"*. Kept apart from
+    /// [`Investigator`](Self::Investigator) so a host can show that the lead
+    /// is the one deciding.
+    Lead(InvestigatorId),
+    /// Several answerers: a reaction window or a framework Fast window, where
+    /// each option names the investigator it is offered to
+    /// ([`ChoiceOption::investigator`]).
+    Several,
+}
+
 /// A prompt the engine emits when it needs player input.
 ///
 /// Carries free-form [`prompt`](Self::prompt) text, a [`kind`](Self::kind)
@@ -267,9 +361,10 @@ pub enum PromptNature {
 pub struct InputRequest {
     /// Human-readable text describing what the player must choose.
     pub prompt: String,
-    /// Offered options for a [`PickSingle`](InputKind::PickSingle) prompt.
-    /// Empty for [`PickMultiple`](InputKind::PickMultiple) (host derives
-    /// hand-card candidates) and [`Confirm`](InputKind::Confirm).
+    /// The offered options: the one a [`PickSingle`](InputKind::PickSingle)
+    /// response names, or the candidates a
+    /// [`PickMultiple`](InputKind::PickMultiple) response selects a subset of.
+    /// Empty for [`Confirm`](InputKind::Confirm).
     pub options: Vec<ChoiceOption>,
     /// Which response variant the host must send back.
     pub kind: InputKind,
@@ -289,17 +384,25 @@ pub struct InputRequest {
     /// What this prompt asks the player to choose between (ADR 0015).
     ///
     /// It rides on the request rather than on each option because every branch
-    /// of one choice shares it. `#[serde(default)]` so a seed outcome persisted
-    /// before this field existed still deserializes — and lands on
-    /// [`Selection`](PromptNature::Selection), which is the behaviour it was
-    /// written under.
-    #[serde(default)]
+    /// of one choice shares it.
     pub nature: PromptNature,
+    /// Who answers this prompt (ADR 0019).
+    ///
+    /// The constructors leave it [`Several`](Responder::Several) as a
+    /// placeholder. The engine's prompt table attaches the asking frame's
+    /// responder to every request it surfaces, so no request the engine
+    /// returns carries the placeholder unless several really do answer.
+    pub responder: Responder,
 }
 
 impl InputRequest {
     /// A single-selection choice over `options` →
     /// [`InputResponse::PickSingle`](crate::action::InputResponse::PickSingle).
+    ///
+    /// Its [`responder`](Self::responder) is a placeholder, as every
+    /// constructor's is: the prompt table (`prompt::request`, which
+    /// `prompt::suspend` calls) overwrites it with the asking frame's, so
+    /// every request the engine returns carries the table's responder.
     #[must_use]
     pub fn pick_single(text: impl Into<String>, options: Vec<ChoiceOption>) -> Self {
         Self {
@@ -309,34 +412,41 @@ impl InputRequest {
             skippable: false,
             target: None,
             nature: PromptNature::Selection,
+            responder: Responder::Several,
         }
     }
 
-    /// A subset-selection prompt →
+    /// A subset-selection prompt over `options`, selecting `count` of them →
     /// [`InputResponse::PickMultiple`](crate::action::InputResponse::PickMultiple).
     ///
-    /// `options` is left empty: every current consumer (skill-test commit,
-    /// setup mulligan, hand-size discard) picks a subset of the *prompted
-    /// investigator's hand*, and the host derives candidates from the hand,
-    /// treating each `OptionId(i)` as hand index `i`. This hand-index
-    /// convention only holds while `PickMultiple` decisions are hand-scoped; a
-    /// future subset-pick over non-hand candidates (e.g. revealed cards,
-    /// enemies) would need to carry them in `options` and render from there,
-    /// like [`pick_single`](Self::pick_single).
+    /// Each selected [`OptionId`] names one of `options`, exactly as a
+    /// [`PickSingle`](InputKind::PickSingle) response does, and the host
+    /// renders each candidate on the surface its option anchors to.
+    ///
+    /// Its [`responder`](Self::responder) is a placeholder the prompt table
+    /// overwrites, as for [`pick_single`](Self::pick_single).
     #[must_use]
-    pub fn pick_multiple(text: impl Into<String>) -> Self {
+    pub fn pick_multiple(
+        text: impl Into<String>,
+        options: Vec<ChoiceOption>,
+        count: PickCount,
+    ) -> Self {
         Self {
             prompt: text.into(),
-            options: Vec::new(),
-            kind: InputKind::PickMultiple,
+            options,
+            kind: InputKind::PickMultiple(count),
             skippable: false,
             target: None,
             nature: PromptNature::Selection,
+            responder: Responder::Several,
         }
     }
 
     /// A binary acknowledge prompt →
     /// [`InputResponse::Confirm`](crate::action::InputResponse::Confirm).
+    ///
+    /// Its [`responder`](Self::responder) is a placeholder the prompt table
+    /// overwrites, as for [`pick_single`](Self::pick_single).
     #[must_use]
     pub fn confirm(text: impl Into<String>) -> Self {
         Self {
@@ -346,6 +456,7 @@ impl InputRequest {
             skippable: false,
             target: None,
             nature: PromptNature::Selection,
+            responder: Responder::Several,
         }
     }
 
@@ -386,6 +497,15 @@ impl InputRequest {
         self.nature = PromptNature::Decision;
         self
     }
+
+    /// Name who answers this prompt. The engine's prompt table attaches the
+    /// asking frame's responder itself; a host calls this only to build a
+    /// request in a test.
+    #[must_use]
+    pub fn answered_by(mut self, responder: Responder) -> Self {
+        self.responder = responder;
+        self
+    }
 }
 
 /// Opaque continuation token returned alongside [`AwaitingInput`].
@@ -415,11 +535,30 @@ mod tests {
     }
 
     #[test]
-    fn pick_multiple_sets_kind_and_empty_options() {
-        let req = InputRequest::pick_multiple("Commit cards");
-        assert_eq!(req.kind, InputKind::PickMultiple);
+    fn pick_multiple_carries_its_options_and_count() {
+        let req = InputRequest::pick_multiple(
+            "Discard",
+            vec![
+                ChoiceOption::new(OptionId(0), "A"),
+                ChoiceOption::new(OptionId(1), "B"),
+            ],
+            PickCount::exactly(1),
+        );
+        assert_eq!(
+            req.kind,
+            InputKind::PickMultiple(PickCount { min: 1, max: 1 })
+        );
         assert!(!req.skippable);
-        assert!(req.options.is_empty());
+        assert_eq!(req.options.len(), 2);
+    }
+
+    #[test]
+    fn a_pick_count_admits_the_selections_in_its_range() {
+        assert!(PickCount::up_to(2).admits(0));
+        assert!(PickCount::up_to(2).admits(2));
+        assert!(!PickCount::up_to(2).admits(3));
+        assert!(!PickCount::exactly(2).admits(1));
+        assert!(PickCount::exactly(2).admits(2));
     }
 
     #[test]
@@ -439,7 +578,7 @@ mod tests {
             PromptNature::Selection
         );
         assert_eq!(
-            InputRequest::pick_multiple("w").nature,
+            InputRequest::pick_multiple("w", vec![], PickCount::up_to(0)).nature,
             PromptNature::Selection
         );
         assert_eq!(InputRequest::confirm("w").nature, PromptNature::Selection);
@@ -459,14 +598,50 @@ mod tests {
         );
     }
 
-    /// A seed outcome persisted before `nature` existed still deserializes, and
-    /// lands on the behaviour it was written under.
+    /// A request missing its `nature` or its `responder` does not deserialize:
+    /// neither field has a default, and a game persisted before one existed
+    /// is discarded (ADR 0010).
     #[test]
-    fn a_request_serialized_without_a_nature_reads_back_as_selection() {
-        let json =
-            r#"{"prompt":"w","options":[],"kind":"PickSingle","skippable":false,"target":null}"#;
-        let back: InputRequest = serde_json::from_str(json).expect("deserialize");
-        assert_eq!(back.nature, PromptNature::Selection);
+    fn a_request_serialized_without_a_nature_or_a_responder_does_not_read_back() {
+        let full = r#"{"prompt":"w","options":[],"kind":"PickSingle","skippable":false,
+            "target":null,"nature":"Selection","responder":"Several"}"#;
+        assert_eq!(
+            serde_json::from_str::<InputRequest>(full).expect("deserialize"),
+            InputRequest::pick_single("w", vec![])
+        );
+        let no_nature = r#"{"prompt":"w","options":[],"kind":"PickSingle","skippable":false,
+            "target":null,"responder":"Several"}"#;
+        assert!(serde_json::from_str::<InputRequest>(no_nature).is_err());
+        let no_responder = r#"{"prompt":"w","options":[],"kind":"PickSingle","skippable":false,
+            "target":null,"nature":"Selection"}"#;
+        assert!(serde_json::from_str::<InputRequest>(no_responder).is_err());
+    }
+
+    /// An option with no `investigator` does not deserialize: `None` is
+    /// written out as `null`, and a missing field is refused rather than
+    /// read as `None` (ADR 0010).
+    #[test]
+    fn an_option_serialized_without_an_investigator_does_not_read_back() {
+        let json = r#"{"id":0,"label":"A","target":null}"#;
+        assert!(serde_json::from_str::<ChoiceOption>(json).is_err());
+        let json = r#"{"id":0,"label":"A","target":null,"investigator":null}"#;
+        assert_eq!(
+            serde_json::from_str::<ChoiceOption>(json).expect("deserialize"),
+            ChoiceOption::new(OptionId(0), "A")
+        );
+    }
+
+    #[test]
+    fn a_responder_and_an_option_investigator_round_trip() {
+        let request = InputRequest::pick_single(
+            "w",
+            vec![ChoiceOption::new(OptionId(0), "A").offered_to(InvestigatorId(2))],
+        )
+        .answered_by(Responder::Lead(InvestigatorId(2)));
+        let back: InputRequest =
+            serde_json::from_str(&serde_json::to_string(&request).expect("serialize"))
+                .expect("deserialize");
+        assert_eq!(back, request);
     }
 
     #[test]
@@ -523,7 +698,10 @@ mod tests {
     #[test]
     fn request_constructors_are_unanchored_and_at_anchors() {
         assert_eq!(InputRequest::confirm("Draw").target, None);
-        assert_eq!(InputRequest::pick_multiple("Commit").target, None);
+        assert_eq!(
+            InputRequest::pick_multiple("Commit", vec![], PickCount::up_to(0)).target,
+            None
+        );
         assert_eq!(InputRequest::pick_single("Choose", vec![]).target, None);
 
         let req = InputRequest::confirm("Draw").at(OptionTarget::EncounterDeck);

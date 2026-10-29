@@ -19,7 +19,7 @@ use card_dsl::dsl::{CardFilter, Effect};
 use crate::action::InputResponse;
 use crate::card_registry::{self, CardRegistry};
 use crate::engine::dispatch::{cards, choice, threat_area};
-use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken};
+use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId, OptionTarget};
 use crate::engine::{abilities_in_effect, board, Cx};
 use crate::state::{
     AssetEntry, CardCode, CardInPlay, CardInstanceId, GameState, InvestigatorId, SlotDiscardFrame,
@@ -384,35 +384,45 @@ pub(in crate::engine) fn enter_asset_making_room(
         }
         _ => {
             // Genuine choice: the player picks which occupier to discard. The
-            // asset stays mid-play, riding this frame across the prompt.
-            let request = slot_discard_request(cx, investigator, &candidates, &deficit);
+            // asset stays mid-play, riding this frame across the prompt, which
+            // the `drive` loop surfaces from it.
             cx.state.continuations.push(SlotDiscardFrame {
                 investigator,
                 card: Some(card),
                 entry,
             });
-            EngineOutcome::AwaitingInput {
-                request,
-                resume_token: ResumeToken(0),
-            }
+            EngineOutcome::Done
         }
     }
 }
 
-/// The `PickSingle` over the make-room `candidates`.
-fn slot_discard_request(
-    cx: &Cx,
-    investigator: InvestigatorId,
-    candidates: &[(CardInstanceId, CardCode)],
-    deficit: &SlotCounts,
+/// What a [`SlotDiscardFrame`] asks: a `PickSingle` over the make-room
+/// candidates, re-derived from the entering asset the frame holds as
+/// [`resume_slot_discard`] re-derives them. One of the
+/// [prompt table](super::prompt::request)'s helpers.
+pub(super) fn slot_discard_request(
+    state: &GameState,
+    cards: &CardRegistry,
+    frame: &SlotDiscardFrame,
 ) -> InputRequest {
-    let prompt = format!(
-        "Investigator {investigator:?}: choose an asset to discard to make room \
-         (slots needed: {deficit:?})."
+    let investigator = frame.investigator;
+    let candidates = frame.card.as_ref().map_or_else(Vec::new, |card| {
+        let deficit = slot_deficit(state, cards, investigator, &card.code);
+        make_room_candidates(state, cards, investigator, &card.code, &deficit)
+    });
+    let who = choice::investigator_name(state, investigator);
+    let prompt = frame.card.as_ref().map_or_else(
+        || format!("{who}: choose an asset to discard to make room."),
+        |card| {
+            format!(
+                "{who}: choose an asset to discard to make room for {}.",
+                choice::card_name(cards, &card.code),
+            )
+        },
     );
     InputRequest::pick_single(
         prompt,
-        choice::candidate_options(cx.state, cx.cards, candidates, |(inst, _)| {
+        choice::candidate_options(state, cards, &candidates, |(inst, _)| {
             OptionTarget::CardInstance(*inst)
         }),
     )

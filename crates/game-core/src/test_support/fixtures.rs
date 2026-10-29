@@ -22,7 +22,10 @@ use std::collections::BTreeSet;
 use card_dsl::card_data::{CardKind, CardMetadata, Class, ClueValue, HealthValue, Prey};
 use card_dsl::dsl::SkillTestKind;
 
-use crate::engine::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
+use crate::engine::{
+    ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, PickCount, Responder,
+    ResumeToken,
+};
 use crate::state::{
     CardCode, CardInPlay, CardInstanceId, Continuation, ContinuationStack, DifficultyBasis, Enemy,
     EnemyId, InFlightSkillTest, Investigator, InvestigatorId, Location, LocationId, Owner,
@@ -238,10 +241,10 @@ pub fn test_skill_test(
 ///
 /// **Render-only.** A state built with it is for reading — a view, a decision
 /// label, an eligibility condition — and is never applied. The stack may be one
-/// the engine could never produce, and nothing re-establishes the prompt such a
-/// state is waiting on: a [`TestSession`](crate::test_support::TestSession)
-/// settling it panics if its top frame cannot re-surface its prompt. To drive a
-/// state, reach it through the session instead.
+/// the engine could never produce. To drive a state with a frame on top, stage
+/// it with [`GameStateBuilder::with_frame`](crate::state::GameStateBuilder::with_frame),
+/// which pushes it with the stack's checks, and settle it into a
+/// [`TestSession`](crate::test_support::TestSession).
 ///
 /// To stack a frame on a state the builder already staged, rebuild from its
 /// frames: `from_frames_unchecked(state.continuations.iter().cloned().chain([frame]))`.
@@ -250,16 +253,30 @@ pub fn from_frames_unchecked(frames: impl IntoIterator<Item = Continuation>) -> 
     ContinuationStack::from_frames_unchecked(frames.into_iter().collect())
 }
 
+/// Who answers the `AwaitingInput` fixtures below, unless a `_for` variant
+/// names someone else: seat 1.
+const SEAT_ONE: Responder = Responder::Investigator(InvestigatorId(1));
+
 /// A sample skill-test commit [`AwaitingInput`](EngineOutcome::AwaitingInput)
 /// outcome, for client/UI fixtures.
 ///
-/// This is the only `AwaitingInput` shape the engine emits today (the
-/// skill-test commit window). The `ResumeToken` value is irrelevant to
-/// rendering — routing keys off `state.in_flight_skill_test`, not the token.
+/// Seat 1 picks any number of their hand cards at `hand_indices`, option `i`
+/// anchored to `hand_indices[i]`. The `ResumeToken` value is irrelevant to
+/// rendering.
 #[must_use]
-pub fn awaiting_commit_input(prompt: impl Into<String>) -> EngineOutcome {
+pub fn awaiting_commit_input(prompt: impl Into<String>, hand_indices: &[u8]) -> EngineOutcome {
+    awaiting_commit_input_for(prompt, InvestigatorId(1), hand_indices)
+}
+
+/// [`awaiting_commit_input`] answered by `investigator`, from their hand.
+#[must_use]
+pub fn awaiting_commit_input_for(
+    prompt: impl Into<String>,
+    investigator: InvestigatorId,
+    hand_indices: &[u8],
+) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_multiple(prompt),
+        request: hand_pick(prompt, investigator, hand_indices),
         resume_token: ResumeToken(0),
     }
 }
@@ -267,12 +284,43 @@ pub fn awaiting_commit_input(prompt: impl Into<String>) -> EngineOutcome {
 /// A skippable [`PickMultiple`](crate::engine::InputKind::PickMultiple)
 /// [`AwaitingInput`](EngineOutcome::AwaitingInput) outcome — for UI tests of the
 /// Pass/Skip control on a multi-select prompt.
+///
+/// Offers seat 1's hand cards at `hand_indices`, as [`awaiting_commit_input`]
+/// does.
 #[must_use]
-pub fn awaiting_skippable_commit_input(prompt: impl Into<String>) -> EngineOutcome {
+pub fn awaiting_skippable_commit_input(
+    prompt: impl Into<String>,
+    hand_indices: &[u8],
+) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_multiple(prompt).skippable(),
+        request: hand_pick(prompt, InvestigatorId(1), hand_indices).skippable(),
         resume_token: ResumeToken(0),
     }
+}
+
+/// A `PickMultiple` answered by `investigator` over their hand cards at
+/// `hand_indices`, any number of them.
+fn hand_pick(
+    prompt: impl Into<String>,
+    investigator: InvestigatorId,
+    hand_indices: &[u8],
+) -> InputRequest {
+    let options = hand_indices
+        .iter()
+        .enumerate()
+        .map(|(i, &hand_index)| {
+            ChoiceOption::new(
+                OptionId(u32::try_from(i).expect("a hand fits in u32")),
+                format!("hand card {hand_index}"),
+            )
+            .at(OptionTarget::HandCard {
+                investigator,
+                hand_index,
+            })
+        })
+        .collect();
+    InputRequest::pick_multiple(prompt, options, PickCount::up_to(hand_indices.len()))
+        .answered_by(Responder::Investigator(investigator))
 }
 
 /// An [`AwaitingInput`](EngineOutcome::AwaitingInput) around an arbitrary
@@ -306,7 +354,8 @@ pub fn awaiting_pick_single_input(prompt: impl Into<String>) -> EngineOutcome {
                 ChoiceOption::new(OptionId(0), "End turn"),
                 ChoiceOption::new(OptionId(1), "Investigate"),
             ],
-        ),
+        )
+        .answered_by(SEAT_ONE),
         resume_token: ResumeToken(0),
     }
 }
@@ -324,18 +373,28 @@ pub fn awaiting_pick_single_with(
     options: Vec<ChoiceOption>,
 ) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_single(prompt, options),
+        request: InputRequest::pick_single(prompt, options).answered_by(SEAT_ONE),
         resume_token: ResumeToken(0),
     }
 }
 
 /// A sample [`Confirm`](crate::engine::InputKind::Confirm)
 /// [`AwaitingInput`](EngineOutcome::AwaitingInput) outcome, for client/UI
-/// fixtures. Models the Mythos encounter-draw prompt.
+/// fixtures. Models the Mythos encounter-draw prompt, asked of seat 1.
 #[must_use]
 pub fn awaiting_confirm_input(prompt: impl Into<String>) -> EngineOutcome {
+    awaiting_confirm_input_for(prompt, InvestigatorId(1))
+}
+
+/// [`awaiting_confirm_input`] asked of `investigator`, for a UI test of who
+/// the game is waiting on.
+#[must_use]
+pub fn awaiting_confirm_input_for(
+    prompt: impl Into<String>,
+    investigator: InvestigatorId,
+) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
-        request: InputRequest::confirm(prompt),
+        request: InputRequest::confirm(prompt).answered_by(Responder::Investigator(investigator)),
         resume_token: ResumeToken(0),
     }
 }
@@ -349,7 +408,8 @@ pub fn awaiting_confirm_input(prompt: impl Into<String>) -> EngineOutcome {
 pub fn awaiting_skippable_pick_single_input(prompt: impl Into<String>) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_single(prompt, vec![ChoiceOption::new(OptionId(0), "Resolve")])
-            .skippable(),
+            .skippable()
+            .answered_by(SEAT_ONE),
         resume_token: ResumeToken(0),
     }
 }
@@ -366,7 +426,9 @@ pub fn awaiting_skippable_pick_single_with(
     options: Vec<ChoiceOption>,
 ) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_single(prompt, options).skippable(),
+        request: InputRequest::pick_single(prompt, options)
+            .skippable()
+            .answered_by(SEAT_ONE),
         resume_token: ResumeToken(0),
     }
 }
@@ -377,7 +439,7 @@ mod tests {
 
     #[test]
     fn awaiting_commit_input_carries_the_prompt() {
-        let outcome = awaiting_commit_input("Commit cards for the test");
+        let outcome = awaiting_commit_input("Commit cards for the test", &[0]);
         match outcome {
             EngineOutcome::AwaitingInput { request, .. } => {
                 assert_eq!(request.prompt, "Commit cards for the test");

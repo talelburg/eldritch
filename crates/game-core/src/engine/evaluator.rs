@@ -43,12 +43,12 @@ use crate::engine::dispatch::actions::evade::EvadeModification;
 use crate::engine::dispatch::actions::fight::FightModification;
 use crate::engine::dispatch::actions::investigate::InvestigateModification;
 use crate::engine::dispatch::actions::take;
-use crate::engine::dispatch::choice::{ChoiceResolution, Grounded};
+use crate::engine::dispatch::choice::{ChoiceResolution, Grounded, Suspension};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::skill_test::SkillTestSpec;
 use crate::engine::dispatch::{
-    self, act_agenda, actions, cards, choice, combat, elimination, emit, engagement, skill_test,
-    threat_area,
+    self, act_agenda, actions, cards, choice, combat, elimination, emit, engagement, prompt,
+    skill_test, threat_area,
 };
 use crate::engine::modified_value;
 use crate::engine::outcome::{EngineOutcome, OptionId, OptionTarget};
@@ -57,8 +57,8 @@ use crate::event::Event;
 use crate::scenario::{ResolutionId, ScenarioEnding};
 use crate::state::{
     AbilitySource, AdvanceTrigger, CardCode, CardInstanceId, Continuation, DamageSource,
-    EffectFrame, EmitStep, EnemyId, GameState, InvestigatorId, Lifetime, LocationId, Owner,
-    PlayFromHandFrame, RecordedModifier, ResolvedTest, Status,
+    EffectFrame, EffectPrompt, EmitStep, EnemyId, GameState, InvestigatorId, Lifetime, LocationId,
+    Owner, PlayFromHandFrame, RecordedModifier, ResolvedTest, Status,
 };
 
 /// Margin of the just-resolved skill test, bound only while running one of its
@@ -481,6 +481,7 @@ fn frame_of(effect: &Effect, ctx: EvalContext) -> EffectFrame {
             ctx,
         },
         _ => EffectFrame::Leaf {
+            prompt: None,
             effect: Box::new(effect.clone()),
             ctx,
         },
@@ -535,8 +536,10 @@ pub(crate) fn step_effect_frame(cx: &mut Cx) -> EngineOutcome {
             cx.state.continuations.push(Continuation::Effect(child));
             EngineOutcome::Done
         }
-        EffectFrame::Leaf { effect, ctx } => step_leaf(cx, &effect, ctx),
-        EffectFrame::Designated { designator, ctx } => step_designated(cx, &designator, ctx),
+        EffectFrame::Leaf { effect, ctx, .. } => step_leaf(cx, &effect, ctx),
+        EffectFrame::Designated {
+            designator, ctx, ..
+        } => step_designated(cx, &designator, ctx),
     }
 }
 
@@ -561,9 +564,10 @@ fn start_for_each(cx: &mut Cx, targets: ForEachTargets, body: &Effect, ctx: Eval
 /// as it stands, in walk order. Read-only, so the change-state gate
 /// ([`effect_can_change_state`]) and the walk agree on the set.
 ///
-/// **Investigators walk in turn order**, the engine's player order — the same
-/// proxy the upkeep, mulligan and hand-size steps walk (`GLOSSARY.md`, *Lead
-/// investigator*). **Enemies walk in id order**: no card in the corpus orders
+/// **Investigators walk in player order** ([`player_order`](crate::engine::player_order)),
+/// starting at the lead, as the upkeep, mulligan and hand-size steps do:
+/// `glossary/Priority_of_Simultaneous_Resolution.md`, *"these choices are made
+/// in player order."* **Enemies walk in id order**: no card in the corpus orders
 /// an enemy fan-out, and id order is deterministic for replay.
 fn for_each_targets(
     state: &GameState,
@@ -591,21 +595,17 @@ fn for_each_targets(
                 .investigators
                 .get(&ctx.controller)
                 .and_then(|i| i.current_location);
-            state
-                .turn_order
-                .iter()
+            crate::engine::player_order(state)
+                .into_iter()
                 .filter(|id| {
-                    state.investigators.get(id).is_some_and(|i| {
-                        i.status == Status::Active
-                            && match set {
-                                InvestigatorTargetSet::All => true,
-                                InvestigatorTargetSet::AtControllerLocation => {
-                                    here.is_some() && i.current_location == here
-                                }
-                            }
+                    state.investigators.get(id).is_some_and(|i| match set {
+                        InvestigatorTargetSet::All => true,
+                        InvestigatorTargetSet::AtControllerLocation => {
+                            here.is_some() && i.current_location == here
+                        }
                     })
                 })
-                .map(|&id| EachBinding::Investigator(id))
+                .map(EachBinding::Investigator)
                 .collect()
         }
         ForEachTargets::Enemies(EnemySet::EngagedWithYou) => state
@@ -645,6 +645,7 @@ pub(crate) fn push_designated_action(
         .push(Continuation::Effect(EffectFrame::Designated {
             designator: Box::new(designator.clone()),
             ctx: eval_ctx,
+            prompt: None,
         }));
 }
 
@@ -669,11 +670,16 @@ fn step_designated(
     let eval_ctx = if let Some(target) = target.filter(|_| eval_ctx.chosen_enemy().is_none()) {
         match ground_designated_enemy(cx, eval_ctx, target) {
             Ok(ctx) => ctx,
-            Err(outcome) => {
-                if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
-                    push_designated_action(cx, designator, eval_ctx);
-                }
-                return outcome;
+            Err(Unbound::Stop(outcome)) => return outcome,
+            Err(Unbound::Ask(prompt)) => {
+                cx.state
+                    .continuations
+                    .push(Continuation::Effect(EffectFrame::Designated {
+                        designator: Box::new(designator.clone()),
+                        ctx: eval_ctx,
+                        prompt: Some(prompt),
+                    }));
+                return prompt::suspend(cx.state, cx.cards);
             }
         }
     } else {
@@ -834,15 +840,23 @@ fn perform_designated_fight(
     )
 }
 
-/// Re-push a suspended `Leaf` so resume re-steps it with `ctx.chosen_option`
-/// set, and return the `AwaitingInput` prompt. The frame *is* the prompt.
-fn suspend_leaf_in_place(cx: &mut Cx, effect: &Effect, ctx: EvalContext) {
+/// Re-push a suspended `Leaf` carrying the `prompt` it asks, so resume re-steps
+/// it with `ctx.chosen_option` set, and suspend on it. The frame *is* the
+/// prompt, and the prompt table reads what it asks off the frame.
+pub(crate) fn suspend_leaf_in_place(
+    cx: &mut Cx,
+    effect: &Effect,
+    ctx: EvalContext,
+    prompt: EffectPrompt,
+) -> EngineOutcome {
     cx.state
         .continuations
         .push(Continuation::Effect(EffectFrame::Leaf {
             effect: Box::new(effect.clone()),
             ctx,
+            prompt: Some(prompt),
         }));
+    prompt::suspend(cx.state, cx.cards)
 }
 
 /// Evaluate one non-control effect node (the [`EffectFrame::Leaf`]
@@ -862,12 +876,8 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
     // AwaitingInput; resume re-steps with `chosen_option` set.
     let eval_ctx = match ground_chosen_targets(cx, effect, eval_ctx) {
         Ok(ctx) => ctx,
-        Err(outcome) => {
-            if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
-                suspend_leaf_in_place(cx, effect, eval_ctx);
-            }
-            return outcome;
-        }
+        Err(Unbound::Stop(outcome)) => return outcome,
+        Err(Unbound::Ask(prompt)) => return suspend_leaf_in_place(cx, effect, eval_ctx, prompt),
     };
     match effect {
         Effect::GainResources { target, amount } => gain_resources(cx, eval_ctx, *target, *amount),
@@ -1173,8 +1183,8 @@ fn step_choose_one(
                     .ability_source
                     .and_then(|s| OptionTarget::for_live_source(s, cx.state));
                 let labels = live.iter().map(|&i| branches[i].label.clone()).collect();
-                suspend_leaf_in_place(cx, node, eval_ctx);
-                choice::awaiting_decision("Choose one", labels, anchor)
+                let prompt = choice::decision_prompt("Choose one", labels, anchor);
+                suspend_leaf_in_place(cx, node, eval_ctx, prompt)
             }
         }
     }
@@ -1182,8 +1192,8 @@ fn step_choose_one(
 
 /// The [`Effect::Native`] step: dispatch to the card-local handler (threading
 /// `ctx.chosen_option` so a resumed native receives its pick). If the native
-/// suspends for a choice, **suspend in place** (re-push `node` so resume
-/// re-invokes the native with the pick). The native must choose *before* any
+/// suspends for a choice, [`NativeCx::suspend`] **suspends in place** (re-pushes
+/// `node` so resume re-invokes the native with the pick). The native must choose *before* any
 /// side effect (standalone contract) so re-invocation is idempotent up to the
 /// suspension — no double-apply.
 ///
@@ -1196,14 +1206,29 @@ fn step_native(cx: &mut Cx, tag: &str, eval_ctx: EvalContext, node: &Effect) -> 
             reason: format!("Native effect {tag:?}: no handler registered").into(),
         };
     };
-    let mut native_cx = NativeCx::new(Cx {
-        state: &mut *cx.state,
-        events: &mut *cx.events,
-        cards: cx.cards,
-        scenario: cx.scenario,
-    });
+    let mut native_cx = NativeCx::new(
+        Cx {
+            state: &mut *cx.state,
+            events: &mut *cx.events,
+            cards: cx.cards,
+            scenario: cx.scenario,
+        },
+        node,
+        eval_ctx,
+    );
     let outcome = f(&mut native_cx, &eval_ctx);
     let written = native_cx.written();
+    let suspended = native_cx.suspended();
+    if native_cx.wrote_past_prompt() {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "Native effect {tag:?} changed the game directly while a prompt one of its \
+                 exits pushed was still pending; the change would land before the prompt \
+                 is answered"
+            )
+            .into(),
+        };
+    }
     if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
         if written {
             return EngineOutcome::Rejected {
@@ -1214,7 +1239,16 @@ fn step_native(cx: &mut Cx, tag: &str, eval_ctx: EvalContext, node: &Effect) -> 
                 .into(),
             };
         }
-        suspend_leaf_in_place(cx, node, eval_ctx);
+        // No exit suspends, so a native's `AwaitingInput` is its own
+        // `NativeCx::suspend`, which re-pushed this node as the prompt.
+        if !suspended {
+            return EngineOutcome::Rejected {
+                reason: format!(
+                    "Native effect {tag:?} suspended without asking through NativeCx::suspend"
+                )
+                .into(),
+            };
+        }
     }
     outcome
 }
@@ -1319,11 +1353,11 @@ fn apply_search_deck(
     ) {
         Grounded::Empty => None,
         Grounded::Picked(i) => Some(eligible[i].0),
-        Grounded::Suspend(outcome) => {
-            if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
-                suspend_leaf_in_place(cx, node, eval_ctx);
-            }
-            return outcome;
+        Grounded::Suspend(suspension) => {
+            return match suspension.into_prompt() {
+                Ok(prompt) => suspend_leaf_in_place(cx, node, eval_ctx, prompt),
+                Err(rejected) => rejected,
+            };
         }
     };
 
@@ -2231,7 +2265,7 @@ fn ground_chosen_targets(
     cx: &mut Cx,
     effect: &Effect,
     eval_ctx: EvalContext,
-) -> Result<EvalContext, EngineOutcome> {
+) -> Result<EvalContext, Unbound> {
     let inv_target = match effect {
         Effect::GainResources { target, .. }
         | Effect::Deal { target, .. }
@@ -2275,19 +2309,33 @@ fn ground_chosen_targets(
     Ok(eval_ctx)
 }
 
+/// Why grounding a node's target did not bind it.
+enum Unbound {
+    /// End the step with this outcome: a skip (`Done`) or a rejection.
+    Stop(EngineOutcome),
+    /// Suspend the node in place on this prompt.
+    Ask(EffectPrompt),
+}
+
+impl From<Suspension> for Unbound {
+    fn from(suspension: Suspension) -> Self {
+        match suspension.into_prompt() {
+            Ok(prompt) => Unbound::Ask(prompt),
+            Err(rejected) => Unbound::Stop(rejected),
+        }
+    }
+}
+
 /// Map a `*::Chosen` arm's [`Grounded`] result to the step's flow: the picked
-/// candidate, or the outcome to return. An empty candidate list rejects with the
+/// candidate, or why it is unbound. An empty candidate list rejects with the
 /// arm's own `empty_reason`.
-fn picked_or_reject<T>(
-    grounded: Grounded<T>,
-    empty_reason: &'static str,
-) -> Result<T, EngineOutcome> {
+fn picked_or_reject<T>(grounded: Grounded<T>, empty_reason: &'static str) -> Result<T, Unbound> {
     match grounded {
         Grounded::Picked(c) => Ok(c),
-        Grounded::Empty => Err(EngineOutcome::Rejected {
+        Grounded::Empty => Err(Unbound::Stop(EngineOutcome::Rejected {
             reason: empty_reason.into(),
-        }),
-        Grounded::Suspend(outcome) => Err(outcome),
+        })),
+        Grounded::Suspend(suspension) => Err(suspension.into()),
     }
 }
 
@@ -2310,7 +2358,7 @@ fn picked_or_reject<T>(
 /// passes its intellect(2) test with nobody at the location damaged, and its
 /// `on_success` heal finds no target. Rejecting there would unwind the whole
 /// action — chaos draw included — via `apply_via`'s snapshot restore, so the
-/// effect is skipped (`Err(EngineOutcome::Done)`, which `step_leaf` returns
+/// effect is skipped (`Err(Unbound::Stop(EngineOutcome::Done))`, which `step_leaf` returns
 /// after having already popped the leaf) instead. An *empty scope* still
 /// rejects.
 fn ground_investigator_choice(
@@ -2318,7 +2366,7 @@ fn ground_investigator_choice(
     eval_ctx: EvalContext,
     scope: LocationSet,
     effect: &Effect,
-) -> Result<EvalContext, EngineOutcome> {
+) -> Result<EvalContext, Unbound> {
     let in_scope = investigator_candidates(cx.state, eval_ctx.controller, scope);
     let candidates: Vec<_> = in_scope
         .iter()
@@ -2326,7 +2374,7 @@ fn ground_investigator_choice(
         .filter(|id| investigator_target_eligible(cx.state, effect, *id))
         .collect();
     if candidates.is_empty() && !in_scope.is_empty() {
-        return Err(EngineOutcome::Done);
+        return Err(Unbound::Stop(EngineOutcome::Done));
     }
     let id = picked_or_reject(
         choice::resolve_grounded_choice(
@@ -2352,7 +2400,7 @@ fn ground_location_choice(
     cx: &mut Cx,
     eval_ctx: EvalContext,
     set: LocationSet,
-) -> Result<EvalContext, EngineOutcome> {
+) -> Result<EvalContext, Unbound> {
     let candidates = location_candidates(cx.state, eval_ctx.controller, set);
     let id = picked_or_reject(
         choice::resolve_grounded_choice(
@@ -2377,7 +2425,7 @@ fn ground_enemy_choice(
     cx: &mut Cx,
     eval_ctx: EvalContext,
     scope: &EnemyScope,
-) -> Result<EvalContext, EngineOutcome> {
+) -> Result<EvalContext, Unbound> {
     let candidates = combat::enemies_in_scope(cx.state, cx.cards, eval_ctx.controller, scope);
     let id = picked_or_reject(
         choice::resolve_grounded_choice(
@@ -2426,7 +2474,7 @@ fn ground_designated_enemy(
     cx: &mut Cx,
     eval_ctx: EvalContext,
     target: DesignatedTarget,
-) -> Result<EvalContext, EngineOutcome> {
+) -> Result<EvalContext, Unbound> {
     let (candidates, prompt, none) = match target {
         DesignatedTarget::Fight => (
             actions::fight::candidates(cx.state, eval_ctx.controller),

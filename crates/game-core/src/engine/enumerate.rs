@@ -10,7 +10,7 @@ use std::fmt;
 use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
 use crate::engine::dispatch::actions::{engage, evade, fight, investigate, r#move};
-use crate::engine::dispatch::{act_agenda, legality};
+use crate::engine::dispatch::{act_agenda, choice, legality};
 use crate::engine::outcome::OptionTarget;
 use crate::engine::{abilities_in_effect, ability_source, board};
 use crate::state::{
@@ -148,6 +148,25 @@ impl fmt::Display for PlaySource {
 }
 
 impl TurnAction {
+    /// The investigator taking this action, or `None` for
+    /// [`EndTurn`](Self::EndTurn), which names none.
+    #[must_use]
+    pub fn investigator(&self) -> Option<InvestigatorId> {
+        match self {
+            Self::EndTurn => None,
+            Self::Move { investigator, .. }
+            | Self::Investigate { investigator }
+            | Self::Resource { investigator }
+            | Self::Draw { investigator }
+            | Self::Fight { investigator, .. }
+            | Self::Evade { investigator, .. }
+            | Self::Engage { investigator, .. }
+            | Self::PlayCard { investigator, .. }
+            | Self::ActivateAbility { investigator, .. }
+            | Self::AdvanceAct { investigator } => Some(*investigator),
+        }
+    }
+
     /// Plain human-readable menu label; [`target`](Self::target) is the
     /// structured anchor.
     ///
@@ -192,19 +211,21 @@ impl TurnAction {
                 investigator,
                 source,
             } => {
-                let code = state
+                let card = state
                     .investigators
                     .get(investigator)
-                    .and_then(|inv| source.card(inv))
-                    .map_or_else(|| format!("card at {source}"), ToString::to_string);
-                format!("Play {code}")
+                    .and_then(|inv| source.card(inv));
+                format!("Play {}", card_name(cards, card))
             }
             // A granted ability says so rather than printing an index that
             // belongs to a different card.
             TurnAction::ActivateAbility { address, .. } => match address {
                 AbilityAddress::Printed(index) => format!("Activate ability {index}"),
                 AbilityAddress::Granted { granter, .. } => {
-                    format!("Activate ability granted by {granter}")
+                    format!(
+                        "Activate ability granted by {}",
+                        card_name(cards, Some(granter))
+                    )
                 }
             },
             TurnAction::AdvanceAct { .. } => "Advance act".into(),
@@ -266,17 +287,22 @@ pub(crate) fn play_under_permission_label(
     card: Option<&CardCode>,
     permission: CardInstanceId,
 ) -> String {
-    let name = |code: Option<&CardCode>| {
-        code.map_or_else(
-            || "?".to_owned(),
-            |code| {
-                (cards.metadata_for)(code)
-                    .map_or_else(|| code.to_string(), |meta| meta.name.clone())
-            },
-        )
-    };
     let granter = board::find_instance(state, permission).map(|(granter, _)| &granter.code);
-    format!("Play {} ({})", name(card), name(granter))
+    format!(
+        "Play {} ({})",
+        card_name(cards, card),
+        card_name(cards, granter)
+    )
+}
+
+/// The name a menu label shows for `card`: [`choice::card_name`], and
+/// `"A card"` where the label's source no longer holds one, in the readable
+/// form `choice::investigator_name` falls back to.
+fn card_name(cards: &CardRegistry, card: Option<&CardCode>) -> String {
+    card.map_or_else(
+        || "A card".to_owned(),
+        |code| choice::card_name(cards, code),
+    )
 }
 
 /// The investigator whose turn is open, or `None` when no

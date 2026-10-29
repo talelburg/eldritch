@@ -12,7 +12,7 @@ use card_dsl::dsl::{
 use serde::{Deserialize, Serialize};
 
 use crate::engine::evaluator::{EachBinding, EvalContext};
-use crate::engine::TimingEvent;
+use crate::engine::{OptionTarget, PromptNature, TimingEvent};
 use crate::event::FailureReason;
 use crate::state::ability_source::{AbilityAddress, AbilitySource};
 use crate::state::card::{CardCode, CardInPlay, CardInstanceId, Owner};
@@ -176,10 +176,15 @@ pub enum AdvanceDeck {
 /// Step cursor for the [`AdvanceReverse`](Continuation::AdvanceReverse) frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AdvanceStep {
-    /// Push the observable `…Advanced` event; for a **forced** advance in
-    /// interactive mode, suspend here with a one-option on-card pick (the flip,
-    /// anchored to the act/agenda — cursor stays until resumed). A **deliberate**
-    /// advance skips the pause and falls through.
+    /// Push the observable `…Advanced` event, then move on: to
+    /// [`AwaitAck`](Self::AwaitAck) for a **forced** advance in interactive
+    /// mode, or straight to [`FireReverse`](Self::FireReverse) for a
+    /// **deliberate** one, whose advance was already the player's choice.
+    Announce,
+    /// The event is out and the flip waits on a one-option on-card pick,
+    /// anchored to the act/agenda. The frame rests here until resumed; the
+    /// prompt is built from the frame (`engine::dispatch::prompt`), so a frame
+    /// staged at this step shows it without announcing the event again.
     AwaitAck,
     /// Queue the leaving card's Forced on-advance reverse via `queue_event` —
     /// the frame lands above this one and the `drive` loop resolves it, which is
@@ -312,7 +317,7 @@ pub enum Continuation {
     /// A node of an in-progress card-effect walk. The effect evaluator is
     /// frame-driven: each control-flow node parks here while its children
     /// resolve; the global `drive` loop steps the top frame. A node that needs a controller pick
-    /// suspends *in place* (its `Leaf` step returns `AwaitingInput` and the frame
+    /// suspends *in place* (its `Leaf` is re-pushed carrying what it asks and
     /// stays on top — it *is* the prompt), so this variant can await input
     /// (routed in `resolve_input`, like [`Self::DealDamage`]). Carries its
     /// own [`EvalContext`] snapshot (its grouped
@@ -456,15 +461,18 @@ pub enum EffectFrame {
     /// `ChooseOne` pushes its chosen branch; `Effect::Deal` may push a
     /// `DealDamage`; `Effect::Native { tag }` runs the native fn.
     /// **Suspends in place** for a controller pick (`ChooseOne`, a `*::Chosen`
-    /// target, a native choice): the step returns `AwaitingInput` and the frame
-    /// stays on top — it *is* the prompt. Resume re-steps it with
-    /// `ctx.chosen_option` set; the node grounds/picks (checked indexing,
-    /// validate-first) instead of suspending.
+    /// target, a native choice): the frame is re-pushed carrying the pick's
+    /// [`EffectPrompt`], and stays on top — it *is* the prompt. Resume clears
+    /// the prompt and re-steps it with `ctx.chosen_option` set; the node
+    /// grounds/picks (checked indexing, validate-first) instead of suspending.
     Leaf {
         /// The effect node to evaluate.
         effect: Box<Effect>,
         /// The evaluation context for this node.
         ctx: EvalContext,
+        /// What the node asks, while it rests suspended for a pick; `None`
+        /// while it is still to be stepped.
+        prompt: Option<EffectPrompt>,
     },
     /// The **designated action** of an activated ability, performed as the
     /// rules describe it but modified in the manner the ability carries
@@ -483,7 +491,33 @@ pub enum EffectFrame {
         designator: Box<ActionDesignator>,
         /// The evaluation context for the designated action.
         ctx: EvalContext,
+        /// What the action asks — which enemy — while it rests suspended for
+        /// the pick; `None` while it is still to be stepped.
+        prompt: Option<EffectPrompt>,
     },
+}
+
+/// What a suspended [`EffectFrame::Leaf`] or [`EffectFrame::Designated`] asks:
+/// the payload of its `PickSingle`, stored on the frame when the node suspends.
+///
+/// A node's question can be computed only by running it, and for a native that
+/// means running card code in the `cards` crate. Storing the answer on the
+/// frame is what lets the engine show the prompt again from the frame alone:
+/// the prompt table (`engine::dispatch::prompt`) reads it back, rather than
+/// re-running the node. Option `i` is `options[i]`, `OptionId(i)` on the wire.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EffectPrompt {
+    /// The prompt text.
+    pub text: String,
+    /// One `(label, anchor)` per offered option, in offered order. An anchor
+    /// of `None` renders in the prompt banner (ADR 0011).
+    pub options: Vec<(String, Option<OptionTarget>)>,
+    /// The board surface the prompt itself renders on, for a decision printed
+    /// on one card (ADR 0015); `None` otherwise.
+    pub target: Option<OptionTarget>,
+    /// Whether the options are board entities or alternatives printed on one
+    /// card (ADR 0015).
+    pub nature: PromptNature,
 }
 
 /// The rest of an action once its costs are paid.
@@ -605,6 +639,11 @@ impl Continuation {
     /// all derived from it, so they cannot disagree. Exhaustive with no wildcard,
     /// so a new [`Continuation`] variant does not compile until it is classified.
     ///
+    /// What a Prompt frame *asks* is the other per-frame decision, and lives
+    /// beside the engine code it needs: the prompt table,
+    /// `engine::dispatch::prompt::request`, the same exhaustive match over
+    /// every kind, which builds the request from the frame.
+    ///
     /// Computed from the frame's *value*, not just its variant: an event window
     /// is a prompt only while it has candidates, the open turn only while it is
     /// not ending, a deal of damage only while it distributes, an attack loop
@@ -644,8 +683,9 @@ impl Continuation {
                     TimingMode::Forced => ScenarioEndDisposition::Complete,
                 },
             ),
-            // Mandatory resolution that surfaces its own prompt (the `drive`
-            // loop steps it until it does): the advance's flip acknowledge, the
+            // Mandatory resolution that rests as its own prompt (the `drive`
+            // loop surfaces it, or steps it until it rests): the advance's flip
+            // acknowledge, the
             // forced acknowledge, the skill test's commit window and result
             // pause, a substitution choice, a slot make-room pick, an effect
             // node's controller pick.
@@ -1585,7 +1625,7 @@ impl ResolvedTest {
 ///   emits the commit-window
 ///   [`ResolveInput`](crate::action::PlayerAction::ResolveInput)
 ///   prompt with a [`PickMultiple`](crate::action::InputResponse::PickMultiple)
-///   response (each `OptionId` a hand index).
+///   response (each `OptionId` one of the hand cards the window offers).
 /// - [`PreTokenWindow`](Self::PreTokenWindow) — set after the commit; `advance`
 ///   opens the ST.2→ST.3 player window, then pre-advances to `Resolving`.
 /// - [`Resolving`](Self::Resolving) — set by `finish_skill_test` once the
@@ -1986,6 +2026,16 @@ pub struct SpawnEngagePending {
     pub enemy: EnemyId,
     /// Co-located investigators to choose among.
     pub candidates: Vec<InvestigatorId>,
+}
+
+impl SpawnEngagePending {
+    /// `enemy`'s pending engagement among `candidates`. The constructor for
+    /// code outside the crate, such as a test staging the prompt, where
+    /// `#[non_exhaustive]` blocks the struct literal.
+    #[must_use]
+    pub fn new(enemy: EnemyId, candidates: Vec<InvestigatorId>) -> Self {
+        Self { enemy, candidates }
+    }
 }
 
 /// Suspended upkeep maximum-hand-size discard. `Some` only while
@@ -2762,6 +2812,12 @@ pub struct AdditionalActionChoiceFrame {
     pub source: AbilitySource,
     /// Which of the source's abilities.
     pub address: AbilityAddress,
+    /// The additional actions offered, in offered order, each as the card in
+    /// play granting it, or `None` for one an effect granted this turn: option
+    /// `i` is `offered[i]`. Stored so the prompt is a function of the frame.
+    /// The resume re-quotes the activation, which nothing can change while the
+    /// prompt is open, so it indexes the same list.
+    pub offered: Vec<Option<CardInstanceId>>,
 }
 
 /// A [`Cost::DiscardCardFromHand`](card_dsl::dsl::Cost::DiscardCardFromHand)

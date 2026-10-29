@@ -16,12 +16,12 @@ use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::emit::{ConditionResolution, TimingEvent};
 use crate::engine::dispatch::initiation::{self, InitiationKind, Refusal};
 use crate::engine::dispatch::legality::{self, check_activate_ability, check_play_card};
-use crate::engine::dispatch::{cards, coordinator, cursor, phases, skill_test, trigger_scan};
+use crate::engine::dispatch::{
+    cards, choice, coordinator, cursor, phases, prompt, skill_test, trigger_scan,
+};
 use crate::engine::enumerate::{self, PlaySource, TurnAction};
 use crate::engine::evaluator::EvalContext;
-use crate::engine::outcome::{
-    ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
-};
+use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget};
 use crate::engine::{abilities_in_effect, ability_source, Cx};
 use crate::event::{Event, LapseReason};
 use crate::state::{
@@ -162,9 +162,10 @@ fn build_resolution_options(
             let id = OptionId(u32::try_from(i).expect("option count fits in u32"));
             // Label distinguishes a hand Fast-event play from an ability fired
             // in place; the anchor is the shared `candidate_anchor`.
+            let name = || choice::card_name(cards, &cand.code);
             let label = match cand.source {
-                CandidateSource::Hand if forced => format!("Resolve {} in hand", cand.code),
-                CandidateSource::Hand => format!("Play {} from hand", cand.code),
+                CandidateSource::Hand if forced => format!("Resolve {} in hand", name()),
+                CandidateSource::Hand => format!("Play {} from hand", name()),
                 CandidateSource::TopOfDiscardPile { permission } => {
                     enumerate::play_under_permission_label(
                         state,
@@ -173,9 +174,16 @@ fn build_resolution_options(
                         permission,
                     )
                 }
-                CandidateSource::Ability(_) => format!("Resolve reaction: {}", cand.code),
+                CandidateSource::Ability(_) => format!("Resolve reaction: {}", name()),
             };
-            ChoiceOption::new(id, label).at(candidate_anchor(cand))
+            let option = ChoiceOption::new(id, label).at(candidate_anchor(cand));
+            // A reaction is offered to its controller, and several may answer
+            // the window; a forced run is the lead's to order (ADR 0019).
+            if forced {
+                option
+            } else {
+                option.offered_to(cand.controller)
+            }
         })
         .collect()
 }
@@ -568,42 +576,37 @@ pub(crate) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
         // with an empty option list would strand the client.
         return close_reaction_window(cx);
     }
-    let window = cx
-        .state
-        .continuations
-        .top()
-        .filter(|c| c.pending_candidates().is_some())
-        .expect("open_queued_reaction_window: top frame is the just-queued window");
-    let skip_hint = if window.is_forced() {
-        " (forced — cannot skip; the lead orders them)"
+    debug_assert!(
+        cx.state
+            .continuations
+            .top()
+            .is_some_and(|c| c.pending_candidates().is_some()),
+        "open_queued_reaction_window: top frame is the just-queued window",
+    );
+    prompt::suspend(cx.state, cx.cards)
+}
+
+/// What a window holding resolution candidates asks — an event reaction
+/// window, the forced run, or a framework Fast window with candidates: which
+/// candidate to resolve next, skippable unless the window is forced. One of the
+/// [prompt table](prompt::request)'s helpers.
+pub(super) fn resolution_request(
+    state: &GameState,
+    cards: &CardRegistry,
+    window: &Continuation,
+    candidates: &[ResolutionCandidate],
+) -> InputRequest {
+    let text = if window.is_forced() {
+        "Forced abilities: the lead investigator chooses which resolves next."
     } else {
-        ", or InputResponse::Skip to close"
+        "Choose one to resolve, or pass."
     };
-    let options = build_resolution_options(
-        cx.state,
-        cx.cards,
-        window
-            .pending_candidates()
-            .expect("open_queued_reaction_window: top window has candidates"),
-        window.is_forced(),
-    );
-    let mut request = InputRequest::pick_single(
-        format!(
-            "Resolution window: {} option(s). \
-             Submit InputResponse::PickSingle(OptionId) to resolve one{skip_hint}.",
-            options.len(),
-        ),
-        options,
-    );
-    if !window.is_forced() {
-        request = request.skippable();
-    }
-    EngineOutcome::AwaitingInput {
-        request,
-        // No multi-window state to disambiguate — routing keys off
-        // the top of `state.open_windows`. Conventional 0 like the
-        // commit-window's resume token.
-        resume_token: ResumeToken(0),
+    let options = build_resolution_options(state, cards, candidates, window.is_forced());
+    let request = InputRequest::pick_single(text, options);
+    if window.is_forced() {
+        request
+    } else {
+        request.skippable()
     }
 }
 
@@ -941,27 +944,7 @@ pub(super) fn advance_resolution(cx: &mut Cx) -> EngineOutcome {
     if candidates.is_empty() {
         return close_reaction_window(cx);
     }
-    let skip_hint = if window.is_forced() {
-        " (forced — cannot skip)"
-    } else {
-        ", or InputResponse::Skip to close"
-    };
-    let options = build_resolution_options(cx.state, cx.cards, candidates, window.is_forced());
-    let mut request = InputRequest::pick_single(
-        format!(
-            "Resolution window: {} option(s). \
-             Submit InputResponse::PickSingle(OptionId) to resolve one{skip_hint}.",
-            options.len(),
-        ),
-        options,
-    );
-    if !window.is_forced() {
-        request = request.skippable();
-    }
-    EngineOutcome::AwaitingInput {
-        request,
-        resume_token: ResumeToken(0),
-    }
+    prompt::suspend(cx.state, cx.cards)
 }
 
 /// Close the reaction window / forced run on **top** of the stack: pop it and
@@ -1043,8 +1026,8 @@ pub(super) fn run_fast_continuation(cx: &mut Cx, kind: FastWindowKind) -> Engine
 /// continuation does not call it: the loop only *queues* its attacks (see
 /// `emit::queue_event`), so they are not finished when it returns. Finds the
 /// next Active investigator AFTER `investigator` via
-/// [`cursor::next_active_investigator_after`](super::cursor::next_active_investigator_after)
-/// — the helper indexes off `turn_order` (not the filtered-Active
+/// [`cursor::next_in_player_order`](super::cursor::next_in_player_order)
+/// — the helper indexes off the whole seating (not the filtered-Active
 /// list), so `investigator` itself can have been defeated mid-loop and
 /// the right successor is still found. Then points the `EnemyPhase` anchor at
 /// them and opens [`PhaseStep::BeforeInvestigatorAttacked`] again if there is
@@ -1053,7 +1036,7 @@ pub(super) fn after_enemy_phase_attacks(
     cx: &mut Cx,
     investigator: InvestigatorId,
 ) -> EngineOutcome {
-    let next = cursor::next_active_investigator_after(cx.state, investigator);
+    let next = cursor::next_in_player_order(cx.state, investigator);
     phases::open_attack_window(cx, next)
 }
 
@@ -1145,27 +1128,33 @@ pub(super) fn any_fast_play_eligible(state: &GameState, cards: &CardRegistry) ->
 /// re-exposed after a fast play resolves (the re-open loop). The window stays on
 /// top across the prompt; `resume_window` dispatches the pick, or closes on Skip.
 pub(super) fn drive_fast_window(cx: &mut Cx) -> EngineOutcome {
-    let plays = enumerate_fast_plays(cx.state, cx.cards);
-    if plays.is_empty() {
+    if enumerate_fast_plays(cx.state, cx.cards).is_empty() {
         // Nothing (more) to play: close + run the window's continuation.
         return close_reaction_window(cx);
     }
-    let options = plays
+    prompt::suspend(cx.state, cx.cards)
+}
+
+/// What a framework Fast window without reaction candidates asks: which of the
+/// currently eligible fast plays to make, or pass. One of the
+/// [prompt table](prompt::request)'s helpers.
+pub(super) fn fast_window_request(state: &GameState, cards: &CardRegistry) -> InputRequest {
+    let options = enumerate_fast_plays(state, cards)
         .iter()
         .enumerate()
         .map(|(i, a)| {
-            ChoiceOption::new(
+            let mut option = ChoiceOption::new(
                 OptionId(u32::try_from(i).unwrap_or(u32::MAX)),
-                a.label(cx.state, cx.cards),
+                a.label(state, cards),
             )
-            .maybe_at(a.target(cx.state))
+            .maybe_at(a.target(state));
+            // Each play is its investigator's, and several may answer the
+            // window (ADR 0019).
+            option.investigator = a.investigator();
+            option
         })
         .collect::<Vec<_>>();
-    EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_single("Fast window — play a card or pass", options)
-            .skippable(),
-        resume_token: ResumeToken(0),
-    }
+    InputRequest::pick_single("Fast window — play a card or pass", options).skippable()
 }
 
 /// Collect every fast play currently eligible across all investigators: Fast

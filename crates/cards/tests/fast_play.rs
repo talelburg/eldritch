@@ -37,7 +37,7 @@
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{PlaySource, TurnAction};
-use game_core::engine::{InputKind, OptionTarget};
+use game_core::engine::{InputKind, OptionTarget, Responder};
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, EnemyId, FastWindowKind,
     GameState, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume, InvestigatorId,
@@ -283,7 +283,11 @@ fn fast_activated_ability_usable_by_non_active_investigator_when_window_permits(
     // re-prompt afterwards, so assert the activation executed rather than the
     // exact post-activation outcome.
     let beat_cop = beat_cop(window.state());
-    let session = window.pick(beat_cop);
+    // A framework Fast window is answered by several investigators, and its
+    // option names the one it is offered to: B, who controls Beat Cop, not A,
+    // whose phase step it is.
+    assert_eq!(window.prompt().responder, Responder::Several);
+    let session = window.pick_for(B, beat_cop);
     assert_beat_cop_fired(&session);
 }
 

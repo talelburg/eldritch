@@ -1,8 +1,9 @@
 use super::*;
 use crate::test_support::{TEST_REGISTRIES, TEST_REGISTRY};
 
-/// A raw setup-mulligan answer: `indices` are the hand indices to redraw
-/// (empty = keep the hand). Only for the tests whose subject is the wire
+/// A raw setup-mulligan answer: `indices` are the ids of the options to
+/// redraw (empty = keep the hand). The mulligan offers the whole hand in
+/// order, so option `i` is the hand card at `i`. Only for the tests whose subject is the wire
 /// action itself — a malformed answer, an answer with no mulligan to
 /// resume, or a replayed log; every other test answers with
 /// `choose_from_hand`.
@@ -314,7 +315,7 @@ fn start_scenario_seeds_mulligan_loop() {
         deck: make_test_deck(10),
         random_basic_weaknesses: 0,
     }];
-    let result = seat_and_open(state, &roster, TEST_REGISTRIES);
+    let result = seat_and_open(state, &roster, 0, TEST_REGISTRIES);
     assert!(
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
         "seat_and_open opens the mulligan prompt, got {:?}",
@@ -376,6 +377,37 @@ fn multi_investigator_mulligan_advances_in_player_order() {
     let after_second = after_first.choose_from_hand(&[]);
     after_second.assert_at_turn_menu(INV);
     assert_eq!(after_second.state().current_mulligan(), None);
+}
+
+/// Each mulligan offers its own investigator's whole hand, anchored to their
+/// hand cards, and any number of them: seat 2's prompt names seat 2's two
+/// cards and none of seat 1's.
+#[test]
+fn a_mulligan_offers_the_prompted_investigators_hand() {
+    let inv2 = InvestigatorId(2);
+    let in_hand = |investigator, hand_index| OptionTarget::HandCard {
+        investigator,
+        hand_index,
+    };
+    let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(seat(1).hand(["a-0"]))
+        .with_seat(seat(2).hand(["b-0", "b-1"]))
+        .with_turn_order([INV, inv2])
+        .with_mulligan_remaining([inv2, INV])
+        .session();
+
+    let request = session.prompt();
+    let anchors: Vec<_> = request.options.iter().map(|o| o.target.clone()).collect();
+    assert_eq!(
+        anchors,
+        vec![Some(in_hand(inv2, 0)), Some(in_hand(inv2, 1))],
+        "seat 2's hand, in hand order",
+    );
+    assert_eq!(
+        request.kind,
+        InputKind::PickMultiple(PickCount { min: 0, max: 2 })
+    );
 }
 
 #[test]

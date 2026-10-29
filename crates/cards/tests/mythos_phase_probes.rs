@@ -147,7 +147,7 @@ fn at_mythos_draw(seats: usize) -> TestSession {
         })
         .collect();
     let session = TestSession::new(
-        engine::seat_and_open(board(), &roster, registries()).state,
+        engine::seat_and_open(board(), &roster, 0, registries()).state,
         registries(),
     );
     let session = (0..seats).fold(session, |s, _| s.choose_from_hand(&[]));

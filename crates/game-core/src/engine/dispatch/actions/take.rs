@@ -52,9 +52,7 @@ use crate::engine::dispatch::actions::investigate::InvestigateModification;
 use crate::engine::dispatch::actions::{draw, engage, evade, fight, investigate, r#move, resource};
 use crate::engine::dispatch::cursor::{self, NotYourTurn};
 use crate::engine::dispatch::{abilities, cards, choice, combat};
-use crate::engine::outcome::{
-    ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
-};
+use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget};
 use crate::engine::{abilities_in_effect, board, evaluator, Cx};
 use crate::event::Event;
 use crate::state::{
@@ -725,40 +723,58 @@ fn ask_additional_action_choice(
             .into(),
         };
     };
+    // The `drive` loop surfaces the choice from the frame
+    // ([`additional_action_request`]).
     cx.state.continuations.push(AdditionalActionChoiceFrame {
         investigator,
         source: *source,
         address: address.clone(),
+        offered: offered
+            .iter()
+            .map(|origin| match origin {
+                AdditionalActionOrigin::InPlay(instance) => Some(*instance),
+                AdditionalActionOrigin::Effect { .. } => None,
+            })
+            .collect(),
     });
-    let options = offered
+    EngineOutcome::Done
+}
+
+/// What an [`AdditionalActionChoiceFrame`] asks: which of the offered
+/// additional actions pays. Option `i` is `offered[i]`, anchored to the card
+/// granting it; an effect's grant has no card, so it is offered un-anchored.
+/// One of the [prompt table](crate::engine::dispatch::prompt::request)'s
+/// helpers.
+pub(in crate::engine::dispatch) fn additional_action_request(
+    state: &GameState,
+    cards: &CardRegistry,
+    frame: &AdditionalActionChoiceFrame,
+) -> InputRequest {
+    let options = frame
+        .offered
         .iter()
         .enumerate()
-        .map(|(i, origin)| {
+        .map(|(i, granter)| {
             let id = OptionId(u32::try_from(i).expect("offered option count fits in u32"));
-            match origin {
-                AdditionalActionOrigin::InPlay(instance) => {
-                    let label = board::find_instance(cx.state, *instance).map_or_else(
+            match granter {
+                Some(instance) => {
+                    let label = board::find_instance(state, *instance).map_or_else(
                         || "Additional action".to_owned(),
-                        |(card, _)| choice::card_name(cx.cards, &card.code),
+                        |(card, _)| choice::card_name(cards, &card.code),
                     );
                     ChoiceOption::new(id, label).at(OptionTarget::CardInstance(*instance))
                 }
-                AdditionalActionOrigin::Effect { .. } => {
-                    ChoiceOption::new(id, "Additional action gained this turn")
-                }
+                None => ChoiceOption::new(id, "Additional action gained this turn"),
             }
         })
         .collect();
-    EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_single(
-            format!(
-                "Investigator {investigator:?}: choose which additional action to use for \
-                 this action."
-            ),
-            options,
+    InputRequest::pick_single(
+        format!(
+            "{}: choose which additional action to use for this action.",
+            choice::investigator_name(state, frame.investigator),
         ),
-        resume_token: ResumeToken(0),
-    }
+        options,
+    )
 }
 
 /// Resume the FAQ 1.10 choice: take the paused activation again, paid for with
@@ -782,6 +798,7 @@ pub(in crate::engine::dispatch) fn resume_additional_action_choice(
         investigator,
         source,
         address,
+        ..
     } = cx
         .state
         .continuations

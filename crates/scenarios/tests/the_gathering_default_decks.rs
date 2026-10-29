@@ -58,7 +58,7 @@ fn seated(deck: &DefaultDeck) -> TestSession {
     state.encounter_deck.push_back(CardCode::new("01166"));
 
     let roster = [deck.roster_entry(WeaknessChoice::Fixed)];
-    let started = engine::seat_and_open(state, &roster, REGISTRIES);
+    let started = engine::seat_and_open(state, &roster, 0, REGISTRIES);
     let session = TestSession::new(started.state, REGISTRIES).choose_from_hand(&[]);
     // The module doc's claim: the shuffle leaves the fixed weakness deep in the
     // deck, below the one upkeep draw a walk makes.

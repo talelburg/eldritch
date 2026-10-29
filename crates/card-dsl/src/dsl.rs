@@ -757,13 +757,13 @@ pub enum EventPattern {
     /// The act this ability is printed on advanced (its reverse side
     /// resolves). *This act* is part of the definition: the engine's matcher
     /// hears it only on the advancing act, and binds controller = the
-    /// lead-investigator proxy (**Lead investigator** in `GLOSSARY.md`;
+    /// lead investigator (**Lead investigator** in `GLOSSARY.md`;
     /// board-wide reverse effects ignore it).
     ActAdvanced,
     /// The agenda this ability is printed on advanced (its reverse side
     /// resolves on doom) — the mirror of [`ActAdvanced`](Self::ActAdvanced),
-    /// heard only on the advancing agenda and bound to the lead-investigator
-    /// proxy. The Gathering's agenda reverses
+    /// heard only on the advancing agenda and bound to the lead investigator.
+    /// The Gathering's agenda reverses
     /// listen here: 01105 (the discard/horror choice) and 01106
     /// (discard from the encounter deck until a `Ghoul` enemy, and draw it).
     AgendaAdvanced,
@@ -3173,10 +3173,10 @@ impl InvestigatorTarget {
 ///
 /// Either set holds only investigators still in the game (`Active`): one who
 /// has resigned or been defeated is no longer an investigator the card can
-/// reach. Both are walked in turn order.
+/// reach. Both are walked in player order, starting at the lead investigator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum InvestigatorTargetSet {
-    /// All investigators currently in the scenario, in turn order.
+    /// All investigators currently in the scenario, in player order.
     All,
     /// All investigators at the controller's location.
     AtControllerLocation,

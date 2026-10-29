@@ -11,15 +11,15 @@ use crate::card_registry::CardRegistry;
 use crate::engine::dispatch;
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{
-    act_agenda, cards, combat, cursor, emit, encounter, engagement, hunters, reaction_windows,
-    reveal,
+    act_agenda, cards, combat, cursor, emit, encounter, engagement, hand_pick, hunters, prompt,
+    reaction_windows, reveal,
 };
-use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
+use crate::engine::outcome::{EngineOutcome, InputRequest, PickCount};
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
     CardCode, CardInPlay, Continuation, DiscardPile, EncounterDrawFrame, EnemyId, EnemyPhaseFrame,
-    EnemyResume, FastWindowKind, GameState, HandSizeDiscard, InvestigationPhaseFrame,
+    EnemyResume, FastWindowKind, GameState, HandSizeDiscard, HunterChoice, InvestigationPhaseFrame,
     InvestigationResume, Investigator, InvestigatorId, InvestigatorTurnFrame, Lifetime,
     MythosPhaseFrame, MythosResume, Owner, Phase, PhaseStep, Skills, Status, UpkeepPhaseFrame,
     UpkeepResume, Zone,
@@ -96,11 +96,27 @@ fn draw_random_basic_weaknesses(cx: &mut Cx, roster: &[RosterEntry]) -> Vec<Vec<
         .collect()
 }
 
+/// Why a roster of `seats` cannot be seated with the lead at roster index
+/// `lead`, or `None` when it can.
+///
+/// A scenario requires at least one investigator: seating is the sole seater,
+/// so the roster is mandatory and an empty one rejects. The lead is a roster
+/// index the players chose before the game exists (Appendix III step 3:
+/// *"Choose one of those investigators to be the lead investigator for this
+/// game."*), so one past the roster names nobody.
+fn unseatable_lead(seats: usize, lead: usize) -> Option<String> {
+    if seats == 0 {
+        return Some("a scenario requires a non-empty roster".to_owned());
+    }
+    (lead >= seats)
+        .then(|| format!("lead index {lead} names no investigator in a roster of {seats}"))
+}
+
 /// Internal scenario setup: seat the roster, shuffle decks, push the initial
 /// phase anchors. Called by [`super::seat_and_open`] (the non-logged engine
 /// entry point); never reached via a `PlayerAction` — the action log is
 /// `ResolveInput`-only.
-pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutcome {
+pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry], lead: usize) -> EngineOutcome {
     // Replaying on an already-started state is a bug, not a no-op — reject so
     // callers notice rather than silently double-emitting `ScenarioStarted`.
     if cx.state.round != 0 {
@@ -146,11 +162,9 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
         };
     }
 
-    // A scenario requires at least one investigator. Seating is the sole
-    // seater: the roster is mandatory, an empty roster rejects.
-    if resolved.is_empty() {
+    if let Some(reason) = unseatable_lead(roster.len(), lead) {
         return EngineOutcome::Rejected {
-            reason: "a scenario requires a non-empty roster".into(),
+            reason: reason.into(),
         };
     }
 
@@ -197,6 +211,9 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
             },
         );
         cx.state.turn_order.push(id);
+        if idx == lead {
+            cx.state.lead = Some(id);
+        }
     }
     // Reveal the starting location on first entry (Rules Reference p.14).
     // investigators.len() is now final (all roster entries seated), so
@@ -243,7 +260,7 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
     // the `Mulligan` frame is on the stack, every non-`ResolveInput` action is
     // rejected. An empty/all-eliminated `turn_order` skips the loop entirely:
     // setup ends immediately and we begin Investigation here.
-    let remaining = cursor::active_investigators_in_turn_order(cx.state);
+    let remaining = cursor::player_order(cx.state);
     if remaining.is_empty() {
         return investigation_phase(cx);
     }
@@ -347,11 +364,11 @@ pub(super) fn resume_end_turn(cx: &mut Cx, active_id: InvestigatorId) -> EngineO
         "resume_end_turn: the turn on top is not the active investigator's",
     );
 
-    // 2.2.2 decision: "return to 2.2" for the next investigator, or
-    // proceed to 2.3. next_active_investigator_after skips eliminated
-    // investigators (Rules Reference p.10) — the same shared helper the
-    // Enemy phase uses.
-    if let Some(next_id) = cursor::next_active_investigator_after(cx.state, active_id) {
+    // 2.2.2 decision: "return to 2.2" for the next investigator in player
+    // order (a stand-in for the investigators' choice; TODO(#1185): let them
+    // choose), or proceed to 2.3. `next_in_player_order` skips eliminated investigators (Rules
+    // Reference p.10) — the same shared helper the Enemy phase uses.
+    if let Some(next_id) = cursor::next_in_player_order(cx.state, active_id) {
         begin_investigator_turn(cx, next_id)
     } else {
         cx.state.active_investigator = None;
@@ -368,7 +385,7 @@ pub(super) fn resume_end_turn(cx: &mut Cx, active_id: InvestigatorId) -> EngineO
 /// the post-2.1 player window once they have resolved. Rotation to the
 /// first active investigator (step 2.2) runs in the
 /// [`PhaseStep::InvestigationBegins`] continuation via
-/// [`begin_investigator_turn`], the first Active investigator in turn order
+/// [`begin_investigator_turn`], the first investigator in player order
 /// first. TODO(#146): let the players choose who takes the first turn.
 pub(super) fn investigation_phase(cx: &mut Cx) -> EngineOutcome {
     // 2.1 Investigation phase begins.
@@ -405,7 +422,7 @@ pub(super) fn investigation_phase(cx: &mut Cx) -> EngineOutcome {
 /// in this window's continuation (`anchor_on_child_pop` →
 /// [`Begins`](crate::state::InvestigationResume::Begins)), so the printed order
 /// 2.1 → window → 2.2 holds. Auto-skips inline when nothing is Fast-eligible, so
-/// single-investigator entry still makes the first investigator in turn order
+/// single-investigator entry still makes the first investigator in player order
 /// active within the same `apply()` call.
 fn investigation_after_phase_start(cx: &mut Cx) -> EngineOutcome {
     set_investigation_resume(cx, InvestigationResume::Begins);
@@ -448,7 +465,8 @@ fn set_investigation_resume(cx: &mut Cx, resume: InvestigationResume) {
 /// the emit, so the window cannot be pushed above what the emit queues.
 ///
 /// `who` must be an `Active` investigator in `turn_order`; callers
-/// resolve it via `first_active_investigator` / `next_active_investigator_after`.
+/// resolve it as the first in [`cursor::player_order`] or via
+/// [`cursor::next_in_player_order`].
 pub(super) fn begin_investigator_turn(cx: &mut Cx, who: InvestigatorId) -> EngineOutcome {
     rotate_to_active(cx, who);
     // A new turn: every card in play grants its additional action again (Leo
@@ -669,11 +687,11 @@ fn rotate_to_active(cx: &mut Cx, id: InvestigatorId) {
 /// from [`enemy_phase`] on the no-tie path, and from
 /// [`resume_hunter_choice`] once all hunters resolve.
 ///
-/// Seeds the cursor to the first Active investigator in `turn_order`.
-/// Eliminated investigators (Defeated / Resigned) are skipped per
-/// Rules Reference p.10 (Elimination); [`cursor::first_active_investigator`] is
-/// the shared helper used by Mythos 1.4 for the same semantics.
-/// The loop body runs in [`anchor_on_child_pop`]'s arms.
+/// Seeds the cursor to the first investigator in [`cursor::player_order`],
+/// Appendix II 3.3: *"Resolve engaged enemy attacks in player order"*.
+/// Eliminated investigators (Defeated / Resigned) are skipped per Rules
+/// Reference p.10 (Elimination). Mythos 1.4 seeds its draw queue from the same
+/// list. The loop body runs in [`anchor_on_child_pop`]'s arms.
 ///
 /// Returns the opened window's [`EngineOutcome`]. The no-active-investigator
 /// path opens `AfterAllInvestigatorsAttacked`, whose continuation cascades
@@ -683,7 +701,7 @@ fn rotate_to_active(cx: &mut Cx, id: InvestigatorId) {
 pub(super) fn enemy_attack_kickoff(cx: &mut Cx) -> EngineOutcome {
     // No Active investigators (turn_order empty or all eliminated) → `None`
     // opens the final window directly, mirroring mythos_phase's no-drawer path.
-    open_attack_window(cx, cursor::first_active_investigator(cx.state))
+    open_attack_window(cx, cursor::player_order(cx.state).first().copied())
 }
 
 /// Point the Enemy phase anchor at the next step-3.3 window and open it.
@@ -695,11 +713,11 @@ pub(super) fn enemy_attack_kickoff(cx: &mut Cx) -> EngineOutcome {
 /// and the window from one `Option` here makes a mismatched pairing
 /// unrepresentable.
 ///
-/// Shared by [`enemy_attack_kickoff`] (step 3.3 entry, cursor =
-/// [`cursor::first_active_investigator`](super::cursor::first_active_investigator))
+/// Shared by [`enemy_attack_kickoff`] (step 3.3 entry, cursor = the first in
+/// [`cursor::player_order`](super::cursor::player_order))
 /// and [`after_enemy_phase_attacks`](super::reaction_windows::after_enemy_phase_attacks)
 /// (per-investigator advance, cursor =
-/// [`cursor::next_active_investigator_after`](super::cursor::next_active_investigator_after)).
+/// [`cursor::next_in_player_order`](super::cursor::next_in_player_order)).
 pub(super) fn open_attack_window(cx: &mut Cx, attacking: Option<InvestigatorId>) -> EngineOutcome {
     let (resume, step) = match attacking {
         Some(investigator) => (
@@ -756,10 +774,10 @@ fn enemy_phase(cx: &mut Cx) -> EngineOutcome {
 /// [`AfterPhaseStartForced`](crate::state::EnemyResume::AfterPhaseStartForced)
 /// resume once step 3.1's queued forced abilities have resolved.
 ///
-/// If hunter movement suspends on a lead-investigator tie, this returns the
-/// [`EngineOutcome::AwaitingInput`] unchanged — the attack-loop kickoff is
-/// deferred to [`resume_hunter_choice`], which runs it once the last hunter
-/// resolves.
+/// If hunter movement parks on a lead-investigator tie, its
+/// [`HunterMove`](crate::state::Continuation::HunterMove) prompt is left on top
+/// for the `drive` loop to surface, and the attack-loop kickoff is deferred to
+/// [`resume_hunter_choice`], which runs it once the last hunter resolves.
 fn enemy_after_phase_start(cx: &mut Cx) -> EngineOutcome {
     // Advance the anchor off `AfterPhaseStartForced`: step 3.2 is running.
     // No investigator is selected yet, since the kickoff runs after hunter
@@ -768,14 +786,15 @@ fn enemy_after_phase_start(cx: &mut Cx) -> EngineOutcome {
     set_enemy_anchor(cx, EnemyResume::HuntersMoving);
 
     // 3.2 Hunter enemies move. Park on a lead-investigator tie; the
-    //     attack-loop kickoff then happens on resume.
-    match hunters::drive_hunter_moves(cx) {
-        outcome @ EngineOutcome::AwaitingInput { .. } => return outcome,
-        // drive_hunter_moves only ever returns Done or AwaitingInput, never Rejected.
-        EngineOutcome::Rejected { reason } => {
-            unreachable!("enemy_after_phase_start: hunter movement rejected unexpectedly: {reason}")
-        }
-        EngineOutcome::Done => {}
+    //     attack-loop kickoff then happens on resume. A tie pushes its
+    //     `HunterMove` prompt and returns `Done`, so the frame on top, not the
+    //     outcome, says whether movement finished.
+    let outcome = hunters::drive_hunter_moves(cx);
+    if let EngineOutcome::Rejected { reason } = outcome {
+        unreachable!("enemy_after_phase_start: hunter movement rejected unexpectedly: {reason}")
+    }
+    if cx.state.continuations.top_of::<HunterChoice>().is_some() {
+        return EngineOutcome::Done;
     }
 
     // 3.3 Kick off the per-investigator attack loop.
@@ -929,7 +948,7 @@ fn run_mythos_draws(cx: &mut Cx) -> EngineOutcome {
     set_mythos_resume(cx, MythosResume::AfterDraws);
     // Per Rules Reference p.10 (Elimination), eliminated investigators (Defeated,
     // Resigned) do not draw — seed Active only.
-    let remaining = cursor::active_investigators_in_turn_order(cx.state);
+    let remaining = cursor::player_order(cx.state);
     if remaining.is_empty() {
         // No Active drawers: open + auto-skip the post-1.4 window inline (its
         // continuation runs mythos_phase_end → Investigation).
@@ -947,7 +966,7 @@ fn run_mythos_draws(cx: &mut Cx) -> EngineOutcome {
     cx.state
         .continuations
         .push(EncounterDrawFrame { remaining });
-    encounter::prompt_encounter_draw(cx)
+    prompt::suspend(cx.state, cx.cards)
 }
 
 /// Run the top `*Phase` anchor's continuation after one of its framework
@@ -1076,7 +1095,7 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
             // None branch: no active investigator can take a turn — the
             // cascade-breaker park (the loss already resolved at the defeat
             // site). See the former anchor_on_child_pop arm.
-            match cursor::first_active_investigator(cx.state) {
+            match cursor::player_order(cx.state).first().copied() {
                 Some(id) => begin_investigator_turn(cx, id),
                 None => EngineOutcome::Done,
             }
@@ -1209,8 +1228,8 @@ pub(super) fn upkeep_resume(cx: &mut Cx) -> EngineOutcome {
 /// 1 resource and 4.5/4.6 run.
 fn upkeep_draws_after(cx: &mut Cx, drew: Option<InvestigatorId>) -> EngineOutcome {
     let mut next = match drew {
-        None => cursor::first_active_investigator(cx.state),
-        Some(prev) => cursor::next_active_investigator_after(cx.state, prev),
+        None => cursor::player_order(cx.state).first().copied(),
+        Some(prev) => cursor::next_in_player_order(cx.state, prev),
     };
     while let Some(id) = next {
         // Park the cursor before the draw (ADR 0003): the frames it may push
@@ -1226,9 +1245,9 @@ fn upkeep_draws_after(cx: &mut Cx, drew: Option<InvestigatorId>) -> EngineOutcom
         if cx.state.continuations.top() != top_before.as_ref() {
             return outcome;
         }
-        next = cursor::next_active_investigator_after(cx.state, id);
+        next = cursor::next_in_player_order(cx.state, id);
     }
-    for id in cursor::active_investigators_in_turn_order(cx.state) {
+    for id in cursor::player_order(cx.state) {
         cards::grant_resources(cx, id, 1);
     }
     upkeep_after_draw(cx)
@@ -1391,47 +1410,60 @@ pub(super) const HAND_SIZE_LIMIT: u8 = 8;
 /// Active investigators, in player order, whose hand exceeds
 /// [`HAND_SIZE_LIMIT`]. Empty when nobody is over the cap.
 pub(super) fn over_cap_investigators(state: &GameState) -> Vec<InvestigatorId> {
-    cursor::active_investigators_in_turn_order(state)
+    cursor::player_order(state)
         .into_iter()
         .filter(|id| state.investigators[id].hand.len() > HAND_SIZE_LIMIT as usize)
         .collect()
 }
 
-/// Pushes a `HandSizeDiscard(remaining)` frame and returns the
-/// [`EngineOutcome::AwaitingInput`] that prompts `remaining[0]` to discard.
-/// Used by both [`check_hand_size`] (first suspension) and
-/// [`resume_hand_size_discard`] (re-prompt after a queue pop).
+/// Pushes a `HandSizeDiscard(remaining)` frame and suspends on it, prompting
+/// `remaining[0]` to discard. Used by both [`check_hand_size`] (first
+/// suspension) and [`resume_hand_size_discard`] (re-prompt after a queue pop).
 ///
 /// `remaining` must be non-empty; callers ensure this before calling.
 fn park_hand_size_discard(cx: &mut Cx, remaining: Vec<InvestigatorId>) -> EngineOutcome {
     cx.state
         .continuations
         .push(Continuation::HandSizeDiscard(HandSizeDiscard { remaining }));
-    hand_size_discard_prompt(cx)
+    prompt::suspend(cx.state, cx.cards)
 }
 
-/// The [`EngineOutcome::AwaitingInput`] a [`HandSizeDiscard`] frame on top
-/// waits on: shown by [`park_hand_size_discard`] when it pushes the frame, and
-/// again by the main loop when it meets the frame on top. It names the count
-/// the pick must hold ([`hand_size_discard_count`] for the investigator
-/// prompted), which falls short of reaching the cap when weaknesses fill the
-/// overflow, and says that weaknesses can't be chosen.
-pub(super) fn hand_size_discard_prompt(cx: &Cx) -> EngineOutcome {
-    let count = cx
-        .state
-        .continuations
-        .top_expect::<HandSizeDiscard>()
-        .remaining
-        .first()
-        .map_or(0, |id| hand_size_discard_count(cx, *id));
-    let cards = if count == 1 { "card" } else { "cards" };
-    EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_multiple(format!(
-            "You have more than {HAND_SIZE_LIMIT} cards in hand — choose {count} {cards} to \
+/// What a [`HandSizeDiscard`] frame on top asks of `investigator`, its queue's
+/// head. It offers the hand cards that are not weaknesses
+/// ([`hand_size_discard_candidates`]) and asks for exactly
+/// [`hand_size_discard_count`] of them, which falls short of reaching the cap
+/// when weaknesses fill the overflow. One of the
+/// [prompt table](prompt::request)'s helpers.
+pub(super) fn hand_size_discard_request(
+    state: &GameState,
+    cards: &CardRegistry,
+    investigator: InvestigatorId,
+) -> InputRequest {
+    let count = hand_size_discard_count(state, cards, investigator);
+    let candidates = hand_size_discard_candidates(state, cards, investigator);
+    let noun = if count == 1 { "card" } else { "cards" };
+    InputRequest::pick_multiple(
+        format!(
+            "You have more than {HAND_SIZE_LIMIT} cards in hand — choose {count} {noun} to \
              discard. Weaknesses can't be chosen.",
-        )),
-        resume_token: ResumeToken(0),
-    }
+        ),
+        hand_pick::options(state, cards, investigator, &candidates),
+        PickCount::exactly(count),
+    )
+}
+
+/// The hand indices of `investigator`'s cards step 4.5 may discard — every one
+/// that is not a weakness — in hand order. `glossary/Weakness.md`: *"A player
+/// may not optionally choose to discard a weakness card from hand, unless a
+/// card explicitly specifies otherwise."*
+fn hand_size_discard_candidates(
+    state: &GameState,
+    registry: &CardRegistry,
+    investigator: InvestigatorId,
+) -> Vec<u8> {
+    hand_pick::candidates(state, investigator, |code| {
+        !cards::is_weakness_code(registry, code)
+    })
 }
 
 /// How many cards `id` must discard at step 4.5: the overflow over
@@ -1444,12 +1476,16 @@ pub(super) fn hand_size_discard_prompt(cx: &Cx) -> EngineOutcome {
 /// Forced Learning) answers the same shortfall that way: *"Weaknesses cannot be
 /// chosen to be discarded from your hand. … If you draw 2 weaknesses, you cannot
 /// discard either one, and must resolve both of them."*
-fn hand_size_discard_count(cx: &Cx, id: InvestigatorId) -> usize {
-    let hand = &cx.state.investigators[&id].hand;
+fn hand_size_discard_count(
+    state: &GameState,
+    registry: &CardRegistry,
+    id: InvestigatorId,
+) -> usize {
+    let hand = &state.investigators[&id].hand;
     let overflow = hand.len().saturating_sub(HAND_SIZE_LIMIT as usize);
     let discardable = hand
         .iter()
-        .filter(|code| !cards::is_weakness_code(cx.cards, code))
+        .filter(|code| !cards::is_weakness_code(registry, code))
         .count();
     overflow.min(discardable)
 }
@@ -1463,7 +1499,7 @@ fn hand_size_discard_count(cx: &Cx, id: InvestigatorId) -> usize {
 fn check_hand_size(cx: &mut Cx) -> EngineOutcome {
     let remaining: Vec<InvestigatorId> = over_cap_investigators(cx.state)
         .into_iter()
-        .filter(|&id| hand_size_discard_count(cx, id) > 0)
+        .filter(|&id| hand_size_discard_count(cx.state, cx.cards, id) > 0)
         .collect();
     if remaining.is_empty() {
         return EngineOutcome::Done;
@@ -1473,8 +1509,9 @@ fn check_hand_size(cx: &mut Cx) -> EngineOutcome {
 
 /// Resume a parked upkeep hand-size discard. Validates the
 /// `PickMultiple` response against the currently-prompted investigator
-/// (`remaining[0]`): the indices must be unique, in-bounds, name no weakness,
-/// and be exactly [`hand_size_discard_count`] in count. On success, discards the
+/// (`remaining[0]`): each option must be one [`hand_size_discard_request`]
+/// offered, none twice, and there must be exactly [`hand_size_discard_count`]
+/// of them. On success, discards the
 /// chosen cards (emitting [`Event::CardDiscarded`] per card), pops the
 /// queue front, and either re-prompts the next over-cap investigator or
 /// — when the queue drains — runs [`upkeep_phase_end`] (4.6 + transition
@@ -1495,51 +1532,24 @@ pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) ->
             .into(),
         };
     };
-    // Each OptionId is a hand index.
-    let indices: Vec<u32> = selected.iter().map(|o| o.0).collect();
-
     // ---- validate (state untouched on any failure) ----
-    let inv = cx.state.investigators.get(&current).unwrap_or_else(|| {
-        unreachable!("resume_hand_size_discard: prompted investigator {current:?} vanished")
-    });
-    let hand_len = inv.hand.len();
-    let target = hand_size_discard_count(cx, current);
-    if indices.len() != target {
+    let hand_len = cx.state.investigators[&current].hand.len();
+    let target = hand_size_discard_count(cx.state, cx.cards, current);
+    if selected.len() != target {
         return EngineOutcome::Rejected {
             reason: format!(
                 "hand-size discard: {current:?} must discard exactly {target} card(s) \
                  (hand {hand_len}, cap {HAND_SIZE_LIMIT}, weaknesses excluded), got {}",
-                indices.len(),
+                selected.len(),
             )
             .into(),
         };
     }
-    let mut seen = BTreeSet::new();
-    for &i in &indices {
-        if !seen.insert(i) {
-            return EngineOutcome::Rejected {
-                reason: format!("hand-size discard: duplicate hand index {i}").into(),
-            };
-        }
-        if i as usize >= hand_len {
-            return EngineOutcome::Rejected {
-                reason: format!(
-                    "hand-size discard: hand index {i} out of bounds (hand size {hand_len})",
-                )
-                .into(),
-            };
-        }
-        let code = &inv.hand[i as usize];
-        if cards::is_weakness_code(cx.cards, code) {
-            return EngineOutcome::Rejected {
-                reason: format!(
-                    "hand-size discard: {code} at hand index {i} is a weakness, which may not \
-                     be chosen to be discarded",
-                )
-                .into(),
-            };
-        }
-    }
+    let candidates = hand_size_discard_candidates(cx.state, cx.cards, current);
+    let indices = match hand_pick::picked(selected, &candidates, "hand-size discard") {
+        Ok(indices) => indices,
+        Err(rejected) => return rejected,
+    };
 
     // ---- mutate ----
     let discarded: Vec<CardCode> = {
@@ -1548,14 +1558,14 @@ pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) ->
             .investigators
             .get_mut(&current)
             .expect("validated above");
-        let mut sorted: Vec<u32> = indices.clone();
+        let mut sorted = indices;
         sorted.sort_unstable();
         let codes: Vec<CardCode> = sorted
             .iter()
-            .map(|&i| inv.hand[i as usize].clone())
+            .map(|&i| inv.hand[usize::from(i)].clone())
             .collect();
         for &i in sorted.iter().rev() {
-            inv.hand.remove(i as usize);
+            inv.hand.remove(usize::from(i));
         }
         inv.discard.extend(codes.iter().cloned());
         codes
@@ -1590,12 +1600,12 @@ pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) ->
 /// `start_scenario` seeds round 1. Eliminated investigators are skipped
 /// (Rules Reference p.10).
 fn reset_actions(cx: &mut Cx) {
-    for id in cursor::active_investigators_in_turn_order(cx.state) {
+    for id in cursor::player_order(cx.state) {
         let inv = cx
             .state
             .investigators
             .get_mut(&id)
-            .expect("id from active_investigators_in_turn_order");
+            .expect("id from player_order");
         if inv.actions_remaining != ACTIONS_PER_TURN {
             inv.actions_remaining = ACTIONS_PER_TURN;
             cx.events.push(Event::ActionsRemainingChanged {

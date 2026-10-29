@@ -14,18 +14,19 @@ use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::LazyLock;
 
-use card_dsl::dsl::{self, Ability, EnemyTarget, InvestigatorTarget};
+use card_dsl::dsl::{self, Ability, EnemyTarget, InvestigatorTarget, SkillTestKind};
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{
     EngineOutcome, InputKind, InputRequest, OptionId, OptionTarget, PromptNature, Registries,
+    Responder,
 };
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, ChaosBag, ChaosToken, EnemyId, FastWindowKind,
     GameState, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume, InvestigatorId,
-    LocationId, Phase, PhaseStep, SkillKind, SubstitutionPromptFrame, UpkeepPhaseFrame,
-    UpkeepResume,
+    LocationId, Phase, PhaseStep, SkillKind, SkillTestId, SkillTestStep, SubstitutionPromptFrame,
+    UpkeepPhaseFrame, UpkeepResume,
 };
 use game_core::test_support::{
     self, seat, ChoiceResolver, MockRegistry, SeatLookup as _, TestSession,
@@ -192,23 +193,60 @@ fn settling_an_open_fast_window_resurfaces_its_prompt() {
     );
 }
 
-/// A fixture whose top frame cannot re-surface its prompt is a stack the engine
-/// never produces. Settling it fails loudly rather than handing back a session
+/// A staged substitution prompt shows its prompt, built from the frame and the
+/// skill test beneath it: the decision between the test's own skill and the
+/// substitute. Answering it substitutes, and the test goes on to its commit
+/// window.
+#[test]
+fn settling_a_staged_substitution_prompt_shows_its_decision() {
+    // A test the substitution covers, about to open its ST.1 window — where
+    // initiation leaves it when it pushes the prompt.
+    let mut test = test_support::test_skill_test(
+        SkillTestId(0),
+        INV,
+        SkillKind::Combat,
+        SkillTestKind::Plain,
+        2,
+    );
+    test.continuation = SkillTestStep::PreCommitWindow;
+    let session = board()
+        .open_turn(INV)
+        .with_frame(test)
+        .with_frame(SubstitutionPromptFrame { investigator: INV })
+        .session();
+
+    let prompt = session.prompt();
+    assert_eq!(prompt.nature, PromptNature::Decision, "{prompt:?}");
+    let labels: Vec<&str> = prompt.options.iter().map(|o| o.label.as_str()).collect();
+    assert_eq!(labels, ["Use Intellect", "Keep Combat"]);
+    assert_eq!(prompt.responder, Responder::Investigator(INV), "the tester");
+
+    let session = session.pick_nth(0);
+    assert_eq!(
+        session.state().current_skill_test().map(|t| t.skill),
+        Some(SkillKind::Intellect),
+    );
+    assert!(
+        matches!(session.prompt().kind, InputKind::PickMultiple(_)),
+        "commit window"
+    );
+}
+
+/// A fixture that settles on a frame that is not a prompt is a stack the engine
+/// never rests at. Settling it fails loudly rather than handing back a session
 /// parked nowhere.
 #[test]
-#[should_panic(expected = "cannot re-surface its prompt")]
-fn settling_a_fixture_that_cannot_resurface_its_prompt_panics() {
-    // A substitution prompt's handler surfaces it when it pushes the frame;
-    // the main loop has no way to show it again.
-    let mut state = board().open_turn(INV).build();
-    state.continuations = test_support::from_frames_unchecked(
-        state
-            .continuations
-            .iter()
-            .cloned()
-            .chain([SubstitutionPromptFrame { investigator: INV }.into()]),
-    );
-    let _ = TestSession::new(state, registries());
+#[should_panic(expected = "is not a prompt")]
+fn settling_a_fixture_parked_on_a_frame_that_is_not_a_prompt_panics() {
+    // The Investigation phase anchor about to begin the first turn, with no
+    // investigator to take it, makes no progress and asks nothing.
+    let _ = GameStateBuilder::new()
+        .with_registries(registries())
+        .with_phase(Phase::Investigation)
+        .with_phase_anchor(InvestigationPhaseFrame {
+            resume: InvestigationResume::Begins,
+        })
+        .session();
 }
 
 /// A staged setup mulligan settles at its prompt, and answering it runs the
@@ -222,7 +260,7 @@ fn settling_a_staged_mulligan_shows_its_prompt() {
         .with_turn_order([INV])
         .with_mulligan_remaining([INV])
         .session();
-    assert_eq!(session.prompt().kind, InputKind::PickMultiple);
+    assert!(matches!(session.prompt().kind, InputKind::PickMultiple(_)));
 
     let session = session.choose_from_hand(&["_ts_kept_out"]);
 
@@ -293,7 +331,7 @@ fn settling_a_staged_hand_size_discard_shows_its_prompt() {
         })
         .with_hand_size_discard_pending([INV])
         .session();
-    assert_eq!(session.prompt().kind, InputKind::PickMultiple);
+    assert!(matches!(session.prompt().kind, InputKind::PickMultiple(_)));
 
     let session = session.choose_from_hand(&["_ts_filler"]);
 
@@ -306,7 +344,7 @@ fn settling_a_staged_hand_size_discard_shows_its_prompt() {
 /// The commit window a skill test opens: a `PickMultiple` that holds the test
 /// open, so the test has not ended yet.
 fn assert_at_commit_window(session: &TestSession) {
-    assert_eq!(session.prompt().kind, InputKind::PickMultiple);
+    assert!(matches!(session.prompt().kind, InputKind::PickMultiple(_)));
     assert_event_count!(session.events(), 0, Event::SkillTestEnded { .. });
 }
 
@@ -438,7 +476,7 @@ impl ChoiceResolver for CommitNothing {
     fn next(&mut self, request: &InputRequest, _state: &GameState) -> InputResponse {
         self.answered.set(self.answered.get() + 1);
         match request.kind {
-            InputKind::PickMultiple => InputResponse::PickMultiple { selected: vec![] },
+            InputKind::PickMultiple(_) => InputResponse::PickMultiple { selected: vec![] },
             InputKind::Confirm => InputResponse::Confirm,
             _ => InputResponse::Skip,
         }
@@ -701,6 +739,11 @@ fn confirm_acknowledges_a_pause() {
         })
         .take(&TurnAction::Investigate { investigator: INV });
     assert_eq!(session.prompt().kind, InputKind::Confirm);
+    assert_eq!(
+        session.prompt().responder,
+        Responder::Investigator(INV),
+        "the tester acknowledges the result"
+    );
 
     let session = session.confirm();
 
@@ -716,6 +759,7 @@ fn confirm_acknowledges_a_pause() {
 #[test]
 fn skip_passes_a_fast_window_and_pick_plays_from_it() {
     let session = turn_begins_window().session();
+    assert_eq!(session.prompt().responder, Responder::Several);
     let free = session.state().card(INV, FREE);
     let session = session.pick(free);
     assert_eq!(resources(&session), 6);

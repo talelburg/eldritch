@@ -23,7 +23,7 @@ fn perform_skill_test_awaits_input_between_started_and_revealed() {
     // only SkillTestStarted among its events.
     let paused = paused_at_commit_window(commit_board(&[]));
 
-    assert_eq!(paused.prompt().kind, InputKind::PickMultiple);
+    assert!(matches!(paused.prompt().kind, InputKind::PickMultiple(_)));
     assert_event!(
         paused.events(),
         Event::SkillTestStarted { investigator, .. } if *investigator == INV

@@ -20,6 +20,19 @@ const BEARER: InvestigatorId = InvestigatorId(1);
 const OTHER: InvestigatorId = InvestigatorId(2);
 /// The bearer-only hunter.
 const HUNTER: EnemyId = EnemyId(1);
+
+/// Hunter movement finished without a tie for the lead to break. A tie pushes
+/// its `HunterMove` prompt and returns `Done` too, so the outcome alone does
+/// not say so; the frame on top does.
+#[track_caller]
+fn assert_no_tie(state: &GameState, outcome: &EngineOutcome) {
+    assert_eq!(*outcome, EngineOutcome::Done);
+    assert!(
+        state.continuations.top_of::<HunterChoice>().is_none(),
+        "no hunter tie is pending: {:?}",
+        state.continuations.top(),
+    );
+}
 #[test]
 fn hunter_moves_one_step_toward_investigator_two_hops_away_no_engage() {
     // Map: A(1)-B(2)-C(3). Investigator at C; hunter at A. Hunter moves
@@ -45,7 +58,7 @@ fn hunter_moves_one_step_toward_investigator_two_hops_away_no_engage() {
         .build();
     let mut events = Vec::new();
     let outcome = drive_hunter_moves(&mut Cx::for_test(&mut state, &mut events));
-    assert_eq!(outcome, EngineOutcome::Done);
+    assert_no_tie(&state, &outcome);
     assert_eq!(state.enemies[&EnemyId(1)].current_location, Some(B));
     assert_eq!(state.enemies[&EnemyId(1)].engaged_with, None);
     assert_event!(events, Event::EnemyMoved { enemy, to } if *enemy == EnemyId(1) && *to == B);
@@ -175,7 +188,7 @@ fn hunter_already_co_located_does_not_move_but_engages() {
         .build();
     let mut events = Vec::new();
     let outcome = drive_hunter_moves(&mut Cx::for_test(&mut state, &mut events));
-    assert_eq!(outcome, EngineOutcome::Done);
+    assert_no_tie(&state, &outcome);
     assert_eq!(state.enemies[&EnemyId(1)].current_location, Some(A));
     assert_eq!(
         state.enemies[&EnemyId(1)].engaged_with,
@@ -233,7 +246,7 @@ fn hunt(enemy: Enemy, bearer_at: LocationId, other_at: LocationId) -> GameState 
         .build();
     let mut events = Vec::new();
     let outcome = drive_hunter_moves(&mut Cx::for_test(&mut state, &mut events));
-    assert_eq!(outcome, EngineOutcome::Done);
+    assert_no_tie(&state, &outcome);
     state
 }
 
@@ -266,7 +279,7 @@ fn bearer_only_hunter_arriving_engages_its_bearer_not_the_lead() {
         .build();
     let mut events = Vec::new();
     let outcome = drive_hunter_moves(&mut Cx::for_test(&mut state, &mut events));
-    assert_eq!(outcome, EngineOutcome::Done, "no lead prompt");
+    assert_no_tie(&state, &outcome);
     assert_eq!(state.enemies[&HUNTER].engaged_with, Some(BEARER));
 }
 

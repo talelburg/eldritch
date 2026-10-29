@@ -6,15 +6,15 @@ use crate::action::{Action, InputResponse, PlayerAction};
 use crate::engine::enumerate::TurnAction;
 use crate::engine::{
     self, ApplyResult, Cx, EngineOutcome, InputKind, InputRequest, OptionId, OptionTarget,
-    PromptNature, Registries, TimingEvent,
+    PromptNature, Registries, Responder, TimingEvent,
 };
 use crate::event::Event;
 use crate::state::{
-    Continuation, DamageSource, DealDamageFrame, DealDamageStep, EmitEventFrame, EmitStep,
-    GameState, GameStateBuilder, HandSizeDiscard, InvestigatorId, MulliganFrame, SkillKind,
+    DamageSource, DealDamageFrame, DealDamageStep, EmitEventFrame, EmitStep, GameState,
+    GameStateBuilder, InvestigatorId, SkillKind,
 };
 use crate::test_support::resolver::{
-    card_codes, drain_with_applier, hand_indices_of, is_turn_menu, options_at,
+    card_codes, drain_with_applier, hand_options_of, is_turn_menu, options_at,
     resolve_commit_codes, sole_option_at, turn_action_option, ChoiceResolver, ScriptedResolver,
 };
 
@@ -29,10 +29,11 @@ use crate::test_support::resolver::{
 ///   phase anchor staged at its phase end
 ///   ([`ending_enemy_phase`](crate::state::GameStateBuilder::ending_enemy_phase),
 ///   [`ending_upkeep_phase`](crate::state::GameStateBuilder::ending_upkeep_phase))
-///   runs that phase end, and play goes on from it. A staged mulligan,
-///   encounter draw or hand-size discard shows its prompt. A
-///   fixture whose top frame cannot re-surface its prompt is a stack the engine
-///   never rests at, and construction panics.
+///   runs that phase end, and play goes on from it. Any prompt frame staged on
+///   top ([`with_frame`](crate::state::GameStateBuilder::with_frame), or a
+///   staged mulligan, encounter draw or hand-size discard) shows its prompt,
+///   built from the frame. A fixture that settles on a frame that is not a
+///   prompt is a stack the engine never rests at, and construction panics.
 /// - **Every step applies once, then drains to the next rest.** The steps are
 ///   the methods whose doc starts "Step:", and each says where it applies.
 ///   The drain answers prompts through the session's
@@ -163,18 +164,17 @@ impl TestSession {
     ///
     /// # Panics
     ///
-    /// Panics if the top frame cannot re-surface its prompt — a stack the
-    /// engine never rests at. Build the state before the prompt and drive into
-    /// it instead.
+    /// Panics if the state settles with a frame on top that is not a prompt —
+    /// a stack the engine never rests at, such as a phase anchor with nothing
+    /// to advance it.
     pub fn new(state: GameState, registries: Registries) -> Self {
         let settled = engine::apply_via(state, registries, |cx| {
             let outcome = engine::drive(cx, EngineOutcome::Done);
             if matches!(outcome, EngineOutcome::Done) {
                 if let Some(top) = cx.state.continuations.top() {
                     panic!(
-                        "TestSession::new: the fixture's top frame cannot re-surface its \
-                         prompt ({top:?}). The engine never rests at this stack; build the \
-                         state before the prompt and drive into it instead",
+                        "TestSession::new: the fixture settled on a frame that is not a \
+                         prompt ({top:?}). The engine never rests at this stack",
                     );
                 }
             }
@@ -375,12 +375,13 @@ impl TestSession {
     /// Panics at the turn menu, away from a skill test's commit window (a
     /// mulligan or hand-size discard is a `PickMultiple` too — answer it with
     /// [`choose_from_hand`](Self::choose_from_hand)), or if a code is not in
-    /// the hand.
+    /// the hand or the window does not offer it.
     pub fn commit(self, codes: &[&str]) -> Self {
         self.assert_off_turn_menu("commit");
         let request = self.prompt();
         assert!(
-            request.kind == InputKind::PickMultiple && self.state.current_skill_test().is_some(),
+            matches!(request.kind, InputKind::PickMultiple(_))
+                && self.state.current_skill_test().is_some(),
             "TestSession::commit: the session is not at a skill test's commit window; it \
              rests at {:?}",
             request.prompt,
@@ -388,12 +389,9 @@ impl TestSession {
         let selected = resolve_commit_codes(
             &card_codes(codes),
             &self.state,
-            &request.prompt,
+            request,
             "TestSession::commit",
-        )
-        .into_iter()
-        .map(OptionId)
-        .collect();
+        );
         self.respond(InputResponse::PickMultiple { selected })
     }
 
@@ -410,7 +408,7 @@ impl TestSession {
     ///
     /// Panics at the turn menu, at a skill test's commit window (commit cards
     /// with [`commit`](Self::commit)), at any other prompt, or if a code is not
-    /// in the hand.
+    /// in the hand or the prompt does not offer it.
     pub fn choose_from_hand(self, codes: &[&str]) -> Self {
         self.assert_off_turn_menu("choose_from_hand");
         assert!(
@@ -419,33 +417,22 @@ impl TestSession {
              commit cards with `commit(&[code])`",
         );
         let request = self.prompt();
-        // The prompt names no investigator; the frame that asks it does. This
-        // reads the stack to translate codes, never to decide where the
-        // session rests.
-        let prompted = match self.state.continuations.top() {
-            Some(
-                Continuation::Mulligan(MulliganFrame { remaining })
-                | Continuation::HandSizeDiscard(HandSizeDiscard { remaining }),
-            ) => remaining.first().copied(),
-            _ => None,
-        }
-        .unwrap_or_else(|| {
+        let (InputKind::PickMultiple(_), Responder::Investigator(prompted)) =
+            (request.kind, request.responder)
+        else {
             panic!(
                 "TestSession::choose_from_hand: the session is not at a mulligan or a \
                  hand-size discard; it rests at {:?}",
                 request.prompt,
             )
-        });
-        let selected = hand_indices_of(
+        };
+        let selected = hand_options_of(
             &card_codes(codes),
             &self.state,
             prompted,
-            &request.prompt,
+            request,
             "TestSession::choose_from_hand",
-        )
-        .into_iter()
-        .map(OptionId)
-        .collect();
+        );
         self.respond(InputResponse::PickMultiple { selected })
     }
 
@@ -622,11 +609,12 @@ impl TestSession {
     /// - several abilities printed on one card (two reactions, or two forced
     ///   abilities), where `n` names the ability in the order the card prints
     ///   them;
-    /// - one ability offered to several investigators, where `n` follows the
-    ///   prompt's order (assert first that each option's label names the
-    ///   investigator it is offered to);
     /// - identical copies of one card in hand, which anchor to the same
     ///   `HandCardByCode`.
+    ///
+    /// One ability offered to several investigators is not among them: each
+    /// option names its investigator, so pick it with
+    /// [`pick_for`](Self::pick_for).
     ///
     /// # Panics
     ///
@@ -657,6 +645,39 @@ impl TestSession {
                 anchored.len(),
             )
         });
+        self.respond(InputResponse::PickSingle(id))
+    }
+
+    /// Step: choose the option anchored to `target` that is offered to
+    /// `investigator`, then drain. For a window several answer (a reaction
+    /// window, a framework Fast window), where one ability can be offered to
+    /// several investigators on one anchor and each option names whose it is
+    /// ([`ChoiceOption::investigator`](crate::engine::ChoiceOption::investigator)).
+    ///
+    /// # Panics
+    ///
+    /// Panics at the turn menu, or unless exactly one option is anchored to
+    /// `target` and offered to `investigator`.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "by value so a call names its anchor inline, like `pick`"
+    )]
+    pub fn pick_for(self, investigator: InvestigatorId, target: OptionTarget) -> Self {
+        self.assert_off_turn_menu("pick_for");
+        let request = self.prompt();
+        let offered: Vec<OptionId> = options_at(request, &target)
+            .filter(|option| option.investigator == Some(investigator))
+            .map(|option| option.id)
+            .collect();
+        let [id] = offered[..] else {
+            panic!(
+                "TestSession::pick_for: {} option(s) anchored to {target:?} are offered to \
+                 {investigator:?}, not one. Prompt {:?} offers {:?}",
+                offered.len(),
+                request.prompt,
+                request.options,
+            );
+        };
         self.respond(InputResponse::PickSingle(id))
     }
 

@@ -13,9 +13,10 @@ use std::borrow::Cow;
 use card_dsl::dsl::Effect;
 
 use crate::action::InputResponse;
+use crate::card_registry::CardRegistry;
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{choice, initiation, reaction_windows};
-use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
+use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId};
 use crate::engine::Cx;
 use crate::state::{AcknowledgeForcedFrame, ResolutionCandidate};
 
@@ -107,25 +108,22 @@ fn is_only_an_advance(effect: &Effect) -> bool {
     matches!(effect, Effect::AdvanceCurrentAct)
 }
 
-/// Drive a [`Continuation::AcknowledgeForced`](crate::state::Continuation::AcknowledgeForced)
-/// frame: suspend with a one-option `PickSingle` naming the ability's card. The
-/// pick precedes the forced effect's resolution ("confirm before the effect"),
-/// and for an act/agenda reverse it is the whole of what an advance asks.
-pub(crate) fn drive_acknowledge_forced(cx: &mut Cx) -> EngineOutcome {
-    let candidate = &cx
-        .state
-        .continuations
-        .top_expect::<AcknowledgeForcedFrame>()
-        .candidate;
-    let name = choice::card_name(cx.cards, &candidate.code);
+/// What a [`Continuation::AcknowledgeForced`](crate::state::Continuation::AcknowledgeForced)
+/// frame asks: a one-option `PickSingle` naming the ability's card. The pick
+/// precedes the forced effect's resolution ("confirm before the effect"), and
+/// for an act/agenda reverse it is the whole of what an advance asks. One of
+/// the [prompt table](super::prompt::request)'s helpers.
+pub(super) fn acknowledge_request(
+    cards: &CardRegistry,
+    frame: &AcknowledgeForcedFrame,
+) -> InputRequest {
+    let candidate = &frame.candidate;
+    let name = choice::card_name(cards, &candidate.code);
     let anchor = reaction_windows::candidate_anchor(candidate);
-    EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_single(
-            format!("Forced — {name}"),
-            vec![ChoiceOption::new(OptionId(0), "Resolve").at(anchor)],
-        ),
-        resume_token: ResumeToken(0),
-    }
+    InputRequest::pick_single(
+        format!("Forced — {name}"),
+        vec![ChoiceOption::new(OptionId(0), "Resolve").at(anchor)],
+    )
 }
 
 /// Resume an [`AcknowledgeForced`](crate::state::Continuation::AcknowledgeForced)
@@ -147,6 +145,7 @@ pub(crate) fn resume_acknowledge_forced(cx: &mut Cx, response: &InputResponse) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::dispatch::prompt;
     use crate::engine::outcome::OptionTarget;
     use crate::state::{
         AbilityAddress, AbilitySource, Agenda, CandidateSource, CardCode, CardInstanceId,
@@ -168,7 +167,7 @@ mod tests {
         let mut cx = Cx::for_test(&mut state, &mut events);
 
         // Drive: one-option suspend.
-        let out = drive_acknowledge_forced(&mut cx);
+        let out = prompt::suspend(cx.state, cx.cards);
         match out {
             EngineOutcome::AwaitingInput { request, .. } => {
                 assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
@@ -227,8 +226,8 @@ mod tests {
             ),
         });
         let mut events = Vec::new();
-        let mut cx = Cx::for_test(&mut state, &mut events);
-        match drive_acknowledge_forced(&mut cx) {
+        let cx = Cx::for_test(&mut state, &mut events);
+        match prompt::suspend(cx.state, cx.cards) {
             EngineOutcome::AwaitingInput { request, .. } => {
                 assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
                 assert_eq!(
@@ -254,8 +253,8 @@ mod tests {
             ),
         });
         let mut events = Vec::new();
-        let mut cx = Cx::for_test(&mut state, &mut events);
-        match drive_acknowledge_forced(&mut cx) {
+        let cx = Cx::for_test(&mut state, &mut events);
+        match prompt::suspend(cx.state, cx.cards) {
             EngineOutcome::AwaitingInput { request, .. } => {
                 assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
                 assert_eq!(
@@ -286,8 +285,8 @@ mod tests {
             ),
         });
         let mut events = Vec::new();
-        let mut cx = Cx::for_test(&mut state, &mut events);
-        match drive_acknowledge_forced(&mut cx) {
+        let cx = Cx::for_test(&mut state, &mut events);
+        match prompt::suspend(cx.state, cx.cards) {
             EngineOutcome::AwaitingInput { request, .. } => {
                 assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
                 assert_eq!(request.options[0].target, Some(OptionTarget::Agenda));

@@ -2,6 +2,7 @@ use card_dsl::card_data::SkillKind;
 
 use super::*;
 use crate::action::RosterEntry;
+use crate::engine::Responder;
 use crate::state::{
     CardCode, GameStateBuilder, LastingEffect, LastingEffectKind, Lifetime, SkillSubstitution,
 };
@@ -11,7 +12,7 @@ use crate::{engine, test_support};
 #[test]
 fn start_scenario_rejects_when_roster_would_seat_zero_investigators() {
     let state = GameStateBuilder::new().build();
-    let result = engine::seat_and_open(state, &[], TEST_REGISTRIES);
+    let result = engine::seat_and_open(state, &[], 0, TEST_REGISTRIES);
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert_eq!(result.state.round, 0, "state unchanged on reject");
     assert!(result.events.is_empty(), "no events on reject");
@@ -58,7 +59,7 @@ fn round_end_clears_round_lifetime_lasting_effects() {
 #[test]
 fn seat_and_open_rejects_an_empty_roster() {
     let state = GameStateBuilder::new().build();
-    let result = engine::seat_and_open(state, &[], TEST_REGISTRIES);
+    let result = engine::seat_and_open(state, &[], 0, TEST_REGISTRIES);
     assert!(
         matches!(result.outcome, EngineOutcome::Rejected { .. }),
         "an empty roster must reject, got {:?}",
@@ -86,7 +87,7 @@ fn start_scenario_shuffles_the_encounter_deck() {
         random_basic_weaknesses: 0,
     }];
 
-    let result = engine::seat_and_open(state, &roster, TEST_REGISTRIES);
+    let result = engine::seat_and_open(state, &roster, 0, TEST_REGISTRIES);
 
     assert!(matches!(
         result.outcome,
@@ -111,8 +112,67 @@ fn start_scenario_rejects_unresolvable_roster_entry() {
         deck: vec![],
         random_basic_weaknesses: 0,
     }];
-    let result = engine::seat_and_open(state, &roster, TEST_REGISTRIES);
+    let result = engine::seat_and_open(state, &roster, 0, TEST_REGISTRIES);
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert_eq!(result.state.round, 0, "state unchanged on reject");
+    assert!(result.events.is_empty());
+}
+
+/// Two `TEST_INV` roster entries with empty decks.
+fn two_seat_roster() -> Vec<RosterEntry> {
+    (0..2)
+        .map(|_| RosterEntry {
+            investigator: CardCode::new(TEST_INV),
+            deck: vec![],
+            random_basic_weaknesses: 0,
+        })
+        .collect()
+}
+
+/// Appendix III step 3: *"Choose one of those investigators to be the lead
+/// investigator for this game."* The lead is a roster index at creation; with
+/// the second seat chosen, it is stored, and the setup mulligan — *"Each
+/// player, in player order, may mulligan once at this time."* (step 8) — asks
+/// the lead first and the first seat second.
+#[test]
+fn seating_with_the_second_seat_as_lead_mulligans_it_first() {
+    let result = engine::seat_and_open(
+        GameStateBuilder::new().build(),
+        &two_seat_roster(),
+        1,
+        TEST_REGISTRIES,
+    );
+
+    assert_eq!(result.state.lead, Some(InvestigatorId(2)));
+    let session = TestSession::new(result.state, TEST_REGISTRIES);
+    assert_eq!(
+        session.prompt().responder,
+        Responder::Investigator(InvestigatorId(2))
+    );
+    let session = session.choose_from_hand(&[]);
+    assert_eq!(
+        session.prompt().responder,
+        Responder::Investigator(InvestigatorId(1))
+    );
+}
+
+/// A lead index past the roster's end names no investigator: seating rejects
+/// with the state unchanged.
+#[test]
+fn seating_rejects_a_lead_index_past_the_roster() {
+    let result = engine::seat_and_open(
+        GameStateBuilder::new().build(),
+        &two_seat_roster(),
+        2,
+        TEST_REGISTRIES,
+    );
+
+    assert!(
+        matches!(result.outcome, EngineOutcome::Rejected { .. }),
+        "got {:?}",
+        result.outcome
+    );
+    assert_eq!(result.state.round, 0, "state unchanged on reject");
+    assert_eq!(result.state.lead, None);
     assert!(result.events.is_empty());
 }

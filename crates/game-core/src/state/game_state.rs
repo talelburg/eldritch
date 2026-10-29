@@ -83,14 +83,33 @@ pub struct GameState {
     ///
     /// [`Investigation`]: Phase::Investigation
     pub active_investigator: Option<InvestigatorId>,
-    /// Order in which investigators take their turns during the
-    /// Investigation phase. The first entry is the first to act.
+    /// The seating: every investigator, eliminated ones included, in the
+    /// clockwise order they sat down. Player order is this rotated to start at
+    /// the [`lead`](Self::lead); walk it through `engine::player_order`, not
+    /// directly.
     ///
-    /// A fixed order stands in for a choice the rules leave open each turn:
-    /// *"The investigators may take their turns in any order. The
-    /// investigators choose among themselves who (among the investigators)
-    /// will take this turn"* (Appendix II, step 2.2).
+    /// The Investigation phase's turns walk player order too, a fixed order
+    /// standing in for a choice the rules leave open each turn: *"The
+    /// investigators may take their turns in any order. The investigators
+    /// choose among themselves who (among the investigators) will take this
+    /// turn"* (Appendix II, step 2.2). TODO(#1185): let the investigators
+    /// choose who takes each turn.
     pub turn_order: Vec<InvestigatorId>,
+    /// The lead investigator chosen at game creation, Appendix III step 3:
+    /// *"Choose one of those investigators to be the lead investigator for
+    /// this game."* Player order is [`turn_order`](Self::turn_order) rotated to
+    /// start here.
+    ///
+    /// Never rewritten after creation, elimination included: who leads *now*
+    /// is derived, as the first Active investigator in player order (ADR 0019),
+    /// so a player-order walk in flight keeps its rotation when the lead is
+    /// eliminated. `None` only before seating, and in a hand-built state with
+    /// no seats.
+    ///
+    /// Required on the wire, `null` for `None`: a payload without it is
+    /// refused rather than loaded with player order unrotated.
+    #[serde(deserialize_with = "crate::wire::required_option")]
+    pub lead: Option<InvestigatorId>,
     /// Deterministic RNG state. Carries `(seed, draws)` only; the
     /// underlying [`rand_chacha::ChaCha8Rng`] is reconstructed on
     /// demand by [`RngState`] methods.
