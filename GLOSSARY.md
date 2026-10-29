@@ -174,6 +174,10 @@ _Avoid_: "The first seat", "the first Active investigator in `turn_order`", or "
 The order of every *"in player order"* step: Mythos 1.4's draws, Enemy 3.3's attacks, Upkeep 4.4, the mulligan, hand size, an "each investigator" effect. `glossary/In_Player_Order.md`: *"the lead investigator performs his or her part of the sequence first, followed by the other players in clockwise order."* Ours is `engine::player_order`: the seating (`GameState::turn_order`) rotated to start at the stored lead, Active investigators only. Investigation 2.2's turns walk it too, as a stand-in for the investigators' choice (#1185).
 _Avoid_: Calling `turn_order` the player order, or walking it directly. It is the *seating*, unrotated, and a walk over it starts at seat 1 whoever leads. A walk's cursor advances with `next_in_player_order`, which wraps past the seating's end and stops at the rotation's: a successor that stops at the end of the seating leaves seat 1 out when seat 2 leads.
 
+**Seating**:
+The clockwise order the investigators sit in around the table. It is fixed at creation and never rotates, and it includes eliminated investigators. **Player order** is derived from it: `glossary/In_Player_Order.md` says *"the lead investigator performs his or her part of the sequence first, followed by the other players in clockwise order"*, and the clockwise part of that is the seating.
+_Avoid_: "Turn order". The seating is not the order turns are taken in once the lead isn't in seat 1, and Investigation 2.2's turns walk player order (see **Player order**). Also avoid using "seating" for the act of placing investigators at creation (`seat_and_open`) when the order is what you mean.
+
 ## Project vocabulary
 
 **Project phase**:
