@@ -2,10 +2,9 @@
 
 ## Status
 
-🟡 **in progress** (opened 2026-08-23). #776, #777 (Agnes Baker), #778
-("Skids" O'Toole), #779 (Daisy Walker), #780 (Wendy Adams), #1116 (the random
-basic weakness draw), #781 (the basic weaknesses and Abandoned and Alone) and
-#782 (the default decks) are closed.
+✅ **Closed 2026-10-29** (opened 2026-08-23). All five core investigators are
+playable from the picker, each with a legal default deck; every issue on the
+milestone is closed.
 
 This milestone was **Slice 2** in `phase-7-the-gathering.md`'s Future slices, an
 unfiled intent. It became a milestone on 2026-08-23 (`/grill-with-docs`) when
@@ -54,7 +53,7 @@ ship untested by anything but a unit test.
 
 ## Issues
 
-**Open:** #1144 (lint posture: `#[expect(…, reason)]` by default, adopt `unreachable_pub`).
+**Open:** none.
 
 ### Closed
 
@@ -68,6 +67,7 @@ ship untested by anything but a unit test.
 | #1116 | The random basic weakness draw (roster count, weakness pool, seeded draw at scenario start) + the playable gate on roster codes + `WeaknessKind` in the corpus: #1117, #1118, #1119, landed as PR #1120 |
 | #781 | Abandoned and Alone 01015 + the basic weaknesses (Amnesia 01096, Paranoia 01097, Haunted 01098, Psychosis 01099, Hypochondria 01100, Mob Enforcer 01101, Silver Twilight Acolyte 01102, Stubborn Detective 01103), with what they needed of the engine: drawn encounter-cardtype weaknesses resolve as encounter cards (closes #514), engagement exits and spawning engaged with the drawer (closes #650), `DamageDealt` around `DamagePlaced`, direct harm and `HarmTaken`, bearer-only prey (closes #654), the one-shot weaknesses, the text-box blank, and the pool test with no exclusions: #1121–#1128, landed as PR #1129 |
 | #782 | Five default decks in `cards::decks`, each with a fixed basic weakness, and the picker's "Random basic weakness" checkbox; the Learn to Play's starter-deck sidebar vendored in `data/learn-to-play/`; the scaffold decks retired, landed as PR #1134 |
+| #1144 | Lint posture: `#[expect(…, reason)]` by default, `allow_attributes` and `unreachable_pub` adopted, landed as PR #1168 |
 
 #783 (the deckbuilding validator) was filed alongside #782 but milestoned to
 **phase 9**, where its real consumer is.
