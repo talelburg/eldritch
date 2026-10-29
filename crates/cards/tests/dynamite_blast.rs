@@ -14,6 +14,7 @@
 //! Runs against `cards::TEST_REGISTRIES`.
 
 use cards::TEST_REGISTRIES;
+use game_core::assert_event_sequence;
 use game_core::engine::enumerate::{PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
 use game_core::event::Event;
@@ -317,5 +318,42 @@ fn both_blasted_enemies_take_their_damage_before_rolands_reaction_is_offered() {
     assert!(
         !s.state().enemies.contains_key(&ENEMY_A) && !s.state().enemies.contains_key(&ENEMY_B),
         "both enemies were defeated before the reaction is offered"
+    );
+}
+
+/// Hypochondria 01100, in the threat area of the first investigator blasted.
+const HYPOCHONDRIA: &str = "01100";
+
+/// Hypochondria's *"**Forced** - After you take 1 or more damage: Take 1
+/// direct horror."* waits until the blast has dealt its damage to every
+/// investigator at the location. Investigator 1 is dealt first, but their
+/// horror lands only after investigator 2's damage. `glossary/Effects.md`:
+/// *"All aspects of an effect have timing priority over all "after..."
+/// triggering conditions that might arise as a consequence of that effect."*
+#[test]
+fn both_deals_land_before_hypochondrias_direct_horror() {
+    let state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(
+            seat(1)
+                .at(HERE)
+                .hand([DYNAMITE])
+                .threat_area([HYPOCHONDRIA]),
+        )
+        .with_seat(seat(2).at(HERE))
+        .with_seating([INV, INV2])
+        .with_location(test_support::test_location(HERE.0, "Cellar"))
+        .open_turn(INV)
+        .build();
+
+    let s = play(state);
+
+    s.assert_at_turn_menu(INV);
+    assert_eq!(s.state().investigators[&INV].horror(), 1);
+    assert_event_sequence!(
+        s.events(),
+        Event::DamagePlacedOnInvestigator { investigator, amount: 3 } if *investigator == INV,
+        Event::DamagePlacedOnInvestigator { investigator, amount: 3 } if *investigator == INV2,
+        Event::HorrorPlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV,
     );
 }

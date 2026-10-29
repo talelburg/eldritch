@@ -16,8 +16,10 @@
 //! move choice (0 = move, 1 = don't).
 
 use cards::TEST_REGISTRIES;
+use game_core::assert_event_sequence;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{OptionTarget, PromptNature};
+use game_core::event::Event;
 use game_core::state::{
     ChaosBag, ChaosToken, Enemy, EnemyId, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
 };
@@ -217,4 +219,59 @@ fn a_successful_test_other_than_an_evasion_is_inert() {
     session.assert_at_turn_menu(INV);
     assert_eq!(location(&session), Some(HERE));
     assert_eq!(engaged_with(&session, RAT), Some(INV));
+}
+
+/// The Attic 01113: *"**Forced** - After you enter the Attic: Take 1 horror."*
+const ATTIC: &str = "01113";
+/// A second investigator, left behind in the Study.
+const INV2: InvestigatorId = InvestigatorId(2);
+
+/// Inside the evasion test, the rat left in the Study engages the
+/// investigator who stays there before the Attic's horror resolves. The
+/// engagement is the move's ENGAGE step, part of the card's effect, and
+/// `glossary/Effects.md` reads: *"All aspects of an effect have timing
+/// priority over all "after..." triggering conditions that might arise as a
+/// consequence of that effect."* Both land before the skill test ends.
+#[test]
+fn the_rat_left_behind_engages_whoever_stays_before_the_attics_horror() {
+    let mut attic = None;
+    let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_seat(seat(1).at(HERE).actions(3).hand([SURVIVAL_INSTINCT]))
+        .with_seat(seat(2).at(HERE))
+        .with_seating([INV, INV2])
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .with_enemy_engaged(enemy(GHOUL), INV)
+        .with_enemy_engaged(enemy(RAT), INV)
+        .open_turn(INV)
+        .session()
+        .edit_state(|state| {
+            let id = state.add_location(cards::by_code(ATTIC).expect("Attic 01113 in corpus"));
+            let added = state.locations.get_mut(&id).expect("just added");
+            added.revealed = true;
+            added.connections = vec![HERE];
+            state
+                .locations
+                .get_mut(&HERE)
+                .expect("the Study")
+                .connections = vec![id];
+            attic = Some(id);
+        });
+    let attic = attic.expect("minted");
+
+    let session = evade_committing(session).pick_nth(DISENGAGE).pick_nth(MOVE);
+
+    session.assert_at_turn_menu(INV);
+    assert_eq!(location(&session), Some(attic));
+    assert_eq!(engaged_with(&session, RAT), Some(INV2));
+    assert_eq!(session.state().investigators[&INV].horror(), 1);
+    assert_event_sequence!(
+        session.events(),
+        Event::EnemyDisengaged { enemy, investigator } if *enemy == RAT && *investigator == INV,
+        Event::InvestigatorMoved { to, .. } if *to == attic,
+        Event::EnemyEngaged { enemy, investigator } if *enemy == RAT && *investigator == INV2,
+        Event::HorrorPlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV,
+        Event::SkillTestEnded { .. },
+    );
 }
