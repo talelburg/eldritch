@@ -40,7 +40,7 @@ use game_core::state::{
     CardCode, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, Status,
 };
 use game_core::test_support::{self, seat, Seat, TestSession};
-use game_core::{assert_event, assert_no_event};
+use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 const DRAWN_TO_THE_FLAME: &str = "01064";
 const DISSONANT_VOICES: &str = "01165";
@@ -201,21 +201,10 @@ fn psychosis_reacts_to_a_drawn_tests_horror_before_two_clues_are_discovered() {
     .commit(&[]);
 
     session.assert_at_turn_menu(INV);
-    let events = session.events();
-    let horror = position(
-        events,
-        |e| matches!(e, Event::HorrorPlacedOnInvestigator { investigator, amount: 3 } if *investigator == INV),
-    );
-    let damage = position(
-        events,
-        |e| matches!(e, Event::DamagePlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV),
-    );
-    let discovered = position(
-        events,
-        |e| matches!(e, Event::CluePlaced { investigator, count: 2 } if *investigator == INV),
-    );
-    assert!(
-        horror < damage && damage < discovered,
-        "the horror, then Psychosis's damage, then the discovery; got {events:#?}",
+    assert_event_sequence!(
+        session.events(),
+        Event::HorrorPlacedOnInvestigator { investigator, amount: 3 } if *investigator == INV,
+        Event::DamagePlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV,
+        Event::CluePlaced { investigator, count: 2 } if *investigator == INV,
     );
 }

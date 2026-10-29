@@ -212,7 +212,7 @@ fn table(
         | Continuation::ActionResolution(_)
         | Continuation::Elimination(_)
         | Continuation::NativeTail(_)
-        | Continuation::EffectRoot(_)
+        | Continuation::EffectBase(_)
         | Continuation::ScenarioEnd(_)
         | Continuation::MythosPhase(_)
         | Continuation::InvestigationPhase(_)

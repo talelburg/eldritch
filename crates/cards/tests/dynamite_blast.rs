@@ -24,6 +24,8 @@ use game_core::state::{
 use game_core::test_support::{self, seat, SeatLookup as _, TestSession};
 
 const DYNAMITE: &str = "01024";
+/// Hypochondria 01100, in the threat area of the first investigator blasted.
+const HYPOCHONDRIA: &str = "01100";
 const INV: InvestigatorId = InvestigatorId(1);
 const INV2: InvestigatorId = InvestigatorId(2);
 const HERE: LocationId = LocationId(10);
@@ -320,9 +322,6 @@ fn both_blasted_enemies_take_their_damage_before_rolands_reaction_is_offered() {
         "both enemies were defeated before the reaction is offered"
     );
 }
-
-/// Hypochondria 01100, in the threat area of the first investigator blasted.
-const HYPOCHONDRIA: &str = "01100";
 
 /// Hypochondria's *"**Forced** - After you take 1 or more damage: Take 1
 /// direct horror."* waits until the blast has dealt its damage to every

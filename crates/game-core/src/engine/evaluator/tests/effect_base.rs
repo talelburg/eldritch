@@ -3,7 +3,7 @@
 //! timing priority over all "after..." triggering conditions that might arise
 //! as a consequence of that effect."*
 //!
-//! The probe cards are test-local (`_er_*`), served by [`PROBES`]: each fires
+//! The probe cards are test-local (`_eb_*`), served by [`PROBES`]: each fires
 //! one cell of one condition, so the event log shows where that cell opened.
 
 use std::sync::OnceLock;
@@ -16,15 +16,15 @@ use crate::assert_event_sequence;
 use crate::state::Enemy;
 
 /// `[reaction]` after its controller defeats an enemy: gain 1 resource.
-const AFTER_DEFEAT_REACTION: &str = "_er_after_defeat_reaction";
+const AFTER_DEFEAT_REACTION: &str = "_eb_after_defeat_reaction";
 /// Forced, after its controller defeats an enemy: gain 1 resource.
-const AFTER_DEFEAT_FORCED: &str = "_er_after_defeat_forced";
+const AFTER_DEFEAT_FORCED: &str = "_eb_after_defeat_forced";
 /// Forced, after its controller discovers clues: gain 3 resources.
-const AFTER_DISCOVERY_FORCED: &str = "_er_after_discovery_forced";
+const AFTER_DISCOVERY_FORCED: &str = "_eb_after_discovery_forced";
 /// An asset weakness whose Revelation deals 1 damage to an enemy at your
 /// location. Drawn mid-effect, its Revelation is an effect of its own, nested
 /// in the one that drew it.
-const DEFEATING_WEAKNESS: &str = "_er_defeating_weakness";
+const DEFEATING_WEAKNESS: &str = "_eb_defeating_weakness";
 
 const ENEMY: EnemyId = EnemyId(100);
 
@@ -191,12 +191,25 @@ fn a_seq_suspended_on_a_choice_resumes_with_the_earlier_defeat_still_held() {
         ]),
     );
     assert_eq!(offered_count(&outcome), 2, "the choice comes first");
+    assert_suspended_leaf(&state);
+    let EngineOutcome::AwaitingInput { request, .. } = &outcome else {
+        unreachable!("offered_count saw AwaitingInput");
+    };
+    assert_eq!(
+        request
+            .options
+            .iter()
+            .map(|o| o.label.as_str())
+            .collect::<Vec<_>>(),
+        ["Gain 1 resource", "Gain 2 resources"],
+        "the prompt is the choice alone: the reaction to the defeat is not offered"
+    );
     assert_event!(events, Event::EnemyDefeated { enemy, .. } if *enemy == ENEMY);
     assert_eq!(resources(&state), before, "no branch has resolved yet");
 
     let mut cx = Cx::for_test(&mut state, &mut events);
     cx.cards = &PROBES;
-    let outcome = resume_pick_in(&mut cx, 1);
+    let outcome = resume_pick_with_cx(&mut cx, 1);
 
     assert_eq!(
         offered_count(&outcome),

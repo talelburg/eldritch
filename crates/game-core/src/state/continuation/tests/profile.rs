@@ -502,7 +502,7 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             profile(DRIVEN, COMPLETE),
         ),
         (
-            Continuation::EffectRoot(EffectRootFrame {
+            Continuation::EffectBase(EffectBaseFrame {
                 parked: vec![EmitEventFrame {
                     event: TimingEvent::RoundEnded,
                     step: EmitStep::At,

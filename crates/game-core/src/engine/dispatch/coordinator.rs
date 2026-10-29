@@ -21,7 +21,7 @@
 //!   [`EmitEventFrame::prevented`]).
 //! - A condition an effect raised **parks** on that effect when it reaches its
 //!   `at` cell, and its `at` and `after` cells open once the effect has
-//!   resolved in full ([`park_in_effect_root`], ADR 0021).
+//!   resolved in full ([`park_in_effect_base`], ADR 0021).
 //!
 //! Neither driver suspends *itself*: each does one step and returns `Done`, and
 //! the loop re-dispatches the (mutated) top frame — or `AwaitingInput` when the
@@ -36,7 +36,7 @@ use crate::engine::dispatch::{forced_triggers, reaction_windows, trigger_scan};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::state::{
-    Continuation, EffectRootFrame, EmitEventFrame, EmitStep, TimingPointFrame, TimingSub,
+    Continuation, EffectBaseFrame, EmitEventFrame, EmitStep, TimingPointFrame, TimingSub,
 };
 
 /// Dispatch the [`Continuation::EmitEvent`] coordinator on top of the stack
@@ -54,7 +54,7 @@ use crate::state::{
 ///   resumes at the `at` cell rather than resolving the condition twice.
 ///
 /// Arriving at `At` inside an effect, the coordinator first parks on that
-/// effect ([`park_in_effect_root`]) and leaves the stack, to come back at the
+/// effect ([`park_in_effect_base`]) and leaves the stack, to come back at the
 /// same cell once the effect has resolved.
 ///
 /// A caller-owned condition's `when` cell is **not walked** — the caller has
@@ -77,7 +77,7 @@ pub(in crate::engine) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
         .continuations
         .top_expect::<EmitEventFrame>()
         .clone();
-    if step == EmitStep::At && park_in_effect_root(cx) {
+    if step == EmitStep::At && park_in_effect_base(cx) {
         return EngineOutcome::Done;
     }
     let resolution = event.condition_resolution();
@@ -294,8 +294,8 @@ pub(super) fn void_remaining_sequence(cx: &mut Cx) {
 
 /// Park the coordinator on top, whose cursor stands at `At`, on the effect it
 /// arose from, if it arose from one: move it into the `parked` list of the
-/// deepest [`EffectRootFrame`] above the nearest boundary, and return `true`.
-/// With no effect root above the boundary, nothing parks and this returns
+/// deepest [`EffectBaseFrame`] above the nearest boundary, and return `true`.
+/// With no effect base above the boundary, nothing parks and this returns
 /// `false`.
 ///
 /// The `at` and `after` cells of a condition an effect raised wait until the
@@ -304,7 +304,7 @@ pub(super) fn void_remaining_sequence(cx: &mut Cx) {
 /// arise as a consequence of that effect."* `glossary/Then.md` says the same of
 /// a nested effect: *"The post-then aspect of an effect has timing priority over
 /// all other indirect consequences of the resolution of the pre-then aspect."*
-/// That is why the **deepest** root is the target: a Revelation drawn by Drawn
+/// That is why the **deepest** base is the target: a Revelation drawn by Drawn
 /// to the Flame 01064 is an effect nested in the play, and the play's *"Then,
 /// discover 2 clues at your location."* lands before the consequences of the
 /// Revelation. The `at` cell waits with the `after` cell (ADR 0021).
@@ -312,7 +312,7 @@ pub(super) fn void_remaining_sequence(cx: &mut Cx) {
 /// The search runs down from the frame beneath the coordinator. Every frame
 /// other than a boundary is transparent, including a coordinator in the middle
 /// of resolving its own condition: `DamagePlaced`, raised while `DamageDealt`
-/// resolves, parks to the root `DamageDealt` would park to. The boundaries are
+/// resolves, parks to the base `DamageDealt` would park to. The boundaries are
 /// in [`bounds_effect_deferral`].
 ///
 /// Called only at `At` with the coordinator on top, before the `at` cell is
@@ -320,9 +320,9 @@ pub(super) fn void_remaining_sequence(cx: &mut Cx) {
 /// from it. Parking happens at that point rather than when the condition is
 /// raised, so released windows open in the order each condition reached its
 /// `at` cell.
-fn park_in_effect_root(cx: &mut Cx) -> bool {
+fn park_in_effect_base(cx: &mut Cx) -> bool {
     let beneath_top = cx.state.continuations.len().saturating_sub(1);
-    let mut deepest_root = None;
+    let mut deepest_base = None;
     for (index, frame) in cx
         .state
         .continuations
@@ -334,18 +334,18 @@ fn park_in_effect_root(cx: &mut Cx) -> bool {
         if bounds_effect_deferral(frame) {
             break;
         }
-        if matches!(frame, Continuation::EffectRoot(_)) {
-            deepest_root = Some(index);
+        if matches!(frame, Continuation::EffectBase(_)) {
+            deepest_base = Some(index);
         }
     }
-    let Some(root) = deepest_root else {
+    let Some(base) = deepest_base else {
         return false;
     };
     let coordinator = cx.state.continuations.pop_expect::<EmitEventFrame>();
-    let Some(Continuation::EffectRoot(EffectRootFrame { parked })) =
-        cx.state.continuations.frames_mut().nth(root)
+    let Some(Continuation::EffectBase(EffectBaseFrame { parked })) =
+        cx.state.continuations.frames_mut().nth(base)
     else {
-        unreachable!("park_in_effect_root: the frame the search found is an effect root");
+        unreachable!("park_in_effect_base: the frame the search found is an effect base");
     };
     parked.push(coordinator);
     true

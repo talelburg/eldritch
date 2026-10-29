@@ -1335,19 +1335,13 @@ fn complete_play(cx: &mut Cx, investigator: InvestigatorId, card: CardCode) -> E
         card: Some(card),
     });
     let eval_ctx = EvalContext::for_controller(investigator);
-    let on_play: Vec<Effect> = abilities
+    let on_play_effects: Vec<Effect> = abilities
         .iter()
         .filter(|a| a.trigger == Trigger::OnPlay)
         .map(|a| a.effect.clone())
         .collect();
-    let on_play = (!on_play.is_empty()).then_some(Effect::Seq(on_play));
-    match (play_designator(&abilities), &on_play) {
-        (Some(designator), _) => {
-            evaluator::push_designated_action(cx, designator, on_play.as_ref(), eval_ctx);
-        }
-        (None, Some(on_play)) => evaluator::push_effect(cx, on_play, eval_ctx),
-        (None, None) => {}
-    }
+    let on_play = (!on_play_effects.is_empty()).then_some(Effect::Seq(on_play_effects));
+    evaluator::push_resolution(cx, play_designator(&abilities), on_play.as_ref(), eval_ctx);
     EngineOutcome::Done
 }
 

@@ -296,7 +296,7 @@ fn two_choices_resume_one_round_trip_at_a_time() {
 
 /// A state saved while an effect waits on a `ChooseOne` pick loads back
 /// unchanged, and the loaded copy resumes the pick to the end of the effect:
-/// everything on the stack mid-effect, its effect-root marker included, is
+/// everything on the stack mid-effect, its effect-base marker included, is
 /// plain serialized data.
 #[test]
 fn a_state_suspended_on_a_choose_one_round_trips_through_json_and_resumes() {

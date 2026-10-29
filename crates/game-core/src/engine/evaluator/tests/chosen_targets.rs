@@ -7,7 +7,7 @@ const A: LocationId = LocationId(1);
 const B: LocationId = LocationId(2);
 
 /// Assert a rejected effect left none of its frames behind as a prompt. Its
-/// root marker may remain: a unit test has no `apply` to roll the stack back.
+/// base marker may remain: a unit test has no `apply` to roll the stack back.
 #[track_caller]
 fn assert_no_effect_frame_left(state: &GameState) {
     assert!(

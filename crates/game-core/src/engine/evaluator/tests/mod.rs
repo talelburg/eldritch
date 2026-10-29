@@ -21,7 +21,7 @@ mod control_flow;
 mod deal_and_heal;
 mod discard_self;
 mod discover_clue;
-mod effect_root;
+mod effect_base;
 mod eval_context;
 mod for_each;
 mod gain_resources;
@@ -79,7 +79,7 @@ fn drive_effect_run_to(cx: &mut Cx, base: usize) -> EngineOutcome {
             // The marker at the bottom of the effect `run` pushed: once
             // exposed, the effect is over and the real loop closes it,
             // releasing the coordinators parked on it onto this run.
-            Some(Continuation::EffectRoot(_)) => close_effect_root(cx),
+            Some(Continuation::EffectBase(_)) => close_effect_base(cx),
             _ => return EngineOutcome::Done,
         };
         match outcome {
@@ -104,16 +104,16 @@ fn run(cx: &mut Cx, effect: &Effect, ctx: EvalContext) -> EngineOutcome {
 /// the resumed top effect run **bounded** — in a unit test there is no
 /// `apply()`→`drive()` afterward to step it.
 fn resume_pick(state: &mut GameState, events: &mut Vec<Event>, i: u32) -> EngineOutcome {
-    resume_pick_in(&mut Cx::for_test(state, events), i)
+    resume_pick_with_cx(&mut Cx::for_test(state, events), i)
 }
 
 /// [`resume_pick`] against the registry `cx` names, for a test running probe
 /// cards of its own.
-fn resume_pick_in(cx: &mut Cx, i: u32) -> EngineOutcome {
+fn resume_pick_with_cx(cx: &mut Cx, i: u32) -> EngineOutcome {
     let recorded = choice::resume_effect_choice(cx, &InputResponse::PickSingle(OptionId(i)));
     // A reject (bad pick / top not a Leaf) propagates as-is; otherwise the
     // pick is recorded and the resumed run is driven bounded (base = depth
-    // just below the top contiguous Effect run and its root marker, so
+    // just below the top contiguous Effect run and its base marker, so
     // fixtures stay untouched).
     if !matches!(recorded, EngineOutcome::Done) {
         return recorded;
@@ -122,7 +122,7 @@ fn resume_pick_in(cx: &mut Cx, i: u32) -> EngineOutcome {
         .state
         .continuations
         .iter()
-        .rposition(|c| !matches!(c, Continuation::Effect(_) | Continuation::EffectRoot(_)))
+        .rposition(|c| !matches!(c, Continuation::Effect(_) | Continuation::EffectBase(_)))
         .map_or(0, |idx| idx + 1);
     drive_effect_run_to(cx, base)
 }

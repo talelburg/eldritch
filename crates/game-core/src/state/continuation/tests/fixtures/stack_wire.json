@@ -429,7 +429,7 @@
     }
   },
   {
-    "EffectRoot": {
+    "EffectBase": {
       "parked": [
         {
           "event": "RoundEnded",

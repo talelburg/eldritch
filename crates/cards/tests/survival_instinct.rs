@@ -15,6 +15,8 @@
 //! `pick_nth`: the disengage choice first (0 = disengage, 1 = don't), then the
 //! move choice (0 = move, 1 = don't).
 
+mod common;
+
 use cards::TEST_REGISTRIES;
 use game_core::assert_event_sequence;
 use game_core::engine::enumerate::TurnAction;
@@ -25,8 +27,12 @@ use game_core::state::{
 };
 use game_core::test_support::{self, seat, TestSession};
 
+use crate::common::with_attic;
+
 const SURVIVAL_INSTINCT: &str = "01081";
 const INV: InvestigatorId = InvestigatorId(1);
+/// A second investigator, left behind in the Study.
+const INV2: InvestigatorId = InvestigatorId(2);
 const HERE: LocationId = LocationId(10);
 const HALLWAY: LocationId = LocationId(11);
 const CELLAR: LocationId = LocationId(12);
@@ -221,11 +227,6 @@ fn a_successful_test_other_than_an_evasion_is_inert() {
     assert_eq!(engaged_with(&session, RAT), Some(INV));
 }
 
-/// The Attic 01113: *"**Forced** - After you enter the Attic: Take 1 horror."*
-const ATTIC: &str = "01113";
-/// A second investigator, left behind in the Study.
-const INV2: InvestigatorId = InvestigatorId(2);
-
 /// Inside the evasion test, the rat left in the Study engages the
 /// investigator who stays there before the Attic's horror resolves. The
 /// engagement is the move's ENGAGE step, part of the card's effect, and
@@ -234,7 +235,6 @@ const INV2: InvestigatorId = InvestigatorId(2);
 /// consequence of that effect."* Both land before the skill test ends.
 #[test]
 fn the_rat_left_behind_engages_whoever_stays_before_the_attics_horror() {
-    let mut attic = None;
     let session = GameStateBuilder::new()
         .with_registries(TEST_REGISTRIES)
         .with_location(test_support::test_location(HERE.0, "Study"))
@@ -245,20 +245,8 @@ fn the_rat_left_behind_engages_whoever_stays_before_the_attics_horror() {
         .with_enemy_engaged(enemy(GHOUL), INV)
         .with_enemy_engaged(enemy(RAT), INV)
         .open_turn(INV)
-        .session()
-        .edit_state(|state| {
-            let id = state.add_location(cards::by_code(ATTIC).expect("Attic 01113 in corpus"));
-            let added = state.locations.get_mut(&id).expect("just added");
-            added.revealed = true;
-            added.connections = vec![HERE];
-            state
-                .locations
-                .get_mut(&HERE)
-                .expect("the Study")
-                .connections = vec![id];
-            attic = Some(id);
-        });
-    let attic = attic.expect("minted");
+        .session();
+    let (session, attic) = with_attic(session, &[HERE]);
 
     let session = evade_committing(session).pick_nth(DISENGAGE).pick_nth(MOVE);
 

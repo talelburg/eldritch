@@ -120,10 +120,10 @@ fn pushing_an_anchor_over_a_deeply_buried_queued_ability_is_refused() {
 #[cfg(debug_assertions)]
 #[test]
 #[should_panic(expected = "would bury a queued ability frame")]
-fn pushing_an_anchor_over_an_effect_root_is_refused() {
+fn pushing_an_anchor_over_an_effect_base_is_refused() {
     let mut stack = ContinuationStack::new();
     stack.push(anchor());
-    stack.push(EffectRootFrame { parked: Vec::new() });
+    stack.push(EffectBaseFrame { parked: Vec::new() });
     stack.push(anchor());
 }
 

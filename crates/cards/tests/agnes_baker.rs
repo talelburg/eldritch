@@ -14,8 +14,8 @@
 //!
 //! Abandoned and Alone 01015 places horror on her as one aspect of an effect:
 //! *"**Revelation** - Take 2 direct horror and remove all cards in your discard
-//! pile from the game."* Psychosis 01099 reacts to the same horror: *"**Forced**
-//! - After you take 1 or more horror: Take 1 direct damage."*
+//! pile from the game."* Psychosis 01099 reacts to the same horror:
+//! *"**Forced** - After you take 1 or more horror: Take 1 direct damage."*
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
