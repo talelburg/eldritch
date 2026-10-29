@@ -115,6 +115,18 @@ fn pushing_an_anchor_over_a_deeply_buried_queued_ability_is_refused() {
     stack.push(anchor());
 }
 
+/// The marker at the bottom of an effect is owed work exactly as the effect's
+/// own frames are: an anchor may not bury it.
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "would bury a queued ability frame")]
+fn pushing_an_anchor_over_an_effect_root_is_refused() {
+    let mut stack = ContinuationStack::new();
+    stack.push(anchor());
+    stack.push(EffectRootFrame { parked: Vec::new() });
+    stack.push(anchor());
+}
+
 #[cfg(debug_assertions)]
 #[test]
 #[should_panic(expected = "a second skill test")]

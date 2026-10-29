@@ -329,6 +329,8 @@ pub enum Continuation {
     Elimination(EliminationFrame),
     /// See [`NativeTailFrame`].
     NativeTail(NativeTailFrame),
+    /// See [`EffectRootFrame`].
+    EffectRoot(EffectRootFrame),
 }
 
 // One `impl_frame!` per variant, in declaration order: the `Frame` downcasts
@@ -365,6 +367,7 @@ impl_frame!(Effect, EffectFrame);
 impl_frame!(ScenarioEnd, ScenarioEndFrame);
 impl_frame!(Elimination, EliminationFrame);
 impl_frame!(NativeTail, NativeTailFrame);
+impl_frame!(EffectRoot, EffectRootFrame);
 
 /// Step cursor for the [`Elimination`](Continuation::Elimination) frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -633,6 +636,9 @@ impl Continuation {
                 // Not queued by an emit either, but the rest of a native's
                 // effect is owed work the same way (ADR 0020).
                 | Continuation::NativeTail(_)
+                // Marks an effect that is still resolving above it, so it is
+                // owed work exactly as that effect's frames are.
+                | Continuation::EffectRoot(_)
         )
     }
 
@@ -786,7 +792,9 @@ impl Continuation {
             | Continuation::Elimination(_)
             // The rest of a native's effect, waiting on what its earlier exits
             // pushed: the effect is under way, and its prompts sit above it.
-            | Continuation::NativeTail(_) => (
+            | Continuation::NativeTail(_)
+            // The bottom of an effect that is under way above it.
+            | Continuation::EffectRoot(_) => (
                 FrameActivity::Driven,
                 ScenarioEndDisposition::Complete,
             ),
@@ -2513,6 +2521,28 @@ pub struct NativeTailFrame {
     pub ops: Vec<NativeOp>,
     /// The index in `ops` of the next one to run.
     pub next: usize,
+}
+
+/// The bottom of one effect: every push of an effect's root frame places this
+/// marker beneath it, so the marker is exposed once the whole effect has
+/// resolved, and then pops.
+///
+/// "One effect" is one resolution of a card's text: a triggered ability, an
+/// event played, a Revelation, an activated ability, or a skill-test clause.
+/// An activated ability's designated action and its residual effect are one
+/// effect under one marker (`glossary/Ability.md`: *"Activating such an
+/// ability performs the designated action as described in the rules, but
+/// modified in the manner described by the ability."*). The `Seq`, `ForEach`,
+/// `If` and `ChooseOne` frames nested inside an effect are not marked.
+///
+/// `parked` holds timing coordinators held back until the effect has resolved.
+/// TODO(#1205): nothing parks a coordinator yet, so it is always empty. Driven,
+/// never a prompt, and never cancelled by a latched resolution: the effect
+/// above it is already under way (ADR 0004).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EffectRootFrame {
+    /// Timing coordinators parked on this effect, in the order they parked.
+    pub parked: Vec<EmitEventFrame>,
 }
 
 // --- Window and timing frame payloads ---

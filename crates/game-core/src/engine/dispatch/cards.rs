@@ -1340,11 +1340,13 @@ fn complete_play(cx: &mut Cx, investigator: InvestigatorId, card: CardCode) -> E
         .filter(|a| a.trigger == Trigger::OnPlay)
         .map(|a| a.effect.clone())
         .collect();
-    if !on_play.is_empty() {
-        evaluator::push_effect(cx, &Effect::Seq(on_play), eval_ctx);
-    }
-    if let Some(designator) = play_designator(&abilities) {
-        evaluator::push_designated_action(cx, designator, eval_ctx);
+    let on_play = (!on_play.is_empty()).then_some(Effect::Seq(on_play));
+    match (play_designator(&abilities), &on_play) {
+        (Some(designator), _) => {
+            evaluator::push_designated_action(cx, designator, on_play.as_ref(), eval_ctx);
+        }
+        (None, Some(on_play)) => evaluator::push_effect(cx, on_play, eval_ctx),
+        (None, None) => {}
     }
     EngineOutcome::Done
 }
