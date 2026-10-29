@@ -1,11 +1,10 @@
-//! The native contract, driven through `apply`.
+//! The native contract, driven through `apply`: a native chooses before it
+//! writes, and resolves in the order its author wrote it.
 //!
-//! Regression for #571: a native that writes through an exit and then
-//! suspends for a choice is `Rejected` in every build. A native chooses before
-//! it writes; the apply's snapshot rollback undoes the rejected native's write.
-//! One that suspends before any write suspends and resumes normally.
+//! A native that writes through an exit and then suspends for a choice is
+//! `Rejected`, and one that suspends before any write resumes normally.
 //!
-//! And a native resolves in the order its author wrote it (ADR 0020): once an
+//! A native resolves in the order its author wrote it (ADR 0020): once an
 //! exit leaves work pending (a deal of harm), every later exit waits for that
 //! work to resolve, and a read of the game made while it waits is `Rejected`
 //! and rolled back.
@@ -43,11 +42,13 @@ const DEFEAT_THEN_WRITE_ACT: &str = "_ncx_act_defeat_then_write";
 const THREE_HARMS_ACT: &str = "_ncx_act_three_harms";
 const HARM_THEN_DOOM_ACT: &str = "_ncx_act_harm_then_doom";
 const HARM_THEN_BAD_ENTRY_ACT: &str = "_ncx_act_harm_then_bad_entry";
+const DEFEAT_SELF_THEN_READ_ACT: &str = "_ncx_act_defeat_self_then_read";
 
 const WRITE_THEN_SUSPEND: &str = "test:write-then-suspend";
 const HARM_THEN_READ: &str = "test:harm-then-read";
 const HARM_THEN_TAKE: &str = "test:harm-then-take";
 const HARM_THEN_BAD_ENTRY: &str = "test:harm-then-bad-entry";
+const DEFEAT_SELF_THEN_READ: &str = "test:defeat-self-then-read";
 
 /// An ally with 2 health, so a deal of damage asks where its point goes.
 const SOAKER: &str = "_ncx_soaker";
@@ -72,10 +73,10 @@ fn forced_native(tag: &'static str) -> Vec<Ability> {
     )]
 }
 
-/// An ally with `health` and no other text.
-fn soaking_ally(code: &str, health: u8) -> CardMetadata {
+/// [`SOAKER`]: an ally with 2 health and no other text.
+fn soaking_ally() -> CardMetadata {
     CardMetadata {
-        code: code.to_owned(),
+        code: SOAKER.to_owned(),
         name: "Soaker".to_owned(),
         text: None,
         traits: vec![],
@@ -88,7 +89,7 @@ fn soaking_ally(code: &str, health: u8) -> CardMetadata {
             cost: Some(0),
             xp: None,
             slots: vec![Slot::Ally],
-            health: Some(health),
+            health: Some(2),
             sanity: None,
             skill_icons: SkillIcons::default(),
             is_fast: false,
@@ -203,10 +204,17 @@ fn harm_then_bad_entry(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
     dealt
 }
 
+/// Defeat the controller, then read the board.
+fn defeat_self_then_read(cx: &mut NativeCx, ctx: &EvalContext) -> EngineOutcome {
+    cx.defeat_investigator(ctx.controller);
+    let _ending = cx.state().ending.is_some();
+    EngineOutcome::Done
+}
+
 fn registries() -> Registries {
     static REGISTRIES: LazyLock<Registries> = LazyLock::new(|| Registries {
         cards: MockRegistry::new()
-            .with_card(soaking_ally(SOAKER, 2))
+            .with_card(soaking_ally())
             .with_abilities(WRITE_THEN_SUSPEND_ACT, || forced_native(WRITE_THEN_SUSPEND))
             .with_native_effect(WRITE_THEN_SUSPEND, write_then_suspend)
             .with_abilities(SUSPEND_THEN_WRITE_ACT, || {
@@ -244,6 +252,10 @@ fn registries() -> Registries {
                 forced_native(HARM_THEN_BAD_ENTRY)
             })
             .with_native_effect(HARM_THEN_BAD_ENTRY, harm_then_bad_entry)
+            .with_abilities(DEFEAT_SELF_THEN_READ_ACT, || {
+                forced_native(DEFEAT_SELF_THEN_READ)
+            })
+            .with_native_effect(DEFEAT_SELF_THEN_READ, defeat_self_then_read)
             .build(),
         scenarios: &ScenarioRegistry::EMPTY,
     });
@@ -298,6 +310,9 @@ fn take_the_point_myself(session: TestSession) -> TestSession {
     session.pick(me)
 }
 
+/// Regression for #571: a native that writes through an exit and then
+/// suspends for a choice is `Rejected` in every build, and the apply's
+/// snapshot rollback undoes its write.
 #[test]
 fn a_native_that_writes_then_suspends_is_rejected_and_its_write_rolled_back() {
     let session = TestSession::new(state_with_act(WRITE_THEN_SUSPEND_ACT), registries());
@@ -482,8 +497,9 @@ fn three_deal_harms_resolve_in_the_order_they_were_called() {
 
 #[test]
 fn the_rest_of_a_native_completes_after_its_deal_ends_the_scenario() {
-    // One damage from defeat: the deal eliminates the sole investigator, and
-    // the scenario's ending latches mid-native.
+    // One damage from defeat: the deal eliminates the sole investigator. The
+    // deal is still pending when the native returns, so the ending latches
+    // when the deal frame resolves, and the tail then completes under it.
     let session = end_enemy_phase(TestSession::new(
         state_with(
             HARM_THEN_DOOM_ACT,
@@ -529,4 +545,20 @@ fn a_deferred_exit_that_turns_out_invalid_rejects_the_apply_and_rolls_back() {
         &at_soak,
         "the damage placed by the answered soak is rolled back"
     );
+}
+
+#[test]
+fn a_read_after_an_exit_ends_the_scenario_inline_is_allowed() {
+    // Defeating the sole investigator latches the ending at once, inserting
+    // its frame at the bottom of the stack. That lifts every frame beneath
+    // the native by one but pushes nothing above them, so nothing is pending
+    // and the read that follows sees the settled board.
+    let session = end_enemy_phase(TestSession::new(
+        state_with_act(DEFEAT_SELF_THEN_READ_ACT),
+        registries(),
+    ));
+
+    assert!(session.rejection().is_none(), "{:?}", session.rejection());
+    assert_event!(session.events(), Event::AllInvestigatorsEliminated);
+    assert_event!(session.events(), Event::ScenarioResolved { .. });
 }

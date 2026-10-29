@@ -4,7 +4,9 @@ Dynamite Blast 01024 prints *"Choose either your location or a connecting locati
 
 A native is ordinary Rust, read top to bottom, but its exits ran on two clocks. A direct write (placing doom, revealing a location) landed when called. A push (`deal_harm`, `move_investigator`, `resolve_encounter_card`, a spawned enemy's engagement tie) left its work for after the native returned. So "take harm, then X" wrote X before the harm was assigned. #1189 refused a direct write made while a pushed prompt was pending. That caught the bug, but it left every author tracking both clocks and every new exit waiting for someone to decide which clock it ran on.
 
-**So a native resolves in the order its author wrote it.** Its exits run at once until one leaves work pending. From then on, every exit it calls is held as an op on a `NativeTail` frame directly beneath the frame that started the deferral, and the drive loop runs the ops in call order once that frame has resolved. An op that leaves work pending again re-parks the rest of the tail beneath that work. Dynamite Blast's investigators are now dealt in a forward loop.
+**So a native resolves in the order its author wrote it.** Its exits run at once until one leaves work pending. From then on, every exit it calls is held as an op on a `NativeTail` frame directly beneath the frame that started the deferral, and the drive loop runs the ops in call order once that frame has resolved. An op that leaves work pending again re-parks the rest of the tail beneath that work. Dynamite Blast's native deals its investigators in a forward loop.
+
+A tail holds a call as a `NativeOp`, so a new exit that returns `()` or an outcome needs a `NativeOp` variant and an arm in `NativeOp::run`.
 
 ## What starts the deferral
 
@@ -28,7 +30,7 @@ The tail frame is Driven and completes under a latched ending, because it is man
 
 ## What it changes in the corpus
 
-**Dynamite Blast** is the only native that called an exit after one that starts a deferral. **They're Getting Out 01107**'s act-3 bullet, *"Each investigator that has not resigned is defeated and suffers 1 physical trauma."*, changes as intended. If Roland holds Cover Up 01007, his defeat pushes an `Elimination` frame for its game-end Forced. The physical trauma now lands after that elimination, steps 1–6 included, where it used to land before Cover Up's mental trauma.
+**Dynamite Blast**'s deals after the first wait in its tail. **They're Getting Out 01107**'s act-3 bullet, *"Each investigator that has not resigned is defeated and suffers 1 physical trauma."*, resolves in printed order. If Roland holds Cover Up 01007, his defeat pushes an `Elimination` frame for its game-end Forced, so the physical trauma lands after that elimination, steps 1–6 included, and so after Cover Up's mental trauma.
 
 **The Barrier 01109** reads its own writes and is unchanged. Its reverse is *"Reveal the Parlor. Put the set-aside Lita Chantler into play in the Parlor. Spawn the set-aside Ghoul Priest in the Hallway."* The reveal pushes nothing. Putting Lita, an asset, into play at a location logs `CardPutIntoPlayAtLocation` and pushes no frame at all. Only the Ghoul Priest's spawn can push one, an engagement tie, and it is the last call.
 

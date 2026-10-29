@@ -1,7 +1,8 @@
 //! A native's tail: the exits it called after an earlier exit left work
 //! pending, deferred until that work has resolved, so a native resolves in
-//! the order its author wrote it. See
-//! `docs/adr/0020-a-native-resolves-in-program-order.md`.
+//! the order its author wrote it.
+//!
+//! See `docs/adr/0020-a-native-resolves-in-program-order.md`.
 
 use crate::engine::dispatch::emit::ConditionResolution;
 use crate::engine::outcome::EngineOutcome;

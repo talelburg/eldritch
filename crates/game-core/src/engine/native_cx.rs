@@ -190,9 +190,7 @@ impl<'a> NativeCx<'a> {
     /// pending work will leave.
     #[must_use]
     pub fn state(&self) -> &GameState {
-        if self.deferred {
-            self.read_after_deferral.set(true);
-        }
+        self.note_read();
         self.cx.state
     }
 
@@ -206,15 +204,23 @@ impl<'a> NativeCx<'a> {
 
     /// Call an exit that returns a value: run `exit` on the inner `Cx` and
     /// note whether it left work pending. After a deferral the call is a read
-    /// as much as a write, so it makes the native `Rejected`.
+    /// as much as a write, so it makes the native `Rejected`. The refused exit
+    /// still runs, so it can return a real value rather than a placeholder,
+    /// and the apply's rollback undoes what it changed.
     fn value_exit<R>(&mut self, exit: impl FnOnce(&mut Cx<'a>) -> R) -> R {
         self.written = true;
-        if self.deferred {
-            self.read_after_deferral.set(true);
-        }
+        self.note_read();
         let value = exit(&mut self.cx);
         self.note_deferral();
         value
+    }
+
+    /// Note a read of the game: after a deferral, it makes the native
+    /// `Rejected`.
+    fn note_read(&self) {
+        if self.deferred {
+            self.read_after_deferral.set(true);
+        }
     }
 
     /// Run `op`, the call of an exit that returns `()` or an

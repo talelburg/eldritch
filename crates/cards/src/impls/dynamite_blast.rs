@@ -182,11 +182,10 @@ mod tests {
     }
 
     #[test]
-    fn blast_pushes_one_effect_deal_per_investigator_ascending_from_the_top() {
-        // Two investigators at the lone location → auto-target; each is dealt
-        // 3 damage through the one harm adapter, investigator 1's deal on top
-        // so the deals resolve in ascending id order. Nothing is placed until
-        // the frames run.
+    fn blast_leaves_investigator_1s_deal_on_top_with_nothing_placed() {
+        // Two investigators at the lone location → auto-target. Investigator
+        // 1's deal of 3 damage is pushed on top; investigator 2's waits in the
+        // native's tail until that deal resolves. Nothing is placed yet.
         let mut state = GameStateBuilder::new()
             .with_registries(crate::TEST_REGISTRIES)
             .with_seat(test_support::seat(1).at(HERE))
