@@ -182,6 +182,23 @@ impl ContinuationStack {
         );
     }
 
+    /// Insert `frame` at `index`, directly beneath the frame that was there
+    /// and everything above it: a native's tail parks beneath the frame that
+    /// started its deferral (ADR 0020).
+    ///
+    /// # Panics
+    ///
+    /// If `index` is past the top of the stack; in debug builds, if
+    /// [`push`](Self::push) would refuse `frame`.
+    #[track_caller]
+    pub(crate) fn insert_beneath(&mut self, index: usize, frame: impl Into<Continuation>) {
+        let frame = frame.into();
+        if cfg!(debug_assertions) {
+            self.assert_push_allowed(&frame);
+        }
+        self.frames.insert(index, frame);
+    }
+
     /// Pop the top frame, whatever its kind.
     pub(crate) fn pop(&mut self) -> Option<Continuation> {
         self.frames.pop()

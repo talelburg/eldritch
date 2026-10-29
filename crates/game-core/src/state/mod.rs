@@ -36,7 +36,7 @@ pub use continuation::{
     EncounterDisposition, EncounterDrawFrame, EnemyAttackSource, EnemyPhaseFrame, EnemyResume,
     FastWindowFrame, FastWindowKind, Frame, FrameActivity, FrameProfile, HandDiscardCostFrame,
     HandSizeDiscard, HunterChoice, InFlightSkillTest, InvestigationPhaseFrame, InvestigationResume,
-    InvestigatorTurnFrame, MoveEnterFrame, MulliganFrame, MythosPhaseFrame, MythosResume,
+    InvestigatorTurnFrame, MoveEnterFrame, MulliganFrame, MythosPhaseFrame, MythosResume, NativeTailFrame,
     PhaseStep, PlayFromHandFrame, PlayerDrawFrame, ResolutionCandidate, ResolvedTest,
     ScenarioEndDisposition, ScenarioEndFrame, ScenarioEndStep, SkillTestFollowUp, SkillTestStep,
     SlotDiscardFrame, SpawnEngagePending, SubstitutionPromptFrame, TimingMode, TimingPointFrame,

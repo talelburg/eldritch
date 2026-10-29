@@ -2,6 +2,7 @@
 //! change the game only through the engine's exits.
 
 use std::borrow::Cow;
+use std::cell::Cell;
 
 use card_dsl::dsl::{Effect, Restriction};
 
@@ -15,12 +16,13 @@ use crate::engine::dispatch::{
 };
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::native_op::NativeOp;
+use crate::engine::native_tail::StackMark;
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::event::TraumaKind;
 use crate::state::{
-    CardCode, CardInstanceId, Deck, EnemyId, GameState, InvestigatorId, LocationId, Owner,
-    SkillSubstitution, UseKind, Zone,
+    CardCode, CardInstanceId, Deck, EnemyId, GameState, InvestigatorId, LocationId,
+    NativeTailFrame, Owner, SkillSubstitution, UseKind, Zone,
 };
 
 /// What a [`NativeEffectFn`](crate::card_registry::NativeEffectFn) gets: full
@@ -63,32 +65,40 @@ use crate::state::{
 /// through a continuation frame and returns, and the frame's prompt surfaces
 /// after the native.
 ///
-/// # Nothing written past a pending prompt
+/// # A native resolves in the order it is written
 ///
-/// So a native whose exit left a prompt pending must not then change the game
-/// directly, or the change would land before the prompt is answered. Each exit
-/// is classified as a direct write or a push; a direct-write exit called while
-/// a prompt an earlier exit pushed is still pending makes the native
-/// `Rejected`, and the apply rolls back. A push after it is still allowed, so
-/// a native may fold several [`deal_harm`](Self::deal_harm)s. Exits that both
-/// write and may push count as direct writes. TODO(#1184): delete this
-/// scaffolding once natives defer their tail.
+/// Some exits leave work pending: [`deal_harm`](Self::deal_harm) pushes the
+/// deal and returns before the harm lands, and a move, an encounter card's
+/// resolution, a spawned enemy's engagement tie or an elimination does the
+/// same. From the first such exit on, every exit the native calls is
+/// **deferred**: held as an op on a tail frame beneath the pending work, and run
+/// in call order once that work has resolved. A deferred exit returns `Done`,
+/// meaning queued (ADR 0003); if its op is `Rejected` when it runs, the whole
+/// apply is rejected and rolls back.
+///
+/// An exit that only queues the timing cells of a change it has already made
+/// (an enemy defeat's `EnemyDefeated`) leaves nothing of the effect pending, so
+/// the exits after it still run at once.
+///
+/// After a deferral the native can no longer see the board as it will be, so
+/// a [`state`](Self::state) read, or an exit that returns a value
+/// ([`take_encounter_top`](Self::take_encounter_top),
+/// [`discard_from_play`](Self::discard_from_play), ...), makes the native
+/// `Rejected`, and the apply rolls back. See
+/// `docs/adr/0020-a-native-resolves-in-program-order.md`.
 pub struct NativeCx<'a> {
     cx: Cx<'a>,
     written: bool,
-    /// How many Prompt-profile frames were on the stack when the native was
-    /// entered. More than that later means one of its exits pushed a prompt.
-    ///
-    /// A count rather than a stack depth, because an exit can shift what lies
-    /// beneath the native: an elimination that ends the scenario inserts the
-    /// ending frame at the bottom of the stack, which would lift the native's
-    /// own effect frame, itself a Prompt, above a recorded depth (They're
-    /// Getting Out 01107's act-3 defeat, then trauma). The count can miss a
-    /// pushed prompt only if the same native's exits also removed one beneath
-    /// it.
-    prompts_at_entry: usize,
-    /// Set when a direct-write exit runs while a pushed prompt is pending.
-    wrote_past_prompt: bool,
+    /// The stack as it stood when the native was entered, so the frames its
+    /// exits push can be found.
+    entry: StackMark,
+    /// Set once an exit has left work pending: every exit after it is
+    /// deferred.
+    deferred: bool,
+    /// The deferred exit calls, in call order.
+    tail: Vec<NativeOp>,
+    /// Set when the native read the game after the deferral began.
+    read_after_deferral: Cell<bool>,
     /// The `Effect::Native` node being resolved and the context it resolves
     /// in: what [`suspend`](Self::suspend) re-pushes as the effect frame the
     /// native's prompt rests on.
@@ -98,86 +108,18 @@ pub struct NativeCx<'a> {
     suspended: bool,
 }
 
-/// How an exit changes the game, which decides whether it may run after an
-/// earlier exit left a prompt pending.
-///
-/// An exit that pushes a frame returns before the frame runs, so a prompt it
-/// raises (a deal of damage's soak, a spawned enemy's engagement tie) surfaces
-/// only after the native returns. A **direct write** made after it would land
-/// before that prompt is answered, out of printed order, so the native is
-/// `Rejected`. A **push** made after it is fine: it resolves after the native
-/// too, in the order the native pushed it — Dynamite Blast 01024's deals,
-/// pushed in reverse so they resolve ascending.
-///
-/// Only a Prompt-profile frame counts as pending. A direct write after an exit
-/// that queued an event emit (`EnemyDefeated` behind
-/// [`deal_damage_to_enemy`](NativeCx::deal_damage_to_enemy)) is allowed, though
-/// it lands before that event's reaction window opens.
-///
-/// TODO(#1184): delete this scaffolding once natives defer their tail.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ExitKind {
-    /// Changes the game before returning, even if it then also pushes a frame
-    /// (a mixed exit, such as
-    /// [`put_set_aside_card_into_play`](NativeCx::put_set_aside_card_into_play),
-    /// counts here).
-    DirectWrite,
-    /// Changes nothing before returning: it only pushes frames that do the
-    /// work after the native.
-    Push,
-}
-
-impl ExitKind {
-    /// How the exit that builds `op` changes the game.
-    fn of(op: &NativeOp) -> Self {
-        match op {
-            NativeOp::DealHarm { .. } | NativeOp::MoveInvestigator { .. } => Self::Push,
-            NativeOp::DefeatInvestigator { .. }
-            | NativeOp::SufferTrauma { .. }
-            | NativeOp::DealDamageToEnemy { .. }
-            | NativeOp::PutSetAsideCardIntoPlay { .. }
-            | NativeOp::RevealLocation { .. }
-            | NativeOp::RelocateEnemy { .. }
-            | NativeOp::PlaceInvestigator { .. }
-            | NativeOp::EngageReadyEnemies
-            | NativeOp::PlaceDoomOnAgenda { .. }
-            | NativeOp::PlaceDoomOnCard { .. }
-            | NativeOp::RemoveClues { .. }
-            | NativeOp::DiscardAllResources { .. }
-            | NativeOp::DiscardEncounterCard { .. }
-            | NativeOp::DiscardFromHand { .. }
-            | NativeOp::RemoveDiscardPileFromGame { .. }
-            | NativeOp::ReshuffleEncounterDiscard
-            | NativeOp::ResolveEncounterCard { .. }
-            | NativeOp::LoseActions { .. }
-            | NativeOp::RoundEndAdvance { .. }
-            | NativeOp::SubstituteSkillUntilEndOfRound { .. }
-            | NativeOp::RestrictUntilEndOfRound { .. }
-            | NativeOp::ReturnCommittedCardToHand { .. }
-            | NativeOp::DiscardAfterThisTest { .. } => Self::DirectWrite,
-        }
-    }
-}
-
-/// How many frames on the stack are Prompt-profile.
-fn prompt_frames(state: &GameState) -> usize {
-    state
-        .continuations
-        .iter()
-        .filter(|frame| frame.awaits_input())
-        .count()
-}
-
 impl<'a> NativeCx<'a> {
     /// Wrap `cx` for one call of the native `node` resolves to, in
     /// `eval_ctx`, not yet written to.
     pub(crate) fn new(cx: Cx<'a>, node: &'a Effect, eval_ctx: EvalContext) -> Self {
-        let prompts_at_entry = prompt_frames(cx.state);
+        let entry = StackMark::of(cx.state);
         Self {
             cx,
             written: false,
-            prompts_at_entry,
-            wrote_past_prompt: false,
+            entry,
+            deferred: false,
+            tail: Vec::new(),
+            read_after_deferral: Cell::new(false),
             node,
             eval_ctx,
             suspended: false,
@@ -192,6 +134,35 @@ impl<'a> NativeCx<'a> {
     /// Whether the native suspended through [`suspend`](Self::suspend).
     pub(crate) fn suspended(&self) -> bool {
         self.suspended
+    }
+
+    /// Whether the native read the game, through [`state`](Self::state) or an
+    /// exit that returns a value, after an exit had left work pending.
+    pub(crate) fn read_after_deferral(&self) -> bool {
+        self.read_after_deferral.get()
+    }
+
+    /// Park the deferred exit calls, if any, as a tail frame directly beneath
+    /// the frame that started the deferral. Called once the native has
+    /// returned.
+    pub(crate) fn park_tail(self) {
+        if self.tail.is_empty() {
+            return;
+        }
+        let Some(at) = self.entry.deferral_start(self.cx.state) else {
+            unreachable!("a deferred exit was called with no deferral started");
+        };
+        let Effect::Native { tag } = self.node else {
+            unreachable!("a NativeCx resolves an Effect::Native node");
+        };
+        self.cx.state.continuations.insert_beneath(
+            at,
+            NativeTailFrame {
+                native: tag.clone(),
+                ops: self.tail,
+                next: 0,
+            },
+        );
     }
 
     /// Suspend the native on what a grounding helper could not settle: the
@@ -214,47 +185,59 @@ impl<'a> NativeCx<'a> {
         }
     }
 
-    /// The game state, read-only.
+    /// The game state, read-only. A read after an exit left work pending makes
+    /// the native `Rejected`: the board it shows is not yet the board the
+    /// pending work will leave.
     #[must_use]
     pub fn state(&self) -> &GameState {
+        if self.deferred {
+            self.read_after_deferral.set(true);
+        }
         self.cx.state
     }
 
     /// The card registry this apply runs against, for a read helper that
-    /// looks a card up.
+    /// looks a card up. Never refused: the registry doesn't change during an
+    /// apply.
     #[must_use]
     pub fn cards(&self) -> &CardRegistry {
         self.cx.cards
     }
 
-    /// Whether a [direct-write](ExitKind::DirectWrite) exit was called while
-    /// a prompt an earlier exit pushed was still pending.
-    pub(crate) fn wrote_past_prompt(&self) -> bool {
-        self.wrote_past_prompt
-    }
-
-    /// Mark the context written and hand out the inner `Cx` for one exit of
-    /// `kind`. Every exit calls it, so every exit is classified.
-    fn write_access(&mut self, kind: ExitKind) -> &mut Cx<'a> {
+    /// Call an exit that returns a value: run `exit` on the inner `Cx` and
+    /// note whether it left work pending. After a deferral the call is a read
+    /// as much as a write, so it makes the native `Rejected`.
+    fn value_exit<R>(&mut self, exit: impl FnOnce(&mut Cx<'a>) -> R) -> R {
         self.written = true;
-        if kind == ExitKind::DirectWrite && self.prompt_pending() {
-            self.wrote_past_prompt = true;
+        if self.deferred {
+            self.read_after_deferral.set(true);
         }
-        &mut self.cx
-    }
-
-    /// Whether an exit called during this native pushed a Prompt-profile frame
-    /// that is still on the stack.
-    fn prompt_pending(&self) -> bool {
-        prompt_frames(self.cx.state) > self.prompts_at_entry
+        let value = exit(&mut self.cx);
+        self.note_deferral();
+        value
     }
 
     /// Run `op`, the call of an exit that returns `()` or an
-    /// [`EngineOutcome`]: every such exit builds its op and runs it here.
-    /// What an op of a `()` exit returns is always `Done`.
+    /// [`EngineOutcome`], or defer it if an earlier exit left work pending.
+    /// What an op of a `()` exit returns is always `Done`, and so is a deferred
+    /// op's: queued.
     fn run_op(&mut self, op: NativeOp) -> EngineOutcome {
-        let kind = ExitKind::of(&op);
-        op.run(self.write_access(kind))
+        self.written = true;
+        if self.deferred {
+            self.tail.push(op);
+            return EngineOutcome::Done;
+        }
+        let outcome = op.run(&mut self.cx);
+        self.note_deferral();
+        outcome
+    }
+
+    /// Start the deferral if an exit has pushed a frame that leaves work
+    /// pending.
+    fn note_deferral(&mut self) {
+        if !self.deferred {
+            self.deferred = self.entry.deferral_start(self.cx.state).is_some();
+        }
     }
 
     // --- Harm and defeat ---
@@ -334,7 +317,7 @@ impl<'a> NativeCx<'a> {
         &mut self,
         code: &str,
     ) -> Result<LocationId, Cow<'static, str>> {
-        set_aside::put_set_aside_location_into_play(self.write_access(ExitKind::DirectWrite), code)
+        self.value_exit(|cx| set_aside::put_set_aside_location_into_play(cx, code))
     }
 
     /// Reveal `location` if it is unrevealed, placing its printed clues.
@@ -350,12 +333,12 @@ impl<'a> NativeCx<'a> {
         code: CardCode,
         owner: Owner,
     ) -> Option<CardInstanceId> {
-        threat_area::attach_to_location(
-            self.write_access(ExitKind::DirectWrite),
+        self.value_exit(|cx| threat_area::attach_to_location(
+            cx,
             location,
             code,
             owner,
-        )
+        ))
     }
 
     // --- Movement and placement ---
@@ -460,13 +443,13 @@ impl<'a> NativeCx<'a> {
         kind: UseKind,
         amount: u8,
     ) -> Result<(), SpendUsesError> {
-        uses::spend_uses(
-            self.write_access(ExitKind::DirectWrite),
+        self.value_exit(|cx| uses::spend_uses(
+            cx,
             investigator,
             instance,
             kind,
             amount,
-        )
+        ))
     }
 
     /// Move up to `amount` uses of `kind` off `instance` into
@@ -493,13 +476,13 @@ impl<'a> NativeCx<'a> {
         kind: UseKind,
         amount: u8,
     ) -> Result<(), MoveUsesError> {
-        uses::move_uses_to_resource_pool(
-            self.write_access(ExitKind::DirectWrite),
+        self.value_exit(|cx| uses::move_uses_to_resource_pool(
+            cx,
             investigator,
             instance,
             kind,
             amount,
-        )
+        ))
     }
 
     /// Move up to `amount` resources out of `investigator`'s resource pool onto
@@ -522,12 +505,12 @@ impl<'a> NativeCx<'a> {
         instance: CardInstanceId,
         amount: u8,
     ) -> Result<(), MoveResourcesError> {
-        board::move_resources_to_card(
-            self.write_access(ExitKind::DirectWrite),
+        self.value_exit(|cx| board::move_resources_to_card(
+            cx,
             investigator,
             instance,
             amount,
-        )
+        ))
     }
 
     /// Discard every resource in `investigator`'s resource pool (Paranoia
@@ -562,7 +545,7 @@ impl<'a> NativeCx<'a> {
         to: CardInstanceId,
         amount: u8,
     ) -> Result<(), MoveHorrorError> {
-        tokens::move_horror(self.write_access(ExitKind::DirectWrite), from, to, amount)
+        self.value_exit(|cx| tokens::move_horror(cx, from, to, amount))
     }
 
     // --- Leaving play ---
@@ -579,7 +562,7 @@ impl<'a> NativeCx<'a> {
         &mut self,
         card: impl Into<LeavingCard>,
     ) -> Result<Placement, NotLeft> {
-        board::discard_from_play(self.write_access(ExitKind::DirectWrite), card)
+        self.value_exit(|cx| board::discard_from_play(cx, card))
     }
 
     /// Remove `card` from the game, with its leave-play consequences. Returns
@@ -589,13 +572,13 @@ impl<'a> NativeCx<'a> {
     ///
     /// [`NotLeft`], as for [`discard_from_play`](Self::discard_from_play).
     pub fn remove_from_game(&mut self, card: impl Into<LeavingCard>) -> Result<Placement, NotLeft> {
-        board::remove_from_game(self.write_access(ExitKind::DirectWrite), card)
+        self.value_exit(|cx| board::remove_from_game(cx, card))
     }
 
     /// Remove the location `location` from the game, discarding what is
     /// attached to it or at it. Returns whether it was in play.
     pub fn remove_location_from_game(&mut self, location: LocationId) -> bool {
-        board::remove_location_from_game(self.write_access(ExitKind::DirectWrite), location)
+        self.value_exit(|cx| board::remove_location_from_game(cx, location))
     }
 
     /// Discard `code`, an encounter card outside any zone of play, to the
@@ -609,7 +592,7 @@ impl<'a> NativeCx<'a> {
     /// Discard a random card from `investigator`'s hand, returning it, or
     /// `None` for an empty hand.
     pub fn discard_random_from_hand(&mut self, investigator: InvestigatorId) -> Option<CardCode> {
-        cards::discard_random_from_hand(self.write_access(ExitKind::DirectWrite), investigator)
+        self.value_exit(|cx| cards::discard_random_from_hand(cx, investigator))
     }
 
     /// Discard the card at `hand_index` of `investigator`'s hand to their
@@ -645,11 +628,11 @@ impl<'a> NativeCx<'a> {
         investigator: InvestigatorId,
         index: usize,
     ) -> Option<CardCode> {
-        cards::add_discarded_card_to_hand(
-            self.write_access(ExitKind::DirectWrite),
+        self.value_exit(|cx| cards::add_discarded_card_to_hand(
+            cx,
             investigator,
             index,
-        )
+        ))
     }
 
     // --- Decks ---
@@ -658,7 +641,7 @@ impl<'a> NativeCx<'a> {
     /// the top, returning whether anything moved (an index past the bottom is
     /// a no-op). No event announces it: a deck's order is hidden.
     pub fn move_card_in_deck(&mut self, deck: Deck, from: usize, to: usize) -> bool {
-        cards::move_card_in_deck(self.write_access(ExitKind::DirectWrite), deck, from, to)
+        self.value_exit(|cx| cards::move_card_in_deck(cx, deck, from, to))
     }
 
     // --- The encounter deck ---
@@ -667,7 +650,7 @@ impl<'a> NativeCx<'a> {
     /// reshuffles the discard in. The card is the caller's to put somewhere,
     /// as [`discard_encounter_card`](Self::discard_encounter_card) does.
     pub fn take_encounter_top(&mut self) -> Option<CardCode> {
-        encounter::take_encounter_top(self.write_access(ExitKind::DirectWrite))
+        self.value_exit(|cx| encounter::take_encounter_top(cx))
     }
 
     /// Draw the top card of the encounter deck, shuffling the encounter
@@ -676,7 +659,7 @@ impl<'a> NativeCx<'a> {
     /// rule defines. The card is the caller's to resolve, as
     /// [`resolve_encounter_card`](Self::resolve_encounter_card) does.
     pub fn draw_encounter_top(&mut self) -> Option<CardCode> {
-        encounter::draw_encounter_top(self.write_access(ExitKind::DirectWrite))
+        self.value_exit(|cx| encounter::draw_encounter_top(cx))
     }
 
     /// Shuffle the encounter discard back into the encounter deck.

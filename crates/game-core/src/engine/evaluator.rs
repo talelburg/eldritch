@@ -1219,16 +1219,16 @@ fn step_native(cx: &mut Cx, tag: &str, eval_ctx: EvalContext, node: &Effect) -> 
     let outcome = f(&mut native_cx, &eval_ctx);
     let written = native_cx.written();
     let suspended = native_cx.suspended();
-    if native_cx.wrote_past_prompt() {
+    if native_cx.read_after_deferral() {
         return EngineOutcome::Rejected {
             reason: format!(
-                "Native effect {tag:?} changed the game directly while a prompt one of its \
-                 exits pushed was still pending; the change would land before the prompt \
-                 is answered"
+                "Native effect {tag:?} read the game after one of its exits left work \
+                 pending; the board it read is not yet the board that work will leave"
             )
             .into(),
         };
     }
+    native_cx.park_tail();
     if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
         if written {
             return EngineOutcome::Rejected {

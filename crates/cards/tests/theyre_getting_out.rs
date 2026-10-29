@@ -25,8 +25,8 @@ use game_core::state::{
     Act, Agenda, CardCode, EliminationCause, Enemy, EnemyId, GameState, GameStateBuilder,
     InvestigatorId, Location, LocationId, Phase, Status,
 };
-use game_core::test_support::{self, seat, Seat, TestSession};
-use game_core::{assert_event, assert_no_event};
+use game_core::test_support::{self, clues, seat, Seat, TestSession};
+use game_core::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
 
 const INV: InvestigatorId = InvestigatorId(1);
 const HALLWAY: LocationId = LocationId(2);
@@ -287,9 +287,16 @@ fn round_end_act_when_window_opens_before_agenda_at_doom() {
 /// therefore terminal) agenda, one doom short of its threshold — so the next
 /// Mythos phase's step 1.2 doom tips it at 1.3 and its reverse fires.
 fn table_at_act(n: u32, act_index: usize) -> GameState {
+    table_of_seats_at_act((1..=n).map(seat).collect(), act_index)
+}
+
+/// [`table_at_act`], seating `seats` (numbered 1 up, in that order) as given.
+fn table_of_seats_at_act(seats: Vec<Seat>, act_index: usize) -> GameState {
+    let n = u32::try_from(seats.len()).expect("a handful of seats");
     // A card each for Upkeep 4.4 to draw.
-    let mut state = (1..=n)
-        .map(|i| seat(i).deck(["01088"]))
+    let mut state = seats
+        .into_iter()
+        .map(|s| s.deck(["01088"]))
         .fold(
             GameStateBuilder::new().with_registries(TEST_REGISTRIES),
             GameStateBuilder::with_seat,
@@ -415,5 +422,50 @@ fn agenda_01107_reverse_at_act_3_defeats_the_unresigned_in_player_order() {
         state.ending,
         Some(ScenarioEnding::NoResolution),
         "the act-3 bullet prints no (→R#)",
+    );
+}
+
+/// The act-3 bullet's two halves resolve in printed order when the defeat runs
+/// a whole elimination: *"Each investigator that has not resigned is defeated
+/// and suffers 1 physical trauma."*
+///
+/// Roland Banks 01001 holds Cover Up 01007, whose *"**Forced** - When the game
+/// ends, if there are any clues on Cover Up: You suffer 1 mental trauma."*
+/// fires on his elimination (ruling, <https://arkhamdb.com/card/01007>: *"If
+/// Roland is eliminated (by being defeated or taking a **resign** action) while
+/// Cover Up is in play, Cover Up's **Forced** effect triggers"*). Rules
+/// Reference, Elimination, step 0: *"Trigger any “when the game ends” abilities
+/// on each weakness the eliminated investigator owns that is in play. Then,
+/// remove those weaknesses from the game."*; step 6: *"If there are no
+/// remaining players, the scenario ends."* The defeat, the whole elimination
+/// included, resolves before the physical trauma.
+#[test]
+fn agenda_01107_reverse_at_act_3_resolves_the_whole_elimination_before_the_trauma() {
+    let roland = seat(1).as_card("01001").threat_area([("01007", clues(3))]);
+    let session = advance_01107(table_of_seats_at_act(vec![roland], 2));
+    let events = session.events();
+
+    assert_event_sequence!(
+        events,
+        Event::TraumaSuffered {
+            investigator: INV,
+            kind: TraumaKind::Mental,
+            amount: 1
+        },
+        Event::CardRemovedFromGame { code, .. } if code.as_str() == "01007",
+        Event::AllInvestigatorsEliminated,
+        Event::TraumaSuffered {
+            investigator: INV,
+            kind: TraumaKind::Physical,
+            amount: 1
+        },
+    );
+    assert_event_count!(
+        events,
+        1,
+        Event::TraumaSuffered {
+            kind: TraumaKind::Mental,
+            ..
+        }
     );
 }

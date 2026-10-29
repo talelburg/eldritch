@@ -24,6 +24,7 @@ mod native_cx;
 pub use native_cx::NativeCx;
 mod native_op;
 pub use native_op::NativeOp;
+mod native_tail;
 mod outcome;
 pub(crate) mod pathfinding;
 
