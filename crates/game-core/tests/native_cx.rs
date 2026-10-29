@@ -213,7 +213,9 @@ fn registries() -> Registries {
                 forced_native("test:suspend-then-write")
             })
             .with_native_effect("test:suspend-then-write", suspend_then_write)
-            .with_abilities(HARM_THEN_WRITE_ACT, || forced_native("test:harm-then-write"))
+            .with_abilities(HARM_THEN_WRITE_ACT, || {
+                forced_native("test:harm-then-write")
+            })
             .with_native_effect("test:harm-then-write", harm_then_write)
             .with_abilities(HARM_THEN_HARM_ACT, || forced_native("test:harm-then-harm"))
             .with_native_effect("test:harm-then-harm", harm_then_harm)
@@ -483,7 +485,11 @@ fn the_rest_of_a_native_completes_after_its_deal_ends_the_scenario() {
     // One damage from defeat: the deal eliminates the sole investigator, and
     // the scenario's ending latches mid-native.
     let session = end_enemy_phase(TestSession::new(
-        state_with(HARM_THEN_DOOM_ACT, seat(1).harm(7, 0), GameStateBuilder::new()),
+        state_with(
+            HARM_THEN_DOOM_ACT,
+            seat(1).harm(7, 0),
+            GameStateBuilder::new(),
+        ),
         registries(),
     ));
 

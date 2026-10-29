@@ -308,9 +308,8 @@ fn both_blasted_enemies_take_their_damage_before_rolands_reaction_is_offered() {
         .with_enemy(enemy_b)
         .open_turn(INV)
         .build();
-    let rolands_card = OptionTarget::CardInstance(
-        state.investigators[&INV].investigator_card.instance_id,
-    );
+    let rolands_card =
+        OptionTarget::CardInstance(state.investigators[&INV].investigator_card.instance_id);
 
     let s = play(state);
 

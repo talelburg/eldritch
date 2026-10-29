@@ -248,10 +248,11 @@ impl<'a> NativeCx<'a> {
     /// `DamagePlaced` nested in its resolve step — so nothing is placed when
     /// this returns.
     ///
-    /// **Return its outcome.** The deal runs on a frame above everything the
-    /// native leaves beneath it, so work written after this call would run
-    /// before the harm lands (ADR 0003).
-    #[must_use = "deal_harm only pushes the deal frame: return its outcome (ADR 0003)"]
+    /// The deal is left pending, so every exit called after this one waits
+    /// until it has resolved (ADR 0020). **Propagate an outcome that is not
+    /// `Done`**: a deal deferred behind earlier work returns `Done`, meaning
+    /// queued (ADR 0003).
+    #[must_use = "deal_harm may be Rejected: propagate an outcome that is not Done"]
     pub fn deal_harm(
         &mut self,
         investigator: InvestigatorId,
@@ -333,12 +334,7 @@ impl<'a> NativeCx<'a> {
         code: CardCode,
         owner: Owner,
     ) -> Option<CardInstanceId> {
-        self.value_exit(|cx| threat_area::attach_to_location(
-            cx,
-            location,
-            code,
-            owner,
-        ))
+        self.value_exit(|cx| threat_area::attach_to_location(cx, location, code, owner))
     }
 
     // --- Movement and placement ---
@@ -373,10 +369,10 @@ impl<'a> NativeCx<'a> {
     /// rule forbids moving there
     /// ([`investigator_can_enter_location`](crate::engine::investigator_can_enter_location)).
     ///
-    /// **Return its outcome.** The move runs on frames above everything the
-    /// native leaves beneath it, so work written after this call would run
-    /// before the move lands (ADR 0003).
-    #[must_use = "move_investigator only queues the move: return its outcome (ADR 0003)"]
+    /// The move is left pending, so every exit called after this one waits
+    /// until it has resolved (ADR 0020). **Propagate an outcome that is not
+    /// `Done`**: `Done` means queued (ADR 0003).
+    #[must_use = "move_investigator may be Rejected: propagate an outcome that is not Done"]
     pub fn move_investigator(
         &mut self,
         investigator: InvestigatorId,
@@ -443,13 +439,7 @@ impl<'a> NativeCx<'a> {
         kind: UseKind,
         amount: u8,
     ) -> Result<(), SpendUsesError> {
-        self.value_exit(|cx| uses::spend_uses(
-            cx,
-            investigator,
-            instance,
-            kind,
-            amount,
-        ))
+        self.value_exit(|cx| uses::spend_uses(cx, investigator, instance, kind, amount))
     }
 
     /// Move up to `amount` uses of `kind` off `instance` into
@@ -476,13 +466,9 @@ impl<'a> NativeCx<'a> {
         kind: UseKind,
         amount: u8,
     ) -> Result<(), MoveUsesError> {
-        self.value_exit(|cx| uses::move_uses_to_resource_pool(
-            cx,
-            investigator,
-            instance,
-            kind,
-            amount,
-        ))
+        self.value_exit(|cx| {
+            uses::move_uses_to_resource_pool(cx, investigator, instance, kind, amount)
+        })
     }
 
     /// Move up to `amount` resources out of `investigator`'s resource pool onto
@@ -505,12 +491,7 @@ impl<'a> NativeCx<'a> {
         instance: CardInstanceId,
         amount: u8,
     ) -> Result<(), MoveResourcesError> {
-        self.value_exit(|cx| board::move_resources_to_card(
-            cx,
-            investigator,
-            instance,
-            amount,
-        ))
+        self.value_exit(|cx| board::move_resources_to_card(cx, investigator, instance, amount))
     }
 
     /// Discard every resource in `investigator`'s resource pool (Paranoia
@@ -628,11 +609,7 @@ impl<'a> NativeCx<'a> {
         investigator: InvestigatorId,
         index: usize,
     ) -> Option<CardCode> {
-        self.value_exit(|cx| cards::add_discarded_card_to_hand(
-            cx,
-            investigator,
-            index,
-        ))
+        self.value_exit(|cx| cards::add_discarded_card_to_hand(cx, investigator, index))
     }
 
     // --- Decks ---
