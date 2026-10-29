@@ -11,6 +11,9 @@
 //!
 //! Holy Rosary 01059 (sanity 2) could soak horror, which a direct deal must not
 //! offer it.
+//!
+//! Psychosis 01099 reacts to the horror: *"**Forced** - After you take 1 or more
+//! horror: Take 1 direct damage."*
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
@@ -25,6 +28,7 @@ const ABANDONED_AND_ALONE: &str = "01015";
 const HOLY_ROSARY: &str = "01059";
 const GUTS: &str = "01089";
 const LUCKY: &str = "01080";
+const PSYCHOSIS: &str = "01099";
 
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(10);
@@ -125,4 +129,35 @@ fn horror_that_defeats_the_bearer_leaves_nothing_in_their_discard_pile() {
     );
     assert_no_event!(session.events(), Event::DiscardPileRemovedFromGame { .. });
     assert_no_event!(session.events(), Event::CardDiscarded { .. });
+}
+
+/// Both aspects of the Revelation resolve before an "after" ability reacts to
+/// the first: `glossary/Effects.md`, *"All aspects of an effect have timing
+/// priority over all "after..." triggering conditions that might arise as a
+/// consequence of that effect."* So the discard pile leaves the game before
+/// Psychosis deals its damage.
+#[test]
+fn the_discard_pile_is_removed_before_psychosis_reacts_to_the_horror() {
+    let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_seat(
+            seat(1)
+                .at(HERE)
+                .actions(3)
+                .threat_area([PSYCHOSIS])
+                .discard([GUTS])
+                .deck([ABANDONED_AND_ALONE, HOLY_ROSARY]),
+        )
+        .open_turn(INV)
+        .session()
+        .take(&TurnAction::Draw { investigator: INV });
+
+    session.assert_at_turn_menu(INV);
+    assert_event_sequence!(
+        session.events(),
+        Event::HorrorPlacedOnInvestigator { investigator, amount: 2 } if *investigator == INV,
+        Event::DiscardPileRemovedFromGame { investigator, .. } if *investigator == INV,
+        Event::DamagePlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV,
+    );
 }

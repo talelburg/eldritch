@@ -15,16 +15,24 @@
 //! `pick_nth`: the disengage choice first (0 = disengage, 1 = don't), then the
 //! move choice (0 = move, 1 = don't).
 
+mod common;
+
 use cards::TEST_REGISTRIES;
+use game_core::assert_event_sequence;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{OptionTarget, PromptNature};
+use game_core::event::Event;
 use game_core::state::{
     ChaosBag, ChaosToken, Enemy, EnemyId, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
 };
 use game_core::test_support::{self, seat, TestSession};
 
+use crate::common::with_attic;
+
 const SURVIVAL_INSTINCT: &str = "01081";
 const INV: InvestigatorId = InvestigatorId(1);
+/// A second investigator, left behind in the Study.
+const INV2: InvestigatorId = InvestigatorId(2);
 const HERE: LocationId = LocationId(10);
 const HALLWAY: LocationId = LocationId(11);
 const CELLAR: LocationId = LocationId(12);
@@ -217,4 +225,41 @@ fn a_successful_test_other_than_an_evasion_is_inert() {
     session.assert_at_turn_menu(INV);
     assert_eq!(location(&session), Some(HERE));
     assert_eq!(engaged_with(&session, RAT), Some(INV));
+}
+
+/// Inside the evasion test, the rat left in the Study engages the
+/// investigator who stays there before the Attic's horror resolves. The
+/// engagement is the move's ENGAGE step, part of the card's effect, and
+/// `glossary/Effects.md` reads: *"All aspects of an effect have timing
+/// priority over all "after..." triggering conditions that might arise as a
+/// consequence of that effect."* Both land before the skill test ends.
+#[test]
+fn the_rat_left_behind_engages_whoever_stays_before_the_attics_horror() {
+    let session = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_seat(seat(1).at(HERE).actions(3).hand([SURVIVAL_INSTINCT]))
+        .with_seat(seat(2).at(HERE))
+        .with_seating([INV, INV2])
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .with_enemy_engaged(enemy(GHOUL), INV)
+        .with_enemy_engaged(enemy(RAT), INV)
+        .open_turn(INV)
+        .session();
+    let (session, attic) = with_attic(session, &[HERE]);
+
+    let session = evade_committing(session).pick_nth(DISENGAGE).pick_nth(MOVE);
+
+    session.assert_at_turn_menu(INV);
+    assert_eq!(location(&session), Some(attic));
+    assert_eq!(engaged_with(&session, RAT), Some(INV2));
+    assert_eq!(session.state().investigators[&INV].horror(), 1);
+    assert_event_sequence!(
+        session.events(),
+        Event::EnemyDisengaged { enemy, investigator } if *enemy == RAT && *investigator == INV,
+        Event::InvestigatorMoved { to, .. } if *to == attic,
+        Event::EnemyEngaged { enemy, investigator } if *enemy == RAT && *investigator == INV2,
+        Event::HorrorPlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV,
+        Event::SkillTestEnded { .. },
+    );
 }

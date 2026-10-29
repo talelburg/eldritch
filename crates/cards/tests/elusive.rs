@@ -16,6 +16,8 @@
 //! > - You must move when you play Elusive, as it is not a 'may' effect, unless
 //! >   there is no legal place to move to or a rule effect forbids movement.
 
+mod common;
+
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::{self, PlaySource, TurnAction};
 use game_core::engine::OptionTarget;
@@ -28,8 +30,12 @@ use game_core::state::{
 use game_core::test_support::{self, seat, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
+use crate::common::with_attic;
+
 const ELUSIVE: &str = "01050";
 const INV: InvestigatorId = InvestigatorId(1);
+/// A second investigator, left behind at `HERE`.
+const INV2: InvestigatorId = InvestigatorId(2);
 const HERE: LocationId = LocationId(10);
 /// A revealed location with no enemies, not connected to `HERE`.
 const THERE: LocationId = LocationId(11);
@@ -46,7 +52,6 @@ const BARRICADE: &str = "01038";
 const BEAT_COP: &str = "01018";
 /// Magnifying Glass (01030): a Fast asset, so its owner's window offers it.
 const MAGNIFYING_GLASS: &str = "01030";
-const ATTIC: &str = "01113";
 
 const PLAY: TurnAction = TurnAction::PlayCard {
     investigator: INV,
@@ -311,15 +316,8 @@ fn the_move_fires_leave_and_enter_timing() {
         CardInstanceId(900),
         Owner::Investigator(INV),
     ));
-    let mut attic = None;
-    let session = session(board([here], [enemy(100)]))
-        .edit_state(|state| {
-            let id = state.add_location(cards::by_code(ATTIC).expect("Attic 01113 in corpus"));
-            state.locations.get_mut(&id).expect("just added").revealed = true;
-            attic = Some(id);
-        })
-        .take(&PLAY);
-    let attic = attic.expect("minted");
+    let (session, attic) = with_attic(session(board([here], [enemy(100)])), &[]);
+    let session = session.take(&PLAY);
 
     session.assert_at_turn_menu(INV);
     assert_eq!(location_of(&session), Some(attic));
@@ -336,5 +334,38 @@ fn the_move_fires_leave_and_enter_timing() {
         session.state().investigators[&INV].horror(),
         1,
         "the Attic's after-enter Forced resolved"
+    );
+}
+
+/// The enemy Elusive disengages engages the investigator left behind before
+/// the Attic 01113's *"**Forced** - After you enter the Attic: Take 1
+/// horror."* resolves. The engagement is the move's ENGAGE step, part of the
+/// effect, and `glossary/Effects.md` reads: *"All aspects of an effect have
+/// timing priority over all "after..." triggering conditions that might arise
+/// as a consequence of that effect."* A second investigator has to stay at
+/// `HERE`: with no one left behind, ENGAGE has nobody to engage.
+#[test]
+fn the_disengaged_enemy_engages_whoever_stays_before_the_attics_horror() {
+    let ghoul = EnemyId(100);
+    let (session, attic) = with_attic(
+        session(
+            board([], [enemy(ghoul.0)])
+                .with_seat(seat(2).at(HERE))
+                .with_seating([INV, INV2]),
+        ),
+        &[],
+    );
+    let session = session.take(&PLAY);
+
+    session.assert_at_turn_menu(INV);
+    assert_eq!(location_of(&session), Some(attic));
+    assert_eq!(session.state().enemies[&ghoul].engaged_with, Some(INV2));
+    assert_eq!(session.state().investigators[&INV].horror(), 1);
+    assert_event_sequence!(
+        session.events(),
+        Event::EnemyDisengaged { enemy, investigator } if *enemy == ghoul && *investigator == INV,
+        Event::InvestigatorMoved { to, .. } if *to == attic,
+        Event::EnemyEngaged { enemy, investigator } if *enemy == ghoul && *investigator == INV2,
+        Event::HorrorPlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV,
     );
 }

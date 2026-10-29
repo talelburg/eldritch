@@ -57,8 +57,8 @@ use crate::event::Event;
 use crate::scenario::{ResolutionId, ScenarioEnding};
 use crate::state::{
     AbilitySource, AdvanceTrigger, CardCode, CardInstanceId, Continuation, DamageSource,
-    EffectFrame, EffectPrompt, EmitStep, EnemyId, GameState, InvestigatorId, Lifetime, LocationId,
-    Owner, PlayFromHandFrame, RecordedModifier, ResolvedTest, Status,
+    EffectBaseFrame, EffectFrame, EffectPrompt, EmitStep, EnemyId, GameState, InvestigatorId,
+    Lifetime, LocationId, Owner, PlayFromHandFrame, RecordedModifier, ResolvedTest, Status,
 };
 
 /// Margin of the just-resolved skill test, bound only while running one of its
@@ -459,13 +459,64 @@ impl EvalContext {
 
 /// Push an effect's root [`EffectFrame`](crate::state::EffectFrame) onto the
 /// continuation stack for the global `drive` loop to own (top-frame
-/// dispatch). The caller returns [`EngineOutcome::Done`]; `drive` then steps
+/// dispatch), above the [`EffectBaseFrame`] that marks the bottom of the
+/// effect. The caller returns [`EngineOutcome::Done`]; `drive` then steps
 /// the pushed frame via its [`Continuation::Effect`](crate::state::Continuation::Effect)
 /// arm.
+///
+/// Every effect comes through here, except an activated ability's or played
+/// event's designated action, which comes through [`push_resolution`]
+/// together with its residual effect.
 pub(crate) fn push_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) {
+    push_effect_base(cx);
+    push_effect_frame(cx, effect, eval_ctx);
+}
+
+/// Push the resolution of an activated ability or a played card: its
+/// `designator`'s designated action above its residual `effect` when its
+/// text prints a bold action word ([`push_designated_action`]), otherwise
+/// its `effect` alone ([`push_effect`]). With neither, nothing is pushed.
+pub(crate) fn push_resolution(
+    cx: &mut Cx,
+    designator: Option<&ActionDesignator>,
+    effect: Option<&Effect>,
+    eval_ctx: EvalContext,
+) {
+    match (designator, effect) {
+        (Some(designator), residual) => {
+            push_designated_action(cx, designator, residual, eval_ctx);
+        }
+        (None, Some(effect)) => push_effect(cx, effect, eval_ctx),
+        (None, None) => {}
+    }
+}
+
+/// Push an effect's root [`EffectFrame`](crate::state::EffectFrame), with no
+/// [`EffectBaseFrame`] beneath it: the caller has pushed that already.
+fn push_effect_frame(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) {
     cx.state
         .continuations
         .push(Continuation::Effect(frame_of(effect, eval_ctx)));
+}
+
+/// Push the marker for the bottom of one effect, beneath its root frame.
+fn push_effect_base(cx: &mut Cx) {
+    cx.state
+        .continuations
+        .push(EffectBaseFrame { parked: Vec::new() });
+}
+
+/// Pop the [`EffectBaseFrame`] on top, now that the effect above it has
+/// resolved in full, and release the timing coordinators parked on it: each
+/// goes back on the stack at its `at` cell, the first parked on top, so the
+/// conditions open their `at` and `after` cells in the order they reached them
+/// (ADR 0021).
+pub(crate) fn close_effect_base(cx: &mut Cx) -> EngineOutcome {
+    let EffectBaseFrame { parked } = cx.state.continuations.pop_expect::<EffectBaseFrame>();
+    for coordinator in parked.into_iter().rev() {
+        cx.state.continuations.push(coordinator);
+    }
+    EngineOutcome::Done
 }
 
 /// Build the [`EffectFrame`](crate::state::EffectFrame) for an effect node:
@@ -633,13 +684,25 @@ fn still_targetable(state: &GameState, target: EachBinding) -> bool {
 
 /// Push a [`EffectFrame::Designated`](crate::state::EffectFrame::Designated)
 /// frame for the global `drive` loop to own — the designated action of an
-/// activated ability. The [`push_effect`] twin for the half of an
-/// ability that is not an effect.
-pub(crate) fn push_designated_action(
+/// activated ability or a played event — above the `residual` effect its text
+/// prints beside the bold word, if any. The [`push_effect`] twin for an
+/// ability whose resolution starts with a designated action.
+///
+/// Frames are LIFO, so the designated action goes on top and resolves first.
+/// Both halves sit above one [`EffectBaseFrame`]: they are one effect
+/// (`glossary/Ability.md`: *"Activating such an ability performs the
+/// designated action as described in the rules, but modified in the manner
+/// described by the ability."*).
+fn push_designated_action(
     cx: &mut Cx,
     designator: &ActionDesignator,
+    residual: Option<&Effect>,
     eval_ctx: EvalContext,
 ) {
+    push_effect_base(cx);
+    if let Some(residual) = residual {
+        push_effect_frame(cx, residual, eval_ctx);
+    }
     cx.state
         .continuations
         .push(Continuation::Effect(EffectFrame::Designated {

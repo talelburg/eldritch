@@ -293,3 +293,45 @@ fn two_choices_resume_one_round_trip_at_a_time() {
     );
     assert!(state.continuations.is_empty());
 }
+
+/// A state saved while an effect waits on a `ChooseOne` pick loads back
+/// unchanged, and the loaded copy resumes the pick to the end of the effect:
+/// everything on the stack mid-effect, its effect-base marker included, is
+/// plain serialized data.
+#[test]
+fn a_state_suspended_on_a_choose_one_round_trips_through_json_and_resumes() {
+    let id = InvestigatorId(1);
+    let mut state = GameStateBuilder::new()
+        .with_registries(TEST_REGISTRIES)
+        .with_seat(seat(1))
+        .build();
+    let before = state.investigators[&id].resources;
+    let mut events = Vec::new();
+    let outcome = run(
+        &mut Cx::for_test(&mut state, &mut events),
+        &dsl::choose_one([
+            (
+                "Gain 1 resource",
+                dsl::gain_resources(InvestigatorTarget::You, 1),
+            ),
+            (
+                "Gain 3 resources",
+                dsl::gain_resources(InvestigatorTarget::You, 3),
+            ),
+        ]),
+        ctx(1),
+    );
+    assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
+
+    let json = serde_json::to_string(&state).expect("serialize");
+    let mut loaded: GameState = serde_json::from_str(&json).expect("deserialize");
+    assert_eq!(loaded, state, "the suspended state loads back unchanged");
+
+    let outcome = resume_pick(&mut loaded, &mut events, 1);
+    assert_eq!(outcome, EngineOutcome::Done);
+    assert_eq!(loaded.investigators[&id].resources, before + 3);
+    assert!(
+        loaded.continuations.is_empty(),
+        "the loaded effect runs to its end and leaves nothing behind",
+    );
+}

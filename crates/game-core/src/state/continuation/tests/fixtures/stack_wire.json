@@ -429,6 +429,17 @@
     }
   },
   {
+    "EffectBase": {
+      "parked": [
+        {
+          "event": "RoundEnded",
+          "step": "At",
+          "prevented": false
+        }
+      ]
+    }
+  },
+  {
     "ScenarioEnd": {
       "step": "EmitGameEnd"
     }

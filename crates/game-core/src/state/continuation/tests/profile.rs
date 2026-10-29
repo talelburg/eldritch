@@ -502,6 +502,16 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             profile(DRIVEN, COMPLETE),
         ),
         (
+            Continuation::EffectBase(EffectBaseFrame {
+                parked: vec![EmitEventFrame {
+                    event: TimingEvent::RoundEnded,
+                    step: EmitStep::At,
+                    prevented: false,
+                }],
+            }),
+            profile(DRIVEN, COMPLETE),
+        ),
+        (
             Continuation::ScenarioEnd(ScenarioEndFrame {
                 step: ScenarioEndStep::EmitGameEnd,
             }),

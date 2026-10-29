@@ -388,6 +388,10 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // earlier exits pushed has resolved: run its deferred exits in
             // call order (ADR 0020).
             Continuation::NativeTail(_) => native_tail::drive_native_tail(cx),
+            // The bottom of an effect, re-exposed once the whole effect above it
+            // has resolved: close it, releasing the coordinators parked on it
+            // (ADR 0021).
+            Continuation::EffectBase(_) => evaluator::close_effect_base(cx),
             // The ending at rest (Inert at `Finalize`): the loop has nothing to
             // drive, and hands the frame to the apply boundary, which holds the
             // `ScenarioRegistry`.
@@ -731,6 +735,7 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         | Continuation::ActionResolution(_)
         | Continuation::Elimination(_)
         | Continuation::NativeTail(_)
+        | Continuation::EffectBase(_)
         | Continuation::ScenarioEnd(_)
         | Continuation::MythosPhase(_)
         | Continuation::InvestigationPhase(_)

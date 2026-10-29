@@ -5,6 +5,21 @@ use crate::test_support::TEST_REGISTRIES;
 const A: LocationId = LocationId(1);
 /// Location "B".
 const B: LocationId = LocationId(2);
+
+/// Assert a rejected effect left none of its frames behind as a prompt. Its
+/// base marker may remain: a unit test has no `apply` to roll the stack back.
+#[track_caller]
+fn assert_no_effect_frame_left(state: &GameState) {
+    assert!(
+        !state
+            .continuations
+            .iter()
+            .any(|c| matches!(c, Continuation::Effect(_))),
+        "a rejected effect leaves no effect frame on the stack: {:?}",
+        state.continuations,
+    );
+}
+
 #[test]
 fn chosen_investigator_single_candidate_auto_binds() {
     // 1 investigator ⇒ auto-bind, no input.
@@ -178,7 +193,7 @@ fn chosen_at_your_location_rejects_when_controller_between_locations() {
         ctx(1),
     );
     assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
-    assert!(state.continuations.is_empty());
+    assert_no_effect_frame_left(&state);
 }
 
 #[test]
@@ -364,7 +379,7 @@ fn deal_damage_to_chosen_enemy_rejects_when_none_co_located() {
         ctx(1),
     );
     assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
-    assert!(state.continuations.is_empty());
+    assert_no_effect_frame_left(&state);
 }
 
 #[test]

@@ -23,10 +23,13 @@
 //!
 //! Each enemy is evaded in turn, in enemy-id order, through the shared evade
 //! exit, so each evasion is its own `EnemyEvaded` with its own "after"
-//! reaction window: Pickpocketing 01046's draw lands after the first evasion,
-//! before the second enemy is evaded. The text does not say whether "evade
-//! all enemies" is one simultaneous evasion with one window, and no Core card
-//! can tell the two apart; a card that can is the point to revisit.
+//! reaction window. Those windows open once the whole effect has resolved
+//! (`glossary/Effects.md`: *"All aspects of an effect have timing priority over
+//! all "after..." triggering conditions that might arise as a consequence of
+//! that effect."*), so Pickpocketing 01046 is offered with every enemy at the
+//! location already evaded. The text does not say whether "evade all enemies"
+//! is one simultaneous evasion with one window, and no Core card can tell the
+//! two apart; a card that can is the point to revisit.
 
 use card_dsl::dsl::{self, Ability, ActionDesignator, EnemySet, EnemyTarget};
 

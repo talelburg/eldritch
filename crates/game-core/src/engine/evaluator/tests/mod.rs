@@ -21,6 +21,7 @@ mod control_flow;
 mod deal_and_heal;
 mod discard_self;
 mod discover_clue;
+mod effect_base;
 mod eval_context;
 mod for_each;
 mod gain_resources;
@@ -75,6 +76,10 @@ fn drive_effect_run_to(cx: &mut Cx, base: usize) -> EngineOutcome {
             // this bounded stand-in must too, or `Deal` in a unit test
             // assigns damage that is never placed.
             Some(Continuation::DealDamage(_)) => combat::drive_deal_damage(cx),
+            // The marker at the bottom of the effect `run` pushed: once
+            // exposed, the effect is over and the real loop closes it,
+            // releasing the coordinators parked on it onto this run.
+            Some(Continuation::EffectBase(_)) => close_effect_base(cx),
             _ => return EngineOutcome::Done,
         };
         match outcome {
@@ -99,11 +104,17 @@ fn run(cx: &mut Cx, effect: &Effect, ctx: EvalContext) -> EngineOutcome {
 /// the resumed top effect run **bounded** — in a unit test there is no
 /// `apply()`→`drive()` afterward to step it.
 fn resume_pick(state: &mut GameState, events: &mut Vec<Event>, i: u32) -> EngineOutcome {
-    let mut cx = Cx::for_test(state, events);
-    let recorded = choice::resume_effect_choice(&mut cx, &InputResponse::PickSingle(OptionId(i)));
+    resume_pick_with_cx(&mut Cx::for_test(state, events), i)
+}
+
+/// [`resume_pick`] against the registry `cx` names, for a test running probe
+/// cards of its own.
+fn resume_pick_with_cx(cx: &mut Cx, i: u32) -> EngineOutcome {
+    let recorded = choice::resume_effect_choice(cx, &InputResponse::PickSingle(OptionId(i)));
     // A reject (bad pick / top not a Leaf) propagates as-is; otherwise the
     // pick is recorded and the resumed run is driven bounded (base = depth
-    // just below the top contiguous Effect run, so fixtures stay untouched).
+    // just below the top contiguous Effect run and its base marker, so
+    // fixtures stay untouched).
     if !matches!(recorded, EngineOutcome::Done) {
         return recorded;
     }
@@ -111,9 +122,9 @@ fn resume_pick(state: &mut GameState, events: &mut Vec<Event>, i: u32) -> Engine
         .state
         .continuations
         .iter()
-        .rposition(|c| !matches!(c, Continuation::Effect(_)))
+        .rposition(|c| !matches!(c, Continuation::Effect(_) | Continuation::EffectBase(_)))
         .map_or(0, |idx| idx + 1);
-    drive_effect_run_to(&mut cx, base)
+    drive_effect_run_to(cx, base)
 }
 
 /// Number of options offered by a suspending `AwaitingInput`.

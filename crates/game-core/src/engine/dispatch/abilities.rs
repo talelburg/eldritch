@@ -218,10 +218,7 @@ fn push_activation_resolution(
     effect: &Effect,
     eval_ctx: EvalContext,
 ) {
-    evaluator::push_effect(cx, effect, eval_ctx);
-    if let Some(designator) = designator {
-        evaluator::push_designated_action(cx, designator, eval_ctx);
-    }
+    evaluator::push_resolution(cx, designator, Some(effect), eval_ctx);
 }
 
 /// Run a parked activated ability's `effect` after its `AoO` loop completes.
