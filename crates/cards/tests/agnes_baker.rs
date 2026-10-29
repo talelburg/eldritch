@@ -11,6 +11,11 @@
 //! > [reaction] You cannot use Agnes' ability if you assign horror to an asset.
 //!
 //! Holy Rosary 01059 is the soaker (*"You get +1 \[willpower\]."*, sanity 2).
+//!
+//! Abandoned and Alone 01015 places horror on her as one aspect of an effect:
+//! *"**Revelation** - Take 2 direct horror and remove all cards in your discard
+//! pile from the game."* Psychosis 01099 reacts to the same horror: *"**Forced**
+//! - After you take 1 or more horror: Take 1 direct damage."*
 
 use cards::TEST_REGISTRIES;
 use game_core::engine::enumerate::TurnAction;
@@ -25,6 +30,10 @@ use game_core::{assert_event, assert_no_event};
 
 const AGNES: &str = "01004";
 const HOLY_ROSARY: &str = "01059";
+const ABANDONED_AND_ALONE: &str = "01015";
+const PSYCHOSIS: &str = "01099";
+/// Deck and discard filler.
+const GUTS: &str = "01089";
 
 const INV: InvestigatorId = InvestigatorId(1);
 const ENEMY: EnemyId = EnemyId(100);
@@ -86,6 +95,50 @@ fn horror_placed_on_agnes_offers_her_reaction_which_damages_the_enemy() {
     assert_event!(
         session.events(),
         Event::EnemyDamaged { enemy, amount: 1, .. } if *enemy == ENEMY
+    );
+}
+
+/// Abandoned and Alone's horror is placed on her and taken by her, and both
+/// "after" cells wait until the Revelation has resolved in full
+/// (`glossary/Effects.md`: *"All aspects of an effect have timing priority over
+/// all "after..." triggering conditions that might arise as a consequence of
+/// that effect."*). They then open in the order their conditions reached them:
+/// the placement, nested in the taking, first. So her reaction is offered once
+/// the discard pile is gone and before Psychosis deals its damage.
+#[test]
+fn her_reaction_to_abandoned_and_alone_waits_for_the_revelation_and_precedes_psychosis() {
+    let mut enemy = horror_enemy();
+    enemy.current_location = Some(HERE);
+    let session = staged(
+        agnes()
+            .actions(3)
+            .threat_area([PSYCHOSIS])
+            .discard([GUTS])
+            .deck([ABANDONED_AND_ALONE, GUTS]),
+    )
+    .with_enemy(enemy)
+    .session()
+    .take(&TurnAction::Draw { investigator: INV });
+
+    let card = agnes_card(&session);
+    assert_eq!(session.offered_at(&card), 1, "her reaction is offered");
+    assert_event!(
+        session.events(),
+        Event::DiscardPileRemovedFromGame { investigator, .. } if *investigator == INV
+    );
+    assert_eq!(
+        session.state().investigators[&INV].damage(),
+        0,
+        "Psychosis waits"
+    );
+
+    let session = session.pick(card);
+    session.assert_at_turn_menu(INV);
+    assert_eq!(enemy_damage(&session), 1);
+    assert_eq!(
+        session.state().investigators[&INV].damage(),
+        1,
+        "then Psychosis"
     );
 }
 

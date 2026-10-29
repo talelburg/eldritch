@@ -481,9 +481,16 @@ fn push_effect_root(cx: &mut Cx) {
         .push(EffectRootFrame { parked: Vec::new() });
 }
 
-/// Pop the [`EffectRootFrame`] on top: the effect above it has resolved.
+/// Pop the [`EffectRootFrame`] on top, now that the effect above it has
+/// resolved in full, and release the timing coordinators parked on it: each
+/// goes back on the stack at its `at` cell, the first parked on top, so the
+/// conditions open their `at` and `after` cells in the order they reached them
+/// (ADR 0021).
 pub(crate) fn close_effect_root(cx: &mut Cx) -> EngineOutcome {
-    cx.state.continuations.pop_expect::<EffectRootFrame>();
+    let EffectRootFrame { parked } = cx.state.continuations.pop_expect::<EffectRootFrame>();
+    for coordinator in parked.into_iter().rev() {
+        cx.state.continuations.push(coordinator);
+    }
     EngineOutcome::Done
 }
 

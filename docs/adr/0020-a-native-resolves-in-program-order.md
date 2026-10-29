@@ -18,7 +18,7 @@ The rule survives ADR 0008's migration without revisiting. Once `EnemyDefeated` 
 
 **The pushed frames are the ones above the stack's length when the native was entered**, lifted by one if an exit latched the scenario's ending. `end_scenario` inserts the ending frame at the bottom of the stack ([ADR 0004](0004-a-latched-resolution-cancels-opportunities-not-resolutions.md)). Without the offset, the native's own parent frame would count as pushed. The tail driver marks the stack the same way before each run of ops.
 
-**The tail sits above any caller-owned frames queued before the deferral.** Once Dynamite Blast defers, the stack from the top is: the first investigator's deal, then the tail holding the other deals, then the enemies' `EnemyDefeated` frames. Windows queued before the deferral keep the order they had. The `after` cell a deal opens inside its own frame still resolves before the tail's next op. Reaching that cell is the second place `Effects.md`'s rule applies, and it is #640's question.
+**The tail sits above any caller-owned frames queued before the deferral.** Once Dynamite Blast defers, the stack from the top is: the first investigator's deal, then the tail holding the other deals, then the enemies' `EnemyDefeated` frames. Windows queued before the deferral keep the order they had. None of them opens yet: the `at` and `after` cells of every condition the blast raises, a deal's included, wait on the effect's root beneath the tail until the whole blast has resolved ([ADR 0021](0021-an-effect-resolves-in-full-before-its-consequences.md)). That is the second place `Effects.md`'s rule applies.
 
 ## Reads after the deferral are refused
 
@@ -41,3 +41,5 @@ The tail frame is Driven and completes under a latched ending, because it is man
 **(B) Natives return a plan instead of calling exits.** It is purer, but it forbids every read of the native's own writes (The Barrier reveals the Parlor and then puts Lita into play in it), and it rewrites every native.
 
 **(C) Keep #1189's refusal.** It catches the bug, but it leaves two clocks. The next card that prints "take harm, then X" would have to be written in reverse order or split into two natives.
+
+*Folded: #1205.*

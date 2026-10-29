@@ -143,23 +143,30 @@ fn with_no_enemy_at_your_location_it_cannot_be_played() {
     s.assert_rejects(|s| s.submit_off_menu(&play()));
 }
 
+/// Each enemy is evaded in turn, and each `EnemyEvaded` has its own "after"
+/// cell, but both wait until the whole effect has resolved
+/// (`glossary/Effects.md`: *"All aspects of an effect have timing priority over
+/// all "after..." triggering conditions that might arise as a consequence of
+/// that effect."*). So Pickpocketing is offered with every enemy already
+/// evaded.
 #[test]
-fn pickpocketing_reacts_after_the_first_evasion_before_the_second() {
+fn pickpocketing_reacts_once_every_enemy_is_evaded() {
     let s = board(
         survivor(1).in_play([PICKPOCKETING]).deck([GUTS]),
         &[ENGAGED, UNENGAGED],
     )
     .take(&play());
 
-    // One `EnemyEvaded` per enemy, in id order, each with its own "after"
-    // window: the first evasion has resolved and the second has not.
     let pickpocketing = s.state().card(INV, PICKPOCKETING);
-    assert_eq!(s.offered_at(&pickpocketing), 1, "offered after an evasion");
+    assert_eq!(
+        s.offered_at(&pickpocketing),
+        1,
+        "offered after the evasions"
+    );
     assert!(s.state().enemies[&ENGAGED].exhausted);
-    assert!(!s.state().enemies[&UNENGAGED].exhausted);
+    assert!(s.state().enemies[&UNENGAGED].exhausted);
 
     let s = s.pick(pickpocketing);
     s.assert_at_turn_menu(INV);
-    assert!(s.state().enemies[&UNENGAGED].exhausted, "the walk resumed");
     assert_eq!(s.state().investigators[&INV].hand, [CardCode::new(GUTS)]);
 }

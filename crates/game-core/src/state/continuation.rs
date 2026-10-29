@@ -2535,10 +2535,15 @@ pub struct NativeTailFrame {
 /// modified in the manner described by the ability."*). The `Seq`, `ForEach`,
 /// `If` and `ChooseOne` frames nested inside an effect are not marked.
 ///
-/// `parked` holds timing coordinators held back until the effect has resolved.
-/// TODO(#1205): nothing parks a coordinator yet, so it is always empty. Driven,
-/// never a prompt, and never cancelled by a latched resolution: the effect
-/// above it is already under way (ADR 0004).
+/// `parked` holds the timing coordinators of conditions the effect raised,
+/// held at their `at` cell until the effect has resolved in full
+/// (`glossary/Effects.md`: *"All aspects of an effect have timing priority over
+/// all "after..." triggering conditions that might arise as a consequence of
+/// that effect."*). Once exposed, the marker pops and puts them back on the
+/// stack, the first parked on top (ADR 0021). Driven, never a prompt, and never
+/// cancelled by a latched resolution: the effect above it is already under way
+/// (ADR 0004). The coordinators it releases meet that resolution's gate one by
+/// one, as they reach the top.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EffectRootFrame {
     /// Timing coordinators parked on this effect, in the order they parked.

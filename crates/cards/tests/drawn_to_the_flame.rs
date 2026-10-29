@@ -24,6 +24,12 @@
 //!   in your threat area."*
 //! - Grasping Hands 01162: *"**Revelation** - Test \[agility\] (3). For each
 //!   point you fail by, take 1 damage."*
+//! - Rotting Remains 01163: *"**Revelation** - Test \[willpower\] (3). For each
+//!   point you fail by, take 1 horror."*
+//!
+//! Psychosis 01099 (`data/arkhamdb-snapshot/pack/core/core.json`) reacts to
+//! horror taken: *"**Forced** - After you take 1 or more horror: Take 1 direct
+//! damage."*
 //!
 //! Runs against `cards::TEST_REGISTRIES`.
 
@@ -39,6 +45,8 @@ use game_core::{assert_event, assert_no_event};
 const DRAWN_TO_THE_FLAME: &str = "01064";
 const DISSONANT_VOICES: &str = "01165";
 const GRASPING_HANDS: &str = "01162";
+const ROTTING_REMAINS: &str = "01163";
+const PSYCHOSIS: &str = "01099";
 
 const INV: InvestigatorId = InvestigatorId(1);
 const HERE: LocationId = LocationId(1);
@@ -173,4 +181,41 @@ fn a_drawn_card_that_eliminates_the_drawer_discovers_nothing() {
     let state = session.state();
     assert_eq!(state.investigators[&INV].status, Status::Defeated);
     assert_eq!(state.locations[&HERE].clues, 3);
+}
+
+/// A consequence raised inside a skill test resolves inside it, so it is not
+/// held for the play's post-then discovery. The Official FAQ on Shrivelling
+/// 01060's horror (`data/official-faq/Frequently_Asked_Questions.md`): *"If you
+/// had any reactions to taking that horror (such as Agnes Baker’s ability), you
+/// would trigger it then, before resolving the rest of the attack."* Rotting
+/// Remains' failed test deals its horror, Psychosis deals its damage, and only
+/// then are 2 clues discovered.
+#[test]
+fn psychosis_reacts_to_a_drawn_tests_horror_before_two_clues_are_discovered() {
+    let session = play(board(
+        seat(1).threat_area([PSYCHOSIS]),
+        3,
+        &[ROTTING_REMAINS],
+        &[],
+    ))
+    .commit(&[]);
+
+    session.assert_at_turn_menu(INV);
+    let events = session.events();
+    let horror = position(
+        events,
+        |e| matches!(e, Event::HorrorPlacedOnInvestigator { investigator, amount: 3 } if *investigator == INV),
+    );
+    let damage = position(
+        events,
+        |e| matches!(e, Event::DamagePlacedOnInvestigator { investigator, amount: 1 } if *investigator == INV),
+    );
+    let discovered = position(
+        events,
+        |e| matches!(e, Event::CluePlaced { investigator, count: 2 } if *investigator == INV),
+    );
+    assert!(
+        horror < damage && damage < discovered,
+        "the horror, then Psychosis's damage, then the discovery; got {events:#?}",
+    );
 }
