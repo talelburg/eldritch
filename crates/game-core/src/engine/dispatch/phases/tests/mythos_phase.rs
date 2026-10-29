@@ -187,9 +187,9 @@ fn mythos_phase_end_emits_phase_ended_and_steps_to_investigation() {
     );
 }
 
-/// Rules Reference p.10: when the first investigator in `seating` is
-/// eliminated, `mythos_phase` seeds the encounter-draw queue from the first
-/// Active investigator rather than blindly taking `seating.first()`.
+/// Rules Reference p.10: when the lead is eliminated, `mythos_phase` seeds
+/// the encounter-draw queue from the first Active investigator in player
+/// order rather than blindly taking the stored lead.
 #[test]
 fn mythos_phase_skips_eliminated_lead_when_seeding_queue() {
     let mut state = GameStateBuilder::default()

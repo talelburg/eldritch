@@ -231,7 +231,8 @@ impl GameStateBuilder {
 
     /// Set the seating, [`GameState::seating`]. Unless
     /// [`with_lead`](Self::with_lead) names another, its first entry is the
-    /// lead, so player order is the seating as given.
+    /// lead, so player order is the seating as given. Left unset,
+    /// [`open_turn`](Self::open_turn) seats its investigator alone.
     pub fn with_seating(mut self, order: impl IntoIterator<Item = InvestigatorId>) -> Self {
         self.seating = order.into_iter().collect();
         self
